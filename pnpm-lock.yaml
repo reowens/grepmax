@@ -12,8 +12,8 @@ importers:
         specifier: ^0.11.0
         version: 0.11.0
       '@mixedbread/sdk':
-        specifier: ^0.38.0
-        version: 0.38.0
+        specifier: ^0.41.0
+        version: 0.41.0
       better-auth:
         specifier: ^1.3.34
         version: 1.3.34
@@ -85,8 +85,8 @@ packages:
   '@levischuck/tiny-cbor@0.2.11':
     resolution: {integrity: sha512-llBRm4dT4Z89aRsm6u2oEZ8tfwL/2l6BwpZ7JcyieouniDECM5AqNgr/y08zalEIvW3RSK4upYyybDcmjXqAow==}
 
-  '@mixedbread/sdk@0.38.0':
-    resolution: {integrity: sha512-DXIbEKm4WcgdVzvz5/oo+dbxIdHFaPnAn3Vux/QUovj5bF4gZgz8RcP+YqDWlvFw0Xdnaw9P8P0vRhjHkpb0Bw==}
+  '@mixedbread/sdk@0.41.0':
+    resolution: {integrity: sha512-ge0inGKiOzbK+bV8sqEVQAvl/TVmeCND/ghOMV6NOt+xe1Zx/aIUP350NXar0KaJAjrn83N6mmp1jpQQdNqR4Q==}
     hasBin: true
 
   '@noble/ciphers@2.0.1':
@@ -465,7 +465,7 @@ snapshots:
 
   '@levischuck/tiny-cbor@0.2.11': {}
 
-  '@mixedbread/sdk@0.38.0': {}
+  '@mixedbread/sdk@0.41.0': {}
 
   '@noble/ciphers@2.0.1': {}
 

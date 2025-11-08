@@ -5,7 +5,6 @@ import * as path from "path";
 import { Mixedbread } from "@mixedbread/sdk";
 import { isIgnoredByGit, getGitRepoFiles, computeBufferHash } from "./utils";
 import ora from "ora";
-import * as os from "os";
 import pLimit from "p-limit";
 import { login } from "./login";
 
@@ -90,15 +89,7 @@ async function initialSync(
   let processed = 0;
   let uploaded = 0;
 
-  const concurrency = Math.max(
-    2,
-    Math.min(
-      8,
-      (os as any).availableParallelism
-        ? os.availableParallelism()
-        : os.cpus().length || 4,
-    ),
-  );
+  const concurrency = 100;
   const limit = pLimit(concurrency);
 
   await Promise.all(
@@ -157,9 +148,20 @@ program
       apiKey: options.apiKey,
     });
 
+    const path = process.cwd();
+
     const results = await mixedbread.stores.search({
       query: pattern,
       store_identifiers: [options.store],
+      filters: {
+        all: [
+          {
+            key: "path",
+            operator: "starts_with",
+            value: path,
+          },
+        ],
+      },
     });
 
     console.log(
