@@ -32,7 +32,7 @@ function getUser(id: string): Promise<User> {
   - Constants: UPPER_SNAKE_CASE
 - Organize imports logically:
   - Built-ins → third-party → internal modules → local files
-- Use ESLint & Prettier for formatting and linting. Do not commit code with unresolved lint errors.
+- Use Biome for formatting and linting. Do not commit code with unresolved lint errors.
 - Avoid deeply nested logic — Extract nested logic into helper functions or early returns.
 - Document intent with JSDoc when logic is complex or non-obvious.
 
