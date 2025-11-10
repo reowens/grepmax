@@ -1,7 +1,7 @@
 import { createAuthClient } from "better-auth/client";
-import { isDevelopment } from "../utils";
 import { deviceAuthorizationClient } from "better-auth/plugins";
 import { getStoredToken } from "../token";
+import { isDevelopment } from "../utils";
 
 const SERVER_URL = isDevelopment()
   ? "http://localhost:3001"
@@ -11,6 +11,8 @@ export const authClient = createAuthClient({
   baseURL: SERVER_URL,
   plugins: [deviceAuthorizationClient()],
 });
+
+export type AuthClient = typeof authClient;
 
 export async function getJWTToken(): Promise<string> {
   const token = await getStoredToken();

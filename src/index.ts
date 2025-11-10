@@ -1,30 +1,35 @@
 #!/usr/bin/env node
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { cancel, confirm, isCancel } from "@clack/prompts";
+import type { Mixedbread } from "@mixedbread/sdk";
 import { program } from "commander";
-import * as fs from "fs";
-import * as path from "path";
-import { Mixedbread } from "@mixedbread/sdk";
-import { isIgnoredByGit, getGitRepoFiles, computeBufferHash } from "./utils";
 import ora from "ora";
 import pLimit from "p-limit";
-import { login, loginAction } from "./login";
-import { logout } from "./logout";
 import { getJWTToken } from "./lib/auth";
 import { createMxbaiClient } from "./lib/mxbai";
-import { confirm, isCancel, cancel } from "@clack/prompts";
+import { login, loginAction } from "./login";
+import { logout } from "./logout";
 import { getStoredToken } from "./token";
+import { computeBufferHash, getGitRepoFiles, isIgnoredByGit } from "./utils";
+
+interface FileMetadata {
+  path: string;
+  hash: string;
+}
 
 async function listStoreFileHashes(
   client: Mixedbread,
   store: string,
 ): Promise<Map<string, string | undefined>> {
   const byExternalId = new Map<string, string | undefined>();
-  let after: string | null | undefined = undefined;
+  let after: string | null | undefined;
   do {
     const resp = await client.stores.files.list(store, { limit: 100, after });
     for (const f of resp.data) {
       const externalId = f.external_id ?? undefined;
       if (!externalId) continue;
-      const metadata = (f.metadata as any) || {};
+      const metadata = (f.metadata || {}) as FileMetadata;
       const hash: string | undefined =
         typeof metadata?.hash === "string" ? metadata.hash : undefined;
       byExternalId.set(externalId, hash);
@@ -193,11 +198,11 @@ program
         results.data
           .map((result) => {
             let content =
-              result.type == "text"
+              result.type === "text"
                 ? result.text
                 : `Not a text chunk! (${result.type})`;
             content = JSON.stringify(content);
-            return `${(result.metadata as any)?.path ?? "Unknown path"}: ${content}`;
+            return `${(result.metadata as FileMetadata)?.path ?? "Unknown path"}: ${content}`;
           })
           .join("\n"),
       );
@@ -235,10 +240,9 @@ program
             lastProcessed = info.processed;
             lastUploaded = info.uploaded;
             lastTotal = info.total;
-            const rel =
-              info.filePath && info.filePath.startsWith(watchRoot)
-                ? path.relative(watchRoot, info.filePath)
-                : (info.filePath ?? "");
+            const rel = info.filePath?.startsWith(watchRoot)
+              ? path.relative(watchRoot, info.filePath)
+              : (info.filePath ?? "");
             spinner.text = `Indexing files (${lastProcessed}/${lastTotal}) • uploaded ${lastUploaded} ${rel}`;
           },
         );

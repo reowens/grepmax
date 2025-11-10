@@ -3,8 +3,8 @@ import chalk from "chalk";
 import { Command } from "commander";
 import open from "open";
 import yoctoSpinner from "yocto-spinner";
-import { getStoredToken, pollForToken, storeToken } from "./token";
 import { authClient } from "./lib/auth";
+import { getStoredToken, pollForToken, storeToken } from "./token";
 
 const CLIENT_ID = "mgrep";
 

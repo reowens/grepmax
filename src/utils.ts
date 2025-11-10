@@ -1,6 +1,6 @@
-import { spawnSync } from "child_process";
-import { createHash } from "crypto";
-import * as path from "path";
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import * as path from "node:path";
 
 export function computeBufferHash(buffer: Buffer): string {
   return createHash("sha256").update(buffer).digest("hex");

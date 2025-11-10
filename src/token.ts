@@ -1,19 +1,20 @@
-import fs from "fs/promises";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import chalk from "chalk";
-import path from "path";
-import os from "os";
 import yoctoSpinner from "yocto-spinner";
+import type { AuthClient } from "./lib/auth";
 
 const CONFIG_DIR = path.join(os.homedir(), ".mgrep");
 const TOKEN_FILE = path.join(CONFIG_DIR, "token.json");
 
 export async function pollForToken(
-  authClient: any,
+  authClient: AuthClient,
   deviceCode: string,
   clientId: string,
   initialInterval: number,
   expiresIn: number,
-): Promise<any> {
+): Promise<TokenData> {
   let pollingInterval = initialInterval;
   const spinner = yoctoSpinner({ text: "", color: "cyan" });
   let dots = 0;
@@ -53,7 +54,7 @@ export async function pollForToken(
           client_id: clientId,
           fetchOptions: {
             headers: {
-              "user-agent": `mgrep`,
+              "user-agent": "mgrep",
             },
           },
         });
@@ -105,7 +106,7 @@ export async function pollForToken(
   });
 }
 
-export async function storeToken(token: any): Promise<void> {
+export async function storeToken(token: TokenData) {
   try {
     // Ensure config directory exists
     await fs.mkdir(CONFIG_DIR, { recursive: true });
@@ -115,11 +116,12 @@ export async function storeToken(token: any): Promise<void> {
       access_token: token.access_token,
       token_type: token.token_type || "Bearer",
       scope: token.scope,
+      expires_in: token.expires_in,
       created_at: new Date().toISOString(),
     };
 
     await fs.writeFile(TOKEN_FILE, JSON.stringify(tokenData, null, 2), "utf-8");
-  } catch (error) {
+  } catch (_error) {
     console.warn("Failed to store authentication token locally");
   }
 }
@@ -128,10 +130,12 @@ interface TokenData {
   access_token: string;
   token_type: string;
   scope: string;
-  created_at: string;
+  expires_in: number;
 }
 
-export async function getStoredToken(): Promise<TokenData | null> {
+export async function getStoredToken(): Promise<
+  (TokenData & { created_at: string }) | null
+> {
   try {
     const data = await fs.readFile(TOKEN_FILE, "utf-8");
     return JSON.parse(data);
@@ -140,7 +144,7 @@ export async function getStoredToken(): Promise<TokenData | null> {
   }
 }
 
-export async function deleteToken(): Promise<void> {
+export async function deleteToken() {
   try {
     await fs.unlink(TOKEN_FILE);
   } catch (error) {
