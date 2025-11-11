@@ -1,0 +1,18 @@
+{
+  "name": "Mixedbread-Grep",
+  "owner": {
+    "name": "Mixedbread",
+    "email": "support@mixedbread.ai"
+  },
+  "plugins": [
+    {
+      "name": "mgrep",
+      "source": "./plugins/mgrep",
+      "description": "Search your local files using Mixedbread",
+      "version": "0.0.0",
+      "author": {
+        "name": "Joel Dierkes"
+      }
+    }
+  ]
+}

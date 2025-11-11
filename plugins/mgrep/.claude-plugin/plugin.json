@@ -1,0 +1,8 @@
+{
+  "name": "mgrep",
+  "description": "Search your local files using Mixedbread",
+  "version": "0.0.0",
+  "author": {
+    "name": "Joel Dierkes"
+  }
+}
