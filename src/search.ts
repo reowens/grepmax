@@ -6,6 +6,7 @@ import type {
 } from "@mixedbread/sdk/resources/vector-stores/vector-stores";
 import type { Command } from "commander";
 import { Command as CommanderCommand } from "commander";
+import { join } from "path";
 import { getJWTToken } from "./lib/auth";
 import { createMxbaiClient } from "./lib/mxbai";
 import type { FileMetadata } from "./types";
@@ -18,7 +19,9 @@ type ChunkType =
   | ScoredVideoURLInputChunk;
 
 function formatChunk(chunk: ChunkType) {
-  const path = (chunk.metadata as FileMetadata)?.path ?? "Unknown path";
+  const pwd = process.cwd();
+  const path =
+    (chunk.metadata as FileMetadata)?.path?.replace(pwd, "") ?? "Unknown path";
   let line_range = "";
   switch (chunk.type) {
     case "text":
@@ -37,15 +40,18 @@ function formatChunk(chunk: ChunkType) {
       line_range = "";
       break;
   }
-  return `${path}${line_range}`;
+  return `.${path}${line_range}`;
 }
 
 export const search: Command = new CommanderCommand("search")
   .description("File pattern searcher")
+  .option("-i", "Makes the search case-insensitive", false)
+  .option("-r", "Recursive search", false)
   .argument("<pattern>", "The pattern to search for")
+  .argument("[path]", "The path to search in")
   .allowUnknownOption(true)
   .allowExcessArguments(true)
-  .action(async (pattern, _options, cmd) => {
+  .action(async (pattern, exec_path, _options, cmd) => {
     const options: { store: string } = cmd.optsWithGlobals();
 
     await ensureAuthenticated();
@@ -54,7 +60,7 @@ export const search: Command = new CommanderCommand("search")
       const jwtToken = await getJWTToken();
       const mxbai = createMxbaiClient(jwtToken);
 
-      const path = process.cwd();
+      const search_path = join(process.cwd(), exec_path ?? "");
 
       const results = await mxbai.stores.search({
         query: pattern,
@@ -64,7 +70,7 @@ export const search: Command = new CommanderCommand("search")
             {
               key: "path",
               operator: "starts_with",
-              value: path,
+              value: search_path,
             },
           ],
         },
