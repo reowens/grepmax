@@ -133,28 +133,28 @@ export async function uploadFile(
   if (buffer.length === 0) {
     return false;
   }
+
   const hash = computeBufferHash(buffer);
+  const options = {
+    external_id: filePath,
+    overwrite: true,
+    metadata: {
+      path: filePath,
+      hash,
+    },
+  } as const;
+
   try {
-    await client.stores.files.upload(store, fs.createReadStream(filePath), {
-      external_id: filePath,
-      overwrite: true,
-      metadata: {
-        path: filePath,
-        hash,
-      },
-    });
+    await client.stores.files.upload(
+      store,
+      fs.createReadStream(filePath),
+      options,
+    );
   } catch (_err) {
     await client.stores.files.upload(
       store,
       new File([buffer], fileName, { type: "text/plain" }),
-      {
-        external_id: filePath,
-        overwrite: true,
-        metadata: {
-          path: filePath,
-          hash,
-        },
-      },
+      options,
     );
   }
   return true;
