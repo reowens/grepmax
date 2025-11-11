@@ -11,8 +11,10 @@ instead.
 
 ## How to use this skill
 
-Use `mgrep <pattern> [path]` to search your local files. Search like you would
-use grep. The results is the file path and the line range of the match.
+Use `mgrep "<pattern>" [path]` to search your local files. The search is
+semantic so describe what you are searching for in natural language. The results
+is the file path and the line range of the match. Use `-m <number>` to limit the
+number of results.
 
 ## Keywords
 search, grep, files, local files, local search, local grep, local search, local
