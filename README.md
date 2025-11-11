@@ -1,5 +1,7 @@
-[![npm version](https://badge.fury.io/js/@mixedbread%2Fcli.svg)](https://www.npmjs.com/package/@mixedbread/mgrep)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) 
+<div align="center">
+  <a href="https://www.npmjs.com/package/@mixedbread/mgrep"><img src="https://badge.fury.io/js/@mixedbread%2Fcli.svg" alt="npm version" /></a>
+  <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License: Apache 2.0" /></a>
+</div>
 
 <br />
 <div align="center">
@@ -26,25 +28,30 @@ Mixedbread. It's as simple as `mgrep watch` and `mgrep "hello world"`. It offers
 a grep-like experience for searching your local files, making it perfect for
 agents.
 
-## Usage
+## Installation
 
-1. Install the package:
+1. To install the `mgrep` package:
     ```bash
     pnpm install -g @mixedbread/mgrep  # or
     npm install -g @mixedbread/mgrep  # or
     bun install -g @mixedbread/mgrep
     ```
 
-2. Sync the git project or folder you want to search. You will be prompted to
+## Usage
+
+1. Sync the git project or folder you want to search. You will be prompted to
    login and authorize the application automatically:
     ```bash
     mgrep watch
     ```
 
-3. Search the files:
+2. Search the files:
     ```bash
-    mgrep <pattern>
+    mgrep <pattern> [path]
     ```
+
+    The `search` command, which is also the default command, supports all grep
+    arguments. It might ignore some arguments, it won't throw an error. 
 
 ## Development
 
