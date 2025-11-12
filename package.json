@@ -5,9 +5,6 @@
   "bin": {
     "mgrep": "dist/index.js"
   },
-  "files": [
-    "dist"
-  ],
   "scripts": {
     "build": "tsc",
     "dev": "npx tsc && node dist/index.js",
