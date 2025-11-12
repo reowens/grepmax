@@ -16,7 +16,7 @@
     "format:check": "biome check .",
     "lint": "biome lint --check .",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "pnpm run build"
+    "prepare": "npx tsc"
   },
   "keywords": [],
   "author": "",
