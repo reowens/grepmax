@@ -6,13 +6,14 @@
     "mgrep": "dist/index.js"
   },
   "scripts": {
-    "build": "npx tsc",
+    "build": "tsc",
     "dev": "npx tsc && node dist/index.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "format": "biome check --write .",
     "format:check": "biome check .",
     "lint": "biome lint --check .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepare": "npn run build"
   },
   "keywords": [],
   "author": "",
