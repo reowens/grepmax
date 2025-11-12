@@ -1,0 +1,10 @@
+node_modules/
+src/
+.vscode/
+*.tsbuildinfo
+tsconfig.json
+biome.json
+.git
+.gitignore
+pnpm-lock.yaml
+
