@@ -1,6 +1,6 @@
 {
-  "name": "mgrep",
-  "version": "0.0.6",
+  "name": "@mixedbread/mgrep",
+  "version": "0.0.7",
   "main": "index.js",
   "bin": {
     "mgrep": "dist/index.js"
