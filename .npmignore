@@ -1,11 +1,2 @@
-# Ignore source files
-src/
-
-# Ignore config files
+src
 tsconfig.json
-biome.json
-pnpm-lock.yaml
-.husky/
-
-# Do NOT ignore dist/ - we need it!
-
