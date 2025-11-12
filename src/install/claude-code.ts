@@ -13,18 +13,28 @@ function installPlugin() {
     (error) => {
       if (error) {
         console.error(`Error installing plugin: ${error}`);
+        console.error(
+          `Do you have claude-code version 2.0.36 or higher installed?`,
+        );
         process.exit(1);
       }
       console.log(
         "Successfully added the mixedbread-ai/mgrep plugin to the marketplace",
       );
-      exec("claude plugin install mgrep", { shell, env: process.env }, (error) => {
-        if (error) {
-          console.error(`Error installing plugin: ${error}`);
-          process.exit(1);
-        }
-        console.log("Successfully installed the mgrep plugin");
-      });
+      exec(
+        "claude plugin install mgrep",
+        { shell, env: process.env },
+        (error) => {
+          if (error) {
+            console.error(`Error installing plugin: ${error}`);
+            console.error(
+              `Do you have claude-code version 2.0.36 or higher installed?`,
+            );
+            process.exit(1);
+          }
+          console.log("Successfully installed the mgrep plugin");
+        },
+      );
     },
   );
 }
