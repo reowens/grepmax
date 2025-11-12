@@ -9,7 +9,7 @@ const shell =
 function installPlugin() {
   exec(
     "claude plugin marketplace add mixedbread-ai/mgrep",
-    { shell },
+    { shell, env: process.env },
     (error) => {
       if (error) {
         console.error(`Error installing plugin: ${error}`);
@@ -18,7 +18,7 @@ function installPlugin() {
       console.log(
         "Successfully added the mixedbread-ai/mgrep plugin to the marketplace",
       );
-      exec("claude plugin install mgrep", { shell }, (error) => {
+      exec("claude plugin install mgrep", { shell, env: process.env }, (error) => {
         if (error) {
           console.error(`Error installing plugin: ${error}`);
           process.exit(1);
