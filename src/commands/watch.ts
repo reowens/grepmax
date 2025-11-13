@@ -74,7 +74,7 @@ export const watch = new Command("watch")
           return;
         }
 
-        uploadFile(store, options.store, filePath).catch((err) => {
+        uploadFile(store, options.store, filePath, filename).catch((err) => {
           console.error("Failed to upload changed file:", filePath, err);
         });
       });
