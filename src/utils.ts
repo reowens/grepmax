@@ -4,8 +4,8 @@ import * as path from "node:path";
 import { cancel, confirm, isCancel } from "@clack/prompts";
 import type { Mixedbread } from "@mixedbread/sdk";
 import pLimit from "p-limit";
+import { loginAction } from "./commands/login";
 import { filterRepoFiles, getDirectoryFiles } from "./lib/git";
-import { loginAction } from "./login";
 import { getStoredToken } from "./token";
 import type { FileMetadata } from "./types";
 

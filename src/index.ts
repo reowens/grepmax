@@ -2,11 +2,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { program } from "commander";
+import { login } from "./commands/login";
+import { logout } from "./commands/logout";
+import { search } from "./commands/search";
+import { watch } from "./commands/watch";
 import { installClaudeCode } from "./install/claude-code";
-import { login } from "./login";
-import { logout } from "./logout";
-import { search } from "./search";
-import { watch } from "./watch";
 
 // utility functions moved to ./utils
 

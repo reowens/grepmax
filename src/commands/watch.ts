@@ -2,10 +2,10 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { Command } from "commander";
 import ora from "ora";
-import { getJWTToken } from "./lib/auth";
-import { isIgnoredByGit } from "./lib/git";
-import { createMxbaiClient } from "./lib/mxbai";
-import { ensureAuthenticated, initialSync, uploadFile } from "./utils";
+import { getJWTToken } from "../lib/auth";
+import { isIgnoredByGit } from "../lib/git";
+import { createMxbaiClient } from "../lib/mxbai";
+import { ensureAuthenticated, initialSync, uploadFile } from "../utils";
 
 export const watch = new Command("watch")
   .description("Watch for file changes")

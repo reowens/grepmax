@@ -7,10 +7,10 @@ import type {
 import type { Command } from "commander";
 import { Command as CommanderCommand } from "commander";
 import { join } from "path";
-import { getJWTToken } from "./lib/auth";
-import { createMxbaiClient } from "./lib/mxbai";
-import type { FileMetadata } from "./types";
-import { ensureAuthenticated } from "./utils";
+import { getJWTToken } from "../lib/auth";
+import { createMxbaiClient } from "../lib/mxbai";
+import type { FileMetadata } from "../types";
+import { ensureAuthenticated } from "../utils";
 
 type ChunkType =
   | ScoredTextInputChunk
