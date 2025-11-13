@@ -34,7 +34,9 @@ function getUser(id: string): Promise<User> {
   - Built-ins → third-party → internal modules → local files
 - Use Biome for formatting and linting. Do not commit code with unresolved lint errors.
 - Avoid deeply nested logic — Extract nested logic into helper functions or early returns.
-- Document intent with JSDoc when logic is complex or non-obvious.
+- Document all exported functions with JSDoc — Include parameter descriptions, return types, and behavior notes. Code should be self-documenting through clear naming, but JSDoc provides essential context for public APIs.
+- Avoid inline comments unless totally necessary — Prefer self-explanatory code and JSDoc documentation. Inline comments should only explain "why" when the reason is non-obvious, not "what" the code does.
+- Separate concerns into focused modules — Group related functionality into dedicated files (e.g., `lib/git.ts` for git operations, `lib/auth.ts` for authentication). Keep modules small and focused on a single responsibility.
 
 ### 4. Testing & Validation
 
@@ -49,7 +51,13 @@ function getUser(id: string): Promise<User> {
 - Use custom error classes for domain-specific failures.
 - Avoid console logs in production; use structured logging or monitoring utilities.
 
-### 6. Git & Code Review
+### 6. Module Organization & Architecture
+
+- Keep utility files focused — Avoid creating monolithic utility files. Split large utility modules by domain (e.g., file operations, git operations, API operations).
+- Group related functionality — Place related functions in the same module. Use the `lib/` directory for reusable, domain-specific utilities.
+- Export only what's needed — Make functions private (not exported) when they're only used within the same module. Export only the public API.
+
+### 7. Git & Code Review
 
 - Commit small and often — Each commit should have a single purpose.
 - Use descriptive commit messages following the `type(scope): description` convention (e.g., `feat(auth): add token refresh logic`).
