@@ -2,12 +2,11 @@ import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { cancel, confirm, isCancel } from "@clack/prompts";
-import type { Mixedbread } from "@mixedbread/sdk";
 import pLimit from "p-limit";
 import { loginAction } from "./commands/login";
 import { filterRepoFiles, getDirectoryFiles } from "./lib/git";
+import type { Store } from "./lib/store";
 import { getStoredToken } from "./token";
-import type { FileMetadata } from "./types";
 
 export function computeBufferHash(buffer: Buffer): string {
   return createHash("sha256").update(buffer).digest("hex");
@@ -37,25 +36,18 @@ export function isDevelopment(): boolean {
 }
 
 export async function listStoreFileHashes(
-  client: Mixedbread,
-  store: string,
+  store: Store,
+  storeId: string,
 ): Promise<Map<string, string | undefined>> {
   const byExternalId = new Map<string, string | undefined>();
-  let after: string | null | undefined;
-  do {
-    const resp = await client.stores.files.list(store, { limit: 100, after });
-    for (const f of resp.data) {
-      const externalId = f.external_id ?? undefined;
-      if (!externalId) continue;
-      const metadata = (f.metadata || {}) as FileMetadata;
-      const hash: string | undefined =
-        typeof metadata?.hash === "string" ? metadata.hash : undefined;
-      byExternalId.set(externalId, hash);
-    }
-    after = resp.pagination?.has_more
-      ? (resp.pagination?.last_cursor ?? undefined)
-      : undefined;
-  } while (after);
+  for await (const file of store.listFiles(storeId)) {
+    const externalId = file.external_id ?? undefined;
+    if (!externalId) continue;
+    const metadata = file.metadata;
+    const hash: string | undefined =
+      metadata && typeof metadata.hash === "string" ? metadata.hash : undefined;
+    byExternalId.set(externalId, hash);
+  }
   return byExternalId;
 }
 
@@ -79,8 +71,8 @@ export async function ensureAuthenticated(): Promise<void> {
 }
 
 export async function uploadFile(
-  client: Mixedbread,
-  store: string,
+  store: Store,
+  storeId: string,
   filePath: string,
   fileName: string,
 ): Promise<boolean> {
@@ -97,17 +89,17 @@ export async function uploadFile(
       path: filePath,
       hash,
     },
-  } as const;
+  };
 
   try {
-    await client.stores.files.upload(
-      store,
-      fs.createReadStream(filePath),
+    await store.uploadFile(
+      storeId,
+      fs.createReadStream(filePath) as any,
       options,
     );
   } catch (_err) {
-    await client.stores.files.upload(
-      store,
+    await store.uploadFile(
+      storeId,
       new File([buffer], fileName, { type: "text/plain" }),
       options,
     );
@@ -116,8 +108,8 @@ export async function uploadFile(
 }
 
 export async function initialSync(
-  client: Mixedbread,
-  store: string,
+  store: Store,
+  storeId: string,
   repoRoot: string,
   onProgress?: (info: {
     processed: number;
@@ -126,7 +118,7 @@ export async function initialSync(
     filePath?: string;
   }) => void,
 ): Promise<{ processed: number; uploaded: number; total: number }> {
-  const storeHashes = await listStoreFileHashes(client, store);
+  const storeHashes = await listStoreFileHashes(store, storeId);
   const repoFiles = filterRepoFiles(getDirectoryFiles(repoRoot), repoRoot);
   const total = repoFiles.length;
   let processed = 0;
@@ -145,8 +137,8 @@ export async function initialSync(
           processed += 1;
           if (!existingHash || existingHash !== hash) {
             const didUpload = await uploadFile(
-              client,
               store,
+              storeId,
               filePath,
               path.basename(filePath),
             );

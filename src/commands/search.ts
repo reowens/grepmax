@@ -1,22 +1,9 @@
-import type {
-  ScoredAudioURLInputChunk,
-  ScoredImageURLInputChunk,
-  ScoredTextInputChunk,
-  ScoredVideoURLInputChunk,
-} from "@mixedbread/sdk/resources/vector-stores/vector-stores";
 import type { Command } from "commander";
 import { Command as CommanderCommand } from "commander";
 import { join } from "path";
-import { getJWTToken } from "../lib/auth";
-import { createMxbaiClient } from "../lib/mxbai";
+import { createStore } from "../lib/context";
+import type { ChunkType } from "../lib/store";
 import type { FileMetadata } from "../types";
-import { ensureAuthenticated } from "../utils";
-
-type ChunkType =
-  | ScoredTextInputChunk
-  | ScoredImageURLInputChunk
-  | ScoredAudioURLInputChunk
-  | ScoredVideoURLInputChunk;
 
 function formatChunk(chunk: ChunkType) {
   const pwd = process.cwd();
@@ -62,22 +49,16 @@ export const search: Command = new CommanderCommand("search")
       exec_path = "";
     }
 
-    await ensureAuthenticated();
-
     try {
-      const jwtToken = await getJWTToken();
-      const mxbai = createMxbaiClient(jwtToken);
-
+      const store = await createStore();
       const search_path = join(process.cwd(), exec_path ?? "");
 
-      const results = await mxbai.stores.search({
-        query: pattern,
-        store_identifiers: [options.store],
-        top_k: parseInt(options.m),
-        search_options: {
-          rerank: true,
-        },
-        filters: {
+      const results = await store.search(
+        options.store,
+        pattern,
+        parseInt(options.m),
+        { rerank: true },
+        {
           all: [
             {
               key: "path",
@@ -86,7 +67,7 @@ export const search: Command = new CommanderCommand("search")
             },
           ],
         },
-      });
+      );
 
       console.log(results.data.map(formatChunk).join("\n"));
     } catch (error) {

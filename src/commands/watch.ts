@@ -2,22 +2,17 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { Command } from "commander";
 import ora from "ora";
-import { getJWTToken } from "../lib/auth";
+import { createStore } from "../lib/context";
 import { isIgnoredByGit } from "../lib/git";
-import { createMxbaiClient } from "../lib/mxbai";
-import { ensureAuthenticated, initialSync, uploadFile } from "../utils";
+import { initialSync, uploadFile } from "../utils";
 
 export const watch = new Command("watch")
   .description("Watch for file changes")
   .action(async (_args, cmd) => {
     const options: { store: string } = cmd.optsWithGlobals();
 
-    await ensureAuthenticated();
-
     try {
-      const jwtToken = await getJWTToken();
-      const mxbai = createMxbaiClient(jwtToken);
-
+      const store = await createStore();
       const watchRoot = process.cwd();
 
       const spinner = ora({ text: "Indexing files..." }).start();
@@ -26,16 +21,16 @@ export const watch = new Command("watch")
       let lastTotal = 0;
       try {
         try {
-          await mxbai.stores.retrieve(options.store);
+          await store.retrieve(options.store);
         } catch {
-          await mxbai.stores.create({
+          await store.create({
             name: options.store,
             description:
               "MGrep store - Mixedbreads mulitmodal mulitlingual magic search",
           });
         }
         const result = await initialSync(
-          mxbai,
+          store,
           options.store,
           watchRoot,
           (info) => {
@@ -78,7 +73,7 @@ export const watch = new Command("watch")
           return;
         }
 
-        uploadFile(mxbai, options.store, filePath, filename).catch((err) => {
+        uploadFile(store, options.store, filePath, filename).catch((err) => {
           console.error("Failed to upload changed file:", filePath, err);
         });
       });
