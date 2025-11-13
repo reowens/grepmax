@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
+import * as path from "node:path";
 import { cancel, confirm, isCancel } from "@clack/prompts";
 import pLimit from "p-limit";
 import { loginAction } from "./commands/login";
@@ -73,6 +74,7 @@ export async function uploadFile(
   store: Store,
   storeId: string,
   filePath: string,
+  fileName: string,
 ): Promise<boolean> {
   const buffer = await fs.promises.readFile(filePath);
   if (buffer.length === 0) {
@@ -89,11 +91,19 @@ export async function uploadFile(
     },
   };
 
-  await store.uploadFile(
-    storeId,
-    fs.createReadStream(filePath) as unknown as File | ReadableStream,
-    options,
-  );
+  try {
+    await store.uploadFile(
+      storeId,
+      fs.createReadStream(filePath) as unknown as File | ReadableStream,
+      options,
+    );
+  } catch (_err) {
+    await store.uploadFile(
+      storeId,
+      new File([buffer], fileName, { type: "text/plain" }),
+      options,
+    );
+  }
   return true;
 }
 
@@ -130,7 +140,12 @@ export async function initialSync(
           const existingHash = storeHashes.get(filePath);
           processed += 1;
           if (!existingHash || existingHash !== hash) {
-            const didUpload = await uploadFile(store, storeId, filePath);
+            const didUpload = await uploadFile(
+              store,
+              storeId,
+              filePath,
+              path.basename(filePath),
+            );
             if (didUpload) {
               uploaded += 1;
             }
