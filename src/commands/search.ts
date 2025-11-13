@@ -10,9 +10,13 @@ function formatChunk(chunk: ChunkType) {
     (chunk.metadata as FileMetadata)?.path?.replace(pwd, "") ?? "Unknown path";
   let line_range = "";
   switch (chunk.type) {
-    case "text":
-      line_range = `, lines ${chunk.generated_metadata?.start_line} to ${(chunk.generated_metadata?.start_line as number) + (chunk.generated_metadata?.num_lines as number)}`;
+    case "text": {
+      const start_line = (chunk.generated_metadata?.start_line as number) + 1;
+      const end_line =
+        start_line + (chunk.generated_metadata?.num_lines as number) + 1;
+      line_range = `, lines ${start_line} to ${end_line}`;
       break;
+    }
     case "image_url":
       line_range =
         chunk.generated_metadata?.type === "pdf"
