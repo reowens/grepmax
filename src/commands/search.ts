@@ -1,6 +1,6 @@
+import { join, normalize } from "node:path";
 import type { Command } from "commander";
 import { Command as CommanderCommand } from "commander";
-import { join, normalize } from "path";
 import { createStore } from "../lib/context";
 import type { ChunkType, FileMetadata } from "../lib/store";
 
@@ -61,7 +61,7 @@ export const search: Command = new CommanderCommand("search")
       const results = await store.search(
         options.store,
         pattern,
-        parseInt(options.m),
+        parseInt(options.m, 10),
         { rerank: true },
         {
           all: [

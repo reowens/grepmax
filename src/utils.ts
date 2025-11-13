@@ -94,7 +94,7 @@ export async function uploadFile(
   try {
     await store.uploadFile(
       storeId,
-      fs.createReadStream(filePath) as any,
+      fs.createReadStream(filePath) as unknown as File | ReadableStream,
       options,
     );
   } catch (_err) {

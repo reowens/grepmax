@@ -1,7 +1,7 @@
 import Mixedbread from "@mixedbread/sdk";
 import { ensureAuthenticated, isDevelopment } from "../utils";
 import { getJWTToken } from "./auth";
-import { NodeGit, type Git } from "./git";
+import { type Git, NodeGit } from "./git";
 import { MixedbreadStore, type Store } from "./store";
 
 const BASE_URL = isDevelopment()
