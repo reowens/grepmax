@@ -10,6 +10,7 @@ const BASE_URL = isDevelopment()
 
 /**
  * Creates an authenticated Store instance
+ * Supports authentication via MIXEDBREAD_API_KEY env var or OAuth token
  */
 export async function createStore(): Promise<Store> {
   await ensureAuthenticated();
