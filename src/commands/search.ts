@@ -54,7 +54,7 @@ export const search: Command = new CommanderCommand("search")
 
     try {
       const store = await createStore();
-      const search_path = exec_path.startsWith("/")
+      const search_path = exec_path?.startsWith("/")
         ? exec_path
         : normalize(join(process.cwd(), exec_path ?? ""));
 
