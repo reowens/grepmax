@@ -1,6 +1,11 @@
 import Mixedbread from "@mixedbread/sdk";
 import { ensureAuthenticated, isDevelopment } from "../utils";
 import { getJWTToken } from "./auth";
+import {
+  type FileSystem,
+  type FileSystemOptions,
+  NodeFileSystem,
+} from "./file";
 import { type Git, NodeGit } from "./git";
 import { MixedbreadStore, type Store } from "./store";
 
@@ -27,4 +32,13 @@ export async function createStore(): Promise<Store> {
  */
 export function createGit(): Git {
   return new NodeGit();
+}
+
+/**
+ * Creates a FileSystem instance
+ */
+export function createFileSystem(
+  options: FileSystemOptions = { ignorePatterns: [] },
+): FileSystem {
+  return new NodeFileSystem(createGit(), options);
 }

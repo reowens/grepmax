@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { Command } from "commander";
 import ora from "ora";
-import { createGit, createStore } from "../lib/context";
+import { createFileSystem, createStore } from "../lib/context";
 import { initialSync, uploadFile } from "../utils";
 
 export const watch = new Command("watch")
@@ -12,7 +12,7 @@ export const watch = new Command("watch")
 
     try {
       const store = await createStore();
-      const git = createGit();
+      const fileSystem = createFileSystem();
       const watchRoot = process.cwd();
 
       const spinner = ora({ text: "Indexing files..." }).start();
@@ -31,7 +31,7 @@ export const watch = new Command("watch")
         }
         const result = await initialSync(
           store,
-          git,
+          fileSystem,
           options.store,
           watchRoot,
           (info) => {
@@ -70,7 +70,7 @@ export const watch = new Command("watch")
           return;
         }
 
-        if (git.isIgnoredByGit(filePath, watchRoot)) {
+        if (fileSystem.isIgnored(filePath, watchRoot)) {
           return;
         }
 

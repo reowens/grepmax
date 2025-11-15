@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { cancel, confirm, isCancel } from "@clack/prompts";
 import pLimit from "p-limit";
 import { loginAction } from "./commands/login";
-import type { Git } from "./lib/git";
+import type { FileSystem } from "./lib/file";
 import type { Store } from "./lib/store";
 import { getStoredToken } from "./token";
 
@@ -115,7 +115,7 @@ export async function uploadFile(
 
 export async function initialSync(
   store: Store,
-  git: Git,
+  fileSystem: FileSystem,
   storeId: string,
   repoRoot: string,
   onProgress?: (info: {
@@ -126,9 +126,9 @@ export async function initialSync(
   }) => void,
 ): Promise<{ processed: number; uploaded: number; total: number }> {
   const storeHashes = await listStoreFileHashes(store, storeId);
-  const repoFiles = git.filterRepoFiles(
-    git.getDirectoryFiles(repoRoot),
-    repoRoot,
+  const allFiles = Array.from(fileSystem.getFiles(repoRoot));
+  const repoFiles = allFiles.filter(
+    (filePath) => !fileSystem.isIgnored(filePath, repoRoot),
   );
   const total = repoFiles.length;
   let processed = 0;
