@@ -128,7 +128,7 @@ export const search: Command = new CommanderCommand("search")
         : normalize(join(process.cwd(), exec_path ?? ""));
 
       let response: string;
-      if (options.a) {
+      if (!options.a) {
         const results = await store.search(
           options.store,
           pattern,
