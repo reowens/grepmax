@@ -67,7 +67,6 @@
 | `mgrep watch` | Index current repo and keep the Mixedbread store in sync via file watchers. |
 | `mgrep login` & `mgrep logout` | Manage device-based authentication with Mixedbread. |
 | `mgrep install-claude-code` | Log in, add the Mixedbread mgrep plugin to Claude Code, and install it for you. |
-| `mgrep --store my-store ...` | Use or create a specific Mixedbread store instead of the default `mgrep`. |
 
 ### mgrep search
 
