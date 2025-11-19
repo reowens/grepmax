@@ -26,6 +26,11 @@ export interface FileSystem {
    * Checks if a file should be ignored
    */
   isIgnored(filePath: string, root: string): boolean;
+
+  /**
+   * Loads the mgrepignore file for a directory
+   */
+  loadMgrepignore(dirRoot: string): void;
 }
 
 /**
@@ -79,6 +84,7 @@ export class NodeFileSystem implements FileSystem {
   }
 
   *getFiles(dirRoot: string): Generator<string> {
+    this.loadMgrepignore(dirRoot);
     if (this.git.isGitRepository(dirRoot)) {
       yield* this.git.getGitFiles(dirRoot);
     } else {
@@ -117,5 +123,12 @@ export class NodeFileSystem implements FileSystem {
     }
 
     return false;
+  }
+
+  loadMgrepignore(dirRoot: string): void {
+    const ignoreFile = path.join(dirRoot, ".mgrepignore");
+    if (fs.existsSync(ignoreFile)) {
+      this.customIgnoreFilter.add(fs.readFileSync(ignoreFile, "utf8"));
+    }
   }
 }

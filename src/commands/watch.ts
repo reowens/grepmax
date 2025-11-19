@@ -55,6 +55,7 @@ export const watch = new Command("watch")
       }
 
       console.log("Watching for file changes in", watchRoot);
+      fileSystem.loadMgrepignore(watchRoot);
       fs.watch(watchRoot, { recursive: true }, (eventType, rawFilename) => {
         const filename = rawFilename?.toString();
         if (!filename) {

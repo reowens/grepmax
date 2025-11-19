@@ -69,7 +69,7 @@
 | `mgrep install-claude-code` | Log in, add the Mixedbread mgrep plugin to Claude Code, and install it for you. |
 | `mgrep --store my-store ...` | Use or create a specific Mixedbread store instead of the default `mgrep`. |
 
-### `mgrep search`
+### mgrep search
 
 `mgrep search` is the default command. It can be used to search the current
 directory for a pattern.
@@ -87,6 +87,20 @@ mgrep "What code parsers are available?"  # search in the current directory
 mgrep "How are chunks defined?" src/models  # search in the src/models directory
 mgrep -m 10 "What is the maximum number of concurrent workers in the code parser?"  # limit the number of results to 10
 mgrep -a "What code parsers are available?"  # generate an answer to the question based on the results
+```
+
+### mgrep watch
+
+`mgrep watch` is used to index the current repository and keep the Mixedbread
+store in sync via file watchers.
+
+It respects the current `.gitignore`, as well as a `.mgrepignore` file in the
+root of the repository. The `.mgrepignore` file follows the same syntax as the
+[`.gitignore`](https://git-scm.com/docs/gitignore) file.
+
+**Examples:**
+```bash
+mgrep watch  # index the current repository and keep the Mixedbread store in sync via file watchers
 ```
 
 ## Mixedbread under the hood
