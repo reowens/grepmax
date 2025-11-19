@@ -76,9 +76,9 @@ directory for a pattern.
 | Option | Description |
 | --- | --- |
 | `-m <max_count>` | The maximum number of results to return |
-| `-c` | Show content of the results |
-| `-a` | Generate an answer to the question based on the results |
-| `-s` | Sync the local files to the store before searching |
+| `-c`, `--content` | Show content of the results |
+| `-a`, `--answer` | Generate an answer to the question based on the results |
+| `-s`, `--sync` | Sync the local files to the store before searching |
 
 **Examples:**
 ```bash

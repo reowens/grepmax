@@ -106,7 +106,7 @@ export const search: Command = new CommanderCommand("search")
     "The maximum number of results to return",
     "10",
   )
-  .option("-c", "Show content of the results", false)
+  .option("-c, --content", "Show content of the results", false)
   .option(
     "-a, --answer",
     "Generate an answer to the question based on the results",
