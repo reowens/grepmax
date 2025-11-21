@@ -118,6 +118,7 @@ export async function initialSync(
   fileSystem: FileSystem,
   storeId: string,
   repoRoot: string,
+  dryRun?: boolean,
   onProgress?: (info: {
     processed: number;
     uploaded: number;
@@ -145,7 +146,11 @@ export async function initialSync(
           const hash = computeBufferHash(buffer);
           const existingHash = storeHashes.get(filePath);
           processed += 1;
-          if (!existingHash || existingHash !== hash) {
+          const shouldUpload = !existingHash || existingHash !== hash;
+          if (dryRun && shouldUpload) {
+            console.log("Dry run: would have uploaded", filePath);
+            uploaded += 1;
+          } else if (shouldUpload) {
             const didUpload = await uploadFile(
               store,
               storeId,

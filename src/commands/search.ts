@@ -117,6 +117,11 @@ export const search: Command = new CommanderCommand("search")
     "Syncs the local files to the store before searching",
     false,
   )
+  .option(
+    "-d, --dry-run",
+    "Dry run the search process (no actual file syncing)",
+    false,
+  )
   .argument("<pattern>", "The pattern to search for")
   .argument("[path]", "The path to search in")
   .allowUnknownOption(true)
@@ -128,6 +133,7 @@ export const search: Command = new CommanderCommand("search")
       c: boolean;
       answer: boolean;
       sync: boolean;
+      dryRun: boolean;
     } = cmd.optsWithGlobals();
     if (exec_path?.startsWith("--")) {
       exec_path = "";
@@ -142,15 +148,22 @@ export const search: Command = new CommanderCommand("search")
           ignorePatterns: ["*.lock", "*.bin", "*.ipynb", "*.pyc"],
         });
         const spinner = ora({ text: "Indexing files..." }).start();
-        await initialSync(store, fileSystem, options.store, root, (info) => {
-          const lastProcessed = info.processed;
-          const lastUploaded = info.uploaded;
-          const lastTotal = info.total;
-          const rel = info.filePath?.startsWith(root)
-            ? relative(root, info.filePath)
-            : (info.filePath ?? "");
-          spinner.text = `Indexing files (${lastProcessed}/${lastTotal}) • uploaded ${lastUploaded} ${rel}`;
-        });
+        const result = await initialSync(
+          store,
+          fileSystem,
+          options.store,
+          root,
+          options.dryRun,
+          (info) => {
+            const lastProcessed = info.processed;
+            const lastUploaded = info.uploaded;
+            const lastTotal = info.total;
+            const rel = info.filePath?.startsWith(root)
+              ? relative(root, info.filePath)
+              : (info.filePath ?? "");
+            spinner.text = `Indexing files (${lastProcessed}/${lastTotal}) • uploaded ${lastUploaded} ${rel}`;
+          },
+        );
         while (true) {
           const info = await store.getInfo(options.store);
           spinner.text = `Indexing ${info.counts.pending + info.counts.in_progress} file(s)`;
@@ -160,6 +173,16 @@ export const search: Command = new CommanderCommand("search")
           await new Promise((resolve) => setTimeout(resolve, 1000));
         }
         spinner.succeed("Indexing complete");
+        if (options.dryRun) {
+          console.log(
+            "Dry run: would have indexed",
+            result.processed,
+            "files, would have uploaded",
+            result.uploaded,
+            "changed or new files",
+          );
+          return;
+        }
       }
 
       const search_path = exec_path?.startsWith("/")

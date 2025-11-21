@@ -6,9 +6,14 @@ import { createFileSystem, createStore } from "../lib/context";
 import { initialSync, uploadFile } from "../utils";
 
 export const watch = new Command("watch")
+  .option(
+    "-d, --dry-run",
+    "Dry run the watch process (no actual file syncing)",
+    false,
+  )
   .description("Watch for file changes")
   .action(async (_args, cmd) => {
-    const options: { store: string } = cmd.optsWithGlobals();
+    const options: { store: string; dryRun: boolean } = cmd.optsWithGlobals();
 
     try {
       const store = await createStore();
@@ -36,6 +41,7 @@ export const watch = new Command("watch")
           fileSystem,
           options.store,
           watchRoot,
+          options.dryRun,
           (info) => {
             lastProcessed = info.processed;
             lastUploaded = info.uploaded;
@@ -49,6 +55,16 @@ export const watch = new Command("watch")
         spinner.succeed(
           `Initial sync complete (${result.processed}/${result.total}) • uploaded ${result.uploaded}`,
         );
+        if (options.dryRun) {
+          console.log(
+            "Dry run: found",
+            result.processed,
+            "files in total, would have uploaded",
+            result.uploaded,
+            "changed or new files",
+          );
+          return;
+        }
       } catch (e) {
         spinner.fail("Initial upload failed");
         throw e;
