@@ -1,7 +1,6 @@
-import { join, normalize, relative } from "node:path";
+import { join, normalize } from "node:path";
 import type { Command } from "commander";
 import { Command as CommanderCommand } from "commander";
-import ora from "ora";
 import { createFileSystem, createStore } from "../lib/context";
 import type {
   AskResponse,
@@ -9,6 +8,10 @@ import type {
   FileMetadata,
   SearchResponse,
 } from "../lib/store";
+import {
+  createIndexingSpinner,
+  formatDryRunSummary,
+} from "../lib/sync-helpers";
 import { initialSync } from "../utils";
 
 function extractSources(response: AskResponse): { [key: number]: ChunkType } {
@@ -147,22 +150,14 @@ export const search: Command = new CommanderCommand("search")
         const fileSystem = createFileSystem({
           ignorePatterns: ["*.lock", "*.bin", "*.ipynb", "*.pyc"],
         });
-        const spinner = ora({ text: "Indexing files..." }).start();
+        const { spinner, onProgress } = createIndexingSpinner(root);
         const result = await initialSync(
           store,
           fileSystem,
           options.store,
           root,
           options.dryRun,
-          (info) => {
-            const lastProcessed = info.processed;
-            const lastUploaded = info.uploaded;
-            const lastTotal = info.total;
-            const rel = info.filePath?.startsWith(root)
-              ? relative(root, info.filePath)
-              : (info.filePath ?? "");
-            spinner.text = `Indexing files (${lastProcessed}/${lastTotal}) • uploaded ${lastUploaded} ${rel}`;
-          },
+          onProgress,
         );
         while (true) {
           const info = await store.getInfo(options.store);
@@ -175,11 +170,9 @@ export const search: Command = new CommanderCommand("search")
         spinner.succeed("Indexing complete");
         if (options.dryRun) {
           console.log(
-            "Dry run: would have indexed",
-            result.processed,
-            "files, would have uploaded",
-            result.uploaded,
-            "changed or new files",
+            formatDryRunSummary(result, {
+              actionDescription: "would have indexed",
+            }),
           );
           return;
         }

@@ -6,6 +6,11 @@ import pLimit from "p-limit";
 import { loginAction } from "./commands/login";
 import type { FileSystem } from "./lib/file";
 import type { Store } from "./lib/store";
+import type {
+  InitialSyncProgress,
+  InitialSyncResult,
+} from "./lib/sync-helpers";
+
 import { getStoredToken } from "./token";
 
 export function computeBufferHash(buffer: Buffer): string {
@@ -119,13 +124,8 @@ export async function initialSync(
   storeId: string,
   repoRoot: string,
   dryRun?: boolean,
-  onProgress?: (info: {
-    processed: number;
-    uploaded: number;
-    total: number;
-    filePath?: string;
-  }) => void,
-): Promise<{ processed: number; uploaded: number; total: number }> {
+  onProgress?: (info: InitialSyncProgress) => void,
+): Promise<InitialSyncResult> {
   const storeHashes = await listStoreFileHashes(store, storeId);
   const allFiles = Array.from(fileSystem.getFiles(repoRoot));
   const repoFiles = allFiles.filter(
