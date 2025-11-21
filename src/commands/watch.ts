@@ -1,8 +1,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Command } from "commander";
-import ora from "ora";
 import { createFileSystem, createStore } from "../lib/context";
+import {
+  createIndexingSpinner,
+  formatDryRunSummary,
+} from "../lib/sync-helpers";
 import { initialSync, uploadFile } from "../utils";
 
 export const watch = new Command("watch")
@@ -22,10 +25,7 @@ export const watch = new Command("watch")
       });
       const watchRoot = process.cwd();
 
-      const spinner = ora({ text: "Indexing files..." }).start();
-      let lastProcessed = 0;
-      let lastUploaded = 0;
-      let lastTotal = 0;
+      const { spinner, onProgress } = createIndexingSpinner(watchRoot);
       try {
         try {
           await store.retrieve(options.store);
@@ -42,26 +42,17 @@ export const watch = new Command("watch")
           options.store,
           watchRoot,
           options.dryRun,
-          (info) => {
-            lastProcessed = info.processed;
-            lastUploaded = info.uploaded;
-            lastTotal = info.total;
-            const rel = info.filePath?.startsWith(watchRoot)
-              ? path.relative(watchRoot, info.filePath)
-              : (info.filePath ?? "");
-            spinner.text = `Indexing files (${lastProcessed}/${lastTotal}) • uploaded ${lastUploaded} ${rel}`;
-          },
+          onProgress,
         );
         spinner.succeed(
           `Initial sync complete (${result.processed}/${result.total}) • uploaded ${result.uploaded}`,
         );
         if (options.dryRun) {
           console.log(
-            "Dry run: found",
-            result.processed,
-            "files in total, would have uploaded",
-            result.uploaded,
-            "changed or new files",
+            formatDryRunSummary(result, {
+              actionDescription: "found",
+              includeTotal: true,
+            }),
           );
           return;
         }
