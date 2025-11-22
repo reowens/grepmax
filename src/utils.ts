@@ -131,18 +131,18 @@ export class MetaStore {
 
   async save() {
     // Serialize saves to avoid concurrent writes that could corrupt the file
+    // Recover from previous failures so the queue never gets permanently stuck
     this.saveQueue = this.saveQueue
+      .catch((err) => {
+        console.error("MetaStore save failed (previous):", err);
+        // Recover so future saves can still run
+      })
       .then(async () => {
         await fs.promises.mkdir(path.dirname(META_FILE), { recursive: true });
         await fs.promises.writeFile(
           META_FILE,
           JSON.stringify(this.data, null, 2),
         );
-      })
-      .catch((err) => {
-        // Log error but allow queue to continue
-        console.error("MetaStore save failed:", err);
-        throw err;
       });
 
     return this.saveQueue;
@@ -186,8 +186,8 @@ export function isDevelopment(): boolean {
   return false;
 }
 
-// Self-check for isDevelopment logic
-if (process.env.OSGREP_RUN_SELFCHECK === "true") {
+// Self-check for isDevelopment logic (only runs in dev mode with explicit flag)
+if (isDevelopment() && process.env.OSGREP_RUN_SELFCHECK === "true") {
   const originalEnv = process.env.NODE_ENV;
 
   // Test 1: node_modules always returns false

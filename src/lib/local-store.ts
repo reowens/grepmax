@@ -153,16 +153,14 @@ export class LocalStore implements Store {
     // Handle worker errors
     this.worker.on("error", (err) => {
       console.error("Worker error:", err);
-      this.rejectAllPending(new Error(`Worker error: ${err.message}`));
-      void this.restartWorker("worker error");
+      void this.restartWorker(`worker error: ${err.message}`);
     });
 
     // Handle worker exit
     this.worker.on("exit", (code) => {
       if (code !== 0) {
         console.error(`Worker exited with code ${code}`);
-        this.rejectAllPending(new Error(`Worker exited with code ${code}`));
-        void this.restartWorker("worker exit");
+        void this.restartWorker(`worker exit: code ${code}`);
       }
     });
   }
@@ -182,17 +180,10 @@ export class LocalStore implements Store {
       return this.restartInFlight;
     }
 
-    const pending = Array.from(this.pendingRequests.entries()).map(
-      ([id, value]) => ({ id, ...value }),
+    // Reject all pending requests - fail fast, recover on next request
+    this.rejectAllPending(
+      new Error(`Worker restarting: ${reason || "unknown reason"}`),
     );
-
-    // Clear timeouts for all pending requests
-    for (const request of pending) {
-      if (request.timeoutId) {
-        clearTimeout(request.timeoutId);
-      }
-    }
-    this.pendingRequests.clear();
 
     this.restartInFlight = (async () => {
       try {
@@ -202,16 +193,7 @@ export class LocalStore implements Store {
       }
       this.initializeWorker();
       if (reason) {
-        console.warn(
-          `Worker restarted due to ${reason}, replaying in-flight jobs (${pending.length})`,
-        );
-      }
-      // Re-dispatch anything that was in flight so callers don't error out
-      for (const request of pending) {
-        // Remove timeoutId from the stored request before re-adding
-        const { id: reqId, timeoutId, ...cleanRequest } = request;
-        this.pendingRequests.set(reqId, cleanRequest);
-        this.worker.postMessage(request.payload);
+        console.warn(`Worker restarted due to ${reason}`);
       }
     })();
 

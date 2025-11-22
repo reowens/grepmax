@@ -68,9 +68,8 @@ export class TreeSitterChunker {
       });
       this.parser = new Parser() as TreeSitterParser;
     } catch (err) {
-      console.error(
-        "Falling back to paragraph chunking; tree-sitter init failed:",
-        err,
+      console.warn(
+        "⚠️  Offline mode: Semantic search quality reduced (Tree-Sitter unavailable)",
       );
       this.parser = null;
     }
@@ -91,7 +90,10 @@ export class TreeSitterChunker {
       if (!url) return null;
       try {
         await this.downloadFile(url, wasmPath);
-      } catch {
+      } catch (err) {
+        console.warn(
+          `⚠️  Could not download ${lang} grammar (offline?). Using fallback chunking.`,
+        );
         return null;
       }
     }
