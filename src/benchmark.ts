@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -168,14 +168,33 @@ async function runBenchmark(
     let rgResult: { matchCount: number; topFile: string };
 
     try {
-      const rgOutput = execSync(
-        `rg -i --max-count=1 '${testCase.grepPattern}' || echo "no matches"`,
-        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
-      );
+      const rgProcess = spawnSync("rg", ["-i", "-c", testCase.grepPattern], {
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      const rgOutput = rgProcess.stdout || "";
       const rgLines = rgOutput.trim().split("\n");
+      
+      // Parse count output (format: filename:count)
+      let totalMatches = 0;
+      let firstFile = "no matches";
+      
+      for (const line of rgLines) {
+        if (line && line.includes(":")) {
+          const [file, countStr] = line.split(":");
+          const count = Number.parseInt(countStr, 10);
+          if (count > 0) {
+            totalMatches += count;
+            if (firstFile === "no matches") {
+              firstFile = file;
+            }
+          }
+        }
+      }
+      
       rgResult = {
-        matchCount: rgLines.filter((l) => l && l !== "no matches").length,
-        topFile: rgLines[0]?.split(":")[0] || "no matches",
+        matchCount: totalMatches,
+        topFile: firstFile,
       };
     } catch {
       rgResult = { matchCount: 0, topFile: "no matches" };
@@ -188,14 +207,28 @@ async function runBenchmark(
     let grepResult: { matchCount: number };
 
     try {
-      const grepOutput = execSync(
-        `grep -ri --max-count=1 '${testCase.grepPattern.replace(/\\/g, "")}' . || echo "no matches"`,
-        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
-      );
+      // Remove backslashes for grep (simpler regex syntax)
+      const grepPattern = testCase.grepPattern.replace(/\\/g, "");
+      const grepProcess = spawnSync("grep", ["-ri", "-c", grepPattern, "."], {
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      const grepOutput = grepProcess.stdout || "";
       const grepLines = grepOutput.trim().split("\n");
-      grepResult = {
-        matchCount: grepLines.filter((l) => l && l !== "no matches").length,
-      };
+      
+      // Parse count output (format: filename:count)
+      let totalMatches = 0;
+      for (const line of grepLines) {
+        if (line && line.includes(":")) {
+          const countStr = line.split(":")[1];
+          const count = Number.parseInt(countStr, 10);
+          if (!Number.isNaN(count)) {
+            totalMatches += count;
+          }
+        }
+      }
+      
+      grepResult = { matchCount: totalMatches };
     } catch {
       grepResult = { matchCount: 0 };
     }
@@ -299,8 +332,12 @@ async function indexRepos(repoDir: string, repos: string[]) {
 
     try {
       // Index using osgrep CLI
-      execSync(`osgrep index`, { stdio: "inherit" });
-      console.log(`   ✅ Indexed ${repo}`);
+      const indexProcess = spawnSync("osgrep", ["index"], { stdio: "inherit" });
+      if (indexProcess.status === 0) {
+        console.log(`   ✅ Indexed ${repo}`);
+      } else {
+        console.log(`   ❌ Failed to index ${repo}`);
+      }
     } catch (error) {
       console.log(`   ❌ Failed to index ${repo}: ${error}`);
     }

@@ -854,33 +854,26 @@ export class LocalStore implements Store {
     const pathFilterEntry = allFilters.find(
       (f) => f?.key === "path" && f?.operator === "starts_with",
     );
-    const pathFilter =
+    const pathPrefix =
       typeof pathFilterEntry?.value === "string" ? pathFilterEntry.value : "";
-    const matchesFilter = (record: VectorRecord) => {
-      if (!pathFilter) return true;
-      return typeof record.path === "string" && record.path.startsWith(pathFilter);
-    };
 
-    // 2. Parallel Retrieval: Vector + FTS
+    // Build LanceDB WHERE clause for path filtering (applied BEFORE limit)
+    const whereClause = pathPrefix
+      ? `path LIKE '${pathPrefix.replace(/'/g, "''")}%'`
+      : undefined;
+
+    // 2. Parallel Retrieval: Vector + FTS with server-side filtering
+    const vectorSearchQuery = table.search(queryVector).limit(candidateLimit);
+    const ftsSearchQuery = table.search(query).limit(candidateLimit);
+
+    if (whereClause) {
+      vectorSearchQuery.where(whereClause);
+      ftsSearchQuery.where(whereClause);
+    }
+
     const [vectorResults, ftsResults] = await Promise.all([
-      // Vector Search
-      table
-        .search(queryVector)
-        .limit(candidateLimit)
-        .toArray()
-        .then((res) =>
-          (res as VectorRecord[]).filter(matchesFilter),
-        ),
-
-      // FTS (Keyword) Search - Good for specific terms like "CLI" or variable names
-      table
-        .search(query)
-        .limit(candidateLimit)
-        .toArray()
-        .then((res) =>
-          (res as VectorRecord[]).filter(matchesFilter),
-        )
-        .catch(() => []), // Ignore if FTS index missing
+      vectorSearchQuery.toArray() as Promise<VectorRecord[]>,
+      ftsSearchQuery.toArray().catch(() => []) as Promise<VectorRecord[]>,
     ]);
 
     // 3. RRF Fusion (Combine the two lists)

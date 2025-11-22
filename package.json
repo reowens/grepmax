@@ -18,7 +18,8 @@
     "build": "tsc",
     "postbuild": "chmod +x dist/index.js",
     "dev": "npx tsc && node dist/index.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "benchmark": "./run-benchmark.sh",
     "benchmark:index": "./run-benchmark.sh $HOME/osgrep-benchmarks --index",
     "format": "biome check --write .",
@@ -60,6 +61,7 @@
     "@biomejs/biome": "2.3.4",
     "@types/node": "^24.10.1",
     "@types/uuid": "^9.0.8",
+    "vitest": "^1.6.0",
     "ts-node": "^10.9.2",
     "husky": "^9.1.7",
     "typescript": "^5.9.3"
