@@ -7,3 +7,4 @@ more customization options
 ~~setup command for osgrep so no wait. just one time setup.~~ ✅ DONE in v0.1.5
 Ssimplify codebase  and data flow -> then work on speed.
 Enhance Test Suite 
+move the meta file into the project root and make it per repo
