@@ -28,9 +28,10 @@ export const index = new Command("index")
     const options: { store?: string; dryRun: boolean; path: string } =
       cmd.optsWithGlobals();
 
+    let store: any = null;
     try {
       await ensureSetup();
-      const store = await createStore();
+      store = await createStore();
       
       // Auto-detect store ID if not explicitly provided
       const indexRoot = options.path || process.cwd();
@@ -87,7 +88,7 @@ export const index = new Command("index")
               includeTotal: true,
             }),
           );
-          process.exit(0);
+          return; // Let Node exit naturally
         }
 
         // Wait for all indexing to complete
@@ -106,16 +107,22 @@ export const index = new Command("index")
         if (PROFILE_ENABLED && typeof store.getProfile === "function") {
           console.log("[profile] local store:", store.getProfile());
         }
-
-        // Exit cleanly after successful indexing
-        process.exit(0);
       } catch (e) {
         spinner.fail("Indexing failed");
         throw e;
+      } finally {
+        // Always clean up the store
+        if (store && typeof store.close === "function") {
+          try {
+            await store.close();
+          } catch (err) {
+            console.error("Failed to close store:", err);
+          }
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       console.error("Failed to index:", message);
-      process.exit(1);
+      process.exitCode = 1;
     }
   });

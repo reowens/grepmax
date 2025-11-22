@@ -306,9 +306,10 @@ export const search: Command = new CommanderCommand("search")
       exec_path = "";
     }
 
+    let store: any = null;
     try {
       await ensureSetup({ silent: options.json || true });
-      const store = await createStore();
+      store = await createStore();
       
       // Auto-detect store ID if not explicitly provided
       const storeId = options.store || getAutoStoreId(process.cwd());
@@ -360,7 +361,7 @@ export const search: Command = new CommanderCommand("search")
                 actionDescription: "would have indexed",
               }),
             );
-            process.exit(0);
+            return; // Let Node exit naturally
           }
         } else {
           // Human mode: show spinner and progress
@@ -424,7 +425,7 @@ export const search: Command = new CommanderCommand("search")
       // Handle JSON output
       if (options.json) {
         console.log(JSON.stringify(results.data, null, 2));
-        process.exit(0);
+        return; // Let Node exit naturally
       }
 
       // Hint if no results found
@@ -444,7 +445,7 @@ export const search: Command = new CommanderCommand("search")
             );
           }
         }
-        process.exit(0);
+        return; // Let Node exit naturally
       }
 
       // Render Output
@@ -458,12 +459,18 @@ export const search: Command = new CommanderCommand("search")
       });
 
       console.log(output);
-
-      // Exit cleanly after successful search
-      process.exit(0);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       console.error("Failed to search:", message);
-      process.exit(1);
+      process.exitCode = 1;
+    } finally {
+      // Always clean up the store
+      if (store && typeof store.close === "function") {
+        try {
+          await store.close();
+        } catch (err) {
+          console.error("Failed to close store:", err);
+        }
+      }
     }
   });

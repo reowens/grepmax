@@ -985,4 +985,21 @@ export class LocalStore implements Store {
   getProfile(): LocalStoreProfile {
     return { ...this.profile };
   }
+
+  async close(): Promise<void> {
+    // Clean shutdown: terminate worker and close DB connection
+    try {
+      await this.worker.terminate();
+    } catch (err) {
+      console.error("Failed to terminate worker:", err);
+    }
+    if (this.db) {
+      try {
+        // LanceDB connections don't have an explicit close, but we null the ref
+        this.db = null;
+      } catch (err) {
+        console.error("Failed to close database:", err);
+      }
+    }
+  }
 }
