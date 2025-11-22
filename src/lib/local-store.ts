@@ -26,10 +26,12 @@ interface VectorRecord {
     start_line: number;
     end_line: number;
     vector: number[];
+    chunk_index?: number;
+    is_anchor?: boolean;
     [key: string]: any;
 }
 
-import { TreeSitterChunker } from "./chunker";
+import { TreeSitterChunker, type Chunk } from "./chunker";
 
 const PROFILE_ENABLED =
     process.env.OSGREP_PROFILE === "1" || process.env.OSGREP_PROFILE === "true";
@@ -55,7 +57,7 @@ export class LocalStore implements Store {
     private readonly MAX_WORKER_RSS = 3 * 1024 * 1024 * 1024; // 3GB limit for M3/Pro machines
     private embedQueue: Promise<void> = Promise.resolve();
     private chunker = new TreeSitterChunker();
-    private readonly VECTOR_DIMENSIONS = 512;
+    private readonly VECTOR_DIMENSIONS = 384;
     private readonly queryPrefix =
         "Represent this sentence for searching relevant passages: ";
     private profile: LocalStoreProfile = {
@@ -178,6 +180,55 @@ export class LocalStore implements Store {
         return await db.openTable(storeId);
     }
 
+    private async fetchNeighborChunk(
+        table: lancedb.Table,
+        path: string,
+        chunkIndex: number,
+    ): Promise<any | null> {
+        const safePath = path.replace(/'/g, "''");
+        try {
+            const res = await table
+                .query()
+                .filter(`path = '${safePath}' AND chunk_index = ${chunkIndex}`)
+                .limit(1)
+                .toArray();
+            return res[0] ?? null;
+        } catch {
+            return null;
+        }
+    }
+
+    private async expandWithNeighbors(table: lancedb.Table, record: any): Promise<any> {
+        const centerIndex = typeof record?.chunk_index === "number" ? record.chunk_index : null;
+        if (centerIndex === null || typeof record?.path !== "string") return record;
+
+        const neighborIndices = [centerIndex - 1, centerIndex + 1].filter((i) => i >= 0);
+        const neighbors: any[] = [];
+        for (const idx of neighborIndices) {
+            const neighbor = await this.fetchNeighborChunk(table, record.path as string, idx);
+            if (neighbor) neighbors.push(neighbor);
+        }
+
+        if (neighbors.length === 0) return record;
+
+        const ordered = [...neighbors, record].sort((a, b) => {
+            const ai = typeof a.chunk_index === "number" ? a.chunk_index : 0;
+            const bi = typeof b.chunk_index === "number" ? b.chunk_index : 0;
+            return ai - bi;
+        });
+
+        const combinedContent = ordered.map((r) => String(r.content ?? "")).join("\n\n");
+        const startLine = Math.min(...ordered.map((r) => (r.start_line as number) ?? record.start_line ?? 0));
+        const endLine = Math.max(...ordered.map((r) => (r.end_line as number) ?? record.end_line ?? 0));
+
+        return {
+            ...record,
+            content: combinedContent,
+            start_line: startLine,
+            end_line: endLine,
+        };
+    }
+
     private baseSchemaRow(): VectorRecord {
         return {
             id: "seed",
@@ -186,8 +237,10 @@ export class LocalStore implements Store {
             content: "",
             start_line: 0,
             end_line: 0,
-        vector: Array(this.VECTOR_DIMENSIONS).fill(0),
-    };
+            chunk_index: 0,
+            is_anchor: false,
+            vector: Array(this.VECTOR_DIMENSIONS).fill(0),
+        };
     }
 
     private formatChunkText(chunk: any, filePath: string): string {
@@ -199,6 +252,143 @@ export class LocalStore implements Store {
         }
         const header = breadcrumb.length > 0 ? breadcrumb.join(" > ") : fileLabel;
         return `${header}\n---\n${chunk.content}`;
+    }
+
+    private extractTopComments(lines: string[]): string[] {
+        const comments: string[] = [];
+        let inBlock = false;
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (inBlock) {
+                comments.push(line);
+                if (trimmed.includes("*/")) inBlock = false;
+                continue;
+            }
+            if (trimmed === "") {
+                // allow blank lines at the top of the file
+                comments.push(line);
+                continue;
+            }
+            if (trimmed.startsWith("//") || trimmed.startsWith("#!") || trimmed.startsWith("# ")) {
+                comments.push(line);
+                continue;
+            }
+            if (trimmed.startsWith("/*")) {
+                comments.push(line);
+                if (!trimmed.includes("*/")) inBlock = true;
+                continue;
+            }
+            break;
+        }
+        // Trim trailing blank lines from the captured comment block
+        while (comments.length > 0 && comments[comments.length - 1].trim() === "") {
+            comments.pop();
+        }
+        return comments;
+    }
+
+    private extractImports(lines: string[], limit = 200): string[] {
+        const modules: string[] = [];
+        for (const raw of lines.slice(0, limit)) {
+            const trimmed = raw.trim();
+            if (!trimmed) continue;
+            if (trimmed.startsWith("import ")) {
+                const fromMatch = trimmed.match(/from\s+["']([^"']+)["']/);
+                const sideEffect = trimmed.match(/^import\s+["']([^"']+)["']/);
+                const named = trimmed.match(/import\s+(?:\* as\s+)?([A-Za-z0-9_$]+)/);
+                if (fromMatch?.[1]) modules.push(fromMatch[1]);
+                else if (sideEffect?.[1]) modules.push(sideEffect[1]);
+                else if (named?.[1]) modules.push(named[1]);
+                continue;
+            }
+            const requireMatch = trimmed.match(/require\(\s*["']([^"']+)["']\s*\)/);
+            if (requireMatch?.[1]) {
+                modules.push(requireMatch[1]);
+            }
+        }
+        return Array.from(new Set(modules));
+    }
+
+    private extractExports(lines: string[], limit = 200): string[] {
+        const exports: string[] = [];
+        for (const raw of lines.slice(0, limit)) {
+            const trimmed = raw.trim();
+            if (!trimmed.startsWith("export") && !trimmed.includes("module.exports")) continue;
+
+            const decl = trimmed.match(/^export\s+(?:default\s+)?(class|function|const|let|var|interface|type|enum)\s+([A-Za-z0-9_$]+)/);
+            if (decl?.[2]) {
+                exports.push(decl[2]);
+                continue;
+            }
+
+            const brace = trimmed.match(/^export\s+\{([^}]+)\}/);
+            if (brace?.[1]) {
+                const names = brace[1]
+                    .split(",")
+                    .map((n) => n.trim())
+                    .filter(Boolean);
+                exports.push(...names);
+                continue;
+            }
+
+            if (trimmed.startsWith("export default")) {
+                exports.push("default");
+            }
+
+            if (trimmed.includes("module.exports")) {
+                exports.push("module.exports");
+            }
+        }
+        return Array.from(new Set(exports));
+    }
+
+    private buildAnchorChunk(filePath: string, content: string): (Chunk & { context: string[]; chunkIndex: number; isAnchor: boolean }) {
+        const lines = content.split("\n");
+        const topComments = this.extractTopComments(lines);
+        const imports = this.extractImports(lines);
+        const exports = this.extractExports(lines);
+
+        const preamble: string[] = [];
+        let nonBlank = 0;
+        let totalChars = 0;
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.length === 0) continue;
+            preamble.push(line);
+            nonBlank += 1;
+            totalChars += line.length;
+            if (nonBlank >= 30 || totalChars >= 1200) break;
+        }
+
+        const sections: string[] = [];
+        sections.push(`File: ${filePath}`);
+        if (imports.length > 0) {
+            sections.push(`Imports: ${imports.join(", ")}`);
+        }
+        if (exports.length > 0) {
+            sections.push(`Exports: ${exports.join(", ")}`);
+        }
+        if (topComments.length > 0) {
+            sections.push(`Top comments:\n${topComments.join("\n")}`);
+        }
+        if (preamble.length > 0) {
+            sections.push(`Preamble:\n${preamble.join("\n")}`);
+        }
+        sections.push("---");
+        sections.push("(anchor)");
+
+        const anchorText = sections.join("\n\n");
+        const approxEndLine = Math.min(lines.length, Math.max(1, nonBlank || preamble.length || 5));
+
+        return {
+            content: anchorText,
+            startLine: 0,
+            endLine: approxEndLine,
+            type: "block",
+            context: [`File: ${filePath}`, "Anchor"],
+            chunkIndex: -1,
+            isAnchor: true,
+        };
     }
 
     private async ensureTable(storeId: string): Promise<lancedb.Table> {
@@ -287,14 +477,26 @@ export class LocalStore implements Store {
 
         // Use TreeSitterChunker
         const chunkStart = PROFILE_ENABLED ? process.hrtime.bigint() : null;
-        const chunks = await this.chunker.chunk(options.metadata?.path || "unknown", content);
+        const parsedChunks = await this.chunker.chunk(options.metadata?.path || "unknown", content);
         if (PROFILE_ENABLED && chunkStart) {
             const chunkEnd = process.hrtime.bigint();
             this.profile.totalChunkTimeMs += Number(chunkEnd - chunkStart) / 1_000_000;
             fileChunkMs += Number(chunkEnd - chunkStart) / 1_000_000;
-            this.profile.totalChunkCount += chunks.length;
+            this.profile.totalChunkCount += parsedChunks.length;
         }
-        if (chunks.length === 0) return;
+        const anchorChunk = this.buildAnchorChunk(options.metadata?.path || "unknown", content);
+        const combinedChunks = anchorChunk ? [anchorChunk, ...parsedChunks] : parsedChunks;
+        if (combinedChunks.length === 0) return;
+
+        const chunks = combinedChunks.map((chunk, idx) => ({
+            ...chunk,
+            chunkIndex:
+                typeof (chunk as any).chunkIndex === "number"
+                    ? (chunk as any).chunkIndex
+                    : (anchorChunk ? idx - 1 : idx),
+            isAnchor: (chunk as any).isAnchor === true || (anchorChunk ? idx === 0 : false),
+        }));
+        this.profile.totalChunkCount += anchorChunk ? 1 : 0;
 
         const chunkTexts = chunks.map(chunk =>
             this.formatChunkText(chunk, options.metadata?.path || ""),
@@ -303,7 +505,7 @@ export class LocalStore implements Store {
             if (text.length > 1500) console.warn(`[WARNING] Giant chunk detected: ${text.length} chars. Likely truncated!`);
         });
 
-        const BATCH_SIZE = 32;
+        const BATCH_SIZE = 64;
         const WRITE_BATCH_SIZE = 50;
         let pendingWrites: VectorRecord[] = [];
 
@@ -329,6 +531,8 @@ export class LocalStore implements Store {
                     content: chunkTexts[chunkIndex],
                     start_line: chunk.startLine,
                     end_line: chunk.endLine,
+                    chunk_index: chunk.chunkIndex,
+                    is_anchor: chunk.isAnchor === true,
                     vector,
                 });
 
@@ -414,7 +618,8 @@ export class LocalStore implements Store {
         // 1. Setup
         const queryVector = await this.getEmbedding(this.queryPrefix + query);
         const finalLimit = top_k ?? 10;
-        const candidateLimit = 50; // How many we fetch from EACH method
+        const totalChunks = await table.countRows();
+        const candidateLimit = Math.min(200, Math.max(50, Math.sqrt(totalChunks)));
 
         const pathFilter = (_filters as any)?.all?.find((f: any) => f?.key === "path" && f?.operator === "starts_with")?.value ?? "";
         const matchesFilter = (r: any) => {
@@ -474,39 +679,59 @@ export class LocalStore implements Store {
             return { data: [] };
         }
 
-        // 4. Neural Reranking (The Brains)
-        let finalResults = candidates.map((r, _) => ({
-            record: r,
-            score: rrfScores.get(`${r.path}:${r.start_line}`) || 0 // Default to RRF score
-        }));
+        // 4. Neural Reranking (The Brains) + score blending
+        const rrfValues = Array.from(rrfScores.values());
+        const maxRrf = rrfValues.length > 0 ? Math.max(...rrfValues) : 0;
+        const normalizeRrf = (key: string) =>
+            maxRrf > 0 ? (rrfScores.get(key) || 0) / maxRrf : 0;
+
+        let finalResults = candidates.map((r) => {
+            const key = `${r.path}:${r.start_line}`;
+            const rrfScore = normalizeRrf(key);
+            return { record: r, score: rrfScore, rrfScore, rerankScore: 0 };
+        });
 
         try {
             const docs = candidates.map((r) => String(r.content ?? ""));
             const scores = await this.rerankDocuments(query, docs);
             
             // Update scores with Neural scores
-            finalResults = candidates.map((r, i) => ({
-                record: r,
-                score: scores[i]
-            }));
+            finalResults = candidates.map((r, i) => {
+                const key = `${r.path}:${r.start_line}`;
+                const rrfScore = normalizeRrf(key);
+                const rerankScore = scores[i] ?? 0;
+                const blendedScore = 0.7 * rerankScore + 0.3 * rrfScore;
+                return { record: r, score: blendedScore, rrfScore, rerankScore };
+            });
         } catch (e) {
-            console.warn("Reranker failed; falling back to RRF order:", e);
+            console.warn("Reranker failed; falling back to blended RRF-only order:", e);
         }
 
         // 5. Final Sort & Format
         finalResults.sort((a, b) => b.score - a.score);
         const limited = finalResults.slice(0, finalLimit);
 
-        const chunks: ChunkType[] = limited.map(({ record, score }) => ({
-            type: "text",
-            text: record.content as string,
-            score,
-            metadata: { path: record.path as string, hash: (record.hash as string) || "" },
-            generated_metadata: {
-                start_line: record.start_line as number,
-                num_lines: (record.end_line as number) - (record.start_line as number),
-            },
-        }));
+        const expanded = await Promise.all(
+            limited.map(async ({ record, score }) => {
+                const withNeighbors = await this.expandWithNeighbors(table, record);
+                return { record: withNeighbors, score };
+            }),
+        );
+
+        const chunks: ChunkType[] = expanded.map(({ record, score }) => {
+            const startLine = (record.start_line as number) ?? 0;
+            const endLine = (record.end_line as number) ?? startLine;
+            return {
+                type: "text",
+                text: record.content as string,
+                score,
+                metadata: { path: record.path as string, hash: (record.hash as string) || "" },
+                generated_metadata: {
+                    start_line: startLine,
+                    num_lines: endLine - startLine,
+                },
+            };
+        });
 
         return { data: chunks };
     }

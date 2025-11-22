@@ -20,3 +20,4 @@ osgrep index > /tmp/osgrep-index.log 2>&1 &
 echo '{"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "osgrep index has been started in the background. Use the osgrep skill for semantic code search."}}'
 exit 0
 
+
