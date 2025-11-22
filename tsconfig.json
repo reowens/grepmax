@@ -15,5 +15,6 @@
     "sourceMap": true,
     "skipLibCheck": true,
     "moduleResolution": "node"
-  }
+  },
+  "exclude": ["tests", "**/*.test.ts", "vitest.config.ts", "node_modules"]
 }
