@@ -1,6 +1,5 @@
 import { exec } from "node:child_process";
 import { Command } from "commander";
-import { ensureAuthenticated } from "../utils";
 
 const shell =
   process.env.SHELL ||
@@ -42,6 +41,5 @@ function installPlugin() {
 export const installClaudeCode = new Command("install-claude-code")
   .description("Install the Claude Code plugin")
   .action(async () => {
-    await ensureAuthenticated();
     await installPlugin();
   });

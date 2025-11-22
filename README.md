@@ -8,7 +8,7 @@
 - Natural-language search that feels as immediate as `grep`.
 - Semantic, multilingual & multimodal (audio, video support coming soon!)
 - Smooth background indexing via `osgrep watch`, designed to detect and keep up-to-date everything that matters inside any git repository.
-- Friendly device-login flow and first-class coding agent integrations.
+- 100% local embeddings (via `transformers.js`) with first-class coding agent integrations.
 - Built for agents and humans alike, and **designed to be a helpful tool**, not a restrictive harness: quiet output, thoughtful defaults, and escape hatches everywhere.
 - Reduces the token usage of your agent by 2x while maintaining superior performance
 
@@ -27,27 +27,14 @@ osgrep "where do we set up auth?"
    npm install -g @ryandonofrio/osgrep    # or pnpm / bun
    ```
 
-2. **Sign in once**
-   ```bash
-   osgrep login
-   ```
-   A browser window (or verification URL) guides you through Mixedbread authentication.
-
-   **Alternative: API Key Authentication**
-   For CI/CD or headless environments, set the `MXBAI_API_KEY` environment variable:
-   ```bash
-   export MXBAI_API_KEY=your_api_key_here
-   ```
-   This bypasses the browser login flow entirely.
-
-3. **Index a project**
+2. **Index a project**
    ```bash
    cd path/to/repo
    osgrep watch
    ```
-   `watch` performs an initial sync, respects `.gitignore`, then keeps the Mixedbread store updated as files change.
+   `watch` performs an initial sync, respects `.gitignore`, then keeps the local index updated as files change.
 
-4. **Search anything**
+3. **Search anything**
    ```bash
    osgrep "where do we set up auth?" src/lib
    osgrep -m 25 "store schema"
@@ -60,7 +47,7 @@ osgrep "where do we set up auth?"
 ## Using it with Coding Agents
 
 - **Claude Code (today)**  
-  1. Run `osgrep install-claude-code`. The command signs you in (if needed), adds the Mixedbread osgrep plugin to the marketplace, and installs it.  
+  1. Run `osgrep install-claude-code`. The command installs the osgrep plugin into Claude Code.  
   2. Open Claude Code, enable the plugin, and point your agent at the repo you are indexing with `osgrep watch`.  
   3. Ask Claude something just like you do locally; results stream straight into the chat with file paths and line hints.  
   
@@ -106,9 +93,8 @@ We designed `osgrep` to complement `grep`, not replace it. The best code search 
 | Command | Purpose |
 | --- | --- |
 | `osgrep` / `osgrep search <pattern> [path]` | Natural-language search with many `grep`-style flags (`-i`, `-r`, `-m`...). |
-| `osgrep watch` | Index current repo and keep the Mixedbread store in sync via file watchers. |
-| `osgrep login` & `osgrep logout` | Manage device-based authentication with Mixedbread. |
-| `osgrep install-claude-code` | Log in, add the Mixedbread osgrep plugin to Claude Code, and install it for you. |
+| `osgrep watch` | Index the current repo and keep the local store in sync via file watchers. |
+| `osgrep install-claude-code` | Add the osgrep plugin to Claude Code for local queries. |
 
 ### osgrep search
 
@@ -132,7 +118,7 @@ osgrep -a "What code parsers are available?"  # generate an answer to the questi
 
 ### osgrep watch
 
-`osgrep watch` is used to index the current repository and keep the Mixedbread
+`osgrep watch` is used to index the current repository and keep the local
 store in sync via file watchers.
 
 It respects the current `.gitignore`, as well as a `.osgrepignore` file in the
@@ -141,15 +127,15 @@ root of the repository. The `.osgrepignore` file follows the same syntax as the
 
 **Examples:**
 ```bash
-osgrep watch  # index the current repository and keep the Mixedbread store in sync via file watchers
+osgrep watch  # index the current repository and keep the local store in sync via file watchers
 ```
 
-## Mixedbread under the hood
+## Local-first under the hood
 
-- Every file is pushed into a Mixedbread Store using the same SDK your apps get.
-- Searches request top-k matches with Mixedbread reranking enabled for tighter relevance.
+- Files are embedded locally with `transformers.js` and stored in `~/.osgrep/data` via LanceDB.
+- Searches combine vector and FTS matches with reciprocal-rank fusion for relevance.
 - Results include relative paths plus contextual hints (line ranges for text, page numbers for PDFs, etc.) for a skim-friendly experience.
-- Because stores are cloud-backed, agents and teammates can query the same corpus without re-uploading.
+- Everything runs offline; disconnect Wi‑Fi and it still works.
 
 ## Configuration Tips
 
@@ -159,7 +145,6 @@ osgrep watch  # index the current repository and keep the Mixedbread store in sy
 - `search` accepts most `grep`-style switches, and politely ignores anything it cannot support, so existing muscle memory still works.
 
 **Environment Variables:**
-- `MXBAI_API_KEY`: Set this to authenticate without browser login (ideal for CI/CD)
 - `MXBAI_STORE`: Override the default store name (default: `osgrep`)
 
 ## Development
@@ -176,9 +161,8 @@ pnpm format       # biome formatting + linting
 
 ## Troubleshooting
 
-- **Login keeps reopening**: run `osgrep logout` to clear cached tokens, then try `osgrep login` again.
 - **Watcher feels noisy**: set `MXBAI_STORE` or pass `--store` to separate experiments, or pause the watcher and restart after large refactors.
-- **Need a fresh store**: delete it from the Mixedbread dashboard, then run `osgrep watch`. It will auto-create a new one.
+- **Need a fresh store**: delete `~/.osgrep/data/<store>` and run `osgrep watch`. It will auto-create a new one.
 
 ## License
 

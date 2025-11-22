@@ -8,6 +8,7 @@ import type {
   FileMetadata,
   SearchResponse,
 } from "../lib/store";
+import { highlight } from "cli-highlight";
 import {
   createIndexingSpinner,
   formatDryRunSummary,
@@ -81,6 +82,12 @@ function formatChunk(chunk: ChunkType, show_content: boolean) {
         start_line + (chunk.generated_metadata?.num_lines as number);
       line_range = `:${start_line}-${end_line}`;
       content = show_content ? (chunk.text ?? "") : "";
+      if (show_content && content) {
+        content = highlight(content, {
+          language: "typescript",
+          ignoreIllegals: true,
+        });
+      }
       break;
     }
     case "image_url":
@@ -97,7 +104,7 @@ function formatChunk(chunk: ChunkType, show_content: boolean) {
       break;
   }
 
-  return `.${path}${line_range} (${(chunk.score * 100).toFixed(2)}% match)${content ? `\n${content}` : ""}`;
+  return `.${path}${line_range} (Relevance Score: ${chunk.score.toFixed(4)})${content ? `\n${content}` : ""}`;
 }
 
 export const search: Command = new CommanderCommand("search")

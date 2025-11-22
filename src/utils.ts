@@ -88,10 +88,6 @@ export async function listStoreFileHashes(
   return byExternalId;
 }
 
-export function ensureAuthenticated(): Promise<void> {
-  return Promise.resolve();
-}
-
 export async function uploadFile(
   store: Store,
   storeId: string,
@@ -104,6 +100,7 @@ export async function uploadFile(
     return false;
   }
 
+  const contentString = buffer.toString("utf-8");
   const hash = computeBufferHash(buffer);
 
   if (metaStore) {
@@ -120,14 +117,11 @@ export async function uploadFile(
       path: filePath,
       hash,
     },
+    content: contentString,
   };
 
   try {
-    await store.uploadFile(
-      storeId,
-      fs.createReadStream(filePath) as unknown as File | ReadableStream,
-      options,
-    );
+    await store.uploadFile(storeId, contentString, options);
   } catch (_err) {
     await store.uploadFile(
       storeId,

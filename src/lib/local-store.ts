@@ -166,24 +166,29 @@ export class LocalStore implements Store {
             await table.delete('id = "test"');
         }
 
-        // Read file content
-        let content = "";
-        if (typeof file === "string") {
-            content = file;
-        } else if (file && typeof file.read === "function") {
-            // It's a stream
-            for await (const chunk of file) {
-                content += chunk;
+        // Read file content (prefer provided content to avoid double reads)
+        let content = options.content ?? "";
+        if (!content) {
+            if (typeof file === "string") {
+                content = file;
+            } else if (file && typeof file.read === "function") {
+                // It's a stream
+                for await (const chunk of file) {
+                    content += chunk;
+                }
+            } else if (file instanceof File) {
+                content = await file.text();
+            } else {
+                // Fallback for now
+                return;
             }
-        } else if (file instanceof File) {
-            content = await file.text();
-        } else {
-            // Fallback for now
-            return;
         }
 
         // Delete existing chunks for this file
-        await table.delete(`path = '${options.metadata?.path}'`);
+        const safePath = options.metadata?.path?.replace(/'/g, "''");
+        if (safePath) {
+            await table.delete(`path = '${safePath}'`);
+        }
 
         // Use TreeSitterChunker
         const chunks = await this.chunker.chunk(options.metadata?.path || "unknown", content);
@@ -192,7 +197,12 @@ export class LocalStore implements Store {
         const texts = chunks.map(c => c.content);
 
         // Batch embedding
-        const vectors = await this.getEmbeddings(texts);
+        const vectors: number[][] = [];
+        for (let i = 0; i < texts.length; i += 100) {
+            const batchTexts = texts.slice(i, i + 100);
+            const batchVectors = await this.getEmbeddings(batchTexts);
+            vectors.push(...batchVectors);
+        }
 
         const data: VectorRecord[] = [];
 
@@ -218,8 +228,7 @@ export class LocalStore implements Store {
     async createFTSIndex(storeId: string): Promise<void> {
         const table = await this.getTable(storeId);
         try {
-            // @ts-ignore - createIndex type definition might be missing in older versions or slightly different
-            await table.createIndex({ columns: ["content"], type: "fts" });
+            await table.createIndex("content");
         } catch (e) {
             console.warn("Failed to create FTS index (might already exist):", e);
         }
@@ -232,24 +241,37 @@ export class LocalStore implements Store {
         _search_options?: { rerank?: boolean },
         _filters?: SearchFilter,
     ): Promise<SearchResponse> {
-        const table = await this.getTable(storeId);
+        let table: lancedb.Table;
+        try {
+            table = await this.getTable(storeId);
+        } catch {
+            return { data: [] };
+        }
         const queryVector = await this.getEmbedding(query);
         const k = 60; // RRF constant
         const limit = 50; // Fetch more candidates for fusion
+        const pathFilter =
+            (_filters as any)?.all?.find(
+                (f: any) => f?.key === "path" && f?.operator === "starts_with",
+            )?.value ?? "";
+        const matchesFilter = (r: any) => {
+            if (!pathFilter) return true;
+            return typeof r.path === "string" && r.path.startsWith(pathFilter);
+        };
 
         // 1. Vector Search
-        const vectorResults = await table
+        const vectorResults = (await table
             .search(queryVector)
             .limit(limit)
-            .toArray();
+            .toArray()).filter(matchesFilter);
 
         // 2. FTS Search
         let ftsResults: any[] = [];
         try {
-            ftsResults = await table
+            ftsResults = (await table
                 .search(query)
                 .limit(limit)
-                .toArray();
+                .toArray()).filter(matchesFilter);
         } catch (e) {
             // FTS might fail if not indexed
         }

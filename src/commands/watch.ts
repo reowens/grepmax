@@ -1,5 +1,5 @@
-import * as fs from "node:fs";
 import * as path from "node:path";
+import chokidar from "chokidar";
 import { Command } from "commander";
 import { createFileSystem, createStore } from "../lib/context";
 import {
@@ -26,15 +26,17 @@ export const watch = new Command("watch")
       const watchRoot = process.cwd();
       const metaStore = new MetaStore();
 
-      const { spinner, onProgress } = createIndexingSpinner(watchRoot);
+      const { spinner, onProgress } = createIndexingSpinner(
+        watchRoot,
+        "Indexing Local Index...",
+      );
       try {
         try {
           await store.retrieve(options.store);
         } catch {
           await store.create({
             name: options.store,
-            description:
-              "osgrep store - Mixedbreads multimodal multilingual magic search",
+            description: "osgrep local index",
           });
         }
         const result = await initialSync(
@@ -65,31 +67,35 @@ export const watch = new Command("watch")
 
       console.log("Watching for file changes in", watchRoot);
       fileSystem.loadOsgrepignore(watchRoot);
-      fs.watch(watchRoot, { recursive: true }, (eventType, rawFilename) => {
-        const filename = rawFilename?.toString();
-        if (!filename) {
-          return;
-        }
-        const filePath = path.join(watchRoot, filename);
-        console.log(`${eventType}: ${filePath}`);
+      const debounceTimers = new Map<string, NodeJS.Timeout>();
+      const scheduleUpload = (filePath: string) => {
+        const existing = debounceTimers.get(filePath);
+        if (existing) clearTimeout(existing);
+        debounceTimers.set(
+          filePath,
+          setTimeout(() => {
+            debounceTimers.delete(filePath);
+            if (fileSystem.isIgnored(filePath, watchRoot)) {
+              return;
+            }
+            const filename = path.basename(filePath);
+            uploadFile(store, options.store, filePath, filename, metaStore).catch((err) => {
+              console.error("Failed to upload changed file:", filePath, err);
+            });
+          }, 300),
+        );
+      };
 
-        try {
-          const stat = fs.statSync(filePath);
-          if (!stat.isFile()) {
-            return;
-          }
-        } catch {
-          return;
-        }
-
-        if (fileSystem.isIgnored(filePath, watchRoot)) {
-          return;
-        }
-
-        uploadFile(store, options.store, filePath, filename, metaStore).catch((err) => {
-          console.error("Failed to upload changed file:", filePath, err);
-        });
+      const watcher = chokidar.watch(watchRoot, {
+        ignoreInitial: true,
       });
+
+      watcher
+        .on("add", scheduleUpload)
+        .on("change", scheduleUpload)
+        .on("error", (err: unknown) => {
+          console.error("Watcher error:", err);
+        });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       console.error("Failed to start watcher:", message);

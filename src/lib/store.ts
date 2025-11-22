@@ -28,6 +28,7 @@ export interface UploadFileOptions {
   external_id: string;
   overwrite?: boolean;
   metadata?: FileMetadata;
+  content?: string;
 }
 
 export interface SearchResponse {
@@ -119,4 +120,3 @@ export interface Store {
    */
   createFTSIndex(storeId: string): Promise<void>;
 }
-

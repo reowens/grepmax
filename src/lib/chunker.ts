@@ -2,7 +2,11 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import * as https from "node:https";
-import Parser from "web-tree-sitter";
+
+// web-tree-sitter ships a CommonJS build
+const TreeSitter = require("web-tree-sitter");
+const Parser = TreeSitter.Parser;
+const Language = TreeSitter.Language;
 
 const GRAMMARS_DIR = path.join(os.homedir(), ".osgrep", "grammars");
 
@@ -27,10 +31,15 @@ export class TreeSitterChunker {
     async init() {
         if (this.initialized) return;
 
-        // @ts-ignore
-        await Parser.init();
-        // @ts-ignore
-        this.parser = new Parser();
+        try {
+            await Parser.init({
+                locator: require.resolve("web-tree-sitter/tree-sitter.wasm"),
+            });
+            this.parser = new Parser();
+        } catch (err) {
+            console.error("Falling back to paragraph chunking; tree-sitter init failed:", err);
+            this.parser = null;
+        }
 
         if (!fs.existsSync(GRAMMARS_DIR)) {
             fs.mkdirSync(GRAMMARS_DIR, { recursive: true });
@@ -53,8 +62,7 @@ export class TreeSitterChunker {
         }
 
         try {
-            // @ts-ignore
-            const language = await Parser.Language.load(wasmPath);
+            const language = Language ? await Language.load(wasmPath) : null;
             this.languages.set(lang, language);
             return language;
         } catch (e) {

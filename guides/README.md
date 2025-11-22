@@ -41,8 +41,8 @@ At a high level, `osgrep` works in two steps:
 1. **Index your files.**  
    When you run `osgrep watch` in a repo, `osgrep`:
    - Scans your files (respecting `.gitignore` and common build artifacts).
-   - Uploads them into a Mixedbread Store (a cloud-backed semantic index).
-   - Keeps that store up to date as files change via a file watcher.
+   - Embeds them locally and stores the vectors/FTS data in `~/.osgrep/data`.
+   - Keeps that index up to date as files change via a file watcher.
 
 2. **Search with natural language.**  
    - Reranks results so that the most useful matches appear first, even if the
@@ -60,13 +60,10 @@ automatically. No need to run `osgrep watch` manually.
 ```bash
 cd ~/code/my-project
 
-# 1. Sign in once (or set MXBAI_API_KEY in your shell/CI)
-osgrep login
-
-# 2. Install the osgrep plugin for claude code. The osgrep plugin will start to index the repo and keep the store in sync automatically.
+# 1. Install the osgrep plugin for claude code. The osgrep plugin will start to index the repo and keep the store in sync automatically.
 osgrep install-claude-code
 
-# 3. Ask questions while you work
+# 2. Ask questions while you work
 osgrep "Where do we initialize the HTTP server?" src
 osgrep "How is error handling wired up in the API layer?" src/api
 ```
