@@ -16,7 +16,7 @@ Natural-language search that works like `grep`. Fast, local, and works with codi
 1. **Install**
    ```bash
    npm install -g osgrep    # or pnpm / bun
-````
+   ```
 
 2.  **Setup (Recommended)**
 
@@ -24,7 +24,7 @@ Natural-language search that works like `grep`. Fast, local, and works with codi
     osgrep setup
     ```
 
-    Downloads embedding models (\~150MB) upfront. If you skip this, models download automatically on first use.
+    Downloads embedding models (~150MB) upfront. If you skip this, models download automatically on first use.
 
 3.  **Search**
 
@@ -37,9 +37,11 @@ Natural-language search that works like `grep`. Fast, local, and works with codi
 
 ## Coding Agent Integration
 
-**Claude Code** 1. Run `osgrep install-claude-code`
-2\. Open Claude Code (`claude`) and ask it questions about your codebase.
-3\. It will use `osgrep` to find relevant context automatically.
+**Claude Code**
+
+1. Run `osgrep install-claude-code`
+2. Open Claude Code (`claude`) and ask it questions about your codebase.
+3. It will use `osgrep` to find relevant context automatically.
 
 ## Commands
 
@@ -78,11 +80,9 @@ osgrep "user validation" --compact
 
 Manually indexes the repository. Useful if you want to pre-warm the cache or if you've made massive changes outside of the editor.
 
-  * Respects `.gitignore` and `.osgrepignore`.
-  * **Smart Indexing:** Only embeds code and config files. Skips binaries, lockfiles, and minified assets.
-  * **Adaptive Throttling:** Monitors your RAM and CPU usage. If your system gets hot, indexing slows down automatically.
-
-<!-- end list -->
+- Respects `.gitignore` and `.osgrepignore`.
+- **Smart Indexing:** Only embeds code and config files. Skips binaries, lockfiles, and minified assets.
+- **Adaptive Throttling:** Monitors your RAM and CPU usage. If your system gets hot, indexing slows down automatically.
 
 ```bash
 osgrep index              # Index current dir
