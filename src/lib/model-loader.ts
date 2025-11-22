@@ -5,6 +5,10 @@ import { env, pipeline } from "@huggingface/transformers";
 const HOMEDIR = os.homedir();
 const CACHE_DIR = path.join(HOMEDIR, ".osgrep", "models");
 
+type DisposablePipeline = {
+  dispose?: () => Promise<unknown> | void;
+};
+
 /**
  * Downloads ML models to local cache directory
  * This is a standalone function that can be called during setup
@@ -20,35 +24,43 @@ export async function downloadModels(): Promise<void> {
 
   console.log(`Worker: Loading models from ${CACHE_DIR}...`);
 
-  const loadedPipelines = [];
+  const loadedPipelines: DisposablePipeline[] = [];
 
   try {
-    // Load embed model
-    const embedPipeline = await pipeline("feature-extraction", embedModelId, {
+    const embedOptions: Record<string, unknown> = {
       dtype: "q8",
       quantized: true,
-    } as any);
+    };
+    // Load embed model
+    const embedPipeline = (await pipeline(
+      "feature-extraction",
+      embedModelId,
+      embedOptions,
+    )) as unknown as DisposablePipeline;
     loadedPipelines.push(embedPipeline);
 
+    const rerankOptions: Record<string, unknown> = {
+      dtype: "q8",
+      quantized: true,
+    };
     // Load rerank model
-    const rerankPipeline = await pipeline(
+    const rerankPipeline = (await pipeline(
       "text-classification",
       rerankModelId,
-      {
-        dtype: "q8",
-        quantized: true,
-      } as any,
-    );
+      rerankOptions,
+    )) as unknown as DisposablePipeline;
     loadedPipelines.push(rerankPipeline);
 
     console.log("Worker: Models loaded.");
   } finally {
     // Dispose pipelines to clean up native resources before exit
-    await Promise.allSettled(
-      loadedPipelines
-        .filter((pipe: any) => typeof pipe?.dispose === "function")
-        .map((pipe: any) => pipe.dispose()),
-    );
+    const disposers: Array<Promise<unknown> | void> = [];
+    for (const pipe of loadedPipelines) {
+      if (typeof pipe.dispose === "function") {
+        disposers.push(pipe.dispose());
+      }
+    }
+    await Promise.allSettled(disposers);
     // Reset to prefer local after download
     env.allowRemoteModels = false;
   }

@@ -23,7 +23,7 @@ type WorkerRequest =
 
 const DB_PATH = path.join(os.homedir(), ".osgrep", "data");
 
-interface VectorRecord {
+type VectorRecord = {
   id: string;
   path: string;
   hash: string;
@@ -33,10 +33,20 @@ interface VectorRecord {
   vector: number[];
   chunk_index?: number;
   is_anchor?: boolean;
-  [key: string]: any;
-}
+} & Record<string, unknown>;
 
 import { type Chunk, TreeSitterChunker } from "./chunker";
+type ChunkWithContext = Chunk & {
+  context: string[];
+  chunkIndex?: number;
+  isAnchor?: boolean;
+};
+type PendingRequest = {
+  resolve: (value: unknown) => void;
+  reject: (reason: unknown) => void;
+  payload: WorkerRequest;
+  timeoutId?: NodeJS.Timeout;
+};
 import { LRUCache } from "./lru";
 
 const PROFILE_ENABLED =
@@ -65,15 +75,7 @@ export class LocalStore implements Store {
   private db: lancedb.Connection | null = null;
   private worker!: Worker;
   private vectorCache = new LRUCache<string, number[]>(VECTOR_CACHE_MAX);
-  private pendingRequests = new Map<
-    string,
-    {
-      resolve: (v: any) => void;
-      reject: (e: any) => void;
-      payload: WorkerRequest;
-      timeoutId?: NodeJS.Timeout;
-    }
-  >();
+  private pendingRequests = new Map<string, PendingRequest>();
   private restartInFlight: Promise<void> | null = null;
   private isClosing = false;
   private readonly MAX_WORKER_RSS = 6 * 1024 * 1024 * 1024; // 6GB upper bound, we restart before OOM
@@ -203,6 +205,15 @@ export class LocalStore implements Store {
     this.restartInFlight = null;
   }
 
+  private isNodeReadable(input: unknown): input is NodeJS.ReadableStream {
+    return (
+      typeof input === "object" &&
+      input !== null &&
+      typeof (input as NodeJS.ReadableStream)[Symbol.asyncIterator] ===
+        "function"
+    );
+  }
+
   private async enqueueEmbedding<T>(fn: () => Promise<T>): Promise<T> {
     const run = this.embedQueue.then(async () => {
       if (this.restartInFlight) {
@@ -240,7 +251,12 @@ export class LocalStore implements Store {
         }
       }, WORKER_TIMEOUT_MS);
 
-      this.pendingRequests.set(id, { resolve, reject, payload, timeoutId });
+      this.pendingRequests.set(id, {
+        resolve: resolve as (value: unknown) => void,
+        reject: reject as (reason: unknown) => void,
+        payload,
+        timeoutId,
+      });
       this.worker.postMessage(payload);
     });
   }
@@ -322,14 +338,14 @@ export class LocalStore implements Store {
     table: lancedb.Table,
     path: string,
     chunkIndex: number,
-  ): Promise<any | null> {
+  ): Promise<VectorRecord | null> {
     const safePath = path.replace(/'/g, "''");
     try {
-      const res = await table
+      const res = (await table
         .query()
         .filter(`path = '${safePath}' AND chunk_index = ${chunkIndex}`)
         .limit(1)
-        .toArray();
+        .toArray()) as VectorRecord[];
       return res[0] ?? null;
     } catch {
       return null;
@@ -338,20 +354,20 @@ export class LocalStore implements Store {
 
   private async expandWithNeighbors(
     table: lancedb.Table,
-    record: any,
-  ): Promise<any> {
+    record: VectorRecord,
+  ): Promise<VectorRecord> {
     const centerIndex =
-      typeof record?.chunk_index === "number" ? record.chunk_index : null;
-    if (centerIndex === null || typeof record?.path !== "string") return record;
+      typeof record.chunk_index === "number" ? record.chunk_index : null;
+    if (centerIndex === null || typeof record.path !== "string") return record;
 
     const neighborIndices = [centerIndex - 1, centerIndex + 1].filter(
       (i) => i >= 0,
     );
-    const neighbors: any[] = [];
+    const neighbors: VectorRecord[] = [];
     for (const idx of neighborIndices) {
       const neighbor = await this.fetchNeighborChunk(
         table,
-        record.path as string,
+        record.path,
         idx,
       );
       if (neighbor) neighbors.push(neighbor);
@@ -397,8 +413,8 @@ export class LocalStore implements Store {
     };
   }
 
-  private formatChunkText(chunk: any, filePath: string): string {
-    const breadcrumb = Array.isArray(chunk.context) ? [...chunk.context] : [];
+  private formatChunkText(chunk: ChunkWithContext, filePath: string): string {
+    const breadcrumb = [...chunk.context];
     const fileLabel = `File: ${filePath || "unknown"}`;
     const hasFileLabel = breadcrumb.some(
       (entry) => typeof entry === "string" && entry.startsWith("File: "),
@@ -604,7 +620,7 @@ export class LocalStore implements Store {
 
   async indexFile(
     storeId: string,
-    file: File | ReadableStream | any,
+    file: File | ReadableStream | NodeJS.ReadableStream | string,
     options: IndexFileOptions,
   ): Promise<void> {
     const fileIndexStart = PROFILE_ENABLED ? process.hrtime.bigint() : null;
@@ -619,15 +635,24 @@ export class LocalStore implements Store {
     if (!content) {
       if (typeof file === "string") {
         content = file;
-      } else if (file && typeof file.read === "function") {
-        // It's a stream
+      } else if (this.isNodeReadable(file)) {
         for await (const chunk of file) {
-          content += chunk;
+          content += typeof chunk === "string" ? chunk : chunk.toString();
+        }
+      } else if (file instanceof ReadableStream) {
+        const reader = file.getReader();
+        let result = await reader.read();
+        while (!result.done) {
+          const value = result.value;
+          content +=
+            typeof value === "string"
+              ? value
+              : Buffer.from(value as ArrayBuffer).toString();
+          result = await reader.read();
         }
       } else if (file instanceof File) {
         content = await file.text();
       } else {
-        // Fallback for now
         return;
       }
     }
@@ -662,22 +687,28 @@ export class LocalStore implements Store {
       options.metadata?.path || "unknown",
       content,
     );
-    const combinedChunks = anchorChunk
+    const baseChunks = anchorChunk
       ? [anchorChunk, ...parsedChunks]
       : parsedChunks;
-    if (combinedChunks.length === 0) return;
+    if (baseChunks.length === 0) return;
 
-    const chunks = combinedChunks.map((chunk, idx) => ({
-      ...chunk,
-      chunkIndex:
-        typeof (chunk as any).chunkIndex === "number"
-          ? (chunk as any).chunkIndex
-          : anchorChunk
-            ? idx - 1
-            : idx,
-      isAnchor:
-        (chunk as any).isAnchor === true || (anchorChunk ? idx === 0 : false),
-    }));
+    const chunks: ChunkWithContext[] = baseChunks.map((chunk, idx) => {
+      const chunkWithContext = chunk as ChunkWithContext;
+      return {
+        ...chunkWithContext,
+        context: Array.isArray(chunkWithContext.context)
+          ? chunkWithContext.context
+          : [],
+        chunkIndex:
+          typeof chunkWithContext.chunkIndex === "number"
+            ? chunkWithContext.chunkIndex
+            : anchorChunk
+              ? idx - 1
+              : idx,
+        isAnchor:
+          chunkWithContext.isAnchor === true || (anchorChunk ? idx === 0 : false),
+      };
+    });
     this.profile.totalChunkCount += anchorChunk ? 1 : 0;
 
     const chunkTexts = chunks.map((chunk) =>
@@ -775,7 +806,8 @@ export class LocalStore implements Store {
     }
     
     try {
-      await table.createIndex("vector", { type: "ivf_flat" } as any);
+      const vectorIndexOptions: Record<string, unknown> = { type: "ivf_flat" };
+      await table.createIndex("vector", vectorIndexOptions);
     } catch (e) {
       const fallbackMsg = e instanceof Error ? e.message : String(e);
       if (!fallbackMsg.includes("already exists")) {
@@ -814,13 +846,19 @@ export class LocalStore implements Store {
     const totalChunks = await table.countRows();
     const candidateLimit = Math.min(200, Math.max(50, Math.sqrt(totalChunks)));
 
+    const allFilters = Array.isArray(
+      (_filters as { all?: unknown })?.all,
+    )
+      ? ((_filters as { all?: unknown }).all as Record<string, unknown>[])
+      : [];
+    const pathFilterEntry = allFilters.find(
+      (f) => f?.key === "path" && f?.operator === "starts_with",
+    );
     const pathFilter =
-      (_filters as any)?.all?.find(
-        (f: any) => f?.key === "path" && f?.operator === "starts_with",
-      )?.value ?? "";
-    const matchesFilter = (r: any) => {
+      typeof pathFilterEntry?.value === "string" ? pathFilterEntry.value : "";
+    const matchesFilter = (record: VectorRecord) => {
       if (!pathFilter) return true;
-      return typeof r.path === "string" && r.path.startsWith(pathFilter);
+      return typeof record.path === "string" && record.path.startsWith(pathFilter);
     };
 
     // 2. Parallel Retrieval: Vector + FTS
@@ -830,23 +868,27 @@ export class LocalStore implements Store {
         .search(queryVector)
         .limit(candidateLimit)
         .toArray()
-        .then((res) => res.filter(matchesFilter)),
+        .then((res) =>
+          (res as VectorRecord[]).filter(matchesFilter),
+        ),
 
       // FTS (Keyword) Search - Good for specific terms like "CLI" or variable names
       table
         .search(query)
         .limit(candidateLimit)
         .toArray()
-        .then((res) => res.filter(matchesFilter))
+        .then((res) =>
+          (res as VectorRecord[]).filter(matchesFilter),
+        )
         .catch(() => []), // Ignore if FTS index missing
     ]);
 
     // 3. RRF Fusion (Combine the two lists)
     const k = 60; // RRF Constant
     const rrfScores = new Map<string, number>();
-    const contentMap = new Map<string, any>();
+    const contentMap = new Map<string, VectorRecord>();
 
-    const fuse = (results: any[]) => {
+    const fuse = (results: VectorRecord[]) => {
       results.forEach((r, i) => {
         // Use path+start_line as unique key since ID might be unstable across re-indexes
         const key = `${r.path}:${r.start_line}`;
@@ -865,7 +907,8 @@ export class LocalStore implements Store {
     const candidates = Array.from(rrfScores.keys())
       .sort((a, b) => (rrfScores.get(b) || 0) - (rrfScores.get(a) || 0))
       .slice(0, candidateLimit) // Take top 50 combined
-      .map((key) => contentMap.get(key));
+      .map((key) => contentMap.get(key))
+      .filter((record): record is VectorRecord => Boolean(record));
 
     if (candidates.length === 0) {
       return { data: [] };
@@ -935,16 +978,14 @@ export class LocalStore implements Store {
   }
   async retrieve(storeId: string): Promise<unknown> {
     const table = await this.getTable(storeId);
-    return typeof (table as any).info === "function"
-      ? (table as any).info?.()
-      : true;
+    const tableInfo = table as { info?: () => unknown };
+    return typeof tableInfo.info === "function" ? tableInfo.info() : true;
   }
 
   async create(options: CreateStoreOptions): Promise<unknown> {
     const table = await this.ensureTable(options.name);
-    return typeof (table as any).info === "function"
-      ? (table as any).info?.()
-      : true;
+    const tableInfo = table as { info?: () => unknown };
+    return typeof tableInfo.info === "function" ? tableInfo.info() : true;
   }
 
   async deleteFile(storeId: string, filePath: string): Promise<void> {
