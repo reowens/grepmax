@@ -5,7 +5,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
-DEBUG_LOG_FILE = Path(os.environ.get("MGREP_WATCH_LOG", "/tmp/mgrep-watch.log"))
+DEBUG_LOG_FILE = Path(os.environ.get("OSGREP_WATCH_LOG", "/tmp/osgrep-watch.log"))
 
 
 def debug_log(message: str) -> None:
@@ -34,13 +34,13 @@ if __name__ == "__main__":
     payload = read_hook_input()
     cwd = payload.get("cwd")
 
-    pid_file = f"/tmp/mgrep-watch-pid-{payload.get('session_id')}.txt"
+    pid_file = f"/tmp/osgrep-watch-pid-{payload.get('session_id')}.txt"
     if os.path.exists(pid_file):
         debug_log(f"PID file already exists: {pid_file}")
         sys.exit(1)
 
-    process = subprocess.Popen(["mgrep", "watch"], preexec_fn=os.setsid, stdout=open(f"/tmp/mgrep-watch-command-{payload.get('session_id')}.log", "w"), stderr=open(f"/tmp/mgrep-watch-command-{payload.get('session_id')}.log", "w"))
-    debug_log(f"Started mgrep watch process: {process.pid}")
+    process = subprocess.Popen(["osgrep", "watch"], preexec_fn=os.setsid, stdout=open(f"/tmp/osgrep-watch-command-{payload.get('session_id')}.log", "w"), stderr=open(f"/tmp/osgrep-watch-command-{payload.get('session_id')}.log", "w"))
+    debug_log(f"Started osgrep watch process: {process.pid}")
     debug_log(f"All environment variables: {os.environ}")
     with open(pid_file, "w") as handle:
         handle.write(str(process.pid))
@@ -48,7 +48,7 @@ if __name__ == "__main__":
     response = {
         "hookSpecificOutput": {
             "hookEventName": "SessionStart",
-            "additionalContext": "You must load mgrep skill for searching and exploring rather than grep"
+            "additionalContext": "You must load osgrep skill for searching and exploring rather than grep"
         }
     }
     print(json.dumps(response))

@@ -1,18 +1,18 @@
 {
-  "name": "mgrep",
+  "name": "osgrep",
   "version": "0.1.0",
-  "author": "Mixedbread <support@mixedbread.com>",
-  "homepage": "https://www.mixedbread.com/",
+  "author": "Ryandonofrio <ryandonofrio@gmail.com>",
+  "homepage": "https://www.ryan.donofr.io",
   "bugs": {
-    "url": "https://github.com/mixedbread-ai/mgrep/issues"
+    "url": "https://github.com/ryandonofrio/osgrep/issues"
   },
   "repository": {
     "type": "git",
-    "url": "github:mixedbread-ai/mgrep"
+    "url": "github:ryandonofrio/osgrep"
   },
   "main": "index.js",
   "bin": {
-    "mgrep": "dist/index.js"
+    "osgrep": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -26,11 +26,9 @@
     "prepare": "npm run build"
   },
   "keywords": [
-    "mixedbread",
-    "search",
+    "osgrep",
     "grep",
     "glob",
-    "search",
     "search"
   ],
   "files": [
@@ -38,23 +36,27 @@
     "README.md"
   ],
   "license": "Apache-2.0",
-  "description": "",
+  "description": "Local grep-like search tool for your codebase.",
   "dependencies": {
     "@clack/prompts": "^0.11.0",
-    "@mixedbread/sdk": "^0.43.0",
-    "better-auth": "^1.3.34",
+    "@huggingface/transformers": "^3.8.0",
+    "@lancedb/lancedb": "^0.22.3",
+    "apache-arrow": "^21.1.0",
     "chalk": "^5.6.2",
     "commander": "^14.0.2",
     "ignore": "^7.0.5",
+    "onnxruntime-node": "^1.23.2",
     "open": "^10.2.0",
     "ora": "^5.4.1",
     "p-limit": "^3.1.0",
+    "uuid": "^9.0.1",
     "yocto-spinner": "^1.0.0",
     "zod": "^4.1.12"
   },
   "devDependencies": {
     "@biomejs/biome": "2.3.4",
-    "@types/node": "^24.10.0",
+    "@types/node": "^24.10.1",
+    "@types/uuid": "^9.0.8",
     "husky": "^9.1.7",
     "typescript": "^5.9.3"
   }

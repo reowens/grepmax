@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-DEBUG_LOG_FILE = Path(os.environ.get("MGREP_WATCH_KILL_LOG", "/tmp/mgrep-watch-kill.log"))
+DEBUG_LOG_FILE = Path(os.environ.get("OSGREP_WATCH_KILL_LOG", "/tmp/osgrep-watch-kill.log"))
 
 
 def debug_log(message: str) -> None:
@@ -31,17 +31,17 @@ def read_hook_input() -> dict[str, object] | None:
 
 
 if __name__ == "__main__":
-    debug_log("Killing mgrep watch process")
+    debug_log("Killing osgrep watch process")
     payload = read_hook_input()
 
-    pid_file = f"/tmp/mgrep-watch-pid-{payload.get('session_id')}.txt"
+    pid_file = f"/tmp/osgrep-watch-pid-{payload.get('session_id')}.txt"
     if not os.path.exists(pid_file):
         debug_log(f"PID file not found: {pid_file}")
         sys.exit(1)
     pid = int(open(pid_file).read().strip())
-    debug_log(f"Killing mgrep watch process: {pid}")
+    debug_log(f"Killing osgrep watch process: {pid}")
     os.kill(pid, signal.SIGKILL)
-    debug_log(f"Killed mgrep watch process: {pid}")
+    debug_log(f"Killed osgrep watch process: {pid}")
     os.remove(pid_file)
     debug_log(f"Removed PID file: {pid_file}")
     sys.exit(0)

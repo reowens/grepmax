@@ -8,7 +8,7 @@ const shell =
 
 function installPlugin() {
   exec(
-    "claude plugin marketplace add mixedbread-ai/mgrep",
+    "claude plugin marketplace add ryandonofrio/osgrep",
     { shell, env: process.env },
     (error) => {
       if (error) {
@@ -19,10 +19,10 @@ function installPlugin() {
         process.exit(1);
       }
       console.log(
-        "Successfully added the mixedbread-ai/mgrep plugin to the marketplace",
+        "Successfully added the ryandonofrio/osgrep plugin to the marketplace",
       );
       exec(
-        "claude plugin install mgrep",
+        "claude plugin install osgrep",
         { shell, env: process.env },
         (error) => {
           if (error) {
@@ -32,7 +32,7 @@ function installPlugin() {
             );
             process.exit(1);
           }
-          console.log("Successfully installed the mgrep plugin");
+          console.log("Successfully installed the osgrep plugin");
         },
       );
     },

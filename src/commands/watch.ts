@@ -33,7 +33,7 @@ export const watch = new Command("watch")
           await store.create({
             name: options.store,
             description:
-              "mgrep store - Mixedbreads multimodal multilingual magic search",
+              "osgrep store - Mixedbreads multimodal multilingual magic search",
           });
         }
         const result = await initialSync(
@@ -62,7 +62,7 @@ export const watch = new Command("watch")
       }
 
       console.log("Watching for file changes in", watchRoot);
-      fileSystem.loadMgrepignore(watchRoot);
+      fileSystem.loadOsgrepignore(watchRoot);
       fs.watch(watchRoot, { recursive: true }, (eventType, rawFilename) => {
         const filename = rawFilename?.toString();
         if (!filename) {

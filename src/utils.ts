@@ -1,9 +1,7 @@
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { cancel, confirm, isCancel } from "@clack/prompts";
 import pLimit from "p-limit";
-import { loginAction } from "./commands/login";
 import type { FileSystem } from "./lib/file";
 import type { Store } from "./lib/store";
 import type {
@@ -11,7 +9,7 @@ import type {
   InitialSyncResult,
 } from "./lib/sync-helpers";
 
-import { getStoredToken } from "./token";
+
 
 export function computeBufferHash(buffer: Buffer): string {
   return createHash("sha256").update(buffer).digest("hex");
@@ -56,29 +54,8 @@ export async function listStoreFileHashes(
   return byExternalId;
 }
 
-export async function ensureAuthenticated(): Promise<void> {
-  // Check if API key is set via environment variable
-  if (process.env.MXBAI_API_KEY) {
-    return;
-  }
-
-  // Check for stored OAuth token
-  const token = await getStoredToken();
-  if (token) {
-    return;
-  }
-
-  const shouldLogin = await confirm({
-    message: "You are not logged in. Would you like to login now?",
-    initialValue: true,
-  });
-
-  if (isCancel(shouldLogin) || !shouldLogin) {
-    cancel("Operation cancelled");
-    process.exit(0);
-  }
-
-  await loginAction();
+export function ensureAuthenticated(): Promise<void> {
+  return Promise.resolve();
 }
 
 export async function uploadFile(

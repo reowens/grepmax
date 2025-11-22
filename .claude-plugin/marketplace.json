@@ -1,20 +1,22 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "Mixedbread-Grep",
+  "name": "osgrep",
   "owner": {
-    "name": "Mixedbread",
-    "email": "support@mixedbread.ai"
+    "name": "Ryan D'Onofrio",
+    "email": "ryandonofrio@gmail.com"
   },
   "plugins": [
     {
-      "name": "mgrep",
-      "source": "./plugins/mgrep",
-      "description": "Search your local files using Mixedbread",
+      "name": "osgrep",
+      "source": "./plugins/osgrep",
+      "description": "Search your local files using osgrep",
       "version": "0.0.0",
       "author": {
-        "name": "Joel Dierkes"
+        "name": "Ryan D'Onofrio"
       },
-      "skills": ["./skills/mgrep"]
+      "skills": [
+        "./skills/osgrep"
+      ]
     }
   ]
 }

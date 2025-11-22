@@ -1,9 +1,9 @@
 {
-  "name": "mgrep",
-  "description": "Search your local files using Mixedbread",
+  "name": "osgrep",
+  "description": "Search your local files using osgrep",
   "version": "0.0.0",
   "author": {
-    "name": "Joel Dierkes"
+    "name": "Ryan D'Onofrio"
   },
   "hooks": "./hooks/hook.json"
 }

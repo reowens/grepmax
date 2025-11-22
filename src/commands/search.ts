@@ -80,13 +80,13 @@ function formatChunk(chunk: ChunkType, show_content: boolean) {
       const end_line =
         start_line + (chunk.generated_metadata?.num_lines as number);
       line_range = `:${start_line}-${end_line}`;
-      content = show_content ? chunk.text : "";
+      content = show_content ? (chunk.text ?? "") : "";
       break;
     }
     case "image_url":
       line_range =
         chunk.generated_metadata?.type === "pdf"
-          ? `, page ${chunk.chunk_index + 1}`
+          ? `, page ${(chunk.chunk_index ?? 0) + 1}`
           : "";
       break;
     case "audio_url":
