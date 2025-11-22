@@ -211,7 +211,7 @@ export async function initialSync(
   let processed = 0;
   let uploaded = 0;
 
-  const concurrency = 10;
+  const concurrency = Math.max(1, Math.floor(os.cpus().length / 2));
   const limit = pLimit(concurrency);
 
   await Promise.all(

@@ -28,7 +28,7 @@ export const watch = new Command("watch")
 
       const { spinner, onProgress } = createIndexingSpinner(
         watchRoot,
-        "Indexing Local Index...",
+        "Indexing...",
       );
       try {
         try {

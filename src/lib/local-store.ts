@@ -41,7 +41,9 @@ export class LocalStore implements Store {
     private readonly MAX_WORKER_RSS = 1.5 * 1024 * 1024 * 1024; // restart only when truly high to avoid churn
     private embedQueue: Promise<void> = Promise.resolve();
     private chunker = new TreeSitterChunker();
-    private readonly VECTOR_DIMENSIONS = 128;
+    private readonly VECTOR_DIMENSIONS = 512;
+    private readonly queryPrefix =
+        "Represent this sentence for searching relevant passages: ";
 
     constructor() {
         this.initializeWorker();
@@ -67,14 +69,16 @@ export class LocalStore implements Store {
         const { workerPath, execArgv } = this.getWorkerConfig();
         this.worker = new Worker(workerPath, { execArgv });
         this.worker.on("message", (message) => {
-            const { id, vector, vectors, error, memory } = message;
+            const { id, vector, vectors, scores, error, memory } = message;
             const pending = this.pendingRequests.get(id);
 
             if (pending) {
                 if (error) {
                     pending.reject(new Error(error));
-                } else if (vectors) {
+                } else if (vectors !== undefined) {
                     pending.resolve(vectors);
+                } else if (scores !== undefined) {
+                    pending.resolve(scores);
                 } else {
                     pending.resolve(vector);
                 }
@@ -122,6 +126,17 @@ export class LocalStore implements Store {
         // Wrapper for single text to maintain compatibility where needed
         const results = await this.getEmbeddings([text]);
         return results[0];
+    }
+
+    private async rerankDocuments(query: string, documents: string[]): Promise<number[]> {
+        return this.enqueueEmbedding(
+            () =>
+                new Promise((resolve, reject) => {
+                    const id = uuidv4();
+                    this.pendingRequests.set(id, { resolve: resolve as any, reject });
+                    this.worker.postMessage({ id, rerank: { query, documents } });
+                }),
+        ) as Promise<number[]>;
     }
 
     private async getDb(): Promise<lancedb.Connection> {
@@ -224,34 +239,37 @@ export class LocalStore implements Store {
 
         const texts = chunks.map(c => c.content);
 
-        // Batch embedding
-        const vectors: number[][] = [];
         const BATCH_SIZE = 16;
+        const WRITE_BATCH_SIZE = 50;
+        let pendingWrites: VectorRecord[] = [];
+
         for (let i = 0; i < texts.length; i += BATCH_SIZE) {
             const batchTexts = texts.slice(i, i + BATCH_SIZE);
             const batchVectors = await this.getEmbeddings(batchTexts);
-            vectors.push(...batchVectors);
+            for (let j = 0; j < batchVectors.length; j++) {
+                const chunkIndex = i + j;
+                const chunk = chunks[chunkIndex];
+                const vector = batchVectors[j];
+
+                pendingWrites.push({
+                    id: uuidv4(),
+                    path: options.metadata?.path || "",
+                    hash: options.metadata?.hash || "",
+                    content: chunk.content,
+                    start_line: chunk.startLine,
+                    end_line: chunk.endLine,
+                    vector,
+                });
+
+                if (pendingWrites.length >= WRITE_BATCH_SIZE) {
+                    await table.add(pendingWrites);
+                    pendingWrites = [];
+                }
+            }
         }
 
-        const data: VectorRecord[] = [];
-
-        for (let i = 0; i < chunks.length; i++) {
-            const chunk = chunks[i];
-            const vector = vectors[i];
-
-            data.push({
-                id: uuidv4(),
-                path: options.metadata?.path || "",
-                hash: options.metadata?.hash || "",
-                content: chunk.content,
-                start_line: chunk.startLine,
-                end_line: chunk.endLine,
-                vector,
-            });
-        }
-
-        if (data.length > 0) {
-            await table.add(data);
+        if (pendingWrites.length > 0) {
+            await table.add(pendingWrites);
         }
     }
 
@@ -267,32 +285,15 @@ export class LocalStore implements Store {
     async createVectorIndex(storeId: string): Promise<void> {
         const table = await this.getTable(storeId);
         try {
-            // Try to create an optimized IVF_PQ index (requires 256+ chunks)
-            await table.createIndex("vector", { type: "ivf_pq" } as any);
+            await table.createIndex("vector", { type: "ivf_flat" } as any);
         } catch (e) {
-            // Check if it's the "not enough rows" error - this is expected for small repos
-            const errorMessage = e instanceof Error ? e.message : String(e);
-            const isNotEnoughRows = errorMessage.includes("Not enough rows to train PQ") || 
-                                   errorMessage.includes("Requires 256 rows");
-            
-            if (isNotEnoughRows) {
-                // Silently fall back to a simpler index for small repos
+            const fallbackMsg = e instanceof Error ? e.message : String(e);
+            if (!fallbackMsg.includes("already exists")) {
                 try {
                     await table.createIndex("vector");
                 } catch (fallbackError) {
-                    // Only warn if both attempts failed for a different reason
-                    const fallbackMsg = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
-                    if (!fallbackMsg.includes("already exists")) {
-                        console.warn("Note: Using basic vector index (repo has < 256 chunks). Performance will improve as you add more files.");
-                    }
-                }
-            } else {
-                // For other errors, try the simple index and warn if that fails too
-                try {
-                    await table.createIndex("vector");
-                } catch (fallbackError) {
-                    const fallbackMsg = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
-                    if (!fallbackMsg.includes("already exists")) {
+                    const fallbackErr = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+                    if (!fallbackErr.includes("already exists")) {
                         console.warn("Failed to create vector index:", fallbackError);
                     }
                 }
@@ -313,9 +314,9 @@ export class LocalStore implements Store {
         } catch {
             return { data: [] };
         }
-        const queryVector = await this.getEmbedding(query);
-        const k = 60; // RRF constant
-        const limit = 50; // Fetch more candidates for fusion
+        const queryVector = await this.getEmbedding(this.queryPrefix + query);
+        const limit = 50; // fetch more candidates for reranking
+        const finalLimit = top_k ?? 10;
         const pathFilter =
             (_filters as any)?.all?.find(
                 (f: any) => f?.key === "path" && f?.operator === "starts_with",
@@ -325,63 +326,42 @@ export class LocalStore implements Store {
             return typeof r.path === "string" && r.path.startsWith(pathFilter);
         };
 
-        // 1. Vector Search
         const vectorResults = (await table
             .search(queryVector)
             .limit(limit)
             .toArray()).filter(matchesFilter);
 
-        // 2. FTS Search
-        let ftsResults: any[] = [];
-        try {
-            ftsResults = (await table
-                .search(query)
-                .limit(limit)
-                .toArray()).filter(matchesFilter);
-        } catch (e) {
-            // FTS might fail if not indexed
+        if (vectorResults.length === 0) {
+            return { data: [] };
         }
 
-        // 3. RRF Fusion
-        const scores = new Map<string, number>();
-        const contentMap = new Map<string, any>();
+        let rerankScores: number[] | null = null;
+        try {
+            const docs = vectorResults.map((r) => String(r.content ?? ""));
+            rerankScores = await this.rerankDocuments(query, docs);
+        } catch (e) {
+            console.warn("Reranker failed; falling back to vector order:", e);
+        }
 
-        // Process Vector Results
-        vectorResults.forEach((r, i) => {
-            const id = r.id as string; // Assuming id is unique
-            // If id is missing, use path+start_line
-            const key = id || `${r.path}:${r.start_line}`;
-            contentMap.set(key, r);
-            const score = 1 / (k + i + 1);
-            scores.set(key, (scores.get(key) || 0) + score);
-        });
+        const scoredResults = vectorResults.map((r, i) => ({
+            record: r,
+            score: rerankScores?.[i] ?? (limit - i) / limit,
+        }));
 
-        // Process FTS Results
-        ftsResults.forEach((r, i) => {
-            const id = r.id as string;
-            const key = id || `${r.path}:${r.start_line}`;
-            if (!contentMap.has(key)) contentMap.set(key, r);
-            const score = 1 / (k + i + 1);
-            scores.set(key, (scores.get(key) || 0) + score);
-        });
+        scoredResults.sort((a, b) => b.score - a.score);
 
-        // Sort by RRF score
-        const sortedKeys = Array.from(scores.keys()).sort((a, b) => (scores.get(b) || 0) - (scores.get(a) || 0));
-        const topKeys = sortedKeys.slice(0, top_k || 10);
+        const limited = scoredResults.slice(0, finalLimit);
 
-        const chunks: ChunkType[] = topKeys.map((key) => {
-            const r = contentMap.get(key);
-            return {
-                type: "text",
-                text: r.content as string,
-                score: scores.get(key) || 0,
-                metadata: { path: r.path as string, hash: (r.hash as string) || "" },
-                generated_metadata: {
-                    start_line: r.start_line as number,
-                    num_lines: (r.end_line as number) - (r.start_line as number),
-                },
-            };
-        });
+        const chunks: ChunkType[] = limited.map(({ record, score }) => ({
+            type: "text",
+            text: record.content as string,
+            score,
+            metadata: { path: record.path as string, hash: (record.hash as string) || "" },
+            generated_metadata: {
+                start_line: record.start_line as number,
+                num_lines: (record.end_line as number) - (record.start_line as number),
+            },
+        }));
 
         return { data: chunks };
     }

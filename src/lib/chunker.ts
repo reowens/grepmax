@@ -29,7 +29,8 @@ export class TreeSitterChunker {
     private languages: Map<string, any> = new Map();
     private initialized = false;
     private readonly MAX_CHUNK_LINES = 150;
-    private readonly MAX_CHUNK_CHARS = 2000;
+    private readonly MAX_CHUNK_CHARS = 1500;
+    private readonly CHUNK_OVERLAP_CHARS = 200;
 
     async init() {
         if (this.initialized) return;
@@ -135,9 +136,12 @@ export class TreeSitterChunker {
         const visit = (node: any) => {
             if (targetTypes.has(node.type)) {
                 const chunkType: Chunk["type"] = node.type.includes("class") ? "class" : "function";
+                const commentNode = this.getLeadingComment(node);
+                const leadingText = commentNode ? `${commentNode.text}\n` : "";
+                const startLine = commentNode ? commentNode.startPosition.row : node.startPosition.row;
                 chunks.push({
-                    content: node.text,
-                    startLine: node.startPosition.row,
+                    content: `${leadingText}${node.text}`,
+                    startLine,
                     endLine: node.endPosition.row,
                     type: chunkType,
                 });
@@ -187,39 +191,45 @@ export class TreeSitterChunker {
             return [chunk];
         }
 
-        const capped: Chunk[] = [];
-        const maxLines = Math.min(this.MAX_CHUNK_LINES, 120);
-        let current: string[] = [];
+        const segments: Chunk[] = [];
+        const maxChars = this.MAX_CHUNK_CHARS;
+        const overlap = this.CHUNK_OVERLAP_CHARS;
+        let offset = 0;
         let startLine = chunk.startLine;
 
-        const pushSegment = (segmentLines: string[]) => {
-            if (segmentLines.length === 0) return;
-            let contentPart = segmentLines.join("\n");
-            if (contentPart.length > this.MAX_CHUNK_CHARS) {
-                contentPart = contentPart.slice(0, this.MAX_CHUNK_CHARS);
-            }
-            const lineCount = contentPart.split("\n").length;
-            capped.push({
+        while (offset < chunk.content.length) {
+            const end = Math.min(chunk.content.length, offset + maxChars);
+            const slice = chunk.content.slice(offset, end);
+            const sliceLineCount = slice.split("\n").length;
+
+            segments.push({
                 ...chunk,
-                content: contentPart,
+                content: slice,
                 startLine,
-                endLine: startLine + lineCount,
+                endLine: startLine + sliceLineCount,
             });
-            startLine += segmentLines.length;
-        };
 
-        for (const line of lines) {
-            if (current.length >= maxLines) {
-                pushSegment(current);
-                current = [];
-            }
-            current.push(line);
+            if (end >= chunk.content.length) break;
+
+            const overlapText = slice.slice(Math.max(0, slice.length - overlap));
+            const overlapLines = Math.max(0, overlapText.split("\n").length - 1);
+            offset += maxChars - overlap;
+            startLine += sliceLineCount - overlapLines;
         }
 
-        if (current.length > 0) {
-            pushSegment(current);
-        }
+        return segments;
+    }
 
-        return capped;
+    private getLeadingComment(node: any): any | null {
+        let sibling = node.previousSibling;
+        while (sibling && typeof sibling.text === "string" && sibling.text.trim() === "") {
+            sibling = sibling.previousSibling;
+        }
+        if (!sibling) return null;
+        const commentTypes = new Set(["comment", "comment_block", "string_literal", "string"]);
+        if (commentTypes.has(sibling.type)) {
+            return sibling;
+        }
+        return null;
     }
 }
