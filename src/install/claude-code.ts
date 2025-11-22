@@ -14,9 +14,13 @@ function installPlugin() {
         console.error("❌ Error adding marketplace:");
         console.error(error);
         console.error("\nTroubleshooting:");
-        console.error("- Ensure you have Claude Code version 2.0.36 or higher installed");
+        console.error(
+          "- Ensure you have Claude Code version 2.0.36 or higher installed",
+        );
         console.error("- Try running: claude plugin marketplace list");
-        console.error("- Check the Claude Code documentation: https://code.claude.com/docs");
+        console.error(
+          "- Check the Claude Code documentation: https://code.claude.com/docs",
+        );
         process.exit(1);
       }
       console.log("✅ Successfully added the osgrep marketplace");
@@ -29,7 +33,9 @@ function installPlugin() {
             console.error(error);
             process.exit(1);
           }
-          console.log("✅ Successfully installed the osgrep plugin for Claude Code");
+          console.log(
+            "✅ Successfully installed the osgrep plugin for Claude Code",
+          );
           console.log("\nNext steps:");
           console.log("1. Restart Claude Code if it's running");
           console.log(

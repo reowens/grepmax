@@ -48,17 +48,7 @@ Today, osgrep works great on: code and text documents.
 More agents coming soon (Codex, Cursor, Windsurf, etc.).
 
 
-## When to use what
-
-`osgrep` complements `grep`. Use both.
-
-| Use `grep` (or `ripgrep`) for... | Use `osgrep` for... |
-| --- | --- |
-| **Exact Matches** | **Intent Search** |
-| Symbol tracing, Refactoring, Regex | Code exploration, Feature discovery, Onboarding |
-
-
-## Commands at a Glance
+## Commands =
 
 | Command | Purpose |
 | --- | --- |
