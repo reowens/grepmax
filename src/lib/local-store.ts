@@ -40,6 +40,7 @@ export class LocalStore implements Store {
     private readonly MAX_WORKER_RSS = 1.5 * 1024 * 1024 * 1024; // restart only when truly high to avoid churn
     private embedQueue: Promise<void> = Promise.resolve();
     private chunker = new TreeSitterChunker();
+    private readonly VECTOR_DIMENSIONS = 128;
 
     constructor() {
         this.initializeWorker();
@@ -47,16 +48,26 @@ export class LocalStore implements Store {
         this.chunker.init().catch(err => console.error("Failed to init chunker:", err));
     }
 
+    private getWorkerConfig(): { workerPath: string; execArgv: string[] } {
+        const tsWorkerPath = path.join(__dirname, "worker.ts");
+        const jsWorkerPath = path.join(__dirname, "worker.js");
+        const hasTsWorker = fs.existsSync(tsWorkerPath);
+        const hasJsWorker = fs.existsSync(jsWorkerPath);
+        const runningTs = path.extname(__filename) === ".ts";
+        const isDev = (runningTs && hasTsWorker) || (hasTsWorker && !hasJsWorker);
+
+        if (isDev) {
+            return { workerPath: tsWorkerPath, execArgv: ["-r", "ts-node/register"] };
+        }
+        return { workerPath: jsWorkerPath, execArgv: [] };
+    }
+
     private initializeWorker() {
-        this.worker = new Worker(path.join(__dirname, "worker.js"));
+        const { workerPath, execArgv } = this.getWorkerConfig();
+        this.worker = new Worker(workerPath, { execArgv });
         this.worker.on("message", (message) => {
             const { id, vector, vectors, error, memory } = message;
             const pending = this.pendingRequests.get(id);
-
-            if (memory && memory.rss > this.MAX_WORKER_RSS) {
-                console.warn(`Worker memory usage high (${Math.round(memory.rss / 1024 / 1024)}MB). Restarting...`);
-                this.restartWorker();
-            }
 
             if (pending) {
                 if (error) {
@@ -68,23 +79,24 @@ export class LocalStore implements Store {
                 }
                 this.pendingRequests.delete(id);
             }
+
+            if (memory && memory.rss > this.MAX_WORKER_RSS) {
+                console.warn(`Worker memory usage high (${Math.round(memory.rss / 1024 / 1024)}MB). Restarting...`);
+                this.restartWorker();
+            }
         });
     }
 
     private async restartWorker() {
-        // Terminate old worker
-        await this.worker.terminate();
-
-        // Re-initialize
-        this.initializeWorker();
-
-        // Note: Any pending requests that were IN FLIGHT in the old worker will hang or need to be rejected.
-        // The 'terminate' call will not trigger the 'message' handler for them.
-        // We should reject all pending requests.
-        for (const [, { reject }] of this.pendingRequests) {
-            reject(new Error("Worker restarted due to memory limit"));
-        }
+        // Reject anything still waiting on the old worker
+        const pending = Array.from(this.pendingRequests.values());
         this.pendingRequests.clear();
+        for (const { reject } of pending) {
+            reject(new Error("Worker restarted"));
+        }
+
+        await this.worker.terminate();
+        this.initializeWorker();
     }
 
     private async enqueueEmbedding<T>(fn: () => Promise<T>): Promise<T> {
@@ -126,6 +138,28 @@ export class LocalStore implements Store {
         return await db.openTable(storeId);
     }
 
+    private baseSchemaRow(): VectorRecord {
+        return {
+            id: "seed",
+            path: "",
+            content: "",
+            start_line: 0,
+            end_line: 0,
+            vector: Array(this.VECTOR_DIMENSIONS).fill(0),
+        };
+    }
+
+    private async ensureTable(storeId: string): Promise<lancedb.Table> {
+        const db = await this.getDb();
+        try {
+            return await db.openTable(storeId);
+        } catch {
+            const table = await db.createTable(storeId, [this.baseSchemaRow()]);
+            await table.delete('id = "seed"');
+            return table;
+        }
+    }
+
     async *listFiles(storeId: string): AsyncGenerator<StoreFile> {
         try {
             const table = await this.getTable(storeId);
@@ -134,7 +168,6 @@ export class LocalStore implements Store {
             const results = await table
                 .query()
                 .select(["path"])
-                .limit(10000) // TODO: pagination
                 .toArray();
 
             const seen = new Set<string>();
@@ -157,25 +190,7 @@ export class LocalStore implements Store {
         file: File | ReadableStream | any,
         options: UploadFileOptions,
     ): Promise<void> {
-        const db = await this.getDb();
-        let table: lancedb.Table;
-        try {
-            table = await db.openTable(storeId);
-        } catch {
-            // Create table if not exists
-            // 128 dim vector
-            table = await db.createTable(storeId, [
-                {
-                    id: "test",
-                    path: "test",
-                    content: "test",
-                    start_line: 0,
-                    end_line: 0,
-                    vector: Array(128).fill(0),
-                },
-            ]);
-            await table.delete('id = "test"');
-        }
+        const table = await this.ensureTable(storeId);
 
         // Read file content (prefer provided content to avoid double reads)
         let content = options.content ?? "";
@@ -243,6 +258,19 @@ export class LocalStore implements Store {
             await table.createIndex("content");
         } catch (e) {
             console.warn("Failed to create FTS index (might already exist):", e);
+        }
+    }
+
+    async createVectorIndex(storeId: string): Promise<void> {
+        const table = await this.getTable(storeId);
+        try {
+            await table.createIndex("vector", { type: "ivf_pq" } as any);
+        } catch (e) {
+            try {
+                await table.createIndex("vector");
+            } catch (fallbackError) {
+                console.warn("Failed to create vector index (might already exist):", e || fallbackError);
+            }
         }
     }
 
@@ -332,12 +360,20 @@ export class LocalStore implements Store {
         return { data: chunks };
     }
 
-    async retrieve(_storeId: string): Promise<unknown> {
-        return {};
+    async retrieve(storeId: string): Promise<unknown> {
+        const table = await this.getTable(storeId);
+        return typeof (table as any).info === "function" ? (table as any).info?.() : true;
     }
 
-    async create(_options: CreateStoreOptions): Promise<unknown> {
-        return {};
+    async create(options: CreateStoreOptions): Promise<unknown> {
+        const table = await this.ensureTable(options.name);
+        return typeof (table as any).info === "function" ? (table as any).info?.() : true;
+    }
+
+    async deleteFile(storeId: string, filePath: string): Promise<void> {
+        const table = await this.getTable(storeId);
+        const safePath = filePath.replace(/'/g, "''");
+        await table.delete(`path = '${safePath}'`);
     }
 
     async ask(

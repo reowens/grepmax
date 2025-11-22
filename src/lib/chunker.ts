@@ -28,6 +28,8 @@ export class TreeSitterChunker {
     private parser: any = null;
     private languages: Map<string, any> = new Map();
     private initialized = false;
+    private readonly MAX_CHUNK_LINES = 150;
+    private readonly MAX_CHUNK_CHARS = 2000;
 
     async init() {
         if (this.initialized) return;
@@ -122,41 +124,37 @@ export class TreeSitterChunker {
 
         const chunks: Chunk[] = [];
 
-        // Simple traversal to find top-level functions and classes
-        // TODO: Make this recursive or smarter based on language
-        // For now, we iterate over children of root
+        const targetTypes = new Set([
+            "function_declaration",
+            "function_definition",
+            "method_definition",
+            "class_declaration",
+            "class_definition",
+        ]);
 
-        for (const child of tree.rootNode.children) {
-            if (child.type === 'function_declaration' ||
-                child.type === 'class_declaration' ||
-                child.type === 'method_definition' ||
-                child.type === 'function_definition' || // python
-                child.type === 'class_definition' // python
-            ) {
+        const visit = (node: any) => {
+            if (targetTypes.has(node.type)) {
+                const chunkType: Chunk["type"] = node.type.includes("class") ? "class" : "function";
                 chunks.push({
-                    content: child.text,
-                    startLine: child.startPosition.row,
-                    endLine: child.endPosition.row,
-                    type: child.type.includes('class') ? 'class' : 'function'
+                    content: node.text,
+                    startLine: node.startPosition.row,
+                    endLine: node.endPosition.row,
+                    type: chunkType,
                 });
-            } else {
-                // For other top level nodes, maybe group them?
-                // For now, let's just take them if they are substantial
-                if (child.text.length > 50) {
-                    chunks.push({
-                        content: child.text,
-                        startLine: child.startPosition.row,
-                        endLine: child.endPosition.row,
-                        type: 'other'
-                    });
-                }
             }
-        }
+
+            const children = node.namedChildren ?? node.children ?? [];
+            for (const child of children) {
+                visit(child);
+            }
+        };
+
+        visit(tree.rootNode);
 
         // If no chunks found (e.g. file with just imports or small code), fallback
         if (chunks.length === 0) return this.fallbackChunk(content);
 
-        return chunks;
+        return chunks.flatMap((chunk) => this.capChunk(chunk));
     }
 
     private fallbackChunk(content: string): Chunk[] {
@@ -171,14 +169,70 @@ export class TreeSitterChunker {
                 continue;
             }
             const numLines = p.split("\n").length;
-            chunks.push({
+            const chunk: Chunk = {
                 content: p,
                 startLine: lineOffset,
                 endLine: lineOffset + numLines,
                 type: 'block'
-            });
+            };
+            chunks.push(...this.capChunk(chunk));
             lineOffset += numLines;
         }
         return chunks;
+    }
+
+    private capChunk(chunk: Chunk): Chunk[] {
+        const lines = chunk.content.split("\n");
+        if (lines.length <= this.MAX_CHUNK_LINES && chunk.content.length <= this.MAX_CHUNK_CHARS) {
+            return [chunk];
+        }
+
+        const capped: Chunk[] = [];
+        const maxLines = Math.min(this.MAX_CHUNK_LINES, 120);
+        const maxChars = Math.min(this.MAX_CHUNK_CHARS, 1800);
+        let current: string[] = [];
+        let currentChars = 0;
+        let startLine = chunk.startLine;
+
+        const pushSegment = (contentPart: string, lineCount: number) => {
+            if (!contentPart) return;
+            if (contentPart.length <= maxChars) {
+                capped.push({
+                    ...chunk,
+                    content: contentPart,
+                    startLine,
+                    endLine: startLine + lineCount,
+                });
+                return;
+            }
+
+            for (let i = 0; i < contentPart.length; i += maxChars) {
+                const slice = contentPart.slice(i, i + maxChars);
+                capped.push({
+                    ...chunk,
+                    content: slice,
+                    startLine,
+                    endLine: startLine + lineCount,
+                });
+            }
+        };
+
+        for (const line of lines) {
+            const nextChars = currentChars + line.length + 1; // include newline
+            if (current.length > 0 && (current.length >= maxLines || nextChars > maxChars)) {
+                pushSegment(current.join("\n"), current.length);
+                startLine += current.length;
+                current = [];
+                currentChars = 0;
+            }
+            current.push(line);
+            currentChars += line.length + 1;
+        }
+
+        if (current.length > 0) {
+            pushSegment(current.join("\n"), current.length);
+        }
+
+        return capped;
     }
 }

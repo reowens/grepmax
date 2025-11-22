@@ -119,4 +119,14 @@ export interface Store {
    * Create FTS index
    */
   createFTSIndex(storeId: string): Promise<void>;
+
+  /**
+   * Create vector index/optimize embeddings
+   */
+  createVectorIndex(storeId: string): Promise<void>;
+
+  /**
+   * Delete a file and its chunks
+   */
+  deleteFile(storeId: string, filePath: string): Promise<void>;
 }

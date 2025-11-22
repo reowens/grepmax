@@ -86,6 +86,19 @@ export const watch = new Command("watch")
         );
       };
 
+      const handleUnlink = async (filePath: string) => {
+        if (fileSystem.isIgnored(filePath, watchRoot)) {
+          return;
+        }
+        try {
+          await store.deleteFile(options.store, filePath);
+          metaStore.delete(filePath);
+          await metaStore.save();
+        } catch (err) {
+          console.error("Failed to delete removed file:", filePath, err);
+        }
+      };
+
       const watcher = chokidar.watch(watchRoot, {
         ignoreInitial: true,
       });
@@ -93,6 +106,7 @@ export const watch = new Command("watch")
       watcher
         .on("add", scheduleUpload)
         .on("change", scheduleUpload)
+        .on("unlink", handleUnlink)
         .on("error", (err: unknown) => {
           console.error("Watcher error:", err);
         });
