@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { program } from "commander";
 import { search } from "./commands/search";
 import { index } from "./commands/index";
+import { setup } from "./commands/setup";
 import { installClaudeCode } from "./install/claude-code";
 import { doctor } from "./commands/doctor";
 
@@ -25,6 +26,7 @@ program
 
 program.addCommand(search, { isDefault: true });
 program.addCommand(index);
+program.addCommand(setup);
 program.addCommand(installClaudeCode);
 program.addCommand(doctor);
 

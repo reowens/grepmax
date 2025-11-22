@@ -22,7 +22,7 @@ Use osgrep whenever you need to search or explore code in the project:
 
 ```bash
 osgrep "How are user authentication tokens validated?"
-osgrep "What functions handle file uploads?"
+osgrep "What functions handle file processing?"
 osgrep "Where is the database connection configured?"
 ```
 

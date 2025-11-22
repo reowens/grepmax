@@ -48,4 +48,7 @@ export const doctor = new Command("doctor")
 
     console.log(`\nSystem: ${os.platform()} ${os.arch()} | Node: ${process.version}`);
     console.log("\nIf you see ✅ everywhere, you are ready to grep.");
+    
+    // Exit cleanly
+    process.exit(0);
   });

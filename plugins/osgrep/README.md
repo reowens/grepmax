@@ -25,7 +25,7 @@ Claude can now use these semantic search queries:
 
 ```bash
 osgrep "How does authentication work?"
-osgrep "Functions that handle file uploads"
+osgrep "Functions that handle file processing"
 osgrep "Where is the database connection configured?"
 osgrep -m 10 "error handling patterns"
 ```

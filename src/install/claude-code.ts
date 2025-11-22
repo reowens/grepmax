@@ -39,7 +39,7 @@ async function installPlugin() {
     console.error("- Ensure you have Claude Code installed");
     console.error("- Try running: claude plugin list");
     console.error("- Check the Claude Code documentation: https://code.claude.com/docs");
-    console.error("- Make sure osgrep is installed globally: npm install -g @ryandonofrio/osgrep");
+    console.error("- Make sure osgrep is installed globally: npm install -g osgrep");
     process.exit(1);
   }
 }
@@ -48,4 +48,5 @@ export const installClaudeCode = new Command("install-claude-code")
   .description("Install the Claude Code plugin")
   .action(async () => {
     await installPlugin();
+    process.exit(0);
   });

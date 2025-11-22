@@ -8,14 +8,14 @@ interface IndexingSpinner {
 
 export interface InitialSyncProgress {
   processed: number;
-  uploaded: number;
+  indexed: number;
   total: number;
   filePath?: string;
 }
 
 export interface InitialSyncResult {
   processed: number;
-  uploaded: number;
+  indexed: number;
   total: number;
 }
 
@@ -52,7 +52,7 @@ export function createIndexingSpinner(
     onProgress(info) {
       const rel = formatRelativePath(root, info.filePath);
       const suffix = rel ? ` ${rel}` : "";
-      spinner.text = `Indexing files (${info.processed}/${info.total}) • uploaded ${info.uploaded}${suffix}`;
+      spinner.text = `Indexing files (${info.processed}/${info.total}) • indexed ${info.indexed}${suffix}`;
     },
   };
 }
@@ -73,5 +73,5 @@ export function formatDryRunSummary(
   }: { actionDescription: string; includeTotal?: boolean },
 ): string {
   const totalSuffix = includeTotal ? " in total" : "";
-  return `Dry run: ${actionDescription} ${result.processed} files${totalSuffix}, would have uploaded ${result.uploaded} changed or new files`;
+  return `Dry run: ${actionDescription} ${result.processed} files${totalSuffix}, would have indexed ${result.indexed} changed or new files`;
 }

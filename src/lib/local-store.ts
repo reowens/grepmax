@@ -13,7 +13,7 @@ import type {
     Store,
     StoreFile,
     StoreInfo,
-    UploadFileOptions,
+    IndexFileOptions,
 } from "./store";
 
 const DB_PATH = path.join(os.homedir(), ".osgrep", "data");
@@ -38,7 +38,7 @@ const PROFILE_ENABLED =
 
 export interface LocalStoreProfile {
     listFilesMs: number;
-    uploadCount: number;
+    indexCount: number;
     totalChunkCount: number;
     totalEmbedBatches: number;
     totalChunkTimeMs: number;
@@ -62,7 +62,7 @@ export class LocalStore implements Store {
         "Represent this sentence for searching relevant passages: ";
     private profile: LocalStoreProfile = {
         listFilesMs: 0,
-        uploadCount: 0,
+        indexCount: 0,
         totalChunkCount: 0,
         totalEmbedBatches: 0,
         totalChunkTimeMs: 0,
@@ -433,12 +433,12 @@ export class LocalStore implements Store {
         }
     }
 
-    async uploadFile(
+    async indexFile(
         storeId: string,
         file: File | ReadableStream | any,
-        options: UploadFileOptions,
+        options: IndexFileOptions,
     ): Promise<void> {
-        const fileUploadStart = PROFILE_ENABLED ? process.hrtime.bigint() : null;
+        const fileIndexStart = PROFILE_ENABLED ? process.hrtime.bigint() : null;
         let fileChunkMs = 0;
         let fileEmbedMs = 0;
         let fileDeleteMs = 0;
@@ -501,9 +501,6 @@ export class LocalStore implements Store {
         const chunkTexts = chunks.map(chunk =>
             this.formatChunkText(chunk, options.metadata?.path || ""),
         );
-        chunkTexts.forEach(text => {
-            if (text.length > 1500) console.warn(`[WARNING] Giant chunk detected: ${text.length} chars. Likely truncated!`);
-        });
 
         const BATCH_SIZE = 64;
         const WRITE_BATCH_SIZE = 50;
@@ -559,12 +556,12 @@ export class LocalStore implements Store {
             }
         }
 
-        if (PROFILE_ENABLED && fileUploadStart) {
+        if (PROFILE_ENABLED && fileIndexStart) {
             const end = process.hrtime.bigint();
-            this.profile.uploadCount += 1;
-            const total = Number(end - fileUploadStart) / 1_000_000;
+            this.profile.indexCount += 1;
+            const total = Number(end - fileIndexStart) / 1_000_000;
             console.log(
-                `[profile] upload ${options.metadata?.path ?? "unknown"} • chunks=${
+                `[profile] index ${options.metadata?.path ?? "unknown"} • chunks=${
                     chunks.length
                 } batches=${Math.ceil(chunkTexts.length / BATCH_SIZE)} ` +
                 `chunkTime=${fileChunkMs.toFixed(1)}ms embedTime=${fileEmbedMs.toFixed(1)}ms ` +

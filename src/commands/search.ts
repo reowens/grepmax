@@ -160,7 +160,7 @@ export const search: Command = new CommanderCommand("search")
               actionDescription: "would have indexed",
             }),
           );
-          return;
+          process.exit(0);
         }
       }
 
@@ -203,9 +203,12 @@ export const search: Command = new CommanderCommand("search")
       
       const response = formatSearchResponse(results, options.c);
       console.log(response);
+      
+      // Exit cleanly after successful search
+      process.exit(0);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       console.error("Failed to search:", message);
-      process.exitCode = 1;
+      process.exit(1);
     }
   });

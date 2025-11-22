@@ -59,7 +59,7 @@ export const index = new Command("index")
         
         if (options.dryRun) {
           spinner.succeed(
-            `Dry run complete (${result.processed}/${result.total}) • would have uploaded ${result.uploaded}`,
+            `Dry run complete (${result.processed}/${result.total}) • would have indexed ${result.indexed}`,
           );
           if (
             PROFILE_ENABLED &&
@@ -73,7 +73,7 @@ export const index = new Command("index")
               includeTotal: true,
             }),
           );
-          return;
+          process.exit(0);
         }
 
         // Wait for all indexing to complete
@@ -87,7 +87,7 @@ export const index = new Command("index")
         }
         
         spinner.succeed(
-          `Indexing complete (${result.processed}/${result.total}) • uploaded ${result.uploaded}`,
+          `Indexing complete (${result.processed}/${result.total}) • indexed ${result.indexed}`,
         );
         if (
           PROFILE_ENABLED &&
@@ -95,6 +95,9 @@ export const index = new Command("index")
         ) {
           console.log("[profile] local store:", (store as any).getProfile());
         }
+        
+        // Exit cleanly after successful indexing
+        process.exit(0);
       } catch (e) {
         spinner.fail("Indexing failed");
         throw e;
@@ -102,6 +105,6 @@ export const index = new Command("index")
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       console.error("Failed to index:", message);
-      process.exitCode = 1;
+      process.exit(1);
     }
   });

@@ -27,7 +27,7 @@ const cases: EvalCase[] = [
     {
         query: "What limits sync concurrency?",
         expectedPath: "src/utils.ts",
-        note: "p-limit cap in sync/upload logic.",
+        note: "p-limit cap in sync/indexing logic.",
     },
     {
         query: "How is the LanceDB vector index created?",
@@ -162,9 +162,9 @@ const cases: EvalCase[] = [
         note: "formatDryRunSummary phrasing.",
     },
     {
-        query: "skip empty files during upload",
+        query: "skip empty files during indexing",
         expectedPath: "src/utils.ts",
-        note: "Zero-byte guard before upload.",
+        note: "Zero-byte guard before indexing.",
     },
     {
         query: "MetaStore caching hashes",

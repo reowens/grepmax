@@ -23,7 +23,7 @@ interface IndexingProfile {
   metaSaveCount: number;
   metaSaveSkipped: boolean;
   processed: number;
-  uploaded: number;
+  indexed: number;
 }
 
 function now(): bigint {
@@ -110,7 +110,7 @@ export async function listStoreFileHashes(
   return byExternalId;
 }
 
-export async function uploadFile(
+export async function indexFile(
   store: Store,
   storeId: string,
   filePath: string,
@@ -120,7 +120,7 @@ export async function uploadFile(
   preComputedBuffer?: Buffer,
   preComputedHash?: string,
 ): Promise<boolean> {
-  const uploadStart = PROFILE_ENABLED ? now() : null;
+  const indexStart = PROFILE_ENABLED ? now() : null;
   let buffer: Buffer;
   let hash: string;
 
@@ -155,9 +155,9 @@ export async function uploadFile(
   };
 
   try {
-    await store.uploadFile(storeId, contentString, options);
+    await store.indexFile(storeId, contentString, options);
   } catch (_err) {
-    await store.uploadFile(
+    await store.indexFile(
       storeId,
       new File([new Uint8Array(buffer)], fileName, { type: "text/plain" }),
       options,
@@ -170,8 +170,8 @@ export async function uploadFile(
     // The caller (initialSync) is responsible for periodic or final saves.
   }
 
-  if (PROFILE_ENABLED && uploadStart && profile) {
-    profile.sections.upload = (profile.sections.upload ?? 0) + toMs(uploadStart);
+  if (PROFILE_ENABLED && indexStart && profile) {
+    profile.sections.index = (profile.sections.index ?? 0) + toMs(indexStart);
   }
 
   return true;
@@ -197,7 +197,7 @@ export async function initialSync(
         metaSaveSkipped: SKIP_META_SAVE,
         metaFileSize: undefined,
         processed: 0,
-        uploaded: 0,
+        indexed: 0,
       }
     : undefined;
 
@@ -274,7 +274,7 @@ export async function initialSync(
   }
   const total = repoFiles.length;
   let processed = 0;
-  let uploaded = 0;
+  let indexed = 0;
   if (PROFILE_ENABLED && profile) {
     profile.processed = total;
   }
@@ -301,31 +301,31 @@ export async function initialSync(
           }
 
           processed += 1;
-          const shouldUpload =
+          const shouldIndex =
             storeIsEmpty || !existingHash || existingHash !== hash;
 
-          if (dryRun && shouldUpload) {
-            console.log("Dry run: would have uploaded", filePath);
-            uploaded += 1;
-          } else if (shouldUpload) {
-            const didUpload = await uploadFile(
+          if (dryRun && shouldIndex) {
+            console.log("Dry run: would have indexed", filePath);
+            indexed += 1;
+          } else if (shouldIndex) {
+            const didIndex = await indexFile(
               store,
               storeId,
               filePath,
               path.basename(filePath),
-              metaStore, // Pass metaStore to update it after upload
+              metaStore, // Pass metaStore to update it after indexing
               profile,
               buffer,
               hash,
             );
-            if (didUpload) {
-              uploaded += 1;
+            if (didIndex) {
+              indexed += 1;
               
-              // Periodic meta save (every 50 uploads) to avoid data loss on crash
+              // Periodic meta save (every 50 files) to avoid data loss on crash
               // but avoid O(n^2) writes.
-              if (metaStore && !SKIP_META_SAVE && uploaded % 50 === 0) {
+              if (metaStore && !SKIP_META_SAVE && indexed % 50 === 0) {
                 const saveStart = PROFILE_ENABLED ? now() : null;
-                // We don't await this to avoid blocking the upload pipeline
+                // We don't await this to avoid blocking the indexing pipeline
                 // It might mean concurrent saves, but that's acceptable for the meta file
                 metaStore.save().catch(err => console.error("Failed to auto-save meta:", err));
                 if (PROFILE_ENABLED && saveStart && profile) {
@@ -335,9 +335,9 @@ export async function initialSync(
               }
             }
           }
-          onProgress?.({ processed, uploaded, total, filePath });
+          onProgress?.({ processed, indexed, total, filePath });
         } catch (_err) {
-          onProgress?.({ processed, uploaded, total, filePath });
+          onProgress?.({ processed, indexed, total, filePath });
         }
       }),
     ),
@@ -345,7 +345,7 @@ export async function initialSync(
 
   if (PROFILE_ENABLED && profile) {
     profile.processed = processed;
-    profile.uploaded = uploaded;
+    profile.indexed = indexed;
   }
 
   // Final meta save
@@ -359,7 +359,7 @@ export async function initialSync(
   }
 
   // Create/Update FTS index after sync only if changes occurred
-  if (!dryRun && uploaded > 0) {
+  if (!dryRun && indexed > 0) {
     const ftsStart = PROFILE_ENABLED ? now() : null;
     await store.createFTSIndex(storeId);
     if (PROFILE_ENABLED && ftsStart && profile) {
@@ -372,8 +372,8 @@ export async function initialSync(
       profile.sections.createVectorIndex =
         (profile.sections.createVectorIndex ?? 0) + toMs(vecStart);
     }
-  } else if (!dryRun && uploaded === 0) {
-    console.log("[profile] Skipping index rebuild (no uploads)");
+  } else if (!dryRun && indexed === 0) {
+    console.log("[profile] Skipping index rebuild (no new files)");
   }
 
   if (PROFILE_ENABLED && totalStart && profile) {
@@ -390,10 +390,10 @@ export async function initialSync(
       ),
     );
     console.log(
-      "[profile] uploads",
-      `processed=${processed} uploaded=${uploaded} metaSaves=${profile.metaSaveCount} metaSize=${metaSize ?? "n/a"} bytes`,
+      "[profile] indexing",
+      `processed=${processed} indexed=${indexed} metaSaves=${profile.metaSaveCount} metaSize=${metaSize ?? "n/a"} bytes`,
     );
   }
 
-  return { processed, uploaded, total };
+  return { processed, indexed, total };
 }

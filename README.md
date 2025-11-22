@@ -23,17 +23,23 @@ osgrep "where do we set up auth?"
 
 1. **Install**
    ```bash
-   npm install -g @ryandonofrio/osgrep    # or pnpm / bun
+   npm install -g osgrep    # or pnpm / bun
    ```
 
-2. **Index a project**
+2. **Setup (optional, but recommended)**
+   ```bash
+   osgrep setup
+   ```
+   Downloads models (~150MB) so your first search is instant. Skip this if you prefer—models download automatically on first use.
+
+3. **Index a project**
    ```bash
    cd path/to/repo
    osgrep index
    ```
    `index` performs a one-time sync, respects `.gitignore`, and creates a local searchable index.
 
-3. **Search anything**
+4. **Search anything**
    ```bash
    osgrep "where do we set up auth?" src/lib
    osgrep -m 25 "store schema"
@@ -69,7 +75,9 @@ More agents coming soon (Codex, Cursor, Windsurf, etc.).
 | Command | Purpose |
 | --- | --- |
 | `osgrep` / `osgrep search <pattern> [path]` | Natural-language search with many `grep`-style flags (`-i`, `-r`, `-m`...). |
+| `osgrep setup` | One-time setup: downloads models (~150MB) and prepares osgrep. |
 | `osgrep index` | Index the current repo to create a local searchable store. |
+| `osgrep doctor` | Check installation health and paths. |
 | `osgrep install-claude-code` | Add the osgrep plugin to Claude Code for local queries. |
 
 ### osgrep search
@@ -94,6 +102,14 @@ osgrep --sync "latest auth changes"  # always fresh but slower
 - `osgrep --sync "query"` = always fresh but slower
 - `osgrep index` then `osgrep "query"` = fast repeated searches
 
+### osgrep setup
+
+One-time setup that downloads models (~150MB) and prepares your system. This is optional but recommended—it ensures your first `osgrep index` or search is fast. If you skip this, models will download automatically on first use.
+
+```bash
+osgrep setup
+```
+
 ### osgrep index
 
 Indexes the current repository and creates a local searchable store. Run once per repository or when refreshing the index.
@@ -114,10 +130,13 @@ osgrep index --path src/lib  # index a specific subdirectory
 osgrep index --dry-run  # see what would be indexed without actually indexing
 ```
 
-### osgrep index
+### osgrep doctor
 
-It respects the current `.gitignore`, as well as a `.osgrepignore` file in the
-root of the repository.
+Check the health of your osgrep installation. Shows paths to data directories, model status, and system information.
+
+```bash
+osgrep doctor
+```
 
 ## How it works
 
@@ -130,7 +149,7 @@ root of the repository.
 
 - `--store <name>` isolates workspaces (per repo, per team, per experiment). Stores are created on demand.
 - Ignore rules come from git, so temp files, build outputs, and vendored deps stay out of embeddings.
-- `index` reports progress (`processed / uploaded`) as it scans.
+- `index` reports progress (`processed / indexed`) as it scans.
 - `search` accepts most `grep`-style switches.
 
 **Environment Variables:**

@@ -24,7 +24,7 @@ export interface StoreFile {
   metadata: FileMetadata | null;
 }
 
-export interface UploadFileOptions {
+export interface IndexFileOptions {
   external_id: string;
   overwrite?: boolean;
   metadata?: FileMetadata;
@@ -70,12 +70,12 @@ export interface Store {
   listFiles(storeId: string): AsyncGenerator<StoreFile>;
 
   /**
-   * Upload a file to a store
+   * Index a file in a store
    */
-  uploadFile(
+  indexFile(
     storeId: string,
     file: File | ReadableStream | any,
-    options: UploadFileOptions,
+    options: IndexFileOptions,
   ): Promise<void>;
 
   /**
