@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import * as https from "node:https";
+// fetch is available in supported Node versions
 
 // web-tree-sitter ships a CommonJS build
 const TreeSitter = require("web-tree-sitter");
@@ -11,9 +11,10 @@ const Language = TreeSitter.Language;
 const GRAMMARS_DIR = path.join(os.homedir(), ".osgrep", "grammars");
 
 const GRAMMAR_URLS: Record<string, string> = {
-    typescript: "https://github.com/tree-sitter/tree-sitter-typescript/releases/download/v0.20.3/tree-sitter-typescript.wasm",
-    tsx: "https://github.com/tree-sitter/tree-sitter-typescript/releases/download/v0.20.3/tree-sitter-tsx.wasm",
-    python: "https://github.com/tree-sitter/tree-sitter-python/releases/download/v0.20.4/tree-sitter-python.wasm",
+    // Use "latest" to avoid pinned versions going 404
+    typescript: "https://github.com/tree-sitter/tree-sitter-typescript/releases/latest/download/tree-sitter-typescript.wasm",
+    tsx: "https://github.com/tree-sitter/tree-sitter-typescript/releases/latest/download/tree-sitter-tsx.wasm",
+    python: "https://github.com/tree-sitter/tree-sitter-python/releases/latest/download/tree-sitter-python.wasm",
 };
 
 export interface Chunk {
@@ -76,24 +77,29 @@ export class TreeSitterChunker {
         }
     }
 
-    private downloadFile(url: string, dest: string): Promise<void> {
-        return new Promise((resolve, reject) => {
-            const file = fs.createWriteStream(dest);
-            https.get(url, (response) => {
-                if (response.statusCode === 302 || response.statusCode === 301) {
-                    this.downloadFile(response.headers.location!, dest).then(resolve).catch(reject);
-                    return;
-                }
-                response.pipe(file);
-                file.on('finish', () => {
-                    file.close();
-                    resolve();
-                });
-            }).on('error', (err) => {
-                fs.unlink(dest, () => { });
-                reject(err);
-            });
-        });
+    private async downloadFile(url: string, dest: string): Promise<void> {
+        console.log(`Downloading ${path.basename(dest)}...`);
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Failed to download ${url}: ${response.status} ${response.statusText}`);
+        }
+
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+
+        // Verify WASM magic number: 00 61 73 6d
+        if (
+            buffer.length < 4 ||
+            buffer[0] !== 0x00 ||
+            buffer[1] !== 0x61 ||
+            buffer[2] !== 0x73 ||
+            buffer[3] !== 0x6d
+        ) {
+            throw new Error(`Invalid WASM header for ${url}. Likely a redirect or HTML error page.`);
+        }
+
+        fs.writeFileSync(dest, buffer);
+        console.log(`Downloaded ${path.basename(dest)} (${buffer.length} bytes)`);
     }
 
     async chunk(filePath: string, content: string): Promise<Chunk[]> {

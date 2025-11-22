@@ -37,7 +37,8 @@ export class LocalStore implements Store {
         string,
         { resolve: (v: number[] | number[][]) => void; reject: (e: any) => void }
     >();
-    private readonly MAX_WORKER_RSS = 1024 * 1024 * 1024; // 1GB
+    private readonly MAX_WORKER_RSS = 1.5 * 1024 * 1024 * 1024; // restart only when truly high to avoid churn
+    private embedQueue: Promise<void> = Promise.resolve();
     private chunker = new TreeSitterChunker();
 
     constructor() {
@@ -86,12 +87,22 @@ export class LocalStore implements Store {
         this.pendingRequests.clear();
     }
 
+    private async enqueueEmbedding<T>(fn: () => Promise<T>): Promise<T> {
+        const run = this.embedQueue.then(fn, fn);
+        // Ensure queue advances even if fn rejects
+        this.embedQueue = run.then(() => undefined, () => undefined);
+        return run;
+    }
+
     private async getEmbeddings(texts: string[]): Promise<number[][]> {
-        return new Promise((resolve, reject) => {
-            const id = uuidv4();
-            this.pendingRequests.set(id, { resolve: resolve as any, reject });
-            this.worker.postMessage({ id, texts });
-        });
+        return this.enqueueEmbedding(
+            () =>
+                new Promise((resolve, reject) => {
+                    const id = uuidv4();
+                    this.pendingRequests.set(id, { resolve: resolve as any, reject });
+                    this.worker.postMessage({ id, texts });
+                }),
+        );
     }
 
     private async getEmbedding(text: string): Promise<number[]> {
@@ -198,8 +209,9 @@ export class LocalStore implements Store {
 
         // Batch embedding
         const vectors: number[][] = [];
-        for (let i = 0; i < texts.length; i += 100) {
-            const batchTexts = texts.slice(i, i + 100);
+        const BATCH_SIZE = 16;
+        for (let i = 0; i < texts.length; i += BATCH_SIZE) {
+            const batchTexts = texts.slice(i, i + BATCH_SIZE);
             const batchVectors = await this.getEmbeddings(batchTexts);
             vectors.push(...batchVectors);
         }

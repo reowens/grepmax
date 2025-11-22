@@ -151,6 +151,19 @@ export async function initialSync(
     await metaStore.load();
   }
 
+  // If the store is empty (e.g., data directory cleared), force a full upload even if hashes match.
+  let storeIsEmpty = false;
+  try {
+    let found = false;
+    for await (const _ of store.listFiles(storeId)) {
+      found = true;
+      break;
+    }
+    storeIsEmpty = !found;
+  } catch (_err) {
+    storeIsEmpty = true;
+  }
+
   // If metaStore is provided, use it. Otherwise fallback to listing store files (slow).
   let storeHashes: Map<string, string | undefined>;
   if (metaStore) {
@@ -171,7 +184,7 @@ export async function initialSync(
   let processed = 0;
   let uploaded = 0;
 
-  const concurrency = 100;
+  const concurrency = 10;
   const limit = pLimit(concurrency);
 
   await Promise.all(
@@ -189,7 +202,8 @@ export async function initialSync(
           }
 
           processed += 1;
-          const shouldUpload = !existingHash || existingHash !== hash;
+          const shouldUpload =
+            storeIsEmpty || !existingHash || existingHash !== hash;
 
           if (dryRun && shouldUpload) {
             console.log("Dry run: would have uploaded", filePath);
