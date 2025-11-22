@@ -7,12 +7,14 @@ import type {
   FileMetadata,
   SearchResponse,
 } from "../lib/store";
+import { ensureSetup } from "../lib/setup-helpers";
 import { highlight } from "cli-highlight";
 import {
   createIndexingSpinner,
   formatDryRunSummary,
 } from "../lib/sync-helpers";
 import { initialSync, MetaStore } from "../utils";
+import { ensureStoreExists, isStoreEmpty } from "../lib/store-helpers";
 
 function detectLanguage(filePath: string): string {
   const ext = extname(filePath).toLowerCase();
@@ -127,15 +129,22 @@ export const search: Command = new CommanderCommand("search")
     }
 
     try {
+      await ensureSetup({ silent: true });
       const store = await createStore();
+      await ensureStoreExists(store, options.store);
       const root = process.cwd();
+      const autoSync = options.sync || (await isStoreEmpty(store, options.store));
+      let didSync = false;
 
-      if (options.sync) {
+      if (autoSync) {
         const fileSystem = createFileSystem({
           ignorePatterns: ["*.lock", "*.bin", "*.ipynb", "*.pyc", "pnpm-lock.yaml", "package-lock.json", "yarn.lock", "bun.lockb"],
         });
         const metaStore = new MetaStore();
-        const { spinner, onProgress } = createIndexingSpinner(root);
+        const { spinner, onProgress } = createIndexingSpinner(
+          root,
+          options.sync ? "Indexing..." : "Indexing repository (first run)...",
+        );
         const result = await initialSync(
           store,
           fileSystem,
@@ -153,7 +162,10 @@ export const search: Command = new CommanderCommand("search")
           }
           await new Promise((resolve) => setTimeout(resolve, 1000));
         }
-        spinner.succeed("Indexing complete");
+        spinner.succeed(
+          `Indexing complete (${result.processed}/${result.total}) • indexed ${result.indexed}`,
+        );
+        didSync = true;
         if (options.dryRun) {
           console.log(
             formatDryRunSummary(result, {
@@ -186,18 +198,20 @@ export const search: Command = new CommanderCommand("search")
       
       // Hint if store is empty
       if (results.data.length === 0) {
-        try {
-          const info = await store.getInfo(options.store);
-          if (info.counts.pending === 0 && info.counts.in_progress === 0) {
+        if (!didSync) {
+          try {
+            const info = await store.getInfo(options.store);
+            if (info.counts.pending === 0 && info.counts.in_progress === 0) {
+              console.log(
+                "No results found. If this is your first search, run 'osgrep index' or 'osgrep --sync \"<query>\"' to index your repository first.\n",
+              );
+            }
+          } catch {
+            // Store doesn't exist yet
             console.log(
-              "No results found. If this is your first search, run 'osgrep index' or 'osgrep --sync \"<query>\"' to index your repository first.\n",
+              "No index found. Run 'osgrep index' or 'osgrep --sync \"<query>\"' to index your repository first.\n",
             );
           }
-        } catch {
-          // Store doesn't exist yet
-          console.log(
-            "No index found. Run 'osgrep index' or 'osgrep --sync \"<query>\"' to index your repository first.\n",
-          );
         }
       }
       

@@ -172,6 +172,25 @@ pnpm format       # biome formatting + linting
 - **Index feels stale**: run `osgrep index` again after large refactors.
 - **Need a fresh store**: delete `~/.osgrep/data/<store>` and run `osgrep index`.
 
+## Version History
+
+### v0.1.6
+- Improved `osgrep setup` with better resource cleanup
+- Cleaner output formatting
+
+### v0.1.5
+- Added `osgrep setup` command for one-time model download
+- Created standalone `model-loader` module for clean model management
+- Fixed auto-exit behavior for all commands
+
+### v0.1.4
+- Commands now auto-exit on success (no more Ctrl+C needed!)
+- Removed watch mode and simplified dependencies
+
+### v0.1.3
+- Changed from scoped package (`@ryandonofrio/osgrep`) to unscoped (`osgrep`)
+- Simplified installation: `npm install -g osgrep`
+
 ## License
 
 Apache-2.0. See the [LICENSE](https://opensource.org/licenses/Apache-2.0) file for details.

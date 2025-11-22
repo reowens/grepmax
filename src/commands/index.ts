@@ -6,6 +6,8 @@ import {
   formatDryRunSummary,
 } from "../lib/sync-helpers";
 import { initialSync, MetaStore } from "../utils";
+import { ensureSetup } from "../lib/setup-helpers";
+import { ensureStoreExists } from "../lib/store-helpers";
 
 const PROFILE_ENABLED =
   process.env.OSGREP_PROFILE === "1" || process.env.OSGREP_PROFILE === "true";
@@ -27,7 +29,9 @@ export const index = new Command("index")
       cmd.optsWithGlobals();
 
     try {
+      await ensureSetup();
       const store = await createStore();
+      await ensureStoreExists(store, options.store);
       const fileSystem = createFileSystem({
         ignorePatterns: ["*.lock", "*.bin", "*.ipynb", "*.pyc", "pnpm-lock.yaml", "package-lock.json", "yarn.lock", "bun.lockb"],
       });
