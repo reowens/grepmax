@@ -67,7 +67,7 @@ export class TreeSitterChunker {
         locator: require.resolve("web-tree-sitter/tree-sitter.wasm"),
       });
       this.parser = new Parser() as TreeSitterParser;
-    } catch (err) {
+    } catch (_err) {
       console.warn(
         "⚠️  Offline mode: Semantic search quality reduced (Tree-Sitter unavailable)",
       );
@@ -90,7 +90,7 @@ export class TreeSitterChunker {
       if (!url) return null;
       try {
         await this.downloadFile(url, wasmPath);
-      } catch (err) {
+      } catch (_err) {
         console.warn(
           `⚠️  Could not download ${lang} grammar (offline?). Using fallback chunking.`,
         );

@@ -252,8 +252,9 @@ export class LocalStore implements Store {
     for (let i = 0; i < texts.length; i++) {
       const text = texts[i];
       // Using full text as key for correctness. V8 handles string keys efficiently.
-      if (this.vectorCache.has(text)) {
-        results[i] = this.vectorCache.get(text)!;
+      const cached = this.vectorCache.get(text);
+      if (cached !== undefined) {
+        results[i] = cached;
       } else {
         neededIndices.push(i);
         neededTexts.push(text);

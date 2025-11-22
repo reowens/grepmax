@@ -22,7 +22,10 @@ export class LRUCache<K, V> {
       return undefined;
     }
     // Move to end (most recently used)
-    const value = this.cache.get(key)!;
+    const value = this.cache.get(key);
+    if (value === undefined) {
+      return undefined;
+    }
     this.cache.delete(key);
     this.cache.set(key, value);
     return value;

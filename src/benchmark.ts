@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { LocalStore } from "./lib/local-store";
 
@@ -12,7 +13,6 @@ type BenchmarkCase = {
 };
 
 const benchmarkCases: BenchmarkCase[] = [
-
   // FastAPI - Dependency injection
   {
     repo: "fastapi",
@@ -142,8 +142,7 @@ async function runBenchmark(
       const searchResults = await store.search(storeId, testCase.query, 5);
 
       osgrepResult = {
-        topFile:
-          searchResults.data[0]?.metadata?.path || "no results",
+        topFile: searchResults.data[0]?.metadata?.path || "no results",
         topScore: searchResults.data[0]?.score || 0,
         foundRelevant:
           searchResults.data.length > 0 &&
@@ -175,8 +174,7 @@ async function runBenchmark(
       );
       const rgLines = rgOutput.trim().split("\n");
       rgResult = {
-        matchCount: rgLines.filter((l) => l && l !== "no matches")
-          .length,
+        matchCount: rgLines.filter((l) => l && l !== "no matches").length,
         topFile: rgLines[0]?.split(":")[0] || "no matches",
       };
     } catch {
@@ -196,8 +194,7 @@ async function runBenchmark(
       );
       const grepLines = grepOutput.trim().split("\n");
       grepResult = {
-        matchCount: grepLines.filter((l) => l && l !== "no matches")
-          .length,
+        matchCount: grepLines.filter((l) => l && l !== "no matches").length,
       };
     } catch {
       grepResult = { matchCount: 0 };
@@ -234,7 +231,7 @@ async function runBenchmark(
 }
 
 function printResults(results: BenchmarkResult[]) {
-  console.log("\n" + "=".repeat(100));
+  console.log(`\n${"=".repeat(100)}`);
   console.log("📊 BENCHMARK RESULTS: osgrep vs ripgrep vs grep");
   console.log("=".repeat(100));
 
@@ -245,16 +242,22 @@ function printResults(results: BenchmarkResult[]) {
   for (const r of results) {
     console.log(`\n🔍 Query: "${r.query}" (${r.repo})`);
     console.log(`   Note: ${r.note}`);
-    console.log(`\n   osgrep:  ${r.osgrep.foundRelevant ? "✅" : "❌"} ${r.osgrep.topFile} (score: ${r.osgrep.topScore.toFixed(2)}) [${r.osgrep.timeMs.toFixed(0)}ms]`);
-    console.log(`   ripgrep: ${r.ripgrep.matchCount > 0 ? "✓" : "❌"} ${r.ripgrep.topFile} (${r.ripgrep.matchCount} matches) [${r.ripgrep.timeMs.toFixed(0)}ms]`);
-    console.log(`   grep:    ${r.grep.matchCount > 0 ? "✓" : "❌"} (${r.grep.matchCount} matches) [${r.grep.timeMs.toFixed(0)}ms]`);
+    console.log(
+      `\n   osgrep:  ${r.osgrep.foundRelevant ? "✅" : "❌"} ${r.osgrep.topFile} (score: ${r.osgrep.topScore.toFixed(2)}) [${r.osgrep.timeMs.toFixed(0)}ms]`,
+    );
+    console.log(
+      `   ripgrep: ${r.ripgrep.matchCount > 0 ? "✓" : "❌"} ${r.ripgrep.topFile} (${r.ripgrep.matchCount} matches) [${r.ripgrep.timeMs.toFixed(0)}ms]`,
+    );
+    console.log(
+      `   grep:    ${r.grep.matchCount > 0 ? "✓" : "❌"} (${r.grep.matchCount} matches) [${r.grep.timeMs.toFixed(0)}ms]`,
+    );
 
     if (r.osgrep.foundRelevant) osgrepRelevant++;
     if (r.ripgrep.matchCount > 0) rgFound++;
     if (r.grep.matchCount > 0) grepFound++;
   }
 
-  console.log("\n" + "=".repeat(100));
+  console.log(`\n${"=".repeat(100)}`);
   console.log("📈 SUMMARY");
   console.log("=".repeat(100));
   console.log(
@@ -306,7 +309,9 @@ async function indexRepos(repoDir: string, repos: string[]) {
 }
 
 async function main() {
-  const repoDir = process.argv[2] || path.join(process.env.HOME!, "osgrep-benchmarks");
+  const repoDir =
+    process.argv[2] ||
+    path.join(process.env.HOME ?? os.homedir(), "osgrep-benchmarks");
   const shouldIndex = process.argv.includes("--index");
 
   console.log(`\n🚀 osgrep Benchmark Suite`);
@@ -326,4 +331,3 @@ main().catch((err) => {
   console.error("❌ Benchmark failed:", err);
   process.exit(1);
 });
-

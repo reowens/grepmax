@@ -157,9 +157,7 @@ export class NodeGit implements Git {
 
         if (res.error || res.status !== 0) {
           const reason =
-            res.error?.message ||
-            stderr?.trim() ||
-            `exit code ${res.status}`;
+            res.error?.message || stderr?.trim() || `exit code ${res.status}`;
           console.error(
             `Warning: git command failed: git ${args.join(" ")} (${reason})`,
           );
