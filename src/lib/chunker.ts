@@ -189,48 +189,35 @@ export class TreeSitterChunker {
 
         const capped: Chunk[] = [];
         const maxLines = Math.min(this.MAX_CHUNK_LINES, 120);
-        const maxChars = Math.min(this.MAX_CHUNK_CHARS, 1800);
         let current: string[] = [];
-        let currentChars = 0;
         let startLine = chunk.startLine;
 
-        const pushSegment = (contentPart: string, lineCount: number) => {
-            if (!contentPart) return;
-            if (contentPart.length <= maxChars) {
-                capped.push({
-                    ...chunk,
-                    content: contentPart,
-                    startLine,
-                    endLine: startLine + lineCount,
-                });
-                return;
+        const pushSegment = (segmentLines: string[]) => {
+            if (segmentLines.length === 0) return;
+            let contentPart = segmentLines.join("\n");
+            if (contentPart.length > this.MAX_CHUNK_CHARS) {
+                contentPart = contentPart.slice(0, this.MAX_CHUNK_CHARS);
             }
-
-            for (let i = 0; i < contentPart.length; i += maxChars) {
-                const slice = contentPart.slice(i, i + maxChars);
-                capped.push({
-                    ...chunk,
-                    content: slice,
-                    startLine,
-                    endLine: startLine + lineCount,
-                });
-            }
+            const lineCount = contentPart.split("\n").length;
+            capped.push({
+                ...chunk,
+                content: contentPart,
+                startLine,
+                endLine: startLine + lineCount,
+            });
+            startLine += segmentLines.length;
         };
 
         for (const line of lines) {
-            const nextChars = currentChars + line.length + 1; // include newline
-            if (current.length > 0 && (current.length >= maxLines || nextChars > maxChars)) {
-                pushSegment(current.join("\n"), current.length);
-                startLine += current.length;
+            if (current.length >= maxLines) {
+                pushSegment(current);
                 current = [];
-                currentChars = 0;
             }
             current.push(line);
-            currentChars += line.length + 1;
         }
 
         if (current.length > 0) {
-            pushSegment(current.join("\n"), current.length);
+            pushSegment(current);
         }
 
         return capped;

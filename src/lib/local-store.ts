@@ -21,6 +21,7 @@ const DB_PATH = path.join(os.homedir(), ".osgrep", "data");
 interface VectorRecord {
     id: string;
     path: string;
+    hash: string;
     content: string;
     start_line: number;
     end_line: number;
@@ -142,6 +143,7 @@ export class LocalStore implements Store {
         return {
             id: "seed",
             path: "",
+            hash: "",
             content: "",
             start_line: 0,
             end_line: 0,
@@ -167,7 +169,7 @@ export class LocalStore implements Store {
             // For now, let's just return unique paths
             const results = await table
                 .query()
-                .select(["path"])
+                .select(["path", "hash"])
                 .toArray();
 
             const seen = new Set<string>();
@@ -176,7 +178,7 @@ export class LocalStore implements Store {
                     seen.add(r.path as string);
                     yield {
                         external_id: r.path as string,
-                        metadata: { path: r.path as string, hash: "" }, // Hash not stored yet
+                        metadata: { path: r.path as string, hash: (r.hash as string) || "" },
                     };
                 }
             }
@@ -240,6 +242,7 @@ export class LocalStore implements Store {
             data.push({
                 id: uuidv4(),
                 path: options.metadata?.path || "",
+                hash: options.metadata?.hash || "",
                 content: chunk.content,
                 start_line: chunk.startLine,
                 end_line: chunk.endLine,

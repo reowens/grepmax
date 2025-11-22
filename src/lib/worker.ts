@@ -41,7 +41,12 @@ class EmbeddingWorker {
     async embed(texts: string[]): Promise<number[][]> {
         if (!this.pipe) await this.initialize();
 
-        const output = await this.pipe(texts, { pooling: "cls", normalize: true });
+        const output = await this.pipe(texts, {
+            pooling: "cls",
+            normalize: true,
+            truncation: true,
+            max_length: 512,
+        });
 
         // Handle both single and batch outputs
         const embeddings: number[][] = [];
