@@ -64,7 +64,7 @@ class EmbeddingWorker {
             pooling: "cls",
             normalize: true,
             truncation: true,
-            max_length: 512,
+            max_length: 1024,
         });
 
         // Handle both single and batch outputs

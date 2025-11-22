@@ -29,15 +29,17 @@ async function installPlugin() {
     console.log("✅ Successfully installed the osgrep plugin for Claude Code");
     console.log("\nNext steps:");
     console.log("1. Restart Claude Code if it's running");
-    console.log("2. The plugin will automatically start `osgrep watch` when you open a project");
-    console.log("3. Use `osgrep` in your terminal or let Claude use it automatically");
+    console.log("2. The plugin will automatically index your project when you open it");
+    console.log("3. Claude will use osgrep for semantic code search automatically");
+    console.log("4. You can also use `osgrep` commands directly in your terminal");
   } catch (error) {
     console.error("❌ Error installing plugin:");
     console.error(error);
     console.error("\nTroubleshooting:");
-    console.error("- Ensure you have claude-code version 2.0.36 or higher installed");
+    console.error("- Ensure you have Claude Code installed");
     console.error("- Try running: claude plugin list");
-    console.error("- Check the Claude Code documentation: https://docs.anthropic.com/claude/docs");
+    console.error("- Check the Claude Code documentation: https://code.claude.com/docs");
+    console.error("- Make sure osgrep is installed globally: npm install -g @ryandonofrio/osgrep");
     process.exit(1);
   }
 }

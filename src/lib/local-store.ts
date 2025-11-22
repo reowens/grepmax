@@ -55,7 +55,7 @@ export class LocalStore implements Store {
     private readonly MAX_WORKER_RSS = 3 * 1024 * 1024 * 1024; // 3GB limit for M3/Pro machines
     private embedQueue: Promise<void> = Promise.resolve();
     private chunker = new TreeSitterChunker();
-    private readonly VECTOR_DIMENSIONS = 384;
+    private readonly VECTOR_DIMENSIONS = 512;
     private readonly queryPrefix =
         "Represent this sentence for searching relevant passages: ";
     private profile: LocalStoreProfile = {
@@ -186,8 +186,19 @@ export class LocalStore implements Store {
             content: "",
             start_line: 0,
             end_line: 0,
-            vector: Array(this.VECTOR_DIMENSIONS).fill(0),
-        };
+        vector: Array(this.VECTOR_DIMENSIONS).fill(0),
+    };
+    }
+
+    private formatChunkText(chunk: any, filePath: string): string {
+        const breadcrumb = Array.isArray(chunk.context) ? [...chunk.context] : [];
+        const fileLabel = `File: ${filePath || "unknown"}`;
+        const hasFileLabel = breadcrumb.some(entry => typeof entry === "string" && entry.startsWith("File: "));
+        if (!hasFileLabel) {
+            breadcrumb.unshift(fileLabel);
+        }
+        const header = breadcrumb.length > 0 ? breadcrumb.join(" > ") : fileLabel;
+        return `${header}\n---\n${chunk.content}`;
     }
 
     private async ensureTable(storeId: string): Promise<lancedb.Table> {
@@ -285,18 +296,19 @@ export class LocalStore implements Store {
         }
         if (chunks.length === 0) return;
 
-        
-        const texts = chunks.map(c => c.content);
-texts.forEach(t => {
-    if (t.length > 1500) console.warn(`[WARNING] Giant chunk detected: ${t.length} chars. Likely truncated!`);
-}); 
+        const chunkTexts = chunks.map(chunk =>
+            this.formatChunkText(chunk, options.metadata?.path || ""),
+        );
+        chunkTexts.forEach(text => {
+            if (text.length > 1500) console.warn(`[WARNING] Giant chunk detected: ${text.length} chars. Likely truncated!`);
+        });
 
-        const BATCH_SIZE = 16;
+        const BATCH_SIZE = 32;
         const WRITE_BATCH_SIZE = 50;
         let pendingWrites: VectorRecord[] = [];
 
-        for (let i = 0; i < texts.length; i += BATCH_SIZE) {
-            const batchTexts = texts.slice(i, i + BATCH_SIZE);
+        for (let i = 0; i < chunkTexts.length; i += BATCH_SIZE) {
+            const batchTexts = chunkTexts.slice(i, i + BATCH_SIZE);
             const embedStart = PROFILE_ENABLED ? process.hrtime.bigint() : null;
             const batchVectors = await this.getEmbeddings(batchTexts);
             if (PROFILE_ENABLED && embedStart) {
@@ -314,7 +326,8 @@ texts.forEach(t => {
                     id: uuidv4(),
                     path: options.metadata?.path || "",
                     hash: options.metadata?.hash || "",
-                    content: `File: ${options.metadata?.path}\n---\n${chunk.content}`,                    start_line: chunk.startLine,
+                    content: chunkTexts[chunkIndex],
+                    start_line: chunk.startLine,
                     end_line: chunk.endLine,
                     vector,
                 });
@@ -349,7 +362,7 @@ texts.forEach(t => {
             console.log(
                 `[profile] upload ${options.metadata?.path ?? "unknown"} • chunks=${
                     chunks.length
-                } batches=${Math.ceil(texts.length / BATCH_SIZE)} ` +
+                } batches=${Math.ceil(chunkTexts.length / BATCH_SIZE)} ` +
                 `chunkTime=${fileChunkMs.toFixed(1)}ms embedTime=${fileEmbedMs.toFixed(1)}ms ` +
                 `deleteTime=${fileDeleteMs.toFixed(1)}ms writeTime=${fileWriteMs.toFixed(1)}ms total=${total.toFixed(1)}ms`,
             );
