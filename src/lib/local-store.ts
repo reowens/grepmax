@@ -764,6 +764,14 @@ export class LocalStore implements Store {
 
   async createVectorIndex(storeId: string): Promise<void> {
     const table = await this.getTable(storeId);
+    
+    // Guard against small tables - LanceDB IVF_PQ requires 256 rows to train
+    // If we have fewer, flat search is faster anyway and we avoid crashes
+    const rowCount = await table.countRows();
+    if (rowCount < 256) {
+      return;
+    }
+    
     try {
       await table.createIndex("vector", { type: "ivf_flat" } as any);
     } catch (e) {

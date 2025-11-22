@@ -377,19 +377,25 @@ export async function initialSync(
 
   // 2. Walk file system and apply the VELVET ROPE filter
   const fileWalkStart = PROFILE_ENABLED ? now() : null;
+  
+  // A. Get ALL files that are not gitignored (this represents "Disk State")
   const allFiles = Array.from(fileSystem.getFiles(repoRoot));
+  const aliveFiles = allFiles.filter(
+    (filePath) => !fileSystem.isIgnored(filePath, repoRoot)
+  );
 
   if (PROFILE_ENABLED && fileWalkStart && profile) {
     profile.sections.fileWalk =
       (profile.sections.fileWalk ?? 0) + toMs(fileWalkStart);
   }
 
-  const repoFiles = allFiles.filter(
-    (filePath) =>
-      !fileSystem.isIgnored(filePath, repoRoot) && isIndexableFile(filePath), // <--- New semantic noise filter
-  );
+  // B. Apply Velvet Rope (this represents "Index Candidates")
+  // We only index these, but we don't delete others just because they aren't indexable
+  const repoFiles = aliveFiles.filter((filePath) => isIndexableFile(filePath));
 
-  const diskPaths = new Set(repoFiles);
+  // C. Determine Staleness
+  // Stale = In DB, but not in 'aliveFiles' (meaning deleted from disk or added to .gitignore)
+  const diskPaths = new Set(aliveFiles);
 
   // 3. Delete stale files (files in DB but not on disk)
   const stalePaths = Array.from(dbPaths).filter((p) => !diskPaths.has(p));
