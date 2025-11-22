@@ -124,11 +124,18 @@ if (parentPort) {
     "message",
     async (message: {
       id: string;
+      type?: string;
       text?: string;
       texts?: string[];
       rerank?: { query: string; documents: string[] };
     }) => {
       try {
+        // Handle graceful shutdown
+        if (message.type === "shutdown") {
+          process.exit(0);
+          return;
+        }
+
         if (message.rerank) {
           const scores = await worker.rerank(
             message.rerank.query,

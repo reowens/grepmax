@@ -75,6 +75,7 @@ export class LocalStore implements Store {
     }
   >();
   private restartInFlight: Promise<void> | null = null;
+  private isClosing = false;
   private readonly MAX_WORKER_RSS = 6 * 1024 * 1024 * 1024; // 6GB upper bound, we restart before OOM
   private embedQueue: Promise<void> = Promise.resolve();
   private chunker = new TreeSitterChunker();
@@ -158,7 +159,8 @@ export class LocalStore implements Store {
 
     // Handle worker exit
     this.worker.on("exit", (code) => {
-      if (code !== 0) {
+      // Only restart on unexpected exits (not graceful shutdowns)
+      if (code !== 0 && !this.isClosing) {
         console.error(`Worker exited with code ${code}`);
         void this.restartWorker(`worker exit: code ${code}`);
       }
@@ -987,18 +989,25 @@ export class LocalStore implements Store {
   }
 
   async close(): Promise<void> {
-    // Clean shutdown: terminate worker and close DB connection
+    // Mark as closing to suppress error messages
+    this.isClosing = true;
+    
+    // Clean shutdown: ask worker to exit gracefully, then terminate if needed
     try {
+      // Send shutdown message
+      this.worker.postMessage({ type: "shutdown" });
+      // Give it a brief moment to exit cleanly
+      await new Promise((resolve) => setTimeout(resolve, 100));
       await this.worker.terminate();
     } catch (err) {
-      console.error("Failed to terminate worker:", err);
+      // Silent cleanup - worker may have already exited
     }
     if (this.db) {
       try {
         // LanceDB connections don't have an explicit close, but we null the ref
         this.db = null;
       } catch (err) {
-        console.error("Failed to close database:", err);
+        // Silent cleanup
       }
     }
   }
