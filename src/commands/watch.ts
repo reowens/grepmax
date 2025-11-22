@@ -14,8 +14,11 @@ export const watch = new Command("watch")
     "Dry run the watch process (no actual file syncing)",
     false,
   )
-  .description("Watch for file changes")
+  .description("Watch for file changes (experimental - prefer 'osgrep index')")
   .action(async (_args, cmd) => {
+    console.log(
+      "⚠️  watch is experimental. Prefer 'osgrep index' for reliable indexing or 'osgrep --sync' for one-time updates.\n",
+    );
     const options: { store: string; dryRun: boolean } = cmd.optsWithGlobals();
 
     try {

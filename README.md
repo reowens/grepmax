@@ -7,14 +7,14 @@
 ## Why osgrep?
 - Natural-language search that feels as immediate as `grep`.
 - Semantic, multilingual & multimodal (audio, video support coming soon!)
-- Smooth background indexing via `osgrep watch`, designed to detect and keep up-to-date everything that matters inside any git repository.
+- On-demand indexing via `osgrep index` for fast, repeated searches.
 - 100% local embeddings (via `transformers.js`) with first-class coding agent integrations.
 - Built for agents and humans alike, and **designed to be a helpful tool**, not a restrictive harness: quiet output, thoughtful defaults, and escape hatches everywhere.
 - Reduces the token usage of your agent by 2x while maintaining superior performance
 
 ```bash
 # index once
-osgrep watch
+osgrep index
 
 # then ask your repo things in natural language
 osgrep "where do we set up auth?"
@@ -30,9 +30,9 @@ osgrep "where do we set up auth?"
 2. **Index a project**
    ```bash
    cd path/to/repo
-   osgrep watch
+   osgrep index
    ```
-   `watch` performs an initial sync, respects `.gitignore`, then keeps the local index updated as files change.
+   `index` performs a one-time sync, respects `.gitignore`, and creates a local searchable index.
 
 3. **Search anything**
    ```bash
@@ -48,8 +48,9 @@ Today, osgrep works great on: code and text documents.
 
 - **Claude Code (today)**  
   1. Run `osgrep install-claude-code`. The command installs the osgrep plugin into Claude Code.  
-  2. Open Claude Code, enable the plugin, and point your agent at the repo you are indexing with `osgrep watch`.  
-  3. Ask Claude something just like you do locally; results stream straight into the chat with file paths and line hints.  
+  2. Run `osgrep index` to index your repository.  
+  3. Open Claude Code, enable the plugin, and point your agent at the repo you indexed.  
+  4. Ask Claude something just like you do locally; results stream straight into the chat with file paths and line hints.  
   
 - More agents (Codex, Cursor, Windsurf, etc.) are on the way—this section will grow as soon as each integration lands.
 
@@ -93,8 +94,9 @@ We designed `osgrep` to complement `grep`, not replace it. The best code search 
 | Command | Purpose |
 | --- | --- |
 | `osgrep` / `osgrep search <pattern> [path]` | Natural-language search with many `grep`-style flags (`-i`, `-r`, `-m`...). |
-| `osgrep watch` | Index the current repo and keep the local store in sync via file watchers. |
+| `osgrep index` | Index the current repo to create a local searchable store. |
 | `osgrep install-claude-code` | Add the osgrep plugin to Claude Code for local queries. |
+| `osgrep watch` | **(Experimental)** Watch for file changes and keep index updated. Requires `OSGREP_ENABLE_WATCH=1`. |
 
 ### osgrep search
 
@@ -106,7 +108,7 @@ directory for a pattern.
 | `-m <max_count>` | The maximum number of results to return |
 | `-c`, `--content` | Show content of the results |
 | `-a`, `--answer` | Generate an answer to the question based on the results |
-| `-s`, `--sync` | Sync the local files to the store before searching |
+| `-s`, `--sync` | Sync the local files to the store before searching (always fresh but slower) |
 
 **Examples:**
 ```bash
@@ -114,21 +116,46 @@ osgrep "What code parsers are available?"  # search in the current directory
 osgrep "How are chunks defined?" src/models  # search in the src/models directory
 osgrep -m 10 "What is the maximum number of concurrent workers in the code parser?"  # limit the number of results to 10
 osgrep -a "What code parsers are available?"  # generate an answer to the question based on the results
+osgrep --sync "latest auth changes"  # always fresh but slower
 ```
 
-### osgrep watch
+**Workflow:**
+- `osgrep --sync "query"` = always fresh but slower
+- `osgrep index` then `osgrep "query"` = fast repeated searches
 
-`osgrep watch` is used to index the current repository and keep the local
-store in sync via file watchers.
+### osgrep index
+
+`osgrep index` is used to index the current repository and create a local
+searchable store. Run this once per repository or when you want to refresh the index.
 
 It respects the current `.gitignore`, as well as a `.osgrepignore` file in the
 root of the repository. The `.osgrepignore` file follows the same syntax as the
 [`.gitignore`](https://git-scm.com/docs/gitignore) file.
 
+| Option | Description |
+| --- | --- |
+| `-d`, `--dry-run` | Dry run the indexing process (no actual file syncing) |
+| `-p`, `--path <dir>` | Path to index (defaults to current directory) |
+
 **Examples:**
 ```bash
-osgrep watch  # index the current repository and keep the local store in sync via file watchers
+osgrep index  # index the current repository
+osgrep index --path src/lib  # index a specific subdirectory
+osgrep index --dry-run  # see what would be indexed without actually indexing
 ```
+
+### osgrep watch
+
+**⚠️ Experimental:** `osgrep watch` is currently experimental and disabled by default. 
+We recommend using `osgrep index` instead for reliable indexing.
+
+To enable: `OSGREP_ENABLE_WATCH=1 osgrep watch`
+
+`osgrep watch` attempts to keep the local store in sync via file watchers, but may have
+stability issues. Use `osgrep index` for production workflows.
+
+It respects the current `.gitignore`, as well as a `.osgrepignore` file in the
+root of the repository.
 
 ## Local-first under the hood
 
@@ -141,11 +168,12 @@ osgrep watch  # index the current repository and keep the local store in sync vi
 
 - `--store <name>` lets you isolate workspaces (per repo, per team, per experiment). Stores are created on demand if they do not exist yet.
 - Ignore rules come straight from git, so temp files, build outputs, and vendored deps stay out of your embeddings.
-- `watch` reports progress (`processed / uploaded`) as it scans; leave it running in a terminal tab to keep your store fresh.
+- `index` reports progress (`processed / uploaded`) as it scans; run it when you want to refresh your store.
 - `search` accepts most `grep`-style switches, and politely ignores anything it cannot support, so existing muscle memory still works.
 
 **Environment Variables:**
 - `MXBAI_STORE`: Override the default store name (default: `osgrep`)
+- `OSGREP_ENABLE_WATCH`: Set to `1` to enable the experimental `watch` command
 
 ## Development
 
@@ -161,8 +189,8 @@ pnpm format       # biome formatting + linting
 
 ## Troubleshooting
 
-- **Watcher feels noisy**: set `MXBAI_STORE` or pass `--store` to separate experiments, or pause the watcher and restart after large refactors.
-- **Need a fresh store**: delete `~/.osgrep/data/<store>` and run `osgrep watch`. It will auto-create a new one.
+- **Index feels stale**: run `osgrep index` again to refresh your store after large refactors.
+- **Need a fresh store**: delete `~/.osgrep/data/<store>` and run `osgrep index`. It will auto-create a new one.
 
 ## License
 

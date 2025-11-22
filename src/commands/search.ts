@@ -240,6 +240,24 @@ export const search: Command = new CommanderCommand("search")
             ],
           },
         );
+        
+        // Hint if store is empty
+        if (results.data.length === 0) {
+          try {
+            const info = await store.getInfo(options.store);
+            if (info.counts.pending === 0 && info.counts.in_progress === 0) {
+              console.log(
+                "No results found. If this is your first search, run 'osgrep index' or 'osgrep --sync \"<query>\"' to index your repository first.\n",
+              );
+            }
+          } catch {
+            // Store doesn't exist yet
+            console.log(
+              "No index found. Run 'osgrep index' or 'osgrep --sync \"<query>\"' to index your repository first.\n",
+            );
+          }
+        }
+        
         response = formatSearchResponse(results, options.c);
       } else {
         const results = await store.ask(
@@ -257,6 +275,24 @@ export const search: Command = new CommanderCommand("search")
             ],
           },
         );
+        
+        // Hint if store is empty
+        if (results.sources.length === 0) {
+          try {
+            const info = await store.getInfo(options.store);
+            if (info.counts.pending === 0 && info.counts.in_progress === 0) {
+              console.log(
+                "No results found. If this is your first search, run 'osgrep index' or 'osgrep --sync \"<query>\"' to index your repository first.\n",
+              );
+            }
+          } catch {
+            // Store doesn't exist yet
+            console.log(
+              "No index found. Run 'osgrep index' or 'osgrep --sync \"<query>\"' to index your repository first.\n",
+            );
+          }
+        }
+        
         response = formatAskResponse(results, options.c);
       }
 
