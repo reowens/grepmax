@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { createFileSystem, createStore } from "../lib/context";
 import { ensureSetup } from "../lib/setup-helpers";
 import { ensureStoreExists } from "../lib/store-helpers";
+import { getAutoStoreId } from "../lib/store-resolver";
 import {
   createIndexingSpinner,
   formatDryRunSummary,
@@ -24,13 +25,18 @@ export const index = new Command("index")
     "",
   )
   .action(async (_args, cmd) => {
-    const options: { store: string; dryRun: boolean; path: string } =
+    const options: { store?: string; dryRun: boolean; path: string } =
       cmd.optsWithGlobals();
 
     try {
       await ensureSetup();
       const store = await createStore();
-      await ensureStoreExists(store, options.store);
+      
+      // Auto-detect store ID if not explicitly provided
+      const indexRoot = options.path || process.cwd();
+      const storeId = options.store || getAutoStoreId(indexRoot);
+      
+      await ensureStoreExists(store, storeId);
       const fileSystem = createFileSystem({
         ignorePatterns: [
           "*.lock",
@@ -43,7 +49,6 @@ export const index = new Command("index")
           "bun.lockb",
         ],
       });
-      const indexRoot = options.path || process.cwd();
       const metaStore = new MetaStore();
 
       const { spinner, onProgress } = createIndexingSpinner(
@@ -52,17 +57,17 @@ export const index = new Command("index")
       );
       try {
         try {
-          await store.retrieve(options.store);
+          await store.retrieve(storeId);
         } catch {
           await store.create({
-            name: options.store,
+            name: storeId,
             description: "osgrep local index",
           });
         }
         const result = await initialSync(
           store,
           fileSystem,
-          options.store,
+          storeId,
           indexRoot,
           options.dryRun,
           onProgress,
@@ -87,7 +92,7 @@ export const index = new Command("index")
 
         // Wait for all indexing to complete
         while (true) {
-          const info = await store.getInfo(options.store);
+          const info = await store.getInfo(storeId);
           spinner.text = `Indexing ${info.counts.pending + info.counts.in_progress} file(s)`;
           if (info.counts.pending === 0 && info.counts.in_progress === 0) {
             break;

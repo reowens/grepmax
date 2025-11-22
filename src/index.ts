@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { program } from "commander";
 import { doctor } from "./commands/doctor";
 import { index } from "./commands/index";
+import { list } from "./commands/list";
 import { search } from "./commands/search";
 import { setup } from "./commands/setup";
 import { installClaudeCode } from "./install/claude-code";
@@ -20,12 +21,13 @@ program
   )
   .option(
     "--store <string>",
-    "The store to use",
-    process.env.MXBAI_STORE || "osgrep",
+    "The store to use (auto-detected if not specified)",
+    process.env.MXBAI_STORE || undefined,
   );
 
 program.addCommand(search, { isDefault: true });
 program.addCommand(index);
+program.addCommand(list);
 program.addCommand(setup);
 program.addCommand(installClaudeCode);
 program.addCommand(doctor);

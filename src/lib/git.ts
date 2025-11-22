@@ -87,6 +87,18 @@ export interface Git {
    * Gets or creates a cached GitIgnoreFilter for a repository
    */
   getGitIgnoreFilter(repoRoot: string): GitIgnoreFilter;
+
+  /**
+   * Gets the repository root directory (absolute path)
+   * Returns null if not in a git repository
+   */
+  getRepositoryRoot(dir: string): string | null;
+
+  /**
+   * Gets the remote URL for origin
+   * Returns null if no remote is configured
+   */
+  getRemoteUrl(dir: string): string | null;
 }
 
 /**
@@ -98,6 +110,8 @@ export class NodeGit implements Git {
     string,
     { filter: GitIgnoreFilter; mtime: number }
   >();
+  private gitRootCache = new Map<string, string | null>();
+  private gitRemoteCache = new Map<string, string | null>();
 
   isGitRepository(dir: string): boolean {
     const normalizedDir = path.resolve(dir);
@@ -228,5 +242,63 @@ export class NodeGit implements Git {
     }
 
     return cached.filter;
+  }
+
+  /**
+   * Gets the repository root directory (absolute path)
+   * Returns null if not in a git repository
+   */
+  getRepositoryRoot(dir: string): string | null {
+    const normalizedDir = path.resolve(dir);
+
+    const cached = this.gitRootCache.get(normalizedDir);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    let root: string | null = null;
+    try {
+      const result = spawnSync("git", ["rev-parse", "--show-toplevel"], {
+        cwd: dir,
+        encoding: "utf-8",
+      });
+      if (result.status === 0 && !result.error && result.stdout) {
+        root = result.stdout.trim();
+      }
+    } catch {
+      root = null;
+    }
+
+    this.gitRootCache.set(normalizedDir, root);
+    return root;
+  }
+
+  /**
+   * Gets the remote URL for origin
+   * Returns null if no remote is configured
+   */
+  getRemoteUrl(dir: string): string | null {
+    const normalizedDir = path.resolve(dir);
+
+    const cached = this.gitRemoteCache.get(normalizedDir);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    let remote: string | null = null;
+    try {
+      const result = spawnSync("git", ["config", "--get", "remote.origin.url"], {
+        cwd: dir,
+        encoding: "utf-8",
+      });
+      if (result.status === 0 && !result.error && result.stdout) {
+        remote = result.stdout.trim();
+      }
+    } catch {
+      remote = null;
+    }
+
+    this.gitRemoteCache.set(normalizedDir, remote);
+    return remote;
   }
 }

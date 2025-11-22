@@ -6,6 +6,7 @@ import { createFileSystem, createStore } from "../lib/context";
 import { ensureSetup } from "../lib/setup-helpers";
 import type { ChunkType, FileMetadata, SearchResponse } from "../lib/store";
 import { ensureStoreExists, isStoreEmpty } from "../lib/store-helpers";
+import { getAutoStoreId } from "../lib/store-resolver";
 import {
   createIndexingSpinner,
   formatDryRunSummary,
@@ -289,7 +290,7 @@ export const search: Command = new CommanderCommand("search")
   .allowExcessArguments(true)
   .action(async (pattern, exec_path, _options, cmd) => {
     const options: {
-      store: string;
+      store?: string;
       m: string;
       c: boolean;
       perFile: string;
@@ -306,10 +307,14 @@ export const search: Command = new CommanderCommand("search")
     try {
       await ensureSetup({ silent: true });
       const store = await createStore();
-      await ensureStoreExists(store, options.store);
+      
+      // Auto-detect store ID if not explicitly provided
+      const storeId = options.store || getAutoStoreId(process.cwd());
+      
+      await ensureStoreExists(store, storeId);
       const root = process.cwd();
       const autoSync =
-        options.sync || (await isStoreEmpty(store, options.store));
+        options.sync || (await isStoreEmpty(store, storeId));
       let didSync = false;
 
       if (autoSync) {
@@ -333,14 +338,14 @@ export const search: Command = new CommanderCommand("search")
         const result = await initialSync(
           store,
           fileSystem,
-          options.store,
+          storeId,
           root,
           options.dryRun,
           onProgress,
           metaStore,
         );
         while (true) {
-          const info = await store.getInfo(options.store);
+          const info = await store.getInfo(storeId);
           spinner.text = `Indexing ${info.counts.pending + info.counts.in_progress} file(s)`;
           if (info.counts.pending === 0 && info.counts.in_progress === 0) {
             break;
@@ -367,7 +372,7 @@ export const search: Command = new CommanderCommand("search")
 
       // Execute Search
       const results = await store.search(
-        options.store,
+        storeId,
         pattern,
         parseInt(options.m, 10),
         { rerank: true },
@@ -386,7 +391,7 @@ export const search: Command = new CommanderCommand("search")
       if (results.data.length === 0) {
         if (!didSync) {
           try {
-            const info = await store.getInfo(options.store);
+            const info = await store.getInfo(storeId);
             if (info.counts.pending === 0 && info.counts.in_progress === 0) {
               // Store exists but no results - might need re-indexing if files changed
               console.log(

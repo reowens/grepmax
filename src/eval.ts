@@ -232,6 +232,29 @@ const topK = 20;
 
 async function run() {
   const store = new LocalStore();
+  
+  // 1. Ensure the store exists
+  try {
+    await store.retrieve(storeId);
+  } catch {
+    console.error(`❌ Store "${storeId}" does not exist!`);
+    console.error(`   Run "osgrep index" first to create and populate the store.`);
+    process.exit(1);
+  }
+
+  // 2. Check if store has data
+  try {
+    const testResult = await store.search(storeId, "test", 1);
+    if (testResult.data.length === 0) {
+      console.error(`⚠️  Store "${storeId}" appears to be empty!`);
+      console.error(`   Run "osgrep index" to populate the store with data.`);
+      process.exit(1);
+    }
+  } catch (err) {
+    console.error(`❌ Error checking store data:`, err);
+    process.exit(1);
+  }
+
   const results: {
     rr: number;
     found: boolean;

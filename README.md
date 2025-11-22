@@ -8,6 +8,7 @@ Natural-language search that works like `grep`. Fast, local, and works with codi
 
 - **Semantic:** Finds concepts ("auth logic"), not just strings.
 - **Local & Private:** 100% local embeddings via `transformers.js`.
+- **Auto-Isolated:** Each repository gets its own index automatically.
 - **Adaptive:** Runs fast on desktops, throttles down on laptops to prevent overheating.
 - **Agent-Ready:** Native integration with Claude Code.
 
@@ -33,7 +34,7 @@ Natural-language search that works like `grep`. Fast, local, and works with codi
     osgrep "where do we handle authentication?"
     ```
 
-    **Your first search will automatically index the repository.** Subsequent searches use the cached index and are near-instant.
+    **Your first search will automatically index the repository.** Each repository is automatically isolated with its own index. Switching between repos "just works" — no manual configuration needed.
 
 ## Coding Agent Integration
 
@@ -89,6 +90,16 @@ osgrep index              # Index current dir
 osgrep index --dry-run    # See what would be indexed
 ```
 
+### `osgrep list`
+
+Lists all indexed repositories (stores) and their metadata.
+
+```bash
+osgrep list
+```
+
+Shows store names, sizes, and last modified times. Useful for seeing what's indexed and cleaning up old stores.
+
 ### `osgrep doctor`
 
 Checks installation health, model paths, and database integrity.
@@ -108,11 +119,34 @@ osgrep is designed to be a "good citizen" on your machine:
 
 ## Configuration
 
-  - **Stores:** Data is saved in `~/.osgrep/data`.
-  - **Isolation:** Use `--store <name>` to isolate different projects or workspaces.
+### Automatic Repository Isolation
+
+osgrep automatically creates a unique index for each repository based on:
+
+1. **Git Remote URL** (e.g., `github.com/facebook/react` → `facebook-react`)
+2. **Git Repo without Remote** → directory name + hash (e.g., `utils-7f8a2b3c`)
+3. **Non-Git Directory** → directory name + hash for collision safety
+
+**Examples:**
+```bash
+cd ~/work/myproject        # Auto-detected: owner-myproject
+osgrep "API handlers"
+
+cd ~/personal/utils        # Auto-detected: utils-abc12345
+osgrep "helper functions"
+```
+
+Stores are isolated automatically — no manual `--store` flags needed!
+
+### Manual Store Management
+
+  - **View all stores:** `osgrep list`
+  - **Override auto-detection:** `osgrep --store custom-name "query"`
+  - **Clean up old stores:** `rm -rf ~/.osgrep/data/store-name`
+  - **Data location:** `~/.osgrep/data`
   - **Env Vars:**
-      - `MXBAI_STORE`: Default store name (default: `osgrep`).
-      - `OSGREP_PROFILE=1`: Enable performance profiling logs.
+      - `MXBAI_STORE`: Override default store name
+      - `OSGREP_PROFILE=1`: Enable performance profiling logs
 
 ## Development
 
