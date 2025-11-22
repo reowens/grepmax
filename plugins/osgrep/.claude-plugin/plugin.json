@@ -1,9 +1,13 @@
 {
   "name": "osgrep",
-  "description": "Search your local files using osgrep",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Semantic code search for Claude Code. Automatically indexes your project and provides intelligent search capabilities.",
   "author": {
-    "name": "Ryan D'Onofrio"
+    "name": "Ryan D'Onofrio",
+    "email": "ryandonofrio@gmail.com"
   },
-  "hooks": "./hooks/hook.json"
+  "homepage": "https://github.com/ryandonofrio/osgrep",
+  "repository": "https://github.com/ryandonofrio/osgrep",
+  "license": "Apache-2.0",
+  "keywords": ["search", "semantic", "grep", "code-search", "semantic-search"]
 }

@@ -3,3 +3,4 @@ node_modules/
 *.tsbuildinfo
 *.tgz
 ADVANCED.md
+test-build.sh
