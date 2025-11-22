@@ -6,176 +6,131 @@
 
 Natural-language search that works like `grep`. Fast, local, and works with coding agents.
 
-- Semantic, multilingual & multimodal
-- On-demand indexing for fast repeated searches
-- 100% local embeddings via `transformers.js`
-- Integrates with coding agents
+- **Semantic:** Finds concepts ("auth logic"), not just strings.
+- **Local & Private:** 100% local embeddings via `transformers.js`.
+- **Adaptive:** Runs fast on desktops, throttles down on laptops to prevent overheating.
+- **Agent-Ready:** Native integration with Claude Code.
 
 ## Quick Start
 
 1. **Install**
    ```bash
    npm install -g osgrep    # or pnpm / bun
-   ```
+````
 
-2. **Setup (optional, but recommended)**
-   ```bash
-   osgrep setup
-   ```
-   Downloads models (~150MB) so your first search is instant. Skip this if you prefer—models download automatically on first use.
+2.  **Setup (Recommended)**
 
-3. **Start searching**
-   ```bash
-   cd path/to/repo
-   osgrep "where do we set up auth?" src/lib
-   osgrep -m 25 "store schema"
-   ```
-   Your first search will automatically index the repository. Subsequent searches are fast and use the cached index. Searches default to the current working directory unless you pass a path.
+    ```bash
+    osgrep setup
+    ```
 
-   **Optional:** Manually index with `osgrep index` if you want to pre-index or refresh the index.
+    Downloads embedding models (\~150MB) upfront. If you skip this, models download automatically on first use.
 
-Today, osgrep works great on: code and text documents.  
-**Coming soon:** PDFs, images, audio, and video.
+3.  **Search**
+
+    ```bash
+    cd my-repo
+    osgrep "where do we handle authentication?"
+    ```
+
+    **Your first search will automatically index the repository.** Subsequent searches use the cached index and are near-instant.
 
 ## Coding Agent Integration
 
-**Claude Code**  
-1. Run `osgrep install-claude-code`
-2. Open Claude Code, enable the plugin, and point it at your repository
-3. The repository will be automatically indexed on first use, or run `osgrep index` to pre-index
-4. Results stream into the chat with file paths and line hints
-  
-More agents coming soon (Codex, Cursor, Windsurf, etc.).
+**Claude Code** 1. Run `osgrep install-claude-code`
+2\. Open Claude Code (`claude`) and ask it questions about your codebase.
+3\. It will use `osgrep` to find relevant context automatically.
 
+## Commands
 
-## Commands =
+### `osgrep search`
 
-| Command | Purpose |
-| --- | --- |
-| `osgrep` / `osgrep search <pattern> [path]` | Natural-language search with many `grep`-style flags (`-i`, `-r`, `-m`...). |
-| `osgrep setup` | One-time setup: downloads models (~150MB) and prepares osgrep. |
-| `osgrep index` | Index the current repo to create a local searchable store. |
-| `osgrep doctor` | Check installation health and paths. |
-| `osgrep install-claude-code` | Add the osgrep plugin to Claude Code for local queries. |
+The default command. Searches the current directory using semantic meaning.
 
-### osgrep search
+```bash
+osgrep "how is the database connection pooled?"
+```
 
-`osgrep search` is the default command. Searches the current directory for a pattern.
-
-| Option | Description |
-| --- | --- |
-| `-m <max_count>` | The maximum number of results to return |
-| `-c`, `--content` | Show content of the results |
-| `-s`, `--sync` | Sync the local files to the store before searching (always fresh but slower) |
+**Options:**
+| Flag | Description | Default |
+| --- | --- | --- |
+| `-m <n>` | Max total results to return. | `25` |
+| `--per-file <n>` | Max matches to show per file. | `1` |
+| `-c`, `--content` | Show full chunk content instead of snippets. | `false` |
+| `--scores` | Show relevance scores (0.0-1.0). | `false` |
+| `--compact` | Show file paths only (like `grep -l`). | `false` |
+| `-s`, `--sync` | Force re-index changed files before searching. | `false` |
 
 **Examples:**
-```bash
-osgrep "What code parsers are available?"  # search in the current directory
-osgrep "How are chunks defined?" src/models  # search in the src/models directory
-osgrep -m 10 "What is the maximum number of concurrent workers in the code parser?"  # limit the number of results to 10
-osgrep --sync "latest auth changes"  # always fresh but slower
-```
-
-**Workflow:**
-- `osgrep "query"` = auto-indexes on first run, then fast repeated searches
-- `osgrep --sync "query"` = always fresh but slower (forces re-index before search)
-- `osgrep index` = manually pre-index or refresh the index
-
-### osgrep setup
-
-One-time setup that downloads models (~150MB) and prepares your system. This is optional but recommended—it ensures your first `osgrep index` or search is fast. If you skip this, models will download automatically on first use.
 
 ```bash
-osgrep setup
+# General concept search
+osgrep "API rate limiting logic"
+
+# Deep dive (show more matches per file)
+osgrep "error handling" --per-file 5
+
+# Just give me the files
+osgrep "user validation" --compact
 ```
 
-### osgrep index
+### `osgrep index`
 
-Manually indexes the current repository and creates a local searchable store. This is optional—the first search will automatically index if needed. Use this command to pre-index or refresh the index after large changes.
+Manually indexes the repository. Useful if you want to pre-warm the cache or if you've made massive changes outside of the editor.
 
-It respects the current `.gitignore`, as well as a `.osgrepignore` file in the
-root of the repository. The `.osgrepignore` file follows the same syntax as the
-[`.gitignore`](https://git-scm.com/docs/gitignore) file.
+  * Respects `.gitignore` and `.osgrepignore`.
+  * **Smart Indexing:** Only embeds code and config files. Skips binaries, lockfiles, and minified assets.
+  * **Adaptive Throttling:** Monitors your RAM and CPU usage. If your system gets hot, indexing slows down automatically.
 
-| Option | Description |
-| --- | --- |
-| `-d`, `--dry-run` | Dry run the indexing process (no actual file syncing) |
-| `-p`, `--path <dir>` | Path to index (defaults to current directory) |
+<!-- end list -->
 
-**Examples:**
 ```bash
-osgrep index  # index the current repository
-osgrep index --path src/lib  # index a specific subdirectory
-osgrep index --dry-run  # see what would be indexed without actually indexing
+osgrep index              # Index current dir
+osgrep index --dry-run    # See what would be indexed
 ```
 
-### osgrep doctor
+### `osgrep doctor`
 
-Check the health of your osgrep installation. Shows paths to data directories, model status, and system information.
+Checks installation health, model paths, and database integrity.
 
 ```bash
 osgrep doctor
 ```
 
-## How it works
+## Performance & Architecture
 
-- Files are embedded locally with `transformers.js` and stored in `~/.osgrep/data` via LanceDB.
-- Searches combine vector and FTS matches with reciprocal-rank fusion.
-- Results include relative paths plus contextual hints (line ranges for text, page numbers for PDFs, etc.).
-- Runs offline.
+osgrep is designed to be a "good citizen" on your machine:
+
+1.  **The Thermostat:** Indexing adjusts concurrency in real-time based on memory pressure and CPU speed. It won't freeze your laptop.
+2.  **Smart Chunking:** Uses `tree-sitter` to split code by function/class boundaries, ensuring embeddings capture complete logical blocks.
+3.  **Deduplication:** Identical code blocks (boilerplate, license headers) are embedded once and cached, saving space and time.
+4.  **Hybrid Search:** Uses Reciprocal Rank Fusion (RRF) to combine Vector Search (semantic) with FTS (keyword) for best-of-both-worlds accuracy.
 
 ## Configuration
 
-- `--store <name>` isolates workspaces (per repo, per team, per experiment). Stores are created on demand.
-- Ignore rules come from git, so temp files, build outputs, and vendored deps stay out of embeddings.
-- `index` reports progress (`processed / indexed`) as it scans.
-- `search` accepts most `grep`-style switches.
-
-**Environment Variables:**
-- `MXBAI_STORE`: Override the default store name (default: `osgrep`)
+  - **Stores:** Data is saved in `~/.osgrep/data`.
+  - **Isolation:** Use `--store <name>` to isolate different projects or workspaces.
+  - **Env Vars:**
+      - `MXBAI_STORE`: Default store name (default: `osgrep`).
+      - `OSGREP_PROFILE=1`: Enable performance profiling logs.
 
 ## Development
 
 ```bash
 pnpm install
-pnpm build        # or pnpm dev for a quick compile + run
-pnpm format       # biome formatting + linting
+pnpm build        # or pnpm dev
+pnpm format       # biome check
 ```
-
-- Executable at `dist/index.js` (built from TypeScript via `tsc`).
-- Run `npx husky init` once after cloning.
-- Tests not wired up yet—run `pnpm typecheck` before publishing.
 
 ## Troubleshooting
 
-- **Index feels stale**: run `osgrep index` again after large refactors.
-- **Need a fresh store**: delete `~/.osgrep/data/<store>` and run `osgrep index`.
-
-## Version History
-
-### v0.1.7
-- Auto-setup: directories and models are created automatically on first use
-- Auto-index: first search automatically indexes empty repositories
-- Refactored setup and store logic into reusable helper modules
-- Improved user experience with better messaging
-
-### v0.1.6
-- Improved `osgrep setup` with better resource cleanup
-- Cleaner output formatting
-
-### v0.1.5
-- Added `osgrep setup` command for one-time model download
-- Created standalone `model-loader` module for clean model management
-- Fixed auto-exit behavior for all commands
-
-### v0.1.4
-- Commands now auto-exit on success (no more Ctrl+C needed!)
-- Removed watch mode and simplified dependencies
-
-### v0.1.3
-- Changed from scoped package (`@ryandonofrio/osgrep`) to unscoped (`osgrep`)
-- Simplified installation: `npm install -g osgrep`
+  - **Index feels stale?** Run `osgrep index` to refresh.
+  - **Weird results?** Run `osgrep doctor` to verify models.
+  - **Need a fresh start?** Delete `~/.osgrep/data` and re-index.
 
 ## License
 
-Apache-2.0. See the [LICENSE](https://opensource.org/licenses/Apache-2.0) file for details.
+Licensed under the Apache License, Version 2.0.  
+See [Apache-2.0](https://opensource.org/licenses/Apache-2.0) for details.
+
+

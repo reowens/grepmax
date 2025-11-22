@@ -1,4 +1,4 @@
-import { extname, join, normalize, relative } from "node:path";
+import { extname, join, relative, normalize } from "node:path";
 import { highlight } from "cli-highlight";
 import type { Command } from "commander";
 import { Command as CommanderCommand } from "commander";
@@ -19,6 +19,7 @@ const style = {
   dim: (s: string) => `\x1b[2m${s}\x1b[22m`,
   blue: (s: string) => `\x1b[34m${s}\x1b[39m`,
   green: (s: string) => `\x1b[32m${s}\x1b[39m`,
+  yellow: (s: string) => `\x1b[33m${s}\x1b[39m`,
 };
 
 function detectLanguage(filePath: string): string {
@@ -73,6 +74,39 @@ function parseChunkText(text: string) {
   };
 }
 
+/**
+ * Cleans metadata lines from the top of a snippet to show code faster.
+ */
+function cleanSnippet(body: string): {
+  cleanedLines: string[];
+  linesRemoved: number;
+} {
+  let lines = body.split("\n");
+  let linesRemoved = 0;
+
+  // Metadata prefixes to strip from the *start* of the snippet
+  const NOISE_PREFIXES = [
+    "File:",
+    "Top comments:",
+    "Preamble:",
+    "(anchor)",
+    "Imports:",
+    "Exports:",
+    "---",
+  ];
+
+  while (
+    lines.length > 0 &&
+    (lines[0].trim() === "" ||
+      NOISE_PREFIXES.some((p) => lines[0].trim().startsWith(p)))
+  ) {
+    lines.shift();
+    linesRemoved++;
+  }
+
+  return { cleanedLines: lines, linesRemoved };
+}
+
 function formatSearchResults(
   response: SearchResponse,
   options: {
@@ -80,13 +114,14 @@ function formatSearchResults(
     perFile: number;
     showScores: boolean;
     compact: boolean;
+    maxCount: number;
     root: string;
   },
 ) {
   const { data } = response;
   if (data.length === 0) return "";
 
-  // 1. Group by File Path (Preserve score order)
+  // 1. Group by File Path
   const grouped = new Map<string, ChunkType[]>();
   for (const chunk of data) {
     const rawPath = (chunk.metadata as FileMetadata)?.path || "Unknown path";
@@ -99,12 +134,20 @@ function formatSearchResults(
   // 2. Summary Line
   const totalFiles = grouped.size;
   const summary = style.bold(
-    `Found ${data.length} relevant chunks in ${totalFiles} files. Showing top ${totalFiles} files.`,
+    `Found ${data.length} relevant chunks in ${totalFiles} files (max-count=${options.maxCount}, per-file=${options.perFile}).`,
   );
-  let output = `\n${summary}\n`;
+  let output = `\n${summary}\n`; // Tighter whitespace
 
   // 3. Iterate Groups
   for (const [rawPath, chunks] of grouped) {
+    // Sort chunks within file: Prefer content over anchors, then score
+    chunks.sort((a, b) => {
+      const aIsAnchor = !!a.metadata?.is_anchor;
+      const bIsAnchor = !!b.metadata?.is_anchor;
+      if (aIsAnchor !== bIsAnchor) return aIsAnchor ? 1 : -1; // Put non-anchors first
+      return b.score - a.score; // Then sort by score
+    });
+
     // Path Formatting
     let displayPath = rawPath;
     if (rawPath !== "Unknown path") {
@@ -118,7 +161,7 @@ function formatSearchResults(
     }
 
     // File Header
-    output += `\n${style.green("📂 " + style.bold(displayPath))}\n`;
+    output += `${style.green("📂 " + style.bold(displayPath))}`;
 
     // Render Chunks
     const shownChunks = chunks.slice(0, options.perFile);
@@ -126,7 +169,7 @@ function formatSearchResults(
 
     for (const chunk of shownChunks) {
       // Metadata
-      const startLine = (chunk.generated_metadata?.start_line ?? 0) + 1;
+      let startLine = (chunk.generated_metadata?.start_line ?? 0) + 1;
       const scoreDisplay = options.showScores
         ? style.dim(` (score: ${chunk.score.toFixed(3)})`)
         : "";
@@ -134,23 +177,39 @@ function formatSearchResults(
       // Parse Text
       const { header, body } = parseChunkText(chunk.text ?? "");
 
-      // Context Header (e.g. "Function: myFunc")
-      if (header) {
-        const contextClean = header.replace(/^File:.*$/m, "").trim();
-        if (contextClean) {
-          output += `   ${style.dim("Context: " + contextClean)}\n`;
+      // Context Header (e.g. "Function: myFunc") - Only show if meaningful
+      if (header && !options.showContent) {
+        // Only show headers that aren't just file paths or boilerplate
+        const contextLines = header
+          .split("\n")
+          .filter((l) => !l.startsWith("File:") && !l.includes("(anchor)"))
+          .map((l) => l.trim())
+          .filter(Boolean);
+
+        if (contextLines.length > 0) {
+          // Join with arrow for brevity
+          output += `\n   ${style.dim("Context: " + contextLines.join(" > "))}`;
         }
       }
 
-      // Code Body Highlighting
+      // Clean Snippet Body
       let displayBody = body;
+      let linesRemoved = 0;
+
       if (!options.showContent) {
-        // Truncate if not requesting full content
-        const lines = body.split("\n");
+        const cleaned = cleanSnippet(body);
+        let lines = cleaned.cleanedLines;
+        linesRemoved = cleaned.linesRemoved;
+
+        // Truncate length
         if (lines.length > 6) {
-          displayBody = lines.slice(0, 6).join("\n");
+          lines = lines.slice(0, 6);
         }
+        displayBody = lines.join("\n");
       }
+
+      // Adjust start line based on cleaning
+      startLine += linesRemoved;
 
       // Apply Syntax Highlighting (ANSI)
       let highlighted = displayBody;
@@ -173,24 +232,28 @@ function formatSearchResults(
         })
         .join("\n");
 
-      output += `${snippet}${scoreDisplay}\n`;
+      output += `\n${snippet}${scoreDisplay}\n`;
 
       // Visual separator between chunks in same file if needed
       if (
         shownChunks.length > 1 &&
         chunk !== shownChunks[shownChunks.length - 1]
       ) {
-        output += style.dim("      ...\n");
+        output += `${style.dim("      ...")}\n`;
       }
     }
 
-    // "More matches" footer
+    // "More matches" footer - softer hint
     if (remaining > 0) {
-      output += `      ${style.dim(`... +${remaining} more matches in this file (use --per-file ${chunks.length} to see all)`)}\n`;
+      // Suggest a reasonable next step (current + remaining, or current + 5)
+      const nextStep = options.perFile + Math.min(remaining, 5);
+      output += `      ${style.dim(`... +${remaining} more matches (rerun with --per-file ${nextStep})`)}\n`;
     }
+    
+    output += "\n"; // Separator between files
   }
 
-  return output;
+  return output.trimEnd(); // Clean up trailing newlines
 }
 
 export const search: Command = new CommanderCommand("search")
@@ -203,7 +266,11 @@ export const search: Command = new CommanderCommand("search")
     "25",
   )
   .option("-c, --content", "Show full chunk content instead of snippets", false)
-  .option("--per-file <n>", "Number of matches to show per file", "1")
+  .option(
+    "--per-file <n>",
+    "Number of matches to show per file",
+    "1",
+  )
   .option("--scores", "Show relevance scores", false)
   .option("--compact", "Show file paths only", false)
   .option(
@@ -341,6 +408,7 @@ export const search: Command = new CommanderCommand("search")
         perFile: parseInt(options.perFile, 10),
         showScores: options.scores,
         compact: options.compact,
+        maxCount: parseInt(options.m, 10),
         root,
       });
 

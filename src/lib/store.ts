@@ -1,6 +1,7 @@
 export interface FileMetadata {
   path: string;
   hash: string;
+  is_anchor?: boolean; 
   [key: string]: any;
 }
 

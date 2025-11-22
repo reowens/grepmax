@@ -902,7 +902,6 @@ export class LocalStore implements Store {
         return { record: withNeighbors, score };
       }),
     );
-
     const chunks: ChunkType[] = expanded.map(({ record, score }) => {
       const startLine = (record.start_line as number) ?? 0;
       const endLine = (record.end_line as number) ?? startLine;
@@ -913,6 +912,7 @@ export class LocalStore implements Store {
         metadata: {
           path: record.path as string,
           hash: (record.hash as string) || "",
+          is_anchor: record.is_anchor === true, 
         },
         generated_metadata: {
           start_line: startLine,
@@ -923,7 +923,6 @@ export class LocalStore implements Store {
 
     return { data: chunks };
   }
-
   async retrieve(storeId: string): Promise<unknown> {
     const table = await this.getTable(storeId);
     return typeof (table as any).info === "function"
