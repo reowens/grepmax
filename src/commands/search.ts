@@ -4,7 +4,12 @@ import type { Command } from "commander";
 import { Command as CommanderCommand } from "commander";
 import { createFileSystem, createStore } from "../lib/context";
 import { ensureSetup } from "../lib/setup-helpers";
-import type { ChunkType, FileMetadata, SearchResponse } from "../lib/store";
+import type {
+  ChunkType,
+  FileMetadata,
+  SearchResponse,
+  Store,
+} from "../lib/store";
 import { ensureStoreExists, isStoreEmpty } from "../lib/store-helpers";
 import { getAutoStoreId } from "../lib/store-resolver";
 import {
@@ -304,7 +309,7 @@ export const search: Command = new CommanderCommand("search")
       exec_path = "";
     }
 
-    let store: any = null;
+    let store: Store | null = null;
     try {
       await ensureSetup({ silent: options.json });
       store = await createStore();

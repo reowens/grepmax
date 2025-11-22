@@ -44,7 +44,7 @@ osgrep --json "auth middleware" src/api
 
 ### Strategy
 
-1. Run `osgrep --json "query"`.
+1. Run osgrep search --json "query"
 2. Read the JSON output. Note the `metadata.path` and `generated_metadata.start_line`.
 3. If the snippet is sufficient, you are done.
 4. If you need more context, use the file tool to read the file around the specific lines found.

@@ -7,6 +7,7 @@ import {
   createIndexingSpinner,
   formatDryRunSummary,
 } from "../lib/sync-helpers";
+import type { Store } from "../lib/store";
 import { initialSync, MetaStore } from "../utils";
 
 const PROFILE_ENABLED =
@@ -28,7 +29,7 @@ export const index = new Command("index")
     const options: { store?: string; dryRun: boolean; path: string } =
       cmd.optsWithGlobals();
 
-    let store: any = null;
+    let store: Store | null = null;
     try {
       await ensureSetup();
       store = await createStore();

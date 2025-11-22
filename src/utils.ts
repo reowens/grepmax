@@ -18,8 +18,7 @@ const SKIP_META_SAVE =
   process.env.OSGREP_SKIP_META_SAVE === "1" ||
   process.env.OSGREP_SKIP_META_SAVE === "true";
 
-// --- THE VELVET ROPE CONFIGURATION ---
-// Only index these extensions to avoid binary noise and improve relevance.
+// Extensions we consider for indexing to avoid binary noise and improve relevance.
 const INDEXABLE_EXTENSIONS = new Set([
   // Code
   ".ts",
@@ -70,7 +69,7 @@ const INDEXABLE_EXTENSIONS = new Set([
   "makefile",
 ]);
 
-const MAX_FILE_SIZE_BYTES = 1024 * 1024; // 1MB limit for semantic indexing
+const MAX_FILE_SIZE_BYTES = 1024 * 1024; // 1MB limit for indexing
 
 interface IndexingProfile {
   sections: Record<string, number>;
@@ -89,23 +88,18 @@ function toMs(start: bigint, end?: bigint): number {
   return Number((end ?? now()) - start) / 1_000_000;
 }
 
-/**
- * Checks if a file is worthy of being indexed (semantic relevance + size safety)
- */
+// Check if a file should be indexed (extension and size).
 function isIndexableFile(filePath: string): boolean {
-  // 1. Extension Check
   const ext = extname(filePath).toLowerCase();
-  // Special handling for files like Dockerfile or Makefile that might have no ext
   const basename = path.basename(filePath).toLowerCase();
   if (!INDEXABLE_EXTENSIONS.has(ext) && !INDEXABLE_EXTENSIONS.has(basename)) {
     return false;
   }
 
-  // 2. Size Check (Skip huge files that choke the embedder)
   try {
     const stats = fs.statSync(filePath);
     if (stats.size > MAX_FILE_SIZE_BYTES) return false;
-    if (stats.size === 0) return false; // Skip empty files
+    if (stats.size === 0) return false;
   } catch {
     return false;
   }
@@ -378,7 +372,7 @@ export async function initialSync(
   // 2. Walk file system and apply the VELVET ROPE filter
   const fileWalkStart = PROFILE_ENABLED ? now() : null;
   
-  // A. Get ALL files that are not gitignored (this represents "Disk State")
+  // Files on disk that are not gitignored.
   const allFiles = Array.from(fileSystem.getFiles(repoRoot));
   const aliveFiles = allFiles.filter(
     (filePath) => !fileSystem.isIgnored(filePath, repoRoot)
@@ -389,8 +383,7 @@ export async function initialSync(
       (profile.sections.fileWalk ?? 0) + toMs(fileWalkStart);
   }
 
-  // B. Apply Velvet Rope (this represents "Index Candidates")
-  // We only index these, but we don't delete others just because they aren't indexable
+  // Apply extension filter to pick index candidates.
   const repoFiles = aliveFiles.filter((filePath) => isIndexableFile(filePath));
 
   // C. Determine Staleness
@@ -438,7 +431,7 @@ export async function initialSync(
     profile.processed = total;
   }
 
-  // --- ADAPTIVE PACING CONFIGURATION ---
+  // Adaptive pacing configuration.
   const MIN_CONCURRENCY = 1;
   const MAX_CONCURRENCY = Math.max(1, Math.floor(os.cpus().length / 2));
   let currentConcurrency = Math.max(1, Math.floor(MAX_CONCURRENCY / 1.5));
@@ -477,7 +470,6 @@ export async function initialSync(
               storeIsEmpty || !existingHash || existingHash !== hash;
 
             if (dryRun && shouldIndex) {
-              // console.log("Dry run: would have indexed", filePath); // Keep output clean
               indexed += 1;
             } else if (shouldIndex) {
               const didIndex = await indexFile(
@@ -517,8 +509,7 @@ export async function initialSync(
       ),
     );
 
-    // --- THE THERMOSTAT ---
-    // Monitor performance and health after every batch
+    // Adjust concurrency based on batch performance.
     const batchDuration = Date.now() - batchStart;
     const timePerFile = batchDuration / batch.length;
     const memUsageMB = process.memoryUsage().rss / 1024 / 1024;
@@ -570,8 +561,6 @@ export async function initialSync(
       profile.sections.createVectorIndex =
         (profile.sections.createVectorIndex ?? 0) + toMs(vecStart);
     }
-  } else if (!dryRun && indexed === 0) {
-    // console.log("[profile] Skipping index rebuild (no new files)");
   }
 
   if (PROFILE_ENABLED && totalStart && profile) {

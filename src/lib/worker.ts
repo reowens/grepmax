@@ -12,24 +12,50 @@ env.allowLocalModels = true;
 // We start with false to prefer local, but will toggle if needed
 env.allowRemoteModels = false;
 
+type EmbedOptions = {
+  pooling: "cls";
+  normalize: boolean;
+  truncation: boolean;
+  max_length: number;
+};
+
+type EmbedOutput = {
+  data: Float32Array | number[];
+  dims?: number[];
+};
+
+type RerankInput = { text: string; text_pair: string };
+
+type RerankResult = { logits?: number[] | number; score?: number };
+
+type EmbedPipeline = (
+  inputs: string[],
+  options: EmbedOptions,
+) => Promise<EmbedOutput>;
+
+type RerankPipeline = (
+  inputs: RerankInput[],
+  options?: Record<string, unknown>,
+) => Promise<RerankResult[]>;
+
 class EmbeddingWorker {
-  private embedPipe: any = null;
-  private rerankPipe: any = null;
+  private embedPipe: EmbedPipeline | null = null;
+  private rerankPipe: RerankPipeline | null = null;
   private embedModelId = "mixedbread-ai/mxbai-embed-xsmall-v1";
   private rerankModelId = "mixedbread-ai/mxbai-rerank-xsmall-v1";
   private readonly TARGET_DIMENSIONS = 384;
 
-  private async loadPipeline(
+  private async loadPipeline<T extends EmbedPipeline | RerankPipeline>(
     task: PipelineType,
     model: string,
-    options: Record<string, any>,
-  ) {
+    options: Record<string, unknown>,
+  ): Promise<T> {
     try {
-      return await pipeline(task, model, options);
+      return (await pipeline(task, model, options)) as unknown as T;
     } catch {
       console.log("Worker: Local model not found. Downloading...");
       env.allowRemoteModels = true;
-      const loaded = await pipeline(task, model, options);
+      const loaded = (await pipeline(task, model, options)) as unknown as T;
       env.allowRemoteModels = false;
       return loaded;
     }
@@ -41,7 +67,7 @@ class EmbeddingWorker {
     console.log(`Worker: Loading models from ${CACHE_DIR}...`);
 
     if (!this.embedPipe) {
-      this.embedPipe = await this.loadPipeline(
+      this.embedPipe = await this.loadPipeline<EmbedPipeline>(
         "feature-extraction",
         this.embedModelId,
         {
@@ -52,7 +78,7 @@ class EmbeddingWorker {
     }
 
     if (!this.rerankPipe) {
-      this.rerankPipe = await this.loadPipeline(
+      this.rerankPipe = await this.loadPipeline<RerankPipeline>(
         "text-classification",
         this.rerankModelId,
         {
@@ -67,8 +93,10 @@ class EmbeddingWorker {
 
   async embed(texts: string[]): Promise<number[][]> {
     if (!this.embedPipe) await this.initialize();
+    const embedPipe = this.embedPipe;
+    if (!embedPipe) throw new Error("Embedding pipeline not initialized");
 
-    const output = await this.embedPipe(texts, {
+    const output = await embedPipe(texts, {
       pooling: "cls",
       normalize: true,
       truncation: true,
@@ -100,19 +128,18 @@ class EmbeddingWorker {
 
   async rerank(query: string, documents: string[]): Promise<number[]> {
     if (!this.rerankPipe) await this.initialize();
+    const rerankPipe = this.rerankPipe;
+    if (!rerankPipe) throw new Error("Rerank pipeline not initialized");
     const inputs = documents.map((doc) => ({ text: query, text_pair: doc }));
-    const results = await this.rerankPipe(inputs, { top_k: null });
-    return results.map((result: any) => {
-      const logitCandidate =
-        typeof result?.logits?.[0] === "number"
-          ? result.logits[0]
-          : typeof result?.logits === "number"
-            ? result.logits
-            : null;
-      if (typeof logitCandidate === "number") {
-        return 1 / (1 + Math.exp(-logitCandidate));
+    const results = await rerankPipe(inputs, { top_k: null });
+    return results.map((result) => {
+      const logits = Array.isArray(result.logits)
+        ? result.logits[0]
+        : result.logits;
+      if (typeof logits === "number") {
+        return 1 / (1 + Math.exp(-logits));
       }
-      return typeof result?.score === "number" ? result.score : 0;
+      return typeof result.score === "number" ? result.score : 0;
     });
   }
 }
