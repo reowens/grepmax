@@ -174,6 +174,12 @@ pnpm format       # biome formatting + linting
 
 ## Version History
 
+### v0.1.7
+- Auto-setup: directories and models are created automatically on first use
+- Auto-index: first search automatically indexes empty repositories
+- Refactored setup and store logic into reusable helper modules
+- Improved user experience with better messaging
+
 ### v0.1.6
 - Improved `osgrep setup` with better resource cleanup
 - Cleaner output formatting

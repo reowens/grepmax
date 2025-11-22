@@ -9,9 +9,6 @@ on:
 jobs:
   publish-npm:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: osgrep
     permissions:
       contents: read
       id-token: write
@@ -33,7 +30,7 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
           cache: 'pnpm'
-          cache-dependency-path: 'osgrep/pnpm-lock.yaml'
+          cache-dependency-path: 'pnpm-lock.yaml'
 
       - name: Verify tag commit is on main
         working-directory: .
@@ -46,6 +43,12 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Check formatting and linting
+        run: pnpm run format:check
+
+      - name: Check types
+        run: pnpm run typecheck
 
       - name: Verify tag matches package.json version
         run: |
@@ -63,5 +66,3 @@ jobs:
         run: pnpm publish --access public --provenance --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-
