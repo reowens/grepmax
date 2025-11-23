@@ -52,6 +52,8 @@ vi.mock("../src/utils", () => ({
     indexed: 1,
     total: 1,
   })),
+  readServerLock: vi.fn(async () => null),
+  formatDenseSnippet: vi.fn((t) => t),
 }));
 
 import { search } from "../src/commands/search";

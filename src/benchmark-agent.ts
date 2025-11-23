@@ -25,6 +25,8 @@ interface BenchmarkResult {
 	cache_read_tokens?: number;
 	tool_calls: number;
 	files_read: number;
+	grep_calls: number;
+	bash_calls: number;
 	result: string;
 	error?: string;
 }
@@ -47,19 +49,48 @@ async function runTest(
 	const startTime = Date.now();
 	let toolCalls = 0;
 	let filesRead = 0;
+	let grepCalls = 0;
 	let bashCalls = 0;
 
 	try {
+		// Build a detailed system prompt that encourages thorough searching
+		const systemPrompt = useOsgrep
+			? `You are a thorough code analysis assistant. Your goal is to provide comprehensive, well-researched answers about codebases.
+
+IMPORTANT: You have access to osgrep, a semantic code search tool. This is MUCH more efficient than grep for conceptual queries.
+
+When answering questions:
+1. First use osgrep with --json to find relevant code semantically
+2. Read the specific files osgrep suggests
+3. Provide detailed analysis based on what you find
+
+The repository is already indexed. Use osgrep for all conceptual/semantic searches.`
+			: `You are a thorough code analysis assistant. Your goal is to provide comprehensive, well-researched answers about codebases.
+
+When answering questions:
+1. Use Grep to search for relevant patterns and keywords
+2. Use Glob to find relevant files
+3. Read files to understand implementation details
+4. Explore multiple files to get a complete picture
+5. Provide detailed analysis based on what you find
+
+Be thorough - search widely before concluding.`;
+
 		// Build query options
 		const options: any = {
 			cwd: repoPath,
-			systemPrompt: {
-				type: 'preset',
-				preset: 'claude_code'
-			},
-			allowedTools: ['Read', 'Grep', 'Glob', 'Bash'],
+			systemPrompt,
+			allowedTools: useOsgrep 
+				? ['Read', 'Grep', 'Glob', 'Bash'] 
+				: ['Read', 'Grep', 'Glob'], // No Bash without osgrep
+			// ALSO explicitly disallow Bash when not using osgrep
+			disallowedTools: useOsgrep ? [] : ['Bash'],
 			permissionMode: 'bypassPermissions' as const, // Auto-approve for benchmarking
+			maxTurns: 50, // Allow many turns for thorough exploration
 		};
+		
+		// Debug: Log the tool configuration
+		console.log(chalk.dim(`   Tools config: allowed=${JSON.stringify(options.allowedTools)}, disallowed=${JSON.stringify(options.disallowedTools)}`));
 
 		// Load osgrep plugin/skill if enabled
 		if (useOsgrep) {
@@ -72,9 +103,20 @@ async function runTest(
 			];
 		}
 
+		// Enhance the prompt to encourage thorough investigation
+		const enhancedPrompt = `${question}
+
+Please provide a comprehensive answer by:
+1. Searching the codebase thoroughly
+2. Reading relevant files
+3. Explaining the implementation with specific code references
+4. Covering all major aspects of the question
+
+Be thorough and cite specific files and code.`;
+
 		// Execute the query using Agent SDK
 		const result = query({
-			prompt: question,
+			prompt: enhancedPrompt,
 			options
 		});
 
@@ -83,7 +125,7 @@ async function runTest(
 
 		// Collect results from the async generator
 		for await (const msg of result) {
-			// Count tool uses
+			// Log progress for visibility
 			if (msg.type === 'assistant' && 'message' in msg) {
 				const assistantMsg = msg.message;
 				if (Array.isArray(assistantMsg.content)) {
@@ -92,10 +134,23 @@ async function runTest(
 							toolCalls++;
 							// Count specific tool types based on name
 							const toolName = block.name;
+							
+							// Debug: Log unexpected tool usage
+							if (toolName === 'Bash' && !useOsgrep) {
+								console.log(chalk.red(`\n   ⚠️  WARNING: Bash tool used when it should be disallowed!`));
+							}
+							
 							if (toolName === 'Read') {
 								filesRead++;
+								process.stdout.write(chalk.dim('.'));
 							} else if (toolName === 'Bash') {
 								bashCalls++;
+								process.stdout.write(chalk.cyan('o'));
+							} else if (toolName === 'Grep') {
+								grepCalls++;
+								process.stdout.write(chalk.yellow('g'));
+							} else if (toolName === 'Glob') {
+								process.stdout.write(chalk.dim('*'));
 							}
 						}
 					}
@@ -104,6 +159,7 @@ async function runTest(
 
 			// Extract final result
 			if (msg.type === 'result') {
+				process.stdout.write('\n'); // New line after progress dots
 				finalResult = msg as SDKResultMessage;
 				if (msg.subtype === 'success') {
 					resultText = msg.result;
@@ -126,6 +182,8 @@ async function runTest(
 			cache_read_tokens: finalResult.usage.cache_read_input_tokens,
 			tool_calls: toolCalls,
 			files_read: filesRead,
+			grep_calls: grepCalls,
+			bash_calls: bashCalls,
 			result: resultText
 		};
 	} catch (error) {
@@ -136,6 +194,8 @@ async function runTest(
 			output_tokens: 0,
 			tool_calls: 0,
 			files_read: 0,
+			grep_calls: 0,
+			bash_calls: 0,
 			result: '',
 			error: error instanceof Error ? error.message : String(error)
 		};
@@ -158,6 +218,8 @@ async function runBenchmark(
 
 	// Run test WITHOUT osgrep plugin
 	console.log(chalk.yellow('\n⏱️  Running WITHOUT osgrep skill...'));
+	console.log(chalk.dim('   (Using only: Read, Grep, Glob)'));
+	process.stdout.write(chalk.dim('   Progress: '));
 	const withoutOsgrep = await runTest(question, repoPath, false);
 	
 	if (withoutOsgrep.error) {
@@ -168,6 +230,8 @@ async function runBenchmark(
 
 	// Run test WITH osgrep plugin/skill
 	console.log(chalk.yellow('\n⏱️  Running WITH osgrep skill...'));
+	console.log(chalk.dim('   (Using: Read, Grep, Glob, osgrep via Bash)'));
+	process.stdout.write(chalk.dim('   Progress: '));
 	const withOsgrep = await runTest(question, repoPath, true);
 	
 	if (withOsgrep.error) {
@@ -215,10 +279,15 @@ function displayResults(comparison: BenchmarkComparison): void {
 	console.log(`│ Cost                │ ${formatCost(without.cost_usd).padEnd(12)} │ ${formatCost(with_.cost_usd).padEnd(12)} │ ${formatPercent(costSavings, 'cheaper').padEnd(11)} │`);
 	console.log(`│ Input Tokens        │ ${formatNumber(without.input_tokens).padEnd(12)} │ ${formatNumber(with_.input_tokens).padEnd(12)} │ ${formatPercent(tokenReduction, 'less').padEnd(11)} │`);
 	console.log(`│ Output Tokens       │ ${formatNumber(without.output_tokens).padEnd(12)} │ ${formatNumber(with_.output_tokens).padEnd(12)} │ ${formatDiff(without.output_tokens, with_.output_tokens).padEnd(11)} │`);
-	console.log(`│ Tool Calls          │ ${formatNumber(without.tool_calls).padEnd(12)} │ ${formatNumber(with_.tool_calls).padEnd(12)} │ ${formatPercent(toolCallReduction, 'less').padEnd(11)} │`);
+	console.log(`│ Tool Calls (Total)  │ ${formatNumber(without.tool_calls).padEnd(12)} │ ${formatNumber(with_.tool_calls).padEnd(12)} │ ${formatPercent(toolCallReduction, 'less').padEnd(11)} │`);
 	console.log(`│ Files Read          │ ${formatNumber(without.files_read).padEnd(12)} │ ${formatNumber(with_.files_read).padEnd(12)} │ ${formatPercent(fileReadReduction, 'less').padEnd(11)} │`);
+	console.log(`│ Grep Searches       │ ${formatNumber(without.grep_calls).padEnd(12)} │ ${formatNumber(with_.grep_calls).padEnd(12)} │ ${formatDiff(without.grep_calls, with_.grep_calls).padEnd(11)} │`);
+	console.log(`│ osgrep Searches     │ ${formatNumber(without.bash_calls).padEnd(12)} │ ${formatNumber(with_.bash_calls).padEnd(12)} │ ${formatDiff(without.bash_calls, with_.bash_calls).padEnd(11)} │`);
 	
 	console.log('└─────────────────────┴──────────────┴──────────────┴─────────────┘');
+	
+	// Add legend
+	console.log(chalk.dim('\nProgress indicators: ') + chalk.dim('.') + chalk.dim('=Read ') + chalk.yellow('g') + chalk.dim('=Grep ') + chalk.cyan('o') + chalk.dim('=osgrep ') + chalk.dim('*=Glob'));
 
 	// Summary
 	console.log(chalk.bold('\n💡 Summary'));
@@ -271,10 +340,11 @@ function formatDiff(before: number, after: number): string {
 async function main() {
 	const question = process.argv[2];
 	const repoPath = process.argv[3] || process.cwd();
+	const outputFile = process.argv[4]; // Optional: path to save JSON results
 
 	if (!question) {
-		console.error(chalk.red('Usage: benchmark-agent <question> [repo-path]'));
-		console.error(chalk.dim('Example: benchmark-agent "How does authentication work?" ./my-repo'));
+		console.error(chalk.red('Usage: benchmark-agent <question> [repo-path] [output-json]'));
+		console.error(chalk.dim('Example: benchmark-agent "How does authentication work?" ./my-repo results.json'));
 		process.exit(1);
 	}
 
@@ -286,15 +356,50 @@ async function main() {
 	try {
 		const comparison = await runBenchmark(question, repoPath);
 		displayResults(comparison);
+		
+		// Save results to JSON if output file specified
+		if (outputFile) {
+			await saveResults(comparison, outputFile);
+		}
 	} catch (error) {
 		console.error(chalk.red('Benchmark failed:'), error);
 		process.exit(1);
 	}
 }
 
+/**
+ * Save benchmark results to JSON file
+ */
+async function saveResults(comparison: BenchmarkComparison, filepath: string): Promise<void> {
+	const fs = await import('fs/promises');
+	const path = await import('path');
+	
+	// Load existing results if file exists
+	let allResults: BenchmarkComparison[] = [];
+	try {
+		const existing = await fs.readFile(filepath, 'utf-8');
+		allResults = JSON.parse(existing);
+	} catch {
+		// File doesn't exist yet, start fresh
+	}
+	
+	// Add timestamp to the comparison
+	const resultWithTimestamp = {
+		...comparison,
+		timestamp: new Date().toISOString(),
+		repository_name: path.basename(comparison.repository)
+	};
+	
+	allResults.push(resultWithTimestamp);
+	
+	// Save back to file
+	await fs.writeFile(filepath, JSON.stringify(allResults, null, 2), 'utf-8');
+	console.log(chalk.green(`\n✓ Results saved to ${filepath}`));
+}
+
 if (require.main === module) {
 	main();
 }
 
-export { runBenchmark, displayResults };
+export { runBenchmark, displayResults, saveResults };
 

@@ -1,4 +1,5 @@
 {
+  "schema_version": "v1",
   "name": "osgrep",
   "version": "0.1.0",
   "description": "Semantic code search for Claude Code. Automatically indexes your project and provides intelligent search capabilities.",
@@ -6,6 +7,7 @@
     "name": "Ryan D'Onofrio",
     "email": "ryandonofrio@gmail.com"
   },
+  "hooks": "./hooks.json",
   "homepage": "https://github.com/ryandonofrio/osgrep",
   "repository": "https://github.com/ryandonofrio/osgrep",
   "license": "Apache-2.0",

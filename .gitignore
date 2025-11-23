@@ -11,3 +11,6 @@ RELEASE_GUIDE.md
 osgrep/run-benchmark.sh
 run-agent-benchmark.sh
 setup-benchmark-repos.sh
+AGENT_BENCHMARK.md
+benchmark-results.json
+src/benchmark-agent.ts

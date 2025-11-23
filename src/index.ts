@@ -7,6 +7,7 @@ import { index } from "./commands/index";
 import { list } from "./commands/list";
 import { search } from "./commands/search";
 import { setup } from "./commands/setup";
+import { serve } from "./commands/serve";
 import { installClaudeCode } from "./install/claude-code";
 
 // utility functions moved to ./utils
@@ -29,6 +30,7 @@ program.addCommand(search, { isDefault: true });
 program.addCommand(index);
 program.addCommand(list);
 program.addCommand(setup);
+program.addCommand(serve);
 program.addCommand(installClaudeCode);
 program.addCommand(doctor);
 

@@ -70,6 +70,8 @@ const INDEXABLE_EXTENSIONS = new Set([
 ]);
 
 const MAX_FILE_SIZE_BYTES = 1024 * 1024; // 1MB limit for indexing
+const SERVER_LOCK_FILE = (cwd: string) =>
+  path.join(cwd, ".osgrep", "server.json");
 
 interface IndexingProfile {
   sections: Record<string, number>;
@@ -105,6 +107,10 @@ function isIndexableFile(filePath: string): boolean {
   }
 
   return true;
+}
+
+export function isIndexablePath(filePath: string): boolean {
+  return isIndexableFile(filePath);
 }
 
 export class MetaStore {
@@ -516,7 +522,7 @@ export async function initialSync(
 
     // Case 1: Getting too hot (Memory spike or very slow processing)
     if (memUsageMB > 1500) {
-      // If RSS > 1.5GB, clamp down hard and sleep
+    // If RSS > 1.5GB, clamp down hard and sleep
       currentConcurrency = Math.max(MIN_CONCURRENCY, currentConcurrency - 2);
       // Force a pause to let GC run/system breathe
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -586,4 +592,68 @@ export async function initialSync(
   }
 
   return { processed, indexed, total };
+}
+
+export function debounce<T extends (...args: any[]) => void>(
+  func: T,
+  wait: number,
+): T {
+  let timeout: NodeJS.Timeout;
+  return function debounceWrapper(this: unknown, ...args: Parameters<T>) {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func.apply(this, args), wait);
+  } as T;
+}
+
+export function formatDenseSnippet(text: string, maxLength = 1500): string {
+  const clean = text ?? "";
+  if (clean.length <= maxLength) return clean;
+  return `${clean.slice(0, maxLength)}...`;
+}
+
+function getServerLockPath(cwd = process.cwd()): string {
+  return SERVER_LOCK_FILE(cwd);
+}
+
+export async function writeServerLock(
+  port: number,
+  pid: number,
+  cwd = process.cwd(),
+): Promise<void> {
+  const lockPath = getServerLockPath(cwd);
+  await fs.promises.mkdir(path.dirname(lockPath), { recursive: true });
+  await fs.promises.writeFile(lockPath, JSON.stringify({ port, pid }), "utf-8");
+}
+
+export async function readServerLock(
+  cwd = process.cwd(),
+): Promise<{ port: number; pid: number } | null> {
+  const lockPath = getServerLockPath(cwd);
+  try {
+    const content = await fs.promises.readFile(lockPath, "utf-8");
+    const data = JSON.parse(content);
+    if (
+      data &&
+      typeof data.port === "number" &&
+      typeof data.pid === "number"
+    ) {
+      return { port: data.port, pid: data.pid };
+    }
+  } catch (_err) {
+    // Missing or malformed lock file -> treat as absent
+  }
+  return null;
+}
+
+export async function clearServerLock(
+  cwd = process.cwd(),
+): Promise<void> {
+  const lockPath = getServerLockPath(cwd);
+  try {
+    await fs.promises.unlink(lockPath);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw err;
+    }
+  }
 }

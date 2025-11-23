@@ -16,7 +16,12 @@ import {
   createIndexingSpinner,
   formatDryRunSummary,
 } from "../lib/sync-helpers";
-import { initialSync, MetaStore } from "../utils";
+import {
+  formatDenseSnippet,
+  initialSync,
+  MetaStore,
+  readServerLock,
+} from "../utils";
 
 // --- UI Helpers (No external deps) ---
 const style = {
@@ -111,6 +116,25 @@ function cleanSnippet(body: string): {
   }
 
   return { cleanedLines: lines, linesRemoved };
+}
+
+function toDenseResults(
+  root: string,
+  data: SearchResponse["data"],
+): Array<{ path: string; score: number; content: string }> {
+  return data.map((item) => {
+    const rawPath =
+      typeof (item.metadata as FileMetadata | undefined)?.path === "string"
+        ? ((item.metadata as FileMetadata).path as string)
+        : "";
+    const relPath = rawPath ? relative(root, rawPath) || rawPath : "unknown";
+    const snippet = formatDenseSnippet(item.text ?? "");
+    return {
+      path: relPath,
+      score: Number(item.score.toFixed(3)),
+      content: snippet,
+    };
+  });
 }
 
 function formatSearchResults(
@@ -309,16 +333,64 @@ export const search: Command = new CommanderCommand("search")
       exec_path = "";
     }
 
+    const root = process.cwd();
+
+    async function tryServerFastPath(): Promise<boolean> {
+      const lock = await readServerLock(root);
+      if (!lock) return false;
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 100);
+      try {
+        const health = await fetch(`http://localhost:${lock.port}/health`, {
+          signal: controller.signal,
+        });
+        if (!health.ok) return false;
+      } catch (_err) {
+        return false;
+      } finally {
+        clearTimeout(timeout);
+      }
+
+      try {
+        const searchRes = await fetch(
+          `http://localhost:${lock.port}/search`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              query: pattern,
+              limit: parseInt(options.m, 10),
+              rerank: true,
+              path: exec_path ?? "",
+            }),
+          },
+        );
+        if (!searchRes.ok) return false;
+        const payload = await searchRes.json();
+        console.log(JSON.stringify(payload));
+        return true;
+      } catch (_err) {
+        return false;
+      }
+    }
+
+    if (options.json) {
+      const fast = await tryServerFastPath();
+      if (fast) {
+        return;
+      }
+    }
+
     let store: Store | null = null;
     try {
       await ensureSetup({ silent: options.json });
       store = await createStore();
       
       // Auto-detect store ID if not explicitly provided
-      const storeId = options.store || getAutoStoreId(process.cwd());
+      const storeId = options.store || getAutoStoreId(root);
       
       await ensureStoreExists(store, storeId);
-      const root = process.cwd();
       const autoSync =
         options.sync || (await isStoreEmpty(store, storeId));
       let didSync = false;
@@ -340,7 +412,7 @@ export const search: Command = new CommanderCommand("search")
         
         if (options.json) {
           // JSON mode: silent indexing without UI
-          const result = await initialSync(
+          await initialSync(
             store,
             fileSystem,
             storeId,
@@ -349,22 +421,19 @@ export const search: Command = new CommanderCommand("search")
             undefined, // No progress callback
             metaStore,
           );
-          // Wait for indexing to complete
-          while (true) {
-            const info = await store.getInfo(storeId);
-            if (info.counts.pending === 0 && info.counts.in_progress === 0) {
-              break;
+          if (!options.dryRun) {
+            while (true) {
+              const info = await store.getInfo(storeId);
+              if (info.counts.pending === 0 && info.counts.in_progress === 0) {
+                break;
+              }
+              await new Promise((resolve) => setTimeout(resolve, 1000));
             }
-            await new Promise((resolve) => setTimeout(resolve, 1000));
           }
           didSync = true;
           if (options.dryRun) {
-            console.log(
-              formatDryRunSummary(result, {
-                actionDescription: "would have indexed",
-              }),
-            );
-            return; // Let Node exit naturally
+            console.log(JSON.stringify({ results: [] }));
+            return;
           }
         } else {
           // Human mode: show spinner and progress
@@ -427,12 +496,17 @@ export const search: Command = new CommanderCommand("search")
 
       // Handle JSON output
       if (options.json) {
-        console.log(JSON.stringify(results.data, null, 2));
+        const dense = toDenseResults(root, results.data);
+        console.log(JSON.stringify({ results: dense }));
         return; // Let Node exit naturally
       }
 
       // Hint if no results found
       if (results.data.length === 0) {
+        if (options.json) {
+          console.log(JSON.stringify({ results: [] }));
+          return;
+        }
         if (!didSync) {
           try {
             const info = await store.getInfo(storeId);
