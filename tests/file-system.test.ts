@@ -90,6 +90,30 @@ describe("NodeFileSystem", () => {
     expect(() => fsImpl.isIgnored(tempRoot, tempRoot)).not.toThrow();
     expect(fsImpl.isIgnored(tempRoot, tempRoot)).toBe(false);
   });
+
+  it("handles dot and parent paths without throwing or false positives", async () => {
+    const fsImpl = new NodeFileSystem(new FakeGit(), { ignorePatterns: [] });
+    const dotPath = path.join(tempRoot, ".");
+    const parentPath = path.join(tempRoot, "..");
+
+    expect(() => fsImpl.isIgnored(dotPath, tempRoot)).not.toThrow();
+    expect(fsImpl.isIgnored(dotPath, tempRoot)).toBe(false);
+
+    // Parent of root should still resolve safely and be treated as ignored to avoid indexing outside root
+    expect(() => fsImpl.isIgnored(parentPath, tempRoot)).not.toThrow();
+    expect(fsImpl.isIgnored(parentPath, tempRoot)).toBe(true);
+  });
+
+  it("normalizes odd separators without crashing the ignore filter", async () => {
+    const fsImpl = new NodeFileSystem(new FakeGit(), { ignorePatterns: [] });
+    const weirdPath = path.join(tempRoot, "foo", ".", "bar");
+
+    await fs.mkdir(path.dirname(weirdPath), { recursive: true });
+    await fs.writeFile(weirdPath, "content");
+
+    expect(() => fsImpl.isIgnored(weirdPath, tempRoot)).not.toThrow();
+    expect(fsImpl.isIgnored(weirdPath, tempRoot)).toBe(false);
+  });
 });
 
 describe("GitIgnoreFilter", () => {
