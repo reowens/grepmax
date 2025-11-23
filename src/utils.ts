@@ -256,6 +256,7 @@ export async function indexFile(
   profile?: IndexingProfile,
   preComputedBuffer?: Buffer,
   preComputedHash?: string,
+  forceIndex?: boolean,
 ): Promise<boolean> {
   const indexStart = PROFILE_ENABLED ? now() : null;
   let buffer: Buffer;
@@ -274,7 +275,7 @@ export async function indexFile(
 
   const contentString = buffer.toString("utf-8");
 
-  if (metaStore) {
+  if (!forceIndex && metaStore) {
     const cachedHash = metaStore.get(filePath);
     if (cachedHash === hash) {
       return false;
@@ -487,6 +488,7 @@ export async function initialSync(
                 profile,
                 buffer,
                 hash,
+                storeIsEmpty,
               );
               if (didIndex) {
                 indexed += 1;

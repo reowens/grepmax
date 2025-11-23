@@ -49,11 +49,13 @@ export interface LocalStoreProfile {
 
 export class LocalStore implements Store {
   private db: lancedb.Connection | null = null;
+  // WorkerManager runs embedding/rerank work, serializes requests, and restarts on high RSS.
   private workerManager = new WorkerManager();
   private chunker = new TreeSitterChunker();
   private readonly VECTOR_DIMENSIONS = 384;
   private readonly EMBED_BATCH_SIZE = 12; // Smaller batches to tame thermals/memory on large repos
   private readonly WRITE_BATCH_SIZE = 50;
+  // Query prefix for embeddings: Represent this sentence for searching relevant passages
   private readonly queryPrefix =
     "Represent this sentence for searching relevant passages: ";
   private profile: LocalStoreProfile = {
@@ -487,12 +489,12 @@ export class LocalStore implements Store {
       this.queryPrefix + query,
     );
     const finalLimit = top_k ?? 10;
-    const totalChunks = await table.countRows();
-    const candidateLimit = Math.min(400, Math.max(100, 2 * Math.sqrt(totalChunks)));
 
-    const allFilters = Array.isArray(
-      (_filters as { all?: unknown })?.all,
-    )
+    // Keep balanced pools so exact matches survive to rerank
+    const vectorLimit = 200;
+    const ftsLimit = 200;
+
+    const allFilters = Array.isArray((_filters as { all?: unknown })?.all)
       ? ((_filters as { all?: unknown }).all as Record<string, unknown>[])
       : [];
     const pathFilterEntry = allFilters.find(
@@ -501,14 +503,13 @@ export class LocalStore implements Store {
     const pathPrefix =
       typeof pathFilterEntry?.value === "string" ? pathFilterEntry.value : "";
 
-    // Build LanceDB WHERE clause for path filtering (applied BEFORE limit)
     const whereClause = pathPrefix
       ? `path LIKE '${pathPrefix.replace(/'/g, "''")}%'`
       : undefined;
 
-    // 2. Parallel Retrieval: Vector + FTS 
-    const vectorSearchQuery = table.search(queryVector).limit(candidateLimit);
-    const ftsSearchQuery = table.search(query).limit(candidateLimit);
+    // 2. Parallel Retrieval
+    const vectorSearchQuery = table.search(queryVector).limit(vectorLimit);
+    const ftsSearchQuery = table.search(query).limit(ftsLimit);
 
     if (whereClause) {
       vectorSearchQuery.where(whereClause);
@@ -520,17 +521,15 @@ export class LocalStore implements Store {
       ftsSearchQuery.toArray().catch(() => []) as Promise<VectorRecord[]>,
     ]);
 
-    // 3. RRF Fusion (Combine the two lists)
-    const k = 60; // RRF Constant
+    // 3. RRF Fusion
+    const k = 20; // balances FTS and vector without overpowering rerank
     const rrfScores = new Map<string, number>();
     const contentMap = new Map<string, VectorRecord>();
 
     const fuse = (results: VectorRecord[]) => {
       results.forEach((r, i) => {
-        // Use path+start_line as unique key since ID might be unstable across re-indexes
         const key = `${r.path}:${r.start_line}`;
         if (!contentMap.has(key)) contentMap.set(key, r);
-
         const rank = i + 1;
         const score = 1 / (k + rank);
         rrfScores.set(key, (rrfScores.get(key) || 0) + score);
@@ -540,22 +539,29 @@ export class LocalStore implements Store {
     fuse(vectorResults);
     fuse(ftsResults);
 
-    // Sort by RRF Score to get the "Best of Both Worlds" candidates
     const candidates = Array.from(rrfScores.keys())
       .sort((a, b) => (rrfScores.get(b) || 0) - (rrfScores.get(a) || 0))
-      .slice(0, candidateLimit) // Take top 50 combined
       .map((key) => contentMap.get(key))
-      .filter((record): record is VectorRecord => Boolean(record));
+      .filter((record): record is VectorRecord => Boolean(record))
+      .slice(0, vectorLimit + ftsLimit);
 
     if (candidates.length === 0) {
       return { data: [] };
     }
 
-    // 4. Neural Reranking (The Brains) + score blending
+    // 4. Neural Reranking & Brute-Force Boosting
     const rrfValues = Array.from(rrfScores.values());
     const maxRrf = rrfValues.length > 0 ? Math.max(...rrfValues) : 0;
     const normalizeRrf = (key: string) =>
       maxRrf > 0 ? (rrfScores.get(key) || 0) / maxRrf : 0;
+
+    const lowerQuery = query.toLowerCase().trim();
+    const queryParts = lowerQuery
+      .split(/[\s/\\_.-]+/)
+      .map((t) => t.trim())
+      .filter((t) => t.length > 2);
+    const isCodeQuery =
+      /[A-Z_]|`|\(|\)|\//.test(query) || queryParts.some((p) => p.includes("_"));
 
     let finalResults = candidates.map((r) => {
       const key = `${r.path}:${r.start_line}`;
@@ -567,22 +573,56 @@ export class LocalStore implements Store {
       const docs = candidates.map((r) => String(r.content ?? ""));
       const scores = await this.workerManager.rerank(query, docs);
 
-      // Update scores with Neural scores
       finalResults = candidates.map((r, i) => {
         const key = `${r.path}:${r.start_line}`;
         const rrfScore = normalizeRrf(key);
         const rerankScore = scores[i] ?? 0;
-        const blendedScore = 0.7 * rerankScore + 0.3 * rrfScore;
+        const rerankWeight = isCodeQuery ? 0.55 : 0.6;
+        const rrfWeight = 1 - rerankWeight;
+        let blendedScore = rerankWeight * rerankScore + rrfWeight * rrfScore;
+
+        const content = String(r.content ?? "").toLowerCase();
+        const path = String(r.path ?? "").toLowerCase();
+
+        // Boost 1: exact substring
+        if (lowerQuery.length > 2 && content.includes(lowerQuery)) {
+          blendedScore += 0.25;
+        }
+
+        // Boost 2: anchor/definition
+        if (r.is_anchor === true) {
+          blendedScore += 0.12;
+        }
+
+        // Boost 3: path token match
+        if (queryParts.some((part) => path.includes(part))) {
+          blendedScore += 0.05;
+        }
+
+        // Boost 4: token overlap (light)
+        const contentTokens = new Set(
+          content
+            .split(/[^a-z0-9_]+/)
+            .map((t) => t.trim())
+            .filter((t) => t.length > 2),
+        );
+        let overlap = 0;
+        if (queryParts.length > 0 && contentTokens.size > 0) {
+          for (const tok of queryParts) {
+            if (contentTokens.has(tok)) overlap += 1;
+          }
+          if (overlap > 0) {
+            blendedScore += Math.min(0.08, overlap * 0.02);
+          }
+        }
+
         return { record: r, score: blendedScore, rrfScore, rerankScore };
       });
     } catch (e) {
-      console.warn(
-        "Reranker failed; falling back to blended RRF-only order:",
-        e,
-      );
+      console.warn("Reranker failed; falling back to RRF:", e);
     }
 
-    // 5. Final Sort & Format
+    // 5. Final Sort
     finalResults.sort((a, b) => b.score - a.score);
     const limited = finalResults.slice(0, finalLimit);
 
@@ -590,6 +630,7 @@ export class LocalStore implements Store {
       table,
       limited.map(({ record }) => record),
     );
+
     const chunks: ChunkType[] = expandedRecords.map((record, idx) => {
       const score = limited[idx]?.score ?? 0;
       const startLine = (record.start_line as number) ?? 0;
@@ -601,7 +642,7 @@ export class LocalStore implements Store {
         metadata: {
           path: record.path as string,
           hash: (record.hash as string) || "",
-          is_anchor: record.is_anchor === true, 
+          is_anchor: record.is_anchor === true,
         },
         generated_metadata: {
           start_line: startLine,
@@ -612,6 +653,7 @@ export class LocalStore implements Store {
 
     return { data: chunks };
   }
+
   async retrieve(storeId: string): Promise<unknown> {
     const table = await this.getTable(storeId);
     const tableInfo = table as { info?: () => unknown };

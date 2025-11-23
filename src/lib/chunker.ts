@@ -201,6 +201,7 @@ export class TreeSitterChunker {
       if (text.includes("=>")) return true;
       if (text.includes("function ")) return true;
       if (text.includes("class ")) return true;
+      if (/(?:^|\n)\s*(?:export\s+)?const\s+[A-Z0-9_]+\s*=/.test(text)) return true;
       return false;
     };
 
