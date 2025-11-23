@@ -1,6 +1,7 @@
 import * as http from "node:http";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { randomUUID } from "node:crypto";
 import { Command } from "commander";
 import chokidar, { type FSWatcher } from "chokidar";
 import { createFileSystem, createStore } from "../lib/context";
@@ -22,6 +23,8 @@ import {
 } from "../utils";
 
 type PendingAction = "upsert" | "delete";
+
+const MAX_REQUEST_BYTES = 10 * 1024 * 1024;
 
 function toDenseResults(
   storeRoot: string,
@@ -67,6 +70,8 @@ async function createWatcher(
       ".osgrep/**",
     ],
   });
+
+  fileSystem.loadOsgrepignore(root);
 
   const pending = new Map<string, PendingAction>();
 
@@ -159,6 +164,7 @@ export const serve = new Command("serve")
     const options: { port: string; store?: string } = cmd.optsWithGlobals();
     const port = parseInt(options.port, 10);
     const root = process.cwd();
+    const authToken = randomUUID();
 
     let store: Store | null = null;
     let watcher: FSWatcher | null = null;
@@ -229,6 +235,20 @@ export const serve = new Command("serve")
       watcher = await createWatcher(store, storeId, root, metaStore);
 
       const server = http.createServer(async (req, res) => {
+        const rawAuth =
+          typeof req.headers.authorization === "string"
+            ? req.headers.authorization
+            : Array.isArray(req.headers.authorization)
+              ? req.headers.authorization[0]
+              : undefined;
+        const providedToken =
+          rawAuth && rawAuth.startsWith("Bearer ")
+            ? rawAuth.slice("Bearer ".length)
+            : rawAuth;
+        if (providedToken !== authToken) {
+          return respondJson(res, 401, { error: "unauthorized" });
+        }
+
         if (!req.url) {
           return respondJson(res, 400, { error: "Invalid request" });
         }
@@ -239,9 +259,33 @@ export const serve = new Command("serve")
         }
 
         if (req.method === "POST" && url.pathname === "/search") {
+          const contentLengthHeader = req.headers["content-length"];
+          const declaredLength = Array.isArray(contentLengthHeader)
+            ? parseInt(contentLengthHeader[0] ?? "", 10)
+            : contentLengthHeader
+              ? parseInt(contentLengthHeader, 10)
+              : NaN;
+
+          if (Number.isFinite(declaredLength) && declaredLength > MAX_REQUEST_BYTES) {
+            return respondJson(res, 413, { error: "payload_too_large" });
+          }
+
+          let receivedBytes = 0;
+          let rejected = false;
           const chunks: Buffer[] = [];
-          req.on("data", (c) => chunks.push(c));
+          req.on("data", (c) => {
+            if (rejected) return;
+            receivedBytes += c.length;
+            if (receivedBytes > MAX_REQUEST_BYTES) {
+              rejected = true;
+              respondJson(res, 413, { error: "payload_too_large" });
+              req.destroy();
+              return;
+            }
+            chunks.push(c);
+          });
           req.on("end", async () => {
+            if (rejected) return;
             try {
               const bodyRaw = Buffer.concat(chunks).toString("utf-8");
               const body = bodyRaw ? JSON.parse(bodyRaw) : {};
@@ -297,8 +341,8 @@ export const serve = new Command("serve")
         return respondJson(res, 404, { error: "not_found" });
       });
 
-      server.listen(port, async () => {
-        await writeServerLock(port, process.pid, root);
+      server.listen(port, "127.0.0.1", async () => {
+        await writeServerLock(port, process.pid, root, authToken);
         const lock = await readServerLock(root);
         console.log(
           `osgrep serve listening on port ${port} (lock: ${lock?.pid ?? "n/a"})`,

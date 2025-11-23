@@ -1,7 +1,6 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { Worker } from "node:worker_threads";
 import * as lancedb from "@lancedb/lancedb";
 import { v4 as uuidv4 } from "uuid";
 import type {
@@ -14,16 +13,13 @@ import type {
   StoreFile,
   StoreInfo,
 } from "./store";
-import { type Chunk, TreeSitterChunker } from "./chunker";
-import { LRUCache } from "./lru";
-import { VECTOR_CACHE_MAX, WORKER_TIMEOUT_MS } from "../config";
-
-type WorkerRequest =
-  | { id: string; text: string }
-  | { id: string; texts: string[] }
-  | { id: string; rerank: { query: string; documents: string[] } };
-
-const DB_PATH = path.join(os.homedir(), ".osgrep", "data");
+import { TreeSitterChunker } from "./chunker";
+import {
+  buildAnchorChunk,
+  ChunkWithContext,
+  formatChunkText,
+} from "./chunk-utils";
+import { WorkerManager } from "./worker-manager";
 
 type VectorRecord = {
   id: string;
@@ -36,18 +32,6 @@ type VectorRecord = {
   chunk_index?: number;
   is_anchor?: boolean;
 } & Record<string, unknown>;
-
-type ChunkWithContext = Chunk & {
-  context: string[];
-  chunkIndex?: number;
-  isAnchor?: boolean;
-};
-type PendingRequest = {
-  resolve: (value: unknown) => void;
-  reject: (reason: unknown) => void;
-  payload: WorkerRequest;
-  timeoutId?: NodeJS.Timeout;
-};
 
 const PROFILE_ENABLED =
   process.env.OSGREP_PROFILE === "1" || process.env.OSGREP_PROFILE === "true";
@@ -65,13 +49,7 @@ export interface LocalStoreProfile {
 
 export class LocalStore implements Store {
   private db: lancedb.Connection | null = null;
-  private worker!: Worker;
-  private vectorCache = new LRUCache<string, number[]>(VECTOR_CACHE_MAX);
-  private pendingRequests = new Map<string, PendingRequest>();
-  private restartInFlight: Promise<void> | null = null;
-  private isClosing = false;
-  private readonly MAX_WORKER_RSS = 6 * 1024 * 1024 * 1024; // 6GB upper bound, we restart before OOM
-  private embedQueue: Promise<void> = Promise.resolve();
+  private workerManager = new WorkerManager();
   private chunker = new TreeSitterChunker();
   private readonly VECTOR_DIMENSIONS = 384;
   private readonly EMBED_BATCH_SIZE = 12; // Smaller batches to tame thermals/memory on large repos
@@ -90,111 +68,10 @@ export class LocalStore implements Store {
   };
 
   constructor() {
-    this.initializeWorker();
     // Initialize chunker in background (it might download WASMs)
     this.chunker
       .init()
       .catch((err) => console.error("Failed to init chunker:", err));
-  }
-
-  private getWorkerConfig(): { workerPath: string; execArgv: string[] } {
-    const tsWorkerPath = path.join(__dirname, "worker.ts");
-    const jsWorkerPath = path.join(__dirname, "worker.js");
-    const hasTsWorker = fs.existsSync(tsWorkerPath);
-    const hasJsWorker = fs.existsSync(jsWorkerPath);
-    const runningTs = path.extname(__filename) === ".ts";
-    const isDev = (runningTs && hasTsWorker) || (hasTsWorker && !hasJsWorker);
-
-    if (isDev) {
-      return { workerPath: tsWorkerPath, execArgv: ["-r", "ts-node/register"] };
-    }
-    return { workerPath: jsWorkerPath, execArgv: [] };
-  }
-
-  private initializeWorker() {
-    const { workerPath, execArgv } = this.getWorkerConfig();
-    this.worker = new Worker(workerPath, { execArgv });
-
-    this.worker.on("message", (message) => {
-      const { id, vector, vectors, scores, error, memory } = message;
-      const pending = this.pendingRequests.get(id);
-
-      if (pending) {
-        // Clear timeout if set
-        if (pending.timeoutId) {
-          clearTimeout(pending.timeoutId);
-        }
-
-        if (error) {
-          pending.reject(new Error(error));
-        } else if (vectors !== undefined) {
-          pending.resolve(vectors);
-        } else if (scores !== undefined) {
-          pending.resolve(scores);
-        } else {
-          pending.resolve(vector);
-        }
-        this.pendingRequests.delete(id);
-      }
-
-      if (memory && memory.rss > this.MAX_WORKER_RSS) {
-        console.warn(
-          `Worker memory usage high (${Math.round(memory.rss / 1024 / 1024)}MB). Restarting...`,
-        );
-        void this.restartWorker("memory limit exceeded");
-      }
-    });
-
-    // Handle worker errors
-    this.worker.on("error", (err) => {
-      console.error("Worker error:", err);
-      void this.restartWorker(`worker error: ${err.message}`);
-    });
-
-    // Handle worker exit
-    this.worker.on("exit", (code) => {
-      // Only restart on unexpected exits (not graceful shutdowns)
-      if (code !== 0 && !this.isClosing) {
-        console.error(`Worker exited with code ${code}`);
-        void this.restartWorker(`worker exit: code ${code}`);
-      }
-    });
-  }
-
-  private rejectAllPending(error: Error) {
-    for (const pending of this.pendingRequests.values()) {
-      if (pending.timeoutId) {
-        clearTimeout(pending.timeoutId);
-      }
-      pending.reject(error);
-    }
-    this.pendingRequests.clear();
-  }
-
-  private async restartWorker(reason?: string) {
-    if (this.restartInFlight) {
-      return this.restartInFlight;
-    }
-
-    // Reject all pending requests - fail fast, recover on next request
-    this.rejectAllPending(
-      new Error(`Worker restarting: ${reason || "unknown reason"}`),
-    );
-
-    this.restartInFlight = (async () => {
-      try {
-        await this.worker.terminate();
-      } catch (err) {
-        console.error("Failed to terminate worker cleanly:", err);
-      }
-      this.initializeWorker();
-      if (reason) {
-        console.warn(`Worker restarted due to ${reason}`);
-      }
-    })();
-
-    await this.restartInFlight;
-    this.restartInFlight = null;
   }
 
   private isNodeReadable(input: unknown): input is NodeJS.ReadableStream {
@@ -206,117 +83,13 @@ export class LocalStore implements Store {
     );
   }
 
-  private async enqueueEmbedding<T>(fn: () => Promise<T>): Promise<T> {
-    const run = this.embedQueue.then(async () => {
-      if (this.restartInFlight) {
-        await this.restartInFlight;
-      }
-      return fn();
-    }, fn);
-    // Ensure queue advances even if fn rejects
-    this.embedQueue = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    return run;
-  }
-
-  private async sendToWorker<T>(
-    buildPayload: (id: string) => WorkerRequest,
-  ): Promise<T> {
-    if (this.restartInFlight) {
-      await this.restartInFlight;
-    }
-
-    return new Promise((resolve, reject) => {
-      const id = uuidv4();
-      const payload = buildPayload(id);
-
-      // Set up timeout
-      const timeoutId = setTimeout(() => {
-        const pending = this.pendingRequests.get(id);
-        if (pending) {
-          this.pendingRequests.delete(id);
-          reject(
-            new Error(`Worker request timed out after ${WORKER_TIMEOUT_MS}ms`),
-          );
-        }
-      }, WORKER_TIMEOUT_MS);
-
-      this.pendingRequests.set(id, {
-        resolve: resolve as (value: unknown) => void,
-        reject: reject as (reason: unknown) => void,
-        payload,
-        timeoutId,
-      });
-      this.worker.postMessage(payload);
-    });
-  }
-
-  private async getEmbeddings(texts: string[]): Promise<number[][]> {
-    const neededIndices: number[] = [];
-    const neededTexts: string[] = [];
-    const results: number[][] = new Array(texts.length);
-
-    // 1. Check Cache
-    for (let i = 0; i < texts.length; i++) {
-      const text = texts[i];
-      // Using full text as key for correctness. V8 handles string keys efficiently.
-      const cached = this.vectorCache.get(text);
-      if (cached !== undefined) {
-        results[i] = cached;
-      } else {
-        neededIndices.push(i);
-        neededTexts.push(text);
-      }
-    }
-
-    if (neededTexts.length === 0) {
-      return results; // All cached!
-    }
-
-    // 2. Embed only what's missing
-    const computedVectors = await this.enqueueEmbedding(() =>
-      this.sendToWorker<number[][]>((id) => ({ id, texts: neededTexts })),
-    );
-
-    // 3. Fill results and update cache
-    for (let i = 0; i < computedVectors.length; i++) {
-      const originalIndex = neededIndices[i];
-      const vector = computedVectors[i];
-      const text = neededTexts[i];
-
-      this.vectorCache.set(text, vector);
-      results[originalIndex] = vector;
-    }
-
-    return results;
-  }
-
-  private async getEmbedding(text: string): Promise<number[]> {
-    // Wrapper for single text to maintain compatibility where needed
-    const results = await this.getEmbeddings([text]);
-    return results[0];
-  }
-
-  private async rerankDocuments(
-    query: string,
-    documents: string[],
-  ): Promise<number[]> {
-    return this.enqueueEmbedding(() =>
-      this.sendToWorker<number[]>((id) => ({
-        id,
-        rerank: { query, documents },
-      })),
-    );
-  }
-
   private async getDb(): Promise<lancedb.Connection> {
     if (!this.db) {
-      if (!fs.existsSync(DB_PATH)) {
-        fs.mkdirSync(DB_PATH, { recursive: true });
+      const dbPath = path.join(os.homedir(), ".osgrep", "data");
+      if (!fs.existsSync(dbPath)) {
+        fs.mkdirSync(dbPath, { recursive: true });
       }
-      this.db = await lancedb.connect(DB_PATH);
+      this.db = await lancedb.connect(dbPath);
     }
     return this.db;
   }
@@ -402,169 +175,6 @@ export class LocalStore implements Store {
       chunk_index: 0,
       is_anchor: false,
       vector: Array(this.VECTOR_DIMENSIONS).fill(0),
-    };
-  }
-
-  private formatChunkText(chunk: ChunkWithContext, filePath: string): string {
-    const breadcrumb = [...chunk.context];
-    const fileLabel = `File: ${filePath || "unknown"}`;
-    const hasFileLabel = breadcrumb.some(
-      (entry) => typeof entry === "string" && entry.startsWith("File: "),
-    );
-    if (!hasFileLabel) {
-      breadcrumb.unshift(fileLabel);
-    }
-    const header = breadcrumb.length > 0 ? breadcrumb.join(" > ") : fileLabel;
-    return `${header}\n---\n${chunk.content}`;
-  }
-
-  private extractTopComments(lines: string[]): string[] {
-    const comments: string[] = [];
-    let inBlock = false;
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (inBlock) {
-        comments.push(line);
-        if (trimmed.includes("*/")) inBlock = false;
-        continue;
-      }
-      if (trimmed === "") {
-        // allow blank lines at the top of the file
-        comments.push(line);
-        continue;
-      }
-      if (
-        trimmed.startsWith("//") ||
-        trimmed.startsWith("#!") ||
-        trimmed.startsWith("# ")
-      ) {
-        comments.push(line);
-        continue;
-      }
-      if (trimmed.startsWith("/*")) {
-        comments.push(line);
-        if (!trimmed.includes("*/")) inBlock = true;
-        continue;
-      }
-      break;
-    }
-    // Trim trailing blank lines from the captured comment block
-    while (comments.length > 0 && comments[comments.length - 1].trim() === "") {
-      comments.pop();
-    }
-    return comments;
-  }
-
-  private extractImports(lines: string[], limit = 200): string[] {
-    const modules: string[] = [];
-    for (const raw of lines.slice(0, limit)) {
-      const trimmed = raw.trim();
-      if (!trimmed) continue;
-      if (trimmed.startsWith("import ")) {
-        const fromMatch = trimmed.match(/from\s+["']([^"']+)["']/);
-        const sideEffect = trimmed.match(/^import\s+["']([^"']+)["']/);
-        const named = trimmed.match(/import\s+(?:\* as\s+)?([A-Za-z0-9_$]+)/);
-        if (fromMatch?.[1]) modules.push(fromMatch[1]);
-        else if (sideEffect?.[1]) modules.push(sideEffect[1]);
-        else if (named?.[1]) modules.push(named[1]);
-        continue;
-      }
-      const requireMatch = trimmed.match(/require\(\s*["']([^"']+)["']\s*\)/);
-      if (requireMatch?.[1]) {
-        modules.push(requireMatch[1]);
-      }
-    }
-    return Array.from(new Set(modules));
-  }
-
-  private extractExports(lines: string[], limit = 200): string[] {
-    const exports: string[] = [];
-    for (const raw of lines.slice(0, limit)) {
-      const trimmed = raw.trim();
-      if (!trimmed.startsWith("export") && !trimmed.includes("module.exports"))
-        continue;
-
-      const decl = trimmed.match(
-        /^export\s+(?:default\s+)?(class|function|const|let|var|interface|type|enum)\s+([A-Za-z0-9_$]+)/,
-      );
-      if (decl?.[2]) {
-        exports.push(decl[2]);
-        continue;
-      }
-
-      const brace = trimmed.match(/^export\s+\{([^}]+)\}/);
-      if (brace?.[1]) {
-        const names = brace[1]
-          .split(",")
-          .map((n) => n.trim())
-          .filter(Boolean);
-        exports.push(...names);
-        continue;
-      }
-
-      if (trimmed.startsWith("export default")) {
-        exports.push("default");
-      }
-
-      if (trimmed.includes("module.exports")) {
-        exports.push("module.exports");
-      }
-    }
-    return Array.from(new Set(exports));
-  }
-
-  private buildAnchorChunk(
-    filePath: string,
-    content: string,
-  ): Chunk & { context: string[]; chunkIndex: number; isAnchor: boolean } {
-    const lines = content.split("\n");
-    const topComments = this.extractTopComments(lines);
-    const imports = this.extractImports(lines);
-    const exports = this.extractExports(lines);
-
-    const preamble: string[] = [];
-    let nonBlank = 0;
-    let totalChars = 0;
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed.length === 0) continue;
-      preamble.push(line);
-      nonBlank += 1;
-      totalChars += line.length;
-      if (nonBlank >= 30 || totalChars >= 1200) break;
-    }
-
-    const sections: string[] = [];
-    sections.push(`File: ${filePath}`);
-    if (imports.length > 0) {
-      sections.push(`Imports: ${imports.join(", ")}`);
-    }
-    if (exports.length > 0) {
-      sections.push(`Exports: ${exports.join(", ")}`);
-    }
-    if (topComments.length > 0) {
-      sections.push(`Top comments:\n${topComments.join("\n")}`);
-    }
-    if (preamble.length > 0) {
-      sections.push(`Preamble:\n${preamble.join("\n")}`);
-    }
-    sections.push("---");
-    sections.push("(anchor)");
-
-    const anchorText = sections.join("\n\n");
-    const approxEndLine = Math.min(
-      lines.length,
-      Math.max(1, nonBlank || preamble.length || 5),
-    );
-
-    return {
-      content: anchorText,
-      startLine: 0,
-      endLine: approxEndLine,
-      type: "block",
-      context: [`File: ${filePath}`, "Anchor"],
-      chunkIndex: -1,
-      isAnchor: true,
     };
   }
 
@@ -675,7 +285,7 @@ export class LocalStore implements Store {
       fileChunkMs += Number(chunkEnd - chunkStart) / 1_000_000;
       this.profile.totalChunkCount += parsedChunks.length;
     }
-    const anchorChunk = this.buildAnchorChunk(
+    const anchorChunk = buildAnchorChunk(
       options.metadata?.path || "unknown",
       content,
     );
@@ -704,7 +314,7 @@ export class LocalStore implements Store {
     this.profile.totalChunkCount += anchorChunk ? 1 : 0;
 
     const chunkTexts = chunks.map((chunk) =>
-      this.formatChunkText(chunk, options.metadata?.path || ""),
+      formatChunkText(chunk, options.metadata?.path || ""),
     );
 
     const BATCH_SIZE = this.EMBED_BATCH_SIZE;
@@ -714,7 +324,7 @@ export class LocalStore implements Store {
     for (let i = 0; i < chunkTexts.length; i += BATCH_SIZE) {
       const batchTexts = chunkTexts.slice(i, i + BATCH_SIZE);
       const embedStart = PROFILE_ENABLED ? process.hrtime.bigint() : null;
-      const batchVectors = await this.getEmbeddings(batchTexts);
+      const batchVectors = await this.workerManager.getEmbeddings(batchTexts);
       if (PROFILE_ENABLED && embedStart) {
         const embedEnd = process.hrtime.bigint();
         this.profile.totalEmbedTimeMs +=
@@ -833,7 +443,9 @@ export class LocalStore implements Store {
     }
 
     // 1. Setup
-    const queryVector = await this.getEmbedding(this.queryPrefix + query);
+    const queryVector = await this.workerManager.getEmbedding(
+      this.queryPrefix + query,
+    );
     const finalLimit = top_k ?? 10;
     const totalChunks = await table.countRows();
     const candidateLimit = Math.min(400, Math.max(100, 2 * Math.sqrt(totalChunks)));
@@ -913,7 +525,7 @@ export class LocalStore implements Store {
 
     try {
       const docs = candidates.map((r) => String(r.content ?? ""));
-      const scores = await this.rerankDocuments(query, docs);
+      const scores = await this.workerManager.rerank(query, docs);
 
       // Update scores with Neural scores
       finalResults = candidates.map((r, i) => {
@@ -997,16 +609,8 @@ export class LocalStore implements Store {
   }
 
   async close(): Promise<void> {
-    // Mark as closing to suppress error messages
-    this.isClosing = true;
-    
-    // Clean shutdown: ask worker to exit gracefully, then terminate if needed
     try {
-      // Send shutdown message
-      this.worker.postMessage({ type: "shutdown" });
-      // Give it a brief moment to exit cleanly
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      await this.worker.terminate();
+      await this.workerManager.close();
     } catch (err) {
       // Silent cleanup - worker may have already exited
     }

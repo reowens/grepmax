@@ -619,15 +619,24 @@ export async function writeServerLock(
   port: number,
   pid: number,
   cwd = process.cwd(),
+  authToken?: string,
 ): Promise<void> {
   const lockPath = getServerLockPath(cwd);
   await fs.promises.mkdir(path.dirname(lockPath), { recursive: true });
-  await fs.promises.writeFile(lockPath, JSON.stringify({ port, pid }), "utf-8");
+  await fs.promises.writeFile(
+    lockPath,
+    JSON.stringify(
+      { port, pid, authToken },
+      null,
+      2,
+    ),
+    "utf-8",
+  );
 }
 
 export async function readServerLock(
   cwd = process.cwd(),
-): Promise<{ port: number; pid: number } | null> {
+): Promise<{ port: number; pid: number; authToken?: string } | null> {
   const lockPath = getServerLockPath(cwd);
   try {
     const content = await fs.promises.readFile(lockPath, "utf-8");
@@ -637,7 +646,11 @@ export async function readServerLock(
       typeof data.port === "number" &&
       typeof data.pid === "number"
     ) {
-      return { port: data.port, pid: data.pid };
+      return {
+        port: data.port,
+        pid: data.pid,
+        authToken: typeof data.authToken === "string" ? data.authToken : undefined,
+      };
     }
   } catch (_err) {
     // Missing or malformed lock file -> treat as absent

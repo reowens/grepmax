@@ -337,13 +337,16 @@ export const search: Command = new CommanderCommand("search")
 
     async function tryServerFastPath(): Promise<boolean> {
       const lock = await readServerLock(root);
-      if (!lock) return false;
+      if (!lock || !lock.authToken) return false;
+
+      const authHeader = { Authorization: `Bearer ${lock.authToken}` };
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 100);
       try {
         const health = await fetch(`http://localhost:${lock.port}/health`, {
           signal: controller.signal,
+          headers: authHeader,
         });
         if (!health.ok) return false;
       } catch (_err) {
@@ -357,7 +360,10 @@ export const search: Command = new CommanderCommand("search")
           `http://localhost:${lock.port}/search`,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              ...authHeader,
+            },
             body: JSON.stringify({
               query: pattern,
               limit: parseInt(options.m, 10),
