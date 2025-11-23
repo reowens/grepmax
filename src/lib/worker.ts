@@ -79,6 +79,7 @@ class EmbeddingWorker {
     }
 
     if (!this.rerankPipe) {
+      // text-classification reranker pipeline for neural scoring
       this.rerankPipe = await this.loadPipeline<RerankPipeline>(
         "text-classification",
         this.rerankModelId,
