@@ -39,7 +39,9 @@
   "files": [
     "dist",
     "plugins",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "NOTICE"
   ],
   "license": "Apache-2.0",
   "description": "Local grep-like search tool for your codebase.",
