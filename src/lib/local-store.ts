@@ -41,7 +41,7 @@ export interface LocalStoreProfile {
 
 export class LocalStore implements Store {
   private db: lancedb.Connection | null = null;
-  // WorkerManager runs embedding/rerank work, serializes requests, and restarts on high RSS.
+  // WorkerManager runs embedding/rerank work in a single worker thread.
   private workerManager = new WorkerManager();
   private chunker = new TreeSitterChunker();
   private readonly VECTOR_DIMENSIONS = CONFIG.VECTOR_DIMENSIONS;

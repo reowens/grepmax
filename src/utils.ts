@@ -458,19 +458,13 @@ export async function initialSync(
     profile.processed = total;
   }
 
-  // Adaptive pacing configuration.
-  const MIN_CONCURRENCY = 1;
-  const MAX_CONCURRENCY = Math.max(1, Math.floor(os.cpus().length / 2));
-  let currentConcurrency = Math.max(1, Math.floor(MAX_CONCURRENCY / 1.5));
-  const BATCH_SIZE = 10; // Process in small chunks to allow breathing room
+  const CONCURRENCY = Math.max(1, Math.min(4, os.cpus().length || 4));
+  const limit = pLimit(CONCURRENCY);
+  const BATCH_SIZE = 10; // Small batches keep memory pressure predictable
 
   // Process files in batches
   for (let i = 0; i < repoFiles.length; i += BATCH_SIZE) {
     const batch = repoFiles.slice(i, i + BATCH_SIZE);
-    const batchStart = Date.now();
-
-    // Re-create limiter based on dynamic concurrency
-    const limit = pLimit(currentConcurrency);
 
     await Promise.all(
       batch.map((filePath) =>
@@ -541,27 +535,6 @@ export async function initialSync(
     );
 
     await flushWriteBuffer();
-
-    // Adjust concurrency based on batch performance.
-    const batchDuration = Date.now() - batchStart;
-    const timePerFile = batchDuration / batch.length;
-    const memUsageMB = process.memoryUsage().rss / 1024 / 1024;
-
-    // Case 1: Getting too hot (Memory spike or very slow processing)
-    if (memUsageMB > 1500) {
-    // If RSS > 1.5GB, clamp down hard and sleep
-      currentConcurrency = Math.max(MIN_CONCURRENCY, currentConcurrency - 2);
-      // Force a pause to let GC run/system breathe
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    } else if (timePerFile > 300) {
-      // Taking >300ms per file means embedding/hashing is struggling
-      currentConcurrency = Math.max(MIN_CONCURRENCY, currentConcurrency - 1);
-    }
-    // Case 2: Cruising comfortably
-    else if (timePerFile < 80 && currentConcurrency < MAX_CONCURRENCY) {
-      // If we are fast (<80ms/file), we can afford more concurrency
-      currentConcurrency++;
-    }
   }
 
   await flushWriteBuffer(true);
