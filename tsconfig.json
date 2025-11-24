@@ -11,7 +11,7 @@
     "module": "CommonJS",
     "target": "ES6",
     "rootDir": "src",
-    "incremental": true,
+    "incremental": false,
     "sourceMap": true,
     "skipLibCheck": true,
     "moduleResolution": "node"
