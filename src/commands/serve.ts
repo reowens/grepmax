@@ -18,6 +18,7 @@ import {
   initialSync,
   isIndexablePath,
   MetaStore,
+  preparedChunksToVectors,
   readServerLock,
   writeServerLock,
 } from "../utils";
@@ -102,7 +103,7 @@ async function createWatcher(
         const buffer = await fs.promises.readFile(filePath);
         if (buffer.length === 0) continue;
         const hash = computeBufferHash(buffer);
-        const { records, indexed: didIndex } = await indexFile(
+        const { chunks, indexed: didIndex } = await indexFile(
           store,
           storeId,
           filePath,
@@ -113,8 +114,9 @@ async function createWatcher(
           hash,
         );
         if (didIndex) {
-          if (records.length > 0) {
-            await store.insertBatch(storeId, records);
+          if (chunks.length > 0) {
+            const vectors = await preparedChunksToVectors(chunks);
+            await store.insertBatch(storeId, vectors);
           }
           metaStore.set(filePath, hash);
           await metaStore.save();

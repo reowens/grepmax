@@ -8,6 +8,7 @@ import type {
   ChunkType,
   CreateStoreOptions,
   IndexFileOptions,
+  PreparedChunk,
   SearchFilter,
   SearchResponse,
   Store,
@@ -28,16 +29,6 @@ import { maxSim } from "./colbert-math";
 const PROFILE_ENABLED =
   process.env.OSGREP_PROFILE === "1" || process.env.OSGREP_PROFILE === "true";
 
-function resolveBatchSize(): number {
-  const fromEnv = Number.parseInt(process.env.OSGREP_BATCH_SIZE ?? "", 10);
-  if (Number.isFinite(fromEnv) && fromEnv > 0) {
-    return Math.min(fromEnv, 96);
-  }
-  if (process.env.OSGREP_LOW_IMPACT === "1") return 24;
-  if (process.env.OSGREP_FAST === "1") return 48;
-  return 32; // Default: faster than old 12, but easier on thermals than 48
-}
-
 export interface LocalStoreProfile {
   listFilesMs: number;
   indexCount: number;
@@ -53,7 +44,6 @@ export class LocalStore implements Store {
   private db: lancedb.Connection | null = null;
   private chunker = new TreeSitterChunker();
   private readonly VECTOR_DIMENSIONS = CONFIG.VECTOR_DIMENSIONS;
-  private readonly EMBED_BATCH_SIZE = resolveBatchSize();
   private readonly queryPrefix = CONFIG.QUERY_PREFIX;
   private readonly colbertDim = CONFIG.COLBERT_DIM;
   private profile: LocalStoreProfile = {
@@ -110,6 +100,7 @@ export class LocalStore implements Store {
       is_anchor: false,
       context_prev: "",
       context_next: "",
+      chunk_type: "",
       vector: Array(this.VECTOR_DIMENSIONS).fill(0),
       colbert: Buffer.alloc(0),
       colbert_scale: 1,
@@ -151,6 +142,7 @@ export class LocalStore implements Store {
       new Field("is_anchor", new Bool(), true),
       new Field("context_prev", new Utf8(), true),
       new Field("context_next", new Utf8(), true),
+      new Field("chunk_type", new Utf8(), true),
       new Field("colbert", new Binary(), true),
       new Field("colbert_scale", new Float64(), true),
     ]);
@@ -235,7 +227,17 @@ export class LocalStore implements Store {
       const table = await this.getTable(storeId);
       // This is a simplification; ideally we'd group by file path
       // For now, let's just return unique paths
-      const results = await table.query().select(["path", "hash"]).toArray();
+      let results: VectorRecord[] = [];
+      try {
+        results = (await table
+          .query()
+          .where("is_anchor = true")
+          .select(["path", "hash"])
+          .toArray()) as VectorRecord[];
+      } catch {
+        // Fallback for legacy tables without is_anchor
+        results = (await table.query().select(["path", "hash"]).toArray()) as VectorRecord[];
+      }
 
       const seen = new Set<string>();
       for (const r of results) {
@@ -261,16 +263,13 @@ export class LocalStore implements Store {
   }
 
   async indexFile(
-    storeId: string,
+    _storeId: string,
     file: File | ReadableStream | NodeJS.ReadableStream | string,
     options: IndexFileOptions,
-  ): Promise<VectorRecord[]> {
+  ): Promise<PreparedChunk[]> {
     const fileIndexStart = PROFILE_ENABLED ? process.hrtime.bigint() : null;
     let fileChunkMs = 0;
-    let fileEmbedMs = 0;
-    let fileDeleteMs = 0;
-    let fileWriteMs = 0;
-    const table = await this.ensureTable(storeId);
+  
 
     // Read file content (prefer provided content to avoid double reads)
     let content = options.content ?? "";
@@ -299,39 +298,30 @@ export class LocalStore implements Store {
       }
     }
 
-    // Delete existing chunks for this file
-    const safePath = options.metadata?.path?.replace(/'/g, "''");
-    if (safePath) {
-      const deleteStart = PROFILE_ENABLED ? process.hrtime.bigint() : null;
-      await table.delete(`path = '${safePath}'`);
-      if (PROFILE_ENABLED && deleteStart) {
-        const deleteEnd = process.hrtime.bigint();
-        this.profile.totalTableDeleteMs +=
-          Number(deleteEnd - deleteStart) / 1_000_000;
-        fileDeleteMs += Number(deleteEnd - deleteStart) / 1_000_000;
-      }
-    }
-
     // Use TreeSitterChunker
     const chunkStart = PROFILE_ENABLED ? process.hrtime.bigint() : null;
     const parsedChunks = await this.chunker.chunk(
       options.metadata?.path || "unknown",
       content,
     );
+    
     if (PROFILE_ENABLED && chunkStart) {
       const chunkEnd = process.hrtime.bigint();
-      this.profile.totalChunkTimeMs +=
-        Number(chunkEnd - chunkStart) / 1_000_000;
+      // Calculate chunking time only
       fileChunkMs += Number(chunkEnd - chunkStart) / 1_000_000;
+      this.profile.totalChunkTimeMs += fileChunkMs;
       this.profile.totalChunkCount += parsedChunks.length;
     }
+
     const anchorChunk = buildAnchorChunk(
       options.metadata?.path || "unknown",
       content,
     );
+    
     const baseChunks = anchorChunk
       ? [anchorChunk, ...parsedChunks]
       : parsedChunks;
+      
     if (baseChunks.length === 0) return [];
 
     const chunks: ChunkWithContext[] = baseChunks.map((chunk, idx) => {
@@ -351,61 +341,45 @@ export class LocalStore implements Store {
           chunkWithContext.isAnchor === true || (anchorChunk ? idx === 0 : false),
       };
     });
+    
     this.profile.totalChunkCount += anchorChunk ? 1 : 0;
 
     const chunkTexts = chunks.map((chunk) =>
       formatChunkText(chunk, options.metadata?.path || ""),
     );
 
-    const BATCH_SIZE = this.EMBED_BATCH_SIZE;
-    let pendingWrites: VectorRecord[] = [];
+    const pendingWrites: PreparedChunk[] = [];
 
-    for (let i = 0; i < chunkTexts.length; i += BATCH_SIZE) {
-      const batchTexts = chunkTexts.slice(i, i + BATCH_SIZE);
-      const embedStart = PROFILE_ENABLED ? process.hrtime.bigint() : null;
-      const hybrids = await workerManager.computeHybrid(batchTexts);
-      if (PROFILE_ENABLED && embedStart) {
-        const embedEnd = process.hrtime.bigint();
-        this.profile.totalEmbedTimeMs +=
-          Number(embedEnd - embedStart) / 1_000_000;
-        fileEmbedMs += Number(embedEnd - embedStart) / 1_000_000;
-        this.profile.totalEmbedBatches += 1;
-      }
-      for (let j = 0; j < hybrids.length; j++) {
-        const chunkIndex = i + j;
-        const chunk = chunks[chunkIndex];
-        const { dense, colbert, scale } = hybrids[j];
-        const prev = chunkTexts[chunkIndex - 1];
-        const next = chunkTexts[chunkIndex + 1];
+    for (let i = 0; i < chunkTexts.length; i++) {
+      const chunk = chunks[i];
+      const prev = chunkTexts[i - 1];
+      const next = chunkTexts[i + 1];
 
-        pendingWrites.push({
-          id: uuidv4(),
-          path: options.metadata?.path || "",
-          hash: options.metadata?.hash || "",
-          content: chunkTexts[chunkIndex],
-          context_prev: typeof prev === "string" ? prev : undefined,
-          context_next: typeof next === "string" ? next : undefined,
-          start_line: chunk.startLine,
-          end_line: chunk.endLine,
-          chunk_index: chunk.chunkIndex,
-          is_anchor: chunk.isAnchor === true,
-          vector: dense,
-          colbert,
-          colbert_scale: scale,
-        });
-      }
+      pendingWrites.push({
+        id: uuidv4(),
+        path: options.metadata?.path || "",
+        hash: options.metadata?.hash || "",
+        content: chunkTexts[i],
+        context_prev: typeof prev === "string" ? prev : undefined,
+        context_next: typeof next === "string" ? next : undefined,
+        start_line: chunk.startLine,
+        end_line: chunk.endLine,
+        chunk_index: chunk.chunkIndex,
+        is_anchor: chunk.isAnchor === true,
+        // This is the critical field for Structural Boosting
+        chunk_type: typeof chunk.type === "string" ? chunk.type : undefined,
+      });
     }
 
     if (PROFILE_ENABLED && fileIndexStart) {
       const end = process.hrtime.bigint();
       this.profile.indexCount += 1;
       const total = Number(end - fileIndexStart) / 1_000_000;
+      // Note: We removed embedTime and deleteTime from this log since they don't happen here anymore
       console.log(
         `[profile] index ${options.metadata?.path ?? "unknown"} • chunks=${
           chunks.length
-        } batches=${Math.ceil(chunkTexts.length / BATCH_SIZE)} ` +
-          `chunkTime=${fileChunkMs.toFixed(1)}ms embedTime=${fileEmbedMs.toFixed(1)}ms ` +
-          `deleteTime=${fileDeleteMs.toFixed(1)}ms writeTime=${fileWriteMs.toFixed(1)}ms total=${total.toFixed(1)}ms`,
+        } chunkTime=${fileChunkMs.toFixed(1)}ms total=${total.toFixed(1)}ms`,
       );
     }
 
@@ -537,6 +511,10 @@ export class LocalStore implements Store {
     const fullText = `${contextPrev}${record.content ?? ""}${contextNext}`;
     const startLine = (record.start_line as number) ?? 0;
     const endLine = (record.end_line as number) ?? startLine;
+    const chunkType =
+      typeof (record as { chunk_type?: unknown }).chunk_type === "string"
+        ? ((record as { chunk_type?: string }).chunk_type as string)
+        : undefined;
 
     return {
       type: "text",
@@ -550,8 +528,26 @@ export class LocalStore implements Store {
       generated_metadata: {
         start_line: startLine,
         num_lines: Math.max(1, endLine - startLine + 1),
+        type: chunkType,
       },
     };
+  }
+
+  private applyStructureBoost(record: VectorRecord, score: number): number {
+    let adjusted = score;
+    const chunkType =
+      typeof (record as { chunk_type?: unknown }).chunk_type === "string"
+        ? ((record as { chunk_type?: string }).chunk_type as string)
+        : "";
+    if (chunkType === "function" || chunkType === "class") {
+      adjusted *= 1.15;
+    }
+    const pathStr =
+      typeof record.path === "string" ? record.path.toLowerCase() : "";
+    if (pathStr.includes("test") || pathStr.includes("spec")) {
+      adjusted *= 0.85;
+    }
+    return adjusted;
   }
 
   async search(
@@ -569,8 +565,8 @@ export class LocalStore implements Store {
     }
 
     const finalLimit = top_k ?? 10;
-    const vectorLimit = 200;
-    const ftsLimit = 200;
+    const vectorLimit = 400;
+    const ftsLimit = 400;
 
     // 1. Dense + ColBERT query encoding
     const queryEnc = await workerManager.encodeQuery(
@@ -633,7 +629,9 @@ export class LocalStore implements Store {
     const reranked = candidates.map((doc) => {
       if (!doc.colbert || (Array.isArray(doc.colbert) && doc.colbert.length === 0)) {
         const denseVec = Array.isArray(doc.vector) ? (doc.vector as number[]) : [];
-        return { record: doc, score: cosineSim(queryVector, denseVec) };
+        let baseScore = cosineSim(queryVector, denseVec);
+        baseScore = this.applyStructureBoost(doc, baseScore);
+        return { record: doc, score: baseScore };
       }
 
       const scale =
@@ -646,7 +644,9 @@ export class LocalStore implements Store {
         int8 = new Int8Array(doc.colbert as number[]);
       } else {
         const denseVec = Array.isArray(doc.vector) ? (doc.vector as number[]) : [];
-        return { record: doc, score: cosineSim(queryVector, denseVec) };
+        let baseScore = cosineSim(queryVector, denseVec);
+        baseScore = this.applyStructureBoost(doc, baseScore);
+        return { record: doc, score: baseScore };
       }
       const docMatrix: number[][] = [];
       for (let i = 0; i < int8.length; i += this.colbertDim) {
@@ -664,10 +664,13 @@ export class LocalStore implements Store {
 
       if (docMatrix.length === 0 || queryMatrix.length === 0) {
         const denseVec = Array.isArray(doc.vector) ? (doc.vector as number[]) : [];
-        return { record: doc, score: cosineSim(queryVector, denseVec) };
+        let baseScore = cosineSim(queryVector, denseVec);
+        baseScore = this.applyStructureBoost(doc, baseScore);
+        return { record: doc, score: baseScore };
       }
 
-      const score = maxSim(queryMatrix, docMatrix);
+      let score = maxSim(queryMatrix, docMatrix);
+      score = this.applyStructureBoost(doc, score);
       return { record: doc, score };
     });
 
@@ -695,6 +698,23 @@ export class LocalStore implements Store {
     const table = await this.getTable(storeId);
     const safePath = filePath.replace(/'/g, "''");
     await table.delete(`path = '${safePath}'`);
+  }
+
+  async deleteFiles(storeId: string, filePaths: string[]): Promise<void> {
+    const unique = Array.from(new Set(filePaths));
+    if (unique.length === 0) return;
+
+    const table = await this.getTable(storeId);
+    const chunks: string[][] = [];
+    const batchSize = 900;
+    for (let i = 0; i < unique.length; i += batchSize) {
+      chunks.push(unique.slice(i, i + batchSize));
+    }
+
+    for (const batch of chunks) {
+      const safe = batch.map((p) => `'${p.replace(/'/g, "''")}'`).join(",");
+      await table.delete(`path IN (${safe})`);
+    }
   }
 
   async getInfo(storeId: string): Promise<StoreInfo> {

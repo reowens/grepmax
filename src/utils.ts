@@ -5,11 +5,16 @@ import * as path from "node:path";
 import { extname } from "node:path";
 import pLimit from "p-limit";
 import type { FileSystem } from "./lib/file";
-import type { Store, VectorRecord } from "./lib/store";
+import type {
+  PreparedChunk,
+  Store,
+  VectorRecord,
+} from "./lib/store";
 import type {
   InitialSyncProgress,
   InitialSyncResult,
 } from "./lib/sync-helpers";
+import { workerManager } from "./lib/worker-manager";
 
 const META_FILE = path.join(os.homedir(), ".osgrep", "meta.json");
 const PROFILE_ENABLED =
@@ -17,6 +22,7 @@ const PROFILE_ENABLED =
 const SKIP_META_SAVE =
   process.env.OSGREP_SKIP_META_SAVE === "1" ||
   process.env.OSGREP_SKIP_META_SAVE === "true";
+const DEFAULT_EMBED_BATCH_SIZE = 48;
 
 // Extensions we consider for indexing to avoid binary noise and improve relevance.
 const INDEXABLE_EXTENSIONS = new Set([
@@ -82,8 +88,13 @@ interface IndexingProfile {
   indexed: number;
 }
 
+type IndexCandidate = {
+  filePath: string;
+  hash: string;
+};
+
 type IndexFileResult = {
-  records: VectorRecord[];
+  chunks: PreparedChunk[];
   indexed: boolean;
 };
 
@@ -93,6 +104,16 @@ function now(): bigint {
 
 function toMs(start: bigint, end?: bigint): number {
   return Number((end ?? now()) - start) / 1_000_000;
+}
+
+function resolveEmbedBatchSize(): number {
+  const fromEnv = Number.parseInt(process.env.OSGREP_BATCH_SIZE ?? "", 10);
+  if (Number.isFinite(fromEnv) && fromEnv > 0) {
+    return Math.min(fromEnv, 96);
+  }
+  if (process.env.OSGREP_LOW_IMPACT === "1") return 24;
+  if (process.env.OSGREP_FAST === "1") return 48;
+  return DEFAULT_EMBED_BATCH_SIZE;
 }
 
 // Check if a file should be indexed (extension and size).
@@ -273,7 +294,7 @@ export async function indexFile(
   } else {
     buffer = await fs.promises.readFile(filePath);
     if (buffer.length === 0) {
-      return { records: [], indexed: false };
+      return { chunks: [], indexed: false };
     }
     hash = computeBufferHash(buffer);
   }
@@ -283,7 +304,7 @@ export async function indexFile(
   if (!forceIndex && metaStore) {
     const cachedHash = metaStore.get(filePath);
     if (cachedHash === hash) {
-      return { records: [], indexed: false };
+      return { chunks: [], indexed: false };
     }
   }
 
@@ -297,15 +318,15 @@ export async function indexFile(
     content: contentString,
   };
 
-  let records: VectorRecord[] = [];
+  let chunks: PreparedChunk[] = [];
   let indexed = false;
 
   try {
-    records = await store.indexFile(storeId, contentString, options);
+    chunks = await store.indexFile(storeId, contentString, options);
     indexed = true;
   } catch (_err) {
     // Fallback for weird encodings
-    records = await store.indexFile(
+    chunks = await store.indexFile(
       storeId,
       new File([new Uint8Array(buffer)], fileName, { type: "text/plain" }),
       options,
@@ -321,7 +342,25 @@ export async function indexFile(
     profile.sections.index = (profile.sections.index ?? 0) + toMs(indexStart);
   }
 
-  return { records, indexed };
+  return { chunks, indexed };
+}
+
+export async function preparedChunksToVectors(
+  chunks: PreparedChunk[],
+): Promise<VectorRecord[]> {
+  if (chunks.length === 0) return [];
+  const hybrids = await workerManager.computeHybrid(
+    chunks.map((chunk) => chunk.content),
+  );
+  return chunks.map((chunk, idx) => {
+    const hybrid = hybrids[idx] ?? { dense: [], colbert: Buffer.alloc(0), scale: 1 };
+    return {
+      ...chunk,
+      vector: hybrid.dense,
+      colbert: hybrid.colbert,
+      colbert_scale: hybrid.scale,
+    };
+  });
 }
 
 export async function initialSync(
@@ -337,6 +376,7 @@ export async function initialSync(
     await metaStore.load();
   }
 
+  const EMBED_BATCH_SIZE = resolveEmbedBatchSize();
   const profile: IndexingProfile | undefined = PROFILE_ENABLED
     ? {
         sections: {},
@@ -409,41 +449,12 @@ export async function initialSync(
 
   // 3. Delete stale files (files in DB but not on disk)
   const stalePaths = Array.from(dbPaths).filter((p) => !diskPaths.has(p));
-  if (stalePaths.length > 0) {
-    const staleStart = PROFILE_ENABLED ? now() : null;
-    if (dryRun) {
-      for (const p of stalePaths) {
-        console.log("Dry run: would delete", p);
-      }
-    } else {
-      await Promise.all(
-        stalePaths.map(async (p) => {
-          try {
-            await store.deleteFile(storeId, p);
-            metaStore?.delete(p);
-          } catch (_err) {
-            // Ignore individual deletion errors
-          }
-        }),
-      );
-      if (metaStore) {
-        await metaStore.save();
-      }
-    }
-    if (PROFILE_ENABLED && staleStart && profile) {
-      profile.sections.staleDeletes =
-        (profile.sections.staleDeletes ?? 0) + toMs(staleStart);
-    }
-  }
-
-  if (!dryRun && !storeIsEmpty) {
-    storeIsEmpty = initialDbCount - stalePaths.length <= 0;
-  }
-
   const total = repoFiles.length;
   let processed = 0;
   let indexed = 0;
+  let pendingIndexCount = 0;
   let writeBuffer: VectorRecord[] = [];
+  const embedQueue: PreparedChunk[] = [];
 
   const flushWriteBuffer = async (force = false) => {
     if (dryRun) return;
@@ -451,7 +462,35 @@ export async function initialSync(
     if (!force && writeBuffer.length < 500) return;
     const toWrite = writeBuffer;
     writeBuffer = [];
+    const writeStart = PROFILE_ENABLED ? now() : null;
     await store.insertBatch(storeId, toWrite);
+    if (PROFILE_ENABLED && writeStart && profile) {
+      profile.sections.tableWrite =
+        (profile.sections.tableWrite ?? 0) + toMs(writeStart);
+    }
+  };
+
+  const flushEmbedQueue = async (force = false) => {
+    if (dryRun) {
+      embedQueue.length = 0;
+      return;
+    }
+    while (
+      embedQueue.length >= EMBED_BATCH_SIZE ||
+      (force && embedQueue.length > 0)
+    ) {
+      const batch = embedQueue.splice(0, EMBED_BATCH_SIZE);
+      const embedStart = PROFILE_ENABLED ? now() : null;
+      const vectors = await preparedChunksToVectors(batch);
+      if (PROFILE_ENABLED && embedStart && profile) {
+        profile.sections.embed =
+          (profile.sections.embed ?? 0) + toMs(embedStart);
+        profile.sections.embedBatches =
+          (profile.sections.embedBatches ?? 0) + 1;
+      }
+      writeBuffer.push(...vectors);
+      await flushWriteBuffer();
+    }
   };
 
   if (PROFILE_ENABLED && profile) {
@@ -462,7 +501,10 @@ export async function initialSync(
   const limit = pLimit(CONCURRENCY);
   const BATCH_SIZE = 10; // Small batches keep memory pressure predictable
 
-  // Process files in batches
+  const candidates: IndexCandidate[] = [];
+  let embedFlushQueue = Promise.resolve();
+
+  // Process files in batches (hashing + change detection only)
   for (let i = 0; i < repoFiles.length; i += BATCH_SIZE) {
     const batch = repoFiles.slice(i, i + BATCH_SIZE);
 
@@ -490,53 +532,125 @@ export async function initialSync(
             const shouldIndex =
               storeIsEmpty || !existingHash || existingHash !== hash;
 
-            if (dryRun && shouldIndex) {
-              indexed += 1;
-            } else if (shouldIndex) {
-              const { records, indexed: didIndex } = await indexFile(
-                store,
-                storeId,
-                filePath,
-                path.basename(filePath),
-                metaStore,
-                profile,
-                buffer,
-                hash,
-                storeIsEmpty,
-              );
-              if (didIndex) {
+            if (shouldIndex) {
+              if (dryRun) {
                 indexed += 1;
-                if (records.length > 0) {
-                  writeBuffer.push(...records);
-                }
-
-                // Periodic meta save
-                if (metaStore && !SKIP_META_SAVE && indexed % 25 === 0) {
-                  const saveStart = PROFILE_ENABLED ? now() : null;
-                  metaStore
-                    .save()
-                    .catch((err) =>
-                      console.error("Failed to auto-save meta:", err),
-                    );
-                  if (PROFILE_ENABLED && saveStart && profile) {
-                    profile.metaSaveCount += 1;
-                    profile.sections.metaSave =
-                      (profile.sections.metaSave ?? 0) + toMs(saveStart);
-                  }
-                }
+              } else {
+                candidates.push({ filePath, hash });
               }
+              pendingIndexCount += 1;
             }
-            onProgress?.({ processed, indexed, total, filePath });
+
+            const progressIndexed = indexed + (dryRun ? 0 : pendingIndexCount);
+            onProgress?.({ processed, indexed: progressIndexed, total, filePath });
           } catch (_err) {
-            onProgress?.({ processed, indexed, total, filePath });
+            const progressIndexed = indexed + (dryRun ? 0 : pendingIndexCount);
+            onProgress?.({ processed, indexed: progressIndexed, total, filePath });
           }
         }),
       ),
     );
-
-    await flushWriteBuffer();
   }
 
+  // Single delete for stale + changed paths
+  if (!dryRun) {
+    const deleteTargets = Array.from(
+      new Set([...stalePaths, ...candidates.map((c) => c.filePath)]),
+    );
+    if (deleteTargets.length > 0) {
+      const staleStart = PROFILE_ENABLED ? now() : null;
+      await store.deleteFiles(storeId, deleteTargets);
+      if (PROFILE_ENABLED && staleStart && profile) {
+        profile.sections.staleDeletes =
+          (profile.sections.staleDeletes ?? 0) + toMs(staleStart);
+      }
+    }
+    if (metaStore && stalePaths.length > 0) {
+      stalePaths.forEach((p) => metaStore.delete(p));
+      await metaStore.save();
+    }
+  } else if (stalePaths.length > 0) {
+    for (const p of stalePaths) {
+      console.log("Dry run: would delete", p);
+    }
+  }
+
+  if (!dryRun && !storeIsEmpty) {
+    storeIsEmpty =
+      initialDbCount - stalePaths.length - candidates.length <= 0;
+  }
+
+  const queueFlush = (force = false) => {
+    embedFlushQueue = embedFlushQueue.then(() => flushEmbedQueue(force));
+    return embedFlushQueue;
+  };
+
+  // Second pass: chunk + embed + write using global batching (parallel chunking)
+  if (!dryRun) {
+    await Promise.all(
+      candidates.map((candidate) =>
+        limit(async () => {
+          try {
+            const buffer = await fs.promises.readFile(candidate.filePath);
+            const { chunks, indexed: didIndex } = await indexFile(
+              store,
+              storeId,
+              candidate.filePath,
+              path.basename(candidate.filePath),
+              metaStore,
+              profile,
+              buffer,
+              candidate.hash,
+              storeIsEmpty,
+            );
+            pendingIndexCount = Math.max(0, pendingIndexCount - 1);
+            if (didIndex) {
+              indexed += 1;
+              if (chunks.length > 0) {
+                embedQueue.push(...chunks);
+                if (embedQueue.length >= EMBED_BATCH_SIZE) {
+                  await queueFlush();
+                }
+              }
+
+              // Periodic meta save
+              if (metaStore && !SKIP_META_SAVE && indexed % 25 === 0) {
+                const saveStart = PROFILE_ENABLED ? now() : null;
+                metaStore
+                  .save()
+                  .catch((err) =>
+                    console.error("Failed to auto-save meta:", err),
+                  );
+                if (PROFILE_ENABLED && saveStart && profile) {
+                  profile.metaSaveCount += 1;
+                  profile.sections.metaSave =
+                    (profile.sections.metaSave ?? 0) + toMs(saveStart);
+                }
+              }
+            }
+            const progressIndexed = indexed + pendingIndexCount;
+            onProgress?.({
+              processed,
+              indexed: progressIndexed,
+              total,
+              filePath: candidate.filePath,
+            });
+          } catch (_err) {
+            pendingIndexCount = Math.max(0, pendingIndexCount - 1);
+            const progressIndexed = indexed + pendingIndexCount;
+            onProgress?.({
+              processed,
+              indexed: progressIndexed,
+              total,
+              filePath: candidate.filePath,
+            });
+          }
+        }),
+      ),
+    );
+  }
+
+  await queueFlush(true);
   await flushWriteBuffer(true);
 
   if (PROFILE_ENABLED && profile) {

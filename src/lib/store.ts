@@ -3,20 +3,24 @@ type MetadataObject = { [key: string]: MetadataValue };
 type MetadataArray = MetadataValue[];
 type MetadataValue = MetadataPrimitive | MetadataArray | MetadataObject;
 
-export type VectorRecord = {
+export type PreparedChunk = {
   id: string;
   path: string;
   hash: string;
   content: string;
   start_line: number;
   end_line: number;
-  vector: number[];
-  colbert: Buffer;
-  colbert_scale: number;
   chunk_index?: number;
   is_anchor?: boolean;
   context_prev?: string;
   context_next?: string;
+  chunk_type?: string;
+};
+
+export type VectorRecord = PreparedChunk & {
+  vector: number[];
+  colbert: Buffer;
+  colbert_scale: number;
 } & Record<string, unknown>;
 
 type MetadataRecord = Record<string, MetadataValue>;
@@ -99,7 +103,7 @@ export interface Store {
     storeId: string,
     file: File | ReadableStream | NodeJS.ReadableStream | string,
     options: IndexFileOptions,
-  ): Promise<VectorRecord[]>;
+  ): Promise<PreparedChunk[]>;
 
   /**
    * Insert a batch of vector records
@@ -146,6 +150,11 @@ export interface Store {
    * Delete a file and its chunks
    */
   deleteFile(storeId: string, filePath: string): Promise<void>;
+
+  /**
+   * Delete multiple files and their chunks in a single operation
+   */
+  deleteFiles(storeId: string, filePaths: string[]): Promise<void>;
 
   /**
    * Optional profiling data for implementations that support it
