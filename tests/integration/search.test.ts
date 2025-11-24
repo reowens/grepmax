@@ -3,6 +3,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { CONFIG } from "../../src/config";
 
 describe.sequential("LocalStore search integration", () => {
   const storeId = "integration-store";
@@ -34,16 +35,25 @@ describe.sequential("LocalStore search integration", () => {
 
     // Stub embedding calls to avoid pulling real models while keeping LanceDB queries real
     const workerManager = (store as any).workerManager;
-    vi.spyOn(workerManager, "getEmbeddings").mockImplementation(
+    vi.spyOn(workerManager, "computeHybrid").mockImplementation(
       async (texts: string[]) =>
-        texts.map((_text, idx) => Array(384).fill(idx + 1)),
+        texts.map((_text: string, idx: number) => {
+          const dense = Array(CONFIG.VECTOR_DIMENSIONS).fill(idx + 1);
+          const int8 = new Int8Array(CONFIG.COLBERT_DIM * 4).fill(idx + 1);
+          return {
+            dense,
+            colbert: Buffer.from(int8),
+            scale: 1,
+          };
+        }),
     );
-    vi.spyOn(workerManager, "getEmbedding").mockResolvedValue(
-      Array(384).fill(0.5),
-    );
-    vi.spyOn(workerManager, "rerank").mockImplementation(
-      async (_query, docs) => docs.map((_doc, idx) => 1 - idx * 0.05),
-    );
+    vi.spyOn(workerManager, "encodeQuery").mockResolvedValue({
+      dense: Array(CONFIG.VECTOR_DIMENSIONS).fill(0.5),
+      colbert: [
+        Array(CONFIG.COLBERT_DIM).fill(0.1),
+        Array(CONFIG.COLBERT_DIM).fill(0.2),
+      ],
+    });
 
     // Force initialization of the underlying LanceDB connection using the temp HOME
     await (store as any).getDb();

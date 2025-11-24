@@ -2,13 +2,11 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { Worker } from "node:worker_threads";
 import { v4 as uuidv4 } from "uuid";
-import { VECTOR_CACHE_MAX, WORKER_TIMEOUT_MS } from "../config";
-import { LRUCache } from "./lru";
+import { WORKER_TIMEOUT_MS } from "../config";
 
 type WorkerRequest =
-  | { id: string; text: string }
-  | { id: string; texts: string[] }
-  | { id: string; rerank: { query: string; documents: string[] } };
+  | { id: string; hybrid: { texts: string[] } }
+  | { id: string; query: { text: string } };
 
 type PendingRequest = {
   resolve: (value: unknown) => void;
@@ -21,7 +19,6 @@ type PendingRequest = {
 export class WorkerManager {
   // Initialize with nulls to preserve index positions during staggering
   private workers: Array<Worker | null> = [];
-  private vectorCache = new LRUCache<string, number[]>(VECTOR_CACHE_MAX);
   private pendingRequests = new Map<string, PendingRequest>();
   private restartInFlight = new Map<number, Promise<void>>();
   private isClosing = false;
@@ -100,7 +97,7 @@ export class WorkerManager {
     this.workers[index] = worker;
 
     worker.on("message", (message) => {
-      const { id, vector, vectors, scores, error, memory } = message;
+      const { id, hybrids, query, error, memory } = message;
       const pending = this.pendingRequests.get(id);
 
       // Only resolve if this worker actually handled it
@@ -109,12 +106,12 @@ export class WorkerManager {
 
         if (error) {
           pending.reject(new Error(error));
-        } else if (vectors !== undefined) {
-          pending.resolve(vectors);
-        } else if (scores !== undefined) {
-          pending.resolve(scores);
+        } else if (hybrids !== undefined) {
+          pending.resolve(hybrids);
+        } else if (query !== undefined) {
+          pending.resolve(query);
         } else {
-          pending.resolve(vector);
+          pending.resolve(undefined);
         }
         this.pendingRequests.delete(id);
       }
@@ -240,50 +237,21 @@ export class WorkerManager {
     });
   }
 
-  async getEmbeddings(texts: string[]): Promise<number[][]> {
-    const neededIndices: number[] = [];
-    const neededTexts: string[] = [];
-    const results: number[][] = new Array(texts.length);
-
-    for (let i = 0; i < texts.length; i++) {
-      const text = texts[i];
-      const cached = this.vectorCache.get(text);
-      if (cached !== undefined) {
-        results[i] = cached;
-      } else {
-        neededIndices.push(i);
-        neededTexts.push(text);
-      }
-    }
-
-    if (neededTexts.length === 0) return results;
-
-    const computedVectors = await this.sendToWorker<number[][]>((id) => ({
+  async computeHybrid(
+    texts: string[],
+  ): Promise<Array<{ dense: number[]; colbert: Buffer; scale: number }>> {
+    return this.sendToWorker<Array<{ dense: number[]; colbert: Buffer; scale: number }>>((id) => ({
       id,
-      texts: neededTexts,
+      hybrid: { texts },
     }));
-
-    for (let i = 0; i < computedVectors.length; i++) {
-      const originalIndex = neededIndices[i];
-      const vector = computedVectors[i];
-      const text = neededTexts[i];
-
-      this.vectorCache.set(text, vector);
-      results[originalIndex] = vector;
-    }
-
-    return results;
   }
 
-  async getEmbedding(text: string): Promise<number[]> {
-    const results = await this.getEmbeddings([text]);
-    return results[0];
-  }
-
-  async rerank(query: string, documents: string[]): Promise<number[]> {
-    return this.sendToWorker<number[]>((id) => ({
+  async encodeQuery(
+    text: string,
+  ): Promise<{ dense: number[]; colbert: number[][] }> {
+    return this.sendToWorker<{ dense: number[]; colbert: number[][] }>((id) => ({
       id,
-      rerank: { query, documents },
+      query: { text },
     }));
   }
 

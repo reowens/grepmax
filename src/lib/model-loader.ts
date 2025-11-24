@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { env, pipeline } from "@huggingface/transformers";
@@ -6,74 +7,44 @@ import { MODEL_IDS } from "../config";
 const HOMEDIR = os.homedir();
 const CACHE_DIR = path.join(HOMEDIR, ".osgrep", "models");
 
-type DisposablePipeline = {
-  dispose?: () => Promise<unknown> | void;
-};
+// Ensure transformers knows where to look/save
+env.cacheDir = CACHE_DIR;
+env.allowLocalModels = true;
+env.allowRemoteModels = true;
 
 /**
- * Downloads ML models to local cache directory
- * This is a standalone function that can be called during setup
+ * Triggers the download of models by simply initializing the pipelines.
+ * transformers.js handles the caching logic automatically.
  */
 export async function downloadModels(): Promise<void> {
-  // Configure cache directory
-  env.cacheDir = CACHE_DIR;
-  env.allowLocalModels = true;
-  env.allowRemoteModels = true; // Enable remote for downloading
-
-  const embedModelId = MODEL_IDS.embed;
-  const rerankModelId = MODEL_IDS.rerank;
-
-  console.log(`Worker: Loading models from ${CACHE_DIR}...`);
-
-  const loadedPipelines: DisposablePipeline[] = [];
+  console.log(`Worker: Ensuring models are cached in ${CACHE_DIR}...`);
 
   try {
-    const embedOptions: Record<string, unknown> = {
-      dtype: "q8",
-      quantized: true,
-    };
-    // Load embed model
-    const embedPipeline = (await pipeline(
-      "feature-extraction",
-      embedModelId,
-      embedOptions,
-    )) as unknown as DisposablePipeline;
-    loadedPipelines.push(embedPipeline);
+    // 1. Download Dense Model
+    await pipeline("feature-extraction", MODEL_IDS.embed, {
+      dtype: "q4", // or "q4" if you chose that
+    });
 
-    const rerankOptions: Record<string, unknown> = {
-      dtype: "q8",
-      quantized: true,
-    };
-    // Load rerank model
-    const rerankPipeline = (await pipeline(
-      "text-classification",
-      rerankModelId,
-      rerankOptions,
-    )) as unknown as DisposablePipeline;
-    loadedPipelines.push(rerankPipeline);
+    // 2. Download ColBERT Model
+    await pipeline("feature-extraction", MODEL_IDS.colbert, {
+      dtype: "q8", 
+    });
 
-    console.log("Worker: Models loaded.");
-  } finally {
-    // Dispose pipelines to clean up native resources before exit
-    const disposers: Array<Promise<unknown> | void> = [];
-    for (const pipe of loadedPipelines) {
-      if (typeof pipe.dispose === "function") {
-        disposers.push(pipe.dispose());
-      }
-    }
-    await Promise.allSettled(disposers);
-    // Reset to prefer local after download
-    env.allowRemoteModels = false;
+    console.log("Worker: Models ready.");
+  } catch (err) {
+    console.error("Failed to download models:", err);
+    throw err;
   }
 }
 
 /**
- * Check if models are already downloaded
+ * Simple check to see if the cache folder exists for our models.
+ * This is a loose check for the UI/Doctor command.
  */
 export function areModelsDownloaded(): boolean {
-  const fs = require("node:fs");
-  const embedModelPath = path.join(CACHE_DIR, ...MODEL_IDS.embed.split("/"));
-  const rerankModelPath = path.join(CACHE_DIR, ...MODEL_IDS.rerank.split("/"));
-
-  return fs.existsSync(embedModelPath) && fs.existsSync(rerankModelPath);
+  // Check if the model directories exist in the cache
+  const embedPath = path.join(CACHE_DIR, ...MODEL_IDS.embed.split("/"));
+  const colbertPath = path.join(CACHE_DIR, ...MODEL_IDS.colbert.split("/"));
+  
+  return fs.existsSync(embedPath) && fs.existsSync(colbertPath);
 }

@@ -408,6 +408,7 @@ export const search: Command = new CommanderCommand("search")
             "*.bin",
             "*.ipynb",
             "*.pyc",
+            "*.json",
             "pnpm-lock.yaml",
             "package-lock.json",
             "yarn.lock",

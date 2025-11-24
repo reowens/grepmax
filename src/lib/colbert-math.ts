@@ -1,0 +1,44 @@
+// src/lib/colbert-math.ts
+
+/**
+ * Computes the MaxSim score between a Query and a Document.
+ * * Late Interaction mechanism:
+ * 1. For every token in the Query...
+ * 2. Find the maximum similarity (dot product) with ANY token in the Document.
+ * 3. Sum those maximums.
+ * * @param queryEmbeddings - Array of vectors [seq_len_q, dim]
+ * @param docEmbeddings - Array of vectors [seq_len_d, dim]
+ */
+export function maxSim(queryEmbeddings: number[][], docEmbeddings: number[][]): number {
+    let totalScore = 0;
+  
+    // Iterate over every query token
+    for (const qVec of queryEmbeddings) {
+      let maxDotProduct = -Infinity;
+  
+      // Compare against every document token
+      for (const dVec of docEmbeddings) {
+        // Compute Dot Product
+        let dot = 0;
+        for (let i = 0; i < qVec.length; i++) {
+          dot += qVec[i] * dVec[i];
+        }
+  
+        if (dot > maxDotProduct) {
+          maxDotProduct = dot;
+        }
+      }
+      
+      // Sum the best matches
+      totalScore += maxDotProduct;
+    }
+  
+    return totalScore;
+  }
+  
+  /**
+   * Optimized version using unrolled loops or simple matrix multiplication thoughts.
+   * If performance becomes a bottleneck, we can optimize this specific function 
+   * or move it to a tiny WASM module, but V8 handles this surprisingly well 
+   * for batch sizes < 100.
+   */

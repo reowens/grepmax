@@ -57,18 +57,19 @@ async function createWatcher(
   root: string,
   metaStore: MetaStore,
 ): Promise<FSWatcher> {
-  const fileSystem = createFileSystem({
-    ignorePatterns: [
-      "*.lock",
-      "*.bin",
-      "*.ipynb",
-      "*.pyc",
-      "pnpm-lock.yaml",
-      "package-lock.json",
-      "yarn.lock",
-      "bun.lockb",
-      ".osgrep/**",
-    ],
+      const fileSystem = createFileSystem({
+        ignorePatterns: [
+          "*.lock",
+          "*.bin",
+          "*.ipynb",
+          "*.pyc",
+          "*.json",
+          "pnpm-lock.yaml",
+          "package-lock.json",
+          "yarn.lock",
+          "bun.lockb",
+          ".osgrep/**",
+        ],
   });
 
   fileSystem.loadOsgrepignore(root);
@@ -209,17 +210,19 @@ export const serve = new Command("serve")
 
       const empty = await isStoreEmpty(store, storeId);
       if (empty) {
-        const fileSystem = createFileSystem({
-          ignorePatterns: [
-            "*.lock",
-            "*.bin",
-            "*.ipynb",
-            "*.pyc",
-            "pnpm-lock.yaml",
-            "package-lock.json",
-            "yarn.lock",
-            "bun.lockb",
-            ".osgrep/**",
+      const fileSystem = createFileSystem({
+        ignorePatterns: [
+          "*.lock",
+          "*.bin",
+          "*.ipynb",
+          "*.pyc",
+          "*.json",
+          "*.onnx",
+          "pnpm-lock.yaml",
+          "package-lock.json",
+          "yarn.lock",
+          "bun.lockb",
+          ".osgrep/**",
           ],
         });
         console.log("Store empty, performing initial index...");

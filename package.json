@@ -29,7 +29,7 @@
     "lint": "biome lint .",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "pnpm build"
-  },
+    },
   "keywords": [
     "osgrep",
     "grep",

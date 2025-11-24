@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as lancedb from "@lancedb/lancedb";
+import { Binary, Bool, Field, FixedSizeList, Float32, Float64, Int32, Utf8, Schema } from "apache-arrow";
 import { v4 as uuidv4 } from "uuid";
 import type {
   ChunkType,
@@ -21,6 +22,8 @@ import {
   formatChunkText,
 } from "./chunk-utils";
 import { WorkerManager } from "./worker-manager";
+import { CONFIG } from "../config";
+import { maxSim } from "./colbert-math";
 
 const PROFILE_ENABLED =
   process.env.OSGREP_PROFILE === "1" || process.env.OSGREP_PROFILE === "true";
@@ -41,11 +44,10 @@ export class LocalStore implements Store {
   // WorkerManager runs embedding/rerank work, serializes requests, and restarts on high RSS.
   private workerManager = new WorkerManager();
   private chunker = new TreeSitterChunker();
-  private readonly VECTOR_DIMENSIONS = 384;
+  private readonly VECTOR_DIMENSIONS = CONFIG.VECTOR_DIMENSIONS;
   private readonly EMBED_BATCH_SIZE = 12; // Smaller batches to tame thermals/memory on large repos
-  // Query prefix for embeddings: Represent this sentence for searching relevant passages
-  private readonly queryPrefix =
-    "Represent this sentence for searching relevant passages: ";
+  private readonly queryPrefix = CONFIG.QUERY_PREFIX;
+  private readonly colbertDim = CONFIG.COLBERT_DIM;
   private profile: LocalStoreProfile = {
     listFilesMs: 0,
     indexCount: 0,
@@ -85,8 +87,7 @@ export class LocalStore implements Store {
   }
 
   private async getTable(storeId: string): Promise<lancedb.Table> {
-    const db = await this.getDb();
-    return await db.openTable(storeId);
+    return this.ensureTable(storeId);
   }
 
   private baseSchemaRow(): VectorRecord {
@@ -102,29 +103,73 @@ export class LocalStore implements Store {
       context_prev: "",
       context_next: "",
       vector: Array(this.VECTOR_DIMENSIONS).fill(0),
+      colbert: Buffer.alloc(0),
+      colbert_scale: 1,
     };
+  }
+
+  private normalizeVector(vector: unknown): number[] {
+    const source =
+      Array.isArray(vector) && vector.every((v) => typeof v === "number")
+        ? (vector as number[])
+        : ArrayBuffer.isView(vector)
+          ? Array.from(vector as unknown as ArrayLike<number>)
+          : [];
+    const trimmed = source.slice(0, this.VECTOR_DIMENSIONS);
+    if (trimmed.length < this.VECTOR_DIMENSIONS) {
+      trimmed.push(...Array(this.VECTOR_DIMENSIONS - trimmed.length).fill(0));
+    }
+    return trimmed;
   }
 
   private async ensureTable(storeId: string): Promise<lancedb.Table> {
     const db = await this.getDb();
+    const schema = new Schema([
+      new Field("id", new Utf8(), false),
+      new Field("path", new Utf8(), false),
+      new Field("hash", new Utf8(), false),
+      new Field("content", new Utf8(), false),
+      new Field("start_line", new Int32(), false),
+      new Field("end_line", new Int32(), false),
+      new Field(
+        "vector",
+        new FixedSizeList(
+          this.VECTOR_DIMENSIONS,
+          new Field("item", new Float32(), false),
+        ),
+        false,
+      ),
+      new Field("chunk_index", new Int32(), true),
+      new Field("is_anchor", new Bool(), true),
+      new Field("context_prev", new Utf8(), true),
+      new Field("context_next", new Utf8(), true),
+      new Field("colbert", new Binary(), true),
+      new Field("colbert_scale", new Float64(), true),
+    ]);
+
     try {
       const table = await db.openTable(storeId);
-      const schemaFields =
-        ((table as { schema?: { fields?: { name?: string }[] } }).schema
-          ?.fields || []).map((f) => f.name);
-      const missingFields = ["context_prev", "context_next"].filter(
-        (field) => !schemaFields.includes(field),
-      );
-
-      if (missingFields.length === 0) {
-        return table;
-      }
-
       let existingRows: VectorRecord[] = [];
+      let needsMigration = false;
       try {
         existingRows = (await table.query().toArray()) as VectorRecord[];
       } catch {
         existingRows = [];
+      }
+
+      const sampleVectorLength =
+        existingRows.length > 0 && Array.isArray(existingRows[0].vector)
+          ? (existingRows[0].vector as number[]).length
+          : 0;
+      if (
+        sampleVectorLength > 0 &&
+        sampleVectorLength !== this.VECTOR_DIMENSIONS
+      ) {
+        needsMigration = true;
+      }
+
+      if (!needsMigration) {
+        return table;
       }
 
       try {
@@ -133,14 +178,24 @@ export class LocalStore implements Store {
         // If drop fails, attempt recreate will throw below
       }
 
-      const newTable = await db.createTable(storeId, [this.baseSchemaRow()]);
+      const newTable = await db.createTable(storeId, [this.baseSchemaRow()], {
+        schema,
+      });
       if (existingRows.length > 0) {
         const migrated = existingRows.map((row) => ({
+          ...row,
           context_prev:
             typeof row.context_prev === "string" ? row.context_prev : "",
           context_next:
             typeof row.context_next === "string" ? row.context_next : "",
-          ...row,
+          colbert: Buffer.isBuffer(row.colbert)
+            ? row.colbert
+            : Array.isArray(row.colbert)
+              ? Buffer.from(new Int8Array(row.colbert as number[]))
+              : Buffer.alloc(0),
+          colbert_scale:
+            typeof row.colbert_scale === "number" ? row.colbert_scale : 1,
+          vector: this.normalizeVector(row.vector),
         }));
         await newTable.add(migrated);
       }
@@ -148,7 +203,9 @@ export class LocalStore implements Store {
       return newTable;
     } catch (err) {
       try {
-        const table = await db.createTable(storeId, [this.baseSchemaRow()]);
+        const table = await db.createTable(storeId, [this.baseSchemaRow()], {
+          schema,
+        });
         await table.delete('id = "seed"');
         return table;
       } catch (createErr) {
@@ -159,7 +216,7 @@ export class LocalStore implements Store {
           const table = await db.openTable(storeId);
           return table;
         }
-        throw err;
+        throw createErr;
       }
     }
   }
@@ -298,7 +355,7 @@ export class LocalStore implements Store {
     for (let i = 0; i < chunkTexts.length; i += BATCH_SIZE) {
       const batchTexts = chunkTexts.slice(i, i + BATCH_SIZE);
       const embedStart = PROFILE_ENABLED ? process.hrtime.bigint() : null;
-      const batchVectors = await this.workerManager.getEmbeddings(batchTexts);
+      const hybrids = await this.workerManager.computeHybrid(batchTexts);
       if (PROFILE_ENABLED && embedStart) {
         const embedEnd = process.hrtime.bigint();
         this.profile.totalEmbedTimeMs +=
@@ -306,10 +363,10 @@ export class LocalStore implements Store {
         fileEmbedMs += Number(embedEnd - embedStart) / 1_000_000;
         this.profile.totalEmbedBatches += 1;
       }
-      for (let j = 0; j < batchVectors.length; j++) {
+      for (let j = 0; j < hybrids.length; j++) {
         const chunkIndex = i + j;
         const chunk = chunks[chunkIndex];
-        const vector = batchVectors[j];
+        const { dense, colbert, scale } = hybrids[j];
         const prev = chunkTexts[chunkIndex - 1];
         const next = chunkTexts[chunkIndex + 1];
 
@@ -324,7 +381,9 @@ export class LocalStore implements Store {
           end_line: chunk.endLine,
           chunk_index: chunk.chunkIndex,
           is_anchor: chunk.isAnchor === true,
-          vector,
+          vector: dense,
+          colbert,
+          colbert_scale: scale,
         });
       }
     }
@@ -348,9 +407,67 @@ export class LocalStore implements Store {
   async insertBatch(storeId: string, records: VectorRecord[]): Promise<void> {
     if (records.length === 0) return;
 
+    const sanitizeRecord = (rec: VectorRecord): VectorRecord => {
+      const vecArray =
+        typeof rec.vector?.toString === "function" && !Array.isArray(rec.vector)
+          ? Array.from(rec.vector as ArrayLike<number>)
+          : Array.isArray(rec.vector)
+            ? (rec.vector as number[])
+            : [];
+      const normalizedVector = this.normalizeVector(vecArray);
+
+      const colBuffer = Buffer.isBuffer(rec.colbert)
+        ? rec.colbert
+        : Array.isArray(rec.colbert)
+          ? Buffer.from(new Int8Array(rec.colbert as number[]))
+          : ArrayBuffer.isView(rec.colbert)
+            ? Buffer.from(new Int8Array(Array.from(rec.colbert as ArrayLike<number>)))
+            : Buffer.alloc(0);
+
+      return {
+        ...rec,
+        vector: Array.from(normalizedVector),
+        colbert: Buffer.from(new Uint8Array(colBuffer)),
+        colbert_scale:
+          typeof rec.colbert_scale === "number" ? rec.colbert_scale : 1,
+      };
+    };
+
+    const sanitized = records.map(sanitizeRecord);
+
+    if (process.env.OSGREP_DEBUG_EMBED === "1" && sanitized.length > 0) {
+      const v = sanitized[0].vector;
+      const c = sanitized[0].colbert;
+      const sum = v.slice(0, 10).reduce((acc, x) => acc + x, 0);
+      console.log(
+        `[debug] insertBatch first vec sum10=${sum.toFixed(4)} first5=${v.slice(0, 5).map((x) => x.toFixed(4))} colbert_len=${c.length} colbert_first5=${c.slice(0, 5)}`,
+      );
+    }
+
     const table = await this.ensureTable(storeId);
     const writeStart = PROFILE_ENABLED ? process.hrtime.bigint() : null;
-    await table.add(records);
+    await table.add(sanitized);
+    if (process.env.OSGREP_DEBUG_EMBED === "1") {
+      try {
+        const sample = await table.query().limit(1).toArray();
+        const vecSample = sample[0]?.vector;
+        const vecArrRaw =
+          vecSample && typeof (vecSample as { toArray?: () => number[] }).toArray === "function"
+            ? (vecSample as { toArray: () => number[] }).toArray()
+            : (vecSample as unknown as ArrayLike<number>);
+        const vecArr = Array.isArray(vecArrRaw)
+          ? vecArrRaw
+          : ArrayBuffer.isView(vecArrRaw)
+            ? Array.from(vecArrRaw as ArrayLike<number>)
+            : [];
+        const sumStored = vecArr.slice(0, 10).reduce((acc, x) => acc + x, 0);
+        console.log(
+          `[debug] stored first vec sum10=${sumStored.toFixed(4)}`,
+        );
+      } catch (err) {
+        console.warn("[debug] failed to read back sample:", err);
+      }
+    }
     if (PROFILE_ENABLED && writeStart) {
       const writeEnd = process.hrtime.bigint();
       this.profile.totalTableWriteMs +=
@@ -370,15 +487,21 @@ export class LocalStore implements Store {
   async createVectorIndex(storeId: string): Promise<void> {
     const table = await this.getTable(storeId);
     
-    // Guard against small tables - LanceDB IVF_PQ requires 256 rows to train
-    // If we have fewer, flat search is faster anyway and we avoid crashes
+    // Guard against small tables - flat search is faster and avoids noisy k-means warnings
     const rowCount = await table.countRows();
-    if (rowCount < 256) {
+    if (rowCount < 4000) {
       return;
     }
     
     try {
-      const vectorIndexOptions: Record<string, unknown> = { type: "ivf_flat" };
+      const numPartitions = Math.max(
+        8,
+        Math.min(64, Math.floor(rowCount / 100)),
+      );
+      const vectorIndexOptions: Record<string, unknown> = {
+        type: "ivf_flat",
+        num_partitions: numPartitions,
+      };
       await table.createIndex("vector", vectorIndexOptions);
     } catch (e) {
       const fallbackMsg = e instanceof Error ? e.message : String(e);
@@ -398,6 +521,31 @@ export class LocalStore implements Store {
     }
   }
 
+  private mapRecordToChunk(record: VectorRecord, score: number): ChunkType {
+    const contextPrev =
+      typeof record.context_prev === "string" ? record.context_prev : "";
+    const contextNext =
+      typeof record.context_next === "string" ? record.context_next : "";
+    const fullText = `${contextPrev}${record.content ?? ""}${contextNext}`;
+    const startLine = (record.start_line as number) ?? 0;
+    const endLine = (record.end_line as number) ?? startLine;
+
+    return {
+      type: "text",
+      text: fullText,
+      score,
+      metadata: {
+        path: record.path as string,
+        hash: (record.hash as string) || "",
+        is_anchor: record.is_anchor === true,
+      },
+      generated_metadata: {
+        start_line: startLine,
+        num_lines: Math.max(1, endLine - startLine + 1),
+      },
+    };
+  }
+
   async search(
     storeId: string,
     query: string,
@@ -412,17 +560,17 @@ export class LocalStore implements Store {
       return { data: [] };
     }
 
-    // 1. Setup
-    const queryVector = await this.workerManager.getEmbedding(
-      this.queryPrefix + query,
-    );
     const finalLimit = top_k ?? 10;
-
-    // Keep balanced pools so exact matches survive to rerank
     const vectorLimit = 200;
     const ftsLimit = 200;
-    const RERANK_CAP = 50;
 
+    // 1. Dense + ColBERT query encoding
+    const queryEnc = await this.workerManager.encodeQuery(
+      this.queryPrefix + query,
+    );
+    const queryVector = queryEnc.dense;
+
+    // Optional path filter support
     const allFilters = Array.isArray((_filters as { all?: unknown })?.all)
       ? ((_filters as { all?: unknown }).all as Record<string, unknown>[])
       : [];
@@ -436,7 +584,7 @@ export class LocalStore implements Store {
       ? `path LIKE '${pathPrefix.replace(/'/g, "''")}%'`
       : undefined;
 
-    // 2. Parallel Retrieval
+    // 2. Hybrid candidate generation (recall)
     const vectorSearchQuery = table.search(queryVector).limit(vectorLimit);
     const ftsSearchQuery = table.search(query).limit(ftsLimit);
 
@@ -445,143 +593,82 @@ export class LocalStore implements Store {
       ftsSearchQuery.where(whereClause);
     }
 
-    const [vectorResults, ftsResults] = await Promise.all([
+    const [denseCandidates, ftsCandidates] = await Promise.all([
       vectorSearchQuery.toArray() as Promise<VectorRecord[]>,
       ftsSearchQuery.toArray().catch(() => []) as Promise<VectorRecord[]>,
     ]);
 
-    // 3. RRF Fusion
-    const k = 20; // balances FTS and vector without overpowering rerank
-    const rrfScores = new Map<string, number>();
-    const contentMap = new Map<string, VectorRecord>();
-
-    const fuse = (results: VectorRecord[]) => {
-      results.forEach((r, i) => {
-        const key = `${r.path}:${r.start_line}`;
-        if (!contentMap.has(key)) contentMap.set(key, r);
-        const rank = i + 1;
-        const score = 1 / (k + rank);
-        rrfScores.set(key, (rrfScores.get(key) || 0) + score);
-      });
-    };
-
-    fuse(vectorResults);
-    fuse(ftsResults);
-
-    const candidates = Array.from(rrfScores.keys())
-      .sort((a, b) => (rrfScores.get(b) || 0) - (rrfScores.get(a) || 0))
-      .map((key) => contentMap.get(key))
-      .filter((record): record is VectorRecord => Boolean(record))
-      .slice(0, vectorLimit + ftsLimit);
+    const candidatesMap = new Map<string, VectorRecord>();
+    [...denseCandidates, ...ftsCandidates].forEach((r) => {
+      const key = `${r.path}:${r.start_line}`;
+      if (!candidatesMap.has(key)) candidatesMap.set(key, r);
+    });
+    const candidates = Array.from(candidatesMap.values());
 
     if (candidates.length === 0) {
       return { data: [] };
     }
 
-    const rerankCandidates = candidates.slice(0, RERANK_CAP);
+    // 3. Use encoded query for ColBERT MaxSim
+    const queryMatrix = queryEnc.colbert;
 
-    // 4. Neural Reranking & Brute-Force Boosting
-    const rrfValues = Array.from(rrfScores.values());
-    const maxRrf = rrfValues.length > 0 ? Math.max(...rrfValues) : 0;
-    const normalizeRrf = (key: string) =>
-      maxRrf > 0 ? (rrfScores.get(key) || 0) / maxRrf : 0;
+    // 4. Offline MaxSim scoring (fallback to dense cosine if ColBERT payload is empty)
+    const cosineSim = (a: number[], b: number[]) => {
+      const dim = Math.min(a.length, b.length);
+      let dot = 0;
+      for (let i = 0; i < dim; i++) {
+        dot += a[i] * b[i];
+      }
+      return dot;
+    };
 
-    const lowerQuery = query.toLowerCase().trim();
-    const queryParts = lowerQuery
-      .split(/[\s/\\_.-]+/)
-      .map((t) => t.trim())
-      .filter((t) => t.length > 2);
-    const isCodeQuery =
-      /[A-Z_]|`|\(|\)|\//.test(query) || queryParts.some((p) => p.includes("_"));
+    const reranked = candidates.map((doc) => {
+      if (!doc.colbert || (Array.isArray(doc.colbert) && doc.colbert.length === 0)) {
+        const denseVec = Array.isArray(doc.vector) ? (doc.vector as number[]) : [];
+        return { record: doc, score: cosineSim(queryVector, denseVec) };
+      }
 
-    let finalResults = rerankCandidates.map((r) => {
-      const key = `${r.path}:${r.start_line}`;
-      const rrfScore = normalizeRrf(key);
-      return { record: r, score: rrfScore, rrfScore, rerankScore: 0 };
+      const scale =
+        typeof doc.colbert_scale === "number" ? doc.colbert_scale : 1.0;
+      let int8: Int8Array;
+      if (Buffer.isBuffer(doc.colbert)) {
+        const buffer = doc.colbert as Buffer;
+        int8 = new Int8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+      } else if (Array.isArray(doc.colbert)) {
+        int8 = new Int8Array(doc.colbert as number[]);
+      } else {
+        const denseVec = Array.isArray(doc.vector) ? (doc.vector as number[]) : [];
+        return { record: doc, score: cosineSim(queryVector, denseVec) };
+      }
+      const docMatrix: number[][] = [];
+      for (let i = 0; i < int8.length; i += this.colbertDim) {
+        const row: number[] = [];
+        let isPadding = true;
+        for (let k = 0; k < this.colbertDim; k++) {
+          const val = (int8[i + k] / 127) * scale;
+          if (val !== 0) isPadding = false;
+          row.push(val);
+        }
+        if (!isPadding) {
+          docMatrix.push(row);
+        }
+      }
+
+      if (docMatrix.length === 0 || queryMatrix.length === 0) {
+        const denseVec = Array.isArray(doc.vector) ? (doc.vector as number[]) : [];
+        return { record: doc, score: cosineSim(queryVector, denseVec) };
+      }
+
+      const score = maxSim(queryMatrix, docMatrix);
+      return { record: doc, score };
     });
 
-    try {
-      const docs = rerankCandidates.map((r) => String(r.content ?? ""));
-      const scores = await this.workerManager.rerank(query, docs);
-
-      finalResults = rerankCandidates.map((r, i) => {
-        const key = `${r.path}:${r.start_line}`;
-        const rrfScore = normalizeRrf(key);
-        const rerankScore = scores[i] ?? 0;
-        const rerankWeight = isCodeQuery ? 0.55 : 0.6;
-        const rrfWeight = 1 - rerankWeight;
-        let blendedScore = rerankWeight * rerankScore + rrfWeight * rrfScore;
-
-        const content = String(r.content ?? "").toLowerCase();
-        const path = String(r.path ?? "").toLowerCase();
-
-        // Boost 1: exact substring
-        if (lowerQuery.length > 2 && content.includes(lowerQuery)) {
-          blendedScore += 0.25;
-        }
-
-        // Boost 2: anchor/definition
-        if (r.is_anchor === true) {
-          blendedScore += 0.12;
-        }
-
-        // Boost 3: path token match
-        if (queryParts.some((part) => path.includes(part))) {
-          blendedScore += 0.05;
-        }
-
-        // Boost 4: token overlap (light)
-        const contentTokens = new Set(
-          content
-            .split(/[^a-z0-9_]+/)
-            .map((t) => t.trim())
-            .filter((t) => t.length > 2),
-        );
-        let overlap = 0;
-        if (queryParts.length > 0 && contentTokens.size > 0) {
-          for (const tok of queryParts) {
-            if (contentTokens.has(tok)) overlap += 1;
-          }
-          if (overlap > 0) {
-            blendedScore += Math.min(0.08, overlap * 0.02);
-          }
-        }
-
-        return { record: r, score: blendedScore, rrfScore, rerankScore };
-      });
-    } catch (e) {
-      console.warn("Reranker failed; falling back to RRF:", e);
-    }
-
-    // 5. Final Sort
-    finalResults.sort((a, b) => b.score - a.score);
-    const limited = finalResults.slice(0, finalLimit);
-
-    const chunks: ChunkType[] = limited.map(({ record, score }) => {
-      const contextPrev =
-        typeof record.context_prev === "string" ? record.context_prev : "";
-      const contextNext =
-        typeof record.context_next === "string" ? record.context_next : "";
-      const fullText = `${contextPrev}${record.content ?? ""}${contextNext}`;
-      const startLine = (record.start_line as number) ?? 0;
-      const endLine = (record.end_line as number) ?? startLine;
-      return {
-        type: "text",
-        text: fullText,
-        score,
-        metadata: {
-          path: record.path as string,
-          hash: (record.hash as string) || "",
-          is_anchor: record.is_anchor === true,
-        },
-        generated_metadata: {
-          start_line: startLine,
-          num_lines: Math.max(1, endLine - startLine + 1),
-        },
-      };
-    });
-
-    return { data: chunks };
+    return {
+      data: reranked
+        .sort((a, b) => b.score - a.score)
+        .slice(0, finalLimit)
+        .map((x) => this.mapRecordToChunk(x.record, x.score)),
+    };
   }
 
   async retrieve(storeId: string): Promise<unknown> {

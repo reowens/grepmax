@@ -11,6 +11,8 @@ export type VectorRecord = {
   start_line: number;
   end_line: number;
   vector: number[];
+  colbert: Buffer;
+  colbert_scale: number;
   chunk_index?: number;
   is_anchor?: boolean;
   context_prev?: string;

@@ -45,6 +45,7 @@ export const index = new Command("index")
           "*.bin",
           "*.ipynb",
           "*.pyc",
+          "*.json",
           "pnpm-lock.yaml",
           "package-lock.json",
           "yarn.lock",

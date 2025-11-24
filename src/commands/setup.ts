@@ -10,7 +10,7 @@ export const setup = new Command("setup")
   .action(async () => {
     console.log("osgrep Setup\n");
     console.log(
-      "This will download models (~150MB) and prepare your system.\n",
+      "This will prepare your system and copy bundled models when available.\n",
     );
 
     const home = os.homedir();
@@ -18,6 +18,7 @@ export const setup = new Command("setup")
     const models = path.join(root, "models");
     const data = path.join(root, "data");
     const grammars = path.join(root, "grammars");
+    const localModels = path.join(__dirname, "..", "..", "models");
 
     try {
       await ensureSetup();
@@ -29,7 +30,7 @@ export const setup = new Command("setup")
     // Show final status
     console.log("\nSetup Complete!\n");
 
-    const modelIds = [MODEL_IDS.embed, MODEL_IDS.rerank];
+    const modelIds = [MODEL_IDS.embed, MODEL_IDS.colbert];
 
     const checkDir = (name: string, p: string) => {
       const exists = fs.existsSync(p);
@@ -41,6 +42,7 @@ export const setup = new Command("setup")
     checkDir("Models", models);
     checkDir("Data (Vector DB)", data);
     checkDir("Grammars", grammars);
+    checkDir("Bundled Models (local)", localModels);
 
     const modelStatuses = modelIds.map((id) => {
       const modelPath = path.join(models, ...id.split("/"));

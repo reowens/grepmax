@@ -1,6 +1,14 @@
+// src/config.ts
 export const MODEL_IDS = {
-  embed: "mixedbread-ai/mxbai-embed-xsmall-v1",
-  rerank: "mixedbread-ai/mxbai-rerank-xsmall-v1",
+  embed: "ryandono/osgrep-coderank-q4", 
+  colbert: "ryandono/osgrep-colbert-q8", 
+};
+
+export const CONFIG = {
+  VECTOR_DIMENSIONS: 768, // CodeRankEmbed
+  COLBERT_DIM: 48, // Mxbai-Edge
+  // Precise prefix from model card
+  QUERY_PREFIX: "Represent this query for searching relevant code: ",
 };
 
 export const VECTOR_CACHE_MAX = Number.parseInt(
