@@ -159,3 +159,6 @@ export class WorkerManager {
     }
   }
 }
+
+// Singleton instance to avoid spinning up multiple heavy embedding workers.
+export const workerManager = new WorkerManager();

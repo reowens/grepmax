@@ -5,9 +5,27 @@ import { parentPort } from "node:worker_threads";
 import { env, type PipelineType, pipeline } from "@huggingface/transformers";
 import { CONFIG, MODEL_IDS } from "../config";
 
+function resolveThreadCount(): number {
+  const fromEnv = Number.parseInt(process.env.OSGREP_THREADS ?? "", 10);
+  if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv;
+  if (process.env.OSGREP_LOW_IMPACT === "1") return 1;
+  const cores = os.cpus().length || 1;
+  // Default: leave one core for UI, and cap at 4 to avoid pegging laptops
+  return Math.max(1, Math.min(cores - 1, 4));
+}
+
 // Configure cache directory
 const HOMEDIR = os.homedir();
 const CACHE_DIR = path.join(HOMEDIR, ".osgrep", "models");
+const NUM_THREADS = resolveThreadCount();
+
+// Configure ONNX Runtime threading before loading pipelines.
+const onnxBackend = env.backends.onnx as any;
+onnxBackend.intraOpNumThreads = NUM_THREADS;
+onnxBackend.interOpNumThreads = Math.max(1, Math.min(NUM_THREADS, 2));
+if (onnxBackend.wasm) {
+  onnxBackend.wasm.numThreads = NUM_THREADS;
+}
 
 // Try to find local models directory (for development/testing)
 const PROJECT_ROOT = process.cwd();
@@ -47,6 +65,7 @@ class EmbeddingWorker {
   private colbertModelId = MODEL_IDS.colbert;
   private readonly vectorDimensions = CONFIG.VECTOR_DIMENSIONS;
   private readonly colbertDimensions = CONFIG.COLBERT_DIM;
+  private initPromise: Promise<void> | null = null;
 
   private async loadPipeline<T extends EmbedPipeline>(
     task: PipelineType,
@@ -66,34 +85,42 @@ class EmbeddingWorker {
 
   async initialize() {
     if (this.embedPipe && this.colbertPipe) return;
+    if (this.initPromise) return this.initPromise;
 
-    console.log(`Worker: Loading models from ${CACHE_DIR}...`);
+    this.initPromise = (async () => {
+      try {
+        console.log(`Worker: Loading models from ${CACHE_DIR}...`);
 
-    if (!this.embedPipe) {
-      this.embedPipe = await this.loadPipeline<EmbedPipeline>(
-        "feature-extraction",
-        this.embedModelId,
-        {
-          dtype: "q4",
-          quantized: true,
-        },
-      );
-    }
+        if (!this.embedPipe) {
+          this.embedPipe = await this.loadPipeline<EmbedPipeline>(
+            "feature-extraction",
+            this.embedModelId,
+            {
+              dtype: "q4",
+              quantized: true,
+            },
+          );
+        }
 
-    if (!this.colbertPipe) {
-      // ColBERT model for late-interaction reranking
-      console.log("Worker: Loading Custom ColBERT (17M)...");
-      this.colbertPipe = await this.loadPipeline<EmbedPipeline>(
-        "feature-extraction",
-        this.colbertModelId,
-        {
-          dtype: "q8",
-          quantized: true,
-        },
-      );
-    }
+        if (!this.colbertPipe) {
+          // ColBERT model for late-interaction reranking
+          this.colbertPipe = await this.loadPipeline<EmbedPipeline>(
+            "feature-extraction",
+            this.colbertModelId,
+            {
+              dtype: "q8",
+              quantized: true,
+            },
+          );
+        }
 
-    console.log("Worker: Models loaded.");
+        console.log("Worker: Models loaded.");
+      } finally {
+        this.initPromise = null;
+      }
+    })();
+
+    return this.initPromise;
   }
 
   private toDenseVectors(output: EmbedOutput): number[][] {

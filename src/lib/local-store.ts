@@ -21,12 +21,22 @@ import {
   ChunkWithContext,
   formatChunkText,
 } from "./chunk-utils";
-import { WorkerManager } from "./worker-manager";
+import { workerManager } from "./worker-manager";
 import { CONFIG } from "../config";
 import { maxSim } from "./colbert-math";
 
 const PROFILE_ENABLED =
   process.env.OSGREP_PROFILE === "1" || process.env.OSGREP_PROFILE === "true";
+
+function resolveBatchSize(): number {
+  const fromEnv = Number.parseInt(process.env.OSGREP_BATCH_SIZE ?? "", 10);
+  if (Number.isFinite(fromEnv) && fromEnv > 0) {
+    return Math.min(fromEnv, 96);
+  }
+  if (process.env.OSGREP_LOW_IMPACT === "1") return 24;
+  if (process.env.OSGREP_FAST === "1") return 48;
+  return 32; // Default: faster than old 12, but easier on thermals than 48
+}
 
 export interface LocalStoreProfile {
   listFilesMs: number;
@@ -41,11 +51,9 @@ export interface LocalStoreProfile {
 
 export class LocalStore implements Store {
   private db: lancedb.Connection | null = null;
-  // WorkerManager runs embedding/rerank work in a single worker thread.
-  private workerManager = new WorkerManager();
   private chunker = new TreeSitterChunker();
   private readonly VECTOR_DIMENSIONS = CONFIG.VECTOR_DIMENSIONS;
-  private readonly EMBED_BATCH_SIZE = 12; // Smaller batches to tame thermals/memory on large repos
+  private readonly EMBED_BATCH_SIZE = resolveBatchSize();
   private readonly queryPrefix = CONFIG.QUERY_PREFIX;
   private readonly colbertDim = CONFIG.COLBERT_DIM;
   private profile: LocalStoreProfile = {
@@ -355,7 +363,7 @@ export class LocalStore implements Store {
     for (let i = 0; i < chunkTexts.length; i += BATCH_SIZE) {
       const batchTexts = chunkTexts.slice(i, i + BATCH_SIZE);
       const embedStart = PROFILE_ENABLED ? process.hrtime.bigint() : null;
-      const hybrids = await this.workerManager.computeHybrid(batchTexts);
+      const hybrids = await workerManager.computeHybrid(batchTexts);
       if (PROFILE_ENABLED && embedStart) {
         const embedEnd = process.hrtime.bigint();
         this.profile.totalEmbedTimeMs +=
@@ -565,7 +573,7 @@ export class LocalStore implements Store {
     const ftsLimit = 200;
 
     // 1. Dense + ColBERT query encoding
-    const queryEnc = await this.workerManager.encodeQuery(
+    const queryEnc = await workerManager.encodeQuery(
       this.queryPrefix + query,
     );
     const queryVector = queryEnc.dense;
@@ -708,7 +716,7 @@ export class LocalStore implements Store {
 
   async close(): Promise<void> {
     try {
-      await this.workerManager.close();
+      await workerManager.close();
     } catch (err) {
       // Silent cleanup - worker may have already exited
     }
