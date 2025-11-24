@@ -9,16 +9,13 @@ export const setup = new Command("setup")
   .description("One-time setup: download models and prepare osgrep")
   .action(async () => {
     console.log("osgrep Setup\n");
-    console.log(
-      "This will prepare your system and copy bundled models when available.\n",
-    );
+
 
     const home = os.homedir();
     const root = path.join(home, ".osgrep");
     const models = path.join(root, "models");
     const data = path.join(root, "data");
     const grammars = path.join(root, "grammars");
-    const localModels = path.join(__dirname, "..", "..", "models");
 
     try {
       await ensureSetup();
@@ -42,7 +39,6 @@ export const setup = new Command("setup")
     checkDir("Models", models);
     checkDir("Data (Vector DB)", data);
     checkDir("Grammars", grammars);
-    checkDir("Bundled Models (local)", localModels);
 
     const modelStatuses = modelIds.map((id) => {
       const modelPath = path.join(models, ...id.split("/"));

@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { parentPort } from "node:worker_threads";
+import { performance } from "node:perf_hooks";
 import { env, type PipelineType, pipeline } from "@huggingface/transformers";
 import { CONFIG, MODEL_IDS } from "../config";
 
@@ -91,19 +92,19 @@ class EmbeddingWorker {
       try {
         console.log(`Worker: Loading models from ${CACHE_DIR}...`);
 
-        if (!this.embedPipe) {
-          this.embedPipe = await this.loadPipeline<EmbedPipeline>(
-            "feature-extraction",
-            this.embedModelId,
-            {
-              dtype: "q4",
-              quantized: true,
-            },
-          );
-        }
+    if (!this.embedPipe) {
+      this.embedPipe = await this.loadPipeline<EmbedPipeline>(
+        "feature-extraction",
+        this.embedModelId,
+        {
+          dtype: "int8",
+          quantized: true,
+        },
+      );
+    }
 
         if (!this.colbertPipe) {
-          // ColBERT model for late-interaction reranking
+          // ColBERT model for late-interaction reranking (custom q8 build)
           this.colbertPipe = await this.loadPipeline<EmbedPipeline>(
             "feature-extraction",
             this.colbertModelId,
@@ -154,13 +155,16 @@ class EmbeddingWorker {
     if (!this.embedPipe) await this.initialize();
     if (!this.colbertPipe) await this.initialize();
 
+    const startDense = performance.now();
     const denseOut = await this.embedPipe!(texts, {
-      pooling: "mean",
+      pooling: "cls",
       normalize: true,
       truncation: true,
       max_length: 4096,
     });
+    const denseTime = performance.now() - startDense;
 
+    const startColbert = performance.now();
     const colbertOut = await this.colbertPipe!(texts, {
       pooling: "none",
       normalize: true,
@@ -168,6 +172,13 @@ class EmbeddingWorker {
       truncation: true,
       max_length: 512,
     });
+    const colbertTime = performance.now() - startColbert;
+
+    if (Math.random() < 0.05) {
+      console.log(
+        `[perf] dense=${denseTime.toFixed(1)}ms colbert=${colbertTime.toFixed(1)}ms`,
+      );
+    }
 
     const denseVectors = this.toDenseVectors(denseOut);
     const results: Array<{ dense: number[]; colbert: Buffer; scale: number }> = [];
@@ -218,7 +229,7 @@ class EmbeddingWorker {
     const colbertPipe = this.colbertPipe!;
 
     const denseOut = await embedPipe([text], {
-      pooling: "mean",
+      pooling: "cls",
       normalize: true,
       truncation: true,
       max_length: 4096,
