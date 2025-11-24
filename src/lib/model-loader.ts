@@ -17,7 +17,6 @@ env.allowRemoteModels = true;
  * transformers.js handles the caching logic automatically.
  */
 export async function downloadModels(): Promise<void> {
-  console.log(`Worker: Ensuring models are cached in ${CACHE_DIR}...`);
 
   try {
     // 1. Download Dense Model
