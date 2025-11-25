@@ -5,6 +5,7 @@ export const DEFAULT_IGNORE_PATTERNS = [
   "*.bin",
   "*.ipynb",
   "*.pyc",
+  "*.txt",
   "*.onnx",
   // Lockfiles across ecosystems
   "package-lock.json",

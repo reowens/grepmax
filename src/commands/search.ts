@@ -145,6 +145,7 @@ function formatSearchResults(
     perFile: number;
     showScores: boolean;
     compact: boolean;
+    plain: boolean;
     maxCount: number;
     root: string;
   },
@@ -162,14 +163,9 @@ function formatSearchResults(
     grouped.get(rawPath)?.push(chunk);
   }
 
-  // 2. Summary Line
-  const totalFiles = grouped.size;
-  const summary = style.bold(
-    `Found ${data.length} relevant chunks in ${totalFiles} files (max-count=${options.maxCount}, per-file=${options.perFile}).`,
-  );
-  let output = `\n${summary}\n`; // Tighter whitespace
+  let output = "";
 
-  // 3. Iterate Groups
+  // 2. Iterate Groups
   for (const [rawPath, chunks] of grouped) {
     // Sort chunks within file: Prefer content over anchors, then score
     chunks.sort((a, b) => {
@@ -187,22 +183,25 @@ function formatSearchResults(
 
     // Compact Mode: Just the path
     if (options.compact) {
-      output += `${style.green("📂 " + displayPath)}\n`;
+      output += options.plain ? `${displayPath}\n` : `${style.green("📂 " + displayPath)}\n`;
       continue;
     }
 
     // File Header
-    output += `${style.green("📂 " + style.bold(displayPath))}`;
+    if (options.plain) {
+      output += `${displayPath}\n`;
+    } else {
+      output += `${style.green("📂 " + style.bold(displayPath))}`;
+    }
 
     // Render Chunks
     const shownChunks = chunks.slice(0, options.perFile);
-    const remaining = chunks.length - shownChunks.length;
 
     for (const chunk of shownChunks) {
       // Metadata
       let startLine = (chunk.generated_metadata?.start_line ?? 0) + 1;
       const scoreDisplay = options.showScores
-        ? style.dim(` (score: ${chunk.score.toFixed(3)})`)
+        ? (options.plain ? ` (score: ${chunk.score.toFixed(3)})` : style.dim(` (score: ${chunk.score.toFixed(3)})`))
         : "";
 
       // Parse Text
@@ -210,7 +209,6 @@ function formatSearchResults(
 
       // Context Header (e.g. "Function: myFunc") - Only show if meaningful
       if (header && !options.showContent) {
-        // Only show headers that aren't just file paths or boilerplate
         const contextLines = header
           .split("\n")
           .filter((l) => !l.startsWith("File:") && !l.includes("(anchor)"))
@@ -218,8 +216,10 @@ function formatSearchResults(
           .filter(Boolean);
 
         if (contextLines.length > 0) {
-          // Join with arrow for brevity
-          output += `\n   ${style.dim("Context: " + contextLines.join(" > "))}`;
+          const contextStr = contextLines.join(" > ");
+          output += options.plain
+            ? `   Context: ${contextStr}`
+            : `\n   ${style.dim("Context: " + contextStr)}`;
         }
       }
 
@@ -233,8 +233,20 @@ function formatSearchResults(
         linesRemoved = cleaned.linesRemoved;
 
         // Truncate length
-        if (lines.length > 6) {
-          lines = lines.slice(0, 6);
+        const chunkType =
+          typeof (chunk.metadata as any)?.chunk_type === "string"
+            ? ((chunk.metadata as any).chunk_type as string)
+            : "";
+        const isDefinition =
+          chunkType === "function" ||
+          chunkType === "class" ||
+          chunkType === "method";
+        const maxLines = isDefinition ? 25 : 12;
+        if (lines.length > maxLines) {
+          lines = lines.slice(0, maxLines);
+          lines.push(
+            `... (+${cleaned.cleanedLines.length - maxLines} more lines)`,
+          );
         }
         displayBody = lines.join("\n");
       }
@@ -244,47 +256,48 @@ function formatSearchResults(
 
       // Apply Syntax Highlighting (ANSI)
       let highlighted = displayBody;
-      try {
-        const lang = detectLanguage(rawPath);
-        highlighted = highlight(displayBody, {
-          language: lang,
-          ignoreIllegals: true,
-        });
-      } catch {
-        // Fallback to plain text
+      if (!options.plain) {
+        try {
+          const lang = detectLanguage(rawPath);
+          highlighted = highlight(displayBody, {
+            language: lang,
+            ignoreIllegals: true,
+          });
+        } catch {
+          // Fallback to plain text
+        }
       }
 
-      // Apply Line Numbers to the Highlighted Text
+      // Apply Line Numbers
       const lines = highlighted.split("\n");
       const snippet = lines
         .map((line, i) => {
+          if (options.plain) {
+            // Simple format: "10: code"
+            return `${startLine + i}: ${line}`;
+          }
+          // Fancy format: "  10 │ code"
           const lineNum = style.dim(`${startLine + i}`.padStart(4) + " │");
           return `${lineNum} ${line}`;
         })
         .join("\n");
 
-      output += `\n${snippet}${scoreDisplay}\n`;
+      output += options.plain ? `\n${snippet}${scoreDisplay}\n` : `\n${snippet}${scoreDisplay}\n`;
 
       // Visual separator between chunks in same file if needed
       if (
         shownChunks.length > 1 &&
         chunk !== shownChunks[shownChunks.length - 1]
       ) {
-        output += `${style.dim("      ...")}\n`;
+        output += options.plain ? "...\n" : `${style.dim("      ...")}\n`;
       }
     }
 
-    // "More matches" footer - softer hint
-    if (remaining > 0) {
-      // Suggest a reasonable next step (current + remaining, or current + 5)
-      const nextStep = options.perFile + Math.min(remaining, 5);
-      output += `      ${style.dim(`... +${remaining} more matches (rerun with --per-file ${nextStep})`)}\n`;
-    }
-    
-    output += "\n"; // Separator between files
+    // Separator between files
+    output += "\n";
   }
 
-  return output.trimEnd(); // Clean up trailing newlines
+  return output.trimEnd();
 }
 
 export const search: Command = new CommanderCommand("search")
@@ -292,7 +305,7 @@ export const search: Command = new CommanderCommand("search")
   .option(
     "-m <max_count>, --max-count <max_count>",
     "The maximum number of results to return (total)",
-    "25",
+    "10",
   )
   .option("-c, --content", "Show full chunk content instead of snippets", false)
   .option(
@@ -302,6 +315,7 @@ export const search: Command = new CommanderCommand("search")
   )
   .option("--scores", "Show relevance scores", false)
   .option("--compact", "Show file paths only", false)
+  .option("--plain", "Disable ANSI colors and use simpler formatting", false)
   .option("--json", "Output results as JSON for machine consumption", false)
   .option(
     "-s, --sync",
@@ -325,6 +339,7 @@ export const search: Command = new CommanderCommand("search")
       perFile: string;
       scores: boolean;
       compact: boolean;
+      plain: boolean;
       json: boolean;
       sync: boolean;
       dryRun: boolean;
@@ -393,10 +408,10 @@ export const search: Command = new CommanderCommand("search")
     try {
       await ensureSetup({ silent: options.json });
       store = await createStore();
-      
+
       // Auto-detect store ID if not explicitly provided
       const storeId = options.store || getAutoStoreId(root);
-      
+
       await ensureStoreExists(store, storeId);
       const autoSync =
         options.sync || (await isStoreEmpty(store, storeId));
@@ -407,7 +422,7 @@ export const search: Command = new CommanderCommand("search")
           ignorePatterns: DEFAULT_IGNORE_PATTERNS,
         });
         const metaStore = new MetaStore();
-        
+
         if (options.json) {
           // JSON mode: silent indexing without UI
           await initialSync(
@@ -523,12 +538,17 @@ export const search: Command = new CommanderCommand("search")
         return; // Let Node exit naturally
       }
 
+      // Auto-detect plain mode if not in TTY (e.g. piped to agent)
+      const isTTY = process.stdout.isTTY;
+      const shouldBePlain = options.plain || !isTTY;
+
       // Render Output
       const output = formatSearchResults(results, {
         showContent: options.c,
         perFile: parseInt(options.perFile, 10),
         showScores: options.scores,
         compact: options.compact,
+        plain: shouldBePlain,
         maxCount: parseInt(options.m, 10),
         root,
       });

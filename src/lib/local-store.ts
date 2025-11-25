@@ -533,13 +533,31 @@ export class LocalStore implements Store {
       typeof (record as { chunk_type?: unknown }).chunk_type === "string"
         ? ((record as { chunk_type?: string }).chunk_type as string)
         : "";
-    if (chunkType === "function" || chunkType === "class") {
-      adjusted *= 1.15;
+    if (
+      chunkType === "function" ||
+      chunkType === "class" ||
+      chunkType === "method"
+    ) {
+      adjusted *= 1.25;
     }
     const pathStr =
       typeof record.path === "string" ? record.path.toLowerCase() : "";
-    if (pathStr.includes("test") || pathStr.includes("spec")) {
+    if (
+      pathStr.includes(".test.") ||
+      pathStr.includes(".spec.") ||
+      pathStr.includes("__tests__")
+    ) {
       adjusted *= 0.85;
+    }
+    if (
+      pathStr.endsWith(".md") ||
+      pathStr.endsWith(".mdx") ||
+      pathStr.endsWith(".txt") ||
+      pathStr.endsWith(".json") ||
+      pathStr.endsWith(".lock") ||
+      pathStr.includes("/docs/")
+    ) {
+      adjusted *= 0.5;
     }
     return adjusted;
   }
