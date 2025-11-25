@@ -1,59 +1,41 @@
 ---
 name: osgrep
-description: Semantic code search for architecture discovery and feature navigation. Use this when the user asks "how", "where", or "what" about the codebase. Prefer conceptual search over exact keyword matching.
+description: Semantic code search engine. Indexes concepts ("how", "why") rather than just keywords. Use this to navigate architecture and find definitions.
 allowed-tools: "Bash(osgrep:*), Read"
 license: Apache-2.0
 ---
 
 # Semantic Code Analysis Specialist
 
-You have access to `osgrep`, a local semantic search engine that indexes the repository and returns concept matches. Unlike `grep`, which matches character strings, `osgrep` matches meaning.
+You have access to `osgrep`, a local neural search engine. It matches *concepts* and *intent*, not just strings. It prioritizes **Code Definitions** (Functions/Classes) and penalizes documentation/tests.
 
 ## Goal
-Act like a senior lead engineer. When asked to explore the codebase, locate features, or explain architecture, you must use `osgrep` first to find the source of truth before reading files or proposing changes.
+Act as a Senior Lead Engineer. Locate the "Source of Truth" (definitions) with minimal token usage.
 
 ## Workflow
 
-### Step 1: Translate to a conceptual query
-Rewrite the user's request as a behavior or intent question. Keep it concise and conceptual; avoid flags like `--json`.
+### 1. Targeted Search (Start Small)
+Run `osgrep "Conceptual Query" [path]`.
+* **Limit:** Always start with `-m 5` (default is 10). Only increase if you find nothing.
+* **Scope:** If you know the general directory (e.g., `packages/server`), provide it as the second argument to filter noise immediately.
+    * *Example:* `osgrep -m 5 "How is session validation handled?" packages/server`
 
-Examples:
-- User: "How does login work?"
-- Run: `osgrep "How is user authentication and session validation handled?"`
+### 2. Scan the Results
+You will receive a ranked list with snippets and tags.
+* **Check Tags:** Look for `[Definition]` tags. These are the high-value function/class bodies.
+* **Trust the Snippet:** The output is dense. Read the function signatures and comments in the snippet.
+* **Ignore Noise:** The tool automatically ranks `.md` docs and `.test` files lower. Do not try to force them to appear unless specifically requested.
 
-- User: "Where are permissions checked?"
-- Run: `osgrep "Where does the system enforce authorization or access control?"`
+### 3. Deep Dive (Progressive Disclosure)
+Only use the `Read` tool if:
+- The snippet is truncated (`...`) AND looks like the correct answer.
+- You need to see imports to trace the data flow.
 
-### Step 2: Scan results before reading
-`osgrep` returns ranked candidates with paths, scores, snippets, and rationale in human-friendly text.
+*Efficiency Rule:* Do not read a file just to verify it exists. Trust the `osgrep` output path.
 
-Do not immediately read every file.
-1. Scan snippets and rationales to understand what each file is doing.
-2. Find definitions, not just references or tests.
-3. If several files look relevant, start with the highest score and clearest rationale.
+## When to use `osgrep` vs `grep`
+- **Use `osgrep` (Default):** "How", "Where", "What", "Explain", "Find feature logic".
+- **Use `grep`:** ONLY for literal refactoring (e.g., "Find every exact usage of `MAX_RETRIES`").
 
-### Step 3: If context feels thin, refine narrowly
-- Prefer tightening the query or modestly increasing breadth: rerun with a slightly higher `--per-file` or `--max-count` if the top results are unclear.
-- If a specific result is promising but truncated, rerun for just that target with `--content` rather than widening everything.
-
-### Step 4: Deep dive only when needed
-Use `Read` only if:
-- the snippet is truncated, or
-- you need surrounding context to confirm behavior.
-
-Efficiency rule: do not read a file just to verify it exists. Trust the returned path. Prioritize definitions over tests unless the user explicitly asks for tests.
-
-### Step 5: Report back with citations
-When answering, cite:
-- the file path
-- what role it plays
-- why it is relevant based on the semantic match
-
-Use short quotes or paraphrases from snippets. Read more only if necessary.
-
-## When to use osgrep vs grep
-- Use `osgrep` by default for: "how", "where", "what", "explain", "find the feature", "show me the flow".
-- Use `grep` only for literal refactors where you must find every exact occurrence of a specific string.
-
-## If unsure about the tool
-Run `osgrep --help` before guessing flags or output meaning.
+## Output Strategy
+Cite the **file path** and the **logic** found in the search results.
