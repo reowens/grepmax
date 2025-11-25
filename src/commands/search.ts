@@ -1,15 +1,9 @@
-import { extname, join, relative, normalize } from "node:path";
-import { highlight } from "cli-highlight";
+import { join, relative, normalize } from "node:path";
 import type { Command } from "commander";
 import { Command as CommanderCommand } from "commander";
 import { createFileSystem, createStore } from "../lib/context";
 import { ensureSetup } from "../lib/setup-helpers";
-import type {
-  ChunkType,
-  FileMetadata,
-  SearchResponse,
-  Store,
-} from "../lib/store";
+import type { FileMetadata, SearchResponse, Store } from "../lib/store";
 import { DEFAULT_IGNORE_PATTERNS } from "../lib/ignore-patterns";
 import { ensureStoreExists, isStoreEmpty } from "../lib/store-helpers";
 import { getAutoStoreId } from "../lib/store-resolver";
@@ -23,101 +17,7 @@ import {
   MetaStore,
   readServerLock,
 } from "../utils";
-
-// --- UI Helpers (No external deps) ---
-const style = {
-  reset: (s: string) => `\x1b[0m${s}\x1b[0m`,
-  bold: (s: string) => `\x1b[1m${s}\x1b[22m`,
-  dim: (s: string) => `\x1b[2m${s}\x1b[22m`,
-  blue: (s: string) => `\x1b[34m${s}\x1b[39m`,
-  green: (s: string) => `\x1b[32m${s}\x1b[39m`,
-  yellow: (s: string) => `\x1b[33m${s}\x1b[39m`,
-};
-
-function detectLanguage(filePath: string): string {
-  const ext = extname(filePath).toLowerCase();
-  switch (ext) {
-    case ".ts":
-    case ".tsx":
-      return "typescript";
-    case ".js":
-    case ".jsx":
-      return "javascript";
-    case ".py":
-      return "python";
-    case ".rs":
-      return "rust";
-    case ".go":
-      return "go";
-    case ".java":
-      return "java";
-    case ".json":
-      return "json";
-    case ".md":
-      return "markdown";
-    case ".yml":
-    case ".yaml":
-      return "yaml";
-    case ".css":
-      return "css";
-    case ".html":
-      return "html";
-    case ".sh":
-      return "bash";
-    default:
-      return "plaintext";
-  }
-}
-
-/**
- * Parses the specialized chunk format: "Header\n---\nBody"
- */
-function parseChunkText(text: string) {
-  const separator = "\n---\n";
-  const index = text.indexOf(separator);
-
-  if (index === -1) {
-    return { header: "", body: text };
-  }
-
-  return {
-    header: text.substring(0, index),
-    body: text.substring(index + separator.length),
-  };
-}
-
-/**
- * Cleans metadata lines from the top of a snippet to show code faster.
- */
-function cleanSnippet(body: string): {
-  cleanedLines: string[];
-  linesRemoved: number;
-} {
-  let lines = body.split("\n");
-  let linesRemoved = 0;
-
-  // Metadata prefixes to strip from the *start* of the snippet
-  const NOISE_PREFIXES = [
-    "File:",
-    "Top comments:",
-    "Preamble:",
-    "(anchor)",
-    "Imports:",
-    "Exports:",
-    "---",
-  ];
-
-  while (
-    lines.length > 0 &&
-    (lines[0].trim() === "" ||
-      NOISE_PREFIXES.some((p) => lines[0].trim().startsWith(p)))
-  ) {
-    lines.shift();
-    linesRemoved++;
-  }
-
-  return { cleanedLines: lines, linesRemoved };
-}
+import { formatTextResults, type TextResult } from "../lib/formatter";
 
 function toDenseResults(
   root: string,
@@ -138,166 +38,24 @@ function toDenseResults(
   });
 }
 
-function formatSearchResults(
-  response: SearchResponse,
-  options: {
-    showContent: boolean;
-    perFile: number;
-    showScores: boolean;
-    compact: boolean;
-    plain: boolean;
-    maxCount: number;
-    root: string;
-  },
-) {
-  const { data } = response;
-  if (data.length === 0) return "";
+function toTextResults(data: SearchResponse["data"]): TextResult[] {
+  return data.map((r) => {
+    const rawPath =
+      typeof (r.metadata as FileMetadata | undefined)?.path === "string"
+        ? ((r.metadata as FileMetadata).path as string)
+        : "Unknown path";
 
-  // 1. Group by File Path
-  const grouped = new Map<string, ChunkType[]>();
-  for (const chunk of data) {
-    const rawPath = (chunk.metadata as FileMetadata)?.path || "Unknown path";
-    if (!grouped.has(rawPath)) {
-      grouped.set(rawPath, []);
-    }
-    grouped.get(rawPath)?.push(chunk);
-  }
-
-  let output = "";
-
-  // 2. Iterate Groups
-  for (const [rawPath, chunks] of grouped) {
-    // Sort chunks within file: Prefer content over anchors, then score
-    chunks.sort((a, b) => {
-      const aIsAnchor = !!a.metadata?.is_anchor;
-      const bIsAnchor = !!b.metadata?.is_anchor;
-      if (aIsAnchor !== bIsAnchor) return aIsAnchor ? 1 : -1; // Put non-anchors first
-      return b.score - a.score; // Then sort by score
-    });
-
-    // Path Formatting
-    let displayPath = rawPath;
-    if (rawPath !== "Unknown path") {
-      displayPath = relative(options.root, rawPath);
-    }
-
-    // Compact Mode: Just the path
-    if (options.compact) {
-      output += options.plain ? `${displayPath}\n` : `${style.green("📂 " + displayPath)}\n`;
-      continue;
-    }
-
-    // File Header
-    if (options.plain) {
-      output += `${displayPath}\n`;
-    } else {
-      output += `${style.green("📂 " + style.bold(displayPath))}`;
-    }
-
-    // Render Chunks
-    const shownChunks = chunks.slice(0, options.perFile);
-
-    for (const chunk of shownChunks) {
-      // Metadata
-      let startLine = (chunk.generated_metadata?.start_line ?? 0) + 1;
-      const scoreDisplay = options.showScores
-        ? (options.plain ? ` (score: ${chunk.score.toFixed(3)})` : style.dim(` (score: ${chunk.score.toFixed(3)})`))
-        : "";
-
-      // Parse Text
-      const { header, body } = parseChunkText(chunk.text ?? "");
-
-      // Context Header (e.g. "Function: myFunc") - Only show if meaningful
-      if (header && !options.showContent) {
-        const contextLines = header
-          .split("\n")
-          .filter((l) => !l.startsWith("File:") && !l.includes("(anchor)"))
-          .map((l) => l.trim())
-          .filter(Boolean);
-
-        if (contextLines.length > 0) {
-          const contextStr = contextLines.join(" > ");
-          output += options.plain
-            ? `   Context: ${contextStr}`
-            : `\n   ${style.dim("Context: " + contextStr)}`;
-        }
-      }
-
-      // Clean Snippet Body
-      let displayBody = body;
-      let linesRemoved = 0;
-
-      if (!options.showContent) {
-        const cleaned = cleanSnippet(body);
-        let lines = cleaned.cleanedLines;
-        linesRemoved = cleaned.linesRemoved;
-
-        // Truncate length
-        const chunkType =
-          typeof (chunk.metadata as any)?.chunk_type === "string"
-            ? ((chunk.metadata as any).chunk_type as string)
-            : "";
-        const isDefinition =
-          chunkType === "function" ||
-          chunkType === "class" ||
-          chunkType === "method";
-        const maxLines = isDefinition ? 25 : 12;
-        if (lines.length > maxLines) {
-          lines = lines.slice(0, maxLines);
-          lines.push(
-            `... (+${cleaned.cleanedLines.length - maxLines} more lines)`,
-          );
-        }
-        displayBody = lines.join("\n");
-      }
-
-      // Adjust start line based on cleaning
-      startLine += linesRemoved;
-
-      // Apply Syntax Highlighting (ANSI)
-      let highlighted = displayBody;
-      if (!options.plain) {
-        try {
-          const lang = detectLanguage(rawPath);
-          highlighted = highlight(displayBody, {
-            language: lang,
-            ignoreIllegals: true,
-          });
-        } catch {
-          // Fallback to plain text
-        }
-      }
-
-      // Apply Line Numbers
-      const lines = highlighted.split("\n");
-      const snippet = lines
-        .map((line, i) => {
-          if (options.plain) {
-            // Simple format: "10: code"
-            return `${startLine + i}: ${line}`;
-          }
-          // Fancy format: "  10 │ code"
-          const lineNum = style.dim(`${startLine + i}`.padStart(4) + " │");
-          return `${lineNum} ${line}`;
-        })
-        .join("\n");
-
-      output += options.plain ? `\n${snippet}${scoreDisplay}\n` : `\n${snippet}${scoreDisplay}\n`;
-
-      // Visual separator between chunks in same file if needed
-      if (
-        shownChunks.length > 1 &&
-        chunk !== shownChunks[shownChunks.length - 1]
-      ) {
-        output += options.plain ? "...\n" : `${style.dim("      ...")}\n`;
-      }
-    }
-
-    // Separator between files
-    output += "\n";
-  }
-
-  return output.trimEnd();
+    return {
+      path: rawPath,
+      score: r.score,
+      content: r.text || "",
+      chunk_type: r.generated_metadata?.type,
+      start_line: r.generated_metadata?.start_line ?? 0,
+      end_line:
+        (r.generated_metadata?.start_line ?? 0) +
+        (r.generated_metadata?.num_lines ?? 0),
+    };
+  });
 }
 
 export const search: Command = new CommanderCommand("search")
@@ -397,7 +155,7 @@ export const search: Command = new CommanderCommand("search")
           return true;
         }
 
-        // 2. Rehydrate server results to match local store shape expected by formatSearchResults.
+        // 2. Rehydrate server results to match local store shape expected by formatTextResults.
         // Server payload is flat ({ path, content/snippet, score, chunk_type? }).
         const rehydratedResults = (payload.results ?? []).map((r: any) => ({
           score: typeof r.score === "number" ? r.score : 0,
@@ -414,7 +172,7 @@ export const search: Command = new CommanderCommand("search")
           },
         }));
 
-        // 2. HANDLE TEXT MODE (Agent/Human)
+        // 3. HANDLE TEXT MODE (Agent/Human)
         // Check for the status flag
         if (payload.status === "indexing") {
           const pct = payload.progress ?? 0;
@@ -427,17 +185,15 @@ export const search: Command = new CommanderCommand("search")
         const isTTY = process.stdout.isTTY;
         const shouldBePlain = options.plain || !isTTY;
 
-        const output = formatSearchResults(
-          { data: rehydratedResults } as any,
-          {
-            showContent: options.c,
-            perFile: parseInt(options.perFile, 10),
-            showScores: options.scores,
-            compact: options.compact,
-            plain: shouldBePlain,
-            maxCount: parseInt(options.m, 10),
-            root,
-          },
+        const mappedResults: TextResult[] = toTextResults(
+          rehydratedResults as SearchResponse["data"],
+        );
+
+        const output = formatTextResults(
+          mappedResults,
+          pattern,
+          root,
+          shouldBePlain,
         );
         console.log(output);
         return true;
@@ -625,15 +381,13 @@ export const search: Command = new CommanderCommand("search")
       const shouldBePlain = options.plain || !isTTY;
 
       // Render Output
-      const output = formatSearchResults(results, {
-        showContent: options.c,
-        perFile: parseInt(options.perFile, 10),
-        showScores: options.scores,
-        compact: options.compact,
-        plain: shouldBePlain,
-        maxCount: parseInt(options.m, 10),
+      const mappedResults: TextResult[] = toTextResults(results.data);
+      const output = formatTextResults(
+        mappedResults,
+        pattern,
         root,
-      });
+        shouldBePlain,
+      );
 
       console.log(output);
     } catch (error) {
