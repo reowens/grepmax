@@ -32,11 +32,13 @@ You will receive a list like: `src/auth.ts:50 [Definition]`.
 - `[Test]` - Test file (usually skip unless the task is test-related)
 - No tag - General code
 
+## Indexing Behavior
+- If the tool says it is still indexing, Stop, alert the user and ask if they want to proceed.
+
+
 ## Default Scoping
 If you know the target area, always scope your path to cut noise:
-- Backend logic: `packages/console/app/src` or `packages/console/core`
-- CLI: `packages/opencode/src`
-- Skip wrappers: avoid `packages/sdk`, `packages/extensions` unless explicitly needed
+- example: `src/console/app`
 
 ## Output Strategy
 When answering, cite the **file path** and specific **logic** found.
