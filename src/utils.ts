@@ -371,6 +371,7 @@ export async function initialSync(
   dryRun?: boolean,
   onProgress?: (info: InitialSyncProgress) => void,
   metaStore?: MetaStore,
+  signal?: AbortSignal,
 ): Promise<InitialSyncResult> {
   if (metaStore) {
     await metaStore.load();
@@ -379,13 +380,13 @@ export async function initialSync(
   const EMBED_BATCH_SIZE = resolveEmbedBatchSize();
   const profile: IndexingProfile | undefined = PROFILE_ENABLED
     ? {
-        sections: {},
-        metaSaveCount: 0,
-        metaSaveSkipped: SKIP_META_SAVE,
-        metaFileSize: undefined,
-        processed: 0,
-        indexed: 0,
-      }
+      sections: {},
+      metaSaveCount: 0,
+      metaSaveSkipped: SKIP_META_SAVE,
+      metaFileSize: undefined,
+      processed: 0,
+      indexed: 0,
+    }
     : undefined;
 
   const totalStart = PROFILE_ENABLED ? now() : null;
@@ -428,7 +429,7 @@ export async function initialSync(
 
   // 2. Walk file system and apply the VELVET ROPE filter
   const fileWalkStart = PROFILE_ENABLED ? now() : null;
-  
+
   // Files on disk that are not gitignored.
   const allFiles = Array.from(fileSystem.getFiles(repoRoot));
   const aliveFiles = allFiles.filter(
@@ -506,6 +507,7 @@ export async function initialSync(
 
   // Process files in batches (hashing + change detection only)
   for (let i = 0; i < repoFiles.length; i += BATCH_SIZE) {
+    if (signal?.aborted) break;
     const batch = repoFiles.slice(i, i + BATCH_SIZE);
 
     await Promise.all(
@@ -588,6 +590,7 @@ export async function initialSync(
     await Promise.all(
       candidates.map((candidate) =>
         limit(async () => {
+          if (signal?.aborted) return;
           try {
             const buffer = await fs.promises.readFile(candidate.filePath);
             const { chunks, indexed: didIndex } = await indexFile(
@@ -610,7 +613,7 @@ export async function initialSync(
                   await queueFlush();
                 }
               }
-              
+
 
               // Periodic meta save
               if (metaStore && !SKIP_META_SAVE && indexed % 25 === 0) {

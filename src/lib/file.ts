@@ -76,7 +76,23 @@ export class NodeFileSystem implements FileSystem {
         }
 
         if (entry.isDirectory()) {
-          yield* this.getAllFilesRecursive(fullPath, root);
+          // Check if this directory is a nested git repository
+          if (this.git.isGitRepository(fullPath)) {
+            // It's a nested git repo! Switch to git ls-files for this subtree.
+            // This ensures we respect its .gitignore file.
+            let yielded = false;
+            for (const file of this.git.getGitFiles(fullPath)) {
+              yielded = true;
+              yield file;
+            }
+            // Fallback if git fails
+            if (!yielded) {
+              yield* this.getAllFilesRecursive(fullPath, root);
+            }
+          } else {
+            // Standard directory, recurse
+            yield* this.getAllFilesRecursive(fullPath, root);
+          }
         } else if (entry.isFile()) {
           yield fullPath;
         }

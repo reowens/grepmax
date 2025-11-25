@@ -7,6 +7,15 @@ export const DEFAULT_IGNORE_PATTERNS = [
   "*.pyc",
   "*.txt",
   "*.onnx",
+  // Safety nets for nested non-git folders
+  "node_modules",
+  "dist",
+  "build",
+  "out",
+  "target",
+  "__pycache__",
+  "coverage",
+  "venv",
   // Lockfiles across ecosystems
   "package-lock.json",
   "yarn.lock",

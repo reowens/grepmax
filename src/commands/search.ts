@@ -390,7 +390,39 @@ export const search: Command = new CommanderCommand("search")
         );
         if (!searchRes.ok) return false;
         const payload = await searchRes.json();
-        console.log(JSON.stringify(payload));
+
+        // 1. HANDLE JSON MODE (Machine)
+        if (options.json) {
+          console.log(JSON.stringify(payload));
+          return true;
+        }
+
+        // 2. HANDLE TEXT MODE (Agent/Human)
+        // Check for the status flag
+        if (payload.status === "indexing") {
+          const pct = payload.progress ?? 0;
+          console.error(
+            `⚠️  osgrep is currently indexing (${pct}% complete). Results may be partial.\n`,
+          );
+        }
+
+        // Auto-detect plain mode if not in TTY (e.g. piped to agent)
+        const isTTY = process.stdout.isTTY;
+        const shouldBePlain = options.plain || !isTTY;
+
+        const output = formatSearchResults(
+          { data: payload.results } as any,
+          {
+            showContent: options.c,
+            perFile: parseInt(options.perFile, 10),
+            showScores: options.scores,
+            compact: options.compact,
+            plain: shouldBePlain,
+            maxCount: parseInt(options.m, 10),
+            root,
+          },
+        );
+        console.log(output);
         return true;
       } catch (_err) {
         return false;
@@ -433,6 +465,7 @@ export const search: Command = new CommanderCommand("search")
             options.dryRun,
             undefined, // No progress callback
             metaStore,
+            undefined, // No timeout for JSON mode (usually machine controlled)
           );
           if (!options.dryRun) {
             while (true) {
@@ -449,39 +482,71 @@ export const search: Command = new CommanderCommand("search")
             return;
           }
         } else {
-          // Human mode: show spinner and progress
+          // Human/Agent mode
+          const isTTY = process.stdout.isTTY;
+          let abortController: AbortController | undefined;
+          let signal: AbortSignal | undefined;
+
+          // If non-interactive (Agent), enforce a timeout to prevent hanging
+          if (!isTTY) {
+            abortController = new AbortController();
+            signal = abortController.signal;
+            setTimeout(() => {
+              abortController?.abort();
+            }, 10000); // 10s timeout
+          }
+
+          // Show spinner and progress
           const { spinner, onProgress } = createIndexingSpinner(
             root,
             options.sync ? "Indexing..." : "Indexing repository (first run)...",
           );
-          const result = await initialSync(
-            store,
-            fileSystem,
-            storeId,
-            root,
-            options.dryRun,
-            onProgress,
-            metaStore,
-          );
-          while (true) {
-            const info = await store.getInfo(storeId);
-            spinner.text = `Indexing ${info.counts.pending + info.counts.in_progress} file(s)`;
-            if (info.counts.pending === 0 && info.counts.in_progress === 0) {
-              break;
-            }
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-          }
-          spinner.succeed(
-            `Indexing complete (${result.processed}/${result.total}) • indexed ${result.indexed}`,
-          );
-          didSync = true;
-          if (options.dryRun) {
-            console.log(
-              formatDryRunSummary(result, {
-                actionDescription: "would have indexed",
-              }),
+
+          try {
+            const result = await initialSync(
+              store,
+              fileSystem,
+              storeId,
+              root,
+              options.dryRun,
+              onProgress,
+              metaStore,
+              signal,
             );
-            process.exit(0);
+
+            if (signal?.aborted) {
+              spinner.warn(
+                `Indexing timed out (${result.processed}/${result.total}). Results may be partial.`,
+              );
+            } else {
+              while (true) {
+                const info = await store.getInfo(storeId);
+                spinner.text = `Indexing ${info.counts.pending + info.counts.in_progress} file(s)`;
+                if (
+                  info.counts.pending === 0 &&
+                  info.counts.in_progress === 0
+                ) {
+                  break;
+                }
+                await new Promise((resolve) => setTimeout(resolve, 1000));
+              }
+              spinner.succeed(
+                `Indexing complete (${result.processed}/${result.total}) • indexed ${result.indexed}`,
+              );
+            }
+            didSync = true;
+
+            if (options.dryRun) {
+              console.log(
+                formatDryRunSummary(result, {
+                  actionDescription: "would have indexed",
+                }),
+              );
+              process.exit(0);
+            }
+          } catch (err) {
+            spinner.fail("Indexing failed");
+            throw err;
           }
         }
       }

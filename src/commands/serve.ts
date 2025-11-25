@@ -26,6 +26,13 @@ import {
 
 type PendingAction = "upsert" | "delete";
 
+// Global State for the Server
+let indexState = {
+  isIndexing: false,
+  indexed: 0,
+  total: 0,
+};
+
 const MAX_REQUEST_BYTES = 10 * 1024 * 1024;
 
 function toDenseResults(
@@ -205,17 +212,43 @@ export const serve = new Command("serve")
         const fileSystem = createFileSystem({
           ignorePatterns: [...DEFAULT_IGNORE_PATTERNS, ".osgrep/**"],
         });
-        console.log("Store empty, performing initial index...");
-        await initialSync(
+        console.log("Store empty, performing initial index (background)...");
+
+        // Setup the Progress Callback
+        const onProgress = (info: {
+          processed: number;
+          indexed: number;
+          total: number;
+        }) => {
+          indexState = {
+            isIndexing: info.indexed < info.total,
+            indexed: info.indexed,
+            total: info.total,
+          };
+        };
+
+        // Trigger Sync (Non-blocking / Background)
+        indexState.isIndexing = true;
+        initialSync(
           store,
           fileSystem,
           storeId,
           root,
           false,
-          undefined,
+          onProgress,
           metaStore,
-        );
-        console.log("Initial index complete.");
+          undefined, // No timeout for server mode
+        )
+          .then(() => {
+            indexState.isIndexing = false;
+            console.log("Background indexing complete.");
+          })
+          .catch((err) => {
+            indexState.isIndexing = false;
+            console.error("Background index failed:", err);
+          });
+      } else {
+        indexState.isIndexing = false;
       }
 
       watcher = await createWatcher(store, storeId, root, metaStore);
@@ -288,24 +321,24 @@ export const serve = new Command("serve")
               const searchPath =
                 typeof body.path === "string" && body.path.length > 0
                   ? path.normalize(
-                      path.isAbsolute(body.path)
-                        ? body.path
-                        : path.join(root, body.path),
-                    )
+                    path.isAbsolute(body.path)
+                      ? body.path
+                      : path.join(root, body.path),
+                  )
                   : root;
 
               const filters =
                 body.filters && typeof body.filters === "object"
                   ? body.filters
                   : {
-                      all: [
-                        {
-                          key: "path",
-                          operator: "starts_with",
-                          value: searchPath,
-                        },
-                      ],
-                    };
+                    all: [
+                      {
+                        key: "path",
+                        operator: "starts_with",
+                        value: searchPath,
+                      },
+                    ],
+                  };
 
               const results = await store!.search(
                 storeId,
@@ -315,7 +348,17 @@ export const serve = new Command("serve")
                 filters,
               );
               const dense = toDenseResults(root, results.data);
-              return respondJson(res, 200, { results: dense });
+
+              // INJECT STATUS
+              const responsePayload = {
+                results: dense,
+                status: indexState.isIndexing ? "indexing" : "ready",
+                progress: indexState.isIndexing
+                  ? Math.round((indexState.indexed / indexState.total) * 100)
+                  : 100,
+              };
+
+              return respondJson(res, 200, responsePayload);
             } catch (err) {
               console.error("Search handler failed:", err);
               return respondJson(res, 500, { error: "search_failed" });

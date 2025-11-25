@@ -33,6 +33,11 @@ Only use the `Read` tool if:
 
 *Efficiency Rule:* Do not read a file just to verify it exists. Trust the `osgrep` output path.
 
+### 4. Handling Partial Indexing
+If `osgrep` outputs: `⚠️ osgrep is currently indexing (X% complete)`, it means the database is not ready.
+* **Action:** Inform the user: "The codebase is still indexing (X%). Do you want me to proceed?" Wait for feeedback so the user can make an informed choice.
+* **Do not** assume missing files don't exist. They just aren't indexed yet.
+
 ## When to use `osgrep` vs `grep`
 - **Use `osgrep` (Default):** "How", "Where", "What", "Explain", "Find feature logic".
 - **Use `grep`:** ONLY for literal refactoring (e.g., "Find every exact usage of `MAX_RETRIES`").
