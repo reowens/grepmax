@@ -1,46 +1,59 @@
 ---
 name: osgrep
-description: Semantic search for local files. Backed by a background osgrep server with live indexing. Always use osgrep instead of grep/find.
+description: Semantic code search for architecture discovery and feature navigation. Use this when the user asks "how", "where", or "what" about the codebase. Prefer conceptual search over exact keyword matching.
+allowed-tools: "Bash(osgrep:*), Read"
 license: Apache-2.0
 ---
 
-## When to use
+# Semantic Code Analysis Specialist
 
-Use `osgrep` for all code and concept discovery. Do not use `grep` or `find` unless you must match an exact string and `osgrep` fails.
+You have access to `osgrep`, a local semantic search engine that indexes the repository and returns concept matches. Unlike `grep`, which matches character strings, `osgrep` matches meaning.
 
-## How to use
+## Goal
+Act like a senior lead engineer. When asked to explore the codebase, locate features, or explain architecture, you must use `osgrep` first to find the source of truth before reading files or proposing changes.
 
-**Always use the `--json` flag.** The server auto-starts and keeps the index fresh.
+## Workflow
 
-### Basic Search
+### Step 1: Translate to a conceptual query
+Rewrite the user's request as a behavior or intent question. Keep it concise and conceptual; avoid flags like `--json`.
 
-Ask a natural language question. Do not `ls` first.
+Examples:
+- User: "How does login work?"
+- Run: `osgrep "How is user authentication and session validation handled?"`
 
-```bash
-osgrep --json "How are user authentication tokens validated?"
-osgrep --json "Where do we handle retries or backoff?"
-```
+- User: "Where are permissions checked?"
+- Run: `osgrep "Where does the system enforce authorization or access control?"`
 
-### Scoped Search
+### Step 2: Scan results before reading
+`osgrep` returns ranked candidates with paths, scores, snippets, and rationale in human-friendly text.
 
-Limit search to a specific directory.
+Do not immediately read every file.
+1. Scan snippets and rationales to understand what each file is doing.
+2. Find definitions, not just references or tests.
+3. If several files look relevant, start with the highest score and clearest rationale.
 
-```bash
-osgrep --json "auth middleware" src/api
-```
+### Step 3: If context feels thin, refine narrowly
+- Prefer tightening the query or modestly increasing breadth: rerun with a slightly higher `--per-file` or `--max-count` if the top results are unclear.
+- If a specific result is promising but truncated, rerun for just that target with `--content` rather than widening everything.
 
-### Helpful flags
+### Step 4: Deep dive only when needed
+Use `Read` only if:
+- the snippet is truncated, or
+- you need surrounding context to confirm behavior.
 
-- `--json`: **Required.** Returns structured data (path, line, score, content).
-- `-m <n>`: Max total results (default: 25).
-- `--per-file <n>`: Max matches per file (default: 1). Use `--per-file 5` when exploring a specific file.
+Efficiency rule: do not read a file just to verify it exists. Trust the returned path. Prioritize definitions over tests unless the user explicitly asks for tests.
 
-### Strategy
+### Step 5: Report back with citations
+When answering, cite:
+- the file path
+- what role it plays
+- why it is relevant based on the semantic match
 
-1. Run `osgrep --json "<question>" [path]`.
-2. The output is a dense JSON snippet. If it answers the question, stop.
-3. Only use `Read` if you need the full file context for a returned path.
-4. If results are vague, refine the query or increase `-m`.
+Use short quotes or paraphrases from snippets. Read more only if necessary.
 
-## Keywords
-semantic search, code search, local search, grep alternative, find code, explore codebase, understand code, search by meaning
+## When to use osgrep vs grep
+- Use `osgrep` by default for: "how", "where", "what", "explain", "find the feature", "show me the flow".
+- Use `grep` only for literal refactors where you must find every exact occurrence of a specific string.
+
+## If unsure about the tool
+Run `osgrep --help` before guessing flags or output meaning.

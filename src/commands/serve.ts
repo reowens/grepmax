@@ -9,6 +9,7 @@ import { ensureSetup } from "../lib/setup-helpers";
 import { ensureStoreExists, isStoreEmpty } from "../lib/store-helpers";
 import { getAutoStoreId } from "../lib/store-resolver";
 import type { Store } from "../lib/store";
+import { DEFAULT_IGNORE_PATTERNS } from "../lib/ignore-patterns"
 import {
   clearServerLock,
   computeBufferHash,
@@ -58,19 +59,8 @@ async function createWatcher(
   root: string,
   metaStore: MetaStore,
 ): Promise<FSWatcher> {
-      const fileSystem = createFileSystem({
-        ignorePatterns: [
-          "*.lock",
-          "*.bin",
-          "*.ipynb",
-          "*.pyc",
-          "*.json",
-          "pnpm-lock.yaml",
-          "package-lock.json",
-          "yarn.lock",
-          "bun.lockb",
-          ".osgrep/**",
-        ],
+  const fileSystem = createFileSystem({
+    ignorePatterns: [...DEFAULT_IGNORE_PATTERNS, ".osgrep/**"],
   });
 
   fileSystem.loadOsgrepignore(root);
@@ -212,20 +202,8 @@ export const serve = new Command("serve")
 
       const empty = await isStoreEmpty(store, storeId);
       if (empty) {
-      const fileSystem = createFileSystem({
-        ignorePatterns: [
-          "*.lock",
-          "*.bin",
-          "*.ipynb",
-          "*.pyc",
-          "*.json",
-          "*.onnx",
-          "pnpm-lock.yaml",
-          "package-lock.json",
-          "yarn.lock",
-          "bun.lockb",
-          ".osgrep/**",
-          ],
+        const fileSystem = createFileSystem({
+          ignorePatterns: [...DEFAULT_IGNORE_PATTERNS, ".osgrep/**"],
         });
         console.log("Store empty, performing initial index...");
         await initialSync(

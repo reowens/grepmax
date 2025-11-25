@@ -49,11 +49,6 @@ export const cases: EvalCase[] = [
     note: "Vector index configuration.",
   },
   {
-    query: "prevent the background process from crashing the computer",
-    expectedPath: "src/lib/local-store.ts|src/lib/worker-manager.ts",
-    note: "MAX_WORKER_RSS guard and restart.",
-  },
-  {
     query: "turn the text into numbers",
     expectedPath: "src/lib/worker.ts",
     note: "Embedding function logic.",
@@ -89,10 +84,6 @@ export const cases: EvalCase[] = [
     expectedPath: "src/lib/chunker.ts",
     note: "Tree-sitter traversal and slicing.",
   },
-  {
-    query: "MAX_WORKER_RSS",
-    expectedPath: "src/lib/local-store.ts|src/lib/worker-manager.ts",
-  },
   { query: "createVectorIndex", expectedPath: "src/lib/local-store.ts" },
   { query: "createFTSIndex", expectedPath: "src/lib/local-store.ts" },
   {
@@ -111,7 +102,7 @@ export const cases: EvalCase[] = [
   {
     query: "restart worker when memory is high",
     expectedPath: "src/lib/local-store.ts|src/lib/worker-manager.ts",
-    note: "RSS guard and worker restart logic.",
+    note: "Worker resilience and restart logic.",
   },
   {
     query: "serialize embedding requests",

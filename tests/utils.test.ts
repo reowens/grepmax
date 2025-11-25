@@ -6,10 +6,12 @@ import type { FileSystem } from "../src/lib/file";
 import type {
   FileMetadata,
   IndexFileOptions,
+  PreparedChunk,
   SearchResponse,
   Store,
   StoreFile,
   StoreInfo,
+  VectorRecord,
 } from "../src/lib/store";
 import { initialSync } from "../src/utils";
 
@@ -57,6 +59,9 @@ class FakeFileSystem implements FileSystem {
 type StoredRecord = {
   content: string;
   metadata: FileMetadata;
+  vector?: number[];
+  colbert?: Buffer;
+  colbert_scale?: number;
 };
 
 class FakeStore implements Store {
@@ -76,12 +81,45 @@ class FakeStore implements Store {
     _storeId: string,
     file: string | File | ReadableStream | NodeJS.ReadableStream,
     options: IndexFileOptions,
-  ): Promise<void> {
+  ): Promise<PreparedChunk[]> {
     this.indexCalls += 1;
-    this.records.set(options.external_id, {
-      content: file,
-      metadata: options.metadata || { path: options.external_id, hash: "" },
-    });
+    const metadata = options.metadata || {
+      path: options.external_id,
+      hash: "",
+    };
+    const content =
+      typeof file === "string"
+        ? file
+        : typeof options.content === "string"
+          ? options.content
+          : "";
+    const chunk: PreparedChunk = {
+      id: `${this.indexCalls}-${metadata.path}`,
+      path: metadata.path,
+      hash: metadata.hash,
+      content,
+      start_line: 0,
+      end_line: 0,
+      chunk_index: 0,
+      is_anchor: false,
+    };
+    return [chunk];
+  }
+
+  async insertBatch(
+    _storeId: string,
+    records: VectorRecord[],
+  ): Promise<void> {
+    for (const record of records) {
+      const key = record.path;
+      this.records.set(key, {
+        content: record.content,
+        metadata: { path: record.path, hash: record.hash },
+        vector: record.vector,
+        colbert: record.colbert,
+        colbert_scale: record.colbert_scale,
+      });
+    }
   }
 
   async search(
@@ -133,6 +171,13 @@ class FakeStore implements Store {
   async deleteFile(_storeId: string, filePath: string): Promise<void> {
     this.records.delete(filePath);
     this.deleted.push(filePath);
+  }
+
+  async deleteFiles(_storeId: string, filePaths: string[]): Promise<void> {
+    const unique = Array.from(new Set(filePaths));
+    for (const filePath of unique) {
+      await this.deleteFile(_storeId, filePath);
+    }
   }
 
   close(): Promise<void> {

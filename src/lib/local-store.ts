@@ -33,11 +33,8 @@ export interface LocalStoreProfile {
   listFilesMs: number;
   indexCount: number;
   totalChunkCount: number;
-  totalEmbedBatches: number;
   totalChunkTimeMs: number;
-  totalEmbedTimeMs: number;
   totalTableWriteMs: number;
-  totalTableDeleteMs: number;
 }
 
 export class LocalStore implements Store {
@@ -50,11 +47,8 @@ export class LocalStore implements Store {
     listFilesMs: 0,
     indexCount: 0,
     totalChunkCount: 0,
-    totalEmbedBatches: 0,
     totalChunkTimeMs: 0,
-    totalEmbedTimeMs: 0,
     totalTableWriteMs: 0,
-    totalTableDeleteMs: 0,
   };
 
   constructor() {
@@ -573,6 +567,7 @@ export class LocalStore implements Store {
       this.queryPrefix + query,
     );
     const queryVector = queryEnc.dense;
+    const doRerank = _search_options?.rerank !== false;
 
     // Optional path filter support
     const allFilters = Array.isArray((_filters as { all?: unknown })?.all)
@@ -613,8 +608,8 @@ export class LocalStore implements Store {
       return { data: [] };
     }
 
-    // 3. Use encoded query for ColBERT MaxSim
-    const queryMatrix = queryEnc.colbert;
+    // 3. Use encoded query for ColBERT MaxSim (opt-in)
+    const queryMatrix = doRerank ? queryEnc.colbert : [];
 
     // 4. Offline MaxSim scoring (fallback to dense cosine if ColBERT payload is empty)
     const cosineSim = (a: number[], b: number[]) => {
@@ -627,49 +622,46 @@ export class LocalStore implements Store {
     };
 
     const reranked = candidates.map((doc) => {
-      if (!doc.colbert || (Array.isArray(doc.colbert) && doc.colbert.length === 0)) {
-        const denseVec = Array.isArray(doc.vector) ? (doc.vector as number[]) : [];
-        let baseScore = cosineSim(queryVector, denseVec);
-        baseScore = this.applyStructureBoost(doc, baseScore);
-        return { record: doc, score: baseScore };
-      }
+      const denseVec = Array.isArray(doc.vector) ? (doc.vector as number[]) : [];
+      let score = cosineSim(queryVector, denseVec);
 
-      const scale =
-        typeof doc.colbert_scale === "number" ? doc.colbert_scale : 1.0;
-      let int8: Int8Array;
-      if (Buffer.isBuffer(doc.colbert)) {
-        const buffer = doc.colbert as Buffer;
-        int8 = new Int8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-      } else if (Array.isArray(doc.colbert)) {
-        int8 = new Int8Array(doc.colbert as number[]);
-      } else {
-        const denseVec = Array.isArray(doc.vector) ? (doc.vector as number[]) : [];
-        let baseScore = cosineSim(queryVector, denseVec);
-        baseScore = this.applyStructureBoost(doc, baseScore);
-        return { record: doc, score: baseScore };
-      }
-      const docMatrix: number[][] = [];
-      for (let i = 0; i < int8.length; i += this.colbertDim) {
-        const row: number[] = [];
-        let isPadding = true;
-        for (let k = 0; k < this.colbertDim; k++) {
-          const val = (int8[i + k] / 127) * scale;
-          if (val !== 0) isPadding = false;
-          row.push(val);
+      if (
+        doRerank &&
+        doc.colbert &&
+        !(Array.isArray(doc.colbert) && doc.colbert.length === 0) &&
+        queryMatrix.length > 0
+      ) {
+        const scale =
+          typeof doc.colbert_scale === "number" ? doc.colbert_scale : 1.0;
+        let int8: Int8Array | null = null;
+        if (Buffer.isBuffer(doc.colbert)) {
+          const buffer = doc.colbert as Buffer;
+          int8 = new Int8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+        } else if (Array.isArray(doc.colbert)) {
+          int8 = new Int8Array(doc.colbert as number[]);
         }
-        if (!isPadding) {
-          docMatrix.push(row);
+
+        if (int8) {
+          const docMatrix: number[][] = [];
+          for (let i = 0; i < int8.length; i += this.colbertDim) {
+            const row: number[] = [];
+            let isPadding = true;
+            for (let k = 0; k < this.colbertDim; k++) {
+              const val = (int8[i + k] / 127) * scale;
+              if (val !== 0) isPadding = false;
+              row.push(val);
+            }
+            if (!isPadding) {
+              docMatrix.push(row);
+            }
+          }
+
+          if (docMatrix.length > 0) {
+            score = maxSim(queryMatrix, docMatrix);
+          }
         }
       }
 
-      if (docMatrix.length === 0 || queryMatrix.length === 0) {
-        const denseVec = Array.isArray(doc.vector) ? (doc.vector as number[]) : [];
-        let baseScore = cosineSim(queryVector, denseVec);
-        baseScore = this.applyStructureBoost(doc, baseScore);
-        return { record: doc, score: baseScore };
-      }
-
-      let score = maxSim(queryMatrix, docMatrix);
       score = this.applyStructureBoost(doc, score);
       return { record: doc, score };
     });

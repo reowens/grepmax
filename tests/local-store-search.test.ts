@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SearchResponse } from "../src/lib/store";
 import { LocalStore } from "../src/lib/local-store";
+import { workerManager } from "../src/lib/worker-manager";
 
 type FakeTableRecord = {
   path: string;
@@ -69,25 +70,31 @@ async function runSearchWithFakeStore({
   const fakeStore: any = {
     queryPrefix: "prefix ",
     getTable: vi.fn(async () => table),
-    workerManager: {
-      encodeQuery: vi.fn(async () => ({
-        dense: [1, 0, 0, 0],
-        colbert: [],
-      })),
-    },
     batchExpandWithNeighbors: vi.fn(async (_table, records) => records),
     mapRecordToChunk: LocalStore.prototype['mapRecordToChunk'],
+    applyStructureBoost: LocalStore.prototype['applyStructureBoost'],
   };
 
+  const encodeSpy = vi
+    .spyOn(workerManager, "encodeQuery")
+    .mockResolvedValue({
+      dense: [1, 0, 0, 0],
+      colbert: [],
+    });
+
   const searchFn = LocalStore.prototype.search;
-  return await searchFn.call(
-    fakeStore,
-    "store",
-    "query",
-    topK,
-    { rerank: true },
-    filters as any,
-  );
+  try {
+    return await searchFn.call(
+      fakeStore,
+      "store",
+      "query",
+      topK,
+      { rerank: true },
+      filters as any,
+    );
+  } finally {
+    encodeSpy.mockRestore();
+  }
 }
 
 // Unit-level fusion test: uses fake tables to exercise scoring without LanceDB

@@ -10,12 +10,8 @@ export const CONFIG = {
   VECTOR_DIMENSIONS: 384, // Arctic XS output dimension
   COLBERT_DIM: 48, // Mxbai-Edge
   // Precise prefix from model card
-  QUERY_PREFIX: "Represent this sentence for searching relevant passages: ",};
-
-export const VECTOR_CACHE_MAX = Number.parseInt(
-  process.env.OSGREP_VECTOR_CACHE_MAX || "10000",
-  10,
-);
+  QUERY_PREFIX: "Represent this sentence for searching relevant passages: ",
+};
 
 export const WORKER_TIMEOUT_MS = Number.parseInt(
   process.env.OSGREP_WORKER_TIMEOUT_MS || "60000",

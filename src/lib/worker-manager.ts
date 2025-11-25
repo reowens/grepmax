@@ -43,15 +43,21 @@ export class WorkerManager {
 
     worker.on("message", (message) => this.handleMessage(message));
     worker.on("error", (err) => {
+      console.error("Worker error:", err);
       this.rejectAll(err instanceof Error ? err : new Error(String(err)));
-      throw err;
+      // Let the worker exit; ensure we create a fresh one next time.
+      this.worker = null;
     });
     worker.on("exit", (code) => {
       if (!this.isClosing && code !== 0) {
+        console.error(
+          `Worker crashed (code ${code}). It will auto-restart on next request.`,
+        );
         const error = new Error(`Worker exited with code ${code}`);
         this.rejectAll(error);
-        throw error;
       }
+      // Clear reference so ensureWorker will spawn a new worker on demand.
+      this.worker = null;
     });
 
     return worker;

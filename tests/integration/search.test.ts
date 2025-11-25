@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { CONFIG } from "../../src/config";
+import { workerManager } from "../../src/lib/worker-manager";
 
 describe.sequential("LocalStore search integration", () => {
   const storeId = "integration-store";
@@ -34,7 +35,6 @@ describe.sequential("LocalStore search integration", () => {
     store = new LocalStore();
 
     // Stub embedding calls to avoid pulling real models while keeping LanceDB queries real
-    const workerManager = (store as any).workerManager;
     vi.spyOn(workerManager, "computeHybrid").mockImplementation(
       async (texts: string[]) =>
         texts.map((_text: string, idx: number) => {

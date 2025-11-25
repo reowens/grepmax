@@ -10,6 +10,7 @@ import type {
   SearchResponse,
   Store,
 } from "../lib/store";
+import { DEFAULT_IGNORE_PATTERNS } from "../lib/ignore-patterns";
 import { ensureStoreExists, isStoreEmpty } from "../lib/store-helpers";
 import { getAutoStoreId } from "../lib/store-resolver";
 import {
@@ -403,17 +404,7 @@ export const search: Command = new CommanderCommand("search")
 
       if (autoSync) {
         const fileSystem = createFileSystem({
-          ignorePatterns: [
-            "*.lock",
-            "*.bin",
-            "*.ipynb",
-            "*.pyc",
-            "*.json",
-            "pnpm-lock.yaml",
-            "package-lock.json",
-            "yarn.lock",
-            "bun.lockb",
-          ],
+          ignorePatterns: DEFAULT_IGNORE_PATTERNS,
         });
         const metaStore = new MetaStore();
         
