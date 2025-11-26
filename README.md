@@ -74,6 +74,7 @@ osgrep "how is the database connection pooled?"
 | `-c`, `--content` | Show full chunk content instead of snippets. | `false` |
 | `--compact` | Show file paths only (like `grep -l`). | `false` |
 | `-s`, `--sync` | Force re-index changed files before searching. | `false` |
+| `-r`, `--reset` | Reset the index and re-index from scratch. | `false` |
 
 **Examples:**
 
