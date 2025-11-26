@@ -16,7 +16,7 @@
         "email": "ryandonofrio@gmail.com"
       },
       "skills": [
-        "../plugins/osgrep/skills/osgrep"
+        "./../plugins/osgrep/skills/osgrep"
       ]
     }
   ]
