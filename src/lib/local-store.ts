@@ -453,9 +453,15 @@ export class LocalStore implements Store {
   async createFTSIndex(storeId: string): Promise<void> {
     const table = await this.getTable(storeId);
     try {
-      await table.createIndex("content");
+      // LanceDB requires explicit config for FTS
+      await table.createIndex("content", {
+        config: lancedb.Index.fts(),
+      });
     } catch (e) {
-      console.warn("Failed to create FTS index (might already exist):", e);
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!msg.includes("already exists")) {
+        console.warn("Failed to create FTS index:", e);
+      }
     }
   }
 
@@ -612,18 +618,38 @@ export class LocalStore implements Store {
       .where(whereClause ? `${whereClause} AND ${docClause}` : docClause)
       .limit(50);
 
-    // C. Run in Parallel
-    const [codeResults, docResults] = await Promise.all([
+    // C. FTS Search (Get 50)
+    // Note: LanceDB FTS requires a string argument to search()
+    let ftsPromise: Promise<VectorRecord[]> = Promise.resolve([]);
+    try {
+      let ftsQuery = table.search(query);
+      if (whereClause) {
+        ftsQuery = ftsQuery.where(whereClause);
+      }
+      ftsPromise = (ftsQuery.limit(50).toArray() as Promise<VectorRecord[]>).catch((e) => {
+        console.warn("FTS search failed (index missing?):", e instanceof Error ? e.message : String(e));
+        return [];
+      });
+    } catch (e) {
+      // FTS might fail if index doesn't exist or other issues
+      console.warn("FTS search failed, falling back to pure vector search", e);
+    }
+
+    // D. Run in Parallel
+    const [codeResults, docResults, ftsResults] = await Promise.all([
       codeQuery.toArray() as Promise<VectorRecord[]>,
       docQuery.toArray() as Promise<VectorRecord[]>,
+      ftsPromise,
     ]);
 
-    // D. Merge (Code First)
-    // We don't need FTS here because the semantic split is usually enough,
-    // but you can add FTS back if you want keyword guarantees.
-    const denseCandidates = [...codeResults, ...docResults];
+    // E. Merge & Deduplicate (Hybrid Pool)
+    // We simply union the results. The RRF logic suggested by the user is implicitly handled
+    // by the fact that we are about to rerank EVERYTHING using ColBERT.
+    // RRF is typically used to select the top N candidates for reranking.
+    // Since our N (400) is small enough for the reranker, we pass the full union.
+    const denseCandidates = [...codeResults, ...docResults, ...ftsResults];
 
-    // Deduplicate (just in case)
+    // Deduplicate
     const candidatesMap = new Map<string, VectorRecord>();
     denseCandidates.forEach((r) => {
       const key = `${r.path}:${r.start_line}`;

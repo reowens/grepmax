@@ -236,7 +236,9 @@ export const cases: EvalCase[] = [
   },
 ];
 
-const storeId = process.argv[2] ?? "default";
+import { getAutoStoreId } from "./lib/store-resolver";
+
+const storeId = process.argv[2] ?? getAutoStoreId(process.cwd());
 const topK = 20;
 
 export function evaluateCase(
@@ -279,7 +281,7 @@ export function evaluateCase(
 
 async function run() {
   const store = new LocalStore();
-  
+
   // 1. Ensure the store exists
   try {
     await store.retrieve(storeId);

@@ -51,3 +51,4 @@ Returns: `path/to/file:line [Tags] Code Snippet`
 - **Watch for Distributed Patterns:** If results span 5+ files in different directories, the feature is likely architectural—survey before diving deep.
 - **Scope When Possible:** Use path constraints to focus: `osgrep "auth" src/server/`
 - **Don't Over-Rely on Snippets:** For architectural questions, snippets are signposts, not answers. Read the key files.
+- **"Still Indexing...":** If you see this, please stop, alert the user that the index is ongoing and ask them if they wish to proceed. Results will be partial until the index is complete.
