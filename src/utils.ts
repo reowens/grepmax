@@ -185,6 +185,15 @@ export class MetaStore {
   delete(filePath: string) {
     delete this.data[filePath];
   }
+
+  deleteByPrefix(prefix: string) {
+    const normalizedPrefix = prefix.endsWith("/") ? prefix : prefix + "/";
+    for (const key of Object.keys(this.data)) {
+      if (key.startsWith(normalizedPrefix)) {
+        delete this.data[key];
+      }
+    }
+  }
 }
 
 export function computeBufferHash(buffer: Buffer): string {

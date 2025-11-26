@@ -26,8 +26,13 @@ export const index = new Command("index")
     "Path to index (defaults to current directory)",
     "",
   )
+  .option(
+    "-r, --reset",
+    "Remove existing index and re-index from scratch",
+    false,
+  )
   .action(async (_args, cmd) => {
-    const options: { store?: string; dryRun: boolean; path: string } =
+    const options: { store?: string; dryRun: boolean; path: string; reset: boolean } =
       cmd.optsWithGlobals();
 
     let store: Store | null = null;
@@ -38,7 +43,18 @@ export const index = new Command("index")
       // Auto-detect store ID if not explicitly provided
       const indexRoot = options.path || process.cwd();
       const storeId = options.store || getAutoStoreId(indexRoot);
-      
+
+      // Handle --reset flag: delete existing store and metadata before re-indexing
+      if (options.reset) {
+        console.log(`Resetting index for store: ${storeId}`);
+        await store.deleteStore(storeId);
+        const metaStoreForReset = new MetaStore();
+        await metaStoreForReset.load();
+        metaStoreForReset.deleteByPrefix(indexRoot);
+        await metaStoreForReset.save();
+        console.log("Existing index removed. Re-indexing...");
+      }
+
       await ensureStoreExists(store, storeId);
       const fileSystem = createFileSystem({
         ignorePatterns: DEFAULT_IGNORE_PATTERNS,

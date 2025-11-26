@@ -737,6 +737,15 @@ export class LocalStore implements Store {
     }
   }
 
+  async deleteStore(storeId: string): Promise<void> {
+    const db = await this.getDb();
+    try {
+      await db.dropTable(storeId);
+    } catch {
+      // Table might not exist, which is fine
+    }
+  }
+
   async getInfo(storeId: string): Promise<StoreInfo> {
     return {
       name: storeId,
