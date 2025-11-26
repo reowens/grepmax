@@ -1,6 +1,6 @@
 {
   "name": "osgrep",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "author": "Ryandonofrio <ryandonofrio@gmail.com>",
   "homepage": "https://www.ryan.donofr.io",
   "bugs": {
@@ -29,7 +29,7 @@
     "lint": "biome lint .",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "pnpm build"
-    },
+  },
   "keywords": [
     "osgrep",
     "grep",
