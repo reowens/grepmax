@@ -79,10 +79,14 @@ function generateHTML(cumulative: CumulativeData): string {
   const avgOsgrepTime = cumulative.totalOsgrepTime / cumulative.queryCount;
   const avgBaselineCost = cumulative.totalBaselineCost / cumulative.queryCount;
   const avgOsgrepCost = cumulative.totalOsgrepCost / cumulative.queryCount;
-  
+
   const timeImprovement = ((avgBaselineTime - avgOsgrepTime) / avgBaselineTime * 100).toFixed(1);
   const costImprovement = ((avgBaselineCost - avgOsgrepCost) / avgBaselineCost * 100).toFixed(1);
   const osgrepWinRate = ((cumulative.osgrepWins / cumulative.queryCount) * 100).toFixed(0);
+
+  const maxTime = Math.max(avgBaselineTime, avgOsgrepTime);
+  const maxCost = Math.max(avgBaselineCost, avgOsgrepCost);
+  const maxWins = Math.max(cumulative.osgrepWins, cumulative.baselineWins, cumulative.ties);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -102,330 +106,204 @@ function generateHTML(cumulative: CumulativeData): string {
 
     body {
       font-family: 'IBM Plex Mono', 'SF Mono', 'Consolas', monospace;
-      background: linear-gradient(135deg, #f5f7f5 0%, #e8ebe8 100%);
+      background: #ffffff;
       min-height: 100vh;
-      padding: 48px 24px;
+      padding: 60px 40px;
       color: #1a3d1a;
     }
 
     .container {
-      max-width: 1200px;
+      max-width: 1400px;
       margin: 0 auto;
     }
 
     .header {
       text-align: center;
-      margin-bottom: 64px;
+      margin-bottom: 80px;
     }
 
     .header h1 {
-      font-size: 52px;
+      font-size: 64px;
       font-weight: 700;
       color: #1a3d1a;
-      margin-bottom: 12px;
-      letter-spacing: -0.02em;
+      margin-bottom: 16px;
+      letter-spacing: -0.03em;
     }
 
     .header p {
-      font-size: 16px;
+      font-size: 20px;
       color: #4a6b4a;
       font-weight: 400;
     }
 
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 24px;
-      margin-bottom: 48px;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 32px;
+      margin-bottom: 80px;
     }
 
     .stat-card {
-      background: white;
-      border-radius: 16px;
-      padding: 32px;
-      box-shadow: 0 4px 16px rgba(45, 90, 45, 0.08);
-      border: 1px solid #e8f0e8;
-      position: relative;
-      overflow: hidden;
-      transition: transform 0.3s ease, box-shadow 0.3s ease;
+      background: #f8faf8;
+      border-radius: 24px;
+      padding: 40px;
+      border: 2px solid #e8f0e8;
+      transition: transform 0.2s ease;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
     }
 
     .stat-card:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 8px 24px rgba(45, 90, 45, 0.12);
-    }
-
-    .stat-card::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 4px;
-      background: linear-gradient(90deg, #2d5a2d 0%, #1a6f1a 100%);
+      transform: translateY(-5px);
+      border-color: #2d5a2d;
     }
 
     .stat-label {
-      font-size: 12px;
+      font-size: 16px;
       color: #6b8a6b;
       text-transform: uppercase;
       letter-spacing: 0.1em;
-      margin-bottom: 16px;
+      margin-bottom: 24px;
       font-weight: 600;
     }
 
-    .stat-values {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .stat-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-    }
-
-    .stat-row-label {
-      font-size: 13px;
-      color: #4a6b4a;
-      font-weight: 500;
-    }
-
     .stat-number {
-      font-size: 24px;
+      font-size: 48px;
       font-weight: 700;
+      color: #1a3d1a;
+      line-height: 1;
+      margin-bottom: 8px;
     }
 
-    .baseline {
-      color: #7a9a7a;
+    .stat-sub {
+      font-size: 18px;
+      color: #4a6b4a;
+      margin-bottom: 24px;
     }
 
-    .experimental {
-      color: #2d5a2d;
-    }
-
-    .improvement-badge {
+    .badge {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      background: linear-gradient(135deg, #1a6f1a 0%, #2d8a2d 100%);
+      padding: 8px 16px;
+      background: #1a6f1a;
       color: white;
-      padding: 6px 14px;
-      border-radius: 20px;
+      border-radius: 100px;
       font-size: 16px;
-      font-weight: 700;
-      margin-top: 16px;
+      font-weight: 600;
     }
 
-    .improvement-badge::before {
-      content: '↓';
-      font-size: 20px;
+    .badge.neutral {
+      background: #6b8a6b;
     }
 
-    .neutral-badge {
-      background: linear-gradient(135deg, #6b8a6b 0%, #7a9a7a 100%);
+    .charts-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 40px;
+      align-items: stretch;
     }
 
-    .neutral-badge::before {
-      content: '→';
-    }
-
-    .chart-container {
+    .chart-section {
       background: white;
-      border-radius: 16px;
-      padding: 48px;
-      box-shadow: 0 4px 16px rgba(45, 90, 45, 0.08);
-      border: 1px solid #e8f0e8;
-      margin-bottom: 32px;
+      display: flex;
+      flex-direction: column;
     }
 
     .chart-title {
       font-size: 24px;
       font-weight: 700;
       color: #1a3d1a;
-      margin-bottom: 32px;
+      margin-bottom: 40px;
       text-align: center;
       letter-spacing: -0.01em;
     }
 
-    .bars {
+    .bar-chart {
       display: flex;
-      flex-direction: column;
-      gap: 32px;
+      justify-content: center;
+      align-items: flex-end;
+      height: 400px;
+      gap: 40px;
+      padding-bottom: 60px;
+      position: relative;
+      border-bottom: 2px solid #e8f0e8;
     }
 
-    .bar-group {
+    .bar-col {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      align-items: center;
+      justify-content: flex-end;
+      height: 100%;
+      width: 80px;
+      position: relative;
+    }
+
+    .bar-value {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      color: #1a3d1a;
+    }
+
+    .bar {
+      width: 100%;
+      border-radius: 8px 8px 0 0;
+      transition: height 1.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+      position: relative;
+    }
+
+    .bar.baseline {
+      background: #e0e8e0;
+    }
+
+    .bar.osgrep {
+      background: #1a6f1a;
+    }
+
+    .bar.tie {
+      background: #8aa88a;
     }
 
     .bar-label {
-      font-size: 14px;
-      font-weight: 600;
-      color: #2d5a2d;
-      margin-bottom: 4px;
-    }
-
-    .bar-wrapper {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-
-    .bar-track {
-      flex: 1;
-      height: 48px;
-      background: #f5f7f5;
-      border-radius: 8px;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .bar-fill {
-      height: 100%;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      padding-right: 16px;
-      font-size: 14px;
-      font-weight: 600;
-      color: white;
-      transition: width 1.5s cubic-bezier(0.4, 0, 0.2, 1);
-      animation: slideIn 1.5s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    @keyframes slideIn {
-      from {
-        width: 0 !important;
-        opacity: 0;
-      }
-      to {
-        opacity: 1;
-      }
-    }
-
-    .bar-baseline {
-      background: linear-gradient(90deg, #9db39d 0%, #8aa88a 100%);
-    }
-
-    .bar-experimental {
-      background: linear-gradient(90deg, #2d5a2d 0%, #1a6f1a 100%);
-    }
-
-    .bar-value-label {
-      min-width: 100px;
-      text-align: right;
-      font-size: 14px;
-      font-weight: 600;
-      color: #4a6b4a;
-    }
-
-    .chart-subtitle {
-      font-size: 14px;
-      font-weight: 600;
-      color: #4a6b4a;
-      margin-bottom: 32px;
-      text-align: center;
-    }
-
-    .preference-bar {
-      display: flex;
-      height: 60px;
-      border-radius: 8px;
-      overflow: hidden;
-      margin-top: 16px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    }
-
-    .preference-segment {
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      position: absolute;
+      bottom: -40px;
       font-size: 16px;
-      font-weight: 700;
-      color: white;
-      transition: all 0.3s ease;
-      position: relative;
-    }
-
-    .preference-segment:hover {
-      filter: brightness(1.1);
-    }
-
-    .preference-osgrep {
-      background: linear-gradient(90deg, #2d5a2d 0%, #1a6f1a 100%);
-    }
-
-    .preference-baseline {
-      background: linear-gradient(90deg, #8aa88a 0%, #9db39d 100%);
-    }
-
-    .preference-tie {
-      background: linear-gradient(90deg, #6b8a6b 0%, #7a9a7a 100%);
-    }
-
-    .preference-legend {
-      display: flex;
-      justify-content: center;
-      gap: 24px;
-      margin-top: 16px;
-      font-size: 13px;
-    }
-
-    .legend-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .legend-color {
-      width: 20px;
-      height: 20px;
-      border-radius: 4px;
+      font-weight: 600;
+      color: #4a6b4a;
+      text-align: center;
+      width: 140px;
+      left: 50%;
+      transform: translateX(-50%);
     }
 
     .footer {
       text-align: center;
-      margin-top: 64px;
+      margin-top: 80px;
       padding-top: 32px;
-      border-top: 2px solid #e8f0e8;
-      color: #6b8a6b;
-      font-size: 13px;
+      color: #8aa88a;
+      font-size: 16px;
     }
 
     .footer a {
       color: #2d5a2d;
       text-decoration: none;
-      font-weight: 600;
+      font-weight: 700;
     }
 
     .footer a:hover {
       text-decoration: underline;
     }
 
-    @media (max-width: 768px) {
-      .header h1 {
-        font-size: 36px;
-      }
-
-      .stats-grid {
+    @media (max-width: 1100px) {
+      .stats-grid, .charts-grid {
         grid-template-columns: 1fr;
+        gap: 40px;
       }
-
-      .chart-container {
-        padding: 24px;
-      }
-
-      .bar-wrapper {
-        flex-direction: column;
-        align-items: stretch;
-      }
-
-      .bar-value-label {
-        text-align: left;
+      
+      .bar-chart {
+        height: 300px;
       }
     }
   </style>
@@ -440,124 +318,79 @@ function generateHTML(cumulative: CumulativeData): string {
     <div class="stats-grid">
       <div class="stat-card">
         <div class="stat-label">Total Time</div>
-        <div class="stat-values">
-          <div class="stat-row">
-            <span class="stat-row-label">Baseline</span>
-            <span class="stat-number baseline">${Math.floor(cumulative.totalBaselineTime / 60)}m ${(cumulative.totalBaselineTime % 60).toFixed(0)}s</span>
-          </div>
-          <div class="stat-row">
-            <span class="stat-row-label">osgrep</span>
-            <span class="stat-number experimental">${Math.floor(cumulative.totalOsgrepTime / 60)}m ${(cumulative.totalOsgrepTime % 60).toFixed(0)}s</span>
-          </div>
-        </div>
-        <div class="improvement-badge">${timeImprovement}% faster</div>
+        <div class="stat-number">${Math.floor(cumulative.totalOsgrepTime / 60)}m ${(cumulative.totalOsgrepTime % 60).toFixed(0)}s</div>
+        <div class="stat-sub">vs ${Math.floor(cumulative.totalBaselineTime / 60)}m ${(cumulative.totalBaselineTime % 60).toFixed(0)}s baseline</div>
+        <div class="badge">${timeImprovement}% faster</div>
       </div>
 
       <div class="stat-card">
         <div class="stat-label">Total Cost</div>
-        <div class="stat-values">
-          <div class="stat-row">
-            <span class="stat-row-label">Baseline</span>
-            <span class="stat-number baseline">$${cumulative.totalBaselineCost.toFixed(2)}</span>
-          </div>
-          <div class="stat-row">
-            <span class="stat-row-label">osgrep</span>
-            <span class="stat-number experimental">$${cumulative.totalOsgrepCost.toFixed(2)}</span>
-          </div>
+        <div class="stat-number">$${cumulative.totalOsgrepCost.toFixed(2)}</div>
+        <div class="stat-sub">vs $${cumulative.totalBaselineCost.toFixed(2)} baseline</div>
+        <div class="badge ${parseFloat(costImprovement) < 0 ? 'neutral' : ''}">
+          ${parseFloat(costImprovement) >= 0 ? costImprovement + '% cheaper' : Math.abs(parseFloat(costImprovement)).toFixed(1) + '% more'}
         </div>
-        <div class="improvement-badge ${parseFloat(costImprovement) < 0 ? 'neutral-badge' : ''}">${parseFloat(costImprovement) >= 0 ? costImprovement + '% cheaper' : Math.abs(parseFloat(costImprovement)).toFixed(1) + '% more'}</div>
       </div>
 
       <div class="stat-card">
-        <div class="stat-label">LLM Judge Preference</div>
-        <div class="stat-values">
-          <div class="stat-row">
-            <span class="stat-row-label">osgrep wins</span>
-            <span class="stat-number experimental">${cumulative.osgrepWins}</span>
-          </div>
-          <div class="stat-row">
-            <span class="stat-row-label">Baseline wins</span>
-            <span class="stat-number baseline">${cumulative.baselineWins}</span>
-          </div>
-          <div class="stat-row">
-            <span class="stat-row-label">Ties</span>
-            <span class="stat-number" style="color: #6b8a6b">${cumulative.ties}</span>
-          </div>
-        </div>
-        <div class="improvement-badge">${osgrepWinRate}% win rate</div>
+        <div class="stat-label">Win Rate</div>
+        <div class="stat-number">${osgrepWinRate}%</div>
+        <div class="stat-sub">${cumulative.osgrepWins} wins, ${cumulative.baselineWins} losses</div>
+        <div class="badge">Preferred</div>
       </div>
     </div>
 
-    <div class="chart-container">
-      <div class="chart-title">Performance Comparison in Claude Code</div>
-      <div class="chart-subtitle">Average per-query metrics across ${cumulative.queryCount} queries in the OpenCode codebase</div>
-      <div class="bars">
-        <div class="bar-group">
-          <div class="bar-label">Average Time per Query — ${timeImprovement}% faster</div>
-          <div class="bar-wrapper">
-            <div class="bar-track">
-              <div class="bar-fill bar-baseline" style="width: 100%">
-                Baseline
-              </div>
-            </div>
-            <div class="bar-value-label">${Math.floor(avgBaselineTime / 60)}m ${(avgBaselineTime % 60).toFixed(0)}s</div>
+    <div class="charts-grid">
+      <div class="chart-section">
+        <div class="chart-title">Avg Time per Query</div>
+        <div class="bar-chart">
+          <div class="bar-col">
+            <div class="bar-value">${avgBaselineTime.toFixed(1)}s</div>
+            <div class="bar baseline" style="height: ${(avgBaselineTime / maxTime * 100).toFixed(1)}%"></div>
+            <div class="bar-label">Baseline</div>
           </div>
-          <div class="bar-wrapper">
-            <div class="bar-track">
-              <div class="bar-fill bar-experimental" style="width: ${(avgOsgrepTime / avgBaselineTime * 100).toFixed(1)}%">
-                osgrep
-              </div>
-            </div>
-            <div class="bar-value-label">${Math.floor(avgOsgrepTime / 60)}m ${(avgOsgrepTime % 60).toFixed(0)}s</div>
+          <div class="bar-col">
+            <div class="bar-value">${avgOsgrepTime.toFixed(1)}s</div>
+            <div class="bar osgrep" style="height: ${(avgOsgrepTime / maxTime * 100).toFixed(1)}%"></div>
+            <div class="bar-label">osgrep</div>
           </div>
         </div>
+      </div>
 
-        <div class="bar-group">
-          <div class="bar-label">Average Cost per Query — ${parseFloat(costImprovement) >= 0 ? costImprovement + '% cheaper' : Math.abs(parseFloat(costImprovement)).toFixed(1) + '% more expensive'}</div>
-          <div class="bar-wrapper">
-            <div class="bar-track">
-              <div class="bar-fill bar-baseline" style="width: 100%">
-                Baseline
-              </div>
-            </div>
-            <div class="bar-value-label">$${avgBaselineCost.toFixed(3)}</div>
+      <div class="chart-section">
+        <div class="chart-title">Avg Cost per Query</div>
+        <div class="bar-chart">
+          <div class="bar-col">
+            <div class="bar-value">$${avgBaselineCost.toFixed(3)}</div>
+            <div class="bar baseline" style="height: ${(avgBaselineCost / maxCost * 100).toFixed(1)}%"></div>
+            <div class="bar-label">Baseline</div>
           </div>
-          <div class="bar-wrapper">
-            <div class="bar-track">
-              <div class="bar-fill bar-experimental" style="width: ${(avgOsgrepCost / avgBaselineCost * 100).toFixed(1)}%">
-                osgrep
-              </div>
-            </div>
-            <div class="bar-value-label">$${avgOsgrepCost.toFixed(3)}</div>
+          <div class="bar-col">
+            <div class="bar-value">$${avgOsgrepCost.toFixed(3)}</div>
+            <div class="bar osgrep" style="height: ${(avgOsgrepCost / maxCost * 100).toFixed(1)}%"></div>
+            <div class="bar-label">osgrep</div>
           </div>
         </div>
+      </div>
 
-        <div class="bar-group">
-          <div class="bar-label">LLM-as-Judge Quality Preference — ${osgrepWinRate}% osgrep wins</div>
-          <div class="preference-bar">
-            <div class="preference-segment preference-osgrep" style="width: ${(cumulative.osgrepWins / cumulative.queryCount * 100).toFixed(1)}%">
-              ${cumulative.osgrepWins} osgrep
-            </div>
-            ${cumulative.ties > 0 ? `<div class="preference-segment preference-tie" style="width: ${(cumulative.ties / cumulative.queryCount * 100).toFixed(1)}%">
-              ${cumulative.ties} tie${cumulative.ties !== 1 ? 's' : ''}
-            </div>` : ''}
-            <div class="preference-segment preference-baseline" style="width: ${(cumulative.baselineWins / cumulative.queryCount * 100).toFixed(1)}%">
-              ${cumulative.baselineWins} baseline
-            </div>
+      <div class="chart-section">
+        <div class="chart-title">LLM Preference</div>
+        <div class="bar-chart">
+          <div class="bar-col">
+            <div class="bar-value">${cumulative.baselineWins}</div>
+            <div class="bar baseline" style="height: ${(cumulative.baselineWins / maxWins * 100).toFixed(1)}%"></div>
+            <div class="bar-label">Baseline</div>
           </div>
-          <div class="preference-legend">
-            <div class="legend-item">
-              <div class="legend-color" style="background: linear-gradient(90deg, #2d5a2d 0%, #1a6f1a 100%);"></div>
-              <span>osgrep preferred</span>
-            </div>
-            ${cumulative.ties > 0 ? `<div class="legend-item">
-              <div class="legend-color" style="background: linear-gradient(90deg, #6b8a6b 0%, #7a9a7a 100%);"></div>
-              <span>Tie</span>
-            </div>` : ''}
-            <div class="legend-item">
-              <div class="legend-color" style="background: linear-gradient(90deg, #8aa88a 0%, #9db39d 100%);"></div>
-              <span>Baseline preferred</span>
-            </div>
+          ${cumulative.ties > 0 ? `
+          <div class="bar-col">
+            <div class="bar-value">${cumulative.ties}</div>
+            <div class="bar tie" style="height: ${(cumulative.ties / maxWins * 100).toFixed(1)}%"></div>
+            <div class="bar-label">Ties</div>
+          </div>` : ''}
+          <div class="bar-col">
+            <div class="bar-value">${cumulative.osgrepWins}</div>
+            <div class="bar osgrep" style="height: ${(cumulative.osgrepWins / maxWins * 100).toFixed(1)}%"></div>
+            <div class="bar-label">osgrep</div>
           </div>
         </div>
       </div>
@@ -573,7 +406,7 @@ function generateHTML(cumulative: CumulativeData): string {
 
 function main() {
   const args = process.argv.slice(2);
-  
+
   if (args.length === 0) {
     console.error('Usage: ts-node generate-benchmark.ts <path-to-csv>');
     console.error('');
@@ -596,8 +429,14 @@ function main() {
   const cumulative = calculateCumulative(rows);
   console.log('Calculating cumulative metrics...');
 
+  // Calculate averages for logging
+  const avgBaselineTime = cumulative.totalBaselineTime / cumulative.queryCount;
+  const avgOsgrepTime = cumulative.totalOsgrepTime / cumulative.queryCount;
+  const avgBaselineCost = cumulative.totalBaselineCost / cumulative.queryCount;
+  const avgOsgrepCost = cumulative.totalOsgrepCost / cumulative.queryCount;
+
   const html = generateHTML(cumulative);
-  
+
   const outputPath = path.join(path.dirname(csvPath), 'benchmark-results.html');
   fs.writeFileSync(outputPath, html, 'utf-8');
 
