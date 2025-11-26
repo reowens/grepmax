@@ -23,7 +23,7 @@ export interface Chunk {
   content: string;
   startLine: number;
   endLine: number;
-  type: "function" | "class" | "block" | "other";
+  type: "function" | "class" | "interface" | "type_alias" | "block" | "other";
   context?: string[];
 }
 
@@ -172,11 +172,17 @@ export class TreeSitterChunker {
         "method_definition",
         "class_declaration",
         "class_definition",
+        "interface_declaration",
+        "type_alias_declaration",
       ].includes(t);
 
-    const classify = (node: TreeSitterNode): "function" | "class" | "other" => {
+    const classify = (
+      node: TreeSitterNode,
+    ): "function" | "class" | "interface" | "type_alias" | "other" => {
       const t = node.type;
       if (t.includes("class")) return "class";
+      if (t.includes("interface")) return "interface";
+      if (t.includes("type_alias")) return "type_alias";
       if (isDefType(t)) return "function";
       return "other";
     };
@@ -264,6 +270,10 @@ export class TreeSitterChunker {
       if (t.includes("class")) return `Class: ${name ?? "<anonymous class>"}`;
       if (t.includes("method"))
         return `Method: ${name ?? "<anonymous method>"}`;
+      if (t.includes("interface"))
+        return `Interface: ${name ?? "<anonymous interface>"}`;
+      if (t.includes("type_alias"))
+        return `Type: ${name ?? "<anonymous type>"}`;
       if (t.includes("function"))
         return `Function: ${name ?? "<anonymous function>"}`;
       if (isTopLevelValueDef(node))

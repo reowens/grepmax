@@ -9,9 +9,7 @@ export const setup = new Command("setup")
   .description("One-time setup: download models and prepare osgrep")
   .action(async () => {
     console.log("osgrep Setup\n");
-    console.log(
-      "This will download models (~150MB) and prepare your system.\n",
-    );
+
 
     const home = os.homedir();
     const root = path.join(home, ".osgrep");
@@ -29,7 +27,7 @@ export const setup = new Command("setup")
     // Show final status
     console.log("\nSetup Complete!\n");
 
-    const modelIds = [MODEL_IDS.embed, MODEL_IDS.rerank];
+    const modelIds = [MODEL_IDS.embed, MODEL_IDS.colbert];
 
     const checkDir = (name: string, p: string) => {
       const exists = fs.existsSync(p);
@@ -56,4 +54,6 @@ export const setup = new Command("setup")
     console.log(`   osgrep index              # Index your repository`);
     console.log(`   osgrep "search query"     # Search your code`);
     console.log(`   osgrep doctor             # Check health status`);
+
+    process.exit(0);
   });

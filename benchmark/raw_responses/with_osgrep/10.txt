@@ -1,0 +1,222 @@
+
+╭─── Claude Code v2.0.54 ───────────────────────────────────────────────────────╮
+│                                        │ Tips for getting started             │
+│           Welcome back Ryan!           │ Run /init to create a CLAUDE.md fi…  │
+│                                        │ ───────────────────────────────────  │
+│                 ▐▛███▜▌                │ Recent activity                      │
+│                ▝▜█████▛▘               │ No recent activity                   │
+│                  ▘▘ ▝▝                 │                                      │
+│                                        │                                      │
+│     Sonnet 4.5 · API Usage Billing     │                                      │
+│   ~/Desktop/osgrep2/testing/opencode   │                                      │
+╰───────────────────────────────────────────────────────────────────────────────╯
+
+
+ Auth conflict: Using ANTHROPIC_API_KEY instead of Anthropic Console key. Either 
+ unset ANTHROPIC_API_KEY, or run `claude /logout`.
+
+  /model to try Opus 4.5
+
+> how is the mobile app remote control architecture designed? you may use 
+the osgrep plugin 
+
+⏺ I'll explore the mobile app remote control architecture using the osgrep
+  plugin to understand how it's designed.
+
+⏺ Bash(osgrep "mobile app remote control architecture design")
+  ⎿  packages/sdk/js/src/gen/types.gen.ts:940
+       type McpLocalConfig = {
+         /**
+     … +202 lines (ctrl+o to expand)
+
+⏺ Let me search more specifically for mobile app remote control features:
+
+⏺ Bash(osgrep "mobile app remote control WebSocket connection")
+  ⎿ packages/web/src/components/Share.tsx:97 [Definition]                  
+      function Share(props: { id: string; api: string; info: Session.Info }
+    ) {
+    … +194 lines (ctrl+o to expand)
+
+
+⏺ Bash(osgrep "mobile app control commands transport layer")
+  ⎿  packages/opencode/src/cli/cmd/mcp.ts:1                              
+       import { cmd } from "./cmd"
+       import { Client } from "@modelcontextprotocol/sdk/client/index.js"
+     … +200 lines (ctrl+o to expand)
+
+⏺ Bash(osgrep "mobile native app remote desktop control")
+  ⎿  packages/sdk/js/src/gen/types.gen.ts:940
+       type McpLocalConfig = {
+         /**
+     … +181 lines (ctrl+o to expand)
+
+⏺ Let me try a more targeted search:
+
+⏺ Bash(osgrep "mobile phone app CLI connection protocol")
+  ⎿  packages/opencode/src/cli/cmd/mcp.ts:58                             
+       import { cmd } from "./cmd"
+       import { Client } from "@modelcontextprotocol/sdk/client/index.js"
+     … +191 lines (ctrl+o to expand)
+
+⏺ Let me search for more specific terms related to remote control:
+
+⏺ Bash(osgrep "ACP agent control protocol server client")
+  ⎿  packages/opencode/src/acp/types.ts:1                       
+       import type { McpServer } from "@agentclientprotocol/sdk"
+       import type { OpencodeClient } from "@opencode-ai/sdk"
+     … +195 lines (ctrl+o to expand)
+
+⏺ Great! Now let me read the key ACP files to understand the architecture:
+
+⏺ Read(packages/opencode/src/cli/cmd/acp.ts)
+  ⎿  Read 89 lines
+
+⏺ Read(packages/opencode/src/acp/agent.ts)
+  ⎿  Read 826 lines
+
+⏺ Read(packages/opencode/src/acp/types.ts)
+  ⎿  Read 23 lines
+
+⏺ Now let me search for session management to understand better:
+
+⏺ Read(packages/opencode/src/acp/session.ts)
+  ⎿  Read 73 lines
+
+⏺ Bash(osgrep "ndJsonStream stdio communication ACP")
+  ⎿  packages/opencode/src/cli/cmd/acp.ts:65   
+       import { Log } from "@/util/log"
+       import { bootstrap } from "../bootstrap"
+     … +200 lines (ctrl+o to expand)
+
+⏺ Perfect! Now I have a comprehensive understanding of the mobile app remote
+   control architecture. Let me provide you with a detailed explanation:
+
+  Mobile App Remote Control Architecture
+
+  The mobile app remote control feature is built on the ACP (Agent Client 
+  Protocol), which enables external clients (like mobile apps) to control
+  and interact with the OpenCode agent running on a desktop/server.
+
+  Architecture Overview
+
+  1. Communication Layer
+
+  Transport Protocol: The architecture uses newline-delimited JSON (ndJSON)
+  over stdin/stdout streams:
+  - packages/opencode/src/cli/cmd/acp.ts:73 - Creates bidirectional
+  communication via ndJsonStream(input, output)
+  - Input: WritableStream that writes to process.stdout
+  - Output: ReadableStream that reads from process.stdin
+
+  2. Core Components
+
+  ACP Command Handler (packages/opencode/src/cli/cmd/acp.ts:18-88):
+  - Starts the ACP server with opencode acp command
+  - Bootstraps a local HTTP server for the OpenCode SDK
+  - Creates stdin/stdout streams for client communication
+  - Initializes the AgentSideConnection from @agentclientprotocol/sdk
+
+  ACP Agent (packages/opencode/src/acp/agent.ts:49-825):
+  - Implements the ACPAgent interface
+  - Handles protocol requests: initialize, authenticate, newSession,
+  loadSession, prompt, cancel
+  - Manages bidirectional event streaming
+
+  Session Manager (packages/opencode/src/acp/session.ts:8-72):
+  - Maintains in-memory session state (Map of sessionId → ACPSessionState)
+  - Tracks: working directory, MCP servers, creation time, model config,
+  mode
+
+  3. Protocol Flow
+
+  Initialization (packages/opencode/src/acp/agent.ts:337-376):
+  1. Client sends InitializeRequest
+  2. Agent responds with:
+     - Protocol version (v1)
+     - Capabilities (loadSession, MCP support, image prompts)
+     - Auth methods (terminal-auth if supported)
+
+  Session Creation (packages/opencode/src/acp/agent.ts:382-416):
+  1. Client sends NewSessionRequest (cwd, mcpServers)
+  2. Agent creates session via SDK
+  3. Loads available models and modes
+  4. Sets up event subscriptions
+  5. Returns sessionId, models, modes
+
+  Event Streaming (packages/opencode/src/acp/agent.ts:62-335):
+  The agent subscribes to SDK events and forwards them to the mobile client:
+
+  - Permission requests → permission.updated events become ACP
+  requestPermission calls
+  - Tool execution → message.part.updated events become:
+    - tool_call (pending)
+    - tool_call_update (in_progress/completed/failed)
+    - Includes diffs for edit operations
+  - Text streaming → Real-time agent_message_chunk updates
+  - Reasoning → agent_thought_chunk for extended thinking
+  - Todo updates → Converted to plan entries
+
+  Prompt Execution (packages/opencode/src/acp/agent.ts:570-702):
+  1. Client sends PromptRequest with text/image/resource parts
+  2. Agent parses slash commands (e.g., /compact)
+  3. Submits prompt to OpenCode SDK
+  4. Events stream back to client asynchronously
+
+  4. Key Features
+
+  MCP Server Integration (packages/opencode/src/acp/agent.ts:480-518):
+  - Remote MCP servers (HTTP/SSE)
+  - Local MCP servers (command-line spawned)
+  - Headers and environment variables support
+
+  Model/Mode Switching (packages/opencode/src/acp/agent.ts:544-568):
+  - Dynamic model changes via setSessionModel
+  - Agent mode switching via setSessionMode
+
+  Command Execution (packages/opencode/src/acp/agent.ts:670-687):
+  - Slash commands routed through SDK
+  - Special handling for /compact command
+
+  Authentication (packages/opencode/src/acp/agent.ts:340-355):
+  - Supports terminal-auth capability
+  - Executes opencode auth login command
+
+  5. Data Flow
+
+  Mobile App (Client)
+      ↕ ndJSON over network/stdio
+  AgentSideConnection
+      ↕ Protocol messages
+  ACP.Agent
+      ↕ HTTP/REST
+  Local OpenCode Server
+      ↕ WebSocket/SSE
+  OpenCode Backend Services
+
+  Architecture Characteristics
+
+  1. Stateful Sessions: Each session maintains context (cwd, models, MCP
+  servers)
+  2. Bidirectional Streaming: Real-time updates flow from agent → client
+  3. Permission Model: Interactive permission requests for sensitive
+  operations
+  4. Tool Transparency: Full visibility into tool execution lifecycle
+  5. Protocol Agnostic: ndJSON transport can run over any bidirectional
+  channel
+
+  This architecture enables mobile apps to provide a full-featured remote
+  control experience with real-time feedback, permission handling, and
+  complete access to OpenCode's capabilities.
+> /cost 
+  ⎿ Total cost:            $0.2310
+    Total duration (API):  1m 30s
+    Total duration (wall): 2m 18s
+    Total code changes:    0 lines added, 0 lines removed
+    Usage by model:
+            claude-haiku:  16.9k input, 1.1k output, 0 cache read, 0 cache write
+     ($0.0224)
+           claude-sonnet:  341 input, 2.4k output, 230.6k cache read, 27.1k 
+    cache write ($0.2086)
+
+
+

@@ -1,0 +1,240 @@
+
+╭─── Claude Code v2.0.53 ───────────────────────────────────────────────────────╮
+│                                        │ Tips for getting started             │
+│           Welcome back Ryan!           │ Run /init to create a CLAUDE.md fi…  │
+│                                        │ ───────────────────────────────────  │
+│                 ▐▛███▜▌                │ Recent activity                      │
+│                ▝▜█████▛▘               │ No recent activity                   │
+│                  ▘▘ ▝▝                 │                                      │
+│                                        │                                      │
+│     Sonnet 4.5 · API Usage Billing     │                                      │
+│   ~/Desktop/osgrep2/testing/opencode   │                                      │
+╰───────────────────────────────────────────────────────────────────────────────╯
+
+
+ Auth conflict: Using ANTHROPIC_API_KEY instead of Anthropic Console key. Either 
+ unset ANTHROPIC_API_KEY, or run `claude /logout`.
+
+  /model to try Opus 4.5
+
+> how do we manage communication between the TUI client and server? use the 
+osgrep plugin 
+
+⏺ I'll use the osgrep plugin to search for information about communication
+  between the TUI client and server.
+
+> The "osgrep" skill is loading 
+  ⎿  Allowed 2 tools for this command
+
+⏺ Now I'll search for information about TUI client-server communication:
+
+⏺ Bash(osgrep "how does TUI client communicate with server")
+  ⎿  packages/opencode/src/server/tui.ts:11                             
+       import { Hono, type Context } from "hono"
+       import { describeRoute, resolver, validator } from "hono-openapi"
+     … +184 lines (ctrl+o to expand)
+
+⏺ Let me read the main TUI communication file to understand the architecture
+   better:
+
+⏺ Read(packages/opencode/src/server/tui.ts)
+  ⎿  Read 70 lines
+
+⏺ Read(packages/opencode/src/cli/cmd/tui/worker.ts)
+  ⎿  Read 59 lines
+
+⏺ Now let me search for how the TUI client uses these endpoints:
+
+⏺ Bash(osgrep "TUI client polling server requests responses")
+  ⎿ packages/sdk/python/src/opencode_ai/api/default/tui_submit_prompt.py:50
+     [Definition]
+      def _build_response(*, client: Union[AuthenticatedClient, Client], re
+    … +209 lines (ctrl+o to expand)
+
+
+
+⏺ Bash(osgrep "TUI thread worker communication loop")
+  ⎿  packages/opencode/src/cli/cmd/tui/thread.ts:66      
+       .url)
+           const execDir = path.dirname(process.execPath)
+     … +203 lines (ctrl+o to expand)
+
+⏺ Read(packages/opencode/src/cli/cmd/tui/thread.ts)
+  ⎿  Read 122 lines
+
+⏺ Now let me look at the TUI app itself to see how it polls:
+
+⏺ Bash(osgrep "TUI app polling /next endpoint")
+  ⎿  packages/sdk/go/option/requestoption.go:74                            
+       func WithHTTPClient(client HTTPClient) RequestOption {
+       	return requestconfig.RequestOptionFunc(func(r *requestconfig.Request
+     … +177 lines (ctrl+o to expand)
+
+⏺ Search(pattern: "tui/control/next|tui/control/response", path: "packages")
+  ⎿  Found 3 files (ctrl+o to expand)
+
+⏺ Read(packages/sdk/js/src/gen/sdk.gen.ts)
+  ⎿  Read 100 lines
+
+⏺ Search(pattern: "TuiControlNext|tuiControlNext", path: "packages/sdk/js",
+        output_mode: "content")
+  ⎿  Found 7 lines (ctrl+o to expand)
+
+⏺ Bash(osgrep "TUI client uses SDK to fetch requests from server")
+  ⎿  packages/sdk/go/option/requestoption.go:42     
+       func WithBaseURL(base string) RequestOption {
+       	u, err := url.Parse(base)
+     … +209 lines (ctrl+o to expand)
+
+⏺ Let me search more specifically for where the TUI client actually calls
+  these endpoints:
+
+⏺ Search(pattern: "\.tui\.next\(|client\.next\(", path:
+        "packages/opencode/src/cli/cmd/tui")
+  ⎿  Found 0 files 
+
+⏺ Search(pattern: "**/*client*.{ts,tsx}", path:
+        "packages/opencode/src/cli/cmd/tui")
+  ⎿  Found 0 files 
+
+⏺ Search(pattern: "**/*.{ts,tsx}", path: "packages/opencode/src/cli/cmd/tui")
+  ⎿  Found 47 files (ctrl+o to expand)
+
+⏺ Read(packages/opencode/src/cli/cmd/tui/context/sdk.tsx)
+  ⎿  Read 66 lines
+
+⏺ Perfect! Now let me check the AsyncQueue implementation to understand the
+  queue mechanism:
+
+⏺ Read(packages/opencode/src/util/queue.ts)
+  ⎿  Read 20 lines
+
+⏺ Now let me check how the server uses callTui:
+
+⏺ Search(pattern: "callTui\(", path: "packages/opencode/src/server",
+        output_mode: "content")
+  ⎿  Found 7 lines (ctrl+o to expand)
+
+⏺ Bash(osgrep "server routes using callTui for TUI operations")
+  ⎿  packages/opencode/src/server/tui.ts:16 [Definition]
+       const request = new AsyncQueue<TuiRequest>()
+       const response = new AsyncQueue<any>()
+     … +183 lines (ctrl+o to expand)
+⏺ Search(pattern: "import.*callTui|\.route.*callTui", path:
+        "packages/opencode/src/server", output_mode: "content")
+  ⎿  Found 0 lines 
+
+⏺ Bash(osgrep "server routes mount TuiRoute endpoints")
+  ⎿  packages/opencode/src/cli/cmd/tui/context/route.tsx:13
+       type SessionRoute = {
+         type: "session"
+     … +137 lines (ctrl+o to expand)
+
+⏺ Search(pattern: "TuiRoute", path: "packages/opencode/src/server/server.ts",
+        output_mode: "content")
+  ⎿  Found 11 lines (ctrl+o to expand)
+
+⏺ Perfect! Now I have a complete picture. Let me provide a comprehensive
+  explanation:
+
+  TUI Client-Server Communication Architecture
+
+  The communication between the TUI (Terminal User Interface) client and
+  server uses a bidirectional queue-based request/response pattern over
+  HTTP. Here's how it works:
+
+  Core Components
+
+  1. Server Side (packages/opencode/src/server/tui.ts:13-70)
+
+  The server maintains two AsyncQueue instances that act as synchronized
+  channels:
+  - request queue: Stores incoming TUI requests waiting to be processed
+  - response queue: Stores responses waiting to be sent back to clients
+
+  The server exposes two HTTP endpoints via TuiRoute:
+
+  - GET /tui/control/next (tui.ts:26-45): Long-polling endpoint where TUI
+  clients wait for new requests
+    - Calls request.next() which blocks until a request is available
+    - Returns the next request from the queue
+  - POST /tui/control/response (tui.ts:47-69): Endpoint for clients to
+  submit responses
+    - Accepts response data
+    - Pushes it to the response queue via response.push(body)
+
+  2. AsyncQueue Implementation (packages/opencode/src/util/queue.ts:1-19)
+
+  The AsyncQueue class provides promise-based synchronization:
+  - push(item): If resolvers are waiting, immediately resolves them;
+  otherwise queues the item
+  - next(): Returns queued items immediately, or returns a Promise that
+  resolves when an item arrives
+  - This creates a producer-consumer pattern with automatic coordination
+
+  3. Worker Architecture (packages/opencode/src/cli/cmd/tui/thread.ts & 
+  worker.ts)
+
+  The TUI uses a multi-process architecture:
+  - Main thread (thread.ts:76-84): Runs the TUI interface
+  - Worker thread (worker.ts:30-58): Runs the actual HTTP server
+  - RPC bridge (thread.ts:84): They communicate via Rpc.client() using Web
+  Worker messaging
+
+  The worker starts the server (worker.ts:34) and exposes RPC methods for
+  the main thread to control it.
+
+  4. Client Side (packages/opencode/src/cli/cmd/tui/context/sdk.tsx:1-65)
+
+  The TUI client:
+  - Creates an SDK client pointing to the worker's server URL
+  (sdk.tsx:10-13)
+  - Subscribes to server-sent events via sdk.event.subscribe() (sdk.tsx:19)
+  - Batches events in 16ms windows to optimize rendering (sdk.tsx:24-50)
+  - All SDK operations (like tui.next(), tui.response()) make HTTP calls to
+  the worker's server
+
+  Communication Flow
+
+  For TUI operations (e.g., showing a dialog):
+
+  1. Server code calls callTui(ctx) with request data (tui.ts:16-23)
+  2. Request is pushed to the request queue
+  3. TUI client's long-polling GET /tui/control/next receives the request
+  4. TUI processes it (shows dialog, gets user input, etc.)
+  5. TUI POSTs response to /tui/control/response
+  6. Response is pushed to response queue
+  7. Original callTui() call's response.next() resolves with the data
+
+  For real-time updates:
+
+  - Server pushes events via SSE (/event endpoint)
+  - TUI client subscribes and batches events for efficient rendering
+  (sdk.tsx:38-56)
+
+  Key Insights
+
+  - Inverted control flow: The server "calls into" the client by pushing to
+  queues, while the client polls
+  - Long-polling: /next endpoint blocks until data is available (no
+  busy-waiting)
+  - Promise-based synchronization: AsyncQueue elegantly handles async
+  producer-consumer patterns
+  - Process isolation: Server runs in a worker thread, keeping the TUI
+  responsive
+  - Event batching: Client batches rapid events to prevent excessive
+  re-renders
+
+> /cost 
+  ⎿ Total cost:            $0.3802
+    Total duration (API):  2m 14s
+    Total duration (wall): 2m 36s
+    Total code changes:    0 lines added, 0 lines removed
+    Usage by model:
+            claude-haiku:  16.1k input, 1.1k output, 0 cache read, 0 cache write
+     ($0.0214)
+           claude-sonnet:  37 input, 3.7k output, 691.7k cache read, 25.6k cache
+     write ($0.3588)
+
+
+

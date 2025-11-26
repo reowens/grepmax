@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SearchResponse } from "../src/lib/store";
 import { LocalStore } from "../src/lib/local-store";
+import { workerManager } from "../src/lib/worker-manager";
 
 type FakeTableRecord = {
   path: string;
@@ -10,6 +11,7 @@ type FakeTableRecord = {
   hash?: string;
   chunk_index?: number;
   is_anchor?: boolean;
+  vector?: number[];
 };
 
 function buildTable({
@@ -22,12 +24,20 @@ function buildTable({
   rowCount?: number;
 }) {
   const whereClauses: string[] = [];
+  const normalizeRecord = (r: FakeTableRecord) => ({
+    vector: [0, 0, 0, 0],
+    ...r,
+  });
+  const normalizedVectorResults = vectorResults.map(normalizeRecord);
+  const normalizedFtsResults = (ftsResults ?? []).map(normalizeRecord);
   const table = {
     countRows: vi.fn(async () => rowCount),
     search: vi.fn((query: unknown) => {
       let filterClause: string | null = null;
       const resultSet =
-        typeof query === "string" ? ftsResults ?? [] : vectorResults;
+        typeof query === "string"
+          ? normalizedFtsResults
+          : normalizedVectorResults;
       const queryWrapper: any = {
         limit: vi.fn(() => queryWrapper),
         where: vi.fn((clause: string) => {
@@ -50,45 +60,46 @@ function buildTable({
 
 async function runSearchWithFakeStore({
   table,
-  rerankScores,
   filters,
   topK,
-  rerankError = false,
 }: {
   table: ReturnType<typeof buildTable>;
-  rerankScores: number[];
   filters?: Record<string, unknown>;
   topK?: number;
-  rerankError?: boolean;
 }): Promise<SearchResponse> {
   const fakeStore: any = {
     queryPrefix: "prefix ",
     getTable: vi.fn(async () => table),
-    workerManager: {
-      getEmbedding: vi.fn(async () => [0]),
-      rerank: rerankError
-        ? vi.fn(async () => {
-            throw new Error("rerank failed");
-          })
-        : vi.fn(async () => rerankScores),
-    },
     batchExpandWithNeighbors: vi.fn(async (_table, records) => records),
+    mapRecordToChunk: LocalStore.prototype['mapRecordToChunk'],
+    applyStructureBoost: LocalStore.prototype['applyStructureBoost'],
   };
 
+  const encodeSpy = vi
+    .spyOn(workerManager, "encodeQuery")
+    .mockResolvedValue({
+      dense: [1, 0, 0, 0],
+      colbert: [],
+    });
+
   const searchFn = LocalStore.prototype.search;
-  return await searchFn.call(
-    fakeStore,
-    "store",
-    "query",
-    topK,
-    { rerank: true },
-    filters as any,
-  );
+  try {
+    return await searchFn.call(
+      fakeStore,
+      "store",
+      "query",
+      topK,
+      { rerank: true },
+      filters as any,
+    );
+  } finally {
+    encodeSpy.mockRestore();
+  }
 }
 
 // Unit-level fusion test: uses fake tables to exercise scoring without LanceDB
 describe("LocalStore.search fusion (unit)", () => {
-  it("orders by blended rerank scores when available", async () => {
+  it("orders by dense similarity when ColBERT is absent", async () => {
     const table = buildTable({
       vectorResults: [
         {
@@ -97,6 +108,7 @@ describe("LocalStore.search fusion (unit)", () => {
           end_line: 1,
           content: "vector match",
           hash: "h1",
+          vector: [2, 0, 0, 0],
         },
         {
           path: "/repo/secondary.ts",
@@ -104,20 +116,20 @@ describe("LocalStore.search fusion (unit)", () => {
           end_line: 1,
           content: "vector secondary",
           hash: "h2",
+          vector: [1, 0, 0, 0],
         },
       ],
     });
 
     const res = await runSearchWithFakeStore({
       table,
-      rerankScores: [0.9, 0.1],
       topK: 1,
     });
 
     expect(res.data[0]?.metadata?.path).toBe("/repo/match.ts");
   });
 
-  it("falls back to RRF order when reranker fails", async () => {
+  it("keeps vector hits above FTS when only vectors have embeddings", async () => {
     const table = buildTable({
       vectorResults: [
         {
@@ -126,6 +138,7 @@ describe("LocalStore.search fusion (unit)", () => {
           end_line: 1,
           content: "vector",
           hash: "h1",
+          vector: [1, 0, 0, 0],
         },
       ],
       ftsResults: [
@@ -135,18 +148,17 @@ describe("LocalStore.search fusion (unit)", () => {
           end_line: 1,
           content: "fts",
           hash: "h2",
+          vector: [0, 0, 0, 0],
         },
       ],
     });
 
     const res = await runSearchWithFakeStore({
       table,
-      rerankScores: [],
-      rerankError: true,
     });
 
     const paths = res.data.map((c) => c.metadata?.path);
-    expect(paths).toContain("/repo/vector.ts");
+    expect(paths[0]).toBe("/repo/vector.ts");
   });
 
   it("applies path filters before fusion", async () => {
@@ -158,6 +170,7 @@ describe("LocalStore.search fusion (unit)", () => {
           end_line: 1,
           content: "keep me",
           hash: "h1",
+          vector: [1, 0, 0, 0],
         },
         {
           path: "/repo/exclude/file.ts",
@@ -165,6 +178,7 @@ describe("LocalStore.search fusion (unit)", () => {
           end_line: 1,
           content: "drop me",
           hash: "h2",
+          vector: [1, 0, 0, 0],
         },
       ],
       ftsResults: [],
@@ -172,7 +186,6 @@ describe("LocalStore.search fusion (unit)", () => {
 
     const res = await runSearchWithFakeStore({
       table,
-      rerankScores: [0.5, 0.4],
       filters: {
         all: [
           {

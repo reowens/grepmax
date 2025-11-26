@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "osgrep",
-      "source": "./plugins/osgrep",
+      "source": "./../plugins/osgrep",
       "description": "Semantic code search for Claude Code. Automatically indexes your project and provides intelligent search capabilities.",
       "version": "0.2.0",
       "author": {

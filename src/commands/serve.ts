@@ -9,6 +9,7 @@ import { ensureSetup } from "../lib/setup-helpers";
 import { ensureStoreExists, isStoreEmpty } from "../lib/store-helpers";
 import { getAutoStoreId } from "../lib/store-resolver";
 import type { Store } from "../lib/store";
+import { DEFAULT_IGNORE_PATTERNS } from "../lib/ignore-patterns"
 import {
   clearServerLock,
   computeBufferHash,
@@ -18,11 +19,19 @@ import {
   initialSync,
   isIndexablePath,
   MetaStore,
+  preparedChunksToVectors,
   readServerLock,
   writeServerLock,
 } from "../utils";
 
 type PendingAction = "upsert" | "delete";
+
+// Global State for the Server
+let indexState = {
+  isIndexing: false,
+  indexed: 0,
+  total: 0,
+};
 
 const MAX_REQUEST_BYTES = 10 * 1024 * 1024;
 
@@ -32,7 +41,7 @@ function toDenseResults(
     score: number;
     text?: string | null;
     metadata?: Record<string, unknown>;
-    generated_metadata?: { start_line?: number | null };
+    generated_metadata?: { start_line?: number | null; type?: string | null };
   }>,
 ) {
   const root = path.resolve(storeRoot);
@@ -47,6 +56,7 @@ function toDenseResults(
       path: relPath,
       score: Number(item.score.toFixed(3)),
       content: snippet,
+      chunk_type: item.generated_metadata?.type ?? undefined,
     };
   });
 }
@@ -58,17 +68,7 @@ async function createWatcher(
   metaStore: MetaStore,
 ): Promise<FSWatcher> {
   const fileSystem = createFileSystem({
-    ignorePatterns: [
-      "*.lock",
-      "*.bin",
-      "*.ipynb",
-      "*.pyc",
-      "pnpm-lock.yaml",
-      "package-lock.json",
-      "yarn.lock",
-      "bun.lockb",
-      ".osgrep/**",
-    ],
+    ignorePatterns: [...DEFAULT_IGNORE_PATTERNS, ".osgrep/**"],
   });
 
   fileSystem.loadOsgrepignore(root);
@@ -101,7 +101,7 @@ async function createWatcher(
         const buffer = await fs.promises.readFile(filePath);
         if (buffer.length === 0) continue;
         const hash = computeBufferHash(buffer);
-        const { records, indexed: didIndex } = await indexFile(
+        const { chunks, indexed: didIndex } = await indexFile(
           store,
           storeId,
           filePath,
@@ -112,8 +112,9 @@ async function createWatcher(
           hash,
         );
         if (didIndex) {
-          if (records.length > 0) {
-            await store.insertBatch(storeId, records);
+          if (chunks.length > 0) {
+            const vectors = await preparedChunksToVectors(chunks);
+            await store.insertBatch(storeId, vectors);
           }
           metaStore.set(filePath, hash);
           await metaStore.save();
@@ -210,29 +211,45 @@ export const serve = new Command("serve")
       const empty = await isStoreEmpty(store, storeId);
       if (empty) {
         const fileSystem = createFileSystem({
-          ignorePatterns: [
-            "*.lock",
-            "*.bin",
-            "*.ipynb",
-            "*.pyc",
-            "pnpm-lock.yaml",
-            "package-lock.json",
-            "yarn.lock",
-            "bun.lockb",
-            ".osgrep/**",
-          ],
+          ignorePatterns: [...DEFAULT_IGNORE_PATTERNS, ".osgrep/**"],
         });
-        console.log("Store empty, performing initial index...");
-        await initialSync(
+        console.log("Store empty, performing initial index (background)...");
+
+        // Setup the Progress Callback
+        const onProgress = (info: {
+          processed: number;
+          indexed: number;
+          total: number;
+        }) => {
+          indexState = {
+            isIndexing: info.indexed < info.total,
+            indexed: info.indexed,
+            total: info.total,
+          };
+        };
+
+        // Trigger Sync (Non-blocking / Background)
+        indexState.isIndexing = true;
+        initialSync(
           store,
           fileSystem,
           storeId,
           root,
           false,
-          undefined,
+          onProgress,
           metaStore,
-        );
-        console.log("Initial index complete.");
+          undefined, // No timeout for server mode
+        )
+          .then(() => {
+            indexState.isIndexing = false;
+            console.log("Background indexing complete.");
+          })
+          .catch((err) => {
+            indexState.isIndexing = false;
+            console.error("Background index failed:", err);
+          });
+      } else {
+        indexState.isIndexing = false;
       }
 
       watcher = await createWatcher(store, storeId, root, metaStore);
@@ -305,24 +322,24 @@ export const serve = new Command("serve")
               const searchPath =
                 typeof body.path === "string" && body.path.length > 0
                   ? path.normalize(
-                      path.isAbsolute(body.path)
-                        ? body.path
-                        : path.join(root, body.path),
-                    )
+                    path.isAbsolute(body.path)
+                      ? body.path
+                      : path.join(root, body.path),
+                  )
                   : root;
 
               const filters =
                 body.filters && typeof body.filters === "object"
                   ? body.filters
                   : {
-                      all: [
-                        {
-                          key: "path",
-                          operator: "starts_with",
-                          value: searchPath,
-                        },
-                      ],
-                    };
+                    all: [
+                      {
+                        key: "path",
+                        operator: "starts_with",
+                        value: searchPath,
+                      },
+                    ],
+                  };
 
               const results = await store!.search(
                 storeId,
@@ -332,7 +349,17 @@ export const serve = new Command("serve")
                 filters,
               );
               const dense = toDenseResults(root, results.data);
-              return respondJson(res, 200, { results: dense });
+
+              // INJECT STATUS
+              const responsePayload = {
+                results: dense,
+                status: indexState.isIndexing ? "indexing" : "ready",
+                progress: indexState.isIndexing
+                  ? Math.round((indexState.indexed / indexState.total) * 100)
+                  : 100,
+              };
+
+              return respondJson(res, 200, responsePayload);
             } catch (err) {
               console.error("Search handler failed:", err);
               return respondJson(res, 500, { error: "search_failed" });

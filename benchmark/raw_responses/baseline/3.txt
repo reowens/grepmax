@@ -1,0 +1,314 @@
+ryandonofrio@Ryans-MBP opencode % claude
+
+╭─── Claude Code v2.0.53 ────────────────────────────────────────────────────────────────────╮
+│                                                    │ Tips for getting started              │
+│                 Welcome back Ryan!                 │ Run /init to create a CLAUDE.md file… │
+│                                                    │ ───────────────────────────────────── │
+│                       ▐▛███▜▌                      │ Recent activity                       │
+│                      ▝▜█████▛▘                     │ No recent activity                    │
+│                        ▘▘ ▝▝                       │                                       │
+│                                                    │                                       │
+│           Sonnet 4.5 · API Usage Billing           │                                       │
+│  /…/ryandonofrio/Desktop/osgrep2/testing/opencode  │                                       │
+╰────────────────────────────────────────────────────────────────────────────────────────────╯
+
+  /model to try Opus 4.5
+
+> where is the LSP integration configured and initialized?
+
+⏺ I'll search for the LSP integration configuration and initialization in the codebase.
+
+⏺ Search(pattern: "LSP|LanguageServer|language.?server")
+  ⎿  Found 20 files (ctrl+o to expand)
+
+⏺ Search(pattern: "**/*lsp*.{ts,tsx,js,jsx}")
+  ⎿  Found 4 files (ctrl+o to expand)
+
+⏺ Search(pattern: "**/*language*server*.{ts,tsx,js,jsx}")
+  ⎿  Found 0 files
+
+⏺ Let me examine the main LSP-related files:
+
+⏺ Read(packages/opencode/src/cli/cmd/debug/lsp.ts)
+  ⎿  Read 48 lines
+
+⏺ Read(packages/opencode/src/tool/lsp-diagnostics.ts)
+  ⎿  Read 27 lines
+
+⏺ Read(packages/opencode/src/tool/lsp-hover.ts)
+  ⎿  Read 32 lines
+
+⏺ Now let me find the main LSP module:
+
+⏺ Search(pattern: "**/lsp/index.ts")
+  ⎿  Found 0 files
+
+⏺ Search(pattern: "**/lsp.ts")
+  ⎿  Found 1 file (ctrl+o to expand)
+
+⏺ Let me search for the LSP directory:
+
+⏺ Bash(find packages/opencode/src -type d -name "lsp" 2>/dev/null)
+  ⎿  packages/opencode/src/lsp
+
+⏺ Search(pattern: "packages/opencode/src/lsp/**/*.ts")
+  ⎿  Found 4 files (ctrl+o to expand)
+
+⏺ Perfect! Let me read these key files:
+
+⏺ Read(packages/opencode/src/lsp/index.ts)
+  ⎿  Read 371 lines
+
+⏺ Read(packages/opencode/src/lsp/client.ts)
+  ⎿  Read 216 lines
+
+⏺ Read(packages/opencode/src/lsp/server.ts)
+  ⎿  Read 1169 lines
+
+⏺ Now let me check where LSP.init() is called:
+
+⏺ Search(pattern: "LSP\.init")
+  ⎿  Found 1 file (ctrl+o to expand)
+
+⏺ Read(packages/opencode/src/project/bootstrap.ts)
+  ⎿  Read 31 lines
+
+⏺ Perfect! Now I have a complete picture. Let me provide a summary of where the LSP
+  integration is configured and initialized.
+
+  LSP Integration Configuration and Initialization
+
+  The LSP integration is configured and initialized in several key locations:
+
+  Main LSP Module
+
+  packages/opencode/src/lsp/index.ts:11-127
+
+  This is the main entry point that:
+  - Defines the LSP namespace with all core functionality
+  - Reads configuration from Config.get() at line 65
+  - Initializes state with available LSP servers at lines 61-123
+  - The init() function at line 125 returns the state
+
+  Initialization
+
+  packages/opencode/src/project/bootstrap.ts:21
+
+  The LSP is initialized during the instance bootstrap process:
+  await LSP.init()
+
+  This happens in the InstanceBootstrap() function, which is called when setting up a new
+  instance.
+
+  Configuration
+
+  The LSP configuration is read from the user's config at
+  packages/opencode/src/lsp/index.ts:65-105:
+  - Checks if cfg.lsp === false to disable all LSPs
+  - Loads built-in LSP servers from packages/opencode/src/lsp/server.ts
+  - Allows custom LSP configuration via cfg.lsp object with properties like:
+    - disabled: boolean to disable a specific server
+    - extensions: file extensions to handle
+    - command: command array to spawn the server
+    - env: environment variables
+    - initialization: initialization options
+
+  LSP Servers
+
+  packages/opencode/src/lsp/server.ts:1-1169
+
+  Defines all built-in LSP servers including:
+  - TypeScript (line 83)
+  - Deno (line 55)
+  - ESLint (line 160)
+  - Gopls (line 211)
+  - Pyright (line 294)
+  - Rust Analyzer (line 584)
+  - And many more (Vue, Svelte, Astro, Java, C#, PHP, etc.)
+
+  LSP Client
+
+  packages/opencode/src/lsp/client.ts:37-214
+
+  The LSPClient.create() function handles:
+  - Setting up JSON-RPC communication with the language server
+  - Sending the LSP initialize request
+  - Handling diagnostics notifications
+  - Managing file synchronization (didOpen, didChange)
+
+> /export
+  ⎿  Conversation copied to clipboard
+
+> /cost
+  ⎿ Total cost:            $0.2241
+    Total duration (API):  1m 2s
+    Total duration (wall): 1h 8m 21s
+    Total code changes:    0 lines added, 0 lines removed
+    Usage by model:
+            claude-haiku:  2.7k input, 205 output, 0 cache read, 0 cache write ($0.0037)
+           claude-sonnet:  80 input, 2.0k output, 221.6k cache read, 33.1k cache write
+    ($0.2204)
+
+
+Total cost:            $0.2241
+Total duration (API):  1m 2s
+Total duration (wall): 1h 9m 20s
+Total code changes:    0 lines added, 0 lines removed
+Usage by model:
+        claude-haiku:  2.7k input, 205 output, 0 cache read, 0 cache write ($0.0037)
+       claude-sonnet:  80 input, 2.0k output, 221.6k cache read, 33.1k cache write ($0.2204)
+ryandonofrio@Ryans-MBP opencode % claude
+
+╭─── Claude Code v2.0.53 ────────────────────────────────────────────────────────────────────╮
+│                                                    │ Tips for getting started              │
+│                 Welcome back Ryan!                 │ Run /init to create a CLAUDE.md file… │
+│                                                    │ ───────────────────────────────────── │
+│                       ▐▛███▜▌                      │ Recent activity                       │
+│                      ▝▜█████▛▘                     │ No recent activity                    │
+│                        ▘▘ ▝▝                       │                                       │
+│                                                    │                                       │
+│           Sonnet 4.5 · API Usage Billing           │                                       │
+│  /…/ryandonofrio/Desktop/osgrep2/testing/opencode  │                                       │
+╰────────────────────────────────────────────────────────────────────────────────────────────╯
+
+  /model to try Opus 4.5
+
+> where is the LSP integration configured and initialized?
+
+⏺ I'll help you find where the LSP integration is configured and initialized. Let me
+  search through the codebase.
+
+⏺ Search(pattern: "LSP|LanguageServer|language.?server")
+  ⎿  Found 20 files (ctrl+o to expand)
+
+⏺ Search(pattern: "**/*lsp*")
+  ⎿  Found 14 files (ctrl+o to expand)
+
+⏺ Search(pattern: "**/language-server*")
+  ⎿  Found 0 files
+
+⏺ Search(pattern: "class.*LSP|startLSP|initLSP|LSPManager|LSPClient")
+  ⎿  Found 3 files (ctrl+o to expand)
+
+⏺ Read(packages/opencode/src/cli/cmd/debug/lsp.ts)
+  ⎿  Read 48 lines
+
+⏺ Read(packages/opencode/src/tool/lsp-diagnostics.ts)
+  ⎿  Read 27 lines
+
+⏺ Read(packages/opencode/src/tool/lsp-hover.ts)
+  ⎿  Read 32 lines
+
+⏺ Now let me read the core LSP implementation files:
+
+⏺ Read(packages/opencode/src/lsp/index.ts)
+  ⎿  Read 371 lines
+
+⏺ Read(packages/opencode/src/lsp/client.ts)
+  ⎿  Read 216 lines
+
+⏺ Now let me check where this is initialized in the bootstrap process:
+
+⏺ Search(pattern: "LSP\.init|from.*lsp")
+  ⎿  Found 20 files (ctrl+o to expand)
+
+⏺ Read(packages/opencode/src/lsp/server.ts)
+  ⎿  Read 1169 lines
+
+⏺ Now let me check where LSP.init() is called in the bootstrap:
+
+⏺ Read(packages/opencode/src/project/bootstrap.ts)
+  ⎿  Read 31 lines
+
+⏺ Perfect! Now let me check the config structure to understand how LSP is configured:
+
+⏺ Search(pattern: "lsp.*:.*\{|config\.lsp", path: "packages/opencode/src/config", output_mode:
+         "content")
+  ⎿  Found 0 lines
+
+⏺ Search(pattern: "lsp", path: "packages/opencode/src/config/config.ts", output_mode:
+        "content")
+  ⎿  Found 20 lines (ctrl+o to expand)
+
+⏺ Read(packages/opencode/src/config/config.ts)
+  ⎿  Read 50 lines
+
+⏺ Based on my investigation, I can now provide you with a comprehensive answer about where
+   the LSP integration is configured and initialized.
+
+  LSP Integration Configuration & Initialization
+
+  Initialization Entry Point
+
+  The LSP integration is initialized in packages/opencode/src/project/bootstrap.ts:21 as
+  part of the InstanceBootstrap() function:
+
+  await LSP.init()
+
+  This is called during the bootstrap process along with other system components like
+  plugins, file watchers, etc.
+
+  Core LSP Implementation
+
+  The main LSP logic is located in these files:
+
+  1. packages/opencode/src/lsp/index.ts - Main LSP namespace with:
+    - init() function (line 125-127) that initializes LSP state
+    - State management for tracking LSP clients and servers
+    - Configuration loading from Config.get() (line 65)
+    - Client spawning and lifecycle management (getClients() starting at line 156)
+    - Public API methods: touchFile(), diagnostics(), hover(), workspaceSymbol(),
+  documentSymbol()
+  2. packages/opencode/src/lsp/client.ts - LSP client implementation:
+    - LSPClient.create() function (line 37) that creates JSON-RPC connections to LSP
+  servers
+    - Handles LSP protocol initialization and communication
+    - Manages diagnostics notifications and workspace configuration
+  3. packages/opencode/src/lsp/server.ts - LSP server definitions:
+    - Contains built-in server configurations for multiple languages (TypeScript, Deno,
+  Vue, ESLint, Gopls, Pyright, Rust Analyzer, Clangd, etc.)
+    - Each server defines: extensions, root directory detection, and spawn logic
+
+  Configuration
+
+  LSP configuration is defined in packages/opencode/src/config/config.ts:570-605:
+
+  lsp: z.union([
+    z.literal(false),  // Disable all LSPs
+    z.record(z.string(), z.union([
+      z.object({ disabled: z.literal(true) }),  // Disable specific LSP
+      z.object({
+        command: z.array(z.string()),
+        extensions: z.array(z.string()).optional(),
+        env: z.record(z.string(), z.string()).optional(),
+        initialization: z.record(z.string(), z.any()).optional(),
+      }),
+    ])),
+  ])
+
+  Users can configure LSPs in their .opencode/config.json file to disable, enable, or add
+  custom LSP servers.
+
+  Tool Integration
+
+  LSP features are exposed as tools for the AI agent:
+  - packages/opencode/src/tool/lsp-diagnostics.ts - Get diagnostics for a file
+  - packages/opencode/src/tool/lsp-hover.ts - Get hover information at a position
+
+> /cost
+  ⎿  Total cost:            $0.3283
+     Total duration (API):  1m 27s
+     Total duration (wall): 1m 14s
+     Total code changes:    0 lines added, 0 lines removed
+     Usage by model:
+             claude-haiku:  1.0k input, 150 output, 0 cache read, 0 cache write ($0.0018)
+            claude-sonnet:  17.1k input, 4.4k output, 262.3k cache read, 34.9k cache write
+     ($0.3265)
+
+> /export
+  ⎿  Conversation copied to clipboard
+
+──────────────────────────────────────────────────────────────────────────────────────────────
+> 
+──────────────────────────────────────────────────────────────────────────────────────────────
+  ? for shortcuts

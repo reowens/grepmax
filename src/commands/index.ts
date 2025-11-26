@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { createFileSystem, createStore } from "../lib/context";
+import { DEFAULT_IGNORE_PATTERNS } from "../lib/ignore-patterns";
 import { ensureSetup } from "../lib/setup-helpers";
 import { ensureStoreExists } from "../lib/store-helpers";
 import { getAutoStoreId } from "../lib/store-resolver";
@@ -40,16 +41,7 @@ export const index = new Command("index")
       
       await ensureStoreExists(store, storeId);
       const fileSystem = createFileSystem({
-        ignorePatterns: [
-          "*.lock",
-          "*.bin",
-          "*.ipynb",
-          "*.pyc",
-          "pnpm-lock.yaml",
-          "package-lock.json",
-          "yarn.lock",
-          "bun.lockb",
-        ],
+        ignorePatterns: DEFAULT_IGNORE_PATTERNS,
       });
       const metaStore = new MetaStore();
 

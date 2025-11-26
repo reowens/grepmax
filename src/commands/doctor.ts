@@ -14,7 +14,7 @@ export const doctor = new Command("doctor")
     const models = path.join(root, "models");
     const data = path.join(root, "data");
     const grammars = path.join(root, "grammars");
-    const modelIds = [MODEL_IDS.embed, MODEL_IDS.rerank];
+    const modelIds = [MODEL_IDS.embed, MODEL_IDS.colbert];
 
     const checkDir = (name: string, p: string) => {
       const exists = fs.existsSync(p);
@@ -40,7 +40,7 @@ export const doctor = new Command("doctor")
     const missingModels = modelStatuses.filter(({ exists }) => !exists);
     if (missingModels.length > 0) {
       console.log(
-        "❌ Some models are missing and will be downloaded automatically on first run.",
+        "❌ Some models are missing; osgrep will try bundled copies first, then download.",
       );
     }
 

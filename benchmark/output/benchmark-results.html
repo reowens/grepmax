@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>osgrep Benchmark Results</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'IBM Plex Mono', 'SF Mono', 'Consolas', monospace;
+      background: linear-gradient(135deg, #f5f7f5 0%, #e8ebe8 100%);
+      min-height: 100vh;
+      padding: 48px 24px;
+      color: #1a3d1a;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 64px;
+    }
+
+    .header h1 {
+      font-size: 52px;
+      font-weight: 700;
+      color: #1a3d1a;
+      margin-bottom: 12px;
+      letter-spacing: -0.02em;
+    }
+
+    .header p {
+      font-size: 16px;
+      color: #4a6b4a;
+      font-weight: 400;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+      margin-bottom: 48px;
+    }
+
+    .stat-card {
+      background: white;
+      border-radius: 16px;
+      padding: 32px;
+      box-shadow: 0 4px 16px rgba(45, 90, 45, 0.08);
+      border: 1px solid #e8f0e8;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .stat-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 24px rgba(45, 90, 45, 0.12);
+    }
+
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, #2d5a2d 0%, #1a6f1a 100%);
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: #6b8a6b;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 16px;
+      font-weight: 600;
+    }
+
+    .stat-values {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .stat-row-label {
+      font-size: 13px;
+      color: #4a6b4a;
+      font-weight: 500;
+    }
+
+    .stat-number {
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    .baseline {
+      color: #7a9a7a;
+    }
+
+    .experimental {
+      color: #2d5a2d;
+    }
+
+    .improvement-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: linear-gradient(135deg, #1a6f1a 0%, #2d8a2d 100%);
+      color: white;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 16px;
+      font-weight: 700;
+      margin-top: 16px;
+    }
+
+    .improvement-badge::before {
+      content: '↓';
+      font-size: 20px;
+    }
+
+    .neutral-badge {
+      background: linear-gradient(135deg, #6b8a6b 0%, #7a9a7a 100%);
+    }
+
+    .neutral-badge::before {
+      content: '→';
+    }
+
+    .chart-container {
+      background: white;
+      border-radius: 16px;
+      padding: 48px;
+      box-shadow: 0 4px 16px rgba(45, 90, 45, 0.08);
+      border: 1px solid #e8f0e8;
+      margin-bottom: 32px;
+    }
+
+    .chart-title {
+      font-size: 24px;
+      font-weight: 700;
+      color: #1a3d1a;
+      margin-bottom: 32px;
+      text-align: center;
+      letter-spacing: -0.01em;
+    }
+
+    .bars {
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+    }
+
+    .bar-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .bar-label {
+      font-size: 14px;
+      font-weight: 600;
+      color: #2d5a2d;
+      margin-bottom: 4px;
+    }
+
+    .bar-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .bar-track {
+      flex: 1;
+      height: 48px;
+      background: #f5f7f5;
+      border-radius: 8px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding-right: 16px;
+      font-size: 14px;
+      font-weight: 600;
+      color: white;
+      transition: width 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+      animation: slideIn 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    @keyframes slideIn {
+      from {
+        width: 0 !important;
+        opacity: 0;
+      }
+      to {
+        opacity: 1;
+      }
+    }
+
+    .bar-baseline {
+      background: linear-gradient(90deg, #9db39d 0%, #8aa88a 100%);
+    }
+
+    .bar-experimental {
+      background: linear-gradient(90deg, #2d5a2d 0%, #1a6f1a 100%);
+    }
+
+    .bar-value-label {
+      min-width: 100px;
+      text-align: right;
+      font-size: 14px;
+      font-weight: 600;
+      color: #4a6b4a;
+    }
+
+    .chart-subtitle {
+      font-size: 14px;
+      font-weight: 600;
+      color: #4a6b4a;
+      margin-bottom: 32px;
+      text-align: center;
+    }
+
+    .preference-bar {
+      display: flex;
+      height: 60px;
+      border-radius: 8px;
+      overflow: hidden;
+      margin-top: 16px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .preference-segment {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      font-weight: 700;
+      color: white;
+      transition: all 0.3s ease;
+      position: relative;
+    }
+
+    .preference-segment:hover {
+      filter: brightness(1.1);
+    }
+
+    .preference-osgrep {
+      background: linear-gradient(90deg, #2d5a2d 0%, #1a6f1a 100%);
+    }
+
+    .preference-baseline {
+      background: linear-gradient(90deg, #8aa88a 0%, #9db39d 100%);
+    }
+
+    .preference-tie {
+      background: linear-gradient(90deg, #6b8a6b 0%, #7a9a7a 100%);
+    }
+
+    .preference-legend {
+      display: flex;
+      justify-content: center;
+      gap: 24px;
+      margin-top: 16px;
+      font-size: 13px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .legend-color {
+      width: 20px;
+      height: 20px;
+      border-radius: 4px;
+    }
+
+    .footer {
+      text-align: center;
+      margin-top: 64px;
+      padding-top: 32px;
+      border-top: 2px solid #e8f0e8;
+      color: #6b8a6b;
+      font-size: 13px;
+    }
+
+    .footer a {
+      color: #2d5a2d;
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    .footer a:hover {
+      text-decoration: underline;
+    }
+
+    @media (max-width: 768px) {
+      .header h1 {
+        font-size: 36px;
+      }
+
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .chart-container {
+        padding: 24px;
+      }
+
+      .bar-wrapper {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .bar-value-label {
+        text-align: left;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>osgrep benchmark</h1>
+      <p>Cumulative performance across 10 queries</p>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total Time</div>
+        <div class="stat-values">
+          <div class="stat-row">
+            <span class="stat-row-label">Baseline</span>
+            <span class="stat-number baseline">26m 11s</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-row-label">osgrep</span>
+            <span class="stat-number experimental">16m 42s</span>
+          </div>
+        </div>
+        <div class="improvement-badge">36.2% faster</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-label">Total Cost</div>
+        <div class="stat-values">
+          <div class="stat-row">
+            <span class="stat-row-label">Baseline</span>
+            <span class="stat-number baseline">$3.69</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-row-label">osgrep</span>
+            <span class="stat-number experimental">$2.85</span>
+          </div>
+        </div>
+        <div class="improvement-badge ">22.7% cheaper</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-label">LLM Judge Preference</div>
+        <div class="stat-values">
+          <div class="stat-row">
+            <span class="stat-row-label">osgrep wins</span>
+            <span class="stat-number experimental">7</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-row-label">Baseline wins</span>
+            <span class="stat-number baseline">2</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-row-label">Ties</span>
+            <span class="stat-number" style="color: #6b8a6b">1</span>
+          </div>
+        </div>
+        <div class="improvement-badge">70% win rate</div>
+      </div>
+    </div>
+
+    <div class="chart-container">
+      <div class="chart-title">Performance Comparison in Claude Code</div>
+      <div class="chart-subtitle">Average per-query metrics across 10 queries in the OpenCode codebase</div>
+      <div class="bars">
+        <div class="bar-group">
+          <div class="bar-label">Average Time per Query — 36.2% faster</div>
+          <div class="bar-wrapper">
+            <div class="bar-track">
+              <div class="bar-fill bar-baseline" style="width: 100%">
+                Baseline
+              </div>
+            </div>
+            <div class="bar-value-label">2m 37s</div>
+          </div>
+          <div class="bar-wrapper">
+            <div class="bar-track">
+              <div class="bar-fill bar-experimental" style="width: 63.8%">
+                osgrep
+              </div>
+            </div>
+            <div class="bar-value-label">1m 40s</div>
+          </div>
+        </div>
+
+        <div class="bar-group">
+          <div class="bar-label">Average Cost per Query — 22.7% cheaper</div>
+          <div class="bar-wrapper">
+            <div class="bar-track">
+              <div class="bar-fill bar-baseline" style="width: 100%">
+                Baseline
+              </div>
+            </div>
+            <div class="bar-value-label">$0.369</div>
+          </div>
+          <div class="bar-wrapper">
+            <div class="bar-track">
+              <div class="bar-fill bar-experimental" style="width: 77.3%">
+                osgrep
+              </div>
+            </div>
+            <div class="bar-value-label">$0.285</div>
+          </div>
+        </div>
+
+        <div class="bar-group">
+          <div class="bar-label">LLM-as-Judge Quality Preference — 70% osgrep wins</div>
+          <div class="preference-bar">
+            <div class="preference-segment preference-osgrep" style="width: 70.0%">
+              7 osgrep
+            </div>
+            <div class="preference-segment preference-tie" style="width: 10.0%">
+              1 tie
+            </div>
+            <div class="preference-segment preference-baseline" style="width: 20.0%">
+              2 baseline
+            </div>
+          </div>
+          <div class="preference-legend">
+            <div class="legend-item">
+              <div class="legend-color" style="background: linear-gradient(90deg, #2d5a2d 0%, #1a6f1a 100%);"></div>
+              <span>osgrep preferred</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-color" style="background: linear-gradient(90deg, #6b8a6b 0%, #7a9a7a 100%);"></div>
+              <span>Tie</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-color" style="background: linear-gradient(90deg, #8aa88a 0%, #9db39d 100%);"></div>
+              <span>Baseline preferred</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <p>Generated with <a href="https://github.com/yourusername/osgrep" target="_blank">osgrep</a> benchmark tool</p>
+    </div>
+  </div>
+</body>
+</html>

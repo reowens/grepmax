@@ -1,15 +1,10 @@
-import { extname, join, relative, normalize } from "node:path";
-import { highlight } from "cli-highlight";
+import { join, relative, normalize } from "node:path";
 import type { Command } from "commander";
 import { Command as CommanderCommand } from "commander";
 import { createFileSystem, createStore } from "../lib/context";
 import { ensureSetup } from "../lib/setup-helpers";
-import type {
-  ChunkType,
-  FileMetadata,
-  SearchResponse,
-  Store,
-} from "../lib/store";
+import type { FileMetadata, SearchResponse, Store } from "../lib/store";
+import { DEFAULT_IGNORE_PATTERNS } from "../lib/ignore-patterns";
 import { ensureStoreExists, isStoreEmpty } from "../lib/store-helpers";
 import { getAutoStoreId } from "../lib/store-resolver";
 import {
@@ -22,101 +17,7 @@ import {
   MetaStore,
   readServerLock,
 } from "../utils";
-
-// --- UI Helpers (No external deps) ---
-const style = {
-  reset: (s: string) => `\x1b[0m${s}\x1b[0m`,
-  bold: (s: string) => `\x1b[1m${s}\x1b[22m`,
-  dim: (s: string) => `\x1b[2m${s}\x1b[22m`,
-  blue: (s: string) => `\x1b[34m${s}\x1b[39m`,
-  green: (s: string) => `\x1b[32m${s}\x1b[39m`,
-  yellow: (s: string) => `\x1b[33m${s}\x1b[39m`,
-};
-
-function detectLanguage(filePath: string): string {
-  const ext = extname(filePath).toLowerCase();
-  switch (ext) {
-    case ".ts":
-    case ".tsx":
-      return "typescript";
-    case ".js":
-    case ".jsx":
-      return "javascript";
-    case ".py":
-      return "python";
-    case ".rs":
-      return "rust";
-    case ".go":
-      return "go";
-    case ".java":
-      return "java";
-    case ".json":
-      return "json";
-    case ".md":
-      return "markdown";
-    case ".yml":
-    case ".yaml":
-      return "yaml";
-    case ".css":
-      return "css";
-    case ".html":
-      return "html";
-    case ".sh":
-      return "bash";
-    default:
-      return "plaintext";
-  }
-}
-
-/**
- * Parses the specialized chunk format: "Header\n---\nBody"
- */
-function parseChunkText(text: string) {
-  const separator = "\n---\n";
-  const index = text.indexOf(separator);
-
-  if (index === -1) {
-    return { header: "", body: text };
-  }
-
-  return {
-    header: text.substring(0, index),
-    body: text.substring(index + separator.length),
-  };
-}
-
-/**
- * Cleans metadata lines from the top of a snippet to show code faster.
- */
-function cleanSnippet(body: string): {
-  cleanedLines: string[];
-  linesRemoved: number;
-} {
-  let lines = body.split("\n");
-  let linesRemoved = 0;
-
-  // Metadata prefixes to strip from the *start* of the snippet
-  const NOISE_PREFIXES = [
-    "File:",
-    "Top comments:",
-    "Preamble:",
-    "(anchor)",
-    "Imports:",
-    "Exports:",
-    "---",
-  ];
-
-  while (
-    lines.length > 0 &&
-    (lines[0].trim() === "" ||
-      NOISE_PREFIXES.some((p) => lines[0].trim().startsWith(p)))
-  ) {
-    lines.shift();
-    linesRemoved++;
-  }
-
-  return { cleanedLines: lines, linesRemoved };
-}
+import { formatTextResults, type TextResult } from "../lib/formatter";
 
 function toDenseResults(
   root: string,
@@ -137,153 +38,24 @@ function toDenseResults(
   });
 }
 
-function formatSearchResults(
-  response: SearchResponse,
-  options: {
-    showContent: boolean;
-    perFile: number;
-    showScores: boolean;
-    compact: boolean;
-    maxCount: number;
-    root: string;
-  },
-) {
-  const { data } = response;
-  if (data.length === 0) return "";
+function toTextResults(data: SearchResponse["data"]): TextResult[] {
+  return data.map((r) => {
+    const rawPath =
+      typeof (r.metadata as FileMetadata | undefined)?.path === "string"
+        ? ((r.metadata as FileMetadata).path as string)
+        : "Unknown path";
 
-  // 1. Group by File Path
-  const grouped = new Map<string, ChunkType[]>();
-  for (const chunk of data) {
-    const rawPath = (chunk.metadata as FileMetadata)?.path || "Unknown path";
-    if (!grouped.has(rawPath)) {
-      grouped.set(rawPath, []);
-    }
-    grouped.get(rawPath)?.push(chunk);
-  }
-
-  // 2. Summary Line
-  const totalFiles = grouped.size;
-  const summary = style.bold(
-    `Found ${data.length} relevant chunks in ${totalFiles} files (max-count=${options.maxCount}, per-file=${options.perFile}).`,
-  );
-  let output = `\n${summary}\n`; // Tighter whitespace
-
-  // 3. Iterate Groups
-  for (const [rawPath, chunks] of grouped) {
-    // Sort chunks within file: Prefer content over anchors, then score
-    chunks.sort((a, b) => {
-      const aIsAnchor = !!a.metadata?.is_anchor;
-      const bIsAnchor = !!b.metadata?.is_anchor;
-      if (aIsAnchor !== bIsAnchor) return aIsAnchor ? 1 : -1; // Put non-anchors first
-      return b.score - a.score; // Then sort by score
-    });
-
-    // Path Formatting
-    let displayPath = rawPath;
-    if (rawPath !== "Unknown path") {
-      displayPath = relative(options.root, rawPath);
-    }
-
-    // Compact Mode: Just the path
-    if (options.compact) {
-      output += `${style.green("📂 " + displayPath)}\n`;
-      continue;
-    }
-
-    // File Header
-    output += `${style.green("📂 " + style.bold(displayPath))}`;
-
-    // Render Chunks
-    const shownChunks = chunks.slice(0, options.perFile);
-    const remaining = chunks.length - shownChunks.length;
-
-    for (const chunk of shownChunks) {
-      // Metadata
-      let startLine = (chunk.generated_metadata?.start_line ?? 0) + 1;
-      const scoreDisplay = options.showScores
-        ? style.dim(` (score: ${chunk.score.toFixed(3)})`)
-        : "";
-
-      // Parse Text
-      const { header, body } = parseChunkText(chunk.text ?? "");
-
-      // Context Header (e.g. "Function: myFunc") - Only show if meaningful
-      if (header && !options.showContent) {
-        // Only show headers that aren't just file paths or boilerplate
-        const contextLines = header
-          .split("\n")
-          .filter((l) => !l.startsWith("File:") && !l.includes("(anchor)"))
-          .map((l) => l.trim())
-          .filter(Boolean);
-
-        if (contextLines.length > 0) {
-          // Join with arrow for brevity
-          output += `\n   ${style.dim("Context: " + contextLines.join(" > "))}`;
-        }
-      }
-
-      // Clean Snippet Body
-      let displayBody = body;
-      let linesRemoved = 0;
-
-      if (!options.showContent) {
-        const cleaned = cleanSnippet(body);
-        let lines = cleaned.cleanedLines;
-        linesRemoved = cleaned.linesRemoved;
-
-        // Truncate length
-        if (lines.length > 6) {
-          lines = lines.slice(0, 6);
-        }
-        displayBody = lines.join("\n");
-      }
-
-      // Adjust start line based on cleaning
-      startLine += linesRemoved;
-
-      // Apply Syntax Highlighting (ANSI)
-      let highlighted = displayBody;
-      try {
-        const lang = detectLanguage(rawPath);
-        highlighted = highlight(displayBody, {
-          language: lang,
-          ignoreIllegals: true,
-        });
-      } catch {
-        // Fallback to plain text
-      }
-
-      // Apply Line Numbers to the Highlighted Text
-      const lines = highlighted.split("\n");
-      const snippet = lines
-        .map((line, i) => {
-          const lineNum = style.dim(`${startLine + i}`.padStart(4) + " │");
-          return `${lineNum} ${line}`;
-        })
-        .join("\n");
-
-      output += `\n${snippet}${scoreDisplay}\n`;
-
-      // Visual separator between chunks in same file if needed
-      if (
-        shownChunks.length > 1 &&
-        chunk !== shownChunks[shownChunks.length - 1]
-      ) {
-        output += `${style.dim("      ...")}\n`;
-      }
-    }
-
-    // "More matches" footer - softer hint
-    if (remaining > 0) {
-      // Suggest a reasonable next step (current + remaining, or current + 5)
-      const nextStep = options.perFile + Math.min(remaining, 5);
-      output += `      ${style.dim(`... +${remaining} more matches (rerun with --per-file ${nextStep})`)}\n`;
-    }
-    
-    output += "\n"; // Separator between files
-  }
-
-  return output.trimEnd(); // Clean up trailing newlines
+    return {
+      path: rawPath,
+      score: r.score,
+      content: r.text || "",
+      chunk_type: r.generated_metadata?.type,
+      start_line: r.generated_metadata?.start_line ?? 0,
+      end_line:
+        (r.generated_metadata?.start_line ?? 0) +
+        (r.generated_metadata?.num_lines ?? 0),
+    };
+  });
 }
 
 export const search: Command = new CommanderCommand("search")
@@ -291,7 +63,7 @@ export const search: Command = new CommanderCommand("search")
   .option(
     "-m <max_count>, --max-count <max_count>",
     "The maximum number of results to return (total)",
-    "25",
+    "10",
   )
   .option("-c, --content", "Show full chunk content instead of snippets", false)
   .option(
@@ -301,7 +73,7 @@ export const search: Command = new CommanderCommand("search")
   )
   .option("--scores", "Show relevance scores", false)
   .option("--compact", "Show file paths only", false)
-  .option("--json", "Output results as JSON for machine consumption", false)
+  .option("--plain", "Disable ANSI colors and use simpler formatting", false)
   .option(
     "-s, --sync",
     "Syncs the local files to the store before searching",
@@ -320,10 +92,11 @@ export const search: Command = new CommanderCommand("search")
     const options: {
       store?: string;
       m: string;
-      c: boolean;
+      content: boolean;
       perFile: string;
       scores: boolean;
       compact: boolean;
+      plain: boolean;
       json: boolean;
       sync: boolean;
       dryRun: boolean;
@@ -374,7 +147,53 @@ export const search: Command = new CommanderCommand("search")
         );
         if (!searchRes.ok) return false;
         const payload = await searchRes.json();
-        console.log(JSON.stringify(payload));
+
+        // 1. HANDLE JSON MODE (Machine)
+        if (options.json) {
+          console.log(JSON.stringify(payload));
+          return true;
+        }
+
+        // 2. Rehydrate server results to match local store shape expected by formatTextResults.
+        // Server payload is flat ({ path, content/snippet, score, chunk_type? }).
+        const rehydratedResults = (payload.results ?? []).map((r: any) => ({
+          score: typeof r.score === "number" ? r.score : 0,
+          text: r.content ?? r.snippet ?? "",
+          metadata: {
+            path: typeof r.path === "string" ? r.path : "Unknown path",
+            is_anchor: r.is_anchor === true,
+          },
+          generated_metadata: {
+            type: r.chunk_type,
+            start_line: typeof r.start_line === "number" ? r.start_line : 0,
+            num_lines:
+              typeof r.num_lines === "number" ? r.num_lines : undefined,
+          },
+        }));
+
+        // 3. HANDLE TEXT MODE (Agent/Human)
+        // Check for the status flag
+        if (payload.status === "indexing") {
+          const pct = payload.progress ?? 0;
+          console.error(
+            `⚠️  osgrep is currently indexing (${pct}% complete). Results may be partial.\n`,
+          );
+        }
+
+        // Auto-detect plain mode if not in TTY (e.g. piped to agent)
+        const isTTY = process.stdout.isTTY;
+        const shouldBePlain = options.plain || !isTTY;
+
+        const mappedResults: TextResult[] = toTextResults(
+          rehydratedResults as SearchResponse["data"],
+        );
+
+        const output = formatTextResults(mappedResults, pattern, root, {
+          isPlain: shouldBePlain,
+          compact: options.compact,
+          content: options.content,
+        });
+        console.log(output);
         return true;
       } catch (_err) {
         return false;
@@ -392,10 +211,10 @@ export const search: Command = new CommanderCommand("search")
     try {
       await ensureSetup({ silent: options.json });
       store = await createStore();
-      
+
       // Auto-detect store ID if not explicitly provided
       const storeId = options.store || getAutoStoreId(root);
-      
+
       await ensureStoreExists(store, storeId);
       const autoSync =
         options.sync || (await isStoreEmpty(store, storeId));
@@ -403,19 +222,10 @@ export const search: Command = new CommanderCommand("search")
 
       if (autoSync) {
         const fileSystem = createFileSystem({
-          ignorePatterns: [
-            "*.lock",
-            "*.bin",
-            "*.ipynb",
-            "*.pyc",
-            "pnpm-lock.yaml",
-            "package-lock.json",
-            "yarn.lock",
-            "bun.lockb",
-          ],
+          ignorePatterns: DEFAULT_IGNORE_PATTERNS,
         });
         const metaStore = new MetaStore();
-        
+
         if (options.json) {
           // JSON mode: silent indexing without UI
           await initialSync(
@@ -426,6 +236,7 @@ export const search: Command = new CommanderCommand("search")
             options.dryRun,
             undefined, // No progress callback
             metaStore,
+            undefined, // No timeout for JSON mode (usually machine controlled)
           );
           if (!options.dryRun) {
             while (true) {
@@ -442,39 +253,71 @@ export const search: Command = new CommanderCommand("search")
             return;
           }
         } else {
-          // Human mode: show spinner and progress
+          // Human/Agent mode
+          const isTTY = process.stdout.isTTY;
+          let abortController: AbortController | undefined;
+          let signal: AbortSignal | undefined;
+
+          // If non-interactive (Agent), enforce a timeout to prevent hanging
+          if (!isTTY) {
+            abortController = new AbortController();
+            signal = abortController.signal;
+            setTimeout(() => {
+              abortController?.abort();
+            }, 10000); // 10s timeout
+          }
+
+          // Show spinner and progress
           const { spinner, onProgress } = createIndexingSpinner(
             root,
             options.sync ? "Indexing..." : "Indexing repository (first run)...",
           );
-          const result = await initialSync(
-            store,
-            fileSystem,
-            storeId,
-            root,
-            options.dryRun,
-            onProgress,
-            metaStore,
-          );
-          while (true) {
-            const info = await store.getInfo(storeId);
-            spinner.text = `Indexing ${info.counts.pending + info.counts.in_progress} file(s)`;
-            if (info.counts.pending === 0 && info.counts.in_progress === 0) {
-              break;
-            }
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-          }
-          spinner.succeed(
-            `Indexing complete (${result.processed}/${result.total}) • indexed ${result.indexed}`,
-          );
-          didSync = true;
-          if (options.dryRun) {
-            console.log(
-              formatDryRunSummary(result, {
-                actionDescription: "would have indexed",
-              }),
+
+          try {
+            const result = await initialSync(
+              store,
+              fileSystem,
+              storeId,
+              root,
+              options.dryRun,
+              onProgress,
+              metaStore,
+              signal,
             );
-            process.exit(0);
+
+            if (signal?.aborted) {
+              spinner.warn(
+                `Indexing timed out (${result.processed}/${result.total}). Results may be partial.`,
+              );
+            } else {
+              while (true) {
+                const info = await store.getInfo(storeId);
+                spinner.text = `Indexing ${info.counts.pending + info.counts.in_progress} file(s)`;
+                if (
+                  info.counts.pending === 0 &&
+                  info.counts.in_progress === 0
+                ) {
+                  break;
+                }
+                await new Promise((resolve) => setTimeout(resolve, 1000));
+              }
+              spinner.succeed(
+                `Indexing complete (${result.processed}/${result.total}) • indexed ${result.indexed}`,
+              );
+            }
+            didSync = true;
+
+            if (options.dryRun) {
+              console.log(
+                formatDryRunSummary(result, {
+                  actionDescription: "would have indexed",
+                }),
+              );
+              process.exit(0);
+            }
+          } catch (err) {
+            spinner.fail("Indexing failed");
+            throw err;
           }
         }
       }
@@ -531,14 +374,16 @@ export const search: Command = new CommanderCommand("search")
         return; // Let Node exit naturally
       }
 
+      // Auto-detect plain mode if not in TTY (e.g. piped to agent)
+      const isTTY = process.stdout.isTTY;
+      const shouldBePlain = options.plain || !isTTY;
+
       // Render Output
-      const output = formatSearchResults(results, {
-        showContent: options.c,
-        perFile: parseInt(options.perFile, 10),
-        showScores: options.scores,
+      const mappedResults: TextResult[] = toTextResults(results.data);
+      const output = formatTextResults(mappedResults, pattern, root, {
+        isPlain: shouldBePlain,
         compact: options.compact,
-        maxCount: parseInt(options.m, 10),
-        root,
+        content: options.content,
       });
 
       console.log(output);

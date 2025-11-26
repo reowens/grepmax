@@ -1,0 +1,11 @@
+Query,Baseline Time (s),Baseline Cost ($),osgrep Time (s),osgrep Cost ($),Winner
+where do we handle authentication and authorization checks?,145,0.26,94,0.26,tie
+how is the file watching system implemented for live updates?,284,0.50,205,0.59,baseline
+where is the LSP integration configured and initialized?,87,0.3283,68,0.23,osgrep
+how do we manage communication between the TUI client and server?,131,0.2591,134,0.38,osgrep
+where are the different agent types defined and how do they differ?,46,0.1322,93,0.31,baseline
+how is terminal rendering and UI state management handled?,179,0.66,104,0.30,osgrep
+where do we integrate with different AI model providers?,147,0.2369,63,0.2056,osgrep
+how is the codebase search and navigation functionality implemented?,216,0.83,93,0.2270,osgrep
+where do we handle bash command execution and sandboxing?,78,0.0729,58,0.1137,osgrep
+how is the mobile app remote control architecture designed?,258,0.4056,90,0.2310,osgrep

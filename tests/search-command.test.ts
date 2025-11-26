@@ -93,15 +93,4 @@ describe("search command", () => {
     expect(mockStore.close).toHaveBeenCalled();
     expect(spinner.succeed).toHaveBeenCalled();
   });
-
-  it("outputs JSON when --json is set", async () => {
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    await (search as Command).parseAsync(["query", "--json"], {
-      from: "user",
-    });
-
-    expect(logSpy).toHaveBeenCalled();
-    expect(spinner.succeed).not.toHaveBeenCalled();
-    logSpy.mockRestore();
-  });
 });
