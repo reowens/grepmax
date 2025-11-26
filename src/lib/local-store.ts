@@ -598,7 +598,7 @@ export class LocalStore implements Store {
       typeof pathFilterEntry?.value === "string" ? pathFilterEntry.value : "";
 
     const whereClause = pathPrefix
-      ? `path LIKE '${pathPrefix.replace(/'/g, "''")}%'`
+      ? `path LIKE '${pathPrefix.replace(/'/g, "''").replace(/\\/g, "\\\\")}%'`
       : undefined;
 
     // 2. HYBRID RECALL - THE "SQL SPLIT" STRATEGY
