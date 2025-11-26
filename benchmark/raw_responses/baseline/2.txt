@@ -1,0 +1,126 @@
+
+╭─── Claude Code v2.0.53 ──────────────────────────────────────────────────────╮
+│                                                    │ Tips for getting        │
+│                 Welcome back Ryan!                 │ started                 │
+│                                                    │ Run /init to create a … │
+│                       ▐▛███▜▌                      │ ─────────────────────── │
+│                      ▝▜█████▛▘                     │ Recent activity         │
+│                        ▘▘ ▝▝                       │ No recent activity      │
+│                                                    │                         │
+│           Sonnet 4.5 · API Usage Billing           │                         │
+│  /…/ryandonofrio/Desktop/osgrep2/testing/opencode  │                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+  /model to try Opus 4.5
+
+> /clear 
+  ⎿  (no content)
+
+> how is the file watching system implemented for live updates? 
+
+⏺ I'll explore the file watching system implementation for live updates in
+  the codebase.
+
+⏺ Explore(Explore file watching system)
+  ⎿  Done (48 tool uses · 60.4k tokens · 1m 43s)                           
+
+⏺ The file watching system in OpenCode is implemented using Parcel Watcher
+  with a sophisticated event-driven architecture. Here's how it works:
+
+  Core Components
+
+  1. File Watcher Library (packages/opencode/src/file/watcher.ts)
+
+  - Uses @parcel/watcher with platform-specific native bindings
+  - Lazy-loaded for performance
+  - Supports macOS (fs-events), Linux (inotify), and Windows
+
+  2. Event Types Monitored
+
+  Three types of file changes are tracked:
+  - create → Published as "add"
+  - update → Published as "change"
+  - delete → Published as "unlink"
+
+  3. Event Flow Architecture
+
+  File System Change
+          ↓
+  Parcel Watcher (native API)
+          ↓
+  Event Handler (watcher.ts:47-62)
+          ↓
+  Bus.publish(FileWatcher.Event.Updated)
+          ↓
+  Subscribers:
+    ├─→ SSE Stream (server.ts:1958) → Browser updates
+    ├─→ Plugin System → Custom hooks
+    └─→ Other components
+
+  4. Live Updates via Server-Sent Events
+
+  The /event endpoint in packages/opencode/src/server/server.ts:1958-1996
+  streams all Bus events to connected clients using SSE:
+
+  .get("/event", async (c) => {
+    return streamSSE(c, async (stream) => {
+      const unsub = Bus.subscribeAll(async (event) => {
+        await stream.writeSSE({
+          data: JSON.stringify(event),
+        })
+      })
+    })
+  })
+
+  5. Filtering & Performance
+
+  The system includes ignore patterns in
+  packages/opencode/src/file/ignore.ts to avoid watching:
+  - node_modules, .git, dist, build
+  - Log files, temp files, coverage reports
+  - Configurable via opencode.jsonc:
+  {
+    "watcher": {
+      "ignore": ["custom-pattern/**"]
+    }
+  }
+
+  6. Initialization
+
+  Initialized during bootstrap in
+  packages/opencode/src/project/bootstrap.ts:15:
+  FileWatcher.init()
+
+  Only activates when OPENCODE_EXPERIMENTAL_WATCHER flag is enabled.
+
+  7. Cleanup
+
+  Uses per-instance state management with automatic cleanup:
+  const state = Instance.state(
+    async () => {
+      const sub = await watcher().subscribe(...)
+      return { sub }
+    },
+    async (state) => {
+      await state.sub?.unsubscribe()
+    }
+  )
+
+  The system provides real-time file change notifications through a
+  centralized event bus, enabling plugins, the browser UI, and other
+  components to react to file system changes efficiently.
+
+> /cost 
+  ⎿ Total cost:            $0.4953
+    Total duration (API):  4m 44s
+    Total duration (wall): 8m 49s
+    Total code changes:    0 lines added, 0 lines removed
+    Usage by model:
+            claude-haiku:  39.4k input, 17.4k output, 1.5m cache read, 100.2k 
+    cache write ($0.4000)
+           claude-sonnet:  21 input, 2.0k output, 65.7k cache read, 12.3k cache 
+    write ($0.0954)
+
+
+
+

@@ -74,7 +74,6 @@ export const search: Command = new CommanderCommand("search")
   .option("--scores", "Show relevance scores", false)
   .option("--compact", "Show file paths only", false)
   .option("--plain", "Disable ANSI colors and use simpler formatting", false)
-  .option("--json", "Output results as JSON for machine consumption", false)
   .option(
     "-s, --sync",
     "Syncs the local files to the store before searching",
@@ -93,7 +92,7 @@ export const search: Command = new CommanderCommand("search")
     const options: {
       store?: string;
       m: string;
-      c: boolean;
+      content: boolean;
       perFile: string;
       scores: boolean;
       compact: boolean;
@@ -189,12 +188,11 @@ export const search: Command = new CommanderCommand("search")
           rehydratedResults as SearchResponse["data"],
         );
 
-        const output = formatTextResults(
-          mappedResults,
-          pattern,
-          root,
-          shouldBePlain,
-        );
+        const output = formatTextResults(mappedResults, pattern, root, {
+          isPlain: shouldBePlain,
+          compact: options.compact,
+          content: options.content,
+        });
         console.log(output);
         return true;
       } catch (_err) {
@@ -382,12 +380,11 @@ export const search: Command = new CommanderCommand("search")
 
       // Render Output
       const mappedResults: TextResult[] = toTextResults(results.data);
-      const output = formatTextResults(
-        mappedResults,
-        pattern,
-        root,
-        shouldBePlain,
-      );
+      const output = formatTextResults(mappedResults, pattern, root, {
+        isPlain: shouldBePlain,
+        compact: options.compact,
+        content: options.content,
+      });
 
       console.log(output);
     } catch (error) {

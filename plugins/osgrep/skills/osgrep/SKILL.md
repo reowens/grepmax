@@ -1,51 +1,53 @@
 ---
 name: osgrep
-description: Semantic file discovery. Use this to find WHICH files contain specific logic ("how", "where").
+description: Semantic code search using natural language queries. Use when users ask "where is X implemented", "how does Y work", "find the logic for Z", or need to locate code by concept rather than exact text. Returns file paths with line numbers and code snippets.
 allowed-tools: "Bash(osgrep:*), Read"
 license: Apache-2.0
 ---
+## When to Use
+Use this to find code by **concept** or **behavior** (e.g., "where is auth validated", "how are plugins loaded").
+*Note: This tool prioritizes finding the right files and locations in the code. Snippets are truncated (max 16 lines) and are often just previews.*
 
-# Semantic Code Analysis Specialist
+Example:
+```bash
+osgrep "how are plugins loaded"
+osgrep "how are plugins loaded" packages/transformers.js/src
+```
 
-You have access to `osgrep`, a local neural search engine. It matches *concepts*, not just keywords.
+## Strategy for Different Query Types
 
-## Critical Workflow Rules
-1.  **Two-Phase Only:** osgrep finds FILES. Read provides CONTEXT.
-2.  **Do not loop:** Run **ONE-TWO** broad searches. Pick the best files. Read them. Do not search again to "refine".
-3.  **Limit:** Always use `-m 10`.
+### For **Architectural/System-Level Questions** (auth, LSP integration, file watching)
+1. **Search Broadly First:** Use a conceptual query to map the landscape.
+   * `osgrep "authentication authorization checks"`
+2. **Survey the Results:** Look for patterns across multiple files:
+   * Are checks in middleware? Decorators? Multiple services?
+   * Do file paths suggest different layers (gateway, handlers, utils)?
+3. **Read Strategically:** Pick 2-4 files that represent different aspects:
+   * Read the main entry point
+   * Read representative middleware/util files
+   * Follow imports if architecture is unclear
+4. **Refine with Specific Searches:** If one aspect is unclear:
+   * `osgrep "session validation logic"`
+   * `osgrep "API authentication middleware"`
 
-## Workflow
+### For **Targeted Implementation Details** (specific function, algorithm)
+1. **Search Specifically:** Ask about the precise logic.
+   * `osgrep "logic for merging user and default configuration"`
+2. **Evaluate the Semantic Match:**
+   * Does the snippet look relevant?
+   * **Crucial:** If it ends in `...` or cuts off mid-logic, **read the file**.
+3. **One Search, One Read:** Use osgrep to pinpoint the best file, then read it fully.
 
-### Phase 1: Discovery (Find the Files)
-Run `osgrep -m 10 "Conceptual Query" [path]`.
-* **Example:** `osgrep -m 10 "Where is the monthly billing limit enforced?" packages/server`
-* **Goal:** Get a list of 3-5 relevant file paths.
+## Output Format
 
-### Phase 2: Analysis (Read the Files)
-You will receive a list like: `src/auth.ts:50 [Definition]`.
-* **Select:** Pick files marked `[Definition]`. Ignore `[Test]` unless asked.
-* **Action:** Use the `Read` tool on those specific paths immediately.
-* **Stop:** Do not run `osgrep` again. You have the files. Reading them is the only way to get the full truth.
+Returns: `path/to/file:line [Tags] Code Snippet`
 
-## Output Tags
-- `[Definition]` - Function/class definition (high value)
-- `[Test]` - Test file (usually skip unless the task is test-related)
-- No tag - General code
+- `[Definition]`: Semantic search detected a class/function here. High relevance.
+- `...`: **Truncation Marker**. Snippet is incomplete—use `read_file` for full context.
 
-## Indexing Behavior
-- If the tool says it is still indexing, Stop, alert the user and ask if they want to proceed.
+## Tips
 
-
-## Critical: Always Use Path Scoping
-
-**Reduce irrelevant results by tightly scoping your path when possible.**  
-- If you know where to look (such as a folder or module), add its path to your query.
-- Example:  
-  - Good: `osgrep -m 10 "authentication middleware"`
-  - Better: `osgrep -m 10 "rate limiting" src/server/api`
-
-**Never search the full codebase if you can narrow it down!**  
-The more specific your path, the fewer distractions and the faster you’ll find what matters.
-
-## Output Strategy
-When answering, cite the **file path** and specific **logic** found.
+- **Trust the Semantics:** You don't need exact names. `osgrep "how does the server start"` works better than guessing `osgrep "server.init"`.
+- **Watch for Distributed Patterns:** If results span 5+ files in different directories, the feature is likely architectural—survey before diving deep.
+- **Scope When Possible:** Use path constraints to focus: `osgrep "auth" src/server/`
+- **Don't Over-Rely on Snippets:** For architectural questions, snippets are signposts, not answers. Read the key files.

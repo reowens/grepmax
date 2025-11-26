@@ -1,0 +1,128 @@
+
+╭─── Claude Code v2.0.54 ──────────────────────────────────────────────────────╮
+│                                                    │ Tips for getting        │
+│                 Welcome back Ryan!                 │ started                 │
+│                                                    │ Run /init to create a … │
+│                       ▐▛███▜▌                      │ ─────────────────────── │
+│                      ▝▜█████▛▘                     │ Recent activity         │
+│                        ▘▘ ▝▝                       │ No recent activity      │
+│                                                    │                         │
+│           Sonnet 4.5 · API Usage Billing           │                         │
+│  /…/ryandonofrio/Desktop/osgrep2/testing/opencode  │                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+  /model to try Opus 4.5
+
+> where are the different agent types defined and how do they differ? 
+
+⏺ I'll help you find where the different agent types are defined and explain
+   how they differ.
+
+⏺ Search(pattern: "agent.*type|agentType|agent_type")
+  ⎿  Found 19 files (ctrl+o to expand)
+
+⏺ Search(pattern: "subagent.*type|subagentType")
+  ⎿  Found 7 files (ctrl+o to expand)
+
+⏺ Search(pattern: "**/*agent*.ts")
+  ⎿  Found 4 files (ctrl+o to expand)
+
+⏺ Search(pattern: "**/*agent*.tsx")
+  ⎿  Found 1 file (ctrl+o to expand)
+
+⏺ Read(packages/opencode/src/tool/task.ts)
+  ⎿  Read 116 lines
+
+⏺ Read(packages/opencode/src/agent/agent.ts)
+  ⎿  Read 259 lines
+
+⏺ Now let me check the config structure to see if there are any additional
+  agent definitions:
+
+⏺ Read(packages/opencode/src/config/config.ts)
+  ⎿  Read 828 lines
+
+⏺ Perfect! Now I have a complete picture of how agents are defined in this
+  codebase. Let me provide you with a clear explanation:
+
+  Agent Types Definition
+
+  Agent types are defined in packages/opencode/src/agent/agent.ts:102-135.
+  There are 3 built-in agent types:
+
+  1. general (line 103-116)
+
+  - Mode: subagent - Can only be invoked by other agents via the Task tool
+  - Description: "General-purpose agent for researching complex questions,
+  searching for code, and executing multi-step tasks"
+  - Tools: Has access to most tools except todoread and todowrite
+  - Permissions: Full agent permissions (edit, bash, webfetch all allowed)
+  - Use case: When searching for keywords/files and you're not confident
+  about finding the right match immediately
+
+  2. build (line 117-124)
+
+  - Mode: primary - Can be used as the main agent for a session
+  - Tools: Has access to default tools
+  - Permissions: Full agent permissions
+  - Use case: Standard build/execution mode
+
+  3. plan (line 125-134)
+
+  - Mode: primary - Can be used as the main agent for a session
+  - Tools: Has access to default tools
+  - Permissions: Highly restricted (line 56-100):
+    - Edit: Denied - cannot modify files
+    - Bash: Very limited - only read-only commands allowed:
+        - File viewing: ls, cat, head, tail, less, more
+      - Search: find, grep, rg
+      - Git read-only: git diff, git log, git show, git status, git branch
+      - Analysis: wc, stat, file, du, sort, uniq, cut
+      - Navigation: pwd, which, whereis
+      - Any write operations require user approval (ask)
+    - WebFetch: Allowed
+  - Use case: Planning mode where the agent explores and designs but doesn't
+   implement
+
+  Key Differences
+
+  The main differences between agent types are:
+
+  1. Mode (subagent vs primary):
+    - primary: Can be the main agent users interact with
+    - subagent: Can only be spawned by other agents via Task tool
+    - all: Can be used in both contexts
+  2. Permissions:
+    - general and build: Full permissions to edit files and run bash
+  commands
+    - plan: Read-only permissions - can explore but cannot modify
+  3. Tool Access:
+    - All have similar tool access, but general specifically excludes todo
+  management tools
+
+  Custom Agents
+
+  Users can define custom agents in:
+  - Config file (line 136-178): via agent field in opencode.json
+  - Agent directory (line 207-248): as markdown files in .opencode/agent/ or
+   agent/
+  - Mode directory (deprecated, line 250-277): markdown files in mode/
+  folder
+
+  Custom agents inherit the base permissions but can override model,
+  temperature, tools, prompts, and permissions via the Agent schema defined
+  at config.ts:352-381.
+
+> /cost 
+  ⎿ Total cost:            $0.1322
+    Total duration (API):  46s
+    Total duration (wall): 19m 26s
+    Total code changes:    0 lines added, 0 lines removed
+    Usage by model:
+            claude-haiku:  1.0k input, 158 output, 0 cache read, 0 cache write 
+    ($0.0018)
+           claude-sonnet:  409 input, 1.5k output, 73.9k cache read, 22.5k cache
+     write ($0.1303)
+
+
+

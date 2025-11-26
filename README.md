@@ -1,15 +1,17 @@
 <div align="center">
   <h1>osgrep</h1>
-  <p><em>Semantic search for your codebase.</em></p>
+  <p><em>Slash tokens. Save time. Semantic search for your coding agent.</em></p>
   <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License: Apache 2.0" /></a><br>
 </div>
 
-Natural-language search that works like `grep`. Fast, local, and works with coding agents.
 
-- **Semantic:** Finds concepts ("auth logic"), not just strings.
+
+Natural-language search that works like `grep`. Fast, local, and built for coding agents.
+
+- **Semantic:** Finds concepts ("where do transactions get created?"), not just strings.
 - **Local & Private:** 100% local embeddings via `transformers.js`.
 - **Auto-Isolated:** Each repository gets its own index automatically.
-- **Adaptive:** Runs fast on desktops, throttles down on laptops to prevent overheating.
+- **Bounded Concurrency:** Runs efficiently with capped thread usage.
 - **Agent-Ready:** Native integration with Claude Code.
 
 ## Quick Start
@@ -36,13 +38,22 @@ Natural-language search that works like `grep`. Fast, local, and works with codi
 
     **Your first search will automatically index the repository.** Each repository is automatically isolated with its own index. Switching between repos "just works" — no manual configuration needed. If the background server is running (`osgrep serve`), search goes through the hot daemon; otherwise it falls back to on-demand indexing.
 
+In our public benchmarks, `osgrep` can save about 20% of your LLM tokens and deliver a 30% speedup.
+
+<div align="center">
+  <img src="public/benchmark_results.png" alt="osgrep benchmark" width="100%" style="border-radius: 8px; margin: 20px 0;" />
+</div>
+
+
+
 ## Coding Agent Integration
 
 **Claude Code**
 
 1. Run `osgrep install-claude-code`
 2. Open Claude Code (`claude`) and ask it questions about your codebase.
-3. The plugin’s hooks auto-start `osgrep serve` in the background and shut it down on session end. Claude will use `osgrep --json` via Bash for semantic searches automatically.
+3. Highly reccomend indexing your code base before using the plugin. 
+3. The plugin’s hooks auto-start `osgrep serve` in the background and shut it down on session end. Claude will use `osgrep` for semantic searches automatically.
 
 ## Commands
 
@@ -50,7 +61,6 @@ Natural-language search that works like `grep`. Fast, local, and works with codi
 
 The default command. Searches the current directory using semantic meaning.
 
-The CLI prefers the hot server when available (via `.osgrep/server.json`), falling back to standalone search automatically.
 
 ```bash
 osgrep "how is the database connection pooled?"
@@ -62,10 +72,8 @@ osgrep "how is the database connection pooled?"
 | `-m <n>` | Max total results to return. | `25` |
 | `--per-file <n>` | Max matches to show per file. | `1` |
 | `-c`, `--content` | Show full chunk content instead of snippets. | `false` |
-| `--scores` | Show relevance scores (0.0-1.0). | `false` |
 | `--compact` | Show file paths only (like `grep -l`). | `false` |
 | `-s`, `--sync` | Force re-index changed files before searching. | `false` |
-| `--json` | Dense output for agents. | `false` |
 
 **Examples:**
 
@@ -86,7 +94,7 @@ Manually indexes the repository. Useful if you want to pre-warm the cache or if 
 
 - Respects `.gitignore` and `.osgrepignore` (see [Configuration](#ignoring-files) section).
 - **Smart Indexing:** Only embeds code and config files. Skips binaries, lockfiles, and minified assets.
-- **Adaptive Throttling:** Monitors your RAM and CPU usage. If your system gets hot, indexing slows down automatically.
+- **Bounded Concurrency:** Uses a fixed thread pool to keep your system responsive.
 
 ```bash
 osgrep index              # Index current dir
@@ -134,10 +142,10 @@ osgrep doctor
 
 osgrep is designed to be a "good citizen" on your machine:
 
-1.  **Bounded Concurrency:** Chunking/embedding stay within small thread pools (1–4) and capped batch sizes to keep laptops responsive (no dynamic throttling).
+1.  **Bounded Concurrency:** Chunking/embedding stay within small thread pools (1–4) and capped batch sizes to keep laptops responsive.
 2.  **Smart Chunking:** Uses `tree-sitter` to split code by function/class boundaries, ensuring embeddings capture complete logical blocks.
 3.  **Deduplication:** Identical code blocks (boilerplate, license headers) are embedded once and cached, saving space and time.
-4.  **Hybrid Search:** Uses Reciprocal Rank Fusion (RRF) to combine Vector Search (semantic) with FTS (keyword) for best-of-both-worlds accuracy.
+4.  **Semantic Split Search:** Queries both "Code" and "Docs" separately to ensure documentation doesn't drown out implementation details, then reranks with ColBERT.
 5.  **Global Batching:** A producer/consumer pipeline decouples chunking from embedding. Files are chunked concurrently, queued, embedded in fat batches, and written to LanceDB in bulk.
 6.  **Anchor-Only Scans & Batch Deletes:** File discovery and stale cleanup hit only anchor rows, and stale/changed paths are removed with a single `IN` delete to minimize I/O.
 7.  **Structural Boosting:** Function/class chunks get a small score boost; test/spec paths are slightly downweighted to bubble up primary definitions first.
@@ -179,9 +187,6 @@ osgrep respects both `.gitignore` and `.osgrepignore` files when indexing. Creat
   - **Override auto-detection:** `osgrep --store custom-name "query"`
   - **Clean up old stores:** `rm -rf ~/.osgrep/data/store-name`
   - **Data location:** `~/.osgrep/data`
-  - **Env Vars:**
-      - `MXBAI_STORE`: Override default store name
-      - `OSGREP_PROFILE=1`: Enable performance profiling logs
 
 ## Development
 
@@ -195,17 +200,12 @@ pnpm format       # biome check
 
   - **Index feels stale?** Run `osgrep index` to refresh.
   - **Weird results?** Run `osgrep doctor` to verify models.
-  - **Need a fresh start?** Delete `~/.osgrep/data` and re-index.
+  - **Need a fresh start?** Delete `~/.osgrep/data` and `~/.osgrep/meta.json` and run `osgrep index`.
 
 ## Attribution
 
-osgrep is built upon the foundation of [mgrep](https://github.com/mixedbread-ai/mgrep) by MixedBread. While approximately 90% of the current codebase has been rewritten or substantially modified to enable fully local operation, we acknowledge and appreciate the original architectural concepts and design decisions that informed this work.
+osgrep is built upon the foundation of [mgrep](https://github.com/mixedbread-ai/mgrep) by MixedBread. We acknowledge and appreciate the original architectural concepts and design decisions that informed this work.
 
-Key transformations in osgrep include:
-- Complete transition to local-only embeddings (no remote APIs)
-- New local storage architecture with LanceDB
-- Enhanced chunking, indexing, and watch mode capabilities
-- Extensive tooling for benchmarking and evaluation
 
 See the [NOTICE](NOTICE) file for detailed attribution information.
 

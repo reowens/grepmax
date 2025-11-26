@@ -17,3 +17,4 @@ src/bench/benchmark-agent.ts
 src/bench/generate-benchmark-chart.ts
 src/.env.local
 CLAUDE.md
+.DS_Store

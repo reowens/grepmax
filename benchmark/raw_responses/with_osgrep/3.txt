@@ -1,0 +1,289 @@
+> /clear
+  ⎿  (no content)
+
+> where is the LSP integration configured and initialized? use the osgrep plugin
+
+⏺ I'll use the osgrep plugin to find where the LSP integration is configured and
+  initialized.
+  ⎿  Allowed 2 tools for this command
+
+> The "osgrep" skill is loading
+  ⎿  Allowed 2 tools for this command
+
+⏺ I'll search for where the LSP integration is configured and initialized.
+
+⏺ Bash(osgrep "LSP integration configuration and initialization")
+  ⎿ packages/sdk/python/src/opencode_ai/models/config_lsp_additional_property_type_1.py:
+    73 [Definition]
+      def to_dict(self) -> dict[str, Any]:
+    … +196 lines (ctrl+o to expand)
+
+
+⏺ Let me search more specifically for the LSP server initialization and where it actually
+   starts up:
+
+⏺ Bash(osgrep "how are LSP servers started and managed")
+  ⎿  packages/opencode/src/lsp/index.ts:66
+       import { Log } from "../util/log"
+       import { LSPClient } from "./client"
+     … +190 lines (ctrl+o to expand)
+
+⏺ Great! Now let me read the main LSP integration files to understand the complete setup:
+
+⏺ Read(packages/opencode/src/lsp/index.ts)
+  ⎿  Read 371 lines
+
+⏺ Read(packages/opencode/src/lsp/server.ts)
+  ⎿  Read 1169 lines
+
+⏺ Read(packages/opencode/src/lsp/client.ts)
+  ⎿  Read 216 lines
+
+⏺ Based on the osgrep search and reading the LSP integration files, here's where the LSP
+  integration is configured and initialized in the OpenCode codebase:
+
+  LSP Configuration and Initialization
+
+  Main Entry Point: packages/opencode/src/lsp/index.ts
+
+  Initialization Function (line 125-127):
+  - LSP.init() - The main initialization function that triggers the state setup
+
+  State Management (lines 61-123):
+  - Uses Instance.state() to manage LSP state
+  - Reads configuration from Config.get() at line 65
+  - Can disable all LSPs via cfg.lsp === false (line 67)
+  - Loads built-in LSP servers from the LSPServer namespace (line 77)
+  - Merges custom LSP configurations from config file (lines 80-105)
+
+  Custom LSP Configuration (lines 80-105):
+  - Allows users to configure custom LSP servers via the config file
+  - Supports properties: disabled, extensions, command, env, initialization
+  - Custom servers spawn using child_process.spawn() with the provided command
+
+  Server Definitions: packages/opencode/src/lsp/server.ts
+
+  Contains all built-in LSP server implementations:
+  - TypeScript (line 83): typescript-language-server
+  - Deno (line 55): deno lsp
+  - Vue (line 111): @vue/language-server
+  - ESLint (line 160): vscode-eslint
+  - Gopls (line 211): Go language server
+  - Pyright (line 294): Python language server
+  - RustAnalyzer (line 584): Rust language server
+  - Clangd (line 630): C/C++ language server
+  - And many more (Elixir, Zig, C#, Swift, Svelte, Astro, Java, YAML, Lua, PHP)
+
+  Each server defines:
+  - id: Server identifier
+  - extensions: File extensions it handles
+  - root: Function to find project root
+  - spawn(): Function to spawn the LSP server process
+
+  Client Creation: packages/opencode/src/lsp/client.ts
+
+  Client Creation Function (lines 37-214):
+  - LSPClient.create() - Creates and initializes an LSP client
+  - Sets up JSON-RPC connection using vscode-jsonrpc (lines 41-44)
+  - Handles LSP notifications like textDocument/publishDiagnostics (line 47)
+  - Sends initialize request with workspace configuration (lines 76-116)
+  - Sends initialized notification (line 118)
+
+  Client Spawning Logic: packages/opencode/src/lsp/index.ts
+
+  getClients Function (lines 156-240):
+  - Matches LSP servers to file extensions (line 204)
+  - Finds project roots using server-specific root functions (line 205)
+  - Manages client lifecycle (caching, spawning, error handling)
+  - Uses a schedule() function to spawn servers and create clients (lines 161-201)
+
+  The LSP integration follows this flow:
+  1. Config → Read from config file
+  2. State → Set up LSP state with available servers
+  3. Match → When a file is touched, match servers by extension
+  4. Spawn → Spawn LSP server process via server.spawn(root)
+  5. Connect → Create JSON-RPC connection to server's stdio
+  6. Initialize → Send LSP initialize/initialized handshake
+  7. Use → Client is ready to handle diagnostics, hover, symbols, etc.
+
+> /cost
+  ⎿ Total cost:            $0.97
+    Total duration (API):  4m 58s
+    Total duration (wall): 1h 9m 55s
+    Total code changes:    0 lines added, 0 lines removed
+    Usage by model:
+            claude-haiku:  46.1k input, 2.5k output, 0 cache read, 0 cache write ($0.0585)
+           claude-sonnet:  5.2k input, 8.1k output, 1.0m cache read, 123.4k cache write
+    ($0.91)
+
+
+Total cost:            $0.97
+Total duration (API):  4m 58s
+Total duration (wall): 1h 10m 16s
+Total code changes:    0 lines added, 0 lines removed
+Usage by model:
+        claude-haiku:  46.1k input, 2.5k output, 0 cache read, 0 cache write ($0.0585)
+       claude-sonnet:  5.2k input, 8.1k output, 1.0m cache read, 123.4k cache write ($0.91)
+(base) ryandonofrio@Ryans-MBP opencode % claude
+
+╭─── Claude Code v2.0.53 ───────────────────────────────────────────────────────────────────╮
+│                                        │ Tips for getting started                         │
+│           Welcome back Ryan!           │ Run /init to create a CLAUDE.md file with instr… │
+│                                        │ ──────────────────────────────────────────────── │
+│                 ▐▛███▜▌                │ Recent activity                                  │
+│                ▝▜█████▛▘               │ No recent activity                               │
+│                  ▘▘ ▝▝                 │                                                  │
+│                                        │                                                  │
+│     Sonnet 4.5 · API Usage Billing     │                                                  │
+│   ~/Desktop/osgrep2/testing/opencode   │                                                  │
+╰───────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+ ⚠Auth conflict: Using ANTHROPIC_API_KEY instead of Anthropic Console key. Either unset
+  ANTHROPIC_API_KEY, or run `claude /logout`.
+  /model to try Opus 4.5
+
+> where is the LSP integration configured and initialized? use the osgrep plugin
+
+⏺ I'll use the osgrep plugin to find where the LSP integration is configured and
+  initialized.
+  ⎿  Allowed 2 tools for this command
+
+> The "osgrep" skill is loading
+  ⎿  Allowed 2 tools for this command
+
+⏺ I'll search for where the LSP integration is configured and initialized using osgrep.
+
+⏺ Bash(osgrep "LSP integration configuration initialization")
+  ⎿ packages/sdk/go/config.go:1
+      // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for deta
+    ils.
+    … +194 lines (ctrl+o to expand)
+
+
+⏺ The results show SDK models. Let me search more specifically for the actual LSP server
+  implementation and initialization:
+
+⏺ Bash(osgrep "LSP server initialization startup language server")
+  ⎿ packages/opencode/src/lsp/client.ts:83 [Definition]
+      async function create(input: { serverID: string; server: LSPServer.Handle; root: s
+    tring }) {
+    … +196 lines (ctrl+o to expand)
+
+
+⏺ Great! Now let me search for where LSP servers are configured and registered:
+
+⏺ Bash(osgrep "LSP server configuration registry list of language servers")
+  ⎿  packages/opencode/src/lsp/server.ts:1039
+                   stdin: "pipe",
+                 }).exited
+     … +192 lines (ctrl+o to expand)
+
+⏺ Perfect! Now let me read the key files to understand the complete LSP integration:
+
+⏺ Read(packages/opencode/src/lsp/index.ts)
+  ⎿  Read 371 lines
+
+⏺ Read(packages/opencode/src/lsp/server.ts)
+  ⎿  Read 1169 lines
+
+⏺ Now let me read the client file to understand the initialization:
+
+⏺ Read(packages/opencode/src/lsp/client.ts)
+  ⎿  Read 216 lines
+
+⏺ Perfect! Now I have a complete understanding of the LSP integration. Let me provide a
+  comprehensive answer:
+
+  LSP Integration Configuration and Initialization
+
+  The LSP integration is configured and initialized across three main files:
+
+  1. Main Entry Point: packages/opencode/src/lsp/index.ts
+
+  This is where the LSP system is initialized and configured:
+
+  - Initialization: The init() function at line 125 initializes the state
+  - State Management: Lines 61-123 define the state initialization logic that:
+    - Loads configuration from Config.get() (line 65)
+    - Checks if LSP is globally disabled via cfg.lsp === false (line 67)
+    - Registers all built-in LSP servers from LSPServer namespace (lines 77-79)
+    - Allows custom LSP server configuration via the config file (lines 80-105)
+    - Custom servers can override or extend built-in servers with custom commands,
+  extensions, environment variables, and initialization options
+
+  2. Server Definitions: packages/opencode/src/lsp/server.ts
+
+  This file defines all the built-in LSP server configurations:
+
+  Built-in LSP Servers (exported as named objects):
+  - Deno (line 55) - TypeScript/JavaScript via Deno
+  - Typescript (line 83) - TypeScript/JavaScript via typescript-language-server
+  - Vue (line 111) - Vue.js files
+  - ESLint (line 160) - ESLint linting
+  - Gopls (line 211) - Go language
+  - Rubocop (line 253) - Ruby
+  - Pyright (line 294) - Python
+  - ElixirLS (line 348) - Elixir
+  - Zls (line 404) - Zig
+  - CSharp (line 510) - C#
+  - SourceKit (line 550) - Swift/Objective-C
+  - RustAnalyzer (line 584) - Rust
+  - Clangd (line 630) - C/C++
+  - Svelte (line 770) - Svelte
+  - Astro (line 810) - Astro
+  - JDTLS (line 861) - Java
+  - YamlLS (line 948) - YAML
+  - LuaLS (line 996) - Lua
+  - PHPIntelephense (line 1129) - PHP
+
+  Each server definition includes:
+  - id: Unique identifier
+  - extensions: File extensions it handles
+  - root: Function to determine workspace root (uses NearestRoot helper)
+  - spawn: Function to spawn the language server process (includes auto-download logic)
+
+  3. Client Connection: packages/opencode/src/lsp/client.ts
+
+  Handles the LSP protocol communication:
+
+  - Connection Creation: Line 41-44 creates a message connection with the spawned server
+  process
+  - LSP Initialize Request: Lines 76-116 send the LSP initialize request with:
+    - Root URI, process ID, workspace folders (lines 78-85)
+    - initializationOptions from the server configuration (lines 86-88)
+    - Client capabilities for diagnostics, configuration, etc. (lines 89-105)
+  - Initialized Notification: Line 118 sends the initialized notification
+  - Configuration Sync: Lines 120-124 send initial configuration via
+  workspace/didChangeConfiguration
+
+  Configuration Flow
+
+  1. User config is loaded from .claude/config.yml or similar
+  2. Built-in servers are registered from LSPServer namespace
+  3. User config can disable servers: lsp.serverName.disabled = true
+  4. User config can add custom servers with command, extensions, env, and initialization
+   fields
+  5. When a file is opened, getClients() (line 156 in index.ts) finds matching servers by
+   extension
+  6. The server is spawned if not already running (lines 162-175)
+  7. An LSP client connection is created (lines 177-186)
+  8. The client is cached for reuse (lines 199-200)
+
+> /cost
+  ⎿ Total cost:            $0.2325
+    Total duration (API):  1m 8s
+    Total duration (wall): 1m 16s
+    Total code changes:    0 lines added, 0 lines removed
+    Usage by model:
+            claude-haiku:  15.3k input, 530 output, 0 cache read, 0 cache write ($0.0180)
+           claude-sonnet:  28 input, 1.9k output, 165.2k cache read, 36.3k cache write
+    ($0.2146)
+
+> /export
+  ⎿  Conversation copied to clipboard
+
+─────────────────────────────────────────────────────────────────────────────────────────────
+> 
+─────────────────────────────────────────────────────────────────────────────────────────────
+  ? for shortcuts

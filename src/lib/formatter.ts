@@ -90,9 +90,19 @@ export function formatTextResults(
   results: TextResult[],
   query: string,
   root: string,
-  isPlain: boolean
+  options: {
+    isPlain: boolean;
+    compact?: boolean;
+    content?: boolean;
+  },
 ): string {
   if (results.length === 0) return `osgrep: No results found for "${query}".`;
+
+  // --- MODE: COMPACT (File paths only) ---
+  if (options.compact) {
+    const uniquePaths = Array.from(new Set(results.map((r) => r.path))).sort();
+    return uniquePaths.map((p) => path.relative(root, p)).join("\n");
+  }
 
   const fileGroups = new Map<string, TextResult[]>();
   results.forEach((r) => {
@@ -104,13 +114,18 @@ export function formatTextResults(
 
   // --- MODE A: AGENT (Hyper-Dense) ---
   // Goal: Max information density per token.
-  if (isPlain) {
+  // --- MODE A: AGENT (Hyper-Dense) ---
+  // Goal: Max information density per token.
+  if (options.isPlain) {
     let output = "";
-    
+
+    // Keep snippets compact but present so agents still see the code.
+    const maxLines = 16;
+
     results.forEach((item) => {
       const relPath = path.relative(root, item.path);
       const line = Math.max(1, item.start_line + 1);
-      
+
       // 1. Semantic Tags (The Agent's Guide)
       const tags: string[] = [];
       const type = item.chunk_type || "";
@@ -118,7 +133,20 @@ export function formatTextResults(
       if (relPath.includes("test") || relPath.includes("spec")) tags.push("Test");
       const tagStr = tags.length > 0 ? ` [${tags.join(",")}]` : "";
 
+      const lines = cleanSnippetLines(item.content);
+      const truncated =
+        !options.content && lines.length > maxLines
+          ? [
+            ...lines.slice(0, maxLines),
+            `... (+${lines.length - maxLines} more lines)`,
+          ]
+          : lines;
+
       output += `${relPath}:${line}${tagStr}\n`;
+      truncated.forEach((ln) => {
+        output += `  ${ln}\n`;
+      });
+      output += "\n";
     });
     output += `osgrep results (${results.length} matches across ${fileCount} files)`;
     return output.trim();
@@ -130,23 +158,23 @@ export function formatTextResults(
 
   for (const [filePath, chunks] of fileGroups) {
     chunks.sort((a, b) => a.start_line - b.start_line);
-    
+
     // Smart Stitching Logic
     const merged: TextResult[] = [];
     if (chunks.length > 0) {
-        let current = chunks[0];
-        for (let i = 1; i < chunks.length; i++) {
-            const next = chunks[i];
-            if (next.start_line <= current.end_line + 10) {
-                current.content += `\n   // ...\n${next.content}`;
-                current.end_line = next.end_line;
-                if (next.chunk_type?.match(/function|class/)) current.chunk_type = next.chunk_type;
-            } else {
-                merged.push(current);
-                current = next;
-            }
+      let current = chunks[0];
+      for (let i = 1; i < chunks.length; i++) {
+        const next = chunks[i];
+        if (next.start_line <= current.end_line + 10) {
+          current.content += `\n   // ...\n${next.content}`;
+          current.end_line = next.end_line;
+          if (next.chunk_type?.match(/function|class/)) current.chunk_type = next.chunk_type;
+        } else {
+          merged.push(current);
+          current = next;
         }
-        merged.push(current);
+      }
+      merged.push(current);
     }
 
     const relPath = path.relative(root, filePath);
@@ -165,8 +193,11 @@ export function formatTextResults(
       const lines = cleanSnippetLines(snippet);
       const maxLines = 12;
       const truncated =
-        lines.length > maxLines
-          ? [...lines.slice(0, maxLines), style.dim(`... (+${lines.length - maxLines} more lines)`)]
+        !options.content && lines.length > maxLines
+          ? [
+            ...lines.slice(0, maxLines),
+            style.dim(`... (+${lines.length - maxLines} more lines)`),
+          ]
           : lines;
 
       // Apply syntax highlighting for humans
