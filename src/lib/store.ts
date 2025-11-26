@@ -157,6 +157,11 @@ export interface Store {
   deleteFiles(storeId: string, filePaths: string[]): Promise<void>;
 
   /**
+   * Delete an entire store (drop the table)
+   */
+  deleteStore(storeId: string): Promise<void>;
+
+  /**
    * Optional profiling data for implementations that support it
    */
   getProfile?(): unknown;
