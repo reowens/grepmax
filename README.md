@@ -41,7 +41,7 @@ Natural-language search that works like `grep`. Fast, local, and built for codin
 In our public benchmarks, `osgrep` can save about 20% of your LLM tokens and deliver a 30% speedup.
 
 <div align="center">
-  <img src="public/benchmark_results.png" alt="osgrep benchmark" width="100%" style="border-radius: 8px; margin: 20px 0;" />
+  <img src="public/bench.png" alt="osgrep benchmark" width="100%" style="border-radius: 8px; margin: 20px 0;" />
 </div>
 
 
