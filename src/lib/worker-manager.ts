@@ -20,7 +20,7 @@ export class WorkerManager {
   private isClosing = false;
 
   constructor() {
-    this.worker = this.createWorker();
+    // Lazy load worker
   }
 
   private getWorkerConfig(): { workerPath: string; execArgv: string[] } {
