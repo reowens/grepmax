@@ -1,5 +1,5 @@
 import * as fs from "node:fs";
-import * as os from "node:os";
+
 import * as path from "node:path";
 
 // web-tree-sitter ships a CommonJS build
@@ -7,7 +7,7 @@ const TreeSitter = require("web-tree-sitter");
 const Parser = TreeSitter.Parser;
 const Language = TreeSitter.Language;
 
-const GRAMMARS_DIR = path.join(os.homedir(), ".osgrep", "grammars");
+import { GRAMMARS_DIR } from "./grammar-loader";
 
 
 

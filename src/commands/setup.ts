@@ -7,6 +7,8 @@ import { MODEL_IDS } from "../config";
 import { gracefulExit } from "../lib/exit";
 
 
+import { ensureGrammars } from "../lib/grammar-loader";
+
 export const setup = new Command("setup")
   .description("One-time setup: download models and prepare osgrep")
   .action(async () => {
@@ -17,6 +19,7 @@ export const setup = new Command("setup")
     const root = path.join(home, ".osgrep");
     const models = path.join(root, "models");
     const data = path.join(root, "data");
+    // grammars path is now handled by ensureGrammars but we still want to check it for the summary
     const grammars = path.join(root, "grammars");
 
     try {
@@ -45,42 +48,7 @@ export const setup = new Command("setup")
 
     // Download Grammars
     console.log("\nChecking Tree-sitter Grammars...");
-    if (!fs.existsSync(grammars)) {
-      fs.mkdirSync(grammars, { recursive: true });
-    }
-
-    const GRAMMAR_URLS: Record<string, string> = {
-      typescript:
-        "https://github.com/tree-sitter/tree-sitter-typescript/releases/latest/download/tree-sitter-typescript.wasm",
-      tsx: "https://github.com/tree-sitter/tree-sitter-typescript/releases/latest/download/tree-sitter-tsx.wasm",
-      python:
-        "https://github.com/tree-sitter/tree-sitter-python/releases/latest/download/tree-sitter-python.wasm",
-      go:
-        "https://github.com/tree-sitter/tree-sitter-go/releases/latest/download/tree-sitter-go.wasm",
-    };
-
-    const downloadFile = async (url: string, dest: string) => {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`Failed to download ${url}`);
-      const arrayBuffer = await response.arrayBuffer();
-      fs.writeFileSync(dest, Buffer.from(arrayBuffer));
-    };
-
-    for (const [lang, url] of Object.entries(GRAMMAR_URLS)) {
-      const dest = path.join(grammars, `tree-sitter-${lang}.wasm`);
-      if (fs.existsSync(dest)) {
-        console.log(`✓ Grammar: ${lang}`);
-      } else {
-        process.stdout.write(`⬇ Downloading ${lang} grammar... `);
-        try {
-          await downloadFile(url, dest);
-          console.log("Done");
-        } catch (err) {
-          console.log("Failed");
-          console.error(`  Error downloading ${lang}:`, err);
-        }
-      }
-    }
+    await ensureGrammars();
 
     const modelStatuses = modelIds.map((id) => {
       const modelPath = path.join(models, ...id.split("/"));
