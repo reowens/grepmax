@@ -149,11 +149,23 @@ class EmbeddingWorker {
 
   private toDenseVectors(output: EmbedOutput): number[][] {
     const dims = output.dims || [1, this.vectorDimensions];
-    const batchSize = dims.length >= 1 ? (dims[0] as number) : 1;
-    const hiddenSize =
-      dims.length >= 2 && typeof dims[dims.length - 1] === "number"
-        ? (dims[dims.length - 1] as number)
-        : this.vectorDimensions;
+
+    // Handle 3D output [batch, seq, dim] - usually from 'feature-extraction' with 'cls' pooling
+    // but sometimes ONNX returns [batch, 1, dim] or similar.
+    let batchSize = 1;
+    let hiddenSize = this.vectorDimensions;
+
+    if (dims.length === 3) {
+      batchSize = dims[0];
+      // dims[1] is sequence length (should be 1 for pooled output)
+      hiddenSize = dims[2];
+    } else if (dims.length === 2) {
+      batchSize = dims[0];
+      hiddenSize = dims[1];
+    } else if (dims.length === 1) {
+      // Single vector
+      hiddenSize = dims[0];
+    }
 
     const embeddings: number[][] = [];
     for (let i = 0; i < batchSize; i++) {

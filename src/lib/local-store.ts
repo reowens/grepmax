@@ -660,6 +660,11 @@ export class LocalStore implements Store {
       return { data: [] };
     }
 
+    // Performance: Cap candidates for expensive reranking
+    // MaxSim is O(N^2), so we only rerank the top 100 candidates from the hybrid pool.
+    // The pool is already "good" candidates from Vector + FTS.
+    const candidatesToRerank = candidates.slice(0, 100);
+
     // 3. Rerank (ColBERT + Structural Boosting)
     const queryMatrix = doRerank ? queryEnc.colbert : [];
 
@@ -673,7 +678,7 @@ export class LocalStore implements Store {
       return dot;
     };
 
-    const reranked = candidates.map((doc) => {
+    const reranked = candidatesToRerank.map((doc) => {
       const denseVec = Array.isArray(doc.vector) ? (doc.vector as number[]) : [];
       let score = cosineSim(queryVector, denseVec);
 

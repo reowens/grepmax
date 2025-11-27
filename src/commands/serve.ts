@@ -30,6 +30,7 @@ type PendingAction = "upsert" | "delete";
 let indexState = {
   isIndexing: false,
   indexed: 0,
+  processed: 0,
   total: 0,
 };
 
@@ -237,6 +238,7 @@ export const serve = new Command("serve")
           indexState = {
             isIndexing: info.indexed < info.total,
             indexed: info.indexed,
+            processed: info.processed,
             total: info.total,
           };
         };
@@ -313,7 +315,7 @@ export const serve = new Command("serve")
                 return respondJson(res, 503, {
                   error: "indexing_in_progress",
                   message: "Initial indexing in progress. Please try again later.",
-                  progress: Math.round((indexState.indexed / indexState.total) * 100)
+                  progress: Math.round((indexState.processed / indexState.total) * 100)
                 });
               }
               await new Promise((resolve) => setTimeout(resolve, 100));

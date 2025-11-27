@@ -207,7 +207,7 @@ export class MetaStore {
   }
 
   deleteByPrefix(prefix: string) {
-    const normalizedPrefix = prefix.endsWith("/") ? prefix : prefix + "/";
+    const normalizedPrefix = prefix.endsWith(path.sep) ? prefix : prefix + path.sep;
     for (const key of Object.keys(this.data)) {
       if (key.startsWith(normalizedPrefix)) {
         delete this.data[key];

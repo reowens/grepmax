@@ -8,9 +8,7 @@ import { list } from "./commands/list";
 import { search } from "./commands/search";
 import { setup } from "./commands/setup";
 import { serve } from "./commands/serve";
-import { installClaudeCode } from "./install/claude-code";
-
-// utility functions moved to ./utils
+import { installClaudeCode } from "./commands/claude-code";
 
 program
   .version(

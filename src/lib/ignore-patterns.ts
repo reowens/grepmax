@@ -5,7 +5,6 @@ export const DEFAULT_IGNORE_PATTERNS = [
   "*.bin",
   "*.ipynb",
   "*.pyc",
-  "*.txt",
   "*.onnx",
   // Safety nets for nested non-git folders
   "node_modules",
