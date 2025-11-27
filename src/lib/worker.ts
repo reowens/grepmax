@@ -78,14 +78,31 @@ class EmbeddingWorker {
     model: string,
     options: Record<string, unknown>,
   ): Promise<T> {
+    const tryLoad = async (device?: string) => {
+      const opts = { ...options, device } as any;
+      try {
+        return (await pipeline(task, model, opts)) as unknown as T;
+      } catch {
+        log("Worker: Local model not found or failed. Downloading/Retrying...");
+        env.allowRemoteModels = true;
+        const loaded = (await pipeline(task, model, opts)) as unknown as T;
+        env.allowRemoteModels = false;
+        return loaded;
+      }
+    };
+
+    const preferredDevice = process.env.OSGREP_DEVICE;
+
     try {
-      return (await pipeline(task, model, options)) as unknown as T;
-    } catch {
-      log("Worker: Local model not found. Downloading...");
-      env.allowRemoteModels = true;
-      const loaded = (await pipeline(task, model, options)) as unknown as T;
-      env.allowRemoteModels = false;
-      return loaded;
+      return await tryLoad(preferredDevice);
+    } catch (error) {
+      if (preferredDevice !== "cpu") {
+        console.warn(
+          `Worker: Failed to load model with device "${preferredDevice ?? "auto"}". Falling back to CPU.`,
+        );
+        return await tryLoad("cpu");
+      }
+      throw error;
     }
   }
 
@@ -97,15 +114,15 @@ class EmbeddingWorker {
       try {
         log(`Worker: Loading models from ${CACHE_DIR}...`);
 
-    if (!this.embedPipe) {
-      this.embedPipe = await this.loadPipeline<EmbedPipeline>(
-        "feature-extraction",
-        this.embedModelId,
-        {
-          dtype: "q4",
-        },
-      );
-    }
+        if (!this.embedPipe) {
+          this.embedPipe = await this.loadPipeline<EmbedPipeline>(
+            "feature-extraction",
+            this.embedModelId,
+            {
+              dtype: "q4",
+            },
+          );
+        }
 
         if (!this.colbertPipe) {
           // ColBERT model for late-interaction reranking (custom q8 build)
@@ -159,21 +176,22 @@ class EmbeddingWorker {
     if (!this.embedPipe) await this.initialize();
     if (!this.colbertPipe) await this.initialize();
 
-    const denseOut = await this.embedPipe!(texts, {
-      pooling: "cls",
-      normalize: true,
-      truncation: true,
-      max_length: 256,
-    });
-
-    const colbertOut = await this.colbertPipe!(texts, {
-      pooling: "none",
-      normalize: true,
-      padding: true,
-      truncation: true,
-      max_length: 512,
-    });
-
+    // PARALLEL EXECUTION
+    const [denseOut, colbertOut] = await Promise.all([
+      this.embedPipe!(texts, {
+        pooling: "cls",
+        normalize: true,
+        truncation: true,
+        max_length: 256,
+      }),
+      this.colbertPipe!(texts, {
+        pooling: "none",
+        normalize: true,
+        padding: true,
+        truncation: true,
+        max_length: 512,
+      }),
+    ]);
 
     const denseVectors = this.toDenseVectors(denseOut);
     const results: Array<{ dense: number[]; colbert: Buffer; scale: number }> = [];

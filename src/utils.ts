@@ -68,7 +68,7 @@ const INDEXABLE_EXTENSIONS = new Set([
   ".md",
   ".mdx",
   ".txt",
-  ".env",
+
   ".gitignore",
   ".dockerfile",
   "dockerfile",
@@ -755,7 +755,7 @@ export async function writeServerLock(
       null,
       2,
     ),
-    "utf-8",
+    { encoding: "utf-8", mode: 0o600 },
   );
 }
 

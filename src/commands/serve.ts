@@ -164,9 +164,11 @@ async function respondJson(
 export const serve = new Command("serve")
   .description("Run osgrep as a background server with live indexing")
   .option("-p, --port <port>", "Port to listen on", process.env.OSGREP_PORT || "4444")
+  .option("--parent-pid <pid>", "Parent process ID to watch for auto-shutdown")
   .action(async (_args, cmd) => {
-    const options: { port: string; store?: string } = cmd.optsWithGlobals();
+    const options: { port: string; store?: string; parentPid?: string } = cmd.optsWithGlobals();
     const port = parseInt(options.port, 10);
+    const parentPid = options.parentPid ? parseInt(options.parentPid, 10) : null;
     const root = process.cwd();
     const authToken = randomUUID();
 
@@ -200,6 +202,17 @@ export const serve = new Command("serve")
     process.on("exit", async () => {
       await clearServerLock(root);
     });
+
+    if (parentPid && !Number.isNaN(parentPid)) {
+      setInterval(() => {
+        try {
+          process.kill(parentPid, 0);
+        } catch {
+          console.log(`Parent process ${parentPid} died. Shutting down...`);
+          shutdown();
+        }
+      }, 5000).unref();
+    }
 
     try {
       await ensureSetup({ silent: true });
@@ -319,14 +332,28 @@ export const serve = new Command("serve")
                   : 25;
               const rerank = body.rerank === false ? false : true;
 
-              const searchPath =
-                typeof body.path === "string" && body.path.length > 0
-                  ? path.normalize(
-                    path.isAbsolute(body.path)
-                      ? body.path
-                      : path.join(root, body.path),
-                  )
-                  : root;
+              const searchPath = (() => {
+                if (typeof body.path !== "string" || body.path.length === 0) {
+                  return root;
+                }
+                const normalized = path.normalize(
+                  path.isAbsolute(body.path) ? body.path : path.join(root, body.path),
+                );
+                const resolvedRoot = path.resolve(root);
+                const resolvedPath = path.resolve(normalized);
+
+                // Prevent path traversal
+                if (
+                  !resolvedPath.startsWith(resolvedRoot + path.sep) &&
+                  resolvedPath !== resolvedRoot
+                ) {
+                  // If they try to escape, just clamp to root or throw.
+                  // For security, let's treat it as root or throw an error.
+                  // Throwing is safer/clearer that it was rejected.
+                  throw new Error("Access denied: path outside repository root");
+                }
+                return resolvedPath;
+              })();
 
               const filters =
                 body.filters && typeof body.filters === "object"
