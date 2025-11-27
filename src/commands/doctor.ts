@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { Command } from "commander";
 import { MODEL_IDS } from "../config";
+import { gracefulExit } from "../lib/exit";
 
 export const doctor = new Command("doctor")
   .description("Check osgrep health and paths")
@@ -47,8 +48,9 @@ export const doctor = new Command("doctor")
     console.log(
       `\nSystem: ${os.platform()} ${os.arch()} | Node: ${process.version}`,
     );
-    console.log("\nIf you see ✅ everywhere, you are ready to grep.");
+    console.log("\nIf you see ✅ everywhere, you are search to grep.");
 
     // Exit cleanly
-    process.exit(0);
+    // Exit cleanly
+    await gracefulExit();
   });

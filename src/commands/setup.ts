@@ -4,6 +4,8 @@ import * as path from "node:path";
 import { Command } from "commander";
 import { ensureSetup } from "../lib/setup-helpers";
 import { MODEL_IDS } from "../config";
+import { gracefulExit } from "../lib/exit";
+
 
 export const setup = new Command("setup")
   .description("One-time setup: download models and prepare osgrep")
@@ -95,5 +97,7 @@ export const setup = new Command("setup")
     console.log(`   osgrep "search query"     # Search your code`);
     console.log(`   osgrep doctor             # Check health status`);
 
-    // process.exit(0);
+
+
+    await gracefulExit();
   });

@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { env, pipeline } from "@huggingface/transformers";
+import { Worker } from "node:worker_threads";
 import { MODEL_IDS } from "../config";
 
 const HOMEDIR = os.homedir();
@@ -10,35 +10,43 @@ const LOG_MODELS =
   process.env.OSGREP_DEBUG_MODELS === "1" ||
   process.env.OSGREP_DEBUG_MODELS === "true";
 
-// Ensure transformers knows where to look/save
-env.cacheDir = CACHE_DIR;
-env.allowLocalModels = true;
-env.allowRemoteModels = true;
-
 /**
- * Triggers the download of models by simply initializing the pipelines.
- * transformers.js handles the caching logic automatically.
+ * Triggers the download of models by spawning a worker thread.
+ * This prevents the main thread from loading onnxruntime, avoiding exit crashes.
  */
 export async function downloadModels(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tsWorkerPath = path.join(__dirname, "download-worker.ts");
+    const jsWorkerPath = path.join(__dirname, "download-worker.js");
+    const hasTsWorker = fs.existsSync(tsWorkerPath);
+    const hasJsWorker = fs.existsSync(jsWorkerPath);
+    const runningTs = path.extname(__filename) === ".ts";
+    const isDev = (runningTs && hasTsWorker) || (hasTsWorker && !hasJsWorker);
 
-  try {
-    // 1. Download Dense Model
-    await pipeline("feature-extraction", MODEL_IDS.embed, {
-      dtype: "q4",
+    const workerPath = isDev ? tsWorkerPath : jsWorkerPath;
+    const execArgv = isDev ? ["-r", "ts-node/register"] : [];
+
+    const worker = new Worker(workerPath, { execArgv });
+
+    worker.on("message", (msg) => {
+      if (msg.status === "success") {
+        if (LOG_MODELS) console.log("Worker: Models ready.");
+        resolve();
+      } else {
+        reject(msg.error);
+      }
     });
 
-    // 2. Download ColBERT Model
-    await pipeline("feature-extraction", MODEL_IDS.colbert, {
-      dtype: "q8", 
+    worker.on("error", (err) => {
+      reject(err);
     });
 
-    if (LOG_MODELS) {
-      console.log("Worker: Models ready.");
-    }
-  } catch (err) {
-    console.error("Failed to download models:", err);
-    throw err;
-  }
+    worker.on("exit", (code) => {
+      if (code !== 0) {
+        reject(new Error(`Download worker exited with code ${code}`));
+      }
+    });
+  });
 }
 
 /**
@@ -49,6 +57,6 @@ export function areModelsDownloaded(): boolean {
   // Check if the model directories exist in the cache
   const embedPath = path.join(CACHE_DIR, ...MODEL_IDS.embed.split("/"));
   const colbertPath = path.join(CACHE_DIR, ...MODEL_IDS.colbert.split("/"));
-  
+
   return fs.existsSync(embedPath) && fs.existsSync(colbertPath);
 }

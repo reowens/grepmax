@@ -10,6 +10,7 @@ import {
 } from "../lib/sync-helpers";
 import type { Store } from "../lib/store";
 import { initialSync, MetaStore } from "../utils";
+import { gracefulExit } from "../lib/exit";
 
 const PROFILE_ENABLED =
   process.env.OSGREP_PROFILE === "1" || process.env.OSGREP_PROFILE === "true";
@@ -39,7 +40,7 @@ export const index = new Command("index")
     try {
       await ensureSetup();
       store = await createStore();
-      
+
       // Auto-detect store ID if not explicitly provided
       const indexRoot = options.path || process.cwd();
       const storeId = options.store || getAutoStoreId(indexRoot);
@@ -97,7 +98,8 @@ export const index = new Command("index")
               includeTotal: true,
             }),
           );
-          return; // Let Node exit naturally
+          await gracefulExit();
+          return;
         }
 
         // Wait for all indexing to complete
@@ -133,5 +135,7 @@ export const index = new Command("index")
       const message = error instanceof Error ? error.message : "Unknown error";
       console.error("Failed to index:", message);
       process.exitCode = 1;
+      await gracefulExit(1);
     }
+    await gracefulExit();
   });

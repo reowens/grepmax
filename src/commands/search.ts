@@ -18,6 +18,7 @@ import {
   readServerLock,
 } from "../utils";
 import { formatTextResults, type TextResult } from "../lib/formatter";
+import { gracefulExit } from "../lib/exit";
 
 function toDenseResults(
   root: string,
@@ -313,7 +314,7 @@ export const search: Command = new CommanderCommand("search")
                   actionDescription: "would have indexed",
                 }),
               );
-              process.exit(0);
+              await gracefulExit();
             }
           } catch (err) {
             spinner.fail("Indexing failed");
@@ -347,13 +348,15 @@ export const search: Command = new CommanderCommand("search")
       if (options.json) {
         const dense = toDenseResults(root, results.data);
         console.log(JSON.stringify({ results: dense }));
-        return; // Let Node exit naturally
+        await gracefulExit();
+        return;
       }
 
       // Hint if no results found
       if (results.data.length === 0) {
         if (options.json) {
           console.log(JSON.stringify({ results: [] }));
+          await gracefulExit();
           return;
         }
         if (!didSync) {
@@ -371,7 +374,8 @@ export const search: Command = new CommanderCommand("search")
             );
           }
         }
-        return; // Let Node exit naturally
+        await gracefulExit();
+        return;
       }
 
       // Auto-detect plain mode if not in TTY (e.g. piped to agent)
@@ -391,6 +395,7 @@ export const search: Command = new CommanderCommand("search")
       const message = error instanceof Error ? error.message : "Unknown error";
       console.error("Failed to search:", message);
       process.exitCode = 1;
+      await gracefulExit(1);
     } finally {
       // Always clean up the store
       if (store && typeof store.close === "function") {
@@ -401,4 +406,5 @@ export const search: Command = new CommanderCommand("search")
         }
       }
     }
+    await gracefulExit();
   });

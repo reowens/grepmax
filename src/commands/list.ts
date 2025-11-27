@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Command } from "commander";
+import { gracefulExit } from "../lib/exit";
 
 const style = {
   bold: (s: string) => `\x1b[1m${s}\x1b[22m`,
@@ -73,6 +74,7 @@ export const list = new Command("list")
       console.log(
         `\nRun ${style.green("osgrep index")} in a repository to create your first store.`,
       );
+      await gracefulExit();
       return;
     }
 
@@ -94,6 +96,7 @@ export const list = new Command("list")
       console.log(
         `\nRun ${style.green("osgrep index")} in a repository to create your first store.`,
       );
+      await gracefulExit();
       return;
     }
 
@@ -133,5 +136,6 @@ export const list = new Command("list")
     console.log(
       style.dim(`To use a specific store: osgrep --store <store-name> <query>`),
     );
+    await gracefulExit();
   });
 
