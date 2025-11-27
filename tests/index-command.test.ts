@@ -40,6 +40,10 @@ vi.mock("../src/utils", () => ({
   })),
 }));
 
+vi.mock("../src/lib/exit", () => ({
+  gracefulExit: vi.fn(async () => { }),
+}));
+
 const fakeFileSystem = {
   getFiles: () => [].values(),
   isIgnored: () => false,

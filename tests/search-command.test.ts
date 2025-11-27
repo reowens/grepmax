@@ -10,13 +10,13 @@ const spinner = {
 const mockStore = {
   search: vi.fn(async () => ({ data: [{ metadata: { path: "/repo/file.ts" }, score: 1, type: "text" }] })),
   getInfo: vi.fn(async () => ({ counts: { pending: 0, in_progress: 0 } })),
-  close: vi.fn(async () => {}),
+  close: vi.fn(async () => { }),
 };
 
 const mockFileSystem = {
   getFiles: () => [].values(),
   isIgnored: () => false,
-  loadOsgrepignore: () => {},
+  loadOsgrepignore: () => { },
 };
 
 vi.mock("../src/lib/context", () => ({
@@ -25,11 +25,11 @@ vi.mock("../src/lib/context", () => ({
 }));
 
 vi.mock("../src/lib/setup-helpers", () => ({
-  ensureSetup: vi.fn(async () => {}),
+  ensureSetup: vi.fn(async () => { }),
 }));
 
 vi.mock("../src/lib/store-helpers", () => ({
-  ensureStoreExists: vi.fn(async () => {}),
+  ensureStoreExists: vi.fn(async () => { }),
   isStoreEmpty: vi.fn(async () => true),
 }));
 
@@ -46,7 +46,7 @@ vi.mock("../src/lib/sync-helpers", () => ({
 }));
 
 vi.mock("../src/utils", () => ({
-  MetaStore: class {},
+  MetaStore: class { },
   initialSync: vi.fn(async () => ({
     processed: 1,
     indexed: 1,
@@ -54,6 +54,10 @@ vi.mock("../src/utils", () => ({
   })),
   readServerLock: vi.fn(async () => null),
   formatDenseSnippet: vi.fn((t) => t),
+}));
+
+vi.mock("../src/lib/exit", () => ({
+  gracefulExit: vi.fn(async () => { }),
 }));
 
 import { search } from "../src/commands/search";
