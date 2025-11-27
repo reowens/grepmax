@@ -85,9 +85,11 @@ class EmbeddingWorker {
       } catch {
         log("Worker: Local model not found or failed. Downloading/Retrying...");
         env.allowRemoteModels = true;
-        const loaded = (await pipeline(task, model, opts)) as unknown as T;
-        env.allowRemoteModels = false;
-        return loaded;
+        try {
+          return (await pipeline(task, model, opts)) as unknown as T;
+        } finally {
+          env.allowRemoteModels = false;
+        }
       }
     };
 
@@ -236,7 +238,7 @@ class EmbeddingWorker {
 
   async encodeQuery(
     text: string,
-  ): Promise<{ dense: number[]; colbert: number[][] }> {
+  ): Promise<{ dense: number[]; colbert: number[][]; colbertDim: number }> {
     if (!this.embedPipe || !this.colbertPipe) await this.initialize();
     const embedPipe = this.embedPipe!;
     const colbertPipe = this.colbertPipe!;
@@ -275,7 +277,7 @@ class EmbeddingWorker {
       }
     }
 
-    return { dense: denseVector, colbert: matrix };
+    return { dense: denseVector, colbert: matrix, colbertDim: effectiveDim };
   }
 
 }

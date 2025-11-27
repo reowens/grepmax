@@ -143,28 +143,38 @@ export class LocalStore implements Store {
 
     try {
       const table = await db.openTable(storeId);
-      let existingRows: VectorRecord[] = [];
+
+      // Check for schema/dimension mismatch without loading all rows
+      // We just peek at one row to verify vector dimensions
       let needsMigration = false;
       try {
-        existingRows = (await table.query().toArray()) as VectorRecord[];
+        const sample = (await table.query().limit(1).toArray()) as VectorRecord[];
+        if (sample.length > 0) {
+          const sampleVectorLength =
+            Array.isArray(sample[0].vector)
+              ? (sample[0].vector as number[]).length
+              : 0;
+          if (
+            sampleVectorLength > 0 &&
+            sampleVectorLength !== this.VECTOR_DIMENSIONS
+          ) {
+            needsMigration = true;
+          }
+        }
       } catch {
-        existingRows = [];
-      }
-
-      const sampleVectorLength =
-        existingRows.length > 0 && Array.isArray(existingRows[0].vector)
-          ? (existingRows[0].vector as number[]).length
-          : 0;
-      if (
-        sampleVectorLength > 0 &&
-        sampleVectorLength !== this.VECTOR_DIMENSIONS
-      ) {
-        needsMigration = true;
+        // If query fails, assume we might need migration or table is empty
       }
 
       if (!needsMigration) {
         return table;
       }
+
+      // If we need migration, we have to do it carefully (batching) or just drop if it's too complex for now.
+      // The original code dropped and recreated, but loaded everything into RAM first.
+      // For safety in this hardening phase, if we detect a dimension mismatch, we will DROP the table
+      // because re-indexing is safer than trying to migrate incompatible vectors in-memory.
+      // Users will just have to re-index.
+      console.warn(`[osgrep] Schema mismatch detected for ${storeId}. Recreating table...`);
 
       try {
         await db.dropTable(storeId);
@@ -175,24 +185,6 @@ export class LocalStore implements Store {
       const newTable = await db.createTable(storeId, [this.baseSchemaRow()], {
         schema,
       });
-      if (existingRows.length > 0) {
-        const migrated = existingRows.map((row) => ({
-          ...row,
-          context_prev:
-            typeof row.context_prev === "string" ? row.context_prev : "",
-          context_next:
-            typeof row.context_next === "string" ? row.context_next : "",
-          colbert: Buffer.isBuffer(row.colbert)
-            ? row.colbert
-            : Array.isArray(row.colbert)
-              ? Buffer.from(new Int8Array(row.colbert as number[]))
-              : Buffer.alloc(0),
-          colbert_scale:
-            typeof row.colbert_scale === "number" ? row.colbert_scale : 1,
-          vector: this.normalizeVector(row.vector),
-        }));
-        await newTable.add(migrated);
-      }
       await newTable.delete('id = "seed"');
       return newTable;
     } catch (err) {
@@ -587,6 +579,13 @@ export class LocalStore implements Store {
     const queryVector = queryEnc.dense;
     const doRerank = _search_options?.rerank !== false;
 
+    // Check for dimension mismatch
+    if (queryEnc.colbertDim && queryEnc.colbertDim !== this.colbertDim) {
+      console.warn(
+        `[osgrep] Warning: Model dimension mismatch. Config: ${this.colbertDim}, Model: ${queryEnc.colbertDim}. Scores may be inaccurate.`,
+      );
+    }
+
     // Optional path filter support
     const allFilters = Array.isArray((_filters as { all?: unknown })?.all)
       ? ((_filters as { all?: unknown }).all as Record<string, unknown>[])
@@ -696,10 +695,14 @@ export class LocalStore implements Store {
 
         if (int8) {
           const docMatrix: number[][] = [];
-          for (let i = 0; i < int8.length; i += this.colbertDim) {
+          // Use the actual dimension from the model if available, otherwise fallback to config
+          const dim = queryEnc.colbertDim || this.colbertDim;
+
+          for (let i = 0; i < int8.length; i += dim) {
             const row: number[] = [];
             let isPadding = true;
-            for (let k = 0; k < this.colbertDim; k++) {
+            for (let k = 0; k < dim; k++) {
+              if (i + k >= int8.length) break; // Safety check
               const val = (int8[i + k] / 127) * scale;
               if (val !== 0) isPadding = false;
               row.push(val);

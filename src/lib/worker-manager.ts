@@ -138,8 +138,8 @@ export class WorkerManager {
 
   async encodeQuery(
     text: string,
-  ): Promise<{ dense: number[]; colbert: number[][] }> {
-    return this.sendToWorker<{ dense: number[]; colbert: number[][] }>((id) => ({
+  ): Promise<{ dense: number[]; colbert: number[][]; colbertDim: number }> {
+    return this.sendToWorker<{ dense: number[]; colbert: number[][]; colbertDim: number }>((id) => ({
       id,
       query: { text },
     }));

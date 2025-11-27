@@ -146,11 +146,29 @@ export class MetaStore {
 
   async load() {
     if (this.loaded) return;
+
+    const loadFile = async (p: string) => {
+      const content = await fs.promises.readFile(p, "utf-8");
+      return JSON.parse(content);
+    };
+
     try {
-      const content = await fs.promises.readFile(META_FILE, "utf-8");
-      this.data = JSON.parse(content);
-    } catch (_e) {
-      this.data = {};
+      this.data = await loadFile(META_FILE);
+    } catch (err) {
+      // Try to recover from tmp file if main file is missing or corrupt
+      const tmpFile = `${META_FILE}.tmp`;
+      try {
+        if (fs.existsSync(tmpFile)) {
+          console.warn("[MetaStore] Main meta file corrupt/missing, recovering from tmp...");
+          this.data = await loadFile(tmpFile);
+          // Restore the main file
+          await fs.promises.copyFile(tmpFile, META_FILE);
+        } else {
+          this.data = {};
+        }
+      } catch {
+        this.data = {};
+      }
     }
     this.loaded = true;
   }
@@ -165,10 +183,12 @@ export class MetaStore {
       })
       .then(async () => {
         await fs.promises.mkdir(path.dirname(META_FILE), { recursive: true });
+        const tmpFile = `${META_FILE}.tmp`;
         await fs.promises.writeFile(
-          META_FILE,
+          tmpFile,
           JSON.stringify(this.data, null, 2),
         );
+        await fs.promises.rename(tmpFile, META_FILE);
       });
 
     return this.saveQueue;

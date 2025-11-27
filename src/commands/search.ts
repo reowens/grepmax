@@ -1,4 +1,4 @@
-import { join, relative, normalize } from "node:path";
+import { join, normalize } from "node:path";
 import type { Command } from "commander";
 import { Command as CommanderCommand } from "commander";
 import { createFileSystem, createStore } from "../lib/context";
@@ -12,7 +12,6 @@ import {
   formatDryRunSummary,
 } from "../lib/sync-helpers";
 import {
-  formatDenseSnippet,
   initialSync,
   MetaStore,
   readServerLock,
@@ -20,24 +19,7 @@ import {
 import { formatTextResults, type TextResult } from "../lib/formatter";
 import { gracefulExit } from "../lib/exit";
 
-function toDenseResults(
-  root: string,
-  data: SearchResponse["data"],
-): Array<{ path: string; score: number; content: string }> {
-  return data.map((item) => {
-    const rawPath =
-      typeof (item.metadata as FileMetadata | undefined)?.path === "string"
-        ? ((item.metadata as FileMetadata).path as string)
-        : "";
-    const relPath = rawPath ? relative(root, rawPath) || rawPath : "unknown";
-    const snippet = formatDenseSnippet(item.text ?? "");
-    return {
-      path: relPath,
-      score: Number(item.score.toFixed(3)),
-      content: snippet,
-    };
-  });
-}
+
 
 function toTextResults(data: SearchResponse["data"]): TextResult[] {
   return data.map((r) => {
@@ -98,7 +80,6 @@ export const search: Command = new CommanderCommand("search")
       scores: boolean;
       compact: boolean;
       plain: boolean;
-      json: boolean;
       sync: boolean;
       dryRun: boolean;
     } = cmd.optsWithGlobals();
@@ -109,6 +90,7 @@ export const search: Command = new CommanderCommand("search")
 
     const root = process.cwd();
 
+    // Try server fast path for standard text search
     async function tryServerFastPath(): Promise<boolean> {
       const lock = await readServerLock(root);
       if (!lock || !lock.authToken) return false;
@@ -149,14 +131,19 @@ export const search: Command = new CommanderCommand("search")
         if (!searchRes.ok) return false;
         const payload = await searchRes.json();
 
-        // 1. HANDLE JSON MODE (Machine)
-        if (options.json) {
-          console.log(JSON.stringify(payload));
-          return true;
+        // Check for the status flag
+        if (payload.status === "indexing") {
+          const pct = payload.progress ?? 0;
+          console.error(
+            `⚠️  osgrep is currently indexing (${pct}% complete). Results may be partial.\n`,
+          );
         }
 
-        // 2. Rehydrate server results to match local store shape expected by formatTextResults.
-        // Server payload is flat ({ path, content/snippet, score, chunk_type? }).
+        // Auto-detect plain mode if not in TTY (e.g. piped to agent)
+        const isTTY = process.stdout.isTTY;
+        const shouldBePlain = options.plain || !isTTY;
+
+        // Rehydrate server results to match local store shape expected by formatTextResults.
         const rehydratedResults = (payload.results ?? []).map((r: any) => ({
           score: typeof r.score === "number" ? r.score : 0,
           text: r.content ?? r.snippet ?? "",
@@ -171,19 +158,6 @@ export const search: Command = new CommanderCommand("search")
               typeof r.num_lines === "number" ? r.num_lines : undefined,
           },
         }));
-
-        // 3. HANDLE TEXT MODE (Agent/Human)
-        // Check for the status flag
-        if (payload.status === "indexing") {
-          const pct = payload.progress ?? 0;
-          console.error(
-            `⚠️  osgrep is currently indexing (${pct}% complete). Results may be partial.\n`,
-          );
-        }
-
-        // Auto-detect plain mode if not in TTY (e.g. piped to agent)
-        const isTTY = process.stdout.isTTY;
-        const shouldBePlain = options.plain || !isTTY;
 
         const mappedResults: TextResult[] = toTextResults(
           rehydratedResults as SearchResponse["data"],
@@ -201,16 +175,14 @@ export const search: Command = new CommanderCommand("search")
       }
     }
 
-    if (options.json) {
-      const fast = await tryServerFastPath();
-      if (fast) {
-        return;
-      }
+    const fast = await tryServerFastPath();
+    if (fast) {
+      return;
     }
 
     let store: Store | null = null;
     try {
-      await ensureSetup({ silent: options.json });
+      await ensureSetup();
       store = await createStore();
 
       // Auto-detect store ID if not explicitly provided
@@ -227,99 +199,71 @@ export const search: Command = new CommanderCommand("search")
         });
         const metaStore = new MetaStore();
 
-        if (options.json) {
-          // JSON mode: silent indexing without UI
-          await initialSync(
+        // Human/Agent mode
+        const isTTY = process.stdout.isTTY;
+        let abortController: AbortController | undefined;
+        let signal: AbortSignal | undefined;
+
+        // If non-interactive (Agent), enforce a timeout to prevent hanging
+        if (!isTTY) {
+          abortController = new AbortController();
+          signal = abortController.signal;
+          setTimeout(() => {
+            abortController?.abort();
+          }, 10000); // 10s timeout
+        }
+
+        // Show spinner and progress
+        const { spinner, onProgress } = createIndexingSpinner(
+          root,
+          options.sync ? "Indexing..." : "Indexing repository (first run)...",
+        );
+
+        try {
+          const result = await initialSync(
             store,
             fileSystem,
             storeId,
             root,
             options.dryRun,
-            undefined, // No progress callback
+            onProgress,
             metaStore,
-            undefined, // No timeout for JSON mode (usually machine controlled)
+            signal,
           );
-          if (!options.dryRun) {
+
+          if (signal?.aborted) {
+            spinner.warn(
+              `Indexing timed out (${result.processed}/${result.total}). Results may be partial.`,
+            );
+          } else {
             while (true) {
               const info = await store.getInfo(storeId);
-              if (info.counts.pending === 0 && info.counts.in_progress === 0) {
+              spinner.text = `Indexing ${info.counts.pending + info.counts.in_progress} file(s)`;
+              if (
+                info.counts.pending === 0 &&
+                info.counts.in_progress === 0
+              ) {
                 break;
               }
               await new Promise((resolve) => setTimeout(resolve, 1000));
             }
+            spinner.succeed(
+              `Indexing complete (${result.processed}/${result.total}) • indexed ${result.indexed}`,
+            );
           }
           didSync = true;
+
           if (options.dryRun) {
-            console.log(JSON.stringify({ results: [] }));
-            return;
-          }
-        } else {
-          // Human/Agent mode
-          const isTTY = process.stdout.isTTY;
-          let abortController: AbortController | undefined;
-          let signal: AbortSignal | undefined;
-
-          // If non-interactive (Agent), enforce a timeout to prevent hanging
-          if (!isTTY) {
-            abortController = new AbortController();
-            signal = abortController.signal;
-            setTimeout(() => {
-              abortController?.abort();
-            }, 10000); // 10s timeout
-          }
-
-          // Show spinner and progress
-          const { spinner, onProgress } = createIndexingSpinner(
-            root,
-            options.sync ? "Indexing..." : "Indexing repository (first run)...",
-          );
-
-          try {
-            const result = await initialSync(
-              store,
-              fileSystem,
-              storeId,
-              root,
-              options.dryRun,
-              onProgress,
-              metaStore,
-              signal,
+            console.log(
+              formatDryRunSummary(result, {
+                actionDescription: "would have indexed",
+              }),
             );
-
-            if (signal?.aborted) {
-              spinner.warn(
-                `Indexing timed out (${result.processed}/${result.total}). Results may be partial.`,
-              );
-            } else {
-              while (true) {
-                const info = await store.getInfo(storeId);
-                spinner.text = `Indexing ${info.counts.pending + info.counts.in_progress} file(s)`;
-                if (
-                  info.counts.pending === 0 &&
-                  info.counts.in_progress === 0
-                ) {
-                  break;
-                }
-                await new Promise((resolve) => setTimeout(resolve, 1000));
-              }
-              spinner.succeed(
-                `Indexing complete (${result.processed}/${result.total}) • indexed ${result.indexed}`,
-              );
-            }
-            didSync = true;
-
-            if (options.dryRun) {
-              console.log(
-                formatDryRunSummary(result, {
-                  actionDescription: "would have indexed",
-                }),
-              );
-              await gracefulExit();
-            }
-          } catch (err) {
-            spinner.fail("Indexing failed");
-            throw err;
+            await gracefulExit();
           }
+        } catch (err) {
+          spinner.fail("Indexing failed");
+          throw err;
         }
       }
 
@@ -344,21 +288,8 @@ export const search: Command = new CommanderCommand("search")
         },
       );
 
-      // Handle JSON output
-      if (options.json) {
-        const dense = toDenseResults(root, results.data);
-        console.log(JSON.stringify({ results: dense }));
-        await gracefulExit();
-        return;
-      }
-
       // Hint if no results found
       if (results.data.length === 0) {
-        if (options.json) {
-          console.log(JSON.stringify({ results: [] }));
-          await gracefulExit();
-          return;
-        }
         if (!didSync) {
           try {
             const info = await store.getInfo(storeId);

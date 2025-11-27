@@ -303,6 +303,23 @@ export const serve = new Command("serve")
             return respondJson(res, 413, { error: "payload_too_large" });
           }
 
+          // Block until initial indexing is complete to prevent race conditions
+          if (indexState.isIndexing) {
+            // We can either wait or return 503. Waiting is better for UX but might timeout.
+            // Let's wait up to 5 seconds, then return 503 if still indexing.
+            const startWait = Date.now();
+            while (indexState.isIndexing) {
+              if (Date.now() - startWait > 5000) {
+                return respondJson(res, 503, {
+                  error: "indexing_in_progress",
+                  message: "Initial indexing in progress. Please try again later.",
+                  progress: Math.round((indexState.indexed / indexState.total) * 100)
+                });
+              }
+              await new Promise((resolve) => setTimeout(resolve, 100));
+            }
+          }
+
           let receivedBytes = 0;
           let rejected = false;
           const chunks: Buffer[] = [];

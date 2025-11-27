@@ -6,11 +6,11 @@ export const GRAMMARS_DIR = path.join(os.homedir(), ".osgrep", "grammars");
 
 const GRAMMAR_URLS: Record<string, string> = {
     typescript:
-        "https://github.com/tree-sitter/tree-sitter-typescript/releases/latest/download/tree-sitter-typescript.wasm",
-    tsx: "https://github.com/tree-sitter/tree-sitter-typescript/releases/latest/download/tree-sitter-tsx.wasm",
+        "https://github.com/tree-sitter/tree-sitter-typescript/releases/download/v0.20.1/tree-sitter-typescript.wasm",
+    tsx: "https://github.com/tree-sitter/tree-sitter-typescript/releases/download/v0.20.1/tree-sitter-tsx.wasm",
     python:
-        "https://github.com/tree-sitter/tree-sitter-python/releases/latest/download/tree-sitter-python.wasm",
-    go: "https://github.com/tree-sitter/tree-sitter-go/releases/latest/download/tree-sitter-go.wasm",
+        "https://github.com/tree-sitter/tree-sitter-python/releases/download/v0.20.1/tree-sitter-python.wasm",
+    go: "https://github.com/tree-sitter/tree-sitter-go/releases/download/v0.20.0/tree-sitter-go.wasm",
 };
 
 const downloadFile = async (url: string, dest: string) => {
