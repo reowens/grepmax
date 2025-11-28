@@ -190,22 +190,21 @@ class EmbeddingWorker {
     if (!this.embedPipe) await this.initialize();
     if (!this.colbertPipe) await this.initialize();
 
-    // PARALLEL EXECUTION
-    const [denseOut, colbertOut] = await Promise.all([
-      this.embedPipe!(texts, {
-        pooling: "cls",
-        normalize: true,
-        truncation: true,
-        max_length: 256,
-      }),
-      this.colbertPipe!(texts, {
-        pooling: "none",
-        normalize: true,
-        padding: true,
-        truncation: true,
-        max_length: 512,
-      }),
-    ]);
+    // SEQUENTIAL EXECUTION (Reduces peak RAM usage)
+    const denseOut = await this.embedPipe!(texts, {
+      pooling: "cls",
+      normalize: true,
+      truncation: true,
+      max_length: 256,
+    });
+
+    const colbertOut = await this.colbertPipe!(texts, {
+      pooling: "none",
+      normalize: true,
+      padding: true,
+      truncation: true,
+      max_length: 512,
+    });
 
     const denseVectors = this.toDenseVectors(denseOut);
     const results: Array<{ dense: number[]; colbert: Buffer; scale: number }> = [];
