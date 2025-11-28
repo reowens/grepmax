@@ -4,6 +4,6 @@
  */
 export async function gracefulExit(code = 0) {
     // Give stdout/stderr a moment to flush
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 250));
     process.exit(code);
 }

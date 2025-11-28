@@ -16,6 +16,6 @@ export const WORKER_TIMEOUT_MS = Number.parseInt(
 );
 
 export const MAX_WORKER_MEMORY_MB = Number.parseInt(
-  process.env.OSGREP_MAX_WORKER_MEMORY_MB || "2048",
+  process.env.OSGREP_MAX_WORKER_MEMORY_MB || "2000",
   10,
 );
