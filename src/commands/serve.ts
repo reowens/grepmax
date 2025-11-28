@@ -189,6 +189,7 @@ export const serve = new Command("serve")
 
     let store: Store | null = null;
     let watcher: FSWatcher | null = null;
+    let server: http.Server | null = null;
     const metaStore = new MetaStore();
 
     const shutdown = async () => {
@@ -253,25 +254,32 @@ export const serve = new Command("serve")
         );
         clearInterval(memoryMonitor);
 
-        // Spawn a new server process with the same port and parent PID
-        const { spawn } = require("node:child_process");
-        const args = ["serve", "--port", String(port)];
-        if (parentPid) {
-          args.push("--parent-pid", String(parentPid));
-        }
+        const restart = () => {
+          // Spawn a new server process with the same port and parent PID
+          const { spawn } = require("node:child_process");
+          const args = ["serve", "--port", String(port)];
+          if (parentPid) {
+            args.push("--parent-pid", String(parentPid));
+          }
 
-        const newServer = spawn(process.execPath, [process.argv[1], ...args], {
-          detached: true,
-          stdio: "inherit",
-        });
+          const child = spawn(process.execPath, [process.argv[1], ...args], {
+            detached: true,
+            stdio: "inherit",
+          });
+          child.unref();
 
-        newServer.unref();
-
-        // Give the new server a moment to start, then shut down this one
-        setTimeout(() => {
-          console.log("[osgrep serve] New server started. Shutting down old instance...");
+          console.log(
+            "[osgrep serve] New server started. Shutting down old instance..."
+          );
           shutdown();
-        }, 2000);
+        };
+
+        // Ensure we release the port before spawning the replacement
+        if (server && typeof server.close === "function") {
+          server.close(restart);
+        } else {
+          restart();
+        }
       }
     }, MEMORY_CHECK_INTERVAL_MS).unref();
 
@@ -329,7 +337,7 @@ export const serve = new Command("serve")
 
       watcher = await createWatcher(store, storeId, root, metaStore);
 
-      const server = http.createServer(async (req, res) => {
+      server = http.createServer(async (req, res) => {
         const rawAuth =
           typeof req.headers.authorization === "string"
             ? req.headers.authorization
@@ -477,7 +485,7 @@ export const serve = new Command("serve")
         return respondJson(res, 404, { error: "not_found" });
       });
 
-      server.listen(port, "127.0.0.1", async () => {
+      server!.listen(port, "127.0.0.1", async () => {
         await writeServerLock(port, process.pid, root, authToken);
         const lock = await readServerLock(root);
         console.log(
