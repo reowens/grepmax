@@ -143,28 +143,38 @@ export class LocalStore implements Store {
 
     try {
       const table = await db.openTable(storeId);
-      let existingRows: VectorRecord[] = [];
+
+      // Check for schema/dimension mismatch without loading all rows
+      // We just peek at one row to verify vector dimensions
       let needsMigration = false;
       try {
-        existingRows = (await table.query().toArray()) as VectorRecord[];
+        const sample = (await table.query().limit(1).toArray()) as VectorRecord[];
+        if (sample.length > 0) {
+          const sampleVectorLength =
+            Array.isArray(sample[0].vector)
+              ? (sample[0].vector as number[]).length
+              : 0;
+          if (
+            sampleVectorLength > 0 &&
+            sampleVectorLength !== this.VECTOR_DIMENSIONS
+          ) {
+            needsMigration = true;
+          }
+        }
       } catch {
-        existingRows = [];
-      }
-
-      const sampleVectorLength =
-        existingRows.length > 0 && Array.isArray(existingRows[0].vector)
-          ? (existingRows[0].vector as number[]).length
-          : 0;
-      if (
-        sampleVectorLength > 0 &&
-        sampleVectorLength !== this.VECTOR_DIMENSIONS
-      ) {
-        needsMigration = true;
+        // If query fails, assume we might need migration or table is empty
       }
 
       if (!needsMigration) {
         return table;
       }
+
+      // If we need migration, we have to do it carefully (batching) or just drop if it's too complex for now.
+      // The original code dropped and recreated, but loaded everything into RAM first.
+      // For safety in this hardening phase, if we detect a dimension mismatch, we will DROP the table
+      // because re-indexing is safer than trying to migrate incompatible vectors in-memory.
+      // Users will just have to re-index.
+      console.warn(`[osgrep] Schema mismatch detected for ${storeId}. Recreating table...`);
 
       try {
         await db.dropTable(storeId);
@@ -175,24 +185,6 @@ export class LocalStore implements Store {
       const newTable = await db.createTable(storeId, [this.baseSchemaRow()], {
         schema,
       });
-      if (existingRows.length > 0) {
-        const migrated = existingRows.map((row) => ({
-          ...row,
-          context_prev:
-            typeof row.context_prev === "string" ? row.context_prev : "",
-          context_next:
-            typeof row.context_next === "string" ? row.context_next : "",
-          colbert: Buffer.isBuffer(row.colbert)
-            ? row.colbert
-            : Array.isArray(row.colbert)
-              ? Buffer.from(new Int8Array(row.colbert as number[]))
-              : Buffer.alloc(0),
-          colbert_scale:
-            typeof row.colbert_scale === "number" ? row.colbert_scale : 1,
-          vector: this.normalizeVector(row.vector),
-        }));
-        await newTable.add(migrated);
-      }
       await newTable.delete('id = "seed"');
       return newTable;
     } catch (err) {
@@ -587,6 +579,13 @@ export class LocalStore implements Store {
     const queryVector = queryEnc.dense;
     const doRerank = _search_options?.rerank !== false;
 
+    // Check for dimension mismatch
+    if (queryEnc.colbertDim && queryEnc.colbertDim !== this.colbertDim) {
+      console.warn(
+        `[osgrep] Warning: Model dimension mismatch. Config: ${this.colbertDim}, Model: ${queryEnc.colbertDim}. Scores may be inaccurate.`,
+      );
+    }
+
     // Optional path filter support
     const allFilters = Array.isArray((_filters as { all?: unknown })?.all)
       ? ((_filters as { all?: unknown }).all as Record<string, unknown>[])
@@ -611,12 +610,12 @@ export class LocalStore implements Store {
     // A. Search Code (High Priority - Get 300)
     const codeQuery = table.search(queryVector)
       .where(whereClause ? `${whereClause} AND ${codeClause}` : codeClause)
-      .limit(300);
+      .limit(100);
 
     // B. Search Docs (Low Priority - Get 50)
     const docQuery = table.search(queryVector)
       .where(whereClause ? `${whereClause} AND ${docClause}` : docClause)
-      .limit(50);
+      .limit(100);
 
     // C. FTS Search (Get 50)
     // Note: LanceDB FTS requires a string argument to search()
@@ -626,7 +625,7 @@ export class LocalStore implements Store {
       if (whereClause) {
         ftsQuery = ftsQuery.where(whereClause);
       }
-      ftsPromise = (ftsQuery.limit(50).toArray() as Promise<VectorRecord[]>).catch((e) => {
+      ftsPromise = (ftsQuery.limit(100).toArray() as Promise<VectorRecord[]>).catch((e) => {
         console.warn("FTS search failed (index missing?):", e instanceof Error ? e.message : String(e));
         return [];
       });
@@ -661,6 +660,10 @@ export class LocalStore implements Store {
       return { data: [] };
     }
 
+    // Performance: We rerank all candidates from the hybrid pool (max 300).
+    // MaxSim is O(N^2), but 300 is manageable and ensures we don't drop good FTS/Doc matches.
+    const candidatesToRerank = candidates;
+
     // 3. Rerank (ColBERT + Structural Boosting)
     const queryMatrix = doRerank ? queryEnc.colbert : [];
 
@@ -674,7 +677,7 @@ export class LocalStore implements Store {
       return dot;
     };
 
-    const reranked = candidates.map((doc) => {
+    const reranked = candidatesToRerank.map((doc) => {
       const denseVec = Array.isArray(doc.vector) ? (doc.vector as number[]) : [];
       let score = cosineSim(queryVector, denseVec);
 
@@ -696,15 +699,25 @@ export class LocalStore implements Store {
 
         if (int8) {
           const docMatrix: number[][] = [];
-          for (let i = 0; i < int8.length; i += this.colbertDim) {
+          // CRITICAL: Stride by the config dimension (assumes config matches stored data).
+          // If CONFIG.COLBERT_DIM changes after indexing, decoding will be incorrect.
+          const stride = this.colbertDim;
+
+          for (let i = 0; i < int8.length; i += stride) {
             const row: number[] = [];
             let isPadding = true;
-            for (let k = 0; k < this.colbertDim; k++) {
+
+            // Iterate up to the stride width
+            for (let k = 0; k < stride; k++) {
+              if (i + k >= int8.length) break;
+
               const val = (int8[i + k] / 127) * scale;
               if (val !== 0) isPadding = false;
+
               row.push(val);
             }
-            if (!isPadding) {
+            // Only push complete, non-padding rows to prevent dimension mismatches
+            if (!isPadding && row.length === stride) {
               docMatrix.push(row);
             }
           }

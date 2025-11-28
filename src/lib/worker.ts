@@ -85,9 +85,11 @@ class EmbeddingWorker {
       } catch {
         log("Worker: Local model not found or failed. Downloading/Retrying...");
         env.allowRemoteModels = true;
-        const loaded = (await pipeline(task, model, opts)) as unknown as T;
-        env.allowRemoteModels = false;
-        return loaded;
+        try {
+          return (await pipeline(task, model, opts)) as unknown as T;
+        } finally {
+          env.allowRemoteModels = false;
+        }
       }
     };
 
@@ -147,11 +149,23 @@ class EmbeddingWorker {
 
   private toDenseVectors(output: EmbedOutput): number[][] {
     const dims = output.dims || [1, this.vectorDimensions];
-    const batchSize = dims.length >= 1 ? (dims[0] as number) : 1;
-    const hiddenSize =
-      dims.length >= 2 && typeof dims[dims.length - 1] === "number"
-        ? (dims[dims.length - 1] as number)
-        : this.vectorDimensions;
+
+    // Handle 3D output [batch, seq, dim] - usually from 'feature-extraction' with 'cls' pooling
+    // but sometimes ONNX returns [batch, 1, dim] or similar.
+    let batchSize = 1;
+    let hiddenSize = this.vectorDimensions;
+
+    if (dims.length === 3) {
+      batchSize = dims[0];
+      // dims[1] is sequence length (should be 1 for pooled output)
+      hiddenSize = dims[2];
+    } else if (dims.length === 2) {
+      batchSize = dims[0];
+      hiddenSize = dims[1];
+    } else if (dims.length === 1) {
+      // Single vector
+      hiddenSize = dims[0];
+    }
 
     const embeddings: number[][] = [];
     for (let i = 0; i < batchSize; i++) {
@@ -176,22 +190,21 @@ class EmbeddingWorker {
     if (!this.embedPipe) await this.initialize();
     if (!this.colbertPipe) await this.initialize();
 
-    // PARALLEL EXECUTION
-    const [denseOut, colbertOut] = await Promise.all([
-      this.embedPipe!(texts, {
-        pooling: "cls",
-        normalize: true,
-        truncation: true,
-        max_length: 256,
-      }),
-      this.colbertPipe!(texts, {
-        pooling: "none",
-        normalize: true,
-        padding: true,
-        truncation: true,
-        max_length: 512,
-      }),
-    ]);
+    // SEQUENTIAL EXECUTION (Reduces peak RAM usage)
+    const denseOut = await this.embedPipe!(texts, {
+      pooling: "cls",
+      normalize: true,
+      truncation: true,
+      max_length: 256,
+    });
+
+    const colbertOut = await this.colbertPipe!(texts, {
+      pooling: "none",
+      normalize: true,
+      padding: true,
+      truncation: true,
+      max_length: 512,
+    });
 
     const denseVectors = this.toDenseVectors(denseOut);
     const results: Array<{ dense: number[]; colbert: Buffer; scale: number }> = [];
@@ -236,7 +249,7 @@ class EmbeddingWorker {
 
   async encodeQuery(
     text: string,
-  ): Promise<{ dense: number[]; colbert: number[][] }> {
+  ): Promise<{ dense: number[]; colbert: number[][]; colbertDim: number }> {
     if (!this.embedPipe || !this.colbertPipe) await this.initialize();
     const embedPipe = this.embedPipe!;
     const colbertPipe = this.colbertPipe!;
@@ -275,7 +288,7 @@ class EmbeddingWorker {
       }
     }
 
-    return { dense: denseVector, colbert: matrix };
+    return { dense: denseVector, colbert: matrix, colbertDim: effectiveDim };
   }
 
 }
@@ -307,7 +320,8 @@ if (parentPort) {
 
         if (message.query) {
           const query = await worker.encodeQuery(message.query.text);
-          parentPort?.postMessage({ id: message.id, query });
+          const memory = process.memoryUsage();
+          parentPort?.postMessage({ id: message.id, query, memory });
           return;
         }
 

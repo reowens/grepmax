@@ -146,11 +146,29 @@ export class MetaStore {
 
   async load() {
     if (this.loaded) return;
+
+    const loadFile = async (p: string) => {
+      const content = await fs.promises.readFile(p, "utf-8");
+      return JSON.parse(content);
+    };
+
     try {
-      const content = await fs.promises.readFile(META_FILE, "utf-8");
-      this.data = JSON.parse(content);
-    } catch (_e) {
-      this.data = {};
+      this.data = await loadFile(META_FILE);
+    } catch (err) {
+      // Try to recover from tmp file if main file is missing or corrupt
+      const tmpFile = `${META_FILE}.tmp`;
+      try {
+        if (fs.existsSync(tmpFile)) {
+          console.warn("[MetaStore] Main meta file corrupt/missing, recovering from tmp...");
+          this.data = await loadFile(tmpFile);
+          // Restore the main file
+          await fs.promises.copyFile(tmpFile, META_FILE);
+        } else {
+          this.data = {};
+        }
+      } catch {
+        this.data = {};
+      }
     }
     this.loaded = true;
   }
@@ -165,10 +183,12 @@ export class MetaStore {
       })
       .then(async () => {
         await fs.promises.mkdir(path.dirname(META_FILE), { recursive: true });
+        const tmpFile = `${META_FILE}.tmp`;
         await fs.promises.writeFile(
-          META_FILE,
+          tmpFile,
           JSON.stringify(this.data, null, 2),
         );
+        await fs.promises.rename(tmpFile, META_FILE);
       });
 
     return this.saveQueue;
@@ -187,7 +207,7 @@ export class MetaStore {
   }
 
   deleteByPrefix(prefix: string) {
-    const normalizedPrefix = prefix.endsWith("/") ? prefix : prefix + "/";
+    const normalizedPrefix = prefix.endsWith(path.sep) ? prefix : prefix + path.sep;
     for (const key of Object.keys(this.data)) {
       if (key.startsWith(normalizedPrefix)) {
         delete this.data[key];
@@ -596,67 +616,70 @@ export async function initialSync(
 
   // Second pass: chunk + embed + write using global batching (parallel chunking)
   if (!dryRun) {
-    await Promise.all(
-      candidates.map((candidate) =>
-        limit(async () => {
-          if (signal?.aborted) return;
-          try {
-            const buffer = await fs.promises.readFile(candidate.filePath);
-            const { chunks, indexed: didIndex } = await indexFile(
-              store,
-              storeId,
-              candidate.filePath,
-              path.basename(candidate.filePath),
-              metaStore,
-              profile,
-              buffer,
-              candidate.hash,
-              storeIsEmpty,
-            );
-            pendingIndexCount = Math.max(0, pendingIndexCount - 1);
-            if (didIndex) {
-              indexed += 1;
-              if (chunks.length > 0) {
-                embedQueue.push(...chunks);
-                if (embedQueue.length >= EMBED_BATCH_SIZE) {
-                  await queueFlush();
+    const INDEX_BATCH = 200;
+    for (let i = 0; i < candidates.length; i += INDEX_BATCH) {
+      const slice = candidates.slice(i, i + INDEX_BATCH);
+      await Promise.all(
+        slice.map((candidate) =>
+          limit(async () => {
+            if (signal?.aborted) return;
+            try {
+              const buffer = await fs.promises.readFile(candidate.filePath);
+              const { chunks, indexed: didIndex } = await indexFile(
+                store,
+                storeId,
+                candidate.filePath,
+                path.basename(candidate.filePath),
+                metaStore,
+                profile,
+                buffer,
+                candidate.hash,
+                storeIsEmpty,
+              );
+              pendingIndexCount = Math.max(0, pendingIndexCount - 1);
+              if (didIndex) {
+                indexed += 1;
+                if (chunks.length > 0) {
+                  embedQueue.push(...chunks);
+                  if (embedQueue.length >= EMBED_BATCH_SIZE) {
+                    await queueFlush();
+                  }
+                }
+
+                // Periodic meta save
+                if (metaStore && !SKIP_META_SAVE && indexed % 25 === 0) {
+                  const saveStart = PROFILE_ENABLED ? now() : null;
+                  metaStore
+                    .save()
+                    .catch((err) =>
+                      console.error("Failed to auto-save meta:", err),
+                    );
+                  if (PROFILE_ENABLED && saveStart && profile) {
+                    profile.metaSaveCount += 1;
+                    profile.sections.metaSave =
+                      (profile.sections.metaSave ?? 0) + toMs(saveStart);
+                  }
                 }
               }
-
-
-              // Periodic meta save
-              if (metaStore && !SKIP_META_SAVE && indexed % 25 === 0) {
-                const saveStart = PROFILE_ENABLED ? now() : null;
-                metaStore
-                  .save()
-                  .catch((err) =>
-                    console.error("Failed to auto-save meta:", err),
-                  );
-                if (PROFILE_ENABLED && saveStart && profile) {
-                  profile.metaSaveCount += 1;
-                  profile.sections.metaSave =
-                    (profile.sections.metaSave ?? 0) + toMs(saveStart);
-                }
-              }
+              onProgress?.({
+                processed,
+                indexed,
+                total,
+                filePath: candidate.filePath,
+              });
+            } catch (_err) {
+              pendingIndexCount = Math.max(0, pendingIndexCount - 1);
+              onProgress?.({
+                processed,
+                indexed,
+                total,
+                filePath: candidate.filePath,
+              });
             }
-            onProgress?.({
-              processed,
-              indexed,
-              total,
-              filePath: candidate.filePath,
-            });
-          } catch (_err) {
-            pendingIndexCount = Math.max(0, pendingIndexCount - 1);
-            onProgress?.({
-              processed,
-              indexed,
-              total,
-              filePath: candidate.filePath,
-            });
-          }
-        }),
-      ),
-    );
+          }),
+        ),
+      );
+    }
   }
 
   await queueFlush(true);

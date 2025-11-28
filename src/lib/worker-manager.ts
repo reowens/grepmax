@@ -2,11 +2,12 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { Worker } from "node:worker_threads";
 import { v4 as uuidv4 } from "uuid";
-import { WORKER_TIMEOUT_MS } from "../config";
+import { MAX_WORKER_MEMORY_MB, WORKER_TIMEOUT_MS } from "../config";
 
 type WorkerRequest =
   | { id: string; hybrid: { texts: string[] } }
-  | { id: string; query: { text: string } };
+  | { id: string; query: { text: string } }
+  | { type: "shutdown" };
 
 type PendingRequest = {
   resolve: (value: unknown) => void;
@@ -19,9 +20,10 @@ export class WorkerManager {
   private pendingRequests = new Map<string, PendingRequest>();
   private isClosing = false;
 
-  constructor() {
-    // Lazy load worker
-  }
+  // Mutex queue: ensures only 1 in-flight request at a time.
+  private queue: Promise<void> = Promise.resolve();
+  private consecutiveRecycles = 0; // Track recycles for same request
+  private lastRequestId: string | null = null; // Track current request
 
   private getWorkerConfig(): { workerPath: string; execArgv: string[] } {
     const tsWorkerPath = path.join(__dirname, "worker.ts");
@@ -44,43 +46,103 @@ export class WorkerManager {
     worker.on("message", (message) => this.handleMessage(message));
     worker.on("error", (err) => {
       console.error("Worker error:", err);
+      // If the worker errors out, we should probably restart it or at least reject pending
+      // But let's rely on 'exit' to handle the cleanup/restart logic if it crashes.
+      // Just reject pending requests here.
       this.rejectAll(err instanceof Error ? err : new Error(String(err)));
-      // Let the worker exit; ensure we create a fresh one next time.
-      this.worker = null;
     });
     worker.on("exit", (code) => {
       if (!this.isClosing && code !== 0) {
-        console.error(
-          `Worker crashed (code ${code}). It will auto-restart on next request.`,
-        );
-        const error = new Error(`Worker exited with code ${code}`);
-        this.rejectAll(error);
+        console.error(`Worker crashed (code ${code}).`);
+        // We don't reject all here anymore, because we have retry logic in sendToWorkerUnqueued.
+        // But we should still clean up if there are pending requests that WON'T be retried?
+        // Actually, if we rely on retry logic, we should just let the pending promise reject
+        // so the retry loop catches it.
+        this.rejectAll(new Error(`Worker exited with code ${code}`));
       }
-      // Clear reference so ensureWorker will spawn a new worker on demand.
       this.worker = null;
     });
 
     return worker;
   }
 
+  private async recycleWorker(reason: string, requestId?: string) {
+    if (this.isClosing || !this.worker) return;
+
+    // Track consecutive recycles for the same request
+    if (requestId && requestId === this.lastRequestId) {
+      this.consecutiveRecycles++;
+    } else {
+      this.consecutiveRecycles = 1;
+      this.lastRequestId = requestId || null;
+    }
+
+    // If we've recycled too many times for the same request, something is wrong
+    if (this.consecutiveRecycles > 3) {
+      console.error(
+        `[WorkerManager] Too many recycles for the same request (${this.consecutiveRecycles}). Likely a file that's too large. Skipping.`,
+      );
+      this.consecutiveRecycles = 0;
+      this.lastRequestId = null;
+      // Reject the current request so it doesn't retry
+      const pending = this.pendingRequests.get(requestId!);
+      if (pending) {
+        this.pendingRequests.delete(requestId!);
+        if (pending.timeoutId) clearTimeout(pending.timeoutId);
+        pending.reject(
+          new Error(
+            "Worker recycled too many times for this request. File may be too large.",
+          ),
+        );
+      }
+      return;
+    }
+
+    console.warn(
+      `[WorkerManager] Recycling worker (attempt ${this.consecutiveRecycles}/3): ${reason}`,
+    );
+
+    // 1. Remove listeners so we don't trigger "crash" logic
+    const oldWorker = this.worker;
+    this.worker = null; // Next request will spawn new one
+    oldWorker.removeAllListeners();
+
+    // 2. Gracefully terminate
+    await oldWorker.terminate();
+  }
+
   private handleMessage(message: any) {
-    const { id, hybrids, query, error } = message;
+    const { id, hybrids, query, error, memory } = message;
     const pending = this.pendingRequests.get(id);
     if (!pending) return;
 
     if (pending.timeoutId) clearTimeout(pending.timeoutId);
 
-    if (error) {
-      pending.reject(new Error(error));
-    } else if (hybrids !== undefined) {
-      pending.resolve(hybrids);
-    } else if (query !== undefined) {
-      pending.resolve(query);
-    } else {
-      pending.resolve(undefined);
-    }
+    if (error) pending.reject(new Error(error));
+    else if (hybrids !== undefined) pending.resolve(hybrids);
+    else if (query !== undefined) pending.resolve(query);
+    else pending.resolve(undefined);
 
     this.pendingRequests.delete(id);
+
+    // Reset recycle counter on success
+    if (id === this.lastRequestId) {
+      this.consecutiveRecycles = 0;
+      this.lastRequestId = null;
+    }
+
+    // Check memory usage
+    if (memory && memory.rss) {
+      const rssMb = Math.round(memory.rss / 1024 / 1024);
+      if (rssMb > MAX_WORKER_MEMORY_MB) {
+        // Recycle immediately since we are done with this request
+        // and the queue ensures no other request is running.
+        this.recycleWorker(
+          `Memory limit exceeded (${rssMb}MB > ${MAX_WORKER_MEMORY_MB}MB)`,
+          id,
+        ).catch((err) => console.error("Failed to recycle worker:", err));
+      }
+    }
   }
 
   private rejectAll(error: Error) {
@@ -98,22 +160,64 @@ export class WorkerManager {
     return this.worker;
   }
 
-  private async sendToWorker<T>(
+  private enqueue<T>(task: () => Promise<T>): Promise<T> {
+    if (this.isClosing) {
+      return Promise.reject(new Error("WorkerManager is closing"));
+    }
+
+    const run = this.queue.then(task, task);
+
+    // Keep the queue alive even if this task fails.
+    this.queue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    return run;
+  }
+
+  private async sendToWorkerUnqueued<T>(
+    buildPayload: (id: string) => WorkerRequest,
+  ): Promise<T> {
+    const MAX_RETRIES = 1;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        return await this.attemptWorkerRequest<T>(buildPayload);
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        console.warn(`[WorkerManager] Request failed (attempt ${attempt + 1}/${MAX_RETRIES + 1}): ${lastError.message}`);
+
+        // If it was a timeout, we already killed the worker in attemptWorkerRequest.
+        // If it was a crash, the exit handler cleared this.worker.
+        // So next attempt will automatically spawn a new worker.
+
+        if (attempt < MAX_RETRIES) {
+          // Wait a bit before retrying
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+    }
+    throw lastError || new Error("Worker request failed after retries");
+  }
+
+  private attemptWorkerRequest<T>(
     buildPayload: (id: string) => WorkerRequest,
   ): Promise<T> {
     const worker = this.ensureWorker();
+    const id = uuidv4();
+    const message = buildPayload(id);
 
-    return new Promise((resolve, reject) => {
-      const id = uuidv4();
-      const payload = buildPayload(id);
-
+    return new Promise<T>((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         const pending = this.pendingRequests.get(id);
         if (pending) {
           this.pendingRequests.delete(id);
-          reject(
-            new Error(`Worker request timed out after ${WORKER_TIMEOUT_MS}ms`),
-          );
+          const err = new Error(`Worker request timed out after ${WORKER_TIMEOUT_MS}ms`);
+          reject(err);
+          // If it timed out, the worker is likely stuck. Kill it.
+          this.recycleWorker("Request timeout");
         }
       }, WORKER_TIMEOUT_MS);
 
@@ -123,48 +227,57 @@ export class WorkerManager {
         timeoutId,
       });
 
-      worker.postMessage(payload);
+      worker.postMessage(message);
     });
+  }
+
+  private async sendToWorker<T>(
+    buildPayload: (id: string) => WorkerRequest,
+  ): Promise<T> {
+    return this.enqueue(() => this.sendToWorkerUnqueued<T>(buildPayload));
   }
 
   async computeHybrid(
     texts: string[],
   ): Promise<Array<{ dense: number[]; colbert: Buffer; scale: number }>> {
-    return this.sendToWorker<Array<{ dense: number[]; colbert: Buffer; scale: number }>>((id) => ({
-      id,
-      hybrid: { texts },
-    }));
+    return this.sendToWorker((id) => ({ id, hybrid: { texts } }));
   }
 
   async encodeQuery(
     text: string,
-  ): Promise<{ dense: number[]; colbert: number[][] }> {
-    return this.sendToWorker<{ dense: number[]; colbert: number[][] }>((id) => ({
-      id,
-      query: { text },
-    }));
+  ): Promise<{ dense: number[]; colbert: number[][]; colbertDim: number }> {
+    return this.sendToWorker((id) => ({ id, query: { text } }));
   }
 
   async close(): Promise<void> {
     this.isClosing = true;
+
+    // Let any queued task finish or fail, then shutdown.
     try {
-      this.worker?.postMessage({ type: "shutdown" });
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    } catch (err) {
-      // Silent cleanup
+      await this.queue;
+    } catch {
+      // ignore
     }
+
+    try {
+      this.worker?.postMessage({ type: "shutdown" } satisfies WorkerRequest);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    } catch {
+      // ignore
+    }
+
     try {
       if (this.worker) {
         await this.worker.terminate();
       }
-    } catch (_err) {
-      // Silent cleanup
+    } catch {
+      // ignore
     } finally {
       this.worker = null;
       this.pendingRequests.clear();
+      this.queue = Promise.resolve();
     }
   }
 }
 
-// Singleton instance to avoid spinning up multiple heavy embedding workers.
 export const workerManager = new WorkerManager();

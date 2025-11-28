@@ -10,35 +10,37 @@
  * @param docEmbeddings - Array of vectors [seq_len_d, dim]
  */
 export function maxSim(queryEmbeddings: number[][], docEmbeddings: number[][]): number {
-    let totalScore = 0;
-  
-    // Iterate over every query token
-    for (const qVec of queryEmbeddings) {
-      let maxDotProduct = -Infinity;
-  
-      // Compare against every document token
-      for (const dVec of docEmbeddings) {
-        // Compute Dot Product
-        let dot = 0;
-        for (let i = 0; i < qVec.length; i++) {
-          dot += qVec[i] * dVec[i];
-        }
-  
-        if (dot > maxDotProduct) {
-          maxDotProduct = dot;
-        }
+  let totalScore = 0;
+
+  // Iterate over every query token
+  for (const qVec of queryEmbeddings) {
+    let maxDotProduct = -Infinity;
+
+    // Compare against every document token
+    for (const dVec of docEmbeddings) {
+      // Compute Dot Product
+      let dot = 0;
+      // Safety: Use the smaller dimension to avoid NaN if models mismatch
+      const limit = Math.min(qVec.length, dVec.length);
+      for (let i = 0; i < limit; i++) {
+        dot += qVec[i] * dVec[i];
       }
-      
-      // Sum the best matches
-      totalScore += maxDotProduct;
+
+      if (dot > maxDotProduct) {
+        maxDotProduct = dot;
+      }
     }
-  
-    return totalScore;
+
+    // Sum the best matches
+    totalScore += maxDotProduct;
   }
-  
-  /**
-   * Optimized version using unrolled loops or simple matrix multiplication thoughts.
-   * If performance becomes a bottleneck, we can optimize this specific function 
-   * or move it to a tiny WASM module, but V8 handles this surprisingly well 
-   * for batch sizes < 100.
-   */
+
+  return totalScore;
+}
+
+/**
+ * Optimized version using unrolled loops or simple matrix multiplication thoughts.
+ * If performance becomes a bottleneck, we can optimize this specific function 
+ * or move it to a tiny WASM module, but V8 handles this surprisingly well 
+ * for batch sizes < 100.
+ */

@@ -123,11 +123,25 @@ export class TreeSitterChunker {
   ): Promise<Chunk[]> {
     const ext = path.extname(filePath).toLowerCase();
     let lang = "";
-    if (ext === ".ts") lang = "typescript";
-    else if (ext === ".tsx") lang = "tsx";
-    else if (ext === ".py") lang = "python";
-    else if (ext === ".js" || ext === ".jsx") lang = "tsx";
-    else if (ext === ".go") lang = "go";
+    const languageExtensions: { [key: string]: string } = {
+      ".ts": "typescript",
+      ".tsx": "tsx",
+      ".py": "python",
+      ".js": "tsx",
+      ".jsx": "tsx",
+      ".go": "go",
+      ".rs": "rust",
+      ".cpp": "cpp",
+      ".c": "c",
+      ".h": "c",
+      ".hpp": "cpp",
+      ".java": "java",
+      ".cs": "c_sharp",
+      ".rb": "ruby",
+      ".php": "php",
+      ".json": "json",
+    };
+    lang = languageExtensions[ext] || "";
     if (!lang) return [];
 
     const language = await this.getLanguage(lang);
@@ -144,8 +158,8 @@ export class TreeSitterChunker {
     let cursorRow = 0;
     let sawDefinition = false;
 
-    const isDefType = (t: string) =>
-      [
+    const isDefType = (t: string) => {
+      const common = [
         "function_declaration",
         "function_definition",
         "method_definition",
@@ -153,7 +167,46 @@ export class TreeSitterChunker {
         "class_definition",
         "interface_declaration",
         "type_alias_declaration",
-      ].includes(t);
+      ];
+      const extras: Record<string, string[]> = {
+        go: ["function_declaration", "method_declaration", "type_declaration"],
+        rust: ["function_item", "impl_item", "trait_item", "struct_item", "enum_item"],
+        cpp: [
+          "function_definition",
+          "class_specifier",
+          "struct_specifier",
+          "enum_specifier",
+          "namespace_definition",
+        ],
+        c: ["function_definition", "struct_specifier", "enum_specifier"],
+        java: [
+          "method_declaration",
+          "class_declaration",
+          "interface_declaration",
+          "enum_declaration",
+        ],
+        c_sharp: [
+          "method_declaration",
+          "class_declaration",
+          "interface_declaration",
+          "enum_declaration",
+          "struct_declaration",
+          "namespace_declaration",
+        ],
+        ruby: ["method", "class", "module"],
+        php: [
+          "function_definition",
+          "method_declaration",
+          "class_declaration",
+          "interface_declaration",
+        ],
+        json: ["pair"],
+      };
+
+      if (common.includes(t)) return true;
+      if (extras[lang] && extras[lang].includes(t)) return true;
+      return false;
+    };
 
     const classify = (
       node: TreeSitterNode,

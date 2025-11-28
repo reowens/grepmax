@@ -1,6 +1,7 @@
 import * as http from "node:http";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as os from "node:os";
 import { randomUUID } from "node:crypto";
 import { Command } from "commander";
 import chokidar, { type FSWatcher } from "chokidar";
@@ -30,10 +31,24 @@ type PendingAction = "upsert" | "delete";
 let indexState = {
   isIndexing: false,
   indexed: 0,
+  processed: 0,
   total: 0,
 };
 
 const MAX_REQUEST_BYTES = 10 * 1024 * 1024;
+
+// Memory monitoring configuration
+const MEMORY_CHECK_INTERVAL_MS = 30_000; // Check every 30 seconds
+const MEMORY_WARNING_THRESHOLD_MB = Number.parseInt(
+  process.env.OSGREP_MEMORY_WARNING_MB ||
+  String(Math.floor((os.totalmem() / 1024 / 1024) * 0.6)), // 60% of system RAM
+  10
+);
+const MEMORY_RESTART_THRESHOLD_MB = Number.parseInt(
+  process.env.OSGREP_MEMORY_RESTART_MB ||
+  String(Math.floor((os.totalmem() / 1024 / 1024) * 0.75)), // 75% of system RAM
+  10
+);
 
 function toDenseResults(
   storeRoot: string,
@@ -214,6 +229,52 @@ export const serve = new Command("serve")
       }, 5000).unref();
     }
 
+    // Memory monitoring: Check every 30 seconds and gracefully restart if needed
+    let lastMemoryWarning = 0;
+    const memoryMonitor = setInterval(() => {
+      const memUsage = process.memoryUsage();
+      const rssMb = Math.round(memUsage.rss / 1024 / 1024);
+
+      // Log warning if above warning threshold (but only once per 5 minutes)
+      if (rssMb > MEMORY_WARNING_THRESHOLD_MB) {
+        const now = Date.now();
+        if (now - lastMemoryWarning > 300_000) { // 5 minutes
+          console.warn(
+            `[osgrep serve] Memory usage high: ${rssMb}MB (warning threshold: ${MEMORY_WARNING_THRESHOLD_MB}MB)`
+          );
+          lastMemoryWarning = now;
+        }
+      }
+
+      // Graceful restart if above restart threshold
+      if (rssMb > MEMORY_RESTART_THRESHOLD_MB) {
+        console.warn(
+          `[osgrep serve] Memory limit exceeded: ${rssMb}MB > ${MEMORY_RESTART_THRESHOLD_MB}MB. Restarting gracefully...`
+        );
+        clearInterval(memoryMonitor);
+
+        // Spawn a new server process with the same port and parent PID
+        const { spawn } = require("node:child_process");
+        const args = ["serve", "--port", String(port)];
+        if (parentPid) {
+          args.push("--parent-pid", String(parentPid));
+        }
+
+        const newServer = spawn(process.execPath, [process.argv[1], ...args], {
+          detached: true,
+          stdio: "inherit",
+        });
+
+        newServer.unref();
+
+        // Give the new server a moment to start, then shut down this one
+        setTimeout(() => {
+          console.log("[osgrep serve] New server started. Shutting down old instance...");
+          shutdown();
+        }, 2000);
+      }
+    }, MEMORY_CHECK_INTERVAL_MS).unref();
+
     try {
       await ensureSetup({ silent: true });
       await metaStore.load();
@@ -237,6 +298,7 @@ export const serve = new Command("serve")
           indexState = {
             isIndexing: info.indexed < info.total,
             indexed: info.indexed,
+            processed: info.processed,
             total: info.total,
           };
         };
@@ -301,6 +363,23 @@ export const serve = new Command("serve")
 
           if (Number.isFinite(declaredLength) && declaredLength > MAX_REQUEST_BYTES) {
             return respondJson(res, 413, { error: "payload_too_large" });
+          }
+
+          // Block until initial indexing is complete to prevent race conditions
+          if (indexState.isIndexing) {
+            // We can either wait or return 503. Waiting is better for UX but might timeout.
+            // Let's wait up to 5 seconds, then return 503 if still indexing.
+            const startWait = Date.now();
+            while (indexState.isIndexing) {
+              if (Date.now() - startWait > 5000) {
+                return respondJson(res, 503, {
+                  error: "indexing_in_progress",
+                  message: "Initial indexing in progress. Please try again later.",
+                  progress: Math.round((indexState.processed / indexState.total) * 100)
+                });
+              }
+              await new Promise((resolve) => setTimeout(resolve, 100));
+            }
           }
 
           let receivedBytes = 0;
