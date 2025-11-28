@@ -52,7 +52,7 @@ In our public benchmarks, `osgrep` can save about 20% of your LLM tokens and del
 
 1. Run `osgrep install-claude-code`
 2. Open Claude Code (`claude`) and ask it questions about your codebase.
-3. Highly reccomend indexing your code base before using the plugin. 
+3. Highly recommend indexing your code base before using the plugin. 
 4. The plugin’s hooks auto-start `osgrep serve` in the background and shut it down on session end. Claude will use `osgrep` for semantic searches automatically but can encouraged to do so.
 
 ## Commands
