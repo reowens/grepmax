@@ -88,7 +88,7 @@ export const list = new Command("list")
       });
     } catch (error) {
       console.error("Failed to read stores:", error);
-      process.exit(1);
+      await gracefulExit(1);
     }
 
     if (stores.length === 0) {
