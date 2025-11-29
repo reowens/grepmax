@@ -12,22 +12,36 @@ env.cacheDir = CACHE_DIR;
 env.allowLocalModels = true;
 env.allowRemoteModels = true;
 
+// Suppress noisy warnings from transformers.js/onnxruntime
+const originalWarn = console.warn;
+console.warn = (...args) => {
+    if (args[0] && typeof args[0] === "string" && args[0].includes("Unable to determine content-length")) {
+        return;
+    }
+    originalWarn(...args);
+};
+
 // Helper to download with timeout
 async function downloadModelWithTimeout(modelId: string, dtype: any) {
     const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
-    const downloadPromise = pipeline("feature-extraction", modelId, {
-        dtype,
-        progress_callback: (progress: any) => {
-            if (parentPort) parentPort.postMessage({ type: "progress", progress });
-        },
-    });
+    try {
+        const downloadPromise = pipeline("feature-extraction", modelId, {
+            dtype,
+            progress_callback: (progress: any) => {
+                if (parentPort) parentPort.postMessage({ type: "progress", progress });
+            },
+        });
 
-    const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error(`Download timed out after ${TIMEOUT_MS}ms`)), TIMEOUT_MS);
-    });
+        const timeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error(`Download timed out after ${TIMEOUT_MS}ms`)), TIMEOUT_MS);
+        });
 
-    return Promise.race([downloadPromise, timeoutPromise]);
+        return Promise.race([downloadPromise, timeoutPromise]);
+    } catch (err) {
+        console.error(`Worker: pipeline creation failed for ${modelId}:`, err);
+        throw err;
+    }
 }
 
 async function download() {
@@ -48,7 +62,8 @@ async function download() {
     } catch (error) {
         console.error("Worker failed to download models:", error);
         if (parentPort) {
-            parentPort.postMessage({ status: "error", error: error instanceof Error ? error.message : String(error) });
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            parentPort.postMessage({ status: "error", error: errorMsg });
         } else {
             process.exit(1);
         }

@@ -29,12 +29,18 @@ export async function downloadModels(): Promise<void> {
     const worker = new Worker(workerPath, { execArgv });
 
     worker.on("message", (msg) => {
+      if (msg.type === "progress") {
+        // Ignore progress messages for now, or log if debug enabled
+        return;
+      }
+
       if (msg.status === "success") {
         if (LOG_MODELS) console.log("Worker: Models ready.");
         resolve();
-      } else {
-        reject(msg.error);
+      } else if (msg.status === "error") {
+        reject(new Error(msg.error || "Unknown worker error"));
       }
+      // Ignore other messages
     });
 
     worker.on("error", (err) => {
