@@ -24,6 +24,8 @@ export class WorkerManager {
   private queue: Promise<void> = Promise.resolve();
   private consecutiveRecycles = 0; // Track recycles for same request
   private lastRequestId: string | null = null; // Track current request
+  private requestsSinceRecycle = 0;
+  private readonly RECYCLE_THRESHOLD = 100;
 
   private getWorkerConfig(): { workerPath: string; execArgv: string[] } {
     const tsWorkerPath = path.join(__dirname, "worker.ts");
@@ -142,6 +144,15 @@ export class WorkerManager {
           id,
         ).catch((err) => console.error("Failed to recycle worker:", err));
       }
+    }
+
+    // Proactive recycling to prevent slow leaks
+    this.requestsSinceRecycle++;
+    if (this.requestsSinceRecycle >= this.RECYCLE_THRESHOLD) {
+      this.requestsSinceRecycle = 0;
+      this.recycleWorker("Proactive recycle (request limit reached)").catch(
+        (err) => console.error("Failed to recycle worker:", err),
+      );
     }
   }
 

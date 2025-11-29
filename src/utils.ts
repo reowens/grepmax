@@ -22,7 +22,7 @@ const PROFILE_ENABLED =
 const SKIP_META_SAVE =
   process.env.OSGREP_SKIP_META_SAVE === "1" ||
   process.env.OSGREP_SKIP_META_SAVE === "true";
-const DEFAULT_EMBED_BATCH_SIZE = 48;
+const DEFAULT_EMBED_BATCH_SIZE = 24;
 
 // Extensions we consider for indexing to avoid binary noise and improve relevance.
 const INDEXABLE_EXTENSIONS = new Set([
@@ -363,9 +363,11 @@ export async function indexFile(
     indexed = true;
   }
 
-  if (indexed && metaStore) {
-    metaStore.set(filePath, hash);
-  }
+  // DEFERRED: We do NOT update the meta store here anymore.
+  // We only update it after the vectors are successfully written to the DB.
+  // if (indexed && metaStore) {
+  //   metaStore.set(filePath, hash);
+  // }
 
   if (indexed && PROFILE_ENABLED && indexStart && profile) {
     profile.sections.index = (profile.sections.index ?? 0) + toMs(indexStart);
@@ -494,6 +496,21 @@ export async function initialSync(
     writeBuffer = [];
     const writeStart = PROFILE_ENABLED ? now() : null;
     await store.insertBatch(storeId, toWrite);
+
+    // CHECKPOINTING FIX: Update meta store only after successful write
+    if (metaStore) {
+      const uniquePaths = new Set(toWrite.map(r => r.path as string));
+      for (const p of uniquePaths) {
+        // We need the hash. Since we don't have it handy in a map here easily without looking up,
+        // we can rely on the fact that 'toWrite' contains the records.
+        // Optimization: Create a map of path -> hash from the batch
+        const record = toWrite.find(r => r.path === p);
+        if (record && record.hash) {
+          metaStore.set(p, record.hash as string);
+        }
+      }
+    }
+
     if (PROFILE_ENABLED && writeStart && profile) {
       profile.sections.tableWrite =
         (profile.sections.tableWrite ?? 0) + toMs(writeStart);
@@ -529,7 +546,7 @@ export async function initialSync(
 
   const CONCURRENCY = Math.max(1, Math.min(4, os.cpus().length || 4));
   const limit = pLimit(CONCURRENCY);
-  const BATCH_SIZE = 10; // Small batches keep memory pressure predictable
+  const BATCH_SIZE = 5; // Small batches keep memory pressure predictable
 
   const candidates: IndexCandidate[] = [];
   let embedFlushQueue = Promise.resolve();
@@ -616,7 +633,7 @@ export async function initialSync(
 
   // Second pass: chunk + embed + write using global batching (parallel chunking)
   if (!dryRun) {
-    const INDEX_BATCH = 200;
+    const INDEX_BATCH = 50;
     for (let i = 0; i < candidates.length; i += INDEX_BATCH) {
       const slice = candidates.slice(i, i + INDEX_BATCH);
       await Promise.all(
@@ -679,6 +696,8 @@ export async function initialSync(
           }),
         ),
       );
+      // Force flush between batches to ensure backpressure
+      await queueFlush(true);
     }
   }
 
