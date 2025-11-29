@@ -1,6 +1,6 @@
 import { workerManager } from "../workers/worker-manager";
 import { CONFIG } from "../../config";
-import { maxSim } from "./colbert-math";
+import { maxSim, cosineSim } from "./colbert-math";
 import type {
     SearchFilter,
     SearchResponse,
@@ -17,47 +17,35 @@ export class Searcher {
     constructor(private db: VectorDB) { }
 
     private mapRecordToChunk(record: VectorRecord, score: number): ChunkType {
-        const contextPrev =
-            typeof record.context_prev === "string" ? record.context_prev : "";
-        const contextNext =
-            typeof record.context_next === "string" ? record.context_next : "";
-        const fullText = `${contextPrev}${record.content ?? ""}${contextNext} `;
-        const startLine = (record.start_line as number) ?? 0;
-        const endLine = (record.end_line as number) ?? startLine;
-        const chunkType =
-            typeof (record as { chunk_type?: unknown }).chunk_type === "string"
-                ? ((record as { chunk_type?: string }).chunk_type as string)
-                : undefined;
+        const fullText = `${record.context_prev || ""}${record.content || ""}${record.context_next || ""} `;
+        const startLine = record.start_line || 0;
+        const endLine = record.end_line || startLine;
 
         return {
             type: "text",
             text: fullText,
             score,
             metadata: {
-                path: record.path as string,
-                hash: (record.hash as string) || "",
-                is_anchor: record.is_anchor === true,
+                path: record.path,
+                hash: record.hash || "",
+                is_anchor: !!record.is_anchor,
             },
             generated_metadata: {
                 start_line: startLine,
                 num_lines: Math.max(1, endLine - startLine + 1),
-                type: chunkType,
+                type: record.chunk_type,
             },
         };
     }
 
     private applyStructureBoost(record: VectorRecord, score: number): number {
         let adjusted = score;
-        const chunkType =
-            typeof (record as { chunk_type?: unknown }).chunk_type === "string"
-                ? ((record as { chunk_type?: string }).chunk_type as string)
-                : "";
+        const chunkType = record.chunk_type || "";
         const boosted = ["function", "class", "method", "interface", "type_alias"];
         if (boosted.includes(chunkType)) {
             adjusted *= 1.25;
         }
-        const pathStr =
-            typeof record.path === "string" ? record.path.toLowerCase() : "";
+        const pathStr = record.path.toLowerCase();
         if (
             pathStr.includes(".test.") ||
             pathStr.includes(".spec.") ||
@@ -179,14 +167,7 @@ export class Searcher {
         // 3. Rerank
         const queryMatrix = doRerank ? queryEnc.colbert : [];
 
-        const cosineSim = (a: number[], b: number[]) => {
-            const dim = Math.min(a.length, b.length);
-            let dot = 0;
-            for (let i = 0; i < dim; i++) {
-                dot += a[i] * b[i];
-            }
-            return dot;
-        };
+
 
         const reranked = candidates.map((doc) => {
             const denseVec = Array.isArray(doc.vector)

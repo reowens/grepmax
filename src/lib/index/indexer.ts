@@ -70,7 +70,7 @@ export class Indexer {
 
         // Chunking
         const chunkStart = PROFILE_ENABLED ? process.hrtime.bigint() : null;
-        const parsedChunks = await this.chunker.chunk(
+        const { chunks: parsedChunks, metadata } = await this.chunker.chunk(
             options.metadata?.path || "unknown",
             content,
         );
@@ -83,6 +83,7 @@ export class Indexer {
         const anchorChunk = buildAnchorChunk(
             options.metadata?.path || "unknown",
             content,
+            metadata
         );
 
         const baseChunks = anchorChunk

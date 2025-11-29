@@ -5,6 +5,7 @@ export interface LanguageDefinition {
         name: string;
         url: string;
     };
+    definitionTypes?: string[];
 }
 
 export const LANGUAGES: LanguageDefinition[] = [
@@ -15,6 +16,14 @@ export const LANGUAGES: LanguageDefinition[] = [
             name: "typescript",
             url: "https://github.com/tree-sitter/tree-sitter-typescript/releases/download/v0.23.2/tree-sitter-typescript.wasm",
         },
+        definitionTypes: [
+            "function_declaration",
+            "method_definition",
+            "class_declaration",
+            "interface_declaration",
+            "enum_declaration",
+            "type_alias_declaration",
+        ],
     },
     {
         id: "tsx",
@@ -23,6 +32,14 @@ export const LANGUAGES: LanguageDefinition[] = [
             name: "tsx",
             url: "https://github.com/tree-sitter/tree-sitter-typescript/releases/download/v0.23.2/tree-sitter-tsx.wasm",
         },
+        definitionTypes: [
+            "function_declaration",
+            "method_definition",
+            "class_declaration",
+            "interface_declaration",
+            "enum_declaration",
+            "type_alias_declaration",
+        ],
     },
     {
         id: "javascript",
@@ -31,6 +48,14 @@ export const LANGUAGES: LanguageDefinition[] = [
             name: "tsx", // Use TSX grammar for JS/JSX to handle modern features
             url: "https://github.com/tree-sitter/tree-sitter-typescript/releases/download/v0.23.2/tree-sitter-tsx.wasm",
         },
+        definitionTypes: [
+            "function_declaration",
+            "method_definition",
+            "class_declaration",
+            "interface_declaration",
+            "enum_declaration",
+            "type_alias_declaration",
+        ],
     },
     {
         id: "python",
@@ -39,6 +64,10 @@ export const LANGUAGES: LanguageDefinition[] = [
             name: "python",
             url: "https://github.com/tree-sitter/tree-sitter-python/releases/download/v0.25.0/tree-sitter-python.wasm",
         },
+        definitionTypes: [
+            "function_definition",
+            "class_definition",
+        ],
     },
     {
         id: "go",
@@ -47,6 +76,11 @@ export const LANGUAGES: LanguageDefinition[] = [
             name: "go",
             url: "https://github.com/tree-sitter/tree-sitter-go/releases/download/v0.25.0/tree-sitter-go.wasm",
         },
+        definitionTypes: [
+            "function_declaration",
+            "method_declaration",
+            "type_declaration",
+        ],
     },
     {
         id: "rust",
@@ -55,6 +89,13 @@ export const LANGUAGES: LanguageDefinition[] = [
             name: "rust",
             url: "https://github.com/tree-sitter/tree-sitter-rust/releases/download/v0.23.2/tree-sitter-rust.wasm",
         },
+        definitionTypes: [
+            "function_item",
+            "impl_item",
+            "trait_item",
+            "struct_item",
+            "enum_item",
+        ],
     },
     {
         id: "cpp",
@@ -63,6 +104,13 @@ export const LANGUAGES: LanguageDefinition[] = [
             name: "cpp",
             url: "https://github.com/tree-sitter/tree-sitter-cpp/releases/download/v0.23.4/tree-sitter-cpp.wasm",
         },
+        definitionTypes: [
+            "function_definition",
+            "class_specifier",
+            "struct_specifier",
+            "enum_specifier",
+            "namespace_definition",
+        ],
     },
     {
         id: "c",
@@ -71,6 +119,11 @@ export const LANGUAGES: LanguageDefinition[] = [
             name: "c",
             url: "https://github.com/tree-sitter/tree-sitter-c/releases/download/v0.23.4/tree-sitter-c.wasm",
         },
+        definitionTypes: [
+            "function_definition",
+            "struct_specifier",
+            "enum_specifier",
+        ],
     },
     {
         id: "java",
@@ -79,6 +132,12 @@ export const LANGUAGES: LanguageDefinition[] = [
             name: "java",
             url: "https://github.com/tree-sitter/tree-sitter-java/releases/download/v0.23.4/tree-sitter-java.wasm",
         },
+        definitionTypes: [
+            "method_declaration",
+            "class_declaration",
+            "interface_declaration",
+            "enum_declaration",
+        ],
     },
     {
         id: "c_sharp",
@@ -87,6 +146,14 @@ export const LANGUAGES: LanguageDefinition[] = [
             name: "c_sharp",
             url: "https://github.com/tree-sitter/tree-sitter-c-sharp/releases/download/v0.23.1/tree-sitter-c_sharp.wasm",
         },
+        definitionTypes: [
+            "method_declaration",
+            "class_declaration",
+            "interface_declaration",
+            "enum_declaration",
+            "struct_declaration",
+            "namespace_declaration",
+        ],
     },
     {
         id: "ruby",
@@ -95,6 +162,11 @@ export const LANGUAGES: LanguageDefinition[] = [
             name: "ruby",
             url: "https://github.com/tree-sitter/tree-sitter-ruby/releases/download/v0.23.1/tree-sitter-ruby.wasm",
         },
+        definitionTypes: [
+            "method",
+            "class",
+            "module",
+        ],
     },
     {
         id: "php",
@@ -103,6 +175,12 @@ export const LANGUAGES: LanguageDefinition[] = [
             name: "php",
             url: "https://github.com/tree-sitter/tree-sitter-php/releases/download/v0.23.11/tree-sitter-php.wasm",
         },
+        definitionTypes: [
+            "function_definition",
+            "method_declaration",
+            "class_declaration",
+            "interface_declaration",
+        ],
     },
     {
         id: "json",
@@ -111,6 +189,9 @@ export const LANGUAGES: LanguageDefinition[] = [
             name: "json",
             url: "https://github.com/tree-sitter/tree-sitter-json/releases/download/v0.24.8/tree-sitter-json.wasm",
         },
+        definitionTypes: [
+            "pair",
+        ],
     },
     {
         id: "markdown",
