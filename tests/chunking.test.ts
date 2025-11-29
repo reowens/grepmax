@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { TreeSitterChunker } from "../src/lib/chunker";
-import { buildAnchorChunk, formatChunkText } from "../src/lib/chunk-utils";
+import { TreeSitterChunker } from "../src/lib/index/chunker";
+import { buildAnchorChunk, formatChunkText } from "../src/lib/index/chunker";
 
 describe("TreeSitterChunker fallback and splitting", () => {
   it("splits large text into overlapping chunks with preserved ordering", async () => {
