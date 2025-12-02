@@ -311,8 +311,8 @@ export const search: Command = new CommanderCommand("search")
       content: boolean;
       perFile: string;
       scores: boolean;
-      compact: boolean;
       minScore: string;
+      compact: boolean;
       plain: boolean;
       sync: boolean;
       dryRun: boolean;

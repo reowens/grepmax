@@ -58,6 +58,18 @@ List defined symbols.
 - With filter: List symbols matching the pattern.
 - `-l N`: Limit number of results.
 
+## Useful Options
+
+- `--scores` - Show relevance scores (0-1) for each result
+- `--min-score <n>` - Filter out low-confidence results (e.g., `--min-score 0.5`)
+- `-m <n>` - Limit max results (default: 10)
+- `--compact` - Show file paths only
+
+Example with filtering:
+```bash
+osgrep "authentication" --scores --min-score 0.5
+```
+
 ## Tips
 - Previews are hints; not a full substitute for reading the file.
 - Results are hybrid (semantic + literal); longer natural language queries work best.
