@@ -80,6 +80,7 @@ osgrep "how is the database connection pooled?" --json
 ```
 
 **Options:**
+
 | Flag | Description | Default |
 | --- | --- | --- |
 | `-m <n>` | Max total results to return. | `25` |
@@ -116,6 +117,7 @@ Manually indexes the repository. Useful if you want to pre-warm the cache or if 
 - **Semantic Chunking:** Uses TreeSitter grammars for supported languages (TypeScript, JavaScript, Python, Go, Rust, C/C++, Java, C#, Ruby, PHP, JSON, YAML, Kotlin, Swift, Dart).
 
 **Options:**
+
 | Flag | Description | Default |
 | --- | --- | --- |
 | `-d`, `--dry-run` | See what would be indexed without making changes. | `false` |
@@ -145,6 +147,7 @@ Runs a lightweight HTTP server with live file watching so searches stay hot in R
 - Writes lock: `.osgrep/server.json` with `port`/`pid`
 
 **Options:**
+
 | Flag | Description |
 | --- | --- |
 | `-p, --port <port>` | Port to listen on (auto-increments if not specified) |
@@ -251,10 +254,10 @@ osgrep respects both `.gitignore` and `.osgrepignore` files when indexing. Creat
 
 ### Manual Store Management
 
-  - **View all stores:** `osgrep list`
-  - **Override auto-detection:** `osgrep --store custom-name "query"`
-  - **Clean up old stores:** `rm -rf ~/.osgrep/data/store-name`
-  - **Data location:** `~/.osgrep/data`
+- **View all stores:** `osgrep list`
+- **Override auto-detection:** `osgrep --store custom-name "query"`
+- **Clean up old stores:** `rm -rf ~/.osgrep/data/store-name`
+- **Data location:** `~/.osgrep/data`
 
 ## Development
 
@@ -266,11 +269,11 @@ pnpm format       # biome check
 
 ## Troubleshooting
 
-  - **Index feels stale?** Run `osgrep index` to refresh.
-  - **Weird results?** Run `osgrep doctor` to verify models.
-  - **Index getting stuck?** Run `osgrep index --verbose` to see which file is being processed.
-  - **Want faster indexing?** Keep fallback disabled (default) to skip files without TreeSitter support.
-  - **Need a fresh start?** Delete `~/.osgrep/data` and `~/.osgrep/meta.json` and run `osgrep index`.
+- **Index feels stale?** Run `osgrep index` to refresh.
+- **Weird results?** Run `osgrep doctor` to verify models.
+- **Index getting stuck?** Run `osgrep index --verbose` to see which file is being processed.
+- **Want faster indexing?** Keep fallback disabled (default) to skip files without TreeSitter support.
+- **Need a fresh start?** Delete `~/.osgrep/data` and `~/.osgrep/meta.json` and run `osgrep index`.
 
 ## Attribution
 
