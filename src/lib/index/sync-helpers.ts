@@ -6,11 +6,17 @@ interface IndexingSpinner {
   onProgress: (info: InitialSyncProgress) => void;
 }
 
+export interface IndexingSpinnerOptions {
+  verbose?: boolean;
+}
+
 export interface InitialSyncProgress {
   processed: number;
   indexed: number;
   total: number;
   filePath?: string;
+  phase?: "scanning" | "indexing";
+  error?: string;
 }
 
 interface ProgressTracker {
@@ -56,14 +62,18 @@ function createProgressTracker(): ProgressTracker {
  *
  * @param root The root directory of the repository
  * @param label The label to use for the spinner
+ * @param options Options for the spinner
  * @returns The spinner and progress callback pair
  */
 export function createIndexingSpinner(
   root: string,
   label = "Indexing files...",
+  options: IndexingSpinnerOptions = {},
 ): IndexingSpinner {
+  const { verbose = false } = options;
   const spinner = ora({ text: label }).start();
   const tracker = createProgressTracker();
+  const seenFiles = new Set<string>();
 
   return {
     spinner,
@@ -86,6 +96,19 @@ export function createIndexingSpinner(
       }
 
       const rel = formatRelativePath(root, info.filePath);
+
+      if (verbose && info.filePath && !seenFiles.has(info.filePath)) {
+        seenFiles.add(info.filePath);
+        // In verbose mode, log each file on its own line
+        spinner.stop();
+        if (info.error) {
+          console.log(`  ✗ ${rel} (${info.error})`);
+        } else {
+          console.log(`  → ${rel}`);
+        }
+        spinner.start();
+      }
+
       const fileSuffix = rel ? ` • ${rel}` : "";
 
       const totalKnown = info.total > 0;

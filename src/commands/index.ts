@@ -30,12 +30,18 @@ export const index = new Command("index")
     "Remove existing index and re-index from scratch",
     false,
   )
+  .option(
+    "-v, --verbose",
+    "Show detailed progress with file names",
+    false,
+  )
   .action(async (_args, cmd) => {
     const options: {
       store?: string;
       dryRun: boolean;
       path: string;
       reset: boolean;
+      verbose: boolean;
     } = cmd.optsWithGlobals();
     let vectorDb: VectorDB | null = null;
 
@@ -60,6 +66,7 @@ export const index = new Command("index")
       const { spinner, onProgress } = createIndexingSpinner(
         projectRoot,
         "Indexing...",
+        { verbose: options.verbose },
       );
       try {
         const result = await initialSync({
