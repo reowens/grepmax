@@ -14,6 +14,8 @@ export interface InitialSyncProgress {
   processed: number;
   indexed: number;
   total: number;
+  /** Number of files that need re-indexing (changed or new) */
+  candidates?: number;
   filePath?: string;
   phase?: "scanning" | "indexing";
   error?: string;
