@@ -251,6 +251,17 @@ export async function initialSync(options: SyncOptions): Promise<InitialSyncResu
 
           await flush(false);
         } catch (err) {
+          const code = (err as NodeJS.ErrnoException)?.code;
+          if (code === "ENOENT") {
+            // Treat missing files as deletions.
+            pendingDeletes.add(relPath);
+            pendingMeta.delete(relPath);
+            metaCache.delete(relPath);
+            processed += 1;
+            markProgress(relPath);
+            await flush(false);
+            return;
+          }
           failedFiles += 1;
           processed += 1;
           seenPaths.add(relPath);
