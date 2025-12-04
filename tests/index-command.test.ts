@@ -40,10 +40,6 @@ vi.mock("../src/lib/index/syncer", () => ({
   })),
 }));
 
-vi.mock("../src/lib/utils/exit", () => ({
-  gracefulExit: vi.fn(async () => { }),
-}));
-
 const fakeVectorDb = {
   drop: vi.fn(async () => { }),
   createFTSIndex: vi.fn(async () => { }),
