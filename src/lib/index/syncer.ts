@@ -85,7 +85,8 @@ export async function initialSync(options: SyncOptions): Promise<InitialSyncResu
       globstar: true,
     };
 
-    const total = 0;
+    // Total is unknown in streaming mode; report processed count only.
+    let total = 0;
     onProgress?.({ processed: 0, indexed: 0, total, filePath: "Scanning..." });
 
     const storedPaths = await vectorDb.listPaths();
@@ -277,6 +278,8 @@ export async function initialSync(options: SyncOptions): Promise<InitialSyncResu
       stale.forEach((p) => metaCache.delete(p));
     }
 
+    // Finalize total so callers can display a meaningful summary.
+    total = processed;
     return { processed, indexed, total };
   } finally {
     if (lock) {
