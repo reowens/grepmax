@@ -36,6 +36,7 @@ vi.mock("../src/lib/index/syncer", () => ({
     processed: 1,
     indexed: 1,
     total: 1,
+    failedFiles: 0,
   })),
 }));
 
@@ -61,6 +62,7 @@ vi.mock("../src/lib/store/vector-db", () => ({
   VectorDB: vi.fn(() => ({
     listPaths: vi.fn(async () => new Map()),
     createFTSIndex: vi.fn(async () => { }),
+    close: vi.fn(async () => { }),
   })),
 }));
 

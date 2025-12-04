@@ -10,6 +10,12 @@ import {
   formatChunkText,
   type ChunkWithContext,
 } from "../index/chunker";
+import {
+  computeBufferHash,
+  hasNullByte,
+  isIndexableFile,
+  readFileSnapshot,
+} from "../utils/file-utils";
 import { ColBERTTokenizer } from "./colbert-tokenizer";
 import { maxSim } from "./colbert-math";
 import type { PreparedChunk, VectorRecord } from "../store/types";
@@ -23,8 +29,15 @@ type HybridResult = {
 
 type ProcessFileInput = {
   path: string;
-  content: string;
-  hash?: string;
+  absolutePath?: string;
+};
+
+type ProcessFileResult = {
+  vectors: VectorRecord[];
+  hash: string;
+  mtimeMs: number;
+  size: number;
+  shouldDelete?: boolean;
 };
 
 type RerankDoc = {
@@ -458,18 +471,35 @@ class WorkerRuntime {
     return prepared;
   }
 
-  async processFile(input: ProcessFileInput): Promise<VectorRecord[]> {
+  async processFile(input: ProcessFileInput): Promise<ProcessFileResult> {
+    const absolutePath = path.isAbsolute(input.path)
+      ? input.path
+      : input.absolutePath
+        ? input.absolutePath
+        : path.join(PROJECT_ROOT, input.path);
+
+    const { buffer, mtimeMs, size } = await readFileSnapshot(absolutePath);
+    const hash = computeBufferHash(buffer);
+
+    if (!isIndexableFile(absolutePath, size)) {
+      return { vectors: [], hash, mtimeMs, size, shouldDelete: true };
+    }
+
+    if (buffer.length === 0 || hasNullByte(buffer)) {
+      return { vectors: [], hash, mtimeMs, size, shouldDelete: true };
+    }
+
     await this.ensureReady();
-    const hash = input.hash ?? "";
-    const chunks = await this.chunkFile(input.path, input.content);
-    if (!chunks.length) return [];
+    const content = buffer.toString("utf-8");
+    const chunks = await this.chunkFile(input.path, content);
+    if (!chunks.length) return { vectors: [], hash, mtimeMs, size };
 
     const preparedChunks = this.toPreparedChunks(input.path, hash, chunks);
     const hybrids = await this.computeHybrid(
       preparedChunks.map((chunk) => chunk.content),
     );
 
-    return preparedChunks.map((chunk, idx) => {
+    const vectors = preparedChunks.map((chunk, idx) => {
       const hybrid = hybrids[idx] ?? {
         dense: new Float32Array(),
         colbert: new Int8Array(),
@@ -483,6 +513,8 @@ class WorkerRuntime {
         pooled_colbert_48d: hybrid.pooled_colbert_48d,
       };
     });
+
+    return { vectors, hash, mtimeMs, size };
   }
 
   async encodeQuery(
@@ -580,7 +612,7 @@ class WorkerRuntime {
 
 const runtime = new WorkerRuntime();
 
-export default async function processFile(input: ProcessFileInput): Promise<VectorRecord[]> {
+export default async function processFile(input: ProcessFileInput): Promise<ProcessFileResult> {
   return runtime.processFile(input);
 }
 

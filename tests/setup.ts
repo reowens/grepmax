@@ -5,16 +5,19 @@ import { CONFIG } from "../src/config";
 const vectorDim = CONFIG.VECTOR_DIM;
 vi.mock("../src/lib/workers/pool", () => {
   const makeDense = (len: number) => Array(len).fill(0);
+  const mockPool = {
+    processFile: vi.fn(async (_input: any) => []),
+    encodeQuery: vi.fn(async () => ({
+      dense: makeDense(vectorDim),
+      colbert: [],
+      colbertDim: CONFIG.COLBERT_DIM,
+    })),
+    rerank: vi.fn(async (_input: any) => []),
+    destroy: vi.fn(async () => { }),
+  };
   return {
-    workerPool: {
-      processFile: vi.fn(async (_input: any) => []),
-      encodeQuery: vi.fn(async () => ({
-        dense: makeDense(vectorDim),
-        colbert: [],
-        colbertDim: CONFIG.COLBERT_DIM,
-      })),
-      rerank: vi.fn(async (_input: any) => []),
-      destroy: vi.fn(async () => { }),
-    },
+    getWorkerPool: () => mockPool,
+    destroyWorkerPool: vi.fn(async () => { }),
+    isWorkerPoolInitialized: vi.fn(() => true),
   };
 });

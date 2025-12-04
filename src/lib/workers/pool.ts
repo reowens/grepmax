@@ -12,7 +12,16 @@ type PendingTask = {
   resolve: (value: any) => void;
   reject: (reason?: unknown) => void;
   worker?: ProcessWorker;
+  timeout?: NodeJS.Timeout;
 };
+
+const TASK_TIMEOUT_MS = (() => {
+  const fromEnv = Number.parseInt(process.env.OSGREP_WORKER_TASK_TIMEOUT_MS ?? "", 10);
+  if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv;
+  return 30_000;
+})();
+
+const FORCE_KILL_GRACE_MS = 200;
 
 class ProcessWorker {
   child: childProcess.ChildProcess;
@@ -44,52 +53,90 @@ function resolveProcessWorker(): { filename: string; execArgv: string[] } {
 
 export class WorkerPool {
   private workers: ProcessWorker[] = [];
-  private queue: PendingTask[] = [];
+  private taskQueue: number[] = [];
+  private tasks = new Map<number, PendingTask>();
   private nextId = 1;
   private destroyed = false;
+  private destroyPromise: Promise<void> | null = null;
+  private readonly modulePath: string;
+  private readonly execArgv: string[];
 
   constructor() {
-    const { filename, execArgv } = resolveProcessWorker();
+    const resolved = resolveProcessWorker();
+    this.modulePath = resolved.filename;
+    this.execArgv = resolved.execArgv;
+
     const workerCount = Math.max(1, CONFIG.WORKER_THREADS);
     for (let i = 0; i < workerCount; i++) {
-      this.spawnWorker(filename, execArgv);
+      this.spawnWorker();
     }
   }
 
-  private spawnWorker(filename: string, execArgv: string[]) {
-    const worker = new ProcessWorker(filename, execArgv);
+  private clearTaskTimeout(task: PendingTask) {
+    if (task.timeout) {
+      clearTimeout(task.timeout);
+      task.timeout = undefined;
+    }
+  }
+
+  private removeFromQueue(taskId: number) {
+    const idx = this.taskQueue.indexOf(taskId);
+    if (idx !== -1) this.taskQueue.splice(idx, 1);
+  }
+
+  private completeTask(task: PendingTask, worker: ProcessWorker | null) {
+    this.clearTaskTimeout(task);
+    this.tasks.delete(task.id);
+    this.removeFromQueue(task.id);
+
+    if (worker) {
+      worker.busy = false;
+      worker.pendingTaskId = null;
+    }
+  }
+
+  private handleWorkerExit(worker: ProcessWorker, code: number | null, signal: NodeJS.Signals | null) {
+    worker.busy = false;
+    const failedTasks = Array.from(this.tasks.values()).filter((t) => t.worker === worker);
+    for (const task of failedTasks) {
+      this.clearTaskTimeout(task);
+      task.reject(
+        new Error(
+          `Worker exited unexpectedly${code ? ` (code ${code})` : ""}${signal ? ` signal ${signal}` : ""
+          }`,
+        ),
+      );
+      this.completeTask(task, null);
+    }
+
+    this.workers = this.workers.filter((w) => w !== worker);
+    if (!this.destroyed) {
+      this.spawnWorker();
+    }
+  }
+
+  private spawnWorker() {
+    const worker = new ProcessWorker(this.modulePath, this.execArgv);
+
     const onMessage = (msg: { id: number; result?: any; error?: string }) => {
-      const task = this.queue.find((t) => t.id === msg.id) || null;
+      const task = this.tasks.get(msg.id);
       if (!task) return;
+
       if (msg.error) {
         task.reject(new Error(msg.error));
       } else {
         task.resolve(msg.result);
       }
-      worker.busy = false;
-      worker.pendingTaskId = null;
-      this.queue = this.queue.filter((t) => t.id !== msg.id);
+
+      this.completeTask(task, worker);
       this.dispatch();
     };
 
+    const onExit = (code: number | null, signal: NodeJS.Signals | null) =>
+      this.handleWorkerExit(worker, code, signal);
+
     worker.child.on("message", onMessage);
-    worker.child.on("exit", (code, signal) => {
-      worker.busy = false;
-      const failedTasks = this.queue.filter((t) => t.worker === worker);
-      for (const task of failedTasks) {
-        task.reject(
-          new Error(
-            `Worker exited unexpectedly${code ? ` (code ${code})` : ""}${signal ? ` signal ${signal}` : ""
-            }`,
-          ),
-        );
-      }
-      this.queue = this.queue.filter((t) => t.worker !== worker);
-      if (!this.destroyed) {
-        const { filename, execArgv } = resolveProcessWorker();
-        this.spawnWorker(filename, execArgv);
-      }
-    });
+    worker.child.on("exit", onExit);
     this.workers.push(worker);
   }
 
@@ -100,34 +147,71 @@ export class WorkerPool {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const task: PendingTask = { id, method, payload, resolve, reject };
-      this.queue.push(task);
+      this.tasks.set(id, task);
+      this.taskQueue.push(id);
       this.dispatch();
     });
+  }
+
+  private handleTaskTimeout(task: PendingTask, worker: ProcessWorker) {
+    if (this.destroyed || !this.tasks.has(task.id)) return;
+
+    this.clearTaskTimeout(task);
+    console.warn(
+      `[worker-pool] ${task.method} timed out after ${TASK_TIMEOUT_MS}ms; restarting worker.`,
+    );
+    task.reject(new Error(`Worker task ${task.method} timed out after ${TASK_TIMEOUT_MS}ms`));
+
+    worker.child.removeAllListeners("message");
+    worker.child.removeAllListeners("exit");
+    try {
+      worker.child.kill("SIGKILL");
+    } catch { }
+
+    this.workers = this.workers.filter((w) => w !== worker);
+    if (!this.destroyed) {
+      this.spawnWorker();
+    }
+
+    this.completeTask(task, null);
+    this.dispatch();
   }
 
   private dispatch() {
     if (this.destroyed) return;
     const idle = this.workers.find((w) => !w.busy);
-    const task = this.queue.find((t) => t.worker === undefined);
-    if (!idle || !task) return;
+    const nextTaskId = this.taskQueue.find((id) => {
+      const t = this.tasks.get(id);
+      return t && !t.worker;
+    });
+
+    if (!idle || nextTaskId === undefined) return;
+    const task = this.tasks.get(nextTaskId);
+    if (!task) {
+      this.removeFromQueue(nextTaskId);
+      this.dispatch();
+      return;
+    }
 
     idle.busy = true;
     idle.pendingTaskId = task.id;
     task.worker = idle;
+
+    task.timeout = setTimeout(() => this.handleTaskTimeout(task, idle), TASK_TIMEOUT_MS);
+
     try {
       idle.child.send({ id: task.id, method: task.method, payload: task.payload });
     } catch (err) {
+      this.clearTaskTimeout(task);
+      this.completeTask(task, idle);
       task.reject(err);
-      idle.busy = false;
-      idle.pendingTaskId = null;
-      task.worker = undefined;
       return;
     }
-    // Allow next dispatch for remaining tasks
+
     this.dispatch();
   }
 
-  processFile(input: { path: string; content: string; hash?: string }) {
+  processFile(input: { path: string; absolutePath?: string }) {
     return this.enqueue("processFile", input);
   }
 
@@ -144,23 +228,62 @@ export class WorkerPool {
   }
 
   async destroy(): Promise<void> {
+    if (this.destroyPromise) return this.destroyPromise;
     if (this.destroyed) return;
+
     this.destroyed = true;
+
+    for (const task of this.tasks.values()) {
+      this.clearTaskTimeout(task);
+      task.reject(new Error("Worker pool destroyed"));
+    }
+    this.tasks.clear();
+    this.taskQueue = [];
+
     const killPromises = this.workers.map(
       (w) =>
         new Promise<void>((resolve) => {
           w.child.removeAllListeners("message");
           w.child.removeAllListeners("exit");
           w.child.once("exit", () => resolve());
-          w.child.kill();
-          setTimeout(() => resolve(), WORKER_TIMEOUT_MS);
+          w.child.kill("SIGTERM");
+          const force = setTimeout(() => {
+            try {
+              w.child.kill("SIGKILL");
+            } catch { }
+          }, FORCE_KILL_GRACE_MS);
+          setTimeout(() => {
+            clearTimeout(force);
+            resolve();
+          }, WORKER_TIMEOUT_MS);
         }),
     );
-    await Promise.allSettled(killPromises);
-    this.workers = [];
-    this.queue.forEach((t) => t.reject(new Error("Worker pool destroyed")));
-    this.queue = [];
+
+    this.destroyPromise = Promise.allSettled(killPromises).then(() => {
+      this.workers = [];
+      this.destroyPromise = null;
+    });
+
+    await this.destroyPromise;
   }
 }
 
-export const workerPool = new WorkerPool();
+let singleton: WorkerPool | null = null;
+
+export function getWorkerPool(): WorkerPool {
+  if (!singleton) {
+    singleton = new WorkerPool();
+  }
+  return singleton;
+}
+
+export async function destroyWorkerPool(): Promise<void> {
+  if (!singleton) return;
+  const pool = singleton;
+  singleton = null;
+  await pool.destroy();
+}
+
+export function isWorkerPoolInitialized(): boolean {
+  return singleton !== null;
+}

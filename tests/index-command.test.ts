@@ -37,6 +37,7 @@ vi.mock("../src/lib/index/syncer", () => ({
     processed: 1,
     indexed: 1,
     total: 1,
+    failedFiles: 0,
   })),
 }));
 

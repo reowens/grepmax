@@ -24,6 +24,7 @@ export interface InitialSyncResult {
   processed: number;
   indexed: number;
   total: number;
+  failedFiles: number;
 }
 
 /**

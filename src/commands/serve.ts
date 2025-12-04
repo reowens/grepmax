@@ -43,61 +43,71 @@ export const serve = new Command("serve")
       }
 
       const server = http.createServer(async (req, res) => {
-        if (req.method === "GET" && req.url === "/health") {
-          res.statusCode = 200;
+        try {
+          if (req.method === "GET" && req.url === "/health") {
+            res.statusCode = 200;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ status: "ok" }));
+            return;
+          }
+
+          if (req.method === "POST" && req.url === "/search") {
+            const chunks: Buffer[] = [];
+            req.on("data", (chunk) => {
+              chunks.push(chunk);
+              const size = Buffer.concat(chunks).length;
+              if (size > 1_000_000) {
+                res.statusCode = 413;
+                res.setHeader("Content-Type", "application/json");
+                res.end(JSON.stringify({ error: "payload_too_large" }));
+                req.destroy();
+              }
+            });
+            req.on("end", async () => {
+              try {
+                const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString("utf-8")) : {};
+                const query = typeof body.query === "string" ? body.query : "";
+                const limit = typeof body.limit === "number" ? body.limit : 10;
+                const searchPath =
+                  typeof body.path === "string"
+                    ? path.relative(projectRoot, path.resolve(projectRoot, body.path))
+                    : "";
+
+                const result = await searcher.search(
+                  query,
+                  limit,
+                  { rerank: true },
+                  undefined,
+                  searchPath,
+                );
+
+                res.statusCode = 200;
+                res.setHeader("Content-Type", "application/json");
+                res.end(JSON.stringify({ results: result.data }));
+              } catch (err) {
+                res.statusCode = 500;
+                res.setHeader("Content-Type", "application/json");
+                res.end(JSON.stringify({ error: (err as Error)?.message || "search_failed" }));
+              }
+            });
+            return;
+          }
+
+          res.statusCode = 404;
+          res.end();
+        } catch (err) {
+          console.error("[serve] request handler error:", err);
+          res.statusCode = 500;
           res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ status: "ok" }));
-          return;
+          res.end(JSON.stringify({ error: "internal_error" }));
         }
-
-        if (req.method === "POST" && req.url === "/search") {
-          const chunks: Buffer[] = [];
-          req.on("data", (chunk) => {
-            chunks.push(chunk);
-            const size = Buffer.concat(chunks).length;
-            if (size > 1_000_000) {
-              res.statusCode = 413;
-              res.setHeader("Content-Type", "application/json");
-              res.end(JSON.stringify({ error: "payload_too_large" }));
-              req.destroy();
-            }
-          });
-          req.on("end", async () => {
-            try {
-              const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString("utf-8")) : {};
-              const query = typeof body.query === "string" ? body.query : "";
-              const limit = typeof body.limit === "number" ? body.limit : 10;
-              const searchPath =
-                typeof body.path === "string"
-                  ? path.relative(projectRoot, path.resolve(projectRoot, body.path))
-                  : "";
-
-              const result = await searcher.search(
-                query,
-                limit,
-                { rerank: true },
-                undefined,
-                searchPath,
-              );
-
-              res.statusCode = 200;
-              res.setHeader("Content-Type", "application/json");
-              res.end(JSON.stringify({ results: result.data }));
-            } catch (err) {
-              res.statusCode = 500;
-              res.setHeader("Content-Type", "application/json");
-              res.end(JSON.stringify({ error: (err as Error)?.message || "search_failed" }));
-            }
-          });
-          return;
-        }
-
-        res.statusCode = 404;
-        res.end();
       });
 
       server.listen(port, () => {
         console.log(`osgrep server listening on http://localhost:${port} (${projectRoot})`);
+      });
+      server.on("error", (err) => {
+        console.error("[serve] server error:", err);
       });
 
       const shutdown = async () => {

@@ -27,6 +27,14 @@ export class MetaCache {
     return this.db.get(filePath);
   }
 
+  async getAllKeys(): Promise<Set<string>> {
+    const keys = new Set<string>();
+    for await (const { key } of this.db.getRange()) {
+      keys.add(String(key));
+    }
+    return keys;
+  }
+
   put(filePath: string, entry: MetaEntry): void {
     this.db.put(filePath, entry);
   }
