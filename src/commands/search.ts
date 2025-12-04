@@ -10,6 +10,7 @@ import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import { VectorDB } from "../lib/store/vector-db";
 import { Searcher } from "../lib/search/searcher";
 import { ensureGrammars } from "../lib/index/grammar-loader";
+import { gracefulExit } from "../lib/utils/exit";
 
 function toTextResults(data: SearchResponse["data"]): TextResult[] {
   return data.map((r) => {
@@ -78,6 +79,7 @@ export const search: Command = new CommanderCommand("search")
     }
 
     const root = process.cwd();
+    let vectorDb: VectorDB | null = null;
 
     try {
       await ensureSetup();
@@ -86,7 +88,7 @@ export const search: Command = new CommanderCommand("search")
         : root;
       const projectRoot = findProjectRoot(searchRoot) ?? searchRoot;
       const paths = ensureProjectPaths(projectRoot);
-      const vectorDb = new VectorDB(paths.lancedbDir);
+      vectorDb = new VectorDB(paths.lancedbDir);
       const searcher = new Searcher(vectorDb);
 
       const existing = await vectorDb.listPaths();
@@ -183,5 +185,14 @@ export const search: Command = new CommanderCommand("search")
       const message = error instanceof Error ? error.message : "Unknown error";
       console.error("Search failed:", message);
       process.exitCode = 1;
+    } finally {
+      if (vectorDb) {
+        try {
+          await vectorDb.close();
+        } catch (err) {
+          console.error("Failed to close VectorDB:", err);
+        }
+      }
+      await gracefulExit();
     }
   });

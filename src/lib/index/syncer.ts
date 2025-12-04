@@ -27,6 +27,10 @@ type GlobOptions = fg.Options;
 
 function buildIgnoreFilter(projectRoot: string) {
   const filter = ignore();
+  const gitignore = path.join(projectRoot, ".gitignore");
+  if (fs.existsSync(gitignore)) {
+    filter.add(fs.readFileSync(gitignore, "utf-8"));
+  }
   const osgrepIgnore = path.join(projectRoot, ".osgrepignore");
   if (fs.existsSync(osgrepIgnore)) {
     filter.add(fs.readFileSync(osgrepIgnore, "utf-8"));

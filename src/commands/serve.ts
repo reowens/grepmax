@@ -102,6 +102,12 @@ export const serve = new Command("serve")
 
       const shutdown = async () => {
         server.close();
+        // Clean close of vectorDB
+        try {
+          await vectorDb.close();
+        } catch (e) {
+          console.error("Error closing vector DB:", e);
+        }
         await gracefulExit();
       };
 
@@ -113,4 +119,4 @@ export const serve = new Command("serve")
       process.exitCode = 1;
       await gracefulExit(1);
     }
-  });
+});

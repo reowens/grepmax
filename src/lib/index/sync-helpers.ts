@@ -126,7 +126,8 @@ export function createIndexingSpinner(
 
       // Calculate estimated time remaining
       let timeSuffix = "";
-      if (info.processed > 0 && info.processed < info.total && info.total > 0) {
+      const totalKnown = info.total > 0;
+      if (totalKnown && info.processed > 0 && info.processed < info.total) {
         const elapsed = Date.now() - tracker.startTime;
         const rate = info.processed / elapsed; // files per ms
         const remaining = info.total - info.processed;
@@ -137,7 +138,11 @@ export function createIndexingSpinner(
         }
       }
 
-      spinner.text = `Indexing files (${info.processed}/${info.total})${timeSuffix}${fileSuffix}`;
+      const progressSuffix = totalKnown
+        ? `(${info.processed}/${info.total})`
+        : `(${info.processed} files)`;
+
+      spinner.text = `Indexing files ${progressSuffix}${timeSuffix}${fileSuffix}`;
     },
   };
 }

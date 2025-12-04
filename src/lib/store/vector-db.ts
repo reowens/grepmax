@@ -100,12 +100,6 @@ export class VectorDB {
       const table = await db.createTable(TABLE_NAME, [this.seedRow()], {
         schema,
       });
-      const fieldNames =
-        Array.isArray((table as any)?.schema?.fields) &&
-          (table as any).schema.fields.length > 0
-          ? (table as any).schema.fields.map((f: any) => f?.name)
-          : [];
-      console.log("[vector-db] created table with fields", fieldNames);
       await table.delete('id = "seed"');
       return table;
     }

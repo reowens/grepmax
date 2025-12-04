@@ -12,7 +12,8 @@ export interface ProjectPaths {
 }
 
 export function findProjectRoot(startDir = process.cwd()): string | null {
-  let dir = path.resolve(startDir);
+  const start = path.resolve(startDir);
+  let dir = start;
   const stopAt = path.parse(dir).root;
 
   while (true) {
@@ -20,12 +21,14 @@ export function findProjectRoot(startDir = process.cwd()): string | null {
       return dir;
     }
 
-    const osgrepDir = path.join(dir, ".osgrep");
-    if (
-      fs.existsSync(osgrepDir) &&
-      path.resolve(dir) !== path.resolve(PATHS.globalRoot)
-    ) {
-      return dir;
+    if (dir === start) {
+      const osgrepDir = path.join(dir, ".osgrep");
+      if (
+        fs.existsSync(osgrepDir) &&
+        path.resolve(dir) !== path.resolve(PATHS.globalRoot)
+      ) {
+        return dir;
+      }
     }
 
     if (dir === stopAt) break;
@@ -34,8 +37,7 @@ export function findProjectRoot(startDir = process.cwd()): string | null {
     dir = parent;
   }
 
-  // Fallback: stay scoped to the starting directory if nothing found above.
-  return path.resolve(startDir);
+  return null;
 }
 
 export function ensureProjectPaths(startDir = process.cwd()): ProjectPaths {
