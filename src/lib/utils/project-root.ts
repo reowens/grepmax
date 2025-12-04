@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { PATHS } from "../../config";
 
 export interface ProjectPaths {
   root: string;
@@ -12,11 +13,29 @@ export interface ProjectPaths {
 
 export function findProjectRoot(startDir = process.cwd()): string | null {
   let dir = path.resolve(startDir);
-  while (dir !== path.dirname(dir)) {
-    if (fs.existsSync(path.join(dir, ".osgrep"))) return dir;
-    dir = path.dirname(dir);
+  const stopAt = path.parse(dir).root;
+
+  while (true) {
+    if (fs.existsSync(path.join(dir, ".git"))) {
+      return dir;
+    }
+
+    const osgrepDir = path.join(dir, ".osgrep");
+    if (
+      fs.existsSync(osgrepDir) &&
+      path.resolve(dir) !== path.resolve(PATHS.globalRoot)
+    ) {
+      return dir;
+    }
+
+    if (dir === stopAt) break;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
   }
-  return null;
+
+  // Fallback: stay scoped to the starting directory if nothing found above.
+  return path.resolve(startDir);
 }
 
 export function ensureProjectPaths(startDir = process.cwd()): ProjectPaths {
@@ -31,5 +50,30 @@ export function ensureProjectPaths(startDir = process.cwd()): ProjectPaths {
     fs.mkdirSync(dir, { recursive: true });
   });
 
+  ensureGitignoreEntry(root);
+
   return { root, osgrepDir, lancedbDir, cacheDir, lmdbPath, configPath };
+}
+
+function ensureGitignoreEntry(root: string) {
+  // Only add when inside a git repo.
+  if (!fs.existsSync(path.join(root, ".git"))) return;
+
+  const gitignorePath = path.join(root, ".gitignore");
+  let contents = "";
+  try {
+    contents = fs.readFileSync(gitignorePath, "utf-8");
+  } catch {
+    // ignore missing file; will create below
+  }
+
+  const hasEntry = contents
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .includes(".osgrep");
+  if (hasEntry) return;
+
+  const needsNewline = contents.length > 0 && !contents.endsWith("\n");
+  const prefix = needsNewline ? "\n" : "";
+  fs.writeFileSync(gitignorePath, `${contents}${prefix}.osgrep\n`, { encoding: "utf-8" });
 }

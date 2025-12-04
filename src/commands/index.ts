@@ -10,6 +10,7 @@ import { initialSync } from "../lib/index/syncer";
 import { ensureGrammars } from "../lib/index/grammar-loader";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import { VectorDB } from "../lib/store/vector-db";
+import { gracefulExit } from "../lib/utils/exit";
 
 export const index = new Command("index")
   .description("Index the current directory and create searchable store")
@@ -91,5 +92,9 @@ export const index = new Command("index")
       const message = error instanceof Error ? error.message : "Unknown error";
       console.error("Failed to index:", message);
       process.exitCode = 1;
+    } finally {
+      const code =
+        typeof process.exitCode === "number" ? process.exitCode : process.exitCode === undefined ? 0 : 1;
+      await gracefulExit(code);
     }
   });

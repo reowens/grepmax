@@ -138,7 +138,15 @@ export class VectorDB {
         context_next: rec.context_next ?? "",
         chunk_type: rec.chunk_type ?? "",
         vector: vec,
-        colbert: Buffer.from(rec.colbert ?? []),
+        colbert: (() => {
+          const c = rec.colbert as any;
+          if (Buffer.isBuffer(c)) return c;
+          if (ArrayBuffer.isView(c) && c.buffer) {
+            return Buffer.from(c.buffer, c.byteOffset ?? 0, c.byteLength ?? 0);
+          }
+          if (Array.isArray(c)) return Buffer.from(c);
+          return Buffer.alloc(0);
+        })(),
         colbert_scale: typeof rec.colbert_scale === "number" ? rec.colbert_scale : 1,
         pooled_colbert_48d: rec.pooled_colbert_48d
           ? Array.from(rec.pooled_colbert_48d)
