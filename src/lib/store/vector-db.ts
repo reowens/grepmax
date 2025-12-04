@@ -158,12 +158,11 @@ export class VectorDB {
             (table as any).schema.fields.length > 0
             ? (table as any).schema.fields.map((f: any) => f?.name)
             : [];
-        console.error("[vector-db] schema mismatch, dropping table. Fields:", schemaFields);
-        await this.drop();
-        this.db = null;
-        const fresh = await this.ensureTable();
-        await fresh.add(rows);
-        return;
+        throw new Error(
+          `[vector-db] schema mismatch detected (fields: ${schemaFields.join(
+            ", ",
+          )}). Please run "osgrep index --reset" to rebuild the index.`,
+        );
       }
       throw err;
     }

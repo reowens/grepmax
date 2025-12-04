@@ -6,7 +6,7 @@ import type {
   ChunkType,
 } from "../store/types";
 import { VectorDB } from "../store/vector-db";
-import { workerPool } from "../workers/pool";
+import { getWorkerPool } from "../workers/pool";
 
 export class Searcher {
   constructor(private db: VectorDB) { }
@@ -70,8 +70,10 @@ export class Searcher {
   ): Promise<SearchResponse> {
     const finalLimit = top_k ?? 10;
 
+    const pool = getWorkerPool();
+
     const { dense: queryVector, colbert: queryMatrixRaw, colbertDim } =
-      await workerPool.encodeQuery(query);
+      await pool.encodeQuery(query);
 
     if (colbertDim !== CONFIG.COLBERT_DIM) {
       console.warn(
@@ -126,7 +128,7 @@ export class Searcher {
       return { data: [] };
     }
 
-    const scores = await workerPool.rerank({
+    const scores = await pool.rerank({
       query: queryMatrixRaw.map((row: number[]) => Array.from(row)),
       docs: candidates.map((doc) => ({
         colbert: (doc.colbert as Buffer | Int8Array | number[]) ?? new Int8Array(),

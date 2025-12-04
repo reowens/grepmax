@@ -9,10 +9,10 @@ import {
   type InitialSyncProgress,
   type InitialSyncResult,
 } from "./sync-helpers";
-import { computeBufferHash, hasNullByte, isIndexableFile } from "../utils/file-utils";
+import { isIndexableFile } from "../utils/file-utils";
 import { MetaCache, type MetaEntry } from "../store/meta-cache";
 import { VectorDB } from "../store/vector-db";
-import { workerPool } from "../workers/pool";
+import { getWorkerPool } from "../workers/pool";
 import type { VectorRecord } from "../store/types";
 import { acquireWriterLock, type LockHandle } from "../utils/lock";
 
@@ -89,7 +89,8 @@ export async function initialSync(options: SyncOptions): Promise<InitialSyncResu
     let total = 0;
     onProgress?.({ processed: 0, indexed: 0, total, filePath: "Scanning..." });
 
-    const storedPaths = await vectorDb.listPaths();
+    const pool = getWorkerPool();
+    const cachedPaths = await metaCache.getAllKeys();
     const seenPaths = new Set<string>();
     const batch: VectorRecord[] = [];
     const pendingMeta = new Map<string, MetaEntry>();
@@ -100,6 +101,7 @@ export async function initialSync(options: SyncOptions): Promise<InitialSyncResu
     const activeTasks: Promise<void>[] = [];
     let processed = 0;
     let indexed = 0;
+    let failedFiles = 0;
     let shouldSkipCleanup = false;
     let flushError: unknown;
     let flushPromise: Promise<void> | null = null;
@@ -139,6 +141,7 @@ export async function initialSync(options: SyncOptions): Promise<InitialSyncResu
         await flushPromise;
       } catch (err) {
         flushError = err;
+        shouldSkipCleanup = true;
         throw err;
       } finally {
         flushPromise = null;
@@ -193,15 +196,18 @@ export async function initialSync(options: SyncOptions): Promise<InitialSyncResu
             return;
           }
 
-          const buffer = await fs.promises.readFile(absPath);
-          const hash = computeBufferHash(buffer);
+          const result = await pool.processFile({
+            path: relPath,
+            absolutePath: absPath,
+          });
+
           const metaEntry: MetaEntry = {
-            hash,
-            mtimeMs: stats.mtimeMs,
-            size: stats.size,
+            hash: result.hash,
+            mtimeMs: result.mtimeMs,
+            size: result.size,
           };
 
-          if (buffer.length === 0 || hasNullByte(buffer)) {
+          if (result.shouldDelete) {
             if (!dryRun) {
               pendingDeletes.add(relPath);
               pendingMeta.set(relPath, metaEntry);
@@ -213,7 +219,7 @@ export async function initialSync(options: SyncOptions): Promise<InitialSyncResu
             return;
           }
 
-          if (cached && cached.hash === hash) {
+          if (cached && cached.hash === result.hash) {
             metaCache.put(relPath, metaEntry);
             processed += 1;
             seenPaths.add(relPath);
@@ -229,16 +235,10 @@ export async function initialSync(options: SyncOptions): Promise<InitialSyncResu
             return;
           }
 
-          const vectors = await workerPool.processFile({
-            path: relPath,
-            content: buffer.toString("utf-8"),
-            hash,
-          });
-
           pendingDeletes.add(relPath);
 
-          if (vectors.length > 0) {
-            batch.push(...vectors);
+          if (result.vectors.length > 0) {
+            batch.push(...result.vectors);
             pendingMeta.set(relPath, metaEntry);
             indexed += 1;
           } else {
@@ -251,8 +251,9 @@ export async function initialSync(options: SyncOptions): Promise<InitialSyncResu
 
           await flush(false);
         } catch (err) {
-          shouldSkipCleanup = true;
+          failedFiles += 1;
           processed += 1;
+          seenPaths.add(relPath);
           console.error(`[sync] Failed to process ${relPath}:`, err);
           markProgress(relPath);
         }
@@ -272,7 +273,7 @@ export async function initialSync(options: SyncOptions): Promise<InitialSyncResu
         : new Error(String(flushError));
     }
 
-    const stale = Array.from(storedPaths.keys()).filter((p) => !seenPaths.has(p));
+    const stale = Array.from(cachedPaths).filter((p) => !seenPaths.has(p));
     if (!dryRun && stale.length > 0 && !shouldSkipCleanup) {
       await vectorDb.deletePaths(stale);
       stale.forEach((p) => metaCache.delete(p));
@@ -280,7 +281,7 @@ export async function initialSync(options: SyncOptions): Promise<InitialSyncResu
 
     // Finalize total so callers can display a meaningful summary.
     total = processed;
-    return { processed, indexed, total };
+    return { processed, indexed, total, failedFiles };
   } finally {
     if (lock) {
       await lock.release();
