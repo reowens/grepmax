@@ -112,6 +112,7 @@ export class WorkerPool {
     this.workers = this.workers.filter((w) => w !== worker);
     if (!this.destroyed) {
       this.spawnWorker();
+      this.dispatch();
     }
   }
 

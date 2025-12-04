@@ -30,6 +30,9 @@ export async function readFileSnapshot(
   const handle = await fs.promises.open(filePath, "r");
   try {
     const before = await handle.stat();
+    if (before.size > MAX_FILE_SIZE_BYTES) {
+      throw new Error("File exceeds maximum allowed size");
+    }
     const size = before.size;
     const buffer = size > 0 ? Buffer.allocUnsafe(size) : Buffer.alloc(0);
     if (size > 0) {
