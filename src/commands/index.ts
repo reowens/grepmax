@@ -63,10 +63,10 @@ export const index = new Command("index")
         await metaStoreForReset.save();
 
         console.log("Existing index removed. Re-indexing...");
-
-        // Ensure grammars are present before re-indexing
-        await ensureGrammars();
       }
+
+      // Ensure grammars are present before indexing (silent if already exist)
+      await ensureGrammars(console.log, { silent: true });
 
       await ensureStoreExists(store, storeId);
       const fileSystem = createFileSystem({

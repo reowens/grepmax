@@ -235,17 +235,25 @@ export class VectorDB {
     async *listFiles(storeId: string): AsyncGenerator<{ external_id: string; metadata: { path: string; hash: string } }> {
         const table = await this.ensureTable(storeId);
         let results: VectorRecord[] = [];
+        const DEBUG = process.env.OSGREP_DEBUG_INDEX === "1";
+
+        if (DEBUG) console.log(`[vector-db] listFiles starting for ${storeId}`);
+
         try {
+            if (DEBUG) console.log(`[vector-db] querying with is_anchor filter`);
             results = (await table
                 .query()
                 .where("is_anchor = true")
                 .select(["path", "hash"])
                 .toArray()) as VectorRecord[];
-        } catch {
+            if (DEBUG) console.log(`[vector-db] got ${results.length} results`);
+        } catch (err) {
+            if (DEBUG) console.log(`[vector-db] anchor query failed, trying without filter:`, err);
             results = (await table
                 .query()
                 .select(["path", "hash"])
                 .toArray()) as VectorRecord[];
+            if (DEBUG) console.log(`[vector-db] got ${results.length} results without filter`);
         }
 
         const seen = new Set<string>();
@@ -261,6 +269,7 @@ export class VectorDB {
                 };
             }
         }
+        if (DEBUG) console.log(`[vector-db] listFiles complete, yielded ${seen.size} unique files`);
     }
 
     async deleteStore(storeId: string): Promise<void> {

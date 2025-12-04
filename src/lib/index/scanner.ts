@@ -178,13 +178,19 @@ export class RepositoryScanner {
 
         if (this.isGitRepository(dirRoot)) {
             let yielded = false;
+            let count = 0;
             try {
                 for await (const file of this.streamGitFiles(dirRoot)) {
                     yielded = true;
+                    count++;
                     yield file;
                 }
             } catch (e) {
                 console.warn(`[scanner] git ls-files failed: ${e}`);
+            }
+
+            if (process.env.OSGREP_DEBUG_INDEX === "1") {
+                console.log(`[scanner] git ls-files yielded ${count} files`);
             }
 
             if (yielded) return;
@@ -193,10 +199,16 @@ export class RepositoryScanner {
             );
         }
 
+        if (process.env.OSGREP_DEBUG_INDEX === "1") {
+            console.log(`[scanner] falling back to filesystem walk`);
+        }
         yield* this.walk(dirRoot, dirRoot);
     }
 
     private async * streamGitFiles(dirRoot: string): AsyncGenerator<string> {
+        const DEBUG = process.env.OSGREP_DEBUG_INDEX === "1";
+        if (DEBUG) console.log(`[scanner] spawning git ls-files in ${dirRoot}`);
+
         const child = spawn(
             "git",
             ["ls-files", "-z", "--others", "--exclude-standard", "--cached"],
@@ -212,18 +224,28 @@ export class RepositoryScanner {
         });
 
         let buffer = "";
+        let count = 0;
         for await (const chunk of child.stdout) {
             buffer += chunk.toString();
             const parts = buffer.split("\u0000");
             buffer = parts.pop() || "";
             for (const file of parts) {
-                if (file) yield path.join(dirRoot, file);
+                if (file) {
+                    count++;
+                    yield path.join(dirRoot, file);
+                }
             }
         }
-        if (buffer) yield path.join(dirRoot, buffer);
+        if (buffer) {
+            count++;
+            yield path.join(dirRoot, buffer);
+        }
+
+        if (DEBUG) console.log(`[scanner] git ls-files yielded ${count} files, waiting for exit`);
 
         await new Promise<void>((resolve, reject) => {
             child.on("exit", (code) => {
+                if (DEBUG) console.log(`[scanner] git ls-files exited with code ${code}`);
                 if (code === 0) resolve();
                 else reject(new Error(`git exited with code ${code}`));
             });

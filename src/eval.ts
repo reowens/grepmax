@@ -538,6 +538,7 @@ async function run() {
     ),
   );
   console.log("=".repeat(80));
+  process.exit(0);
 }
 
 run().catch((err) => {

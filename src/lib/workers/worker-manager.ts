@@ -1,5 +1,4 @@
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { Worker } from "node:worker_threads";
 import { v4 as uuidv4 } from "uuid";
@@ -26,7 +25,7 @@ type PendingRequest = {
 };
 
 const MAX_RETRIES = 1;
-const RSS_RECYCLE_THRESHOLD_MB = 500;
+const RSS_RECYCLE_THRESHOLD_MB = Number.POSITIVE_INFINITY;
 
 export class WorkerManager {
   private workers: Array<Worker | null> = [];
@@ -39,9 +38,8 @@ export class WorkerManager {
   private readonly threadSetting = this.resolveThreadSetting();
 
   private resolvePoolSize(): number {
-    const cores = os.cpus().length || 1;
-    const pool = Math.floor(Math.min(4, cores / 2));
-    return Math.max(1, pool);
+    // Single worker by default for stability on macOS; increase manually if safe
+    return 1;
   }
 
   private resolveThreadSetting(): string {
@@ -49,7 +47,8 @@ export class WorkerManager {
     if (fromEnv === "1" || fromEnv === "2") {
       return fromEnv;
     }
-    return this.poolSize >= 2 ? "1" : "2";
+    // With one worker we can allow 2 intra-op threads to regain some speed
+    return this.poolSize === 1 ? "2" : "1";
   }
 
   private getWorkerConfig(): { workerPath: string; execArgv: string[] } {
@@ -219,7 +218,7 @@ export class WorkerManager {
     const rssMb =
       memory && memory.rss ? Math.round(memory.rss / 1024 / 1024) : 0;
     const limitMb = Math.min(MAX_WORKER_MEMORY_MB, RSS_RECYCLE_THRESHOLD_MB);
-    if (rssMb > limitMb) {
+    if (Number.isFinite(limitMb) && rssMb > limitMb) {
       this.recycleWorker(
         workerIndex,
         `Memory limit exceeded (${rssMb}MB > ${limitMb}MB)`,

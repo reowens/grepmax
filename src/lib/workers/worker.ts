@@ -383,7 +383,11 @@ class EmbeddingWorker {
     await this.initialize();
 
     const results: HybridResult[] = [];
-    const BATCH_SIZE = 32;
+    const envBatch = Number.parseInt(process.env.OSGREP_WORKER_BATCH_SIZE ?? "", 20);
+    const BATCH_SIZE =
+      Number.isFinite(envBatch) && envBatch > 0
+        ? Math.max(4, Math.min(16, envBatch))
+        : 16;
     for (let i = 0; i < texts.length; i += BATCH_SIZE) {
       const batchTexts = texts.slice(i, i + BATCH_SIZE);
       const denseBatch = await this.runGraniteBatch(batchTexts);

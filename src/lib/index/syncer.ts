@@ -27,6 +27,12 @@ const SKIP_META_SAVE =
     process.env.OSGREP_SKIP_META_SAVE === "true";
 const DEFAULT_EMBED_BATCH_SIZE = 24;
 const META_FILE = path.join(os.homedir(), ".osgrep", "meta.json");
+const USE_POOLED_COLBERT =
+    process.env.OSGREP_ENABLE_POOLED_COLBERT === "1" ||
+    process.env.OSGREP_ENABLE_POOLED_COLBERT === "true";
+const DEBUG_INDEX =
+    process.env.OSGREP_DEBUG_INDEX === "1" ||
+    process.env.OSGREP_DEBUG_INDEX === "true";
 
 export interface IndexingProfile {
     sections: Record<string, number>;
@@ -95,6 +101,9 @@ export async function initialSync(
         : undefined;
 
     const totalStart = PROFILE_ENABLED ? now() : null;
+    if (DEBUG_INDEX) {
+        console.log("[index] start", { repoRoot, storeId });
+    }
 
     // 1. Scan existing store to find what we already have
     const dbPaths = new Set<string>();
@@ -104,10 +113,15 @@ export async function initialSync(
     const storeScanStart = PROFILE_ENABLED ? now() : null;
 
     try {
+        let dbScanCount = 0;
         for await (const file of store.listFiles(storeId)) {
             const externalId = file.external_id ?? undefined;
             if (!externalId) continue;
             dbPaths.add(externalId);
+            dbScanCount++;
+            if (dbScanCount % 100 === 0) {
+                onProgress?.({ processed: 0, indexed: 0, total: 0, filePath: `Checking index... (${dbScanCount} files)` });
+            }
             if (!metaStore) {
                 const metadata = file.metadata;
                 const hash: string | undefined =
@@ -137,9 +151,28 @@ export async function initialSync(
 
     // Files on disk that are not gitignored.
     const allFiles: string[] = [];
+    let scanCount = 0;
+    let lastFile = "";
     for await (const file of fileSystem.getFiles(repoRoot)) {
         allFiles.push(file);
+        scanCount++;
+        lastFile = file;
+        if (scanCount % 100 === 0) {
+            onProgress?.({ processed: 0, indexed: 0, total: 0, filePath: `Scanning... (${scanCount} files found)` });
+        }
     }
+    if (DEBUG_INDEX) {
+        console.log("[index] scan complete", { scanCount, lastFile });
+    }
+
+    if (DEBUG_INDEX) {
+        console.log("[index] calling onProgress with Processing message");
+    }
+    onProgress?.({ processed: 0, indexed: 0, total: 0, filePath: `Processing ${allFiles.length} files...` });
+    if (DEBUG_INDEX) {
+        console.log("[index] onProgress called");
+    }
+
     const aliveFiles = allFiles.filter(
         (filePath) => !fileSystem.isIgnored(filePath, repoRoot)
     );
@@ -151,6 +184,13 @@ export async function initialSync(
 
     // Apply extension filter to pick index candidates.
     const repoFiles = aliveFiles.filter((filePath) => isIndexableFile(filePath));
+    if (DEBUG_INDEX) {
+        console.log("[index] files", {
+            total: allFiles.length,
+            alive: aliveFiles.length,
+            indexable: repoFiles.length,
+        });
+    }
 
     // C. Determine Staleness
     // Stale = In DB, but not in 'aliveFiles' (meaning deleted from disk or added to .gitignore)
@@ -174,6 +214,9 @@ export async function initialSync(
         writeBuffer = [];
         const writeStart = PROFILE_ENABLED ? now() : null;
         await store.insertBatch(storeId, toWrite);
+        if (DEBUG_INDEX) {
+            console.log("[index] wrote batch", { size: toWrite.length });
+        }
 
         // CHECKPOINTING FIX: Update meta store only after successful write
         if (metaStore) {
@@ -212,6 +255,13 @@ export async function initialSync(
             const batch = embedQueue.splice(0, EMBED_BATCH_SIZE);
             const embedStart = PROFILE_ENABLED ? now() : null;
             const vectors = await preparedChunksToVectors(batch);
+            if (DEBUG_INDEX) {
+                console.log("[index] embedded batch", {
+                    size: batch.length,
+                    remaining: embedQueue.length,
+                    pendingWrite: writeBuffer.length + vectors.length,
+                });
+            }
             if (PROFILE_ENABLED && embedStart && profile) {
                 profile.sections.embed =
                     (profile.sections.embed ?? 0) + toMs(embedStart);
@@ -324,6 +374,13 @@ export async function initialSync(
         storeIsEmpty =
             initialDbCount - stalePaths.length - candidates.length <= 0;
     }
+    if (DEBUG_INDEX) {
+        console.log("[index] candidates", {
+            stale: stalePaths.length,
+            candidates: candidates.length,
+            storeIsEmpty,
+        });
+    }
 
     const queueFlush = (force = false) => {
         embedFlushQueue = embedFlushQueue.then(() => flushEmbedQueue(force));
@@ -333,6 +390,7 @@ export async function initialSync(
     // Second pass: chunk + embed + write using global batching (parallel chunking)
     if (!dryRun) {
         const INDEX_BATCH = 50;
+        let indexingProcessed = 0;
         for (let i = 0; i < candidates.length; i += INDEX_BATCH) {
             const slice = candidates.slice(i, i + INDEX_BATCH);
             await Promise.all(
@@ -356,6 +414,7 @@ export async function initialSync(
                             );
                             candidate.buffer = undefined;
                             pendingIndexCount = Math.max(0, pendingIndexCount - 1);
+                            indexingProcessed += 1;
                             if (didIndex) {
                                 indexed += 1;
                                 if (chunks.length > 0) {
@@ -381,17 +440,18 @@ export async function initialSync(
                                 }
                             }
                             onProgress?.({
-                                processed,
+                                processed: indexingProcessed,
                                 indexed,
-                                total,
+                                total: candidates.length,
                                 filePath: candidate.filePath,
                             });
                         } catch (_err) {
                             pendingIndexCount = Math.max(0, pendingIndexCount - 1);
+                            indexingProcessed += 1;
                             onProgress?.({
-                                processed,
+                                processed: indexingProcessed,
                                 indexed,
-                                total,
+                                total: candidates.length,
                                 filePath: candidate.filePath,
                             });
                         }
@@ -582,7 +642,7 @@ export async function preparedChunksToVectors(
             vector: denseVector,
             colbert: colbertVector,
             colbert_scale: hybrid.scale,
-            ...(pooled
+            ...(USE_POOLED_COLBERT && pooled
                 ? {
                     pooled_colbert_48d:
                         pooled instanceof Float32Array

@@ -24,20 +24,22 @@ const downloadFile = async (url: string, dest: string) => {
     fs.writeFileSync(dest, Buffer.from(arrayBuffer));
 };
 
-export async function ensureGrammars(log: (msg: string) => void = console.log) {
+export async function ensureGrammars(log: (msg: string) => void = console.log, options?: { silent?: boolean }) {
     if (!fs.existsSync(GRAMMARS_DIR)) {
         fs.mkdirSync(GRAMMARS_DIR, { recursive: true });
     }
 
+    const silent = options?.silent ?? false;
+
     for (const [lang, url] of Object.entries(GRAMMAR_URLS)) {
         const dest = path.join(GRAMMARS_DIR, `tree-sitter-${lang}.wasm`);
         if (fs.existsSync(dest)) {
-            log(`✓ Grammar: ${lang}`);
+            // Skip logging if silent mode (grammars already exist)
+            if (!silent) {
+                log(`✓ Grammar: ${lang}`);
+            }
         } else {
-            // Use process.stdout directly for the "Downloading..." part if possible,
-            // but to keep it simple with the passed log function, we'll just log a start message.
-            // If the caller passed console.log, it will print a newline.
-            // For a better UX, we might want to allow a more complex logger, but for now:
+            // Always show download progress, even in silent mode
             if (log === console.log) {
                 process.stdout.write(`⬇ Downloading ${lang} grammar... `);
             } else {
