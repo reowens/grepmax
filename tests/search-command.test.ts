@@ -31,10 +31,6 @@ vi.mock("../src/lib/index/sync-helpers", () => ({
   formatDryRunSummary: vi.fn(() => "dry-run-summary"),
 }));
 
-vi.mock("../src/lib/store/meta-store", () => ({
-  MetaStore: class { },
-}));
-
 vi.mock("../src/lib/index/syncer", () => ({
   initialSync: vi.fn(async () => ({
     processed: 1,
@@ -45,10 +41,6 @@ vi.mock("../src/lib/index/syncer", () => ({
 
 vi.mock("../src/lib/utils/file-utils", () => ({
   formatDenseSnippet: vi.fn((t) => t),
-}));
-
-vi.mock("../src/lib/utils/exit", () => ({
-  gracefulExit: vi.fn(async () => { }),
 }));
 
 const mockSearcher = {
