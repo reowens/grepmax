@@ -7,31 +7,20 @@ const spinner = {
   fail: vi.fn(),
 };
 
-const mockStore = {
-  search: vi.fn(async () => ({ data: [{ metadata: { path: "/repo/file.ts" }, score: 1, type: "text" }] })),
-  getInfo: vi.fn(async () => ({ counts: { pending: 0, in_progress: 0 } })),
-  close: vi.fn(async () => { }),
-};
-
-const mockFileSystem = {
-  getFiles: () => [].values(),
-  isIgnored: () => false,
-  loadOsgrepignore: () => { },
-};
-
-vi.mock("../src/lib/core/context", () => ({
-  createStore: vi.fn(async () => mockStore),
-  createFileSystem: vi.fn(() => mockFileSystem),
-}));
-
 vi.mock("../src/lib/setup/setup-helpers", () => ({
   ensureSetup: vi.fn(async () => { }),
 }));
 
-vi.mock("../src/lib/store/store-utils", () => ({
-  ensureStoreExists: vi.fn(async () => { }),
-  isStoreEmpty: vi.fn(async () => true),
-  getAutoStoreId: vi.fn(() => "auto-store"),
+vi.mock("../src/lib/utils/project-root", () => ({
+  ensureProjectPaths: vi.fn(() => ({
+    root: "/tmp/project",
+    osgrepDir: "/tmp/project/.osgrep",
+    lancedbDir: "/tmp/project/.osgrep/lancedb",
+    cacheDir: "/tmp/project/.osgrep/cache",
+    lmdbPath: "/tmp/project/.osgrep/cache/meta.lmdb",
+    configPath: "/tmp/project/.osgrep/config.json",
+  })),
+  findProjectRoot: vi.fn(() => "/tmp/project"),
 }));
 
 vi.mock("../src/lib/index/sync-helpers", () => ({
@@ -54,10 +43,6 @@ vi.mock("../src/lib/index/syncer", () => ({
   })),
 }));
 
-vi.mock("../src/lib/utils/lockfile", () => ({
-  readServerLock: vi.fn(async () => null),
-}));
-
 vi.mock("../src/lib/utils/file-utils", () => ({
   formatDenseSnippet: vi.fn((t) => t),
 }));
@@ -66,9 +51,33 @@ vi.mock("../src/lib/utils/exit", () => ({
   gracefulExit: vi.fn(async () => { }),
 }));
 
+const mockSearcher = {
+  search: vi.fn(async () => ({
+    data: [
+      {
+        metadata: { path: "/tmp/project/src/file.ts" },
+        score: 1,
+        type: "text",
+        text: "content",
+        generated_metadata: { start_line: 0, num_lines: 1 },
+      },
+    ],
+  })),
+};
+
+vi.mock("../src/lib/store/vector-db", () => ({
+  VectorDB: vi.fn(() => ({
+    listPaths: vi.fn(async () => new Map()),
+    createFTSIndex: vi.fn(async () => { }),
+  })),
+}));
+
+vi.mock("../src/lib/search/searcher", () => ({
+  Searcher: vi.fn(() => mockSearcher),
+}));
+
 import { search } from "../src/commands/search";
 import { initialSync } from "../src/lib/index/syncer";
-import { isStoreEmpty } from "../src/lib/store/store-utils";
 
 describe("search command", () => {
   const originalCwd = process.cwd();
@@ -83,24 +92,14 @@ describe("search command", () => {
     const tmpDir = originalCwd;
     await (search as Command).parseAsync(["query"], { from: "user" });
 
-    expect(isStoreEmpty).toHaveBeenCalled();
     expect(initialSync).toHaveBeenCalled();
-    expect(mockStore.search).toHaveBeenCalledWith(
-      "auto-store",
+    expect(mockSearcher.search).toHaveBeenCalledWith(
       "query",
       expect.any(Number),
       { rerank: true },
-      {
-        all: [
-          {
-            key: "path",
-            operator: "starts_with",
-            value: tmpDir,
-          },
-        ],
-      },
+      undefined,
+      "",
     );
-    expect(mockStore.close).toHaveBeenCalled();
     expect(spinner.succeed).toHaveBeenCalled();
   });
 });

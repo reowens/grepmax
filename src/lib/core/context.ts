@@ -1,20 +1,48 @@
-import { RepositoryScanner, type ScannerOptions } from "../index/scanner";
-import { LocalStore } from "../store/local-store";
-import type { Store } from "../store/store";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import fg from "fast-glob";
+import ignore from "ignore";
+import { ensureProjectPaths } from "../utils/project-root";
+import { VectorDB } from "../store/vector-db";
 
-/**
- * Creates a Store instance
- */
-export async function createStore(): Promise<Store> {
-  return new LocalStore();
+export interface ScannerOptions {
+  ignorePatterns: string[];
 }
 
-/**
- * Creates a FileSystem instance (RepositoryScanner)
- */
+export async function createStore(projectRoot = process.cwd()): Promise<VectorDB> {
+  const paths = ensureProjectPaths(projectRoot);
+  return new VectorDB(paths.lancedbDir);
+}
+
 export function createFileSystem(
   options: ScannerOptions = { ignorePatterns: [] },
-): RepositoryScanner {
-  return new RepositoryScanner(options);
-}
+) {
+  const filter = ignore();
+  filter.add(options.ignorePatterns ?? []);
 
+  return {
+    loadOsgrepignore(root: string) {
+      const ignorePath = path.join(root, ".osgrepignore");
+      if (fs.existsSync(ignorePath)) {
+        filter.add(fs.readFileSync(ignorePath, "utf-8"));
+      }
+    },
+    isIgnored(filePath: string, root: string) {
+      const rel = path.relative(root, filePath).replace(/\\/g, "/");
+      return filter.ignores(rel);
+    },
+    async *getFiles(root: string) {
+      for await (const entry of fg.stream("**/*", {
+        cwd: root,
+        onlyFiles: true,
+        dot: false,
+        followSymbolicLinks: false,
+        ignore: options.ignorePatterns,
+      })) {
+        const rel = entry.toString();
+        if (filter.ignores(rel)) continue;
+        yield path.join(root, rel);
+      }
+    },
+  };
+}

@@ -1,18 +1,41 @@
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
-import { parentPort } from "node:worker_threads";
 import * as ort from "onnxruntime-node";
 import { AutoTokenizer, env, type PreTrainedTokenizer } from "@huggingface/transformers";
+import { v4 as uuidv4 } from "uuid";
 import { CONFIG, MODEL_IDS, PATHS } from "../../config";
+import {
+  TreeSitterChunker,
+  buildAnchorChunk,
+  formatChunkText,
+  type ChunkWithContext,
+} from "../index/chunker";
 import { ColBERTTokenizer } from "./colbert-tokenizer";
+import { maxSim } from "./colbert-math";
+import type { PreparedChunk, VectorRecord } from "../store/types";
+
+type HybridResult = {
+  dense: Float32Array;
+  colbert: Int8Array;
+  scale: number;
+  pooled_colbert_48d?: Float32Array;
+};
+
+type ProcessFileInput = {
+  path: string;
+  content: string;
+  hash?: string;
+};
+
+type RerankDoc = {
+  colbert: Buffer | Int8Array | number[];
+  scale: number;
+};
 
 function resolveThreadCount(): number {
   const fromEnv = Number.parseInt(process.env.OSGREP_THREADS ?? "", 10);
   if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv;
-  if (process.env.OSGREP_LOW_IMPACT === "1") return 1;
-  const cores = os.cpus().length || 1;
-  return Math.max(1, Math.min(cores - 1, 4));
+  return CONFIG.WORKER_THREADS;
 }
 
 const CACHE_DIR = PATHS.models;
@@ -35,27 +58,19 @@ if (fs.existsSync(LOCAL_MODELS)) {
   log(`Worker: Using local models from ${LOCAL_MODELS}`);
 }
 
-type HybridResult = {
-  dense: Float32Array;
-  colbert: Int8Array;
-  scale: number;
-  pooled_colbert_48d?: Float32Array;
-};
-
-class EmbeddingWorker {
+class WorkerRuntime {
   private embedSession: ort.InferenceSession | null = null;
   private embedTokenizer: PreTrainedTokenizer | null = null;
 
   private colbertSession: ort.InferenceSession | null = null;
   private colbertTokenizer: ColBERTTokenizer | null = null;
 
-  private embedModelId = MODEL_IDS.embed;
-  private colbertModelId = MODEL_IDS.colbert;
-  private readonly vectorDimensions = CONFIG.VECTOR_DIMENSIONS;
+  private readonly vectorDimensions = CONFIG.VECTOR_DIM;
   private initPromise: Promise<void> | null = null;
+  private chunker = new TreeSitterChunker();
 
   private resolveGranitePaths(): { modelPath: string; tokenizerPath: string } {
-    const basePath = path.join(CACHE_DIR, this.embedModelId);
+    const basePath = path.join(CACHE_DIR, MODEL_IDS.embed);
     const onnxDir = path.join(basePath, "onnx");
     const candidates = ["model_q4.onnx", "model.onnx"];
 
@@ -98,30 +113,21 @@ class EmbeddingWorker {
     let modelPath = "";
     let tokenizerPath = "";
 
-    const devModelPath = "/Users/ryandonofrio/Desktop/osgrep2/Archive-1/models/distilled_colbert/onnx/model.onnx";
-    const devTokenizerPath = "/Users/ryandonofrio/Desktop/osgrep2/Archive-1/models/distilled_colbert";
-
-    if (fs.existsSync(devModelPath)) {
-      modelPath = devModelPath;
-      tokenizerPath = devTokenizerPath;
-      log(`Worker: Using DEV model from ${modelPath}`);
-    } else {
-      const prodPath = path.join(CACHE_DIR, this.colbertModelId, "onnx", "model.onnx");
-      if (fs.existsSync(prodPath)) {
-        modelPath = prodPath;
-        tokenizerPath = path.join(CACHE_DIR, this.colbertModelId);
-      }
+    const prodPath = path.join(CACHE_DIR, MODEL_IDS.colbert, "onnx", "model.onnx");
+    if (fs.existsSync(prodPath)) {
+      modelPath = prodPath;
+      tokenizerPath = path.join(CACHE_DIR, MODEL_IDS.colbert);
     }
 
     if (!modelPath) {
       throw new Error(
-        `ColBERT ONNX model not found. Expected at ${devModelPath} or ~/.osgrep/models/${this.colbertModelId}/onnx/model.onnx`,
+        `ColBERT ONNX model not found. Expected at ~/.osgrep/models/${MODEL_IDS.colbert}/onnx/model.onnx`,
       );
     }
 
     await this.colbertTokenizer.init(tokenizerPath);
 
-    log(`Worker: Loading native ONNX session from ${modelPath}`);
+    log(`Worker: Loading ColBERT ONNX session from ${modelPath}`);
 
     const sessionOptions: ort.InferenceSession.SessionOptions = {
       executionProviders: ["cpu"],
@@ -133,7 +139,7 @@ class EmbeddingWorker {
     this.colbertSession = await ort.InferenceSession.create(modelPath, sessionOptions);
   }
 
-  async initialize() {
+  private async ensureReady() {
     if (
       this.embedSession &&
       this.embedTokenizer &&
@@ -145,10 +151,7 @@ class EmbeddingWorker {
     if (this.initPromise) return this.initPromise;
 
     this.initPromise = (async () => {
-      log("Worker: Loading models...");
-      await this.loadGranite();
-      await this.loadColbert();
-      log("Worker: Models loaded.");
+      await Promise.all([this.chunker.init(), this.loadGranite(), this.loadColbert()]);
     })().finally(() => {
       this.initPromise = null;
     });
@@ -209,7 +212,7 @@ class EmbeddingWorker {
   }
 
   private async runGraniteBatch(texts: string[]): Promise<Float32Array[]> {
-    if (!this.embedSession || !this.embedTokenizer) await this.initialize();
+    await this.ensureReady();
     if (!this.embedSession || !this.embedTokenizer) return [];
 
     const encoded = await this.embedTokenizer(texts, {
@@ -270,7 +273,7 @@ class EmbeddingWorker {
     texts: string[],
     denseVectors: Float32Array[],
   ): Promise<HybridResult[]> {
-    if (!this.colbertSession || !this.colbertTokenizer) await this.initialize();
+    await this.ensureReady();
     if (!this.colbertSession || !this.colbertTokenizer) return [];
 
     const encodedBatch = await Promise.all(
@@ -380,7 +383,7 @@ class EmbeddingWorker {
 
   async computeHybrid(texts: string[]): Promise<HybridResult[]> {
     if (!texts.length) return [];
-    await this.initialize();
+    await this.ensureReady();
 
     const results: HybridResult[] = [];
     const envBatch = Number.parseInt(process.env.OSGREP_WORKER_BATCH_SIZE ?? "", 20);
@@ -398,10 +401,100 @@ class EmbeddingWorker {
     return results;
   }
 
+  private async chunkFile(pathname: string, content: string): Promise<ChunkWithContext[]> {
+    await this.ensureReady();
+    const { chunks: parsedChunks, metadata } = await this.chunker.chunk(
+      pathname,
+      content,
+    );
+
+    const anchorChunk = buildAnchorChunk(pathname, content, metadata);
+    const baseChunks = anchorChunk
+      ? [anchorChunk, ...parsedChunks]
+      : parsedChunks;
+
+    return baseChunks.map((chunk, idx) => {
+      const chunkWithContext = chunk as ChunkWithContext;
+      return {
+        ...chunkWithContext,
+        context: Array.isArray(chunkWithContext.context)
+          ? chunkWithContext.context
+          : [],
+        chunkIndex:
+          typeof chunkWithContext.chunkIndex === "number"
+            ? chunkWithContext.chunkIndex
+            : anchorChunk
+              ? idx - 1
+              : idx,
+        isAnchor:
+          chunkWithContext.isAnchor === true ||
+          (anchorChunk ? idx === 0 : false),
+      };
+    });
+  }
+
+  private toPreparedChunks(
+    path: string,
+    hash: string,
+    chunks: ChunkWithContext[],
+  ): PreparedChunk[] {
+    const texts = chunks.map((chunk) => formatChunkText(chunk, path));
+    const prepared: PreparedChunk[] = [];
+
+    for (let i = 0; i < texts.length; i++) {
+      const chunk = chunks[i];
+      const prev = texts[i - 1];
+      const next = texts[i + 1];
+
+      prepared.push({
+        id: uuidv4(),
+        path,
+        hash,
+        content: texts[i],
+        context_prev: typeof prev === "string" ? prev : undefined,
+        context_next: typeof next === "string" ? next : undefined,
+        start_line: chunk.startLine,
+        end_line: chunk.endLine,
+        chunk_index: chunk.chunkIndex,
+        is_anchor: chunk.isAnchor === true,
+        chunk_type: typeof chunk.type === "string" ? chunk.type : undefined,
+      });
+    }
+
+    return prepared;
+  }
+
+  async processFile(input: ProcessFileInput): Promise<VectorRecord[]> {
+    await this.ensureReady();
+    const hash = input.hash ?? "";
+    const chunks = await this.chunkFile(input.path, input.content);
+    if (!chunks.length) return [];
+
+    const preparedChunks = this.toPreparedChunks(input.path, hash, chunks);
+    const hybrids = await this.computeHybrid(
+      preparedChunks.map((chunk) => chunk.content),
+    );
+
+    return preparedChunks.map((chunk, idx) => {
+      const hybrid = hybrids[idx] ?? {
+        dense: new Float32Array(),
+        colbert: new Int8Array(),
+        scale: 1,
+      };
+      return {
+        ...chunk,
+        vector: hybrid.dense,
+        colbert: hybrid.colbert,
+        colbert_scale: hybrid.scale,
+        pooled_colbert_48d: hybrid.pooled_colbert_48d,
+      };
+    });
+  }
+
   async encodeQuery(
     text: string,
   ): Promise<{ dense: number[]; colbert: number[][]; colbertDim: number }> {
-    await this.initialize();
+    await this.ensureReady();
 
     const [denseVector] = await this.runGraniteBatch([text]);
     const encoded = await this.colbertTokenizer!.encodeQuery(text);
@@ -455,59 +548,56 @@ class EmbeddingWorker {
       colbertDim: dim,
     };
   }
+
+  async rerank(input: {
+    query: number[][];
+    docs: RerankDoc[];
+    colbertDim: number;
+  }): Promise<number[]> {
+    await this.ensureReady();
+    const queryMatrix = input.query.map((row) =>
+      row instanceof Float32Array ? row : new Float32Array(row),
+    );
+
+    return input.docs.map((doc) => {
+      const col = doc.colbert;
+      const colbert =
+        col instanceof Int8Array
+          ? col
+          : Buffer.isBuffer(col)
+            ? new Int8Array(col.buffer, col.byteOffset, col.byteLength)
+            : new Int8Array(col);
+
+      if (!colbert.length) return 0;
+      const seqLen = Math.floor(colbert.length / input.colbertDim);
+      const docMatrix: Float32Array[] = [];
+      for (let i = 0; i < seqLen; i++) {
+        const start = i * input.colbertDim;
+        const row = new Float32Array(input.colbertDim);
+        for (let d = 0; d < input.colbertDim; d++) {
+          row[d] = (colbert[start + d] * doc.scale) / 127.0;
+        }
+        docMatrix.push(row);
+      }
+      return maxSim(queryMatrix, docMatrix);
+    });
+  }
 }
 
-const worker = new EmbeddingWorker();
+const runtime = new WorkerRuntime();
 
-if (parentPort) {
-  parentPort.on(
-    "message",
-    async (message: {
-      id: string;
-      type?: string;
-      hybrid?: { texts: string[] };
-      query?: { text: string };
-    }) => {
-      try {
-        if (message.type === "shutdown") {
-          process.exit(0);
-          return;
-        }
+export default async function processFile(input: ProcessFileInput): Promise<VectorRecord[]> {
+  return runtime.processFile(input);
+}
 
-        if (message.hybrid) {
-          const result = await worker.computeHybrid(message.hybrid.texts);
-          const memory = process.memoryUsage();
-          const transferList: ArrayBuffer[] = [];
-          for (const entry of result) {
-            if (entry.colbert?.buffer instanceof ArrayBuffer) {
-              transferList.push(entry.colbert.buffer as ArrayBuffer);
-            }
-            if (entry.dense?.buffer instanceof ArrayBuffer) {
-              transferList.push(entry.dense.buffer as ArrayBuffer);
-            }
-            if (entry.pooled_colbert_48d?.buffer instanceof ArrayBuffer) {
-              transferList.push(entry.pooled_colbert_48d.buffer as ArrayBuffer);
-            }
-          }
-          parentPort?.postMessage({ id: message.id, result, memory }, transferList);
-          return;
-        }
+export async function encodeQuery(input: { text: string }) {
+  return runtime.encodeQuery(input.text);
+}
 
-        if (message.query) {
-          const query = await worker.encodeQuery(message.query.text);
-          const memory = process.memoryUsage();
-          parentPort?.postMessage({ id: message.id, query, memory });
-          return;
-        }
-
-        throw new Error("Unknown message type");
-      } catch (error) {
-        console.error("Worker error:", error);
-        parentPort?.postMessage({
-          id: message.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    },
-  );
+export async function rerank(input: {
+  query: number[][];
+  docs: RerankDoc[];
+  colbertDim: number;
+}) {
+  return runtime.rerank(input);
 }

@@ -1,12 +1,25 @@
 import * as os from "node:os";
+import * as path from "node:path";
+
 export const MODEL_IDS = {
   embed: "onnx-community/granite-embedding-30m-english-ONNX",
   colbert: "ryandono/osgrep-colbert-q8",
 };
 
+const DEFAULT_WORKER_THREADS = (() => {
+  const fromEnv = Number.parseInt(process.env.OSGREP_WORKER_THREADS ?? "", 10);
+  if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv;
+  const cores = os.cpus().length || 1;
+  return Math.max(1, Math.min(cores, 4));
+})();
+
 export const CONFIG = {
-  VECTOR_DIMENSIONS: 384,
+  VECTOR_DIM: 384,
   COLBERT_DIM: 48,
+  MAX_CHUNK_CHARS: 2000,
+  MAX_CHUNK_LINES: 75,
+  EMBED_BATCH_SIZE: 24,
+  WORKER_THREADS: DEFAULT_WORKER_THREADS,
   QUERY_PREFIX: "",
 };
 
@@ -15,27 +28,11 @@ export const WORKER_TIMEOUT_MS = Number.parseInt(
   10,
 );
 
-export const MAX_WORKER_MEMORY_MB = Number.parseInt(
-  process.env.OSGREP_MAX_WORKER_MEMORY_MB ||
-  String(
-    Math.max(
-      2048,
-      Math.floor((os.totalmem() / 1024 / 1024) * 0.5), // 50% of system RAM
-    ),
-  ),
-  10,
-);
-
-import * as path from "node:path";
-
 const HOME = os.homedir();
-const ROOT = path.join(HOME, ".osgrep");
+const GLOBAL_ROOT = path.join(HOME, ".osgrep");
 
 export const PATHS = {
-  root: ROOT,
-  models: path.join(ROOT, "models"),
-  data: path.join(ROOT, "data"),
-  grammars: path.join(ROOT, "grammars"),
-  meta: path.join(ROOT, "meta.json"),
-  serverLock: path.join(ROOT, "server.json"),
+  globalRoot: GLOBAL_ROOT,
+  models: path.join(GLOBAL_ROOT, "models"),
+  grammars: path.join(GLOBAL_ROOT, "grammars"),
 };

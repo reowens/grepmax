@@ -1,26 +1,16 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { Command } from "commander";
-import { createStore } from "../lib/core/context";
-import { DEFAULT_IGNORE_PATTERNS } from "../lib/index/ignore-patterns";
 import { ensureSetup } from "../lib/setup/setup-helpers";
-import {
-  ensureStoreExists,
-  getAutoStoreId,
-} from "../lib/store/store-utils";
 import {
   createIndexingSpinner,
   formatDryRunSummary,
 } from "../lib/index/sync-helpers";
-import type { Store } from "../lib/store/store";
-import { MetaStore } from "../lib/store/meta-store";
-
 import { initialSync } from "../lib/index/syncer";
-
 import { gracefulExit } from "../lib/utils/exit";
 import { ensureGrammars } from "../lib/index/grammar-loader";
-import { createFileSystem } from "../lib/core/context";
-
-const PROFILE_ENABLED =
-  process.env.OSGREP_PROFILE === "1" || process.env.OSGREP_PROFILE === "true";
+import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
+import { VectorDB } from "../lib/store/vector-db";
 
 export const index = new Command("index")
   .description("Index the current directory and create searchable store")
@@ -43,67 +33,42 @@ export const index = new Command("index")
     const options: { store?: string; dryRun: boolean; path: string; reset: boolean } =
       cmd.optsWithGlobals();
 
-    let store: Store | null = null;
     try {
       await ensureSetup();
-      store = await createStore();
-      if (!store) throw new Error("Failed to create store");
+      const indexRoot = options.path
+        ? path.resolve(options.path)
+        : process.cwd();
+      const projectRoot = findProjectRoot(indexRoot) ?? indexRoot;
+      const paths = ensureProjectPaths(projectRoot);
+      const vectorDb = new VectorDB(paths.lancedbDir);
 
-      // Auto-detect store ID if not explicitly provided
-      const indexRoot = options.path || process.cwd();
-      const storeId = options.store || getAutoStoreId(indexRoot);
-
-      // Handle --reset flag: delete existing store and metadata before re-indexing
       if (options.reset) {
-        console.log(`Resetting index for store: ${storeId}`);
-        await store.deleteStore(storeId);
-        const metaStoreForReset = new MetaStore();
-        await metaStoreForReset.load();
-        metaStoreForReset.deleteByPrefix(indexRoot);
-        await metaStoreForReset.save();
-
+        console.log(`Resetting index at ${paths.osgrepDir}`);
+        await vectorDb.drop();
+        try {
+          fs.rmSync(paths.lmdbPath, { force: true });
+        } catch { }
         console.log("Existing index removed. Re-indexing...");
       }
 
       // Ensure grammars are present before indexing (silent if already exist)
       await ensureGrammars(console.log, { silent: true });
 
-      await ensureStoreExists(store, storeId);
-      const fileSystem = createFileSystem({
-        ignorePatterns: DEFAULT_IGNORE_PATTERNS,
-      });
-      const metaStore = new MetaStore();
-
       const { spinner, onProgress } = createIndexingSpinner(
-        indexRoot,
+        projectRoot,
         "Indexing...",
       );
       try {
-        try {
-          await store.retrieve(storeId);
-        } catch {
-          await store.create({
-            name: storeId,
-            description: "osgrep local index",
-          });
-        }
-        const result = await initialSync(
-          store!,
-          fileSystem,
-          storeId,
-          indexRoot,
-          options.dryRun,
+        const result = await initialSync({
+          projectRoot,
+          dryRun: options.dryRun,
           onProgress,
-          metaStore,
-        );
+        });
 
         if (options.dryRun) {
           spinner.succeed(
             `Dry run complete (${result.processed}/${result.total}) • would have indexed ${result.indexed}`,
           );
-          if (PROFILE_ENABLED && typeof store.getProfile === "function") {
-            console.log("[profile] local store:", store.getProfile());
-          }
           console.log(
             formatDryRunSummary(result, {
               actionDescription: "would have indexed",
@@ -114,34 +79,14 @@ export const index = new Command("index")
           return;
         }
 
-        // Wait for all indexing to complete
-        while (true) {
-          const info = await store.getInfo(storeId);
-          spinner.text = `Indexing ${info.counts.pending + info.counts.in_progress} file(s)`;
-          if (info.counts.pending === 0 && info.counts.in_progress === 0) {
-            break;
-          }
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
+        await vectorDb.createFTSIndex();
 
         spinner.succeed(
           `Indexing complete (${result.processed}/${result.total}) • indexed ${result.indexed}`,
         );
-        if (PROFILE_ENABLED && typeof store.getProfile === "function") {
-          console.log("[profile] local store:", store.getProfile());
-        }
       } catch (e) {
         spinner.fail("Indexing failed");
         throw e;
-      } finally {
-        // Always clean up the store
-        if (store && typeof store.close === "function") {
-          try {
-            await store.close();
-          } catch (err) {
-            console.error("Failed to close store:", err);
-          }
-        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";

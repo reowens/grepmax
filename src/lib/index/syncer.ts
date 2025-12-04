@@ -1,655 +1,199 @@
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
-import pLimit from "p-limit";
-import type { RepositoryScanner } from "./scanner";
-import type {
-    PreparedChunk,
-    Store,
-    VectorRecord,
-} from "../store/store";
-import type {
-    InitialSyncProgress,
-    InitialSyncResult,
+import fg from "fast-glob";
+import ignore from "ignore";
+import { CONFIG } from "../../config";
+import { ensureProjectPaths } from "../utils/project-root";
+import { DEFAULT_IGNORE_PATTERNS } from "./ignore-patterns";
+import {
+  type InitialSyncProgress,
+  type InitialSyncResult,
 } from "./sync-helpers";
-import { workerManager } from "../workers/worker-manager";
-import { MetaStore, type MetaEntry } from "../store/meta-store";
 import { computeBufferHash, isIndexableFile } from "../utils/file-utils";
+import { MetaCache, type MetaEntry } from "../store/meta-cache";
+import { VectorDB } from "../store/vector-db";
+import { workerPool } from "../workers/pool";
+import type { VectorRecord } from "../store/types";
 
-// Re-export these for convenience if needed by other modules, 
-// though ideally they should import from file-utils directly.
-// export { indexFile, preparedChunksToVectors };
-
-const PROFILE_ENABLED =
-    process.env.OSGREP_PROFILE === "1" || process.env.OSGREP_PROFILE === "true";
-const SKIP_META_SAVE =
-    process.env.OSGREP_SKIP_META_SAVE === "1" ||
-    process.env.OSGREP_SKIP_META_SAVE === "true";
-const DEFAULT_EMBED_BATCH_SIZE = 24;
-const META_FILE = path.join(os.homedir(), ".osgrep", "meta.json");
-const USE_POOLED_COLBERT =
-    process.env.OSGREP_ENABLE_POOLED_COLBERT === "1" ||
-    process.env.OSGREP_ENABLE_POOLED_COLBERT === "true";
-const DEBUG_INDEX =
-    process.env.OSGREP_DEBUG_INDEX === "1" ||
-    process.env.OSGREP_DEBUG_INDEX === "true";
-
-export interface IndexingProfile {
-    sections: Record<string, number>;
-    metaFileSize?: number;
-    metaSaveCount: number;
-    metaSaveSkipped: boolean;
-    processed: number;
-    indexed: number;
-}
-
-type IndexCandidate = {
-    filePath: string;
-    hash: string;
-    mtimeMs: number;
-    size: number;
-    buffer?: Buffer;
+type SyncOptions = {
+  projectRoot: string;
+  dryRun?: boolean;
+  onProgress?: (info: InitialSyncProgress) => void;
+  signal?: AbortSignal;
 };
 
-export type IndexFileResult = {
-    chunks: PreparedChunk[];
-    indexed: boolean;
-};
+type GlobOptions = fg.Options;
 
-function now(): bigint {
-    return process.hrtime.bigint();
+function buildIgnoreFilter(projectRoot: string) {
+  const filter = ignore();
+  const osgrepIgnore = path.join(projectRoot, ".osgrepignore");
+  if (fs.existsSync(osgrepIgnore)) {
+    filter.add(fs.readFileSync(osgrepIgnore, "utf-8"));
+  }
+  return filter;
 }
 
-function toMs(start: bigint, end?: bigint): number {
-    return Number((end ?? now()) - start) / 1_000_000;
+async function countFiles(
+  globOptions: GlobOptions,
+  filter: ReturnType<typeof buildIgnoreFilter>,
+  signal?: AbortSignal,
+): Promise<number> {
+  let total = 0;
+  for await (const entry of fg.stream("**/*", globOptions)) {
+    if (signal?.aborted) break;
+    const relPath = entry.toString();
+    if (filter.ignores(relPath)) continue;
+    const cwd = globOptions.cwd ?? process.cwd();
+    const absPath = path.join(cwd, relPath);
+    if (isIndexableFile(absPath)) {
+      total += 1;
+    }
+  }
+  return total;
 }
 
-function resolveEmbedBatchSize(): number {
-    const fromEnv = Number.parseInt(process.env.OSGREP_BATCH_SIZE ?? "", 10);
-    if (Number.isFinite(fromEnv) && fromEnv > 0) {
-        return Math.min(fromEnv, 96);
-    }
-    if (process.env.OSGREP_LOW_IMPACT === "1") return 24;
-    if (process.env.OSGREP_FAST === "1") return 48;
-    return DEFAULT_EMBED_BATCH_SIZE;
+async function flushBatch(
+  db: VectorDB,
+  meta: MetaCache,
+  batch: VectorRecord[],
+  pendingMeta: Map<string, MetaEntry>,
+  dryRun?: boolean,
+) {
+  if (batch.length === 0) return;
+  const toWrite = batch.splice(0);
+  const metaEntries = Array.from(pendingMeta.entries());
+  pendingMeta.clear();
+
+  if (dryRun) return;
+  await db.insertBatch(toWrite);
+  for (const [p, entry] of metaEntries) {
+    meta.put(p, entry);
+  }
 }
 
-export async function initialSync(
-    store: Store,
-    fileSystem: RepositoryScanner,
-    storeId: string,
-    repoRoot: string,
-    dryRun?: boolean,
-    onProgress?: (info: InitialSyncProgress) => void,
-    metaStore?: MetaStore,
-    signal?: AbortSignal,
-): Promise<InitialSyncResult> {
-    if (metaStore) {
-        await metaStore.load();
-    }
+export async function initialSync(options: SyncOptions): Promise<InitialSyncResult> {
+  const {
+    projectRoot,
+    dryRun = false,
+    onProgress,
+    signal,
+  } = options;
+  const paths = ensureProjectPaths(projectRoot);
+  const vectorDb = new VectorDB(paths.lancedbDir);
+  const metaCache = new MetaCache(paths.lmdbPath);
+  const ignoreFilter = buildIgnoreFilter(paths.root);
 
-    const EMBED_BATCH_SIZE = resolveEmbedBatchSize();
-    const profile: IndexingProfile | undefined = PROFILE_ENABLED
-        ? {
-            sections: {},
-            metaSaveCount: 0,
-            metaSaveSkipped: SKIP_META_SAVE,
-            metaFileSize: undefined,
-            processed: 0,
-            indexed: 0,
-        }
-        : undefined;
+  const globOptions: GlobOptions = {
+    cwd: paths.root,
+    dot: false,
+    onlyFiles: true,
+    unique: true,
+    followSymbolicLinks: false,
+    ignore: [...DEFAULT_IGNORE_PATTERNS, ".git/**", ".osgrep/**"],
+    suppressErrors: true,
+  };
 
-    const totalStart = PROFILE_ENABLED ? now() : null;
-    if (DEBUG_INDEX) {
-        console.log("[index] start", { repoRoot, storeId });
-    }
+  const total = await countFiles(globOptions, ignoreFilter, signal);
+  onProgress?.({ processed: 0, indexed: 0, total, filePath: "Scanning..." });
 
-    // 1. Scan existing store to find what we already have
-    const dbPaths = new Set<string>();
-    let storeIsEmpty = false;
-    let storeHashes: Map<string, string | undefined> = new Map();
-    let initialDbCount = 0;
-    const storeScanStart = PROFILE_ENABLED ? now() : null;
+  const storedPaths = await vectorDb.listPaths();
+  const seenPaths = new Set<string>();
+  const batch: any[] = [];
+  const pendingMeta = new Map<string, MetaEntry>();
+  const batchLimit = Math.max(1, CONFIG.EMBED_BATCH_SIZE);
+
+  let processed = 0;
+  let indexed = 0;
+
+  for await (const entry of fg.stream("**/*", globOptions)) {
+    if (signal?.aborted) break;
+    const relPath = entry.toString();
+    if (ignoreFilter.ignores(relPath)) continue;
+
+    const absPath = path.join(paths.root, relPath);
+    if (!isIndexableFile(absPath)) continue;
 
     try {
-        let dbScanCount = 0;
-        for await (const file of store.listFiles(storeId)) {
-            const externalId = file.external_id ?? undefined;
-            if (!externalId) continue;
-            dbPaths.add(externalId);
-            dbScanCount++;
-            if (dbScanCount % 100 === 0) {
-                onProgress?.({ processed: 0, indexed: 0, total: 0, filePath: `Checking index... (${dbScanCount} files)` });
-            }
-            if (!metaStore) {
-                const metadata = file.metadata;
-                const hash: string | undefined =
-                    metadata && typeof metadata.hash === "string"
-                        ? metadata.hash
-                        : undefined;
-                storeHashes.set(externalId, hash);
-            }
-        }
-        initialDbCount = dbPaths.size;
-        storeIsEmpty = dbPaths.size === 0;
-    } catch (_err) {
-        storeIsEmpty = true;
-    }
+      const stats = await fs.promises.stat(absPath);
+      const cached = metaCache.get(relPath);
 
-    if (PROFILE_ENABLED && storeScanStart && profile) {
-        profile.sections.storeScan =
-            (profile.sections.storeScan ?? 0) + toMs(storeScanStart);
-    }
+      if (
+        cached &&
+        cached.mtimeMs === stats.mtimeMs &&
+        cached.size === stats.size
+      ) {
+        processed += 1;
+        seenPaths.add(relPath);
+        onProgress?.({ processed, indexed, total, filePath: relPath });
+        continue;
+      }
 
-    if (metaStore && storeHashes.size === 0) {
-        storeHashes = new Map();
-    }
+      const buffer = await fs.promises.readFile(absPath);
+      if (buffer.length === 0) {
+        processed += 1;
+        seenPaths.add(relPath);
+        onProgress?.({ processed, indexed, total, filePath: relPath });
+        continue;
+      }
+      const hash = computeBufferHash(buffer);
 
-    // 2. Walk file system and apply the VELVET ROPE filter
-    const fileWalkStart = PROFILE_ENABLED ? now() : null;
-
-    // Files on disk that are not gitignored.
-    const allFiles: string[] = [];
-    let scanCount = 0;
-    let lastFile = "";
-    for await (const file of fileSystem.getFiles(repoRoot)) {
-        allFiles.push(file);
-        scanCount++;
-        lastFile = file;
-        if (scanCount % 100 === 0) {
-            onProgress?.({ processed: 0, indexed: 0, total: 0, filePath: `Scanning... (${scanCount} files found)` });
-        }
-    }
-    if (DEBUG_INDEX) {
-        console.log("[index] scan complete", { scanCount, lastFile });
-    }
-
-    if (DEBUG_INDEX) {
-        console.log("[index] calling onProgress with Processing message");
-    }
-    onProgress?.({ processed: 0, indexed: 0, total: 0, filePath: `Processing ${allFiles.length} files...` });
-    if (DEBUG_INDEX) {
-        console.log("[index] onProgress called");
-    }
-
-    const aliveFiles = allFiles.filter(
-        (filePath) => !fileSystem.isIgnored(filePath, repoRoot)
-    );
-
-    if (PROFILE_ENABLED && fileWalkStart && profile) {
-        profile.sections.fileWalk =
-            (profile.sections.fileWalk ?? 0) + toMs(fileWalkStart);
-    }
-
-    // Apply extension filter to pick index candidates.
-    const repoFiles = aliveFiles.filter((filePath) => isIndexableFile(filePath));
-    if (DEBUG_INDEX) {
-        console.log("[index] files", {
-            total: allFiles.length,
-            alive: aliveFiles.length,
-            indexable: repoFiles.length,
+      if (cached && cached.hash === hash) {
+        metaCache.put(relPath, {
+          hash,
+          mtimeMs: stats.mtimeMs,
+          size: stats.size,
         });
-    }
+        processed += 1;
+        seenPaths.add(relPath);
+        onProgress?.({ processed, indexed, total, filePath: relPath });
+        continue;
+      }
 
-    // C. Determine Staleness
-    // Stale = In DB, but not in 'aliveFiles' (meaning deleted from disk or added to .gitignore)
-    const diskPaths = new Set(aliveFiles);
+      if (dryRun) {
+        processed += 1;
+        indexed += 1;
+        seenPaths.add(relPath);
+        onProgress?.({ processed, indexed, total, filePath: relPath });
+        continue;
+      }
 
-    // 3. Delete stale files (files in DB but not on disk)
-    const stalePaths = Array.from(dbPaths).filter((p) => !diskPaths.has(p));
-    const total = repoFiles.length;
-    let processed = 0;
-    let indexed = 0;
-    let pendingIndexCount = 0;
-    let writeBuffer: VectorRecord[] = [];
-    const embedQueue: PreparedChunk[] = [];
-    const candidateMeta = new Map<string, MetaEntry>();
+      const vectors = await workerPool.processFile({
+        path: relPath,
+        content: buffer.toString("utf-8"),
+        hash,
+      });
 
-    const flushWriteBuffer = async (force = false) => {
-        if (dryRun) return;
-        if (writeBuffer.length === 0) return;
-        if (!force && writeBuffer.length < 500) return;
-        const toWrite = writeBuffer;
-        writeBuffer = [];
-        const writeStart = PROFILE_ENABLED ? now() : null;
-        await store.insertBatch(storeId, toWrite);
-        if (DEBUG_INDEX) {
-            console.log("[index] wrote batch", { size: toWrite.length });
-        }
-
-        // CHECKPOINTING FIX: Update meta store only after successful write
-        if (metaStore) {
-            const uniquePaths = new Set(toWrite.map((r) => r.path as string));
-            for (const p of uniquePaths) {
-                const meta = candidateMeta.get(p);
-                const record = toWrite.find((r) => r.path === p);
-                if (record && record.hash && meta) {
-                    metaStore.set(p, meta);
-                } else if (record && record.hash) {
-                    metaStore.set(p, {
-                        hash: record.hash as string,
-                        mtimeMs: 0,
-                        size: 0,
-                    });
-                }
-            }
-        }
-
-        if (PROFILE_ENABLED && writeStart && profile) {
-            profile.sections.tableWrite =
-                (profile.sections.tableWrite ?? 0) + toMs(writeStart);
-        }
-    };
-
-    const flushEmbedQueue = async (force = false) => {
-        if (dryRun) {
-            embedQueue.length = 0;
-            return;
-        }
-        embedQueue.sort((a, b) => a.content.length - b.content.length);
-        while (
-            embedQueue.length >= EMBED_BATCH_SIZE ||
-            (force && embedQueue.length > 0)
-        ) {
-            const batch = embedQueue.splice(0, EMBED_BATCH_SIZE);
-            const embedStart = PROFILE_ENABLED ? now() : null;
-            const vectors = await preparedChunksToVectors(batch);
-            if (DEBUG_INDEX) {
-                console.log("[index] embedded batch", {
-                    size: batch.length,
-                    remaining: embedQueue.length,
-                    pendingWrite: writeBuffer.length + vectors.length,
-                });
-            }
-            if (PROFILE_ENABLED && embedStart && profile) {
-                profile.sections.embed =
-                    (profile.sections.embed ?? 0) + toMs(embedStart);
-                profile.sections.embedBatches =
-                    (profile.sections.embedBatches ?? 0) + 1;
-            }
-            writeBuffer.push(...vectors);
-            await flushWriteBuffer();
-        }
-    };
-
-    if (PROFILE_ENABLED && profile) {
-        profile.processed = total;
-    }
-
-    const CONCURRENCY = Math.max(1, Math.min(4, os.cpus().length || 4));
-    const limit = pLimit(CONCURRENCY);
-    const BATCH_SIZE = 5; // Small batches keep memory pressure predictable
-
-    const candidates: IndexCandidate[] = [];
-    let embedFlushQueue = Promise.resolve();
-
-    // Process files in batches (hashing + change detection only)
-    for (let i = 0; i < repoFiles.length; i += BATCH_SIZE) {
-        if (signal?.aborted) break;
-        const batch = repoFiles.slice(i, i + BATCH_SIZE);
-
-        await Promise.all(
-            batch.map((filePath) =>
-                limit(async () => {
-                    let counted = false;
-                    try {
-                        const stats = await fs.promises.stat(filePath);
-                        const mtimeMs = stats.mtimeMs;
-                        const size = stats.size;
-                        const metaEntry = metaStore?.get(filePath);
-                        const existingHash =
-                            (metaEntry && metaEntry.hash) || storeHashes.get(filePath);
-                        const metaMatches =
-                            !storeIsEmpty &&
-                            !!metaEntry &&
-                            metaEntry.mtimeMs === mtimeMs &&
-                            metaEntry.size === size &&
-                            !!metaEntry.hash;
-
-                        processed += 1;
-                        counted = true;
-
-                        if (metaMatches) {
-                            onProgress?.({ processed, indexed, total, filePath });
-                            return;
-                        }
-
-                        const buffer = await fs.promises.readFile(filePath);
-                        const hashStart = PROFILE_ENABLED ? now() : null;
-                        const hash = computeBufferHash(buffer);
-
-                        if (PROFILE_ENABLED && hashStart && profile) {
-                            profile.sections.hash =
-                                (profile.sections.hash ?? 0) + toMs(hashStart);
-                        }
-
-                        const shouldIndex =
-                            storeIsEmpty || !existingHash || existingHash !== hash;
-
-                        if (shouldIndex) {
-                            if (dryRun) {
-                                indexed += 1;
-                            } else {
-                                candidates.push({ filePath, hash, mtimeMs, size, buffer });
-                                candidateMeta.set(filePath, { hash, mtimeMs, size });
-                            }
-                            pendingIndexCount += 1;
-                        }
-
-                        onProgress?.({ processed, indexed, total, filePath });
-                    } catch (_err) {
-                        if (!counted) processed += 1;
-                        onProgress?.({ processed, indexed, total, filePath });
-                    }
-                }),
-            ),
-        );
-    }
-
-    // Single delete for stale + changed paths
-    if (!dryRun) {
-        const deleteTargets = Array.from(
-            new Set([...stalePaths, ...candidates.map((c) => c.filePath)]),
-        );
-        if (deleteTargets.length > 0) {
-            const staleStart = PROFILE_ENABLED ? now() : null;
-            await store.deleteFiles(storeId, deleteTargets);
-            if (PROFILE_ENABLED && staleStart && profile) {
-                profile.sections.staleDeletes =
-                    (profile.sections.staleDeletes ?? 0) + toMs(staleStart);
-            }
-        }
-        if (metaStore && stalePaths.length > 0) {
-            stalePaths.forEach((p) => metaStore.delete(p));
-            await metaStore.save();
-        }
-    } else if (stalePaths.length > 0) {
-        for (const p of stalePaths) {
-            console.log("Dry run: would delete", p);
-        }
-    }
-
-    if (!dryRun && !storeIsEmpty) {
-        storeIsEmpty =
-            initialDbCount - stalePaths.length - candidates.length <= 0;
-    }
-    if (DEBUG_INDEX) {
-        console.log("[index] candidates", {
-            stale: stalePaths.length,
-            candidates: candidates.length,
-            storeIsEmpty,
+      if (vectors.length > 0) {
+        batch.push(...vectors);
+        pendingMeta.set(relPath, {
+          hash,
+          mtimeMs: stats.mtimeMs,
+          size: stats.size,
         });
+        indexed += 1;
+      }
+
+      seenPaths.add(relPath);
+      processed += 1;
+      onProgress?.({ processed, indexed, total, filePath: relPath });
+
+      if (batch.length >= batchLimit) {
+        await flushBatch(vectorDb, metaCache, batch, pendingMeta, dryRun);
+      }
+    } catch (err) {
+      processed += 1;
+      console.error(`[sync] Failed to process ${relPath}:`, err);
+      onProgress?.({ processed, indexed, total, filePath: relPath });
     }
+  }
 
-    const queueFlush = (force = false) => {
-        embedFlushQueue = embedFlushQueue.then(() => flushEmbedQueue(force));
-        return embedFlushQueue;
-    };
+  await flushBatch(vectorDb, metaCache, batch, pendingMeta, dryRun);
 
-    // Second pass: chunk + embed + write using global batching (parallel chunking)
-    if (!dryRun) {
-        const INDEX_BATCH = 50;
-        let indexingProcessed = 0;
-        for (let i = 0; i < candidates.length; i += INDEX_BATCH) {
-            const slice = candidates.slice(i, i + INDEX_BATCH);
-            await Promise.all(
-                slice.map((candidate) =>
-                    limit(async () => {
-                        if (signal?.aborted) return;
-                        try {
-                            const buffer =
-                                candidate.buffer ??
-                                (await fs.promises.readFile(candidate.filePath));
-                            const { chunks, indexed: didIndex } = await indexFile(
-                                store,
-                                storeId,
-                                candidate.filePath,
-                                path.basename(candidate.filePath),
-                                metaStore,
-                                profile,
-                                buffer,
-                                candidate.hash,
-                                storeIsEmpty,
-                            );
-                            candidate.buffer = undefined;
-                            pendingIndexCount = Math.max(0, pendingIndexCount - 1);
-                            indexingProcessed += 1;
-                            if (didIndex) {
-                                indexed += 1;
-                                if (chunks.length > 0) {
-                                    embedQueue.push(...chunks);
-                                    if (embedQueue.length >= EMBED_BATCH_SIZE) {
-                                        await queueFlush();
-                                    }
-                                }
+  const stale = Array.from(storedPaths.keys()).filter((p) => !seenPaths.has(p));
+  if (!dryRun && stale.length > 0) {
+    await vectorDb.deletePaths(stale);
+    stale.forEach((p) => metaCache.delete(p));
+  }
 
-                                // Periodic meta save
-                                if (metaStore && !SKIP_META_SAVE && indexed % 25 === 0) {
-                                    const saveStart = PROFILE_ENABLED ? now() : null;
-                                    metaStore
-                                        .save()
-                                        .catch((err) =>
-                                            console.error("Failed to auto-save meta:", err),
-                                        );
-                                    if (PROFILE_ENABLED && saveStart && profile) {
-                                        profile.metaSaveCount += 1;
-                                        profile.sections.metaSave =
-                                            (profile.sections.metaSave ?? 0) + toMs(saveStart);
-                                    }
-                                }
-                            }
-                            onProgress?.({
-                                processed: indexingProcessed,
-                                indexed,
-                                total: candidates.length,
-                                filePath: candidate.filePath,
-                            });
-                        } catch (_err) {
-                            pendingIndexCount = Math.max(0, pendingIndexCount - 1);
-                            indexingProcessed += 1;
-                            onProgress?.({
-                                processed: indexingProcessed,
-                                indexed,
-                                total: candidates.length,
-                                filePath: candidate.filePath,
-                            });
-                        }
-                    }),
-                ),
-            );
-            // Force flush between batches to ensure backpressure
-            await queueFlush(true);
-        }
-    }
-
-    await queueFlush(true);
-    await flushWriteBuffer(true);
-
-    if (PROFILE_ENABLED && profile) {
-        profile.processed = processed;
-        profile.indexed = indexed;
-    }
-
-    // Final meta save
-    if (!dryRun && metaStore) {
-        const finalSaveStart = PROFILE_ENABLED ? now() : null;
-        await metaStore.save();
-        if (PROFILE_ENABLED && finalSaveStart && profile) {
-            profile.metaSaveCount += 1;
-            profile.sections.metaSave =
-                (profile.sections.metaSave ?? 0) + toMs(finalSaveStart);
-        }
-    }
-
-    // Create/Update FTS & Vector Index only if needed
-    if (!dryRun && indexed > 0) {
-        const ftsStart = PROFILE_ENABLED ? now() : null;
-        await store.createFTSIndex(storeId);
-        if (PROFILE_ENABLED && ftsStart && profile) {
-            profile.sections.createFTSIndex =
-                (profile.sections.createFTSIndex ?? 0) + toMs(ftsStart);
-        }
-        // Vector index creation removed
-    }
-
-    if (PROFILE_ENABLED && totalStart && profile) {
-        profile.sections.total = toMs(totalStart);
-        const metaSize = await fs.promises
-            .stat(META_FILE)
-            .then((s) => s.size)
-            .catch(() => undefined);
-        profile.metaFileSize = metaSize;
-        console.log(
-            "[profile] timing (ms):",
-            Object.fromEntries(
-                Object.entries(profile.sections).map(([k, v]) => [
-                    k,
-                    Number(v.toFixed(2)),
-                ]),
-            ),
-        );
-        console.log(
-            "[profile] indexing",
-            `processed=${processed} indexed=${indexed} metaSaves=${profile.metaSaveCount} metaSize=${metaSize ?? "n/a"} bytes`,
-        );
-    }
-
-    return { processed, indexed, total };
-}
-
-export async function indexFile(
-    store: Store,
-    storeId: string,
-    filePath: string,
-    fileName: string,
-    metaStore?: MetaStore,
-    profile?: IndexingProfile,
-    preComputedBuffer?: Buffer,
-    preComputedHash?: string,
-    forceIndex?: boolean,
-): Promise<IndexFileResult> {
-    const indexStart = PROFILE_ENABLED ? now() : null;
-    let buffer: Buffer;
-    let hash: string;
-
-    if (preComputedBuffer && preComputedHash) {
-        buffer = preComputedBuffer;
-        hash = preComputedHash;
-    } else {
-        buffer = await fs.promises.readFile(filePath);
-        if (buffer.length === 0) {
-            return { chunks: [], indexed: false };
-        }
-        hash = computeBufferHash(buffer);
-    }
-
-    const contentString = buffer.toString("utf-8");
-
-    if (!forceIndex && metaStore) {
-        const cachedHash = metaStore.get(filePath)?.hash;
-        if (cachedHash === hash) {
-            return { chunks: [], indexed: false };
-        }
-    }
-
-    const options = {
-        external_id: filePath,
-        overwrite: true,
-        metadata: {
-            path: filePath,
-            hash,
-        },
-        content: contentString,
-    };
-
-    let chunks: PreparedChunk[] = [];
-    let indexed = false;
-
-    try {
-        chunks = await store.indexFile(storeId, contentString, options);
-        indexed = true;
-    } catch (_err) {
-        // Fallback for weird encodings
-        chunks = await store.indexFile(
-            storeId,
-            new File([new Uint8Array(buffer)], fileName, { type: "text/plain" }),
-            options,
-        );
-        indexed = true;
-    }
-
-    // DEFERRED: We do NOT update the meta store here anymore.
-    // We only update it after the vectors are successfully written to the DB.
-    // if (indexed && metaStore) {
-    //   metaStore.set(filePath, hash);
-    // }
-
-    if (indexed && PROFILE_ENABLED && indexStart && profile) {
-        profile.sections.index = (profile.sections.index ?? 0) + toMs(indexStart);
-    }
-
-    return { chunks, indexed };
-}
-
-export async function preparedChunksToVectors(
-    chunks: PreparedChunk[],
-): Promise<VectorRecord[]> {
-    if (chunks.length === 0) return [];
-    const hybrids = await workerManager.computeHybrid(
-        chunks.map((chunk) => chunk.content),
-    );
-    return chunks.map((chunk, idx) => {
-        const hybrid = hybrids[idx] ?? {
-            dense: new Float32Array(),
-            colbert: new Int8Array(),
-            scale: 1,
-        };
-        const denseSource = (hybrid as { dense?: unknown }).dense;
-        const denseVector =
-            ArrayBuffer.isView(denseSource) && denseSource instanceof Float32Array
-                ? denseSource
-                : Array.isArray(denseSource)
-                    ? new Float32Array(denseSource)
-                    : ArrayBuffer.isView(denseSource)
-                        ? (() => {
-                            const view = denseSource as ArrayBufferView;
-                            const arr =
-                                "length" in view
-                                    ? Array.from(view as unknown as ArrayLike<number>)
-                                    : Array.from(new Uint8Array(view.buffer));
-                            return new Float32Array(arr);
-                        })()
-                        : new Float32Array();
-
-        const colbertSource = (hybrid as { colbert?: unknown }).colbert;
-        const colbertVector =
-            Buffer.isBuffer(colbertSource)
-                ? colbertSource
-                : ArrayBuffer.isView(colbertSource)
-                    ? new Int8Array(
-                        (colbertSource as ArrayBufferView).buffer,
-                        (colbertSource as ArrayBufferView).byteOffset,
-                        (colbertSource as ArrayBufferView).byteLength,
-                    )
-                    : Array.isArray(colbertSource)
-                        ? new Int8Array(colbertSource)
-                        : new Int8Array();
-
-        const pooled = (hybrid as { pooled_colbert_48d?: Float32Array | number[] }).pooled_colbert_48d;
-        return {
-            ...chunk,
-            vector: denseVector,
-            colbert: colbertVector,
-            colbert_scale: hybrid.scale,
-            ...(USE_POOLED_COLBERT && pooled
-                ? {
-                    pooled_colbert_48d:
-                        pooled instanceof Float32Array
-                            ? pooled
-                            : new Float32Array(pooled ?? []),
-                }
-                : {}),
-        };
-    });
+  return { processed, indexed, total };
 }
