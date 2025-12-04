@@ -54,9 +54,4 @@ export interface SearchFilter {
   [key: string]: MetadataValue;
 }
 
-export interface IndexFileOptions {
-  external_id: string;
-  overwrite?: boolean;
-  metadata?: FileMetadata;
-  content?: string;
-}
+

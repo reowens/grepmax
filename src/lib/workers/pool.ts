@@ -1,3 +1,7 @@
+/**
+ * Architecture Note: We use a custom Child Process pool instead of Worker Threads
+ * to ensure the ONNX Runtime segfaults do not crash the main process.
+ */
 import * as childProcess from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -139,8 +143,7 @@ export class WorkerPool {
       this.clearTaskTimeout(task);
       task.reject(
         new Error(
-          `Worker exited unexpectedly${code ? ` (code ${code})` : ""}${
-            signal ? ` signal ${signal}` : ""
+          `Worker exited unexpectedly${code ? ` (code ${code})` : ""}${signal ? ` signal ${signal}` : ""
           }`,
         ),
       );
@@ -215,7 +218,7 @@ export class WorkerPool {
     worker.child.removeAllListeners("exit");
     try {
       worker.child.kill("SIGKILL");
-    } catch {}
+    } catch { }
 
     this.workers = this.workers.filter((w) => w !== worker);
     if (!this.destroyed) {
@@ -302,7 +305,7 @@ export class WorkerPool {
           const force = setTimeout(() => {
             try {
               w.child.kill("SIGKILL");
-            } catch {}
+            } catch { }
           }, FORCE_KILL_GRACE_MS);
           setTimeout(() => {
             clearTimeout(force);

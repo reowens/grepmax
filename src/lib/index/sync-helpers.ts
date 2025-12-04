@@ -14,9 +14,6 @@ export interface InitialSyncProgress {
 }
 
 interface ProgressTracker {
-  startTime: number;
-  lastProcessed: number;
-  estimatedTimeRemaining(): string;
   update(processed: number, total: number): void;
 }
 
@@ -46,47 +43,13 @@ function formatRelativePath(root: string, filePath?: string): string {
  * Creates a progress tracker that estimates time remaining based on processing rate.
  */
 function createProgressTracker(): ProgressTracker {
-  const startTime = Date.now();
-  const lastProcessed = 0;
-
   return {
-    startTime,
-    lastProcessed,
-    update(processed: number, _total: number) {
-      this.lastProcessed = processed;
-    },
-    estimatedTimeRemaining(): string {
-      if (this.lastProcessed === 0) return "";
-
-      const elapsed = Date.now() - this.startTime;
-      const rate = this.lastProcessed / elapsed; // files per ms
-
-      if (rate === 0) return "";
-
-      return "";
+    update(_processed: number, _total: number) {
+      // No-op for now, but keeping structure if we want to add stats later
     },
   };
 }
 
-/**
- * Formats milliseconds into a human-readable time string.
- */
-function formatTime(ms: number): string {
-  const seconds = Math.ceil(ms / 1000);
-
-  if (seconds < 60) {
-    return `${seconds}s`;
-  }
-
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-
-  if (remainingSeconds === 0) {
-    return `${minutes}m`;
-  }
-
-  return `${minutes}m ${remainingSeconds}s`;
-}
 
 /**
  * Creates a shared spinner + progress callback pair that keeps the CLI UI
@@ -126,25 +89,12 @@ export function createIndexingSpinner(
       const rel = formatRelativePath(root, info.filePath);
       const fileSuffix = rel ? ` • ${rel}` : "";
 
-      // Calculate estimated time remaining
-      let timeSuffix = "";
       const totalKnown = info.total > 0;
-      if (totalKnown && info.processed > 0 && info.processed < info.total) {
-        const elapsed = Date.now() - tracker.startTime;
-        const rate = info.processed / elapsed; // files per ms
-        const remaining = info.total - info.processed;
-        const estimatedMs = remaining / rate;
-
-        if (estimatedMs > 0 && Number.isFinite(estimatedMs)) {
-          timeSuffix = ` • ~${formatTime(estimatedMs)} remaining`;
-        }
-      }
-
       const progressSuffix = totalKnown
         ? `(${info.processed}/${info.total})`
         : `(${info.processed} files)`;
 
-      spinner.text = `Indexing files ${progressSuffix}${timeSuffix}${fileSuffix}`;
+      spinner.text = `Indexing files ${progressSuffix}${fileSuffix}`;
     },
   };
 }

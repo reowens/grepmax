@@ -16,13 +16,7 @@ export function hasNullByte(buffer: Buffer, sampleLength = 1024): boolean {
   return false;
 }
 
-export function computeFileHash(
-  filePath: string,
-  readFileSyncFn: (p: string) => Buffer,
-): string {
-  const buffer = readFileSyncFn(filePath);
-  return computeBufferHash(buffer);
-}
+
 
 export async function readFileSnapshot(
   filePath: string,

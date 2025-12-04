@@ -168,6 +168,8 @@ export const search: Command = new CommanderCommand("search")
         isPlain: shouldBePlain,
         compact: options.compact,
         content: options.content,
+        perFile: parseInt(options.perFile, 10),
+        showScores: options.scores,
       });
 
       console.log(output);

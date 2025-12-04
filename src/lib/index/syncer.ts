@@ -45,12 +45,16 @@ async function flushBatch(
   dryRun?: boolean,
 ) {
   if (dryRun) return;
+
+  // 1. Write to VectorDB first (source of truth for data)
   if (pendingDeletes.length > 0) {
     await db.deletePaths(pendingDeletes);
   }
   if (vectors.length > 0) {
     await db.insertBatch(vectors);
   }
+
+  // 2. Update MetaCache only after VectorDB write succeeds
   for (const [p, entry] of pendingMeta.entries()) {
     meta.put(p, entry);
   }
@@ -76,14 +80,24 @@ export async function initialSync(
   try {
     lock = await acquireWriterLock(paths.osgrepDir);
 
-    // CRITICAL: Handle reset INSIDE the lock to prevent corruption
-    if (reset && !dryRun) {
+    // Consistency Check: If VectorDB is empty but MetaCache is not (or vice versa),
+    // we might be in a corrupted state. Force a reset.
+    const hasRows = await vectorDb.hasAnyRows();
+    const hasMeta = (await metaCache.getAllKeys()).size > 0;
+    const isInconsistent = (hasRows && !hasMeta) || (!hasRows && hasMeta);
+
+    if ((reset || isInconsistent) && !dryRun) {
+      if (isInconsistent) {
+        console.warn(
+          "[syncer] Detected inconsistent state (VectorDB/MetaCache mismatch). Forcing re-sync.",
+        );
+      }
       await vectorDb.drop();
 
       metaCache.close();
       try {
         fs.rmSync(paths.lmdbPath, { force: true });
-      } catch {}
+      } catch { }
       metaCache = new MetaCache(paths.lmdbPath);
     }
 

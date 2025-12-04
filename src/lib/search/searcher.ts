@@ -8,9 +8,10 @@ import type {
 } from "../store/types";
 import type { VectorDB } from "../store/vector-db";
 import { getWorkerPool } from "../workers/pool";
+import { escapeSqlString, normalizePath } from "../utils/filter-builder";
 
 export class Searcher {
-  constructor(private db: VectorDB) {}
+  constructor(private db: VectorDB) { }
 
   private mapRecordToChunk(
     record: Partial<VectorRecord>,
@@ -92,7 +93,7 @@ export class Searcher {
     }
 
     const whereClause = pathPrefix
-      ? `path LIKE '${pathPrefix.replace(/'/g, "''").replace(/\\/g, "\\\\")}%'`
+      ? `path LIKE '${escapeSqlString(normalizePath(pathPrefix))}%'`
       : undefined;
 
     const PRE_RERANK_K = Math.max(finalLimit * 3, 150);

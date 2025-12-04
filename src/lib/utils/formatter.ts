@@ -67,6 +67,8 @@ export function formatTextResults(
     isPlain: boolean;
     compact?: boolean;
     content?: boolean;
+    perFile?: number;
+    showScores?: boolean;
   },
 ): string {
   if (results.length === 0) return `osgrep: No results found for "${query}".`;
@@ -111,9 +113,9 @@ export function formatTextResults(
       const truncated =
         !options.content && lines.length > maxLines
           ? [
-              ...lines.slice(0, maxLines),
-              `... (+${lines.length - maxLines} more lines)`,
-            ]
+            ...lines.slice(0, maxLines),
+            `... (+${lines.length - maxLines} more lines)`,
+          ]
           : lines;
 
       output += `${relPath}:${line}${tagStr}\n`;
@@ -131,14 +133,22 @@ export function formatTextResults(
   let rank = 1;
 
   for (const [filePath, chunks] of fileGroups) {
-    chunks.sort((a, b) => a.start_line - b.start_line);
+    // 1. Sort by score descending (best matches first)
+    chunks.sort((a, b) => b.score - a.score);
+
+    // 2. Apply per-file limit
+    const limit = options.perFile ?? 1000;
+    const limitedChunks = chunks.slice(0, limit);
+
+    // 3. Re-sort by line number for display
+    limitedChunks.sort((a, b) => a.start_line - b.start_line);
 
     // Smart Stitching Logic
     const merged: TextResult[] = [];
-    if (chunks.length > 0) {
-      let current = chunks[0];
-      for (let i = 1; i < chunks.length; i++) {
-        const next = chunks[i];
+    if (limitedChunks.length > 0) {
+      let current = limitedChunks[0];
+      for (let i = 1; i < limitedChunks.length; i++) {
+        const next = limitedChunks[i];
         if (next.start_line <= current.end_line + 10) {
           current.content += `\n   // ...\n${next.content}`;
           current.end_line = next.end_line;
@@ -171,9 +181,9 @@ export function formatTextResults(
       const truncated =
         !options.content && lines.length > maxLines
           ? [
-              ...lines.slice(0, maxLines),
-              style.dim(`... (+${lines.length - maxLines} more lines)`),
-            ]
+            ...lines.slice(0, maxLines),
+            style.dim(`... (+${lines.length - maxLines} more lines)`),
+          ]
           : lines;
 
       // Apply syntax highlighting for humans
@@ -188,7 +198,11 @@ export function formatTextResults(
         // fall back to non-highlighted text
       }
 
-      output += `${rank}) 📂 ${style.green(relPath)}${style.dim(`:${line}`)}${tagStr}\n`;
+      const scoreStr = options.showScores
+        ? ` ${style.dim(`(score: ${item.score.toFixed(3)})`)}`
+        : "";
+
+      output += `${rank}) 📂 ${style.green(relPath)}${style.dim(`:${line}`)}${tagStr}${scoreStr}\n`;
       const numbered = rendered.split("\n").map((ln, idx) => {
         const num = style.dim(`${line + idx}`.padStart(4));
         return `${num} │ ${ln}`;

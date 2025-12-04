@@ -186,22 +186,7 @@ export class VectorDB {
     return rows.length > 0;
   }
 
-  // Deprecated for full scans, kept for legacy if needed but discouraged
-  async listPaths(): Promise<Map<string, string | undefined>> {
-    const table = await this.ensureTable();
-    const results = (await table
-      .query()
-      .select(["path", "hash"])
-      .toArray()) as VectorRecord[];
-    const byPath = new Map<string, string | undefined>();
-    for (const r of results) {
-      const key = r.path as string;
-      if (!byPath.has(key)) {
-        byPath.set(key, r.hash as string | undefined);
-      }
-    }
-    return byPath;
-  }
+
 
   async deletePaths(paths: string[]): Promise<void> {
     if (!paths.length) return;
