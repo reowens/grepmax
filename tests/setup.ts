@@ -2,23 +2,19 @@ import { vi } from "vitest";
 import { CONFIG } from "../src/config";
 
 // Avoid spinning up heavy embedding workers during tests.
-const vectorDim = CONFIG.VECTOR_DIMENSIONS;
-vi.mock("../src/lib/workers/worker-manager", () => {
+const vectorDim = CONFIG.VECTOR_DIM;
+vi.mock("../src/lib/workers/pool", () => {
   const makeDense = (len: number) => Array(len).fill(0);
   return {
-    workerManager: {
-      computeHybrid: vi.fn(async (texts: string[]) =>
-        texts.map(() => ({
-          dense: makeDense(vectorDim),
-          colbert: Buffer.alloc(0),
-          scale: 1,
-        })),
-      ),
+    workerPool: {
+      processFile: vi.fn(async (_input: any) => []),
       encodeQuery: vi.fn(async () => ({
         dense: makeDense(vectorDim),
         colbert: [],
+        colbertDim: CONFIG.COLBERT_DIM,
       })),
-      close: vi.fn(async () => { }),
+      rerank: vi.fn(async (_input: any) => []),
+      destroy: vi.fn(async () => { }),
     },
   };
 });

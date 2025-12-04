@@ -1,13 +1,11 @@
 import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
 import ora from "ora";
 import { areModelsDownloaded, downloadModels } from "./model-loader";
+import { PATHS } from "../../config";
 
 export interface SetupPaths {
   root: string;
   models: string;
-  data: string;
   grammars: string;
 }
 
@@ -17,13 +15,10 @@ export interface SetupStatus extends SetupPaths {
 }
 
 function getPaths(): SetupPaths {
-  const home = os.homedir();
-  const root = path.join(home, ".osgrep");
   return {
-    root,
-    models: path.join(root, "models"),
-    data: path.join(root, "data"),
-    grammars: path.join(root, "grammars"),
+    root: PATHS.globalRoot,
+    models: PATHS.models,
+    grammars: PATHS.grammars,
   };
 }
 
@@ -37,7 +32,7 @@ export async function ensureSetup({
   silent?: boolean;
 } = {}): Promise<SetupStatus> {
   const paths = getPaths();
-  const dirs = [paths.root, paths.models, paths.data, paths.grammars];
+  const dirs = [paths.root, paths.models, paths.grammars];
 
   const needsDirs = dirs.some((dir) => !fs.existsSync(dir));
   let createdDirs = false;

@@ -1,19 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../src/lib/core/context", () => {
-  return {
-    createStore: vi.fn(async () => fakeStore),
-    createFileSystem: vi.fn(() => fakeFileSystem),
-  };
-});
-
 vi.mock("../src/lib/setup/setup-helpers", () => ({
   ensureSetup: vi.fn(async () => { }),
 }));
 
-vi.mock("../src/lib/store/store-utils", () => ({
-  ensureStoreExists: vi.fn(async () => { }),
-  getAutoStoreId: vi.fn(() => "auto-store"),
+vi.mock("../src/lib/utils/project-root", () => ({
+  ensureProjectPaths: vi.fn(() => ({
+    root: "/tmp/project",
+    osgrepDir: "/tmp/project/.osgrep",
+    lancedbDir: "/tmp/project/.osgrep/lancedb",
+    cacheDir: "/tmp/project/.osgrep/cache",
+    lmdbPath: "/tmp/project/.osgrep/cache/meta.lmdb",
+    configPath: "/tmp/project/.osgrep/config.json",
+  })),
+  findProjectRoot: vi.fn(() => "/tmp/project"),
 }));
 
 vi.mock("../src/lib/index/sync-helpers", () => ({
@@ -28,8 +28,8 @@ vi.mock("../src/lib/index/sync-helpers", () => ({
   formatDryRunSummary: vi.fn(() => "dry-run-summary"),
 }));
 
-vi.mock("../src/lib/store/meta-store", () => ({
-  MetaStore: class { },
+vi.mock("../src/lib/index/grammar-loader", () => ({
+  ensureGrammars: vi.fn(async () => { }),
 }));
 
 vi.mock("../src/lib/index/syncer", () => ({
@@ -44,18 +44,14 @@ vi.mock("../src/lib/utils/exit", () => ({
   gracefulExit: vi.fn(async () => { }),
 }));
 
-const fakeFileSystem = {
-  getFiles: () => [].values(),
-  isIgnored: () => false,
-  loadOsgrepignore: () => { },
+const fakeVectorDb = {
+  drop: vi.fn(async () => { }),
+  createFTSIndex: vi.fn(async () => { }),
 };
 
-const fakeStore = {
-  retrieve: vi.fn(async () => ({})),
-  create: vi.fn(async () => ({})),
-  getInfo: vi.fn(async () => ({ counts: { pending: 0, in_progress: 0 } })),
-  close: vi.fn(async () => { }),
-};
+vi.mock("../src/lib/store/vector-db", () => ({
+  VectorDB: vi.fn(() => fakeVectorDb),
+}));
 
 import { index } from "../src/commands/index";
 import { initialSync } from "../src/lib/index/syncer";
@@ -72,7 +68,6 @@ describe("index command", () => {
 
     expect(ensureSetup).toHaveBeenCalledOnce();
     expect(initialSync).toHaveBeenCalledOnce();
-    expect(fakeStore.close).toHaveBeenCalledOnce();
     const spinner = (createIndexingSpinner as any).mock.results[0]
       .value.spinner;
     expect(spinner.succeed).toHaveBeenCalled();

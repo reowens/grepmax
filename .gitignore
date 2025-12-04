@@ -21,3 +21,4 @@ CLAUDE.md
 latest_review.md
 benchmarks/*.log
 .osgrep/server.json
+osgrep/*

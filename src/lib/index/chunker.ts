@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { GRAMMARS_DIR } from "./grammar-loader";
 import { getLanguageByExtension } from "../core/languages";
+import { CONFIG } from "../../config";
 
 // web-tree-sitter ships a CommonJS build
 const TreeSitter = require("web-tree-sitter");
@@ -142,8 +143,8 @@ export class TreeSitterChunker {
   private initialized = false;
 
   // Tuned for speed: Fill the context window (512 tokens) more aggressively.
-  private readonly MAX_CHUNK_LINES = 75;
-  private readonly MAX_CHUNK_CHARS = 2000;
+  private readonly MAX_CHUNK_LINES = CONFIG.MAX_CHUNK_LINES;
+  private readonly MAX_CHUNK_CHARS = CONFIG.MAX_CHUNK_CHARS;
   private readonly OVERLAP_LINES = 10;
   private readonly OVERLAP_CHARS = 200;
 

@@ -107,11 +107,12 @@ export function createIndexingSpinner(
     onProgress(info) {
       tracker.update(info.processed, info.total);
 
-      // Handle pre-indexing phases (before total is known)
-      if (info.total === 0 && info.filePath && (
+      // Handle pre-indexing phases (before total is known or special messages)
+      if (info.filePath && (
         info.filePath.startsWith('Scanning...') ||
         info.filePath.startsWith('Checking index...') ||
-        info.filePath.startsWith('Processing')
+        info.filePath.startsWith('Processing') ||
+        info.filePath.startsWith('Checking for changes')
       )) {
         spinner.text = info.filePath;
         if (process.env.OSGREP_DEBUG_INDEX === "1") {

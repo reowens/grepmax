@@ -10,9 +10,8 @@ export const doctor = new Command("doctor")
   .action(async () => {
     console.log("🏥 osgrep Doctor\n");
 
-    const root = PATHS.root;
+    const root = PATHS.globalRoot;
     const models = PATHS.models;
-    const data = PATHS.data;
     const grammars = PATHS.grammars;
     const modelIds = [MODEL_IDS.embed, MODEL_IDS.colbert];
 
@@ -24,7 +23,6 @@ export const doctor = new Command("doctor")
 
     checkDir("Root", root);
     checkDir("Models", models);
-    checkDir("Data (Vector DB)", data);
     checkDir("Grammars", grammars);
 
     const modelStatuses = modelIds.map((id) => {
