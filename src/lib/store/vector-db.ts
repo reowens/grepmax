@@ -192,9 +192,7 @@ export class VectorDB {
         pooled_colbert_48d: rec.pooled_colbert_48d
           ? Array.from(rec.pooled_colbert_48d)
           : undefined,
-        doc_token_ids: rec.doc_token_ids
-          ? Array.from(rec.doc_token_ids)
-          : null,
+        doc_token_ids: rec.doc_token_ids ? Array.from(rec.doc_token_ids) : null,
       };
     });
 
@@ -262,7 +260,6 @@ export class VectorDB {
     this.unregisterCleanup?.();
     this.unregisterCleanup = undefined;
     if (this.db) {
-
       if (this.db.close) await this.db.close();
     }
     this.db = null;

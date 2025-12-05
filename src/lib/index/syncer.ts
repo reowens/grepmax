@@ -80,25 +80,25 @@ export async function initialSync(
   try {
     lock = await acquireWriterLock(paths.osgrepDir);
 
-    // Consistency Check: If VectorDB is empty but MetaCache is not (or vice versa),
-    // we might be in a corrupted state. Force a reset.
-    const hasRows = await vectorDb.hasAnyRows();
-    const hasMeta = (await metaCache.getAllKeys()).size > 0;
-    const isInconsistent = (hasRows && !hasMeta) || (!hasRows && hasMeta);
+    if (!dryRun) {
+      const hasRows = await vectorDb.hasAnyRows();
+      const hasMeta = (await metaCache.getAllKeys()).size > 0;
+      const isInconsistent = (hasRows && !hasMeta) || (!hasRows && hasMeta);
 
-    if ((reset || isInconsistent) && !dryRun) {
-      if (isInconsistent) {
-        console.warn(
-          "[syncer] Detected inconsistent state (VectorDB/MetaCache mismatch). Forcing re-sync.",
-        );
+      if (reset || isInconsistent) {
+        if (isInconsistent) {
+          console.warn(
+            "[syncer] Detected inconsistent state (VectorDB/MetaCache mismatch). Forcing re-sync.",
+          );
+        }
+        await vectorDb.drop();
+
+        metaCache.close();
+        try {
+          fs.rmSync(paths.lmdbPath, { force: true });
+        } catch { }
+        metaCache = new MetaCache(paths.lmdbPath);
       }
-      await vectorDb.drop();
-
-      metaCache.close();
-      try {
-        fs.rmSync(paths.lmdbPath, { force: true });
-      } catch { }
-      metaCache = new MetaCache(paths.lmdbPath);
     }
 
     const globOptions: GlobOptions = {
@@ -116,9 +116,10 @@ export async function initialSync(
     onProgress?.({ processed: 0, indexed: 0, total, filePath: "Scanning..." });
 
     const pool = getWorkerPool();
-    const cachedPaths = treatAsEmptyCache
-      ? new Set<string>()
-      : await metaCache.getAllKeys();
+    const cachedPaths =
+      dryRun || treatAsEmptyCache
+        ? new Set<string>()
+        : await metaCache.getAllKeys();
     const seenPaths = new Set<string>();
     const visitedRealPaths = new Set<string>();
     const batch: VectorRecord[] = [];
@@ -260,7 +261,9 @@ export async function initialSync(
           }
 
           if (cached && cached.hash === result.hash) {
-            metaCache.put(relPath, metaEntry);
+            if (!dryRun) {
+              metaCache.put(relPath, metaEntry);
+            }
             processed += 1;
             seenPaths.add(relPath);
             markProgress(relPath);
@@ -296,7 +299,9 @@ export async function initialSync(
             // Treat missing files as deletions.
             pendingDeletes.add(relPath);
             pendingMeta.delete(relPath);
-            metaCache.delete(relPath);
+            if (!dryRun) {
+              metaCache.delete(relPath);
+            }
             processed += 1;
             markProgress(relPath);
             await flush(false);

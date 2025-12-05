@@ -11,7 +11,7 @@ import { escapeSqlString, normalizePath } from "../utils/filter-builder";
 import { getWorkerPool } from "../workers/pool";
 
 export class Searcher {
-  constructor(private db: VectorDB) { }
+  constructor(private db: VectorDB) {}
 
   private mapRecordToChunk(
     record: Partial<VectorRecord>,

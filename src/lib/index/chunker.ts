@@ -14,13 +14,13 @@ export interface Chunk {
   startLine: number;
   endLine: number;
   type:
-  | "function"
-  | "method"
-  | "class"
-  | "interface"
-  | "type_alias"
-  | "block"
-  | "other";
+    | "function"
+    | "method"
+    | "class"
+    | "interface"
+    | "type_alias"
+    | "block"
+    | "other";
   context?: string[];
 }
 

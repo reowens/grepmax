@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { parentPort } from "node:worker_threads";
@@ -63,6 +64,40 @@ async function downloadModelWithTimeout(modelId: string, dtype: PipelineDType) {
   }
 }
 
+// Helper to manually download extra files like skiplist.json
+async function downloadExtraFile(modelId: string, filename: string) {
+  const url = `https://huggingface.co/${modelId}/resolve/main/${filename}`;
+  // Construct path: ~/.osgrep/models/ryandono/osgrep-colbert-q8/skiplist.json
+  const destDir = path.join(CACHE_DIR, ...modelId.split("/"));
+  const destPath = path.join(destDir, filename);
+
+  if (!fs.existsSync(destDir)) {
+    fs.mkdirSync(destDir, { recursive: true });
+  }
+
+  // If file exists and is non-zero, skip (or implement hash check if you want SOTA robustness)
+  if (fs.existsSync(destPath) && fs.statSync(destPath).size > 0) {
+    return;
+  }
+
+  if (parentPort) {
+    parentPort.postMessage({
+      type: "progress",
+      progress: { status: "downloading", file: filename },
+    });
+  }
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.statusText}`);
+    const buffer = await res.arrayBuffer();
+    fs.writeFileSync(destPath, Buffer.from(buffer));
+  } catch (e) {
+    console.warn(`⚠️ Failed to download ${filename}:`, e);
+    // Don't crash, just warn. The math worker has a fallback (empty set).
+  }
+}
+
 async function download() {
   try {
     // 1. Download Dense Model
@@ -75,6 +110,9 @@ async function download() {
       "fp32",
     );
     await colbertPipeline.dispose();
+
+    // 3. Download the custom Skiplist
+    await downloadExtraFile(MODEL_IDS.colbert, "skiplist.json");
 
     if (parentPort) {
       parentPort.postMessage({ status: "success" });
