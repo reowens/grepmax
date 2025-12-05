@@ -67,10 +67,16 @@ export function formatChunkText(
   chunk: ChunkWithContext,
   filePath: string,
 ): string {
-  const context = chunk.context.join(" > ");
-  const pathLine = filePath ? `// ${filePath}` : "// unknown file";
-  const contextLine = context ? `// ${context}` : "";
-  return `${pathLine}\n${contextLine}\n${chunk.content}`;
+  const breadcrumb = [...chunk.context];
+  const fileLabel = `File: ${filePath || "unknown"}`;
+  const hasFileLabel = breadcrumb.some(
+    (entry) => typeof entry === "string" && entry.startsWith("File: "),
+  );
+  if (!hasFileLabel) {
+    breadcrumb.unshift(fileLabel);
+  }
+  const header = breadcrumb.length > 0 ? breadcrumb.join(" > ") : fileLabel;
+  return `${header}\n---\n${chunk.content}`;
 }
 
 export function buildAnchorChunk(

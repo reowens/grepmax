@@ -108,9 +108,53 @@ export class VectorDB {
   async insertBatch(records: VectorRecord[]): Promise<void> {
     if (!records.length) return;
     const table = await this.ensureTable();
+
+    const toBuffer = (val: unknown): Buffer => {
+      if (Buffer.isBuffer(val)) return val;
+      if (ArrayBuffer.isView(val) && (val as ArrayBufferView).buffer) {
+        const view = val as ArrayBufferView;
+        return Buffer.from(
+          view.buffer,
+          view.byteOffset ?? 0,
+          view.byteLength ?? undefined,
+        );
+      }
+      if (
+        val &&
+        typeof val === "object" &&
+        "type" in (val as any) &&
+        (val as any).type === "Buffer" &&
+        Array.isArray((val as any).data)
+      ) {
+        return Buffer.from((val as any).data);
+      }
+      if (Array.isArray(val)) return Buffer.from(val);
+      return Buffer.alloc(0);
+    };
+
+    const toNumberArray = (val: unknown): number[] => {
+      if (Array.isArray(val)) return val.map((x) => Number(x) || 0);
+      if (ArrayBuffer.isView(val) && (val as ArrayBufferView).buffer) {
+        return Array.from(val as unknown as ArrayLike<number>);
+      }
+      if (
+        val &&
+        typeof val === "object" &&
+        !("length" in (val as any)) &&
+        Object.keys(val as any).length > 0
+      ) {
+        // Plain object with numeric keys (e.g., from IPC serialization)
+        return Object.entries(val as Record<string, unknown>)
+          .filter(([k]) => !Number.isNaN(Number(k)))
+          .sort((a, b) => Number(a[0]) - Number(b[0]))
+          .map(([, v]) => Number(v) || 0);
+      }
+      return [];
+    };
+
     const rows = records.map((rec) => {
       const vec = (() => {
-        const arr = Array.from(rec.vector ?? []);
+        const arr = toNumberArray(rec.vector);
         if (arr.length < CONFIG.VECTOR_DIM) {
           arr.push(...Array(CONFIG.VECTOR_DIM - arr.length).fill(0));
         } else if (arr.length > CONFIG.VECTOR_DIM) {
@@ -132,15 +176,7 @@ export class VectorDB {
         context_next: rec.context_next ?? "",
         chunk_type: rec.chunk_type ?? "",
         vector: vec,
-        colbert: (() => {
-          const c = rec.colbert;
-          if (Buffer.isBuffer(c)) return c;
-          if (ArrayBuffer.isView(c) && c.buffer) {
-            return Buffer.from(c.buffer, c.byteOffset ?? 0, c.byteLength ?? 0);
-          }
-          if (Array.isArray(c)) return Buffer.from(c);
-          return Buffer.alloc(0);
-        })(),
+        colbert: toBuffer(rec.colbert),
         colbert_scale:
           typeof rec.colbert_scale === "number" ? rec.colbert_scale : 1,
         pooled_colbert_48d: rec.pooled_colbert_48d
