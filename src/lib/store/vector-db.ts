@@ -194,7 +194,7 @@ export class VectorDB {
           : undefined,
         doc_token_ids: rec.doc_token_ids
           ? Array.from(rec.doc_token_ids)
-          : undefined,
+          : null,
       };
     });
 
@@ -262,7 +262,7 @@ export class VectorDB {
     this.unregisterCleanup?.();
     this.unregisterCleanup = undefined;
     if (this.db) {
-      // @ts-expect-error - close might not exist on some versions/mocks
+
       if (this.db.close) await this.db.close();
     }
     this.db = null;

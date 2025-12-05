@@ -47,6 +47,23 @@ export const setup = new Command("setup")
       console.log(`${symbol} Model: ${id}`);
     });
 
+    // Write skiplist.json
+    console.log("\nGenerating skiplist.json...");
+    const skiplistTokens = [
+      2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 27, 28, 29, 30, 31,
+      32, 33, 60, 61, 62, 63, 64, 65, 92, 93, 94, 95,
+    ];
+    const colbertPath = path.join(PATHS.models, ...MODEL_IDS.colbert.split("/"));
+    if (fs.existsSync(colbertPath)) {
+      fs.writeFileSync(
+        path.join(colbertPath, "skiplist.json"),
+        JSON.stringify(skiplistTokens),
+      );
+      console.log(`✓ Wrote ${skiplistTokens.length} skip IDs to skiplist.json`);
+    } else {
+      console.warn("⚠ ColBERT model directory not found, skipping skiplist generation.");
+    }
+
     console.log(`\nosgrep is ready! You can now run:`);
     console.log(`   osgrep index              # Index your repository`);
     console.log(`   osgrep "search query"     # Search your code`);
