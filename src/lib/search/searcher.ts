@@ -11,7 +11,7 @@ import { escapeSqlString, normalizePath } from "../utils/filter-builder";
 import { getWorkerPool } from "../workers/pool";
 
 export class Searcher {
-  constructor(private db: VectorDB) {}
+  constructor(private db: VectorDB) { }
 
   private mapRecordToChunk(
     record: Partial<VectorRecord>,
@@ -85,6 +85,8 @@ export class Searcher {
     return adjusted;
   }
 
+  private ftsIndexChecked = false;
+
   async search(
     query: string,
     top_k?: number,
@@ -113,12 +115,22 @@ export class Searcher {
       ? `path LIKE '${escapeSqlString(normalizePath(pathPrefix))}%'`
       : undefined;
 
-    const PRE_RERANK_K = Math.max(finalLimit * 3, 150);
+    const PRE_RERANK_K = Math.max(finalLimit * 5, 500);
     let table: Table;
     try {
       table = await this.db.ensureTable();
     } catch {
       return { data: [] };
+    }
+
+    // Ensure FTS index exists (lazy init on first search)
+    if (!this.ftsIndexChecked) {
+      try {
+        await this.db.createFTSIndex();
+        this.ftsIndexChecked = true;
+      } catch (e) {
+        console.warn("[Searcher] Failed to ensure FTS index:", e);
+      }
     }
 
     let vectorQuery = table.vectorSearch(queryVector).limit(PRE_RERANK_K);
@@ -136,22 +148,7 @@ export class Searcher {
       ftsResults = (await ftsQuery.toArray()) as VectorRecord[];
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      // If FTS index is missing, try to create it and retry once
-      if (msg.includes("FTS index not found") || msg.includes("No FTS index")) {
-        console.warn("[Searcher] FTS index missing, attempting to create...");
-        try {
-          await this.db.createFTSIndex();
-          let ftsQuery = table.search(query).limit(PRE_RERANK_K);
-          if (whereClause) {
-            ftsQuery = ftsQuery.where(whereClause);
-          }
-          ftsResults = (await ftsQuery.toArray()) as VectorRecord[];
-        } catch (retryErr) {
-          console.warn("[Searcher] FTS self-heal failed:", retryErr);
-        }
-      } else {
-        // ignore other fts failures
-      }
+      console.warn(`[Searcher] FTS search failed: ${msg}`);
     }
 
     // Reciprocal Rank Fusion (vector + FTS)
@@ -160,14 +157,14 @@ export class Searcher {
     const docMap = new Map<string, VectorRecord>();
 
     vectorResults.forEach((doc, rank) => {
-      const key = `${doc.path}:${doc.chunk_index}`;
+      const key = doc.id || `${doc.path}:${doc.chunk_index}`;
       docMap.set(key, doc);
       const score = 1.0 / (RRF_K + rank + 1);
       candidateScores.set(key, (candidateScores.get(key) || 0) + score);
     });
 
     ftsResults.forEach((doc, rank) => {
-      const key = `${doc.path}:${doc.chunk_index}`;
+      const key = doc.id || `${doc.path}:${doc.chunk_index}`;
       if (!docMap.has(key)) docMap.set(key, doc);
       const score = 1.0 / (RRF_K + rank + 1);
       candidateScores.set(key, (candidateScores.get(key) || 0) + score);

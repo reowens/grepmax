@@ -14,13 +14,13 @@ export interface Chunk {
   startLine: number;
   endLine: number;
   type:
-    | "function"
-    | "method"
-    | "class"
-    | "interface"
-    | "type_alias"
-    | "block"
-    | "other";
+  | "function"
+  | "method"
+  | "class"
+  | "interface"
+  | "type_alias"
+  | "block"
+  | "other";
   context?: string[];
 }
 
@@ -182,6 +182,7 @@ export class TreeSitterChunker {
       console.warn(
         `⚠️  Missing grammar for ${lang}. Run 'osgrep setup' to download it. Using fallback chunking.`,
       );
+      this.languages.set(lang, null);
       return null;
     }
 
@@ -192,6 +193,7 @@ export class TreeSitterChunker {
       this.languages.set(lang, language);
       return language;
     } catch {
+      this.languages.set(lang, null);
       return null;
     }
   }

@@ -97,7 +97,7 @@ export async function initialSync(
       metaCache.close();
       try {
         fs.rmSync(paths.lmdbPath, { force: true });
-      } catch {}
+      } catch { }
       metaCache = new MetaCache(paths.lmdbPath);
     }
 
