@@ -18,6 +18,7 @@ export type HybridResult = {
     colbert: Int8Array;
     scale: number;
     pooled_colbert_48d?: Float32Array;
+    token_ids?: number[];
 };
 
 export class ColbertModel {
@@ -31,22 +32,13 @@ export class ColbertModel {
 
         const basePath = path.join(CACHE_DIR, MODEL_IDS.colbert);
         const onnxDir = path.join(basePath, "onnx");
-        const candidates = ["model.onnx", "model_quantized.onnx", "model_q4.onnx"];
-        const resolved = candidates
-            .map((name) => path.join(onnxDir, name))
-            .find((candidate) => fs.existsSync(candidate));
 
-        if (!resolved) {
-            throw new Error(
-                `ColBERT ONNX model not found. Expected one of ${candidates.join(
-                    ", ",
-                )} in ${onnxDir}`,
-            );
+        const modelPath = path.join(onnxDir, "model.onnx");
+        if (!fs.existsSync(modelPath)) {
+            throw new Error(`ColBERT ONNX model not found at ${modelPath}`);
         }
 
         await this.tokenizer.init(basePath);
-
-        log(`Worker: Loading ColBERT ONNX session from ${resolved}`);
 
         const sessionOptions: ort.InferenceSession.SessionOptions = {
             executionProviders: ["cpu"],
@@ -55,7 +47,15 @@ export class ColbertModel {
             graphOptimizationLevel: "all",
         };
 
-        this.session = await ort.InferenceSession.create(resolved, sessionOptions);
+        log(`Worker: Loading ColBERT ONNX session from ${modelPath}`);
+        this.session = await ort.InferenceSession.create(
+            modelPath,
+            sessionOptions,
+        );
+
+        if (!this.session) {
+            throw new Error(`ColBERT ONNX load failed; tried ${modelPath}`);
+        }
     }
 
     isReady(): boolean {
@@ -169,6 +169,7 @@ export class ColbertModel {
                 colbert: int8Array,
                 scale: maxVal,
                 pooled_colbert_48d: pooled,
+                token_ids: Array.from(encodedBatch[b].input_ids, (v) => Number(v)),
             });
         }
 

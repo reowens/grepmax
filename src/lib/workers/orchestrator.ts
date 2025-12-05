@@ -37,6 +37,7 @@ export type ProcessFileResult = {
 export type RerankDoc = {
   colbert: Buffer | Int8Array | number[];
   scale: number;
+  token_ids?: number[];
 };
 
 const CACHE_DIR = PATHS.models;
@@ -217,6 +218,7 @@ export class WorkerOrchestrator {
         colbert: Buffer.from(hybrid.colbert),
         colbert_scale: hybrid.scale,
         pooled_colbert_48d: hybrid.pooled_colbert_48d,
+        doc_token_ids: hybrid.token_ids,
       };
     });
 
@@ -319,7 +321,11 @@ export class WorkerOrchestrator {
         }
         docMatrix.push(row);
       }
-      return maxSim(queryMatrix, docMatrix);
+      const tokenIds =
+        Array.isArray(doc.token_ids) && doc.token_ids.length === seqLen
+          ? doc.token_ids
+          : undefined;
+      return maxSim(queryMatrix, docMatrix, tokenIds);
     });
   }
 }

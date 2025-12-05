@@ -72,7 +72,7 @@ async function download() {
     // 2. Download ColBERT Model
     const colbertPipeline = await downloadModelWithTimeout(
       MODEL_IDS.colbert,
-      "q8",
+      "fp32",
     );
     await colbertPipeline.dispose();
 

@@ -98,6 +98,7 @@ export class Searcher {
       : undefined;
 
     const PRE_RERANK_K = Math.max(finalLimit * 3, 150);
+    const RRF_K = 60;
 
     let table: Table;
     try {
@@ -123,33 +124,49 @@ export class Searcher {
       // ignore fts failures
     }
 
-    const seen = new Set<string>();
-    const candidates: VectorRecord[] = [];
+    // Reciprocal Rank Fusion
+    const candidateScores = new Map<string, number>();
+    const docMap = new Map<string, VectorRecord>();
 
-    for (const r of [...vectorResults, ...ftsResults]) {
-      const key = `${r.path}:${r.chunk_index}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        candidates.push(r);
-      }
-    }
+    vectorResults.forEach((doc, rank) => {
+      const key = `${doc.path}:${doc.chunk_index}`;
+      docMap.set(key, doc);
+      const score = 1.0 / (RRF_K + rank + 1);
+      candidateScores.set(key, (candidateScores.get(key) || 0) + score);
+    });
 
-    if (candidates.length === 0) {
+    ftsResults.forEach((doc, rank) => {
+      const key = `${doc.path}:${doc.chunk_index}`;
+      if (!docMap.has(key)) docMap.set(key, doc);
+      const score = 1.0 / (RRF_K + rank + 1);
+      candidateScores.set(key, (candidateScores.get(key) || 0) + score);
+    });
+
+    const topCandidates = Array.from(candidateScores.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, Math.max(50, finalLimit * 3))
+      .map(([key]) => docMap.get(key))
+      .filter(Boolean) as VectorRecord[];
+
+    if (topCandidates.length === 0) {
       return { data: [] };
     }
 
     const scores = await pool.rerank({
       query: queryMatrixRaw.map((row: number[]) => Array.from(row)),
-      docs: candidates.map((doc) => ({
+      docs: topCandidates.map((doc) => ({
         colbert: Buffer.from(
           (doc.colbert as Buffer | Int8Array | number[]) ?? []
         ),
         scale: typeof doc.colbert_scale === "number" ? doc.colbert_scale : 1,
+        token_ids: Array.isArray((doc as any).doc_token_ids)
+          ? ((doc as any).doc_token_ids as number[])
+          : undefined,
       })),
       colbertDim,
     });
 
-    const scored = candidates.map((doc, idx) => ({
+    const scored = topCandidates.map((doc, idx) => ({
       record: doc,
       score: scores?.[idx] ?? 0,
     }));
