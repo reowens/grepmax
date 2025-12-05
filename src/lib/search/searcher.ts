@@ -98,8 +98,6 @@ export class Searcher {
       : undefined;
 
     const PRE_RERANK_K = Math.max(finalLimit * 3, 150);
-    const RRF_K = 60;
-
     let table: Table;
     try {
       table = await this.db.ensureTable();
@@ -124,7 +122,8 @@ export class Searcher {
       // ignore fts failures
     }
 
-    // Reciprocal Rank Fusion
+    // Reciprocal Rank Fusion (vector + FTS)
+    const RRF_K = 60;
     const candidateScores = new Map<string, number>();
     const docMap = new Map<string, VectorRecord>();
 
@@ -142,11 +141,16 @@ export class Searcher {
       candidateScores.set(key, (candidateScores.get(key) || 0) + score);
     });
 
-    const topCandidates = Array.from(candidateScores.entries())
+    const fused = Array.from(candidateScores.entries())
       .sort((a, b) => b[1] - a[1])
-      .slice(0, Math.max(50, finalLimit * 3))
       .map(([key]) => docMap.get(key))
       .filter(Boolean) as VectorRecord[];
+
+    // Keep a wide fanout to avoid dropping relevant docs before rerank
+    const topCandidates = fused.slice(
+      0,
+      Math.max(PRE_RERANK_K, finalLimit * 5),
+    );
 
     if (topCandidates.length === 0) {
       return { data: [] };
