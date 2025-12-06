@@ -1,14 +1,14 @@
 import * as path from "node:path";
 import type { Command } from "commander";
 import { Command as CommanderCommand } from "commander";
-import { GraphBuilder } from "../lib/graph/graph-builder";
+
 import { ensureGrammars } from "../lib/index/grammar-loader";
 import {
   createIndexingSpinner,
   formatDryRunSummary,
 } from "../lib/index/sync-helpers";
 import { initialSync } from "../lib/index/syncer";
-import { formatTrace } from "../lib/output/formatter";
+
 import { Searcher } from "../lib/search/searcher";
 import { ensureSetup } from "../lib/setup/setup-helpers";
 import type {
@@ -36,10 +36,10 @@ function toTextResults(data: SearchResponse["data"]): TextResult[] {
       typeof r.generated_metadata?.end_line === "number"
         ? r.generated_metadata.end_line
         : start +
-          Math.max(
-            0,
-            (r.generated_metadata?.num_lines ?? 1) - 1,
-          );
+        Math.max(
+          0,
+          (r.generated_metadata?.num_lines ?? 1) - 1,
+        );
 
     return {
       path: rawPath,
@@ -98,10 +98,10 @@ function toCompactHits(data: SearchResponse["data"]): CompactHit[] {
       typeof chunk.generated_metadata?.end_line === "number"
         ? chunk.generated_metadata.end_line
         : start +
-          Math.max(
-            0,
-            (chunk.generated_metadata?.num_lines ?? 1) - 1,
-          );
+        Math.max(
+          0,
+          (chunk.generated_metadata?.num_lines ?? 1) - 1,
+        );
 
     return {
       path: rawPath,
@@ -155,16 +155,6 @@ function truncateEnd(s: string, max: number): string {
   return `${s.slice(0, max - 3)}...`;
 }
 
-function truncateMiddle(s: string, max: number): string {
-  if (max <= 0) return "";
-  if (s.length <= max) return s;
-  if (max <= 5) return s.slice(0, max);
-  const keep = max - 3;
-  const left = Math.ceil(keep / 2);
-  const right = Math.floor(keep / 2);
-  return `${s.slice(0, left)}...${s.slice(s.length - right)}`;
-}
-
 function padR(s: string, w: number) {
   const n = Math.max(0, w - s.length);
   return s + " ".repeat(n);
@@ -182,7 +172,7 @@ function formatCompactTSV(
   if (!hits.length) return "No matches found.";
   const lines: string[] = [];
   lines.push(`osgrep hits\tquery=${query}\tcount=${hits.length}`);
-  lines.push("path\tlines\tscore\trole\tconf\tdefined\tpreview");
+  lines.push("path\tlines\tscore\trole\tconf\tdefined");
 
   for (const hit of hits) {
     const relPath = path.isAbsolute(hit.path)
@@ -192,8 +182,7 @@ function formatCompactTSV(
     const role = compactRole(hit.role);
     const conf = compactConf(hit.confidence);
     const defs = (hit.defined ?? []).join(",");
-    const preview = (hit.preview || "").replace(/\t/g, " ").trim();
-    lines.push([relPath, hit.range, score, role, conf, defs, preview].join("\t"));
+    lines.push([relPath, hit.range, score, role, conf, defs].join("\t"));
   }
   return lines.join("\n");
 }
@@ -216,12 +205,10 @@ function formatCompactPretty(
   const wConf = 1;
   const wDef = 20;
 
-  const minPreview = 20;
-  const gutters = 6;
+  const gutters = 5;
   const fixed = wLines + wScore + wRole + wConf + wDef + gutters;
 
-  const wPath = Math.max(24, Math.min(52, termWidth - fixed - minPreview));
-  const wPreview = Math.max(minPreview, termWidth - fixed - wPath);
+  const wPath = Math.max(24, Math.min(64, termWidth - fixed));
 
   const header = `osgrep hits  count=${hits.length}  query="${query}"`;
 
@@ -232,7 +219,6 @@ function formatCompactPretty(
     padR("role", wRole),
     padR("c", wConf),
     padR("defined", wDef),
-    "preview",
   ].join(" ");
 
   const out: string[] = [];
@@ -247,19 +233,19 @@ function formatCompactPretty(
     const role = compactRole(hit.role);
     const conf = compactConf(hit.confidence);
     const defs = (hit.defined ?? []).join(",") || "-";
-    const preview = (hit.preview || "").trim();
+    const displayPath = `${relPath}:${hit.start_line + 1}`;
+    const paddedPath = padR(displayPath, wPath);
 
-    out.push(
-      [
-        padR(truncateMiddle(relPath, wPath), wPath),
-        padR(hit.range, wLines),
-        padL(score || "", wScore),
-        padR(role, wRole),
-        padR(conf, wConf),
-        padR(truncateEnd(defs, wDef), wDef),
-        truncateEnd(preview, wPreview),
-      ].join(" "),
-    );
+    const row = [
+      paddedPath,
+      padR(hit.range, wLines),
+      padL(score || "", wScore),
+      padR(role, wRole),
+      padR(conf, wConf),
+      padR(truncateEnd(defs, wDef), wDef),
+    ].join(" ");
+
+    out.push(row);
   }
 
   return out.join("\n");
@@ -297,7 +283,7 @@ export const search: Command = new CommanderCommand("search")
     false,
   )
   .option("--plain", "Disable ANSI colors and use simpler formatting", false)
-  .option("--trace", "Trace the call graph for a symbol", false)
+
   .option(
     "-s, --sync",
     "Syncs the local files to the store before searching",
@@ -322,7 +308,7 @@ export const search: Command = new CommanderCommand("search")
       plain: boolean;
       sync: boolean;
       dryRun: boolean;
-      trace: boolean;
+
     } = cmd.optsWithGlobals();
 
     if (exec_path?.startsWith("--")) {
@@ -404,12 +390,7 @@ export const search: Command = new CommanderCommand("search")
         }
       }
 
-      if (options.trace) {
-        const graphBuilder = new GraphBuilder(vectorDb);
-        const graph = await graphBuilder.buildGraph(pattern);
-        console.log(formatTrace(graph));
-        return;
-      }
+
 
       const searcher = new Searcher(vectorDb);
 

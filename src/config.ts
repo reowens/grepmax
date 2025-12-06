@@ -3,7 +3,7 @@ import * as path from "node:path";
 
 export const MODEL_IDS = {
   embed: "onnx-community/granite-embedding-30m-english-ONNX",
-  colbert: "ryandono/osgrep-colbert-fp32",
+  colbert: "ryandono/mxbai-edge-colbert-v0-17m-onnx-int8",
 };
 
 const DEFAULT_WORKER_THREADS = (() => {

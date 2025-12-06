@@ -34,6 +34,7 @@ async function collectSymbols(options: {
   projectRoot: string;
   limit: number;
   pathPrefix?: string;
+  pattern?: string;
 }): Promise<SymbolEntry[]> {
   const paths = ensureProjectPaths(options.projectRoot);
   const db = new VectorDB(paths.lancedbDir);
@@ -45,7 +46,8 @@ async function collectSymbols(options: {
       .query()
       .select(["defined_symbols", "path", "start_line"])
       .where("array_length(defined_symbols) > 0")
-      .limit(Math.max(options.limit * 10, options.limit, 1000)); // fetch more rows to account for multiple symbols per chunk
+      // Fetch more rows to ensure we have enough after filtering/aggregation
+      .limit(options.pattern ? 10000 : Math.max(options.limit * 50, 2000));
 
     if (options.pathPrefix) {
       query = query.where(
@@ -61,6 +63,9 @@ async function collectSymbols(options: {
       const path = String((row as any).path || "");
       const line = Number((row as any).start_line || 0);
       for (const sym of defs) {
+        if (options.pattern && !sym.toLowerCase().includes(options.pattern.toLowerCase())) {
+          continue;
+        }
         const existing = map.get(sym);
         if (existing) {
           existing.count += 1;
@@ -71,7 +76,11 @@ async function collectSymbols(options: {
     }
 
     return Array.from(map.values())
-      .sort((a, b) => a.symbol.localeCompare(b.symbol))
+      .sort((a, b) => {
+        // Sort by count desc, then symbol asc
+        if (b.count !== a.count) return b.count - a.count;
+        return a.symbol.localeCompare(b.symbol);
+      })
       .slice(0, options.limit);
   } finally {
     await db.close();
@@ -117,15 +126,17 @@ function formatTable(entries: SymbolEntry[]): string {
 
 export const symbols = new Command("symbols")
   .description("List indexed symbols and where they are defined")
-  .option("-l, --limit <number>", "Max symbols to list (default 200)", "200")
+  .argument("[pattern]", "Optional pattern to filter symbols by name")
+  .option("-l, --limit <number>", "Max symbols to list (default 20)", "20")
   .option("-p, --path <prefix>", "Only include symbols under this path prefix")
-  .action(async (cmd) => {
+  .action(async (pattern, cmd) => {
     const projectRoot = findProjectRoot(process.cwd()) ?? process.cwd();
     const limit = Number.parseInt(cmd.limit, 10);
     const entries = await collectSymbols({
       projectRoot,
-      limit: Number.isFinite(limit) && limit > 0 ? limit : 200,
+      limit: Number.isFinite(limit) && limit > 0 ? limit : 20,
       pathPrefix: cmd.path as string | undefined,
+      pattern: pattern as string | undefined,
     });
 
     console.log(

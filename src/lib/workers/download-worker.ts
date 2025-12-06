@@ -89,12 +89,29 @@ async function downloadExtraFile(modelId: string, filename: string) {
 
   try {
     const res = await fetch(url);
-    if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.statusText}`);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
     const buffer = await res.arrayBuffer();
     fs.writeFileSync(destPath, Buffer.from(buffer));
+    if (parentPort) {
+      parentPort.postMessage({
+        type: "progress",
+        progress: { status: "downloaded", file: filename },
+      });
+    }
   } catch (e) {
-    console.warn(`⚠️ Failed to download ${filename}:`, e);
+    const errorMsg = e instanceof Error ? e.message : String(e);
+    console.warn(`⚠️ Failed to download ${filename} from ${url}:`, errorMsg);
     // Don't crash, just warn. The math worker has a fallback (empty set).
+    // But report the failure so setup can retry
+    if (parentPort) {
+      parentPort.postMessage({
+        type: "warning",
+        file: filename,
+        error: errorMsg,
+      });
+    }
   }
 }
 
