@@ -1,25 +1,25 @@
-import { join, normalize } from "node:path";
+import * as path from "node:path";
 import type { Command } from "commander";
 import { Command as CommanderCommand } from "commander";
-import { createFileSystem, createStore } from "../lib/context";
-import { ensureSetup } from "../lib/setup-helpers";
-import type { FileMetadata, SearchResponse, Store } from "../lib/store";
-import { DEFAULT_IGNORE_PATTERNS } from "../lib/ignore-patterns";
-import { ensureStoreExists, isStoreEmpty } from "../lib/store-helpers";
-import { getAutoStoreId } from "../lib/store-resolver";
+
+import { ensureGrammars } from "../lib/index/grammar-loader";
 import {
   createIndexingSpinner,
   formatDryRunSummary,
-} from "../lib/sync-helpers";
-import {
-  initialSync,
-  MetaStore,
-  readServerLock,
-} from "../utils";
-import { formatTextResults, type TextResult } from "../lib/formatter";
-import { gracefulExit } from "../lib/exit";
+} from "../lib/index/sync-helpers";
+import { initialSync } from "../lib/index/syncer";
 
-
+import { Searcher } from "../lib/search/searcher";
+import { ensureSetup } from "../lib/setup/setup-helpers";
+import type {
+  ChunkType,
+  FileMetadata,
+  SearchResponse,
+} from "../lib/store/types";
+import { VectorDB } from "../lib/store/vector-db";
+import { gracefulExit } from "../lib/utils/exit";
+import { formatTextResults, type TextResult } from "../lib/utils/formatter";
+import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
 function toTextResults(data: SearchResponse["data"]): TextResult[] {
   return data.map((r) => {
@@ -28,17 +28,243 @@ function toTextResults(data: SearchResponse["data"]): TextResult[] {
         ? ((r.metadata as FileMetadata).path as string)
         : "Unknown path";
 
+    const start =
+      typeof r.generated_metadata?.start_line === "number"
+        ? r.generated_metadata.start_line
+        : 0;
+    const end =
+      typeof r.generated_metadata?.end_line === "number"
+        ? r.generated_metadata.end_line
+        : start +
+        Math.max(
+          0,
+          (r.generated_metadata?.num_lines ?? 1) - 1,
+        );
+
     return {
       path: rawPath,
       score: r.score,
       content: r.text || "",
       chunk_type: r.generated_metadata?.type,
-      start_line: r.generated_metadata?.start_line ?? 0,
-      end_line:
-        (r.generated_metadata?.start_line ?? 0) +
-        (r.generated_metadata?.num_lines ?? 0),
+      start_line: start,
+      end_line: end,
     };
   });
+}
+
+type CompactHit = {
+  path: string;
+  range: string;
+  start_line: number;
+  end_line: number;
+  role?: string;
+  confidence?: string;
+  score?: number;
+  defined?: string[];
+  preview?: string;
+};
+
+function getPreviewText(chunk: ChunkType): string {
+  const maxLen = 140;
+  const lines =
+    chunk.text
+      ?.split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean) ?? [];
+  let preview = lines[0] ?? "";
+
+  if (!preview && chunk.defined_symbols?.length) {
+    preview = chunk.defined_symbols[0] ?? "";
+  }
+
+  if (preview.length > maxLen) {
+    preview = `${preview.slice(0, maxLen)}...`;
+  }
+  return preview;
+}
+
+function toCompactHits(data: SearchResponse["data"]): CompactHit[] {
+  return data.map((chunk) => {
+    const rawPath =
+      typeof (chunk.metadata as FileMetadata | undefined)?.path === "string"
+        ? ((chunk.metadata as FileMetadata).path as string)
+        : "Unknown path";
+
+    const start =
+      typeof chunk.generated_metadata?.start_line === "number"
+        ? chunk.generated_metadata.start_line
+        : 0;
+    const end =
+      typeof chunk.generated_metadata?.end_line === "number"
+        ? chunk.generated_metadata.end_line
+        : start +
+        Math.max(
+          0,
+          (chunk.generated_metadata?.num_lines ?? 1) - 1,
+        );
+
+    return {
+      path: rawPath,
+      range: `${start + 1}-${end + 1}`,
+      start_line: start,
+      end_line: end,
+      role: chunk.role,
+      confidence: chunk.confidence,
+      score: chunk.score,
+      defined: Array.isArray(chunk.defined_symbols)
+        ? chunk.defined_symbols.slice(0, 3)
+        : typeof chunk.defined_symbols === "string"
+          ? [chunk.defined_symbols]
+          : typeof (chunk.defined_symbols as any)?.toArray === "function"
+            ? ((chunk.defined_symbols as any).toArray() as string[]).slice(0, 3)
+            : [],
+      preview: getPreviewText(chunk),
+    };
+  });
+}
+
+function compactRole(role?: string): string {
+  if (!role) return "UNK";
+  if (role.startsWith("ORCH")) return "ORCH";
+  if (role.startsWith("DEF")) return "DEF";
+  if (role.startsWith("IMP")) return "IMPL";
+  return role.slice(0, 4).toUpperCase();
+}
+
+function compactConf(conf?: string): string {
+  if (!conf) return "U";
+  const c = conf.toUpperCase();
+  if (c.startsWith("H")) return "H";
+  if (c.startsWith("M")) return "M";
+  if (c.startsWith("L")) return "L";
+  return "U";
+}
+
+function compactScore(score?: number): string {
+  if (typeof score !== "number") return "";
+  const fixed = score.toFixed(3);
+  return fixed.replace(/^0\./, ".").replace(/\.?0+$/, (m) =>
+    m.startsWith(".") ? "" : m,
+  );
+}
+
+function truncateEnd(s: string, max: number): string {
+  if (max <= 0) return "";
+  if (s.length <= max) return s;
+  if (max <= 3) return s.slice(0, max);
+  return `${s.slice(0, max - 3)}...`;
+}
+
+function padR(s: string, w: number) {
+  const n = Math.max(0, w - s.length);
+  return s + " ".repeat(n);
+}
+function padL(s: string, w: number) {
+  const n = Math.max(0, w - s.length);
+  return " ".repeat(n) + s;
+}
+
+function formatCompactTSV(
+  hits: CompactHit[],
+  projectRoot: string,
+  query: string,
+): string {
+  if (!hits.length) return "No matches found.";
+  const lines: string[] = [];
+  lines.push(`osgrep hits\tquery=${query}\tcount=${hits.length}`);
+  lines.push("path\tlines\tscore\trole\tconf\tdefined");
+
+  for (const hit of hits) {
+    const relPath = path.isAbsolute(hit.path)
+      ? path.relative(projectRoot, hit.path)
+      : hit.path;
+    const score = compactScore(hit.score);
+    const role = compactRole(hit.role);
+    const conf = compactConf(hit.confidence);
+    const defs = (hit.defined ?? []).join(",");
+    lines.push([relPath, hit.range, score, role, conf, defs].join("\t"));
+  }
+  return lines.join("\n");
+}
+
+function formatCompactPretty(
+  hits: CompactHit[],
+  projectRoot: string,
+  query: string,
+  termWidth: number,
+  useAnsi: boolean,
+): string {
+  if (!hits.length) return "No matches found.";
+
+  const dim = (s: string) => (useAnsi ? `\x1b[90m${s}\x1b[0m` : s);
+  const bold = (s: string) => (useAnsi ? `\x1b[1m${s}\x1b[0m` : s);
+
+  const wLines = 9;
+  const wScore = 6;
+  const wRole = 4;
+  const wConf = 1;
+  const wDef = 20;
+
+  const gutters = 5;
+  const fixed = wLines + wScore + wRole + wConf + wDef + gutters;
+
+  const wPath = Math.max(24, Math.min(64, termWidth - fixed));
+
+  const header = `osgrep hits  count=${hits.length}  query="${query}"`;
+
+  const cols = [
+    padR("path", wPath),
+    padR("lines", wLines),
+    padL("score", wScore),
+    padR("role", wRole),
+    padR("c", wConf),
+    padR("defined", wDef),
+  ].join(" ");
+
+  const out: string[] = [];
+  out.push(bold(header));
+  out.push(dim(cols));
+
+  for (const hit of hits) {
+    const relPath = path.isAbsolute(hit.path)
+      ? path.relative(projectRoot, hit.path)
+      : hit.path;
+    const score = compactScore(hit.score);
+    const role = compactRole(hit.role);
+    const conf = compactConf(hit.confidence);
+    const defs = (hit.defined ?? []).join(",") || "-";
+    const displayPath = `${relPath}:${hit.start_line + 1}`;
+    const paddedPath = padR(displayPath, wPath);
+
+    const row = [
+      paddedPath,
+      padR(hit.range, wLines),
+      padL(score || "", wScore),
+      padR(role, wRole),
+      padR(conf, wConf),
+      padR(truncateEnd(defs, wDef), wDef),
+    ].join(" ");
+
+    out.push(row);
+  }
+
+  return out.join("\n");
+}
+
+function formatCompactTable(
+  hits: CompactHit[],
+  projectRoot: string,
+  query: string,
+  opts: { isTTY: boolean; plain: boolean },
+): string {
+  if (!hits.length) return "No matches found.";
+
+  if (!opts.isTTY || opts.plain) {
+    return formatCompactTSV(hits, projectRoot, query);
+  }
+
+  const termWidth = Math.max(80, process.stdout.columns ?? 120);
+  return formatCompactPretty(hits, projectRoot, query, termWidth, true);
 }
 
 export const search: Command = new CommanderCommand("search")
@@ -49,14 +275,15 @@ export const search: Command = new CommanderCommand("search")
     "10",
   )
   .option("-c, --content", "Show full chunk content instead of snippets", false)
-  .option(
-    "--per-file <n>",
-    "Number of matches to show per file",
-    "1",
-  )
+  .option("--per-file <n>", "Number of matches to show per file", "1")
   .option("--scores", "Show relevance scores", false)
-  .option("--compact", "Show file paths only", false)
+  .option(
+    "--compact",
+    "Compact hits view (paths + line ranges + role/preview)",
+    false,
+  )
   .option("--plain", "Disable ANSI colors and use simpler formatting", false)
+
   .option(
     "-s, --sync",
     "Syncs the local files to the store before searching",
@@ -64,7 +291,7 @@ export const search: Command = new CommanderCommand("search")
   )
   .option(
     "-d, --dry-run",
-    "Dry run the search process (no actual file syncing)",
+    "Show what would be indexed without actually indexing",
     false,
   )
   .argument("<pattern>", "The pattern to search for")
@@ -73,7 +300,6 @@ export const search: Command = new CommanderCommand("search")
   .allowExcessArguments(true)
   .action(async (pattern, exec_path, _options, cmd) => {
     const options: {
-      store?: string;
       m: string;
       content: boolean;
       perFile: string;
@@ -82,6 +308,7 @@ export const search: Command = new CommanderCommand("search")
       plain: boolean;
       sync: boolean;
       dryRun: boolean;
+
     } = cmd.optsWithGlobals();
 
     if (exec_path?.startsWith("--")) {
@@ -89,253 +316,148 @@ export const search: Command = new CommanderCommand("search")
     }
 
     const root = process.cwd();
+    let vectorDb: VectorDB | null = null;
 
-    // Try server fast path for standard text search
-    async function tryServerFastPath(): Promise<boolean> {
-      const lock = await readServerLock(root);
-      if (!lock || !lock.authToken) return false;
-
-      const authHeader = { Authorization: `Bearer ${lock.authToken}` };
-
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 100);
-      try {
-        const health = await fetch(`http://localhost:${lock.port}/health`, {
-          signal: controller.signal,
-          headers: authHeader,
-        });
-        if (!health.ok) return false;
-      } catch (_err) {
-        return false;
-      } finally {
-        clearTimeout(timeout);
-      }
-
-      try {
-        const searchRes = await fetch(
-          `http://localhost:${lock.port}/search`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              ...authHeader,
-            },
-            body: JSON.stringify({
-              query: pattern,
-              limit: parseInt(options.m, 10),
-              rerank: true,
-              path: exec_path ?? "",
-            }),
-          },
-        );
-        if (!searchRes.ok) return false;
-        const payload = await searchRes.json();
-
-        // Check for the status flag
-        if (payload.status === "indexing") {
-          const pct = payload.progress ?? 0;
-          console.error(
-            `⚠️  osgrep is currently indexing (${pct}% complete). Results may be partial.\n`,
-          );
-        }
-
-        // Auto-detect plain mode if not in TTY (e.g. piped to agent)
-        const isTTY = process.stdout.isTTY;
-        const shouldBePlain = options.plain || !isTTY;
-
-        // Rehydrate server results to match local store shape expected by formatTextResults.
-        const rehydratedResults = (payload.results ?? []).map((r: any) => ({
-          score: typeof r.score === "number" ? r.score : 0,
-          text: r.content ?? r.snippet ?? "",
-          metadata: {
-            path: typeof r.path === "string" ? r.path : "Unknown path",
-            is_anchor: r.is_anchor === true,
-          },
-          generated_metadata: {
-            type: r.chunk_type,
-            start_line: typeof r.start_line === "number" ? r.start_line : 0,
-            num_lines:
-              typeof r.num_lines === "number" ? r.num_lines : undefined,
-          },
-        }));
-
-        const mappedResults: TextResult[] = toTextResults(
-          rehydratedResults as SearchResponse["data"],
-        );
-
-        const output = formatTextResults(mappedResults, pattern, root, {
-          isPlain: shouldBePlain,
-          compact: options.compact,
-          content: options.content,
-        });
-        console.log(output);
-        return true;
-      } catch (_err) {
-        return false;
-      }
-    }
-
-    const fast = await tryServerFastPath();
-    if (fast) {
-      return;
-    }
-
-    let store: Store | null = null;
     try {
       await ensureSetup();
-      store = await createStore();
+      const searchRoot = exec_path ? path.resolve(exec_path) : root;
+      const projectRoot = findProjectRoot(searchRoot) ?? searchRoot;
+      const paths = ensureProjectPaths(projectRoot);
 
-      // Auto-detect store ID if not explicitly provided
-      const storeId = options.store || getAutoStoreId(root);
+      // Propagate project root to worker processes
+      process.env.OSGREP_PROJECT_ROOT = projectRoot;
 
-      await ensureStoreExists(store, storeId);
-      const autoSync =
-        options.sync || (await isStoreEmpty(store, storeId));
-      let didSync = false;
+      vectorDb = new VectorDB(paths.lancedbDir);
 
-      if (autoSync) {
-        const fileSystem = createFileSystem({
-          ignorePatterns: DEFAULT_IGNORE_PATTERNS,
-        });
-        const metaStore = new MetaStore();
+      const hasRows = await vectorDb.hasAnyRows();
+      const needsSync = options.sync || !hasRows;
 
-        // Human/Agent mode
+      if (needsSync) {
         const isTTY = process.stdout.isTTY;
         let abortController: AbortController | undefined;
         let signal: AbortSignal | undefined;
 
-        // If non-interactive (Agent), enforce a timeout to prevent hanging
         if (!isTTY) {
           abortController = new AbortController();
           signal = abortController.signal;
           setTimeout(() => {
             abortController?.abort();
-          }, 10000); // 10s timeout
+          }, 60000); // 60 seconds timeout for non-TTY auto-indexing
         }
 
-        // Show spinner and progress
         const { spinner, onProgress } = createIndexingSpinner(
-          root,
+          projectRoot,
           options.sync ? "Indexing..." : "Indexing repository (first run)...",
         );
 
         try {
-          const result = await initialSync(
-            store,
-            fileSystem,
-            storeId,
-            root,
-            options.dryRun,
+          await ensureGrammars(console.log, { silent: true });
+          const result = await initialSync({
+            projectRoot,
+            dryRun: options.dryRun,
             onProgress,
-            metaStore,
             signal,
-          );
+          });
 
           if (signal?.aborted) {
             spinner.warn(
               `Indexing timed out (${result.processed}/${result.total}). Results may be partial.`,
             );
-          } else {
-            while (true) {
-              const info = await store.getInfo(storeId);
-              spinner.text = `Indexing ${info.counts.pending + info.counts.in_progress} file(s)`;
-              if (
-                info.counts.pending === 0 &&
-                info.counts.in_progress === 0
-              ) {
-                break;
-              }
-              await new Promise((resolve) => setTimeout(resolve, 1000));
-            }
-            spinner.succeed(
-              `Indexing complete (${result.processed}/${result.total}) • indexed ${result.indexed}`,
-            );
           }
-          didSync = true;
 
           if (options.dryRun) {
+            spinner.succeed(
+              `Dry run complete (${result.processed}/${result.total}) • would have indexed ${result.indexed}`,
+            );
             console.log(
               formatDryRunSummary(result, {
                 actionDescription: "would have indexed",
+                includeTotal: true,
               }),
             );
-            await gracefulExit();
+            return;
           }
-        } catch (err) {
+
+          await vectorDb.createFTSIndex();
+          const failedSuffix =
+            result.failedFiles > 0 ? ` • ${result.failedFiles} failed` : "";
+          spinner.succeed(
+            `${options.sync ? "Indexing" : "Initial indexing"} complete (${result.processed}/${result.total}) • indexed ${result.indexed}${failedSuffix}`,
+          );
+        } catch (e) {
           spinner.fail("Indexing failed");
-          throw err;
+          throw e;
         }
       }
 
-      const search_path = exec_path?.startsWith("/")
-        ? exec_path
-        : normalize(join(root, exec_path ?? ""));
 
-      // Execute Search
-      const results = await store.search(
-        storeId,
+
+      const searcher = new Searcher(vectorDb);
+
+      const searchResult = await searcher.search(
         pattern,
         parseInt(options.m, 10),
         { rerank: true },
-        {
-          all: [
-            {
-              key: "path",
-              operator: "starts_with",
-              value: search_path,
-            },
-          ],
-        },
+        undefined,
+        exec_path ? path.relative(projectRoot, path.resolve(exec_path)) : "",
       );
 
-      // Hint if no results found
-      if (results.data.length === 0) {
-        if (!didSync) {
-          try {
-            const info = await store.getInfo(storeId);
-            if (info.counts.pending === 0 && info.counts.in_progress === 0) {
-              // Store exists but no results - might need re-indexing if files changed
-              console.log(
-                "No results found. If files have changed, you can re-index with 'osgrep index' or 'osgrep search --sync \"<query>\"'.\n",
-              );
-            }
-          } catch {
-            console.log(
-              "No results found. The repository will be automatically indexed on your next search.\n",
-            );
-          }
-        }
-        await gracefulExit();
+      const compactHits = options.compact
+        ? toCompactHits(searchResult.data)
+        : [];
+      const compactText =
+        options.compact && compactHits.length
+          ? formatCompactTable(compactHits, projectRoot, pattern, {
+            isTTY: !!process.stdout.isTTY,
+            plain: !!options.plain,
+          })
+          : options.compact
+            ? "No matches found."
+            : "";
+
+      if (!searchResult.data.length) {
+        console.log("No matches found.");
         return;
       }
 
-      // Auto-detect plain mode if not in TTY (e.g. piped to agent)
+      if (options.compact) {
+        console.log(compactText);
+        return;
+      }
+
       const isTTY = process.stdout.isTTY;
       const shouldBePlain = options.plain || !isTTY;
 
-      // Render Output
-      const mappedResults: TextResult[] = toTextResults(results.data);
-      const output = formatTextResults(mappedResults, pattern, root, {
-        isPlain: shouldBePlain,
-        compact: options.compact,
-        content: options.content,
-      });
-
-      console.log(output);
+      if (shouldBePlain) {
+        const mappedResults = toTextResults(searchResult.data);
+        const output = formatTextResults(mappedResults, pattern, projectRoot, {
+          isPlain: true,
+          compact: options.compact,
+          content: options.content,
+          perFile: parseInt(options.perFile, 10),
+          showScores: options.scores,
+        });
+        console.log(output);
+      } else {
+        // Use new holographic formatter for TTY
+        const { formatResults } = await import("../lib/output/formatter");
+        const output = formatResults(searchResult.data, projectRoot, {
+          content: options.content,
+        });
+        console.log(output);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
-      console.error("Failed to search:", message);
+      console.error("Search failed:", message);
       process.exitCode = 1;
-      await gracefulExit(1);
     } finally {
-      // Always clean up the store
-      if (store && typeof store.close === "function") {
+      if (vectorDb) {
         try {
-          await store.close();
+          await vectorDb.close();
         } catch (err) {
-          console.error("Failed to close store:", err);
+          console.error("Failed to close VectorDB:", err);
         }
       }
+      await gracefulExit();
     }
-    await gracefulExit();
   });

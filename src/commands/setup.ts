@@ -1,26 +1,15 @@
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { Command } from "commander";
-import { ensureSetup } from "../lib/setup-helpers";
-import { MODEL_IDS } from "../config";
-import { gracefulExit } from "../lib/exit";
-
-
-import { ensureGrammars } from "../lib/grammar-loader";
+import { MODEL_IDS, PATHS } from "../config";
+import { ensureGrammars } from "../lib/index/grammar-loader";
+import { ensureSetup } from "../lib/setup/setup-helpers";
+import { gracefulExit } from "../lib/utils/exit";
 
 export const setup = new Command("setup")
   .description("One-time setup: download models and prepare osgrep")
   .action(async () => {
     console.log("osgrep Setup\n");
-
-
-    const home = os.homedir();
-    const root = path.join(home, ".osgrep");
-    const models = path.join(root, "models");
-    const data = path.join(root, "data");
-    // grammars path is now handled by ensureGrammars but we still want to check it for the summary
-    const grammars = path.join(root, "grammars");
 
     try {
       await ensureSetup();
@@ -40,17 +29,16 @@ export const setup = new Command("setup")
       console.log(`${symbol} ${name}: ${p}`);
     };
 
-    checkDir("Root", root);
-    checkDir("Models", models);
-    checkDir("Data (Vector DB)", data);
-    checkDir("Grammars", grammars);
+    checkDir("Global Root", PATHS.globalRoot);
+    checkDir("Models", PATHS.models);
+    checkDir("Grammars", PATHS.grammars);
 
     // Download Grammars
     console.log("\nChecking Tree-sitter Grammars...");
     await ensureGrammars();
 
     const modelStatuses = modelIds.map((id) => {
-      const modelPath = path.join(models, ...id.split("/"));
+      const modelPath = path.join(PATHS.models, ...id.split("/"));
       return { id, path: modelPath, exists: fs.existsSync(modelPath) };
     });
 
@@ -59,12 +47,38 @@ export const setup = new Command("setup")
       console.log(`${symbol} Model: ${id}`);
     });
 
+    // Check for skiplist.json and try to download if missing
+    const colbertPath = path.join(
+      PATHS.models,
+      ...MODEL_IDS.colbert.split("/"),
+    );
+    const skiplistPath = path.join(colbertPath, "skiplist.json");
+    if (fs.existsSync(skiplistPath)) {
+      console.log(`✓ Skiplist found: ${skiplistPath}`);
+    } else {
+      console.log(`⚠ Skiplist missing, attempting to download...`);
+      try {
+        const url = `https://huggingface.co/${MODEL_IDS.colbert}/resolve/main/skiplist.json`;
+        const response = await fetch(url);
+        if (response.ok) {
+          const buffer = await response.arrayBuffer();
+          fs.writeFileSync(skiplistPath, Buffer.from(buffer));
+          console.log(`✓ Skiplist downloaded successfully`);
+        } else {
+          console.log(`⚠ Skiplist download failed (HTTP ${response.status}), will use fallback`);
+          console.log(`   Expected at: ${skiplistPath}`);
+        }
+      } catch (error) {
+        console.log(`⚠ Skiplist download failed, will use fallback`);
+        console.log(`   Error: ${error instanceof Error ? error.message : String(error)}`);
+        console.log(`   Expected at: ${skiplistPath}`);
+      }
+    }
+
     console.log(`\nosgrep is ready! You can now run:`);
     console.log(`   osgrep index              # Index your repository`);
     console.log(`   osgrep "search query"     # Search your code`);
     console.log(`   osgrep doctor             # Check health status`);
-
-
 
     await gracefulExit();
   });
