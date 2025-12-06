@@ -9,6 +9,32 @@ const TreeSitter = require("web-tree-sitter");
 const Parser = TreeSitter.Parser;
 const Language = TreeSitter.Language;
 
+function resolveTreeSitterWasmLocator(): string {
+  try {
+    return require.resolve("web-tree-sitter/tree-sitter.wasm");
+  } catch {
+    try {
+      const pkgDir = path.dirname(
+        require.resolve("web-tree-sitter/package.json"),
+      );
+      const candidate = path.join(pkgDir, "tree-sitter.wasm");
+      if (fs.existsSync(candidate)) return candidate;
+    } catch {
+      // fall through to final fallback
+    }
+
+    return path.join(
+      __dirname,
+      "..",
+      "..",
+      "..",
+      "node_modules",
+      "web-tree-sitter",
+      "tree-sitter.wasm",
+    );
+  }
+}
+
 export interface Chunk {
   content: string;
   startLine: number;
@@ -191,8 +217,9 @@ export class TreeSitterChunker {
   async init() {
     if (this.initialized) return;
     try {
+      const wasmLocator = resolveTreeSitterWasmLocator();
       await Parser.init({
-        locator: require.resolve("web-tree-sitter/tree-sitter.wasm"),
+        locator: wasmLocator,
       });
       this.parser = new Parser() as TreeSitterParser;
     } catch (_err) {
@@ -293,13 +320,17 @@ export class TreeSitterChunker {
     const definitionTypes = langDef?.definitionTypes || [];
 
     const isDefType = (t: string) => definitionTypes.includes(t);
+    const matchesDefKeyword = (keyword: string) =>
+      definitionTypes.some((t) => t.includes(keyword));
 
     const classify = (node: TreeSitterNode): Chunk["type"] => {
       const t = node.type;
-      if (t.includes("method")) return "method";
-      if (t.includes("class")) return "class";
-      if (t.includes("interface")) return "interface";
-      if (t.includes("type_alias")) return "type_alias";
+      if (t.includes("method") || matchesDefKeyword("method")) return "method";
+      if (t.includes("class") || matchesDefKeyword("class")) return "class";
+      if (t.includes("interface") || matchesDefKeyword("interface"))
+        return "interface";
+      if (t.includes("type_alias") || matchesDefKeyword("type_alias"))
+        return "type_alias";
       if (isDefType(t) || isTopLevelValueDef(node)) return "function";
       return "block";
     };
@@ -641,7 +672,7 @@ export class TreeSitterChunker {
         ...chunk,
         content: subLines.join("\n"),
         startLine: chunk.startLine + i,
-        endLine: chunk.startLine + end,
+        endLine: chunk.startLine + end - 1,
       });
     }
 
@@ -666,7 +697,7 @@ export class TreeSitterChunker {
         ...chunk,
         content: sub,
         startLine: chunk.startLine + prefixLines,
-        endLine: chunk.startLine + prefixLines + subLineCount,
+        endLine: chunk.startLine + prefixLines + subLineCount - 1,
       });
     }
 
@@ -688,7 +719,7 @@ export class TreeSitterChunker {
       chunks.push({
         content: subContent,
         startLine: i,
-        endLine: end,
+        endLine: i + subLines.length - 1,
         type: "block",
         context,
       });

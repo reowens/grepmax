@@ -70,10 +70,7 @@ export function maxSim(
       const dot = inner(qVec.subarray(0, dim), dVec.subarray(0, dim));
       if (dot > maxDotProduct) maxDotProduct = dot;
     }
-    // Guard against all tokens being skipped
-    if (!Number.isFinite(maxDotProduct)) {
-      maxDotProduct = 0;
-    }
+    if (maxDotProduct === -Infinity) maxDotProduct = 0;
     totalScore += maxDotProduct;
   }
 

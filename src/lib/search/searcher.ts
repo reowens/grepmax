@@ -259,8 +259,8 @@ export class Searcher {
     } = await pool.encodeQuery(query);
 
     if (colbertDim !== CONFIG.COLBERT_DIM) {
-      console.warn(
-        `[Searcher] Warning: Query ColBERT dim (${colbertDim}) != Config (${CONFIG.COLBERT_DIM})`,
+      throw new Error(
+        `[Searcher] Query ColBERT dim (${colbertDim}) != Config (${CONFIG.COLBERT_DIM})`,
       );
     }
 

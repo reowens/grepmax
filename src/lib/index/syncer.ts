@@ -23,6 +23,10 @@ type SyncOptions = {
 };
 
 type GlobOptions = fg.Options;
+type MetaCacheLike = Pick<
+  MetaCache,
+  "get" | "getAllKeys" | "put" | "delete" | "close"
+>;
 
 function buildIgnoreFilter(projectRoot: string) {
   const filter = ignore();
@@ -39,7 +43,7 @@ function buildIgnoreFilter(projectRoot: string) {
 
 async function flushBatch(
   db: VectorDB,
-  meta: MetaCache,
+  meta: MetaCacheLike,
   vectors: VectorRecord[],
   pendingMeta: Map<string, MetaEntry>,
   pendingDeletes: string[],
@@ -61,6 +65,23 @@ async function flushBatch(
   }
 }
 
+function createNoopMetaCache(): MetaCacheLike {
+  const store = new Map<string, MetaEntry>();
+  return {
+    get: (filePath: string) => store.get(filePath),
+    async getAllKeys() {
+      return new Set(store.keys());
+    },
+    put: (filePath: string, entry: MetaEntry) => {
+      store.set(filePath, entry);
+    },
+    delete: (filePath: string) => {
+      store.delete(filePath);
+    },
+    close: () => {},
+  };
+}
+
 export async function initialSync(
   options: SyncOptions,
 ): Promise<InitialSyncResult> {
@@ -71,7 +92,7 @@ export async function initialSync(
     onProgress,
     signal,
   } = options;
-  const paths = ensureProjectPaths(projectRoot);
+  const paths = ensureProjectPaths(projectRoot, { dryRun });
 
   // Propagate project root to worker processes
   process.env.OSGREP_PROJECT_ROOT = paths.root;
@@ -80,13 +101,16 @@ export async function initialSync(
   const vectorDb = new VectorDB(paths.lancedbDir);
   const ignoreFilter = buildIgnoreFilter(paths.root);
   const treatAsEmptyCache = reset && dryRun;
-  let metaCache: MetaCache | null = null;
+  let metaCache: MetaCacheLike | null = null;
 
   try {
-    lock = await acquireWriterLockWithRetry(paths.osgrepDir);
-
-    // Open MetaCache only after lock is acquired
-    metaCache = new MetaCache(paths.lmdbPath);
+    if (!dryRun) {
+      lock = await acquireWriterLockWithRetry(paths.osgrepDir);
+      // Open MetaCache only after lock is acquired
+      metaCache = new MetaCache(paths.lmdbPath);
+    } else {
+      metaCache = createNoopMetaCache();
+    }
 
     if (!dryRun) {
       const hasRows = await vectorDb.hasAnyRows();
@@ -143,6 +167,7 @@ export async function initialSync(
     let shouldSkipCleanup = false;
     let flushError: unknown;
     let flushPromise: Promise<void> | null = null;
+    let flushLock: Promise<void> = Promise.resolve();
 
     const markProgress = (filePath: string) => {
       onProgress?.({ processed, indexed, total, filePath });
@@ -156,34 +181,38 @@ export async function initialSync(
         pendingMeta.size >= batchLimit;
       if (!shouldFlush) return;
 
-      while (flushPromise) {
-        await flushPromise;
-      }
+      const runFlush = async () => {
+        const toWrite = batch.splice(0);
+        const metaEntries = new Map(pendingMeta);
+        const deletes = Array.from(pendingDeletes);
+        pendingMeta.clear();
+        pendingDeletes.clear();
 
-      const toWrite = batch.splice(0);
-      const metaEntries = new Map(pendingMeta);
-      const deletes = Array.from(pendingDeletes);
-      pendingMeta.clear();
-      pendingDeletes.clear();
+        const currentFlush = flushBatch(
+          vectorDb,
+          metaCache!, // Non-null assertion: metaCache is assigned after lock
+          toWrite,
+          metaEntries,
+          deletes,
+          dryRun,
+        );
 
-      flushPromise = flushBatch(
-        vectorDb,
-        metaCache!, // Non-null assertion: metaCache is assigned after lock
-        toWrite,
-        metaEntries,
-        deletes,
-        dryRun,
-      );
+        flushPromise = currentFlush;
+        try {
+          await currentFlush;
+        } catch (err) {
+          flushError = err;
+          shouldSkipCleanup = true;
+          throw err;
+        } finally {
+          if (flushPromise === currentFlush) {
+            flushPromise = null;
+          }
+        }
+      };
 
-      try {
-        await flushPromise;
-      } catch (err) {
-        flushError = err;
-        shouldSkipCleanup = true;
-        throw err;
-      } finally {
-        flushPromise = null;
-      }
+      flushLock = flushLock.then(runFlush);
+      await flushLock;
     };
 
     const isTimeoutError = (err: unknown) =>

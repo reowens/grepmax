@@ -11,7 +11,7 @@ const DEFAULT_WORKER_THREADS = (() => {
   if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv;
 
   const cores = os.cpus().length || 1;
-  const HARD_CAP = 4;
+  const HARD_CAP = 2;
   return Math.max(1, Math.min(HARD_CAP, cores));
 })();
 

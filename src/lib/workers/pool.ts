@@ -243,6 +243,7 @@ export class WorkerPool {
         `[worker-pool] ${task.method} timed out after ${TASK_TIMEOUT_MS}ms; restarting worker.`,
       );
     }
+    this.completeTask(task, null);
     task.reject(
       new Error(
         `Worker task ${task.method} timed out after ${TASK_TIMEOUT_MS}ms`,
@@ -259,8 +260,6 @@ export class WorkerPool {
     if (!this.destroyed) {
       this.spawnWorker();
     }
-
-    this.completeTask(task, null);
     this.dispatch();
   }
 
