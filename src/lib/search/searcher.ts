@@ -19,27 +19,33 @@ export class Searcher {
     score: number,
   ): ChunkType {
     // 1. Aggressive Header Stripping
-    // The chunker adds a preamble like:
-    // // File: ...
-    // import ...
-    // File: ... > Function: ...
-    //
-    // We want to strip all that and get to the meat.
-    let cleanCode = record.content || "";
+    // Prefer display_text (includes breadcrumbs/imports) but strip them for humans
+    let cleanCode = record.display_text || record.content || "";
 
     // Split by lines
     const lines = cleanCode.split("\n");
     let startIdx = 0;
 
     // Skip lines that look like headers or imports
-    // Heuristic: Skip until we see a line that is NOT a comment, NOT an import, and NOT empty.
-    // But we must be careful not to skip the actual function definition if it starts with export.
+    // Heuristic: skip until we hit the first line that looks like code or a symbol breadcrumb
+    let inImportBlock = false;
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
       if (line.startsWith("// File:")) continue;
       if (line.startsWith("File:")) continue; // Sometimes "File: ..." without comment
-      if (line.startsWith("import ")) continue;
+      if (line.startsWith("Imports:") || line.startsWith("Exports:")) continue;
+      if (line === "---" || line === "(anchor)") continue;
+      if (line.startsWith("//")) continue; // other header comments
+
+      if (inImportBlock) {
+        if (line.endsWith(";")) inImportBlock = false;
+        continue;
+      }
+      if (line.startsWith("import ")) {
+        inImportBlock = !line.endsWith(";");
+        continue;
+      }
       if (line.startsWith("from ")) continue; // Python/JS
 
       // If we hit something else, this is likely the start of code
@@ -158,6 +164,10 @@ export class Searcher {
 
         adjusted *= boostFactor;
       }
+    }
+
+    if (record.role === "DOCS") {
+      adjusted *= 0.6;
     }
 
     const pathStr = (record.path || "").toLowerCase();

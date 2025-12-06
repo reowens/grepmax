@@ -40,13 +40,13 @@ export interface Chunk {
   startLine: number;
   endLine: number;
   type:
-    | "function"
-    | "method"
-    | "class"
-    | "interface"
-    | "type_alias"
-    | "block"
-    | "other";
+  | "function"
+  | "method"
+  | "class"
+  | "interface"
+  | "type_alias"
+  | "block"
+  | "other";
   context?: string[];
   docstring?: string;
   complexity?: number;
@@ -73,6 +73,11 @@ export interface FileMetadata {
 export interface ChunkingResult {
   chunks: Chunk[];
   metadata: FileMetadata;
+}
+
+function isDocLikeFile(filePath: string): boolean {
+  const ext = path.extname(filePath).toLowerCase();
+  return [".md", ".mdx", ".txt", ".rst", ".adoc"].includes(ext);
 }
 
 // Minimal TreeSitter node interface
@@ -263,6 +268,7 @@ export class TreeSitterChunker {
   async chunk(filePath: string, content: string): Promise<ChunkingResult> {
     if (!this.initialized) await this.init();
 
+    const docLike = isDocLikeFile(filePath);
     let result: ChunkingResult = {
       chunks: [],
       metadata: { imports: [], exports: [], comments: [] },
@@ -278,6 +284,10 @@ export class TreeSitterChunker {
 
     if (result.chunks.length === 0) {
       result.chunks = this.fallbackChunk(content, filePath);
+    }
+
+    if (docLike) {
+      result.chunks = result.chunks.map((c) => ({ ...c, role: "DOCS" }));
     }
 
     // Split chunks if too big
@@ -320,8 +330,6 @@ export class TreeSitterChunker {
     const definitionTypes = langDef?.definitionTypes || [];
 
     const isDefType = (t: string) => definitionTypes.includes(t);
-    const matchesDefKeyword = (keyword: string) =>
-      definitionTypes.some((t) => t.includes(keyword));
 
     const classify = (node: TreeSitterNode): Chunk["type"] => {
       const t = node.type;
@@ -582,9 +590,9 @@ export class TreeSitterChunker {
           parentSymbol:
             stack.length > 1
               ? stack[stack.length - 1].replace(
-                  /^(Class|Method|Function|Interface|Type): /,
-                  "",
-                )
+                /^(Class|Method|Function|Interface|Type): /,
+                "",
+              )
               : undefined,
         });
         nextStack = context;

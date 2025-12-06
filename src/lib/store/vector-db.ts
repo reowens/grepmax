@@ -68,8 +68,8 @@ export class VectorDB {
     };
   }
 
-  private validateSchema(table: lancedb.Table) {
-    const schema = table.schemaSync();
+  private async validateSchema(table: lancedb.Table) {
+    const schema = await table.schema();
     const fields = new Set(schema.fields.map((f) => f.name));
     const required = ["complexity", "is_exported"];
     const missing = required.filter((r) => !fields.has(r));
@@ -142,7 +142,7 @@ export class VectorDB {
     const db = await this.getDb();
     try {
       const table = await db.openTable(TABLE_NAME);
-      this.validateSchema(table);
+      await this.validateSchema(table);
       return table;
     } catch (_err) {
       const schema = this.buildSchema();
