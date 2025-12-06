@@ -126,7 +126,7 @@ export const search: Command = new CommanderCommand("search")
           signal = abortController.signal;
           setTimeout(() => {
             abortController?.abort();
-          }, 10000);
+          }, 60000); // 60 seconds timeout for non-TTY auto-indexing
         }
 
         const { spinner, onProgress } = createIndexingSpinner(
