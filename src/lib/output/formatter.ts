@@ -20,6 +20,14 @@ function detectLanguage(filePath: string): string {
   return lang?.id || "plaintext";
 }
 
+function formatScore(score?: number): string {
+  if (typeof score !== "number") return "";
+  const fixed = score.toFixed(3);
+  return fixed.replace(/^0\./, ".").replace(/\.?0+$/, (m) =>
+    m.startsWith(".") ? "" : m,
+  );
+}
+
 export function formatResult(
   result: ChunkType,
   root: string,
@@ -61,6 +69,11 @@ export function formatResult(
     context.push(
       `Calls: ${result.referenced_symbols.slice(0, 3).join(", ")}${result.referenced_symbols.length > 3 ? "..." : ""}`,
     );
+  }
+  // Add score if available
+  const scoreStr = formatScore(result.score);
+  if (scoreStr) {
+    context.push(`Score: ${scoreStr}`);
   }
   const contextLine =
     context.length > 0 ? `\n${style.gray(context.join(" | "))}` : "";
