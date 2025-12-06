@@ -3,6 +3,9 @@ import type { ChunkType } from "../store/types";
 
 export interface JsonOutput {
   results?: ChunkType[];
+  hits?: unknown[];
+  tsv?: string;
+  format?: string;
   graph?: {
     center: GraphNode | null;
     callers: GraphNode[];

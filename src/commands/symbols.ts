@@ -119,7 +119,6 @@ export const symbols = new Command("symbols")
   .description("List indexed symbols and where they are defined")
   .option("-l, --limit <number>", "Max symbols to list (default 200)", "200")
   .option("-p, --path <prefix>", "Only include symbols under this path prefix")
-  .option("--json", "Output JSON instead of table")
   .action(async (cmd) => {
     const projectRoot = findProjectRoot(process.cwd()) ?? process.cwd();
     const limit = Number.parseInt(cmd.limit, 10);
@@ -129,13 +128,9 @@ export const symbols = new Command("symbols")
       pathPrefix: cmd.path as string | undefined,
     });
 
-    if (cmd.json) {
-      console.log(JSON.stringify(entries, null, 2));
-    } else {
-      console.log(
-        `${style.bold("Project")}: ${style.green(projectRoot)}\n${formatTable(entries)}`,
-      );
-    }
+    console.log(
+      `${style.bold("Project")}: ${style.green(projectRoot)}\n${formatTable(entries)}`,
+    );
 
     await gracefulExit();
   });

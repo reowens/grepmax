@@ -9,10 +9,13 @@ import {
 } from "../lib/index/sync-helpers";
 import { initialSync } from "../lib/index/syncer";
 import { formatTrace } from "../lib/output/formatter";
-import { formatJson } from "../lib/output/json-formatter";
 import { Searcher } from "../lib/search/searcher";
 import { ensureSetup } from "../lib/setup/setup-helpers";
-import type { FileMetadata, SearchResponse } from "../lib/store/types";
+import type {
+  ChunkType,
+  FileMetadata,
+  SearchResponse,
+} from "../lib/store/types";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
 import { formatTextResults, type TextResult } from "../lib/utils/formatter";
@@ -25,17 +28,257 @@ function toTextResults(data: SearchResponse["data"]): TextResult[] {
         ? ((r.metadata as FileMetadata).path as string)
         : "Unknown path";
 
+    const start =
+      typeof r.generated_metadata?.start_line === "number"
+        ? r.generated_metadata.start_line
+        : 0;
+    const end =
+      typeof r.generated_metadata?.end_line === "number"
+        ? r.generated_metadata.end_line
+        : start +
+          Math.max(
+            0,
+            (r.generated_metadata?.num_lines ?? 1) - 1,
+          );
+
     return {
       path: rawPath,
       score: r.score,
       content: r.text || "",
       chunk_type: r.generated_metadata?.type,
-      start_line: r.generated_metadata?.start_line ?? 0,
-      end_line:
-        (r.generated_metadata?.start_line ?? 0) +
-        (r.generated_metadata?.num_lines ?? 0),
+      start_line: start,
+      end_line: end,
     };
   });
+}
+
+type CompactHit = {
+  path: string;
+  range: string;
+  start_line: number;
+  end_line: number;
+  role?: string;
+  confidence?: string;
+  score?: number;
+  defined?: string[];
+  preview?: string;
+};
+
+function getPreviewText(chunk: ChunkType): string {
+  const maxLen = 140;
+  const lines =
+    chunk.text
+      ?.split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean) ?? [];
+  let preview = lines[0] ?? "";
+
+  if (!preview && chunk.defined_symbols?.length) {
+    preview = chunk.defined_symbols[0] ?? "";
+  }
+
+  if (preview.length > maxLen) {
+    preview = `${preview.slice(0, maxLen)}...`;
+  }
+  return preview;
+}
+
+function toCompactHits(data: SearchResponse["data"]): CompactHit[] {
+  return data.map((chunk) => {
+    const rawPath =
+      typeof (chunk.metadata as FileMetadata | undefined)?.path === "string"
+        ? ((chunk.metadata as FileMetadata).path as string)
+        : "Unknown path";
+
+    const start =
+      typeof chunk.generated_metadata?.start_line === "number"
+        ? chunk.generated_metadata.start_line
+        : 0;
+    const end =
+      typeof chunk.generated_metadata?.end_line === "number"
+        ? chunk.generated_metadata.end_line
+        : start +
+          Math.max(
+            0,
+            (chunk.generated_metadata?.num_lines ?? 1) - 1,
+          );
+
+    return {
+      path: rawPath,
+      range: `${start + 1}-${end + 1}`,
+      start_line: start,
+      end_line: end,
+      role: chunk.role,
+      confidence: chunk.confidence,
+      score: chunk.score,
+      defined: Array.isArray(chunk.defined_symbols)
+        ? chunk.defined_symbols.slice(0, 3)
+        : typeof chunk.defined_symbols === "string"
+          ? [chunk.defined_symbols]
+          : typeof (chunk.defined_symbols as any)?.toArray === "function"
+            ? ((chunk.defined_symbols as any).toArray() as string[]).slice(0, 3)
+            : [],
+      preview: getPreviewText(chunk),
+    };
+  });
+}
+
+function compactRole(role?: string): string {
+  if (!role) return "UNK";
+  if (role.startsWith("ORCH")) return "ORCH";
+  if (role.startsWith("DEF")) return "DEF";
+  if (role.startsWith("IMP")) return "IMPL";
+  return role.slice(0, 4).toUpperCase();
+}
+
+function compactConf(conf?: string): string {
+  if (!conf) return "U";
+  const c = conf.toUpperCase();
+  if (c.startsWith("H")) return "H";
+  if (c.startsWith("M")) return "M";
+  if (c.startsWith("L")) return "L";
+  return "U";
+}
+
+function compactScore(score?: number): string {
+  if (typeof score !== "number") return "";
+  const fixed = score.toFixed(3);
+  return fixed.replace(/^0\./, ".").replace(/\.?0+$/, (m) =>
+    m.startsWith(".") ? "" : m,
+  );
+}
+
+function truncateEnd(s: string, max: number): string {
+  if (max <= 0) return "";
+  if (s.length <= max) return s;
+  if (max <= 3) return s.slice(0, max);
+  return `${s.slice(0, max - 3)}...`;
+}
+
+function truncateMiddle(s: string, max: number): string {
+  if (max <= 0) return "";
+  if (s.length <= max) return s;
+  if (max <= 5) return s.slice(0, max);
+  const keep = max - 3;
+  const left = Math.ceil(keep / 2);
+  const right = Math.floor(keep / 2);
+  return `${s.slice(0, left)}...${s.slice(s.length - right)}`;
+}
+
+function padR(s: string, w: number) {
+  const n = Math.max(0, w - s.length);
+  return s + " ".repeat(n);
+}
+function padL(s: string, w: number) {
+  const n = Math.max(0, w - s.length);
+  return " ".repeat(n) + s;
+}
+
+function formatCompactTSV(
+  hits: CompactHit[],
+  projectRoot: string,
+  query: string,
+): string {
+  if (!hits.length) return "No matches found.";
+  const lines: string[] = [];
+  lines.push(`osgrep hits\tquery=${query}\tcount=${hits.length}`);
+  lines.push("path\tlines\tscore\trole\tconf\tdefined\tpreview");
+
+  for (const hit of hits) {
+    const relPath = path.isAbsolute(hit.path)
+      ? path.relative(projectRoot, hit.path)
+      : hit.path;
+    const score = compactScore(hit.score);
+    const role = compactRole(hit.role);
+    const conf = compactConf(hit.confidence);
+    const defs = (hit.defined ?? []).join(",");
+    const preview = (hit.preview || "").replace(/\t/g, " ").trim();
+    lines.push([relPath, hit.range, score, role, conf, defs, preview].join("\t"));
+  }
+  return lines.join("\n");
+}
+
+function formatCompactPretty(
+  hits: CompactHit[],
+  projectRoot: string,
+  query: string,
+  termWidth: number,
+  useAnsi: boolean,
+): string {
+  if (!hits.length) return "No matches found.";
+
+  const dim = (s: string) => (useAnsi ? `\x1b[90m${s}\x1b[0m` : s);
+  const bold = (s: string) => (useAnsi ? `\x1b[1m${s}\x1b[0m` : s);
+
+  const wLines = 9;
+  const wScore = 6;
+  const wRole = 4;
+  const wConf = 1;
+  const wDef = 20;
+
+  const minPreview = 20;
+  const gutters = 6;
+  const fixed = wLines + wScore + wRole + wConf + wDef + gutters;
+
+  const wPath = Math.max(24, Math.min(52, termWidth - fixed - minPreview));
+  const wPreview = Math.max(minPreview, termWidth - fixed - wPath);
+
+  const header = `osgrep hits  count=${hits.length}  query="${query}"`;
+
+  const cols = [
+    padR("path", wPath),
+    padR("lines", wLines),
+    padL("score", wScore),
+    padR("role", wRole),
+    padR("c", wConf),
+    padR("defined", wDef),
+    "preview",
+  ].join(" ");
+
+  const out: string[] = [];
+  out.push(bold(header));
+  out.push(dim(cols));
+
+  for (const hit of hits) {
+    const relPath = path.isAbsolute(hit.path)
+      ? path.relative(projectRoot, hit.path)
+      : hit.path;
+    const score = compactScore(hit.score);
+    const role = compactRole(hit.role);
+    const conf = compactConf(hit.confidence);
+    const defs = (hit.defined ?? []).join(",") || "-";
+    const preview = (hit.preview || "").trim();
+
+    out.push(
+      [
+        padR(truncateMiddle(relPath, wPath), wPath),
+        padR(hit.range, wLines),
+        padL(score || "", wScore),
+        padR(role, wRole),
+        padR(conf, wConf),
+        padR(truncateEnd(defs, wDef), wDef),
+        truncateEnd(preview, wPreview),
+      ].join(" "),
+    );
+  }
+
+  return out.join("\n");
+}
+
+function formatCompactTable(
+  hits: CompactHit[],
+  projectRoot: string,
+  query: string,
+  opts: { isTTY: boolean; plain: boolean },
+): string {
+  if (!hits.length) return "No matches found.";
+
+  if (!opts.isTTY || opts.plain) {
+    return formatCompactTSV(hits, projectRoot, query);
+  }
+
+  const termWidth = Math.max(80, process.stdout.columns ?? 120);
+  return formatCompactPretty(hits, projectRoot, query, termWidth, true);
 }
 
 export const search: Command = new CommanderCommand("search")
@@ -48,10 +291,13 @@ export const search: Command = new CommanderCommand("search")
   .option("-c, --content", "Show full chunk content instead of snippets", false)
   .option("--per-file <n>", "Number of matches to show per file", "1")
   .option("--scores", "Show relevance scores", false)
-  .option("--compact", "Show file paths only", false)
+  .option(
+    "--compact",
+    "Compact hits view (paths + line ranges + role/preview)",
+    false,
+  )
   .option("--plain", "Disable ANSI colors and use simpler formatting", false)
   .option("--trace", "Trace the call graph for a symbol", false)
-  .option("--json", "Output results in JSON format", false)
   .option(
     "-s, --sync",
     "Syncs the local files to the store before searching",
@@ -77,7 +323,6 @@ export const search: Command = new CommanderCommand("search")
       sync: boolean;
       dryRun: boolean;
       trace: boolean;
-      json: boolean;
     } = cmd.optsWithGlobals();
 
     if (exec_path?.startsWith("--")) {
@@ -162,13 +407,7 @@ export const search: Command = new CommanderCommand("search")
       if (options.trace) {
         const graphBuilder = new GraphBuilder(vectorDb);
         const graph = await graphBuilder.buildGraph(pattern);
-        if (options.json) {
-          console.log(
-            formatJson({ graph, metadata: { count: 1, query: pattern } }),
-          );
-        } else {
-          console.log(formatTrace(graph));
-        }
+        console.log(formatTrace(graph));
         return;
       }
 
@@ -182,18 +421,26 @@ export const search: Command = new CommanderCommand("search")
         exec_path ? path.relative(projectRoot, path.resolve(exec_path)) : "",
       );
 
-      if (options.json) {
-        console.log(
-          formatJson({
-            results: searchResult.data,
-            metadata: { count: searchResult.data.length, query: pattern },
-          }),
-        );
-        return;
-      }
+      const compactHits = options.compact
+        ? toCompactHits(searchResult.data)
+        : [];
+      const compactText =
+        options.compact && compactHits.length
+          ? formatCompactTable(compactHits, projectRoot, pattern, {
+            isTTY: !!process.stdout.isTTY,
+            plain: !!options.plain,
+          })
+          : options.compact
+            ? "No matches found."
+            : "";
 
       if (!searchResult.data.length) {
         console.log("No matches found.");
+        return;
+      }
+
+      if (options.compact) {
+        console.log(compactText);
         return;
       }
 

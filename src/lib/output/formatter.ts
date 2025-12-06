@@ -76,7 +76,7 @@ export function formatResult(
     const lines = code.split("\n");
     code = [
       ...lines.slice(0, 15),
-      style.dim(`... (+${lines.length - 15} more lines)`),
+      style.dim(`...`),
     ].join("\n");
   }
 

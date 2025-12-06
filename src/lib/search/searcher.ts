@@ -18,6 +18,23 @@ export class Searcher {
     record: Partial<VectorRecord>,
     score: number,
   ): ChunkType {
+    const toStrArray = (val?: unknown): string[] => {
+      if (!val) return [];
+      if (Array.isArray(val)) {
+        return val.filter((v) => typeof v === "string");
+      }
+      if (typeof (val as any).toArray === "function") {
+        try {
+          const arr = (val as any).toArray();
+          if (Array.isArray(arr)) return arr.filter((v) => typeof v === "string");
+          return Array.from(arr || []).filter((v) => typeof v === "string");
+        } catch {
+          return [];
+        }
+      }
+      return [];
+    };
+
     // 1. Aggressive Header Stripping
     // Prefer display_text (includes breadcrumbs/imports) but strip them for humans
     let cleanCode = record.display_text || record.content || "";
@@ -63,11 +80,25 @@ export class Searcher {
 
     // 2. Cap the Symbol Lists
     const MAX_SYMBOLS = 10;
-    const truncate = (arr?: string[]) => {
-      if (!arr) return [];
-      if (arr.length <= MAX_SYMBOLS) return arr;
-      return [...arr.slice(0, MAX_SYMBOLS), `... (+${arr.length - MAX_SYMBOLS} more)`];
+    const truncate = (arr?: unknown) => {
+      const arrVal = toStrArray(arr);
+      if (arrVal.length <= MAX_SYMBOLS) return arrVal;
+      return [
+        ...arrVal.slice(0, MAX_SYMBOLS),
+        `... (+${arrVal.length - MAX_SYMBOLS} more)`,
+      ];
     };
+
+    const definedSymbols = truncate(record.defined_symbols);
+    const referencedSymbols = truncate(record.referenced_symbols);
+    const imports = truncate(record.imports);
+    const exports = truncate(record.exports);
+
+    const startLine = record.start_line ?? 0;
+    const endLine =
+      typeof record.end_line === "number" ? record.end_line : startLine;
+
+    const numLines = Math.max(1, endLine - startLine + 1);
 
     return {
       type: "text",
@@ -79,8 +110,9 @@ export class Searcher {
         is_anchor: !!record.is_anchor,
       },
       generated_metadata: {
-        start_line: record.start_line || 0,
-        num_lines: Math.max(1, (record.end_line || 0) - (record.start_line || 0) + 1),
+        start_line: startLine,
+        end_line: endLine,
+        num_lines: numLines,
         type: record.chunk_type,
       },
       complexity: record.complexity,
@@ -89,10 +121,10 @@ export class Searcher {
       parent_symbol: record.parent_symbol,
 
       // Truncate lists to save tokens
-      defined_symbols: truncate(record.defined_symbols),
-      referenced_symbols: truncate(record.referenced_symbols),
-      imports: truncate(record.imports),
-      exports: truncate(record.exports),
+      defined_symbols: definedSymbols,
+      referenced_symbols: referencedSymbols,
+      imports,
+      exports,
 
       // Remove 'context' field entirely from JSON output
       // context: record.context_prev ? [record.context_prev] : [], 

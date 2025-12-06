@@ -29,9 +29,9 @@ export const OsgrepPlugin: Plugin = async ({ $ }) => {
         },
         async execute({ query }) {
           try {
-            // Run osgrep with --json flag
+            // Run osgrep with compact TSV output (default, token-cheap)
             // Note: We assume 'osgrep' is in the PATH.
-            const { stdout } = await $\`osgrep search \${query} --json\`;
+            const { stdout } = await $\`osgrep search \${query} --compact\`;
             return stdout.trim();
           } catch (e: any) {
             return \`Error running osgrep: \${e.message}\`;
@@ -50,7 +50,7 @@ export const OsgrepPlugin: Plugin = async ({ $ }) => {
         },
         async execute({ symbol }) {
           try {
-            const { stdout } = await $\`osgrep search --trace \${symbol} --json\`;
+            const { stdout } = await $\`osgrep search --trace \${symbol}\`;
             return stdout.trim();
           } catch (e: any) {
             return \`Error running osgrep trace: \${e.message}\`;

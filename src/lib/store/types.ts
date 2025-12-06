@@ -43,6 +43,7 @@ export interface FileMetadata extends MetadataRecord {
 
 export interface ChunkGeneratedMetadata extends MetadataRecord {
   start_line?: number;
+  end_line?: number;
   num_lines?: number;
   type?: string;
 }
