@@ -1,62 +1,74 @@
 ---
 name: osgrep
-description: Semantic code search using natural language queries. Use when users ask "where is X implemented", "how does Y work", "find the logic for Z", or need to locate code by concept rather than exact text. Returns file paths with line numbers and code snippets.
+description: Semantic code search and call-graph tracing for AI agents. Finds code by concept, surfaces roles (ORCHESTRATION vs DEFINITION), and traces dependencies. Output is compact TSV for low token use.
 allowed-tools: "Bash(osgrep:*), Read"
 license: Apache-2.0
 ---
+
+## Core Commands
+- Search: `osgrep search "how does auth work"`
+- Trace: `osgrep trace "AuthService"`
+- Symbols: `osgrep symbols "Auth"`
+
+## Output (Default = Compact TSV)
+- One line per hit: `path\tlines\tscore\trole\tconf\tdefined\tpreview`
+- Header includes query and count.
+- Roles are short (`ORCH/DEF/IMPL`), confidence is `H/M/L`, scores are short (`.942`).
+- Use `path` + `lines` with `Read` to fetch real code.
+
 ## When to Use
-Use this to find code by **concept** or **behavior** (e.g., "where is auth validated", "how are plugins loaded").
-*Note: This tool prioritizes finding the right files and locations in the code. Snippets are truncated (max 16 lines) and are often just previews.*
+- Find implementations: “where is validation logic”
+- Understand concepts: “how does middleware work”
+- Explore architecture: “authentication system”
+- Trace impact: “who calls X / what does X call”
 
-Example:
-```bash
-osgrep "how are plugins loaded" --json
-osgrep "how are plugins loaded" packages/transformers.js/src --json
-```
+## Quick Patterns
+1) “How does X work?”
+   - `osgrep search "how does X work"`
+   - Read the top ORCH hits.
+2) “Who calls this?”
+   - `osgrep --trace "SymbolName"`
+   - Read callers/callees, then jump with `Read`.
+3) Narrow scope:
+   - `osgrep search "auth middleware" src/server`
 
-## Strategy for Different Query Types
+## Command Reference
 
-### For **Architectural/System-Level Questions** (auth, LSP integration, file watching)
-1. **Search Broadly First:** Use a conceptual query to map the landscape.
-   * `osgrep "authentication authorization checks"`
-2. **Survey the Results:** Look for patterns across multiple files:
-   * Are checks in middleware? Decorators? Multiple services?
-   * Do file paths suggest different layers (gateway, handlers, utils)?
-3. **Read Strategically:** Pick 2-4 files that represent different aspects:
-   * Read the main entry point
-   * Read representative middleware/util files
-   * Follow imports if architecture is unclear
-4. **Refine with Specific Searches:** If one aspect is unclear:
-   * `osgrep "session validation logic"`
-   * `osgrep "API authentication middleware"`
+### `search [pattern] [path]`
+Semantic search. Returns ranked results with roles (ORCH/DEF/IMPL).
+- `--compact`: TSV output (default for agents).
+- `--max-count N`: Limit results.
 
-### For **Targeted Implementation Details** (specific function, algorithm)
-1. **Search Specifically:** Ask about the precise logic.
-   * `osgrep "logic for merging user and default configuration"`
-2. **Evaluate the Semantic Match:**
-   * Does the snippet look relevant?
-   * **Crucial:** If it ends in `...` or cuts off mid-logic, **read the file**.
-3. **One Search, One Read:** Use osgrep to pinpoint the best file, then read it fully.
+### `trace <symbol>`
+Show call graph for a specific symbol.
+- Callers: Who calls this?
+- Callees: What does this call?
+- Definition: Where is it defined?
 
-## Output Format
-Always use the `--json` flag for machine-readable output.
-
-Returns a JSON array of objects with the following key fields:
-- `path`: File path.
-- `role`: **CRITICAL**. `ORCHESTRATION` (high-level logic), `DEFINITION` (types/classes), or `IMPLEMENTATION`.
-- `confidence`: `High`, `Medium`, or `Low`.
-- `defined_symbols` / `referenced_symbols`: Useful for understanding code relationships.
-- `text`: The code snippet (truncated).
-
-**Interpretation Guide:**
-- **`ORCHESTRATION` + `High` Confidence:** This is likely the main logic you are looking for. Read this file first.
-- **`DEFINITION`:** Good for understanding types, but might not contain the flow.
-- **`Low` Confidence:** Read only if no better matches found.
+### `symbols [filter]`
+List defined symbols.
+- No args: List top 20 most referenced symbols.
+- With filter: List symbols matching the pattern.
+- `-l N`: Limit number of results.
 
 ## Tips
+- Previews are hints; not a full substitute for reading the file.
+- Results are hybrid (semantic + literal); longer natural language queries work best.
+- If results span many dirs, start with ORCH hits to map the flow.
 
-- **Trust the Semantics:** You don't need exact names. `osgrep "how does the server start"` works better than guessing `osgrep "server.init"`.
-- **Watch for Distributed Patterns:** If results span 5+ files in different directories, the feature is likely architectural—survey before diving deep.
-- **Scope When Possible:** Use path constraints to focus: `osgrep "auth" src/server/`
-- **Don't Over-Rely on Snippets:** For architectural questions, snippets are signposts, not answers. Read the key files.
-- **"Still Indexing...":** If you see this, please stop, alert the user that the index is ongoing and ask them if they wish to proceed. Results will be partial until the index is complete.
+## Typical Workflow
+
+1. **Discover** - Use `search` to find relevant code by
+concept
+    ```bash
+    osgrep search "worker pool lifecycle" --compact
+    # → src/lib/workers/pool.ts:112 WorkerPool
+
+2. Explore - Use symbols to see related symbols
+osgrep symbols Worker
+# → WorkerPool, WorkerOrchestrator, spawnWorker, etc.
+3. Trace - Use trace to map dependencies
+osgrep trace WorkerPool
+# → Shows callers, callees, definition
+4. Read - Use the file paths from above with Read tool
+Read src/lib/workers/pool.ts:112-186

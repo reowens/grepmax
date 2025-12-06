@@ -47,16 +47,32 @@ export const setup = new Command("setup")
       console.log(`${symbol} Model: ${id}`);
     });
 
-    // Check for skiplist.json (Verification only, don't write it)
+    // Check for skiplist.json and try to download if missing
     const colbertPath = path.join(
       PATHS.models,
       ...MODEL_IDS.colbert.split("/"),
     );
     const skiplistPath = path.join(colbertPath, "skiplist.json");
     if (fs.existsSync(skiplistPath)) {
-      console.log(`✓ Skiplist found`);
+      console.log(`✓ Skiplist found: ${skiplistPath}`);
     } else {
-      console.log(`⚠ Skiplist missing (will use fallback)`);
+      console.log(`⚠ Skiplist missing, attempting to download...`);
+      try {
+        const url = `https://huggingface.co/${MODEL_IDS.colbert}/resolve/main/skiplist.json`;
+        const response = await fetch(url);
+        if (response.ok) {
+          const buffer = await response.arrayBuffer();
+          fs.writeFileSync(skiplistPath, Buffer.from(buffer));
+          console.log(`✓ Skiplist downloaded successfully`);
+        } else {
+          console.log(`⚠ Skiplist download failed (HTTP ${response.status}), will use fallback`);
+          console.log(`   Expected at: ${skiplistPath}`);
+        }
+      } catch (error) {
+        console.log(`⚠ Skiplist download failed, will use fallback`);
+        console.log(`   Error: ${error instanceof Error ? error.message : String(error)}`);
+        console.log(`   Expected at: ${skiplistPath}`);
+      }
     }
 
     console.log(`\nosgrep is ready! You can now run:`);

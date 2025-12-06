@@ -3,13 +3,15 @@ import { highlight } from "cli-highlight";
 import { getLanguageByExtension } from "../core/languages";
 import type { ChunkType, FileMetadata } from "../store/types";
 
+const useColors = process.stdout.isTTY && !process.env.NO_COLOR;
+
 const style = {
-  bold: (s: string) => `\x1b[1m${s}\x1b[22m`,
-  dim: (s: string) => `\x1b[2m${s}\x1b[22m`,
-  green: (s: string) => `\x1b[32m${s}\x1b[39m`,
-  blue: (s: string) => `\x1b[34m${s}\x1b[39m`,
-  cyan: (s: string) => `\x1b[36m${s}\x1b[39m`,
-  gray: (s: string) => `\x1b[90m${s}\x1b[39m`,
+  bold: (s: string) => useColors ? `\x1b[1m${s}\x1b[22m` : s,
+  dim: (s: string) => useColors ? `\x1b[2m${s}\x1b[22m` : s,
+  green: (s: string) => useColors ? `\x1b[32m${s}\x1b[39m` : s,
+  blue: (s: string) => useColors ? `\x1b[34m${s}\x1b[39m` : s,
+  cyan: (s: string) => useColors ? `\x1b[36m${s}\x1b[39m` : s,
+  gray: (s: string) => useColors ? `\x1b[90m${s}\x1b[39m` : s,
 };
 
 function detectLanguage(filePath: string): string {

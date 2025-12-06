@@ -33,7 +33,7 @@ export class ColbertModel {
     const basePath = path.join(CACHE_DIR, MODEL_IDS.colbert);
     const onnxDir = path.join(basePath, "onnx");
 
-    const modelPath = path.join(onnxDir, "model.onnx");
+    const modelPath = path.join(onnxDir, "model_int8.onnx");
     if (!fs.existsSync(modelPath)) {
       throw new Error(`ColBERT ONNX model not found at ${modelPath}`);
     }
