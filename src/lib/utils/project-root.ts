@@ -28,7 +28,10 @@ export function findProjectRoot(startDir = process.cwd()): string | null {
   return start;
 }
 
-export function ensureProjectPaths(startDir = process.cwd()): ProjectPaths {
+export function ensureProjectPaths(
+  startDir = process.cwd(),
+  options?: { dryRun?: boolean },
+): ProjectPaths {
   const root = findProjectRoot(startDir) ?? path.resolve(startDir);
   const osgrepDir = path.join(root, ".osgrep");
   const lancedbDir = path.join(osgrepDir, "lancedb");
@@ -36,11 +39,13 @@ export function ensureProjectPaths(startDir = process.cwd()): ProjectPaths {
   const lmdbPath = path.join(cacheDir, "meta.lmdb");
   const configPath = path.join(osgrepDir, "config.json");
 
-  [osgrepDir, lancedbDir, cacheDir].forEach((dir) => {
-    fs.mkdirSync(dir, { recursive: true });
-  });
+  if (!options?.dryRun) {
+    [osgrepDir, lancedbDir, cacheDir].forEach((dir) => {
+      fs.mkdirSync(dir, { recursive: true });
+    });
 
-  ensureGitignoreEntry(root);
+    ensureGitignoreEntry(root);
+  }
 
   return { root, osgrepDir, lancedbDir, cacheDir, lmdbPath, configPath };
 }

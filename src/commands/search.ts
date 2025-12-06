@@ -91,27 +91,14 @@ export const search: Command = new CommanderCommand("search")
       await ensureSetup();
       const searchRoot = exec_path ? path.resolve(exec_path) : root;
       const projectRoot = findProjectRoot(searchRoot) ?? searchRoot;
-      const paths = ensureProjectPaths(projectRoot);
+      const paths = ensureProjectPaths(projectRoot, {
+        dryRun: options.dryRun,
+      });
 
       // Propagate project root to worker processes
       process.env.OSGREP_PROJECT_ROOT = projectRoot;
 
       vectorDb = new VectorDB(paths.lancedbDir);
-
-      if (options.trace) {
-        const graphBuilder = new GraphBuilder(vectorDb);
-        const graph = await graphBuilder.buildGraph(pattern);
-        if (options.json) {
-          console.log(
-            formatJson({ graph, metadata: { count: 1, query: pattern } }),
-          );
-        } else {
-          console.log(formatTrace(graph));
-        }
-        return;
-      }
-
-      const searcher = new Searcher(vectorDb);
 
       const hasRows = await vectorDb.hasAnyRows();
       const needsSync = options.sync || !hasRows;
@@ -173,6 +160,21 @@ export const search: Command = new CommanderCommand("search")
           throw e;
         }
       }
+
+      if (options.trace) {
+        const graphBuilder = new GraphBuilder(vectorDb);
+        const graph = await graphBuilder.buildGraph(pattern);
+        if (options.json) {
+          console.log(
+            formatJson({ graph, metadata: { count: 1, query: pattern } }),
+          );
+        } else {
+          console.log(formatTrace(graph));
+        }
+        return;
+      }
+
+      const searcher = new Searcher(vectorDb);
 
       const searchResult = await searcher.search(
         pattern,

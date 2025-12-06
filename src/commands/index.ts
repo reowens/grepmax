@@ -45,7 +45,9 @@ export const index = new Command("index")
         ? path.resolve(options.path)
         : process.cwd();
       const projectRoot = findProjectRoot(indexRoot) ?? indexRoot;
-      const paths = ensureProjectPaths(projectRoot);
+      const paths = ensureProjectPaths(projectRoot, {
+        dryRun: options.dryRun,
+      });
       vectorDb = new VectorDB(paths.lancedbDir);
 
       if (options.reset) {
