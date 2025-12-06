@@ -10,6 +10,7 @@ import { installOpencode, uninstallOpencode } from "./commands/opencode";
 import { search } from "./commands/search";
 import { serve } from "./commands/serve";
 import { setup } from "./commands/setup";
+import { symbols } from "./commands/symbols";
 
 program
   .version(
@@ -42,6 +43,7 @@ if (isIndexCommand && fs.existsSync(legacyDataPath)) {
 program.addCommand(search, { isDefault: true });
 program.addCommand(index);
 program.addCommand(list);
+program.addCommand(symbols);
 program.addCommand(setup);
 program.addCommand(serve);
 program.addCommand(installClaudeCode);
