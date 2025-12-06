@@ -325,12 +325,11 @@ export class TreeSitterChunker {
 
     const classify = (node: TreeSitterNode): Chunk["type"] => {
       const t = node.type;
-      if (t.includes("method") || matchesDefKeyword("method")) return "method";
-      if (t.includes("class") || matchesDefKeyword("class")) return "class";
-      if (t.includes("interface") || matchesDefKeyword("interface"))
-        return "interface";
-      if (t.includes("type_alias") || matchesDefKeyword("type_alias"))
-        return "type_alias";
+      // Classify strictly by the node's own type; avoid language-wide keyword inference
+      if (t.includes("method")) return "method";
+      if (t.includes("class")) return "class";
+      if (t.includes("interface")) return "interface";
+      if (t.includes("type_alias")) return "type_alias";
       if (isDefType(t) || isTopLevelValueDef(node)) return "function";
       return "block";
     };
