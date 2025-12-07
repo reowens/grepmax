@@ -45,17 +45,7 @@ vi.mock("../src/lib/utils/file-utils", () => ({
 }));
 
 const mockSearcher = {
-  search: vi.fn(async () => ({
-    data: [
-      {
-        metadata: { path: "/tmp/project/src/file.ts" },
-        score: 1,
-        type: "text",
-        text: "content",
-        generated_metadata: { start_line: 0, num_lines: 1 },
-      },
-    ],
-  })),
+  search: vi.fn(),
 };
 
 vi.mock("../src/lib/store/vector-db", () => ({
@@ -81,6 +71,17 @@ describe("search command", () => {
     vi.clearAllMocks();
     spinner.text = "";
     (search as Command).exitOverride();
+    mockSearcher.search.mockResolvedValue({
+      data: [
+        {
+          metadata: { path: "/tmp/project/src/file.ts" },
+          score: 1,
+          type: "text",
+          text: "content",
+          generated_metadata: { start_line: 0, num_lines: 1 },
+        },
+      ],
+    });
   });
 
   it("auto-syncs when store is empty and performs search", async () => {
@@ -104,11 +105,12 @@ describe("min-score filtering", () => {
     vi.clearAllMocks();
     spinner.text = "";
     (search as Command).exitOverride();
+    mockSearcher.search.mockResolvedValue({ data: [] });
   });
 
   it("filters results below min-score threshold", async () => {
     // Setup mock to return results with different scores
-    mockStore.search.mockResolvedValueOnce({
+    mockSearcher.search.mockResolvedValueOnce({
       data: [
         { metadata: { path: "/repo/high.ts" }, score: 0.9, type: "text", generated_metadata: { start_line: 1 } },
         { metadata: { path: "/repo/medium.ts" }, score: 0.5, type: "text", generated_metadata: { start_line: 1 } },
@@ -130,7 +132,7 @@ describe("min-score filtering", () => {
   });
 
   it("shows all results when min-score is 0 (default)", async () => {
-    mockStore.search.mockResolvedValueOnce({
+    mockSearcher.search.mockResolvedValueOnce({
       data: [
         { metadata: { path: "/repo/high.ts" }, score: 0.9, type: "text", generated_metadata: { start_line: 1 } },
         { metadata: { path: "/repo/low.ts" }, score: 0.1, type: "text", generated_metadata: { start_line: 1 } },
@@ -149,7 +151,7 @@ describe("min-score filtering", () => {
   });
 
   it("returns no results message when all results are filtered out", async () => {
-    mockStore.search.mockResolvedValueOnce({
+    mockSearcher.search.mockResolvedValueOnce({
       data: [
         { metadata: { path: "/repo/low.ts" }, score: 0.3, type: "text", generated_metadata: { start_line: 1 } },
       ],
@@ -160,7 +162,7 @@ describe("min-score filtering", () => {
     await (search as Command).parseAsync(["query", "--min-score", "0.9"], { from: "user" });
 
     const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
-    expect(output).toContain("No results found");
+    expect(output).toContain("No matches found");
 
     consoleSpy.mockRestore();
   });
