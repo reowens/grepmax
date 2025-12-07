@@ -3,193 +3,151 @@ import os from "node:os";
 import path from "node:path";
 import { Command } from "commander";
 
-const TOOL_PATH = path.join(
+const PLUGIN_PATH = path.join(
   os.homedir(),
   ".config",
   "opencode",
-  "tool",
+  "plugin",
   "osgrep.ts",
 );
-const MCP_PATH = path.join(
-  os.homedir(),
-  ".config",
-  "opencode",
-  "opencode.json",
-);
 
-const TOOL_DEFINITION = `
-import { tool } from "@opencode-ai/plugin"
+// We embed the entire logic (Daemon management + Tool definition) into this string.
+const PLUGIN_CONTENT = `
+import { type Plugin, tool } from "@opencode-ai/plugin";
+import { spawn, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 
-const SKILL = \`
----
-name: osgrep
-description: Semantic code search and call-graph tracing for AI agents. Finds code by concept, surfaces roles (ORCHESTRATION vs DEFINITION), and traces dependencies. Output is compact TSV for low token use.
-allowed-tools: "Bash(osgrep:*), Read"
-license: Apache-2.0
----
+// --- DAEMON HELPERS (Replicating your start.js/stop.js) ---
 
-## Core Commands
-- Search: \`osgrep search "how does auth work"\`
-- Trace: \`osgrep trace "AuthService"\`
-- Symbols: \`osgrep symbols "Auth"\`
+function startDaemon(cwd: string) {
+  const logPath = "/tmp/osgrep.log";
+  const out = fs.openSync(logPath, "a");
+  
+  // Spawn detached osgrep serve
+  const child = spawn("osgrep", ["serve"], {
+    cwd,
+    detached: true,
+    stdio: ["ignore", out, out],
+  });
+  child.unref();
+}
 
-## Output (Default = Compact TSV)
-- One line per hit: \`path\\tlines\\tscore\\trole\\tconf\\tdefined\\tpreview\`
-- Header includes query and count.
-- Roles are short (\`ORCH/DEF/IMPL\`), confidence is \`H/M/L\`, scores are short (\`.942\`).
-- Use \`path\` + \`lines\` with \`Read\` to fetch real code.
+function stopDaemon(cwd: string) {
+  const lockPath = path.join(cwd, ".osgrep", "server.json");
+  let killed = false;
 
-## When to Use
-- Find implementations: “where is validation logic”
-- Understand concepts: “how does middleware work”
-- Explore architecture: “authentication system”
-- Trace impact: “who calls X / what does X call”
+  if (fs.existsSync(lockPath)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(lockPath, "utf-8"));
+      const pid = data?.pid;
+      if (typeof pid === "number") {
+        process.kill(pid, "SIGTERM");
+        killed = true;
+      }
+    } catch {}
+    try { fs.unlinkSync(lockPath); } catch {}
+  }
 
-## Quick Patterns
-1) “How does X work?”
-   - \`osgrep search "how does X work"\`
-   - Read the top ORCH hits.
-2) “Who calls this?”
-   - \`osgrep --trace "SymbolName"\`
-   - Read callers/callees, then jump with \`Read\`.
-3) Narrow scope:
-   - \`osgrep search "auth middleware" src/server\`
-
-## Command Reference
-
-### \`search [pattern] [path]\`
-Semantic search. Returns ranked results with roles (ORCH/DEF/IMPL).
-- \`--compact\`: TSV output (default for agents).
-- \`--max-count N\`: Limit results.
-
-### \`trace <symbol>\`
-Show call graph for a specific symbol.
-- Callers: Who calls this?
-- Callees: What does this call?
-- Definition: Where is it defined?
-
-### \`symbols [filter]\`
-List defined symbols.
-- No args: List top 20 most referenced symbols.
-- With filter: List symbols matching the pattern.
-- \`-l N\`: Limit number of results.
-
-## Tips
-- Previews are hints; not a full substitute for reading the file.
-- Results are hybrid (semantic + literal); longer natural language queries work best.
-- If results span many dirs, start with ORCH hits to map the flow.
-
-## Typical Workflow
-
-1. **Discover** - Use \`search\` to find relevant code by
-concept
-    \`\`\`bash
-    osgrep search "worker pool lifecycle" --compact
-    # → src/lib/workers/pool.ts:112 WorkerPool
-    \`\`\`
-
-2. **Explore** - Use \`symbols\` to see related symbols
-    \`\`\`bash
-    osgrep symbols Worker
-    # → WorkerPool, WorkerOrchestrator, spawnWorker, etc.
-    \`\`\`
-
-3. **Trace** - Use \`trace\` to map dependencies
-    \`\`\`bash
-    osgrep trace WorkerPool
-    # → Shows callers, callees, definition
-    \`\`\`
-
-4. **Read** - Use the file paths from above with \`Read\` tool
-    \`\`\`bash
-    Read src/lib/workers/pool.ts:112-186
-    \`\`\`
-\`;
-
-export default tool({
-  description: SKILL,
-  args: {
-    args: tool.schema.string().describe("The arguments to pass to osgrep, e.g. 'search \"query\"' or 'trace Symbol'"),
-  },
-  async execute(params) {
-    const result = await Bun.$\`osgrep \${params.args}\`.text()
-    return result.trim()
-  },
-})`;
-
-async function installPlugin() {
-  try {
-    fs.mkdirSync(path.dirname(TOOL_PATH), { recursive: true });
-
-    if (!fs.existsSync(TOOL_PATH)) {
-      fs.writeFileSync(TOOL_PATH, TOOL_DEFINITION);
-      console.log("Successfully installed the osgrep tool");
-    } else {
-      console.log("The osgrep tool is already installed");
-    }
-
-    fs.mkdirSync(path.dirname(MCP_PATH), { recursive: true });
-
-    if (!fs.existsSync(MCP_PATH)) {
-      fs.writeFileSync(MCP_PATH, JSON.stringify({}, null, 2));
-    }
-    const mcpContent = fs.readFileSync(MCP_PATH, "utf-8");
-    const mcpJson = JSON.parse(mcpContent);
-    if (!mcpJson.$schema) {
-      mcpJson.$schema = "https://opencode.ai/config.json";
-    }
-    if (!mcpJson.mcp) {
-      mcpJson.mcp = {};
-    }
-    mcpJson.mcp.osgrep = {
-      type: "local",
-      command: ["osgrep", "mcp"],
-      enabled: true,
-    };
-    fs.writeFileSync(MCP_PATH, JSON.stringify(mcpJson, null, 2));
-    console.log("Successfully installed the osgrep tool in the OpenCode agent");
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`Error installing tool: ${errorMessage}`);
-    console.error((error as Error)?.stack);
-    process.exit(1);
+  if (!killed) {
+    // Best-effort fallback
+    spawnSync("pkill", ["-f", "osgrep serve"], { stdio: "ignore" });
   }
 }
 
-async function uninstallPlugin() {
-  try {
-    if (fs.existsSync(TOOL_PATH)) {
-      fs.unlinkSync(TOOL_PATH);
-      console.log(
-        "Successfully removed the osgrep tool from the OpenCode agent",
-      );
-    } else {
-      console.log("The osgrep tool is not installed in the OpenCode agent");
-    }
+// --- PLUGIN DEFINITION ---
 
-    if (fs.existsSync(MCP_PATH)) {
-      const mcpContent = fs.readFileSync(MCP_PATH, "utf-8");
-      const mcpJson = JSON.parse(mcpContent);
-      delete mcpJson.mcp.osgrep;
-      fs.writeFileSync(MCP_PATH, JSON.stringify(mcpJson, null, 2));
-      console.log("Successfully removed the osgrep from the OpenCode agent");
+export const OsgrepPlugin: Plugin = async (context) => {
+  return {
+    // 1. LIFECYCLE HOOKS
+    event: async ({ event }) => {
+      // OpenCode provides the project directory in the context, but event.cwd might be safer if available
+      // Falling back to process.cwd() or context.directory
+      const currentDir = context.directory || process.cwd();
+
+      if (event.type === "session.created") {
+        try {
+          startDaemon(currentDir);
+          // Optional: Notify user via toast that daemon is up
+          // console.log("osgrep daemon started");
+        } catch (err) {
+          console.error("Failed to start osgrep daemon", err);
+        }
+      }
+
+      if (event.type === "session.deleted" || event.type === "session.idle") {
+        stopDaemon(currentDir);
+      }
+    },
+
+    // 2. TOOL DEFINITION
+    tool: {
+      osgrep: tool({
+        description: \`
+---
+name: osgrep
+description: Semantic code search. The indexer (daemon) is ALREADY RUNNING.
+allowed-tools: "Bash(osgrep:*), Read"
+---
+Commands:
+- Search: osgrep search "auth logic" (Finds implementation concepts)
+- Trace: osgrep trace "AuthService" (Finds callers/callees)
+- Symbols: osgrep symbols "Auth"
+
+## ⚠️ CRITICAL: Handling "Indexing" State
+If any \`osgrep\` command returns a status indicating **"Indexing"**, **"Building"**, or **"Syncing"**:
+1. **STOP** your current train of thought.
+2. **INFORM** the user: "The semantic index is currently building. Search results will be incomplete."
+3. **ASK**: "Do you want me to proceed with partial results, or wait for indexing to finish?"
+   *(Do not assume you should proceed without confirmation).*
+
+   
+\`,
+        args: {
+          argv: tool.schema.array(tool.schema.string())
+            .describe("Arguments for osgrep, e.g. ['search', 'user auth']")
+        },
+        async execute({ argv }) {
+          // Use the plugin context's shell ($) for safe execution
+          // We use the 'osgrep' command which communicates with the running daemon
+          const result = await context.$\`osgrep \${argv}\`.text();
+          return result.trim();
+        },
+      }),
+    },
+  };
+};
+`;
+
+async function install() {
+  try {
+    fs.mkdirSync(path.dirname(PLUGIN_PATH), { recursive: true });
+    fs.writeFileSync(PLUGIN_PATH, PLUGIN_CONTENT);
+    console.log("✅ osgrep OpenCode plugin installed!");
+    console.log(`   Location: ${PLUGIN_PATH}`);
+    console.log("   Behavior: Automatically starts 'osgrep serve' on session start.");
+  } catch (err) {
+    console.error("❌ Installation failed:", err);
+  }
+}
+
+async function uninstall() {
+  try {
+    if (fs.existsSync(PLUGIN_PATH)) {
+      fs.unlinkSync(PLUGIN_PATH);
+      console.log("✅ osgrep OpenCode plugin removed.");
     } else {
-      console.log("The osgrep is not installed in the OpenCode agent");
+      console.log("⚠️  Plugin was not found.");
     }
-  } catch (error) {
-    console.error(`Error uninstalling plugin: ${error}`);
-    process.exit(1);
+  } catch (err) {
+    console.error("❌ Uninstall failed:", err);
   }
 }
 
 export const installOpencode = new Command("install-opencode")
-  .description("Install the osgrep tool in the OpenCode agent")
-  .action(async () => {
-    await installPlugin();
-  });
+  .description("Install osgrep as an OpenCode plugin (Daemon + Tool)")
+  .action(install);
 
 export const uninstallOpencode = new Command("uninstall-opencode")
-  .description("Uninstall the osgrep tool from the OpenCode agent")
-  .action(async () => {
-    await uninstallPlugin();
-  });
+  .description("Remove the osgrep OpenCode plugin")
+  .action(uninstall);

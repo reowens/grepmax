@@ -5,6 +5,13 @@ allowed-tools: "Bash(osgrep:*), Read"
 license: Apache-2.0
 ---
 
+## ⚠️ CRITICAL: Handling "Indexing" State
+If any `osgrep` command returns a status indicating **"Indexing"**, **"Building"**, or **"Syncing"**:
+1. **STOP** your current train of thought.
+2. **INFORM** the user: "The semantic index is currently building. Search results will be incomplete."
+3. **ASK**: "Do you want me to proceed with partial results, or wait for indexing to finish?"
+   *(Do not assume you should proceed without confirmation).*
+
 ## Core Commands
 - Search: `osgrep search "how does auth work"`
 - Trace: `osgrep trace "AuthService"`
@@ -58,17 +65,25 @@ List defined symbols.
 
 ## Typical Workflow
 
-1. **Discover** - Use `search` to find relevant code by
-concept
+1. **Discover** - Use `search` to find relevant code by concept
     ```bash
     osgrep search "worker pool lifecycle" --compact
     # → src/lib/workers/pool.ts:112 WorkerPool
+    ```
 
-2. Explore - Use symbols to see related symbols
-osgrep symbols Worker
-# → WorkerPool, WorkerOrchestrator, spawnWorker, etc.
-3. Trace - Use trace to map dependencies
-osgrep trace WorkerPool
-# → Shows callers, callees, definition
-4. Read - Use the file paths from above with Read tool
-Read src/lib/workers/pool.ts:112-186
+2. **Explore** - Use `symbols` to see related symbols
+    ```bash
+    osgrep symbols Worker
+    # → WorkerPool, WorkerOrchestrator, spawnWorker, etc.
+    ```
+
+3. **Trace** - Use `trace` to map dependencies
+    ```bash
+    osgrep trace WorkerPool
+    # → Shows callers, callees, definition
+    ```
+
+4. **Read** - Use the file paths from above with `Read` tool
+    ```bash
+    Read src/lib/workers/pool.ts:112-186
+    ```
