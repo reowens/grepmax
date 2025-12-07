@@ -1,3 +1,4 @@
+
 import * as path from "node:path";
 import { Command } from "commander";
 import { ensureGrammars } from "../lib/index/grammar-loader";
@@ -70,7 +71,7 @@ export const index = new Command("index")
 
         if (options.dryRun) {
           spinner.succeed(
-            `Dry run complete (${result.processed}/${result.total}) • would have indexed ${result.indexed}`,
+            `Dry run complete(${result.processed} / ${result.total}) • would have indexed ${result.indexed} `,
           );
           console.log(
             formatDryRunSummary(result, {
@@ -84,7 +85,7 @@ export const index = new Command("index")
         const failedSuffix =
           result.failedFiles > 0 ? ` • ${result.failedFiles} failed` : "";
         spinner.succeed(
-          `Indexing complete (${result.processed}/${result.total}) • indexed ${result.indexed}${failedSuffix}`,
+          `Indexing complete(${result.processed} / ${result.total}) • indexed ${result.indexed}${failedSuffix} `,
         );
       } catch (e) {
         spinner.fail("Indexing failed");
