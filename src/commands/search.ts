@@ -19,6 +19,7 @@ import type {
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
 import { formatTextResults, type TextResult } from "../lib/utils/formatter";
+import { isLocked } from "../lib/utils/lock";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
 function toTextResults(data: SearchResponse["data"]): TextResult[] {
@@ -328,6 +329,14 @@ export const search: Command = new CommanderCommand("search")
       process.env.OSGREP_PROJECT_ROOT = projectRoot;
 
       vectorDb = new VectorDB(paths.lancedbDir);
+
+      // Check for active indexing lock and warn if present
+      // This allows agents (via shim) to know results might be partial.
+      if (isLocked(paths.osgrepDir)) {
+        console.warn(
+          "⚠️  Warning: Indexing in progress... search results may be incomplete.",
+        );
+      }
 
       const hasRows = await vectorDb.hasAnyRows();
       const needsSync = options.sync || !hasRows;
