@@ -31,7 +31,8 @@ export const serve = new Command("serve")
   .action(async (_args, cmd) => {
     const options: { port: string; background: boolean } =
       cmd.optsWithGlobals();
-    const port = parseInt(options.port, 10);
+    let port = parseInt(options.port, 10);
+    const startPort = port;
     const projectRoot = findProjectRoot(process.cwd()) ?? process.cwd();
 
     // Check if already running
@@ -204,21 +205,42 @@ export const serve = new Command("serve")
         }
       });
 
+      server.on("error", (e: NodeJS.ErrnoException) => {
+        if (e.code === "EADDRINUSE") {
+          const nextPort = port + 1;
+          if (nextPort < startPort + 10) {
+            console.log(`Port ${port} in use, retrying with ${nextPort}...`);
+            port = nextPort;
+            server.close(() => {
+              server.listen(port);
+            });
+            return;
+          }
+          console.error(
+            `Could not find an open port between ${startPort} and ${startPort + 9}`,
+          );
+        }
+        console.error("[serve] server error:", e);
+        // Ensure we exit if server fails to start
+        process.exit(1);
+      });
+
       server.listen(port, () => {
+        const address = server.address();
+        const actualPort =
+          typeof address === "object" && address ? address.port : port;
+
         if (!process.env.OSGREP_BACKGROUND) {
           console.log(
-            `osgrep server listening on http://localhost:${port} (${projectRoot})`,
+            `osgrep server listening on http://localhost:${actualPort} (${projectRoot})`,
           );
         }
         registerServer({
           pid: process.pid,
-          port,
+          port: actualPort,
           projectRoot,
           startTime: Date.now(),
         });
-      });
-      server.on("error", (err) => {
-        console.error("[serve] server error:", err);
       });
 
       const shutdown = async () => {
