@@ -21,6 +21,7 @@ import { gracefulExit } from "../lib/utils/exit";
 import { formatTextResults, type TextResult } from "../lib/utils/formatter";
 import { isLocked } from "../lib/utils/lock";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
+import { getServerForProject } from "../lib/utils/server-registry";
 
 function toTextResults(data: SearchResponse["data"]): TextResult[] {
   return data.map((r) => {
@@ -318,6 +319,86 @@ export const search: Command = new CommanderCommand("search")
 
     const root = process.cwd();
     let vectorDb: VectorDB | null = null;
+
+    // Check for running server
+    const execPathForServer = exec_path ? path.resolve(exec_path) : root;
+    const projectRootForServer = findProjectRoot(execPathForServer) ?? execPathForServer;
+    const server = getServerForProject(projectRootForServer);
+
+    if (server) {
+      try {
+        const response = await fetch(`http://localhost:${server.port}/search`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query: pattern,
+            limit: parseInt(options.m, 10),
+            path: exec_path ? path.relative(projectRootForServer, path.resolve(exec_path)) : undefined,
+          }),
+        });
+
+        if (response.ok) {
+          const body = await response.json() as { results: any[] };
+          // Reuse existing formatting logic
+          // We need to mimic the structure searcher returns: { data: body.results }
+          const searchResult = { data: body.results };
+
+          // Copy-paste of formatting logic below (refactoring would be better but keeping it simple for now)
+          // Actually, let's just jump to the rendering block if we can, 
+          // but the rendering block is deep inside.
+          // I will duplicate the rendering logic slightly or structure it to share.
+
+          // Let's just render and return here to avoid deep nesting issues
+          const compactHits = options.compact
+            ? toCompactHits(searchResult.data)
+            : [];
+
+          if (options.compact) {
+            const compactText = compactHits.length
+              ? formatCompactTable(compactHits, projectRootForServer, pattern, {
+                isTTY: !!process.stdout.isTTY,
+                plain: !!options.plain,
+              })
+              : "No matches found.";
+            console.log(compactText);
+            return; // EXIT
+          }
+
+          if (!searchResult.data.length) {
+            console.log("No matches found.");
+            return; // EXIT
+          }
+
+          const isTTY = process.stdout.isTTY;
+          const shouldBePlain = options.plain || !isTTY;
+
+          if (shouldBePlain) {
+            const mappedResults = toTextResults(searchResult.data);
+            const output = formatTextResults(mappedResults, pattern, projectRootForServer, {
+              isPlain: true,
+              compact: options.compact,
+              content: options.content,
+              perFile: parseInt(options.perFile, 10),
+              showScores: options.scores,
+            });
+            console.log(output);
+          } else {
+            const { formatResults } = await import("../lib/output/formatter");
+            const output = formatResults(searchResult.data, projectRootForServer, {
+              content: options.content,
+            });
+            console.log(output);
+          }
+
+          return; // EXIT successful server search
+        }
+      } catch (e) {
+        // Fallback silently or warn?
+        // User requested it, so maybe debug log? 
+        // SKILL says: "If osgrep command returns status indicating Indexing..."
+        // We'll just fall back to local mode.
+      }
+    }
 
     try {
       await ensureSetup();
