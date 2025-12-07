@@ -3,8 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { Command } from "commander";
 
-// Adjust this if your plugin source structure differs
-const PLUGIN_HOOKS_DIR = path.resolve(__dirname, "../../hooks"); 
+
 
 const SKILL = `
 ---
