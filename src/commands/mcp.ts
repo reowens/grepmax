@@ -8,6 +8,8 @@ import { Command } from "commander";
 import { initialSync } from "../lib/index/syncer";
 import { ensureSetup } from "../lib/setup/setup-helpers";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
 export const mcp = new Command("mcp")
     .description("Start MCP server for osgrep")
@@ -51,7 +53,11 @@ export const mcp = new Command("mcp")
         const server = new Server(
             {
                 name: "osgrep",
-                version: "0.5.3",
+                version: JSON.parse(
+                    fs.readFileSync(path.join(__dirname, "../../package.json"), {
+                        encoding: "utf-8",
+                    }),
+                ).version,
             },
             {
                 capabilities: {

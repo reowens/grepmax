@@ -39,7 +39,7 @@ Commands:
 - Symbols: osgrep symbols "Auth"
 
 ## ⚠️ CRITICAL: Handling "Indexing" State
-If any \`osgrep\` command returns a status indicating **"Indexing"**, **"Building"**, or **"Syncing"**:
+If any \\\`osgrep\\\` command returns a status indicating **"Indexing"**, **"Building"**, or **"Syncing"**:
 1. **STOP** your current train of thought.
 2. **INFORM** the user: "The semantic index is currently building. Search results will be incomplete."
 3. **ASK**: "Do you want me to proceed with partial results, or wait for indexing to finish?"
