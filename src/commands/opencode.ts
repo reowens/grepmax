@@ -3,6 +3,13 @@ import os from "node:os";
 import path from "node:path";
 import { Command } from "commander";
 
+const TOOL_PATH = path.join(
+  os.homedir(),
+  ".config",
+  "opencode",
+  "tool",
+  "osgrep.ts",
+);
 const PLUGIN_PATH = path.join(
   os.homedir(),
   ".config",
@@ -10,80 +17,17 @@ const PLUGIN_PATH = path.join(
   "plugin",
   "osgrep.ts",
 );
+const CONFIG_PATH = path.join(
+  os.homedir(),
+  ".config",
+  "opencode",
+  "opencode.json",
+);
 
-// We embed the entire logic (Daemon management + Tool definition) into this string.
-const PLUGIN_CONTENT = `
-import { type Plugin, tool } from "@opencode-ai/plugin";
-import { spawn, spawnSync } from "node:child_process";
-import fs from "node:fs";
-import path from "node:path";
+const SHIM_CONTENT = `
+import { tool } from "@opencode-ai/plugin";
 
-// --- DAEMON HELPERS (Replicating your start.js/stop.js) ---
-
-function startDaemon(cwd: string) {
-  const logPath = "/tmp/osgrep.log";
-  const out = fs.openSync(logPath, "a");
-  
-  // Spawn detached osgrep serve
-  const child = spawn("osgrep", ["serve"], {
-    cwd,
-    detached: true,
-    stdio: ["ignore", out, out],
-  });
-  child.unref();
-}
-
-function stopDaemon(cwd: string) {
-  const lockPath = path.join(cwd, ".osgrep", "server.json");
-  let killed = false;
-
-  if (fs.existsSync(lockPath)) {
-    try {
-      const data = JSON.parse(fs.readFileSync(lockPath, "utf-8"));
-      const pid = data?.pid;
-      if (typeof pid === "number") {
-        process.kill(pid, "SIGTERM");
-        killed = true;
-      }
-    } catch {}
-    try { fs.unlinkSync(lockPath); } catch {}
-  }
-
-  if (!killed) {
-    // Best-effort fallback
-    spawnSync("pkill", ["-f", "osgrep serve"], { stdio: "ignore" });
-  }
-}
-
-// --- PLUGIN DEFINITION ---
-
-export const OsgrepPlugin: Plugin = async (context) => {
-  return {
-    // 1. LIFECYCLE HOOKS
-    event: async ({ event }) => {
-      // OpenCode provides the project directory in the context, but event.cwd might be safer if available
-      // Falling back to process.cwd() or context.directory
-      const currentDir = context.directory || process.cwd();
-
-      if (event.type === "session.created") {
-        try {
-          startDaemon(currentDir);
-          // Optional: Notify user via toast that daemon is up
-          // console.log("osgrep daemon started");
-        } catch (err) {
-          console.error("Failed to start osgrep daemon", err);
-        }
-      }
-
-      if (event.type === "session.deleted" || event.type === "session.idle") {
-        stopDaemon(currentDir);
-      }
-    },
-
-    // 2. TOOL DEFINITION
-    tool: {
-      osgrep: tool({
-        description: \`
+const SKILL = \`
 ---
 name: osgrep
 description: Semantic code search. The indexer (daemon) is ALREADY RUNNING.
@@ -100,32 +44,90 @@ If any \`osgrep\` command returns a status indicating **"Indexing"**, **"Buildin
 2. **INFORM** the user: "The semantic index is currently building. Search results will be incomplete."
 3. **ASK**: "Do you want me to proceed with partial results, or wait for indexing to finish?"
    *(Do not assume you should proceed without confirmation).*
+\`;
 
-   
-\`,
-        args: {
-          argv: tool.schema.array(tool.schema.string())
-            .describe("Arguments for osgrep, e.g. ['search', 'user auth']")
-        },
-        async execute({ argv }) {
-          // Use the plugin context's shell ($) for safe execution
-          // We use the 'osgrep' command which communicates with the running daemon
-          const result = await context.$\`osgrep \${argv}\`.text();
-          return result.trim();
-        },
-      }),
-    },
-  };
-};
-`;
+export default tool({
+  description: SKILL,
+  args: {
+    argv: tool.schema.array(tool.schema.string())
+      .describe("Arguments for osgrep, e.g. ['search', 'user auth']")
+  },
+  async execute({ argv }) {
+    // Use the plugin context's shell ($) for safe execution if available, 
+    // or Bun's $ if running in that environment (which OpenCode does).
+    // The previous mgrep example used Bun.$. 
+    // But here we are writing a file that OpenCode runs. 
+    // If OpenCode uses Bun, we can use Bun.$. 
+    // The user's prompt example used Bun.$.
+    
+    // We'll rely on global Bun object or simply child_process since we are in a shim.
+    // However, the mgrep example shows: const out = await Bun.$\`mgrep \${argv}\`.text()
+    // Let's stick to that if possible, but safely.
+    // If Bun is not available, we might break. But OpenCode seems to be Bun-based.
+    
+    // safe join if argv is array? 
+    // Actually the user provided: const out = await Bun.$\`osgrep \${argv}\`.text()
+    
+    // We must ensure 'osgrep' is in PATH or use absolute path? 
+    // The mgrep example relied on 'mgrep' being in PATH.
+    
+    try {
+      // @ts-ignore
+      const out = await Bun.spawn(["osgrep", ...argv], { stdout: "pipe" }).stdout;
+      const text = await new Response(out).text();
+      // Simple guard for indexing message
+      if (text.includes("Indexing") || text.includes("Building") || text.includes("Syncing")) {
+         return \`WARN: The index is currently updating. 
+         
+         Output so far:
+         \${text.trim()}
+         
+         PLEASE READ THE "Indexing" WARNING IN MY SKILL DESCRIPTION.\`;
+      }
+      return text.trim();
+    } catch (err) {
+       return \`Error running osgrep: \${err}\`;
+    }
+  },
+})`;
 
 async function install() {
   try {
-    fs.mkdirSync(path.dirname(PLUGIN_PATH), { recursive: true });
-    fs.writeFileSync(PLUGIN_PATH, PLUGIN_CONTENT);
-    console.log("✅ osgrep OpenCode plugin installed!");
-    console.log(`   Location: ${PLUGIN_PATH}`);
-    console.log("   Behavior: Automatically starts 'osgrep serve' on session start.");
+    // 1. Delete legacy plugin
+    if (fs.existsSync(PLUGIN_PATH)) {
+      try {
+        fs.unlinkSync(PLUGIN_PATH);
+        console.log("Deleted legacy plugin at", PLUGIN_PATH);
+      } catch (e) {
+        console.warn("mnt: Failed to delete legacy plugin:", e);
+      }
+    }
+
+    // 2. Create tool shim
+    fs.mkdirSync(path.dirname(TOOL_PATH), { recursive: true });
+    fs.writeFileSync(TOOL_PATH, SHIM_CONTENT);
+    console.log("✅ Created tool shim at", TOOL_PATH);
+
+    // 3. Register MCP
+    if (!fs.existsSync(CONFIG_PATH)) {
+      fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify({}, null, 2));
+    }
+
+    const config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8") || "{}");
+    if (!config.$schema) config.$schema = "https://opencode.ai/config.json";
+    if (!config.mcp) config.mcp = {};
+
+    config.mcp.osgrep = {
+      type: "local",
+      command: ["osgrep", "mcp"],
+      enabled: true
+    };
+
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+    console.log("✅ Registered MCP server in", CONFIG_PATH);
+    console.log("   Command: check proper path if 'osgrep' is not in PATH of OpenCode.");
+
   } catch (err) {
     console.error("❌ Installation failed:", err);
   }
@@ -133,12 +135,28 @@ async function install() {
 
 async function uninstall() {
   try {
+    // 1. Remove shim
+    if (fs.existsSync(TOOL_PATH)) {
+      fs.unlinkSync(TOOL_PATH);
+      console.log("✅ Removed tool shim.");
+    }
+
+    // 2. Unregister MCP
+    if (fs.existsSync(CONFIG_PATH)) {
+      const config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8") || "{}");
+      if (config.mcp?.osgrep) {
+        delete config.mcp.osgrep;
+        fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+        console.log("✅ Unregistered MCP server.");
+      }
+    }
+
+    // Cleanup plugin just in case
     if (fs.existsSync(PLUGIN_PATH)) {
       fs.unlinkSync(PLUGIN_PATH);
-      console.log("✅ osgrep OpenCode plugin removed.");
-    } else {
-      console.log("⚠️  Plugin was not found.");
+      console.log("✅ Cleaned up plugin file.");
     }
+
   } catch (err) {
     console.error("❌ Uninstall failed:", err);
   }

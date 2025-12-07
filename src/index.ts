@@ -5,7 +5,7 @@ import { program } from "commander";
 import { installClaudeCode } from "./commands/claude-code";
 import { installCodex } from "./commands/codex";
 import { installDroid } from "./commands/droid";
-import { installOpencode } from "./commands/opencode";
+import { installOpencode, uninstallOpencode } from "./commands/opencode";
 import { doctor } from "./commands/doctor";
 import { index } from "./commands/index";
 import { list } from "./commands/list";
@@ -14,6 +14,7 @@ import { serve } from "./commands/serve";
 import { setup } from "./commands/setup";
 import { symbols } from "./commands/symbols";
 import { trace } from "./commands/trace";
+import { mcp } from "./commands/mcp";
 
 program
   .version(
@@ -50,10 +51,12 @@ program.addCommand(symbols);
 program.addCommand(trace);
 program.addCommand(setup);
 program.addCommand(serve);
+program.addCommand(mcp);
 program.addCommand(installClaudeCode);
 program.addCommand(installCodex);
 program.addCommand(installDroid);
 program.addCommand(installOpencode);
+program.addCommand(uninstallOpencode);
 program.addCommand(doctor);
 
 program.parse();
