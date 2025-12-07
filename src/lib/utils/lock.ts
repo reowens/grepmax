@@ -107,3 +107,15 @@ export async function acquireWriterLockWithRetry(
   }
   throw new Error("Failed to acquire lock after retries");
 }
+
+export function isLocked(lockDir: string): boolean {
+  try {
+    const lockPath = path.join(lockDir, "LOCK");
+    if (!fs.existsSync(lockPath)) return false;
+
+    const { pid } = parseLock(lockPath);
+    return isProcessAlive(pid);
+  } catch {
+    return false;
+  }
+}
