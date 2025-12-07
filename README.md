@@ -2,6 +2,7 @@
   <h1>osgrep</h1>
   <p><em>Slash tokens. Save time. Semantic search for your coding agent.</em></p>
   <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License: Apache 2.0" /></a><br>
+  [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Ryandonofrio3/osgrep)
 </div>
 
 
