@@ -126,7 +126,8 @@ export const skeleton = new Command("skeleton")
         }
 
         if (vectorDb) {
-          const cached = await getStoredSkeleton(vectorDb, target); // target is path here
+          const relativeToProject = path.relative(projectRoot, filePath);
+          const cached = await getStoredSkeleton(vectorDb, relativeToProject);
           if (cached) {
             outputResult(
               {
