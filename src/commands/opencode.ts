@@ -34,9 +34,18 @@ description: Semantic code search. The indexer (daemon) is ALREADY RUNNING.
 allowed-tools: "Bash(osgrep:*), Read"
 ---
 Commands:
-- Search: osgrep "auth logic" --compact (Finds implementation concepts)
+- Search: osgrep "where does the code validate JWT tokens and check expiration" --compact
 - Trace: osgrep trace "AuthService" (Finds callers/callees)
 - Symbols: osgrep symbols "Auth"
+
+## ⚡ CRITICAL: Use SPECIFIC Queries
+**Semantic search requires detailed, contextual queries to work well.**
+- ✅ GOOD: "where does the worker pool respawn crashed child processes"
+- ✅ GOOD: "middleware that validates user permissions before database writes"
+- ❌ WEAK: "auth logic" (too vague for semantic matching)
+- ❌ WEAK: "validation" (needs context)
+
+**More words = better results.** Be specific about what you're looking for.
 
 ## ⚠️ CRITICAL: Handling "Indexing" State
 If any \\\`osgrep\\\` command returns a status indicating **"Indexing"**, **"Building"**, or **"Syncing"**:
