@@ -225,7 +225,7 @@ export async function initialSync(
     };
 
     for await (const relPath of walk(paths.root, {
-      additionalPatterns: ["!**/.git/**", "!**/.osgrep/**"], // exclude .git and .osgrep explicitly if walker doesn't
+      additionalPatterns: ["**/.git/**", "**/.osgrep/**"], // exclude .git and .osgrep explicitly if walker doesn't
     })) {
       if (signal?.aborted) {
         shouldSkipCleanup = true;

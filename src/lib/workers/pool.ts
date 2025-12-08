@@ -243,7 +243,27 @@ export class WorkerPool {
 
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
-      const task: PendingTask<M> = { id, method, payload, resolve, reject };
+      let settled = false;
+      const safeResolve = (val: TaskResults[M]) => {
+        if (!settled) {
+          settled = true;
+          resolve(val);
+        }
+      };
+      const safeReject = (reason?: unknown) => {
+        if (!settled) {
+          settled = true;
+          reject(reason);
+        }
+      };
+
+      const task: PendingTask<M> = {
+        id,
+        method,
+        payload,
+        resolve: safeResolve,
+        reject: safeReject,
+      };
 
       if (signal) {
         signal.addEventListener("abort", () => {
@@ -254,7 +274,7 @@ export class WorkerPool {
             this.tasks.delete(id);
             const err = new Error("Aborted");
             err.name = "AbortError";
-            reject(err);
+            safeReject(err);
           }
           // If task is already running (assigned to worker), we can't easily kill it without
           // killing the worker. For now, we just let it finish but reject the promise early so
@@ -263,7 +283,7 @@ export class WorkerPool {
             // Task is running. Reject caller immediately.
             const err = new Error("Aborted");
             err.name = "AbortError";
-            reject(err);
+            safeReject(err);
             // We intentionally do NOT delete the task map entry here,
             // because we need handleWorkerMessage to cleanly cleanup the worker state
             // when it eventually finishes.
