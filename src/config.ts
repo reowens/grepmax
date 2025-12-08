@@ -37,12 +37,12 @@ export const WORKER_BOOT_TIMEOUT_MS = Number.parseInt(
 
 export const MAX_WORKER_MEMORY_MB = Number.parseInt(
   process.env.OSGREP_MAX_WORKER_MEMORY_MB ||
-  String(
-    Math.max(
-      2048,
-      Math.floor((os.totalmem() / 1024 / 1024) * 0.5), // 50% of system RAM
+    String(
+      Math.max(
+        2048,
+        Math.floor((os.totalmem() / 1024 / 1024) * 0.5), // 50% of system RAM
+      ),
     ),
-  ),
   10,
 );
 

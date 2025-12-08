@@ -10,6 +10,7 @@ import {
   formatChunkText,
   TreeSitterChunker,
 } from "../index/chunker";
+import { Skeletonizer } from "../skeleton";
 import type { PreparedChunk, VectorRecord } from "../store/types";
 import {
   computeBufferHash,
@@ -65,6 +66,7 @@ export class WorkerOrchestrator {
   private granite = new GraniteModel();
   private colbert = new ColbertModel();
   private chunker = new TreeSitterChunker();
+  private skeletonizer = new Skeletonizer();
   private initPromise: Promise<void> | null = null;
   private readonly vectorDimensions = CONFIG.VECTOR_DIM;
 
@@ -77,6 +79,7 @@ export class WorkerOrchestrator {
     this.initPromise = (async () => {
       await Promise.all([
         this.chunker.init(),
+        this.skeletonizer.init(),
         this.granite.load(),
         this.colbert.load(),
       ]);
@@ -159,6 +162,7 @@ export class WorkerOrchestrator {
     path: string,
     hash: string,
     chunks: ChunkWithContext[],
+    skeleton?: string,
   ): PreparedChunk[] {
     const texts = chunks.map((chunk) => formatChunkText(chunk, path));
     const prepared: PreparedChunk[] = [];
@@ -188,6 +192,7 @@ export class WorkerOrchestrator {
         referenced_symbols: chunk.referencedSymbols,
         role: chunk.role,
         parent_symbol: chunk.parentSymbol,
+        file_skeleton: chunk.isAnchor ? skeleton : undefined,
       });
     }
 
@@ -220,12 +225,31 @@ export class WorkerOrchestrator {
     onProgress?.();
 
     const content = buffer.toString("utf-8");
-    const chunks = await this.chunkFile(input.path, content);
+    const chunksPromise = this.chunkFile(input.path, content);
+
+    // Generate skeleton in parallel
+    const skeletonPromise = this.skeletonizer.skeletonizeFile(
+      input.path,
+      content,
+      {
+        includeSummary: true,
+      },
+    );
+
+    const [chunks, skeletonResult] = await Promise.all([
+      chunksPromise,
+      skeletonPromise,
+    ]);
     onProgress?.();
 
     if (!chunks.length) return { vectors: [], hash, mtimeMs, size };
 
-    const preparedChunks = this.toPreparedChunks(input.path, hash, chunks);
+    const preparedChunks = this.toPreparedChunks(
+      input.path,
+      hash,
+      chunks,
+      skeletonResult.success ? skeletonResult.skeleton : undefined,
+    );
     const hybrids = await this.computeHybrid(
       preparedChunks.map((chunk) => chunk.content),
       onProgress,

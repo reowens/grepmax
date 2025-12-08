@@ -65,6 +65,7 @@ export class VectorDB {
       exports: [],
       role: "",
       parent_symbol: "",
+      file_skeleton: "",
     };
   }
 
@@ -135,6 +136,7 @@ export class VectorDB {
       new Field("exports", new List(new Field("item", new Utf8(), true)), true),
       new Field("role", new Utf8(), true),
       new Field("parent_symbol", new Utf8(), true),
+      new Field("file_skeleton", new Utf8(), true),
     ]);
   }
 
@@ -242,6 +244,7 @@ export class VectorDB {
         exports: rec.exports ?? [],
         role: rec.role ?? "",
         parent_symbol: rec.parent_symbol ?? "",
+        file_skeleton: rec.file_skeleton ?? "",
       };
     });
 

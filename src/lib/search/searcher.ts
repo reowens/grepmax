@@ -12,7 +12,7 @@ import { getWorkerPool } from "../workers/pool";
 import { detectIntent, type SearchIntent } from "./intent";
 
 export class Searcher {
-  constructor(private db: VectorDB) { }
+  constructor(private db: VectorDB) {}
 
   private mapRecordToChunk(
     record: Partial<VectorRecord>,
@@ -26,7 +26,8 @@ export class Searcher {
       if (typeof (val as any).toArray === "function") {
         try {
           const arr = (val as any).toArray();
-          if (Array.isArray(arr)) return arr.filter((v) => typeof v === "string");
+          if (Array.isArray(arr))
+            return arr.filter((v) => typeof v === "string");
           return Array.from(arr || []).filter((v) => typeof v === "string");
         } catch {
           return [];
@@ -37,7 +38,7 @@ export class Searcher {
 
     // 1. Aggressive Header Stripping
     // Prefer display_text (includes breadcrumbs/imports) but strip them for humans
-    let cleanCode = record.display_text || record.content || "";
+    const cleanCode = record.display_text || record.content || "";
 
     // Split by lines
     const lines = cleanCode.split("\n");
@@ -127,7 +128,7 @@ export class Searcher {
       exports,
 
       // Remove 'context' field entirely from JSON output
-      // context: record.context_prev ? [record.context_prev] : [], 
+      // context: record.context_prev ? [record.context_prev] : [],
     };
   }
 
@@ -483,27 +484,27 @@ export class Searcher {
 
     const scores = doRerank
       ? await pool.rerank(
-        {
-          query: queryMatrixRaw,
-          docs: rerankCandidates.map((doc) => ({
-            colbert: (doc.colbert as Buffer | Int8Array | number[]) ?? [],
-            scale:
-              typeof doc.colbert_scale === "number" ? doc.colbert_scale : 1,
-            token_ids: Array.isArray((doc as any).doc_token_ids)
-              ? ((doc as any).doc_token_ids as number[])
-              : undefined,
-          })),
-          colbertDim,
-        },
-        signal,
-      )
+          {
+            query: queryMatrixRaw,
+            docs: rerankCandidates.map((doc) => ({
+              colbert: (doc.colbert as Buffer | Int8Array | number[]) ?? [],
+              scale:
+                typeof doc.colbert_scale === "number" ? doc.colbert_scale : 1,
+              token_ids: Array.isArray((doc as any).doc_token_ids)
+                ? ((doc as any).doc_token_ids as number[])
+                : undefined,
+            })),
+            colbertDim,
+          },
+          signal,
+        )
       : rerankCandidates.map((doc, idx) => {
-        // If rerank is disabled, fall back to fusion ordering with structural boost
-        const key = doc.id || `${doc.path}:${doc.chunk_index}`;
-        const fusedScore = candidateScores.get(key) ?? 0;
-        // Small tie-breaker so later items don't all share 0
-        return fusedScore || 1 / (idx + 1);
-      });
+          // If rerank is disabled, fall back to fusion ordering with structural boost
+          const key = doc.id || `${doc.path}:${doc.chunk_index}`;
+          const fusedScore = candidateScores.get(key) ?? 0;
+          // Small tie-breaker so later items don't all share 0
+          return fusedScore || 1 / (idx + 1);
+        });
 
     type ScoredItem = {
       record: (typeof rerankCandidates)[number];

@@ -5,7 +5,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { Command } from "commander";
 
-const shell = process.env.SHELL || (process.platform === "win32" ? "cmd.exe" : "/bin/sh");
+const shell =
+  process.env.SHELL || (process.platform === "win32" ? "cmd.exe" : "/bin/sh");
 const execAsync = promisify(exec);
 
 const SKILL = `
@@ -29,14 +30,19 @@ async function installPlugin() {
   try {
     // 1. Register the MCP Tool
     // 'osgrep mcp' acts as the server.
-    await execAsync("codex mcp add osgrep osgrep mcp", { shell, env: process.env });
+    await execAsync("codex mcp add osgrep osgrep mcp", {
+      shell,
+      env: process.env,
+    });
     console.log("✅ osgrep MCP tool registered with Codex");
 
     // 2. Add Instructions to AGENTS.md
     const destPath = path.join(os.homedir(), ".codex", "AGENTS.md");
     fs.mkdirSync(path.dirname(destPath), { recursive: true });
 
-    let content = fs.existsSync(destPath) ? fs.readFileSync(destPath, "utf-8") : "";
+    const content = fs.existsSync(destPath)
+      ? fs.readFileSync(destPath, "utf-8")
+      : "";
 
     // Only append if not present
     if (!content.includes("name: osgrep")) {
@@ -55,12 +61,14 @@ async function uninstallPlugin() {
   try {
     await execAsync("codex mcp remove osgrep", { shell, env: process.env });
     console.log("✅ osgrep MCP tool removed");
-  } catch (e) { /* ignore if not found */ }
+  } catch (e) {
+    /* ignore if not found */
+  }
 
   const destPath = path.join(os.homedir(), ".codex", "AGENTS.md");
   if (fs.existsSync(destPath)) {
     let content = fs.readFileSync(destPath, "utf-8");
-    // Naive removal: strictly matches the block we added. 
+    // Naive removal: strictly matches the block we added.
     // For robust removal, you might need regex, but this works if the string is exact.
     if (content.includes(SKILL)) {
       content = content.replace(SKILL, "").trim();

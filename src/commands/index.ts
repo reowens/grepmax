@@ -1,4 +1,3 @@
-
 import * as path from "node:path";
 import { Command } from "commander";
 import { ensureGrammars } from "../lib/index/grammar-loader";
@@ -11,7 +10,6 @@ import { ensureSetup } from "../lib/setup/setup-helpers";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
-
 
 export const index = new Command("index")
   .description("Index the current directory and create searchable store")
@@ -30,11 +28,7 @@ export const index = new Command("index")
     "Remove existing index and re-index from scratch",
     false,
   )
-  .option(
-    "-v, --verbose",
-    "Show detailed progress with file names",
-    false,
-  )
+  .option("-v, --verbose", "Show detailed progress with file names", false)
   .action(async (_args, cmd) => {
     const options: {
       store?: string;

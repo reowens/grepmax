@@ -65,12 +65,16 @@ export const setup = new Command("setup")
           fs.writeFileSync(skiplistPath, Buffer.from(buffer));
           console.log(`✓ Skiplist downloaded successfully`);
         } else {
-          console.log(`⚠ Skiplist download failed (HTTP ${response.status}), will use fallback`);
+          console.log(
+            `⚠ Skiplist download failed (HTTP ${response.status}), will use fallback`,
+          );
           console.log(`   Expected at: ${skiplistPath}`);
         }
       } catch (error) {
         console.log(`⚠ Skiplist download failed, will use fallback`);
-        console.log(`   Error: ${error instanceof Error ? error.message : String(error)}`);
+        console.log(
+          `   Error: ${error instanceof Error ? error.message : String(error)}`,
+        );
         console.log(`   Expected at: ${skiplistPath}`);
       }
     }

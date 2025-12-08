@@ -119,9 +119,9 @@ export function formatTextResults(
       const truncated =
         !options.content && lines.length > maxLines
           ? [
-            ...lines.slice(0, maxLines),
-            `... (+${lines.length - maxLines} more lines)`,
-          ]
+              ...lines.slice(0, maxLines),
+              `... (+${lines.length - maxLines} more lines)`,
+            ]
           : lines;
 
       const scoreStr = options.showScores
@@ -172,7 +172,10 @@ export function formatTextResults(
     mergedGroups.push({ filePath, merged });
   }
 
-  const displayedCount = mergedGroups.reduce((sum, g) => sum + g.merged.length, 0);
+  const displayedCount = mergedGroups.reduce(
+    (sum, g) => sum + g.merged.length,
+    0,
+  );
   let output = `\n${style.bold(`osgrep results (query: "${query}", ${displayedCount} matches across ${fileCount} files)`)}\n`;
   let rank = 1;
 
@@ -196,9 +199,9 @@ export function formatTextResults(
       const truncated =
         !options.content && lines.length > maxLines
           ? [
-            ...lines.slice(0, maxLines),
-            style.dim(`... (+${lines.length - maxLines} more lines)`),
-          ]
+              ...lines.slice(0, maxLines),
+              style.dim(`... (+${lines.length - maxLines} more lines)`),
+            ]
           : lines;
 
       // Apply syntax highlighting for humans

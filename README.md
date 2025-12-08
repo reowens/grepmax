@@ -215,6 +215,32 @@ osgrep list
 
 Shows store names, sizes, and last modified times. Useful for seeing what's indexed and cleaning up old stores.
 
+### `osgrep skeleton`
+
+Generates a compressed "skeleton" of a file, showing only signatures, types, and class structures while eliding function bodies.
+
+```bash
+osgrep skeleton src/lib/auth.ts
+```
+
+**Output:**
+```typescript
+class AuthService {
+  validate(token: string): boolean {
+    // → jwt.verify, checkScope, .. | C:5 | ORCH
+  }
+}
+```
+
+**Modes:**
+- `osgrep skeleton <file>`: Skeletonize specific file.
+- `osgrep skeleton <Symbol>`: Find symbol in index and skeletonize its file.
+- `osgrep skeleton "query"`: Search for query and skeletonize top matches.
+
+**Supported Languages:**
+TypeScript, JavaScript, Python, Go, Rust, Java, C#, C++, C, Ruby, PHP.
+
+
 ### `osgrep doctor`
 
 Checks installation health, model paths, and database integrity.

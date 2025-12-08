@@ -3,8 +3,6 @@ import os from "node:os";
 import path from "node:path";
 import { Command } from "commander";
 
-
-
 const SKILL = `
 ---
 name: osgrep
@@ -58,38 +56,61 @@ If any \`osgrep\` command returns a status indicating **"Indexing"**, **"Buildin
 type HookCommand = { type: "command"; command: string; timeout: number };
 type HookEntry = { matcher?: string | null; hooks: HookCommand[] };
 type HooksConfig = Record<string, HookEntry[]>;
-type Settings = { hooks?: HooksConfig; enableHooks?: boolean; allowBackgroundProcesses?: boolean } & Record<string, unknown>;
+type Settings = {
+  hooks?: HooksConfig;
+  enableHooks?: boolean;
+  allowBackgroundProcesses?: boolean;
+} & Record<string, unknown>;
 
 function resolveDroidRoot(): string {
   const root = path.join(os.homedir(), ".factory");
   if (!fs.existsSync(root)) {
-    throw new Error(`Factory Droid directory not found at ${root}. Run Factory Droid once to initialize.`);
+    throw new Error(
+      `Factory Droid directory not found at ${root}. Run Factory Droid once to initialize.`,
+    );
   }
   return root;
 }
 
 function writeFileIfChanged(filePath: string, content: string): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const already = fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf-8") : undefined;
+  const already = fs.existsSync(filePath)
+    ? fs.readFileSync(filePath, "utf-8")
+    : undefined;
   if (already !== content) fs.writeFileSync(filePath, content);
 }
 
 function parseJsonWithComments(content: string): Record<string, unknown> {
-  const stripped = content.split("\n").map((line) => line.replace(/^\s*\/\/.*$/, "")).join("\n");
-  try { return JSON.parse(stripped); } catch { return {}; }
+  const stripped = content
+    .split("\n")
+    .map((line) => line.replace(/^\s*\/\/.*$/, ""))
+    .join("\n");
+  try {
+    return JSON.parse(stripped);
+  } catch {
+    return {};
+  }
 }
 
 function loadSettings(settingsPath: string): Settings {
   if (!fs.existsSync(settingsPath)) return {};
-  return parseJsonWithComments(fs.readFileSync(settingsPath, "utf-8")) as Settings;
+  return parseJsonWithComments(
+    fs.readFileSync(settingsPath, "utf-8"),
+  ) as Settings;
 }
 
-function saveSettings(settingsPath: string, settings: Record<string, unknown>): void {
+function saveSettings(
+  settingsPath: string,
+  settings: Record<string, unknown>,
+): void {
   fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
 }
 
-function mergeHooks(existing: HooksConfig | undefined, incoming: HooksConfig): HooksConfig {
+function mergeHooks(
+  existing: HooksConfig | undefined,
+  incoming: HooksConfig,
+): HooksConfig {
   const merged = existing ? JSON.parse(JSON.stringify(existing)) : {};
   for (const [event, entries] of Object.entries(incoming)) {
     const current = merged[event] || [];
@@ -139,8 +160,21 @@ try { execSync("pkill -f 'osgrep serve'"); } catch {}
 
   // 3. Configure Settings
   const hookConfig: HooksConfig = {
-    SessionStart: [{ matcher: "startup|resume", hooks: [{ type: "command", command: `node "${startJsPath}"`, timeout: 10 }] }],
-    SessionEnd: [{ hooks: [{ type: "command", command: `node "${stopJsPath}"`, timeout: 10 }] }],
+    SessionStart: [
+      {
+        matcher: "startup|resume",
+        hooks: [
+          { type: "command", command: `node "${startJsPath}"`, timeout: 10 },
+        ],
+      },
+    ],
+    SessionEnd: [
+      {
+        hooks: [
+          { type: "command", command: `node "${stopJsPath}"`, timeout: 10 },
+        ],
+      },
+    ],
   };
 
   const settings = loadSettings(settingsPath);
@@ -157,11 +191,15 @@ async function uninstallPlugin() {
   const hooksDir = path.join(root, "hooks", "osgrep");
   const skillsDir = path.join(root, "skills", "osgrep");
 
-  if (fs.existsSync(hooksDir)) fs.rmSync(hooksDir, { recursive: true, force: true });
-  if (fs.existsSync(skillsDir)) fs.rmSync(skillsDir, { recursive: true, force: true });
+  if (fs.existsSync(hooksDir))
+    fs.rmSync(hooksDir, { recursive: true, force: true });
+  if (fs.existsSync(skillsDir))
+    fs.rmSync(skillsDir, { recursive: true, force: true });
 
   console.log("✅ osgrep removed from Factory Droid");
-  console.log("NOTE: You may want to manually clean up 'hooks' in ~/.factory/settings.json");
+  console.log(
+    "NOTE: You may want to manually clean up 'hooks' in ~/.factory/settings.json",
+  );
 }
 
 export const installDroid = new Command("install-droid")

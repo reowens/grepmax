@@ -170,7 +170,8 @@ export class WorkerPool {
       this.clearTaskTimeout(task);
       task.reject(
         new Error(
-          `Worker exited unexpectedly${code ? ` (code ${code})` : ""}${signal ? ` signal ${signal}` : ""
+          `Worker exited unexpectedly${code ? ` (code ${code})` : ""}${
+            signal ? ` signal ${signal}` : ""
           }`,
         ),
       );
@@ -266,29 +267,33 @@ export class WorkerPool {
       };
 
       if (signal) {
-        signal.addEventListener("abort", () => {
-          // If task is still in queue, remove it
-          const idx = this.taskQueue.indexOf(id);
-          if (idx !== -1) {
-            this.taskQueue.splice(idx, 1);
-            this.tasks.delete(id);
-            const err = new Error("Aborted");
-            err.name = "AbortError";
-            safeReject(err);
-          }
-          // If task is already running (assigned to worker), we can't easily kill it without
-          // killing the worker. For now, we just let it finish but reject the promise early so
-          // the caller doesn't wait. The worker will eventually finish and we'll ignore the result.
-          else if (this.tasks.has(id)) {
-            // Task is running. Reject caller immediately.
-            const err = new Error("Aborted");
-            err.name = "AbortError";
-            safeReject(err);
-            // We intentionally do NOT delete the task map entry here,
-            // because we need handleWorkerMessage to cleanly cleanup the worker state
-            // when it eventually finishes.
-          }
-        }, { once: true });
+        signal.addEventListener(
+          "abort",
+          () => {
+            // If task is still in queue, remove it
+            const idx = this.taskQueue.indexOf(id);
+            if (idx !== -1) {
+              this.taskQueue.splice(idx, 1);
+              this.tasks.delete(id);
+              const err = new Error("Aborted");
+              err.name = "AbortError";
+              safeReject(err);
+            }
+            // If task is already running (assigned to worker), we can't easily kill it without
+            // killing the worker. For now, we just let it finish but reject the promise early so
+            // the caller doesn't wait. The worker will eventually finish and we'll ignore the result.
+            else if (this.tasks.has(id)) {
+              // Task is running. Reject caller immediately.
+              const err = new Error("Aborted");
+              err.name = "AbortError";
+              safeReject(err);
+              // We intentionally do NOT delete the task map entry here,
+              // because we need handleWorkerMessage to cleanly cleanup the worker state
+              // when it eventually finishes.
+            }
+          },
+          { once: true },
+        );
       }
 
       this.tasks.set(id, task as unknown as PendingTask<TaskMethod>);
@@ -320,7 +325,7 @@ export class WorkerPool {
     worker.child.removeAllListeners("exit");
     try {
       worker.child.kill("SIGKILL");
-    } catch { }
+    } catch {}
 
     this.workers = this.workers.filter((w) => w !== worker);
     if (!this.destroyed) {
@@ -406,7 +411,7 @@ export class WorkerPool {
           const force = setTimeout(() => {
             try {
               w.child.kill("SIGKILL");
-            } catch { }
+            } catch {}
           }, FORCE_KILL_GRACE_MS);
           setTimeout(() => {
             clearTimeout(force);

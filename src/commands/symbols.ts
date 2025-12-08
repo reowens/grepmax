@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { VectorDB } from "../lib/store/vector-db";
-import { escapeSqlString, normalizePath } from "../lib/utils/filter-builder";
 import { gracefulExit } from "../lib/utils/exit";
+import { escapeSqlString, normalizePath } from "../lib/utils/filter-builder";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
 const style = {
@@ -63,7 +63,10 @@ async function collectSymbols(options: {
       const path = String((row as any).path || "");
       const line = Number((row as any).start_line || 0);
       for (const sym of defs) {
-        if (options.pattern && !sym.toLowerCase().includes(options.pattern.toLowerCase())) {
+        if (
+          options.pattern &&
+          !sym.toLowerCase().includes(options.pattern.toLowerCase())
+        ) {
           continue;
         }
         const existing = map.get(sym);
@@ -106,7 +109,7 @@ function formatTable(entries: SymbolEntry[]): string {
     loc: Math.max(...all.map((r) => r.loc.length)),
   };
 
-  const render = (r: typeof rows[number]) =>
+  const render = (r: (typeof rows)[number]) =>
     `${r.symbol.padEnd(widths.symbol)}  ${r.count
       .padStart(widths.count)
       .padEnd(widths.count + 2)}${r.loc}`;

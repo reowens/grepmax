@@ -11,10 +11,10 @@ type IncomingMessage =
   | { id: number; method: "processFile"; payload: ProcessFileInput }
   | { id: number; method: "encodeQuery"; payload: { text: string } }
   | {
-    id: number;
-    method: "rerank";
-    payload: { query: number[][]; docs: RerankDoc[]; colbertDim: number };
-  };
+      id: number;
+      method: "rerank";
+      payload: { query: number[][]; docs: RerankDoc[]; colbertDim: number };
+    };
 
 type OutgoingMessage =
   | { id: number; result: ProcessFileResult }

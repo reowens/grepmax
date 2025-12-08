@@ -1,16 +1,17 @@
+import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Command } from "commander";
 import { Command as CommanderCommand } from "commander";
-
 import { ensureGrammars } from "../lib/index/grammar-loader";
 import {
   createIndexingSpinner,
   formatDryRunSummary,
 } from "../lib/index/sync-helpers";
 import { initialSync } from "../lib/index/syncer";
-
 import { Searcher } from "../lib/search/searcher";
 import { ensureSetup } from "../lib/setup/setup-helpers";
+import { Skeletonizer } from "../lib/skeleton";
+import { getStoredSkeleton } from "../lib/skeleton/retriever";
 import type {
   ChunkType,
   FileMetadata,
@@ -37,11 +38,7 @@ function toTextResults(data: SearchResponse["data"]): TextResult[] {
     const end =
       typeof r.generated_metadata?.end_line === "number"
         ? r.generated_metadata.end_line
-        : start +
-        Math.max(
-          0,
-          (r.generated_metadata?.num_lines ?? 1) - 1,
-        );
+        : start + Math.max(0, (r.generated_metadata?.num_lines ?? 1) - 1);
 
     return {
       path: rawPath,
@@ -99,11 +96,7 @@ function toCompactHits(data: SearchResponse["data"]): CompactHit[] {
     const end =
       typeof chunk.generated_metadata?.end_line === "number"
         ? chunk.generated_metadata.end_line
-        : start +
-        Math.max(
-          0,
-          (chunk.generated_metadata?.num_lines ?? 1) - 1,
-        );
+        : start + Math.max(0, (chunk.generated_metadata?.num_lines ?? 1) - 1);
 
     return {
       path: rawPath,
@@ -145,9 +138,9 @@ function compactConf(conf?: string): string {
 function compactScore(score?: number): string {
   if (typeof score !== "number") return "";
   const fixed = score.toFixed(3);
-  return fixed.replace(/^0\./, ".").replace(/\.?0+$/, (m) =>
-    m.startsWith(".") ? "" : m,
-  );
+  return fixed
+    .replace(/^0\./, ".")
+    .replace(/\.?0+$/, (m) => (m.startsWith(".") ? "" : m));
 }
 
 function truncateEnd(s: string, max: number): string {
@@ -269,6 +262,96 @@ function formatCompactTable(
   return formatCompactPretty(hits, projectRoot, query, termWidth, true);
 }
 
+// Reuse Skeletonizer instance
+let globalSkeletonizer: Skeletonizer | null = null;
+
+async function outputSkeletons(
+  results: any[],
+  projectRoot: string,
+  limit: number,
+  db?: VectorDB | null,
+): Promise<void> {
+  const seenPaths = new Set<string>();
+  const filesToProcess: string[] = [];
+
+  for (const result of results) {
+    const p = (result.metadata as any)?.path;
+    if (typeof p === "string" && !seenPaths.has(p)) {
+      seenPaths.add(p);
+      filesToProcess.push(p);
+      if (filesToProcess.length >= limit) break;
+    }
+  }
+
+  if (filesToProcess.length === 0) {
+    console.log("No skeleton matches found.");
+    return;
+    return;
+  }
+
+  // Reuse or init skeletonizer for fallbacks
+  if (!globalSkeletonizer) {
+    globalSkeletonizer = new Skeletonizer();
+    // Lazy init only if we actually fallback
+  }
+
+  const skeletonOpts = { includeSummary: true };
+  const skeletonResults: Array<{
+    file: string;
+    skeleton: string;
+    tokens: number;
+    error?: string;
+  }> = [];
+
+  for (const relPath of filesToProcess) {
+    // 1. Try DB cache
+    if (db) {
+      const cached = await getStoredSkeleton(db, relPath);
+      if (cached) {
+        skeletonResults.push({
+          file: relPath,
+          skeleton: cached,
+          tokens: Math.ceil(cached.length / 4), // Rough estimate
+        });
+        continue;
+      }
+    }
+
+    // 2. Fallback to fresh generation
+    await globalSkeletonizer.init();
+    const absPath = path.resolve(projectRoot, relPath);
+    if (!fs.existsSync(absPath)) {
+      skeletonResults.push({
+        file: relPath,
+        skeleton: `// File not found: ${relPath}`,
+        tokens: 0,
+        error: "File not found",
+      });
+      continue;
+    }
+
+    const content = fs.readFileSync(absPath, "utf-8");
+    const res = await globalSkeletonizer.skeletonizeFile(
+      relPath,
+      content,
+      skeletonOpts,
+    );
+    skeletonResults.push({
+      file: relPath,
+      skeleton: res.skeleton,
+      tokens: res.tokenEstimate,
+      error: res.error,
+    });
+  }
+
+  // Since search doesn't support --json explicitly yet, we just print text.
+  // But if we ever add it, we have the structure.
+  for (const res of skeletonResults) {
+    console.log(res.skeleton);
+    console.log(""); // Separator
+  }
+}
+
 export const search: Command = new CommanderCommand("search")
   .description("File pattern searcher")
   .option(
@@ -301,6 +384,11 @@ export const search: Command = new CommanderCommand("search")
     "Show what would be indexed without actually indexing",
     false,
   )
+  .option(
+    "--skeleton",
+    "Show code skeleton for matching files instead of snippets",
+    false,
+  )
   .argument("<pattern>", "The pattern to search for")
   .argument("[path]", "The path to search in")
   .allowUnknownOption(true)
@@ -316,7 +404,7 @@ export const search: Command = new CommanderCommand("search")
       plain: boolean;
       sync: boolean;
       dryRun: boolean;
-
+      skeleton: boolean;
     } = cmd.optsWithGlobals();
 
     if (exec_path?.startsWith("--")) {
@@ -324,15 +412,15 @@ export const search: Command = new CommanderCommand("search")
     }
 
     const root = process.cwd();
-    const minScore =
-      Number.isFinite(Number.parseFloat(options.minScore))
-        ? Number.parseFloat(options.minScore)
-        : 0;
+    const minScore = Number.isFinite(Number.parseFloat(options.minScore))
+      ? Number.parseFloat(options.minScore)
+      : 0;
     let vectorDb: VectorDB | null = null;
 
     // Check for running server
     const execPathForServer = exec_path ? path.resolve(exec_path) : root;
-    const projectRootForServer = findProjectRoot(execPathForServer) ?? execPathForServer;
+    const projectRootForServer =
+      findProjectRoot(execPathForServer) ?? execPathForServer;
     const server = getServerForProject(projectRootForServer);
 
     if (server) {
@@ -357,6 +445,22 @@ export const search: Command = new CommanderCommand("search")
             (r) => typeof r.score !== "number" || r.score >= minScore,
           );
 
+          if (options.skeleton) {
+            await outputSkeletons(
+              filteredData,
+              projectRootForServer,
+              parseInt(options.m, 10),
+              // Server doesn't easily expose DB instance here in HTTP client mode,
+              // but we are in client. Wait, this text implies "Server Search" block.
+              // Client talks to server. The server returns JSON.
+              // We don't have DB access here.
+              // So we pass null, and it will fallback to generating local skeleton (if file exists locally).
+              // This is acceptable for Phase 3.
+              null,
+            );
+            return;
+          }
+
           const compactHits = options.compact
             ? toCompactHits(filteredData)
             : [];
@@ -364,9 +468,9 @@ export const search: Command = new CommanderCommand("search")
           if (options.compact) {
             const compactText = compactHits.length
               ? formatCompactTable(compactHits, projectRootForServer, pattern, {
-                isTTY: !!process.stdout.isTTY,
-                plain: !!options.plain,
-              })
+                  isTTY: !!process.stdout.isTTY,
+                  plain: !!options.plain,
+                })
               : "No matches found.";
             console.log(compactText);
             return; // EXIT
@@ -495,8 +599,6 @@ export const search: Command = new CommanderCommand("search")
         }
       }
 
-
-
       const searcher = new Searcher(vectorDb);
 
       const searchResult = await searcher.search(
@@ -511,15 +613,23 @@ export const search: Command = new CommanderCommand("search")
         (r) => typeof r.score !== "number" || r.score >= minScore,
       );
 
-      const compactHits = options.compact
-        ? toCompactHits(filteredData)
-        : [];
+      if (options.skeleton) {
+        await outputSkeletons(
+          filteredData,
+          projectRoot,
+          parseInt(options.m, 10),
+          vectorDb,
+        );
+        return;
+      }
+
+      const compactHits = options.compact ? toCompactHits(filteredData) : [];
       const compactText =
         options.compact && compactHits.length
           ? formatCompactTable(compactHits, projectRoot, pattern, {
-            isTTY: !!process.stdout.isTTY,
-            plain: !!options.plain,
-          })
+              isTTY: !!process.stdout.isTTY,
+              plain: !!options.plain,
+            })
           : options.compact
             ? "No matches found."
             : "";

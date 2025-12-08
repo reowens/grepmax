@@ -40,13 +40,13 @@ export interface Chunk {
   startLine: number;
   endLine: number;
   type:
-  | "function"
-  | "method"
-  | "class"
-  | "interface"
-  | "type_alias"
-  | "block"
-  | "other";
+    | "function"
+    | "method"
+    | "class"
+    | "interface"
+    | "type_alias"
+    | "block"
+    | "other";
   context?: string[];
   docstring?: string;
   complexity?: number;
@@ -285,9 +285,14 @@ export class TreeSitterChunker {
     if (result.chunks.length === 0) {
       // FIX: Skip fallback chunking for large data files to prevent memory leaks/CPU spikes
       // on massive generated JSON/YAML/XML files.
-      const isDataFile = [".json", ".yaml", ".yml", ".xml", ".csv", ".map"].includes(
-        path.extname(filePath).toLowerCase(),
-      );
+      const isDataFile = [
+        ".json",
+        ".yaml",
+        ".yml",
+        ".xml",
+        ".csv",
+        ".map",
+      ].includes(path.extname(filePath).toLowerCase());
       // 100KB limit for data files that don't have tree-sitter support or failed to parse
       const LARGE_DATA_FILE_LIMIT = 100 * 1024;
 
@@ -609,9 +614,9 @@ export class TreeSitterChunker {
           parentSymbol:
             stack.length > 1
               ? stack[stack.length - 1].replace(
-                /^(Class|Method|Function|Interface|Type): /,
-                "",
-              )
+                  /^(Class|Method|Function|Interface|Type): /,
+                  "",
+                )
               : undefined,
         });
         nextStack = context;

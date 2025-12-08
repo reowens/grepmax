@@ -25,6 +25,7 @@ export type PreparedChunk = {
   exports?: string[];
   role?: string;
   parent_symbol?: string;
+  file_skeleton?: string;
 };
 
 export type VectorRecord = PreparedChunk & {

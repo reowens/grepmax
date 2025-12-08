@@ -1,4 +1,3 @@
-
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { CONFIG } from "../../config";
@@ -63,7 +62,7 @@ function createNoopMetaCache(): MetaCacheLike {
     delete: (filePath: string) => {
       store.delete(filePath);
     },
-    close: () => { },
+    close: () => {},
   };
 }
 
@@ -112,7 +111,7 @@ export async function initialSync(
         metaCache.close();
         try {
           fs.rmSync(paths.lmdbPath, { force: true });
-        } catch { }
+        } catch {}
         metaCache = new MetaCache(paths.lmdbPath);
       }
     }

@@ -6,6 +6,10 @@ export const DEFAULT_IGNORE_PATTERNS = [
   "*.ipynb",
   "*.pyc",
   "*.onnx",
+  // Non-code text files (osgrep is for CODE search)
+  "*.txt",
+  "*.log",
+  "*.csv",
   // Safety nets for nested non-git folders
   "**/node_modules/**",
   "**/dist/**",
@@ -15,6 +19,12 @@ export const DEFAULT_IGNORE_PATTERNS = [
   "**/__pycache__/**",
   "**/coverage/**",
   "**/venv/**",
+  // Test fixtures and benchmark data
+  "**/fixtures/**",
+  "**/benchmark/**",
+  "**/testdata/**",
+  "**/__fixtures__/**",
+  "**/__snapshots__/**",
   // Lockfiles across ecosystems
   "package-lock.json",
   "yarn.lock",

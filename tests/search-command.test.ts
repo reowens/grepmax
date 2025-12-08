@@ -112,15 +112,32 @@ describe("min-score filtering", () => {
     // Setup mock to return results with different scores
     mockSearcher.search.mockResolvedValueOnce({
       data: [
-        { metadata: { path: "/repo/high.ts" }, score: 0.9, type: "text", generated_metadata: { start_line: 1 } },
-        { metadata: { path: "/repo/medium.ts" }, score: 0.5, type: "text", generated_metadata: { start_line: 1 } },
-        { metadata: { path: "/repo/low.ts" }, score: 0.2, type: "text", generated_metadata: { start_line: 1 } },
+        {
+          metadata: { path: "/repo/high.ts" },
+          score: 0.9,
+          type: "text",
+          generated_metadata: { start_line: 1 },
+        },
+        {
+          metadata: { path: "/repo/medium.ts" },
+          score: 0.5,
+          type: "text",
+          generated_metadata: { start_line: 1 },
+        },
+        {
+          metadata: { path: "/repo/low.ts" },
+          score: 0.2,
+          type: "text",
+          generated_metadata: { start_line: 1 },
+        },
       ],
     });
 
-    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => { });
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    await (search as Command).parseAsync(["query", "--min-score", "0.6"], { from: "user" });
+    await (search as Command).parseAsync(["query", "--min-score", "0.6"], {
+      from: "user",
+    });
 
     // Check that only high-score result is in output
     const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
@@ -134,12 +151,22 @@ describe("min-score filtering", () => {
   it("shows all results when min-score is 0 (default)", async () => {
     mockSearcher.search.mockResolvedValueOnce({
       data: [
-        { metadata: { path: "/repo/high.ts" }, score: 0.9, type: "text", generated_metadata: { start_line: 1 } },
-        { metadata: { path: "/repo/low.ts" }, score: 0.1, type: "text", generated_metadata: { start_line: 1 } },
+        {
+          metadata: { path: "/repo/high.ts" },
+          score: 0.9,
+          type: "text",
+          generated_metadata: { start_line: 1 },
+        },
+        {
+          metadata: { path: "/repo/low.ts" },
+          score: 0.1,
+          type: "text",
+          generated_metadata: { start_line: 1 },
+        },
       ],
     });
 
-    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => { });
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     await (search as Command).parseAsync(["query"], { from: "user" });
 
@@ -153,13 +180,20 @@ describe("min-score filtering", () => {
   it("returns no results message when all results are filtered out", async () => {
     mockSearcher.search.mockResolvedValueOnce({
       data: [
-        { metadata: { path: "/repo/low.ts" }, score: 0.3, type: "text", generated_metadata: { start_line: 1 } },
+        {
+          metadata: { path: "/repo/low.ts" },
+          score: 0.3,
+          type: "text",
+          generated_metadata: { start_line: 1 },
+        },
       ],
     });
 
-    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => { });
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    await (search as Command).parseAsync(["query", "--min-score", "0.9"], { from: "user" });
+    await (search as Command).parseAsync(["query", "--min-score", "0.9"], {
+      from: "user",
+    });
 
     const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
     expect(output).toContain("No matches found");

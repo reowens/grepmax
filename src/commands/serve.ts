@@ -176,7 +176,7 @@ export const serve = new Command("serve")
                   undefined,
                   searchPath,
                   undefined, // intent
-                  ac.signal
+                  ac.signal,
                 );
 
                 if (ac.signal.aborted) {
