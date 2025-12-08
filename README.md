@@ -51,8 +51,12 @@ Natural-language search that works like `grep`. Fast, local, and built for codin
     ```bash
     osgrep trace "function_name"
     ```
+See who calls a function (upstream dependencies) and what it calls (downstream dependencies). Perfect for impact analysis and understanding code flow.
 
-    See who calls a function (upstream dependencies) and what it calls (downstream dependencies). Perfect for impact analysis and understanding code flow.
+To find the symbols in your code base:
+    ```bash
+    osgrep symbols
+    ```
 
 In our public benchmarks, `osgrep` can save about 20% of your LLM tokens and deliver a 30% speedup.
 
@@ -69,6 +73,13 @@ In our public benchmarks, `osgrep` can save about 20% of your LLM tokens and del
 3. Highly recommend indexing your code base before using the plugin.
 4. The plugin's hooks auto-start `osgrep serve` in the background and shut it down on session end. Claude will use `osgrep` for semantic searches automatically but can be encouraged to do so.
 
+## Opencode Plugin
+1. Run `osgrep install-opencode`
+2. Open OC (`opencode`) and ask it questions about your codebase.
+3. Highly recommend indexing your code base before using the plugin.
+4. The plugin's hooks auto-start `osgrep serve` in the background and shut it down on session end. OC will use `osgrep` for semantic searches automatically but can be encouraged to do so.
+
+
 ## Commands
 
 ### `osgrep search`
@@ -76,7 +87,7 @@ In our public benchmarks, `osgrep` can save about 20% of your LLM tokens and del
 The default command. Searches the current directory using semantic meaning.
 
 ```bash
-osgrep "how is the database connection pooled?" --json
+osgrep "how is the database connection pooled?"
 ```
 
 **Options:**
