@@ -230,13 +230,47 @@ export class WorkerPool {
   private enqueue<M extends TaskMethod>(
     method: M,
     payload: TaskPayloads[M],
+    signal?: AbortSignal,
   ): Promise<TaskResults[M]> {
     if (this.destroyed) {
       return Promise.reject(new Error("Worker pool destroyed"));
     }
+    if (signal?.aborted) {
+      const err = new Error("Aborted");
+      err.name = "AbortError";
+      return Promise.reject(err);
+    }
+
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const task: PendingTask<M> = { id, method, payload, resolve, reject };
+
+      if (signal) {
+        signal.addEventListener("abort", () => {
+          // If task is still in queue, remove it
+          const idx = this.taskQueue.indexOf(id);
+          if (idx !== -1) {
+            this.taskQueue.splice(idx, 1);
+            this.tasks.delete(id);
+            const err = new Error("Aborted");
+            err.name = "AbortError";
+            reject(err);
+          }
+          // If task is already running (assigned to worker), we can't easily kill it without
+          // killing the worker. For now, we just let it finish but reject the promise early so
+          // the caller doesn't wait. The worker will eventually finish and we'll ignore the result.
+          else if (this.tasks.has(id)) {
+            // Task is running. Reject caller immediately.
+            const err = new Error("Aborted");
+            err.name = "AbortError";
+            reject(err);
+            // We intentionally do NOT delete the task map entry here,
+            // because we need handleWorkerMessage to cleanly cleanup the worker state
+            // when it eventually finishes.
+          }
+        }, { once: true });
+      }
+
       this.tasks.set(id, task as unknown as PendingTask<TaskMethod>);
       this.taskQueue.push(id);
       this.dispatch();
@@ -317,15 +351,16 @@ export class WorkerPool {
   }
 
   processFile(input: ProcessFileInput) {
+    // ProcessFile doesn't currently use cancellation, but we could add it later
     return this.enqueue("processFile", input);
   }
 
-  encodeQuery(text: string) {
-    return this.enqueue("encodeQuery", { text });
+  encodeQuery(text: string, signal?: AbortSignal) {
+    return this.enqueue("encodeQuery", { text }, signal);
   }
 
-  rerank(input: TaskPayloads["rerank"]) {
-    return this.enqueue("rerank", input);
+  rerank(input: TaskPayloads["rerank"], signal?: AbortSignal) {
+    return this.enqueue("rerank", input, signal);
   }
 
   async destroy(): Promise<void> {
