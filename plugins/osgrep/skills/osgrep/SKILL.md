@@ -1,150 +1,96 @@
 ---
 name: osgrep
-description: Semantic code search for AI agents. Finds code by concept, compresses files to skeletons, and traces call graphs. Saves 80-95% tokens vs reading full files.
+description: Semantic code search. Finds code by concept, compresses files to skeletons. Use instead of grep/ripgrep/reading whole files.
 allowed-tools: "Bash(osgrep:*), Read"
-license: Apache-2.0
 ---
 
-## Why Use osgrep?
+## When to Use osgrep
 
-**Problem:** Reading full files burns tokens. A 500-line file costs ~2000 tokens.
-**Solution:** osgrep lets you understand code structure in ~100 tokens, then read only what you need.
+**USE osgrep for:**
+- "Explain the architecture" 
+- "How does X work?"
+- "Find where Y happens"
+- "What are the main components?"
 
-| Without osgrep | With osgrep |
-|----------------|-------------|
-| Read 5 files (~10,000 tokens) | Skeleton 5 files (~500 tokens) |
-| Guess which function matters | See ORCH roles highlight key logic |
-| Miss related code | Trace shows dependencies |
+**DON'T use for:**
+- You already know the exact file and line
+- Simple string search in one file
 
-## Core Commands
+## Commands
 
 ```bash
-osgrep "where does authentication happen"     # Search by concept
-osgrep skeleton src/services/auth.ts          # Get structure (~90% smaller)
-osgrep trace AuthService                      # See callers/callees
-osgrep symbols                                # List key symbols in codebase
+osgrep "how requests flow from client to server"   # Semantic search
+osgrep "auth" --skeleton                           # Search + compress results
+osgrep skeleton src/server.ts                      # Compress specific file  
+osgrep trace handleRequest                         # Who calls / what calls
+osgrep symbols                                     # List main symbols
 ```
 
-## The Right Tool for Each Question
+## Workflow: Architecture Questions
 
-| Question Type | Command | Why |
-|--------------|---------|-----|
-| "Where is X?" | `osgrep "X"` | Semantic search finds concepts |
-| "What's in this file?" | `osgrep skeleton file.ts` | See structure without reading everything |
-| "Who calls X?" | `osgrep trace X` | Map dependencies |
-| "What are the main classes?" | `osgrep symbols` | Get vocabulary of codebase |
-| "Show me the implementation" | `Read file.ts:42-80` | After you know WHERE |
+**Query:** "Explain client-server architecture, identify key files, show request flow"
 
-## Recommended Workflow
-
-### For "Find something specific"
 ```bash
-osgrep "JWT token validation and expiration"
-# → src/auth/jwt.ts:45  validateToken  ORCH  H
-Read src/auth/jwt.ts:45-90
-```
+# 1. Find entry points
+osgrep "where do client requests enter the server"
 
-### For "Understand how X works"
-```bash
-# 1. Find the entry point
-osgrep "request handling middleware"
+# 2. Get structure of key files (80-95% smaller than reading)
+osgrep skeleton src/server/handler.ts
+osgrep skeleton src/client/api.ts
 
-# 2. Get structure without reading everything
-osgrep skeleton src/middleware/auth.ts
-
-# 3. Trace what it calls
-osgrep trace authMiddleware
-
-# 4. Read ONLY the specific function you need
-Read src/middleware/auth.ts:23-45
-```
-
-### For "Explore architecture"
-```bash
-# 1. Get the vocabulary
-osgrep symbols
-
-# 2. Skeleton the top-referenced classes
-osgrep skeleton src/services/UserService.ts
-osgrep skeleton src/db/Connection.ts
-
-# 3. Trace key orchestrators
+# 3. Trace the flow
 osgrep trace handleRequest
 
-# 4. Now you understand the structure - read specifics as needed
+# 4. Read specific code ONLY if needed
+Read src/server/handler.ts:45-60
 ```
 
-## Query Tips
+## Workflow: Find Specific Code
 
-**Be specific.** Semantic search needs context.
+**Query:** "Where is JWT validation?"
 
 ```bash
-# ❌ Too vague
-osgrep "auth"
+osgrep "JWT token validation and expiration checking"
+# → src/auth/jwt.ts:45  validateToken  ORCH
 
-# ✅ Specific
-osgrep "where does the code validate JWT tokens and check expiration"
+Read src/auth/jwt.ts:45-80
 ```
 
-**More words = better matches.** Think of it like asking a colleague.
+## Output Guide
 
-## Understanding Output
-
-### Search Results
+### Search Results (--compact)
 ```
-path              lines    score  role  conf  defined
-src/auth/jwt.ts   45-89    .94    ORCH  H     validateToken
+path                lines   score  role  defined
+src/auth/jwt.ts     45-89   .94    ORCH  validateToken
 ```
-- **ORCH** = Orchestration (complex, calls many things) - often what you want
-- **DEF** = Definition (class, interface, type)
-- **IMPL** = Implementation (simpler functions)
-- **H/M/L** = Confidence level
+- **ORCH** = orchestrates other code (usually what you want)
+- **DEF** = definition (class, type)
 
 ### Skeleton Output
 ```typescript
 // src/auth/jwt.ts (skeleton, ~85 tokens)
 export class JWTService {
-  constructor(private secret: string);
-  
   validateToken(token: string): Claims {
-    // → decode, verify, isExpired | C:8 | ORCH
-  }
-  
-  sign(payload: object): string {
-    // → encode, stringify | C:2
+    // -> decode, verify, isExpired | C:8 | ORCH
   }
 }
 ```
-- Shows signatures without implementation
-- Summary shows: calls made, complexity, role
-- 85 tokens vs ~800 for full file
+- Shows signatures, hides bodies
+- Summary: what it calls, complexity, role
+- **~85 tokens vs ~800 for full file**
 
-## Command Reference
+## Query Tips
 
-### `osgrep [query] [path]`
-Semantic search. Default command.
-- `-m N` - Max results (default: 10)
-- `--compact` - TSV output
+```bash
+# Bad - too vague
+osgrep "auth"
 
-### `osgrep skeleton <target>`
-Compress code to signatures + summaries.
-- Target: file path, symbol name, or search query
-- `--limit N` - Max files for query mode
-- `--no-summary` - Omit body summaries
+# Good - specific intent  
+osgrep "where does the server validate JWT tokens before processing requests"
+```
 
-### `osgrep trace <symbol>`
-Show call graph for a symbol.
-- Who calls this? (callers)
-- What does this call? (callees)
+**More words = better results.** Describe what you're looking for like you'd ask a colleague.
 
-### `osgrep symbols [filter]`
-List defined symbols sorted by reference count.
-- No args: top 20 symbols
-- With filter: matching symbols only
+## If Index is Building
 
-## ⚠️ Indexing State
-
-If output shows "Indexing", "Building", or "Syncing":
-1. **STOP** - Results will be incomplete
-2. **INFORM** the user the index is building
-3. **ASK** if they want to wait or proceed with partial results
+If you see "Indexing" or "Syncing": STOP. Tell the user the index is building. Ask if they want to wait or proceed with partial results.
