@@ -328,8 +328,8 @@ export class Skeletonizer {
         // Python uses indented ... (Ellipsis) - valid syntax
         return `\n    ${summary}\n    ...`;
       case "ruby":
-        // Ruby methods end with 'end'
-        return `\n    ${summary}\n  end`;
+        // Ruby body doesn't include closing 'end' in AST - it's preserved after
+        return `\n    ${summary}`;
       default:
         // C-style languages use { ... }
         return `{\n    ${summary}\n  }`;
@@ -475,7 +475,8 @@ export class Skeletonizer {
         n.type === "invocation_expression" // C#
       ) {
         // Java/C# method calls
-        const nameNode = n.childForFieldName?.("name") || n.childForFieldName?.("function");
+        const nameNode =
+          n.childForFieldName?.("name") || n.childForFieldName?.("function");
         if (nameNode) {
           refs.push(nameNode.text);
           seen.add(nameNode.text);
@@ -485,7 +486,8 @@ export class Skeletonizer {
         n.type === "command" || // Ruby
         n.type === "command_call" // Ruby
       ) {
-        const nameNode = n.childForFieldName?.("method") || n.childForFieldName?.("name");
+        const nameNode =
+          n.childForFieldName?.("method") || n.childForFieldName?.("name");
         if (nameNode) {
           refs.push(nameNode.text);
           seen.add(nameNode.text);
