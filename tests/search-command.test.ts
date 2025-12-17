@@ -266,4 +266,22 @@ describe("unknown option handling", () => {
       (search as Command).parseAsync(["--./path", "query"], { from: "user" })
     ).rejects.toThrow(/unknown option/i);
   });
+
+  it("accepts valid options without error", async () => {
+    // Regression: ensure known options still work
+    await expect(
+      (search as Command).parseAsync(["query", ".", "-m", "5", "--compact"], {
+        from: "user",
+      })
+    ).resolves.not.toThrow();
+  });
+
+  it("allows pattern starting with dash using -- separator", async () => {
+    // Standard CLI convention: -- ends option parsing
+    await expect(
+      (search as Command).parseAsync(["--", "-pattern-with-dash", "."], {
+        from: "user",
+      })
+    ).resolves.not.toThrow();
+  });
 });
