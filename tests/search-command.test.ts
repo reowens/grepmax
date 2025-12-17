@@ -201,3 +201,33 @@ describe("min-score filtering", () => {
     consoleSpy.mockRestore();
   });
 });
+
+describe("unknown option handling", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    spinner.text = "";
+    (search as Command).exitOverride();
+  });
+
+  it("rejects unknown options instead of misparsing them as arguments", async () => {
+    // Before fix: --json was treated as pattern, "query" as path
+    // After fix: Commander properly rejects unknown options
+    await expect(
+      (search as Command).parseAsync(["--json", "query", "."], { from: "user" })
+    ).rejects.toThrow(/unknown option/i);
+  });
+
+  it("rejects unknown options even when placed after arguments", async () => {
+    await expect(
+      (search as Command).parseAsync(["query", ".", "--json"], { from: "user" })
+    ).rejects.toThrow(/unknown option/i);
+  });
+
+  it("rejects excess arguments", async () => {
+    await expect(
+      (search as Command).parseAsync(["query", ".", "extra", "args"], {
+        from: "user",
+      })
+    ).rejects.toThrow(/too many arguments/i);
+  });
+});
