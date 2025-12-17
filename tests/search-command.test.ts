@@ -246,4 +246,24 @@ describe("unknown option handling", () => {
       })
     ).rejects.toThrow(/unknown option/i);
   });
+
+  it("rejects unknown options with equals sign", async () => {
+    await expect(
+      (search as Command).parseAsync(["--json=true", "query", "."], {
+        from: "user",
+      })
+    ).rejects.toThrow(/unknown option/i);
+  });
+
+  it("rejects short unknown options", async () => {
+    await expect(
+      (search as Command).parseAsync(["-j", "query", "."], { from: "user" })
+    ).rejects.toThrow(/unknown option/i);
+  });
+
+  it("rejects unknown option that looks like a path", async () => {
+    await expect(
+      (search as Command).parseAsync(["--./path", "query"], { from: "user" })
+    ).rejects.toThrow(/unknown option/i);
+  });
 });
