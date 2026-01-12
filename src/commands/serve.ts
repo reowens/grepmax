@@ -166,6 +166,11 @@ export const serve = new Command("serve")
                 // Add AbortController for cancellation
                 const ac = new AbortController();
                 req.on("close", () => {
+                  if (req.complete) return;
+                  ac.abort();
+                });
+                res.on("close", () => {
+                  if (res.writableFinished) return;
                   ac.abort();
                 });
 
