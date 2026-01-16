@@ -50,11 +50,33 @@ export function ensureProjectPaths(
   return { root, osgrepDir, lancedbDir, cacheDir, lmdbPath, configPath };
 }
 
+function fileContainsEntry(filePath: string, entry: string): boolean {
+  try {
+    const contents = fs.readFileSync(filePath, "utf-8");
+    return contents
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .includes(entry);
+  } catch {
+    return false;
+  }
+}
+
 function ensureGitignoreEntry(root: string) {
   // Only add when inside a git repo.
   if (!fs.existsSync(path.join(root, ".git"))) return;
 
+  const entry = ".osgrep";
+
+  // Check .git/info/exclude first
+  const excludePath = path.join(root, ".git", "info", "exclude");
+  if (fileContainsEntry(excludePath, entry)) return;
+
+  // Check .gitignore
   const gitignorePath = path.join(root, ".gitignore");
+  if (fileContainsEntry(gitignorePath, entry)) return;
+
+  // Add to .gitignore
   let contents = "";
   try {
     contents = fs.readFileSync(gitignorePath, "utf-8");
@@ -62,15 +84,9 @@ function ensureGitignoreEntry(root: string) {
     // ignore missing file; will create below
   }
 
-  const hasEntry = contents
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .includes(".osgrep");
-  if (hasEntry) return;
-
   const needsNewline = contents.length > 0 && !contents.endsWith("\n");
   const prefix = needsNewline ? "\n" : "";
-  fs.writeFileSync(gitignorePath, `${contents}${prefix}.osgrep\n`, {
+  fs.writeFileSync(gitignorePath, `${contents}${prefix}${entry}\n`, {
     encoding: "utf-8",
   });
 }
