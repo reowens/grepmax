@@ -497,6 +497,11 @@ export const mcp = new Command("mcp")
     }
 
     async function handleIndexStatus(): Promise<ToolResult> {
+      // Wait for daemon startup if still in progress
+      if (_daemonReady) {
+        await _daemonReady;
+      }
+
       const server = getServerForProject(projectRoot);
       if (!server || !isProcessRunning(server.pid)) {
         // Fall back to config file
