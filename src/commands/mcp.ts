@@ -49,6 +49,14 @@ const TOOLS = [
           type: "string",
           description: "Restrict search to files under this path prefix (e.g. 'src/auth/')",
         },
+        min_score: {
+          type: "number",
+          description: "Minimum relevance score (0-1). Results below this threshold are filtered out. Default: 0 (no filtering)",
+        },
+        max_per_file: {
+          type: "number",
+          description: "Max results per file (default: no cap). Useful to get diversity across files.",
+        },
       },
       required: ["query"],
     },
@@ -105,7 +113,55 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: "index_status",
+    description:
+      "Check the status of the osgrep index and serve daemon. Returns file count, chunk count, embed mode, index age, and whether live watching is active.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
+    },
+  },
 ];
+
+// ---------------------------------------------------------------------------
+// Daemon lifecycle
+// ---------------------------------------------------------------------------
+
+let _daemonReady: Promise<boolean> | null = null;
+
+async function ensureDaemon(projectRoot: string): Promise<boolean> {
+  const existing = getServerForProject(projectRoot);
+  if (existing && isProcessRunning(existing.pid)) {
+    console.log(
+      `[MCP] Serve daemon already running (PID: ${existing.pid}, Port: ${existing.port})`,
+    );
+    return true;
+  }
+
+  console.log("[MCP] Starting serve daemon...");
+  const child = spawn("osgrep", ["serve", "-b"], {
+    cwd: projectRoot,
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
+
+  // Poll for readiness — daemon registers in ~/.osgrep/servers.json once listening
+  for (let i = 0; i < 30; i++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const server = getServerForProject(projectRoot);
+    if (server && isProcessRunning(server.pid)) {
+      console.log(
+        `[MCP] Daemon ready (PID: ${server.pid}, Port: ${server.port})`,
+      );
+      return true;
+    }
+  }
+
+  console.error("[MCP] Daemon failed to become ready within 60s");
+  return false;
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -212,10 +268,20 @@ export const mcp = new Command("mcp")
       const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 50);
       const searchPath = typeof args.path === "string" ? args.path : undefined;
 
+      // Wait for daemon startup if still in progress
+      if (_daemonReady) {
+        const ready = await _daemonReady;
+        if (!ready) {
+          return err(
+            "Search daemon failed to start. Run 'osgrep serve -b' manually.",
+          );
+        }
+      }
+
       const server = getServerForProject(projectRoot);
       if (!server || !isProcessRunning(server.pid)) {
         return err(
-          "Search daemon not running. It should auto-start — try again in a few seconds, or run 'osgrep serve -b' manually.",
+          "Search daemon not running. Run 'osgrep serve -b' manually.",
         );
       }
 
@@ -238,7 +304,10 @@ export const mcp = new Command("mcp")
           return ok("No matches found.");
         }
 
-        const compact = results.map((r: any) => ({
+        const minScore = typeof args.min_score === "number" ? args.min_score : 0;
+        const maxPerFile = typeof args.max_per_file === "number" ? args.max_per_file : 0;
+
+        let compact = results.map((r: any) => ({
           path: r.metadata?.path ?? r.path ?? "",
           startLine: r.generated_metadata?.start_line ?? 0,
           endLine: r.generated_metadata?.end_line ?? 0,
@@ -248,6 +317,20 @@ export const mcp = new Command("mcp")
           definedSymbols: toStringArray(r.defined_symbols).slice(0, 5),
           snippet: typeof r.text === "string" ? r.text : "",
         }));
+
+        if (minScore > 0) {
+          compact = compact.filter((r) => r.score >= minScore);
+        }
+
+        if (maxPerFile > 0) {
+          const counts = new Map<string, number>();
+          compact = compact.filter((r) => {
+            const count = counts.get(r.path) || 0;
+            if (count >= maxPerFile) return false;
+            counts.set(r.path, count + 1);
+            return true;
+          });
+        }
 
         return ok(JSON.stringify(compact, null, 2));
       } catch (e) {
@@ -413,6 +496,45 @@ export const mcp = new Command("mcp")
       }
     }
 
+    async function handleIndexStatus(): Promise<ToolResult> {
+      const server = getServerForProject(projectRoot);
+      if (!server || !isProcessRunning(server.pid)) {
+        // Fall back to config file
+        const configPath = path.join(projectRoot, ".osgrep", "config.json");
+        try {
+          const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+          return ok(JSON.stringify({
+            daemon: "stopped",
+            embedMode: config.embedMode ?? "unknown",
+            model: config.embedModel ?? config.mlxModel ?? null,
+            vectorDim: config.vectorDim ?? null,
+            indexedAt: config.indexedAt ?? null,
+          }, null, 2));
+        } catch {
+          return ok(JSON.stringify({ daemon: "stopped", indexed: false }));
+        }
+      }
+
+      try {
+        const response = await fetch(`http://localhost:${server.port}/stats`, {
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!response.ok) {
+          return err(`Stats request failed (${response.status})`);
+        }
+        const stats = await response.json();
+        return ok(JSON.stringify({
+          daemon: "running",
+          pid: server.pid,
+          port: server.port,
+          ...stats as Record<string, unknown>,
+        }, null, 2));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return err(`Failed to get status: ${msg}`);
+      }
+    }
+
     // --- MCP server setup ---
 
     const transport = new StdioServerTransport();
@@ -449,6 +571,8 @@ export const mcp = new Command("mcp")
           return handleTraceCalls(toolArgs);
         case "list_symbols":
           return handleListSymbols(toolArgs);
+        case "index_status":
+          return handleIndexStatus();
         default:
           return err(`Unknown tool: ${name}`);
       }
@@ -457,29 +581,6 @@ export const mcp = new Command("mcp")
     await server.connect(transport);
 
     // Ensure the serve daemon is running (handles indexing, GPU, live reindex).
-    // The search CLI checks for a running daemon and uses it for GPU-accelerated search.
-    setTimeout(() => {
-      try {
-        const existing = getServerForProject(projectRoot);
-
-        if (existing && isProcessRunning(existing.pid)) {
-          console.log(
-            `[MCP] Serve daemon already running (PID: ${existing.pid}, Port: ${existing.port})`,
-          );
-          return;
-        }
-
-        console.log("[MCP] Starting serve daemon...");
-        const child = spawn("osgrep", ["serve", "-b"], {
-          cwd: projectRoot,
-          detached: true,
-          stdio: "ignore",
-        });
-        child.unref();
-        console.log(`[MCP] Serve daemon started (PID: ${child.pid})`);
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        console.error("[MCP] Failed to start serve daemon:", msg);
-      }
-    }, 1000);
+    // The MCP server owns daemon lifecycle — the SessionStart hook is read-only.
+    _daemonReady = ensureDaemon(projectRoot);
   });

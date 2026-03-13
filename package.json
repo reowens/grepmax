@@ -1,14 +1,14 @@
 {
   "name": "osgrep",
   "version": "0.5.16",
-  "author": "Ryandonofrio <ryandonofrio@gmail.com>",
-  "homepage": "https://www.ryan.donofr.io",
+  "author": "Robert Owens <robowens@me.com>",
+  "homepage": "https://github.com/reowens/osgrep-max",
   "bugs": {
-    "url": "https://github.com/Ryandonofrio3/osgrep/issues"
+    "url": "https://github.com/reowens/osgrep-max/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Ryandonofrio3/osgrep.git"
+    "url": "https://github.com/reowens/osgrep-max.git"
   },
   "main": "index.js",
   "bin": {

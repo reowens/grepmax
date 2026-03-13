@@ -6,12 +6,12 @@
     <img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License: Apache 2.0" />
   </a>
 
-  <a href="https://deepwiki.com/Ryandonofrio3/osgrep">
+  <a href="https://deepwiki.com/reowens/osgrep-max">
     <img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" />
   </a>
 
 <a>
-  <img alt="CodeRabbit Pull Request Reviews" src="https://img.shields.io/coderabbit/prs/github/ryandonofrio3/osgrep">
+  <img alt="CodeRabbit Pull Request Reviews" src="https://img.shields.io/coderabbit/prs/github/reowens/osgrep-max">
 </a>
 </div>
 

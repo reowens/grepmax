@@ -56,6 +56,22 @@ jobs:
             exit 1
           fi
 
+      - name: Verify plugin versions match package.json
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          PLUGIN_VERSION=$(node -p "require('./plugins/osgrep/.claude-plugin/plugin.json').version")
+          MARKET_VERSION=$(node -p "require('./.claude-plugin/marketplace.json').plugins[0].version")
+          if [ "$PKG_VERSION" != "$PLUGIN_VERSION" ]; then
+            echo "plugin.json version ($PLUGIN_VERSION) != package.json ($PKG_VERSION)"
+            echo "Run: bash scripts/sync-versions.sh"
+            exit 1
+          fi
+          if [ "$PKG_VERSION" != "$MARKET_VERSION" ]; then
+            echo "marketplace.json version ($MARKET_VERSION) != package.json ($PKG_VERSION)"
+            echo "Run: bash scripts/sync-versions.sh"
+            exit 1
+          fi
+
       - name: Build
         run: pnpm build
 

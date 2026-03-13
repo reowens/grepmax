@@ -5,7 +5,7 @@ set -euo pipefail
 # - Runs osgrep indexing against a target directory with multiple env configs.
 # - Wipes Lance data and meta between runs to keep results comparable.
 
-TARGET_DIR="${TARGET_DIR:-/Users/ryandonofrio/Desktop/osgrep2/opencode/packages/opencode/src}"
+TARGET_DIR="${TARGET_DIR:-./src}"
 OSGREP_BIN="${OSGREP_BIN:-node dist/index.js}"
 LOG_DIR="${LOG_DIR:-./benchmarks}"
 LOG_FILE="${LOG_FILE:-${LOG_DIR}/index-bench-$(date +%Y%m%d-%H%M%S).log}"
