@@ -1,0 +1,13 @@
+[project]
+name = "mlx-embed-server"
+version = "0.1.0"
+description = "MLX-accelerated embedding server for osgrep"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.34.0",
+    "mlx-embeddings @ git+https://github.com/Blaizzy/mlx-embeddings.git",
+]
+
+[project.scripts]
+mlx-embed-server = "server:main"
