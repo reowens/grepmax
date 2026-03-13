@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { CONFIG } from "../../config";
+import { CONFIG, MODEL_IDS } from "../../config";
 import { MetaCache, type MetaEntry } from "../store/meta-cache";
 import type { VectorRecord } from "../store/types";
 import { VectorDB } from "../store/vector-db";
@@ -11,6 +11,42 @@ import { getWorkerPool } from "../workers/pool";
 import type { ProcessFileResult } from "../workers/worker";
 import type { InitialSyncProgress, InitialSyncResult } from "./sync-helpers";
 import { walk } from "./walker";
+
+// --- Model mismatch guard ---
+// Prevents searching an index built with a different embedding model,
+// which would silently return garbage results.
+
+interface IndexConfig {
+  embedModel: string;
+  colbertModel: string;
+  vectorDim: number;
+  indexedAt?: string;
+}
+
+function readIndexConfig(configPath: string): IndexConfig | null {
+  try {
+    const raw = fs.readFileSync(configPath, "utf-8");
+    return JSON.parse(raw) as IndexConfig;
+  } catch {
+    return null;
+  }
+}
+
+function writeIndexConfig(configPath: string): void {
+  const config: IndexConfig = {
+    embedModel: MODEL_IDS.embed,
+    colbertModel: MODEL_IDS.colbert,
+    vectorDim: CONFIG.VECTOR_DIM,
+    indexedAt: new Date().toISOString(),
+  };
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
+}
+
+function checkModelMismatch(configPath: string): boolean {
+  const stored = readIndexConfig(configPath);
+  if (!stored) return false; // No config yet — first index
+  return stored.embedModel !== MODEL_IDS.embed || stored.colbertModel !== MODEL_IDS.colbert;
+}
 
 type SyncOptions = {
   projectRoot: string;
@@ -99,9 +135,15 @@ export async function initialSync(
       const hasRows = await vectorDb.hasAnyRows();
       const hasMeta = (await metaCache.getAllKeys()).size > 0;
       const isInconsistent = (hasRows && !hasMeta) || (!hasRows && hasMeta);
+      const modelChanged = checkModelMismatch(paths.configPath);
 
-      if (reset || isInconsistent) {
-        if (isInconsistent) {
+      if (reset || isInconsistent || modelChanged) {
+        if (modelChanged) {
+          const stored = readIndexConfig(paths.configPath);
+          console.warn(
+            `[syncer] Embedding model changed: ${stored?.embedModel} → ${MODEL_IDS.embed}. Forcing full re-index.`,
+          );
+        } else if (isInconsistent) {
           console.warn(
             "[syncer] Detected inconsistent state (VectorDB/MetaCache mismatch). Forcing re-sync.",
           );
@@ -379,6 +421,11 @@ export async function initialSync(
       stale.forEach((p) => {
         metaCache!.delete(p);
       });
+    }
+
+    // Write model config so future runs can detect model changes
+    if (!dryRun) {
+      writeIndexConfig(paths.configPath);
     }
 
     // Finalize total so callers can display a meaningful summary.
