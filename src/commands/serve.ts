@@ -8,8 +8,10 @@ import { readIndexConfig } from "../lib/index/index-config";
 import { ensureGrammars } from "../lib/index/grammar-loader";
 import { createIndexingSpinner } from "../lib/index/sync-helpers";
 import { initialSync } from "../lib/index/syncer";
+import { startWatcher, type WatcherHandle } from "../lib/index/watcher";
 import { Searcher } from "../lib/search/searcher";
 import { ensureSetup } from "../lib/setup/setup-helpers";
+import { MetaCache } from "../lib/store/meta-cache";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
@@ -154,34 +156,41 @@ export const serve = new Command("serve")
       await ensureSetup();
       await ensureGrammars(console.log, { silent: true });
 
-      const vectorDb = new VectorDB(paths.lancedbDir);
-      const searcher = new Searcher(vectorDb);
-
-      // Only show spinner if not in background (or check isTTY)
-      // If spawned in background with stdio ignore, console.log goes nowhere.
-      // But we might want to log to a file in the future.
-
+      // Initial sync is self-contained (creates+closes its own VectorDB+MetaCache).
       if (!process.env.OSGREP_BACKGROUND) {
         const { spinner, onProgress } = createIndexingSpinner(
           projectRoot,
           "Indexing before starting server...",
         );
         try {
-          await initialSync({
-            projectRoot,
-            onProgress,
-          });
-          await vectorDb.createFTSIndex();
+          await initialSync({ projectRoot, onProgress });
           spinner.succeed("Initial index ready. Starting server...");
         } catch (e) {
           spinner.fail("Indexing failed");
           throw e;
         }
       } else {
-        // In background, just sync quietly
         await initialSync({ projectRoot });
-        await vectorDb.createFTSIndex();
       }
+
+      // Open long-lived resources for serving + watching.
+      const vectorDb = new VectorDB(paths.lancedbDir);
+      const metaCache = new MetaCache(paths.lmdbPath);
+      const searcher = new Searcher(vectorDb);
+
+      // Start live file watcher
+      let fileWatcher: WatcherHandle | null = startWatcher({
+        projectRoot,
+        vectorDb,
+        metaCache,
+        osgrepDir: paths.osgrepDir,
+        onReindex: (files, durationMs) => {
+          console.log(
+            `[watch] Reindexed ${files} file${files !== 1 ? "s" : ""} (${(durationMs / 1000).toFixed(1)}s)`,
+          );
+        },
+      });
+      console.log("[serve] File watcher active");
 
       // Idle timeout: shut down if no searches for 30 minutes
       const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
@@ -220,6 +229,7 @@ export const serve = new Command("serve")
                 model: cfg?.embedModel ?? null,
                 mlxModel: cfg?.mlxModel ?? null,
                 indexedAt: cfg?.indexedAt ?? null,
+                watching: fileWatcher !== null,
               };
               res.statusCode = 200;
               res.setHeader("Content-Type", "application/json");
@@ -390,6 +400,12 @@ export const serve = new Command("serve")
       const shutdown = async () => {
         unregisterServer(process.pid);
 
+        // Stop file watcher first
+        if (fileWatcher) {
+          try { await fileWatcher.close(); } catch {}
+          fileWatcher = null;
+        }
+
         // Stop MLX server if we started it
         if (mlxChild?.pid) {
           try { process.kill(mlxChild.pid, "SIGTERM"); } catch {}
@@ -409,7 +425,12 @@ export const serve = new Command("serve")
           setTimeout(resolve, 5000);
         });
 
-        // Clean close of vectorDB
+        // Clean close of owned resources
+        try {
+          metaCache.close();
+        } catch (e) {
+          console.error("Error closing meta cache:", e);
+        }
         try {
           await vectorDb.close();
         } catch (e) {
