@@ -10,12 +10,14 @@
       "name": "osgrep",
       "source": "./plugins/osgrep",
       "description": "Semantic code search for Claude Code. Automatically indexes your project and provides intelligent search capabilities.",
-      "version": "0.5.16",
+      "version": "0.6.0",
       "author": {
         "name": "Ryan D'Onofrio",
         "email": "ryandonofrio@gmail.com"
       },
-      "skills": ["./skills/osgrep"]
+      "skills": [
+        "./skills/osgrep"
+      ]
     }
   ]
 }

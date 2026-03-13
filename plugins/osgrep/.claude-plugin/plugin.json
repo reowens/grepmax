@@ -1,6 +1,6 @@
 {
   "name": "osgrep",
-  "version": "0.5.16",
+  "version": "0.6.0",
   "description": "Semantic code search for Claude Code. Automatically indexes your project and provides intelligent search capabilities.",
   "author": {
     "name": "Robert Owens",
@@ -10,5 +10,11 @@
   "homepage": "https://github.com/reowens/osgrep-max",
   "repository": "https://github.com/reowens/osgrep-max",
   "license": "Apache-2.0",
-  "keywords": ["search", "semantic", "grep", "code-search", "semantic-search"]
+  "keywords": [
+    "search",
+    "semantic",
+    "grep",
+    "code-search",
+    "semantic-search"
+  ]
 }
