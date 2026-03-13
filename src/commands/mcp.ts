@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -7,9 +8,11 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { Command } from "commander";
-import { initialSync } from "../lib/index/syncer";
-import { ensureSetup } from "../lib/setup/setup-helpers";
-import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
+import { findProjectRoot } from "../lib/utils/project-root";
+import {
+  getServerForProject,
+  isProcessRunning,
+} from "../lib/utils/server-registry";
 
 export const mcp = new Command("mcp")
   .description("Start MCP server for osgrep")
@@ -78,36 +81,31 @@ export const mcp = new Command("mcp")
 
     await server.connect(transport);
 
-    const startBackgroundSync = async () => {
-      console.log("[SYNC] Scheduling initial sync in 1 second...");
+    // Ensure the serve daemon is running (handles indexing, GPU, live reindex).
+    // The search CLI checks for a running daemon and uses it for GPU-accelerated search.
+    setTimeout(() => {
+      try {
+        const projectRoot = findProjectRoot(process.cwd()) ?? process.cwd();
+        const existing = getServerForProject(projectRoot);
 
-      setTimeout(async () => {
-        console.log("[SYNC] Starting file sync...");
-        try {
-          const projectRoot = findProjectRoot(process.cwd()) ?? process.cwd();
-          ensureProjectPaths(projectRoot);
-          process.env.OSGREP_PROJECT_ROOT = projectRoot;
-
-          await ensureSetup();
-          // We run initialSync. It will handle updates if already indexed,
-          // essentially acting as a refresh on start.
-          // Since osgrep serves as a "daemon" here, this keeps the index fresh on boot.
-          await initialSync({
-            projectRoot,
-            dryRun: false,
-            // We can pass a progress handler that logs to stderr if we want,
-            // but for now let's keep it quiet or rely on the redirected console.log
-          });
-          console.log("[SYNC] Sync complete.");
-        } catch (error) {
-          const errorMessage =
-            error instanceof Error ? error.message : String(error);
-          console.error("[SYNC] Sync failed:", errorMessage);
+        if (existing && isProcessRunning(existing.pid)) {
+          console.log(
+            `[MCP] Serve daemon already running (PID: ${existing.pid}, Port: ${existing.port})`,
+          );
+          return;
         }
-      }, 1000);
-    };
 
-    startBackgroundSync().catch((error) => {
-      console.error("[SYNC] Background sync setup failed:", error);
-    });
+        console.log("[MCP] Starting serve daemon...");
+        const child = spawn("osgrep", ["serve", "-b"], {
+          cwd: projectRoot,
+          detached: true,
+          stdio: "ignore",
+        });
+        child.unref();
+        console.log(`[MCP] Serve daemon started (PID: ${child.pid})`);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error("[MCP] Failed to start serve daemon:", msg);
+      }
+    }, 1000);
   });
