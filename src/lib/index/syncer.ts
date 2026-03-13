@@ -12,41 +12,11 @@ import type { ProcessFileResult } from "../workers/worker";
 import type { InitialSyncProgress, InitialSyncResult } from "./sync-helpers";
 import { walk } from "./walker";
 
-// --- Model mismatch guard ---
-// Prevents searching an index built with a different embedding model,
-// which would silently return garbage results.
-
-interface IndexConfig {
-  embedModel: string;
-  colbertModel: string;
-  vectorDim: number;
-  indexedAt?: string;
-}
-
-function readIndexConfig(configPath: string): IndexConfig | null {
-  try {
-    const raw = fs.readFileSync(configPath, "utf-8");
-    return JSON.parse(raw) as IndexConfig;
-  } catch {
-    return null;
-  }
-}
-
-function writeIndexConfig(configPath: string): void {
-  const config: IndexConfig = {
-    embedModel: MODEL_IDS.embed,
-    colbertModel: MODEL_IDS.colbert,
-    vectorDim: CONFIG.VECTOR_DIM,
-    indexedAt: new Date().toISOString(),
-  };
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
-}
-
-function checkModelMismatch(configPath: string): boolean {
-  const stored = readIndexConfig(configPath);
-  if (!stored) return false; // No config yet — first index
-  return stored.embedModel !== MODEL_IDS.embed || stored.colbertModel !== MODEL_IDS.colbert;
-}
+import {
+  readIndexConfig,
+  writeIndexConfig,
+  checkModelMismatch,
+} from "./index-config";
 
 type SyncOptions = {
   projectRoot: string;

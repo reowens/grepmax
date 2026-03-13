@@ -285,6 +285,21 @@ export class VectorDB {
     return rows.length > 0;
   }
 
+  async getStats(): Promise<{ chunks: number; totalBytes: number }> {
+    const table = await this.ensureTable();
+    const [count, stats] = await Promise.all([
+      table.countRows(),
+      table.stats(),
+    ]);
+    return { chunks: count, totalBytes: stats.totalBytes };
+  }
+
+  async getDistinctFileCount(): Promise<number> {
+    const table = await this.ensureTable();
+    const rows = await table.query().select(["path"]).toArray();
+    return new Set(rows.map((r) => r.path)).size;
+  }
+
   async deletePaths(paths: string[]): Promise<void> {
     if (!paths.length) return;
     const table = await this.ensureTable();

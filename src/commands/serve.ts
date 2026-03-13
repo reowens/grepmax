@@ -1,9 +1,10 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
 import * as http from "node:http";
 import * as path from "node:path";
 import { Command } from "commander";
 import { PATHS } from "../config";
+import { readIndexConfig } from "../lib/index/index-config";
 import { ensureGrammars } from "../lib/index/grammar-loader";
 import { createIndexingSpinner } from "../lib/index/sync-helpers";
 import { initialSync } from "../lib/index/syncer";
@@ -20,6 +21,43 @@ import {
   unregisterServer,
 } from "../lib/utils/server-registry";
 
+function isMlxServerUp(): Promise<boolean> {
+  const port = parseInt(process.env.MLX_EMBED_PORT || "8100", 10);
+  return new Promise((resolve) => {
+    const req = http.get(
+      { hostname: "127.0.0.1", port, path: "/health", timeout: 2000 },
+      (res) => { res.resume(); resolve(res.statusCode === 200); },
+    );
+    req.on("error", () => resolve(false));
+    req.on("timeout", () => { req.destroy(); resolve(false); });
+  });
+}
+
+function startMlxServer(mlxModel?: string): ChildProcess | null {
+  // Look for mlx-embed-server relative to the osgrep package
+  const candidates = [
+    path.resolve(__dirname, "../../mlx-embed-server"),
+    path.resolve(__dirname, "../mlx-embed-server"),
+  ];
+  const serverDir = candidates.find((d) => fs.existsSync(path.join(d, "server.py")));
+  if (!serverDir) return null;
+
+  const logPath = "/tmp/mlx-embed-server.log";
+  const out = fs.openSync(logPath, "a");
+  const env: Record<string, string> = { ...process.env } as Record<string, string>;
+  if (mlxModel) {
+    env.MLX_EMBED_MODEL = mlxModel;
+  }
+  const child = spawn("uv", ["run", "python", "server.py"], {
+    cwd: serverDir,
+    detached: true,
+    stdio: ["ignore", out, out],
+    env,
+  });
+  child.unref();
+  return child;
+}
+
 export const serve = new Command("serve")
   .description("Run osgrep as a background server with live indexing")
   .option(
@@ -28,8 +66,9 @@ export const serve = new Command("serve")
     process.env.OSGREP_PORT || "4444",
   )
   .option("-b, --background", "Run in background", false)
+  .option("--cpu", "Use CPU-only embeddings (skip MLX GPU server)", false)
   .action(async (_args, cmd) => {
-    const options: { port: string; background: boolean } =
+    const options: { port: string; background: boolean; cpu: boolean } =
       cmd.optsWithGlobals();
     let port = parseInt(options.port, 10);
     const startPort = port;
@@ -70,6 +109,47 @@ export const serve = new Command("serve")
     // Propagate project root to worker processes
     process.env.OSGREP_PROJECT_ROOT = projectRoot;
 
+    // Determine embed mode: --cpu flag overrides, then config, then default to cpu
+    const indexConfig = readIndexConfig(paths.configPath);
+    const useGpu = options.cpu
+      ? false
+      : indexConfig?.embedMode === "gpu";
+    const mlxModel = indexConfig?.mlxModel;
+
+    // MLX GPU embed server — started when GPU mode is active.
+    let mlxChild: ChildProcess | null = null;
+    if (!useGpu) {
+      console.log("[serve] CPU-only mode");
+    } else {
+      const mlxUp = await isMlxServerUp();
+      if (mlxUp) {
+        console.log("[serve] MLX GPU server already running");
+      } else {
+        mlxChild = startMlxServer(mlxModel);
+        if (mlxChild) {
+          console.log(`[serve] Starting MLX GPU embed server (PID: ${mlxChild.pid})${mlxModel ? ` [${mlxModel}]` : ""}`);
+          let ready = false;
+          for (let i = 0; i < 30; i++) {
+            await new Promise((r) => setTimeout(r, 1000));
+            if (await isMlxServerUp()) {
+              console.log("[serve] MLX GPU server ready");
+              ready = true;
+              break;
+            }
+          }
+          if (!ready) {
+            console.error("[serve] MLX GPU server failed to start. Run with --cpu to use CPU embeddings.");
+            process.exitCode = 1;
+            return;
+          }
+        } else {
+          console.error("[serve] MLX server not found. Run with --cpu to use CPU embeddings.");
+          process.exitCode = 1;
+          return;
+        }
+      }
+    }
+
     try {
       await ensureSetup();
       await ensureGrammars(console.log, { silent: true });
@@ -103,16 +183,57 @@ export const serve = new Command("serve")
         await vectorDb.createFTSIndex();
       }
 
+      // Idle timeout: shut down if no searches for 30 minutes
+      const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+      let lastActivity = Date.now();
+      const idleCheck = setInterval(() => {
+        if (Date.now() - lastActivity > IDLE_TIMEOUT_MS) {
+          console.log("[serve] Idle timeout reached, shutting down.");
+          clearInterval(idleCheck);
+          process.kill(process.pid, "SIGTERM");
+        }
+      }, 60_000);
+      idleCheck.unref();
+
       const server = http.createServer(async (req, res) => {
         try {
           if (req.method === "GET" && req.url === "/health") {
+            lastActivity = Date.now();
             res.statusCode = 200;
             res.setHeader("Content-Type", "application/json");
             res.end(JSON.stringify({ status: "ok" }));
             return;
           }
 
+          if (req.method === "GET" && req.url === "/stats") {
+            try {
+              const dbStats = await vectorDb.getStats();
+              const cfg = readIndexConfig(paths.configPath);
+              const stats = {
+                files: dbStats.chunks > 0
+                  ? (await vectorDb.getDistinctFileCount())
+                  : 0,
+                chunks: dbStats.chunks,
+                totalBytes: dbStats.totalBytes,
+                vectorDim: cfg?.vectorDim ?? null,
+                embedMode: cfg?.embedMode ?? "cpu",
+                model: cfg?.embedModel ?? null,
+                mlxModel: cfg?.mlxModel ?? null,
+                indexedAt: cfg?.indexedAt ?? null,
+              };
+              res.statusCode = 200;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify(stats));
+            } catch (err) {
+              res.statusCode = 500;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ error: (err as Error)?.message || "stats_failed" }));
+            }
+            return;
+          }
+
           if (req.method === "POST" && req.url === "/search") {
+            lastActivity = Date.now();
             const chunks: Buffer[] = [];
             let totalSize = 0;
             let aborted = false;
@@ -268,6 +389,11 @@ export const serve = new Command("serve")
 
       const shutdown = async () => {
         unregisterServer(process.pid);
+
+        // Stop MLX server if we started it
+        if (mlxChild?.pid) {
+          try { process.kill(mlxChild.pid, "SIGTERM"); } catch {}
+        }
 
         // Properly await server close
         await new Promise<void>((resolve, reject) => {
