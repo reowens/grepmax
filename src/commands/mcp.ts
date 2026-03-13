@@ -212,15 +212,17 @@ export const mcp = new Command("mcp")
       }
     };
 
-    process.on("SIGINT", async () => {
+    const exit = async () => {
       await cleanup();
       process.exit(0);
-    });
+    };
 
-    process.on("SIGTERM", async () => {
-      await cleanup();
-      process.exit(0);
-    });
+    process.on("SIGINT", exit);
+    process.on("SIGTERM", exit);
+
+    // MCP SDK doesn't handle stdin close — exit when the client disconnects
+    process.stdin.on("end", exit);
+    process.stdin.on("close", exit);
 
     process.on("unhandledRejection", (reason, promise) => {
       console.error(
