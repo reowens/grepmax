@@ -263,6 +263,21 @@ export const mcp = new Command("mcp")
 
     // --- Tool handlers ---
 
+    async function ensureDaemonRunning(): Promise<boolean> {
+      if (_daemonReady) {
+        const ready = await _daemonReady;
+        if (!ready) return false;
+      }
+
+      const server = getServerForProject(projectRoot);
+      if (server && isProcessRunning(server.pid)) return true;
+
+      // Daemon died — restart it
+      console.log("[MCP] Daemon not running, restarting...");
+      _daemonReady = ensureDaemon(projectRoot);
+      return _daemonReady;
+    }
+
     async function handleSemanticSearch(args: Record<string, unknown>): Promise<ToolResult> {
       const query = String(args.query || "");
       if (!query) return err("Missing required parameter: query");
@@ -270,21 +285,13 @@ export const mcp = new Command("mcp")
       const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 50);
       const searchPath = typeof args.path === "string" ? args.path : undefined;
 
-      // Wait for daemon startup if still in progress
-      if (_daemonReady) {
-        const ready = await _daemonReady;
-        if (!ready) {
-          return err(
-            "Search daemon failed to start. Run 'osgrep serve -b' manually.",
-          );
-        }
+      if (!(await ensureDaemonRunning())) {
+        return err("Search daemon failed to start. Run 'osgrep serve -b' manually.");
       }
 
       const server = getServerForProject(projectRoot);
       if (!server || !isProcessRunning(server.pid)) {
-        return err(
-          "Search daemon not running. Run 'osgrep serve -b' manually.",
-        );
+        return err("Search daemon not running. Run 'osgrep serve -b' manually.");
       }
 
       try {
@@ -499,10 +506,7 @@ export const mcp = new Command("mcp")
     }
 
     async function handleIndexStatus(): Promise<ToolResult> {
-      // Wait for daemon startup if still in progress
-      if (_daemonReady) {
-        await _daemonReady;
-      }
+      await ensureDaemonRunning();
 
       const server = getServerForProject(projectRoot);
       if (!server || !isProcessRunning(server.pid)) {
