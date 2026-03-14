@@ -92,7 +92,8 @@ export const serve = new Command("serve")
         .filter((arg) => arg !== "-b" && arg !== "--background");
       const logDir = path.join(PATHS.globalRoot, "logs");
       fs.mkdirSync(logDir, { recursive: true });
-      const logFile = path.join(logDir, "server.log");
+      const safeName = path.basename(projectRoot).replace(/[^a-zA-Z0-9._-]/g, "_");
+      const logFile = path.join(logDir, `server-${safeName}.log`);
       const out = fs.openSync(logFile, "a");
       const err = fs.openSync(logFile, "a");
 
@@ -108,6 +109,7 @@ export const serve = new Command("serve")
     }
 
     const paths = ensureProjectPaths(projectRoot);
+    const projectName = path.basename(projectRoot);
 
     // Propagate project root to worker processes
     process.env.OSGREP_PROJECT_ROOT = projectRoot;
@@ -124,11 +126,11 @@ export const serve = new Command("serve")
     // MLX GPU embed server — started when GPU mode is active.
     let mlxChild: ChildProcess | null = null;
     if (!useGpu) {
-      console.log("[serve] CPU-only mode");
+      console.log(`[serve:${projectName}] CPU-only mode`);
     } else {
       const mlxUp = await isMlxServerUp();
       if (mlxUp) {
-        console.log("[serve] MLX GPU server already running");
+        console.log(`[serve:${projectName}] MLX GPU server already running`);
       } else {
         mlxChild = startMlxServer(mlxModel);
         if (mlxChild) {
@@ -137,18 +139,18 @@ export const serve = new Command("serve")
           for (let i = 0; i < 30; i++) {
             await new Promise((r) => setTimeout(r, 1000));
             if (await isMlxServerUp()) {
-              console.log("[serve] MLX GPU server ready");
+              console.log(`[serve:${projectName}] MLX GPU server ready`);
               ready = true;
               break;
             }
           }
           if (!ready) {
-            console.error("[serve] MLX GPU server failed to start. Run with --cpu to use CPU embeddings.");
+            console.error(`[serve:${projectName}] MLX GPU server failed to start. Run with --cpu to use CPU embeddings.`);
             process.exitCode = 1;
             return;
           }
         } else {
-          console.error("[serve] MLX server not found. Run with --cpu to use CPU embeddings.");
+          console.error(`[serve:${projectName}] MLX server not found. Run with --cpu to use CPU embeddings.`);
           process.exitCode = 1;
           return;
         }
@@ -189,11 +191,11 @@ export const serve = new Command("serve")
         osgrepDir: paths.osgrepDir,
         onReindex: (files, durationMs) => {
           console.log(
-            `[watch] Reindexed ${files} file${files !== 1 ? "s" : ""} (${(durationMs / 1000).toFixed(1)}s)`,
+            `[watch:${projectName}] Reindexed ${files} file${files !== 1 ? "s" : ""} (${(durationMs / 1000).toFixed(1)}s)`,
           );
         },
       });
-      console.log("[serve] File watcher active");
+      console.log(`[serve:${projectName}] File watcher active`);
 
       // Idle timeout: shut down if no searches for 30 minutes
       // Disabled when started by MCP server (--no-idle-timeout)
@@ -202,7 +204,7 @@ export const serve = new Command("serve")
         const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
         const idleCheck = setInterval(() => {
           if (Date.now() - lastActivity > IDLE_TIMEOUT_MS) {
-            console.log("[serve] Idle timeout reached, shutting down.");
+            console.log(`[serve:${projectName}] Idle timeout reached, shutting down.`);
             clearInterval(idleCheck);
             process.kill(process.pid, "SIGTERM");
           }
@@ -346,7 +348,7 @@ export const serve = new Command("serve")
             });
 
             req.on("error", (err) => {
-              console.error("[serve] request error:", err);
+              console.error(`[serve:${projectName}] request error:`, err);
               aborted = true;
             });
 
@@ -356,7 +358,7 @@ export const serve = new Command("serve")
           res.statusCode = 404;
           res.end();
         } catch (err) {
-          console.error("[serve] request handler error:", err);
+          console.error(`[serve:${projectName}] request handler error:`, err);
           if (!res.headersSent) {
             res.statusCode = 500;
             res.setHeader("Content-Type", "application/json");
@@ -380,7 +382,7 @@ export const serve = new Command("serve")
             `Could not find an open port between ${startPort} and ${startPort + 9}`,
           );
         }
-        console.error("[serve] server error:", e);
+        console.error(`[serve:${projectName}] server error:`, e);
         // Ensure we exit if server fails to start
         process.exit(1);
       });
