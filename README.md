@@ -87,6 +87,10 @@ In our public benchmarks, `osgrep` can save about 20% of your LLM tokens and del
 1. Run `osgrep install-codex`
 2. Codex will use `osgrep` for semantic searches.
 
+### Factory Droid Plugin
+1. Run `osgrep install-droid`
+2. To remove: `osgrep uninstall-droid`
+
 ### MCP Server
 
 osgrep exposes tools via the [Model Context Protocol](https://modelcontextprotocol.io/) for any MCP-compatible AI agent or editor.
