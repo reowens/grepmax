@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  getLanguageByExtension,
   getGrammarUrl,
+  getLanguageByExtension,
 } from "../src/lib/core/languages";
 
 describe("getLanguageByExtension", () => {
@@ -33,6 +33,19 @@ describe("getLanguageByExtension", () => {
 
   it("returns rust for .rs", () => {
     expect(getLanguageByExtension(".rs")?.id).toBe("rust");
+  });
+
+  it("returns swift for .swift with grammar", () => {
+    const lang = getLanguageByExtension(".swift");
+    expect(lang?.id).toBe("swift");
+    expect(lang?.grammar).toBeDefined();
+  });
+
+  it("returns kotlin for .kt and .kts", () => {
+    expect(getLanguageByExtension(".kt")?.id).toBe("kotlin");
+    expect(getLanguageByExtension(".kts")?.id).toBe("kotlin");
+    const lang = getLanguageByExtension(".kt");
+    expect(lang?.grammar).toBeDefined();
   });
 
   it("returns undefined for unknown extension", () => {
@@ -71,5 +84,15 @@ describe("getGrammarUrl", () => {
   it("returns URL for python grammar", () => {
     const url = getGrammarUrl("python");
     expect(url).toContain("tree-sitter-python");
+  });
+
+  it("returns URL for swift grammar", () => {
+    const url = getGrammarUrl("swift");
+    expect(url).toContain("tree-sitter-swift");
+  });
+
+  it("returns URL for kotlin grammar", () => {
+    const url = getGrammarUrl("kotlin");
+    expect(url).toContain("tree-sitter-kotlin");
   });
 });

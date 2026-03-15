@@ -415,6 +415,7 @@ export class TreeSitterChunker {
           "property_identifier",
           "type_identifier",
           "field_identifier",
+          "simple_identifier", // Swift, Kotlin
         ].includes(c.type),
       );
       if (identifierChild?.text) return String(identifierChild.text);
@@ -482,7 +483,8 @@ export class TreeSitterChunker {
       // Metadata extraction
       if (
         node.type === "import_statement" ||
-        node.type === "import_declaration"
+        node.type === "import_declaration" ||
+        node.type === "import_header" // Kotlin
       ) {
         metadata.imports.push(node.text.trim());
       } else if (
@@ -584,6 +586,25 @@ export class TreeSitterChunker {
               }
 
               referencedSymbols.push(funcName);
+            } else {
+              // Swift/Kotlin: call_expression has no "function" field;
+              // the callable is a positional child
+              const firstChild = (n.namedChildren ?? [])[0];
+              if (firstChild) {
+                let funcName = firstChild.text;
+                if (firstChild.type === "navigation_expression") {
+                  const suffix = (firstChild.namedChildren ?? []).find(
+                    (c) => c.type === "navigation_suffix",
+                  );
+                  const methodId = suffix
+                    ? (suffix.namedChildren ?? []).find(
+                        (c) => c.type === "simple_identifier",
+                      )
+                    : null;
+                  if (methodId) funcName = methodId.text;
+                }
+                referencedSymbols.push(funcName);
+              }
             }
           }
           for (const child of n.namedChildren ?? []) {

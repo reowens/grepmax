@@ -266,7 +266,14 @@ export class Skeletonizer {
 
     if (typeof bodyFieldName === "string") {
       // This is a function/method - extract its body region
-      const bodyNode = node.childForFieldName?.(bodyFieldName);
+      // Try named field first, then fall back to finding child by type
+      // (some grammars like Kotlin use positional children, not named fields)
+      const bodyNode =
+        node.childForFieldName?.(bodyFieldName) ||
+        (node.namedChildren || []).find(
+          (c) => c.type === "function_body" || c.type === bodyFieldName,
+        ) ||
+        null;
       if (bodyNode) {
         const summary = this.createSummary(bodyNode, langId, opts);
         elisions.push({
@@ -468,6 +475,28 @@ export class Skeletonizer {
           if (funcName && !seen.has(funcName) && funcName.length < 30) {
             seen.add(funcName);
             refs.push(funcName);
+          }
+        } else {
+          // Swift/Kotlin: call_expression has no "function" field;
+          // the callable is a positional child
+          const firstChild = (n.namedChildren ?? [])[0];
+          if (firstChild) {
+            let funcName = firstChild.text;
+            if (firstChild.type === "navigation_expression") {
+              const suffix = (firstChild.namedChildren ?? []).find(
+                (c) => c.type === "navigation_suffix",
+              );
+              const methodId = suffix
+                ? (suffix.namedChildren ?? []).find(
+                    (c) => c.type === "simple_identifier",
+                  )
+                : null;
+              if (methodId) funcName = methodId.text;
+            }
+            if (funcName && !seen.has(funcName) && funcName.length < 30) {
+              seen.add(funcName);
+              refs.push(funcName);
+            }
           }
         }
       } else if (
