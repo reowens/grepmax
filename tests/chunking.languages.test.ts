@@ -96,10 +96,7 @@ object GeometryUtils {
 describe.skipIf(!hasSwiftGrammar)("Swift chunking", () => {
   it("extracts function and class definitions", async () => {
     const chunker = new TreeSitterChunker();
-    const { chunks, metadata } = await chunker.chunk(
-      "example.swift",
-      SWIFT_CODE,
-    );
+    const { chunks } = await chunker.chunk("example.swift", SWIFT_CODE);
 
     const defined = chunks.flatMap((c) => c.definedSymbols ?? []);
     expect(defined).toContain("Person");
@@ -123,7 +120,7 @@ describe.skipIf(!hasSwiftGrammar)("Swift chunking", () => {
       c.definedSymbols?.includes("createPerson"),
     );
     expect(createPersonChunk).toBeDefined();
-    expect(createPersonChunk!.referencedSymbols).toContain("Person");
+    expect(createPersonChunk?.referencedSymbols).toContain("Person");
   });
 
   it("captures imports", async () => {
@@ -160,7 +157,7 @@ describe.skipIf(!hasKotlinGrammar)("Kotlin chunking", () => {
       c.definedSymbols?.includes("distance"),
     );
     expect(distanceChunk).toBeDefined();
-    expect(distanceChunk!.referencedSymbols).toContain("sqrt");
+    expect(distanceChunk?.referencedSymbols).toContain("sqrt");
   });
 
   it("captures imports", async () => {
@@ -223,6 +220,6 @@ describe.skipIf(!hasLuaGrammar)("Lua chunking", () => {
       c.definedSymbols?.includes("farewell"),
     );
     expect(farewellChunk).toBeDefined();
-    expect(farewellChunk!.referencedSymbols).toContain("greet");
+    expect(farewellChunk?.referencedSymbols).toContain("greet");
   });
 });

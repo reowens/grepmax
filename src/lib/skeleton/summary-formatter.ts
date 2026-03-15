@@ -83,7 +83,6 @@ function getCommentPrefix(style: "slash" | "hash" | "dash"): string {
       return "#";
     case "dash":
       return "--";
-    case "slash":
     default:
       return "//";
   }

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { MAX_FILE_SIZE_BYTES } from "../src/config";
 import {
   computeBufferHash,

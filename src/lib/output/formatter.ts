@@ -145,7 +145,7 @@ export function formatTrace(graph: {
   }
 
   // 2. Center (The Symbol)
-  lines.push(style.bold("▶ " + graph.center.symbol));
+  lines.push(style.bold(`▶ ${graph.center.symbol}`));
   lines.push(
     `  ${style.dim(`Defined in ${graph.center.file}:${graph.center.line}`)}`,
   );

@@ -46,7 +46,7 @@ async function installPlugin() {
 
     // Only append if not present
     if (!content.includes("name: gmax")) {
-      fs.appendFileSync(destPath, "\n" + SKILL);
+      fs.appendFileSync(destPath, `\n${SKILL}`);
       console.log("✅ gmax skill instructions added to Codex");
     } else {
       console.log("ℹ️  gmax skill instructions already present");
@@ -61,7 +61,7 @@ async function uninstallPlugin() {
   try {
     await execAsync("codex mcp remove osgrep", { shell, env: process.env });
     console.log("✅ gmax MCP tool removed");
-  } catch (e) {
+  } catch (_e) {
     /* ignore if not found */
   }
 
