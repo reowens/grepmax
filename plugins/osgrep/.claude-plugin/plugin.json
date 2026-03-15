@@ -1,6 +1,6 @@
 {
   "name": "osgrep",
-  "version": "0.7.0",
+  "version": "0.1.0",
   "description": "Semantic code search for Claude Code. Automatically indexes your project and provides intelligent search capabilities.",
   "author": {
     "name": "Robert Owens",
