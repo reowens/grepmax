@@ -1,6 +1,6 @@
 {
-  "name": "osgrep",
-  "version": "0.6.0",
+  "name": "osgrep-max",
+  "version": "0.7.0",
   "author": "Robert Owens <robowens@me.com>",
   "homepage": "https://github.com/reowens/osgrep-max",
   "bugs": {
