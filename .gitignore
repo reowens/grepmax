@@ -23,6 +23,7 @@ benchmarks/*.log
 .osgrep
 TODO.md
 AGENTS.md
+docs/
 
 # Python
 __pycache__/
