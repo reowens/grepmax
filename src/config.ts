@@ -76,6 +76,7 @@ export const INDEXABLE_EXTENSIONS: Set<string> = new Set([
   ".cs",
   ".swift",
   ".kt",
+  ".kts",
   ".scala",
   ".lua",
   ".sh",

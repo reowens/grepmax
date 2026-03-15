@@ -176,6 +176,32 @@ export const LANGUAGES: LanguageDefinition[] = [
     ],
   },
   {
+    id: "swift",
+    extensions: [".swift"],
+    grammar: {
+      name: "swift",
+      url: "https://github.com/alex-pinkus/tree-sitter-swift/releases/download/0.7.1-pypi/tree-sitter-swift.wasm",
+    },
+    definitionTypes: [
+      "function_declaration",
+      "class_declaration", // covers class, struct, enum, actor
+      "protocol_declaration",
+    ],
+  },
+  {
+    id: "kotlin",
+    extensions: [".kt", ".kts"],
+    grammar: {
+      name: "kotlin",
+      url: "https://github.com/fwcd/tree-sitter-kotlin/releases/download/0.3.8/tree-sitter-kotlin.wasm",
+    },
+    definitionTypes: [
+      "function_declaration",
+      "class_declaration", // covers class, interface, enum class
+      "object_declaration", // object singletons, companion objects
+    ],
+  },
+  {
     id: "json",
     extensions: [".json"],
     grammar: {

@@ -109,6 +109,18 @@ export const BODY_FIELDS: Record<string, Record<string, string | null>> = {
     interface_declaration: null,
     trait_declaration: null, // Container
   },
+
+  swift: {
+    function_declaration: "body", // → function_body
+    class_declaration: null, // Container (class/struct/enum/actor)
+    protocol_declaration: null, // Container
+  },
+
+  kotlin: {
+    function_declaration: "body", // → function_body
+    class_declaration: null, // Container (class/interface/enum)
+    object_declaration: null, // Container (object/companion)
+  },
 };
 
 /**
@@ -128,6 +140,13 @@ export const CONTAINER_TYPES: Record<string, string[]> = {
   c: [],
   ruby: ["class", "module"],
   php: ["class_declaration", "trait_declaration"],
+  swift: [
+    "class_declaration",
+    "class_body",
+    "protocol_declaration",
+    "protocol_body",
+  ],
+  kotlin: ["class_declaration", "class_body", "object_declaration"],
 };
 
 /**
