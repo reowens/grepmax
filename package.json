@@ -2,13 +2,13 @@
   "name": "grepmax",
   "version": "0.7.0",
   "author": "Robert Owens <robowens@me.com>",
-  "homepage": "https://github.com/reowens/osgrep-max",
+  "homepage": "https://github.com/reowens/grepmax",
   "bugs": {
-    "url": "https://github.com/reowens/osgrep-max/issues"
+    "url": "https://github.com/reowens/grepmax/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/reowens/osgrep-max.git"
+    "url": "https://github.com/reowens/grepmax.git"
   },
   "main": "index.js",
   "bin": {
