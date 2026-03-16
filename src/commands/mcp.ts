@@ -40,7 +40,7 @@ const TOOLS = [
         },
         limit: {
           type: "number",
-          description: "Max results to return (default 10, max 50)",
+          description: "Max results to return (default 3, max 50)",
         },
         root: {
           type: "string",
@@ -51,6 +51,11 @@ const TOOLS = [
           type: "string",
           description:
             "Restrict search to files under this path prefix (e.g. 'src/auth/'). Relative to the search root.",
+        },
+        detail: {
+          type: "string",
+          description:
+            "Output detail: 'pointer' (default, metadata only — symbol, location, role, calls) or 'code' (include 4-line code snippets)",
         },
         min_score: {
           type: "number",
@@ -79,7 +84,12 @@ const TOOLS = [
         },
         limit: {
           type: "number",
-          description: "Max results to return (default 10, max 50)",
+          description: "Max results to return (default 3, max 50)",
+        },
+        detail: {
+          type: "string",
+          description:
+            "Output detail: 'pointer' (default) or 'code' (include snippets)",
         },
         min_score: {
           type: "number",
@@ -378,8 +388,8 @@ export const mcp = new Command("mcp")
           typeof args.min_score === "number" ? args.min_score : 0;
         const maxPerFile =
           typeof args.max_per_file === "number" ? args.max_per_file : 0;
-
-        const MAX_SNIPPET_LINES = 4;
+        const detail =
+          typeof args.detail === "string" ? args.detail : "pointer";
 
         let results = result.data.map((r: any) => {
           const absPath = r.path ?? r.metadata?.path ?? "";
@@ -389,28 +399,57 @@ export const mcp = new Command("mcp")
           const startLine =
             r.startLine ?? r.generated_metadata?.start_line ?? 0;
           const endLine = r.endLine ?? r.generated_metadata?.end_line ?? 0;
-          const score = typeof r.score === "number" ? r.score.toFixed(2) : "0";
-          const role = (r.role ?? "IMPL").slice(0, 4).toUpperCase();
           const defs = toStringArray(
             r.definedSymbols ?? r.defined_symbols,
-          ).slice(0, 3);
-          const raw =
-            typeof r.content === "string"
-              ? r.content
-              : typeof r.text === "string"
-                ? r.text
-                : "";
-
-          const lines = raw.split("\n");
-          const capped = lines.slice(0, MAX_SNIPPET_LINES);
-          const numbered = capped.map(
-            (line: string, i: number) => `${startLine + i + 1}│${line}`,
           );
+          const refs = toStringArray(
+            r.referenced_symbols ?? r.referencedSymbols,
+          );
+          const symbol = defs[0] || "(anonymous)";
+          const role = (r.role ?? "IMPL").slice(0, 4).toUpperCase();
+          const exported = r.is_exported ? "exported " : "";
+          const complexity =
+            typeof r.complexity === "number" && r.complexity > 0
+              ? ` C:${Math.round(r.complexity)}`
+              : "";
+          const parentStr = r.parent_symbol
+            ? `parent:${r.parent_symbol} `
+            : "";
+          const callsStr =
+            refs.length > 0
+              ? `calls:${refs.slice(0, 8).join(",")}`
+              : "";
 
-          const header = `${relPath}:${startLine + 1}-${endLine + 1} [${role}] score:${score}${defs.length ? ` defines:${defs.join(",")}` : ""}`;
-          const snippet = numbered.join("\n");
+          const line1 = `${symbol} [${exported}${role}${complexity}] ${relPath}:${startLine + 1}-${endLine + 1}`;
+          const line2 =
+            parentStr || callsStr
+              ? `  ${parentStr}${callsStr}`
+              : "";
 
-          return { absPath, header, snippet, score: +score };
+          let snippet = "";
+          if (detail === "code") {
+            const raw =
+              typeof r.content === "string"
+                ? r.content
+                : typeof r.text === "string"
+                  ? r.text
+                  : "";
+            const lines = raw.split("\n").slice(0, 4);
+            snippet =
+              "\n" +
+              lines
+                .map(
+                  (l: string, i: number) => `${startLine + i + 1}│${l}`,
+                )
+                .join("\n");
+          }
+
+          const text = line1 + (line2 ? `\n${line2}` : "") + snippet;
+          return {
+            absPath,
+            text,
+            score: typeof r.score === "number" ? r.score : 0,
+          };
         });
 
         if (minScore > 0) {
@@ -427,10 +466,7 @@ export const mcp = new Command("mcp")
           });
         }
 
-        const output = results
-          .map((r) => `${r.header}\n${r.snippet}`)
-          .join("\n\n");
-        return ok(output);
+        return ok(results.map((r) => r.text).join("\n\n"));
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         return err(`Search failed: ${msg}`);
