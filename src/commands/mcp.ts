@@ -334,28 +334,28 @@ export const mcp = new Command("mcp")
       const query = String(args.query || "");
       if (!query) return err("Missing required parameter: query");
 
-      const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 50);
+      const limit = Math.min(Math.max(Number(args.limit) || 3, 1), 50);
 
       await ensureIndexReady();
 
       try {
         const searcher = getSearcher();
 
-        // Determine path prefix for scoping
+        // Determine path prefix and display root for relative paths
         let pathPrefix: string | undefined;
+        let displayRoot = projectRoot;
 
         if (!searchAll) {
-          // Resolve search root — default to project root
           const searchRoot =
             typeof args.root === "string"
               ? path.resolve(args.root)
               : path.resolve(projectRoot);
 
+          displayRoot = searchRoot;
           pathPrefix = searchRoot.endsWith("/")
             ? searchRoot
             : `${searchRoot}/`;
 
-          // If a sub-path is specified, append it
           if (typeof args.path === "string") {
             pathPrefix = path.join(searchRoot, args.path);
             if (!pathPrefix.endsWith("/")) pathPrefix += "/";
@@ -379,11 +379,21 @@ export const mcp = new Command("mcp")
         const maxPerFile =
           typeof args.max_per_file === "number" ? args.max_per_file : 0;
 
-        const MAX_SNIPPET_LINES = 8;
+        const MAX_SNIPPET_LINES = 4;
 
-        let compact = result.data.map((r: any) => {
+        let results = result.data.map((r: any) => {
+          const absPath = r.path ?? r.metadata?.path ?? "";
+          const relPath = absPath.startsWith(displayRoot)
+            ? absPath.slice(displayRoot.length + 1)
+            : absPath;
           const startLine =
             r.startLine ?? r.generated_metadata?.start_line ?? 0;
+          const endLine = r.endLine ?? r.generated_metadata?.end_line ?? 0;
+          const score = typeof r.score === "number" ? r.score.toFixed(2) : "0";
+          const role = (r.role ?? "IMPL").slice(0, 4).toUpperCase();
+          const defs = toStringArray(
+            r.definedSymbols ?? r.defined_symbols,
+          ).slice(0, 3);
           const raw =
             typeof r.content === "string"
               ? r.content
@@ -391,46 +401,36 @@ export const mcp = new Command("mcp")
                 ? r.text
                 : "";
 
-          // Add line numbers and cap at MAX_SNIPPET_LINES
           const lines = raw.split("\n");
           const capped = lines.slice(0, MAX_SNIPPET_LINES);
           const numbered = capped.map(
             (line: string, i: number) => `${startLine + i + 1}│${line}`,
           );
-          const snippet =
-            lines.length > MAX_SNIPPET_LINES
-              ? `${numbered.join("\n")}\n… (+${lines.length - MAX_SNIPPET_LINES} more lines)`
-              : numbered.join("\n");
 
-          return {
-            path: r.path ?? r.metadata?.path ?? "",
-            startLine,
-            endLine: r.endLine ?? r.generated_metadata?.end_line ?? 0,
-            score: typeof r.score === "number" ? +r.score.toFixed(3) : 0,
-            role: r.role ?? "IMPLEMENTATION",
-            confidence: r.confidence ?? "Unknown",
-            definedSymbols: toStringArray(
-              r.definedSymbols ?? r.defined_symbols,
-            ).slice(0, 5),
-            snippet,
-          };
+          const header = `${relPath}:${startLine + 1}-${endLine + 1} [${role}] score:${score}${defs.length ? ` defines:${defs.join(",")}` : ""}`;
+          const snippet = numbered.join("\n");
+
+          return { absPath, header, snippet, score: +score };
         });
 
         if (minScore > 0) {
-          compact = compact.filter((r) => r.score >= minScore);
+          results = results.filter((r) => r.score >= minScore);
         }
 
         if (maxPerFile > 0) {
           const counts = new Map<string, number>();
-          compact = compact.filter((r) => {
-            const count = counts.get(r.path) || 0;
+          results = results.filter((r) => {
+            const count = counts.get(r.absPath) || 0;
             if (count >= maxPerFile) return false;
-            counts.set(r.path, count + 1);
+            counts.set(r.absPath, count + 1);
             return true;
           });
         }
 
-        return ok(JSON.stringify(compact));
+        const output = results
+          .map((r) => `${r.header}\n${r.snippet}`)
+          .join("\n\n");
+        return ok(output);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         return err(`Search failed: ${msg}`);
