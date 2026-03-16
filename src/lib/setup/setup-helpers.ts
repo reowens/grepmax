@@ -23,7 +23,7 @@ function getPaths(): SetupPaths {
 }
 
 /**
- * Idempotent helper that ensures osgrep directories and models exist.
+ * Idempotent helper that ensures gmax directories and models exist.
  * Returns status about work performed so callers can decide what to show.
  */
 export async function ensureSetup({
@@ -38,9 +38,7 @@ export async function ensureSetup({
   let createdDirs = false;
 
   const dirSpinner =
-    !silent && needsDirs
-      ? ora("Preparing osgrep directories...").start()
-      : null;
+    !silent && needsDirs ? ora("Preparing gmax directories...").start() : null;
   try {
     if (needsDirs) {
       dirs.forEach((dir) => {

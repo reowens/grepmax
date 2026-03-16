@@ -92,7 +92,7 @@ async function collectSymbols(options: {
 
 function formatTable(entries: SymbolEntry[]): string {
   if (entries.length === 0) {
-    return "No symbols found. Run `osgrep index` to build the index.";
+    return "No symbols found. Run `gmax index` to build the index.";
   }
 
   const rows = entries.map((e) => ({

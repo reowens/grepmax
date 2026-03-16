@@ -1,7 +1,7 @@
-"""MLX-accelerated embedding server for osgrep.
+"""MLX-accelerated embedding server for grepmax.
 
 Serves granite-embedding-small-english-r2 on Apple Silicon GPU via MLX.
-osgrep workers call POST /embed with {"texts": [...]} and get back {"vectors": [...]}.
+gmax workers call POST /embed with {"texts": [...]} and get back {"vectors": [...]}.
 Falls through to ONNX CPU if this server isn't running.
 
 IMPORTANT: All MLX operations must run on a single thread. FastAPI async

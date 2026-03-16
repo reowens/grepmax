@@ -83,7 +83,6 @@ function getCommentPrefix(style: "slash" | "hash" | "dash"): string {
       return "#";
     case "dash":
       return "--";
-    case "slash":
     default:
       return "//";
   }
@@ -114,8 +113,6 @@ export function formatSkeletonHeader(
   tokenEstimate: number,
   langId?: string,
 ): string {
-  const prefix = langId
-    ? getCommentPrefix(getCommentStyle(langId))
-    : "//";
+  const prefix = langId ? getCommentPrefix(getCommentStyle(langId)) : "//";
   return `${prefix} ${filePath} (skeleton, ~${tokenEstimate} tokens)`;
 }

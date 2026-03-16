@@ -44,8 +44,8 @@ export type RerankDoc = {
 
 const CACHE_DIR = PATHS.models;
 const LOG_MODELS =
-  process.env.OSGREP_DEBUG_MODELS === "1" ||
-  process.env.OSGREP_DEBUG_MODELS === "true";
+  process.env.GMAX_DEBUG_MODELS === "1" ||
+  process.env.GMAX_DEBUG_MODELS === "true";
 const log = (...args: unknown[]) => {
   if (LOG_MODELS) console.log(...args);
 };
@@ -54,8 +54,8 @@ env.cacheDir = CACHE_DIR;
 env.allowLocalModels = true;
 env.allowRemoteModels = true;
 
-const PROJECT_ROOT = process.env.OSGREP_PROJECT_ROOT
-  ? path.resolve(process.env.OSGREP_PROJECT_ROOT)
+const PROJECT_ROOT = process.env.GMAX_PROJECT_ROOT
+  ? path.resolve(process.env.GMAX_PROJECT_ROOT)
   : process.cwd();
 const LOCAL_MODELS = path.join(PROJECT_ROOT, "models");
 if (fs.existsSync(LOCAL_MODELS)) {
@@ -64,12 +64,17 @@ if (fs.existsSync(LOCAL_MODELS)) {
 }
 
 export class WorkerOrchestrator {
-  private granite = new GraniteModel();
+  private granite: GraniteModel;
   private colbert = new ColbertModel();
   private chunker = new TreeSitterChunker();
   private skeletonizer = new Skeletonizer();
   private initPromise: Promise<void> | null = null;
-  private readonly vectorDimensions = CONFIG.VECTOR_DIM;
+  private readonly vectorDimensions: number;
+
+  constructor(vectorDim?: number) {
+    this.vectorDimensions = vectorDim ?? CONFIG.VECTOR_DIM;
+    this.granite = new GraniteModel(this.vectorDimensions);
+  }
 
   private async ensureReady() {
     if (this.granite.isReady() && this.colbert.isReady()) {
@@ -100,7 +105,7 @@ export class WorkerOrchestrator {
 
     const results: HybridResult[] = [];
     const envBatch = Number.parseInt(
-      process.env.OSGREP_WORKER_BATCH_SIZE ?? "",
+      process.env.GMAX_WORKER_BATCH_SIZE ?? "",
       10,
     );
     const BATCH_SIZE =
@@ -289,7 +294,8 @@ export class WorkerOrchestrator {
 
     // Try MLX GPU server first, fall back to ONNX CPU
     const mlxResult = await mlxEmbed([text]);
-    const denseVector = mlxResult?.[0] ?? (await this.granite.runBatch([text]))[0];
+    const denseVector =
+      mlxResult?.[0] ?? (await this.granite.runBatch([text]))[0];
 
     const encoded = await this.colbert.encodeQuery(text);
 

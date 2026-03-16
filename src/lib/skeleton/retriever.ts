@@ -20,7 +20,7 @@ export async function getStoredSkeleton(
       }
     }
     return null;
-  } catch (e) {
+  } catch (_e) {
     // If table doesn't exist or query fails, return null
     return null;
   }

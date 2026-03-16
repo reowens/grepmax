@@ -4,7 +4,7 @@ import { PATHS } from "../../config";
 
 export interface ProjectPaths {
   root: string;
-  osgrepDir: string;
+  dataDir: string;
   lancedbDir: string;
   cacheDir: string;
   lmdbPath: string;
@@ -15,10 +15,10 @@ export function findProjectRoot(startDir = process.cwd()): string | null {
   const start = path.resolve(startDir);
 
   // Only consider the current directory; do not climb above the user's cwd.
-  const osgrepDir = path.join(start, ".osgrep");
+  const dataDir = path.join(start, ".gmax");
   const gitDir = path.join(start, ".git");
   if (
-    (fs.existsSync(osgrepDir) || fs.existsSync(gitDir)) &&
+    (fs.existsSync(dataDir) || fs.existsSync(gitDir)) &&
     path.resolve(start) !== path.resolve(PATHS.globalRoot)
   ) {
     return start;
@@ -33,21 +33,21 @@ export function ensureProjectPaths(
   options?: { dryRun?: boolean },
 ): ProjectPaths {
   const root = findProjectRoot(startDir) ?? path.resolve(startDir);
-  const osgrepDir = path.join(root, ".osgrep");
-  const lancedbDir = path.join(osgrepDir, "lancedb");
-  const cacheDir = path.join(osgrepDir, "cache");
+  const dataDir = path.join(root, ".gmax");
+  const lancedbDir = path.join(dataDir, "lancedb");
+  const cacheDir = path.join(dataDir, "cache");
   const lmdbPath = path.join(cacheDir, "meta.lmdb");
-  const configPath = path.join(osgrepDir, "config.json");
+  const configPath = path.join(dataDir, "config.json");
 
   if (!options?.dryRun) {
-    [osgrepDir, lancedbDir, cacheDir].forEach((dir) => {
+    [dataDir, lancedbDir, cacheDir].forEach((dir) => {
       fs.mkdirSync(dir, { recursive: true });
     });
 
     ensureGitignoreEntry(root);
   }
 
-  return { root, osgrepDir, lancedbDir, cacheDir, lmdbPath, configPath };
+  return { root, dataDir, lancedbDir, cacheDir, lmdbPath, configPath };
 }
 
 function fileContainsEntry(filePath: string, entry: string): boolean {
@@ -66,7 +66,7 @@ function ensureGitignoreEntry(root: string) {
   // Only add when inside a git repo.
   if (!fs.existsSync(path.join(root, ".git"))) return;
 
-  const entry = ".osgrep";
+  const entry = ".gmax";
 
   // Check .git/info/exclude first
   const excludePath = path.join(root, ".git", "info", "exclude");

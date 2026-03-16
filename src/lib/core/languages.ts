@@ -202,6 +202,29 @@ export const LANGUAGES: LanguageDefinition[] = [
     ],
   },
   {
+    id: "scala",
+    extensions: [".scala", ".sc"],
+    grammar: {
+      name: "scala",
+      url: "https://github.com/tree-sitter/tree-sitter-scala/releases/download/v0.25.0/tree-sitter-scala.wasm",
+    },
+    definitionTypes: [
+      "function_definition",
+      "class_definition",
+      "object_definition",
+      "trait_definition",
+    ],
+  },
+  {
+    id: "lua",
+    extensions: [".lua"],
+    grammar: {
+      name: "lua",
+      url: "https://github.com/tree-sitter-grammars/tree-sitter-lua/releases/download/v0.5.0/tree-sitter-lua.wasm",
+    },
+    definitionTypes: ["function_declaration"],
+  },
+  {
     id: "json",
     extensions: [".json"],
     grammar: {
@@ -229,6 +252,11 @@ export const LANGUAGES: LanguageDefinition[] = [
   {
     id: "bash",
     extensions: [".sh"],
+    grammar: {
+      name: "bash",
+      url: "https://github.com/tree-sitter/tree-sitter-bash/releases/download/v0.25.1/tree-sitter-bash.wasm",
+    },
+    definitionTypes: ["function_definition"],
   },
 ];
 

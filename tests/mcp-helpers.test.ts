@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toStringArray, ok, err } from "../src/commands/mcp";
+import { err, ok, toStringArray } from "../src/commands/mcp";
 
 describe("toStringArray", () => {
   it("returns strings from a string array", () => {

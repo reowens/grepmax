@@ -26,7 +26,7 @@ async function getIgnoreFilter(
       const content = await fs.readFile(ignorePath, "utf-8");
       if (!filter) filter = ignore();
       filter.add(content);
-    } catch (err) {
+    } catch (_err) {
       // Ignore missing files
     }
   }
@@ -38,7 +38,7 @@ export async function* walk(
   rootDir: string,
   options: WalkOptions = {},
 ): AsyncGenerator<string> {
-  const ignoreFiles = options.ignoreFiles || [".gitignore", ".osgrepignore"];
+  const ignoreFiles = options.ignoreFiles || [".gitignore", ".gmaxignore"];
   const rootParams = ignore().add(DEFAULT_IGNORE_PATTERNS);
   if (options.additionalPatterns) {
     rootParams.add(options.additionalPatterns);
@@ -75,7 +75,7 @@ async function* _walk(
   let entries: Dirent[];
   try {
     entries = await fs.readdir(currentDir, { withFileTypes: true });
-  } catch (err) {
+  } catch (_err) {
     return;
   }
 

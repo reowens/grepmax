@@ -121,6 +121,21 @@ export const BODY_FIELDS: Record<string, Record<string, string | null>> = {
     class_declaration: null, // Container (class/interface/enum)
     object_declaration: null, // Container (object/companion)
   },
+
+  bash: {
+    function_definition: "body", // positional fallback → compound_statement
+  },
+
+  scala: {
+    function_definition: "body", // positional — expression bodies
+    class_definition: null, // Container
+    object_definition: null, // Container
+    trait_definition: null, // Container
+  },
+
+  lua: {
+    function_declaration: "body", // named "body" field → block
+  },
 };
 
 /**
@@ -147,6 +162,14 @@ export const CONTAINER_TYPES: Record<string, string[]> = {
     "protocol_body",
   ],
   kotlin: ["class_declaration", "class_body", "object_declaration"],
+  bash: [],
+  scala: [
+    "class_definition",
+    "object_definition",
+    "trait_definition",
+    "template_body",
+  ],
+  lua: [],
 };
 
 /**

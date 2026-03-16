@@ -271,7 +271,12 @@ export class Skeletonizer {
       const bodyNode =
         node.childForFieldName?.(bodyFieldName) ||
         (node.namedChildren || []).find(
-          (c) => c.type === "function_body" || c.type === bodyFieldName,
+          (c) =>
+            c.type === "function_body" ||
+            c.type === "compound_statement" ||
+            c.type === "block" ||
+            c.type === "template_body" ||
+            c.type === bodyFieldName,
         ) ||
         null;
       if (bodyNode) {
@@ -457,7 +462,11 @@ export class Skeletonizer {
     const seen = new Set<string>();
 
     const extract = (n: TreeSitterNode) => {
-      if (n.type === "call_expression" || n.type === "call") {
+      if (
+        n.type === "call_expression" ||
+        n.type === "call" ||
+        n.type === "function_call"
+      ) {
         const func = n.childForFieldName?.("function");
         if (func) {
           let funcName = func.text;

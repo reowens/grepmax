@@ -70,7 +70,7 @@ type PendingTask<M extends TaskMethod = TaskMethod> = {
 
 const TASK_TIMEOUT_MS = (() => {
   const fromEnv = Number.parseInt(
-    process.env.OSGREP_WORKER_TASK_TIMEOUT_MS ?? "",
+    process.env.GMAX_WORKER_TASK_TIMEOUT_MS ?? "",
     10,
   );
   if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv;

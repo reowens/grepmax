@@ -5,23 +5,23 @@ import { Command } from "commander";
 
 const SKILL = `
 ---
-name: osgrep
+name: gmax
 description: Semantic code search and call-graph tracing for AI agents. Finds code by concept, surfaces roles (ORCHESTRATION vs DEFINITION), and traces dependencies.
-allowed-tools: "Bash(osgrep:*), Read"
+allowed-tools: "Bash(gmax:*), Read"
 license: Apache-2.0
 ---
 
 ## ⚠️ CRITICAL: Handling "Indexing" State
-If any \`osgrep\` command returns a status indicating **"Indexing"**, **"Building"**, or **"Syncing"**:
+If any \`gmax\` command returns a status indicating **"Indexing"**, **"Building"**, or **"Syncing"**:
 1. **STOP** your current train of thought.
 2. **INFORM** the user: "The semantic index is currently building. Search results will be incomplete."
 3. **ASK**: "Do you want me to proceed with partial results, or wait for indexing to finish?"
    *(Do not assume you should proceed without confirmation).*
 
 ## Core Commands
-- Search: \`osgrep "how does auth work" --compact\`
-- Trace: \`osgrep trace "AuthService"\`
-- Symbols: \`osgrep symbols "Auth"\`
+- Search: \`gmax "how does auth work" --compact\`
+- Trace: \`gmax trace "AuthService"\`
+- Symbols: \`gmax symbols "Auth"\`
 
 ## Output (Default = Compact TSV)
 - One line per hit: \`path\\tlines\\tscore\\trole\\tconf\\tdefined\\tpreview\`
@@ -32,17 +32,17 @@ If any \`osgrep\` command returns a status indicating **"Indexing"**, **"Buildin
 
 1. **Discover**
    \`\`\`bash
-   osgrep "worker pool lifecycle" --compact
+   gmax "worker pool lifecycle" --compact
    \`\`\`
 
 2. **Explore**
    \`\`\`bash
-   osgrep symbols Worker
+   gmax symbols Worker
    \`\`\`
 
 3. **Trace**
    \`\`\`bash
-   osgrep trace WorkerPool
+   gmax trace WorkerPool
    \`\`\`
 
 4. **Read**
@@ -130,26 +130,26 @@ function mergeHooks(
 
 async function installPlugin() {
   const root = resolveDroidRoot();
-  const hooksDir = path.join(root, "hooks", "osgrep");
-  const skillsDir = path.join(root, "skills", "osgrep");
+  const hooksDir = path.join(root, "hooks", "gmax");
+  const skillsDir = path.join(root, "skills", "gmax");
   const settingsPath = path.join(root, "settings.json");
 
   // 1. Install Hook Scripts (Start/Stop Daemon)
   // We expect these files to exist in your dist/hooks folder
-  const startJsPath = path.join(hooksDir, "osgrep_start.js");
-  const stopJsPath = path.join(hooksDir, "osgrep_stop.js");
+  const startJsPath = path.join(hooksDir, "gmax_start.js");
+  const stopJsPath = path.join(hooksDir, "gmax_stop.js");
 
   // Create these scripts dynamically if we don't want to read from dist
   const startScript = `
 const { spawn } = require("child_process");
 const fs = require("fs");
-const out = fs.openSync("/tmp/osgrep.log", "a");
-const child = spawn("osgrep", ["serve"], { detached: true, stdio: ["ignore", out, out] });
+const out = fs.openSync("/tmp/gmax.log", "a");
+const child = spawn("gmax", ["serve"], { detached: true, stdio: ["ignore", out, out] });
 child.unref();
 `;
   const stopScript = `
 const { spawnSync, execSync } = require("child_process");
-try { execSync("pkill -f 'osgrep serve'"); } catch {}
+try { execSync("pkill -f 'gmax serve'"); } catch {}
 `;
 
   writeFileIfChanged(startJsPath, startScript.trim());
@@ -183,29 +183,29 @@ try { execSync("pkill -f 'osgrep serve'"); } catch {}
   settings.hooks = mergeHooks(settings.hooks as HooksConfig, hookConfig);
   saveSettings(settingsPath, settings);
 
-  console.log(`✅ osgrep installed for Factory Droid (Hooks + Skill)`);
+  console.log(`✅ gmax installed for Factory Droid (Hooks + Skill)`);
 }
 
 async function uninstallPlugin() {
   const root = resolveDroidRoot();
-  const hooksDir = path.join(root, "hooks", "osgrep");
-  const skillsDir = path.join(root, "skills", "osgrep");
+  const hooksDir = path.join(root, "hooks", "gmax");
+  const skillsDir = path.join(root, "skills", "gmax");
 
   if (fs.existsSync(hooksDir))
     fs.rmSync(hooksDir, { recursive: true, force: true });
   if (fs.existsSync(skillsDir))
     fs.rmSync(skillsDir, { recursive: true, force: true });
 
-  console.log("✅ osgrep removed from Factory Droid");
+  console.log("✅ gmax removed from Factory Droid");
   console.log(
     "NOTE: You may want to manually clean up 'hooks' in ~/.factory/settings.json",
   );
 }
 
 export const installDroid = new Command("install-droid")
-  .description("Install osgrep for Factory Droid")
+  .description("Install gmax for Factory Droid")
   .action(installPlugin);
 
 export const uninstallDroid = new Command("uninstall-droid")
-  .description("Uninstall osgrep from Factory Droid")
+  .description("Uninstall gmax from Factory Droid")
   .action(uninstallPlugin);

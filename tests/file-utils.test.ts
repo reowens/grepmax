@@ -1,11 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import { MAX_FILE_SIZE_BYTES } from "../src/config";
 import {
   computeBufferHash,
   formatDenseSnippet,
   hasNullByte,
   isIndexableFile,
 } from "../src/lib/utils/file-utils";
-import { MAX_FILE_SIZE_BYTES } from "../src/config";
 
 describe("computeBufferHash", () => {
   it("returns consistent SHA256 hex for known input", () => {
@@ -61,9 +61,7 @@ describe("isIndexableFile", () => {
   });
 
   it("returns false for size exceeding MAX_FILE_SIZE_BYTES", () => {
-    expect(isIndexableFile("src/main.ts", MAX_FILE_SIZE_BYTES + 1)).toBe(
-      false,
-    );
+    expect(isIndexableFile("src/main.ts", MAX_FILE_SIZE_BYTES + 1)).toBe(false);
   });
 
   it("returns true at exactly MAX_FILE_SIZE_BYTES", () => {

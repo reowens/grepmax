@@ -4,7 +4,7 @@ import * as path from "node:path";
 
 import { LANGUAGES } from "../core/languages";
 
-export const GRAMMARS_DIR = path.join(os.homedir(), ".osgrep", "grammars");
+export const GRAMMARS_DIR = path.join(os.homedir(), ".gmax", "grammars");
 
 const GRAMMAR_URLS: Record<string, string> = {};
 for (const lang of LANGUAGES) {
@@ -16,7 +16,7 @@ for (const lang of LANGUAGES) {
 const downloadFile = async (url: string, dest: string) => {
   const response = await fetch(url, {
     headers: {
-      "User-Agent": "osgrep",
+      "User-Agent": "gmax",
     },
   });
   if (!response.ok) throw new Error(`Failed to download ${url}`);

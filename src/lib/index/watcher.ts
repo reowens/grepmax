@@ -1,12 +1,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { watch, type FSWatcher } from "chokidar";
+import { type FSWatcher, watch } from "chokidar";
+import type { MetaCache, MetaEntry } from "../store/meta-cache";
+import type { VectorRecord } from "../store/types";
+import type { VectorDB } from "../store/vector-db";
 import { isIndexableFile } from "../utils/file-utils";
 import { acquireWriterLockWithRetry } from "../utils/lock";
 import { getWorkerPool } from "../workers/pool";
-import type { VectorRecord } from "../store/types";
-import type { VectorDB } from "../store/vector-db";
-import type { MetaCache, MetaEntry } from "../store/meta-cache";
 
 export interface WatcherHandle {
   close: () => Promise<void>;
@@ -16,7 +16,7 @@ interface WatcherOptions {
   projectRoot: string;
   vectorDb: VectorDB;
   metaCache: MetaCache;
-  osgrepDir: string;
+  dataDir: string;
   onReindex?: (files: number, durationMs: number) => void;
 }
 
@@ -26,7 +26,7 @@ interface WatcherOptions {
 export const WATCHER_IGNORE_PATTERNS: Array<string | RegExp> = [
   "**/node_modules/**",
   "**/.git/**",
-  "**/.osgrep/**",
+  "**/.gmax/**",
   "**/dist/**",
   "**/build/**",
   "**/out/**",
@@ -36,14 +36,14 @@ export const WATCHER_IGNORE_PATTERNS: Array<string | RegExp> = [
   "**/venv/**",
   "**/.next/**",
   "**/lancedb/**",
-  /(^|[\/\\])\../, // dotfiles
+  /(^|[/\\])\../, // dotfiles
 ];
 
 const DEBOUNCE_MS = 2000;
 const FTS_REBUILD_INTERVAL_MS = 5 * 60 * 1000;
 
 export function startWatcher(opts: WatcherOptions): WatcherHandle {
-  const { projectRoot, vectorDb, metaCache, osgrepDir, onReindex } = opts;
+  const { projectRoot, vectorDb, metaCache, dataDir, onReindex } = opts;
   const pending = new Map<string, "change" | "unlink">();
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let processing = false;
@@ -81,7 +81,7 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
     let reindexed = 0;
 
     try {
-      const lock = await acquireWriterLockWithRetry(osgrepDir, {
+      const lock = await acquireWriterLockWithRetry(dataDir, {
         maxRetries: 3,
         retryDelayMs: 500,
       });

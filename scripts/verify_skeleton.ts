@@ -1,4 +1,3 @@
-import * as path from "path";
 import { VectorDB } from "../src/lib/store/vector-db";
 import { ensureProjectPaths } from "../src/lib/utils/project-root";
 
@@ -19,10 +18,10 @@ async function main() {
 
     for (const r of results) {
       console.log(`File: ${r.path}`);
-      const skel = r["file_skeleton"];
+      const skel = r.file_skeleton;
       if (skel && typeof skel === "string" && skel.length > 0) {
-        console.log("✅ Has skeleton (" + skel.length + " chars)");
-        console.log(skel.substring(0, 50) + "...");
+        console.log(`✅ Has skeleton (${skel.length} chars)`);
+        console.log(`${skel.substring(0, 50)}...`);
       } else {
         console.log("❌ No skeleton found!");
       }

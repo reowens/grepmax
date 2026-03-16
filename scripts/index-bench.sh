@@ -2,11 +2,11 @@
 set -euo pipefail
 
 # Simple indexing benchmark harness for macOS.
-# - Runs osgrep indexing against a target directory with multiple env configs.
+# - Runs gmax indexing against a target directory with multiple env configs.
 # - Wipes Lance data and meta between runs to keep results comparable.
 
 TARGET_DIR="${TARGET_DIR:-./src}"
-OSGREP_BIN="${OSGREP_BIN:-node dist/index.js}"
+GMAX_BIN="${GMAX_BIN:-node dist/index.js}"
 LOG_DIR="${LOG_DIR:-./benchmarks}"
 LOG_FILE="${LOG_FILE:-${LOG_DIR}/index-bench-$(date +%Y%m%d-%H%M%S).log}"
 TIMEOUT_SEC="${TIMEOUT_SEC:-600}"
@@ -14,15 +14,15 @@ TIMEOUT_SEC="${TIMEOUT_SEC:-600}"
 mkdir -p "${LOG_DIR}"
 
 CONFIGS=(
-  "OSGREP_THREADS=1 OSGREP_WORKER_BATCH_SIZE=8"
-  "OSGREP_THREADS=1 OSGREP_WORKER_BATCH_SIZE=12"
-  "OSGREP_THREADS=2 OSGREP_WORKER_BATCH_SIZE=12"
-  "OSGREP_THREADS=2 OSGREP_WORKER_BATCH_SIZE=16"
+  "GMAX_THREADS=1 GMAX_WORKER_BATCH_SIZE=8"
+  "GMAX_THREADS=1 GMAX_WORKER_BATCH_SIZE=12"
+  "GMAX_THREADS=2 GMAX_WORKER_BATCH_SIZE=12"
+  "GMAX_THREADS=2 GMAX_WORKER_BATCH_SIZE=16"
 )
 
 clean_state() {
-  echo "Cleaning ~/.osgrep data/meta..."
-  rm -rf "${HOME}/.osgrep/data" "${HOME}/.osgrep/meta.json" "${HOME}/.osgrep/meta.json.tmp"
+  echo "Cleaning ~/.gmax data/meta..."
+  rm -rf "${HOME}/.gmax/data" "${HOME}/.gmax/meta.json" "${HOME}/.gmax/meta.json.tmp"
 }
 
 run_one() {
@@ -30,7 +30,7 @@ run_one() {
   echo "==== ${env_line} ====" | tee -a "${LOG_FILE}"
   clean_state
   SECONDS=0
-  local cmd="${env_line} OSGREP_DEBUG_INDEX=1 OSGREP_PROFILE=1 OSGREP_SKIP_META_SAVE=1 ${OSGREP_BIN} index --path \"${TARGET_DIR}\" --reset"
+  local cmd="${env_line} GMAX_DEBUG_INDEX=1 GMAX_PROFILE=1 GMAX_SKIP_META_SAVE=1 ${GMAX_BIN} index --path \"${TARGET_DIR}\" --reset"
   # /usr/bin/time -l (macOS) for resource stats; falls back to builtin time if unavailable.
   if command -v /usr/bin/time >/dev/null 2>&1; then
     cmd="/usr/bin/time -l ${cmd}"

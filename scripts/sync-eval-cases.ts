@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 const newEvalPath = path.resolve(__dirname, "../src/eval.ts");
-const oldEvalPath = path.resolve(__dirname, "../../old-osgrep/src/eval.ts");
+const oldEvalPath = path.resolve(__dirname, "../../old-gmax/src/eval.ts");
 
 function extractCases(content: string, label: string) {
   const match = content.match(

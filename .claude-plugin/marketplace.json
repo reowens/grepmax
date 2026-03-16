@@ -1,23 +1,21 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "osgrep",
+  "name": "grepmax",
   "owner": {
     "name": "Robert Owens",
     "email": "robowens@me.com"
   },
   "plugins": [
     {
-      "name": "osgrep",
-      "source": "./plugins/osgrep",
+      "name": "grepmax",
+      "source": "./plugins/grepmax",
       "description": "Semantic code search for Claude Code. Automatically indexes your project and provides intelligent search capabilities.",
       "version": "0.1.0",
       "author": {
         "name": "Ryan D'Onofrio",
         "email": "ryandonofrio@gmail.com"
       },
-      "skills": [
-        "./skills/osgrep"
-      ]
+      "skills": ["./skills/gmax"]
     }
   ]
 }

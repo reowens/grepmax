@@ -14,11 +14,11 @@ vi.mock("../src/lib/setup/setup-helpers", () => ({
 vi.mock("../src/lib/utils/project-root", () => ({
   ensureProjectPaths: vi.fn(() => ({
     root: "/tmp/project",
-    osgrepDir: "/tmp/project/.osgrep",
-    lancedbDir: "/tmp/project/.osgrep/lancedb",
-    cacheDir: "/tmp/project/.osgrep/cache",
-    lmdbPath: "/tmp/project/.osgrep/cache/meta.lmdb",
-    configPath: "/tmp/project/.osgrep/config.json",
+    dataDir: "/tmp/project/.gmax",
+    lancedbDir: "/tmp/project/.gmax/lancedb",
+    cacheDir: "/tmp/project/.gmax/cache",
+    lmdbPath: "/tmp/project/.gmax/cache/meta.lmdb",
+    configPath: "/tmp/project/.gmax/config.json",
   })),
   findProjectRoot: vi.fn(() => "/tmp/project"),
 }));
@@ -213,13 +213,17 @@ describe("unknown option handling", () => {
     // Before fix: --json was treated as pattern, "query" as path
     // After fix: Commander properly rejects unknown options
     await expect(
-      (search as Command).parseAsync(["--json", "query", "."], { from: "user" })
+      (search as Command).parseAsync(["--json", "query", "."], {
+        from: "user",
+      }),
     ).rejects.toThrow(/unknown option/i);
   });
 
   it("rejects unknown options even when placed after arguments", async () => {
     await expect(
-      (search as Command).parseAsync(["query", ".", "--json"], { from: "user" })
+      (search as Command).parseAsync(["query", ".", "--json"], {
+        from: "user",
+      }),
     ).rejects.toThrow(/unknown option/i);
   });
 
@@ -227,7 +231,7 @@ describe("unknown option handling", () => {
     await expect(
       (search as Command).parseAsync(["query", ".", "extra", "args"], {
         from: "user",
-      })
+      }),
     ).rejects.toThrow(/too many arguments/i);
   });
 
@@ -235,7 +239,7 @@ describe("unknown option handling", () => {
     await expect(
       (search as Command).parseAsync(["--json", "--xml", "query", "."], {
         from: "user",
-      })
+      }),
     ).rejects.toThrow(/unknown option/i);
   });
 
@@ -243,7 +247,7 @@ describe("unknown option handling", () => {
     await expect(
       (search as Command).parseAsync(["query", "--no-rerank", "--json", "."], {
         from: "user",
-      })
+      }),
     ).rejects.toThrow(/unknown option/i);
   });
 
@@ -251,19 +255,19 @@ describe("unknown option handling", () => {
     await expect(
       (search as Command).parseAsync(["--json=true", "query", "."], {
         from: "user",
-      })
+      }),
     ).rejects.toThrow(/unknown option/i);
   });
 
   it("rejects short unknown options", async () => {
     await expect(
-      (search as Command).parseAsync(["-j", "query", "."], { from: "user" })
+      (search as Command).parseAsync(["-j", "query", "."], { from: "user" }),
     ).rejects.toThrow(/unknown option/i);
   });
 
   it("rejects unknown option that looks like a path", async () => {
     await expect(
-      (search as Command).parseAsync(["--./path", "query"], { from: "user" })
+      (search as Command).parseAsync(["--./path", "query"], { from: "user" }),
     ).rejects.toThrow(/unknown option/i);
   });
 
@@ -272,7 +276,7 @@ describe("unknown option handling", () => {
     await expect(
       (search as Command).parseAsync(["query", ".", "-m", "5", "--compact"], {
         from: "user",
-      })
+      }),
     ).resolves.not.toThrow();
   });
 
@@ -281,7 +285,7 @@ describe("unknown option handling", () => {
     await expect(
       (search as Command).parseAsync(["--", "-pattern-with-dash", "."], {
         from: "user",
-      })
+      }),
     ).resolves.not.toThrow();
   });
 });

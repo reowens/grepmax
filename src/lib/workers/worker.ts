@@ -7,7 +7,10 @@ import {
 
 export type { ProcessFileInput, ProcessFileResult, RerankDoc };
 
-const orchestrator = new WorkerOrchestrator();
+const vectorDim = process.env.GMAX_VECTOR_DIM
+  ? Number.parseInt(process.env.GMAX_VECTOR_DIM, 10)
+  : undefined;
+const orchestrator = new WorkerOrchestrator(vectorDim);
 
 export default async function processFile(
   input: ProcessFileInput,

@@ -1,13 +1,44 @@
 import * as os from "node:os";
 import * as path from "node:path";
 
+export const MODEL_TIERS: Record<
+  string,
+  {
+    id: string;
+    label: string;
+    onnxModel: string;
+    mlxModel: string;
+    vectorDim: number;
+    params: string;
+  }
+> = {
+  small: {
+    id: "small",
+    label: "granite-small (384d, 47M params, fast)",
+    onnxModel: "onnx-community/granite-embedding-small-english-r2-ONNX",
+    mlxModel: "ibm-granite/granite-embedding-small-english-r2",
+    vectorDim: 384,
+    params: "47M",
+  },
+  standard: {
+    id: "standard",
+    label: "granite-r2 (768d, 149M params, better quality)",
+    onnxModel: "onnx-community/granite-embedding-english-r2-ONNX",
+    mlxModel: "ibm-granite/granite-embedding-english-r2",
+    vectorDim: 768,
+    params: "149M",
+  },
+};
+
+export const DEFAULT_MODEL_TIER = "small";
+
 export const MODEL_IDS = {
-  embed: "onnx-community/granite-embedding-small-english-r2-ONNX",
+  embed: MODEL_TIERS[DEFAULT_MODEL_TIER].onnxModel,
   colbert: "ryandono/mxbai-edge-colbert-v0-17m-onnx-int8",
 };
 
 const DEFAULT_WORKER_THREADS = (() => {
-  const fromEnv = Number.parseInt(process.env.OSGREP_WORKER_THREADS ?? "", 10);
+  const fromEnv = Number.parseInt(process.env.GMAX_WORKER_THREADS ?? "", 10);
   if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv;
 
   const cores = os.cpus().length || 1;
@@ -26,17 +57,17 @@ export const CONFIG = {
 };
 
 export const WORKER_TIMEOUT_MS = Number.parseInt(
-  process.env.OSGREP_WORKER_TIMEOUT_MS || "60000",
+  process.env.GMAX_WORKER_TIMEOUT_MS || "60000",
   10,
 );
 
 export const WORKER_BOOT_TIMEOUT_MS = Number.parseInt(
-  process.env.OSGREP_WORKER_BOOT_TIMEOUT_MS || "300000",
+  process.env.GMAX_WORKER_BOOT_TIMEOUT_MS || "300000",
   10,
 );
 
 export const MAX_WORKER_MEMORY_MB = Number.parseInt(
-  process.env.OSGREP_MAX_WORKER_MEMORY_MB ||
+  process.env.GMAX_MAX_WORKER_MEMORY_MB ||
     String(
       Math.max(
         2048,
@@ -47,7 +78,7 @@ export const MAX_WORKER_MEMORY_MB = Number.parseInt(
 );
 
 const HOME = os.homedir();
-const GLOBAL_ROOT = path.join(HOME, ".osgrep");
+const GLOBAL_ROOT = path.join(HOME, ".gmax");
 
 export const PATHS = {
   globalRoot: GLOBAL_ROOT,
@@ -63,12 +94,16 @@ export const INDEXABLE_EXTENSIONS: Set<string> = new Set([
   ".tsx",
   ".js",
   ".jsx",
+  ".mjs",
+  ".cjs",
   ".py",
   ".go",
   ".rs",
   ".java",
   ".c",
   ".cpp",
+  ".cc",
+  ".cxx",
   ".h",
   ".hpp",
   ".rb",
@@ -78,6 +113,7 @@ export const INDEXABLE_EXTENSIONS: Set<string> = new Set([
   ".kt",
   ".kts",
   ".scala",
+  ".sc",
   ".lua",
   ".sh",
   ".sql",

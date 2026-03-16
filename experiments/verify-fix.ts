@@ -7,9 +7,9 @@ import {
 } from "../src/lib/utils/project-root";
 
 // Force old-engine style boosts for this check.
-process.env.OSGREP_CODE_BOOST = "1.25";
-process.env.OSGREP_TEST_PENALTY = "0.85";
-process.env.OSGREP_DOC_PENALTY = "0.5";
+process.env.GMAX_CODE_BOOST = "1.25";
+process.env.GMAX_TEST_PENALTY = "0.85";
+process.env.GMAX_DOC_PENALTY = "0.5";
 
 async function main() {
   const root = process.cwd();

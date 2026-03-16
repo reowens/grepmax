@@ -22,8 +22,13 @@ export class VectorDB {
   private db: lancedb.Connection | null = null;
   private unregisterCleanup?: () => void;
   private closed = false;
+  private readonly vectorDim: number;
 
-  constructor(private lancedbDir: string) {
+  constructor(
+    private lancedbDir: string,
+    vectorDim?: number,
+  ) {
+    this.vectorDim = vectorDim ?? CONFIG.VECTOR_DIM;
     this.unregisterCleanup = registerCleanup(() => this.close());
   }
 
@@ -54,7 +59,7 @@ export class VectorDB {
       chunk_type: "",
       complexity: 0,
       is_exported: false,
-      vector: Array(CONFIG.VECTOR_DIM).fill(0),
+      vector: Array(this.vectorDim).fill(0),
       colbert: Buffer.alloc(0),
       colbert_scale: 1,
       pooled_colbert_48d: Array(CONFIG.COLBERT_DIM).fill(0),
@@ -78,7 +83,7 @@ export class VectorDB {
       throw new Error(
         `[vector-db] schema missing fields (${missing.join(
           ", ",
-        )}). Please run "osgrep index --reset" to rebuild the index.`,
+        )}). Please run "gmax index --reset" to rebuild the index.`,
       );
     }
   }
@@ -95,7 +100,7 @@ export class VectorDB {
       new Field(
         "vector",
         new FixedSizeList(
-          CONFIG.VECTOR_DIM,
+          this.vectorDim,
           new Field("item", new Float32(), false),
         ),
         false,
@@ -206,10 +211,10 @@ export class VectorDB {
     const rows = records.map((rec) => {
       const vec = (() => {
         const arr = toNumberArray(rec.vector);
-        if (arr.length < CONFIG.VECTOR_DIM) {
-          arr.push(...Array(CONFIG.VECTOR_DIM - arr.length).fill(0));
-        } else if (arr.length > CONFIG.VECTOR_DIM) {
-          arr.length = CONFIG.VECTOR_DIM;
+        if (arr.length < this.vectorDim) {
+          arr.push(...Array(this.vectorDim - arr.length).fill(0));
+        } else if (arr.length > this.vectorDim) {
+          arr.length = this.vectorDim;
         }
         return arr;
       })();
@@ -258,7 +263,7 @@ export class VectorDB {
         throw new Error(
           `[vector-db] schema mismatch detected (fields: ${schemaFields.join(
             ", ",
-          )}). Please run "osgrep index --reset" to rebuild the index.`,
+          )}). Please run "gmax index --reset" to rebuild the index.`,
         );
       }
       throw err;

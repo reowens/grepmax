@@ -75,7 +75,7 @@ export function formatTextResults(
     showScores?: boolean;
   },
 ): string {
-  if (results.length === 0) return `osgrep: No results found for "${query}".`;
+  if (results.length === 0) return `gmax: No results found for "${query}".`;
 
   // --- MODE: COMPACT (File paths only) ---
   if (options.compact) {
@@ -133,7 +133,7 @@ export function formatTextResults(
       });
       output += "\n";
     });
-    output += `osgrep results (${results.length} matches across ${fileCount} files)`;
+    output += `gmax results (${results.length} matches across ${fileCount} files)`;
     return output.trim();
   }
 
@@ -176,7 +176,7 @@ export function formatTextResults(
     (sum, g) => sum + g.merged.length,
     0,
   );
-  let output = `\n${style.bold(`osgrep results (query: "${query}", ${displayedCount} matches across ${fileCount} files)`)}\n`;
+  let output = `\n${style.bold(`gmax results (query: "${query}", ${displayedCount} matches across ${fileCount} files)`)}\n`;
   let rank = 1;
 
   for (const { filePath, merged } of mergedGroups) {

@@ -5,10 +5,10 @@ import { Worker } from "node:worker_threads";
 import { MODEL_IDS } from "../../config";
 
 const HOMEDIR = os.homedir();
-const CACHE_DIR = path.join(HOMEDIR, ".osgrep", "models");
+const CACHE_DIR = path.join(HOMEDIR, ".gmax", "models");
 const LOG_MODELS =
-  process.env.OSGREP_DEBUG_MODELS === "1" ||
-  process.env.OSGREP_DEBUG_MODELS === "true";
+  process.env.GMAX_DEBUG_MODELS === "1" ||
+  process.env.GMAX_DEBUG_MODELS === "true";
 
 /**
  * Triggers the download of models by spawning a worker thread.

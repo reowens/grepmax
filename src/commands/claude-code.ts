@@ -21,20 +21,20 @@ function runClaudeCommand(args: string[]): Promise<void> {
 
 async function installPlugin() {
   try {
-    await runClaudeCommand(["marketplace", "add", "reowens/osgrep-max"]);
-    console.log("✅ Successfully added the osgrep marketplace");
-    await runClaudeCommand(["install", "osgrep"]);
-    console.log("✅ Successfully installed the osgrep plugin for Claude Code");
+    await runClaudeCommand(["marketplace", "add", "reowens/grepmax"]);
+    console.log("✅ Successfully added the gmax marketplace");
+    await runClaudeCommand(["install", "grepmax"]);
+    console.log("✅ Successfully installed the gmax plugin for Claude Code");
     console.log("\nNext steps:");
     console.log("1. Restart Claude Code if it's running");
     console.log(
       "2. The plugin will automatically index your project when you open it",
     );
     console.log(
-      "3. Claude will use osgrep for semantic code search automatically",
+      "3. Claude will use gmax for semantic code search automatically",
     );
     console.log(
-      "4. You can also use `osgrep` commands directly in your terminal",
+      "4. You can also use `gmax` commands directly in your terminal",
     );
   } catch (error) {
     console.error("❌ Error installing plugin:");

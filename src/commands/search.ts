@@ -166,7 +166,7 @@ function formatCompactTSV(
 ): string {
   if (!hits.length) return "No matches found.";
   const lines: string[] = [];
-  lines.push(`osgrep hits\tquery=${query}\tcount=${hits.length}`);
+  lines.push(`gmax hits\tquery=${query}\tcount=${hits.length}`);
   lines.push("path\tlines\tscore\trole\tconf\tdefined");
 
   for (const hit of hits) {
@@ -205,7 +205,7 @@ function formatCompactPretty(
 
   const wPath = Math.max(24, Math.min(64, termWidth - fixed));
 
-  const header = `osgrep hits  count=${hits.length}  query="${query}"`;
+  const header = `gmax hits  count=${hits.length}  query="${query}"`;
 
   const cols = [
     padR("path", wPath),
@@ -461,9 +461,9 @@ export const search: Command = new CommanderCommand("search")
           if (options.compact) {
             const compactText = compactHits.length
               ? formatCompactTable(compactHits, projectRootForServer, pattern, {
-                isTTY: !!process.stdout.isTTY,
-                plain: !!options.plain,
-              })
+                  isTTY: !!process.stdout.isTTY,
+                  plain: !!options.plain,
+                })
               : "No matches found.";
             console.log(compactText);
             return; // EXIT
@@ -519,13 +519,13 @@ export const search: Command = new CommanderCommand("search")
       const paths = ensureProjectPaths(projectRoot);
 
       // Propagate project root to worker processes
-      process.env.OSGREP_PROJECT_ROOT = projectRoot;
+      process.env.GMAX_PROJECT_ROOT = projectRoot;
 
       vectorDb = new VectorDB(paths.lancedbDir);
 
       // Check for active indexing lock and warn if present
       // This allows agents (via shim) to know results might be partial.
-      if (isLocked(paths.osgrepDir)) {
+      if (isLocked(paths.dataDir)) {
         console.warn(
           "⚠️  Warning: Indexing in progress... search results may be incomplete.",
         );
@@ -620,9 +620,9 @@ export const search: Command = new CommanderCommand("search")
       const compactText =
         options.compact && compactHits.length
           ? formatCompactTable(compactHits, projectRoot, pattern, {
-            isTTY: !!process.stdout.isTTY,
-            plain: !!options.plain,
-          })
+              isTTY: !!process.stdout.isTTY,
+              plain: !!options.plain,
+            })
           : options.compact
             ? "No matches found."
             : "";
