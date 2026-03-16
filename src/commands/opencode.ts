@@ -8,14 +8,14 @@ const TOOL_PATH = path.join(
   ".config",
   "opencode",
   "tool",
-  "osgrep.ts",
+  "gmax.ts",
 );
 const PLUGIN_PATH = path.join(
   os.homedir(),
   ".config",
   "opencode",
   "plugin",
-  "osgrep.ts",
+  "gmax.ts",
 );
 const CONFIG_PATH = path.join(
   os.homedir(),
@@ -29,21 +29,21 @@ import { tool } from "@opencode-ai/plugin";
 
 const SKILL = \`
 ---
-name: osgrep
-description: Semantic code search. Use alongside grep - grep for exact strings, osgrep for concepts.
-allowed-tools: "Bash(osgrep:*), Read"
+name: gmax
+description: Semantic code search. Use alongside grep - grep for exact strings, gmax for concepts.
+allowed-tools: "Bash(gmax:*), Read"
 ---
 
-## What osgrep does
+## What gmax does
 
-Finds code by meaning. When you'd ask a colleague "where do we handle auth?", use osgrep.
+Finds code by meaning. When you'd ask a colleague "where do we handle auth?", use gmax.
 
 - grep/ripgrep: exact string match, fast
-- osgrep: concept match, finds code you couldn't grep for
+- gmax: concept match, finds code you couldn't grep for
 
 ## Primary command
 
-osgrep "where do we validate user permissions"
+gmax "where do we validate user permissions"
 
 
 Returns ~10 results with code snippets (15+ lines each). Usually enough to understand what's happening.
@@ -69,7 +69,7 @@ export async function handleAuth(req: Request) {
 
 The snippet often has enough context. But if you need more:
 
-# osgrep found src/auth/handler.ts:45-90 as ORCH
+# gmax found src/auth/handler.ts:45-90 as ORCH
 Read src/auth/handler.ts:45-120
 
 
@@ -78,32 +78,32 @@ Read the specific line range, not the whole file.
 ## Other commands
 
 # Trace call graph (who calls X, what X calls)
-osgrep trace handleAuth
+gmax trace handleAuth
 
 # Skeleton of a huge file (to find which ranges to read)
-osgrep skeleton src/giant-2000-line-file.ts
+gmax skeleton src/giant-2000-line-file.ts
 
 # Just file paths when you only need locations
-osgrep "authentication" --compact
+gmax "authentication" --compact
 
 
 ## Workflow: architecture questions
 
 # 1. Find entry points
-osgrep "where do requests enter the server"
+gmax "where do requests enter the server"
 # Review the ORCH results - code is shown
 
 # 2. If you need deeper context on a specific function
 Read src/server/handler.ts:45-120
 
 # 3. Trace to understand call flow
-osgrep trace handleRequest  
+gmax trace handleRequest
 
 ## Tips
 
 - More words = better results. "auth" is vague. "where does the server validate JWT tokens" is specific.
 - ORCH results contain the logic - prioritize these
-- Don't read entire files. Use the line ranges osgrep gives you.
+- Don't read entire files. Use the line ranges gmax gives you.
 - If results seem off, rephrase your query like you'd ask a teammate
 
 \`;
@@ -112,16 +112,16 @@ export default tool({
   description: SKILL,
   args: {
     argv: tool.schema.array(tool.schema.string())
-      .describe("Arguments for osgrep, e.g. ['search', 'user auth']")
+      .describe("Arguments for gmax, e.g. ['search', 'user auth']")
   },
   async execute({ argv }) {
     try {
       // @ts-ignore
-      const out = await Bun.spawn(["osgrep", ...argv], { stdout: "pipe" }).stdout;
+      const out = await Bun.spawn(["gmax", ...argv], { stdout: "pipe" }).stdout;
       const text = await new Response(out).text();
       return text.trim();
     } catch (err) {
-       return \`Error running osgrep: \${err}\`;
+       return \`Error running gmax: \${err}\`;
     }
   },
 })`;
@@ -153,16 +153,16 @@ async function install() {
     if (!config.$schema) config.$schema = "https://opencode.ai/config.json";
     if (!config.mcp) config.mcp = {};
 
-    config.mcp.osgrep = {
+    config.mcp.gmax = {
       type: "local",
-      command: ["osgrep", "mcp"],
+      command: ["gmax", "mcp"],
       enabled: true,
     };
 
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
     console.log("✅ Registered MCP server in", CONFIG_PATH);
     console.log(
-      "   Command: check proper path if 'osgrep' is not in PATH of OpenCode.",
+      "   Command: check proper path if 'gmax' is not in PATH of OpenCode.",
     );
   } catch (err) {
     console.error("❌ Installation failed:", err);
@@ -180,8 +180,8 @@ async function uninstall() {
     // 2. Unregister MCP
     if (fs.existsSync(CONFIG_PATH)) {
       const config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8") || "{}");
-      if (config.mcp?.osgrep) {
-        delete config.mcp.osgrep;
+      if (config.mcp?.gmax) {
+        delete config.mcp.gmax;
         fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
         console.log("✅ Unregistered MCP server.");
       }
@@ -198,9 +198,9 @@ async function uninstall() {
 }
 
 export const installOpencode = new Command("install-opencode")
-  .description("Install osgrep as an OpenCode plugin (Daemon + Tool)")
+  .description("Install gmax as an OpenCode plugin (Daemon + Tool)")
   .action(install);
 
 export const uninstallOpencode = new Command("uninstall-opencode")
-  .description("Remove the osgrep OpenCode plugin")
+  .description("Remove the gmax OpenCode plugin")
   .action(uninstall);

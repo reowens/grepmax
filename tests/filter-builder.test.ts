@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { escapeSqlString, normalizePath } from "../src/lib/utils/filter-builder";
+import {
+  escapeSqlString,
+  normalizePath,
+} from "../src/lib/utils/filter-builder";
 
 describe("escapeSqlString", () => {
   it("returns input unchanged when no single quotes", () => {

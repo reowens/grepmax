@@ -9,8 +9,8 @@ function loadSkipIds(): Set<number> {
   if (SKIP_IDS) return SKIP_IDS;
 
   // Check local models first (same logic as orchestrator)
-  const PROJECT_ROOT = process.env.OSGREP_PROJECT_ROOT
-    ? path.resolve(process.env.OSGREP_PROJECT_ROOT)
+  const PROJECT_ROOT = process.env.GMAX_PROJECT_ROOT
+    ? path.resolve(process.env.GMAX_PROJECT_ROOT)
     : process.cwd();
   const localModels = path.join(PROJECT_ROOT, "models");
   const localColbert = path.join(localModels, ...MODEL_IDS.colbert.split("/"));

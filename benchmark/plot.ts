@@ -7,9 +7,9 @@ interface BenchmarkRow {
   query: string;
   baselineTime: number;
   baselineCost: number;
-  osgrepTime: number;
-  osgrepCost: number;
-  winner: "baseline" | "osgrep" | "tie";
+  gmaxTime: number;
+  gmaxCost: number;
+  winner: "baseline" | "gmax" | "tie";
 }
 
 interface CumulativeData {
@@ -18,7 +18,7 @@ interface CumulativeData {
   totalBaselineCost: number;
   totalOsgrepCost: number;
   queryCount: number;
-  osgrepWins: number;
+  gmaxWins: number;
   baselineWins: number;
   ties: number;
 }
@@ -40,11 +40,11 @@ function parseCSV(csvPath: string): BenchmarkRow[] {
       query: parts[0],
       baselineTime: parseFloat(parts[1]) || 0,
       baselineCost: parseFloat(parts[2]) || 0,
-      osgrepTime: parseFloat(parts[3]) || 0,
-      osgrepCost: parseFloat(parts[4]) || 0,
+      gmaxTime: parseFloat(parts[3]) || 0,
+      gmaxCost: parseFloat(parts[4]) || 0,
       winner: (parts[5]?.toLowerCase() || "tie") as
         | "baseline"
-        | "osgrep"
+        | "gmax"
         | "tie",
     });
   }
@@ -56,11 +56,11 @@ function calculateCumulative(rows: BenchmarkRow[]): CumulativeData {
   return rows.reduce(
     (acc, row) => ({
       totalBaselineTime: acc.totalBaselineTime + row.baselineTime,
-      totalOsgrepTime: acc.totalOsgrepTime + row.osgrepTime,
+      totalOsgrepTime: acc.totalOsgrepTime + row.gmaxTime,
       totalBaselineCost: acc.totalBaselineCost + row.baselineCost,
-      totalOsgrepCost: acc.totalOsgrepCost + row.osgrepCost,
+      totalOsgrepCost: acc.totalOsgrepCost + row.gmaxCost,
       queryCount: acc.queryCount + 1,
-      osgrepWins: acc.osgrepWins + (row.winner === "osgrep" ? 1 : 0),
+      gmaxWins: acc.gmaxWins + (row.winner === "gmax" ? 1 : 0),
       baselineWins: acc.baselineWins + (row.winner === "baseline" ? 1 : 0),
       ties: acc.ties + (row.winner === "tie" ? 1 : 0),
     }),
@@ -70,7 +70,7 @@ function calculateCumulative(rows: BenchmarkRow[]): CumulativeData {
       totalBaselineCost: 0,
       totalOsgrepCost: 0,
       queryCount: 0,
-      osgrepWins: 0,
+      gmaxWins: 0,
       baselineWins: 0,
       ties: 0,
     },
@@ -91,15 +91,15 @@ function generateHTML(cumulative: CumulativeData): string {
     ((avgBaselineCost - avgOsgrepCost) / avgBaselineCost) *
     100
   ).toFixed(1);
-  const osgrepWinRate = (
-    (cumulative.osgrepWins / cumulative.queryCount) *
+  const gmaxWinRate = (
+    (cumulative.gmaxWins / cumulative.queryCount) *
     100
   ).toFixed(0);
 
   const maxTime = Math.max(avgBaselineTime, avgOsgrepTime);
   const maxCost = Math.max(avgBaselineCost, avgOsgrepCost);
   const maxWins = Math.max(
-    cumulative.osgrepWins,
+    cumulative.gmaxWins,
     cumulative.baselineWins,
     cumulative.ties,
   );
@@ -109,7 +109,7 @@ function generateHTML(cumulative: CumulativeData): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>osgrep Benchmark Results</title>
+  <title>gmax Benchmark Results</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -274,7 +274,7 @@ function generateHTML(cumulative: CumulativeData): string {
       background: #e0e8e0;
     }
 
-    .bar.osgrep {
+    .bar.gmax {
       background: #1a6f1a;
     }
 
@@ -327,7 +327,7 @@ function generateHTML(cumulative: CumulativeData): string {
 <body>
   <div class="container">
     <div class="header">
-      <h1>osgrep benchmark</h1>
+      <h1>gmax benchmark</h1>
       <p>Cumulative performance across ${cumulative.queryCount} queries</p>
     </div>
 
@@ -350,8 +350,8 @@ function generateHTML(cumulative: CumulativeData): string {
 
       <div class="stat-card">
         <div class="stat-label">Win Rate</div>
-        <div class="stat-number">${osgrepWinRate}%</div>
-        <div class="stat-sub">${cumulative.osgrepWins} wins, ${cumulative.baselineWins} losses</div>
+        <div class="stat-number">${gmaxWinRate}%</div>
+        <div class="stat-sub">${cumulative.gmaxWins} wins, ${cumulative.baselineWins} losses</div>
         <div class="badge">Preferred</div>
       </div>
     </div>
@@ -367,8 +367,8 @@ function generateHTML(cumulative: CumulativeData): string {
           </div>
           <div class="bar-col">
             <div class="bar-value">${avgOsgrepTime.toFixed(1)}s</div>
-            <div class="bar osgrep" style="height: ${((avgOsgrepTime / maxTime) * 100).toFixed(1)}%"></div>
-            <div class="bar-label">osgrep</div>
+            <div class="bar gmax" style="height: ${((avgOsgrepTime / maxTime) * 100).toFixed(1)}%"></div>
+            <div class="bar-label">gmax</div>
           </div>
         </div>
       </div>
@@ -383,8 +383,8 @@ function generateHTML(cumulative: CumulativeData): string {
           </div>
           <div class="bar-col">
             <div class="bar-value">$${avgOsgrepCost.toFixed(3)}</div>
-            <div class="bar osgrep" style="height: ${((avgOsgrepCost / maxCost) * 100).toFixed(1)}%"></div>
-            <div class="bar-label">osgrep</div>
+            <div class="bar gmax" style="height: ${((avgOsgrepCost / maxCost) * 100).toFixed(1)}%"></div>
+            <div class="bar-label">gmax</div>
           </div>
         </div>
       </div>
@@ -408,16 +408,16 @@ function generateHTML(cumulative: CumulativeData): string {
               : ""
           }
           <div class="bar-col">
-            <div class="bar-value">${cumulative.osgrepWins}</div>
-            <div class="bar osgrep" style="height: ${((cumulative.osgrepWins / maxWins) * 100).toFixed(1)}%"></div>
-            <div class="bar-label">osgrep</div>
+            <div class="bar-value">${cumulative.gmaxWins}</div>
+            <div class="bar gmax" style="height: ${((cumulative.gmaxWins / maxWins) * 100).toFixed(1)}%"></div>
+            <div class="bar-label">gmax</div>
           </div>
         </div>
       </div>
     </div>
 
     <div class="footer">
-      <p>Generated with <a href="https://github.com/yourusername/osgrep" target="_blank">osgrep</a> benchmark tool</p>
+      <p>Generated with <a href="https://github.com/yourusername/gmax" target="_blank">gmax</a> benchmark tool</p>
     </div>
   </div>
 </body>
@@ -432,7 +432,7 @@ function main() {
     console.error("");
     console.error("CSV format:");
     console.error(
-      "Query,Baseline Time (s),Baseline Cost ($),osgrep Time (s),osgrep Cost ($),Winner",
+      "Query,Baseline Time (s),Baseline Cost ($),gmax Time (s),gmax Cost ($),Winner",
     );
     process.exit(1);
   }
@@ -473,7 +473,7 @@ function main() {
     `  Avg cost change: ${(((avgBaselineCost - avgOsgrepCost) / avgBaselineCost) * 100).toFixed(1)}%`,
   );
   console.log(
-    `  osgrep wins: ${cumulative.osgrepWins}/${cumulative.queryCount} (${((cumulative.osgrepWins / cumulative.queryCount) * 100).toFixed(0)}%)`,
+    `  gmax wins: ${cumulative.gmaxWins}/${cumulative.queryCount} (${((cumulative.gmaxWins / cumulative.queryCount) * 100).toFixed(0)}%)`,
   );
 }
 

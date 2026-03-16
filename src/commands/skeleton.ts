@@ -1,10 +1,10 @@
 /**
- * osgrep skeleton - Show code skeleton (signatures without implementation)
+ * gmax skeleton - Show code skeleton (signatures without implementation)
  *
  * Usage:
- *   osgrep skeleton <file>           # Skeleton of a file
- *   osgrep skeleton <symbol>         # Find symbol and skeleton its file
- *   osgrep skeleton "query"          # Search and skeleton top results
+ *   gmax skeleton <file>           # Skeleton of a file
+ *   gmax skeleton <symbol>         # Find symbol and skeleton its file
+ *   gmax skeleton "query"          # Search and skeleton top results
  */
 
 import * as fs from "node:fs";
@@ -156,7 +156,7 @@ export const skeleton = new Command("skeleton")
         if (!filePath) {
           console.error(`Symbol not found in index: ${target}`);
           console.error(
-            "Try running 'osgrep index' first or use a search query.",
+            "Try running 'gmax index' first or use a search query.",
           );
           process.exitCode = 1;
           return;

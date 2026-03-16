@@ -16,8 +16,8 @@ type Scenario = {
 };
 
 const enableDiagnostics =
-  process.env.OSGREP_SWEEP_DEBUG === "1" ||
-  process.env.OSGREP_SWEEP_DEBUG === "true";
+  process.env.GMAX_SWEEP_DEBUG === "1" ||
+  process.env.GMAX_SWEEP_DEBUG === "true";
 
 type Ranked = { path: string; score?: number };
 
@@ -40,8 +40,8 @@ function targetRank(response: { data: any[] }, expectedPath: string): number {
 }
 
 // Keep runs consistent and serial.
-process.env.OSGREP_WORKER_THREADS ??= "1";
-process.env.OSGREP_WORKER_COUNT ??= "1";
+process.env.GMAX_WORKER_THREADS ??= "1";
+process.env.GMAX_WORKER_COUNT ??= "1";
 
 const scenarios: Scenario[] = [
   {
@@ -52,39 +52,39 @@ const scenarios: Scenario[] = [
   {
     name: "oldish-no-rerank-strong-boosts",
     env: {
-      OSGREP_CODE_BOOST: "1.25",
-      OSGREP_TEST_PENALTY: "0.85",
-      OSGREP_DOC_PENALTY: "0.5",
-      OSGREP_PRE_K: "300",
-      OSGREP_STAGE1_K: "400",
-      OSGREP_STAGE2_K: "0", // skip pooled filter
-      OSGREP_MAX_PER_FILE: "50",
+      GMAX_CODE_BOOST: "1.25",
+      GMAX_TEST_PENALTY: "0.85",
+      GMAX_DOC_PENALTY: "0.5",
+      GMAX_PRE_K: "300",
+      GMAX_STAGE1_K: "400",
+      GMAX_STAGE2_K: "0", // skip pooled filter
+      GMAX_MAX_PER_FILE: "50",
     },
     searchOptions: { rerank: false },
   },
   {
     name: "small-rerank-strong-boosts",
     env: {
-      OSGREP_CODE_BOOST: "1.25",
-      OSGREP_TEST_PENALTY: "0.85",
-      OSGREP_DOC_PENALTY: "0.5",
-      OSGREP_PRE_K: "300",
-      OSGREP_STAGE1_K: "400",
-      OSGREP_STAGE2_K: "80",
-      OSGREP_MAX_PER_FILE: "50",
+      GMAX_CODE_BOOST: "1.25",
+      GMAX_TEST_PENALTY: "0.85",
+      GMAX_DOC_PENALTY: "0.5",
+      GMAX_PRE_K: "300",
+      GMAX_STAGE1_K: "400",
+      GMAX_STAGE2_K: "80",
+      GMAX_MAX_PER_FILE: "50",
     },
     searchOptions: { rerank: true },
   },
   {
     name: "no-diversify-rerank",
     env: {
-      OSGREP_CODE_BOOST: "1.2",
-      OSGREP_TEST_PENALTY: "0.85",
-      OSGREP_DOC_PENALTY: "0.7",
-      OSGREP_PRE_K: "400",
-      OSGREP_STAGE1_K: "500",
-      OSGREP_STAGE2_K: "120",
-      OSGREP_MAX_PER_FILE: "1000",
+      GMAX_CODE_BOOST: "1.2",
+      GMAX_TEST_PENALTY: "0.85",
+      GMAX_DOC_PENALTY: "0.7",
+      GMAX_PRE_K: "400",
+      GMAX_STAGE1_K: "500",
+      GMAX_STAGE2_K: "120",
+      GMAX_MAX_PER_FILE: "1000",
     },
     searchOptions: { rerank: true },
   },

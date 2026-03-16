@@ -17,13 +17,13 @@ describe("TreeSitterChunker - Large Data Files", () => {
 
   it("should chunk a small JSON file using fallback", async () => {
     const content = JSON.stringify(
-      { name: "osgrep", version: "1.0.0" },
+      { name: "grepmax", version: "1.0.0" },
       null,
       2,
     );
     const result = await chunker.chunk("package.json", content);
     expect(result.chunks.length).toBeGreaterThan(0);
-    expect(result.chunks[0].content).toContain("osgrep");
+    expect(result.chunks[0].content).toContain("grepmax");
   });
 
   it("should NOT chunk a large generated JSON file (>100KB)", async () => {

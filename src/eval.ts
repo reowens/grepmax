@@ -1,5 +1,5 @@
 // Reduce worker pool fan-out during eval to avoid ONNX concurrency issues
-process.env.OSGREP_WORKER_COUNT ??= "1";
+process.env.GMAX_WORKER_COUNT ??= "1";
 
 import { Searcher } from "./lib/search/searcher";
 import type { SearchResponse } from "./lib/store/types";
@@ -244,7 +244,7 @@ export const cases: EvalCase[] = [
   },
   {
     query:
-      "How does serve --background redirect logs to ~/.osgrep/logs/server.log?",
+      "How does serve --background redirect logs to ~/.gmax/logs/server.log?",
     expectedPath: "src/commands/serve.ts",
     note: "Background flag redirecting stdio to server.log.",
   },
@@ -266,19 +266,19 @@ export const cases: EvalCase[] = [
 
   // --- Paths, Config, Environment ---
   {
-    query: "How do we create .osgrep directories and add them to .gitignore?",
+    query: "How do we create .gmax directories and add them to .gitignore?",
     expectedPath: "src/lib/utils/project-root.ts",
     note: "ensureProjectPaths scaffolds directories and gitignore entry.",
   },
   {
-    query: "How is the project root detected via .git or existing .osgrep?",
+    query: "How is the project root detected via .git or existing .gmax?",
     expectedPath: "src/lib/utils/project-root.ts",
     note: "findProjectRoot walking parents and honoring repo roots.",
   },
   {
     query: "Where are PATHS.globalRoot, models, and grammars defined?",
     expectedPath: "src/config.ts",
-    note: "PATHS pointing to ~/.osgrep directories.",
+    note: "PATHS pointing to ~/.gmax directories.",
   },
   {
     query: "How do workers prefer a local ./models directory when present?",
@@ -293,18 +293,18 @@ export const cases: EvalCase[] = [
 
   // --- Extended Coverage ---
   {
-    query: "Where do we read WORKER_TIMEOUT_MS from OSGREP_WORKER_TIMEOUT_MS?",
+    query: "Where do we read WORKER_TIMEOUT_MS from GMAX_WORKER_TIMEOUT_MS?",
     expectedPath: "src/config.ts",
     note: "WORKER_TIMEOUT_MS env override.",
   },
   {
     query: "Where is TASK_TIMEOUT_MS set for worker tasks?",
     expectedPath: "src/lib/workers/pool.ts",
-    note: "OSGREP_WORKER_TASK_TIMEOUT_MS guarded timeout.",
+    note: "GMAX_WORKER_TASK_TIMEOUT_MS guarded timeout.",
   },
   {
     query:
-      "How do we cap worker threads from OSGREP_WORKER_THREADS with a HARD_CAP of 4?",
+      "How do we cap worker threads from GMAX_WORKER_THREADS with a HARD_CAP of 4?",
     expectedPath: "src/config.ts",
     note: "DEFAULT_WORKER_THREADS calculation.",
   },
@@ -362,7 +362,7 @@ export const cases: EvalCase[] = [
     note: "splitIfTooBig uses OVERLAP_LINES and OVERLAP_CHARS.",
   },
   {
-    query: "Where is GRAMMARS_DIR set to ~/.osgrep/grammars?",
+    query: "Where is GRAMMARS_DIR set to ~/.gmax/grammars?",
     expectedPath: "src/lib/index/grammar-loader.ts",
     note: "GRAMMARS_DIR constant.",
   },
@@ -452,7 +452,7 @@ export const cases: EvalCase[] = [
   },
   {
     query:
-      "Where does ensureSetup create ~/.osgrep directories with ora spinner?",
+      "Where does ensureSetup create ~/.gmax directories with ora spinner?",
     expectedPath: "src/lib/setup/setup-helpers.ts",
     note: "ensureSetup directory creation feedback.",
   },
@@ -491,7 +491,7 @@ export const cases: EvalCase[] = [
   {
     query: "Where does serve register running servers to servers.json?",
     expectedPath: "src/lib/utils/server-registry.ts",
-    note: "registerServer writes to ~/.osgrep/servers.json.",
+    note: "registerServer writes to ~/.gmax/servers.json.",
   },
   {
     query: "How does serve status enumerate active servers?",
@@ -594,7 +594,7 @@ async function run() {
   const hasRows = await vectorDb.hasAnyRows();
   if (!hasRows) {
     console.error(`❌ Store appears to be empty!`);
-    console.error(`   Run "osgrep index" to populate the store with data.`);
+    console.error(`   Run "gmax index" to populate the store with data.`);
     process.exit(1);
   }
 
@@ -605,7 +605,7 @@ async function run() {
       console.error(
         `⚠️  Store appears to be empty (search returned 0 results)!`,
       );
-      console.error(`   Run "osgrep index" to populate the store with data.`);
+      console.error(`   Run "gmax index" to populate the store with data.`);
       process.exit(1);
     }
   } catch (err) {
@@ -664,7 +664,7 @@ async function run() {
 if (
   // Only auto-run when executed directly (not when imported for experiments/tests)
   require.main === module &&
-  process.env.OSGREP_EVAL_AUTORUN !== "0"
+  process.env.GMAX_EVAL_AUTORUN !== "0"
 ) {
   run().catch((err) => {
     console.error("Eval failed:", err);

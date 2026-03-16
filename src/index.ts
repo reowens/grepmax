@@ -16,6 +16,7 @@ import { setup } from "./commands/setup";
 import { skeleton } from "./commands/skeleton";
 import { symbols } from "./commands/symbols";
 import { trace } from "./commands/trace";
+import { watch } from "./commands/watch";
 
 program
   .version(
@@ -28,20 +29,16 @@ program
   .option(
     "--store <string>",
     "The store to use (auto-detected if not specified)",
-    process.env.OSGREP_STORE || undefined,
+    process.env.GMAX_STORE || undefined,
   );
 
-const legacyDataPath = path.join(
-  require("node:os").homedir(),
-  ".osgrep",
-  "data",
-);
+const legacyDataPath = path.join(require("node:os").homedir(), ".gmax", "data");
 const isIndexCommand = process.argv.some((arg) => arg === "index");
 if (isIndexCommand && fs.existsSync(legacyDataPath)) {
-  console.log("⚠️  Legacy global database detected at ~/.osgrep/data.");
-  console.log("   osgrep now uses per-project .osgrep/ directories.");
+  console.log("⚠️  Legacy global database detected at ~/.gmax/data.");
+  console.log("   gmax now uses per-project .gmax/ directories.");
   console.log(
-    "   Run 'osgrep index' in your project root to create a new index.",
+    "   Run 'gmax index' in your project root to create a new index.",
   );
 }
 
@@ -53,6 +50,7 @@ program.addCommand(symbols);
 program.addCommand(trace);
 program.addCommand(setup);
 program.addCommand(serve);
+program.addCommand(watch);
 program.addCommand(mcp);
 program.addCommand(installClaudeCode);
 program.addCommand(installCodex);

@@ -48,6 +48,25 @@ describe("getLanguageByExtension", () => {
     expect(lang?.grammar).toBeDefined();
   });
 
+  it("returns bash for .sh with grammar", () => {
+    const lang = getLanguageByExtension(".sh");
+    expect(lang?.id).toBe("bash");
+    expect(lang?.grammar).toBeDefined();
+  });
+
+  it("returns scala for .scala and .sc", () => {
+    expect(getLanguageByExtension(".scala")?.id).toBe("scala");
+    expect(getLanguageByExtension(".sc")?.id).toBe("scala");
+    const lang = getLanguageByExtension(".scala");
+    expect(lang?.grammar).toBeDefined();
+  });
+
+  it("returns lua for .lua with grammar", () => {
+    const lang = getLanguageByExtension(".lua");
+    expect(lang?.id).toBe("lua");
+    expect(lang?.grammar).toBeDefined();
+  });
+
   it("returns undefined for unknown extension", () => {
     expect(getLanguageByExtension(".unknown")).toBeUndefined();
   });
@@ -94,5 +113,20 @@ describe("getGrammarUrl", () => {
   it("returns URL for kotlin grammar", () => {
     const url = getGrammarUrl("kotlin");
     expect(url).toContain("tree-sitter-kotlin");
+  });
+
+  it("returns URL for bash grammar", () => {
+    const url = getGrammarUrl("bash");
+    expect(url).toContain("tree-sitter-bash");
+  });
+
+  it("returns URL for scala grammar", () => {
+    const url = getGrammarUrl("scala");
+    expect(url).toContain("tree-sitter-scala");
+  });
+
+  it("returns URL for lua grammar", () => {
+    const url = getGrammarUrl("lua");
+    expect(url).toContain("tree-sitter-lua");
   });
 });

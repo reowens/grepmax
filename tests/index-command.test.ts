@@ -7,11 +7,11 @@ vi.mock("../src/lib/setup/setup-helpers", () => ({
 vi.mock("../src/lib/utils/project-root", () => ({
   ensureProjectPaths: vi.fn(() => ({
     root: "/tmp/project",
-    osgrepDir: "/tmp/project/.osgrep",
-    lancedbDir: "/tmp/project/.osgrep/lancedb",
-    cacheDir: "/tmp/project/.osgrep/cache",
-    lmdbPath: "/tmp/project/.osgrep/cache/meta.lmdb",
-    configPath: "/tmp/project/.osgrep/config.json",
+    dataDir: "/tmp/project/.gmax",
+    lancedbDir: "/tmp/project/.gmax/lancedb",
+    cacheDir: "/tmp/project/.gmax/cache",
+    lmdbPath: "/tmp/project/.gmax/cache/meta.lmdb",
+    configPath: "/tmp/project/.gmax/config.json",
   })),
   findProjectRoot: vi.fn(() => "/tmp/project"),
 }));

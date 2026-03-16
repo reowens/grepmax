@@ -1,13 +1,13 @@
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const registryModulePath = "../src/lib/utils/server-registry";
 
 async function loadRegistry(tempHome: string) {
   const config = await import("../src/config");
-  const globalRoot = path.join(tempHome, ".osgrep");
+  const globalRoot = path.join(tempHome, ".gmax");
   (config.PATHS as any).globalRoot = globalRoot;
   (config.PATHS as any).models = path.join(globalRoot, "models");
   (config.PATHS as any).grammars = path.join(globalRoot, "grammars");
@@ -19,9 +19,7 @@ describe("Server Registry", () => {
   let tempHome: string;
 
   beforeEach(async () => {
-    tempHome = await fs.mkdtemp(
-      path.join(os.tmpdir(), "osgrep-registry-test-"),
-    );
+    tempHome = await fs.mkdtemp(path.join(os.tmpdir(), "gmax-registry-test-"));
     process.env.HOME = tempHome;
   });
 

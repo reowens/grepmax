@@ -10,8 +10,8 @@ import { CONFIG, MODEL_IDS, PATHS } from "../../../config";
 const CACHE_DIR = PATHS.models;
 const ONNX_THREADS = 1;
 const LOG_MODELS =
-  process.env.OSGREP_DEBUG_MODELS === "1" ||
-  process.env.OSGREP_DEBUG_MODELS === "true";
+  process.env.GMAX_DEBUG_MODELS === "1" ||
+  process.env.GMAX_DEBUG_MODELS === "true";
 const log = (...args: unknown[]) => {
   if (LOG_MODELS) console.log(...args);
 };
@@ -19,7 +19,11 @@ const log = (...args: unknown[]) => {
 export class GraniteModel {
   private session: ort.InferenceSession | null = null;
   private tokenizer: PreTrainedTokenizer | null = null;
-  private readonly vectorDimensions = CONFIG.VECTOR_DIM;
+  private readonly vectorDimensions: number;
+
+  constructor(vectorDim?: number) {
+    this.vectorDimensions = vectorDim ?? CONFIG.VECTOR_DIM;
+  }
 
   private resolvePaths(): { modelPath: string; tokenizerPath: string } {
     const basePath = path.join(CACHE_DIR, MODEL_IDS.embed);

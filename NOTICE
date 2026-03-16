@@ -1,4 +1,4 @@
-osgrep
+grepmax
 Copyright 2025 Ryan Donofrio
 
 This product includes software originally developed by MixedBread as mgrep.
@@ -9,7 +9,7 @@ https://github.com/mixedbread-ai/mgrep
 
 MODIFICATIONS AND ENHANCEMENTS
 
-osgrep is a substantial modification and enhancement of the original mgrep 
+grepmax is a substantial modification and enhancement of the original mgrep 
 codebase. The following major changes and additions have been made by 
 Ryan Donofrio:
 

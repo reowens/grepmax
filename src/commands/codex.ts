@@ -11,8 +11,8 @@ const execAsync = promisify(exec);
 
 const SKILL = `
 ---
-name: osgrep
-description: Semantic code search and call-graph tracing via osgrep.
+name: gmax
+description: Semantic code search and call-graph tracing via gmax.
 ---
 
 ## ⚠️ CRITICAL: Handling "Indexing" State
@@ -22,19 +22,19 @@ If the tool output says **"Indexing"**, **"Building"**, or **"Syncing"**:
 3. **ASK** if they want to proceed or wait.
 
 ## Commands
-- Search: \`osgrep "auth logic" --compact\`
-- Trace: \`osgrep trace "AuthService"\`
+- Search: \`gmax "auth logic" --compact\`
+- Trace: \`gmax trace "AuthService"\`
 `;
 
 async function installPlugin() {
   try {
     // 1. Register the MCP Tool
-    // 'osgrep mcp' acts as the server.
-    await execAsync("codex mcp add osgrep osgrep mcp", {
+    // 'gmax mcp' acts as the server.
+    await execAsync("codex mcp add gmax gmax mcp", {
       shell,
       env: process.env,
     });
-    console.log("✅ osgrep MCP tool registered with Codex");
+    console.log("✅ gmax MCP tool registered with Codex");
 
     // 2. Add Instructions to AGENTS.md
     const destPath = path.join(os.homedir(), ".codex", "AGENTS.md");
@@ -45,11 +45,11 @@ async function installPlugin() {
       : "";
 
     // Only append if not present
-    if (!content.includes("name: osgrep")) {
-      fs.appendFileSync(destPath, "\n" + SKILL);
-      console.log("✅ osgrep skill instructions added to Codex");
+    if (!content.includes("name: gmax")) {
+      fs.appendFileSync(destPath, `\n${SKILL}`);
+      console.log("✅ gmax skill instructions added to Codex");
     } else {
-      console.log("ℹ️  osgrep skill instructions already present");
+      console.log("ℹ️  gmax skill instructions already present");
     }
   } catch (error) {
     console.error(`❌ Error installing Codex plugin: ${error}`);
@@ -59,9 +59,9 @@ async function installPlugin() {
 
 async function uninstallPlugin() {
   try {
-    await execAsync("codex mcp remove osgrep", { shell, env: process.env });
-    console.log("✅ osgrep MCP tool removed");
-  } catch (e) {
+    await execAsync("codex mcp remove gmax", { shell, env: process.env });
+    console.log("✅ gmax MCP tool removed");
+  } catch (_e) {
     /* ignore if not found */
   }
 
@@ -73,15 +73,15 @@ async function uninstallPlugin() {
     if (content.includes(SKILL)) {
       content = content.replace(SKILL, "").trim();
       fs.writeFileSync(destPath, content);
-      console.log("✅ osgrep instructions removed from AGENTS.md");
+      console.log("✅ gmax instructions removed from AGENTS.md");
     }
   }
 }
 
 export const installCodex = new Command("install-codex")
-  .description("Install osgrep for Codex")
+  .description("Install gmax for Codex")
   .action(installPlugin);
 
 export const uninstallCodex = new Command("uninstall-codex")
-  .description("Uninstall osgrep from Codex")
+  .description("Uninstall gmax from Codex")
   .action(uninstallPlugin);

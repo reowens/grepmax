@@ -7,9 +7,9 @@ import { gracefulExit } from "../lib/utils/exit";
 import { findProjectRoot } from "../lib/utils/project-root";
 
 export const doctor = new Command("doctor")
-  .description("Check osgrep health and paths")
+  .description("Check gmax health and paths")
   .action(async () => {
-    console.log("🏥 osgrep Doctor\n");
+    console.log("🏥 gmax Doctor\n");
 
     const root = PATHS.globalRoot;
     const models = PATHS.models;
@@ -39,17 +39,17 @@ export const doctor = new Command("doctor")
     const missingModels = modelStatuses.filter(({ exists }) => !exists);
     if (missingModels.length > 0) {
       console.log(
-        "❌ Some models are missing; osgrep will try bundled copies first, then download.",
+        "❌ Some models are missing; gmax will try bundled copies first, then download.",
       );
     }
 
     console.log(`\nLocal Project: ${process.cwd()}`);
     const projectRoot = findProjectRoot(process.cwd());
     if (projectRoot) {
-      console.log(`✅ Index found at: ${path.join(projectRoot, ".osgrep")}`);
+      console.log(`✅ Index found at: ${path.join(projectRoot, ".gmax")}`);
     } else {
       console.log(
-        `ℹ️  No index found in current directory (run 'osgrep index' to create one)`,
+        `ℹ️  No index found in current directory (run 'gmax index' to create one)`,
       );
     }
 

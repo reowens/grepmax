@@ -6,8 +6,8 @@ VERSION=$(node -p "require('./package.json').version")
 echo "Syncing version: $VERSION"
 
 # plugin.json
-jq --arg v "$VERSION" '.version = $v' plugins/osgrep/.claude-plugin/plugin.json > /tmp/plugin.json.tmp
-mv /tmp/plugin.json.tmp plugins/osgrep/.claude-plugin/plugin.json
+jq --arg v "$VERSION" '.version = $v' plugins/grepmax/.claude-plugin/plugin.json > /tmp/plugin.json.tmp
+mv /tmp/plugin.json.tmp plugins/grepmax/.claude-plugin/plugin.json
 
 # marketplace.json
 jq --arg v "$VERSION" '.plugins[0].version = $v' .claude-plugin/marketplace.json > /tmp/marketplace.json.tmp

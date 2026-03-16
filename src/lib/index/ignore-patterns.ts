@@ -6,7 +6,7 @@ export const DEFAULT_IGNORE_PATTERNS = [
   "*.ipynb",
   "*.pyc",
   "*.onnx",
-  // Non-code text files (osgrep is for CODE search)
+  // Non-code text files (gmax is for CODE search)
   "*.txt",
   "*.log",
   "*.csv",

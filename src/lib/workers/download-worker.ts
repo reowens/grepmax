@@ -7,7 +7,7 @@ import { MODEL_IDS } from "../../config";
 
 // Configuration
 const HOMEDIR = os.homedir();
-const CACHE_DIR = path.join(HOMEDIR, ".osgrep", "models");
+const CACHE_DIR = path.join(HOMEDIR, ".gmax", "models");
 env.cacheDir = CACHE_DIR;
 env.allowLocalModels = true;
 env.allowRemoteModels = true;
@@ -67,7 +67,7 @@ async function downloadModelWithTimeout(modelId: string, dtype: PipelineDType) {
 // Helper to manually download extra files like skiplist.json
 async function downloadExtraFile(modelId: string, filename: string) {
   const url = `https://huggingface.co/${modelId}/resolve/main/${filename}`;
-  // Construct path: ~/.osgrep/models/ryandono/osgrep-colbert-q8/skiplist.json
+  // Construct path: ~/.gmax/models/ryandono/gmax-colbert-q8/skiplist.json
   const destDir = path.join(CACHE_DIR, ...modelId.split("/"));
   const destPath = path.join(destDir, filename);
 

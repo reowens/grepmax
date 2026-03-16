@@ -143,7 +143,7 @@ export class Searcher {
     if (record.is_anchor) {
       // Minimal penalty to break ties
       const anchorPenalty =
-        Number.parseFloat(process.env.OSGREP_ANCHOR_PENALTY ?? "") || 0.99;
+        Number.parseFloat(process.env.GMAX_ANCHOR_PENALTY ?? "") || 0.99;
       adjusted *= anchorPenalty;
     } else {
       // Only boost non-anchors
@@ -212,7 +212,7 @@ export class Searcher {
 
     if (isTestPath) {
       const testPenalty =
-        Number.parseFloat(process.env.OSGREP_TEST_PENALTY ?? "") || 0.5;
+        Number.parseFloat(process.env.GMAX_TEST_PENALTY ?? "") || 0.5;
       adjusted *= testPenalty;
     }
     if (
@@ -224,7 +224,7 @@ export class Searcher {
       pathStr.includes("/docs/")
     ) {
       const docPenalty =
-        Number.parseFloat(process.env.OSGREP_DOC_PENALTY ?? "") || 0.6;
+        Number.parseFloat(process.env.GMAX_DOC_PENALTY ?? "") || 0.6;
       adjusted *= docPenalty; // Downweight docs/data
     }
     // Import-only penalty
@@ -360,7 +360,7 @@ export class Searcher {
     const whereClause =
       whereClauseParts.length > 0 ? whereClauseParts.join(" AND ") : undefined;
 
-    const envPreK = Number.parseInt(process.env.OSGREP_PRE_K ?? "", 10);
+    const envPreK = Number.parseInt(process.env.GMAX_PRE_K ?? "", 10);
     const PRE_RERANK_K =
       Number.isFinite(envPreK) && envPreK > 0
         ? envPreK
@@ -432,7 +432,7 @@ export class Searcher {
 
     // Item 8: Widen PRE_RERANK_K
     // Retrieve a wide set for Stage 1 filtering
-    const envStage1 = Number.parseInt(process.env.OSGREP_STAGE1_K ?? "", 10);
+    const envStage1 = Number.parseInt(process.env.GMAX_STAGE1_K ?? "", 10);
     const STAGE1_K =
       Number.isFinite(envStage1) && envStage1 > 0 ? envStage1 : 200;
     const topCandidates = fused.slice(0, STAGE1_K);
@@ -440,17 +440,14 @@ export class Searcher {
     // Item 9: Two-stage rerank
     // Stage 1: Cheap pooled cosine filter
     let stage2Candidates = topCandidates;
-    const envStage2K = Number.parseInt(process.env.OSGREP_STAGE2_K ?? "", 10);
+    const envStage2K = Number.parseInt(process.env.GMAX_STAGE2_K ?? "", 10);
     const STAGE2_K =
       Number.isFinite(envStage2K) && envStage2K > 0 ? envStage2K : 40;
 
-    const envRerankTop = Number.parseInt(
-      process.env.OSGREP_RERANK_TOP ?? "",
-      10,
-    );
+    const envRerankTop = Number.parseInt(process.env.GMAX_RERANK_TOP ?? "", 10);
     const RERANK_TOP =
       Number.isFinite(envRerankTop) && envRerankTop > 0 ? envRerankTop : 20;
-    const envBlend = Number.parseFloat(process.env.OSGREP_RERANK_BLEND ?? "");
+    const envBlend = Number.parseFloat(process.env.GMAX_RERANK_BLEND ?? "");
     const FUSED_WEIGHT =
       Number.isFinite(envBlend) && envBlend >= 0 ? envBlend : 0.5;
 
@@ -530,7 +527,7 @@ export class Searcher {
     const seenFiles = new Map<string, number>();
     const diversified: ScoredItem[] = [];
     const envMaxPerFile = Number.parseInt(
-      process.env.OSGREP_MAX_PER_FILE ?? "",
+      process.env.GMAX_MAX_PER_FILE ?? "",
       10,
     );
     const MAX_PER_FILE =

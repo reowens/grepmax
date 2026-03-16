@@ -9,7 +9,7 @@ import * as http from "node:http";
 const MLX_PORT = parseInt(process.env.MLX_EMBED_PORT || "8100", 10);
 const MLX_HOST = "127.0.0.1";
 const MLX_TIMEOUT_MS = 10_000;
-const EMBED_MODE = process.env.OSGREP_EMBED_MODE || "auto";
+const EMBED_MODE = process.env.GMAX_EMBED_MODE || "auto";
 
 let mlxAvailable: boolean | null = null;
 let lastCheck = 0;

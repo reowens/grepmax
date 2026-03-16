@@ -6,17 +6,18 @@ import type { VectorRecord } from "../store/types";
 import { VectorDB } from "../store/vector-db";
 import { isIndexableFile } from "../utils/file-utils";
 import { acquireWriterLockWithRetry, type LockHandle } from "../utils/lock";
+import { registerProject } from "../utils/project-registry";
 import { ensureProjectPaths } from "../utils/project-root";
 import { getWorkerPool } from "../workers/pool";
 import type { ProcessFileResult } from "../workers/worker";
-import type { InitialSyncProgress, InitialSyncResult } from "./sync-helpers";
-import { walk } from "./walker";
-
 import {
+  checkModelMismatch,
+  readGlobalConfig,
   readIndexConfig,
   writeIndexConfig,
-  checkModelMismatch,
 } from "./index-config";
+import type { InitialSyncProgress, InitialSyncResult } from "./sync-helpers";
+import { walk } from "./walker";
 
 type SyncOptions = {
   projectRoot: string;
@@ -85,7 +86,7 @@ export async function initialSync(
   const paths = ensureProjectPaths(projectRoot);
 
   // Propagate project root to worker processes
-  process.env.OSGREP_PROJECT_ROOT = paths.root;
+  process.env.GMAX_PROJECT_ROOT = paths.root;
 
   let lock: LockHandle | null = null;
   const vectorDb = new VectorDB(paths.lancedbDir);
@@ -94,7 +95,7 @@ export async function initialSync(
 
   try {
     if (!dryRun) {
-      lock = await acquireWriterLockWithRetry(paths.osgrepDir);
+      lock = await acquireWriterLockWithRetry(paths.dataDir);
       // Open MetaCache only after lock is acquired
       metaCache = new MetaCache(paths.lmdbPath);
     } else {
@@ -236,7 +237,7 @@ export async function initialSync(
     };
 
     for await (const relPath of walk(paths.root, {
-      additionalPatterns: ["**/.git/**", "**/.osgrep/**"], // exclude .git and .osgrep explicitly if walker doesn't
+      additionalPatterns: ["**/.git/**", "**/.gmax/**"], // exclude .git and .gmax explicitly if walker doesn't
     })) {
       if (signal?.aborted) {
         shouldSkipCleanup = true;
@@ -273,7 +274,7 @@ export async function initialSync(
 
           const cached = treatAsEmptyCache
             ? undefined
-            : metaCache!.get(relPath);
+            : metaCache?.get(relPath);
 
           if (
             cached &&
@@ -308,7 +309,7 @@ export async function initialSync(
 
           if (cached && cached.hash === result.hash) {
             if (!dryRun) {
-              metaCache!.put(relPath, metaEntry);
+              metaCache?.put(relPath, metaEntry);
             }
             processed += 1;
             seenPaths.add(relPath);
@@ -346,7 +347,7 @@ export async function initialSync(
             pendingDeletes.add(relPath);
             pendingMeta.delete(relPath);
             if (!dryRun) {
-              metaCache!.delete(relPath);
+              metaCache?.delete(relPath);
             }
             processed += 1;
             markProgress(relPath);
@@ -389,13 +390,25 @@ export async function initialSync(
     if (!dryRun && stale.length > 0 && !shouldSkipCleanup) {
       await vectorDb.deletePaths(stale);
       stale.forEach((p) => {
-        metaCache!.delete(p);
+        metaCache?.delete(p);
       });
     }
 
     // Write model config so future runs can detect model changes
     if (!dryRun) {
       writeIndexConfig(paths.configPath);
+
+      // Register project in global registry
+      const globalConfig = readGlobalConfig();
+      registerProject({
+        root: paths.root,
+        name: path.basename(paths.root),
+        vectorDim: globalConfig.vectorDim,
+        modelTier: globalConfig.modelTier,
+        embedMode: globalConfig.embedMode,
+        lastIndexed: new Date().toISOString(),
+        chunkCount: indexed,
+      });
     }
 
     // Finalize total so callers can display a meaningful summary.

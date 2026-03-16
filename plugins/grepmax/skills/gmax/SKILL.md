@@ -1,15 +1,15 @@
 ---
-name: osgrep
-description: Semantic code search. Use alongside grep - grep for exact strings, osgrep for concepts.
-allowed-tools: "mcp__osgrep__semantic_search, mcp__osgrep__code_skeleton, mcp__osgrep__trace_calls, mcp__osgrep__list_symbols, Bash(osgrep:*), Read"
+name: gmax
+description: Semantic code search. Use alongside grep - grep for exact strings, gmax for concepts.
+allowed-tools: "mcp__grepmax__semantic_search, mcp__grepmax__code_skeleton, mcp__grepmax__trace_calls, mcp__grepmax__list_symbols, mcp__grepmax__index_status, Bash(gmax:*), Read"
 ---
 
-## What osgrep does
+## What gmax does
 
-Finds code by meaning. When you'd ask a colleague "where do we handle auth?", use osgrep.
+Finds code by meaning. When you'd ask a colleague "where do we handle auth?", use gmax.
 
 - grep/ripgrep: exact string match, fast
-- osgrep: concept match, finds code you couldn't grep for
+- gmax: concept match, finds code you couldn't grep for
 
 ## MCP tools (preferred)
 
@@ -45,11 +45,11 @@ Check index and daemon health — file count, chunks, embed mode, age, watching 
 If MCP tools aren't available, use the CLI via Bash:
 
 ```bash
-osgrep "where do we validate user permissions"   # Semantic search
-osgrep "authentication" --compact                 # Just file paths + line ranges
-osgrep skeleton src/giant-2000-line-file.ts       # File structure
-osgrep trace handleAuth                           # Call graph
-osgrep symbols booking                            # Find symbols by name
+gmax "where do we validate user permissions"   # Semantic search
+gmax "authentication" --compact                 # Just file paths + line ranges
+gmax skeleton src/giant-2000-line-file.ts       # File structure
+gmax trace handleAuth                           # Call graph
+gmax symbols booking                            # Find symbols by name
 ```
 
 ## Output explained (CLI)

@@ -9,10 +9,10 @@ describe("serve watcher ignore predicate", () => {
   let tempRoot: string;
 
   beforeEach(async () => {
-    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "osgrep-watch-"));
-    await fs.mkdir(path.join(tempRoot, ".osgrep"), { recursive: true });
+    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gmax-watch-"));
+    await fs.mkdir(path.join(tempRoot, ".gmax"), { recursive: true });
     await fs.mkdir(path.join(tempRoot, ".git"), { recursive: true });
-    await fs.writeFile(path.join(tempRoot, ".osgrep", "server.json"), "{}");
+    await fs.writeFile(path.join(tempRoot, ".gmax", "server.json"), "{}");
   });
 
   afterEach(async () => {
@@ -26,10 +26,10 @@ describe("serve watcher ignore predicate", () => {
     );
     expect(strings).toContain("**/node_modules/**");
     expect(strings).toContain("**/.git/**");
-    expect(strings).toContain("**/.osgrep/**");
+    expect(strings).toContain("**/.gmax/**");
   });
 
-  it("does not throw on the root path and ignores osgrep/git internals", async () => {
+  it("does not throw on the root path and ignores gmax/git internals", async () => {
     const globPatterns = WATCHER_IGNORE_PATTERNS.filter(
       (p): p is string => typeof p === "string",
     );
@@ -49,7 +49,7 @@ describe("serve watcher ignore predicate", () => {
     expect(() => ignored(tempRoot)).not.toThrow();
     expect(ignored(tempRoot)).toBe(false);
 
-    expect(ignored(path.join(tempRoot, ".osgrep", "server.json"))).toBe(true);
+    expect(ignored(path.join(tempRoot, ".gmax", "server.json"))).toBe(true);
     expect(ignored(path.join(tempRoot, ".git", "HEAD"))).toBe(true);
   });
 });

@@ -2,24 +2,22 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as p from "@clack/prompts";
 import { Command } from "commander";
-import { MODEL_IDS, PATHS } from "../config";
+import { MODEL_IDS, MODEL_TIERS, PATHS } from "../config";
 import { ensureGrammars } from "../lib/index/grammar-loader";
-import { readIndexConfig, writeSetupConfig } from "../lib/index/index-config";
+import {
+  readGlobalConfig,
+  readIndexConfig,
+  writeGlobalConfig,
+  writeSetupConfig,
+} from "../lib/index/index-config";
 import { ensureSetup } from "../lib/setup/setup-helpers";
-import { ensureProjectPaths } from "../lib/utils/project-root";
 import { gracefulExit } from "../lib/utils/exit";
-
-const MLX_MODELS = [
-  {
-    value: "ibm-granite/granite-embedding-small-english-r2",
-    label: "Granite Small (general purpose, 384-dim)",
-  },
-] as const;
+import { ensureProjectPaths } from "../lib/utils/project-root";
 
 export const setup = new Command("setup")
   .description("Interactive setup: download models, choose embedding mode")
   .action(async () => {
-    p.intro("osgrep setup");
+    p.intro("gmax setup");
 
     // Step 1: Download ONNX models + grammars (existing behavior)
     try {
@@ -42,12 +40,15 @@ export const setup = new Command("setup")
       const modelPath = path.join(PATHS.models, ...id.split("/"));
       return { id, exists: fs.existsSync(modelPath) };
     });
-    modelStatuses.forEach(({ id, exists }) => {
+    for (const { id, exists } of modelStatuses) {
       p.log.info(`${exists ? "✓" : "✗"} ${id}`);
-    });
+    }
 
     // Check skiplist
-    const colbertPath = path.join(PATHS.models, ...MODEL_IDS.colbert.split("/"));
+    const colbertPath = path.join(
+      PATHS.models,
+      ...MODEL_IDS.colbert.split("/"),
+    );
     const skiplistPath = path.join(colbertPath, "skiplist.json");
     if (!fs.existsSync(skiplistPath)) {
       try {
@@ -63,10 +64,32 @@ export const setup = new Command("setup")
       }
     }
 
-    // Step 3: Interactive embed mode selection
+    // Step 3: Read existing config
     const paths = ensureProjectPaths(process.cwd());
     const existingConfig = readIndexConfig(paths.configPath);
+    const globalConfig = readGlobalConfig();
 
+    // Step 4: Model tier selection
+    const modelTier = await p.select({
+      message: "Model size",
+      options: Object.values(MODEL_TIERS).map((tier) => ({
+        value: tier.id,
+        label: tier.label,
+        hint: tier.id === "standard" ? "32GB+ RAM recommended" : "recommended",
+      })),
+      initialValue:
+        existingConfig?.modelTier ?? globalConfig.modelTier ?? "small",
+    });
+
+    if (p.isCancel(modelTier)) {
+      p.cancel("Setup cancelled");
+      await gracefulExit();
+      return;
+    }
+
+    const selectedTier = MODEL_TIERS[modelTier];
+
+    // Step 5: Embed mode selection
     const embedMode = await p.select({
       message: "Embedding mode",
       options: [
@@ -81,7 +104,11 @@ export const setup = new Command("setup")
           hint: "Apple Silicon only, faster indexing + search",
         },
       ],
-      initialValue: existingConfig?.embedMode ?? (process.arch === "arm64" && process.platform === "darwin" ? "gpu" : "cpu"),
+      initialValue:
+        existingConfig?.embedMode ??
+        (process.arch === "arm64" && process.platform === "darwin"
+          ? "gpu"
+          : "cpu"),
     });
 
     if (p.isCancel(embedMode)) {
@@ -90,43 +117,38 @@ export const setup = new Command("setup")
       return;
     }
 
-    let mlxModel: string | undefined;
-    if (embedMode === "gpu") {
-      const modelChoice = await p.select({
-        message: "MLX embedding model",
-        options: MLX_MODELS.map((m) => ({
-          value: m.value,
-          label: m.label,
-        })),
-        initialValue: existingConfig?.mlxModel ?? MLX_MODELS[0].value,
-      });
+    const mlxModel = embedMode === "gpu" ? selectedTier.mlxModel : undefined;
 
-      if (p.isCancel(modelChoice)) {
-        p.cancel("Setup cancelled");
-        await gracefulExit();
-        return;
+    // Step 6: Write configs
+    writeSetupConfig(paths.configPath, {
+      embedMode,
+      mlxModel,
+      modelTier,
+    });
+    writeGlobalConfig({
+      modelTier,
+      vectorDim: selectedTier.vectorDim,
+      embedMode,
+      mlxModel,
+    });
+
+    // Step 7: Warn about reindex if tier/mode changed
+    if (existingConfig?.indexedAt) {
+      const tierChanged = existingConfig.modelTier !== modelTier;
+      const modeChanged = existingConfig.embedMode !== embedMode;
+      if (tierChanged) {
+        p.log.warn(
+          `Model tier changed (${existingConfig.vectorDim ?? 384}d → ${selectedTier.vectorDim}d). Existing indexes will be rebuilt on next use.`,
+        );
+      } else if (modeChanged) {
+        p.log.warn(
+          "Embedding mode changed. Run `gmax serve` to apply the new settings.",
+        );
       }
-      mlxModel = modelChoice;
-    }
-
-    // Step 4: Write config
-    writeSetupConfig(paths.configPath, { embedMode, mlxModel });
-
-    // Step 5: Warn about reindex if mode/model changed
-    if (
-      existingConfig?.indexedAt &&
-      (existingConfig.embedMode !== embedMode ||
-        existingConfig.mlxModel !== mlxModel)
-    ) {
-      p.log.warn(
-        "Embedding mode changed. Run `osgrep serve` to reindex with the new settings.",
-      );
     }
 
     p.outro(
-      embedMode === "gpu"
-        ? `Ready — GPU mode with ${mlxModel}`
-        : "Ready — CPU mode",
+      `Ready — ${selectedTier.label}, ${embedMode === "gpu" ? "GPU" : "CPU"} mode`,
     );
 
     await gracefulExit();
