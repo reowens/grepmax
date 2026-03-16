@@ -1,6 +1,6 @@
 {
   "name": "grepmax",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Semantic code search for Claude Code. Automatically indexes your project and provides intelligent search capabilities.",
   "author": {
     "name": "Robert Owens",
