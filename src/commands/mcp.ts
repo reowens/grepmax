@@ -345,23 +345,42 @@ export const mcp = new Command("mcp")
         const maxPerFile =
           typeof args.max_per_file === "number" ? args.max_per_file : 0;
 
-        let compact = result.data.map((r: any) => ({
-          path: r.path ?? r.metadata?.path ?? "",
-          startLine: r.startLine ?? r.generated_metadata?.start_line ?? 0,
-          endLine: r.endLine ?? r.generated_metadata?.end_line ?? 0,
-          score: typeof r.score === "number" ? +r.score.toFixed(3) : 0,
-          role: r.role ?? "IMPLEMENTATION",
-          confidence: r.confidence ?? "Unknown",
-          definedSymbols: toStringArray(
-            r.definedSymbols ?? r.defined_symbols,
-          ).slice(0, 5),
-          snippet:
+        const MAX_SNIPPET_LINES = 8;
+
+        let compact = result.data.map((r: any) => {
+          const startLine =
+            r.startLine ?? r.generated_metadata?.start_line ?? 0;
+          const raw =
             typeof r.content === "string"
               ? r.content
               : typeof r.text === "string"
                 ? r.text
-                : "",
-        }));
+                : "";
+
+          // Add line numbers and cap at MAX_SNIPPET_LINES
+          const lines = raw.split("\n");
+          const capped = lines.slice(0, MAX_SNIPPET_LINES);
+          const numbered = capped.map(
+            (line: string, i: number) => `${startLine + i + 1}│${line}`,
+          );
+          const snippet =
+            lines.length > MAX_SNIPPET_LINES
+              ? `${numbered.join("\n")}\n… (+${lines.length - MAX_SNIPPET_LINES} more lines)`
+              : numbered.join("\n");
+
+          return {
+            path: r.path ?? r.metadata?.path ?? "",
+            startLine,
+            endLine: r.endLine ?? r.generated_metadata?.end_line ?? 0,
+            score: typeof r.score === "number" ? +r.score.toFixed(3) : 0,
+            role: r.role ?? "IMPLEMENTATION",
+            confidence: r.confidence ?? "Unknown",
+            definedSymbols: toStringArray(
+              r.definedSymbols ?? r.defined_symbols,
+            ).slice(0, 5),
+            snippet,
+          };
+        });
 
         if (minScore > 0) {
           compact = compact.filter((r) => r.score >= minScore);
