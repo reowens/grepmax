@@ -38,7 +38,7 @@ export const MODEL_IDS = {
 };
 
 const DEFAULT_WORKER_THREADS = (() => {
-  const fromEnv = Number.parseInt(process.env.OSGREP_WORKER_THREADS ?? "", 10);
+  const fromEnv = Number.parseInt(process.env.GMAX_WORKER_THREADS ?? "", 10);
   if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv;
 
   const cores = os.cpus().length || 1;
@@ -57,17 +57,17 @@ export const CONFIG = {
 };
 
 export const WORKER_TIMEOUT_MS = Number.parseInt(
-  process.env.OSGREP_WORKER_TIMEOUT_MS || "60000",
+  process.env.GMAX_WORKER_TIMEOUT_MS || "60000",
   10,
 );
 
 export const WORKER_BOOT_TIMEOUT_MS = Number.parseInt(
-  process.env.OSGREP_WORKER_BOOT_TIMEOUT_MS || "300000",
+  process.env.GMAX_WORKER_BOOT_TIMEOUT_MS || "300000",
   10,
 );
 
 export const MAX_WORKER_MEMORY_MB = Number.parseInt(
-  process.env.OSGREP_MAX_WORKER_MEMORY_MB ||
+  process.env.GMAX_MAX_WORKER_MEMORY_MB ||
     String(
       Math.max(
         2048,

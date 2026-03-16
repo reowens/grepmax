@@ -519,7 +519,7 @@ export const search: Command = new CommanderCommand("search")
       const paths = ensureProjectPaths(projectRoot);
 
       // Propagate project root to worker processes
-      process.env.OSGREP_PROJECT_ROOT = projectRoot;
+      process.env.GMAX_PROJECT_ROOT = projectRoot;
 
       vectorDb = new VectorDB(paths.lancedbDir);
 

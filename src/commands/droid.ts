@@ -130,14 +130,14 @@ function mergeHooks(
 
 async function installPlugin() {
   const root = resolveDroidRoot();
-  const hooksDir = path.join(root, "hooks", "osgrep");
-  const skillsDir = path.join(root, "skills", "osgrep");
+  const hooksDir = path.join(root, "hooks", "gmax");
+  const skillsDir = path.join(root, "skills", "gmax");
   const settingsPath = path.join(root, "settings.json");
 
   // 1. Install Hook Scripts (Start/Stop Daemon)
   // We expect these files to exist in your dist/hooks folder
-  const startJsPath = path.join(hooksDir, "osgrep_start.js");
-  const stopJsPath = path.join(hooksDir, "osgrep_stop.js");
+  const startJsPath = path.join(hooksDir, "gmax_start.js");
+  const stopJsPath = path.join(hooksDir, "gmax_stop.js");
 
   // Create these scripts dynamically if we don't want to read from dist
   const startScript = `
@@ -188,8 +188,8 @@ try { execSync("pkill -f 'gmax serve'"); } catch {}
 
 async function uninstallPlugin() {
   const root = resolveDroidRoot();
-  const hooksDir = path.join(root, "hooks", "osgrep");
-  const skillsDir = path.join(root, "skills", "osgrep");
+  const hooksDir = path.join(root, "hooks", "gmax");
+  const skillsDir = path.join(root, "skills", "gmax");
 
   if (fs.existsSync(hooksDir))
     fs.rmSync(hooksDir, { recursive: true, force: true });

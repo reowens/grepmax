@@ -36,7 +36,7 @@ Natural-language search that works like `grep`. Fast, local, and built for codin
 2.  **Setup (Recommended)**
 
     ```bash
-    osgrep setup
+    gmax setup
     ```
 
     Downloads embedding models (~150MB) upfront and lets you choose between CPU (ONNX) and GPU (MLX) embedding modes. If you skip this, models download automatically on first use.
@@ -45,61 +45,61 @@ Natural-language search that works like `grep`. Fast, local, and built for codin
 
     ```bash
     cd my-repo
-    osgrep "where do we handle authentication?"
+    gmax "where do we handle authentication?"
     ```
 
-    **Your first search will automatically index the repository.** Each repository is automatically isolated with its own index. Switching between repos "just works" — no manual configuration needed. If the background server is running (`osgrep serve`), search goes through the hot daemon; otherwise it falls back to on-demand indexing.
+    **Your first search will automatically index the repository.** Each repository is automatically isolated with its own index. Switching between repos "just works" — no manual configuration needed. If the background server is running (`gmax serve`), search goes through the hot daemon; otherwise it falls back to on-demand indexing.
 
 4.  **Trace** (Call Graph)
 
     ```bash
-    osgrep trace "function_name"
+    gmax trace "function_name"
     ```
 See who calls a function (upstream dependencies) and what it calls (downstream dependencies). Perfect for impact analysis and understanding code flow.
 
 To find the symbols in your code base:
     ```bash
-    osgrep symbols
+    gmax symbols
     ```
 
 In our public benchmarks, `grepmax` can save about 20% of your LLM tokens and deliver a 30% speedup.
 
 <div align="center">
-  <img src="public/bench.png" alt="osgrep benchmark" width="100%" style="border-radius: 8px; margin: 20px 0;" />
+  <img src="public/bench.png" alt="gmax benchmark" width="100%" style="border-radius: 8px; margin: 20px 0;" />
 </div>
 
 
 
 ### Claude Code Plugin
 
-1. Run `osgrep install-claude-code`
+1. Run `gmax install-claude-code`
 2. Open Claude Code (`claude`) and ask it questions about your codebase.
 3. Highly recommend indexing your code base before using the plugin.
-4. The plugin's hooks auto-start `osgrep serve` in the background and shut it down on session end. Claude will use `osgrep` for semantic searches automatically but can be encouraged to do so.
+4. The plugin's hooks auto-start `gmax serve` in the background and shut it down on session end. Claude will use `gmax` for semantic searches automatically but can be encouraged to do so.
 
 ### Opencode Plugin
-1. Run `osgrep install-opencode`
+1. Run `gmax install-opencode`
 2. Open OC (`opencode`) and ask it questions about your codebase.
 3. Highly recommend indexing your code base before using the plugin.
-4. The plugin's hooks auto-start `osgrep serve` in the background and shut it down on session end. OC will use `osgrep` for semantic searches automatically but can be encouraged to do so.
+4. The plugin's hooks auto-start `gmax serve` in the background and shut it down on session end. OC will use `gmax` for semantic searches automatically but can be encouraged to do so.
 
 ### Codex Plugin
-1. Run `osgrep install-codex`
-2. Codex will use `osgrep` for semantic searches.
+1. Run `gmax install-codex`
+2. Codex will use `gmax` for semantic searches.
 
 ### Factory Droid Plugin
-1. Run `osgrep install-droid`
-2. To remove: `osgrep uninstall-droid`
+1. Run `gmax install-droid`
+2. To remove: `gmax uninstall-droid`
 
 ### MCP Server
 
-osgrep exposes tools via the [Model Context Protocol](https://modelcontextprotocol.io/) for any MCP-compatible AI agent or editor.
+gmax exposes tools via the [Model Context Protocol](https://modelcontextprotocol.io/) for any MCP-compatible AI agent or editor.
 
 ```bash
-osgrep mcp
+gmax mcp
 ```
 
-This starts a stdio-based MCP server that auto-launches the `osgrep serve` daemon. Available tools:
+This starts a stdio-based MCP server that auto-launches the `gmax serve` daemon. Available tools:
 
 | Tool | Description |
 | --- | --- |
@@ -112,12 +112,12 @@ This starts a stdio-based MCP server that auto-launches the `osgrep serve` daemo
 
 ## Commands
 
-### `osgrep search`
+### `gmax search`
 
 The default command. Searches the current directory using semantic meaning.
 
 ```bash
-osgrep "how is the database connection pooled?"
+gmax "how is the database connection pooled?"
 ```
 
 **Options:**
@@ -139,26 +139,26 @@ osgrep "how is the database connection pooled?"
 
 ```bash
 # General concept search
-osgrep "API rate limiting logic"
+gmax "API rate limiting logic"
 
 # Deep dive (show more matches per file)
-osgrep "error handling" --per-file 5
+gmax "error handling" --per-file 5
 
 # Just give me the files
-osgrep "user validation" --compact
+gmax "user validation" --compact
 
 # Show relevance scores and filter low-confidence matches
-osgrep "authentication" --scores --min-score 0.5
+gmax "authentication" --scores --min-score 0.5
 
 # Show skeletons of matching files
-osgrep "database connection" --skeleton
+gmax "database connection" --skeleton
 ```
 
-### `osgrep index`
+### `gmax index`
 
 Manually indexes the repository. Useful if you want to pre-warm the cache or if you've made massive changes outside of the editor.
 
-- Respects `.gitignore` and `.osgrepignore` (see [Configuration](#ignoring-files) section).
+- Respects `.gitignore` and `.gmaxignore` (see [Configuration](#ignoring-files) section).
 - **Smart Indexing:** Only embeds code and config files. Skips binaries, lockfiles, and minified assets.
 - **Bounded Concurrency:** Uses a fixed thread pool to keep your system responsive.
 - **Semantic Chunking:** Uses TreeSitter grammars for supported languages (TypeScript, JavaScript, Python, Go, Rust, C/C++, Java, C#, Ruby, PHP, Swift, Kotlin, JSON).
@@ -175,13 +175,13 @@ Manually indexes the repository. Useful if you want to pre-warm the cache or if 
 **Examples:**
 
 ```bash
-osgrep index                    # Index current dir
-osgrep index --dry-run          # See what would be indexed
-osgrep index --verbose          # Watch detailed progress (useful for debugging)
-osgrep index --reset            # Full re-index from scratch
+gmax index                    # Index current dir
+gmax index --dry-run          # See what would be indexed
+gmax index --verbose          # Watch detailed progress (useful for debugging)
+gmax index --reset            # Full re-index from scratch
 ```
 
-### `osgrep serve`
+### `gmax serve`
 
 Runs a lightweight HTTP server with live file watching so searches stay hot in RAM.
 
@@ -204,57 +204,57 @@ Runs a lightweight HTTP server with live file watching so searches stay hot in R
 
 **Port Selection (priority order):**
 1. Explicit `-p <port>` flag
-2. `OSGREP_PORT` environment variable
+2. `GMAX_PORT` environment variable
 3. Default `4444` (auto-increments if in use)
 
 **Usage:**
 
 ```bash
-osgrep serve                    # Foreground, port 4444 (or next available)
-osgrep serve --background       # Background mode, auto port
-osgrep serve -b -p 5000         # Background on specific port
+gmax serve                    # Foreground, port 4444 (or next available)
+gmax serve --background       # Background mode, auto port
+gmax serve -b -p 5000         # Background on specific port
 ```
 
 **Subcommands:**
 
 ```bash
-osgrep serve status             # Show server status for current directory
-osgrep serve stop               # Stop server in current directory
-osgrep serve stop --all         # Stop all running osgrep servers
+gmax serve status             # Show server status for current directory
+gmax serve stop               # Stop server in current directory
+gmax serve stop --all         # Stop all running gmax servers
 ```
 
 **Example workflow:**
 
 ```bash
 # Start servers in multiple projects
-cd ~/project-a && osgrep serve -b    # Starts on port 4444
-cd ~/project-b && osgrep serve -b    # Starts on port 4445 (auto-increment)
+cd ~/project-a && gmax serve -b    # Starts on port 4444
+cd ~/project-b && gmax serve -b    # Starts on port 4445 (auto-increment)
 
 # Check status
-osgrep serve status
+gmax serve status
 
 # Stop all when done
-osgrep serve stop --all
+gmax serve stop --all
 ```
 
 Claude Code hooks start/stop this automatically; you rarely need to run it manually.
 
-### `osgrep list`
+### `gmax list`
 
 Lists all indexed repositories (stores) and their metadata.
 
 ```bash
-osgrep list
+gmax list
 ```
 
 Shows store names, sizes, and last modified times. Useful for seeing what's indexed and cleaning up old stores.
 
-### `osgrep skeleton`
+### `gmax skeleton`
 
 Generates a compressed "skeleton" of a file, showing only signatures, types, and class structures while eliding function bodies.
 
 ```bash
-osgrep skeleton src/lib/auth.ts
+gmax skeleton src/lib/auth.ts
 ```
 
 **Output:**
@@ -267,25 +267,25 @@ class AuthService {
 ```
 
 **Modes:**
-- `osgrep skeleton <file>`: Skeletonize specific file.
-- `osgrep skeleton <Symbol>`: Find symbol in index and skeletonize its file.
-- `osgrep skeleton "query"`: Search for query and skeletonize top matches.
+- `gmax skeleton <file>`: Skeletonize specific file.
+- `gmax skeleton <Symbol>`: Find symbol in index and skeletonize its file.
+- `gmax skeleton "query"`: Search for query and skeletonize top matches.
 
 **Supported Languages:**
 TypeScript, JavaScript, Python, Go, Rust, Java, C#, C++, C, Ruby, PHP, Swift, Kotlin.
 
 
-### `osgrep doctor`
+### `gmax doctor`
 
 Checks installation health, model paths, and database integrity.
 
 ```bash
-osgrep doctor
+gmax doctor
 ```
 
 ## Performance & Architecture
 
-osgrep is designed to be a "good citizen" on your machine:
+gmax is designed to be a "good citizen" on your machine:
 
 1.  **Bounded Concurrency:** Chunking/embedding stay within small thread pools (1–4) and capped batch sizes to keep laptops responsive.
 2.  **Smart Chunking:** Uses `tree-sitter` to split code by function/class boundaries, ensuring embeddings capture complete logical blocks.
@@ -300,7 +300,7 @@ osgrep is designed to be a "good citizen" on your machine:
 
 ### Automatic Repository Isolation
 
-osgrep automatically creates a unique index for each repository based on:
+gmax automatically creates a unique index for each repository based on:
 
 1. **Git Remote URL** (e.g., `github.com/facebook/react` → `facebook-react`)
 2. **Git Repo without Remote** → directory name + hash (e.g., `utils-7f8a2b3c`)
@@ -309,19 +309,19 @@ osgrep automatically creates a unique index for each repository based on:
 **Examples:**
 ```bash
 cd ~/work/myproject        # Auto-detected: owner-myproject
-osgrep "API handlers"
+gmax "API handlers"
 
 cd ~/personal/utils        # Auto-detected: utils-abc12345
-osgrep "helper functions"
+gmax "helper functions"
 ```
 
 Stores are isolated automatically — no manual `--store` flags needed!
 
 ### Ignoring Files
 
-osgrep respects both `.gitignore` and `.osgrepignore` files when indexing. Create a `.osgrepignore` file in your repository root to exclude additional files or patterns from indexing.
+gmax respects both `.gitignore` and `.gmaxignore` files when indexing. Create a `.gmaxignore` file in your repository root to exclude additional files or patterns from indexing.
 
-**`.osgrepignore` syntax:**
+**`.gmaxignore` syntax:**
 - Uses the same pattern syntax as `.gitignore`
 - Patterns are relative to the repository root
 - Supports glob patterns, negation (`!`), and directory patterns (`/`)
@@ -329,20 +329,20 @@ osgrep respects both `.gitignore` and `.osgrepignore` files when indexing. Creat
 
 ### Index Management
 
-- **View indexed projects:** `osgrep list`
-- **Index location:** `.osgrep/` in each project root
-- **Clean up a project index:** `rm -rf .osgrep/` in the project directory
-- **Global data (models, grammars):** `~/.osgrep/`
+- **View indexed projects:** `gmax list`
+- **Index location:** `.gmax/` in each project root
+- **Clean up a project index:** `rm -rf .gmax/` in the project directory
+- **Global data (models, grammars):** `~/.gmax/`
 
 ### GPU Embeddings (Apple Silicon)
 
-On Macs with Apple Silicon, osgrep can use MLX for GPU-accelerated embeddings instead of ONNX on CPU.
+On Macs with Apple Silicon, gmax can use MLX for GPU-accelerated embeddings instead of ONNX on CPU.
 
-1. Run `osgrep setup` and select **GPU (MLX)** when prompted.
-2. Start the server: `osgrep serve` (automatically starts the MLX embed server).
-3. To force CPU mode on a GPU-configured project: `osgrep serve --cpu`.
+1. Run `gmax setup` and select **GPU (MLX)** when prompted.
+2. Start the server: `gmax serve` (automatically starts the MLX embed server).
+3. To force CPU mode on a GPU-configured project: `gmax serve --cpu`.
 
-The MLX embed server runs on port `8100` by default (configurable via `MLX_EMBED_PORT`). It is managed automatically by `osgrep serve` — you don't need to start it manually.
+The MLX embed server runs on port `8100` by default (configurable via `MLX_EMBED_PORT`). It is managed automatically by `gmax serve` — you don't need to start it manually.
 
 ## Development
 
@@ -355,15 +355,15 @@ pnpm format       # biome check
 
 ## Troubleshooting
 
-- **Index feels stale?** Run `osgrep index` to refresh, or use `osgrep serve` for live reindexing.
-- **Weird results?** Run `osgrep doctor` to verify models.
-- **Index getting stuck?** Run `osgrep index --verbose` to see which file is being processed.
-- **Need a fresh start?** Delete `.osgrep/` in your project root and run `osgrep index`.
-- **MLX server won't start?** Check `/tmp/mlx-embed-server.log` for errors. Use `osgrep serve --cpu` to fall back to CPU.
+- **Index feels stale?** Run `gmax index` to refresh, or use `gmax serve` for live reindexing.
+- **Weird results?** Run `gmax doctor` to verify models.
+- **Index getting stuck?** Run `gmax index --verbose` to see which file is being processed.
+- **Need a fresh start?** Delete `.gmax/` in your project root and run `gmax index`.
+- **MLX server won't start?** Check `/tmp/mlx-embed-server.log` for errors. Use `gmax serve --cpu` to fall back to CPU.
 
 ## Attribution
 
-osgrep is built upon the foundation of [mgrep](https://github.com/mixedbread-ai/mgrep) by MixedBread. We acknowledge and appreciate the original architectural concepts and design decisions that informed this work.
+gmax is built upon the foundation of [mgrep](https://github.com/mixedbread-ai/mgrep) by MixedBread. We acknowledge and appreciate the original architectural concepts and design decisions that informed this work.
 
 
 See the [NOTICE](NOTICE) file for detailed attribution information.

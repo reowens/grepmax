@@ -30,7 +30,7 @@ async function installPlugin() {
   try {
     // 1. Register the MCP Tool
     // 'gmax mcp' acts as the server.
-    await execAsync("codex mcp add osgrep gmax mcp", {
+    await execAsync("codex mcp add gmax gmax mcp", {
       shell,
       env: process.env,
     });
@@ -59,7 +59,7 @@ async function installPlugin() {
 
 async function uninstallPlugin() {
   try {
-    await execAsync("codex mcp remove osgrep", { shell, env: process.env });
+    await execAsync("codex mcp remove gmax", { shell, env: process.env });
     console.log("✅ gmax MCP tool removed");
   } catch (_e) {
     /* ignore if not found */

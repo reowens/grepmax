@@ -67,7 +67,7 @@ export const watch = new Command("watch")
     const paths = ensureProjectPaths(projectRoot);
 
     // Propagate project root to worker processes
-    process.env.OSGREP_PROJECT_ROOT = paths.root;
+    process.env.GMAX_PROJECT_ROOT = paths.root;
 
     console.log(`[watch:${projectName}] Starting...`);
 

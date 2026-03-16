@@ -30,7 +30,7 @@ const DEFAULT_DATASET = path.resolve(
 );
 const DEFAULT_OLD_BIN = path.resolve(
   __dirname,
-  "../../old-osgrep/dist/index.js",
+  "../../old-gmax/dist/index.js",
 );
 const DEFAULT_NEW_BIN = path.resolve(__dirname, "../dist/index.js");
 const DEFAULT_RUNS = Number.parseInt(process.env.RUNS || "1", 10) || 1;
@@ -106,16 +106,16 @@ function main() {
   const newBin = path.resolve(process.env.NEW_BIN || DEFAULT_NEW_BIN);
   const runs = DEFAULT_RUNS;
 
-  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "osgrep-bench-"));
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gmax-bench-"));
   const resultsDir = path.resolve(__dirname, "../benchmark/results");
   ensureDir(resultsDir);
 
   const env: NodeJS.ProcessEnv = {
     ...process.env,
-    OSGREP_WORKER_THREADS: process.env.OSGREP_WORKER_THREADS || "4",
-    OSGREP_WORKER_TASK_TIMEOUT_MS:
-      process.env.OSGREP_WORKER_TASK_TIMEOUT_MS || "240000",
-    OSGREP_LOG_PLAIN: "1",
+    GMAX_WORKER_THREADS: process.env.GMAX_WORKER_THREADS || "4",
+    GMAX_WORKER_TASK_TIMEOUT_MS:
+      process.env.GMAX_WORKER_TASK_TIMEOUT_MS || "240000",
+    GMAX_LOG_PLAIN: "1",
   };
 
   const engines: EngineConfig[] = [
@@ -146,8 +146,8 @@ function main() {
     dataset,
     runs,
     envOverrides: {
-      OSGREP_WORKER_THREADS: env.OSGREP_WORKER_THREADS,
-      OSGREP_WORKER_TASK_TIMEOUT_MS: env.OSGREP_WORKER_TASK_TIMEOUT_MS,
+      GMAX_WORKER_THREADS: env.GMAX_WORKER_THREADS,
+      GMAX_WORKER_TASK_TIMEOUT_MS: env.GMAX_WORKER_TASK_TIMEOUT_MS,
     },
     engines,
     results,

@@ -4,7 +4,7 @@ import { AutoTokenizer } from "@huggingface/transformers";
 import * as ort from "onnxruntime-node";
 
 // CONFIGURATION
-const MODEL_DIR = path.resolve("./osgrep-models/colbert"); // Adjust if your path differs
+const MODEL_DIR = path.resolve("./gmax-models/colbert"); // Adjust if your path differs
 const MODEL_PATH = path.join(MODEL_DIR, "model.onnx");
 const SKIPLIST_PATH = path.join(MODEL_DIR, "skiplist.json");
 

@@ -86,7 +86,7 @@ export async function initialSync(
   const paths = ensureProjectPaths(projectRoot);
 
   // Propagate project root to worker processes
-  process.env.OSGREP_PROJECT_ROOT = paths.root;
+  process.env.GMAX_PROJECT_ROOT = paths.root;
 
   let lock: LockHandle | null = null;
   const vectorDb = new VectorDB(paths.lancedbDir);
@@ -274,7 +274,7 @@ export async function initialSync(
 
           const cached = treatAsEmptyCache
             ? undefined
-            : metaCache!.get(relPath);
+            : metaCache?.get(relPath);
 
           if (
             cached &&
@@ -309,7 +309,7 @@ export async function initialSync(
 
           if (cached && cached.hash === result.hash) {
             if (!dryRun) {
-              metaCache!.put(relPath, metaEntry);
+              metaCache?.put(relPath, metaEntry);
             }
             processed += 1;
             seenPaths.add(relPath);
@@ -347,7 +347,7 @@ export async function initialSync(
             pendingDeletes.add(relPath);
             pendingMeta.delete(relPath);
             if (!dryRun) {
-              metaCache!.delete(relPath);
+              metaCache?.delete(relPath);
             }
             processed += 1;
             markProgress(relPath);
@@ -390,7 +390,7 @@ export async function initialSync(
     if (!dryRun && stale.length > 0 && !shouldSkipCleanup) {
       await vectorDb.deletePaths(stale);
       stale.forEach((p) => {
-        metaCache!.delete(p);
+        metaCache?.delete(p);
       });
     }
 

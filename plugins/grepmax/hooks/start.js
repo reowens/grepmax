@@ -39,8 +39,9 @@ function startMlxServer() {
 }
 
 async function main() {
-  // Start MLX embed server if not running (set OSGREP_EMBED_MODE=cpu to skip)
-  const embedMode = process.env.OSGREP_EMBED_MODE || "auto";
+  // Start MLX embed server if not running (set GMAX_EMBED_MODE=cpu to skip)
+  const embedMode =
+    process.env.GMAX_EMBED_MODE || process.env.OSGREP_EMBED_MODE || "auto";
   if (embedMode !== "cpu") {
     const mlxUp = await isMlxRunning();
     if (!mlxUp) {

@@ -7,8 +7,8 @@ import {
 
 export type { ProcessFileInput, ProcessFileResult, RerankDoc };
 
-const vectorDim = process.env.OSGREP_VECTOR_DIM
-  ? Number.parseInt(process.env.OSGREP_VECTOR_DIM, 10)
+const vectorDim = process.env.GMAX_VECTOR_DIM
+  ? Number.parseInt(process.env.GMAX_VECTOR_DIM, 10)
   : undefined;
 const orchestrator = new WorkerOrchestrator(vectorDim);
 

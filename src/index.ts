@@ -29,7 +29,7 @@ program
   .option(
     "--store <string>",
     "The store to use (auto-detected if not specified)",
-    process.env.OSGREP_STORE || undefined,
+    process.env.GMAX_STORE || undefined,
   );
 
 const legacyDataPath = path.join(require("node:os").homedir(), ".gmax", "data");

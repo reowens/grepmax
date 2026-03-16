@@ -8,14 +8,14 @@ const TOOL_PATH = path.join(
   ".config",
   "opencode",
   "tool",
-  "osgrep.ts",
+  "gmax.ts",
 );
 const PLUGIN_PATH = path.join(
   os.homedir(),
   ".config",
   "opencode",
   "plugin",
-  "osgrep.ts",
+  "gmax.ts",
 );
 const CONFIG_PATH = path.join(
   os.homedir(),
@@ -153,7 +153,7 @@ async function install() {
     if (!config.$schema) config.$schema = "https://opencode.ai/config.json";
     if (!config.mcp) config.mcp = {};
 
-    config.mcp.osgrep = {
+    config.mcp.gmax = {
       type: "local",
       command: ["gmax", "mcp"],
       enabled: true,
@@ -180,8 +180,8 @@ async function uninstall() {
     // 2. Unregister MCP
     if (fs.existsSync(CONFIG_PATH)) {
       const config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8") || "{}");
-      if (config.mcp?.osgrep) {
-        delete config.mcp.osgrep;
+      if (config.mcp?.gmax) {
+        delete config.mcp.gmax;
         fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
         console.log("✅ Unregistered MCP server.");
       }

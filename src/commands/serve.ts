@@ -42,7 +42,7 @@ function isMlxServerUp(): Promise<boolean> {
 }
 
 function startMlxServer(mlxModel?: string): ChildProcess | null {
-  // Look for mlx-embed-server relative to the osgrep package
+  // Look for mlx-embed-server relative to the grepmax package
   const candidates = [
     path.resolve(__dirname, "../../mlx-embed-server"),
     path.resolve(__dirname, "../mlx-embed-server"),
@@ -76,7 +76,7 @@ export const serve = new Command("serve")
   .option(
     "-p, --port <port>",
     "Port to listen on",
-    process.env.OSGREP_PORT || "4444",
+    process.env.GMAX_PORT || "4444",
   )
   .option("-b, --background", "Run in background", false)
   .option("--cpu", "Use CPU-only embeddings (skip MLX GPU server)", false)
@@ -118,7 +118,7 @@ export const serve = new Command("serve")
         detached: true,
         stdio: ["ignore", out, err],
         cwd: process.cwd(),
-        env: { ...process.env, OSGREP_BACKGROUND: "true" },
+        env: { ...process.env, GMAX_BACKGROUND: "true" },
       });
       child.unref();
       console.log(`Started background server (PID: ${child.pid})`);
@@ -129,7 +129,7 @@ export const serve = new Command("serve")
     const projectName = path.basename(projectRoot);
 
     // Propagate project root to worker processes
-    process.env.OSGREP_PROJECT_ROOT = projectRoot;
+    process.env.GMAX_PROJECT_ROOT = projectRoot;
 
     // Determine embed mode: --cpu flag overrides, then config, then default
     // Default to GPU on Apple Silicon, CPU everywhere else
@@ -186,7 +186,7 @@ export const serve = new Command("serve")
       await ensureGrammars(console.log, { silent: true });
 
       // Initial sync is self-contained (creates+closes its own VectorDB+MetaCache).
-      if (!process.env.OSGREP_BACKGROUND) {
+      if (!process.env.GMAX_BACKGROUND) {
         const { spinner, onProgress } = createIndexingSpinner(
           projectRoot,
           "Indexing before starting server...",
@@ -423,7 +423,7 @@ export const serve = new Command("serve")
         const actualPort =
           typeof address === "object" && address ? address.port : port;
 
-        if (!process.env.OSGREP_BACKGROUND) {
+        if (!process.env.GMAX_BACKGROUND) {
           console.log(
             `gmax server listening on http://localhost:${actualPort} (${projectRoot})`,
           );

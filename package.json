@@ -12,8 +12,7 @@
   },
   "main": "index.js",
   "bin": {
-    "gmax": "dist/index.js",
-    "osgrep": "dist/index.js"
+    "gmax": "dist/index.js"
   },
   "scripts": {
     "prebuild": "mkdir -p dist",
@@ -23,7 +22,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "benchmark": "./run-benchmark.sh",
-    "benchmark:index": "./run-benchmark.sh $HOME/osgrep-benchmarks --index",
+    "benchmark:index": "./run-benchmark.sh $HOME/gmax-benchmarks --index",
     "benchmark:agent": "npx tsx src/bench/benchmark-agent.ts",
     "benchmark:chart": "npx tsx src/bench/generate-benchmark-chart.ts",
     "format": "biome check --write .",
@@ -33,7 +32,7 @@
     "prepublishOnly": "pnpm build"
   },
   "keywords": [
-    "osgrep",
+    "grepmax",
     "grep",
     "glob",
     "search"

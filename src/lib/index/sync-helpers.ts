@@ -91,7 +91,7 @@ export function createIndexingSpinner(
           info.filePath.startsWith("Checking for changes"))
       ) {
         spinner.text = info.filePath;
-        if (process.env.OSGREP_DEBUG_INDEX === "1") {
+        if (process.env.GMAX_DEBUG_INDEX === "1") {
           console.log(`[progress] ${info.filePath}`);
         }
         return;
