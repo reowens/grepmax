@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -9,15 +8,17 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { Command } from "commander";
 import { GraphBuilder } from "../lib/graph/graph-builder";
+import { readIndexConfig } from "../lib/index/index-config";
+import { initialSync } from "../lib/index/syncer";
+import { startWatcher, type WatcherHandle } from "../lib/index/watcher";
+import { Searcher } from "../lib/search/searcher";
 import { getStoredSkeleton } from "../lib/skeleton/retriever";
 import { Skeletonizer } from "../lib/skeleton/skeletonizer";
+import { MetaCache } from "../lib/store/meta-cache";
 import { VectorDB } from "../lib/store/vector-db";
 import { escapeSqlString, normalizePath } from "../lib/utils/filter-builder";
+import { listProjects } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
-import {
-  getServerForProject,
-  isProcessRunning,
-} from "../lib/utils/server-registry";
 
 // ---------------------------------------------------------------------------
 // Tool definitions
@@ -54,6 +55,17 @@ const TOOLS = [
           type: "number",
           description:
             "Max results per file (default: no cap). Useful to get diversity across files.",
+        },
+        scope: {
+          type: "string",
+          description:
+            "Search scope: 'current' (default) searches this project, 'all' searches all indexed projects.",
+        },
+        projects: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Filter to specific project names when scope is 'all' (e.g. ['webapp', 'api']). Matches project names from the registry.",
         },
       },
       required: ["query"],
@@ -117,52 +129,13 @@ const TOOLS = [
   {
     name: "index_status",
     description:
-      "Check the status of the gmax index and serve daemon. Returns file count, chunk count, embed mode, index age, and whether live watching is active.",
+      "Check the status of the gmax index. Returns file count, chunk count, embed mode, index age, and whether live watching is active.",
     inputSchema: {
       type: "object" as const,
       properties: {},
     },
   },
 ];
-
-// ---------------------------------------------------------------------------
-// Daemon lifecycle
-// ---------------------------------------------------------------------------
-
-let _daemonReady: Promise<boolean> | null = null;
-
-async function ensureDaemon(projectRoot: string): Promise<boolean> {
-  const existing = getServerForProject(projectRoot);
-  if (existing && isProcessRunning(existing.pid)) {
-    console.log(
-      `[MCP] Serve daemon already running (PID: ${existing.pid}, Port: ${existing.port})`,
-    );
-    return true;
-  }
-
-  console.log("[MCP] Starting serve daemon...");
-  const child = spawn("gmax", ["serve", "-b"], {
-    cwd: projectRoot,
-    detached: true,
-    stdio: "ignore",
-  });
-  child.unref();
-
-  // Poll for readiness — daemon registers in ~/.gmax/servers.json once listening
-  for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 2000));
-    const server = getServerForProject(projectRoot);
-    if (server && isProcessRunning(server.pid)) {
-      console.log(
-        `[MCP] Daemon ready (PID: ${server.pid}, Port: ${server.port})`,
-      );
-      return true;
-    }
-  }
-
-  console.error("[MCP] Daemon failed to become ready within 60s");
-  return false;
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -204,15 +177,26 @@ export const mcp = new Command("mcp")
     // --- Lifecycle ---
 
     let _vectorDb: VectorDB | null = null;
+    let _searcher: Searcher | null = null;
+    let _metaCache: MetaCache | null = null;
     let _skeletonizer: Skeletonizer | null = null;
+    let _watcher: WatcherHandle | null = null;
+    let _indexReady = false;
 
     const cleanup = async () => {
-      if (_vectorDb) {
-        try {
-          await _vectorDb.close();
-        } catch {}
-        _vectorDb = null;
-      }
+      try {
+        await _watcher?.close();
+      } catch {}
+      try {
+        _metaCache?.close();
+      } catch {}
+      try {
+        await _vectorDb?.close();
+      } catch {}
+      _vectorDb = null;
+      _searcher = null;
+      _metaCache = null;
+      _watcher = null;
     };
 
     const exit = async () => {
@@ -250,10 +234,23 @@ export const mcp = new Command("mcp")
     const projectRoot = findProjectRoot(process.cwd()) ?? process.cwd();
     const paths = ensureProjectPaths(projectRoot);
 
+    // Propagate project root to worker processes
+    process.env.OSGREP_PROJECT_ROOT = paths.root;
+
     // Lazy resource accessors
-    async function getVectorDb(): Promise<VectorDB> {
+    function getVectorDb(): VectorDB {
       if (!_vectorDb) _vectorDb = new VectorDB(paths.lancedbDir);
       return _vectorDb;
+    }
+
+    function getSearcher(): Searcher {
+      if (!_searcher) _searcher = new Searcher(getVectorDb());
+      return _searcher;
+    }
+
+    function getMetaCache(): MetaCache {
+      if (!_metaCache) _metaCache = new MetaCache(paths.lmdbPath);
+      return _metaCache;
     }
 
     async function getSkeletonizer(): Promise<Skeletonizer> {
@@ -264,22 +261,43 @@ export const mcp = new Command("mcp")
       return _skeletonizer;
     }
 
-    // --- Tool handlers ---
+    // --- Index sync + file watcher ---
 
-    async function ensureDaemonRunning(): Promise<boolean> {
-      if (_daemonReady) {
-        const ready = await _daemonReady;
-        if (!ready) return false;
+    async function ensureIndexReady(): Promise<void> {
+      if (_indexReady) return;
+
+      try {
+        // Check if index already exists — skip expensive full sync if so
+        const db = getVectorDb();
+        const hasIndex = await db.hasAnyRows();
+
+        if (!hasIndex) {
+          // First time — need full index
+          console.log("[MCP] No index found, running initial sync...");
+          await initialSync({ projectRoot });
+          console.log("[MCP] Initial sync complete.");
+        } else {
+          console.log("[MCP] Index exists, skipping sync.");
+        }
+
+        // Start file watcher for live reindexing
+        _watcher = startWatcher({
+          projectRoot,
+          vectorDb: getVectorDb(),
+          metaCache: getMetaCache(),
+          dataDir: paths.dataDir,
+          onReindex: (files, ms) => {
+            console.log(`[MCP] Reindexed ${files} files in ${ms}ms`);
+          },
+        });
+
+        _indexReady = true;
+      } catch (e) {
+        console.error("[MCP] Index sync failed:", e);
       }
-
-      const server = getServerForProject(projectRoot);
-      if (server && isProcessRunning(server.pid)) return true;
-
-      // Daemon died — restart it
-      console.log("[MCP] Daemon not running, restarting...");
-      _daemonReady = ensureDaemon(projectRoot);
-      return _daemonReady;
     }
+
+    // --- Tool handlers ---
 
     async function handleSemanticSearch(
       args: Record<string, unknown>,
@@ -289,32 +307,91 @@ export const mcp = new Command("mcp")
 
       const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 50);
       const searchPath = typeof args.path === "string" ? args.path : undefined;
+      const scope = typeof args.scope === "string" ? args.scope : "current";
+      const projectFilter = Array.isArray(args.projects)
+        ? (args.projects as string[])
+        : undefined;
 
-      if (!(await ensureDaemonRunning())) {
-        return err(
-          "Search daemon failed to start. Run 'gmax serve -b' manually.",
-        );
-      }
-
-      const server = getServerForProject(projectRoot);
-      if (!server || !isProcessRunning(server.pid)) {
-        return err("Search daemon not running. Run 'gmax serve -b' manually.");
-      }
+      await ensureIndexReady();
 
       try {
-        const response = await fetch(`http://localhost:${server.port}/search`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query, limit, path: searchPath }),
-          signal: AbortSignal.timeout(30_000),
-        });
+        let results: any[];
 
-        if (!response.ok) {
-          const body = await response.text();
-          return err(`Search failed (${response.status}): ${body}`);
+        if (scope === "all") {
+          // Multi-project search
+          results = [];
+          let projects = listProjects();
+
+          // Filter by project name if specified
+          if (projectFilter && projectFilter.length > 0) {
+            const names = new Set(projectFilter.map((n) => n.toLowerCase()));
+            projects = projects.filter((p) => names.has(p.name.toLowerCase()));
+          }
+
+          // Filter by path prefix — match against project root paths
+          if (searchPath && !projectFilter) {
+            const normalizedPath = searchPath.toLowerCase();
+            projects = projects.filter((p) =>
+              p.root.toLowerCase().includes(normalizedPath),
+            );
+          }
+
+          for (const project of projects) {
+            try {
+              const lanceDir = path.join(project.root, ".gmax", "lancedb");
+              if (!fs.existsSync(lanceDir)) continue;
+
+              const isCurrentProject = project.root === projectRoot;
+              const db = isCurrentProject
+                ? getVectorDb()
+                : new VectorDB(lanceDir, project.vectorDim);
+
+              const searcher = isCurrentProject
+                ? getSearcher()
+                : new Searcher(db);
+
+              // Only pass searchPath as file filter if it wasn't used as project filter
+              const filePathFilter =
+                projectFilter || !searchPath ? undefined : searchPath;
+              const result = await searcher.search(
+                query,
+                limit,
+                { rerank: true },
+                undefined,
+                filePathFilter,
+              );
+
+              for (const r of result.data) {
+                results.push({ ...r, _project: project.name });
+              }
+
+              // Close non-current project DBs
+              if (!isCurrentProject) await db.close();
+            } catch (e) {
+              console.error(
+                `[MCP] Search failed for project ${project.name}:`,
+                e,
+              );
+            }
+          }
+
+          // Sort by score descending, take top limit
+          results.sort(
+            (a, b) => (b._score ?? b.score ?? 0) - (a._score ?? a.score ?? 0),
+          );
+          results = results.slice(0, limit);
+        } else {
+          // Current project search
+          const searcher = getSearcher();
+          const result = await searcher.search(
+            query,
+            limit,
+            { rerank: true },
+            undefined,
+            searchPath,
+          );
+          results = result.data;
         }
-
-        const { results } = (await response.json()) as { results: any[] };
 
         if (!results || results.length === 0) {
           return ok("No matches found.");
@@ -325,24 +402,35 @@ export const mcp = new Command("mcp")
         const maxPerFile =
           typeof args.max_per_file === "number" ? args.max_per_file : 0;
 
-        let compact = results.map((r: any) => ({
-          path: r.metadata?.path ?? r.path ?? "",
-          startLine: r.generated_metadata?.start_line ?? 0,
-          endLine: r.generated_metadata?.end_line ?? 0,
-          score: typeof r.score === "number" ? +r.score.toFixed(3) : 0,
-          role: r.role ?? "IMPLEMENTATION",
-          confidence: r.confidence ?? "Unknown",
-          definedSymbols: toStringArray(r.defined_symbols).slice(0, 5),
-          snippet: typeof r.text === "string" ? r.text : "",
-        }));
+        let compact = results.map((r: any) => {
+          const entry: any = {
+            path: r.path ?? r.metadata?.path ?? "",
+            startLine: r.startLine ?? r.generated_metadata?.start_line ?? 0,
+            endLine: r.endLine ?? r.generated_metadata?.end_line ?? 0,
+            score: typeof r.score === "number" ? +r.score.toFixed(3) : 0,
+            role: r.role ?? "IMPLEMENTATION",
+            confidence: r.confidence ?? "Unknown",
+            definedSymbols: toStringArray(
+              r.definedSymbols ?? r.defined_symbols,
+            ).slice(0, 5),
+            snippet:
+              typeof r.content === "string"
+                ? r.content
+                : typeof r.text === "string"
+                  ? r.text
+                  : "",
+          };
+          if (r._project) entry.project = r._project;
+          return entry;
+        });
 
         if (minScore > 0) {
-          compact = compact.filter((r) => r.score >= minScore);
+          compact = compact.filter((r: any) => r.score >= minScore);
         }
 
         if (maxPerFile > 0) {
           const counts = new Map<string, number>();
-          compact = compact.filter((r) => {
+          compact = compact.filter((r: any) => {
             const count = counts.get(r.path) || 0;
             if (count >= maxPerFile) return false;
             counts.set(r.path, count + 1);
@@ -353,7 +441,7 @@ export const mcp = new Command("mcp")
         return ok(JSON.stringify(compact, null, 2));
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        return err(`Search request failed: ${msg}`);
+        return err(`Search failed: ${msg}`);
       }
     }
 
@@ -377,7 +465,7 @@ export const mcp = new Command("mcp")
 
       // Try cached skeleton first
       try {
-        const db = await getVectorDb();
+        const db = getVectorDb();
         const cached = await getStoredSkeleton(db, relPath);
         if (cached) {
           const tokens = Math.ceil(cached.length / 4);
@@ -413,7 +501,7 @@ export const mcp = new Command("mcp")
       if (!symbol) return err("Missing required parameter: symbol");
 
       try {
-        const db = await getVectorDb();
+        const db = getVectorDb();
         const builder = new GraphBuilder(db);
         const graph = await builder.buildGraph(symbol);
 
@@ -468,7 +556,7 @@ export const mcp = new Command("mcp")
       const pathPrefix = typeof args.path === "string" ? args.path : undefined;
 
       try {
-        const db = await getVectorDb();
+        const db = getVectorDb();
         const table = await db.ensureTable();
 
         let query = table
@@ -530,55 +618,41 @@ export const mcp = new Command("mcp")
     }
 
     async function handleIndexStatus(): Promise<ToolResult> {
-      await ensureDaemonRunning();
-
-      const server = getServerForProject(projectRoot);
-      if (!server || !isProcessRunning(server.pid)) {
-        // Fall back to config file
-        const configPath = path.join(projectRoot, ".gmax", "config.json");
-        try {
-          const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-          return ok(
-            JSON.stringify(
-              {
-                daemon: "stopped",
-                embedMode: config.embedMode ?? "unknown",
-                model: config.embedModel ?? config.mlxModel ?? null,
-                vectorDim: config.vectorDim ?? null,
-                indexedAt: config.indexedAt ?? null,
-              },
-              null,
-              2,
-            ),
-          );
-        } catch {
-          return ok(JSON.stringify({ daemon: "stopped", indexed: false }));
-        }
-      }
-
       try {
-        const response = await fetch(`http://localhost:${server.port}/stats`, {
-          signal: AbortSignal.timeout(5000),
-        });
-        if (!response.ok) {
-          return err(`Stats request failed (${response.status})`);
-        }
-        const stats = await response.json();
+        const db = getVectorDb();
+        const stats = await db.getStats();
+        const fileCount = await db.getDistinctFileCount();
+        const config = readIndexConfig(paths.configPath);
+
         return ok(
           JSON.stringify(
             {
-              daemon: "running",
-              pid: server.pid,
-              port: server.port,
-              ...(stats as Record<string, unknown>),
+              mode: "embedded",
+              files: fileCount,
+              chunks: stats.chunks,
+              totalBytes: stats.totalBytes,
+              vectorDim: config?.vectorDim ?? 384,
+              modelTier: config?.modelTier ?? "small",
+              embedMode: config?.embedMode ?? "cpu",
+              model: config?.embedModel ?? null,
+              indexedAt: config?.indexedAt ?? null,
+              watching: _watcher !== null,
             },
             null,
             2,
           ),
         );
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return err(`Failed to get status: ${msg}`);
+      } catch {
+        const config = readIndexConfig(paths.configPath);
+        return ok(
+          JSON.stringify({
+            mode: "embedded",
+            indexed: !!config?.indexedAt,
+            vectorDim: config?.vectorDim ?? null,
+            modelTier: config?.modelTier ?? null,
+            watching: false,
+          }),
+        );
       }
     }
 
@@ -627,7 +701,8 @@ export const mcp = new Command("mcp")
 
     await server.connect(transport);
 
-    // Ensure the serve daemon is running (handles indexing, GPU, live reindex).
-    // The MCP server owns daemon lifecycle — the SessionStart hook is read-only.
-    _daemonReady = ensureDaemon(projectRoot);
+    // Index and start watching in the background (non-blocking)
+    ensureIndexReady().catch((e) => {
+      console.error("[MCP] Background index sync failed:", e);
+    });
   });
