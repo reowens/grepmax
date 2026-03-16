@@ -162,6 +162,18 @@ export type ToolResult = {
   isError?: boolean;
 };
 
+const MCP_MAX_SNIPPET_LINES = 8;
+const MCP_MAX_SKELETON_LINES = 300;
+
+function capSkeleton(text: string, maxLines: number): string {
+  const lines = text.split("\n");
+  if (lines.length <= maxLines) return text;
+  return (
+    lines.slice(0, maxLines).join("\n") +
+    `\n\n// ... truncated (${lines.length - maxLines} more lines — use Read tool for full file)`
+  );
+}
+
 export function ok(text: string): ToolResult {
   return { content: [{ type: "text", text }] };
 }
@@ -228,7 +240,7 @@ export const mcp = new Command("mcp")
     const paths = ensureProjectPaths(projectRoot);
 
     // Propagate project root to worker processes
-    process.env.OSGREP_PROJECT_ROOT = paths.root;
+    process.env.GMAX_PROJECT_ROOT = paths.root;
 
     // Lazy resource accessors
     function getVectorDb(): VectorDB {
@@ -405,12 +417,20 @@ export const mcp = new Command("mcp")
             definedSymbols: toStringArray(
               r.definedSymbols ?? r.defined_symbols,
             ).slice(0, 5),
-            snippet:
-              typeof r.content === "string"
-                ? r.content
-                : typeof r.text === "string"
-                  ? r.text
-                  : "",
+            snippet: (() => {
+              const raw =
+                typeof r.content === "string"
+                  ? r.content
+                  : typeof r.text === "string"
+                    ? r.text
+                    : "";
+              const lines = raw.split("\n");
+              if (lines.length <= MCP_MAX_SNIPPET_LINES) return raw;
+              return (
+                lines.slice(0, MCP_MAX_SNIPPET_LINES).join("\n") +
+                `\n... (+${lines.length - MCP_MAX_SNIPPET_LINES} lines)`
+              );
+            })(),
           };
           if (r._project) entry.project = r._project;
           return entry;
@@ -430,7 +450,7 @@ export const mcp = new Command("mcp")
           });
         }
 
-        return ok(JSON.stringify(compact, null, 2));
+        return ok(JSON.stringify(compact));
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         return err(`Search failed: ${msg}`);
@@ -460,8 +480,9 @@ export const mcp = new Command("mcp")
         const db = getVectorDb();
         const cached = await getStoredSkeleton(db, relPath);
         if (cached) {
-          const tokens = Math.ceil(cached.length / 4);
-          return ok(`// ${relPath} (~${tokens} tokens)\n\n${cached}`);
+          const body = capSkeleton(cached, MCP_MAX_SKELETON_LINES);
+          const tokens = Math.ceil(body.length / 4);
+          return ok(`// ${relPath} (~${tokens} tokens)\n\n${body}`);
         }
       } catch {
         // Index may not exist yet — fall through to live generation
@@ -477,9 +498,9 @@ export const mcp = new Command("mcp")
           return err(`Skeleton generation failed: ${result.error}`);
         }
 
-        return ok(
-          `// ${relPath} (~${result.tokenEstimate} tokens)\n\n${result.skeleton}`,
-        );
+        const body = capSkeleton(result.skeleton, MCP_MAX_SKELETON_LINES);
+        const tokens = Math.ceil(body.length / 4);
+        return ok(`// ${relPath} (~${tokens} tokens)\n\n${body}`);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         return err(`Skeleton failed: ${msg}`);
@@ -602,7 +623,7 @@ export const mcp = new Command("mcp")
           return ok("No symbols found. Run 'gmax index' to build the index.");
         }
 
-        return ok(JSON.stringify(entries, null, 2));
+        return ok(JSON.stringify(entries));
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         return err(`Symbol listing failed: ${msg}`);
@@ -617,22 +638,18 @@ export const mcp = new Command("mcp")
         const config = readIndexConfig(paths.configPath);
 
         return ok(
-          JSON.stringify(
-            {
-              mode: "embedded",
-              files: fileCount,
-              chunks: stats.chunks,
-              totalBytes: stats.totalBytes,
-              vectorDim: config?.vectorDim ?? 384,
-              modelTier: config?.modelTier ?? "small",
-              embedMode: config?.embedMode ?? "cpu",
-              model: config?.embedModel ?? null,
-              indexedAt: config?.indexedAt ?? null,
-              watching: !!getWatcherForProject(projectRoot),
-            },
-            null,
-            2,
-          ),
+          JSON.stringify({
+            mode: "embedded",
+            files: fileCount,
+            chunks: stats.chunks,
+            totalBytes: stats.totalBytes,
+            vectorDim: config?.vectorDim ?? 384,
+            modelTier: config?.modelTier ?? "small",
+            embedMode: config?.embedMode ?? "cpu",
+            model: config?.embedModel ?? null,
+            indexedAt: config?.indexedAt ?? null,
+            watching: !!getWatcherForProject(projectRoot),
+          }),
         );
       } catch {
         const config = readIndexConfig(paths.configPath);
