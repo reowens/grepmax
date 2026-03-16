@@ -345,23 +345,42 @@ export const mcp = new Command("mcp")
         const maxPerFile =
           typeof args.max_per_file === "number" ? args.max_per_file : 0;
 
-        let compact = result.data.map((r: any) => ({
-          path: r.path ?? r.metadata?.path ?? "",
-          startLine: r.startLine ?? r.generated_metadata?.start_line ?? 0,
-          endLine: r.endLine ?? r.generated_metadata?.end_line ?? 0,
-          score: typeof r.score === "number" ? +r.score.toFixed(3) : 0,
-          role: r.role ?? "IMPLEMENTATION",
-          confidence: r.confidence ?? "Unknown",
-          definedSymbols: toStringArray(
-            r.definedSymbols ?? r.defined_symbols,
-          ).slice(0, 5),
-          snippet:
+        const MAX_SNIPPET_LINES = 8;
+
+        let compact = result.data.map((r: any) => {
+          const startLine =
+            r.startLine ?? r.generated_metadata?.start_line ?? 0;
+          const raw =
             typeof r.content === "string"
               ? r.content
               : typeof r.text === "string"
                 ? r.text
-                : "",
-        }));
+                : "";
+
+          // Add line numbers and cap at MAX_SNIPPET_LINES
+          const lines = raw.split("\n");
+          const capped = lines.slice(0, MAX_SNIPPET_LINES);
+          const numbered = capped.map(
+            (line: string, i: number) => `${startLine + i + 1}│${line}`,
+          );
+          const snippet =
+            lines.length > MAX_SNIPPET_LINES
+              ? `${numbered.join("\n")}\n… (+${lines.length - MAX_SNIPPET_LINES} more lines)`
+              : numbered.join("\n");
+
+          return {
+            path: r.path ?? r.metadata?.path ?? "",
+            startLine,
+            endLine: r.endLine ?? r.generated_metadata?.end_line ?? 0,
+            score: typeof r.score === "number" ? +r.score.toFixed(3) : 0,
+            role: r.role ?? "IMPLEMENTATION",
+            confidence: r.confidence ?? "Unknown",
+            definedSymbols: toStringArray(
+              r.definedSymbols ?? r.defined_symbols,
+            ).slice(0, 5),
+            snippet,
+          };
+        });
 
         if (minScore > 0) {
           compact = compact.filter((r) => r.score >= minScore);
@@ -444,33 +463,28 @@ export const mcp = new Command("mcp")
 
         const lines: string[] = [];
 
+        // Center
+        lines.push(
+          `${graph.center.symbol} [${graph.center.role}] ${graph.center.file}:${graph.center.line + 1}`,
+        );
+
         // Callers
         if (graph.callers.length > 0) {
-          lines.push("Callers (who calls this?):");
+          lines.push("Callers:");
           for (const caller of graph.callers) {
-            lines.push(`  <- ${caller.symbol} (${caller.file}:${caller.line})`);
+            lines.push(
+              `  <- ${caller.symbol} ${caller.file}:${caller.line + 1}`,
+            );
           }
         } else {
-          lines.push("No known callers.");
+          lines.push("Callers: none");
         }
-
-        lines.push("");
-
-        // Center
-        lines.push(`${graph.center.symbol}`);
-        lines.push(`  Defined in ${graph.center.file}:${graph.center.line}`);
-        lines.push(`  Role: ${graph.center.role}`);
-
-        lines.push("");
 
         // Callees
         if (graph.callees.length > 0) {
-          lines.push("Callees (what does this call?):");
-          for (const callee of graph.callees) {
-            lines.push(`  -> ${callee}`);
-          }
+          lines.push(`Calls: ${graph.callees.join(", ")}`);
         } else {
-          lines.push("No known callees.");
+          lines.push("Calls: none");
         }
 
         return ok(lines.join("\n"));
@@ -547,7 +561,10 @@ export const mcp = new Command("mcp")
           return ok("No symbols found. Run 'gmax index' to build the index.");
         }
 
-        return ok(JSON.stringify(entries));
+        const lines = entries.map(
+          (e) => `${e.symbol}\t${e.path}:${e.line}`,
+        );
+        return ok(lines.join("\n"));
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         return err(`Symbol listing failed: ${msg}`);
@@ -563,23 +580,19 @@ export const mcp = new Command("mcp")
         const stats = await db.getStats();
         const fileCount = await db.getDistinctFileCount();
 
-        return ok(
-          JSON.stringify({
-            store: "centralized (~/.gmax/lancedb)",
-            totalChunks: stats.chunks,
-            totalFiles: fileCount,
-            totalBytes: stats.totalBytes,
-            embedMode: config?.embedMode ?? "unknown",
-            model: config?.embedModel ?? null,
-            vectorDim: config?.vectorDim ?? null,
-            indexedAt: config?.indexedAt ?? null,
-            indexedDirectories: projects.map((p) => ({
-              name: p.name,
-              root: p.root,
-              lastIndexed: p.lastIndexed,
-            })),
-          }),
-        );
+        const lines = [
+          `Index: ~/.gmax/lancedb (${stats.chunks} chunks, ${fileCount} files)`,
+          `Model: ${config?.embedModel ?? "unknown"} (${config?.vectorDim ?? "?"}d, ${config?.embedMode ?? "unknown"})`,
+          config?.indexedAt
+            ? `Last indexed: ${config.indexedAt}`
+            : "",
+          "",
+          "Indexed directories:",
+          ...projects.map(
+            (p) => `  ${p.name}\t${p.root}\t${p.lastIndexed ?? "unknown"}`,
+          ),
+        ].filter(Boolean);
+        return ok(lines.join("\n"));
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         return err(`Status check failed: ${msg}`);
