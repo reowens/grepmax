@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -8,6 +7,7 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { Command } from "commander";
+import { PATHS } from "../config";
 import { GraphBuilder } from "../lib/graph/graph-builder";
 import { readIndexConfig } from "../lib/index/index-config";
 import { initialSync } from "../lib/index/syncer";
@@ -18,10 +18,6 @@ import { VectorDB } from "../lib/store/vector-db";
 import { escapeSqlString, normalizePath } from "../lib/utils/filter-builder";
 import { listProjects } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
-import {
-  getWatcherForProject,
-  isProcessRunning,
-} from "../lib/utils/watcher-registry";
 
 // ---------------------------------------------------------------------------
 // Tool definitions
@@ -31,7 +27,7 @@ const TOOLS = [
   {
     name: "semantic_search",
     description:
-      "Search code by meaning. Use natural language queries like 'where do we validate permissions' or 'how does the booking flow work'. Returns ranked code snippets with file paths, line numbers, and relevance scores.",
+      "Search code by meaning within a directory. Use natural language queries like 'where do we validate permissions'. Searches the current project by default. Use `root` to search a different directory's index (e.g. a parent directory).",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -44,10 +40,15 @@ const TOOLS = [
           type: "number",
           description: "Max results to return (default 10, max 50)",
         },
+        root: {
+          type: "string",
+          description:
+            "Directory to search (absolute or relative path). Defaults to the current project root. Use to search a parent or sibling directory's indexed code.",
+        },
         path: {
           type: "string",
           description:
-            "Restrict search to files under this path prefix (e.g. 'src/auth/')",
+            "Restrict search to files under this path prefix (e.g. 'src/auth/'). Relative to the search root.",
         },
         min_score: {
           type: "number",
@@ -59,16 +60,32 @@ const TOOLS = [
           description:
             "Max results per file (default: no cap). Useful to get diversity across files.",
         },
-        scope: {
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "search_all",
+    description:
+      "Search ALL indexed code across every directory. Use when you need to find code that could be anywhere. Returns results with full absolute paths so you know which project each result is from.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        query: {
           type: "string",
-          description:
-            "Search scope: 'current' (default) searches this project, 'all' searches all indexed projects.",
+          description: "Natural language search query.",
         },
-        projects: {
-          type: "array",
-          items: { type: "string" },
-          description:
-            "Filter to specific project names when scope is 'all' (e.g. ['webapp', 'api']). Matches project names from the registry.",
+        limit: {
+          type: "number",
+          description: "Max results to return (default 10, max 50)",
+        },
+        min_score: {
+          type: "number",
+          description: "Minimum relevance score (0-1). Default: 0",
+        },
+        max_per_file: {
+          type: "number",
+          description: "Max results per file (default: no cap).",
         },
       },
       required: ["query"],
@@ -93,7 +110,7 @@ const TOOLS = [
   {
     name: "trace_calls",
     description:
-      "Trace the call graph for a symbol — who calls it (callers) and what it calls (callees). Useful for understanding how functions connect across files.",
+      "Trace the call graph for a symbol — who calls it (callers) and what it calls (callees). Searches across ALL indexed code to follow calls across project boundaries.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -132,7 +149,7 @@ const TOOLS = [
   {
     name: "index_status",
     description:
-      "Check the status of the gmax index. Returns file count, chunk count, embed mode, index age, and whether live watching is active.",
+      "Check the status of the gmax index. Returns indexed directories, chunk counts, embed mode, index age, and watcher status.",
     inputSchema: {
       type: "object" as const,
       properties: {},
@@ -162,18 +179,6 @@ export type ToolResult = {
   isError?: boolean;
 };
 
-const MCP_MAX_SNIPPET_LINES = 8;
-const MCP_MAX_SKELETON_LINES = 300;
-
-function capSkeleton(text: string, maxLines: number): string {
-  const lines = text.split("\n");
-  if (lines.length <= maxLines) return text;
-  return (
-    lines.slice(0, maxLines).join("\n") +
-    `\n\n// ... truncated (${lines.length - maxLines} more lines — use Read tool for full file)`
-  );
-}
-
 export function ok(text: string): ToolResult {
   return { content: [{ type: "text", text }] };
 }
@@ -197,11 +202,13 @@ export const mcp = new Command("mcp")
     let _indexReady = false;
 
     const cleanup = async () => {
-      try {
-        await _vectorDb?.close();
-      } catch {}
-      _vectorDb = null;
-      _searcher = null;
+      if (_vectorDb) {
+        try {
+          await _vectorDb.close();
+        } catch {}
+        _vectorDb = null;
+        _searcher = null;
+      }
     };
 
     const exit = async () => {
@@ -236,13 +243,13 @@ export const mcp = new Command("mcp")
 
     // --- Project context ---
 
-    const projectRoot = findProjectRoot(process.cwd()) ?? process.cwd();
+    const projectRoot = findProjectRoot(process.cwd());
     const paths = ensureProjectPaths(projectRoot);
 
     // Propagate project root to worker processes
     process.env.GMAX_PROJECT_ROOT = paths.root;
 
-    // Lazy resource accessors
+    // Lazy resource accessors — all use centralized store
     function getVectorDb(): VectorDB {
       if (!_vectorDb) _vectorDb = new VectorDB(paths.lancedbDir);
       return _vectorDb;
@@ -261,21 +268,7 @@ export const mcp = new Command("mcp")
       return _skeletonizer;
     }
 
-    // --- Index sync + background watcher ---
-
-    function ensureWatcher(): void {
-      const existing = getWatcherForProject(projectRoot);
-      if (existing && isProcessRunning(existing.pid)) return;
-
-      // Spawn background watcher (singleton per project)
-      const child = spawn("gmax", ["watch", "-b"], {
-        cwd: projectRoot,
-        detached: true,
-        stdio: "ignore",
-      });
-      child.unref();
-      console.log("[MCP] Started background watcher");
-    }
+    // --- Index sync ---
 
     async function ensureIndexReady(): Promise<void> {
       if (_indexReady) return;
@@ -292,9 +285,6 @@ export const mcp = new Command("mcp")
           console.log("[MCP] Index exists, ready.");
         }
 
-        // Ensure background watcher is running
-        ensureWatcher();
-
         _indexReady = true;
       } catch (e) {
         console.error("[MCP] Index sync failed:", e);
@@ -305,99 +295,48 @@ export const mcp = new Command("mcp")
 
     async function handleSemanticSearch(
       args: Record<string, unknown>,
+      searchAll = false,
     ): Promise<ToolResult> {
       const query = String(args.query || "");
       if (!query) return err("Missing required parameter: query");
 
       const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 50);
-      const searchPath = typeof args.path === "string" ? args.path : undefined;
-      const scope = typeof args.scope === "string" ? args.scope : "current";
-      const projectFilter = Array.isArray(args.projects)
-        ? (args.projects as string[])
-        : undefined;
 
       await ensureIndexReady();
 
       try {
-        let results: any[];
+        const searcher = getSearcher();
 
-        if (scope === "all") {
-          // Multi-project search
-          results = [];
-          let projects = listProjects();
+        // Determine path prefix for scoping
+        let pathPrefix: string | undefined;
 
-          // Filter by project name if specified
-          if (projectFilter && projectFilter.length > 0) {
-            const names = new Set(projectFilter.map((n) => n.toLowerCase()));
-            projects = projects.filter((p) => names.has(p.name.toLowerCase()));
+        if (!searchAll) {
+          // Resolve search root — default to project root
+          const searchRoot =
+            typeof args.root === "string"
+              ? path.resolve(args.root)
+              : path.resolve(projectRoot);
+
+          pathPrefix = searchRoot.endsWith("/")
+            ? searchRoot
+            : `${searchRoot}/`;
+
+          // If a sub-path is specified, append it
+          if (typeof args.path === "string") {
+            pathPrefix = path.join(searchRoot, args.path);
+            if (!pathPrefix.endsWith("/")) pathPrefix += "/";
           }
-
-          // Filter by path prefix — match against project root paths
-          if (searchPath && !projectFilter) {
-            const normalizedPath = searchPath.toLowerCase();
-            projects = projects.filter((p) =>
-              p.root.toLowerCase().includes(normalizedPath),
-            );
-          }
-
-          for (const project of projects) {
-            try {
-              const lanceDir = path.join(project.root, ".gmax", "lancedb");
-              if (!fs.existsSync(lanceDir)) continue;
-
-              const isCurrentProject = project.root === projectRoot;
-              const db = isCurrentProject
-                ? getVectorDb()
-                : new VectorDB(lanceDir, project.vectorDim);
-
-              const searcher = isCurrentProject
-                ? getSearcher()
-                : new Searcher(db);
-
-              // Only pass searchPath as file filter if it wasn't used as project filter
-              const filePathFilter =
-                projectFilter || !searchPath ? undefined : searchPath;
-              const result = await searcher.search(
-                query,
-                limit,
-                { rerank: true },
-                undefined,
-                filePathFilter,
-              );
-
-              for (const r of result.data) {
-                results.push({ ...r, _project: project.name });
-              }
-
-              // Close non-current project DBs
-              if (!isCurrentProject) await db.close();
-            } catch (e) {
-              console.error(
-                `[MCP] Search failed for project ${project.name}:`,
-                e,
-              );
-            }
-          }
-
-          // Sort by score descending, take top limit
-          results.sort(
-            (a, b) => (b._score ?? b.score ?? 0) - (a._score ?? a.score ?? 0),
-          );
-          results = results.slice(0, limit);
-        } else {
-          // Current project search
-          const searcher = getSearcher();
-          const result = await searcher.search(
-            query,
-            limit,
-            { rerank: true },
-            undefined,
-            searchPath,
-          );
-          results = result.data;
         }
 
-        if (!results || results.length === 0) {
+        const result = await searcher.search(
+          query,
+          limit,
+          { rerank: true },
+          undefined,
+          pathPrefix,
+        );
+
+        if (!result.data || result.data.length === 0) {
           return ok("No matches found.");
         }
 
@@ -406,43 +345,31 @@ export const mcp = new Command("mcp")
         const maxPerFile =
           typeof args.max_per_file === "number" ? args.max_per_file : 0;
 
-        let compact = results.map((r: any) => {
-          const entry: any = {
-            path: r.path ?? r.metadata?.path ?? "",
-            startLine: r.startLine ?? r.generated_metadata?.start_line ?? 0,
-            endLine: r.endLine ?? r.generated_metadata?.end_line ?? 0,
-            score: typeof r.score === "number" ? +r.score.toFixed(3) : 0,
-            role: r.role ?? "IMPLEMENTATION",
-            confidence: r.confidence ?? "Unknown",
-            definedSymbols: toStringArray(
-              r.definedSymbols ?? r.defined_symbols,
-            ).slice(0, 5),
-            snippet: (() => {
-              const raw =
-                typeof r.content === "string"
-                  ? r.content
-                  : typeof r.text === "string"
-                    ? r.text
-                    : "";
-              const lines = raw.split("\n");
-              if (lines.length <= MCP_MAX_SNIPPET_LINES) return raw;
-              return (
-                lines.slice(0, MCP_MAX_SNIPPET_LINES).join("\n") +
-                `\n... (+${lines.length - MCP_MAX_SNIPPET_LINES} lines)`
-              );
-            })(),
-          };
-          if (r._project) entry.project = r._project;
-          return entry;
-        });
+        let compact = result.data.map((r: any) => ({
+          path: r.path ?? r.metadata?.path ?? "",
+          startLine: r.startLine ?? r.generated_metadata?.start_line ?? 0,
+          endLine: r.endLine ?? r.generated_metadata?.end_line ?? 0,
+          score: typeof r.score === "number" ? +r.score.toFixed(3) : 0,
+          role: r.role ?? "IMPLEMENTATION",
+          confidence: r.confidence ?? "Unknown",
+          definedSymbols: toStringArray(
+            r.definedSymbols ?? r.defined_symbols,
+          ).slice(0, 5),
+          snippet:
+            typeof r.content === "string"
+              ? r.content
+              : typeof r.text === "string"
+                ? r.text
+                : "",
+        }));
 
         if (minScore > 0) {
-          compact = compact.filter((r: any) => r.score >= minScore);
+          compact = compact.filter((r) => r.score >= minScore);
         }
 
         if (maxPerFile > 0) {
           const counts = new Map<string, number>();
-          compact = compact.filter((r: any) => {
+          compact = compact.filter((r) => {
             const count = counts.get(r.path) || 0;
             if (count >= maxPerFile) return false;
             counts.set(r.path, count + 1);
@@ -464,25 +391,18 @@ export const mcp = new Command("mcp")
       if (!target) return err("Missing required parameter: target");
 
       const absPath = path.resolve(projectRoot, target);
-      const relPath = path.relative(projectRoot, absPath);
-
-      // Security: ensure path is within project
-      if (relPath.startsWith("..") || path.isAbsolute(relPath)) {
-        return err("Path must be within the project root.");
-      }
 
       if (!fs.existsSync(absPath)) {
         return err(`File not found: ${target}`);
       }
 
-      // Try cached skeleton first
+      // Try cached skeleton first (stored with absolute path)
       try {
         const db = getVectorDb();
-        const cached = await getStoredSkeleton(db, relPath);
+        const cached = await getStoredSkeleton(db, absPath);
         if (cached) {
-          const body = capSkeleton(cached, MCP_MAX_SKELETON_LINES);
-          const tokens = Math.ceil(body.length / 4);
-          return ok(`// ${relPath} (~${tokens} tokens)\n\n${body}`);
+          const tokens = Math.ceil(cached.length / 4);
+          return ok(`// ${target} (~${tokens} tokens)\n\n${cached}`);
         }
       } catch {
         // Index may not exist yet — fall through to live generation
@@ -492,15 +412,15 @@ export const mcp = new Command("mcp")
       try {
         const content = fs.readFileSync(absPath, "utf-8");
         const skel = await getSkeletonizer();
-        const result = await skel.skeletonizeFile(relPath, content);
+        const result = await skel.skeletonizeFile(absPath, content);
 
         if (!result.success && result.error) {
           return err(`Skeleton generation failed: ${result.error}`);
         }
 
-        const body = capSkeleton(result.skeleton, MCP_MAX_SKELETON_LINES);
-        const tokens = Math.ceil(body.length / 4);
-        return ok(`// ${relPath} (~${tokens} tokens)\n\n${body}`);
+        return ok(
+          `// ${target} (~${result.tokenEstimate} tokens)\n\n${result.skeleton}`,
+        );
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         return err(`Skeleton failed: ${msg}`);
@@ -579,8 +499,12 @@ export const mcp = new Command("mcp")
           .limit(pattern ? 10000 : Math.max(limit * 50, 2000));
 
         if (pathPrefix) {
+          // Support both absolute and relative path prefixes
+          const absPrefix = path.isAbsolute(pathPrefix)
+            ? pathPrefix
+            : path.resolve(projectRoot, pathPrefix);
           query = query.where(
-            `path LIKE '${escapeSqlString(normalizePath(pathPrefix))}%'`,
+            `path LIKE '${escapeSqlString(normalizePath(absPrefix))}%'`,
           );
         }
 
@@ -632,36 +556,33 @@ export const mcp = new Command("mcp")
 
     async function handleIndexStatus(): Promise<ToolResult> {
       try {
+        const config = readIndexConfig(PATHS.configPath);
+        const projects = listProjects();
+
         const db = getVectorDb();
         const stats = await db.getStats();
         const fileCount = await db.getDistinctFileCount();
-        const config = readIndexConfig(paths.configPath);
 
         return ok(
           JSON.stringify({
-            mode: "embedded",
-            files: fileCount,
-            chunks: stats.chunks,
+            store: "centralized (~/.gmax/lancedb)",
+            totalChunks: stats.chunks,
+            totalFiles: fileCount,
             totalBytes: stats.totalBytes,
-            vectorDim: config?.vectorDim ?? 384,
-            modelTier: config?.modelTier ?? "small",
-            embedMode: config?.embedMode ?? "cpu",
+            embedMode: config?.embedMode ?? "unknown",
             model: config?.embedModel ?? null,
-            indexedAt: config?.indexedAt ?? null,
-            watching: !!getWatcherForProject(projectRoot),
-          }),
-        );
-      } catch {
-        const config = readIndexConfig(paths.configPath);
-        return ok(
-          JSON.stringify({
-            mode: "embedded",
-            indexed: !!config?.indexedAt,
             vectorDim: config?.vectorDim ?? null,
-            modelTier: config?.modelTier ?? null,
-            watching: false,
+            indexedAt: config?.indexedAt ?? null,
+            indexedDirectories: projects.map((p) => ({
+              name: p.name,
+              root: p.root,
+              lastIndexed: p.lastIndexed,
+            })),
           }),
         );
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return err(`Status check failed: ${msg}`);
       }
     }
 
@@ -694,7 +615,9 @@ export const mcp = new Command("mcp")
 
       switch (name) {
         case "semantic_search":
-          return handleSemanticSearch(toolArgs);
+          return handleSemanticSearch(toolArgs, false);
+        case "search_all":
+          return handleSemanticSearch(toolArgs, true);
         case "code_skeleton":
           return handleCodeSkeleton(toolArgs);
         case "trace_calls":
@@ -710,8 +633,6 @@ export const mcp = new Command("mcp")
 
     await server.connect(transport);
 
-    // Index and start watching in the background (non-blocking)
-    ensureIndexReady().catch((e) => {
-      console.error("[MCP] Background index sync failed:", e);
-    });
+    // Kick off index readiness check in background
+    ensureIndexReady();
   });

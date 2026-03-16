@@ -94,7 +94,7 @@ describe("search command", () => {
       expect.any(Number),
       { rerank: true },
       undefined,
-      "",
+      expect.stringMatching(/\/$/), // absolute path prefix ending with /
     );
     expect(spinner.succeed).toHaveBeenCalled();
   });

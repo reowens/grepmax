@@ -317,6 +317,12 @@ export class VectorDB {
     }
   }
 
+  async deletePathsWithPrefix(prefix: string): Promise<void> {
+    const table = await this.ensureTable();
+    const escaped = prefix.replace(/'/g, "''");
+    await table.delete(`path LIKE '${escaped}%'`);
+  }
+
   async drop(): Promise<void> {
     const db = await this.getDb();
     try {

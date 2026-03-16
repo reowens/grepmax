@@ -302,13 +302,18 @@ async function outputSkeletons(
     error?: string;
   }> = [];
 
-  for (const relPath of filesToProcess) {
+  for (const filePath of filesToProcess) {
+    // Paths from search results are now absolute (centralized index)
+    const absPath = path.isAbsolute(filePath)
+      ? filePath
+      : path.resolve(projectRoot, filePath);
+
     // 1. Try DB cache
     if (db) {
-      const cached = await getStoredSkeleton(db, relPath);
+      const cached = await getStoredSkeleton(db, absPath);
       if (cached) {
         skeletonResults.push({
-          file: relPath,
+          file: filePath,
           skeleton: cached,
           tokens: Math.ceil(cached.length / 4), // Rough estimate
         });
@@ -318,11 +323,10 @@ async function outputSkeletons(
 
     // 2. Fallback to fresh generation
     await globalSkeletonizer.init();
-    const absPath = path.resolve(projectRoot, relPath);
     if (!fs.existsSync(absPath)) {
       skeletonResults.push({
-        file: relPath,
-        skeleton: `// File not found: ${relPath}`,
+        file: filePath,
+        skeleton: `// File not found: ${filePath}`,
         tokens: 0,
         error: "File not found",
       });
@@ -331,12 +335,12 @@ async function outputSkeletons(
 
     const content = fs.readFileSync(absPath, "utf-8");
     const res = await globalSkeletonizer.skeletonizeFile(
-      relPath,
+      absPath,
       content,
       skeletonOpts,
     );
     skeletonResults.push({
-      file: relPath,
+      file: filePath,
       skeleton: res.skeleton,
       tokens: res.tokenEstimate,
       error: res.error,
@@ -594,12 +598,20 @@ export const search: Command = new CommanderCommand("search")
 
       const searcher = new Searcher(vectorDb);
 
+      // Use absolute path prefix for filtering
+      const searchPathPrefix = exec_path
+        ? path.resolve(exec_path)
+        : projectRoot;
+      const pathFilter = searchPathPrefix.endsWith("/")
+        ? searchPathPrefix
+        : `${searchPathPrefix}/`;
+
       const searchResult = await searcher.search(
         pattern,
         parseInt(options.m, 10),
         { rerank: true },
         undefined,
-        exec_path ? path.relative(projectRoot, path.resolve(exec_path)) : "",
+        pathFilter,
       );
 
       const filteredData = searchResult.data.filter(

@@ -1,3 +1,4 @@
+import * as path from "node:path";
 import { Command } from "commander";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
@@ -50,8 +51,12 @@ async function collectSymbols(options: {
       .limit(options.pattern ? 10000 : Math.max(options.limit * 50, 2000));
 
     if (options.pathPrefix) {
+      // Resolve to absolute path for centralized index
+      const absPrefix = path.isAbsolute(options.pathPrefix)
+        ? options.pathPrefix
+        : path.resolve(options.projectRoot, options.pathPrefix);
       query = query.where(
-        `path LIKE '${escapeSqlString(normalizePath(options.pathPrefix))}%'`,
+        `path LIKE '${escapeSqlString(normalizePath(absPrefix))}%'`,
       );
     }
 

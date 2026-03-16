@@ -35,6 +35,16 @@ export class MetaCache {
     return keys;
   }
 
+  async getKeysWithPrefix(prefix: string): Promise<Set<string>> {
+    const keys = new Set<string>();
+    for await (const { key } of this.db.getRange({ start: prefix })) {
+      const k = String(key);
+      if (!k.startsWith(prefix)) break;
+      keys.add(k);
+    }
+    return keys;
+  }
+
   put(filePath: string, entry: MetaEntry): void {
     this.db.put(filePath, entry);
   }

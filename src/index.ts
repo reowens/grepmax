@@ -32,14 +32,14 @@ program
     process.env.GMAX_STORE || undefined,
   );
 
-const legacyDataPath = path.join(require("node:os").homedir(), ".gmax", "data");
-const isIndexCommand = process.argv.some((arg) => arg === "index");
-if (isIndexCommand && fs.existsSync(legacyDataPath)) {
-  console.log("⚠️  Legacy global database detected at ~/.gmax/data.");
-  console.log("   gmax now uses per-project .gmax/ directories.");
-  console.log(
-    "   Run 'gmax index' in your project root to create a new index.",
-  );
+// Detect legacy per-project .gmax/ or .osgrep/ directories
+const legacyProjectData = [".gmax", ".osgrep"]
+  .map((d) => path.join(process.cwd(), d))
+  .find((d) => fs.existsSync(path.join(d, "lancedb")));
+if (legacyProjectData) {
+  console.log(`⚠️  Legacy per-project index detected at ${legacyProjectData}`);
+  console.log("   gmax now uses a centralized index at ~/.gmax/lancedb/.");
+  console.log("   Run 'gmax index' to re-index into the centralized store.");
 }
 
 program.addCommand(search, { isDefault: true });

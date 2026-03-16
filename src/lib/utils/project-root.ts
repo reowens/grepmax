@@ -3,90 +3,65 @@ import * as path from "node:path";
 import { PATHS } from "../../config";
 
 export interface ProjectPaths {
+  /** The directory being indexed/searched (walk root) */
   root: string;
+  /** Centralized data directory (~/.gmax) */
   dataDir: string;
+  /** Centralized LanceDB directory (~/.gmax/lancedb) */
   lancedbDir: string;
+  /** Centralized cache directory (~/.gmax/cache) */
   cacheDir: string;
+  /** Centralized LMDB metadata path (~/.gmax/cache/meta.lmdb) */
   lmdbPath: string;
+  /** Centralized config path (~/.gmax/config.json) */
   configPath: string;
 }
 
-export function findProjectRoot(startDir = process.cwd()): string | null {
+/**
+ * Find the project root for a given directory.
+ * Looks for .git to determine the project boundary.
+ * Falls back to the directory itself if no .git found.
+ */
+export function findProjectRoot(startDir = process.cwd()): string {
   const start = path.resolve(startDir);
 
-  // Only consider the current directory; do not climb above the user's cwd.
-  const dataDir = path.join(start, ".gmax");
-  const gitDir = path.join(start, ".git");
-  if (
-    (fs.existsSync(dataDir) || fs.existsSync(gitDir)) &&
-    path.resolve(start) !== path.resolve(PATHS.globalRoot)
-  ) {
-    return start;
+  // Walk up to find .git
+  let dir = start;
+  while (true) {
+    if (fs.existsSync(path.join(dir, ".git"))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) break; // reached filesystem root
+    dir = parent;
   }
 
-  // Otherwise, treat the current dir as the root (per-subdirectory isolation).
+  // No .git found — treat startDir as root
   return start;
 }
 
+/**
+ * Returns centralized paths for storage.
+ * The `root` field is the directory being indexed/searched.
+ * All storage paths point to ~/.gmax/ (centralized).
+ */
 export function ensureProjectPaths(
   startDir = process.cwd(),
   options?: { dryRun?: boolean },
 ): ProjectPaths {
-  const root = findProjectRoot(startDir) ?? path.resolve(startDir);
-  const dataDir = path.join(root, ".gmax");
-  const lancedbDir = path.join(dataDir, "lancedb");
-  const cacheDir = path.join(dataDir, "cache");
-  const lmdbPath = path.join(cacheDir, "meta.lmdb");
-  const configPath = path.join(dataDir, "config.json");
+  const root = findProjectRoot(startDir);
 
   if (!options?.dryRun) {
-    [dataDir, lancedbDir, cacheDir].forEach((dir) => {
+    // Ensure centralized directories exist
+    for (const dir of [PATHS.lancedbDir, PATHS.cacheDir]) {
       fs.mkdirSync(dir, { recursive: true });
-    });
-
-    ensureGitignoreEntry(root);
+    }
   }
 
-  return { root, dataDir, lancedbDir, cacheDir, lmdbPath, configPath };
-}
-
-function fileContainsEntry(filePath: string, entry: string): boolean {
-  try {
-    const contents = fs.readFileSync(filePath, "utf-8");
-    return contents
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .includes(entry);
-  } catch {
-    return false;
-  }
-}
-
-function ensureGitignoreEntry(root: string) {
-  // Only add when inside a git repo.
-  if (!fs.existsSync(path.join(root, ".git"))) return;
-
-  const entry = ".gmax";
-
-  // Check .git/info/exclude first
-  const excludePath = path.join(root, ".git", "info", "exclude");
-  if (fileContainsEntry(excludePath, entry)) return;
-
-  // Check .gitignore
-  const gitignorePath = path.join(root, ".gitignore");
-  if (fileContainsEntry(gitignorePath, entry)) return;
-
-  // Add to .gitignore
-  let contents = "";
-  try {
-    contents = fs.readFileSync(gitignorePath, "utf-8");
-  } catch {
-    // ignore missing file; will create below
-  }
-
-  const needsNewline = contents.length > 0 && !contents.endsWith("\n");
-  const prefix = needsNewline ? "\n" : "";
-  fs.writeFileSync(gitignorePath, `${contents}${prefix}${entry}\n`, {
-    encoding: "utf-8",
-  });
+  return {
+    root,
+    dataDir: PATHS.globalRoot,
+    lancedbDir: PATHS.lancedbDir,
+    cacheDir: PATHS.cacheDir,
+    lmdbPath: PATHS.lmdbPath,
+    configPath: PATHS.configPath,
+  };
 }

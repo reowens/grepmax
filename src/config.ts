@@ -84,6 +84,12 @@ export const PATHS = {
   globalRoot: GLOBAL_ROOT,
   models: path.join(GLOBAL_ROOT, "models"),
   grammars: path.join(GLOBAL_ROOT, "grammars"),
+  // Centralized index storage — one database for all indexed directories
+  lancedbDir: path.join(GLOBAL_ROOT, "lancedb"),
+  cacheDir: path.join(GLOBAL_ROOT, "cache"),
+  lmdbPath: path.join(GLOBAL_ROOT, "cache", "meta.lmdb"),
+  configPath: path.join(GLOBAL_ROOT, "config.json"),
+  lockDir: GLOBAL_ROOT,
 };
 
 export const MAX_FILE_SIZE_BYTES = 1024 * 1024 * 2; // 2MB limit for indexing

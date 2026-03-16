@@ -46,7 +46,8 @@ export const doctor = new Command("doctor")
     console.log(`\nLocal Project: ${process.cwd()}`);
     const projectRoot = findProjectRoot(process.cwd());
     if (projectRoot) {
-      console.log(`✅ Index found at: ${path.join(projectRoot, ".gmax")}`);
+      console.log(`✅ Project root: ${projectRoot}`);
+      console.log(`   Centralized index at: ~/.gmax/lancedb/`);
     } else {
       console.log(
         `ℹ️  No index found in current directory (run 'gmax index' to create one)`,

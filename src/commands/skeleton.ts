@@ -126,8 +126,8 @@ export const skeleton = new Command("skeleton")
         }
 
         if (vectorDb) {
-          const relativeToProject = path.relative(projectRoot, filePath);
-          const cached = await getStoredSkeleton(vectorDb, relativeToProject);
+          // Use absolute path for DB lookup (centralized index stores absolute paths)
+          const cached = await getStoredSkeleton(vectorDb, filePath);
           if (cached) {
             outputResult(
               {
@@ -162,14 +162,17 @@ export const skeleton = new Command("skeleton")
           return;
         }
 
-        const absolutePath = path.resolve(projectRoot, filePath);
+        // filePath from DB is absolute (centralized index)
+        const absolutePath = path.isAbsolute(filePath)
+          ? filePath
+          : path.resolve(projectRoot, filePath);
         if (!fs.existsSync(absolutePath)) {
           console.error(`File not found: ${absolutePath}`);
           process.exitCode = 1;
           return;
         }
 
-        const cached = await getStoredSkeleton(vectorDb!, filePath);
+        const cached = await getStoredSkeleton(vectorDb!, absolutePath);
         if (cached) {
           outputResult(
             {
@@ -184,7 +187,7 @@ export const skeleton = new Command("skeleton")
 
         const content = fs.readFileSync(absolutePath, "utf-8");
         const result = await skeletonizer.skeletonizeFile(
-          filePath,
+          absolutePath,
           content,
           skeletonOpts,
         );
@@ -225,7 +228,10 @@ export const skeleton = new Command("skeleton")
         }> = [];
 
         for (const filePath of filePaths) {
-          const absolutePath = path.resolve(projectRoot, filePath);
+          // Paths from search results are absolute (centralized index)
+          const absolutePath = path.isAbsolute(filePath)
+            ? filePath
+            : path.resolve(projectRoot, filePath);
 
           if (!fs.existsSync(absolutePath)) {
             results.push({
@@ -238,7 +244,7 @@ export const skeleton = new Command("skeleton")
           }
 
           // Try cache first
-          const cached = await getStoredSkeleton(vectorDb!, filePath);
+          const cached = await getStoredSkeleton(vectorDb!, absolutePath);
           if (cached) {
             results.push({
               file: filePath,
@@ -250,7 +256,7 @@ export const skeleton = new Command("skeleton")
 
           const content = fs.readFileSync(absolutePath, "utf-8");
           const result = await skeletonizer.skeletonizeFile(
-            filePath,
+            absolutePath,
             content,
             skeletonOpts,
           );

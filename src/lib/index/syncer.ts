@@ -29,7 +29,7 @@ type SyncOptions = {
 
 type MetaCacheLike = Pick<
   MetaCache,
-  "get" | "getAllKeys" | "put" | "delete" | "close"
+  "get" | "getAllKeys" | "getKeysWithPrefix" | "put" | "delete" | "close"
 >;
 
 async function flushBatch(
@@ -63,6 +63,13 @@ function createNoopMetaCache(): MetaCacheLike {
     async getAllKeys() {
       return new Set(store.keys());
     },
+    async getKeysWithPrefix(prefix: string) {
+      const keys = new Set<string>();
+      for (const k of store.keys()) {
+        if (k.startsWith(prefix)) keys.add(k);
+      }
+      return keys;
+    },
     put: (filePath: string, entry: MetaEntry) => {
       store.set(filePath, entry);
     },
@@ -84,6 +91,11 @@ export async function initialSync(
     signal,
   } = options;
   const paths = ensureProjectPaths(projectRoot);
+  const resolvedRoot = path.resolve(projectRoot);
+  // Path prefix for scoping — all absolute paths for this project start with this
+  const rootPrefix = resolvedRoot.endsWith("/")
+    ? resolvedRoot
+    : `${resolvedRoot}/`;
 
   // Propagate project root to worker processes
   process.env.GMAX_PROJECT_ROOT = paths.root;
@@ -103,29 +115,23 @@ export async function initialSync(
     }
 
     if (!dryRun) {
-      const hasRows = await vectorDb.hasAnyRows();
-      const hasMeta = (await metaCache.getAllKeys()).size > 0;
-      const isInconsistent = (hasRows && !hasMeta) || (!hasRows && hasMeta);
+      // Scope checks to this project's paths only
+      const projectKeys = await metaCache.getKeysWithPrefix(rootPrefix);
+
       const modelChanged = checkModelMismatch(paths.configPath);
 
-      if (reset || isInconsistent || modelChanged) {
+      if (reset || modelChanged) {
         if (modelChanged) {
           const stored = readIndexConfig(paths.configPath);
           console.warn(
             `[syncer] Embedding model changed: ${stored?.embedModel} → ${MODEL_IDS.embed}. Forcing full re-index.`,
           );
-        } else if (isInconsistent) {
-          console.warn(
-            "[syncer] Detected inconsistent state (VectorDB/MetaCache mismatch). Forcing re-sync.",
-          );
         }
-        await vectorDb.drop();
-
-        metaCache.close();
-        try {
-          fs.rmSync(paths.lmdbPath, { force: true });
-        } catch {}
-        metaCache = new MetaCache(paths.lmdbPath);
+        // Only delete this project's data from the centralized store
+        await vectorDb.deletePathsWithPrefix(rootPrefix);
+        for (const key of projectKeys) {
+          metaCache.delete(key);
+        }
       }
     }
 
@@ -133,10 +139,11 @@ export async function initialSync(
     onProgress?.({ processed: 0, indexed: 0, total, filePath: "Scanning..." });
 
     const pool = getWorkerPool();
+    // Get only this project's cached paths (scoped by prefix)
     const cachedPaths =
       dryRun || treatAsEmptyCache
         ? new Set<string>()
-        : await metaCache.getAllKeys();
+        : await metaCache.getKeysWithPrefix(rootPrefix);
     const seenPaths = new Set<string>();
     const visitedRealPaths = new Set<string>();
     const batch: VectorRecord[] = [];
@@ -204,14 +211,13 @@ export async function initialSync(
       err instanceof Error && err.message?.toLowerCase().includes("timed out");
 
     const processFileWithRetry = async (
-      relPath: string,
       absPath: string,
     ): Promise<ProcessFileResult> => {
       let retries = 0;
       while (true) {
         try {
           return await pool.processFile({
-            path: relPath,
+            path: absPath,
             absolutePath: absPath,
           });
         } catch (err) {
@@ -237,14 +243,12 @@ export async function initialSync(
     };
 
     for await (const relPath of walk(paths.root, {
-      additionalPatterns: ["**/.git/**", "**/.gmax/**"], // exclude .git and .gmax explicitly if walker doesn't
+      additionalPatterns: ["**/.git/**", "**/.gmax/**", "**/.osgrep/**"],
     })) {
       if (signal?.aborted) {
         shouldSkipCleanup = true;
         break;
       }
-      // Walker yields relative paths
-      // if (ignoreFilter.ignores(relPath)) continue; // Handled by walker
 
       const absPath = path.join(paths.root, relPath);
 
@@ -272,9 +276,10 @@ export async function initialSync(
             return;
           }
 
+          // Use absolute path as the key for MetaCache
           const cached = treatAsEmptyCache
             ? undefined
-            : metaCache?.get(relPath);
+            : metaCache!.get(absPath);
 
           if (
             cached &&
@@ -282,12 +287,12 @@ export async function initialSync(
             cached.size === stats.size
           ) {
             processed += 1;
-            seenPaths.add(relPath);
+            seenPaths.add(absPath);
             markProgress(relPath);
             return;
           }
 
-          const result = await processFileWithRetry(relPath, absPath);
+          const result = await processFileWithRetry(absPath);
 
           const metaEntry: MetaEntry = {
             hash: result.hash,
@@ -297,22 +302,22 @@ export async function initialSync(
 
           if (result.shouldDelete) {
             if (!dryRun) {
-              pendingDeletes.add(relPath);
-              pendingMeta.set(relPath, metaEntry);
+              pendingDeletes.add(absPath);
+              pendingMeta.set(absPath, metaEntry);
               await flush(false);
             }
             processed += 1;
-            seenPaths.add(relPath);
+            seenPaths.add(absPath);
             markProgress(relPath);
             return;
           }
 
           if (cached && cached.hash === result.hash) {
             if (!dryRun) {
-              metaCache?.put(relPath, metaEntry);
+              metaCache!.put(absPath, metaEntry);
             }
             processed += 1;
-            seenPaths.add(relPath);
+            seenPaths.add(absPath);
             markProgress(relPath);
             return;
           }
@@ -320,22 +325,22 @@ export async function initialSync(
           if (dryRun) {
             processed += 1;
             indexed += 1;
-            seenPaths.add(relPath);
+            seenPaths.add(absPath);
             markProgress(relPath);
             return;
           }
 
-          pendingDeletes.add(relPath);
+          pendingDeletes.add(absPath);
 
           if (result.vectors.length > 0) {
             batch.push(...result.vectors);
-            pendingMeta.set(relPath, metaEntry);
+            pendingMeta.set(absPath, metaEntry);
             indexed += 1;
           } else {
-            pendingMeta.set(relPath, metaEntry);
+            pendingMeta.set(absPath, metaEntry);
           }
 
-          seenPaths.add(relPath);
+          seenPaths.add(absPath);
           processed += 1;
           markProgress(relPath);
 
@@ -344,10 +349,10 @@ export async function initialSync(
           const code = (err as NodeJS.ErrnoException)?.code;
           if (code === "ENOENT") {
             // Treat missing files as deletions.
-            pendingDeletes.add(relPath);
-            pendingMeta.delete(relPath);
+            pendingDeletes.add(absPath);
+            pendingMeta.delete(absPath);
             if (!dryRun) {
-              metaCache?.delete(relPath);
+              metaCache!.delete(absPath);
             }
             processed += 1;
             markProgress(relPath);
@@ -356,7 +361,7 @@ export async function initialSync(
           }
           failedFiles += 1;
           processed += 1;
-          seenPaths.add(relPath);
+          seenPaths.add(absPath);
           console.error(`[sync] Failed to process ${relPath}:`, err);
           markProgress(relPath);
         }
@@ -386,11 +391,12 @@ export async function initialSync(
       await vectorDb.createFTSIndex();
     }
 
+    // Stale cleanup: only remove paths scoped to this project's root
     const stale = Array.from(cachedPaths).filter((p) => !seenPaths.has(p));
     if (!dryRun && stale.length > 0 && !shouldSkipCleanup) {
       await vectorDb.deletePaths(stale);
       stale.forEach((p) => {
-        metaCache?.delete(p);
+        metaCache!.delete(p);
       });
     }
 

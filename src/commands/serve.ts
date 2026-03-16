@@ -310,27 +310,13 @@ export const serve = new Command("serve")
                 const query = typeof body.query === "string" ? body.query : "";
                 const limit = typeof body.limit === "number" ? body.limit : 10;
 
-                let searchPath = "";
+                // Use absolute path prefix for search filtering
+                let searchPath = `${projectRoot}/`;
                 if (typeof body.path === "string") {
                   const resolvedPath = path.resolve(projectRoot, body.path);
-                  const rootPrefix = projectRoot.endsWith(path.sep)
-                    ? projectRoot
-                    : `${projectRoot}${path.sep}`;
-
-                  // Normalize paths for consistency (Windows/Linux)
-                  const normalizedRootPrefix = path.normalize(rootPrefix);
-                  const normalizedResolvedPath = path.normalize(resolvedPath);
-
-                  if (
-                    normalizedResolvedPath !== projectRoot &&
-                    !normalizedResolvedPath.startsWith(normalizedRootPrefix)
-                  ) {
-                    res.statusCode = 400;
-                    res.setHeader("Content-Type", "application/json");
-                    res.end(JSON.stringify({ error: "invalid_path" }));
-                    return;
-                  }
-                  searchPath = path.relative(projectRoot, resolvedPath);
+                  searchPath = resolvedPath.endsWith("/")
+                    ? resolvedPath
+                    : `${resolvedPath}/`;
                 }
 
                 // Add AbortController for cancellation
