@@ -34,6 +34,7 @@ function startMlxServer() {
     cwd: serverDir,
     detached: true,
     stdio: ["ignore", out, out],
+    env: { ...process.env, VIRTUAL_ENV: "", CONDA_DEFAULT_ENV: "" },
   });
   child.unref();
 }
