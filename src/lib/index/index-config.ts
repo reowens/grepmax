@@ -45,7 +45,7 @@ export function readGlobalConfig(): GlobalConfig {
     return {
       modelTier: DEFAULT_MODEL_TIER,
       vectorDim: tier.vectorDim,
-      embedMode: "cpu",
+      embedMode: process.arch === "arm64" && process.platform === "darwin" ? "gpu" : "cpu",
     };
   }
 }
