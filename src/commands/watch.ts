@@ -23,9 +23,12 @@ const IDLE_CHECK_INTERVAL_MS = 60 * 1000; // check every minute
 export const watch = new Command("watch")
   .description("Start background file watcher for live reindexing")
   .option("-b, --background", "Run watcher in background and exit")
+  .option("-p, --path <dir>", "Directory to watch (defaults to project root)")
   .option("--no-idle-timeout", "Disable the 30-minute idle shutdown")
-  .action(async (options: { background?: boolean; idleTimeout?: boolean }) => {
-    const projectRoot = findProjectRoot(process.cwd()) ?? process.cwd();
+  .action(async (options: { background?: boolean; path?: string; idleTimeout?: boolean }) => {
+    const projectRoot = options.path
+      ? path.resolve(options.path)
+      : findProjectRoot(process.cwd()) ?? process.cwd();
     const projectName = path.basename(projectRoot);
 
     // Check if watcher already running

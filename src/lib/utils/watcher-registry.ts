@@ -66,6 +66,18 @@ export function getWatcherForProject(
   return undefined;
 }
 
+export function getWatcherCoveringPath(
+  dir: string,
+): WatcherInfo | undefined {
+  const resolved = path.resolve(dir);
+  const entries = loadRegistry();
+  for (const e of entries) {
+    if (resolved.startsWith(e.projectRoot) && isProcessRunning(e.pid))
+      return e;
+  }
+  return undefined;
+}
+
 export function listWatchers(): WatcherInfo[] {
   const entries = loadRegistry();
   const active = entries.filter((e) => isProcessRunning(e.pid));

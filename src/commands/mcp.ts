@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -18,6 +19,7 @@ import { VectorDB } from "../lib/store/vector-db";
 import { escapeSqlString, normalizePath } from "../lib/utils/filter-builder";
 import { listProjects } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
+import { getWatcherCoveringPath } from "../lib/utils/watcher-registry";
 
 // ---------------------------------------------------------------------------
 // Tool definitions
@@ -286,9 +288,41 @@ export const mcp = new Command("mcp")
         }
 
         _indexReady = true;
+        ensureWatcher();
       } catch (e) {
         console.error("[MCP] Index sync failed:", e);
       }
+    }
+
+    // --- Background watcher ---
+
+    function findIndexedParent(dir: string): string | undefined {
+      const resolved = path.resolve(dir);
+      const projects = listProjects();
+      // Find indexed directories that are parents of `dir`, pick broadest
+      let broadest: string | undefined;
+      for (const p of projects) {
+        if (resolved.startsWith(p.root) && p.root !== resolved) {
+          if (!broadest || p.root.length < broadest.length) {
+            broadest = p.root;
+          }
+        }
+      }
+      return broadest;
+    }
+
+    function ensureWatcher(): void {
+      if (getWatcherCoveringPath(projectRoot)) return;
+
+      const watchRoot = findIndexedParent(projectRoot) ?? projectRoot;
+      if (getWatcherCoveringPath(watchRoot)) return;
+
+      const child = spawn("gmax", ["watch", "-b", "--path", watchRoot], {
+        detached: true,
+        stdio: "ignore",
+      });
+      child.unref();
+      console.log(`[MCP] Started background watcher for ${watchRoot}`);
     }
 
     // --- Tool handlers ---
