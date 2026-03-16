@@ -25,6 +25,9 @@ TODO.md
 AGENTS.md
 docs/
 
+.env
+.npmrc
+
 # Python
 __pycache__/
 .venv/
