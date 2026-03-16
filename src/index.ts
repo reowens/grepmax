@@ -16,6 +16,7 @@ import { setup } from "./commands/setup";
 import { skeleton } from "./commands/skeleton";
 import { symbols } from "./commands/symbols";
 import { trace } from "./commands/trace";
+import { watch } from "./commands/watch";
 
 program
   .version(
@@ -49,6 +50,7 @@ program.addCommand(symbols);
 program.addCommand(trace);
 program.addCommand(setup);
 program.addCommand(serve);
+program.addCommand(watch);
 program.addCommand(mcp);
 program.addCommand(installClaudeCode);
 program.addCommand(installCodex);

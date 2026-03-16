@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -10,15 +11,17 @@ import { Command } from "commander";
 import { GraphBuilder } from "../lib/graph/graph-builder";
 import { readIndexConfig } from "../lib/index/index-config";
 import { initialSync } from "../lib/index/syncer";
-import { startWatcher, type WatcherHandle } from "../lib/index/watcher";
 import { Searcher } from "../lib/search/searcher";
 import { getStoredSkeleton } from "../lib/skeleton/retriever";
 import { Skeletonizer } from "../lib/skeleton/skeletonizer";
-import { MetaCache } from "../lib/store/meta-cache";
 import { VectorDB } from "../lib/store/vector-db";
 import { escapeSqlString, normalizePath } from "../lib/utils/filter-builder";
 import { listProjects } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
+import {
+  getWatcherForProject,
+  isProcessRunning,
+} from "../lib/utils/watcher-registry";
 
 // ---------------------------------------------------------------------------
 // Tool definitions
@@ -178,25 +181,15 @@ export const mcp = new Command("mcp")
 
     let _vectorDb: VectorDB | null = null;
     let _searcher: Searcher | null = null;
-    let _metaCache: MetaCache | null = null;
     let _skeletonizer: Skeletonizer | null = null;
-    let _watcher: WatcherHandle | null = null;
     let _indexReady = false;
 
     const cleanup = async () => {
-      try {
-        await _watcher?.close();
-      } catch {}
-      try {
-        _metaCache?.close();
-      } catch {}
       try {
         await _vectorDb?.close();
       } catch {}
       _vectorDb = null;
       _searcher = null;
-      _metaCache = null;
-      _watcher = null;
     };
 
     const exit = async () => {
@@ -248,11 +241,6 @@ export const mcp = new Command("mcp")
       return _searcher;
     }
 
-    function getMetaCache(): MetaCache {
-      if (!_metaCache) _metaCache = new MetaCache(paths.lmdbPath);
-      return _metaCache;
-    }
-
     async function getSkeletonizer(): Promise<Skeletonizer> {
       if (!_skeletonizer) {
         _skeletonizer = new Skeletonizer();
@@ -261,35 +249,39 @@ export const mcp = new Command("mcp")
       return _skeletonizer;
     }
 
-    // --- Index sync + file watcher ---
+    // --- Index sync + background watcher ---
+
+    function ensureWatcher(): void {
+      const existing = getWatcherForProject(projectRoot);
+      if (existing && isProcessRunning(existing.pid)) return;
+
+      // Spawn background watcher (singleton per project)
+      const child = spawn("gmax", ["watch", "-b"], {
+        cwd: projectRoot,
+        detached: true,
+        stdio: "ignore",
+      });
+      child.unref();
+      console.log("[MCP] Started background watcher");
+    }
 
     async function ensureIndexReady(): Promise<void> {
       if (_indexReady) return;
 
       try {
-        // Check if index already exists — skip expensive full sync if so
         const db = getVectorDb();
         const hasIndex = await db.hasAnyRows();
 
         if (!hasIndex) {
-          // First time — need full index
           console.log("[MCP] No index found, running initial sync...");
           await initialSync({ projectRoot });
           console.log("[MCP] Initial sync complete.");
         } else {
-          console.log("[MCP] Index exists, skipping sync.");
+          console.log("[MCP] Index exists, ready.");
         }
 
-        // Start file watcher for live reindexing
-        _watcher = startWatcher({
-          projectRoot,
-          vectorDb: getVectorDb(),
-          metaCache: getMetaCache(),
-          dataDir: paths.dataDir,
-          onReindex: (files, ms) => {
-            console.log(`[MCP] Reindexed ${files} files in ${ms}ms`);
-          },
-        });
+        // Ensure background watcher is running
+        ensureWatcher();
 
         _indexReady = true;
       } catch (e) {
@@ -636,7 +628,7 @@ export const mcp = new Command("mcp")
               embedMode: config?.embedMode ?? "cpu",
               model: config?.embedModel ?? null,
               indexedAt: config?.indexedAt ?? null,
-              watching: _watcher !== null,
+              watching: !!getWatcherForProject(projectRoot),
             },
             null,
             2,
