@@ -26,6 +26,7 @@ export type PreparedChunk = {
   role?: string;
   parent_symbol?: string;
   file_skeleton?: string;
+  summary?: string;
 };
 
 export type VectorRecord = PreparedChunk & {
@@ -65,6 +66,7 @@ export interface ChunkType extends MetadataRecord {
   exports?: string[];
   role?: string;
   parent_symbol?: string;
+  summary?: string;
   context?: string[];
 }
 

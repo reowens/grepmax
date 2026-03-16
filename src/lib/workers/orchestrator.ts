@@ -4,6 +4,7 @@ import { env } from "@huggingface/transformers";
 import * as ort from "onnxruntime-node";
 import { v4 as uuidv4 } from "uuid";
 import { CONFIG, PATHS } from "../../config";
+import { summarizeChunks } from "./summarize/llm-client";
 import {
   buildAnchorChunk,
   type ChunkWithContext,
@@ -259,10 +260,29 @@ export class WorkerOrchestrator {
       chunks,
       skeletonResult.success ? skeletonResult.skeleton : undefined,
     );
-    const hybrids = await this.computeHybrid(
-      preparedChunks.map((chunk) => chunk.content),
-      onProgress,
-    );
+
+    // Run embedding and summarization in parallel
+    const lang = path.extname(input.path).replace(/^\./, "") || "unknown";
+    const [hybrids, summaries] = await Promise.all([
+      this.computeHybrid(
+        preparedChunks.map((chunk) => chunk.content),
+        onProgress,
+      ),
+      summarizeChunks(
+        preparedChunks.map((c) => ({
+          code: c.content,
+          language: lang,
+          file: c.path,
+        })),
+      ),
+    ]);
+
+    // Attach summaries if available
+    if (summaries) {
+      for (let i = 0; i < preparedChunks.length; i++) {
+        if (summaries[i]) preparedChunks[i].summary = summaries[i];
+      }
+    }
 
     const vectors = preparedChunks.map((chunk, idx) => {
       const hybrid = hybrids[idx] ?? {
