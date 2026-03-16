@@ -24,7 +24,8 @@ Natural-language search that works like `grep`. Fast, local, and built for codin
 - **Role Detection:** Distinguishes `ORCHESTRATION` (high-level logic) from `DEFINITION` (types/classes).
 - **Local & Private:** 100% local embeddings via ONNX (CPU) or MLX (Apple Silicon GPU).
 - **Centralized Index:** One database at `~/.gmax/` — index once, search from anywhere.
-- **Agent-Ready:** Native output with symbols, roles, and call graphs.
+- **LLM Summaries:** Optional Qwen3-Coder generates one-line descriptions per code chunk at index time.
+- **Agent-Ready:** Pointer mode returns metadata (symbol, role, calls, summary) — no code snippets, ~80% fewer tokens.
 
 ## Quick Start
 
@@ -99,8 +100,8 @@ In our public benchmarks, `grepmax` can save about 20% of your LLM tokens and de
 
 | Tool | Description |
 | --- | --- |
-| `semantic_search` | Natural language code search. Use `root` to search a parent or sibling directory. |
-| `search_all` | Search ALL indexed code across every directory. |
+| `semantic_search` | Code search by meaning. Returns pointers (symbol, file:line, role, calls, summary) by default. Use `root` for cross-directory search, `detail: "code"` for snippets. |
+| `search_all` | Search ALL indexed code across every directory. Same pointer format. |
 | `code_skeleton` | Collapsed file structure (~4x fewer tokens than reading the full file) |
 | `trace_calls` | Call graph — who calls a symbol and what it calls (unscoped, crosses project boundaries) |
 | `list_symbols` | List indexed functions, classes, and types with definition locations |
@@ -227,6 +228,19 @@ All chunks store **absolute file paths**. Search scoping is done via path prefix
 On Macs with Apple Silicon, gmax defaults to MLX for GPU-accelerated embeddings. The MLX embed server runs on port `8100` and is managed automatically by the Claude Code plugin hook.
 
 To force CPU mode: `GMAX_EMBED_MODE=cpu gmax index`
+
+### LLM Summaries
+
+gmax can generate one-line natural language descriptions for every code chunk using a local LLM (Qwen3-Coder-30B-A3B via MLX). Summaries are pre-computed at index time and stored in LanceDB — zero latency at search time.
+
+The summarizer server runs on port `8101` and auto-starts alongside the embed server. If unavailable, indexing proceeds without summaries.
+
+Example search output with summaries:
+```
+handleAuth [exported ORCH C:8] src/auth/handler.ts:45-90
+  Validates JWT from Authorization header, checks RBAC permissions, returns 401 on failure
+  parent:AuthController calls:validateToken,checkRole,respond
+```
 
 ## Configuration
 

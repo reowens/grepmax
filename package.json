@@ -1,6 +1,6 @@
 {
   "name": "grepmax",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "author": "Robert Owens <robowens@me.com>",
   "homepage": "https://github.com/reowens/grepmax",
   "bugs": {
@@ -46,7 +46,7 @@
     "NOTICE"
   ],
   "license": "Apache-2.0",
-  "description": "Local grep-like search tool for your codebase.",
+  "description": "Semantic code search for coding agents. Local embeddings, LLM summaries, call graph tracing.",
   "dependencies": {
     "@clack/prompts": "^1.1.0",
     "@huggingface/transformers": "^3.8.0",
