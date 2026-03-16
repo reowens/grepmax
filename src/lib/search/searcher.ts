@@ -126,9 +126,7 @@ export class Searcher {
       referenced_symbols: referencedSymbols,
       imports,
       exports,
-
-      // Remove 'context' field entirely from JSON output
-      // context: record.context_prev ? [record.context_prev] : [],
+      summary: record.summary,
     };
   }
 

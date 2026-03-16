@@ -421,6 +421,8 @@ export const mcp = new Command("mcp")
               : "";
 
           const line1 = `${symbol} [${exported}${role}${complexity}] ${relPath}:${startLine + 1}-${endLine + 1}`;
+          const summaryStr =
+            r.summary ? `  ${r.summary}` : "";
           const line2 =
             parentStr || callsStr
               ? `  ${parentStr}${callsStr}`
@@ -444,7 +446,11 @@ export const mcp = new Command("mcp")
                 .join("\n");
           }
 
-          const text = line1 + (line2 ? `\n${line2}` : "") + snippet;
+          const text =
+            line1 +
+            (summaryStr ? `\n${summaryStr}` : "") +
+            (line2 ? `\n${line2}` : "") +
+            snippet;
           return {
             absPath,
             text,
