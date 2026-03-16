@@ -73,9 +73,16 @@ export function createIndexingSpinner(
   options: IndexingSpinnerOptions = {},
 ): IndexingSpinner {
   const { verbose = false } = options;
-  const spinner = ora({ text: label }).start();
+  const isTTY = process.stderr.isTTY;
+  const spinner = ora({ text: label, isSilent: !isTTY }).start();
   const tracker = createProgressTracker();
   const seenFiles = new Set<string>();
+
+  // Non-TTY: emit periodic log lines instead of spinner updates
+  let lastLogTime = Date.now();
+  let lastLogCount = 0;
+  const LOG_INTERVAL_MS = 10_000;
+  const LOG_INTERVAL_FILES = 100;
 
   return {
     spinner,
@@ -91,6 +98,9 @@ export function createIndexingSpinner(
           info.filePath.startsWith("Checking for changes"))
       ) {
         spinner.text = info.filePath;
+        if (!isTTY) {
+          process.stderr.write(`[index] ${info.filePath}\n`);
+        }
         if (process.env.GMAX_DEBUG_INDEX === "1") {
           console.log(`[progress] ${info.filePath}`);
         }
@@ -119,6 +129,22 @@ export function createIndexingSpinner(
         : `(${info.processed} files)`;
 
       spinner.text = `Indexing files ${progressSuffix}${fileSuffix}`;
+
+      // Non-TTY: periodic log lines
+      if (!isTTY) {
+        const now = Date.now();
+        const filesDelta = info.processed - lastLogCount;
+        if (
+          filesDelta >= LOG_INTERVAL_FILES ||
+          now - lastLogTime >= LOG_INTERVAL_MS
+        ) {
+          process.stderr.write(
+            `[index] ${info.processed} files (${info.indexed} indexed) ${rel}\n`,
+          );
+          lastLogTime = now;
+          lastLogCount = info.processed;
+        }
+      }
     },
   };
 }
