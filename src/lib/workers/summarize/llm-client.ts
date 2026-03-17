@@ -75,6 +75,7 @@ export async function summarizeChunks(
 
   const { ok, data } = await postJSON("/summarize", { chunks });
   if (!ok || !data?.summaries) {
+    process.stderr.write("[summarizer] Request failed or server unavailable\n");
     return null;
   }
 

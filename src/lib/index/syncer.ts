@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { CONFIG, MODEL_IDS } from "../../config";
+import { log, debug, timer } from "../utils/logger";
 import { MetaCache, type MetaEntry } from "../store/meta-cache";
 import type { VectorRecord } from "../store/types";
 import { VectorDB } from "../store/vector-db";
@@ -173,6 +174,8 @@ export async function initialSync(
 
   // Propagate project root to worker processes
   process.env.GMAX_PROJECT_ROOT = paths.root;
+  const syncTimer = timer("index", "Total");
+  log("index", `Root: ${resolvedRoot}`);
 
   let lock: LockHandle | null = null;
   const vectorDb = new VectorDB(paths.lancedbDir);
@@ -191,15 +194,16 @@ export async function initialSync(
     if (!dryRun) {
       // Scope checks to this project's paths only
       const projectKeys = await metaCache.getKeysWithPrefix(rootPrefix);
+      log("index", `Cached files: ${projectKeys.size}`);
 
       const modelChanged = checkModelMismatch(paths.configPath);
 
       if (reset || modelChanged) {
         if (modelChanged) {
           const stored = readIndexConfig(paths.configPath);
-          console.warn(
-            `[syncer] Embedding model changed: ${stored?.embedModel} → ${MODEL_IDS.embed}. Forcing full re-index.`,
-          );
+          log("index", `Reset: model changed (${stored?.embedModel} → ${MODEL_IDS.embed})`);
+        } else {
+          log("index", "Reset: --reset flag");
         }
         // Only delete this project's data from the centralized store
         await vectorDb.deletePathsWithPrefix(rootPrefix);
@@ -230,6 +234,9 @@ export async function initialSync(
     let processed = 0;
     let indexed = 0;
     let failedFiles = 0;
+    let cacheHits = 0;
+    let walkedFiles = 0;
+    const walkTimer = timer("index", "Walk");
     let shouldSkipCleanup = false;
     let flushError: unknown;
     let flushPromise: Promise<void> | null = null;
@@ -337,6 +344,7 @@ export async function initialSync(
       }
 
       if (!isIndexableFile(absPath)) continue;
+      walkedFiles++;
 
       await schedule(async () => {
         if (signal?.aborted) {
@@ -360,12 +368,15 @@ export async function initialSync(
             cached.mtimeMs === stats.mtimeMs &&
             cached.size === stats.size
           ) {
+            cacheHits++;
+            debug("index", `SKIP ${relPath} (cached)`);
             processed += 1;
             seenPaths.add(absPath);
             markProgress(relPath);
             return;
           }
 
+          debug("index", `EMBED ${relPath}`);
           const result = await processFileWithRetry(absPath);
 
           const metaEntry: MetaEntry = {
@@ -443,6 +454,10 @@ export async function initialSync(
     }
 
     await Promise.allSettled(activeTasks);
+    walkTimer();
+    log("index", `Walk: ${walkedFiles} files`);
+    log("index", `Embed: ${indexed} new, ${cacheHits} cached, ${failedFiles} failed`);
+
     if (signal?.aborted) {
       shouldSkipCleanup = true;
     }
@@ -456,6 +471,7 @@ export async function initialSync(
     }
 
     if (!dryRun) {
+      const ftsTimer = timer("index", "FTS");
       onProgress?.({
         processed,
         indexed,
@@ -463,11 +479,13 @@ export async function initialSync(
         filePath: "Creating FTS index...",
       });
       await vectorDb.createFTSIndex();
+      ftsTimer();
     }
 
     // Stale cleanup: only remove paths scoped to this project's root
     const stale = Array.from(cachedPaths).filter((p) => !seenPaths.has(p));
     if (!dryRun && stale.length > 0 && !shouldSkipCleanup) {
+      log("index", `Stale cleanup: ${stale.length} paths`);
       await vectorDb.deletePaths(stale);
       stale.forEach((p) => {
         metaCache!.delete(p);
@@ -476,6 +494,7 @@ export async function initialSync(
 
     // --- Summary post-processing (sequential, single process) ---
     if (!dryRun && indexed > 0) {
+      const sumTimer = timer("index", "Summarize");
       onProgress?.({
         processed,
         indexed,
@@ -494,15 +513,11 @@ export async function initialSync(
           });
         },
       );
-      if (summarized > 0) {
-        onProgress?.({
-          processed,
-          indexed,
-          total,
-          filePath: `Summarized ${summarized} chunks`,
-        });
-      }
+      sumTimer();
+      log("index", `Summarize: ${summarized} chunks`);
     }
+
+    syncTimer();
 
     // Write model config so future runs can detect model changes
     if (!dryRun) {
