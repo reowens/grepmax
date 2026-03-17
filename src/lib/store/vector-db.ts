@@ -13,6 +13,7 @@ import {
   Utf8,
 } from "apache-arrow";
 import { CONFIG } from "../../config";
+import { log } from "../utils/logger";
 import { registerCleanup } from "../utils/cleanup";
 import type { VectorRecord } from "./types";
 
@@ -154,6 +155,7 @@ export class VectorDB {
       await this.validateSchema(table);
       return table;
     } catch (_err) {
+      log("db", `Creating table (${this.vectorDim}d)`);
       const schema = this.buildSchema();
       const table = await db.createTable(TABLE_NAME, [this.seedRow()], {
         schema,
