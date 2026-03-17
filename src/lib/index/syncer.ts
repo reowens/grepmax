@@ -32,6 +32,72 @@ type MetaCacheLike = Pick<
   "get" | "getAllKeys" | "getKeysWithPrefix" | "put" | "delete" | "close"
 >;
 
+export async function generateSummaries(
+  db: VectorDB,
+  pathPrefix: string,
+  onProgress?: (count: number, total: number) => void,
+): Promise<number> {
+  let summarizeChunks: typeof import("../workers/summarize/llm-client").summarizeChunks;
+  try {
+    const mod = await import("../workers/summarize/llm-client");
+    summarizeChunks = mod.summarizeChunks;
+  } catch {
+    return 0;
+  }
+
+  // Quick availability check
+  const test = await summarizeChunks([
+    { code: "test", language: "ts", file: "test" },
+  ]);
+  if (!test) return 0;
+
+  const table = await db.ensureTable();
+  const rows = await table
+    .query()
+    .select(["id", "path", "content"])
+    .where(
+      `path LIKE '${pathPrefix}%' AND (summary IS NULL OR summary = '')`,
+    )
+    .limit(50000)
+    .toArray();
+
+  if (rows.length === 0) return 0;
+
+  let summarized = 0;
+  const BATCH_SIZE = 5;
+
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const batch = rows.slice(i, i + BATCH_SIZE);
+    const chunks = batch.map((r: any) => ({
+      code: String(r.content || ""),
+      language:
+        path.extname(String(r.path || "")).replace(/^\./, "") || "unknown",
+      file: String(r.path || ""),
+    }));
+
+    const summaries = await summarizeChunks(chunks);
+    if (!summaries) break;
+
+    const ids: string[] = [];
+    const values: string[] = [];
+    for (let j = 0; j < batch.length; j++) {
+      if (summaries[j]) {
+        ids.push(String((batch[j] as any).id));
+        values.push(summaries[j]);
+      }
+    }
+
+    if (ids.length > 0) {
+      await db.updateRows(ids, "summary", values);
+      summarized += ids.length;
+    }
+
+    onProgress?.(summarized, rows.length);
+  }
+
+  return summarized;
+}
+
 async function flushBatch(
   db: VectorDB,
   meta: MetaCacheLike,
@@ -398,6 +464,36 @@ export async function initialSync(
       stale.forEach((p) => {
         metaCache!.delete(p);
       });
+    }
+
+    // --- Summary post-processing (sequential, single process) ---
+    if (!dryRun && indexed > 0) {
+      onProgress?.({
+        processed,
+        indexed,
+        total,
+        filePath: "Generating summaries...",
+      });
+      const summarized = await generateSummaries(
+        vectorDb,
+        rootPrefix,
+        (count, chunkTotal) => {
+          onProgress?.({
+            processed: count,
+            indexed,
+            total: chunkTotal,
+            filePath: `Summarizing... (${count}/${chunkTotal})`,
+          });
+        },
+      );
+      if (summarized > 0) {
+        onProgress?.({
+          processed,
+          indexed,
+          total,
+          filePath: `Summarized ${summarized} chunks`,
+        });
+      }
     }
 
     // Write model config so future runs can detect model changes

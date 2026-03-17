@@ -37,15 +37,20 @@ export interface GlobalConfig {
 const GLOBAL_CONFIG_PATH = path.join(PATHS.globalRoot, "config.json");
 
 export function readGlobalConfig(): GlobalConfig {
+  const defaultEmbedMode =
+    process.arch === "arm64" && process.platform === "darwin" ? "gpu" : "cpu";
   try {
     const raw = fs.readFileSync(GLOBAL_CONFIG_PATH, "utf-8");
-    return JSON.parse(raw) as GlobalConfig;
+    const parsed = JSON.parse(raw) as GlobalConfig;
+    // Ensure embedMode has a default even if missing from stored config
+    if (!parsed.embedMode) parsed.embedMode = defaultEmbedMode;
+    return parsed;
   } catch {
     const tier = MODEL_TIERS[DEFAULT_MODEL_TIER];
     return {
       modelTier: DEFAULT_MODEL_TIER,
       vectorDim: tier.vectorDim,
-      embedMode: process.arch === "arm64" && process.platform === "darwin" ? "gpu" : "cpu",
+      embedMode: defaultEmbedMode,
     };
   }
 }
