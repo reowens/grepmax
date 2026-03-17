@@ -13,6 +13,8 @@ export interface WatcherInfo {
   pid: number;
   projectRoot: string;
   startTime: number;
+  status?: "syncing" | "watching" | "summarizing";
+  lastReindex?: number;
 }
 
 const REGISTRY_PATH = path.join(PATHS.globalRoot, "watchers.json");
@@ -46,6 +48,20 @@ export function registerWatcher(info: WatcherInfo): void {
   );
   entries.push(info);
   saveRegistry(entries);
+}
+
+export function updateWatcherStatus(
+  pid: number,
+  status: WatcherInfo["status"],
+  lastReindex?: number,
+): void {
+  const entries = loadRegistry();
+  const match = entries.find((e) => e.pid === pid);
+  if (match) {
+    match.status = status;
+    if (lastReindex) match.lastReindex = lastReindex;
+    saveRegistry(entries);
+  }
 }
 
 export function unregisterWatcher(pid: number): void {

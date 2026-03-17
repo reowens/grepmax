@@ -50,8 +50,12 @@ SYSTEM_PROMPT = """You are a code summarizer. Given a code chunk, produce exactl
 Be specific about business logic, services, and side effects. Do not describe syntax.
 Do not use phrases like "This function" or "This code". Start with a verb."""
 
-def build_prompt(code: str, language: str, file: str) -> str:
-    return f"Language: {language}\nFile: {file}\n\n```\n{code}\n```"
+def build_prompt(code: str, language: str, file: str, symbols: list[str] | None = None) -> str:
+    parts = [f"Language: {language}", f"File: {file}"]
+    if symbols:
+        parts.append(f"Defines: {', '.join(symbols)}")
+    parts.append(f"\n```\n{code}\n```")
+    return "\n".join(parts)
 
 
 def is_port_in_use(port: int) -> bool:
@@ -59,11 +63,11 @@ def is_port_in_use(port: int) -> bool:
         return s.connect_ex(("127.0.0.1", port)) == 0
 
 
-def summarize_chunk(code: str, language: str, file: str) -> str:
+def summarize_chunk(code: str, language: str, file: str, symbols: list[str] | None = None) -> str:
     """Generate a one-line summary for a code chunk."""
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": build_prompt(code, language, file)},
+        {"role": "user", "content": build_prompt(code, language, file, symbols)},
     ]
     prompt = tokenizer.apply_chat_template(
         messages, tokenize=False, add_generation_prompt=True
@@ -106,6 +110,7 @@ class ChunkInput(BaseModel):
     code: str
     language: str = "unknown"
     file: str = ""
+    symbols: list[str] = []
 
 
 class SummarizeRequest(BaseModel):
@@ -125,7 +130,7 @@ async def summarize(request: SummarizeRequest) -> SummarizeResponse:
     async with _mlx_lock:
         for chunk in request.chunks:
             try:
-                summary = summarize_chunk(chunk.code, chunk.language, chunk.file)
+                summary = summarize_chunk(chunk.code, chunk.language, chunk.file, chunk.symbols or None)
                 summaries.append(summary)
             except Exception as e:
                 summaries.append(f"(summary failed: {e})")

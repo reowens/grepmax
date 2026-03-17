@@ -54,7 +54,7 @@ export async function generateSummaries(
   const table = await db.ensureTable();
   const rows = await table
     .query()
-    .select(["id", "path", "content"])
+    .select(["id", "path", "content", "defined_symbols"])
     .where(
       `path LIKE '${pathPrefix}%' AND (summary IS NULL OR summary = '')`,
     )
@@ -68,12 +68,20 @@ export async function generateSummaries(
 
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
     const batch = rows.slice(i, i + BATCH_SIZE);
-    const chunks = batch.map((r: any) => ({
-      code: String(r.content || ""),
-      language:
-        path.extname(String(r.path || "")).replace(/^\./, "") || "unknown",
-      file: String(r.path || ""),
-    }));
+    const chunks = batch.map((r: any) => {
+      const defs = Array.isArray(r.defined_symbols)
+        ? r.defined_symbols.filter((s: unknown) => typeof s === "string")
+        : typeof r.defined_symbols?.toArray === "function"
+          ? r.defined_symbols.toArray()
+          : [];
+      return {
+        code: String(r.content || ""),
+        language:
+          path.extname(String(r.path || "")).replace(/^\./, "") || "unknown",
+        file: String(r.path || ""),
+        symbols: defs as string[],
+      };
+    });
 
     const summaries = await summarizeChunks(chunks);
     if (!summaries) break;

@@ -75,6 +75,13 @@ Check centralized index health — chunks, files, indexed directories, model inf
 4. **Trace** — `trace_calls` to understand call flow across files
 5. **Skeleton** — `code_skeleton` before reading large files
 
+## If results seem stale
+
+1. Check `index_status` — if watcher shows "syncing", results may be incomplete. Wait for it.
+2. To force a re-index: `Bash(gmax index)` (indexes current directory)
+3. To add summaries without re-indexing: `Bash(gmax summarize)`
+4. Do NOT use `gmax reindex` — it doesn't exist.
+
 ## Tips
 
 - More words = better results. "auth" is vague. "where does the server validate JWT tokens" is specific.

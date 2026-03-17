@@ -15,6 +15,7 @@ import {
   listWatchers,
   registerWatcher,
   unregisterWatcher,
+  updateWatcherStatus,
 } from "../lib/utils/watcher-registry";
 
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
@@ -74,25 +75,37 @@ export const watch = new Command("watch")
 
     console.log(`[watch:${projectName}] Starting...`);
 
-    // Initial sync if no index
+    // Register early so MCP can see status
+    registerWatcher({
+      pid: process.pid,
+      projectRoot,
+      startTime: Date.now(),
+      status: "syncing",
+    });
+
+    // Initial sync if this directory isn't indexed yet
     const vectorDb = new VectorDB(paths.lancedbDir);
-    if (!(await vectorDb.hasAnyRows())) {
+    const table = await vectorDb.ensureTable();
+    const prefix = projectRoot.endsWith("/") ? projectRoot : `${projectRoot}/`;
+    const indexed = await table
+      .query()
+      .select(["id"])
+      .where(`path LIKE '${prefix}%'`)
+      .limit(1)
+      .toArray();
+
+    if (indexed.length === 0) {
       console.log(
-        `[watch:${projectName}] No index found, running initial sync...`,
+        `[watch:${projectName}] No index found for ${projectRoot}, running initial sync...`,
       );
       await initialSync({ projectRoot });
       console.log(`[watch:${projectName}] Initial sync complete.`);
     }
 
+    updateWatcherStatus(process.pid, "watching");
+
     // Open resources for watcher
     const metaCache = new MetaCache(paths.lmdbPath);
-
-    // Register
-    registerWatcher({
-      pid: process.pid,
-      projectRoot,
-      startTime: Date.now(),
-    });
 
     // Start watching
     const watcher = startWatcher({
@@ -105,6 +118,7 @@ export const watch = new Command("watch")
           `[watch:${projectName}] Reindexed ${files} file${files !== 1 ? "s" : ""} (${(ms / 1000).toFixed(1)}s)`,
         );
         lastActivity = Date.now();
+        updateWatcherStatus(process.pid, "watching", Date.now());
       },
     });
 

@@ -656,12 +656,28 @@ export const mcp = new Command("mcp")
         const stats = await db.getStats();
         const fileCount = await db.getDistinctFileCount();
 
+        // Watcher status
+        const watcher = getWatcherCoveringPath(projectRoot);
+        let watcherLine = "Watcher: not running";
+        if (watcher) {
+          const status = watcher.status ?? "unknown";
+          const root = path.basename(watcher.projectRoot);
+          const reindex = watcher.lastReindex
+            ? `last reindex: ${Math.round((Date.now() - watcher.lastReindex) / 60000)}m ago`
+            : "";
+          watcherLine = `Watcher: ${status} (${root}/)${reindex ? ` ${reindex}` : ""}`;
+          if (status === "syncing") {
+            watcherLine += " — search results may be incomplete";
+          }
+        }
+
         const lines = [
           `Index: ~/.gmax/lancedb (${stats.chunks} chunks, ${fileCount} files)`,
           `Model: ${config?.embedModel ?? "unknown"} (${config?.vectorDim ?? "?"}d, ${config?.embedMode ?? "unknown"})`,
           config?.indexedAt
             ? `Last indexed: ${config.indexedAt}`
             : "",
+          watcherLine,
           "",
           "Indexed directories:",
           ...projects.map(

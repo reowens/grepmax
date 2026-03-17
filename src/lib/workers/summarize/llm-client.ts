@@ -20,6 +20,7 @@ interface ChunkInput {
   code: string;
   language: string;
   file: string;
+  symbols?: string[];
 }
 
 function postJSON(

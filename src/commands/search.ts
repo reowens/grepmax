@@ -61,6 +61,7 @@ type CompactHit = {
   score?: number;
   defined?: string[];
   preview?: string;
+  summary?: string;
 };
 
 function getPreviewText(chunk: ChunkType): string {
@@ -114,6 +115,7 @@ function toCompactHits(data: SearchResponse["data"]): CompactHit[] {
             ? ((chunk.defined_symbols as any).toArray() as string[]).slice(0, 3)
             : [],
       preview: getPreviewText(chunk),
+      summary: typeof chunk.summary === "string" ? chunk.summary : undefined,
     };
   });
 }
@@ -167,7 +169,7 @@ function formatCompactTSV(
   if (!hits.length) return "No matches found.";
   const lines: string[] = [];
   lines.push(`gmax hits\tquery=${query}\tcount=${hits.length}`);
-  lines.push("path\tlines\tscore\trole\tconf\tdefined");
+  lines.push("path\tlines\tscore\trole\tconf\tdefined\tsummary");
 
   for (const hit of hits) {
     const relPath = path.isAbsolute(hit.path)
@@ -177,7 +179,8 @@ function formatCompactTSV(
     const role = compactRole(hit.role);
     const conf = compactConf(hit.confidence);
     const defs = (hit.defined ?? []).join(",");
-    lines.push([relPath, hit.range, score, role, conf, defs].join("\t"));
+    const summary = hit.summary ?? "";
+    lines.push([relPath, hit.range, score, role, conf, defs, summary].join("\t"));
   }
   return lines.join("\n");
 }
