@@ -320,6 +320,22 @@ export class VectorDB {
     }
   }
 
+  async updateRows(
+    ids: string[],
+    field: string,
+    values: (string | null)[],
+  ): Promise<void> {
+    if (!ids.length) return;
+    const table = await this.ensureTable();
+    for (let i = 0; i < ids.length; i++) {
+      const escaped = ids[i].replace(/'/g, "''");
+      await table.update({
+        where: `id = '${escaped}'`,
+        values: { [field]: values[i] ?? "" },
+      });
+    }
+  }
+
   async deletePathsWithPrefix(prefix: string): Promise<void> {
     const table = await this.ensureTable();
     const escaped = prefix.replace(/'/g, "''");
