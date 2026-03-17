@@ -2,7 +2,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Command } from "commander";
-import { MODEL_IDS, PATHS } from "../config";
+import { MODEL_IDS, MODEL_TIERS, PATHS } from "../config";
+import { readGlobalConfig } from "../lib/index/index-config";
 import { gracefulExit } from "../lib/utils/exit";
 import { findProjectRoot } from "../lib/utils/project-root";
 
@@ -14,8 +15,6 @@ export const doctor = new Command("doctor")
     const root = PATHS.globalRoot;
     const models = PATHS.models;
     const grammars = PATHS.grammars;
-    const modelIds = [MODEL_IDS.embed, MODEL_IDS.colbert];
-
     const checkDir = (name: string, p: string) => {
       const exists = fs.existsSync(p);
       const symbol = exists ? "✅" : "❌";
@@ -26,22 +25,26 @@ export const doctor = new Command("doctor")
     checkDir("Models", models);
     checkDir("Grammars", grammars);
 
-    const modelStatuses = modelIds.map((id) => {
+    const globalConfig = readGlobalConfig();
+    const tier = MODEL_TIERS[globalConfig.modelTier] ?? MODEL_TIERS.small;
+    const embedModel =
+      globalConfig.embedMode === "gpu" ? tier.mlxModel : tier.onnxModel;
+
+    console.log(
+      `\nEmbed mode: ${globalConfig.embedMode} | Model tier: ${globalConfig.modelTier} (${tier.vectorDim}d)`,
+    );
+    console.log(`Embed model: ${embedModel}`);
+    console.log(`ColBERT model: ${MODEL_IDS.colbert}`);
+
+    const modelStatuses = [embedModel, MODEL_IDS.colbert].map((id) => {
       const modelPath = path.join(models, ...id.split("/"));
       return { id, path: modelPath, exists: fs.existsSync(modelPath) };
     });
 
-    modelStatuses.forEach(({ id, path: p, exists }) => {
-      const symbol = exists ? "✅" : "❌";
-      console.log(`${symbol} Model: ${id} (${p})`);
+    modelStatuses.forEach(({ id, exists }) => {
+      const symbol = exists ? "✅" : "⚠️ ";
+      console.log(`${symbol} ${id}: ${exists ? "downloaded" : "will download on first use"}`);
     });
-
-    const missingModels = modelStatuses.filter(({ exists }) => !exists);
-    if (missingModels.length > 0) {
-      console.log(
-        "❌ Some models are missing; gmax will try bundled copies first, then download.",
-      );
-    }
 
     console.log(`\nLocal Project: ${process.cwd()}`);
     const projectRoot = findProjectRoot(process.cwd());
