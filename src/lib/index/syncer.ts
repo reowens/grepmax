@@ -32,7 +32,7 @@ type MetaCacheLike = Pick<
   "get" | "getAllKeys" | "getKeysWithPrefix" | "put" | "delete" | "close"
 >;
 
-async function generateSummaries(
+export async function generateSummaries(
   db: VectorDB,
   pathPrefix: string,
   onProgress?: (count: number, total: number) => void,

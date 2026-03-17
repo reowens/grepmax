@@ -14,6 +14,7 @@ import { search } from "./commands/search";
 import { serve } from "./commands/serve";
 import { setup } from "./commands/setup";
 import { skeleton } from "./commands/skeleton";
+import { summarize } from "./commands/summarize";
 import { symbols } from "./commands/symbols";
 import { trace } from "./commands/trace";
 import { watch } from "./commands/watch";
@@ -58,6 +59,7 @@ program.addCommand(installDroid);
 program.addCommand(uninstallDroid);
 program.addCommand(installOpencode);
 program.addCommand(uninstallOpencode);
+program.addCommand(summarize);
 program.addCommand(doctor);
 
 program.parse();
