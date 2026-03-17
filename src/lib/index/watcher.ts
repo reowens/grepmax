@@ -7,6 +7,7 @@ import type { VectorDB } from "../store/vector-db";
 import { isIndexableFile } from "../utils/file-utils";
 import { acquireWriterLockWithRetry } from "../utils/lock";
 import { getWorkerPool } from "../workers/pool";
+import { summarizeChunks } from "../workers/summarize/llm-client";
 
 export interface WatcherHandle {
   close: () => Promise<void>;
@@ -93,12 +94,12 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
         const metaUpdates = new Map<string, MetaEntry>();
         const metaDeletes: string[] = [];
 
-        for (const [absPath, event] of batch) {
-          const relPath = path.relative(projectRoot, absPath);
+        const changedIds: string[] = [];
 
+        for (const [absPath, event] of batch) {
           if (event === "unlink") {
-            deletes.push(relPath);
-            metaDeletes.push(relPath);
+            deletes.push(absPath);
+            metaDeletes.push(absPath);
             reindexed++;
             continue;
           }
@@ -109,9 +110,9 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
             if (!isIndexableFile(absPath, stats.size)) continue;
 
             // Check if content actually changed via hash
-            const cached = metaCache.get(relPath);
+            const cached = metaCache.get(absPath);
             const result = await pool.processFile({
-              path: relPath,
+              path: absPath,
               absolutePath: absPath,
             });
 
@@ -122,33 +123,36 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
             };
 
             if (cached && cached.hash === result.hash) {
-              // Content unchanged (mtime changed but hash same) — just update meta
-              metaUpdates.set(relPath, metaEntry);
+              metaUpdates.set(absPath, metaEntry);
               continue;
             }
 
             if (result.shouldDelete) {
-              deletes.push(relPath);
-              metaUpdates.set(relPath, metaEntry);
+              deletes.push(absPath);
+              metaUpdates.set(absPath, metaEntry);
               reindexed++;
               continue;
             }
 
             // Delete old vectors, insert new
-            deletes.push(relPath);
+            deletes.push(absPath);
             if (result.vectors.length > 0) {
               vectors.push(...result.vectors);
+              // Track IDs of new vectors for summarization
+              for (const v of result.vectors) {
+                changedIds.push(v.id);
+              }
             }
-            metaUpdates.set(relPath, metaEntry);
+            metaUpdates.set(absPath, metaEntry);
             reindexed++;
           } catch (err) {
             const code = (err as NodeJS.ErrnoException)?.code;
             if (code === "ENOENT") {
-              deletes.push(relPath);
-              metaDeletes.push(relPath);
+              deletes.push(absPath);
+              metaDeletes.push(absPath);
               reindexed++;
             } else {
-              console.error(`[watch] Failed to process ${relPath}:`, err);
+              console.error(`[watch] Failed to process ${absPath}:`, err);
             }
           }
         }
@@ -167,6 +171,39 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
         }
         for (const p of metaDeletes) {
           metaCache.delete(p);
+        }
+
+        // Summarize new/changed chunks (sequential, no GPU contention)
+        if (changedIds.length > 0) {
+          try {
+            const table = await vectorDb.ensureTable();
+            for (const id of changedIds) {
+              const escaped = id.replace(/'/g, "''");
+              const rows = await table
+                .query()
+                .select(["id", "path", "content"])
+                .where(`id = '${escaped}'`)
+                .limit(1)
+                .toArray();
+              if (rows.length === 0) continue;
+              const r = rows[0] as any;
+              const lang =
+                path.extname(String(r.path || "")).replace(/^\./, "") ||
+                "unknown";
+              const summaries = await summarizeChunks([
+                {
+                  code: String(r.content || ""),
+                  language: lang,
+                  file: String(r.path || ""),
+                },
+              ]);
+              if (summaries?.[0]) {
+                await vectorDb.updateRows([id], "summary", [summaries[0]]);
+              }
+            }
+          } catch {
+            // Summarizer unavailable — skip silently
+          }
         }
       } finally {
         await lock.release();
