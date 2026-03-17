@@ -5,6 +5,7 @@ import type { MetaCache, MetaEntry } from "../store/meta-cache";
 import type { VectorRecord } from "../store/types";
 import type { VectorDB } from "../store/vector-db";
 import { isIndexableFile } from "../utils/file-utils";
+import { log } from "../utils/logger";
 import { acquireWriterLockWithRetry } from "../utils/lock";
 import { getWorkerPool } from "../workers/pool";
 import { summarizeChunks } from "../workers/summarize/llm-client";
@@ -77,6 +78,7 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
 
     const batch = new Map(pending);
     pending.clear();
+    log("watch", `Processing ${batch.size} changed files`);
 
     const start = Date.now();
     let reindexed = 0;

@@ -3,6 +3,7 @@
  * to ensure the ONNX Runtime segfaults do not crash the main process.
  */
 import * as childProcess from "node:child_process";
+import { log, debug } from "../utils/logger";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { CONFIG, WORKER_TIMEOUT_MS } from "../../config";
@@ -178,6 +179,7 @@ export class WorkerPool {
       this.completeTask(task, null);
     }
 
+    log("pool", `Worker PID:${worker.child.pid} exited (code:${code} signal:${signal})`);
     this.workers = this.workers.filter((w) => w !== worker);
     if (!this.destroyed) {
       this.spawnWorker();
@@ -187,6 +189,7 @@ export class WorkerPool {
 
   private spawnWorker() {
     const worker = new ProcessWorker(this.modulePath, this.execArgv);
+    debug("pool", `Spawned worker PID:${worker.child.pid}`);
 
     const onMessage = (msg: WorkerMessage) => {
       const task = this.tasks.get(msg.id);
