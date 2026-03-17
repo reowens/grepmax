@@ -54,6 +54,49 @@ export const doctor = new Command("doctor")
       );
     }
 
+    // Check MLX embed server
+    const embedUp = await fetch("http://127.0.0.1:8100/health")
+      .then((r) => r.ok)
+      .catch(() => false);
+    console.log(
+      `${embedUp ? "✅" : "⚠️ "} MLX Embed: ${embedUp ? "running (port 8100)" : "not running"}`,
+    );
+
+    // Check summarizer server
+    const summarizerUp = await fetch("http://127.0.0.1:8101/health")
+      .then((r) => r.ok)
+      .catch(() => false);
+    console.log(
+      `${summarizerUp ? "✅" : "⚠️ "} Summarizer: ${summarizerUp ? "running (port 8101)" : "not running"}`,
+    );
+
+    // Check summary coverage
+    try {
+      const { VectorDB } = await import("../lib/store/vector-db");
+      const db = new VectorDB(PATHS.lancedbDir);
+      const table = await db.ensureTable();
+      const totalChunks = await table.countRows();
+      if (totalChunks > 0) {
+        const withSummary = (
+          await table
+            .query()
+            .where("length(summary) > 5")
+            .select(["id"])
+            .toArray()
+        ).length;
+        const pct = Math.round((withSummary / totalChunks) * 100);
+        const symbol = pct >= 90 ? "✅" : pct > 0 ? "⚠️ " : "❌";
+        console.log(
+          `${symbol} Summary coverage: ${withSummary}/${totalChunks} (${pct}%)`,
+        );
+      } else {
+        console.log("ℹ️  No indexed chunks yet");
+      }
+      await db.close();
+    } catch {
+      console.log("⚠️  Could not check summary coverage");
+    }
+
     console.log(
       `\nSystem: ${os.platform()} ${os.arch()} | Node: ${process.version}`,
     );
