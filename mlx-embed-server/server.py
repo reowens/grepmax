@@ -96,9 +96,18 @@ def load_model():
     print("[mlx-embed] Model ready on Metal GPU.")
 
 
+async def idle_watchdog():
+    while True:
+        await asyncio.sleep(60)
+        if time.time() - last_activity > IDLE_TIMEOUT_S:
+            print("[mlx-embed] Idle timeout, shutting down")
+            os._exit(0)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_model()
+    asyncio.create_task(idle_watchdog())
     yield
 
 

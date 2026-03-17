@@ -10,7 +10,7 @@ import {
 import { Command } from "commander";
 import { PATHS } from "../config";
 import { GraphBuilder } from "../lib/graph/graph-builder";
-import { readIndexConfig } from "../lib/index/index-config";
+import { readGlobalConfig, readIndexConfig } from "../lib/index/index-config";
 import { generateSummaries, initialSync } from "../lib/index/syncer";
 import { Searcher } from "../lib/search/searcher";
 import { getStoredSkeleton } from "../lib/skeleton/retriever";
@@ -576,9 +576,11 @@ export const mcp = new Command("mcp")
           lines.push("Callers: none");
         }
 
-        // Callees
+        // Callees (cap at 15)
         if (graph.callees.length > 0) {
-          lines.push(`Calls: ${graph.callees.join(", ")}`);
+          const capped = graph.callees.slice(0, 15);
+          const suffix = graph.callees.length > 15 ? ` (+${graph.callees.length - 15} more)` : "";
+          lines.push(`Calls: ${capped.join(", ")}${suffix}`);
         } else {
           lines.push("Calls: none");
         }
@@ -657,9 +659,12 @@ export const mcp = new Command("mcp")
           return ok("No symbols found. Run 'gmax index' to build the index.");
         }
 
-        const lines = entries.map(
-          (e) => `${e.symbol}\t${e.path}:${e.line}`,
-        );
+        const lines = entries.map((e) => {
+          const rel = e.path.startsWith(projectRoot)
+            ? e.path.slice(projectRoot.length + 1)
+            : e.path;
+          return `${e.symbol}\t${rel}:${e.line}`;
+        });
         return ok(lines.join("\n"));
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -670,6 +675,7 @@ export const mcp = new Command("mcp")
     async function handleIndexStatus(): Promise<ToolResult> {
       try {
         const config = readIndexConfig(PATHS.configPath);
+        const globalConfig = readGlobalConfig();
         const projects = listProjects();
 
         const db = getVectorDb();
@@ -693,7 +699,7 @@ export const mcp = new Command("mcp")
 
         const lines = [
           `Index: ~/.gmax/lancedb (${stats.chunks} chunks, ${fileCount} files)`,
-          `Model: ${config?.embedModel ?? "unknown"} (${config?.vectorDim ?? "?"}d, ${config?.embedMode ?? "unknown"})`,
+          `Model: ${config?.embedModel ?? "unknown"} (${config?.vectorDim ?? "?"}d, ${globalConfig.embedMode})`,
           config?.indexedAt
             ? `Last indexed: ${config.indexedAt}`
             : "",
