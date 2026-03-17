@@ -8,7 +8,7 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { Command } from "commander";
-import { PATHS } from "../config";
+import { MODEL_TIERS, PATHS } from "../config";
 import { GraphBuilder } from "../lib/graph/graph-builder";
 import { readGlobalConfig, readIndexConfig } from "../lib/index/index-config";
 import { generateSummaries, initialSync } from "../lib/index/syncer";
@@ -699,7 +699,7 @@ export const mcp = new Command("mcp")
 
         const lines = [
           `Index: ~/.gmax/lancedb (${stats.chunks} chunks, ${fileCount} files)`,
-          `Model: ${config?.embedModel ?? "unknown"} (${config?.vectorDim ?? "?"}d, ${globalConfig.embedMode})`,
+          `Model: ${globalConfig.embedMode === "gpu" ? (MODEL_TIERS[globalConfig.modelTier]?.mlxModel ?? config?.embedModel ?? "unknown") : (config?.embedModel ?? "unknown")} (${config?.vectorDim ?? "?"}d, ${globalConfig.embedMode})`,
           config?.indexedAt
             ? `Last indexed: ${config.indexedAt}`
             : "",
