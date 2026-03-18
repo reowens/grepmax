@@ -307,7 +307,7 @@ export const mcp = new Command("mcp")
 
       try {
         const db = getVectorDb();
-        const hasIndex = await db.hasAnyRows();
+        const hasIndex = await db.hasRowsForPath(projectRoot);
 
         if (!hasIndex) {
           console.log("[MCP] No index found, running initial sync...");
@@ -318,7 +318,6 @@ export const mcp = new Command("mcp")
         }
 
         _indexReady = true;
-        ensureWatcher();
       } catch (e) {
         console.error("[MCP] Index sync failed:", e);
       }
@@ -326,33 +325,15 @@ export const mcp = new Command("mcp")
 
     // --- Background watcher ---
 
-    function findIndexedParent(dir: string): string | undefined {
-      const resolved = path.resolve(dir);
-      const projects = listProjects();
-      // Find indexed directories that are parents of `dir`, pick broadest
-      let broadest: string | undefined;
-      for (const p of projects) {
-        if (resolved.startsWith(p.root) && p.root !== resolved) {
-          if (!broadest || p.root.length < broadest.length) {
-            broadest = p.root;
-          }
-        }
-      }
-      return broadest;
-    }
-
     function ensureWatcher(): void {
       if (getWatcherCoveringPath(projectRoot)) return;
 
-      const watchRoot = findIndexedParent(projectRoot) ?? projectRoot;
-      if (getWatcherCoveringPath(watchRoot)) return;
-
-      const child = spawn("gmax", ["watch", "-b", "--path", watchRoot], {
+      const child = spawn("gmax", ["watch", "-b", "--path", projectRoot], {
         detached: true,
         stdio: "ignore",
       });
       child.unref();
-      console.log(`[MCP] Started background watcher for ${watchRoot}`);
+      console.log(`[MCP] Started background watcher for ${projectRoot}`);
     }
 
     // --- Tool handlers ---
@@ -367,6 +348,7 @@ export const mcp = new Command("mcp")
       const limit = Math.min(Math.max(Number(args.limit) || 3, 1), 50);
 
       await ensureIndexReady();
+      ensureWatcher();
 
       try {
         const searcher = getSearcher();
@@ -807,6 +789,7 @@ export const mcp = new Command("mcp")
 
     await server.connect(transport);
 
-    // Kick off index readiness check in background
+    // Kick off index readiness check and watcher in background
     ensureIndexReady();
+    ensureWatcher();
   });

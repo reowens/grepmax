@@ -39,6 +39,15 @@ function startPythonServer(scriptName, logName) {
   child.unref();
 }
 
+function startWatcher() {
+  try {
+    const { execFileSync } = require("node:child_process");
+    execFileSync("gmax", ["watch", "-b"], { timeout: 5000, stdio: "ignore" });
+  } catch {
+    // Watcher may already be running or gmax not in PATH — ignore
+  }
+}
+
 async function main() {
   const embedMode =
     process.env.GMAX_EMBED_MODE || process.env.OSGREP_EMBED_MODE || "auto";
@@ -54,6 +63,9 @@ async function main() {
       startPythonServer("summarizer.py", "mlx-summarizer");
     }
   }
+
+  // Start a file watcher for the current project (30-min idle timeout)
+  startWatcher();
 
   const response = {
     hookSpecificOutput: {
