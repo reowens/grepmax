@@ -1,3 +1,6 @@
-// No-op: let gmax serve persist across sessions.
-// The start hook ensures exactly one is running.
-// Use `gmax serve stop` to explicitly shut it down.
+try {
+  const { execFileSync } = require("node:child_process");
+  execFileSync("gmax", ["watch", "stop"], { timeout: 5000, stdio: "ignore" });
+} catch {
+  // Watcher may not be running or gmax not in PATH — ignore
+}

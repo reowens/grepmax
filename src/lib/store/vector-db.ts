@@ -295,6 +295,18 @@ export class VectorDB {
     return rows.length > 0;
   }
 
+  async hasRowsForPath(pathPrefix: string): Promise<boolean> {
+    const table = await this.ensureTable();
+    const prefix = pathPrefix.endsWith("/") ? pathPrefix : `${pathPrefix}/`;
+    const rows = await table
+      .query()
+      .select(["id"])
+      .where(`path LIKE '${prefix.replace(/'/g, "''")}%'`)
+      .limit(1)
+      .toArray();
+    return rows.length > 0;
+  }
+
   async getStats(): Promise<{ chunks: number; totalBytes: number }> {
     const table = await this.ensureTable();
     const [count, stats] = await Promise.all([

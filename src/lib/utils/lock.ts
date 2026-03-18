@@ -68,7 +68,7 @@ export async function acquireWriterLock(lockDir: string): Promise<LockHandle> {
         ? `${pid}${startedAt ? ` @ ${startedAt}` : ""}`
         : "unknown";
       throw new Error(
-        `.gmax lock already held (${holderDesc}). Another indexing process is running or the lock must be cleared.`,
+        `.gmax lock already held (${holderDesc}). Another process is using the index. Try: gmax watch stop --all`,
       );
     }
   }

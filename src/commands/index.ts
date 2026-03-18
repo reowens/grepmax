@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import * as path from "node:path";
 import { Command } from "commander";
 import { ensureGrammars } from "../lib/index/grammar-loader";
@@ -10,6 +11,11 @@ import { ensureSetup } from "../lib/setup/setup-helpers";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
+import {
+  getWatcherCoveringPath,
+  isProcessRunning,
+  unregisterWatcher,
+} from "../lib/utils/watcher-registry";
 
 export const index = new Command("index")
   .description("Index the current directory and create searchable store")
@@ -57,6 +63,28 @@ export const index = new Command("index")
       // Ensure grammars are present before indexing (silent if already exist)
       await ensureGrammars(console.log, { silent: true });
 
+      // Stop any watcher that covers this project — it holds the shared lock
+      const watcher = getWatcherCoveringPath(projectRoot);
+      let restartWatcher: { pid: number; projectRoot: string } | null = null;
+      if (watcher) {
+        console.log(
+          `Stopping watcher (PID: ${watcher.pid}) for ${path.basename(watcher.projectRoot)}...`,
+        );
+        try {
+          process.kill(watcher.pid, "SIGTERM");
+        } catch {}
+        // Wait for process to exit (up to 5s)
+        for (let i = 0; i < 50; i++) {
+          if (!isProcessRunning(watcher.pid)) break;
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        unregisterWatcher(watcher.pid);
+        restartWatcher = {
+          pid: watcher.pid,
+          projectRoot: watcher.projectRoot,
+        };
+      }
+
       const { spinner, onProgress } = createIndexingSpinner(
         projectRoot,
         "Indexing...",
@@ -91,6 +119,25 @@ export const index = new Command("index")
       } catch (e) {
         spinner.fail("Indexing failed");
         throw e;
+      } finally {
+        // Restart the watcher if we stopped one
+        if (restartWatcher) {
+          try {
+            const child = spawn(
+              process.argv[0],
+              [process.argv[1], "watch", "--path", restartWatcher.projectRoot],
+              { detached: true, stdio: "ignore" },
+            );
+            child.unref();
+            console.log(
+              `Restarted watcher for ${path.basename(restartWatcher.projectRoot)} (PID: ${child.pid})`,
+            );
+          } catch {
+            console.log(
+              `Note: could not restart watcher. Run: gmax watch --path ${restartWatcher.projectRoot} -b`,
+            );
+          }
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";

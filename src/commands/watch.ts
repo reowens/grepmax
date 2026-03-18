@@ -10,6 +10,7 @@ import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import {
+  getWatcherCoveringPath,
   getWatcherForProject,
   isProcessRunning,
   listWatchers,
@@ -32,11 +33,11 @@ export const watch = new Command("watch")
       : findProjectRoot(process.cwd()) ?? process.cwd();
     const projectName = path.basename(projectRoot);
 
-    // Check if watcher already running
-    const existing = getWatcherForProject(projectRoot);
+    // Check if watcher already running (exact match or parent covering this dir)
+    const existing = getWatcherForProject(projectRoot) ?? getWatcherCoveringPath(projectRoot);
     if (existing && isProcessRunning(existing.pid)) {
       console.log(
-        `Watcher already running for ${projectName} (PID: ${existing.pid})`,
+        `Watcher already running for ${path.basename(existing.projectRoot)} (PID: ${existing.pid})`,
       );
       return;
     }
