@@ -474,7 +474,11 @@ export const mcp = new Command("mcp")
           });
         }
 
-        return ok(results.map((r) => r.text).join("\n\n"));
+        const output = results.map((r) => r.text).join("\n\n");
+        if (result.warnings?.length) {
+          return ok(`${result.warnings.join("\n")}\n\n${output}`);
+        }
+        return ok(output);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         return err(`Search failed: ${msg}`);

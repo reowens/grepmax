@@ -277,6 +277,9 @@ export class Searcher {
   }
 
   private ftsIndexChecked = false;
+  private ftsAvailable = false;
+  private ftsLastCheckedAt = 0;
+  private static readonly FTS_RETRY_INTERVAL_MS = 5 * 60 * 1000;
 
   async search(
     query: string,
@@ -370,12 +373,20 @@ export class Searcher {
       return { data: [] };
     }
 
-    // Ensure FTS index exists (lazy init on first search)
-    if (!this.ftsIndexChecked) {
-      this.ftsIndexChecked = true; // Set immediately to prevent retry spam
+    // Ensure FTS index exists (lazy init, retry periodically on failure)
+    const now = Date.now();
+    if (
+      !this.ftsIndexChecked ||
+      (!this.ftsAvailable &&
+        now - this.ftsLastCheckedAt > Searcher.FTS_RETRY_INTERVAL_MS)
+    ) {
+      this.ftsIndexChecked = true;
+      this.ftsLastCheckedAt = now;
       try {
         await this.db.createFTSIndex();
+        this.ftsAvailable = true;
       } catch (e) {
+        this.ftsAvailable = false;
         console.warn("[Searcher] Failed to ensure FTS index:", e);
       }
     }
@@ -387,15 +398,20 @@ export class Searcher {
     const vectorResults = (await vectorQuery.toArray()) as VectorRecord[];
 
     let ftsResults: VectorRecord[] = [];
-    try {
-      let ftsQuery = table.search(query).limit(PRE_RERANK_K);
-      if (whereClause) {
-        ftsQuery = ftsQuery.where(whereClause);
+    let ftsSearchFailed = false;
+    if (this.ftsAvailable) {
+      try {
+        let ftsQuery = table.search(query).limit(PRE_RERANK_K);
+        if (whereClause) {
+          ftsQuery = ftsQuery.where(whereClause);
+        }
+        ftsResults = (await ftsQuery.toArray()) as VectorRecord[];
+      } catch (e) {
+        ftsSearchFailed = true;
+        this.ftsAvailable = false;
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn(`[Searcher] FTS search failed (will retry later): ${msg}`);
       }
-      ftsResults = (await ftsQuery.toArray()) as VectorRecord[];
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.warn(`[Searcher] FTS search failed: ${msg}`);
     }
 
     if (signal?.aborted) {
@@ -566,6 +582,13 @@ export class Searcher {
         chunk.confidence = confidence;
         return chunk;
       }),
+      ...(!this.ftsAvailable || ftsSearchFailed
+        ? {
+            warnings: [
+              "Full-text search unavailable — results may be less precise",
+            ],
+          }
+        : {}),
     };
   }
 }

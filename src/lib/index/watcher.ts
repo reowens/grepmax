@@ -47,9 +47,12 @@ const FTS_REBUILD_INTERVAL_MS = 5 * 60 * 1000;
 export function startWatcher(opts: WatcherOptions): WatcherHandle {
   const { projectRoot, vectorDb, metaCache, dataDir, onReindex } = opts;
   const pending = new Map<string, "change" | "unlink">();
+  const retryCount = new Map<string, number>();
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let processing = false;
   let closed = false;
+  let consecutiveLockFailures = 0;
+  const MAX_RETRIES = 5;
 
   const watcher: FSWatcher = watch(projectRoot, {
     ignored: WATCHER_IGNORE_PATTERNS,
@@ -159,12 +162,17 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
           }
         }
 
-        // Flush to VectorDB
-        if (deletes.length > 0) {
-          await vectorDb.deletePaths(deletes);
-        }
+        // Flush to VectorDB: insert first, then delete old (preserving new)
+        const newIds = vectors.map((v) => v.id);
         if (vectors.length > 0) {
           await vectorDb.insertBatch(vectors);
+        }
+        if (deletes.length > 0) {
+          if (newIds.length > 0) {
+            await vectorDb.deletePathsExcludingIds(deletes, newIds);
+          } else {
+            await vectorDb.deletePaths(deletes);
+          }
         }
 
         // Update MetaCache
@@ -216,15 +224,41 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
         const duration = Date.now() - start;
         onReindex?.(reindexed, duration);
       }
+      consecutiveLockFailures = 0;
+      for (const absPath of batch.keys()) {
+        retryCount.delete(absPath);
+      }
     } catch (err) {
+      const isLockError =
+        err instanceof Error && err.message.includes("lock already held");
+      if (isLockError) {
+        consecutiveLockFailures++;
+      }
       console.error("[watch] Batch processing failed:", err);
-      // Re-queue failed items for retry
+      let dropped = 0;
       for (const [absPath, event] of batch) {
-        if (!pending.has(absPath)) {
+        const count = (retryCount.get(absPath) ?? 0) + 1;
+        if (count >= MAX_RETRIES) {
+          retryCount.delete(absPath);
+          dropped++;
+        } else if (!pending.has(absPath)) {
           pending.set(absPath, event);
+          retryCount.set(absPath, count);
         }
       }
-      scheduleBatch();
+      if (dropped > 0) {
+        console.warn(
+          `[watch] Dropped ${dropped} file(s) after ${MAX_RETRIES} failed retries`,
+        );
+      }
+      if (pending.size > 0) {
+        const backoffMs = Math.min(
+          DEBOUNCE_MS * 2 ** consecutiveLockFailures,
+          30_000,
+        );
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => processBatch(), backoffMs);
+      }
     } finally {
       processing = false;
       // Process any events that came in while we were processing

@@ -350,6 +350,27 @@ export class VectorDB {
     }
   }
 
+  async deletePathsExcludingIds(
+    paths: string[],
+    excludeIds: string[],
+  ): Promise<void> {
+    if (!paths.length) return;
+    const table = await this.ensureTable();
+    const unique = Array.from(new Set(paths));
+    const batchSize = 500;
+    const idExclusion =
+      excludeIds.length > 0
+        ? ` AND id NOT IN (${excludeIds.map((id) => `'${id.replace(/'/g, "''")}'`).join(",")})`
+        : "";
+    for (let i = 0; i < unique.length; i += batchSize) {
+      const slice = unique.slice(i, i + batchSize);
+      const values = slice
+        .map((p) => `'${p.replace(/'/g, "''")}'`)
+        .join(",");
+      await table.delete(`path IN (${values})${idExclusion}`);
+    }
+  }
+
   async deletePathsWithPrefix(prefix: string): Promise<void> {
     const table = await this.ensureTable();
     const escaped = prefix.replace(/'/g, "''");
