@@ -22,7 +22,8 @@ function runClaudeCommand(args: string[]): Promise<void> {
 async function installPlugin() {
   try {
     await runClaudeCommand(["marketplace", "add", "reowens/grepmax"]);
-    console.log("✅ Successfully added the gmax marketplace");
+    await runClaudeCommand(["marketplace", "update", "grepmax"]);
+    console.log("✅ Marketplace updated");
     await runClaudeCommand(["install", "grepmax"]);
     console.log("✅ Successfully installed the gmax plugin for Claude Code");
     console.log("\nNext steps:");
