@@ -157,7 +157,7 @@ function createNoopMetaCache(): MetaCacheLike {
     delete: (filePath: string) => {
       store.delete(filePath);
     },
-    close: () => {},
+    close: async () => {},
   };
 }
 
@@ -524,7 +524,7 @@ export async function initialSync(
     if (lock) {
       await lock.release();
     }
-    metaCache?.close();
+    await metaCache?.close();
     await vectorDb.close();
   }
 }

@@ -60,11 +60,12 @@ export class MetaCache {
     }
   }
 
-  close(): void {
+  async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
     this.unregisterCleanup?.();
     this.unregisterCleanup = undefined;
+    await this.db.flushed;
     this.db.close();
   }
 }

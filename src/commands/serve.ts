@@ -456,7 +456,7 @@ export const serve = new Command("serve")
 
         // Clean close of owned resources
         try {
-          metaCache.close();
+          await metaCache.close();
         } catch (e) {
           console.error("Error closing meta cache:", e);
         }
