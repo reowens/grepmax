@@ -149,7 +149,7 @@ child.unref();
 `;
   const stopScript = `
 const { spawnSync, execSync } = require("child_process");
-try { execSync("pkill -f 'gmax serve'"); } catch {}
+try { execSync("gmax serve stop", { stdio: "ignore" }); } catch {}
 `;
 
   writeFileIfChanged(startJsPath, startScript.trim());

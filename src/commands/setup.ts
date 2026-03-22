@@ -25,7 +25,7 @@ export const setup = new Command("setup")
     } catch (error) {
       p.cancel("Setup failed");
       console.error(error);
-      process.exit(1);
+      await gracefulExit(1);
     }
 
     // Download grammars

@@ -798,6 +798,8 @@ export const mcp = new Command("mcp")
     await server.connect(transport);
 
     // Kick off index readiness check and watcher in background
-    ensureIndexReady();
+    ensureIndexReady().catch((e) =>
+      console.error("[MCP] Index readiness check failed:", e),
+    );
     ensureWatcher();
   });
