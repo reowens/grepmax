@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { program } from "commander";
 import { installClaudeCode } from "./commands/claude-code";
 import { installCodex } from "./commands/codex";
+import { config } from "./commands/config";
 import { doctor } from "./commands/doctor";
 import { installDroid, uninstallDroid } from "./commands/droid";
 import { index } from "./commands/index";
@@ -20,6 +21,10 @@ import { trace } from "./commands/trace";
 import { watch } from "./commands/watch";
 
 program
+  .name("gmax")
+  .description(
+    "Semantic code search — finds code by meaning, not just strings",
+  )
   .version(
     JSON.parse(
       fs.readFileSync(path.join(__dirname, "../package.json"), {
@@ -43,23 +48,33 @@ if (legacyProjectData) {
   console.log("   Run 'gmax index' to re-index into the centralized store.");
 }
 
+// Core commands
 program.addCommand(search, { isDefault: true });
 program.addCommand(index);
 program.addCommand(list);
 program.addCommand(skeleton);
 program.addCommand(symbols);
 program.addCommand(trace);
-program.addCommand(setup);
+
+// Services
 program.addCommand(serve);
 program.addCommand(watch);
 program.addCommand(mcp);
+program.addCommand(summarize);
+
+// Setup & diagnostics
+program.addCommand(setup);
+program.addCommand(config);
+program.addCommand(doctor);
+
+// Plugin installers
 program.addCommand(installClaudeCode);
 program.addCommand(installCodex);
 program.addCommand(installDroid);
+(uninstallDroid as any)._hidden = true;
 program.addCommand(uninstallDroid);
 program.addCommand(installOpencode);
+(uninstallOpencode as any)._hidden = true;
 program.addCommand(uninstallOpencode);
-program.addCommand(summarize);
-program.addCommand(doctor);
 
 program.parse();

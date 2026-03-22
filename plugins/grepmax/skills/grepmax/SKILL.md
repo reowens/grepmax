@@ -35,10 +35,10 @@ handleAuth [exported ORCH C:8] src/auth/handler.ts:45-90
 ```
 
 Parameters:
-- `query` (required): Natural language. More words = better results.
+- `query` (required): Natural language. Be specific — 5+ words gives much better results than 1-2 words.
 - `limit` (optional): Max results (default 3, max 50)
-- `root` (optional): Directory to search. Use `root: "../"` to search a parent directory.
-- `path` (optional): Restrict to path prefix (e.g. "src/auth/")
+- `root` (optional): Absolute path to search a different indexed directory.
+- `path` (optional): Restrict to path prefix (e.g. "src/auth/"). Relative to the search root.
 - `detail` (optional): `"pointer"` (default) or `"code"`
 - `min_score` (optional): Filter by minimum relevance score (0-1)
 - `max_per_file` (optional): Cap results per file for diversity
@@ -48,7 +48,9 @@ Parameters:
 - `code` — comparing implementations, finding duplicates, checking syntax
 
 ### search_all
-Search ALL indexed code across every directory. Same modes as semantic_search.
+Search ALL indexed code across every directory. Same parameters as semantic_search (query, limit, detail, min_score, max_per_file) but without `root` or `path` — searches everything.
+
+Use sparingly. Prefer `semantic_search` when you know which directory to search.
 
 ### code_skeleton
 File structure — signatures with bodies collapsed (~4x fewer tokens).
@@ -60,16 +62,17 @@ Call graph — who calls a symbol and what it calls. Unscoped — follows calls 
 
 ### list_symbols
 List indexed symbols with definition locations.
-- `pattern` (optional): Filter by name
-- `limit` (optional): Max results (default 20)
+- `pattern` (optional): Filter by name (case-insensitive substring match)
+- `limit` (optional): Max results (default 20, max 100)
 - `path` (optional): Only symbols under this path prefix
 
 ### index_status
-Check centralized index health — chunks, files, indexed directories, model info.
+Check centralized index health — chunks, files, indexed directories, model info, watcher status.
 
 ### summarize_directory
-Generate LLM summaries for indexed code in a directory. Summaries are stored and returned in search results. Run after indexing a new directory.
+Generate LLM summaries for indexed code in a directory. Summaries are stored and returned in search results. Requires the summarizer server (auto-started by the plugin hook).
 - `path` (optional): Directory to summarize. Defaults to project root.
+- `limit` (optional): Max chunks to summarize per call (default 200, max 5000). Run again to continue.
 
 ## Workflow
 
@@ -81,15 +84,22 @@ Generate LLM summaries for indexed code in a directory. Summaries are stored and
 
 ## If results seem stale
 
-1. Check `index_status` — if watcher shows "syncing", results may be incomplete. Wait for it.
-2. To force a re-index: `Bash(gmax index)` (indexes current directory)
+The watcher auto-starts when the MCP server connects — it detects file changes and re-indexes in the background. Usually results are fresh without manual intervention.
+
+1. Check `index_status` — if watcher shows "syncing", wait for it to finish.
+2. To force a full re-index: `Bash(gmax index)` (indexes current directory)
 3. To add summaries without re-indexing: `Bash(gmax summarize)`
 4. Do NOT use `gmax reindex` — it doesn't exist.
 
+## Search warnings
+
+If search results include a warning like "Full-text search unavailable", results may be less precise. This resolves automatically — the index retries FTS every 5 minutes.
+
 ## Tips
 
-- More words = better results. "auth" is vague. "where does the server validate JWT tokens" is specific.
-- ORCH results contain the logic — prioritize over DEF/IMPL.
-- Summaries tell you what the code does without reading it. Use them to decide what to Read.
-- Use `root` to search parent directories (monorepo, workspace).
-- Use `search_all` sparingly — it searches everything indexed.
+- **Be specific.** "auth" returns noise. "where does the server validate JWT tokens from the Authorization header" returns exactly what you need. Aim for 5+ words.
+- **ORCH results contain the logic** — prioritize over DEF/IMPL results.
+- **Summaries tell you what the code does** without reading it. Use them to decide what to `Read`.
+- **Use `root` for cross-project search** — absolute path to another indexed directory.
+- **Use `max_per_file`** when results cluster in one file but you need diversity.
+- **Don't search for exact strings** — use grep/Grep for that. gmax finds concepts, not literals.

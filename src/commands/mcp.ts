@@ -224,7 +224,7 @@ export function err(text: string): ToolResult {
 // ---------------------------------------------------------------------------
 
 export const mcp = new Command("mcp")
-  .description("Start MCP server for gmax")
+  .description("Start MCP server (stdio, auto-started by plugins)")
   .action(async (_optsArg, _cmd) => {
     // --- Lifecycle ---
 

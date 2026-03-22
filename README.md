@@ -106,6 +106,7 @@ In our public benchmarks, `grepmax` can save about 20% of your LLM tokens and de
 | `trace_calls` | Call graph — who calls a symbol and what it calls (unscoped, crosses project boundaries) |
 | `list_symbols` | List indexed functions, classes, and types with definition locations |
 | `index_status` | Check index health: chunk counts, indexed directories, model info |
+| `summarize_directory` | Generate LLM summaries for indexed chunks. Summaries appear in search results. |
 
 ## Commands
 
@@ -193,6 +194,17 @@ gmax skeleton "auth logic"        # Search, skeletonize top matches
 
 **Supported Languages:** TypeScript, JavaScript, Python, Go, Rust, Java, C#, C++, C, Ruby, PHP, Swift, Kotlin.
 
+### `gmax config`
+
+View or update configuration without the full interactive setup.
+
+```bash
+gmax config                          # Show current settings
+gmax config --embed-mode cpu         # Switch to CPU embeddings
+gmax config --embed-mode gpu         # Switch to GPU (MLX)
+gmax config --model-tier standard    # Switch to standard model (768d)
+```
+
 ### `gmax doctor`
 
 Checks installation health, model paths, and database integrity.
@@ -244,9 +256,31 @@ handleAuth [exported ORCH C:8] src/auth/handler.ts:45-90
 
 ## Configuration
 
+### Config File
+
+Settings are stored in `~/.gmax/config.json`:
+
+```json
+{
+  "modelTier": "small",
+  "vectorDim": 384,
+  "embedMode": "gpu",
+  "mlxModel": "ibm-granite/granite-embedding-small-english-r2"
+}
+```
+
+View and change settings with `gmax config` or run `gmax setup` for interactive configuration.
+
 ### Ignoring Files
 
-gmax respects `.gitignore` and `.gmaxignore` files. Create a `.gmaxignore` in your directory root to exclude additional patterns.
+gmax respects `.gitignore` and `.gmaxignore` files. Create a `.gmaxignore` in your directory root to exclude additional patterns:
+
+```gitignore
+# .gmaxignore — same syntax as .gitignore
+docs/generated/
+*.test.ts
+fixtures/
+```
 
 ### Index Management
 
@@ -255,15 +289,21 @@ gmax respects `.gitignore` and `.gmaxignore` files. Create a `.gmaxignore` in yo
 - **Clean up:** `gmax index --reset` re-indexes the current directory from scratch
 - **Full reset:** `rm -rf ~/.gmax/lancedb ~/.gmax/cache` to start completely fresh
 
-## Development
+### Environment Variables
 
-```bash
-pnpm install
-pnpm build
-pnpm test         # vitest
-pnpm format       # biome check
-just deploy       # publish latest tag to npm
-```
+| Variable | Description | Default |
+| --- | --- | --- |
+| `GMAX_WORKER_THREADS` | Number of worker threads for embedding | 50% of CPU cores |
+| `GMAX_EMBED_MODE` | Force `cpu` or `gpu` embedding mode | Auto-detect |
+| `GMAX_DEBUG` | Enable debug logging (`1` to enable) | Off |
+| `GMAX_VERBOSE` | Enable verbose output (`1` to enable) | Off |
+| `GMAX_WORKER_TASK_TIMEOUT_MS` | Worker task timeout in ms | `120000` |
+| `GMAX_MAX_WORKER_MEMORY_MB` | Max worker memory in MB | 50% of system RAM |
+| `GMAX_MAX_PER_FILE` | Default max results per file in search | `3` |
+
+## Contributing
+
+See [CLAUDE.md](CLAUDE.md) for development setup, commands, and architecture details.
 
 ## Troubleshooting
 

@@ -72,7 +72,7 @@ function startMlxServer(mlxModel?: string): ChildProcess | null {
 }
 
 export const serve = new Command("serve")
-  .description("Run gmax as a background server with live indexing")
+  .description("HTTP search server with live file watching")
   .option(
     "-p, --port <port>",
     "Port to listen on",

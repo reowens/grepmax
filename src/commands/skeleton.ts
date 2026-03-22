@@ -85,6 +85,15 @@ export const skeleton = new Command("skeleton")
   .option("--json", "Output as JSON", false)
   .option("--no-summary", "Omit call/complexity summary in bodies", false)
   .option("-s, --sync", "Sync index before searching", false)
+  .addHelpText(
+    "after",
+    `
+Examples:
+  gmax skeleton src/lib/auth.ts  Show file structure
+  gmax skeleton AuthService      Find symbol, show its file
+  gmax skeleton "auth logic"     Search, skeletonize top matches
+`,
+  )
   .action(async (target: string, options: SkeletonOptions, _cmd) => {
     let vectorDb: VectorDB | null = null;
 

@@ -35,6 +35,16 @@ export const index = new Command("index")
     false,
   )
   .option("-v, --verbose", "Show detailed progress with file names", false)
+  .addHelpText(
+    "after",
+    `
+Examples:
+  gmax index                     Index current directory
+  gmax index --path ~/workspace  Index a specific directory
+  gmax index --dry-run           Preview what would be indexed
+  gmax index --reset             Full re-index from scratch
+`,
+  )
   .action(async (_args, cmd) => {
     const options: {
       store?: string;

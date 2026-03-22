@@ -8,7 +8,7 @@ import { gracefulExit } from "../lib/utils/exit";
 import { findProjectRoot } from "../lib/utils/project-root";
 
 export const doctor = new Command("doctor")
-  .description("Check gmax health and paths")
+  .description("Check installation health, models, and index status")
   .action(async () => {
     console.log("🏥 gmax Doctor\n");
 

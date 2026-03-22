@@ -359,7 +359,7 @@ async function outputSkeletons(
 }
 
 export const search: Command = new CommanderCommand("search")
-  .description("File pattern searcher")
+  .description("Search code by meaning (default command)")
   .option(
     "-m <max_count>, --max-count <max_count>",
     "The maximum number of results to return (total)",
@@ -395,8 +395,18 @@ export const search: Command = new CommanderCommand("search")
     "Show code skeleton for matching files instead of snippets",
     false,
   )
-  .argument("<pattern>", "The pattern to search for")
-  .argument("[path]", "The path to search in")
+  .argument("<pattern>", "Natural language query (e.g. \"where do we handle auth?\")")
+  .argument("[path]", "Restrict search to this path prefix")
+  .addHelpText(
+    "after",
+    `
+Examples:
+  gmax "where do we handle authentication?"
+  gmax "database connection pooling" -m 10
+  gmax "error handling" --compact --min-score 0.5
+  gmax "validation logic" --skeleton
+`,
+  )
   .action(async (pattern, exec_path, _options, cmd) => {
     const options: {
       m: string;
