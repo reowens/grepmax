@@ -44,6 +44,15 @@ export const index = new Command("index")
       verbose: boolean;
     } = cmd.optsWithGlobals();
     let vectorDb: VectorDB | null = null;
+    const ac = new AbortController();
+    let aborted = false;
+    const onSignal = () => {
+      if (aborted) return;
+      aborted = true;
+      ac.abort();
+    };
+    process.on("SIGINT", onSignal);
+    process.on("SIGTERM", onSignal);
 
     try {
       await ensureSetup();
@@ -96,7 +105,15 @@ export const index = new Command("index")
           dryRun: options.dryRun,
           reset: options.reset,
           onProgress,
+          signal: ac.signal,
         });
+
+        if (aborted) {
+          spinner.warn(
+            `Indexing interrupted — partial progress saved (${result.indexed} indexed)`,
+          );
+          return;
+        }
 
         if (options.dryRun) {
           spinner.succeed(
@@ -144,6 +161,8 @@ export const index = new Command("index")
       console.error("Failed to index:", message);
       process.exitCode = 1;
     } finally {
+      process.removeListener("SIGINT", onSignal);
+      process.removeListener("SIGTERM", onSignal);
       if (vectorDb) {
         try {
           await vectorDb.close();

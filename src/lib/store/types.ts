@@ -72,6 +72,7 @@ export interface ChunkType extends MetadataRecord {
 
 export interface SearchResponse {
   data: ChunkType[];
+  warnings?: string[];
 }
 
 export interface SearchFilter {

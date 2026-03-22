@@ -476,7 +476,18 @@ export async function initialSync(
         : new Error(String(flushError));
     }
 
-    if (!dryRun) {
+    // Stale cleanup: only remove paths scoped to this project's root
+    const stale = Array.from(cachedPaths).filter((p) => !seenPaths.has(p));
+    if (!dryRun && stale.length > 0 && !shouldSkipCleanup) {
+      log("index", `Stale cleanup: ${stale.length} paths`);
+      await vectorDb.deletePaths(stale);
+      stale.forEach((p) => {
+        metaCache!.delete(p);
+      });
+    }
+
+    // Only rebuild FTS index if data actually changed
+    if (!dryRun && (indexed > 0 || stale.length > 0)) {
       const ftsTimer = timer("index", "FTS");
       onProgress?.({
         processed,
@@ -486,16 +497,6 @@ export async function initialSync(
       });
       await vectorDb.createFTSIndex();
       ftsTimer();
-    }
-
-    // Stale cleanup: only remove paths scoped to this project's root
-    const stale = Array.from(cachedPaths).filter((p) => !seenPaths.has(p));
-    if (!dryRun && stale.length > 0 && !shouldSkipCleanup) {
-      log("index", `Stale cleanup: ${stale.length} paths`);
-      await vectorDb.deletePaths(stale);
-      stale.forEach((p) => {
-        metaCache!.delete(p);
-      });
     }
 
     syncTimer();

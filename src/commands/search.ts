@@ -617,6 +617,12 @@ export const search: Command = new CommanderCommand("search")
         pathFilter,
       );
 
+      if (searchResult.warnings?.length) {
+        for (const w of searchResult.warnings) {
+          console.warn(`Warning: ${w}`);
+        }
+      }
+
       const filteredData = searchResult.data.filter(
         (r) => typeof r.score !== "number" || r.score >= minScore,
       );
