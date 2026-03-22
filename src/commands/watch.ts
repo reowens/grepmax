@@ -143,7 +143,7 @@ export const watch = new Command("watch")
       try {
         await watcher.close();
       } catch {}
-      metaCache.close();
+      await metaCache.close();
       await vectorDb.close();
       unregisterWatcher(process.pid);
       await gracefulExit();
