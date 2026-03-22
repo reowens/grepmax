@@ -32,7 +32,7 @@
     "prepublishOnly": "pnpm build",
     "preversion": "pnpm test && pnpm typecheck",
     "version": "bash scripts/sync-versions.sh && git add -A",
-    "postversion": "git push origin main --tags && gh release create v$npm_package_version --generate-notes --title v$npm_package_version && sleep 5 && gh run watch $(gh run list --workflow=release.yml --limit 1 --json databaseId --jq '.[0].databaseId') --exit-status && sleep 10 && npm cache clean --force && npm install -g grepmax@$npm_package_version"
+    "postversion": "git push origin main --tags && gh release create v$npm_package_version --generate-notes --title v$npm_package_version && sleep 5 && gh run watch $(gh run list --workflow=release.yml --limit 1 --json databaseId --jq '.[0].databaseId') --exit-status && sleep 30 && npm cache clean --force && npm install -g grepmax@$npm_package_version"
   },
   "keywords": [
     "grepmax",

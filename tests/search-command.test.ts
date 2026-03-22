@@ -40,6 +40,10 @@ vi.mock("../src/lib/index/syncer", () => ({
   })),
 }));
 
+vi.mock("../src/lib/index/grammar-loader", () => ({
+  ensureGrammars: vi.fn(async () => {}),
+}));
+
 vi.mock("../src/lib/utils/file-utils", () => ({
   formatDenseSnippet: vi.fn((t) => t),
 }));
