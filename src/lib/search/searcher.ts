@@ -11,6 +11,85 @@ import { escapeSqlString, normalizePath } from "../utils/filter-builder";
 import { getWorkerPool } from "../workers/pool";
 import { detectIntent, type SearchIntent } from "./intent";
 
+export function buildWhereClause(
+  pathPrefix: string | undefined,
+  filters: SearchFilter | undefined,
+  searchIntent: SearchIntent,
+): string | undefined {
+  const parts: string[] = [];
+
+  if (pathPrefix) {
+    parts.push(
+      `path LIKE '${escapeSqlString(normalizePath(pathPrefix))}%'`,
+    );
+  }
+
+  const fileFilter = filters?.file;
+  if (typeof fileFilter === "string" && fileFilter) {
+    parts.push(`path LIKE '%/${escapeSqlString(fileFilter)}'`);
+  }
+
+  const excludeFilter = filters?.exclude;
+  if (typeof excludeFilter === "string" && excludeFilter) {
+    const absExclude = pathPrefix
+      ? normalizePath(pathPrefix + excludeFilter)
+      : excludeFilter;
+    parts.push(`path NOT LIKE '${escapeSqlString(absExclude)}%'`);
+  }
+
+  const langFilter = filters?.language;
+  if (typeof langFilter === "string" && langFilter) {
+    const ext = langFilter.startsWith(".") ? langFilter : `.${langFilter}`;
+    parts.push(`path LIKE '%${escapeSqlString(ext)}'`);
+  }
+
+  const roleFilter = filters?.role;
+  if (typeof roleFilter === "string" && roleFilter) {
+    parts.push(`role = '${escapeSqlString(roleFilter)}'`);
+  }
+
+  const projectRoots = filters?.project_roots;
+  if (typeof projectRoots === "string" && projectRoots) {
+    const roots = projectRoots.split(",");
+    const clauses = roots.map((r) => {
+      const prefix = r.endsWith("/") ? r : `${r}/`;
+      return `path LIKE '${escapeSqlString(prefix)}%'`;
+    });
+    parts.push(`(${clauses.join(" OR ")})`);
+  }
+
+  const excludeRoots = filters?.exclude_project_roots;
+  if (typeof excludeRoots === "string" && excludeRoots) {
+    for (const r of excludeRoots.split(",")) {
+      const prefix = r.endsWith("/") ? r : `${r}/`;
+      parts.push(`path NOT LIKE '${escapeSqlString(prefix)}%'`);
+    }
+  }
+
+  const defFilter = filters?.def;
+  if (typeof defFilter === "string" && defFilter) {
+    parts.push(
+      `array_contains(defined_symbols, '${escapeSqlString(defFilter)}')`,
+    );
+  } else if (
+    searchIntent.type === "DEFINITION" &&
+    searchIntent.filters?.definitionsOnly
+  ) {
+    parts.push(
+      `(role = 'DEFINITION' OR array_length(defined_symbols) > 0)`,
+    );
+  }
+
+  const refFilter = filters?.ref;
+  if (typeof refFilter === "string" && refFilter) {
+    parts.push(
+      `array_contains(referenced_symbols, '${escapeSqlString(refFilter)}')`,
+    );
+  }
+
+  return parts.length > 0 ? parts.join(" AND ") : undefined;
+}
+
 export class Searcher {
   constructor(private db: VectorDB) {}
 
@@ -321,103 +400,7 @@ export class Searcher {
       );
     }
 
-    const whereClauseParts: string[] = [];
-    if (pathPrefix) {
-      whereClauseParts.push(
-        `path LIKE '${escapeSqlString(normalizePath(pathPrefix))}%'`,
-      );
-    }
-
-    // Handle file name filter
-    const fileFilter = _filters?.file;
-    if (typeof fileFilter === "string" && fileFilter) {
-      whereClauseParts.push(
-        `path LIKE '%/${escapeSqlString(fileFilter)}'`,
-      );
-    }
-
-    // Handle exclude filter
-    const excludeFilter = _filters?.exclude;
-    if (typeof excludeFilter === "string" && excludeFilter) {
-      const absExclude = pathPrefix
-        ? normalizePath(pathPrefix + excludeFilter)
-        : excludeFilter;
-      whereClauseParts.push(
-        `path NOT LIKE '${escapeSqlString(absExclude)}%'`,
-      );
-    }
-
-    // Handle language filter (by file extension)
-    const langFilter = _filters?.language;
-    if (typeof langFilter === "string" && langFilter) {
-      const ext = langFilter.startsWith(".") ? langFilter : `.${langFilter}`;
-      whereClauseParts.push(
-        `path LIKE '%${escapeSqlString(ext)}'`,
-      );
-    }
-
-    // Handle role filter
-    const roleFilter = _filters?.role;
-    if (typeof roleFilter === "string" && roleFilter) {
-      whereClauseParts.push(
-        `role = '${escapeSqlString(roleFilter)}'`,
-      );
-    }
-
-    // Handle project roots filter (from search_all projects param)
-    const projectRoots = _filters?.project_roots;
-    if (typeof projectRoots === "string" && projectRoots) {
-      const roots = projectRoots.split(",");
-      const clauses = roots.map((r) => {
-        const prefix = r.endsWith("/") ? r : `${r}/`;
-        return `path LIKE '${escapeSqlString(prefix)}%'`;
-      });
-      whereClauseParts.push(`(${clauses.join(" OR ")})`);
-    }
-
-    // Handle exclude project roots filter
-    const excludeRoots = _filters?.exclude_project_roots;
-    if (typeof excludeRoots === "string" && excludeRoots) {
-      for (const r of excludeRoots.split(",")) {
-        const prefix = r.endsWith("/") ? r : `${r}/`;
-        whereClauseParts.push(
-          `path NOT LIKE '${escapeSqlString(prefix)}%'`,
-        );
-      }
-    }
-
-    // Handle --def (definition) filter
-    const defFilter = _filters?.def;
-    if (typeof defFilter === "string" && defFilter) {
-      whereClauseParts.push(
-        `array_contains(defined_symbols, '${escapeSqlString(defFilter)}')`,
-      );
-    } else if (
-      searchIntent.type === "DEFINITION" &&
-      searchIntent.filters?.definitionsOnly
-    ) {
-      // If intent is DEFINITION but no specific symbol provided, filter by role
-      whereClauseParts.push(
-        `(role = 'DEFINITION' OR array_length(defined_symbols) > 0)`,
-      );
-    }
-
-    // Handle --ref (reference) filter
-    const refFilter = _filters?.ref;
-    if (typeof refFilter === "string" && refFilter) {
-      whereClauseParts.push(
-        `array_contains(referenced_symbols, '${escapeSqlString(refFilter)}')`,
-      );
-    } else if (
-      searchIntent.type === "USAGE" &&
-      searchIntent.filters?.usagesOnly
-    ) {
-      // If intent is USAGE, we might want to filter out definitions?
-      // For now, let's just rely on boosting.
-    }
-
-    const whereClause =
-      whereClauseParts.length > 0 ? whereClauseParts.join(" AND ") : undefined;
+    const whereClause = buildWhereClause(pathPrefix, _filters, searchIntent);
 
     const envPreK = Number.parseInt(process.env.GMAX_PRE_K ?? "", 10);
     const PRE_RERANK_K =
