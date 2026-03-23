@@ -56,7 +56,7 @@ const TOOLS = [
         detail: {
           type: "string",
           description:
-            "Output detail: 'pointer' (default, metadata only — symbol, location, role, calls) or 'code' (include 4-line code snippets)",
+            "Output detail: 'pointer' (default, metadata only), 'code' (4-line snippets), or 'full' (complete chunk content with line numbers)",
         },
         min_score: {
           type: "number",
@@ -77,6 +77,16 @@ const TOOLS = [
           type: "string",
           description:
             "Exclude files under this path prefix (e.g. 'tests/' or 'dist/').",
+        },
+        language: {
+          type: "string",
+          description:
+            "Filter by file extension (e.g. 'ts', 'py', 'go'). Omit the dot.",
+        },
+        role: {
+          type: "string",
+          description:
+            "Filter by chunk role: 'ORCHESTRATION' (logic/flow), 'DEFINITION' (types/classes), or 'IMPLEMENTATION'.",
         },
       },
       required: ["query"],
@@ -100,7 +110,7 @@ const TOOLS = [
         detail: {
           type: "string",
           description:
-            "Output detail: 'pointer' (default) or 'code' (include snippets)",
+            "Output detail: 'pointer' (default), 'code' (snippets), or 'full' (complete content)",
         },
         min_score: {
           type: "number",
@@ -119,6 +129,16 @@ const TOOLS = [
           type: "string",
           description:
             "Exclude files under this path prefix (e.g. 'tests/').",
+        },
+        language: {
+          type: "string",
+          description:
+            "Filter by file extension (e.g. 'ts', 'py').",
+        },
+        role: {
+          type: "string",
+          description:
+            "Filter by role: 'ORCHESTRATION', 'DEFINITION', or 'IMPLEMENTATION'.",
         },
       },
       required: ["query"],
@@ -475,6 +495,12 @@ export const mcp = new Command("mcp")
         if (typeof args.exclude === "string" && args.exclude) {
           filters.exclude = args.exclude;
         }
+        if (typeof args.language === "string" && args.language) {
+          filters.language = args.language;
+        }
+        if (typeof args.role === "string" && args.role) {
+          filters.role = args.role;
+        }
 
         const result = await searcher.search(
           query,
@@ -533,17 +559,19 @@ export const mcp = new Command("mcp")
               : "";
 
           let snippet = "";
-          if (detail === "code") {
+          if (detail === "code" || detail === "full") {
             const raw =
               typeof r.content === "string"
                 ? r.content
                 : typeof r.text === "string"
                   ? r.text
                   : "";
-            const lines = raw.split("\n").slice(0, 4);
+            const allLines = raw.split("\n");
+            const linesToShow =
+              detail === "full" ? allLines : allLines.slice(0, 4);
             snippet =
               "\n" +
-              lines
+              linesToShow
                 .map(
                   (l: string, i: number) => `${startLine + i + 1}│${l}`,
                 )

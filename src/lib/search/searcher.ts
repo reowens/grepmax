@@ -347,6 +347,23 @@ export class Searcher {
       );
     }
 
+    // Handle language filter (by file extension)
+    const langFilter = _filters?.language;
+    if (typeof langFilter === "string" && langFilter) {
+      const ext = langFilter.startsWith(".") ? langFilter : `.${langFilter}`;
+      whereClauseParts.push(
+        `path LIKE '%${escapeSqlString(ext)}'`,
+      );
+    }
+
+    // Handle role filter
+    const roleFilter = _filters?.role;
+    if (typeof roleFilter === "string" && roleFilter) {
+      whereClauseParts.push(
+        `role = '${escapeSqlString(roleFilter)}'`,
+      );
+    }
+
     // Handle --def (definition) filter
     const defFilter = _filters?.def;
     if (typeof defFilter === "string" && defFilter) {

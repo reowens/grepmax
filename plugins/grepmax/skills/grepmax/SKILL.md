@@ -39,11 +39,13 @@ Parameters:
 - `limit` (optional): Max results (default 3, max 50)
 - `root` (optional): Absolute path to search a different indexed directory.
 - `path` (optional): Restrict to path prefix (e.g. "src/auth/"). Relative to the search root.
-- `detail` (optional): `"pointer"` (default) or `"code"`
+- `detail` (optional): `"pointer"` (default), `"code"` (4-line snippets), or `"full"` (complete chunk with line numbers)
 - `min_score` (optional): Filter by minimum relevance score (0-1)
 - `max_per_file` (optional): Cap results per file for diversity
 - `file` (optional): Filter to files matching this name (e.g. "syncer.ts"). Matches filename, not full path.
 - `exclude` (optional): Exclude files under this path prefix (e.g. "tests/" or "dist/")
+- `language` (optional): Filter by file extension (e.g. "ts", "py", "go"). Omit the dot.
+- `role` (optional): Filter by chunk role: "ORCHESTRATION" (logic/flow), "DEFINITION" (types), or "IMPLEMENTATION"
 
 **When to use which mode:**
 - `pointer` — navigation, finding locations, understanding architecture
