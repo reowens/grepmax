@@ -100,12 +100,15 @@ In our public benchmarks, `grepmax` can save about 20% of your LLM tokens and de
 
 | Tool | Description |
 | --- | --- |
-| `semantic_search` | Code search by meaning. Returns pointers (symbol, file:line, role, calls, summary) by default. Use `root` for cross-directory search, `detail: "code"` for snippets. |
-| `search_all` | Search ALL indexed code across every directory. Same pointer format. |
-| `code_skeleton` | Collapsed file structure (~4x fewer tokens than reading the full file) |
-| `trace_calls` | Call graph — who calls a symbol and what it calls (unscoped, crosses project boundaries) |
-| `list_symbols` | List indexed functions, classes, and types with definition locations |
-| `index_status` | Check index health: chunk counts, indexed directories, model info |
+| `semantic_search` | Code search by meaning. 16 composable params: query, limit, root, path, detail (pointer/code/full), context_lines, min_score, max_per_file, file, exclude, language, role, mode (symbol), include_imports, name_pattern. |
+| `search_all` | Search ALL indexed code. Same params + `projects`/`exclude_projects` to scope by project name. |
+| `code_skeleton` | Collapsed file structure (~4x fewer tokens). Accepts files, directories, or comma-separated paths. `format: "json"` for structured output. |
+| `trace_calls` | Call graph with importers, callers (multi-hop via `depth`), and callees with file:line locations. |
+| `list_symbols` | List indexed symbols with role (ORCH/DEF/IMPL) and export status. |
+| `summarize_project` | High-level project overview — languages, directory structure, roles, key symbols, entry points. |
+| `related_files` | Find dependencies and dependents of a file by shared symbol references. |
+| `recent_changes` | Recently modified indexed files with relative timestamps. |
+| `index_status` | Check index health: per-project chunk counts, model info, watcher status. |
 | `summarize_directory` | Generate LLM summaries for indexed chunks. Summaries appear in search results. |
 
 ## Commands
@@ -125,8 +128,17 @@ gmax "how is the database connection pooled?"
 | `-m <n>` | Max total results to return. | `5` |
 | `--per-file <n>` | Max matches to show per file. | `3` |
 | `-c`, `--content` | Show full chunk content instead of snippets. | `false` |
+| `-C <n>`, `--context <n>` | Include N lines before/after each result. | `0` |
 | `--scores` | Show relevance scores (0-1) for each result. | `false` |
 | `--min-score <n>` | Filter out results below this score threshold. | `0` |
+| `--root <dir>` | Search a different project directory. | cwd |
+| `--file <name>` | Filter to files matching this name (e.g. `syncer.ts`). | — |
+| `--exclude <prefix>` | Exclude files under this path prefix (e.g. `tests/`). | — |
+| `--lang <ext>` | Filter by file extension (e.g. `ts`, `py`). | — |
+| `--role <role>` | Filter by role: `ORCHESTRATION`, `DEFINITION`, `IMPLEMENTATION`. | — |
+| `--symbol` | Append call graph (importers, callers, callees) after results. | `false` |
+| `--imports` | Prepend file imports to each result. | `false` |
+| `--name <regex>` | Filter results by symbol name regex. | — |
 | `--compact` | Compact hits view (paths + line ranges + role/preview). | `false` |
 | `--skeleton` | Show code skeleton for matching files instead of snippets. | `false` |
 | `--plain` | Disable ANSI colors and use simpler formatting. | `false` |
@@ -136,10 +148,11 @@ gmax "how is the database connection pooled?"
 
 ```bash
 gmax "API rate limiting logic"
-gmax "error handling" --per-file 5
-gmax "user validation" --compact
-gmax "authentication" --scores --min-score 0.5
-gmax "database connection" --skeleton
+gmax "auth handler" --role ORCHESTRATION --lang ts --plain
+gmax "database" --file syncer.ts --plain
+gmax "VectorDB" --symbol --plain
+gmax "error handling" -C 5 --imports
+gmax "handler" --name "handle.*" --exclude tests/
 ```
 
 ### `gmax index`
@@ -182,17 +195,56 @@ gmax serve --background           # Background mode
 gmax serve --cpu                  # Force CPU-only embeddings
 ```
 
-### `gmax skeleton`
+### `gmax trace`
 
-Compressed view of a file — signatures with bodies collapsed.
+Call graph — who imports a symbol, who calls it, and what it calls.
 
 ```bash
-gmax skeleton src/lib/auth.ts
-gmax skeleton AuthService         # Find symbol, skeletonize its file
-gmax skeleton "auth logic"        # Search, skeletonize top matches
+gmax trace handleAuth             # 1-hop trace
+gmax trace handleAuth -d 2        # 2-hop: callers-of-callers
+```
+
+### `gmax skeleton`
+
+Compressed view of a file — signatures with bodies collapsed. Supports files, directories, and batch.
+
+```bash
+gmax skeleton src/lib/auth.ts             # Single file
+gmax skeleton src/lib/search/             # All files in directory
+gmax skeleton src/a.ts,src/b.ts           # Batch
+gmax skeleton src/lib/auth.ts --json      # Structured JSON output
+gmax skeleton AuthService                 # Find symbol, skeletonize its file
 ```
 
 **Supported Languages:** TypeScript, JavaScript, Python, Go, Rust, Java, C#, C++, C, Ruby, PHP, Swift, Kotlin.
+
+### `gmax project`
+
+High-level project overview — languages, directory structure, role distribution, key symbols, entry points.
+
+```bash
+gmax project                     # Current project
+gmax project --root ~/workspace  # Different project
+```
+
+### `gmax related`
+
+Find files related by shared symbol references — dependencies and dependents.
+
+```bash
+gmax related src/lib/index/syncer.ts
+gmax related src/commands/mcp.ts -l 5
+```
+
+### `gmax recent`
+
+Show recently modified indexed files with relative timestamps.
+
+```bash
+gmax recent                      # Last 20 modified files
+gmax recent -l 10                # Last 10
+gmax recent --root ~/workspace   # Different project
+```
 
 ### `gmax config`
 
