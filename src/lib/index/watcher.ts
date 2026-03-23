@@ -6,6 +6,7 @@ import type { VectorRecord } from "../store/types";
 import type { VectorDB } from "../store/vector-db";
 import { escapeSqlString } from "../utils/filter-builder";
 import { INDEXABLE_EXTENSIONS } from "../../config";
+import { isFileCached } from "../utils/cache-check";
 import { isIndexableFile } from "../utils/file-utils";
 import { log } from "../utils/logger";
 import { acquireWriterLockWithRetry } from "../utils/lock";
@@ -118,11 +119,7 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
 
             // Quick mtime/size check — skip worker pool if unchanged
             const cached = metaCache.get(absPath);
-            if (
-              cached &&
-              cached.mtimeMs === stats.mtimeMs &&
-              cached.size === stats.size
-            ) {
+            if (isFileCached(cached, stats)) {
               continue;
             }
 

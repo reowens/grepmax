@@ -1,11 +1,11 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { GraphBuilder } from "../src/lib/graph/graph-builder";
 
 function createMockDb(data: Record<string, any[]>) {
   const mockTable = {
     query: () => {
       let whereClause = "";
-      let selectedFields: string[] | null = null;
+      let _selectedFields: string[] | null = null;
       let limitVal = 100;
 
       const chain = {
@@ -14,7 +14,7 @@ function createMockDb(data: Record<string, any[]>) {
           return chain;
         },
         select: (fields: string[]) => {
-          selectedFields = fields;
+          _selectedFields = fields;
           return chain;
         },
         limit: (n: number) => {
