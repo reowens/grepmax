@@ -1,7 +1,7 @@
 # Claude's Gaps — Features that would make gmax better for AI agents
 
 *Written by Claude, from direct experience using gmax via MCP in real coding sessions.*
-*Last updated: v0.7.7 (2026-03-22)*
+*Last updated: v0.7.8 (2026-03-22)*
 
 ---
 
@@ -22,70 +22,121 @@
 - **Language filter** — `language: "ts"` restricts to file extension
 - **Role filter** — `role: "ORCHESTRATION"` shows only logic/flow code
 
+### v0.7.8
+- **Project filter for search_all** — `projects: "platform,osgrep"` or `exclude_projects: "capstone"`
+
 ---
 
-## Remaining — Phase 3+
+## Phase 4 — Quick wins (easy, high impact)
+
+### Line numbers in skeleton output
+Skeleton shows `function initialSync(...)` but no line number. I can't jump to it without searching again. Adding `// :164` annotations makes skeletons directly navigable.
+
+**Effort:** Easy — the skeletonizer already has line info from Tree-sitter nodes, just not formatting it.
+
+### Symbol type info in `list_symbols`
+Returns `symbol\tfile:line` but doesn't say function vs class vs interface vs type. When searching `Auth`, 15 results and no way to tell which is the class vs the type.
+
+**Want:** `AuthService [class]\tsrc/auth/service.ts:12` — add role/type annotation.
+
+**Effort:** Easy — `defined_symbols` chunks have `role` and could infer type from Tree-sitter node type stored during chunking.
+
+### Context lines in search results
+A chunk at lines 45-90 might depend on variables at line 30. Need N lines before/after to understand it.
+
+**Want:** `context_lines: 5` param on semantic_search that includes surrounding lines.
+
+**Effort:** Easy — read the file, grab `startLine - N` to `endLine + N`, format with line numbers.
+
+---
+
+## Phase 5 — Medium effort, high impact
+
+### Project overview tool (`summarize_project`)
+When encountering a new codebase, I need "what is this, what are the entry points, what are the subsystems?" Currently takes 5-10 tool calls to piece together.
+
+**Want:** `summarize_project` MCP tool that returns: project name, language breakdown, top-level directory structure, entry points (files with main/index/app), key symbols by chunk count, total files/chunks.
+
+**Effort:** Medium — aggregate from existing index data (path patterns, symbol counts, role distribution).
 
 ### Import context in search results
-When a result appears in `src/lib/index/syncer.ts`, I don't know what it depends on without a Read call. The file's imports tell me the dependency graph at a glance.
+When a result appears in `syncer.ts`, I don't know what it depends on without a Read call.
 
-**Want:** Optional `include_imports: true` flag on `semantic_search` that appends the file's import block to each result.
+**Want:** `include_imports: true` flag that prepends the file's import block to each result.
 
-**Effort:** Medium — need language-aware import line detection (or just grab lines until first non-import).
+**Effort:** Medium — read first N lines until imports end, language-aware detection.
 
 ### Combined symbol + semantic search
-When I search for "handleAuth", I want the definition, implementation, AND callers in one shot. Currently requires `semantic_search` + `trace_calls` as two separate calls.
+Search for "handleAuth" → get definition + implementation + callers in one shot.
 
-**Want:** A `mode: "symbol"` on semantic_search that auto-detects symbol-like queries (camelCase, snake_case, no spaces) and appends trace data to the result.
+**Want:** `mode: "symbol"` that auto-detects symbol-like queries and appends trace data.
 
-**Effort:** Medium — need symbol detection heuristic + inline trace_calls.
+**Effort:** Medium — symbol detection heuristic + inline trace.
 
-### Multi-hop trace
-`trace_calls` only goes 1 hop. "What calls the thing that calls handleAuth?" requires two separate trace calls.
+### Multi-hop trace (`depth: 2`)
+"What calls the thing that calls handleAuth?" requires two trace calls.
 
-**Want:** `depth: 2` option that shows the full 2-hop call chain.
+**Want:** `depth` param for N-hop graph traversal with cycle detection.
 
-**Effort:** Medium — recursive graph traversal with cycle detection.
+**Effort:** Medium — recursive traversal, deduplicate nodes.
+
+---
+
+## Phase 6 — Medium effort, moderate impact
+
+### Recent changes awareness
+After watcher re-indexes, can't see what was updated. No way to focus on actively modified code.
+
+**Want:** `recent_changes` tool or `--recent` flag that sorts by index time / shows recently modified files.
+
+**Effort:** Medium — MetaCache has mtimeMs, could sort/filter by it.
+
+### Related files discovery
+When editing `syncer.ts`, what other files typically change with it?
+
+**Want:** `related_files` tool powered by co-import analysis (files that share imports/symbols).
+
+**Effort:** Medium — analyze import overlap from indexed chunks.
 
 ### Find usages (import tracking)
-`trace_calls` finds callers of a symbol's methods, but doesn't find where the symbol is *imported* or *re-exported*. If I trace `VectorDB`, I get who calls its methods but not who imports the class.
+`trace_calls` finds callers but not files that import/re-export a symbol.
 
-**Want:** An `imports` section in trace output showing files that import the symbol.
+**Want:** `imports` section in trace output showing files that import the symbol.
 
-**Effort:** Medium — need to scan import statements, not just referenced_symbols.
+**Effort:** Medium — scan import statements in content field.
 
-### search_all project filter
-`search_all` searches everything indexed. Can't say "search all projects except capstone." Old/irrelevant projects dilute results.
+### Structured skeleton output
+Skeleton is a text blob. JSON output with `{name, line, signature, type}` per symbol would enable programmatic navigation.
 
-**Want:** `projects: ["platform", "osgrep"]` or `exclude_projects: ["capstone"]` param.
+**Want:** `--json` flag or `format: "json"` param on code_skeleton.
 
-**Effort:** Easy — WHERE clause on path prefix, same pattern as other filters.
+**Effort:** Medium — skeletonizer already has structured data, just needs a JSON formatter.
 
 ---
 
 ## Nice to have
 
 ### Stale result indicator
-When the watcher is behind, results might be stale but I have no way to know. A `stale: true` flag on individual results (based on file mtime vs index time) would let me decide whether to trust it.
+`stale: true` per result based on file mtime vs index time.
 
 ### Search confidence explanation
-`confidence: "High"/"Medium"/"Low"` is useful but opaque. A brief reason — "exact symbol match + high vector similarity" vs "FTS only" — would help me refine queries.
+Why a result is High/Medium/Low confidence.
 
 ### Regex name pattern filter
-"Find all functions matching `handle*Auth*` that deal with JWT validation." Semantic search finds the concept but can't filter by naming pattern. A `name_pattern` regex filter on results would bridge this.
+`name_pattern: "handle.*Auth"` to filter by symbol naming pattern.
 
 ---
 
 ## What's already great
 
 - **Pointer mode** is the right default — metadata without code saves massive context
-- **Role classification** (ORCH/DEF/IMPL) is genuinely useful for prioritizing results
-- **Role filter** lets me skip noise and get straight to orchestration code
+- **Role classification + filter** lets me skip noise and find orchestration code
 - **Summaries** are the killer feature — understand code without reading it
-- **`code_skeleton`** with directory/batch mode is indispensable for subsystem exploration
+- **`code_skeleton`** with directory/batch mode is indispensable
 - **`detail: "full"`** eliminates most Read calls after search
 - **`language` filter** essential in polyglot repos
-- **Non-blocking indexing** feedback prevents hanging
+- **`projects`/`exclude_projects`** on search_all scopes cross-project search
+- **Non-blocking indexing** with progress feedback prevents hanging
 - **FTS warnings** surface degraded search instead of silently failing
-- **`root` param** for cross-project search essential in monorepos
-- **Composable filters** — language + role + file + exclude all work together
+- **Composable filters** — language + role + file + exclude + projects all work together
+- **Callee file paths** in trace eliminate follow-up searches
