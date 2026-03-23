@@ -15,6 +15,7 @@
     "gmax": "dist/index.js"
   },
   "scripts": {
+    "postinstall": "node scripts/postinstall.js",
     "prebuild": "mkdir -p dist",
     "build": "tsc",
     "postbuild": "chmod +x dist/index.js",
@@ -43,6 +44,7 @@
   "files": [
     "dist",
     "plugins",
+    "scripts/postinstall.js",
     "mlx-embed-server",
     "README.md",
     "LICENSE",
