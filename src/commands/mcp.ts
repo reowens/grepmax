@@ -11,7 +11,7 @@ import { Command } from "commander";
 import { MODEL_TIERS, PATHS } from "../config";
 import { GraphBuilder } from "../lib/graph/graph-builder";
 import { readGlobalConfig, readIndexConfig } from "../lib/index/index-config";
-import { generateSummaries, initialSync } from "../lib/index/syncer";
+import { generateSummaries } from "../lib/index/syncer";
 import { Searcher } from "../lib/search/searcher";
 import { getStoredSkeleton } from "../lib/skeleton/retriever";
 import { Skeletonizer } from "../lib/skeleton/skeletonizer";
@@ -304,8 +304,36 @@ export const mcp = new Command("mcp")
 
     // --- Index sync ---
 
+    let _indexChildPid: number | null = null;
+
+    function isIndexProcessRunning(): boolean {
+      if (!_indexChildPid) return false;
+      try {
+        process.kill(_indexChildPid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
     async function ensureIndexReady(): Promise<void> {
       if (_indexReady) return;
+
+      // Check if a previously spawned index process finished
+      if (_indexing && !isIndexProcessRunning()) {
+        _indexing = false;
+        _indexProgress = "";
+        _indexChildPid = null;
+        // Re-check if index now exists
+        try {
+          const db = getVectorDb();
+          if (await db.hasRowsForPath(projectRoot)) {
+            _indexReady = true;
+            console.log("[MCP] Background indexing complete.");
+            return;
+          }
+        } catch {}
+      }
 
       try {
         const db = getVectorDb();
@@ -315,24 +343,35 @@ export const mcp = new Command("mcp")
           if (_indexing) return; // Already indexing in background
           _indexing = true;
           _indexProgress = "starting...";
-          console.log("[MCP] No index found, running initial sync...");
-          initialSync({
-            projectRoot,
-            onProgress: (info) => {
-              _indexProgress = `${info.processed}/${info.total || "?"} files`;
-            },
-          })
-            .then(() => {
+          console.log("[MCP] No index found, spawning background index...");
+
+          // Spawn gmax index as a detached child process — doesn't hold
+          // the lock inside this MCP process, so CLI `gmax index` won't conflict.
+          const child = spawn(
+            process.argv[0],
+            [process.argv[1], "index", "--path", projectRoot],
+            { detached: true, stdio: "ignore" },
+          );
+          _indexChildPid = child.pid ?? null;
+          child.unref();
+          _indexProgress = `PID ${_indexChildPid}`;
+          console.log(
+            `[MCP] Background index started (PID: ${_indexChildPid})`,
+          );
+
+          child.on("exit", (code) => {
+            _indexing = false;
+            _indexProgress = "";
+            _indexChildPid = null;
+            if (code === 0) {
               _indexReady = true;
-              _indexing = false;
-              _indexProgress = "";
-              console.log("[MCP] Initial sync complete.");
-            })
-            .catch((e) => {
-              _indexing = false;
-              _indexProgress = "";
-              console.error("[MCP] Index sync failed:", e);
-            });
+              console.log("[MCP] Background indexing complete.");
+            } else {
+              console.error(
+                `[MCP] Background indexing failed (exit code: ${code})`,
+              );
+            }
+          });
         } else {
           console.log("[MCP] Index exists, ready.");
           _indexReady = true;
