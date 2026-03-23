@@ -93,6 +93,11 @@ const TOOLS = [
           description:
             "Include N lines before and after the chunk (like grep -C). Only with detail 'code' or 'full'. Max 20.",
         },
+        mode: {
+          type: "string",
+          description:
+            "Search mode: 'default' (semantic only) or 'symbol' (semantic + call graph trace appended). Use 'symbol' when query is a function/class name.",
+        },
       },
       required: ["query"],
     },
@@ -686,7 +691,63 @@ export const mcp = new Command("mcp")
           });
         }
 
-        const output = results.map((r) => r.text).join("\n\n");
+        let output = results.map((r) => r.text).join("\n\n");
+
+        // Symbol mode: append call graph
+        const mode =
+          typeof args.mode === "string" ? args.mode : "default";
+        if (mode === "symbol" && !searchAll) {
+          try {
+            const db = getVectorDb();
+            const builder = new GraphBuilder(db);
+            const graph = await builder.buildGraph(query);
+
+            if (graph.center) {
+              const traceLines: string[] = ["", "--- Call graph ---"];
+              const centerRel = graph.center.file.startsWith(projectRoot)
+                ? graph.center.file.slice(projectRoot.length + 1)
+                : graph.center.file;
+              traceLines.push(
+                `${graph.center.symbol} [${graph.center.role}] ${centerRel}:${graph.center.line + 1}`,
+              );
+
+              if (graph.callers.length > 0) {
+                traceLines.push("Callers:");
+                for (const caller of graph.callers) {
+                  const rel = caller.file.startsWith(projectRoot)
+                    ? caller.file.slice(projectRoot.length + 1)
+                    : caller.file;
+                  traceLines.push(
+                    `  <- ${caller.symbol} ${rel}:${caller.line + 1}`,
+                  );
+                }
+              }
+
+              if (graph.callees.length > 0) {
+                traceLines.push("Calls:");
+                for (const callee of graph.callees.slice(0, 15)) {
+                  if (callee.file) {
+                    const rel = callee.file.startsWith(projectRoot)
+                      ? callee.file.slice(projectRoot.length + 1)
+                      : callee.file;
+                    traceLines.push(
+                      `  -> ${callee.symbol} ${rel}:${callee.line + 1}`,
+                    );
+                  } else {
+                    traceLines.push(
+                      `  -> ${callee.symbol} (not indexed)`,
+                    );
+                  }
+                }
+              }
+
+              output += `\n${traceLines.join("\n")}`;
+            }
+          } catch {
+            // Trace failed — return search results without trace
+          }
+        }
+
         if (result.warnings?.length) {
           return ok(`${result.warnings.join("\n")}\n\n${output}`);
         }

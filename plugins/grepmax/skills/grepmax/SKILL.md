@@ -47,6 +47,7 @@ Parameters:
 - `exclude` (optional): Exclude files under this path prefix (e.g. "tests/" or "dist/")
 - `language` (optional): Filter by file extension (e.g. "ts", "py", "go"). Omit the dot.
 - `role` (optional): Filter by chunk role: "ORCHESTRATION" (logic/flow), "DEFINITION" (types), or "IMPLEMENTATION"
+- `mode` (optional): `"default"` (semantic only) or `"symbol"` (semantic + call graph appended). Use "symbol" when query is a function or class name — gets search results + callers/callees in one call.
 
 **When to use which mode:**
 - `pointer` — navigation, finding locations, understanding architecture
