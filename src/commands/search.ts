@@ -629,6 +629,19 @@ Examples:
         }
       }
 
+      // Ensure a watcher is running for live reindexing
+      if (!process.env.VITEST && !process.env.NODE_ENV?.includes("test")) {
+        try {
+          const { execFileSync } = await import("node:child_process");
+          execFileSync("gmax", ["watch", "-b", "--path", projectRoot], {
+            timeout: 5000,
+            stdio: "ignore",
+          });
+        } catch {
+          // Watcher may already be running — ignore
+        }
+      }
+
       const searcher = new Searcher(vectorDb);
 
       // Use --root or fall back to project root
