@@ -29,44 +29,51 @@ Natural-language search that works like `grep`. Fast, local, and built for codin
 
 ## Quick Start
 
-1. **Install**
-   ```bash
-   npm install -g grepmax
-   ```
+```bash
+npm install -g grepmax        # 1. Install
+cd my-repo && gmax index      # 2. Index (models download automatically)
+gmax "where do we handle auth?"  # 3. Search
+```
 
-2.  **Setup (Recommended)**
+That's it. No setup required — gmax auto-detects your platform (GPU on Apple Silicon, CPU elsewhere) and downloads models on first use.
 
-    ```bash
-    gmax setup
-    ```
+### Optional: Interactive Setup
 
-    Downloads embedding models (~150MB) upfront and lets you choose between CPU (ONNX) and GPU (MLX) embedding modes. If you skip this, models download automatically on first use.
+```bash
+gmax setup                    # Choose model tier + embedding mode interactively
+```
 
-3.  **Index**
+Run this if you want to:
+- Switch between **CPU** (ONNX, works everywhere) and **GPU** (MLX, Apple Silicon only, ~3x faster)
+- Choose between **small** model (384d, 47M params, fast) and **standard** model (768d, 149M params, better quality)
 
-    ```bash
-    cd my-repo
-    gmax index
-    ```
+### Quick Config (Non-Interactive)
 
-    Indexes into a centralized store at `~/.gmax/lancedb/`. You can index any directory — a single repo, a monorepo, or an entire workspace.
+```bash
+gmax config                          # View current settings
+gmax config --embed-mode cpu         # Switch to CPU
+gmax config --embed-mode gpu         # Switch to GPU (Apple Silicon only)
+gmax config --model-tier standard    # Switch to larger model
+```
 
-4.  **Search**
+### Verify Installation
 
-    ```bash
-    gmax "where do we handle authentication?"
-    ```
+```bash
+gmax doctor                   # Check models, index, servers
+```
 
-5.  **Trace** (Call Graph)
+### Core Commands
 
-    ```bash
-    gmax trace "function_name"
-    ```
-    See who calls a function (upstream dependencies) and what it calls (downstream dependencies).
-
-    ```bash
-    gmax symbols                  # List all indexed symbols
-    ```
+```bash
+gmax "where do we handle auth?"      # Semantic search
+gmax "VectorDB" --symbol --agent     # Search + call graph (compact output)
+gmax trace handleAuth -d 2           # Call graph (2-hop)
+gmax skeleton src/lib/search/        # File structure (directory)
+gmax project                         # Project overview
+gmax related src/lib/syncer.ts       # Dependencies + dependents
+gmax recent                          # Recently modified files
+gmax symbols auth                    # List indexed symbols
+```
 
 In our public benchmarks, `grepmax` can save about 20% of your LLM tokens and deliver a 30% speedup.
 

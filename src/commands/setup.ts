@@ -90,25 +90,25 @@ export const setup = new Command("setup")
     const selectedTier = MODEL_TIERS[modelTier];
 
     // Step 5: Embed mode selection
+    const isAppleSilicon =
+      process.arch === "arm64" && process.platform === "darwin";
     const embedMode = await p.select({
-      message: "Embedding mode",
+      message: "Are you on Apple Silicon (M1/M2/M3/M4)?",
       options: [
         {
-          value: "cpu" as const,
-          label: "CPU only",
-          hint: "ONNX — works everywhere",
+          value: "gpu" as const,
+          label: "Yes — use GPU acceleration",
+          hint: "~3x faster indexing and search via MLX",
         },
         {
-          value: "gpu" as const,
-          label: "GPU (MLX)",
-          hint: "Apple Silicon only, faster indexing + search",
+          value: "cpu" as const,
+          label: "No — use CPU",
+          hint: "Works on all platforms (Intel, Linux, Windows)",
         },
       ],
       initialValue:
         existingConfig?.embedMode ??
-        (process.arch === "arm64" && process.platform === "darwin"
-          ? "gpu"
-          : "cpu"),
+        (isAppleSilicon ? "gpu" : "cpu"),
     });
 
     if (p.isCancel(embedMode)) {
