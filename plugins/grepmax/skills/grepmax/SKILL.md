@@ -130,11 +130,31 @@ The watcher auto-starts when the MCP server connects — it detects file changes
 
 If search results include a warning like "Full-text search unavailable", results may be less precise. This resolves automatically — the index retries FTS every 5 minutes.
 
+## CLI vs MCP — when to use which
+
+**Prefer CLI (`Bash(gmax ...)`) for repeated searches.** The CLI is ~2x more token-efficient because MCP tool schemas add ~800 tokens of overhead per call. Every CLI flag maps to an MCP param:
+
+```
+Bash(gmax "auth handler" --role ORCHESTRATION --lang ts --plain -m 3)
+```
+
+is equivalent to `semantic_search` with `role: "ORCHESTRATION", language: "ts", limit: 3` — but costs half the tokens.
+
+**CLI commands for all MCP tools:**
+- `gmax "query" --plain` → `semantic_search`
+- `gmax trace <symbol> -d 2` → `trace_calls` with depth
+- `gmax skeleton <target> --json` → `code_skeleton`
+- `gmax project` → `summarize_project`
+- `gmax related <file>` → `related_files`
+- `gmax recent` → `recent_changes`
+
+**Use MCP tools when:** first exploring (tool descriptions guide usage), or when you need pointer mode output (more structured than CLI).
+
 ## Tips
 
 - **Be specific.** "auth" returns noise. "where does the server validate JWT tokens from the Authorization header" returns exactly what you need. Aim for 5+ words.
-- **ORCH results contain the logic** — prioritize over DEF/IMPL results.
+- **Use `--plain` for CLI searches** — agent-friendly output without ANSI codes.
+- **ORCH results contain the logic** — use `--role ORCHESTRATION` to filter noise.
 - **Summaries tell you what the code does** without reading it. Use them to decide what to `Read`.
-- **Use `root` for cross-project search** — absolute path to another indexed directory.
-- **Use `max_per_file`** when results cluster in one file but you need diversity.
+- **Use `--symbol` on CLI** to get search results + call graph in one shot.
 - **Don't search for exact strings** — use grep/Grep for that. gmax finds concepts, not literals.
