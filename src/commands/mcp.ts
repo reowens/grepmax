@@ -288,6 +288,27 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: "related_files",
+    description:
+      "Find files related to a given file by shared symbol references. Shows dependencies (what this file calls) and dependents (what calls this file).",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        file: {
+          type: "string",
+          description:
+            "File path relative to project root (e.g. 'src/lib/index/syncer.ts')",
+        },
+        limit: {
+          type: "number",
+          description:
+            "Max related files per direction (default 10)",
+        },
+      },
+      required: ["file"],
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1430,6 +1451,123 @@ export const mcp = new Command("mcp")
       }
     }
 
+    async function handleRelatedFiles(
+      args: Record<string, unknown>,
+    ): Promise<ToolResult> {
+      const file = String(args.file || "");
+      if (!file) return err("Missing required parameter: file");
+
+      const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 25);
+      const absPath = path.resolve(projectRoot, file);
+
+      try {
+        const db = getVectorDb();
+        const table = await db.ensureTable();
+
+        const fileChunks = await table
+          .query()
+          .select(["defined_symbols", "referenced_symbols"])
+          .where(`path = '${escapeSqlString(absPath)}'`)
+          .toArray();
+
+        if (fileChunks.length === 0) {
+          return ok(`File not found in index: ${file}`);
+        }
+
+        const definedHere = new Set<string>();
+        const referencedHere = new Set<string>();
+        for (const chunk of fileChunks) {
+          for (const s of toStringArray((chunk as any).defined_symbols))
+            definedHere.add(s);
+          for (const s of toStringArray(
+            (chunk as any).referenced_symbols,
+          ))
+            referencedHere.add(s);
+        }
+
+        // Dependencies: files that DEFINE symbols this file REFERENCES
+        const depCounts = new Map<string, number>();
+        for (const sym of referencedHere) {
+          if (definedHere.has(sym)) continue;
+          const rows = await table
+            .query()
+            .select(["path"])
+            .where(
+              `array_contains(defined_symbols, '${escapeSqlString(sym)}')`,
+            )
+            .limit(3)
+            .toArray();
+          for (const row of rows) {
+            const p = String((row as any).path || "");
+            if (p === absPath) continue;
+            depCounts.set(p, (depCounts.get(p) || 0) + 1);
+          }
+        }
+
+        // Dependents: files that REFERENCE symbols this file DEFINES
+        const revCounts = new Map<string, number>();
+        for (const sym of definedHere) {
+          const rows = await table
+            .query()
+            .select(["path"])
+            .where(
+              `array_contains(referenced_symbols, '${escapeSqlString(sym)}')`,
+            )
+            .limit(20)
+            .toArray();
+          for (const row of rows) {
+            const p = String((row as any).path || "");
+            if (p === absPath) continue;
+            revCounts.set(p, (revCounts.get(p) || 0) + 1);
+          }
+        }
+
+        const lines: string[] = [];
+        lines.push(`Related files for ${file}:\n`);
+
+        const topDeps = Array.from(depCounts.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, limit);
+        if (topDeps.length > 0) {
+          lines.push("Dependencies (files this imports/calls):");
+          for (const [p, count] of topDeps) {
+            const rel = p.startsWith(`${projectRoot}/`)
+              ? p.slice(projectRoot.length + 1)
+              : p;
+            lines.push(
+              `  ${rel.padEnd(40)} (${count} shared symbol${count > 1 ? "s" : ""})`,
+            );
+          }
+        } else {
+          lines.push("Dependencies: none found");
+        }
+
+        lines.push("");
+
+        const topRevs = Array.from(revCounts.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, limit);
+        if (topRevs.length > 0) {
+          lines.push("Dependents (files that call this):");
+          for (const [p, count] of topRevs) {
+            const rel = p.startsWith(`${projectRoot}/`)
+              ? p.slice(projectRoot.length + 1)
+              : p;
+            lines.push(
+              `  ${rel.padEnd(40)} (${count} shared symbol${count > 1 ? "s" : ""})`,
+            );
+          }
+        } else {
+          lines.push("Dependents: none found");
+        }
+
+        return ok(lines.join("\n"));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return err(`Related files failed: ${msg}`);
+      }
+    }
+
     // --- MCP server setup ---
 
     const transport = new StdioServerTransport();
@@ -1474,6 +1612,8 @@ export const mcp = new Command("mcp")
           return handleSummarizeDirectory(toolArgs);
         case "summarize_project":
           return handleSummarizeProject(toolArgs);
+        case "related_files":
+          return handleRelatedFiles(toolArgs);
         default:
           return err(`Unknown tool: ${name}`);
       }
