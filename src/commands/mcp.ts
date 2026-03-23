@@ -98,6 +98,11 @@ const TOOLS = [
           description:
             "Search mode: 'default' (semantic only) or 'symbol' (semantic + call graph trace appended). Use 'symbol' when query is a function/class name.",
         },
+        include_imports: {
+          type: "boolean",
+          description:
+            "Prepend the file's import/require statements to each result. Deduped per file.",
+        },
       },
       required: ["query"],
     },
@@ -164,6 +169,11 @@ const TOOLS = [
           type: "number",
           description:
             "Include N lines before/after chunk. Only with detail 'code' or 'full'. Max 20.",
+        },
+        include_imports: {
+          type: "boolean",
+          description:
+            "Prepend file's import statements to each result.",
         },
       },
       required: ["query"],
@@ -480,6 +490,59 @@ export const mcp = new Command("mcp")
       console.log(`[MCP] Started background watcher for ${projectRoot}`);
     }
 
+    // --- Utilities ---
+
+    function extractImports(filePath: string): string {
+      try {
+        const content = fs.readFileSync(filePath, "utf-8");
+        const lines = content.split("\n");
+        const importLines: string[] = [];
+        let inMultiLine = false;
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+
+          if (inMultiLine) {
+            importLines.push(line);
+            if (trimmed === ")" || trimmed === ");") inMultiLine = false;
+            continue;
+          }
+
+          if (
+            !trimmed ||
+            trimmed.startsWith("//") ||
+            trimmed.startsWith("#") ||
+            trimmed.startsWith("*") ||
+            trimmed.startsWith("/*")
+          ) {
+            continue;
+          }
+
+          if (
+            trimmed.startsWith("import ") ||
+            trimmed.startsWith("from ") ||
+            (trimmed.startsWith("const ") && trimmed.includes("require(")) ||
+            trimmed.startsWith("require(") ||
+            trimmed.startsWith("use ") ||
+            trimmed.startsWith("using ") ||
+            trimmed.startsWith("package ")
+          ) {
+            importLines.push(line);
+            if (trimmed.includes("(") && !trimmed.includes(")")) {
+              inMultiLine = true;
+            }
+            continue;
+          }
+
+          break;
+        }
+
+        return importLines.length > 0 ? importLines.join("\n") : "";
+      } catch {
+        return "";
+      }
+    }
+
     // --- Tool handlers ---
 
     async function handleSemanticSearch(
@@ -592,6 +655,8 @@ export const mcp = new Command("mcp")
           typeof args.max_per_file === "number" ? args.max_per_file : 0;
         const detail =
           typeof args.detail === "string" ? args.detail : "pointer";
+        const includeImports = Boolean(args.include_imports);
+        const importCache = new Map<string, string>();
 
         let results = result.data.map((r: any) => {
           const absPath = r.path ?? r.metadata?.path ?? "";
@@ -680,11 +745,22 @@ export const mcp = new Command("mcp")
             }
           }
 
-          const text =
+          let text =
             line1 +
             (summaryStr ? `\n${summaryStr}` : "") +
             (line2 ? `\n${line2}` : "") +
             snippet;
+
+          if (includeImports && absPath) {
+            if (!importCache.has(absPath)) {
+              importCache.set(absPath, extractImports(absPath));
+            }
+            const imports = importCache.get(absPath)!;
+            if (imports) {
+              text = `imports:\n${imports}\n\n${text}`;
+            }
+          }
+
           return {
             absPath,
             text,
