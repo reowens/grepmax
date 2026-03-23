@@ -78,9 +78,20 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
     debounceTimer = setTimeout(() => processBatch(), DEBOUNCE_MS);
   };
 
+  const BATCH_TIMEOUT_MS = 120_000;
+
   const processBatch = async () => {
     if (closed || processing || pending.size === 0) return;
     processing = true;
+
+    const batchTimeout = setTimeout(() => {
+      if (processing) {
+        console.error(
+          "[watch] Batch processing timed out after 120s, resetting",
+        );
+        processing = false;
+      }
+    }, BATCH_TIMEOUT_MS);
 
     const batch = new Map(pending);
     pending.clear();
@@ -194,39 +205,6 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
         await lock.release();
       }
 
-      // Summarize new/changed chunks outside the lock (sequential, no GPU contention)
-      if (changedIds.length > 0) {
-        try {
-          const table = await vectorDb.ensureTable();
-          for (const id of changedIds) {
-            const escaped = escapeSqlString(id);
-            const rows = await table
-              .query()
-              .select(["id", "path", "content"])
-              .where(`id = '${escaped}'`)
-              .limit(1)
-              .toArray();
-            if (rows.length === 0) continue;
-            const r = rows[0] as any;
-            const lang =
-              path.extname(String(r.path || "")).replace(/^\./, "") ||
-              "unknown";
-            const summaries = await summarizeChunks([
-              {
-                code: String(r.content || ""),
-                language: lang,
-                file: String(r.path || ""),
-              },
-            ]);
-            if (summaries?.[0]) {
-              await vectorDb.updateRows([id], "summary", [summaries[0]]);
-            }
-          }
-        } catch {
-          // Summarizer unavailable — skip silently
-        }
-      }
-
       if (reindexed > 0) {
         const duration = Date.now() - start;
         onReindex?.(reindexed, duration);
@@ -267,11 +245,47 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
         debounceTimer = setTimeout(() => processBatch(), backoffMs);
       }
     } finally {
+      clearTimeout(batchTimeout);
       processing = false;
       // Process any events that came in while we were processing
       if (pending.size > 0) {
         scheduleBatch();
       }
+    }
+
+    // Fire-and-forget summarization — doesn't block the next batch
+    if (changedIds.length > 0) {
+      (async () => {
+        try {
+          const table = await vectorDb.ensureTable();
+          for (const id of changedIds) {
+            const escaped = escapeSqlString(id);
+            const rows = await table
+              .query()
+              .select(["id", "path", "content"])
+              .where(`id = '${escaped}'`)
+              .limit(1)
+              .toArray();
+            if (rows.length === 0) continue;
+            const r = rows[0] as any;
+            const lang =
+              path.extname(String(r.path || "")).replace(/^\./, "") ||
+              "unknown";
+            const summaries = await summarizeChunks([
+              {
+                code: String(r.content || ""),
+                language: lang,
+                file: String(r.path || ""),
+              },
+            ]);
+            if (summaries?.[0]) {
+              await vectorDb.updateRows([id], "summary", [summaries[0]]);
+            }
+          }
+        } catch {
+          // Summarizer unavailable — skip
+        }
+      })();
     }
   };
 
@@ -293,7 +307,7 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
 
   // Periodic FTS rebuild
   const ftsInterval = setInterval(async () => {
-    if (closed) return;
+    if (closed || processing) return;
     try {
       await vectorDb.createFTSIndex();
     } catch (err) {
