@@ -82,6 +82,8 @@ In our public benchmarks, `grepmax` can save about 20% of your LLM tokens and de
 2. Open Claude Code — the plugin auto-starts the MLX GPU server and a background file watcher.
 3. Claude uses `gmax` for semantic searches automatically via MCP tools.
 
+Plugin files (skill instructions, hooks) auto-update when you run `npm update -g grepmax` — no need to re-run `install-claude-code`.
+
 ### Opencode
 1. Run `gmax install-opencode`
 2. OC uses `gmax` for semantic searches via MCP.
