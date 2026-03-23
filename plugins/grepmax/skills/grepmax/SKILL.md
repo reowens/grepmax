@@ -55,8 +55,9 @@ Search ALL indexed code across every directory. Same parameters as semantic_sear
 Use sparingly. Prefer `semantic_search` when you know which directory to search.
 
 ### code_skeleton
-File structure — signatures with bodies collapsed (~4x fewer tokens).
-- `target` (required): File path relative to project root
+File or directory structure — signatures with bodies collapsed (~4x fewer tokens).
+- `target` (required): File path, directory path (e.g. "src/lib/search/"), or comma-separated files
+- `limit` (optional): Max files for directory mode (default 10, max 20)
 
 ### trace_calls
 Call graph — who calls a symbol and what it calls. Callers and callees include file:line locations. Unscoped — follows calls across all indexed directories.

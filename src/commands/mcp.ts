@@ -16,6 +16,7 @@ import { Searcher } from "../lib/search/searcher";
 import { getStoredSkeleton } from "../lib/skeleton/retriever";
 import { Skeletonizer } from "../lib/skeleton/skeletonizer";
 import { VectorDB } from "../lib/store/vector-db";
+import { isIndexableFile } from "../lib/utils/file-utils";
 import { escapeSqlString, normalizePath } from "../lib/utils/filter-builder";
 import { listProjects } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
@@ -126,14 +127,19 @@ const TOOLS = [
   {
     name: "code_skeleton",
     description:
-      "Show the structure of a source file — all function/class/method signatures with bodies collapsed. Useful for understanding large files without reading every line. Returns ~4x fewer tokens than the full file.",
+      "Show the structure of source files — signatures with bodies collapsed (~4x fewer tokens). Accepts a file path, a directory path, or comma-separated file paths.",
     inputSchema: {
       type: "object" as const,
       properties: {
         target: {
           type: "string",
           description:
-            "File path relative to project root (e.g. 'src/services/booking.ts')",
+            "File path, directory path (e.g. 'src/lib/search/'), or comma-separated files (e.g. 'src/a.ts,src/b.ts'). Relative to project root.",
+        },
+        limit: {
+          type: "number",
+          description:
+            "Max files for directory mode (default 10, max 20). Ignored for single files.",
         },
       },
       required: ["target"],
@@ -587,41 +593,84 @@ export const mcp = new Command("mcp")
       const target = String(args.target || "");
       if (!target) return err("Missing required parameter: target");
 
-      const absPath = path.resolve(projectRoot, target);
+      const fileLimit = Math.min(
+        Math.max(Number(args.limit) || 10, 1),
+        20,
+      );
 
-      if (!fs.existsSync(absPath)) {
-        return err(`File not found: ${target}`);
-      }
+      // Determine targets: comma-separated, directory, or single file
+      let targets: string[];
 
-      // Try cached skeleton first (stored with absolute path)
-      try {
-        const db = getVectorDb();
-        const cached = await getStoredSkeleton(db, absPath);
-        if (cached) {
-          const tokens = Math.ceil(cached.length / 4);
-          return ok(`// ${target} (~${tokens} tokens)\n\n${cached}`);
+      if (target.includes(",")) {
+        targets = target
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean);
+      } else {
+        const absPath = path.resolve(projectRoot, target);
+        if (fs.existsSync(absPath) && fs.statSync(absPath).isDirectory()) {
+          const entries = fs.readdirSync(absPath, { withFileTypes: true });
+          targets = entries
+            .filter(
+              (e) =>
+                e.isFile() &&
+                isIndexableFile(path.join(absPath, e.name)),
+            )
+            .map((e) =>
+              path.relative(projectRoot, path.join(absPath, e.name)),
+            )
+            .slice(0, fileLimit);
+          if (targets.length === 0) {
+            return err(`No indexable files found in ${target}`);
+          }
+        } else {
+          targets = [target];
         }
-      } catch {
-        // Index may not exist yet — fall through to live generation
       }
 
-      // Generate skeleton from file
-      try {
-        const content = fs.readFileSync(absPath, "utf-8");
-        const skel = await getSkeletonizer();
-        const result = await skel.skeletonizeFile(absPath, content);
+      // Generate skeletons for all targets
+      const parts: string[] = [];
+      const skel = await getSkeletonizer();
 
-        if (!result.success && result.error) {
-          return err(`Skeleton generation failed: ${result.error}`);
+      for (const t of targets) {
+        const absPath = path.resolve(projectRoot, t);
+
+        if (!fs.existsSync(absPath)) {
+          parts.push(`// ${t} — file not found`);
+          continue;
         }
 
-        return ok(
-          `// ${target} (~${result.tokenEstimate} tokens)\n\n${result.skeleton}`,
-        );
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return err(`Skeleton failed: ${msg}`);
+        // Try cached skeleton first
+        try {
+          const db = getVectorDb();
+          const cached = await getStoredSkeleton(db, absPath);
+          if (cached) {
+            const tokens = Math.ceil(cached.length / 4);
+            parts.push(`// ${t} (~${tokens} tokens)\n\n${cached}`);
+            continue;
+          }
+        } catch {
+          // Index may not exist yet — fall through to live generation
+        }
+
+        // Generate live
+        try {
+          const content = fs.readFileSync(absPath, "utf-8");
+          const result = await skel.skeletonizeFile(absPath, content);
+          if (result.success) {
+            parts.push(
+              `// ${t} (~${result.tokenEstimate} tokens)\n\n${result.skeleton}`,
+            );
+          } else {
+            parts.push(`// ${t} — skeleton failed: ${result.error}`);
+          }
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          parts.push(`// ${t} — error: ${msg}`);
+        }
       }
+
+      return ok(parts.join("\n\n---\n\n"));
     }
 
     async function handleTraceCalls(
