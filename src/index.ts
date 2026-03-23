@@ -10,6 +10,9 @@ import { installDroid, uninstallDroid } from "./commands/droid";
 import { index } from "./commands/index";
 import { list } from "./commands/list";
 import { mcp } from "./commands/mcp";
+import { project } from "./commands/project";
+import { recent } from "./commands/recent";
+import { related } from "./commands/related";
 import { installOpencode, uninstallOpencode } from "./commands/opencode";
 import { search } from "./commands/search";
 import { serve } from "./commands/serve";
@@ -55,6 +58,9 @@ program.addCommand(list);
 program.addCommand(skeleton);
 program.addCommand(symbols);
 program.addCommand(trace);
+program.addCommand(project);
+program.addCommand(related);
+program.addCommand(recent);
 
 // Services
 program.addCommand(serve);
