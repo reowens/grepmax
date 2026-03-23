@@ -88,6 +88,11 @@ const TOOLS = [
           description:
             "Filter by chunk role: 'ORCHESTRATION' (logic/flow), 'DEFINITION' (types/classes), or 'IMPLEMENTATION'.",
         },
+        context_lines: {
+          type: "number",
+          description:
+            "Include N lines before and after the chunk (like grep -C). Only with detail 'code' or 'full'. Max 20.",
+        },
       },
       required: ["query"],
     },
@@ -149,6 +154,11 @@ const TOOLS = [
           type: "string",
           description:
             "Comma-separated project names to exclude (e.g. 'capstone,power').",
+        },
+        context_lines: {
+          type: "number",
+          description:
+            "Include N lines before/after chunk. Only with detail 'code' or 'full'. Max 20.",
         },
       },
       required: ["query"],
@@ -601,23 +611,53 @@ export const mcp = new Command("mcp")
               : "";
 
           let snippet = "";
+          const contextN =
+            typeof args.context_lines === "number"
+              ? Math.min(Math.max(args.context_lines, 0), 20)
+              : 0;
           if (detail === "code" || detail === "full") {
-            const raw =
-              typeof r.content === "string"
-                ? r.content
-                : typeof r.text === "string"
-                  ? r.text
-                  : "";
-            const allLines = raw.split("\n");
-            const linesToShow =
-              detail === "full" ? allLines : allLines.slice(0, 4);
-            snippet =
-              "\n" +
-              linesToShow
-                .map(
-                  (l: string, i: number) => `${startLine + i + 1}│${l}`,
-                )
-                .join("\n");
+            if (contextN > 0 && absPath) {
+              // Read surrounding context from file
+              try {
+                const fileContent = fs.readFileSync(absPath, "utf-8");
+                const fileLines = fileContent.split("\n");
+                const ctxStart = Math.max(0, startLine - contextN);
+                const ctxEnd = Math.min(
+                  fileLines.length,
+                  endLine + 1 + contextN,
+                );
+                snippet =
+                  "\n" +
+                  fileLines
+                    .slice(ctxStart, ctxEnd)
+                    .map(
+                      (l: string, i: number) =>
+                        `${ctxStart + i + 1}│${l}`,
+                    )
+                    .join("\n");
+              } catch {
+                // Fall through to chunk content
+              }
+            }
+            if (!snippet) {
+              const raw =
+                typeof r.content === "string"
+                  ? r.content
+                  : typeof r.text === "string"
+                    ? r.text
+                    : "";
+              const allLines = raw.split("\n");
+              const linesToShow =
+                detail === "full" ? allLines : allLines.slice(0, 4);
+              snippet =
+                "\n" +
+                linesToShow
+                  .map(
+                    (l: string, i: number) =>
+                      `${startLine + i + 1}│${l}`,
+                  )
+                  .join("\n");
+            }
           }
 
           const text =
@@ -655,6 +695,38 @@ export const mcp = new Command("mcp")
         const msg = e instanceof Error ? e.message : String(e);
         return err(`Search failed: ${msg}`);
       }
+    }
+
+    function annotateSkeletonLines(
+      skeleton: string,
+      sourceContent: string,
+    ): string {
+      const sourceLines = sourceContent.split("\n");
+      const skelLines = skeleton.split("\n");
+      const used = new Set<number>();
+
+      return skelLines
+        .map((skelLine) => {
+          const trimmed = skelLine.trim();
+          if (
+            !trimmed ||
+            trimmed.startsWith("//") ||
+            trimmed.startsWith("*") ||
+            trimmed.startsWith("/*")
+          ) {
+            return skelLine;
+          }
+          // Match against source lines using first 40 chars
+          const matchStr = trimmed.slice(0, 40);
+          for (let i = 0; i < sourceLines.length; i++) {
+            if (!used.has(i) && sourceLines[i].includes(matchStr)) {
+              used.add(i);
+              return `${String(i + 1).padStart(4)}│${skelLine}`;
+            }
+          }
+          return skelLine;
+        })
+        .join("\n");
     }
 
     async function handleCodeSkeleton(
@@ -710,13 +782,22 @@ export const mcp = new Command("mcp")
           continue;
         }
 
+        // Read source for line annotations
+        let sourceContent = "";
+        try {
+          sourceContent = fs.readFileSync(absPath, "utf-8");
+        } catch {}
+
         // Try cached skeleton first
         try {
           const db = getVectorDb();
           const cached = await getStoredSkeleton(db, absPath);
           if (cached) {
             const tokens = Math.ceil(cached.length / 4);
-            parts.push(`// ${t} (~${tokens} tokens)\n\n${cached}`);
+            const annotated = sourceContent
+              ? annotateSkeletonLines(cached, sourceContent)
+              : cached;
+            parts.push(`// ${t} (~${tokens} tokens)\n\n${annotated}`);
             continue;
           }
         } catch {
@@ -725,11 +806,15 @@ export const mcp = new Command("mcp")
 
         // Generate live
         try {
-          const content = fs.readFileSync(absPath, "utf-8");
+          const content = sourceContent || fs.readFileSync(absPath, "utf-8");
           const result = await skel.skeletonizeFile(absPath, content);
           if (result.success) {
+            const annotated = annotateSkeletonLines(
+              result.skeleton,
+              content,
+            );
             parts.push(
-              `// ${t} (~${result.tokenEstimate} tokens)\n\n${result.skeleton}`,
+              `// ${t} (~${result.tokenEstimate} tokens)\n\n${annotated}`,
             );
           } else {
             parts.push(`// ${t} — skeleton failed: ${result.error}`);
@@ -830,7 +915,7 @@ export const mcp = new Command("mcp")
 
         let query = table
           .query()
-          .select(["defined_symbols", "path", "start_line"])
+          .select(["defined_symbols", "path", "start_line", "role", "is_exported"])
           .where("array_length(defined_symbols) > 0")
           .limit(pattern ? 10000 : Math.max(limit * 50, 2000));
 
@@ -848,12 +933,14 @@ export const mcp = new Command("mcp")
 
         const map = new Map<
           string,
-          { symbol: string; count: number; path: string; line: number }
+          { symbol: string; count: number; path: string; line: number; role: string; exported: boolean }
         >();
         for (const row of rows) {
           const defs = toStringArray((row as any).defined_symbols);
           const rowPath = String((row as any).path || "");
           const line = Number((row as any).start_line || 0);
+          const role = String((row as any).role || "");
+          const exported = Boolean((row as any).is_exported);
           for (const sym of defs) {
             if (pattern && !sym.toLowerCase().includes(pattern.toLowerCase())) {
               continue;
@@ -867,6 +954,8 @@ export const mcp = new Command("mcp")
                 count: 1,
                 path: rowPath,
                 line: Math.max(1, line + 1),
+                role,
+                exported,
               });
             }
           }
@@ -887,7 +976,9 @@ export const mcp = new Command("mcp")
           const rel = e.path.startsWith(projectRoot)
             ? e.path.slice(projectRoot.length + 1)
             : e.path;
-          return `${e.symbol}\t${rel}:${e.line}`;
+          const roleTag = e.role ? ` [${e.role.slice(0, 4)}]` : "";
+          const expTag = e.exported ? " exported" : "";
+          return `${e.symbol}${roleTag}${expTag}\t${rel}:${e.line}`;
         });
         return ok(lines.join("\n"));
       } catch (e) {

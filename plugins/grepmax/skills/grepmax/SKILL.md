@@ -40,6 +40,7 @@ Parameters:
 - `root` (optional): Absolute path to search a different indexed directory.
 - `path` (optional): Restrict to path prefix (e.g. "src/auth/"). Relative to the search root.
 - `detail` (optional): `"pointer"` (default), `"code"` (4-line snippets), or `"full"` (complete chunk with line numbers)
+- `context_lines` (optional): Include N lines before/after the chunk (like grep -C). Only with detail "code" or "full". Max 20.
 - `min_score` (optional): Filter by minimum relevance score (0-1)
 - `max_per_file` (optional): Cap results per file for diversity
 - `file` (optional): Filter to files matching this name (e.g. "syncer.ts"). Matches filename, not full path.
@@ -70,10 +71,12 @@ Call graph — who calls a symbol and what it calls. Callers and callees include
 - `symbol` (required): Function/method/class name
 
 ### list_symbols
-List indexed symbols with definition locations.
+List indexed symbols with definition locations, role, and export status.
 - `pattern` (optional): Filter by name (case-insensitive substring match)
 - `limit` (optional): Max results (default 20, max 100)
 - `path` (optional): Only symbols under this path prefix
+
+Output: `symbolName [ORCH] exported  src/path/file.ts:42`
 
 ### index_status
 Check centralized index health — chunks, files, indexed directories, model info, watcher status.
