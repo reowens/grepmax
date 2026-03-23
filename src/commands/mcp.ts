@@ -12,6 +12,7 @@ import { MODEL_TIERS, PATHS } from "../config";
 import { type CallerTree, GraphBuilder } from "../lib/graph/graph-builder";
 import { readGlobalConfig, readIndexConfig } from "../lib/index/index-config";
 import { generateSummaries } from "../lib/index/syncer";
+import { MetaCache } from "../lib/store/meta-cache";
 import { Searcher } from "../lib/search/searcher";
 import { getStoredSkeleton } from "../lib/skeleton/retriever";
 import { Skeletonizer } from "../lib/skeleton/skeletonizer";
@@ -312,6 +313,25 @@ const TOOLS = [
         },
       },
       required: ["file"],
+    },
+  },
+  {
+    name: "recent_changes",
+    description:
+      "Show recently modified files in the index. Useful after pulls or merges to see what changed.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        limit: {
+          type: "number",
+          description: "Max files to return (default 20)",
+        },
+        root: {
+          type: "string",
+          description:
+            "Project root (defaults to current project)",
+        },
+      },
     },
   },
 ];
@@ -1669,6 +1689,70 @@ export const mcp = new Command("mcp")
       }
     }
 
+    function formatTimeAgo(ms: number): string {
+      const sec = Math.floor(ms / 1000);
+      if (sec < 60) return `${sec}s ago`;
+      const min = Math.floor(sec / 60);
+      if (min < 60) return `${min}m ago`;
+      const hr = Math.floor(min / 60);
+      if (hr < 24) return `${hr}h ago`;
+      const days = Math.floor(hr / 24);
+      return `${days}d ago`;
+    }
+
+    async function handleRecentChanges(
+      args: Record<string, unknown>,
+    ): Promise<ToolResult> {
+      const limit = Math.min(
+        Math.max(Number(args.limit) || 20, 1),
+        50,
+      );
+      const root =
+        typeof args.root === "string"
+          ? path.resolve(args.root)
+          : projectRoot;
+      const prefix = root.endsWith("/") ? root : `${root}/`;
+
+      try {
+        const metaCache = new MetaCache(PATHS.lmdbPath);
+        try {
+          const files: Array<{ path: string; mtimeMs: number }> = [];
+          for await (const {
+            path: p,
+            entry,
+          } of metaCache.entries()) {
+            if (p.startsWith(prefix)) {
+              files.push({ path: p, mtimeMs: entry.mtimeMs });
+            }
+          }
+          files.sort((a, b) => b.mtimeMs - a.mtimeMs);
+          const top = files.slice(0, limit);
+
+          if (top.length === 0) {
+            return ok(`No indexed files found for ${root}`);
+          }
+
+          const now = Date.now();
+          const lines = [
+            `Recent changes in ${path.basename(root)} (${top.length} most recent):\n`,
+          ];
+          for (const f of top) {
+            const rel = f.path.startsWith(prefix)
+              ? f.path.slice(prefix.length)
+              : f.path;
+            const ago = formatTimeAgo(now - f.mtimeMs);
+            lines.push(`  ${ago.padEnd(10)} ${rel}`);
+          }
+          return ok(lines.join("\n"));
+        } finally {
+          await metaCache.close();
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return err(`Recent changes failed: ${msg}`);
+      }
+    }
+
     // --- MCP server setup ---
 
     const transport = new StdioServerTransport();
@@ -1715,6 +1799,8 @@ export const mcp = new Command("mcp")
           return handleSummarizeProject(toolArgs);
         case "related_files":
           return handleRelatedFiles(toolArgs);
+        case "recent_changes":
+          return handleRecentChanges(toolArgs);
         default:
           return err(`Unknown tool: ${name}`);
       }
