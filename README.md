@@ -125,6 +125,7 @@ gmax "how is the database connection pooled?"
 
 | Flag | Description | Default |
 | --- | --- | --- |
+| `--agent` | Ultra-compact output for AI agents (one line per result). | `false` |
 | `-m <n>` | Max total results to return. | `5` |
 | `--per-file <n>` | Max matches to show per file. | `3` |
 | `-c`, `--content` | Show full chunk content instead of snippets. | `false` |
@@ -148,12 +149,14 @@ gmax "how is the database connection pooled?"
 
 ```bash
 gmax "API rate limiting logic"
-gmax "auth handler" --role ORCHESTRATION --lang ts --plain
-gmax "database" --file syncer.ts --plain
-gmax "VectorDB" --symbol --plain
-gmax "error handling" -C 5 --imports
-gmax "handler" --name "handle.*" --exclude tests/
+gmax "auth handler" --role ORCHESTRATION --lang ts --agent
+gmax "database" --file syncer.ts --agent
+gmax "VectorDB" --symbol --agent
+gmax "error handling" -C 5 --imports --plain
+gmax "handler" --name "handle.*" --exclude tests/ --agent
 ```
+
+> **For AI agents:** Use `--agent` for the most token-efficient output (~90% fewer tokens than default). Output format: `file:line symbol [role] — summary`
 
 ### `gmax index`
 

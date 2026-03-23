@@ -78,7 +78,7 @@ gmax doctor                                # health check
 ## Workflow
 
 1. **Explore** — `Bash(gmax project)` for overview of a new codebase
-2. **Search** — `Bash(gmax "query" --plain)` to find code. Add `--symbol` for function/class names.
+2. **Search** — `Bash(gmax "query" --agent)` to find code. Add `--symbol` for function/class names.
 3. **Read** — `Read file:line` for specific ranges
 4. **Skeleton** — `Bash(gmax skeleton <path>)` before reading large files
 5. **Trace** — `Bash(gmax trace <symbol> -d 2)` for call flow
