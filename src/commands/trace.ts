@@ -8,7 +8,12 @@ import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 export const trace = new Command("trace")
   .description("Trace the call graph for a symbol")
   .argument("<symbol>", "The symbol to trace")
-  .action(async (symbol) => {
+  .option("-d, --depth <n>", "Caller traversal depth (default 1, max 3)", "1")
+  .action(async (symbol, opts) => {
+    const depth = Math.min(
+      Math.max(Number.parseInt(opts.depth || "1", 10), 1),
+      3,
+    );
     const root = process.cwd();
     let vectorDb: VectorDB | null = null;
 
@@ -19,7 +24,7 @@ export const trace = new Command("trace")
       vectorDb = new VectorDB(paths.lancedbDir);
 
       const graphBuilder = new GraphBuilder(vectorDb);
-      const graph = await graphBuilder.buildGraph(symbol);
+      const graph = await graphBuilder.buildGraphMultiHop(symbol, depth);
       console.log(formatTrace(graph));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";

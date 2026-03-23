@@ -17,6 +17,7 @@ import { ensureSetup } from "../lib/setup/setup-helpers";
 import { getStoredSkeleton } from "../lib/skeleton/retriever";
 import { Skeletonizer } from "../lib/skeleton/skeletonizer";
 import { VectorDB } from "../lib/store/vector-db";
+import { isIndexableFile } from "../lib/utils/file-utils";
 import { gracefulExit } from "../lib/utils/exit";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
@@ -124,6 +125,66 @@ Examples:
       };
 
       // Determine mode based on target
+      const resolvedTarget = path.resolve(target);
+
+      // Directory mode
+      if (
+        fs.existsSync(resolvedTarget) &&
+        fs.statSync(resolvedTarget).isDirectory()
+      ) {
+        const entries = fs.readdirSync(resolvedTarget, {
+          withFileTypes: true,
+        });
+        const files = entries
+          .filter(
+            (e) =>
+              e.isFile() &&
+              isIndexableFile(path.join(resolvedTarget, e.name)),
+          )
+          .map((e) => path.join(resolvedTarget, e.name))
+          .slice(0, Number.parseInt(options.limit, 10));
+
+        if (files.length === 0) {
+          console.error(`No indexable files in ${target}`);
+          process.exitCode = 1;
+          return;
+        }
+
+        for (const filePath of files) {
+          const content = fs.readFileSync(filePath, "utf-8");
+          const result = await skeletonizer.skeletonizeFile(
+            filePath,
+            content,
+            skeletonOpts,
+          );
+          outputResult(result, options);
+        }
+        return;
+      }
+
+      // Batch mode (comma-separated)
+      if (target.includes(",")) {
+        const targets = target
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean);
+        for (const t of targets) {
+          const filePath = path.resolve(t);
+          if (!fs.existsSync(filePath)) {
+            console.error(`Not found: ${t}`);
+            continue;
+          }
+          const content = fs.readFileSync(filePath, "utf-8");
+          const result = await skeletonizer.skeletonizeFile(
+            filePath,
+            content,
+            skeletonOpts,
+          );
+          outputResult(result, options);
+        }
+        return;
+      }
+
       if (isFilePath(target)) {
         // === FILE MODE ===
         const filePath = path.resolve(target);

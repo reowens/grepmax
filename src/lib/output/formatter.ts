@@ -117,12 +117,13 @@ export function formatResults(
   return results.map((r) => formatResult(r, root, options)).join("\n\n");
 }
 
-import type { GraphNode } from "../graph/graph-builder";
+import type { CallerTree, GraphNode } from "../graph/graph-builder";
 
 export function formatTrace(graph: {
   center: GraphNode | null;
-  callers: GraphNode[];
+  callerTree: CallerTree[];
   callees: GraphNode[];
+  importers: string[];
 }): string {
   if (!graph.center) {
     return style.dim("Symbol not found.");
@@ -130,21 +131,41 @@ export function formatTrace(graph: {
 
   const lines: string[] = [];
 
-  // 1. Callers (Upstream)
-  if (graph.callers.length > 0) {
-    lines.push(style.bold("Callers (Who calls this?):"));
-    graph.callers.forEach((caller) => {
+  // 1. Importers
+  if (graph.importers.length > 0) {
+    const filtered = graph.importers.filter(
+      (p) => p !== graph.center!.file,
+    );
+    if (filtered.length > 0) {
+      lines.push(style.bold("Imported by:"));
+      for (const imp of filtered.slice(0, 10)) {
+        lines.push(`  ${style.dim(imp)}`);
+      }
+      lines.push("");
+    }
+  }
+
+  // 2. Callers (Upstream, recursive tree)
+  function renderCallerTree(trees: CallerTree[], depth: number): void {
+    for (const t of trees) {
+      const pad = "  ".repeat(depth);
       lines.push(
-        `  ${style.blue("↑")} ${style.green(caller.symbol)} ${style.dim(`(${caller.file}:${caller.line})`)}`,
+        `${pad}${style.blue("↑")} ${style.green(t.node.symbol)} ${style.dim(`(${t.node.file}:${t.node.line})`)}`,
       );
-    });
+      renderCallerTree(t.callers, depth + 1);
+    }
+  }
+
+  if (graph.callerTree.length > 0) {
+    lines.push(style.bold("Callers (Who calls this?):"));
+    renderCallerTree(graph.callerTree, 1);
     lines.push("");
   } else {
     lines.push(style.dim("No known callers."));
     lines.push("");
   }
 
-  // 2. Center (The Symbol)
+  // 3. Center (The Symbol)
   lines.push(style.bold(`▶ ${graph.center.symbol}`));
   lines.push(
     `  ${style.dim(`Defined in ${graph.center.file}:${graph.center.line}`)}`,
@@ -152,7 +173,7 @@ export function formatTrace(graph: {
   lines.push(`  ${style.dim(`Role: ${graph.center.role}`)}`);
   lines.push("");
 
-  // 3. Callees (Downstream)
+  // 4. Callees (Downstream)
   if (graph.callees.length > 0) {
     lines.push(style.bold("Callees (What does this call?):"));
     graph.callees.forEach((callee) => {
