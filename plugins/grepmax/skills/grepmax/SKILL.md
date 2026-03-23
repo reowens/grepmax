@@ -52,7 +52,11 @@ Parameters:
 - `code` — comparing implementations, finding duplicates, checking syntax
 
 ### search_all
-Search ALL indexed code across every directory. Same parameters as semantic_search (query, limit, detail, min_score, max_per_file) but without `root` or `path` — searches everything.
+Search ALL indexed code across every directory. Same parameters as semantic_search (query, limit, detail, min_score, max_per_file, file, exclude, language, role) but without `root` or `path`.
+
+Additional parameters:
+- `projects` (optional): Comma-separated project names to include (e.g. "platform,osgrep"). Use `index_status` to see names.
+- `exclude_projects` (optional): Comma-separated project names to exclude (e.g. "capstone,power")
 
 Use sparingly. Prefer `semantic_search` when you know which directory to search.
 
