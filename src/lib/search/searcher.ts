@@ -364,6 +364,28 @@ export class Searcher {
       );
     }
 
+    // Handle project roots filter (from search_all projects param)
+    const projectRoots = _filters?.project_roots;
+    if (typeof projectRoots === "string" && projectRoots) {
+      const roots = projectRoots.split(",");
+      const clauses = roots.map((r) => {
+        const prefix = r.endsWith("/") ? r : `${r}/`;
+        return `path LIKE '${escapeSqlString(prefix)}%'`;
+      });
+      whereClauseParts.push(`(${clauses.join(" OR ")})`);
+    }
+
+    // Handle exclude project roots filter
+    const excludeRoots = _filters?.exclude_project_roots;
+    if (typeof excludeRoots === "string" && excludeRoots) {
+      for (const r of excludeRoots.split(",")) {
+        const prefix = r.endsWith("/") ? r : `${r}/`;
+        whereClauseParts.push(
+          `path NOT LIKE '${escapeSqlString(prefix)}%'`,
+        );
+      }
+    }
+
     // Handle --def (definition) filter
     const defFilter = _filters?.def;
     if (typeof defFilter === "string" && defFilter) {

@@ -140,6 +140,16 @@ const TOOLS = [
           description:
             "Filter by role: 'ORCHESTRATION', 'DEFINITION', or 'IMPLEMENTATION'.",
         },
+        projects: {
+          type: "string",
+          description:
+            "Comma-separated project names to include (e.g. 'platform,osgrep'). Use index_status to see names.",
+        },
+        exclude_projects: {
+          type: "string",
+          description:
+            "Comma-separated project names to exclude (e.g. 'capstone,power').",
+        },
       },
       required: ["query"],
     },
@@ -500,6 +510,38 @@ export const mcp = new Command("mcp")
         }
         if (typeof args.role === "string" && args.role) {
           filters.role = args.role;
+        }
+        if (searchAll) {
+          const allProjects = listProjects();
+          if (typeof args.projects === "string" && args.projects) {
+            const names = args.projects
+              .split(",")
+              .map((s: string) => s.trim());
+            const roots = names
+              .map(
+                (n: string) => allProjects.find((p) => p.name === n)?.root,
+              )
+              .filter(Boolean);
+            if (roots.length > 0) {
+              filters.project_roots = roots.join(",");
+            }
+          }
+          if (
+            typeof args.exclude_projects === "string" &&
+            args.exclude_projects
+          ) {
+            const names = args.exclude_projects
+              .split(",")
+              .map((s: string) => s.trim());
+            const roots = names
+              .map(
+                (n: string) => allProjects.find((p) => p.name === n)?.root,
+              )
+              .filter(Boolean);
+            if (roots.length > 0) {
+              filters.exclude_project_roots = roots.join(",");
+            }
+          }
         }
 
         const result = await searcher.search(
