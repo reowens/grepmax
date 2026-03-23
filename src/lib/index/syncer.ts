@@ -1,12 +1,17 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { CONFIG, MODEL_IDS } from "../../config";
+import {
+  CONFIG,
+  INDEXABLE_EXTENSIONS,
+  MAX_FILE_SIZE_BYTES,
+  MODEL_IDS,
+} from "../../config";
 import { log, debug, timer } from "../utils/logger";
 import { MetaCache, type MetaEntry } from "../store/meta-cache";
 import type { VectorRecord } from "../store/types";
 import { VectorDB } from "../store/vector-db";
 import { escapeSqlString } from "../utils/filter-builder";
-import { isIndexableFile } from "../utils/file-utils";
+// isIndexableFile no longer used — extension check inlined for performance
 import { acquireWriterLockWithRetry, type LockHandle } from "../utils/lock";
 import { registerProject } from "../utils/project-registry";
 import { ensureProjectPaths } from "../utils/project-root";
@@ -340,17 +345,15 @@ export async function initialSync(
 
       const absPath = path.join(paths.root, relPath);
 
-      // Check real path to avoid duplicates and loops
-      try {
-        const realPath = fs.realpathSync(absPath);
-        if (visitedRealPaths.has(realPath)) continue;
-        visitedRealPaths.add(realPath);
-      } catch {
-        // Skip broken symlinks or inaccessible files
+      // Extension check only — no stat syscall
+      const ext = path.extname(absPath).toLowerCase();
+      const basename = path.basename(absPath).toLowerCase();
+      if (
+        !INDEXABLE_EXTENSIONS.has(ext) &&
+        !INDEXABLE_EXTENSIONS.has(basename)
+      ) {
         continue;
       }
-
-      if (!isIndexableFile(absPath)) continue;
       walkedFiles++;
 
       await schedule(async () => {
@@ -360,8 +363,18 @@ export async function initialSync(
         }
 
         try {
-          const stats = await fs.promises.stat(absPath);
-          if (!isIndexableFile(absPath, stats.size)) {
+          // Stat + symlink dedup (lstat to detect symlinks without resolving)
+          const stats = await fs.promises.lstat(absPath);
+          if (stats.isSymbolicLink()) {
+            try {
+              const realPath = await fs.promises.realpath(absPath);
+              if (visitedRealPaths.has(realPath)) return;
+              visitedRealPaths.add(realPath);
+            } catch {
+              return; // Broken symlink
+            }
+          }
+          if (!stats.isFile() || stats.size === 0 || stats.size > MAX_FILE_SIZE_BYTES) {
             return;
           }
 
