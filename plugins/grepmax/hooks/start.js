@@ -89,7 +89,7 @@ async function main() {
     hookSpecificOutput: {
       hookEventName: "SessionStart",
       additionalContext:
-        "gmax MCP ready. Use semantic_search for concept-based code search (5+ words recommended). Use code_skeleton before reading large files. index_status to check health.",
+        'gmax ready. PREFER CLI over MCP tools — use Bash(gmax "query" --plain) for search, Bash(gmax trace <symbol>) for call graphs, Bash(gmax skeleton <path>) for file structure. CLI is 2x more token-efficient than MCP tool calls. Always add --plain flag.',
     },
   };
   process.stdout.write(JSON.stringify(response));
