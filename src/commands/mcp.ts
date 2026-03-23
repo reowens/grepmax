@@ -15,10 +15,13 @@ import { generateSummaries } from "../lib/index/syncer";
 import { MetaCache } from "../lib/store/meta-cache";
 import { Searcher } from "../lib/search/searcher";
 import { getStoredSkeleton } from "../lib/skeleton/retriever";
+import { extractSymbolsFromSkeleton } from "../lib/skeleton/symbol-extractor";
 import { Skeletonizer } from "../lib/skeleton/skeletonizer";
 import { VectorDB } from "../lib/store/vector-db";
 import { isIndexableFile } from "../lib/utils/file-utils";
 import { escapeSqlString, normalizePath } from "../lib/utils/filter-builder";
+import { formatTimeAgo } from "../lib/utils/format-helpers";
+import { extractImports } from "../lib/utils/import-extractor";
 import { listProjects } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import { getWatcherCoveringPath } from "../lib/utils/watcher-registry";
@@ -537,59 +540,6 @@ export const mcp = new Command("mcp")
       console.log(`[MCP] Started background watcher for ${projectRoot}`);
     }
 
-    // --- Utilities ---
-
-    function extractImports(filePath: string): string {
-      try {
-        const content = fs.readFileSync(filePath, "utf-8");
-        const lines = content.split("\n");
-        const importLines: string[] = [];
-        let inMultiLine = false;
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-
-          if (inMultiLine) {
-            importLines.push(line);
-            if (trimmed === ")" || trimmed === ");") inMultiLine = false;
-            continue;
-          }
-
-          if (
-            !trimmed ||
-            trimmed.startsWith("//") ||
-            trimmed.startsWith("#") ||
-            trimmed.startsWith("*") ||
-            trimmed.startsWith("/*")
-          ) {
-            continue;
-          }
-
-          if (
-            trimmed.startsWith("import ") ||
-            trimmed.startsWith("from ") ||
-            (trimmed.startsWith("const ") && trimmed.includes("require(")) ||
-            trimmed.startsWith("require(") ||
-            trimmed.startsWith("use ") ||
-            trimmed.startsWith("using ") ||
-            trimmed.startsWith("package ")
-          ) {
-            importLines.push(line);
-            if (trimmed.includes("(") && !trimmed.includes(")")) {
-              inMultiLine = true;
-            }
-            continue;
-          }
-
-          break;
-        }
-
-        return importLines.length > 0 ? importLines.join("\n") : "";
-      } catch {
-        return "";
-      }
-    }
-
     // --- Tool handlers ---
 
     async function handleSemanticSearch(
@@ -1060,39 +1010,7 @@ export const mcp = new Command("mcp")
           const annotated = sourceContent
             ? annotateSkeletonLines(skeleton, sourceContent)
             : skeleton;
-          const symbols = annotated
-            .split("\n")
-            .filter((l) => /^\s*\d+│/.test(l))
-            .map((l) => {
-              const m = l.match(/^\s*(\d+)│(.+)/);
-              if (!m) return null;
-              const line = Number.parseInt(m[1], 10);
-              const sig = m[2].trim();
-              const exported = sig.includes("export ");
-              const type =
-                sig.match(
-                  /\b(class|interface|type|function|def|fn|func)\b/,
-                )?.[1] || "other";
-              const name =
-                sig.match(
-                  /(?:function|class|interface|type|def|fn|func)\s+(\w+)/,
-                )?.[1] ||
-                sig.match(/^(?:async\s+)?(\w+)\s*[(<]/)?.[1] ||
-                "unknown";
-              return {
-                name,
-                line,
-                signature: sig
-                  .replace(/\s*\{?\s*\/\/.*$/, "")
-                  .trim(),
-                type,
-                exported,
-              };
-            })
-            .filter(
-              (s): s is NonNullable<typeof s> =>
-                s !== null && s.name !== "unknown",
-            );
+          const symbols = extractSymbolsFromSkeleton(annotated);
 
           jsonFiles.push({
             file: t,
@@ -1698,17 +1616,6 @@ export const mcp = new Command("mcp")
         const msg = e instanceof Error ? e.message : String(e);
         return err(`Related files failed: ${msg}`);
       }
-    }
-
-    function formatTimeAgo(ms: number): string {
-      const sec = Math.floor(ms / 1000);
-      if (sec < 60) return `${sec}s ago`;
-      const min = Math.floor(sec / 60);
-      if (min < 60) return `${min}m ago`;
-      const hr = Math.floor(min / 60);
-      if (hr < 24) return `${hr}h ago`;
-      const days = Math.floor(hr / 24);
-      return `${days}d ago`;
     }
 
     async function handleRecentChanges(
