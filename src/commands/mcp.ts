@@ -14,6 +14,7 @@ import { readGlobalConfig, readIndexConfig } from "../lib/index/index-config";
 import { generateSummaries } from "../lib/index/syncer";
 import { MetaCache } from "../lib/store/meta-cache";
 import { Searcher } from "../lib/search/searcher";
+import { annotateSkeletonLines } from "../lib/skeleton/annotator";
 import { getStoredSkeleton } from "../lib/skeleton/retriever";
 import { extractSymbolsFromSkeleton } from "../lib/skeleton/symbol-extractor";
 import { Skeletonizer } from "../lib/skeleton/skeletonizer";
@@ -859,38 +860,6 @@ export const mcp = new Command("mcp")
         const msg = e instanceof Error ? e.message : String(e);
         return err(`Search failed: ${msg}`);
       }
-    }
-
-    function annotateSkeletonLines(
-      skeleton: string,
-      sourceContent: string,
-    ): string {
-      const sourceLines = sourceContent.split("\n");
-      const skelLines = skeleton.split("\n");
-      const used = new Set<number>();
-
-      return skelLines
-        .map((skelLine) => {
-          const trimmed = skelLine.trim();
-          if (
-            !trimmed ||
-            trimmed.startsWith("//") ||
-            trimmed.startsWith("*") ||
-            trimmed.startsWith("/*")
-          ) {
-            return skelLine;
-          }
-          // Match against source lines using first 40 chars
-          const matchStr = trimmed.slice(0, 40);
-          for (let i = 0; i < sourceLines.length; i++) {
-            if (!used.has(i) && sourceLines[i].includes(matchStr)) {
-              used.add(i);
-              return `${String(i + 1).padStart(4)}│${skelLine}`;
-            }
-          }
-          return skelLine;
-        })
-        .join("\n");
     }
 
     async function handleCodeSkeleton(

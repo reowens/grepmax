@@ -206,6 +206,120 @@ describe("min-score filtering", () => {
   });
 });
 
+describe("search filter passthrough", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (search as Command).exitOverride();
+    mockSearcher.search.mockResolvedValue({
+      data: [
+        {
+          metadata: { path: "/tmp/project/src/file.ts" },
+          score: 1,
+          type: "text",
+          text: "content",
+          generated_metadata: { start_line: 0, num_lines: 1 },
+          defined_symbols: ["testSymbol"],
+        },
+      ],
+    });
+  });
+
+  it("passes --file as file filter", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await (search as Command).parseAsync(
+      ["query", "--file", "syncer.ts", "--plain"],
+      { from: "user" },
+    );
+    expect(mockSearcher.search).toHaveBeenCalledWith(
+      "query",
+      expect.any(Number),
+      { rerank: true },
+      expect.objectContaining({ file: "syncer.ts" }),
+      expect.any(String),
+    );
+    spy.mockRestore();
+  });
+
+  it("passes --lang as language filter", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await (search as Command).parseAsync(
+      ["query", "--lang", "ts", "--plain"],
+      { from: "user" },
+    );
+    expect(mockSearcher.search).toHaveBeenCalledWith(
+      "query",
+      expect.any(Number),
+      { rerank: true },
+      expect.objectContaining({ language: "ts" }),
+      expect.any(String),
+    );
+    spy.mockRestore();
+  });
+
+  it("passes --role as role filter", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await (search as Command).parseAsync(
+      ["query", "--role", "ORCHESTRATION", "--plain"],
+      { from: "user" },
+    );
+    expect(mockSearcher.search).toHaveBeenCalledWith(
+      "query",
+      expect.any(Number),
+      { rerank: true },
+      expect.objectContaining({ role: "ORCHESTRATION" }),
+      expect.any(String),
+    );
+    spy.mockRestore();
+  });
+
+  it("passes --exclude as exclude filter", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await (search as Command).parseAsync(
+      ["query", "--exclude", "tests/", "--plain"],
+      { from: "user" },
+    );
+    expect(mockSearcher.search).toHaveBeenCalledWith(
+      "query",
+      expect.any(Number),
+      { rerank: true },
+      expect.objectContaining({ exclude: "tests/" }),
+      expect.any(String),
+    );
+    spy.mockRestore();
+  });
+
+  it("composes multiple filters", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await (search as Command).parseAsync(
+      ["query", "--lang", "ts", "--role", "ORCHESTRATION", "--plain"],
+      { from: "user" },
+    );
+    expect(mockSearcher.search).toHaveBeenCalledWith(
+      "query",
+      expect.any(Number),
+      { rerank: true },
+      expect.objectContaining({ language: "ts", role: "ORCHESTRATION" }),
+      expect.any(String),
+    );
+    spy.mockRestore();
+  });
+
+  it("passes undefined filters when no filter flags", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await (search as Command).parseAsync(["query", "--plain"], {
+      from: "user",
+    });
+    expect(mockSearcher.search).toHaveBeenCalledWith(
+      "query",
+      expect.any(Number),
+      { rerank: true },
+      undefined,
+      expect.any(String),
+    );
+    spy.mockRestore();
+  });
+});
+
 describe("unknown option handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
