@@ -89,33 +89,16 @@ export const setup = new Command("setup")
 
     const selectedTier = MODEL_TIERS[modelTier];
 
-    // Step 5: Embed mode selection
+    // Step 5: Embed mode — auto-detect, no prompt needed
     const isAppleSilicon =
       process.arch === "arm64" && process.platform === "darwin";
-    const embedMode = await p.select({
-      message: "Are you on Apple Silicon (M1/M2/M3/M4)?",
-      options: [
-        {
-          value: "gpu" as const,
-          label: "Yes — use GPU acceleration",
-          hint: "~3x faster indexing and search via MLX",
-        },
-        {
-          value: "cpu" as const,
-          label: "No — use CPU",
-          hint: "Works on all platforms (Intel, Linux, Windows)",
-        },
-      ],
-      initialValue:
-        existingConfig?.embedMode ??
-        (isAppleSilicon ? "gpu" : "cpu"),
-    });
-
-    if (p.isCancel(embedMode)) {
-      p.cancel("Setup cancelled");
-      await gracefulExit();
-      return;
-    }
+    const embedMode: "cpu" | "gpu" =
+      existingConfig?.embedMode ?? (isAppleSilicon ? "gpu" : "cpu");
+    p.log.info(
+      isAppleSilicon
+        ? "Apple Silicon detected — using GPU acceleration (MLX)"
+        : "Using CPU embeddings (ONNX)",
+    );
 
     const mlxModel = embedMode === "gpu" ? selectedTier.mlxModel : undefined;
 
