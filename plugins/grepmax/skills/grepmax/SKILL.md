@@ -4,12 +4,13 @@ description: Semantic code search. Use alongside grep - grep for exact strings, 
 allowed-tools: "mcp__grepmax__semantic_search, mcp__grepmax__code_skeleton, mcp__grepmax__trace_calls, mcp__grepmax__list_symbols, mcp__grepmax__index_status, mcp__grepmax__summarize_directory, mcp__grepmax__summarize_project, mcp__grepmax__related_files, mcp__grepmax__recent_changes, Bash(gmax:*), Read"
 ---
 
-## What gmax does
+## When to use what
 
-Semantic code search — finds code by meaning, not just strings.
-
-- grep/ripgrep: exact string match
-- gmax: concept match ("where do we handle auth?", "how does booking flow work?")
+- **Know the exact string/symbol?** → `Grep` tool (fastest, zero overhead)
+- **Know the file already?** → `Read` tool directly
+- **Searching by concept/behavior?** → `Bash(gmax "query" --agent)` (semantic search)
+- **Need file structure?** → `Bash(gmax skeleton <path>)`
+- **Need call flow?** → `Bash(gmax trace <symbol>)`
 
 ## IMPORTANT: Use CLI, not MCP tools
 
