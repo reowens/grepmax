@@ -49,6 +49,8 @@ const FTS_REBUILD_INTERVAL_MS = 5 * 60 * 1000;
 
 export function startWatcher(opts: WatcherOptions): WatcherHandle {
   const { projectRoot, vectorDb, metaCache, dataDir, onReindex } = opts;
+  const projectName = path.basename(projectRoot);
+  const wtag = `watch:${projectName}`;
   const pending = new Map<string, "change" | "unlink">();
   const retryCount = new Map<string, number>();
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -70,7 +72,7 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
   });
 
   watcher.on("error", (err) => {
-    console.error("[watch] Watcher error:", err);
+    console.error(`[${wtag}] Watcher error:`, err);
   });
 
   const scheduleBatch = () => {
@@ -87,7 +89,7 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
     const batchTimeout = setTimeout(() => {
       if (processing) {
         console.error(
-          "[watch] Batch processing timed out after 120s, resetting",
+          `[${wtag}] Batch processing timed out after 120s, resetting`,
         );
         processing = false;
       }
@@ -95,7 +97,7 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
 
     const batch = new Map(pending);
     pending.clear();
-    log("watch", `Processing ${batch.size} changed files`);
+    log(wtag, `Processing ${batch.size} changed files`);
 
     const start = Date.now();
     let reindexed = 0;
@@ -175,7 +177,13 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
               metaDeletes.push(absPath);
               reindexed++;
             } else {
-              console.error(`[watch] Failed to process ${absPath}:`, err);
+              console.error(`[${wtag}] Failed to process ${absPath}:`, err);
+              if (!pool.isHealthy()) {
+                console.error(
+                  `[${wtag}] Worker pool unhealthy, aborting batch`,
+                );
+                break;
+              }
             }
           }
         }
@@ -205,10 +213,14 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
         await lock.release();
       }
 
+      const duration = Date.now() - start;
       if (reindexed > 0) {
-        const duration = Date.now() - start;
         onReindex?.(reindexed, duration);
       }
+      log(
+        wtag,
+        `Batch complete: ${batch.size} files, ${reindexed} reindexed (${(duration / 1000).toFixed(1)}s)`,
+      );
       consecutiveLockFailures = 0;
       for (const absPath of batch.keys()) {
         retryCount.delete(absPath);
@@ -219,7 +231,7 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
       if (isLockError) {
         consecutiveLockFailures++;
       }
-      console.error("[watch] Batch processing failed:", err);
+      console.error(`[${wtag}] Batch processing failed:`, err);
       let dropped = 0;
       for (const [absPath, event] of batch) {
         const count = (retryCount.get(absPath) ?? 0) + 1;
@@ -233,7 +245,7 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
       }
       if (dropped > 0) {
         console.warn(
-          `[watch] Dropped ${dropped} file(s) after ${MAX_RETRIES} failed retries`,
+          `[${wtag}] Dropped ${dropped} file(s) after ${MAX_RETRIES} failed retries`,
         );
       }
       if (pending.size > 0) {
@@ -311,7 +323,7 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
     try {
       await vectorDb.createFTSIndex();
     } catch (err) {
-      console.error("[watch] FTS rebuild failed:", err);
+      console.error(`[${wtag}] FTS rebuild failed:`, err);
     }
   }, FTS_REBUILD_INTERVAL_MS);
   ftsInterval.unref();

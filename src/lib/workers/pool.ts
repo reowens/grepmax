@@ -134,6 +134,10 @@ export class WorkerPool {
     }
   }
 
+  isHealthy(): boolean {
+    return !this.destroyed && this.workers.length > 0;
+  }
+
   private clearTaskTimeout<M extends TaskMethod>(task: PendingTask<M>) {
     if (task.timeout) {
       clearTimeout(task.timeout);
