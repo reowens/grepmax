@@ -10,7 +10,7 @@
       "name": "grepmax",
       "source": "./plugins/grepmax",
       "description": "Semantic code search for Claude Code. Automatically indexes your project and provides intelligent search capabilities.",
-      "version": "0.7.42",
+      "version": "0.7.43",
       "author": {
         "name": "Robert Owens",
         "email": "robowens@me.com"
