@@ -39,4 +39,16 @@ describe("isFileCached", () => {
     const stats = { mtimeMs: 1711123456789.123, size: 1024 };
     expect(isFileCached(cached, stats)).toBe(true);
   });
+
+  it("treats sub-millisecond mtime differences as equal", () => {
+    const cached = { mtimeMs: 1711123456789.123, size: 1024 };
+    const stats = { mtimeMs: 1711123456789.456, size: 1024 };
+    expect(isFileCached(cached, stats)).toBe(true);
+  });
+
+  it("detects real mtime differences across millisecond boundary", () => {
+    const cached = { mtimeMs: 1711123456789.9, size: 1024 };
+    const stats = { mtimeMs: 1711123456790.1, size: 1024 };
+    expect(isFileCached(cached, stats)).toBe(false);
+  });
 });

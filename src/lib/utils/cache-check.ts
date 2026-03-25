@@ -3,5 +3,10 @@ export function isFileCached(
   stats: { mtimeMs: number; size: number },
 ): boolean {
   if (!cached) return false;
-  return cached.mtimeMs === stats.mtimeMs && cached.size === stats.size;
+  // Truncate to millisecond — APFS returns sub-ms precision that can
+  // differ across stat calls or serialization round-trips.
+  return (
+    Math.trunc(cached.mtimeMs) === Math.trunc(stats.mtimeMs) &&
+    cached.size === stats.size
+  );
 }

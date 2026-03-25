@@ -62,16 +62,20 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
   let summarizationAc: AbortController | null = null;
   const MAX_RETRIES = 5;
 
+  // macOS: FSEvents is a single-FD kernel API — no EMFILE risk and no polling.
+  // Linux: inotify is event-driven but uses one FD per watch; fall back to
+  //        polling for monorepos to avoid hitting ulimit.
+  // Override with GMAX_WATCH_POLL=1 to force polling on any platform.
+  const forcePoll = process.env.GMAX_WATCH_POLL === "1";
+  const usePoll = forcePoll || process.platform !== "darwin";
+
   const watcher: FSWatcher = watch(projectRoot, {
     ignored: WATCHER_IGNORE_PATTERNS,
     ignoreInitial: true,
     persistent: true,
-    // Use polling to avoid EMFILE in large monorepos.
-    // fs.watch() uses one FD per directory (kqueue on macOS) and hits ulimit.
-    // Polling 2-3k source files every 5s is negligible CPU.
-    usePolling: true,
-    interval: 5000,
-    binaryInterval: 10000,
+    ...(usePoll
+      ? { usePolling: true, interval: 5000, binaryInterval: 10000 }
+      : {}),
   });
 
   watcher.on("error", (err) => {
