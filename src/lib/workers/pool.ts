@@ -392,9 +392,8 @@ export class WorkerPool {
     this.dispatch();
   }
 
-  processFile(input: ProcessFileInput) {
-    // ProcessFile doesn't currently use cancellation, but we could add it later
-    return this.enqueue("processFile", input);
+  processFile(input: ProcessFileInput, signal?: AbortSignal) {
+    return this.enqueue("processFile", input, signal);
   }
 
   encodeQuery(text: string, signal?: AbortSignal) {
