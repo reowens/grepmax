@@ -2,33 +2,41 @@ dist/
 node_modules/
 *.tsbuildinfo
 *.tgz
+.DS_Store
+
+# Environment & credentials
+.env
+.env.local
+.npmrc
+src/.env.local
+
+# Internal dev notes
+CLAUDE.md
+TODO.md
+AGENTS.md
 ADVANCED.md
-test-build.sh
-TEST_SUITE_PROMPT.md
-WATCH_MODE_PROMPT.md
 ENGINEERING_DIARY.md
 RELEASE_GUIDE.md
+TEST_SUITE_PROMPT.md
+WATCH_MODE_PROMPT.md
+AGENT_BENCHMARK.md
+claudes-gaps.md
+latest_review.md
+docs/
+
+# Benchmark scripts
 gmax/run-benchmark.sh
 run-agent-benchmark.sh
 setup-benchmark-repos.sh
-AGENT_BENCHMARK.md
+test-build.sh
 benchmark-results.json
+benchmarks/*.log
 src/bench/benchmark-agent.ts
 src/bench/generate-benchmark-chart.ts
-src/.env.local
-CLAUDE.md
-.DS_Store
-latest_review.md
-benchmarks/*.log
-.gmax
-TODO.md
-AGENTS.md
-docs/
 
-.env
-.npmrc
+# Runtime data
+.gmax
 
 # Python
 __pycache__/
 .venv/
-.gmax

@@ -24,7 +24,7 @@ Natural-language search that works like `grep`. Fast, local, and built for codin
 - **Role Detection:** Distinguishes `ORCHESTRATION` (high-level logic) from `DEFINITION` (types/classes).
 - **Local & Private:** 100% local embeddings via ONNX (CPU) or MLX (Apple Silicon GPU).
 - **Centralized Index:** One database at `~/.gmax/` — index once, search from anywhere.
-- **LLM Summaries:** Optional Qwen3-Coder generates one-line descriptions per code chunk at index time.
+- **LLM Summaries:** Optional Qwen3-Coder generates one-line descriptions per code chunk on demand.
 - **Agent-Ready:** Pointer mode returns metadata (symbol, role, calls, summary) — no code snippets, ~80% fewer tokens.
 
 ## Quick Start
@@ -186,7 +186,7 @@ gmax index --reset                # Full re-index from scratch
 
 ### `gmax watch`
 
-Background file watcher for live reindexing. Watches for file changes and incrementally updates the centralized index.
+Background file watcher for live reindexing. Watches for file changes and incrementally updates the centralized index. Uses FSEvents on macOS (kernel-level, low overhead) and polling on Linux.
 
 ```bash
 gmax watch -b                     # Background mode (auto-stops after 30min idle)
@@ -196,6 +196,17 @@ gmax watch stop --all             # Stop all watchers
 ```
 
 The MCP server auto-starts a watcher on session start. You rarely need to run this manually.
+
+### `gmax summarize`
+
+Generate one-line LLM summaries for indexed chunks. Requires the summarizer server (Qwen3-Coder via MLX on Apple Silicon). Summaries are stored in LanceDB and appear in search results.
+
+```bash
+gmax summarize                    # Summarize all unsummarized chunks
+gmax summarize --path src/lib/    # Only summarize chunks under a directory
+```
+
+Summarization is **on-demand only** — it does not run automatically during indexing or file watching. The `summarize_directory` MCP tool provides the same functionality for AI agents.
 
 ### `gmax serve`
 
@@ -307,9 +318,15 @@ To force CPU mode: `GMAX_EMBED_MODE=cpu gmax index`
 
 ### LLM Summaries
 
-gmax can generate one-line natural language descriptions for every code chunk using a local LLM (Qwen3-Coder-30B-A3B via MLX). Summaries are pre-computed at index time and stored in LanceDB — zero latency at search time.
+gmax can generate one-line natural language descriptions for every code chunk using a local LLM (Qwen3-Coder-30B-A3B via MLX). Summaries are stored in LanceDB — zero latency at search time.
 
-The summarizer server runs on port `8101` and auto-starts alongside the embed server. If unavailable, indexing proceeds without summaries.
+Summarization is **on-demand**, not automatic. Run `gmax summarize` or use the `summarize_directory` MCP tool after indexing. The summarizer server runs on port `8101` and must be started separately. If unavailable, `gmax summarize` will report the server is not running.
+
+```bash
+gmax summarize                    # Generate summaries for all unsummarized chunks
+gmax summarize --path src/lib/    # Scope to a directory
+gmax doctor                       # Check summarizer status + coverage
+```
 
 Example search output with summaries:
 ```
@@ -364,6 +381,7 @@ fixtures/
 | `GMAX_WORKER_TASK_TIMEOUT_MS` | Worker task timeout in ms | `120000` |
 | `GMAX_MAX_WORKER_MEMORY_MB` | Max worker memory in MB | 50% of system RAM |
 | `GMAX_MAX_PER_FILE` | Default max results per file in search | `3` |
+| `GMAX_WATCH_POLL` | Force polling mode for file watcher (`1` to enable) | Off (FSEvents on macOS) |
 
 ## Contributing
 
