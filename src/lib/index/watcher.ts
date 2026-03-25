@@ -12,6 +12,7 @@ import { log } from "../utils/logger";
 import { acquireWriterLockWithRetry } from "../utils/lock";
 import { getWorkerPool } from "../workers/pool";
 import { summarizeChunks } from "../workers/summarize/llm-client";
+import { computeRetryAction } from "./watcher-batch";
 
 export interface WatcherHandle {
   close: () => Promise<void>;
@@ -57,6 +58,8 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
   let processing = false;
   let closed = false;
   let consecutiveLockFailures = 0;
+  let currentBatchAc: AbortController | null = null;
+  let summarizationAc: AbortController | null = null;
   const MAX_RETRIES = 5;
 
   const watcher: FSWatcher = watch(projectRoot, {
@@ -96,18 +99,17 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
     if (closed || processing || pending.size === 0) return;
     processing = true;
 
+    const batchAc = new AbortController();
+    currentBatchAc = batchAc;
     const batchTimeout = setTimeout(() => {
-      if (processing) {
-        console.error(
-          `[${wtag}] Batch processing timed out after 120s, resetting`,
-        );
-        processing = false;
-      }
+      log(wtag, `Batch timed out after ${BATCH_TIMEOUT_MS}ms, aborting`);
+      batchAc.abort();
     }, BATCH_TIMEOUT_MS);
 
     const batch = new Map(pending);
     pending.clear();
-    log(wtag, `Processing ${batch.size} changed files`);
+    const filenames = [...batch.keys()].map((p) => path.basename(p));
+    log(wtag, `Processing ${batch.size} changed files: ${filenames.join(", ")}`);
 
     const start = Date.now();
     let reindexed = 0;
@@ -128,6 +130,8 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
         const metaDeletes: string[] = [];
 
         for (const [absPath, event] of batch) {
+          if (batchAc.signal.aborted) break;
+
           if (event === "unlink") {
             deletes.push(absPath);
             metaDeletes.push(absPath);
@@ -149,7 +153,7 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
             const result = await pool.processFile({
               path: absPath,
               absolutePath: absPath,
-            });
+            }, batchAc.signal);
 
             const metaEntry: MetaEntry = {
               hash: result.hash,
@@ -181,6 +185,7 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
             metaUpdates.set(absPath, metaEntry);
             reindexed++;
           } catch (err) {
+            if (batchAc.signal.aborted) break;
             const code = (err as NodeJS.ErrnoException)?.code;
             if (code === "ENOENT") {
               deletes.push(absPath);
@@ -242,15 +247,18 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
         consecutiveLockFailures++;
       }
       console.error(`[${wtag}] Batch processing failed:`, err);
-      let dropped = 0;
-      for (const [absPath, event] of batch) {
-        const count = (retryCount.get(absPath) ?? 0) + 1;
-        if (count >= MAX_RETRIES) {
-          retryCount.delete(absPath);
-          dropped++;
-        } else if (!pending.has(absPath)) {
+
+      const { requeued, dropped, backoffMs } = computeRetryAction(
+        batch,
+        retryCount,
+        MAX_RETRIES,
+        isLockError,
+        consecutiveLockFailures,
+        DEBOUNCE_MS,
+      );
+      for (const [absPath, event] of requeued) {
+        if (!pending.has(absPath)) {
           pending.set(absPath, event);
-          retryCount.set(absPath, count);
         }
       }
       if (dropped > 0) {
@@ -259,15 +267,12 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
         );
       }
       if (pending.size > 0) {
-        const backoffMs = Math.min(
-          DEBOUNCE_MS * 2 ** consecutiveLockFailures,
-          30_000,
-        );
         if (debounceTimer) clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => processBatch(), backoffMs);
       }
     } finally {
       clearTimeout(batchTimeout);
+      currentBatchAc = null;
       processing = false;
       // Process any events that came in while we were processing
       if (pending.size > 0) {
@@ -275,12 +280,17 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
       }
     }
 
-    // Fire-and-forget summarization — doesn't block the next batch
+    // Cancel previous summarization before starting a new one
+    summarizationAc?.abort();
+    summarizationAc = new AbortController();
+    const sumSignal = summarizationAc.signal;
+
     if (changedIds.length > 0) {
       (async () => {
         try {
           const table = await vectorDb.ensureTable();
           for (const id of changedIds) {
+            if (sumSignal.aborted) break;
             const escaped = escapeSqlString(id);
             const rows = await table
               .query()
@@ -300,12 +310,13 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
                 file: String(r.path || ""),
               },
             ]);
+            if (sumSignal.aborted) break;
             if (summaries?.[0]) {
               await vectorDb.updateRows([id], "summary", [summaries[0]]);
             }
           }
         } catch {
-          // Summarizer unavailable — skip
+          // Summarizer unavailable or aborted — skip
         }
       })();
     }
@@ -341,6 +352,8 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
   return {
     close: async () => {
       closed = true;
+      currentBatchAc?.abort();
+      summarizationAc?.abort();
       if (debounceTimer) clearTimeout(debounceTimer);
       clearInterval(ftsInterval);
       await watcher.close();

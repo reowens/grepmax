@@ -22,6 +22,7 @@ import {
 
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const IDLE_CHECK_INTERVAL_MS = 60 * 1000; // check every minute
+const MAX_LOG_BYTES = 5 * 1024 * 1024; // 5 MB — rotate log when exceeded
 
 export const watch = new Command("watch")
   .description("Start background file watcher for live reindexing")
@@ -53,6 +54,16 @@ export const watch = new Command("watch")
       fs.mkdirSync(logDir, { recursive: true });
       const safeName = projectName.replace(/[^a-zA-Z0-9._-]/g, "_");
       const logFile = path.join(logDir, `watch-${safeName}.log`);
+
+      // Rotate log if it exceeds MAX_LOG_BYTES
+      try {
+        const logStat = fs.statSync(logFile);
+        if (logStat.size > MAX_LOG_BYTES) {
+          const prev = `${logFile}.prev`;
+          fs.renameSync(logFile, prev);
+        }
+      } catch {}
+
       const out = fs.openSync(logFile, "a");
 
       const child = spawn(process.argv[0], [process.argv[1], ...args], {
