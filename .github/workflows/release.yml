@@ -81,7 +81,6 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release (tag only, no assets)
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          generate_release_notes: true
+        run: gh release create "${{ github.ref_name }}" --generate-notes --title "${{ github.ref_name }}" || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
