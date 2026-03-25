@@ -4,14 +4,12 @@ import { type FSWatcher, watch } from "chokidar";
 import type { MetaCache, MetaEntry } from "../store/meta-cache";
 import type { VectorRecord } from "../store/types";
 import type { VectorDB } from "../store/vector-db";
-import { escapeSqlString } from "../utils/filter-builder";
 import { INDEXABLE_EXTENSIONS } from "../../config";
 import { isFileCached } from "../utils/cache-check";
 import { isIndexableFile } from "../utils/file-utils";
 import { log } from "../utils/logger";
 import { acquireWriterLockWithRetry } from "../utils/lock";
 import { getWorkerPool } from "../workers/pool";
-import { summarizeChunks } from "../workers/summarize/llm-client";
 import { computeRetryAction } from "./watcher-batch";
 
 export interface WatcherHandle {
@@ -59,7 +57,6 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
   let closed = false;
   let consecutiveLockFailures = 0;
   let currentBatchAc: AbortController | null = null;
-  let summarizationAc: AbortController | null = null;
   const MAX_RETRIES = 5;
 
   // macOS: FSEvents is a single-FD kernel API — no EMFILE risk and no polling.
@@ -117,8 +114,6 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
 
     const start = Date.now();
     let reindexed = 0;
-
-    const changedIds: string[] = [];
 
     try {
       const lock = await acquireWriterLockWithRetry(dataDir, {
@@ -181,10 +176,6 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
             deletes.push(absPath);
             if (result.vectors.length > 0) {
               vectors.push(...result.vectors);
-              // Track IDs of new vectors for summarization
-              for (const v of result.vectors) {
-                changedIds.push(v.id);
-              }
             }
             metaUpdates.set(absPath, metaEntry);
             reindexed++;
@@ -284,46 +275,6 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
       }
     }
 
-    // Cancel previous summarization before starting a new one
-    summarizationAc?.abort();
-    summarizationAc = new AbortController();
-    const sumSignal = summarizationAc.signal;
-
-    if (changedIds.length > 0) {
-      (async () => {
-        try {
-          const table = await vectorDb.ensureTable();
-          for (const id of changedIds) {
-            if (sumSignal.aborted) break;
-            const escaped = escapeSqlString(id);
-            const rows = await table
-              .query()
-              .select(["id", "path", "content"])
-              .where(`id = '${escaped}'`)
-              .limit(1)
-              .toArray();
-            if (rows.length === 0) continue;
-            const r = rows[0] as any;
-            const lang =
-              path.extname(String(r.path || "")).replace(/^\./, "") ||
-              "unknown";
-            const summaries = await summarizeChunks([
-              {
-                code: String(r.content || ""),
-                language: lang,
-                file: String(r.path || ""),
-              },
-            ]);
-            if (sumSignal.aborted) break;
-            if (summaries?.[0]) {
-              await vectorDb.updateRows([id], "summary", [summaries[0]]);
-            }
-          }
-        } catch {
-          // Summarizer unavailable or aborted — skip
-        }
-      })();
-    }
   };
 
   const onFileEvent = (event: "change" | "unlink", absPath: string) => {
@@ -357,7 +308,6 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
     close: async () => {
       closed = true;
       currentBatchAc?.abort();
-      summarizationAc?.abort();
       if (debounceTimer) clearTimeout(debounceTimer);
       clearInterval(ftsInterval);
       await watcher.close();
