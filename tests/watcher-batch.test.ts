@@ -128,6 +128,65 @@ describe("processBatchCore", () => {
     expect(result.changedIds).toContain("chunk-1");
     expect(result.changedIds).toContain("chunk-2");
   });
+
+  it("respects pre-aborted signal", async () => {
+    const pool = mockPool();
+    const cache = mockMetaCache();
+    const ac = new AbortController();
+    ac.abort();
+
+    const batch = new Map<string, "change" | "unlink">([
+      ["/src/a.ts", "change"],
+      ["/src/b.ts", "change"],
+    ]);
+    const result = await processBatchCore(batch, cache, pool, ac.signal);
+
+    expect(pool.processFile).not.toHaveBeenCalled();
+    expect(result.reindexed).toBe(0);
+  });
+
+  it("aborts mid-batch when signal fires", async () => {
+    const ac = new AbortController();
+    const pool = {
+      processFile: vi.fn(async () => {
+        ac.abort();
+        return {
+          vectors: [{ id: "v1", path: "/a.ts" }] as any[],
+          hash: "newhash",
+          mtimeMs: 2000,
+          size: 100,
+          shouldDelete: false,
+        };
+      }),
+    };
+    const cache = mockMetaCache();
+
+    const batch = new Map<string, "change" | "unlink">([
+      ["/src/a.ts", "change"],
+      ["/src/b.ts", "change"],
+      ["/src/c.ts", "change"],
+    ]);
+    const result = await processBatchCore(batch, cache, pool, ac.signal);
+
+    expect(pool.processFile).toHaveBeenCalledTimes(1);
+    expect(result.reindexed).toBe(1);
+  });
+
+  it("passes signal to pool.processFile", async () => {
+    const pool = mockPool();
+    const cache = mockMetaCache();
+    const ac = new AbortController();
+
+    const batch = new Map<string, "change" | "unlink">([
+      ["/src/a.ts", "change"],
+    ]);
+    await processBatchCore(batch, cache, pool, ac.signal);
+
+    expect(pool.processFile).toHaveBeenCalledWith(
+      { path: "/src/a.ts", absolutePath: "/src/a.ts" },
+      ac.signal,
+    );
+  });
 });
 
 describe("flushBatchToDb", () => {

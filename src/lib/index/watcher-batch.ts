@@ -9,10 +9,13 @@ export interface MetaCacheLike {
 }
 
 export interface WorkerPoolLike {
-  processFile(input: {
-    path: string;
-    absolutePath: string;
-  }): Promise<{
+  processFile(
+    input: {
+      path: string;
+      absolutePath: string;
+    },
+    signal?: AbortSignal,
+  ): Promise<{
     vectors: VectorRecord[];
     hash: string;
     mtimeMs: number;
@@ -40,6 +43,7 @@ export async function processBatchCore(
   batch: Map<string, "change" | "unlink">,
   metaCache: MetaCacheLike,
   pool: WorkerPoolLike,
+  signal?: AbortSignal,
 ): Promise<BatchResult> {
   let reindexed = 0;
   const changedIds: string[] = [];
@@ -49,6 +53,7 @@ export async function processBatchCore(
   const metaDeletes: string[] = [];
 
   for (const [absPath, event] of batch) {
+    if (signal?.aborted) break;
     if (event === "unlink") {
       deletes.push(absPath);
       metaDeletes.push(absPath);
@@ -68,7 +73,7 @@ export async function processBatchCore(
       const result = await pool.processFile({
         path: absPath,
         absolutePath: absPath,
-      });
+      }, signal);
 
       const metaEntry: MetaEntry = {
         hash: result.hash,
