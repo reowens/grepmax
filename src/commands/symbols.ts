@@ -137,13 +137,17 @@ export const symbols = new Command("symbols")
   .argument("[pattern]", "Optional pattern to filter symbols by name")
   .option("-l, --limit <number>", "Max symbols to list (default 20)", "20")
   .option("-p, --path <prefix>", "Only include symbols under this path prefix")
+  .option("--root <dir>", "Project root directory")
   .action(async (pattern, cmd) => {
-    const projectRoot = findProjectRoot(process.cwd()) ?? process.cwd();
+    const root = cmd.root ? path.resolve(cmd.root) : process.cwd();
+    const projectRoot = findProjectRoot(root) ?? root;
     const limit = Number.parseInt(cmd.limit, 10);
+    // Auto-scope to project root; --path narrows further within it
+    const pathPrefix = cmd.path ?? projectRoot;
     const entries = await collectSymbols({
       projectRoot,
       limit: Number.isFinite(limit) && limit > 0 ? limit : 20,
-      pathPrefix: cmd.path as string | undefined,
+      pathPrefix,
       pattern: pattern as string | undefined,
     });
 

@@ -16,6 +16,7 @@ export const related = new Command("related")
   .description("Find files related by shared symbol references")
   .argument("<file>", "File path relative to project root")
   .option("-l, --limit <n>", "Max results per direction (default 10)", "10")
+  .option("--root <dir>", "Project root directory")
   .action(async (file, opts) => {
     const limit = Math.min(
       Math.max(Number.parseInt(opts.limit || "10", 10), 1),
@@ -24,12 +25,14 @@ export const related = new Command("related")
     let vectorDb: VectorDB | null = null;
 
     try {
-      const projectRoot = findProjectRoot(process.cwd()) ?? process.cwd();
+      const root = opts.root ? path.resolve(opts.root) : process.cwd();
+      const projectRoot = findProjectRoot(root) ?? root;
       const paths = ensureProjectPaths(projectRoot);
       vectorDb = new VectorDB(paths.lancedbDir);
 
       const absPath = path.resolve(projectRoot, file);
       const table = await vectorDb.ensureTable();
+      const pathScope = `path LIKE '${escapeSqlString(projectRoot)}/%'`;
 
       const fileChunks = await table
         .query()
@@ -59,7 +62,7 @@ export const related = new Command("related")
           .query()
           .select(["path"])
           .where(
-            `array_contains(defined_symbols, '${escapeSqlString(sym)}')`,
+            `array_contains(defined_symbols, '${escapeSqlString(sym)}') AND ${pathScope}`,
           )
           .limit(3)
           .toArray();
@@ -77,7 +80,7 @@ export const related = new Command("related")
           .query()
           .select(["path"])
           .where(
-            `array_contains(referenced_symbols, '${escapeSqlString(sym)}')`,
+            `array_contains(referenced_symbols, '${escapeSqlString(sym)}') AND ${pathScope}`,
           )
           .limit(20)
           .toArray();

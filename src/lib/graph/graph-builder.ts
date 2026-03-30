@@ -18,7 +18,17 @@ export interface CallerTree {
 }
 
 export class GraphBuilder {
-  constructor(private db: VectorDB) {}
+  private pathPrefix: string | undefined;
+
+  constructor(private db: VectorDB, pathPrefix?: string) {
+    // Normalize to ensure trailing slash for LIKE queries
+    this.pathPrefix = pathPrefix ? (pathPrefix.endsWith("/") ? pathPrefix : `${pathPrefix}/`) : undefined;
+  }
+
+  private scopeWhere(condition: string): string {
+    if (!this.pathPrefix) return condition;
+    return `${condition} AND path LIKE '${escapeSqlString(this.pathPrefix)}%'`;
+  }
 
   /**
    * Find all chunks that call the given symbol.
@@ -30,7 +40,11 @@ export class GraphBuilder {
     // Find chunks where referenced_symbols contains the symbol
     const rows = await table
       .query()
-      .where(`array_contains(referenced_symbols, '${escaped}')`)
+      .select([
+        "path", "start_line", "defined_symbols", "referenced_symbols",
+        "role", "parent_symbol", "complexity",
+      ])
+      .where(this.scopeWhere(`array_contains(referenced_symbols, '${escaped}')`))
       .limit(100)
       .toArray();
 
@@ -50,7 +64,8 @@ export class GraphBuilder {
     // Find the definition of the symbol
     const rows = await table
       .query()
-      .where(`array_contains(defined_symbols, '${escaped}')`)
+      .select(["referenced_symbols"])
+      .where(this.scopeWhere(`array_contains(defined_symbols, '${escaped}')`))
       .limit(1)
       .toArray();
 
@@ -74,7 +89,11 @@ export class GraphBuilder {
     // 1. Get Center (Definition)
     const centerRows = await table
       .query()
-      .where(`array_contains(defined_symbols, '${escaped}')`)
+      .select([
+        "path", "start_line", "defined_symbols", "referenced_symbols",
+        "role", "parent_symbol", "complexity",
+      ])
+      .where(this.scopeWhere(`array_contains(defined_symbols, '${escaped}')`))
       .limit(1)
       .toArray();
 
@@ -97,7 +116,7 @@ export class GraphBuilder {
       const esc = escapeSqlString(name);
       const rows = await table
         .query()
-        .where(`array_contains(defined_symbols, '${esc}')`)
+        .where(this.scopeWhere(`array_contains(defined_symbols, '${esc}')`))
         .select([
           "path",
           "start_line",
@@ -138,7 +157,7 @@ export class GraphBuilder {
     const rows = await table
       .query()
       .select(["path"])
-      .where(`content LIKE '%import%${escaped}%'`)
+      .where(this.scopeWhere(`content LIKE '%import%${escaped}%'`))
       .limit(100)
       .toArray();
 
@@ -182,11 +201,17 @@ export class GraphBuilder {
     return { center: graph.center, callerTree, callees: graph.callees, importers };
   }
 
+  private static readonly MAX_VISITED = 500;
+
   private async expandCallers(
     callers: GraphNode[],
     remainingDepth: number,
     visited: Set<string>,
   ): Promise<CallerTree[]> {
+    if (remainingDepth <= 0 || visited.size > GraphBuilder.MAX_VISITED) {
+      return callers.map((c) => ({ node: c, callers: [] }));
+    }
+
     const trees: CallerTree[] = [];
     for (const caller of callers) {
       if (visited.has(caller.symbol)) {
