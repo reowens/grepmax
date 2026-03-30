@@ -22,7 +22,20 @@ Bash(gmax "auth handler" --role ORCHESTRATION --lang ts --agent -m 3)
 
 **Only use MCP tools** for `index_status` or `summarize_directory`. For everything else, use CLI.
 
-## CLI commands (use these)
+## Project management
+
+Projects must be added before they can be searched:
+
+```
+gmax add                        # add current directory to the index
+gmax add ~/projects/myapp       # add a specific project
+gmax status                     # see all indexed projects and their state
+gmax remove                     # remove current project from the index
+```
+
+If search returns "This project hasn't been added to gmax yet", run `gmax add` first.
+
+## CLI commands
 
 ### Search — `gmax "query" --agent`
 
@@ -87,21 +100,22 @@ gmax recent                                # recently modified files
 ```
 gmax symbols                               # list indexed symbols
 gmax symbols auth -p src/ --root ~/proj    # filter by name, path, project
+gmax status                                # show all indexed projects
 gmax index                                 # reindex current directory
-gmax list                                  # show indexed projects
 gmax config                                # view/change settings
 gmax doctor                                # health check
 ```
 
 ## Workflow
 
-1. **Explore** — `Bash(gmax project)` for overview of a new codebase
-2. **Search** — `Bash(gmax "query" --agent)` to find code. Add `--symbol` for function/class names.
-3. **Skeleton** — `Bash(gmax skeleton <path>)` before reading large files, or use `--skeleton` on search
-4. **Read** — `Read file:line` for specific ranges identified by search/skeleton
-5. **Trace** — `Bash(gmax trace <symbol>)` for call flow
-6. **Context** — `Bash(gmax related <file>)` to see what else to look at
-7. **Changes** — `Bash(gmax recent)` after pulls
+1. **Add** — `Bash(gmax add)` to register and index a new project
+2. **Explore** — `Bash(gmax project)` for overview of a new codebase
+3. **Search** — `Bash(gmax "query" --agent)` to find code. Add `--symbol` for function/class names.
+4. **Skeleton** — `Bash(gmax skeleton <path>)` before reading large files, or use `--skeleton` on search
+5. **Read** — `Read file:line` for specific ranges identified by search/skeleton
+6. **Trace** — `Bash(gmax trace <symbol>)` for call flow
+7. **Context** — `Bash(gmax related <file>)` to see what else to look at
+8. **Status** — `Bash(gmax status)` to check index state across all projects
 
 ## MCP tools
 
@@ -118,8 +132,8 @@ Use MCP only for `index_status` and `summarize_directory`. Use CLI for everythin
 - **Use `--root <dir>`** to search/trace/query a different project from your current directory.
 - **Don't search for exact strings** — use grep/Grep for that. gmax finds concepts.
 
-## If results seem stale
+## If search fails or returns nothing
 
-The watcher auto-starts on first CLI search. Usually results are fresh without manual intervention.
-1. `Bash(gmax index)` to force re-index
-2. Do NOT use `gmax reindex` — it doesn't exist.
+1. Check if the project is added: `Bash(gmax status)`
+2. If not added: `Bash(gmax add)`
+3. If stale: `Bash(gmax index)` to force re-index
