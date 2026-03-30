@@ -20,6 +20,7 @@ import type {
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
 import { formatTextResults, type TextResult } from "../lib/utils/formatter";
+import { extractImports } from "../lib/utils/import-extractor";
 import { isLocked } from "../lib/utils/lock";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import { getServerForProject } from "../lib/utils/server-registry";
@@ -696,11 +697,23 @@ Examples:
         }
       }
 
+      // Build import cache when --imports is requested
+      const importCache = new Map<string, string>();
+      const getImportsForFile = (absPath: string): string => {
+        if (!options.imports || !absPath) return "";
+        if (!importCache.has(absPath)) {
+          importCache.set(absPath, extractImports(absPath));
+        }
+        return importCache.get(absPath) ?? "";
+      };
+
       // Agent mode: ultra-compact one-line-per-result output
       if (options.agent) {
         if (!filteredData.length) {
           console.log("(none)");
         } else {
+          // In agent mode, print imports header per file
+          const seenImportFiles = new Set<string>();
           for (const r of filteredData) {
             const absP = (r as any).path ?? (r as any).metadata?.path ?? "";
             const relPath = absP.startsWith(effectiveRoot)
@@ -720,12 +733,40 @@ Examples:
             const role = ((r as any).role ?? "")
               .slice(0, 4)
               .toUpperCase();
-            const summary = (r as any).summary
-              ? ` — ${(r as any).summary}`
-              : "";
+            let hint = "";
+            if ((r as any).summary) {
+              hint = ` — ${(r as any).summary}`;
+            } else {
+              // Extract first meaningful signature line from content
+              const raw = (r as any).content ?? (r as any).text ?? "";
+              const lines = raw.split("\n");
+              for (const line of lines) {
+                const trimmed = line.trim();
+                // Skip empty, comments, imports, braces, and mid-line fragments
+                if (!trimmed || trimmed.length < 5) continue;
+                if (trimmed.startsWith("//") || trimmed.startsWith("/*") || trimmed.startsWith("*")) continue;
+                if (trimmed.startsWith("import ") || trimmed.startsWith("#") || trimmed.startsWith("File:")) continue;
+                if (trimmed === "{" || trimmed === "}") continue;
+                // Skip lines that look like continuations (start with punctuation, closing braces, or spread)
+                if (/^[.),;:}\]|&(+`'"!~]/.test(trimmed)) continue;
+                if (trimmed.startsWith("} ") || trimmed.startsWith("- ") || trimmed.startsWith("...")) continue;
+                // Skip lines that look like mid-expression fragments (no keyword/declaration prefix)
+                if (/^[a-z]/.test(trimmed) && !/^(export|function|class|interface|type|const|let|var|async|return|if|for|while|switch|enum|struct|pub |fn |def |impl |mod |use )/.test(trimmed)) continue;
+                hint = ` — ${trimmed.length > 120 ? trimmed.slice(0, 117) + "..." : trimmed}`;
+                break;
+              }
+            }
+            // Print file imports once per file when --imports is used
+            if (options.imports && absP && !seenImportFiles.has(absP)) {
+              seenImportFiles.add(absP);
+              const imports = getImportsForFile(absP);
+              if (imports) {
+                console.log(`[imports ${relPath}] ${imports.split("\n").join(" | ")}`);
+              }
+            }
             const sym = symbol ? ` ${symbol}` : "";
             const rl = role ? ` [${role}]` : "";
-            console.log(`${relPath}:${startLine}${sym}${rl}${summary}`);
+            console.log(`${relPath}:${startLine}${sym}${rl}${hint}`);
           }
         }
 
@@ -735,7 +776,7 @@ Examples:
             const { GraphBuilder } = await import(
               "../lib/graph/graph-builder"
             );
-            const builder = new GraphBuilder(vectorDb);
+            const builder = new GraphBuilder(vectorDb, effectiveRoot);
             const graph = await builder.buildGraphMultiHop(pattern, 1);
             if (graph.center) {
               console.log("---");
@@ -795,6 +836,24 @@ Examples:
       const isTTY = process.stdout.isTTY;
       const shouldBePlain = options.plain || !isTTY;
 
+      // Print imports per unique file before results when --imports is used
+      if (options.imports) {
+        const seenFiles = new Set<string>();
+        for (const r of filteredData) {
+          const absP = (r as any).path ?? (r as any).metadata?.path ?? "";
+          if (absP && !seenFiles.has(absP)) {
+            seenFiles.add(absP);
+            const imports = getImportsForFile(absP);
+            if (imports) {
+              const relP = absP.startsWith(effectiveRoot)
+                ? absP.slice(effectiveRoot.length + 1)
+                : absP;
+              console.log(`--- imports: ${relP} ---\n${imports}\n`);
+            }
+          }
+        }
+      }
+
       if (shouldBePlain) {
         const mappedResults = toTextResults(filteredData);
         const output = formatTextResults(mappedResults, pattern, projectRoot, {
@@ -820,7 +879,7 @@ Examples:
           const { GraphBuilder } = await import(
             "../lib/graph/graph-builder"
           );
-          const builder = new GraphBuilder(vectorDb);
+          const builder = new GraphBuilder(vectorDb, effectiveRoot);
           const graph = await builder.buildGraphMultiHop(pattern, 1);
           if (graph.center) {
             const lines: string[] = ["\n--- Call graph ---"];
