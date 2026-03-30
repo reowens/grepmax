@@ -89,7 +89,7 @@ async function main() {
     hookSpecificOutput: {
       hookEventName: "SessionStart",
       additionalContext:
-        'gmax ready. PREFER CLI over MCP — use Bash(gmax "query" --agent) for search (one line per result, 89% fewer tokens). Bash(gmax trace <symbol>) for call graphs. Bash(gmax skeleton <path>) for structure. Always use --agent flag.',
+        'gmax ready. PREFER CLI over MCP — use Bash(gmax "query" --agent) for search (one line per result, 89% fewer tokens). Bash(gmax trace <symbol>) for call graphs. Bash(gmax skeleton <path>) for structure. Use --agent flag on search commands only.',
     },
   };
   process.stdout.write(JSON.stringify(response));
