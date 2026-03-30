@@ -32,6 +32,7 @@ export const DEFAULT_IGNORE_PATTERNS = [
   "vendor",
   ".osgrep",
   ".gmax",
+  ".gmax.json",
   // Minified/generated assets
   "*.min.js",
   "*.min.css",

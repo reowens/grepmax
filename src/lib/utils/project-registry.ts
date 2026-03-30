@@ -17,6 +17,7 @@ export interface ProjectEntry {
   embedMode: string;
   lastIndexed: string;
   chunkCount?: number;
+  status?: "pending" | "indexed" | "error";
 }
 
 const REGISTRY_PATH = path.join(PATHS.globalRoot, "projects.json");

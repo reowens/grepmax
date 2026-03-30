@@ -550,6 +550,7 @@ export async function initialSync(
         embedMode: globalConfig.embedMode,
         lastIndexed: new Date().toISOString(),
         chunkCount: indexed,
+        status: "indexed",
       });
     }
 
