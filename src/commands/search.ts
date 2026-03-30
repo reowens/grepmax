@@ -22,6 +22,7 @@ import { gracefulExit } from "../lib/utils/exit";
 import { formatTextResults, type TextResult } from "../lib/utils/formatter";
 import { extractImports } from "../lib/utils/import-extractor";
 import { isLocked } from "../lib/utils/lock";
+import { getProject } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import { getServerForProject } from "../lib/utils/server-registry";
 
@@ -560,6 +561,26 @@ Examples:
 
       // Propagate project root to worker processes
       process.env.GMAX_PROJECT_ROOT = projectRoot;
+
+      // Check if project is registered (skip for --sync which auto-indexes)
+      if (!options.sync) {
+        const checkRoot = options.root
+          ? findProjectRoot(path.resolve(options.root)) ?? path.resolve(options.root)
+          : projectRoot;
+        const project = getProject(checkRoot);
+        if (!project) {
+          console.error(
+            `This project hasn't been added to gmax yet.\n\nRun: gmax add ${checkRoot}\n`,
+          );
+          process.exitCode = 1;
+          return;
+        }
+        if (project.status === "pending") {
+          console.warn(
+            "This project is still being indexed. Results may be incomplete.\n",
+          );
+        }
+      }
 
       vectorDb = new VectorDB(paths.lancedbDir);
 
