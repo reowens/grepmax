@@ -59,3 +59,23 @@ export function removeProject(root: string): void {
   const entries = loadRegistry().filter((e) => e.root !== root);
   saveRegistry(entries);
 }
+
+/**
+ * Find a registered parent that covers this path, if any.
+ */
+export function getParentProject(root: string): ProjectEntry | undefined {
+  const resolved = root.endsWith("/") ? root : `${root}/`;
+  return loadRegistry().find(
+    (e) => e.root !== root && resolved.startsWith(e.root.endsWith("/") ? e.root : `${e.root}/`),
+  );
+}
+
+/**
+ * Find registered projects that are children of this path.
+ */
+export function getChildProjects(root: string): ProjectEntry[] {
+  const prefix = root.endsWith("/") ? root : `${root}/`;
+  return loadRegistry().filter(
+    (e) => e.root !== root && e.root.startsWith(prefix),
+  );
+}

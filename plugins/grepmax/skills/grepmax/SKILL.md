@@ -24,16 +24,17 @@ Bash(gmax "auth handler" --role ORCHESTRATION --lang ts --agent -m 3)
 
 ## Project management
 
-Projects must be added before they can be searched:
+Projects must be added before CLI search works. MCP tools auto-add on first use, but CLI requires an explicit step:
 
 ```
-gmax add                        # add current directory to the index
+gmax add                        # add + index current directory
 gmax add ~/projects/myapp       # add a specific project
 gmax status                     # see all indexed projects and their state
 gmax remove                     # remove current project from the index
+gmax index                      # reindex an already-added project
 ```
 
-If search returns "This project hasn't been added to gmax yet", run `gmax add` first.
+If search returns "This project hasn't been added to gmax yet", run `Bash(gmax add)` first.
 
 ## CLI commands
 

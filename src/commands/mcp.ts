@@ -309,11 +309,11 @@ export const mcp = new Command("mcp")
 
       _indexing = true;
       _indexProgress = "starting...";
-      console.log("[MCP] First-time index for this project...");
+      console.log("[MCP] First-time setup for this project...");
 
       const child = spawn(
         process.argv[0],
-        [process.argv[1], "index", "--path", projectRoot],
+        [process.argv[1], "add", projectRoot],
         { detached: true, stdio: "ignore" },
       );
       _indexChildPid = child.pid ?? null;
@@ -326,7 +326,7 @@ export const mcp = new Command("mcp")
         _indexChildPid = null;
         if (code === 0) {
           _indexReady = true;
-          console.log("[MCP] First-time indexing complete.");
+          console.log("[MCP] First-time setup complete.");
         } else {
           console.error(
             `[MCP] Indexing failed (exit code: ${code})`,

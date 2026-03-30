@@ -11,8 +11,11 @@ import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
 import { createMarker, hasMarker } from "../lib/utils/project-marker";
 import {
+  getChildProjects,
+  getParentProject,
   getProject,
   registerProject,
+  removeProject,
 } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import { readGlobalConfig } from "../lib/index/index-config";
@@ -46,6 +49,28 @@ Examples:
         );
         console.log(`Run \`gmax index\` to re-index, or \`gmax index --reset\` for a full rebuild.`);
         return;
+      }
+
+      // Check if a parent project already covers this path
+      const parent = getParentProject(projectRoot);
+      if (parent) {
+        console.log(
+          `Already covered by ${path.basename(parent.root)} (${parent.root}).`,
+        );
+        console.log(`Use \`gmax status\` to see indexed projects.`);
+        return;
+      }
+
+      // If this is a parent of existing projects, absorb them
+      const children = getChildProjects(projectRoot);
+      if (children.length > 0) {
+        const names = children.map((c) => c.name).join(", ");
+        console.log(
+          `Absorbing ${children.length} sub-project(s): ${names}`,
+        );
+        for (const child of children) {
+          removeProject(child.root);
+        }
       }
 
       // Create marker file
