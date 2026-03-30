@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -24,7 +25,20 @@ const CONFIG_PATH = path.join(
   "opencode.json",
 );
 
-const SHIM_CONTENT = `
+function resolveGmaxBin(): string {
+  try {
+    return execSync("which gmax", { encoding: "utf-8" }).trim();
+  } catch {
+    // Fall back to the path of the current process entry point
+    const binDir = path.dirname(process.argv[1]);
+    const candidate = path.join(binDir, "gmax");
+    if (fs.existsSync(candidate)) return candidate;
+    return "gmax";
+  }
+}
+
+function buildShimContent(gmaxBin: string) {
+  return `
 import { tool } from "@opencode-ai/plugin";
 
 const SKILL = \`
@@ -58,7 +72,7 @@ export async function handleAuth(req: Request) {
   const claims = await validateToken(token);
   if (!claims) return unauthorized();
   const allowed = await checkRole(claims.role, req.path);
-  ... 
+  ...
 
 - **ORCHESTRATION** = contains logic, coordinates other code
 - **DEFINITION** = types, interfaces, classes
@@ -106,7 +120,13 @@ gmax trace handleRequest
 - Don't read entire files. Use the line ranges gmax gives you.
 - If results seem off, rephrase your query like you'd ask a teammate
 
+## If Index is Building
+
+If you see "Indexing" or "Syncing": STOP. Tell the user the index is building. Ask if they want to wait or proceed with partial results.
+
 \`;
+
+const GMAX_BIN = "${gmaxBin}";
 
 export default tool({
   description: SKILL,
@@ -117,14 +137,23 @@ export default tool({
   async execute({ argv }) {
     try {
       // @ts-ignore
-      const out = await Bun.spawn(["gmax", ...argv], { stdout: "pipe" }).stdout;
+      const out = await Bun.spawn([GMAX_BIN, ...argv], { stdout: "pipe" }).stdout;
       const text = await new Response(out).text();
+      if (text.includes("Indexing") || text.includes("Building") || text.includes("Syncing")) {
+        return \`WARN: The index is currently updating.
+
+Output so far:
+\${text.trim()}
+
+PLEASE READ THE "Indexing" WARNING IN MY SKILL DESCRIPTION.\`;
+      }
       return text.trim();
     } catch (err) {
        return \`Error running gmax: \${err}\`;
     }
   },
 })`;
+}
 
 async function install() {
   try {
@@ -138,12 +167,16 @@ async function install() {
       }
     }
 
-    // 2. Create tool shim
+    // 2. Resolve absolute path to gmax binary
+    const gmaxBin = resolveGmaxBin();
+    console.log(`   Resolved gmax binary: ${gmaxBin}`);
+
+    // 3. Create tool shim
     fs.mkdirSync(path.dirname(TOOL_PATH), { recursive: true });
-    fs.writeFileSync(TOOL_PATH, SHIM_CONTENT);
+    fs.writeFileSync(TOOL_PATH, buildShimContent(gmaxBin));
     console.log("✅ Created tool shim at", TOOL_PATH);
 
-    // 3. Register MCP
+    // 4. Register MCP
     if (!fs.existsSync(CONFIG_PATH)) {
       fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
       fs.writeFileSync(CONFIG_PATH, JSON.stringify({}, null, 2));
@@ -155,15 +188,12 @@ async function install() {
 
     config.mcp.gmax = {
       type: "local",
-      command: ["gmax", "mcp"],
+      command: [gmaxBin, "mcp"],
       enabled: true,
     };
 
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
     console.log("✅ Registered MCP server in", CONFIG_PATH);
-    console.log(
-      "   Command: check proper path if 'gmax' is not in PATH of OpenCode.",
-    );
   } catch (err) {
     console.error("❌ Installation failed:", err);
   }

@@ -61,60 +61,74 @@ export async function generateSummaries(
 
   const queryLimit = maxChunks ?? 50000;
   const table = await db.ensureTable();
-  const rows = await table
-    .query()
-    .select(["id", "path", "content", "defined_symbols"])
-    .where(
-      `path LIKE '${escapeSqlString(pathPrefix)}%' AND (summary IS NULL OR summary = '')`,
-    )
-    .limit(queryLimit)
-    .toArray();
-
-  if (rows.length === 0) return { summarized: 0, remaining: 0 };
-
-  let summarized = 0;
+  const whereFilter = `path LIKE '${escapeSqlString(pathPrefix)}%' AND (summary IS NULL OR summary = '')`;
+  const PAGE_SIZE = 500;
   const BATCH_SIZE = 5;
 
-  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-    const batch = rows.slice(i, i + BATCH_SIZE);
-    const chunks = batch.map((r: any) => {
-      const defs = Array.isArray(r.defined_symbols)
-        ? r.defined_symbols.filter((s: unknown) => typeof s === "string")
-        : typeof r.defined_symbols?.toArray === "function"
-          ? r.defined_symbols.toArray()
-          : [];
-      return {
-        code: String(r.content || ""),
-        language:
-          path.extname(String(r.path || "")).replace(/^\./, "") || "unknown",
-        file: String(r.path || ""),
-        symbols: defs as string[],
-      };
-    });
+  let summarized = 0;
+  let pageOffset = 0;
+  let totalProcessed = 0;
+  let aborted = false;
 
-    const summaries = await summarizeChunks(chunks);
-    if (!summaries) break;
+  while (totalProcessed < queryLimit) {
+    const pageSize = Math.min(PAGE_SIZE, queryLimit - totalProcessed);
+    const rows = await table
+      .query()
+      .select(["id", "path", "content", "defined_symbols"])
+      .where(whereFilter)
+      .limit(pageSize)
+      .offset(pageOffset)
+      .toArray();
 
-    const ids: string[] = [];
-    const values: string[] = [];
-    for (let j = 0; j < batch.length; j++) {
-      if (summaries[j]) {
-        ids.push(String((batch[j] as any).id));
-        values.push(summaries[j]);
+    if (rows.length === 0) break;
+    pageOffset += rows.length;
+    totalProcessed += rows.length;
+
+    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+      const batch = rows.slice(i, i + BATCH_SIZE);
+      const chunks = batch.map((r: any) => {
+        const defs = Array.isArray(r.defined_symbols)
+          ? r.defined_symbols.filter((s: unknown) => typeof s === "string")
+          : typeof r.defined_symbols?.toArray === "function"
+            ? r.defined_symbols.toArray()
+            : [];
+        return {
+          code: String(r.content || ""),
+          language:
+            path.extname(String(r.path || "")).replace(/^\./, "") || "unknown",
+          file: String(r.path || ""),
+          symbols: defs as string[],
+        };
+      });
+
+      const summaries = await summarizeChunks(chunks);
+      if (!summaries) {
+        aborted = true;
+        break;
       }
+
+      const ids: string[] = [];
+      const values: string[] = [];
+      for (let j = 0; j < batch.length; j++) {
+        if (summaries[j]) {
+          ids.push(String((batch[j] as any).id));
+          values.push(summaries[j]);
+        }
+      }
+
+      if (ids.length > 0) {
+        await db.updateRows(ids, "summary", values);
+        summarized += ids.length;
+      }
+
+      onProgress?.(summarized, totalProcessed);
     }
 
-    if (ids.length > 0) {
-      await db.updateRows(ids, "summary", values);
-      summarized += ids.length;
-    }
-
-    onProgress?.(summarized, rows.length);
+    if (aborted) break;
   }
 
-  // Estimate remaining (rows.length was capped by queryLimit)
-  const remaining = rows.length === queryLimit
-    ? queryLimit - summarized // at least this many more
+  const remaining = totalProcessed >= queryLimit
+    ? queryLimit - summarized
     : 0;
   return { summarized, remaining };
 }

@@ -6,7 +6,7 @@ import * as childProcess from "node:child_process";
 import { log, debug } from "../utils/logger";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { CONFIG, WORKER_TIMEOUT_MS } from "../../config";
+import { CONFIG, MAX_WORKER_MEMORY_MB, WORKER_TIMEOUT_MS } from "../../config";
 import type { ProcessFileInput, ProcessFileResult, RerankDoc } from "./worker";
 
 type TaskMethod = "processFile" | "encodeQuery" | "rerank";
@@ -88,9 +88,13 @@ class ProcessWorker {
   constructor(
     public modulePath: string,
     public execArgv: string[],
+    maxMemoryMb?: number,
   ) {
+    const memArgs = maxMemoryMb
+      ? [`--max-old-space-size=${maxMemoryMb}`]
+      : [];
     this.child = childProcess.fork(modulePath, {
-      execArgv,
+      execArgv: [...memArgs, ...execArgv],
       env: { ...process.env },
     });
   }
@@ -115,6 +119,7 @@ export class WorkerPool {
   private workers: ProcessWorker[] = [];
   private taskQueue: number[] = [];
   private tasks = new Map<number, PendingTask<TaskMethod>>();
+  private abortedTasks = new Set<number>();
   private nextId = 1;
   private destroyed = false;
   private destroyPromise: Promise<void> | null = null;
@@ -201,10 +206,21 @@ export class WorkerPool {
   }
 
   private spawnWorker() {
-    const worker = new ProcessWorker(this.modulePath, this.execArgv);
+    const worker = new ProcessWorker(this.modulePath, this.execArgv, MAX_WORKER_MEMORY_MB);
     debug("pool", `Spawned worker PID:${worker.child.pid}`);
 
     const onMessage = (msg: WorkerMessage) => {
+      // Fast cleanup for tasks that were aborted while running
+      if (this.abortedTasks.has(msg.id)) {
+        this.abortedTasks.delete(msg.id);
+        const task = this.tasks.get(msg.id);
+        if (task) {
+          this.completeTask(task, worker);
+          this.dispatch();
+        }
+        return;
+      }
+
       const task = this.tasks.get(msg.id);
       if (!task) return;
 
@@ -304,9 +320,8 @@ export class WorkerPool {
               const err = new Error("Aborted");
               err.name = "AbortError";
               safeReject(err);
-              // We intentionally do NOT delete the task map entry here,
-              // because we need handleWorkerMessage to cleanly cleanup the worker state
-              // when it eventually finishes.
+              // Track for fast cleanup when the worker eventually finishes.
+              this.abortedTasks.add(id);
             }
           },
           { once: true },

@@ -66,16 +66,18 @@ export const WORKER_BOOT_TIMEOUT_MS = Number.parseInt(
   10,
 );
 
-export const MAX_WORKER_MEMORY_MB = Number.parseInt(
-  process.env.GMAX_MAX_WORKER_MEMORY_MB ||
-    String(
-      Math.max(
-        2048,
-        Math.floor((os.totalmem() / 1024 / 1024) * 0.5), // 50% of system RAM
-      ),
-    ),
-  10,
-);
+export const MAX_WORKER_MEMORY_MB = (() => {
+  const fromEnv = Number.parseInt(
+    process.env.GMAX_MAX_WORKER_MEMORY_MB ?? "",
+    10,
+  );
+  if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv;
+  const HARD_CEILING = 4096; // 4GB max per worker regardless of system RAM
+  return Math.min(
+    HARD_CEILING,
+    Math.max(2048, Math.floor((os.totalmem() / 1024 / 1024) * 0.5)),
+  );
+})();
 
 const HOME = os.homedir();
 const GLOBAL_ROOT = path.join(HOME, ".gmax");

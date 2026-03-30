@@ -213,54 +213,46 @@ export class VectorDB {
       return [];
     };
 
-    const rows = records.map((rec) => {
-      const vec = (() => {
-        const arr = toNumberArray(rec.vector);
-        if (arr.length < this.vectorDim) {
-          arr.push(...Array(this.vectorDim - arr.length).fill(0));
-        } else if (arr.length > this.vectorDim) {
-          arr.length = this.vectorDim;
-        }
-        return arr;
-      })();
-
-      return {
-        id: rec.id,
-        path: rec.path,
-        hash: rec.hash,
-        content: rec.content,
-        display_text: rec.display_text || rec.content, // fallback
-        start_line: rec.start_line,
-        end_line: rec.end_line,
-        chunk_index: rec.chunk_index ?? null,
-        is_anchor: rec.is_anchor ?? false,
-        context_prev: rec.context_prev ?? "",
-        context_next: rec.context_next ?? "",
-        chunk_type: rec.chunk_type ?? "",
-        complexity:
-          typeof rec.complexity === "number" ? rec.complexity : undefined,
-        is_exported: rec.is_exported ?? false,
-        vector: vec,
-        colbert: toBuffer(rec.colbert),
-        colbert_scale:
-          typeof rec.colbert_scale === "number" ? rec.colbert_scale : 1,
-        pooled_colbert_48d: rec.pooled_colbert_48d
-          ? Array.from(rec.pooled_colbert_48d)
-          : undefined,
-        doc_token_ids: rec.doc_token_ids ? Array.from(rec.doc_token_ids) : null,
-        defined_symbols: rec.defined_symbols ?? [],
-        referenced_symbols: rec.referenced_symbols ?? [],
-        imports: rec.imports ?? [],
-        exports: rec.exports ?? [],
-        role: rec.role ?? "",
-        parent_symbol: rec.parent_symbol ?? "",
-        file_skeleton: rec.file_skeleton ?? "",
-        summary: rec.summary ?? null,
-      };
-    });
+    // Mutate records in-place to avoid doubling memory with a parallel rows array.
+    // Callers (syncer flushBatch) splice records before passing — they're never reused.
+    for (const rec of records) {
+      const vec = toNumberArray(rec.vector);
+      if (vec.length < this.vectorDim) {
+        vec.push(...Array(this.vectorDim - vec.length).fill(0));
+      } else if (vec.length > this.vectorDim) {
+        vec.length = this.vectorDim;
+      }
+      (rec as any).vector = vec;
+      (rec as any).colbert = toBuffer(rec.colbert);
+      (rec as any).display_text = rec.display_text || rec.content;
+      (rec as any).chunk_index = rec.chunk_index ?? null;
+      (rec as any).is_anchor = rec.is_anchor ?? false;
+      (rec as any).context_prev = rec.context_prev ?? "";
+      (rec as any).context_next = rec.context_next ?? "";
+      (rec as any).chunk_type = rec.chunk_type ?? "";
+      (rec as any).complexity =
+        typeof rec.complexity === "number" ? rec.complexity : undefined;
+      (rec as any).is_exported = rec.is_exported ?? false;
+      (rec as any).colbert_scale =
+        typeof rec.colbert_scale === "number" ? rec.colbert_scale : 1;
+      (rec as any).pooled_colbert_48d = rec.pooled_colbert_48d
+        ? Array.from(rec.pooled_colbert_48d)
+        : undefined;
+      (rec as any).doc_token_ids = rec.doc_token_ids
+        ? Array.from(rec.doc_token_ids)
+        : null;
+      (rec as any).defined_symbols = rec.defined_symbols ?? [];
+      (rec as any).referenced_symbols = rec.referenced_symbols ?? [];
+      (rec as any).imports = rec.imports ?? [];
+      (rec as any).exports = rec.exports ?? [];
+      (rec as any).role = rec.role ?? "";
+      (rec as any).parent_symbol = rec.parent_symbol ?? "";
+      (rec as any).file_skeleton = rec.file_skeleton ?? "";
+      (rec as any).summary = rec.summary ?? null;
+    }
 
     try {
-      await table.add(rows);
+      await table.add(records);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.toLowerCase().includes("found field not in schema")) {
