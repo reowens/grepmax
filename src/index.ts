@@ -2,6 +2,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { program } from "commander";
+import { add } from "./commands/add";
 import { installClaudeCode } from "./commands/claude-code";
 import { installCodex } from "./commands/codex";
 import { config } from "./commands/config";
@@ -14,11 +15,13 @@ import { project } from "./commands/project";
 import { recent } from "./commands/recent";
 import { related } from "./commands/related";
 import { installOpencode, uninstallOpencode } from "./commands/opencode";
+import { remove } from "./commands/remove";
 import { search } from "./commands/search";
 import { serve } from "./commands/serve";
 import { setup } from "./commands/setup";
 import { skeleton } from "./commands/skeleton";
 import { summarize } from "./commands/summarize";
+import { status } from "./commands/status";
 import { symbols } from "./commands/symbols";
 import { trace } from "./commands/trace";
 import { watch } from "./commands/watch";
@@ -53,7 +56,10 @@ if (legacyProjectData) {
 
 // Core commands
 program.addCommand(search, { isDefault: true });
+program.addCommand(add);
+program.addCommand(remove);
 program.addCommand(index);
+program.addCommand(status);
 program.addCommand(list);
 program.addCommand(skeleton);
 program.addCommand(symbols);
