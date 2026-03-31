@@ -57,7 +57,23 @@ function startPythonServer(serverDir, scriptName, logName) {
   child.unref();
 }
 
+function isProjectRegistered() {
+  try {
+    const projectsPath = _path.join(
+      require("node:os").homedir(),
+      ".gmax",
+      "projects.json",
+    );
+    const projects = JSON.parse(require("node:fs").readFileSync(projectsPath, "utf-8"));
+    const cwd = process.cwd();
+    return projects.some((p) => cwd.startsWith(p.root));
+  } catch {
+    return false;
+  }
+}
+
 function startWatcher() {
+  if (!isProjectRegistered()) return;
   try {
     execFileSync("gmax", ["watch", "-b"], { timeout: 5000, stdio: "ignore" });
   } catch {

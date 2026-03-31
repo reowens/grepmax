@@ -1,6 +1,6 @@
-import { spawn } from "node:child_process";
 import * as path from "node:path";
 import { Command } from "commander";
+import { readGlobalConfig } from "../lib/index/index-config";
 import { ensureGrammars } from "../lib/index/grammar-loader";
 import {
   createIndexingSpinner,
@@ -10,7 +10,9 @@ import { initialSync } from "../lib/index/syncer";
 import { ensureSetup } from "../lib/setup/setup-helpers";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
+import { getProject, registerProject } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
+import { launchWatcher } from "../lib/utils/watcher-launcher";
 import {
   getWatcherCoveringPath,
   isProcessRunning,
@@ -70,6 +72,16 @@ Examples:
         ? path.resolve(options.path)
         : process.cwd();
       const projectRoot = findProjectRoot(indexRoot) ?? indexRoot;
+
+      // Project must be registered before reindexing
+      if (!getProject(projectRoot)) {
+        console.error(
+          `This project hasn't been added yet.\n\nRun: gmax add ${projectRoot}\n`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+
       const paths = ensureProjectPaths(projectRoot);
       vectorDb = new VectorDB(paths.lancedbDir);
 
@@ -138,6 +150,19 @@ Examples:
           return;
         }
 
+        // Update registry with new stats
+        const globalConfig = readGlobalConfig();
+        registerProject({
+          root: projectRoot,
+          name: path.basename(projectRoot),
+          vectorDim: globalConfig.vectorDim,
+          modelTier: globalConfig.modelTier,
+          embedMode: globalConfig.embedMode,
+          lastIndexed: new Date().toISOString(),
+          chunkCount: result.indexed,
+          status: "indexed",
+        });
+
         const failedSuffix =
           result.failedFiles > 0 ? ` • ${result.failedFiles} failed` : "";
         spinner.succeed(
@@ -149,19 +174,10 @@ Examples:
       } finally {
         // Restart the watcher if we stopped one
         if (restartWatcher) {
-          try {
-            const child = spawn(
-              process.argv[0],
-              [process.argv[1], "watch", "--path", restartWatcher.projectRoot],
-              { detached: true, stdio: "ignore" },
-            );
-            child.unref();
+          const launched = launchWatcher(restartWatcher.projectRoot);
+          if (launched) {
             console.log(
-              `Restarted watcher for ${path.basename(restartWatcher.projectRoot)} (PID: ${child.pid})`,
-            );
-          } catch {
-            console.log(
-              `Note: could not restart watcher. Run: gmax watch --path ${restartWatcher.projectRoot} -b`,
+              `Restarted watcher for ${path.basename(restartWatcher.projectRoot)} (PID: ${launched.pid})`,
             );
           }
         }

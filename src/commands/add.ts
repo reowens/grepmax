@@ -1,7 +1,7 @@
-import { spawn } from "node:child_process";
 import * as path from "node:path";
 import { Command } from "commander";
 import { ensureGrammars } from "../lib/index/grammar-loader";
+import { readGlobalConfig } from "../lib/index/index-config";
 import {
   createIndexingSpinner,
 } from "../lib/index/sync-helpers";
@@ -18,7 +18,7 @@ import {
   removeProject,
 } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
-import { readGlobalConfig } from "../lib/index/index-config";
+import { launchWatcher } from "../lib/utils/watcher-launcher";
 
 export const add = new Command("add")
   .description("Add a project to the gmax index")
@@ -112,13 +112,24 @@ Examples:
           onProgress,
         });
 
+        // Update registry: pending → indexed
+        registerProject({
+          root: projectRoot,
+          name: projectName,
+          vectorDim: globalConfig.vectorDim,
+          modelTier: globalConfig.modelTier,
+          embedMode: globalConfig.embedMode,
+          lastIndexed: new Date().toISOString(),
+          chunkCount: result.indexed,
+          status: "indexed",
+        });
+
         const failedSuffix =
           result.failedFiles > 0 ? ` · ${result.failedFiles} failed` : "";
         spinner.succeed(
           `Added ${projectName} (${result.total} files, ${result.indexed} chunks${failedSuffix})`,
         );
       } catch (e) {
-        // Update status to error
         registerProject({
           root: projectRoot,
           name: projectName,
@@ -133,19 +144,10 @@ Examples:
         throw e;
       }
 
-      // Start watcher in background
-      try {
-        const child = spawn(
-          process.argv[0],
-          [process.argv[1], "watch", "--path", projectRoot],
-          { detached: true, stdio: "ignore" },
-        );
-        child.unref();
-        console.log(`Watcher started (PID: ${child.pid})`);
-      } catch {
-        console.log(
-          `Note: could not start watcher. Run: gmax watch --path ${projectRoot} -b`,
-        );
+      // Start watcher
+      const launched = launchWatcher(projectRoot);
+      if (launched) {
+        console.log(`Watcher started (PID: ${launched.pid})`);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";

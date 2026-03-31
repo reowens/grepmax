@@ -34,6 +34,19 @@ vi.mock("../src/lib/utils/project-registry", () => ({
     chunkCount: 100,
     status: "indexed",
   })),
+  registerProject: vi.fn(),
+}));
+
+vi.mock("../src/lib/index/index-config", () => ({
+  readGlobalConfig: vi.fn(() => ({
+    vectorDim: 384,
+    modelTier: "small",
+    embedMode: "cpu",
+  })),
+}));
+
+vi.mock("../src/lib/utils/watcher-launcher", () => ({
+  launchWatcher: vi.fn(() => null),
 }));
 
 vi.mock("../src/lib/index/sync-helpers", () => ({

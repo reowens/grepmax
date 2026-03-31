@@ -13,13 +13,11 @@ import { VectorDB } from "../store/vector-db";
 import { escapeSqlString } from "../utils/filter-builder";
 // isIndexableFile no longer used — extension check inlined for performance
 import { acquireWriterLockWithRetry, type LockHandle } from "../utils/lock";
-import { registerProject } from "../utils/project-registry";
 import { ensureProjectPaths } from "../utils/project-root";
 import { getWorkerPool } from "../workers/pool";
 import type { ProcessFileResult } from "../workers/worker";
 import {
   checkModelMismatch,
-  readGlobalConfig,
   readIndexConfig,
   writeIndexConfig,
 } from "./index-config";
@@ -539,19 +537,6 @@ export async function initialSync(
     // Write model config so future runs can detect model changes
     if (!dryRun) {
       writeIndexConfig(paths.configPath);
-
-      // Register project in global registry
-      const globalConfig = readGlobalConfig();
-      registerProject({
-        root: paths.root,
-        name: path.basename(paths.root),
-        vectorDim: globalConfig.vectorDim,
-        modelTier: globalConfig.modelTier,
-        embedMode: globalConfig.embedMode,
-        lastIndexed: new Date().toISOString(),
-        chunkCount: indexed,
-        status: "indexed",
-      });
     }
 
     // Finalize total so callers can display a meaningful summary.

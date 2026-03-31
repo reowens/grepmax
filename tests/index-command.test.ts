@@ -53,6 +53,32 @@ vi.mock("../src/lib/store/vector-db", () => ({
   }),
 }));
 
+vi.mock("../src/lib/utils/project-registry", () => ({
+  getProject: vi.fn(() => ({
+    root: "/tmp/project",
+    name: "project",
+    vectorDim: 384,
+    modelTier: "small",
+    embedMode: "cpu",
+    lastIndexed: new Date().toISOString(),
+    chunkCount: 100,
+    status: "indexed",
+  })),
+  registerProject: vi.fn(),
+}));
+
+vi.mock("../src/lib/index/index-config", () => ({
+  readGlobalConfig: vi.fn(() => ({
+    vectorDim: 384,
+    modelTier: "small",
+    embedMode: "cpu",
+  })),
+}));
+
+vi.mock("../src/lib/utils/watcher-launcher", () => ({
+  launchWatcher: vi.fn(() => null),
+}));
+
 import { index } from "../src/commands/index";
 import { createIndexingSpinner } from "../src/lib/index/sync-helpers";
 import { initialSync } from "../src/lib/index/syncer";

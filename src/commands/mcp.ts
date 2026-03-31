@@ -23,7 +23,7 @@ import { isIndexableFile } from "../lib/utils/file-utils";
 import { escapeSqlString, normalizePath } from "../lib/utils/filter-builder";
 import { formatTimeAgo } from "../lib/utils/format-helpers";
 import { extractImports } from "../lib/utils/import-extractor";
-import { listProjects } from "../lib/utils/project-registry";
+import { getProject, listProjects } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import { getWatcherCoveringPath } from "../lib/utils/watcher-registry";
 
@@ -338,6 +338,8 @@ export const mcp = new Command("mcp")
     // --- Background watcher ---
 
     function ensureWatcher(): void {
+      // Only start watcher for registered projects
+      if (!getProject(projectRoot)) return;
       if (getWatcherCoveringPath(projectRoot)) return;
 
       const child = spawn("gmax", ["watch", "-b", "--path", projectRoot], {

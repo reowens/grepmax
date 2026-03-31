@@ -3,12 +3,14 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { Command } from "commander";
 import { PATHS } from "../config";
+import { readGlobalConfig } from "../lib/index/index-config";
 import { escapeSqlString } from "../lib/utils/filter-builder";
 import { initialSync } from "../lib/index/syncer";
 import { startWatcher } from "../lib/index/watcher";
 import { MetaCache } from "../lib/store/meta-cache";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
+import { getProject, registerProject } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import {
   getWatcherCoveringPath,
@@ -81,6 +83,16 @@ export const watch = new Command("watch")
     }
 
     // --- Foreground mode ---
+
+    // Watcher requires project to be registered
+    if (!getProject(projectRoot)) {
+      console.error(
+        `[watch:${projectName}] Project not registered. Run: gmax add ${projectRoot}`,
+      );
+      process.exitCode = 1;
+      return;
+    }
+
     const paths = ensureProjectPaths(projectRoot);
 
     // Propagate project root to worker processes
@@ -111,7 +123,21 @@ export const watch = new Command("watch")
       console.log(
         `[watch:${projectName}] No index found for ${projectRoot}, running initial sync...`,
       );
-      await initialSync({ projectRoot });
+      const syncResult = await initialSync({ projectRoot });
+
+      // Update registry after sync
+      const globalConfig = readGlobalConfig();
+      registerProject({
+        root: projectRoot,
+        name: projectName,
+        vectorDim: globalConfig.vectorDim,
+        modelTier: globalConfig.modelTier,
+        embedMode: globalConfig.embedMode,
+        lastIndexed: new Date().toISOString(),
+        chunkCount: syncResult.indexed,
+        status: "indexed",
+      });
+
       console.log(`[watch:${projectName}] Initial sync complete.`);
     }
 

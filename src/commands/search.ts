@@ -562,24 +562,22 @@ Examples:
       // Propagate project root to worker processes
       process.env.GMAX_PROJECT_ROOT = projectRoot;
 
-      // Check if project is registered (skip for --sync which auto-indexes)
-      if (!options.sync) {
-        const checkRoot = options.root
-          ? findProjectRoot(path.resolve(options.root)) ?? path.resolve(options.root)
-          : projectRoot;
-        const project = getProject(checkRoot);
-        if (!project) {
-          console.error(
-            `This project hasn't been added to gmax yet.\n\nRun: gmax add ${checkRoot}\n`,
-          );
-          process.exitCode = 1;
-          return;
-        }
-        if (project.status === "pending") {
-          console.warn(
-            "This project is still being indexed. Results may be incomplete.\n",
-          );
-        }
+      // Check if project is registered
+      const checkRoot = options.root
+        ? findProjectRoot(path.resolve(options.root)) ?? path.resolve(options.root)
+        : projectRoot;
+      const project = getProject(checkRoot);
+      if (!project) {
+        console.error(
+          `This project hasn't been added to gmax yet.\n\nRun: gmax add ${checkRoot}\n`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+      if (project.status === "pending") {
+        console.warn(
+          "This project is still being indexed. Results may be incomplete.\n",
+        );
       }
 
       vectorDb = new VectorDB(paths.lancedbDir);
@@ -641,6 +639,22 @@ Examples:
           }
 
           await vectorDb.createFTSIndex();
+
+          // Update registry after sync
+          const { readGlobalConfig } = await import("../lib/index/index-config");
+          const { registerProject } = await import("../lib/utils/project-registry");
+          const gc = readGlobalConfig();
+          registerProject({
+            root: projectRoot,
+            name: path.basename(projectRoot),
+            vectorDim: gc.vectorDim,
+            modelTier: gc.modelTier,
+            embedMode: gc.embedMode,
+            lastIndexed: new Date().toISOString(),
+            chunkCount: result.indexed,
+            status: "indexed",
+          });
+
           const failedSuffix =
             result.failedFiles > 0 ? ` • ${result.failedFiles} failed` : "";
           spinner.succeed(
@@ -654,15 +668,8 @@ Examples:
 
       // Ensure a watcher is running for live reindexing
       if (!process.env.VITEST && !process.env.NODE_ENV?.includes("test")) {
-        try {
-          const { execFileSync } = await import("node:child_process");
-          execFileSync("gmax", ["watch", "-b", "--path", projectRoot], {
-            timeout: 5000,
-            stdio: "ignore",
-          });
-        } catch {
-          // Watcher may already be running — ignore
-        }
+        const { launchWatcher } = await import("../lib/utils/watcher-launcher");
+        launchWatcher(projectRoot);
       }
 
       const searcher = new Searcher(vectorDb);
