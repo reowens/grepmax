@@ -387,6 +387,9 @@ export const search: Command = new CommanderCommand("search")
   .option("-c, --content", "Show full chunk content instead of snippets", false)
   .option("--per-file <n>", "Number of matches to show per file", "3")
   .option("--scores", "Show relevance scores", false)
+  .option("--explain", "Show scoring breakdown per result", false)
+  .option("--context-for-llm", "Return full function body + imports per result", false)
+  .option("--budget <tokens>", "Max tokens for --context-for-llm output (default 8000)", "8000")
   .option(
     "--min-score <score>",
     "Minimum relevance score (0-1) to include in results",
@@ -460,6 +463,9 @@ Examples:
       name: string;
       context: string;
       agent: boolean;
+      explain: boolean;
+      contextForLlm: boolean;
+      budget: string;
     } = cmd.optsWithGlobals();
 
     const root = process.cwd();
@@ -577,6 +583,7 @@ Examples:
             const { formatResults } = await import("../lib/output/formatter");
             const output = formatResults(filteredData, projectRootForServer, {
               content: options.content,
+              explain: options.explain,
             });
             console.log(output);
           }
@@ -738,7 +745,7 @@ Examples:
       const searchResult = await searcher.search(
         pattern,
         parseInt(options.m, 10),
-        { rerank: true },
+        { rerank: true, explain: options.explain },
         Object.keys(searchFilters).length > 0 ? searchFilters : undefined,
         pathFilter,
       );
@@ -839,7 +846,11 @@ Examples:
             }
             const sym = symbol ? ` ${symbol}` : "";
             const rl = role ? ` [${role}]` : "";
-            console.log(`${relPath}:${startLine}${sym}${rl}${hint}`);
+            const explainSuffix =
+              options.explain && (r as any).scoreBreakdown
+                ? `\texplain:rerank=${(r as any).scoreBreakdown.rerank.toFixed(3)},fused=${(r as any).scoreBreakdown.fused.toFixed(3)},boost=${(r as any).scoreBreakdown.boost.toFixed(2)}x,score=${(r as any).scoreBreakdown.normalized.toFixed(3)}`
+                : "";
+            console.log(`${relPath}:${startLine}${sym}${rl}${hint}${explainSuffix}`);
           }
         }
 
@@ -906,6 +917,80 @@ Examples:
       }
 
       _searchResultCount = filteredData.length;
+
+      // Context-for-LLM mode: full function body + imports per result
+      if (options.contextForLlm) {
+        const fs = await import("node:fs");
+        const { extractImportsFromContent } = await import(
+          "../lib/utils/import-extractor"
+        );
+        const budget = parseInt(options.budget, 10) || 8000;
+        let tokensUsed = 0;
+        let shown = 0;
+
+        console.log(
+          resultCountHeader(filteredData, parseInt(options.m, 10)),
+        );
+
+        for (const r of filteredData) {
+          const absP = (r as any).path ?? (r as any).metadata?.path ?? "";
+          const startLine =
+            (r as any).startLine ??
+            (r as any).start_line ??
+            (r as any).generated_metadata?.start_line ??
+            0;
+          const endLine =
+            (r as any).endLine ??
+            (r as any).end_line ??
+            (r as any).generated_metadata?.end_line ??
+            startLine;
+          const relPath = absP.startsWith(projectRoot)
+            ? absP.slice(projectRoot.length + 1)
+            : absP;
+          const role = (r as any).role || "IMPLEMENTATION";
+          const symbol =
+            Array.isArray((r as any).defined_symbols) &&
+            (r as any).defined_symbols.length > 0
+              ? (r as any).defined_symbols[0]
+              : "";
+
+          try {
+            const content = fs.readFileSync(absP, "utf-8");
+            const allLines = content.split("\n");
+            const body = allLines
+              .slice(startLine, Math.min(endLine + 1, allLines.length))
+              .join("\n");
+            const imports = extractImportsFromContent(content);
+
+            const blob = [
+              `--- ${relPath}:${startLine + 1}${symbol ? ` ${symbol}` : ""} [${role}] ---`,
+            ];
+            if (imports) {
+              blob.push("[imports]", imports, "");
+            }
+            blob.push("[body]", body);
+
+            const blobText = blob.join("\n");
+            const blobTokens = Math.ceil(blobText.length / 4);
+
+            if (tokensUsed + blobTokens > budget && shown > 0) {
+              console.log(
+                `\n(budget exhausted at ~${tokensUsed} tokens, ${filteredData.length - shown} more results not shown)`,
+              );
+              break;
+            }
+
+            console.log(`\n${blobText}`);
+            tokensUsed += blobTokens;
+            shown++;
+          } catch {
+            console.log(`\n--- ${relPath} (file not readable) ---`);
+            shown++;
+          }
+        }
+        return;
+      }
+
       const isTTY = process.stdout.isTTY;
       const shouldBePlain = options.plain || !isTTY;
 
@@ -944,11 +1029,26 @@ Examples:
           showScores: options.scores,
         });
         console.log(output);
+        if (options.explain) {
+          for (const r of filteredData) {
+            const b = (r as any).scoreBreakdown;
+            if (b) {
+              const absP = (r as any).path ?? (r as any).metadata?.path ?? "";
+              const relPath = absP.startsWith(projectRoot)
+                ? absP.slice(projectRoot.length + 1)
+                : absP;
+              console.log(
+                `  [explain ${relPath}] rerank=${b.rerank.toFixed(3)}  fused=${b.fused.toFixed(3)}  boost=${b.boost.toFixed(2)}x  final=${b.normalized.toFixed(3)}`,
+              );
+            }
+          }
+        }
       } else {
         // Use new holographic formatter for TTY
         const { formatResults } = await import("../lib/output/formatter");
         const output = formatResults(filteredData, projectRoot, {
           content: options.content,
+          explain: options.explain,
         });
         console.log(output);
       }

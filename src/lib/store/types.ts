@@ -68,6 +68,15 @@ export interface ChunkType extends MetadataRecord {
   parent_symbol?: string;
   summary?: string;
   context?: string[];
+  scoreBreakdown?: ScoreBreakdown;
+}
+
+export interface ScoreBreakdown {
+  rerank: number;
+  fused: number;
+  boost: number;
+  normalized: number;
+  [key: string]: MetadataValue;
 }
 
 export interface SearchResponse {

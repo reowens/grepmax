@@ -363,7 +363,7 @@ export class Searcher {
   async search(
     query: string,
     top_k?: number,
-    _search_options?: { rerank?: boolean },
+    _search_options?: { rerank?: boolean; explain?: boolean },
     _filters?: SearchFilter,
     pathPrefix?: string,
     intent?: SearchIntent,
@@ -371,6 +371,7 @@ export class Searcher {
   ): Promise<SearchResponse> {
     const finalLimit = top_k ?? 10;
     const doRerank = _search_options?.rerank ?? true;
+    const explain = _search_options?.explain ?? false;
     const searchIntent = intent || detectIntent(query);
 
     const pool = getWorkerPool();
@@ -612,6 +613,7 @@ export class Searcher {
     type ScoredItem = {
       record: (typeof rerankCandidates)[number];
       score: number;
+      breakdown?: { rerank: number; fused: number; boost: number; normalized: number };
     };
 
     const scored: ScoredItem[] = rerankCandidates.map((doc, idx) => {
@@ -620,7 +622,13 @@ export class Searcher {
       const fusedScore = candidateScores.get(key) ?? 0;
       const blended = base + FUSED_WEIGHT * fusedScore;
       const boosted = this.applyStructureBoost(doc, blended, searchIntent);
-      return { record: doc, score: boosted };
+      return {
+        record: doc,
+        score: boosted,
+        breakdown: explain
+          ? { rerank: base, fused: fusedScore, boost: blended > 0 ? boosted / blended : 1, normalized: 0 }
+          : undefined,
+      };
     });
 
     // Note: "boosted" was not previously declared -- fix to use "scored"
@@ -683,6 +691,7 @@ export class Searcher {
     const finalResults = diversified.map((item: ScoredItem) => ({
       ...item.record,
       _score: item.score,
+      _breakdown: item.breakdown,
       vector: undefined,
       colbert: undefined,
     }));
@@ -702,6 +711,9 @@ export class Searcher {
         else if (normalized > 0.5) confidence = "Medium";
 
         chunk.score = normalized;
+        if ((r as any)._breakdown) {
+          chunk.scoreBreakdown = { ...(r as any)._breakdown, normalized };
+        }
         chunk.confidence = confidence;
         return chunk;
       }),

@@ -31,7 +31,7 @@ function formatScore(score?: number): string {
 export function formatResult(
   result: ChunkType,
   root: string,
-  options: { content?: boolean } = {},
+  options: { content?: boolean; explain?: boolean } = {},
 ): string {
   const metadata = result.metadata as FileMetadata;
   const relPath = path.relative(root, metadata.path);
@@ -99,8 +99,15 @@ export function formatResult(
     // ignore
   }
 
+  // Explain line
+  let explainLine = "";
+  if (options.explain && result.scoreBreakdown) {
+    const b = result.scoreBreakdown;
+    explainLine = `\n${style.dim(`  Scoring: rerank=${b.rerank.toFixed(3)}  fused=${b.fused.toFixed(3)}  boost=${b.boost.toFixed(2)}x  final=${b.normalized.toFixed(3)}`)}`;
+  }
+
   return `
-${header}${breadcrumbLine}${contextLine}
+${header}${breadcrumbLine}${contextLine}${explainLine}
 
 ${code}
 
@@ -111,7 +118,7 @@ ${style.dim("─".repeat(80))}
 export function formatResults(
   results: ChunkType[],
   root: string,
-  options: { content?: boolean } = {},
+  options: { content?: boolean; explain?: boolean } = {},
 ): string {
   if (results.length === 0) return "No results found.";
   return results.map((r) => formatResult(r, root, options)).join("\n\n");

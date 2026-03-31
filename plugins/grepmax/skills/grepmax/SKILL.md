@@ -57,7 +57,7 @@ gmax "auth" --imports --agent              # show file imports per file
 
 Output: `file:line symbol [ROLE] — signature_hint` (one line per result)
 
-All search flags: `--agent --plain -m <n> --per-file <n> --min-score <n> --root <dir> --file <name> --exclude <prefix> --lang <ext> --role <role> --symbol --imports --name <regex> -C <n> --compact --content --scores --skeleton`
+All search flags: `--agent --plain -m <n> --per-file <n> --min-score <n> --root <dir> --file <name> --exclude <prefix> --lang <ext> --role <role> --symbol --imports --name <regex> -C <n> --compact --content --scores --skeleton --explain --context-for-llm --budget <tokens>`
 
 #### When `--agent` isn't enough
 
@@ -66,6 +66,22 @@ If you need more context than the one-line hint, use `--skeleton` instead:
 gmax "auth middleware" --skeleton -m 2     # file skeletons for top matches
 ```
 This shows function signatures, what each calls, and complexity — enough to decide what to Read.
+
+#### Full function bodies without follow-up reads
+
+Use `--context-for-llm` to get complete function bodies + imports per result in one call:
+```
+gmax "auth middleware" --context-for-llm -m 3      # full bodies with imports
+gmax "auth" --context-for-llm --budget 4000 -m 5   # cap output at ~4000 tokens
+```
+
+#### Debug search ranking
+
+Use `--explain` to see why results ranked where they did:
+```
+gmax "auth handler" --explain                       # scoring breakdown per result
+gmax "auth handler" --explain --agent               # compact explain suffix
+```
 
 ### Trace — `gmax trace <symbol>`
 ```

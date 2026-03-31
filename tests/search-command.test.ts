@@ -126,7 +126,7 @@ describe("search command", () => {
     expect(mockSearcher.search).toHaveBeenCalledWith(
       "query",
       expect.any(Number),
-      { rerank: true },
+      expect.objectContaining({ rerank: true }),
       undefined,
       expect.stringMatching(/\/$/), // absolute path prefix ending with /
     );
@@ -263,7 +263,7 @@ describe("search filter passthrough", () => {
     expect(mockSearcher.search).toHaveBeenCalledWith(
       "query",
       expect.any(Number),
-      { rerank: true },
+      expect.objectContaining({ rerank: true }),
       expect.objectContaining({ file: "syncer.ts" }),
       expect.any(String),
     );
@@ -279,7 +279,7 @@ describe("search filter passthrough", () => {
     expect(mockSearcher.search).toHaveBeenCalledWith(
       "query",
       expect.any(Number),
-      { rerank: true },
+      expect.objectContaining({ rerank: true }),
       expect.objectContaining({ language: "ts" }),
       expect.any(String),
     );
@@ -295,7 +295,7 @@ describe("search filter passthrough", () => {
     expect(mockSearcher.search).toHaveBeenCalledWith(
       "query",
       expect.any(Number),
-      { rerank: true },
+      expect.objectContaining({ rerank: true }),
       expect.objectContaining({ role: "ORCHESTRATION" }),
       expect.any(String),
     );
@@ -311,7 +311,7 @@ describe("search filter passthrough", () => {
     expect(mockSearcher.search).toHaveBeenCalledWith(
       "query",
       expect.any(Number),
-      { rerank: true },
+      expect.objectContaining({ rerank: true }),
       expect.objectContaining({ exclude: "tests/" }),
       expect.any(String),
     );
@@ -327,7 +327,7 @@ describe("search filter passthrough", () => {
     expect(mockSearcher.search).toHaveBeenCalledWith(
       "query",
       expect.any(Number),
-      { rerank: true },
+      expect.objectContaining({ rerank: true }),
       expect.objectContaining({ language: "ts", role: "ORCHESTRATION" }),
       expect.any(String),
     );
@@ -342,7 +342,7 @@ describe("search filter passthrough", () => {
     expect(mockSearcher.search).toHaveBeenCalledWith(
       "query",
       expect.any(Number),
-      { rerank: true },
+      expect.objectContaining({ rerank: true }),
       undefined,
       expect.any(String),
     );
