@@ -467,6 +467,9 @@ Examples:
       ? Number.parseFloat(options.minScore)
       : 0;
     let vectorDb: VectorDB | null = null;
+    const _searchStartMs = Date.now();
+    let _searchResultCount = 0;
+    let _searchError: string | undefined;
 
     // Check for running server
     const execPathForServer = exec_path ? path.resolve(exec_path) : root;
@@ -545,6 +548,8 @@ Examples:
 
           const isTTY = process.stdout.isTTY;
           const shouldBePlain = options.plain || !isTTY;
+
+          _searchResultCount = filteredData.length;
 
           if (!options.agent && !options.compact) {
             console.log(
@@ -774,6 +779,7 @@ Examples:
       };
 
       // Agent mode: ultra-compact one-line-per-result output
+      _searchResultCount = filteredData.length;
       if (options.agent) {
         if (!filteredData.length) {
           console.log("(none)");
@@ -899,6 +905,7 @@ Examples:
         return;
       }
 
+      _searchResultCount = filteredData.length;
       const isTTY = process.stdout.isTTY;
       const shouldBePlain = options.plain || !isTTY;
 
@@ -1004,9 +1011,24 @@ Examples:
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
+      _searchError = message;
       console.error("Search failed:", message);
       process.exitCode = 1;
     } finally {
+      // Best-effort query logging
+      try {
+        const { logQuery } = await import("../lib/utils/query-log");
+        logQuery({
+          ts: new Date().toISOString(),
+          source: "cli",
+          tool: "search",
+          query: pattern,
+          project: findProjectRoot(root) ?? root,
+          results: _searchResultCount,
+          ms: Date.now() - _searchStartMs,
+          error: _searchError,
+        });
+      } catch {}
       if (vectorDb) {
         try {
           await vectorDb.close();

@@ -9,6 +9,8 @@ allowed-tools: "mcp__grepmax__semantic_search, mcp__grepmax__code_skeleton, mcp_
 - **Know the exact string/symbol?** → `Grep` tool (fastest, zero overhead)
 - **Know the file already?** → `Read` tool directly
 - **Searching by concept/behavior?** → `Bash(gmax "query" --agent)` (semantic search)
+- **Need full function body?** → `Bash(gmax extract <symbol>)` (complete source with line numbers)
+- **Quick symbol overview?** → `Bash(gmax peek <symbol>)` (signature + callers + callees)
 - **Need file structure?** → `Bash(gmax skeleton <path>)`
 - **Need call flow?** → `Bash(gmax trace <symbol>)`
 
@@ -73,6 +75,22 @@ gmax trace handleAuth --root ~/project     # trace in a different project
 gmax trace handleAuth --agent              # compact: symbol\tpath:line, <- callers, -> callees
 ```
 
+### Extract — `gmax extract <symbol>`
+```
+gmax extract handleAuth                    # full function body with line numbers
+gmax extract handleAuth --agent            # compact: path:start-end then raw code
+gmax extract handleAuth --imports          # prepend file imports
+gmax extract handleAuth --root ~/project   # extract from different project
+```
+
+### Peek — `gmax peek <symbol>`
+```
+gmax peek handleAuth                       # signature + callers + callees
+gmax peek handleAuth --agent               # compact TSV output
+gmax peek handleAuth -d 2                  # 2-hop callers
+gmax peek handleAuth --root ~/project      # peek in different project
+```
+
 ### Skeleton — `gmax skeleton <target>`
 ```
 gmax skeleton src/lib/auth.ts              # single file
@@ -122,11 +140,13 @@ gmax doctor                                # health check
 1. **Add** — `Bash(gmax add)` to register and index a new project
 2. **Explore** — `Bash(gmax project)` for overview of a new codebase
 3. **Search** — `Bash(gmax "query" --agent)` to find code. Add `--symbol` for function/class names.
-4. **Skeleton** — `Bash(gmax skeleton <path>)` before reading large files, or use `--skeleton` on search
-5. **Read** — `Read file:line` for specific ranges identified by search/skeleton
-6. **Trace** — `Bash(gmax trace <symbol>)` for call flow
-7. **Context** — `Bash(gmax related <file>)` to see what else to look at
-8. **Status** — `Bash(gmax status)` to check index state across all projects
+4. **Peek** — `Bash(gmax peek <symbol>)` for a quick overview (signature + callers + callees)
+5. **Extract** — `Bash(gmax extract <symbol>)` for the full function body with line numbers
+6. **Skeleton** — `Bash(gmax skeleton <path>)` before reading large files, or use `--skeleton` on search
+7. **Read** — `Read file:line` for specific ranges identified by search/skeleton
+8. **Trace** — `Bash(gmax trace <symbol>)` for deep call flow (multi-hop)
+9. **Context** — `Bash(gmax related <file>)` to see what else to look at
+10. **Status** — `Bash(gmax status)` to check index state across all projects
 
 ## MCP tools
 

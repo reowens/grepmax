@@ -89,6 +89,32 @@ const TOOLS = [
     },
   },
   {
+    name: "extract_symbol",
+    description: "Extract complete function/class body by symbol name.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        symbol: { type: "string", description: "Symbol name to extract" },
+        root: { type: "string", description: "Project root (absolute path)" },
+        include_imports: { type: "boolean", description: "Prepend file imports" },
+      },
+      required: ["symbol"],
+    },
+  },
+  {
+    name: "peek_symbol",
+    description: "Compact symbol overview: signature + callers + callees.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        symbol: { type: "string", description: "Symbol name" },
+        root: { type: "string", description: "Project root (absolute path)" },
+        depth: { type: "number", description: "Caller depth (default 1, max 3)" },
+      },
+      required: ["symbol"],
+    },
+  },
+  {
     name: "list_symbols",
     description: "List indexed symbols with role and export status.",
     inputSchema: {
@@ -923,6 +949,271 @@ export const mcp = new Command("mcp")
       }
     }
 
+    async function handleExtractSymbol(
+      args: Record<string, unknown>,
+    ): Promise<ToolResult> {
+      ensureWatcher();
+      const symbol = String(args.symbol || "");
+      if (!symbol) return err("Missing required parameter: symbol");
+
+      try {
+        const root =
+          typeof args.root === "string" && args.root
+            ? args.root
+            : projectRoot;
+        const db = getVectorDb();
+        const table = await db.ensureTable();
+        const prefix = root.endsWith("/") ? root : `${root}/`;
+
+        const rows = await table
+          .query()
+          .select([
+            "path",
+            "start_line",
+            "end_line",
+            "role",
+            "is_exported",
+            "defined_symbols",
+          ])
+          .where(
+            `array_contains(defined_symbols, '${escapeSqlString(symbol)}') AND path LIKE '${escapeSqlString(prefix)}%'`,
+          )
+          .limit(10)
+          .toArray();
+
+        if (rows.length === 0) {
+          return ok(
+            `Symbol '${symbol}' not found in the index. Check \`gmax status\` to see which projects are indexed, or try \`gmax search ${symbol}\` to find similar symbols.`,
+          );
+        }
+
+        // Pick best match: prefer exact first-defined, then highest role
+        const ROLE_PRI: Record<string, number> = {
+          ORCHESTRATION: 3,
+          DEFINITION: 2,
+          IMPLEMENTATION: 1,
+        };
+        const sorted = rows.sort((a: any, b: any) => {
+          const aDefs = Array.isArray(a.defined_symbols)
+            ? a.defined_symbols
+            : [];
+          const bDefs = Array.isArray(b.defined_symbols)
+            ? b.defined_symbols
+            : [];
+          const aFirst = aDefs[0] === symbol ? 1 : 0;
+          const bFirst = bDefs[0] === symbol ? 1 : 0;
+          if (bFirst !== aFirst) return bFirst - aFirst;
+          return (
+            (ROLE_PRI[String(b.role)] || 0) - (ROLE_PRI[String(a.role)] || 0)
+          );
+        });
+
+        const best = sorted[0] as any;
+        const filePath = String(best.path);
+        const startLine = Number(best.start_line || 0);
+        const endLine = Number(best.end_line || 0);
+        const role = String(best.role || "IMPLEMENTATION");
+        const exported = Boolean(best.is_exported);
+
+        const fs = await import("node:fs");
+        const content = fs.readFileSync(filePath, "utf-8");
+        const allLines = content.split("\n");
+        const body = allLines
+          .slice(startLine, Math.min(endLine + 1, allLines.length))
+          .join("\n");
+
+        const relPath = filePath.startsWith(root)
+          ? filePath.slice(root.length + 1)
+          : filePath;
+        const exportedStr = exported ? ", exported" : "";
+
+        const parts: string[] = [];
+        if (args.include_imports) {
+          const { extractImportsFromContent } = await import(
+            "../lib/utils/import-extractor"
+          );
+          const imports = extractImportsFromContent(content);
+          if (imports) parts.push(imports, "");
+        }
+        parts.push(
+          `// ${relPath}:${startLine + 1}-${endLine + 1} [${role}${exportedStr}]`,
+        );
+        parts.push(body);
+
+        // Note other definitions
+        const others = sorted.slice(1, 4);
+        if (others.length > 0) {
+          const otherLocs = others
+            .map((r: any) => {
+              const p = String(r.path);
+              const rel = p.startsWith(root) ? p.slice(root.length + 1) : p;
+              return `${rel}:${Number(r.start_line || 0) + 1}`;
+            })
+            .join(", ");
+          parts.push("", `Also defined in: ${otherLocs}`);
+        }
+
+        return ok(parts.join("\n"));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return err(`Extract failed: ${msg}`);
+      }
+    }
+
+    async function handlePeekSymbol(
+      args: Record<string, unknown>,
+    ): Promise<ToolResult> {
+      ensureWatcher();
+      const symbol = String(args.symbol || "");
+      if (!symbol) return err("Missing required parameter: symbol");
+
+      try {
+        const root =
+          typeof args.root === "string" && args.root
+            ? args.root
+            : projectRoot;
+        const depth = Math.min(
+          Math.max(Number(args.depth || 1), 1),
+          3,
+        );
+
+        const db = getVectorDb();
+        const { GraphBuilder } = await import("../lib/graph/graph-builder");
+        const builder = new GraphBuilder(db, root);
+        const graph = await builder.buildGraph(symbol);
+
+        if (!graph.center) {
+          return ok(
+            `Symbol '${symbol}' not found in the index. Check \`gmax status\` to see which projects are indexed, or try \`gmax search ${symbol}\` to find similar symbols.`,
+          );
+        }
+
+        const center = graph.center;
+        const rel = (p: string) =>
+          p.startsWith(root) ? p.slice(root.length + 1) : p;
+
+        // Get chunk metadata for is_exported and end_line
+        const table = await db.ensureTable();
+        const prefix = root.endsWith("/") ? root : `${root}/`;
+        const metaRows = await table
+          .query()
+          .select(["is_exported", "start_line", "end_line"])
+          .where(
+            `array_contains(defined_symbols, '${escapeSqlString(symbol)}') AND path LIKE '${escapeSqlString(prefix)}%'`,
+          )
+          .limit(1)
+          .toArray();
+        const exported =
+          metaRows.length > 0 && Boolean((metaRows[0] as any).is_exported);
+        const startLine =
+          metaRows.length > 0
+            ? Number((metaRows[0] as any).start_line || 0)
+            : center.line;
+        const endLine =
+          metaRows.length > 0
+            ? Number((metaRows[0] as any).end_line || 0)
+            : center.line;
+
+        // Get signature from source
+        const fs = await import("node:fs");
+        let sigText = "(source not available)";
+        let bodyLines = 0;
+        try {
+          const content = fs.readFileSync(center.file, "utf-8");
+          const lines = content.split("\n");
+          const chunk = lines.slice(startLine, endLine + 1);
+          bodyLines = chunk.length;
+          const sigLines: string[] = [];
+          for (const line of chunk) {
+            sigLines.push(line);
+            if (line.includes("{") || line.includes("=>")) break;
+          }
+          sigText = sigLines.join("\n").trim();
+        } catch {}
+
+        // Get callers
+        let callerList: Array<{ symbol: string; file: string; line: number }>;
+        if (depth > 1) {
+          const multiHop = await builder.buildGraphMultiHop(symbol, depth);
+          const flat: Array<{
+            symbol: string;
+            file: string;
+            line: number;
+          }> = [];
+          function walkCallers(tree: any[]) {
+            for (const t of tree) {
+              flat.push({
+                symbol: t.node.symbol,
+                file: t.node.file,
+                line: t.node.line,
+              });
+              walkCallers(t.callers);
+            }
+          }
+          walkCallers(multiHop.callerTree);
+          callerList = flat;
+        } else {
+          callerList = graph.callers;
+        }
+
+        const exportedStr = exported ? ", exported" : "";
+        const parts: string[] = [];
+        parts.push(
+          `${center.symbol}  ${rel(center.file)}:${center.line + 1}  [${center.role}${exportedStr}]`,
+        );
+        parts.push("");
+        parts.push(`  ${sigText}`);
+        if (bodyLines > 3) {
+          parts.push(`    // ... (${bodyLines} lines total)`);
+        }
+        parts.push("");
+
+        // Callers
+        const maxCallers = 5;
+        if (callerList.length > 0) {
+          parts.push(`callers (${callerList.length}):`);
+          for (const c of callerList.slice(0, maxCallers)) {
+            const loc = c.file
+              ? `${rel(c.file)}:${c.line + 1}`
+              : "(not indexed)";
+            parts.push(`  <- ${c.symbol}  ${loc}`);
+          }
+          if (callerList.length > maxCallers) {
+            parts.push(
+              `  ... and ${callerList.length - maxCallers} more`,
+            );
+          }
+        } else {
+          parts.push("No known callers.");
+        }
+        parts.push("");
+
+        // Callees
+        const maxCallees = 8;
+        if (graph.callees.length > 0) {
+          parts.push(`callees (${graph.callees.length}):`);
+          for (const c of graph.callees.slice(0, maxCallees)) {
+            const loc = c.file
+              ? `${rel(c.file)}:${c.line + 1}`
+              : "(not indexed)";
+            parts.push(`  -> ${c.symbol}  ${loc}`);
+          }
+          if (graph.callees.length > maxCallees) {
+            parts.push(
+              `  ... and ${graph.callees.length - maxCallees} more`,
+            );
+          }
+        } else {
+          parts.push("No known callees.");
+        }
+
+        return ok(parts.join("\n"));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return err(`Peek failed: ${msg}`);
+      }
+    }
+
     async function handleListSymbols(
       args: Record<string, unknown>,
     ): Promise<ToolResult> {
@@ -1490,31 +1781,68 @@ export const mcp = new Command("mcp")
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params;
       const toolArgs = (args ?? {}) as Record<string, unknown>;
+      const startMs = Date.now();
 
+      let result: ToolResult;
       switch (name) {
         case "semantic_search":
-          return handleSemanticSearch(toolArgs, false);
+          result = await handleSemanticSearch(toolArgs, false);
+          break;
         case "search_all":
-          return handleSemanticSearch(toolArgs, true);
+          result = await handleSemanticSearch(toolArgs, true);
+          break;
         case "code_skeleton":
-          return handleCodeSkeleton(toolArgs);
+          result = await handleCodeSkeleton(toolArgs);
+          break;
         case "trace_calls":
-          return handleTraceCalls(toolArgs);
+          result = await handleTraceCalls(toolArgs);
+          break;
+        case "extract_symbol":
+          result = await handleExtractSymbol(toolArgs);
+          break;
+        case "peek_symbol":
+          result = await handlePeekSymbol(toolArgs);
+          break;
         case "list_symbols":
-          return handleListSymbols(toolArgs);
+          result = await handleListSymbols(toolArgs);
+          break;
         case "index_status":
-          return handleIndexStatus();
+          result = await handleIndexStatus();
+          break;
         case "summarize_directory":
-          return handleSummarizeDirectory(toolArgs);
+          result = await handleSummarizeDirectory(toolArgs);
+          break;
         case "summarize_project":
-          return handleSummarizeProject(toolArgs);
+          result = await handleSummarizeProject(toolArgs);
+          break;
         case "related_files":
-          return handleRelatedFiles(toolArgs);
+          result = await handleRelatedFiles(toolArgs);
+          break;
         case "recent_changes":
-          return handleRecentChanges(toolArgs);
+          result = await handleRecentChanges(toolArgs);
+          break;
         default:
           return err(`Unknown tool: ${name}`);
       }
+
+      // Best-effort query logging
+      try {
+        const { logQuery } = await import("../lib/utils/query-log");
+        const text = result.content?.[0]?.text ?? "";
+        const resultLines = text.split("\n").filter((l) => l.trim()).length;
+        logQuery({
+          ts: new Date().toISOString(),
+          source: "mcp",
+          tool: name,
+          query: String(toolArgs.query ?? toolArgs.symbol ?? toolArgs.target ?? ""),
+          project: projectRoot,
+          results: resultLines,
+          ms: Date.now() - startMs,
+          error: result.isError ? text.slice(0, 200) : undefined,
+        });
+      } catch {}
+
+      return result;
     });
 
     await server.connect(transport);

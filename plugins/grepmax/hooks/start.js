@@ -121,7 +121,7 @@ async function main() {
     hookSpecificOutput: {
       hookEventName: "SessionStart",
       additionalContext:
-        'gmax ready. PREFER CLI over MCP — use Bash(gmax "query" --agent) for search (one line per result, 89% fewer tokens). Bash(gmax trace <symbol>) for call graphs. Bash(gmax skeleton <path>) for structure. Bash(gmax status) to check indexed projects. --agent flag works on search, trace, symbols, related, recent, status, project. If search says "not added yet", run Bash(gmax add).',
+        'gmax ready. PREFER CLI over MCP — use Bash(gmax "query" --agent) for search (one line per result, 89% fewer tokens). Bash(gmax extract <symbol>) for full function body. Bash(gmax peek <symbol>) for quick overview (sig+callers+callees). Bash(gmax trace <symbol>) for call graphs. Bash(gmax skeleton <path>) for structure. Bash(gmax status) to check indexed projects. --agent flag works on search, trace, symbols, related, recent, status, project, extract, peek. If search says "not added yet", run Bash(gmax add).',
     },
   };
   process.stdout.write(JSON.stringify(response));

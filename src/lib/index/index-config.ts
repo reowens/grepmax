@@ -32,6 +32,7 @@ export interface GlobalConfig {
   vectorDim: number;
   embedMode: "cpu" | "gpu";
   mlxModel?: string;
+  queryLog?: boolean;
 }
 
 const GLOBAL_CONFIG_PATH = path.join(PATHS.globalRoot, "config.json");
