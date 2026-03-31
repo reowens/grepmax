@@ -38,15 +38,17 @@ export const watch = new Command("watch")
 
     // --- Daemon mode ---
     if (options.daemon) {
-      if (options.background) {
-        const args = process.argv
-          .slice(2)
-          .filter((arg) => arg !== "-b" && arg !== "--background");
+      if (options.path) {
+        console.error("Error: --daemon watches all projects globally; --path is not allowed with --daemon");
+        process.exitCode = 1;
+        return;
+      }
 
+      if (options.background) {
         const logFile = path.join(PATHS.logsDir, "daemon.log");
         const out = openRotatedLog(logFile);
 
-        const child = spawn(process.argv[0], [process.argv[1], ...args], {
+        const child = spawn(process.argv[0], [process.argv[1], "watch", "--daemon"], {
           detached: true,
           stdio: ["ignore", out, out],
           cwd: process.cwd(),

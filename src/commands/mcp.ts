@@ -339,9 +339,13 @@ export const mcp = new Command("mcp")
     // --- Background watcher ---
 
     async function ensureWatcher(): Promise<void> {
-      const result = await launchWatcher(projectRoot);
-      if (result.ok && !result.reused) {
-        console.log(`[MCP] Started background watcher for ${projectRoot} (PID: ${result.pid})`);
+      try {
+        const result = await launchWatcher(projectRoot);
+        if (result.ok && !result.reused) {
+          console.log(`[MCP] Started background watcher for ${projectRoot} (PID: ${result.pid})`);
+        }
+      } catch (err) {
+        console.error("[MCP] Watcher startup failed:", err);
       }
     }
 

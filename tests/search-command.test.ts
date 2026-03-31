@@ -46,7 +46,7 @@ vi.mock("../src/lib/index/index-config", () => ({
 }));
 
 vi.mock("../src/lib/utils/watcher-launcher", () => ({
-  launchWatcher: vi.fn(() => null),
+  launchWatcher: vi.fn(async () => ({ ok: true, pid: 9999, reused: true })),
 }));
 
 vi.mock("../src/lib/index/sync-helpers", () => ({

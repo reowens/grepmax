@@ -38,21 +38,29 @@ export async function launchWatcher(projectRoot: string): Promise<LaunchResult> 
   }
 
   // 3. Try daemon IPC
-  const resp = await sendDaemonCommand({ cmd: "watch", root: projectRoot });
+  let resp: Awaited<ReturnType<typeof sendDaemonCommand>>;
+  try {
+    resp = await sendDaemonCommand({ cmd: "watch", root: projectRoot });
+  } catch {
+    resp = { ok: false, error: "request-failed" };
+  }
   if (resp.ok && typeof resp.pid === "number") {
     return { ok: true, pid: resp.pid, reused: true };
   }
 
-  // 4. Daemon not running — try to start it
+  // 4. Daemon not running — try to start it, poll until ready
   const error = resp.error as string | undefined;
   if (error === "ENOENT" || error === "ECONNREFUSED") {
     const daemonPid = spawnDaemon();
     if (daemonPid) {
-      // Wait for daemon to start listening
-      await new Promise((r) => setTimeout(r, 2000));
-      const retry = await sendDaemonCommand({ cmd: "watch", root: projectRoot });
-      if (retry.ok && typeof retry.pid === "number") {
-        return { ok: true, pid: retry.pid, reused: false };
+      for (let i = 0; i < 25; i++) {
+        await new Promise((r) => setTimeout(r, 200));
+        try {
+          const retry = await sendDaemonCommand({ cmd: "watch", root: projectRoot });
+          if (retry.ok && typeof retry.pid === "number") {
+            return { ok: true, pid: retry.pid, reused: false };
+          }
+        } catch {}
       }
     }
   }

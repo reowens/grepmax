@@ -36,6 +36,8 @@ export class Daemon {
   private shuttingDown = false;
   // Sorted longest-first for prefix matching
   private sortedRoots: string[] = [];
+  // Guard against concurrent watchProject/unwatchProject
+  private readonly pendingOps = new Set<string>();
 
   async start(): Promise<void> {
     // 1. Kill existing per-project watchers
@@ -50,10 +52,15 @@ export class Daemon {
     try { fs.unlinkSync(PATHS.daemonSocket); } catch {}
 
     // 3. Open shared resources
-    fs.mkdirSync(PATHS.cacheDir, { recursive: true });
-    fs.mkdirSync(PATHS.lancedbDir, { recursive: true });
-    this.vectorDb = new VectorDB(PATHS.lancedbDir);
-    this.metaCache = new MetaCache(PATHS.lmdbPath);
+    try {
+      fs.mkdirSync(PATHS.cacheDir, { recursive: true });
+      fs.mkdirSync(PATHS.lancedbDir, { recursive: true });
+      this.vectorDb = new VectorDB(PATHS.lancedbDir);
+      this.metaCache = new MetaCache(PATHS.lmdbPath);
+    } catch (err) {
+      console.error("[daemon] Failed to open shared resources:", err);
+      throw err;
+    }
 
     // 4. Create chokidar (empty — projects added via watchProject)
     const forcePoll = process.env.GMAX_WATCH_POLL === "1";
@@ -74,7 +81,7 @@ export class Daemon {
       console.error("[daemon] Watcher error:", err);
     });
 
-    // 5. Register daemon
+    // 5. Register daemon (only after resources are open)
     registerDaemon(process.pid);
 
     // 6. Load registered projects
@@ -142,8 +149,9 @@ export class Daemon {
   }
 
   async watchProject(root: string): Promise<void> {
-    if (this.processors.has(root)) return;
+    if (this.processors.has(root) || this.pendingOps.has(root)) return;
     if (!this.vectorDb || !this.metaCache || !this.watcher) return;
+    this.pendingOps.add(root);
 
     const processor = new ProjectBatchProcessor({
       projectRoot: root,
@@ -172,6 +180,7 @@ export class Daemon {
       lastHeartbeat: Date.now(),
     });
 
+    this.pendingOps.delete(root);
     console.log(`[daemon] Watching ${root}`);
   }
 
