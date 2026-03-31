@@ -290,6 +290,10 @@ async function outputSkeletons(
 
   if (filesToProcess.length === 0) {
     console.log("No skeleton matches found.");
+    console.log(
+      "\nTry: broaden your query, or use `gmax skeleton <path>` to view a specific file's structure.",
+    );
+    process.exitCode = 1;
     return;
   }
 
@@ -358,6 +362,19 @@ async function outputSkeletons(
     console.log(res.skeleton);
     console.log(""); // Separator
   }
+}
+
+function resultCountHeader(results: any[], maxCount: number): string {
+  const files = new Set<string>();
+  for (const r of results) {
+    const p = (r as any).path ?? (r as any).metadata?.path ?? "";
+    if (p) files.add(p);
+  }
+  const showing =
+    results.length < maxCount
+      ? `${results.length}`
+      : `top ${results.length}`;
+  return `Found ${results.length} match${results.length === 1 ? "" : "es"} (showing ${showing}) across ${files.size} file${files.size === 1 ? "" : "s"}`;
 }
 
 export const search: Command = new CommanderCommand("search")
@@ -500,23 +517,41 @@ Examples:
             : [];
 
           if (options.compact) {
-            const compactText = compactHits.length
-              ? formatCompactTable(compactHits, projectRootForServer, pattern, {
+            if (!compactHits.length) {
+              console.log("No matches found.");
+              console.log(
+                "\nTry: broaden your query, use fewer keywords, or check `gmax status` to verify the project is indexed.",
+              );
+              process.exitCode = 1;
+            } else {
+              console.log(
+                formatCompactTable(compactHits, projectRootForServer, pattern, {
                   isTTY: !!process.stdout.isTTY,
                   plain: !!options.plain,
-                })
-              : "No matches found.";
-            console.log(compactText);
+                }),
+              );
+            }
             return; // EXIT
           }
 
           if (!filteredData.length) {
             console.log("No matches found.");
+            console.log(
+              "\nTry: broaden your query, use fewer keywords, or check `gmax status` to verify the project is indexed.",
+            );
+            process.exitCode = 1;
             return; // EXIT
           }
 
           const isTTY = process.stdout.isTTY;
           const shouldBePlain = options.plain || !isTTY;
+
+          if (!options.agent && !options.compact) {
+            console.log(
+              resultCountHeader(filteredData, parseInt(options.m, 10)),
+            );
+            console.log();
+          }
 
           if (shouldBePlain) {
             const mappedResults = toTextResults(filteredData);
@@ -742,6 +777,7 @@ Examples:
       if (options.agent) {
         if (!filteredData.length) {
           console.log("(none)");
+          process.exitCode = 1;
         } else {
           // In agent mode, print imports header per file
           const seenImportFiles = new Set<string>();
@@ -843,29 +879,35 @@ Examples:
         return;
       }
 
-      const compactHits = options.compact ? toCompactHits(filteredData) : [];
-      const compactText =
-        options.compact && compactHits.length
-          ? formatCompactTable(compactHits, projectRoot, pattern, {
-              isTTY: !!process.stdout.isTTY,
-              plain: !!options.plain,
-            })
-          : options.compact
-            ? "No matches found."
-            : "";
-
       if (!filteredData.length) {
         console.log("No matches found.");
+        console.log(
+          "\nTry: broaden your query, use fewer keywords, or check `gmax status` to verify the project is indexed.",
+        );
+        process.exitCode = 1;
         return;
       }
 
       if (options.compact) {
-        console.log(compactText);
+        const compactHits = toCompactHits(filteredData);
+        console.log(
+          formatCompactTable(compactHits, projectRoot, pattern, {
+            isTTY: !!process.stdout.isTTY,
+            plain: !!options.plain,
+          }),
+        );
         return;
       }
 
       const isTTY = process.stdout.isTTY;
       const shouldBePlain = options.plain || !isTTY;
+
+      if (!options.agent && !options.compact) {
+        console.log(
+          resultCountHeader(filteredData, parseInt(options.m, 10)),
+        );
+        console.log();
+      }
 
       // Print imports per unique file before results when --imports is used
       if (options.imports) {

@@ -17,6 +17,7 @@ export const related = new Command("related")
   .argument("<file>", "File path relative to project root")
   .option("-l, --limit <n>", "Max results per direction (default 10)", "10")
   .option("--root <dir>", "Project root directory")
+  .option("--agent", "Compact output for AI agents", false)
   .action(async (file, opts) => {
     const limit = Math.min(
       Math.max(Number.parseInt(opts.limit || "10", 10), 1),
@@ -42,6 +43,10 @@ export const related = new Command("related")
 
       if (fileChunks.length === 0) {
         console.log(`File not found in index: ${file}`);
+        console.log(
+          "\nCheck that the path is relative to the project root. Run `gmax status` to see indexed projects.",
+        );
+        process.exitCode = 1;
         return;
       }
 
@@ -91,42 +96,59 @@ export const related = new Command("related")
         }
       }
 
-      console.log(`Related files for ${file}:\n`);
-
       const topDeps = Array.from(depCounts.entries())
         .sort((a, b) => b[1] - a[1])
         .slice(0, limit);
-      if (topDeps.length > 0) {
-        console.log("Dependencies (files this imports/calls):");
-        for (const [p, count] of topDeps) {
-          const rel = p.startsWith(`${projectRoot}/`)
-            ? p.slice(projectRoot.length + 1)
-            : p;
-          console.log(
-            `  ${rel.padEnd(40)} (${count} shared symbol${count > 1 ? "s" : ""})`,
-          );
-        }
-      } else {
-        console.log("Dependencies: none found");
-      }
-
-      console.log("");
-
       const topRevs = Array.from(revCounts.entries())
         .sort((a, b) => b[1] - a[1])
         .slice(0, limit);
-      if (topRevs.length > 0) {
-        console.log("Dependents (files that call this):");
-        for (const [p, count] of topRevs) {
-          const rel = p.startsWith(`${projectRoot}/`)
+
+      if (opts.agent) {
+        const rel = (p: string) =>
+          p.startsWith(`${projectRoot}/`)
             ? p.slice(projectRoot.length + 1)
             : p;
-          console.log(
-            `  ${rel.padEnd(40)} (${count} shared symbol${count > 1 ? "s" : ""})`,
-          );
+        for (const [p, count] of topDeps) {
+          console.log(`dep: ${rel(p)}\t${count}`);
+        }
+        for (const [p, count] of topRevs) {
+          console.log(`rev: ${rel(p)}\t${count}`);
+        }
+        if (!topDeps.length && !topRevs.length) {
+          console.log("(none)");
         }
       } else {
-        console.log("Dependents: none found");
+        console.log(`Related files for ${file}:\n`);
+
+        if (topDeps.length > 0) {
+          console.log("Dependencies (files this imports/calls):");
+          for (const [p, count] of topDeps) {
+            const rel = p.startsWith(`${projectRoot}/`)
+              ? p.slice(projectRoot.length + 1)
+              : p;
+            console.log(
+              `  ${rel.padEnd(40)} (${count} shared symbol${count > 1 ? "s" : ""})`,
+            );
+          }
+        } else {
+          console.log("Dependencies: none found");
+        }
+
+        console.log("");
+
+        if (topRevs.length > 0) {
+          console.log("Dependents (files that call this):");
+          for (const [p, count] of topRevs) {
+            const rel = p.startsWith(`${projectRoot}/`)
+              ? p.slice(projectRoot.length + 1)
+              : p;
+            console.log(
+              `  ${rel.padEnd(40)} (${count} shared symbol${count > 1 ? "s" : ""})`,
+            );
+          }
+        } else {
+          console.log("Dependents: none found");
+        }
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Unknown error";

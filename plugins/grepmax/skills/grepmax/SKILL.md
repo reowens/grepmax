@@ -40,7 +40,7 @@ If search returns "This project hasn't been added to gmax yet", run `Bash(gmax a
 
 ### Search — `gmax "query" --agent`
 
-The `--agent` flag is **search-only**. Do NOT use it on `trace`, `skeleton`, or other commands.
+The `--agent` flag produces compact, token-efficient output for AI agents. It is supported on: `search`, `trace`, `symbols`, `related`, `recent`, `status`, and `project`.
 
 ```
 gmax "where do we handle authentication" --agent
@@ -70,6 +70,7 @@ This shows function signatures, what each calls, and complexity — enough to de
 gmax trace handleAuth                      # 1-hop: callers + callees
 gmax trace handleAuth -d 2                 # 2-hop: callers-of-callers
 gmax trace handleAuth --root ~/project     # trace in a different project
+gmax trace handleAuth --agent              # compact: symbol\tpath:line, <- callers, -> callees
 ```
 
 ### Skeleton — `gmax skeleton <target>`
@@ -97,11 +98,20 @@ gmax related src/lib/index/syncer.ts --root ~/project
 gmax recent                                # recently modified files
 ```
 
-### Other
+### Symbols — `gmax symbols`
 ```
 gmax symbols                               # list indexed symbols
 gmax symbols auth -p src/ --root ~/proj    # filter by name, path, project
+gmax symbols --agent                       # compact: symbol\tpath:line\tcount
+```
+
+### Other
+```
 gmax status                                # show all indexed projects
+gmax status --agent                        # compact: name\tchunks\tage\tstatus
+gmax recent --agent                        # compact: path\tage
+gmax related src/file.ts --agent           # compact: dep:/rev: path\tcount
+gmax project --agent                       # compact: key\tvalue pairs
 gmax index                                 # reindex current directory
 gmax config                                # view/change settings
 gmax doctor                                # health check
@@ -124,7 +134,7 @@ Use MCP only for `index_status` and `summarize_directory`. Use CLI for everythin
 
 ## Tips
 
-- **Use `--agent` on search only** — one line per result with signature hints.
+- **Use `--agent` for compact output** — supported on search, trace, symbols, related, recent, status, project.
 - **Be specific.** 5+ words. "auth" returns noise. "where does the server validate JWT tokens" is specific.
 - **Use `--role ORCHESTRATION`** to skip type definitions and find the actual logic.
 - **Use `--symbol`** when the query is a function/class name — gets search + trace in one call.

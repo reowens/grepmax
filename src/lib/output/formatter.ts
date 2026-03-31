@@ -119,14 +119,30 @@ export function formatResults(
 
 import type { CallerTree, GraphNode } from "../graph/graph-builder";
 
-export function formatTrace(graph: {
-  center: GraphNode | null;
-  callerTree: CallerTree[];
-  callees: GraphNode[];
-  importers: string[];
-}): string {
+export function formatTrace(
+  graph: {
+    center: GraphNode | null;
+    callerTree: CallerTree[];
+    callees: GraphNode[];
+    importers: string[];
+  },
+  options?: { symbol?: string },
+): string {
   if (!graph.center) {
-    return style.dim("Symbol not found.");
+    const name = options?.symbol ?? "unknown";
+    const lines = [
+      `Symbol not found: ${style.bold(name)}`,
+      "",
+      style.dim("Possible reasons:"),
+      style.dim("  • The symbol doesn't exist in any indexed project"),
+      style.dim("  • The containing file hasn't been indexed yet"),
+      style.dim("  • The name is spelled differently in the source"),
+      "",
+      style.dim("Try:"),
+      style.dim("  gmax status          — see which projects are indexed"),
+      style.dim("  gmax search <name>   — fuzzy search for similar symbols"),
+    ];
+    return lines.join("\n");
   }
 
   const lines: string[] = [];

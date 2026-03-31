@@ -97,7 +97,13 @@ async function collectSymbols(options: {
 
 function formatTable(entries: SymbolEntry[]): string {
   if (entries.length === 0) {
-    return "No symbols found. Run `gmax index` to build the index.";
+    return [
+      "No symbols found.",
+      "",
+      "Try:",
+      "  gmax status   — verify the project is indexed",
+      "  gmax index    — rebuild the index",
+    ].join("\n");
   }
 
   const rows = entries.map((e) => ({
@@ -132,12 +138,25 @@ function formatTable(entries: SymbolEntry[]): string {
   return lines.join("\n");
 }
 
+function formatAgent(entries: SymbolEntry[], projectRoot: string): string {
+  if (entries.length === 0) return "(none)";
+  return entries
+    .map((e) => {
+      const rel = e.path.startsWith(projectRoot)
+        ? e.path.slice(projectRoot.length + 1)
+        : e.path;
+      return `${e.symbol}\t${rel}:${Math.max(1, e.line + 1)}\t${e.count}`;
+    })
+    .join("\n");
+}
+
 export const symbols = new Command("symbols")
   .description("List indexed symbols and where they are defined")
   .argument("[pattern]", "Optional pattern to filter symbols by name")
   .option("-l, --limit <number>", "Max symbols to list (default 20)", "20")
   .option("-p, --path <prefix>", "Only include symbols under this path prefix")
   .option("--root <dir>", "Project root directory")
+  .option("--agent", "Compact output for AI agents", false)
   .action(async (pattern, cmd) => {
     const root = cmd.root ? path.resolve(cmd.root) : process.cwd();
     const projectRoot = findProjectRoot(root) ?? root;
@@ -151,9 +170,17 @@ export const symbols = new Command("symbols")
       pattern: pattern as string | undefined,
     });
 
-    console.log(
-      `${style.bold("Project")}: ${style.green(projectRoot)}\n${formatTable(entries)}`,
-    );
+    if (cmd.agent) {
+      console.log(formatAgent(entries, projectRoot));
+    } else {
+      console.log(
+        `${style.bold("Project")}: ${style.green(projectRoot)}\n${formatTable(entries)}`,
+      );
+    }
+
+    if (entries.length === 0) {
+      process.exitCode = 1;
+    }
 
     await gracefulExit();
   });

@@ -10,6 +10,7 @@ export const recent = new Command("recent")
   .description("Show recently modified indexed files")
   .option("-l, --limit <n>", "Max files (default 20)", "20")
   .option("--root <dir>", "Project root (defaults to current directory)")
+  .option("--agent", "Compact output for AI agents", false)
   .action(async (opts) => {
     const limit = Math.min(
       Math.max(Number.parseInt(opts.limit || "20", 10), 1),
@@ -35,19 +36,32 @@ export const recent = new Command("recent")
 
         if (top.length === 0) {
           console.log(`No indexed files found for ${root}`);
+          console.log(
+            "\nTry: `gmax add` to register and index this project, or `gmax status` to see what's indexed.",
+          );
+          process.exitCode = 1;
           return;
         }
 
         const now = Date.now();
-        console.log(
-          `Recent changes in ${path.basename(root)} (${top.length} most recent):\n`,
-        );
-        for (const f of top) {
-          const rel = f.path.startsWith(prefix)
-            ? f.path.slice(prefix.length)
-            : f.path;
-          const ago = formatTimeAgo(now - f.mtimeMs);
-          console.log(`  ${ago.padEnd(10)} ${rel}`);
+        if (opts.agent) {
+          for (const f of top) {
+            const rel = f.path.startsWith(prefix)
+              ? f.path.slice(prefix.length)
+              : f.path;
+            console.log(`${rel}\t${formatTimeAgo(now - f.mtimeMs)}`);
+          }
+        } else {
+          console.log(
+            `Recent changes in ${path.basename(root)} (${top.length} most recent):\n`,
+          );
+          for (const f of top) {
+            const rel = f.path.startsWith(prefix)
+              ? f.path.slice(prefix.length)
+              : f.path;
+            const ago = formatTimeAgo(now - f.mtimeMs);
+            console.log(`  ${ago.padEnd(10)} ${rel}`);
+          }
         }
       } finally {
         await metaCache.close();

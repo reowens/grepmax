@@ -16,6 +16,7 @@ function toArr(val: unknown): string[] {
 export const project = new Command("project")
   .description("Show project overview — languages, structure, key symbols")
   .option("--root <dir>", "Project root (defaults to current directory)")
+  .option("--agent", "Compact output for AI agents", false)
   .action(async (opts) => {
     let vectorDb: VectorDB | null = null;
 
@@ -47,6 +48,7 @@ export const project = new Command("project")
         console.log(
           `No indexed data found for ${root}. Run: gmax index --path ${root}`,
         );
+        process.exitCode = 1;
         return;
       }
 
@@ -100,48 +102,74 @@ export const project = new Command("project")
 
       const projects = listProjects();
       const proj = projects.find((p) => p.root === root);
-      console.log(`Project: ${projectName} (${root})`);
-      console.log(
-        `Last indexed: ${proj?.lastIndexed ?? "unknown"} • ${rows.length} chunks • ${files.size} files\n`,
-      );
 
       const extEntries = Array.from(extCounts.entries())
         .sort((a, b) => b[1] - a[1])
         .slice(0, 8);
-      console.log(
-        `Languages: ${extEntries.map(([ext, count]) => `${ext} (${Math.round((count / rows.length) * 100)}%)`).join(", ")}\n`,
-      );
-
-      console.log("Directory structure:");
-      for (const [dir, data] of Array.from(dirCounts.entries())
-        .sort((a, b) => b[1].chunks - a[1].chunks)
-        .slice(0, 12)) {
-        console.log(
-          `  ${dir.padEnd(25)} (${data.files.size} files, ${data.chunks} chunks)`,
-        );
-      }
-
-      const roleEntries = Array.from(roleCounts.entries()).sort(
-        (a, b) => b[1] - a[1],
-      );
-      console.log(
-        `\nRoles: ${roleEntries.map(([r, c]) => `${Math.round((c / rows.length) * 100)}% ${r}`).join(", ")}\n`,
-      );
-
       const topSymbols = Array.from(symbolRefs.entries())
         .sort((a, b) => b[1] - a[1])
         .slice(0, 8);
-      if (topSymbols.length > 0) {
-        console.log("Key symbols (by reference count):");
-        for (const [sym, count] of topSymbols) {
-          console.log(`  ${sym.padEnd(25)} (referenced ${count}x)`);
-        }
-      }
 
-      if (entryPoints.length > 0) {
-        console.log("\nEntry points (exported orchestration):");
-        for (const ep of entryPoints.slice(0, 10)) {
-          console.log(`  ${ep.symbol.padEnd(25)} ${ep.path}`);
+      if (opts.agent) {
+        console.log(`name\t${projectName}`);
+        console.log(`root\t${root}`);
+        console.log(`chunks\t${rows.length}`);
+        console.log(`files\t${files.size}`);
+        console.log(`last_indexed\t${proj?.lastIndexed ?? "unknown"}`);
+        console.log(
+          `languages\t${extEntries.map(([ext]) => ext).join(",")}`,
+        );
+        console.log(
+          `top_dirs\t${Array.from(dirCounts.entries()).sort((a, b) => b[1].chunks - a[1].chunks).slice(0, 8).map(([d]) => d).join(",")}`,
+        );
+        if (topSymbols.length > 0) {
+          console.log(
+            `key_symbols\t${topSymbols.map(([s]) => s).join(",")}`,
+          );
+        }
+        if (entryPoints.length > 0) {
+          console.log(
+            `entry_points\t${entryPoints.slice(0, 10).map((e) => e.symbol).join(",")}`,
+          );
+        }
+      } else {
+        console.log(`Project: ${projectName} (${root})`);
+        console.log(
+          `Last indexed: ${proj?.lastIndexed ?? "unknown"} • ${rows.length} chunks • ${files.size} files\n`,
+        );
+
+        console.log(
+          `Languages: ${extEntries.map(([ext, count]) => `${ext} (${Math.round((count / rows.length) * 100)}%)`).join(", ")}\n`,
+        );
+
+        console.log("Directory structure:");
+        for (const [dir, data] of Array.from(dirCounts.entries())
+          .sort((a, b) => b[1].chunks - a[1].chunks)
+          .slice(0, 12)) {
+          console.log(
+            `  ${dir.padEnd(25)} (${data.files.size} files, ${data.chunks} chunks)`,
+          );
+        }
+
+        const roleEntries = Array.from(roleCounts.entries()).sort(
+          (a, b) => b[1] - a[1],
+        );
+        console.log(
+          `\nRoles: ${roleEntries.map(([r, c]) => `${Math.round((c / rows.length) * 100)}% ${r}`).join(", ")}\n`,
+        );
+
+        if (topSymbols.length > 0) {
+          console.log("Key symbols (by reference count):");
+          for (const [sym, count] of topSymbols) {
+            console.log(`  ${sym.padEnd(25)} (referenced ${count}x)`);
+          }
+        }
+
+        if (entryPoints.length > 0) {
+          console.log("\nEntry points (exported orchestration):");
+          for (const ep of entryPoints.slice(0, 10)) {
+            console.log(`  ${ep.symbol.padEnd(25)} ${ep.path}`);
+          }
         }
       }
     } catch (error) {
