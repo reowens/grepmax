@@ -19,6 +19,7 @@ export class MetaCache {
     this.db = open<MetaEntry>({
       path: lmdbPath,
       compression: true,
+      cache: true,
     });
     this.unregisterCleanup = registerCleanup(() => this.close());
   }
