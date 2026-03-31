@@ -33,8 +33,8 @@ The watcher system has grown organically across 9+ files with no unified lifecyc
 | 4. Centralize spawn | **Done** | `watcher-launcher.ts` with `LaunchResult` type; MCP uses it |
 | 5. Single daemon | **Not started** | Main remaining work |
 | 6. MCP coverage | **Done** | 7 handlers call `ensureWatcher()` |
-| 7. Log consolidation | Pending | |
-| 8. Watcher resilience | Pending | |
+| 7. Log consolidation | **Done** | `~/.gmax/logs/` with shared `openRotatedLog()` |
+| 8. Watcher resilience | **Done** | Pool failure requeue + verified stop with SIGKILL |
 
 ---
 
@@ -272,37 +272,30 @@ All 7 MCP tool handlers call `ensureWatcher()`:
 
 ---
 
-## Phase 7: Logging consolidation
+## Phase 7: Logging consolidation ✅
 
-### 7.1 Move MLX server logs to `~/.gmax/logs/`
-- **Current:** `/tmp/mlx-embed-server.log` and `/tmp/mlx-summarizer.log`
-- **Fix:** `~/.gmax/logs/mlx-embed-server.log` with 5MB rotation
-
-### 7.2 Unified log rotation
-- Apply watch.ts rotation logic (5MB, keep `.prev`) to all log files
+- All logs consolidated to `~/.gmax/logs/` (was `/tmp/` for MLX server + droid hook)
+- Shared `openRotatedLog()` utility in `src/lib/utils/log-rotate.ts` (5MB rotation, keep `.prev`)
+- `PATHS.logsDir` constant added to `src/config.ts`
 
 ---
 
-## Phase 8: Watcher resilience
+## Phase 8: Watcher resilience ✅
 
-### 8.1 Handle worker pool failure
-- Clear pending files on pool failure (don't accumulate forever)
-- Log the error
-- Files re-detected on next change via mtime
+### 8.1 Requeue on pool failure ✅
+- `watcher.ts` tracks attempted files in a Set during batch processing
+- After early abort (pool unhealthy or signal aborted), unprocessed files are requeued to `pending`
+- Files will be retried on next batch cycle
 
-### 8.2 Post-batch heartbeat
-- After `processBatch()` completes, check if elapsed time exceeded the heartbeat interval (60s)
-- If so, fire an immediate heartbeat to prevent false stale detection
-- This defends against the event-loop-blocking scenario described in Phase 3.2
+### 8.2 Post-batch heartbeat — N/A
+- `processBatch()` is fully async; the event loop is never blocked. Heartbeat `setInterval` fires normally during batch processing. No fix needed.
 
-### 8.3 Stop hook with verification
-- Check PID after `gmax watch stop`
-- SIGKILL if still alive after 3s
+### 8.3 Verified stop with SIGKILL ✅
+- Shared `killProcess()` in `src/lib/utils/process.ts`: SIGTERM → poll 3s → SIGKILL → poll 1s
+- Used by `watch stop`, `watch stop --all`, and `remove`
 
-### 8.4 Chokidar crash recovery
-- Chokidar re-emits `add` events on restart for files that changed during downtime (if mtime differs from initial scan)
-- No need to persist pending queue — chokidar handles this via `ignoreInitial: false` on restart
-- On watcher restart, `ready` event fires after full re-scan, catching missed changes
+### 8.4 Chokidar crash recovery — N/A
+- Already handled via `ignoreInitial: false` on restart. No fix needed.
 
 ---
 
@@ -315,8 +308,8 @@ All 7 MCP tool handlers call `ensureWatcher()`:
 | 3. LMDB watcher store | Medium | High | **Done** | — |
 | 4. Centralize spawn | Small | High | **Done** | — |
 | 6. MCP coverage | Trivial | Medium | **Done** | — |
-| 7. Log consolidation | Trivial | Low | TODO | **PR — next** |
-| 8. Watcher resilience | Small | Medium | TODO | **PR — next** |
+| 7. Log consolidation | Trivial | Low | **Done** | — |
+| 8. Watcher resilience | Small | Medium | **Done** | — |
 | 5. Single daemon | Large | High | TODO | **Future — own PR** |
 
 ---
@@ -331,14 +324,12 @@ Phases 1–4, 6 (all done):
 5. `launchWatcher()` returns `LaunchResult` with distinct error reasons ✅
 6. All 7 MCP tool handlers call `ensureWatcher()` ✅
 
-After log consolidation PR:
-7. MLX logs in `~/.gmax/logs/` not `/tmp/`
-8. All logs rotate at 5MB
-
-After resilience PR:
-9. Long batch processing → heartbeat fires immediately after batch completes
-10. Worker pool crash → pending files cleared, error logged, files re-detected on next change
-11. `gmax watch stop` → verified process is gone
+Phases 7–8 (all done):
+7. MLX logs in `~/.gmax/logs/` not `/tmp/` ✅
+8. All logs rotate at 5MB via shared `openRotatedLog()` ✅
+9. Pool failure mid-batch → unprocessed files requeued to pending ✅
+10. `gmax watch stop` → SIGTERM, poll 3s, SIGKILL if needed ✅
+11. `gmax remove` → same verified kill via shared `killProcess()` ✅
 
 After daemon PR:
 12. `gmax add ~/proj1 && gmax add ~/proj2` → one daemon, two projects watched

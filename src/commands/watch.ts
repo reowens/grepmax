@@ -10,6 +10,7 @@ import { MetaCache } from "../lib/store/meta-cache";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
 import { openRotatedLog } from "../lib/utils/log-rotate";
+import { killProcess } from "../lib/utils/process";
 import { getProject, registerProject } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import {
@@ -221,10 +222,11 @@ watch
     if (options.all) {
       const watchers = listWatchers();
       for (const w of watchers) {
-        try {
-          process.kill(w.pid, "SIGTERM");
-          unregisterWatcher(w.pid);
-        } catch {}
+        const killed = await killProcess(w.pid);
+        unregisterWatcher(w.pid);
+        if (!killed) {
+          console.warn(`Warning: PID ${w.pid} did not exit after SIGKILL`);
+        }
       }
       console.log(`Stopped ${watchers.length} watcher(s).`);
       await gracefulExit();
@@ -240,13 +242,12 @@ watch
       return;
     }
 
-    try {
-      process.kill(watcher.pid, "SIGTERM");
-      unregisterWatcher(watcher.pid);
+    const killed = await killProcess(watcher.pid);
+    unregisterWatcher(watcher.pid);
+    if (killed) {
       console.log(`Stopped watcher (PID: ${watcher.pid})`);
-    } catch {
-      console.log("Watcher process not found.");
-      unregisterWatcher(watcher.pid);
+    } else {
+      console.warn(`Warning: watcher PID ${watcher.pid} did not exit`);
     }
     await gracefulExit();
   });

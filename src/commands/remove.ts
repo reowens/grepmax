@@ -4,6 +4,7 @@ import { Command } from "commander";
 import { MetaCache } from "../lib/store/meta-cache";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
+import { killProcess } from "../lib/utils/process";
 import { removeMarker } from "../lib/utils/project-marker";
 import {
   getProject,
@@ -12,7 +13,6 @@ import {
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import {
   getWatcherForProject,
-  isProcessRunning,
   unregisterWatcher,
 } from "../lib/utils/watcher-store";
 
@@ -75,13 +75,7 @@ Examples:
       const watcher = getWatcherForProject(projectRoot);
       if (watcher) {
         console.log(`Stopping watcher (PID: ${watcher.pid})...`);
-        try {
-          process.kill(watcher.pid, "SIGTERM");
-        } catch {}
-        for (let i = 0; i < 50; i++) {
-          if (!isProcessRunning(watcher.pid)) break;
-          await new Promise((r) => setTimeout(r, 100));
-        }
+        await killProcess(watcher.pid);
         unregisterWatcher(watcher.pid);
       }
 

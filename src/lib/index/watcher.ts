@@ -127,9 +127,11 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
         const vectors: VectorRecord[] = [];
         const metaUpdates = new Map<string, MetaEntry>();
         const metaDeletes: string[] = [];
+        const attempted = new Set<string>();
 
         for (const [absPath, event] of batch) {
           if (batchAc.signal.aborted) break;
+          attempted.add(absPath);
 
           if (event === "unlink") {
             deletes.push(absPath);
@@ -195,6 +197,13 @@ export function startWatcher(opts: WatcherOptions): WatcherHandle {
                 break;
               }
             }
+          }
+        }
+
+        // Requeue files that weren't attempted (aborted or pool unhealthy)
+        for (const [absPath, event] of batch) {
+          if (!attempted.has(absPath) && !pending.has(absPath)) {
+            pending.set(absPath, event);
           }
         }
 
