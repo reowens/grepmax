@@ -45,7 +45,18 @@ function findMlxServerDir() {
 function startPythonServer(serverDir, scriptName, logName) {
   if (!serverDir) return;
 
-  const logPath = `/tmp/${logName}.log`;
+  const logDir = _path.join(require("node:os").homedir(), ".gmax", "logs");
+  fs.mkdirSync(logDir, { recursive: true });
+  const logPath = _path.join(logDir, `${logName}.log`);
+
+  // Rotate if > 5MB (same threshold as watch.ts)
+  try {
+    const stat = fs.statSync(logPath);
+    if (stat.size > 5 * 1024 * 1024) {
+      fs.renameSync(logPath, `${logPath}.prev`);
+    }
+  } catch {}
+
   const out = fs.openSync(logPath, "a");
 
   const child = spawn("uv", ["run", "python", scriptName], {
