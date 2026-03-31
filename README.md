@@ -186,16 +186,17 @@ gmax index --reset                # Full re-index from scratch
 
 ### `gmax watch`
 
-Background file watcher for live reindexing. Watches for file changes and incrementally updates the centralized index. Uses FSEvents on macOS (kernel-level, low overhead) and polling on Linux.
+Background file watcher for live reindexing. A single daemon process watches all registered projects through native OS file system events (`@parcel/watcher` — FSEvents on macOS, inotify on Linux). File changes are detected in sub-second and incrementally reindexed.
 
 ```bash
-gmax watch -b                     # Background mode (auto-stops after 30min idle)
-gmax watch --path ~/workspace     # Watch a specific directory
-gmax watch status                 # Show running watchers
-gmax watch stop --all             # Stop all watchers
+gmax watch --daemon -b            # Start daemon (watches all projects)
+gmax watch -b                     # Per-project mode (fallback)
+gmax watch status                 # Show daemon + watcher status
+gmax watch stop                   # Stop daemon
+gmax watch stop --all             # Stop everything
 ```
 
-The MCP server auto-starts a watcher on session start. You rarely need to run this manually.
+The daemon auto-starts when you run `gmax search` or use MCP tools. It shuts down after 30 minutes of inactivity. CLI commands communicate with the daemon over a Unix domain socket at `~/.gmax/daemon.sock`.
 
 ### `gmax summarize`
 
@@ -295,6 +296,9 @@ gmax doctor
 All data lives in `~/.gmax/`:
 - `~/.gmax/lancedb/` — LanceDB vector store (one database for all indexed directories)
 - `~/.gmax/cache/meta.lmdb` — file metadata cache (content hashes, mtimes)
+- `~/.gmax/cache/watchers.lmdb` — watcher/daemon registry (LMDB, crash-safe)
+- `~/.gmax/daemon.sock` — Unix domain socket for daemon IPC
+- `~/.gmax/logs/` — daemon and watcher logs (5MB rotation)
 - `~/.gmax/config.json` — global config (model tier, embed mode)
 - `~/.gmax/models/` — embedding models
 - `~/.gmax/grammars/` — Tree-sitter grammars
@@ -304,6 +308,10 @@ All chunks store **absolute file paths**. Search scoping is done via path prefix
 
 ### Performance
 
+- **Single Daemon:** One process watches all projects via native OS events — no polling, sub-second file change detection. Shared VectorDB, MetaCache, and worker pool across projects.
+- **Native File Watching:** `@parcel/watcher` uses FSEvents (macOS), inotify (Linux), ReadDirectoryChangesW (Windows) — zero CPU overhead, no file descriptor exhaustion.
+- **Automatic Compaction:** LanceDB table fragments from incremental inserts are compacted every 5 minutes, preventing performance degradation over time.
+- **LMDB Caching:** File metadata reads use LRU/LFU caching for the watcher's hot path.
 - **Bounded Concurrency:** Worker threads scale to 50% of CPU cores (min 4). Override with `GMAX_WORKER_THREADS`.
 - **Smart Chunking:** `tree-sitter` splits code by function/class boundaries for complete logical blocks.
 - **Deduplication:** Identical code blocks are embedded once and cached.
@@ -389,11 +397,12 @@ See [CLAUDE.md](CLAUDE.md) for development setup, commands, and architecture det
 
 ## Troubleshooting
 
-- **Index feels stale?** Run `gmax index` to refresh, or use `gmax watch -b` for live reindexing.
+- **Index feels stale?** Run `gmax index` to refresh. The daemon auto-reindexes on file changes.
 - **Weird results?** Run `gmax doctor` to verify models.
 - **Index getting stuck?** Run `gmax index --verbose` to see which file is being processed.
 - **Need a fresh start?** `rm -rf ~/.gmax/lancedb ~/.gmax/cache` then `gmax index`.
-- **MLX server won't start?** Check `/tmp/mlx-embed-server.log` for errors. Use `GMAX_EMBED_MODE=cpu` to fall back to CPU.
+- **Daemon issues?** Check `~/.gmax/logs/daemon.log`. Run `gmax watch stop` then `gmax watch --daemon -b` to restart.
+- **MLX server won't start?** Check `~/.gmax/logs/mlx-embed-server.log` for errors. Use `GMAX_EMBED_MODE=cpu` to fall back to CPU.
 
 ## Attribution
 
