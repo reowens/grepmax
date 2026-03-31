@@ -1,9 +1,12 @@
 /**
  * Centralized watcher launch logic.
  * Single function that all code paths use to spawn a watcher.
+ * Tries daemon IPC first, falls back to per-project spawn.
  */
 
 import { spawn } from "node:child_process";
+import { sendDaemonCommand } from "./daemon-client";
+import { spawnDaemon } from "./daemon-launcher";
 import { getProject } from "./project-registry";
 import {
   getWatcherCoveringPath,
@@ -15,7 +18,7 @@ export type LaunchResult =
   | { ok: true; pid: number; reused: boolean }
   | { ok: false; reason: "not-registered" | "spawn-failed"; message: string };
 
-export function launchWatcher(projectRoot: string): LaunchResult {
+export async function launchWatcher(projectRoot: string): Promise<LaunchResult> {
   // 1. Project must be registered
   const project = getProject(projectRoot);
   if (!project) {
@@ -26,7 +29,7 @@ export function launchWatcher(projectRoot: string): LaunchResult {
     };
   }
 
-  // 2. Check if watcher already running
+  // 2. Check if watcher already running (daemon registers per-project entries)
   const existing =
     getWatcherForProject(projectRoot) ??
     getWatcherCoveringPath(projectRoot);
@@ -34,7 +37,35 @@ export function launchWatcher(projectRoot: string): LaunchResult {
     return { ok: true, pid: existing.pid, reused: true };
   }
 
-  // 3. Spawn
+  // 3. Try daemon IPC
+  let resp: Awaited<ReturnType<typeof sendDaemonCommand>>;
+  try {
+    resp = await sendDaemonCommand({ cmd: "watch", root: projectRoot });
+  } catch {
+    resp = { ok: false, error: "request-failed" };
+  }
+  if (resp.ok && typeof resp.pid === "number") {
+    return { ok: true, pid: resp.pid, reused: true };
+  }
+
+  // 4. Daemon not running — try to start it, poll until ready
+  const error = resp.error as string | undefined;
+  if (error === "ENOENT" || error === "ECONNREFUSED") {
+    const daemonPid = spawnDaemon();
+    if (daemonPid) {
+      for (let i = 0; i < 25; i++) {
+        await new Promise((r) => setTimeout(r, 200));
+        try {
+          const retry = await sendDaemonCommand({ cmd: "watch", root: projectRoot });
+          if (retry.ok && typeof retry.pid === "number") {
+            return { ok: true, pid: retry.pid, reused: false };
+          }
+        } catch {}
+      }
+    }
+  }
+
+  // 5. Fall back to per-project spawn
   try {
     const child = spawn(
       process.argv[0],

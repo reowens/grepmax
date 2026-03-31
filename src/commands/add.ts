@@ -145,7 +145,7 @@ Examples:
       }
 
       // Start watcher
-      const launched = launchWatcher(projectRoot);
+      const launched = await launchWatcher(projectRoot);
       if (launched.ok) {
         console.log(`Watcher started (PID: ${launched.pid})`);
       } else if (launched.reason === "spawn-failed") {

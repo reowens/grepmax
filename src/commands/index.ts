@@ -95,25 +95,28 @@ Examples:
       await ensureGrammars(console.log, { silent: true });
 
       // Stop any watcher that covers this project — it holds the shared lock
-      const watcher = getWatcherCoveringPath(projectRoot);
-      let restartWatcher: { pid: number; projectRoot: string } | null = null;
-      if (watcher) {
-        console.log(
-          `Stopping watcher (PID: ${watcher.pid}) for ${path.basename(watcher.projectRoot)}...`,
-        );
-        try {
-          process.kill(watcher.pid, "SIGTERM");
-        } catch {}
-        // Wait for process to exit (up to 5s)
-        for (let i = 0; i < 50; i++) {
-          if (!isProcessRunning(watcher.pid)) break;
-          await new Promise((r) => setTimeout(r, 100));
+      let restartWatcher = false;
+      const { isDaemonRunning, sendDaemonCommand } = await import("../lib/utils/daemon-client");
+      if (await isDaemonRunning()) {
+        console.log("Pausing daemon watcher for reindex...");
+        await sendDaemonCommand({ cmd: "unwatch", root: projectRoot });
+        restartWatcher = true;
+      } else {
+        const watcher = getWatcherCoveringPath(projectRoot);
+        if (watcher) {
+          console.log(
+            `Stopping watcher (PID: ${watcher.pid}) for ${path.basename(watcher.projectRoot)}...`,
+          );
+          try {
+            process.kill(watcher.pid, "SIGTERM");
+          } catch {}
+          for (let i = 0; i < 50; i++) {
+            if (!isProcessRunning(watcher.pid)) break;
+            await new Promise((r) => setTimeout(r, 100));
+          }
+          unregisterWatcher(watcher.pid);
+          restartWatcher = true;
         }
-        unregisterWatcher(watcher.pid);
-        restartWatcher = {
-          pid: watcher.pid,
-          projectRoot: watcher.projectRoot,
-        };
       }
 
       const { spinner, onProgress } = createIndexingSpinner(
@@ -174,10 +177,10 @@ Examples:
       } finally {
         // Restart the watcher if we stopped one
         if (restartWatcher) {
-          const launched = launchWatcher(restartWatcher.projectRoot);
+          const launched = await launchWatcher(projectRoot);
           if (launched.ok) {
             console.log(
-              `Restarted watcher for ${path.basename(restartWatcher.projectRoot)} (PID: ${launched.pid})`,
+              `Restarted watcher for ${path.basename(projectRoot)} (PID: ${launched.pid})`,
             );
           } else if (launched.reason === "spawn-failed") {
             console.warn(`[index] ${launched.message}`);

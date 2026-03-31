@@ -181,4 +181,39 @@ export function migrateFromJson(): void {
   }
 }
 
+// --- Daemon registry ---
+
+export const DAEMON_KEY = "__daemon__";
+
+export function registerDaemon(pid: number): void {
+  getDb().put(DAEMON_KEY, {
+    pid,
+    projectRoot: DAEMON_KEY,
+    startTime: Date.now(),
+    status: "watching",
+    lastHeartbeat: Date.now(),
+  });
+}
+
+export function unregisterDaemon(): void {
+  try {
+    getDb().remove(DAEMON_KEY);
+  } catch {}
+}
+
+export function getDaemonInfo(): WatcherInfo | undefined {
+  const info = getDb().get(DAEMON_KEY);
+  if (info && isAlive(info)) return info;
+  if (info) {
+    try { getDb().remove(DAEMON_KEY); } catch {}
+  }
+  return undefined;
+}
+
+export function unregisterWatcherByRoot(projectRoot: string): void {
+  try {
+    getDb().remove(projectRoot);
+  } catch {}
+}
+
 export { isProcessRunning };

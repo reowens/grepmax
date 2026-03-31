@@ -71,12 +71,18 @@ Examples:
         }
       }
 
-      // Stop any watcher
-      const watcher = getWatcherForProject(projectRoot);
-      if (watcher) {
-        console.log(`Stopping watcher (PID: ${watcher.pid})...`);
-        await killProcess(watcher.pid);
-        unregisterWatcher(watcher.pid);
+      // Stop any watcher — try daemon IPC first, fall back to direct kill
+      const { isDaemonRunning, sendDaemonCommand } = await import("../lib/utils/daemon-client");
+      if (await isDaemonRunning()) {
+        console.log("Unwatching via daemon...");
+        await sendDaemonCommand({ cmd: "unwatch", root: projectRoot });
+      } else {
+        const watcher = getWatcherForProject(projectRoot);
+        if (watcher) {
+          console.log(`Stopping watcher (PID: ${watcher.pid})...`);
+          await killProcess(watcher.pid);
+          unregisterWatcher(watcher.pid);
+        }
       }
 
       // Delete vectors from LanceDB

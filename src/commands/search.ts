@@ -669,7 +669,7 @@ Examples:
       // Ensure a watcher is running for live reindexing
       if (!process.env.VITEST && !process.env.NODE_ENV?.includes("test")) {
         const { launchWatcher } = await import("../lib/utils/watcher-launcher");
-        const launched = launchWatcher(projectRoot);
+        const launched = await launchWatcher(projectRoot);
         if (!launched.ok && launched.reason === "spawn-failed") {
           console.warn(`[search] ${launched.message}`);
         }

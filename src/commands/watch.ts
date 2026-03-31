@@ -31,9 +31,59 @@ const IDLE_CHECK_INTERVAL_MS = 60 * 1000; // check every minute
 export const watch = new Command("watch")
   .description("Start background file watcher for live reindexing")
   .option("-b, --background", "Run watcher in background and exit")
+  .option("-d, --daemon", "Run as centralized daemon watching all projects")
   .option("-p, --path <dir>", "Directory to watch (defaults to project root)")
   .option("--no-idle-timeout", "Disable the 30-minute idle shutdown")
-  .action(async (options: { background?: boolean; path?: string; idleTimeout?: boolean }) => {
+  .action(async (options: { background?: boolean; daemon?: boolean; path?: string; idleTimeout?: boolean }) => {
+
+    // --- Daemon mode ---
+    if (options.daemon) {
+      if (options.path) {
+        console.error("Error: --daemon watches all projects globally; --path is not allowed with --daemon");
+        process.exitCode = 1;
+        return;
+      }
+
+      if (options.background) {
+        const logFile = path.join(PATHS.logsDir, "daemon.log");
+        const out = openRotatedLog(logFile);
+
+        const child = spawn(process.argv[0], [process.argv[1], "watch", "--daemon"], {
+          detached: true,
+          stdio: ["ignore", out, out],
+          cwd: process.cwd(),
+          env: { ...process.env, GMAX_BACKGROUND: "true" },
+        });
+        child.unref();
+
+        console.log(`Daemon started (PID: ${child.pid}, log: ${logFile})`);
+        process.exit(0);
+      }
+
+      // Daemon foreground
+      migrateFromJson();
+      const { Daemon } = await import("../lib/daemon/daemon");
+      const daemon = new Daemon();
+
+      try {
+        await daemon.start();
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException)?.code;
+        if (code === "EADDRINUSE") {
+          // Another daemon already running — not an error
+          process.exit(0);
+        }
+        console.error("[daemon] Failed to start:", err);
+        process.exitCode = 1;
+        return;
+      }
+
+      process.on("SIGINT", () => daemon.shutdown().then(() => gracefulExit()));
+      process.on("SIGTERM", () => daemon.shutdown().then(() => gracefulExit()));
+      return;
+    }
+
+    // --- Per-project mode ---
     const projectRoot = options.path
       ? path.resolve(options.path)
       : findProjectRoot(process.cwd()) ?? process.cwd();
@@ -72,7 +122,7 @@ export const watch = new Command("watch")
       process.exit(0);
     }
 
-    // --- Foreground mode ---
+    // --- Per-project foreground mode ---
 
     // Migrate legacy watchers.json to LMDB on first use
     migrateFromJson();
@@ -196,21 +246,39 @@ watch
   .command("status")
   .description("Show running watchers")
   .action(async () => {
-    const watchers = listWatchers();
+    const { sendDaemonCommand } = await import("../lib/utils/daemon-client");
+    const resp = await sendDaemonCommand({ cmd: "status" });
 
-    if (watchers.length === 0) {
+    if (resp.ok) {
+      const projects = resp.projects as Array<{ root: string; status: string }>;
+      const uptime = Math.floor((resp.uptime as number) / 60);
+      console.log(`Daemon (PID: ${resp.pid}, uptime: ${uptime}m):`);
+      for (const p of projects) {
+        console.log(`  - ${p.root} [${p.status}]`);
+      }
+      if (projects.length === 0) {
+        console.log("  (no projects)");
+      }
+    }
+
+    // Also show any per-project watchers not managed by daemon
+    const watchers = listWatchers().filter(
+      (w) => !resp.ok || w.pid !== resp.pid,
+    );
+    if (watchers.length > 0) {
+      console.log("Per-project watchers:");
+      for (const w of watchers) {
+        const age = Math.floor((Date.now() - w.startTime) / 60000);
+        console.log(
+          `  - PID: ${w.pid} | Root: ${w.projectRoot} | Running: ${age}m`,
+        );
+      }
+    }
+
+    if (!resp.ok && watchers.length === 0) {
       console.log("No running watchers.");
-      await gracefulExit();
-      return;
     }
 
-    console.log("Running watchers:");
-    for (const w of watchers) {
-      const age = Math.floor((Date.now() - w.startTime) / 60000);
-      console.log(
-        `- PID: ${w.pid} | Root: ${w.projectRoot} | Running: ${age}m`,
-      );
-    }
     await gracefulExit();
   });
 
@@ -219,6 +287,16 @@ watch
   .description("Stop watcher for current project")
   .option("--all", "Stop all running watchers")
   .action(async (options: { all?: boolean }) => {
+    const { isDaemonRunning, sendDaemonCommand } = await import("../lib/utils/daemon-client");
+    let stoppedDaemon = false;
+
+    // Try shutting down daemon first
+    if (await isDaemonRunning()) {
+      await sendDaemonCommand({ cmd: "shutdown" });
+      console.log("Daemon stopped.");
+      stoppedDaemon = true;
+    }
+
     if (options.all) {
       const watchers = listWatchers();
       for (const w of watchers) {
@@ -228,16 +306,23 @@ watch
           console.warn(`Warning: PID ${w.pid} did not exit after SIGKILL`);
         }
       }
-      console.log(`Stopped ${watchers.length} watcher(s).`);
+      if (watchers.length > 0) {
+        console.log(`Stopped ${watchers.length} per-project watcher(s).`);
+      } else if (!stoppedDaemon) {
+        console.log("No running watchers.");
+      }
       await gracefulExit();
       return;
     }
 
+    // Single project stop
     const projectRoot = findProjectRoot(process.cwd()) ?? process.cwd();
     const watcher = getWatcherForProject(projectRoot);
 
     if (!watcher) {
-      console.log("No watcher running for this project.");
+      if (!stoppedDaemon) {
+        console.log("No watcher running for this project.");
+      }
       await gracefulExit();
       return;
     }

@@ -86,9 +86,14 @@ function isProjectRegistered() {
 function startWatcher() {
   if (!isProjectRegistered()) return;
   try {
-    execFileSync("gmax", ["watch", "-b"], { timeout: 5000, stdio: "ignore" });
+    execFileSync("gmax", ["watch", "--daemon", "-b"], { timeout: 5000, stdio: "ignore" });
   } catch {
-    // Watcher may already be running or gmax not in PATH — ignore
+    // Fallback to per-project mode (older gmax without --daemon)
+    try {
+      execFileSync("gmax", ["watch", "-b"], { timeout: 5000, stdio: "ignore" });
+    } catch {
+      // Watcher may already be running or gmax not in PATH — ignore
+    }
   }
 }
 
