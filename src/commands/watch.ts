@@ -45,6 +45,13 @@ export const watch = new Command("watch")
       }
 
       if (options.background) {
+        // Skip spawn if daemon already running — prevents process accumulation
+        // when SessionStart hook fires on every session/clear/resume
+        const { isDaemonRunning } = await import("../lib/utils/daemon-client");
+        if (await isDaemonRunning()) {
+          process.exit(0);
+        }
+
         const logFile = path.join(PATHS.logsDir, "daemon.log");
         const out = openRotatedLog(logFile);
 
