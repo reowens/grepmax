@@ -140,6 +140,7 @@ export function listWatchers(): WatcherInfo[] {
 
   for (const { key, value } of db.getRange()) {
     if (!value) continue;
+    if (String(key) === DAEMON_KEY) continue;
     if (isAlive(value)) {
       alive.push(value);
     } else {

@@ -62,16 +62,28 @@ export class Daemon {
       throw err;
     }
 
-    // 4. Create chokidar (empty — projects added via watchProject)
-    const forcePoll = process.env.GMAX_WATCH_POLL === "1";
-    const usePoll = forcePoll || process.platform !== "darwin";
-    this.watcher = watch([], {
+    // 4. Register daemon (only after resources are open)
+    registerDaemon(process.pid);
+
+    // 5. Load registered projects and create processors
+    const projects = listProjects().filter((p) => p.status === "indexed");
+    const initialRoots: string[] = [];
+    for (const p of projects) {
+      this.addProcessor(p.root);
+      initialRoots.push(p.root);
+    }
+
+    // 6. Create chokidar with all initial roots
+    // Daemon always uses polling — watching multiple large project trees
+    // with native fs.watch can exhaust file descriptors even on macOS.
+    // Polling at 5s intervals is lightweight and reliable for all platforms.
+    this.watcher = watch(initialRoots, {
       ignored: WATCHER_IGNORE_PATTERNS,
       ignoreInitial: true,
       persistent: true,
-      ...(usePoll
-        ? { usePolling: true, interval: 5000, binaryInterval: 10000 }
-        : {}),
+      usePolling: true,
+      interval: 5000,
+      binaryInterval: 10000,
     });
 
     this.watcher.on("add", (p) => this.routeEvent("change", p));
@@ -80,15 +92,6 @@ export class Daemon {
     this.watcher.on("error", (err) => {
       console.error("[daemon] Watcher error:", err);
     });
-
-    // 5. Register daemon (only after resources are open)
-    registerDaemon(process.pid);
-
-    // 6. Load registered projects
-    const projects = listProjects().filter((p) => p.status === "indexed");
-    for (const p of projects) {
-      await this.watchProject(p.root);
-    }
 
     // 7. Heartbeat
     this.heartbeatInterval = setInterval(() => {
@@ -150,7 +153,17 @@ export class Daemon {
 
   async watchProject(root: string): Promise<void> {
     if (this.processors.has(root) || this.pendingOps.has(root)) return;
-    if (!this.vectorDb || !this.metaCache || !this.watcher) return;
+    if (!this.watcher) return;
+
+    this.addProcessor(root);
+    this.watcher.add(root);
+
+    console.log(`[daemon] Watching ${root}`);
+  }
+
+  private addProcessor(root: string): void {
+    if (this.processors.has(root)) return;
+    if (!this.vectorDb || !this.metaCache) return;
     this.pendingOps.add(root);
 
     const processor = new ProjectBatchProcessor({
@@ -168,7 +181,6 @@ export class Daemon {
       },
     });
 
-    this.watcher.add(root);
     this.processors.set(root, processor);
     this.rebuildSortedRoots();
 
@@ -181,7 +193,6 @@ export class Daemon {
     });
 
     this.pendingOps.delete(root);
-    console.log(`[daemon] Watching ${root}`);
   }
 
   async unwatchProject(root: string): Promise<void> {
