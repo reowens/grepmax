@@ -175,10 +175,12 @@ Examples:
         // Restart the watcher if we stopped one
         if (restartWatcher) {
           const launched = launchWatcher(restartWatcher.projectRoot);
-          if (launched) {
+          if (launched.ok) {
             console.log(
               `Restarted watcher for ${path.basename(restartWatcher.projectRoot)} (PID: ${launched.pid})`,
             );
+          } else if (launched.reason === "spawn-failed") {
+            console.warn(`[index] ${launched.message}`);
           }
         }
       }

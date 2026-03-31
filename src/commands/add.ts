@@ -146,8 +146,10 @@ Examples:
 
       // Start watcher
       const launched = launchWatcher(projectRoot);
-      if (launched) {
+      if (launched.ok) {
         console.log(`Watcher started (PID: ${launched.pid})`);
+      } else if (launched.reason === "spawn-failed") {
+        console.warn(`[add] ${launched.message}`);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
