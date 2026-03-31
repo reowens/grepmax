@@ -86,6 +86,7 @@ export const PATHS = {
   globalRoot: GLOBAL_ROOT,
   models: path.join(GLOBAL_ROOT, "models"),
   grammars: path.join(GLOBAL_ROOT, "grammars"),
+  logsDir: path.join(GLOBAL_ROOT, "logs"),
   // Centralized index storage — one database for all indexed directories
   lancedbDir: path.join(GLOBAL_ROOT, "lancedb"),
   cacheDir: path.join(GLOBAL_ROOT, "cache"),

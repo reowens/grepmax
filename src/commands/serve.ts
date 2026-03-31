@@ -14,6 +14,7 @@ import { ensureSetup } from "../lib/setup/setup-helpers";
 import { MetaCache } from "../lib/store/meta-cache";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
+import { openRotatedLog } from "../lib/utils/log-rotate";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import {
   getServerForProject,
@@ -52,8 +53,7 @@ function startMlxServer(mlxModel?: string): ChildProcess | null {
   );
   if (!serverDir) return null;
 
-  const logPath = "/tmp/mlx-embed-server.log";
-  const out = fs.openSync(logPath, "a");
+  const out = openRotatedLog(path.join(PATHS.logsDir, "mlx-embed-server.log"));
   const env: Record<string, string> = { ...process.env } as Record<
     string,
     string
@@ -105,14 +105,12 @@ export const serve = new Command("serve")
       const args = process.argv
         .slice(2)
         .filter((arg) => arg !== "-b" && arg !== "--background");
-      const logDir = path.join(PATHS.globalRoot, "logs");
-      fs.mkdirSync(logDir, { recursive: true });
       const safeName = path
         .basename(projectRoot)
         .replace(/[^a-zA-Z0-9._-]/g, "_");
-      const logFile = path.join(logDir, `server-${safeName}.log`);
-      const out = fs.openSync(logFile, "a");
-      const err = fs.openSync(logFile, "a");
+      const logFile = path.join(PATHS.logsDir, `server-${safeName}.log`);
+      const out = openRotatedLog(logFile);
+      const err = openRotatedLog(logFile);
 
       const child = spawn(process.argv[0], [process.argv[1], ...args], {
         detached: true,

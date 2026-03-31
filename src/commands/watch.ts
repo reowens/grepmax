@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import * as fs from "node:fs";
 import * as path from "node:path";
 import { Command } from "commander";
 import { PATHS } from "../config";
@@ -10,6 +9,7 @@ import { startWatcher } from "../lib/index/watcher";
 import { MetaCache } from "../lib/store/meta-cache";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
+import { openRotatedLog } from "../lib/utils/log-rotate";
 import { getProject, registerProject } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import {
@@ -26,7 +26,6 @@ import {
 
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const IDLE_CHECK_INTERVAL_MS = 60 * 1000; // check every minute
-const MAX_LOG_BYTES = 5 * 1024 * 1024; // 5 MB — rotate log when exceeded
 
 export const watch = new Command("watch")
   .description("Start background file watcher for live reindexing")
@@ -54,21 +53,9 @@ export const watch = new Command("watch")
         .slice(2)
         .filter((arg) => arg !== "-b" && arg !== "--background");
 
-      const logDir = path.join(PATHS.globalRoot, "logs");
-      fs.mkdirSync(logDir, { recursive: true });
       const safeName = projectName.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const logFile = path.join(logDir, `watch-${safeName}.log`);
-
-      // Rotate log if it exceeds MAX_LOG_BYTES
-      try {
-        const logStat = fs.statSync(logFile);
-        if (logStat.size > MAX_LOG_BYTES) {
-          const prev = `${logFile}.prev`;
-          fs.renameSync(logFile, prev);
-        }
-      } catch {}
-
-      const out = fs.openSync(logFile, "a");
+      const logFile = path.join(PATHS.logsDir, `watch-${safeName}.log`);
+      const out = openRotatedLog(logFile);
 
       const child = spawn(process.argv[0], [process.argv[1], ...args], {
         detached: true,

@@ -143,7 +143,10 @@ async function installPlugin() {
   const startScript = `
 const { spawn } = require("child_process");
 const fs = require("fs");
-const out = fs.openSync("/tmp/gmax.log", "a");
+const path = require("path");
+const logDir = path.join(require("os").homedir(), ".gmax", "logs");
+fs.mkdirSync(logDir, { recursive: true });
+const out = fs.openSync(path.join(logDir, "gmax.log"), "a");
 const child = spawn("gmax", ["serve"], { detached: true, stdio: ["ignore", out, out] });
 child.unref();
 `;
