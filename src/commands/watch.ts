@@ -190,7 +190,7 @@ export const watch = new Command("watch")
     const metaCache = new MetaCache(paths.lmdbPath);
 
     // Start watching
-    const watcher = startWatcher({
+    const watcher = await startWatcher({
       projectRoot,
       vectorDb,
       metaCache,

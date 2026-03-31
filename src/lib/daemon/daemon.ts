@@ -1,10 +1,11 @@
 import * as fs from "node:fs";
 import * as net from "node:net";
 import * as path from "node:path";
-import { type FSWatcher, watch } from "chokidar";
+import * as watcher from "@parcel/watcher";
+import type { AsyncSubscription } from "@parcel/watcher";
 import { PATHS } from "../../config";
 import { ProjectBatchProcessor } from "../index/batch-processor";
-import { WATCHER_IGNORE_PATTERNS } from "../index/watcher";
+import { WATCHER_IGNORE_GLOBS } from "../index/watcher";
 import { MetaCache } from "../store/meta-cache";
 import { VectorDB } from "../store/vector-db";
 import { killProcess } from "../utils/process";
@@ -24,8 +25,8 @@ const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const HEARTBEAT_INTERVAL_MS = 60 * 1000;
 
 export class Daemon {
-  private watcher: FSWatcher | null = null;
   private readonly processors = new Map<string, ProjectBatchProcessor>();
+  private readonly subscriptions = new Map<string, AsyncSubscription>();
   private vectorDb: VectorDB | null = null;
   private metaCache: MetaCache | null = null;
   private server: net.Server | null = null;
@@ -34,9 +35,6 @@ export class Daemon {
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private idleInterval: ReturnType<typeof setInterval> | null = null;
   private shuttingDown = false;
-  // Sorted longest-first for prefix matching
-  private sortedRoots: string[] = [];
-  // Guard against concurrent watchProject/unwatchProject
   private readonly pendingOps = new Set<string>();
 
   async start(): Promise<void> {
@@ -65,40 +63,18 @@ export class Daemon {
     // 4. Register daemon (only after resources are open)
     registerDaemon(process.pid);
 
-    // 5. Load registered projects and create processors
+    // 5. Subscribe to all registered projects
     const projects = listProjects().filter((p) => p.status === "indexed");
-    const initialRoots: string[] = [];
     for (const p of projects) {
-      this.addProcessor(p.root);
-      initialRoots.push(p.root);
+      await this.watchProject(p.root);
     }
 
-    // 6. Create chokidar with all initial roots
-    // Daemon always uses polling — watching multiple large project trees
-    // with native fs.watch can exhaust file descriptors even on macOS.
-    // Polling at 5s intervals is lightweight and reliable for all platforms.
-    this.watcher = watch(initialRoots, {
-      ignored: WATCHER_IGNORE_PATTERNS,
-      ignoreInitial: true,
-      persistent: true,
-      usePolling: true,
-      interval: 5000,
-      binaryInterval: 10000,
-    });
-
-    this.watcher.on("add", (p) => this.routeEvent("change", p));
-    this.watcher.on("change", (p) => this.routeEvent("change", p));
-    this.watcher.on("unlink", (p) => this.routeEvent("unlink", p));
-    this.watcher.on("error", (err) => {
-      console.error("[daemon] Watcher error:", err);
-    });
-
-    // 7. Heartbeat
+    // 6. Heartbeat
     this.heartbeatInterval = setInterval(() => {
       heartbeat(process.pid);
     }, HEARTBEAT_INTERVAL_MS);
 
-    // 8. Idle timeout
+    // 7. Idle timeout
     this.idleInterval = setInterval(() => {
       if (Date.now() - this.lastActivity > IDLE_TIMEOUT_MS) {
         console.log("[daemon] Idle for 30 minutes, shutting down");
@@ -106,7 +82,7 @@ export class Daemon {
       }
     }, HEARTBEAT_INTERVAL_MS);
 
-    // 9. Socket server
+    // 8. Socket server
     this.server = net.createServer((conn) => {
       let buf = "";
       conn.on("data", (chunk) => {
@@ -128,7 +104,7 @@ export class Daemon {
           conn.end();
         });
       });
-      conn.on("error", () => {}); // ignore client disconnect
+      conn.on("error", () => {});
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -153,16 +129,6 @@ export class Daemon {
 
   async watchProject(root: string): Promise<void> {
     if (this.processors.has(root) || this.pendingOps.has(root)) return;
-    if (!this.watcher) return;
-
-    this.addProcessor(root);
-    this.watcher.add(root);
-
-    console.log(`[daemon] Watching ${root}`);
-  }
-
-  private addProcessor(root: string): void {
-    if (this.processors.has(root)) return;
     if (!this.vectorDb || !this.metaCache) return;
     this.pendingOps.add(root);
 
@@ -182,7 +148,26 @@ export class Daemon {
     });
 
     this.processors.set(root, processor);
-    this.rebuildSortedRoots();
+
+    // Subscribe with @parcel/watcher — native backend, no polling
+    const sub = await watcher.subscribe(
+      root,
+      (err, events) => {
+        if (err) {
+          console.error(`[daemon:${path.basename(root)}] Watcher error:`, err);
+          return;
+        }
+        for (const event of events) {
+          processor.handleFileEvent(
+            event.type === "delete" ? "unlink" : "change",
+            event.path,
+          );
+        }
+        this.lastActivity = Date.now();
+      },
+      { ignore: WATCHER_IGNORE_GLOBS },
+    );
+    this.subscriptions.set(root, sub);
 
     registerWatcher({
       pid: process.pid,
@@ -193,6 +178,7 @@ export class Daemon {
     });
 
     this.pendingOps.delete(root);
+    console.log(`[daemon] Watching ${root}`);
   }
 
   async unwatchProject(root: string): Promise<void> {
@@ -200,9 +186,14 @@ export class Daemon {
     if (!processor) return;
 
     await processor.close();
-    this.watcher?.unwatch(root);
+
+    const sub = this.subscriptions.get(root);
+    if (sub) {
+      await sub.unsubscribe();
+      this.subscriptions.delete(root);
+    }
+
     this.processors.delete(root);
-    this.rebuildSortedRoots();
     unregisterWatcherByRoot(root);
 
     console.log(`[daemon] Unwatched ${root}`);
@@ -233,8 +224,11 @@ export class Daemon {
       await processor.close();
     }
 
-    // Close chokidar
-    try { await this.watcher?.close(); } catch {}
+    // Unsubscribe all watchers
+    for (const sub of this.subscriptions.values()) {
+      try { await sub.unsubscribe(); } catch {}
+    }
+    this.subscriptions.clear();
 
     // Close server + socket
     this.server?.close();
@@ -252,28 +246,5 @@ export class Daemon {
     try { await this.vectorDb?.close(); } catch {}
 
     console.log("[daemon] Shutdown complete");
-  }
-
-  private routeEvent(event: "change" | "unlink", absPath: string): void {
-    const processor = this.findProcessor(absPath);
-    if (processor) {
-      processor.handleFileEvent(event, absPath);
-    }
-  }
-
-  private findProcessor(absPath: string): ProjectBatchProcessor | undefined {
-    // sortedRoots is longest-first, so first match is the most specific
-    for (const root of this.sortedRoots) {
-      if (absPath.startsWith(root) && (absPath.length === root.length || absPath[root.length] === "/")) {
-        return this.processors.get(root);
-      }
-    }
-    return undefined;
-  }
-
-  private rebuildSortedRoots(): void {
-    this.sortedRoots = [...this.processors.keys()].sort(
-      (a, b) => b.length - a.length,
-    );
   }
 }

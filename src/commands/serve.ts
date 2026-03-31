@@ -206,7 +206,7 @@ export const serve = new Command("serve")
       const searcher = new Searcher(vectorDb);
 
       // Start live file watcher
-      let fileWatcher: WatcherHandle | null = startWatcher({
+      let fileWatcher: WatcherHandle | null = await startWatcher({
         projectRoot,
         vectorDb,
         metaCache,

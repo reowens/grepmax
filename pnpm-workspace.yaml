@@ -5,25 +5,4 @@ ignoredBuiltDependencies:
   - sharp
   - usearch
 
-onlyBuiltDependencies:
-  - '"'
-  - ','
-  - '-'
-  - '['
-  - ']'
-  - b
-  - d
-  - e
-  - esbuild
-  - i
-  - l
-  - lmdb
-  - m
-  - n
-  - o
-  - r
-  - s
-  - simsimd
-  - t
-  - u
-  - x
+onlyBuiltDependencies: '["@parcel/watcher"]'
