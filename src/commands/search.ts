@@ -669,7 +669,10 @@ Examples:
       // Ensure a watcher is running for live reindexing
       if (!process.env.VITEST && !process.env.NODE_ENV?.includes("test")) {
         const { launchWatcher } = await import("../lib/utils/watcher-launcher");
-        launchWatcher(projectRoot);
+        const launched = launchWatcher(projectRoot);
+        if (!launched.ok && launched.reason === "spawn-failed") {
+          console.warn(`[search] ${launched.message}`);
+        }
       }
 
       const searcher = new Searcher(vectorDb);

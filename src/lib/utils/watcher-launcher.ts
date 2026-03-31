@@ -11,21 +11,19 @@ import {
   isProcessRunning,
 } from "./watcher-store";
 
-/**
- * Launch a background watcher for a project.
- *
- * Returns { pid } on success, null if:
- * - Project is not registered
- * - Watcher is already running
- * - Spawn fails
- */
-export function launchWatcher(
-  projectRoot: string,
-): { pid: number } | null {
+export type LaunchResult =
+  | { ok: true; pid: number; reused: boolean }
+  | { ok: false; reason: "not-registered" | "spawn-failed"; message: string };
+
+export function launchWatcher(projectRoot: string): LaunchResult {
   // 1. Project must be registered
   const project = getProject(projectRoot);
   if (!project) {
-    return null;
+    return {
+      ok: false,
+      reason: "not-registered",
+      message: `Project not registered. Run: gmax add ${projectRoot}`,
+    };
   }
 
   // 2. Check if watcher already running
@@ -33,7 +31,7 @@ export function launchWatcher(
     getWatcherForProject(projectRoot) ??
     getWatcherCoveringPath(projectRoot);
   if (existing && isProcessRunning(existing.pid)) {
-    return { pid: existing.pid };
+    return { ok: true, pid: existing.pid, reused: true };
   }
 
   // 3. Spawn
@@ -46,13 +44,19 @@ export function launchWatcher(
     child.unref();
 
     if (child.pid) {
-      return { pid: child.pid };
+      return { ok: true, pid: child.pid, reused: false };
     }
-    console.error(`[watcher-launcher] Spawn returned no PID for ${projectRoot}`);
-    return null;
+    return {
+      ok: false,
+      reason: "spawn-failed",
+      message: `Spawn returned no PID for ${projectRoot}`,
+    };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[watcher-launcher] Failed to start watcher for ${projectRoot}: ${msg}`);
-    return null;
+    return {
+      ok: false,
+      reason: "spawn-failed",
+      message: `Failed to start watcher for ${projectRoot}: ${msg}`,
+    };
   }
 }

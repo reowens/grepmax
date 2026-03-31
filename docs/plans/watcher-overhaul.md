@@ -23,105 +23,93 @@ The watcher system has grown organically across 9+ files with no unified lifecyc
 
 ---
 
-## Phase 1: Gate all auto-index paths on registration
+## Status
+
+| Phase | Status | Notes |
+|-------|--------|-------|
+| 1. Gate auto-index | **Done** | All 4 paths gated on registration |
+| 2. Separate registration | **Done** | `initialSync()` no longer calls `registerProject()` |
+| 3. LMDB watcher store | **Done** | `watcher-store.ts` with migration from JSON |
+| 4. Centralize spawn | **Done** | `watcher-launcher.ts` with `LaunchResult` type; MCP uses it |
+| 5. Single daemon | **Not started** | Main remaining work |
+| 6. MCP coverage | **Done** | 7 handlers call `ensureWatcher()` |
+| 7. Log consolidation | Pending | |
+| 8. Watcher resilience | Pending | |
+
+---
+
+## Phase 1: Gate all auto-index paths on registration ✅
 
 **Goal:** Make `gmax add` the single entry point. Remove all other auto-index paths.
 
-### 1.1 `search --sync` must not auto-index unregistered projects
-- **File:** `src/commands/search.ts`
-- **Current:** `--sync` skips the registration check and runs `initialSync()` directly
-- **Fix:** `--sync` only reindexes registered projects. If unregistered, print "run gmax add" regardless of `--sync`
+### 1.1 `search` gates on registration ✅
+- `src/commands/search.ts` — `getProject(checkRoot)` check exits early with "run gmax add" before any `initialSync()` or `--sync` path is reached.
 
-### 1.2 Watcher must not `initialSync()` unregistered projects
-- **File:** `src/commands/watch.ts:100-116`
-- **Current:** If no indexed data found, watcher runs `initialSync()` directly
-- **Fix:** Check project registry. If not registered, log warning and exit
+### 1.2 Watcher gates on registration ✅
+- `src/commands/watch.ts` — `getProject(projectRoot)` check at top of foreground mode exits with error. Background mode re-spawns into foreground, hitting the same check.
 
-### 1.3 SessionStart hook must check registration before starting watcher
-- **File:** `plugins/grepmax/hooks/start.js:60-66`
-- **Current:** Unconditionally calls `gmax watch -b`
-- **Fix:** Read `projects.json` (or LMDB after Phase 3), check if CWD is registered. Only start if registered. MCP handles unregistered projects via `gmax add` on first search.
+### 1.3 SessionStart hook checks registration ✅
+- `plugins/grepmax/hooks/start.js` — `isProjectRegistered()` reads `projects.json` and checks `cwd.startsWith(p.root)` before calling `gmax watch -b`.
+- **Note:** The hook reads `projects.json` directly rather than calling a gmax command. This is acceptable — it's a fast path check that avoids spawning a process, and the format is stable. If the registry moves away from JSON, this hook must be updated.
 
-### 1.4 MCP `ensureWatcher` must check registration
-- **File:** `src/commands/mcp.ts:340-348`
-- **Current:** Spawns watcher without checking registration
-- **Fix:** Check `getProject(projectRoot)` before spawning. Skip if not registered.
+### 1.4 MCP `ensureWatcher` checks registration ✅
+- `src/commands/mcp.ts` — `ensureWatcher()` delegates to `launchWatcher()`, which checks registration internally.
 
 ---
 
-## Phase 2: Separate registration from indexing
+## Phase 2: Separate registration from indexing ✅
 
 **Goal:** `registerProject()` is explicit in callers, not a hidden side effect of `initialSync()`.
 
-### 2.1 Remove `registerProject()` from `initialSync()`
-- **File:** `src/lib/index/syncer.ts:540-554`
-- **Current:** `registerProject()` called at end of `initialSync()` as side effect
-- **Fix:** `initialSync()` returns `{ processed, indexed, total, failedFiles }`. Callers register explicitly.
+### 2.1 `registerProject()` removed from `initialSync()` ✅
+- `initialSync()` returns `{ processed, indexed, total, failedFiles }`. Callers register explicitly.
 
-### 2.2 Update all callers
-| Caller | Current | After |
-|--------|---------|-------|
-| `add.ts` | Registers "pending" before, syncer registers "indexed" after | Registers "pending" before, updates to "indexed" after sync returns |
-| `index.ts` | Relies on syncer side effect | Updates existing entry (lastIndexed, chunkCount) after sync |
-| `watch.ts` | Relies on syncer side effect | Updates existing entry after sync |
-| `search.ts --sync` | Relies on syncer side effect | Updates existing entry after sync |
+### 2.2 Callers updated ✅
+All callers (`add.ts`, `index.ts`, `watch.ts`, `search.ts`) now call `registerProject()` explicitly after `initialSync()` returns.
 
 ---
 
-## Phase 3: Move watcher registry from JSON to LMDB
+## Phase 3: LMDB watcher store ✅
 
 **Goal:** Atomic watcher state, no race conditions, crash-safe.
 
-### 3.1 Create `src/lib/utils/watcher-store.ts`
-New LMDB-backed watcher registry replacing `watchers.json`:
-- **Location:** `~/.gmax/cache/watchers.lmdb` (alongside `meta.lmdb`)
-- **Schema:** key = project root, value = `WatcherInfo`
-- Uses the same `lmdb` package as MetaCache
-- All reads/writes are transactional — no more load→filter→push→save races
+### 3.1 `src/lib/utils/watcher-store.ts` ✅
+Implemented with:
+- Location: `~/.gmax/cache/watchers.lmdb`
+- API: `register()`, `unregister()`, `get()`, `getAll()`, `getCovering()`
+- Migration from `watchers.json` on first use
 
-```typescript
-export class WatcherStore {
-  register(info: WatcherInfo): void       // atomic put
-  unregister(projectRoot: string): void   // atomic remove
-  get(projectRoot: string): WatcherInfo | undefined
-  getAll(): WatcherInfo[]                 // prunes dead PIDs on read
-  getCovering(dir: string): WatcherInfo | undefined
-}
-```
+**Design note:** Uses a separate LMDB environment from `meta.lmdb` rather than named databases in a shared environment. Tradeoff: slightly more file handles, but simpler lifecycle — each store opens/closes independently. Acceptable given we have only 2 LMDB stores.
 
-### 3.2 Add heartbeat
-- `WatcherInfo` gains `lastHeartbeat: number`
-- Watcher updates heartbeat every 60s
-- `get()` treats heartbeat >5min stale as dead (even if PID alive — catches deadlocks)
+### 3.2 Heartbeat ✅
+- `WatcherInfo.lastHeartbeat` updated every 60s via `setInterval`
+- Stale threshold: 5 minutes (miss 5 consecutive beats)
 
-### 3.3 Migrate existing code
-- Replace all `watcher-registry.ts` imports with `watcher-store.ts`
-- Delete `watchers.json` on first use of new store
-- Files affected: `watch.ts`, `mcp.ts`, `index.ts`, `add.ts`, `search.ts`, `status.ts`, `start.js`
+**Known risk:** The heartbeat timer runs on the main event loop. If `processBatch()` blocks the loop during a large reindex (heavy synchronous LMDB writes or Tree-sitter parsing), heartbeats can be delayed. In practice, the async pipeline yields frequently enough that this hasn't been a problem, but Phase 8 should add a defensive check: if the batch took longer than the heartbeat interval, fire an immediate heartbeat after the batch completes.
+
+### 3.3 Migration ✅
+- `migrateFromJson()` reads `watchers.json`, writes live entries to LMDB, deletes JSON file.
 
 ---
 
-## Phase 4: Centralize watcher spawn logic
+## Phase 4: Centralize watcher spawn logic ✅
 
 **Goal:** One function, one pattern, consistent behavior.
 
-### 4.1 Create `src/lib/utils/watcher-launcher.ts`
+### 4.1 `src/lib/utils/watcher-launcher.ts` ✅
+`launchWatcher()` returns a discriminated union so callers can distinguish outcomes:
+
 ```typescript
-export function launchWatcher(projectRoot: string): { pid: number } | null
+type LaunchResult =
+  | { ok: true; pid: number; reused: boolean }
+  | { ok: false; reason: "not-registered" | "spawn-failed"; message: string };
 ```
 
-1. Checks project is registered → null if not
-2. Checks no watcher already running (via WatcherStore) → returns existing PID if so
-3. Spawns `gmax watch --path <root> -b`
-4. Logs success or failure
-5. Returns `{ pid }` or null
-
-### 4.2 Replace all spawn sites
-- `src/commands/add.ts` — after indexing
-- `src/commands/mcp.ts` — ensureWatcher
-- `src/commands/index.ts` — restart after reindex
-- `src/commands/search.ts` — start after sync
-- `plugins/grepmax/hooks/start.js` — SessionStart
+### 4.2 All spawn sites migrated ✅
+- `add.ts` — uses `launchWatcher()`, logs spawn failures
+- `index.ts` — uses `launchWatcher()`, logs spawn failures
+- `search.ts` — uses `launchWatcher()`, logs spawn failures
+- `mcp.ts` — `ensureWatcher()` delegates to `launchWatcher()` (no more inline spawn)
 
 ---
 
@@ -158,6 +146,10 @@ and receive JSON responses. This gives us:
 **Stale socket cleanup:** On daemon startup, try connecting to existing socket.
 If ECONNREFUSED, unlink and recreate. If connected, another daemon is alive — exit.
 
+**Security model:** The socket inherits `~/.gmax/` directory permissions (default umask, typically 0755 on macOS). Since it's inside the user's home directory, only the owning user can connect. No additional authentication is needed — this matches the threat model (local single-user tool).
+
+**Filesystem compatibility:** Unix domain sockets require a local filesystem. If `~/.gmax/` is on NFS or another filesystem that doesn't support sockets, `net.createServer()` will fail with EOPNOTSUPP. Fallback: if socket creation fails, log a warning and fall back to per-project watcher mode (Phase 4 path). The daemon client's `ensureDaemon()` should catch this and degrade gracefully.
+
 ### 5.2 Daemon process (`gmax watch --daemon`)
 
 **File:** `src/commands/watch.ts` (extend existing)
@@ -166,9 +158,11 @@ New `--daemon` flag starts multi-project mode:
 1. Read all registered projects from `projects.json`
 2. Create single chokidar instance with `watcher.add()` for each root
 3. Listen on `~/.gmax/daemon.sock` for IPC commands
-4. Register in LMDB watcher store (single entry, PID + "daemon" status)
-5. Heartbeat every 60s (already implemented)
-6. Idle timeout: 30min of no activity across ALL projects → shutdown
+4. Register in LMDB watcher store (single entry, PID + "daemon" flag)
+5. Heartbeat every 60s
+6. Idle timeout: 30min with no **file-change events** across ALL projects → shutdown
+
+**Idle timeout definition:** Only file-change events from chokidar count as activity. Search queries, IPC pings, and status checks do NOT reset the idle timer. Rationale: if no files are changing, there's no indexing work to do — the daemon should release resources. On next search, `ensureDaemon()` restarts it.
 
 On IPC `watch` command:
 - Call `chokidar.add(root)` on the existing watcher instance
@@ -196,25 +190,46 @@ export async function ensureDaemon(): Promise<void>
 
 Uses `net.createConnection({ path: SOCKET_PATH })` to connect.
 ECONNREFUSED → daemon is dead, spawn a new one.
+EOPNOTSUPP → filesystem doesn't support sockets, fall back to per-project mode.
 
 ### 5.4 Update callers
 
 | Caller | Current | After |
 |--------|---------|-------|
 | `gmax add` | `launchWatcher(root)` | `ensureDaemon()` then `sendDaemonCommand({cmd: "watch", root})` |
-| `gmax remove` | kill watcher PID | `sendDaemonCommand({cmd: "unwatch", root})` |
+| `gmax remove` | kills watcher PID, unregisters | `sendDaemonCommand({cmd: "unwatch", root})` |
 | `gmax index` | stop/restart per-project watcher | `sendDaemonCommand({cmd: "unwatch", root})`, index, then `sendDaemonCommand({cmd: "watch", root})` |
-| MCP `ensureWatcher` | spawn per-project watcher | `ensureDaemon()` (daemon watches all registered) |
+| MCP `ensureWatcher` | `launchWatcher()` | `ensureDaemon()` (daemon watches all registered) |
 | SessionStart hook | `gmax watch -b` | `gmax watch --daemon` (if not already running) |
 | `gmax watch status` | list per-project watchers | `sendDaemonCommand({cmd: "status"})` |
 | `gmax watch stop` | kill per-project PID | `sendDaemonCommand({cmd: "shutdown"})` or kill daemon PID |
 
-### 5.5 Backward compat
+### 5.5 Mutual exclusion: daemon vs. per-project watchers
 
-- `gmax watch --path <root> -b` still works for single-project mode
-- `gmax watch --daemon` is the new multi-project mode
-- `launchWatcher()` updated to prefer daemon mode: try IPC first,
-  fall back to per-project spawn if daemon unavailable
+Running both a daemon and per-project watchers for the same root causes duplicate file events and double-indexing. The system must enforce mutual exclusion:
+
+**Daemon startup:**
+1. Read all entries from `WatcherStore.getAll()`
+2. For each registered project, check if a per-project watcher is already running (PID alive, not a daemon)
+3. If found: send SIGTERM, wait up to 5s, then SIGKILL if still alive
+4. Only then `chokidar.add(root)` for that project
+5. Log: `[daemon] Took over watching ${root} from per-project watcher (PID ${pid})`
+
+**Per-project watcher startup (fallback mode):**
+1. Check if a daemon is running via `isDaemonRunning()`
+2. If daemon is running: send `{cmd: "watch", root}` to daemon instead of starting a per-project watcher — return the daemon's PID
+3. If daemon is not running: proceed with per-project spawn as today
+
+**`launchWatcher()` updated logic:**
+```
+1. Try IPC: isDaemonRunning()?
+   → yes: sendDaemonCommand({cmd: "watch", root}), return daemon PID
+   → EOPNOTSUPP: sockets not supported, skip to step 2
+   → ECONNREFUSED: daemon dead, skip to step 2
+2. Spawn per-project watcher (existing behavior)
+```
+
+This means `launchWatcher()` remains the single entry point. Callers don't need to know whether a daemon or per-project watcher is active.
 
 ### 5.6 Worker pool sharing
 
@@ -245,16 +260,15 @@ absolute paths). No change to the embedding pipeline.
 5. `gmax watch stop` → daemon shuts down cleanly, socket removed
 6. Two Claude sessions → both connect to same daemon
 7. `ps aux | grep gmax` → only one watcher process regardless of project count
+8. Start per-project watcher, then start daemon → daemon takes over, old PID gone
+9. Start daemon on NFS home dir → falls back to per-project mode with warning
 
 ---
 
-## Phase 6: MCP ensureWatcher coverage
+## Phase 6: MCP ensureWatcher coverage ✅
 
-**Goal:** Watcher stays alive during any MCP tool use, not just search.
-
-### 6.1 Call ensureWatcher from all tool handlers
-- **Current:** Only called in `handleSemanticSearch()` (line 363)
-- **Fix:** Call at top of every handler — skeleton, trace, symbols, related, recent, etc. It's cheap (one LMDB read).
+All 7 MCP tool handlers call `ensureWatcher()`:
+- `handleSemanticSearch`, `handleCodeSkeleton`, `handleTraceCalls`, `handleListSymbols`, `handleRelatedFiles`, `handleRecentChanges`, `handleSummarize`
 
 ---
 
@@ -276,11 +290,16 @@ absolute paths). No change to the embedding pipeline.
 - Log the error
 - Files re-detected on next change via mtime
 
-### 8.2 Stop hook with verification
+### 8.2 Post-batch heartbeat
+- After `processBatch()` completes, check if elapsed time exceeded the heartbeat interval (60s)
+- If so, fire an immediate heartbeat to prevent false stale detection
+- This defends against the event-loop-blocking scenario described in Phase 3.2
+
+### 8.3 Stop hook with verification
 - Check PID after `gmax watch stop`
 - SIGKILL if still alive after 3s
 
-### 8.3 Chokidar crash recovery
+### 8.4 Chokidar crash recovery
 - Chokidar re-emits `add` events on restart for files that changed during downtime (if mtime differs from initial scan)
 - No need to persist pending queue — chokidar handles this via `ignoreInitial: false` on restart
 - On watcher restart, `ready` event fires after full re-scan, catching missed changes
@@ -289,41 +308,43 @@ absolute paths). No change to the embedding pipeline.
 
 ## Implementation Order
 
-| Phase | Effort | Impact | Dependencies | Ship separately? |
-|-------|--------|--------|-------------|-----------------|
-| 1. Gate auto-index | Small | Critical | None | Yes — immediate fix |
-| 2. Separate registration | Medium | High | Phase 1 | Bundle with Phase 1 |
-| 4. Centralize spawn | Small | High | Phase 1 | Bundle with Phase 1 |
-| 3. LMDB watcher store | Medium | High | Phase 4 | Yes — own PR |
-| 6. MCP coverage | Trivial | Medium | Phase 4 | Bundle with Phase 3 |
-| 7. Log consolidation | Trivial | Low | None | Yes — own PR |
-| 8. Watcher resilience | Small | Medium | Phase 3 | Bundle with Phase 3 |
-| 5. Single daemon | Large | High | Phase 3 | Future — own PR |
-
-**PR 1:** Phases 1 + 2 + 4 — gate auto-index, separate registration, centralize spawn
-**PR 2:** Phases 3 + 6 + 8 — LMDB watcher store, MCP coverage, resilience
-**PR 3:** Phase 7 — log consolidation
-**Future:** Phase 5 — single daemon
+| Phase | Effort | Impact | Status | Ship as |
+|-------|--------|--------|--------|---------|
+| 1. Gate auto-index | Small | Critical | **Done** | — |
+| 2. Separate registration | Medium | High | **Done** | — |
+| 3. LMDB watcher store | Medium | High | **Done** | — |
+| 4. Centralize spawn | Small | High | **Done** | — |
+| 6. MCP coverage | Trivial | Medium | **Done** | — |
+| 7. Log consolidation | Trivial | Low | TODO | **PR — next** |
+| 8. Watcher resilience | Small | Medium | TODO | **PR — next** |
+| 5. Single daemon | Large | High | TODO | **Future — own PR** |
 
 ---
 
 ## Verification
 
-After PR 1:
-1. `gmax add .` → indexes, starts watcher, `.gmax.json` created
-2. `gmax status` → shows project as "indexed" with "watching"
-3. `gmax search "query" --sync` on unregistered project → "run gmax add" (not auto-index)
-4. `gmax watch -b` on unregistered project → refuses to start
-5. MCP search on new project → runs `gmax add`, watcher starts
-6. `gmax remove . --force` → watcher stopped, data cleaned, entry gone
-7. `gmax index` on registered project → reindexes, updates registry entry
+Phases 1–4, 6 (all done):
+1. `gmax search "query"` on unregistered project → "run gmax add" (not auto-index) ✅
+2. `gmax search "query" --sync` on unregistered project → same ✅
+3. `gmax watch -b` on unregistered project → refuses to start ✅
+4. MCP `ensureWatcher()` uses `launchWatcher()` — no inline spawn ✅
+5. `launchWatcher()` returns `LaunchResult` with distinct error reasons ✅
+6. All 7 MCP tool handlers call `ensureWatcher()` ✅
 
-After PR 2:
-8. Open two Claude sessions on same project → only one watcher (LMDB atomic)
-9. Kill watcher process → next `gmax status` shows "idle" (heartbeat stale)
-10. Next search → watcher auto-relaunched
-11. All MCP tools (skeleton, trace, etc.) keep watcher alive
+After log consolidation PR:
+7. MLX logs in `~/.gmax/logs/` not `/tmp/`
+8. All logs rotate at 5MB
 
-After PR 3:
-12. MLX logs in `~/.gmax/logs/` not `/tmp/`
-13. All logs rotate at 5MB
+After resilience PR:
+9. Long batch processing → heartbeat fires immediately after batch completes
+10. Worker pool crash → pending files cleared, error logged, files re-detected on next change
+11. `gmax watch stop` → verified process is gone
+
+After daemon PR:
+12. `gmax add ~/proj1 && gmax add ~/proj2` → one daemon, two projects watched
+13. `gmax watch status` → shows daemon PID with both roots
+14. Kill daemon → next `gmax search` restarts it
+15. `gmax remove ~/proj1` → daemon unwatches, continues watching proj2
+16. Per-project watcher running → daemon startup takes over cleanly
+17. Two Claude sessions → both connect to same daemon
+18. `ps aux | grep gmax` → only one watcher process
