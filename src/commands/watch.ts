@@ -15,12 +15,14 @@ import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import {
   getWatcherCoveringPath,
   getWatcherForProject,
+  heartbeat,
   isProcessRunning,
   listWatchers,
+  migrateFromJson,
   registerWatcher,
   unregisterWatcher,
   updateWatcherStatus,
-} from "../lib/utils/watcher-registry";
+} from "../lib/utils/watcher-store";
 
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const IDLE_CHECK_INTERVAL_MS = 60 * 1000; // check every minute
@@ -83,6 +85,9 @@ export const watch = new Command("watch")
     }
 
     // --- Foreground mode ---
+
+    // Migrate legacy watchers.json to LMDB on first use
+    migrateFromJson();
 
     // Watcher requires project to be registered
     if (!getProject(projectRoot)) {
@@ -163,6 +168,11 @@ export const watch = new Command("watch")
 
     console.log(`[watch:${projectName}] File watcher active`);
 
+    // Heartbeat — update LMDB every 60s so other processes can detect liveliness
+    const heartbeatInterval = setInterval(() => {
+      heartbeat(process.pid);
+    }, IDLE_CHECK_INTERVAL_MS);
+
     // Idle timeout
     let lastActivity = Date.now();
     if (options.idleTimeout !== false) {
@@ -178,6 +188,7 @@ export const watch = new Command("watch")
 
     // Graceful shutdown
     async function shutdown() {
+      clearInterval(heartbeatInterval);
       try {
         await watcher.close();
       } catch {}

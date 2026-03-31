@@ -17,7 +17,7 @@ import {
   getWatcherCoveringPath,
   isProcessRunning,
   unregisterWatcher,
-} from "../lib/utils/watcher-registry";
+} from "../lib/utils/watcher-store";
 
 export const index = new Command("index")
   .description("Index the current directory and create searchable store")

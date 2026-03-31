@@ -25,7 +25,7 @@ import { formatTimeAgo } from "../lib/utils/format-helpers";
 import { extractImports } from "../lib/utils/import-extractor";
 import { getProject, listProjects } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
-import { getWatcherCoveringPath } from "../lib/utils/watcher-registry";
+import { getWatcherCoveringPath } from "../lib/utils/watcher-store";
 
 // ---------------------------------------------------------------------------
 // Tool definitions
@@ -675,6 +675,7 @@ export const mcp = new Command("mcp")
     async function handleCodeSkeleton(
       args: Record<string, unknown>,
     ): Promise<ToolResult> {
+      ensureWatcher();
       const target = String(args.target || "");
       if (!target) return err("Missing required parameter: target");
 
@@ -820,6 +821,7 @@ export const mcp = new Command("mcp")
     async function handleTraceCalls(
       args: Record<string, unknown>,
     ): Promise<ToolResult> {
+      ensureWatcher();
       const symbol = String(args.symbol || "");
       if (!symbol) return err("Missing required parameter: symbol");
 
@@ -921,6 +923,7 @@ export const mcp = new Command("mcp")
     async function handleListSymbols(
       args: Record<string, unknown>,
     ): Promise<ToolResult> {
+      ensureWatcher();
       const pattern =
         typeof args.pattern === "string" ? args.pattern : undefined;
       const limit = Math.min(Math.max(Number(args.limit) || 20, 1), 100);
@@ -1283,6 +1286,7 @@ export const mcp = new Command("mcp")
     async function handleRelatedFiles(
       args: Record<string, unknown>,
     ): Promise<ToolResult> {
+      ensureWatcher();
       const file = String(args.file || "");
       if (!file) return err("Missing required parameter: file");
 
@@ -1400,6 +1404,7 @@ export const mcp = new Command("mcp")
     async function handleRecentChanges(
       args: Record<string, unknown>,
     ): Promise<ToolResult> {
+      ensureWatcher();
       const limit = Math.min(
         Math.max(Number(args.limit) || 20, 1),
         50,

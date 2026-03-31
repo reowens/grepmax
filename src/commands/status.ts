@@ -8,7 +8,7 @@ import { findProjectRoot } from "../lib/utils/project-root";
 import {
   getWatcherForProject,
   listWatchers,
-} from "../lib/utils/watcher-registry";
+} from "../lib/utils/watcher-store";
 import { PATHS } from "../config";
 
 const style = {

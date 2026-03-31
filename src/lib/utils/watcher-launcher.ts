@@ -9,7 +9,7 @@ import {
   getWatcherCoveringPath,
   getWatcherForProject,
   isProcessRunning,
-} from "./watcher-registry";
+} from "./watcher-store";
 
 /**
  * Launch a background watcher for a project.

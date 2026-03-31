@@ -9,7 +9,7 @@ import { initialSync } from "../lib/index/syncer";
 import { ensureSetup } from "../lib/setup/setup-helpers";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
-import { createMarker, hasMarker } from "../lib/utils/project-marker";
+import { createMarker } from "../lib/utils/project-marker";
 import {
   getChildProjects,
   getParentProject,
@@ -43,9 +43,9 @@ Examples:
 
       // Check if already registered
       const existing = getProject(projectRoot);
-      if (existing || hasMarker(projectRoot)) {
+      if (existing) {
         console.log(
-          `${projectName} is already added (${existing?.chunkCount ?? 0} chunks).`,
+          `${projectName} is already added (${existing.chunkCount ?? 0} chunks).`,
         );
         console.log(`Run \`gmax index\` to re-index, or \`gmax index --reset\` for a full rebuild.`);
         return;

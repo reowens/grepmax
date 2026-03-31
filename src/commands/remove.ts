@@ -14,7 +14,7 @@ import {
   getWatcherForProject,
   isProcessRunning,
   unregisterWatcher,
-} from "../lib/utils/watcher-registry";
+} from "../lib/utils/watcher-store";
 
 function confirm(message: string): Promise<boolean> {
   const rl = readline.createInterface({
