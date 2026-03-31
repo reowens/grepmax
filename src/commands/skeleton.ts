@@ -19,6 +19,7 @@ import { Skeletonizer } from "../lib/skeleton/skeletonizer";
 import { VectorDB } from "../lib/store/vector-db";
 import { isIndexableFile } from "../lib/utils/file-utils";
 import { gracefulExit } from "../lib/utils/exit";
+import { listProjects } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
 interface SkeletonOptions {
@@ -26,6 +27,18 @@ interface SkeletonOptions {
   json: boolean;
   noSummary: boolean;
   sync: boolean;
+}
+
+/**
+ * Resolve a relative path across all indexed projects.
+ * Returns the first match found, or null.
+ */
+function resolveAcrossProjects(relativePath: string): string | null {
+  for (const project of listProjects()) {
+    const candidate = path.join(project.root, relativePath);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
 }
 
 /**
@@ -187,12 +200,17 @@ Examples:
 
       if (isFilePath(target)) {
         // === FILE MODE ===
-        const filePath = path.resolve(target);
+        let filePath = path.resolve(target);
 
         if (!fs.existsSync(filePath)) {
-          console.error(`File not found: ${filePath}`);
-          process.exitCode = 1;
-          return;
+          // Try resolving across indexed projects
+          const found = resolveAcrossProjects(target);
+          if (!found) {
+            console.error(`File not found: ${filePath}`);
+            process.exitCode = 1;
+            return;
+          }
+          filePath = found;
         }
 
         if (vectorDb) {
