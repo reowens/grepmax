@@ -47,6 +47,7 @@ function formatChunks(n?: number): string {
 
 export const status = new Command("status")
   .description("Show gmax index status for all projects")
+  .option("--agent", "Compact output for AI agents", false)
   .addHelpText(
     "after",
     `
@@ -54,22 +55,47 @@ Examples:
   gmax status              Show status of all indexed projects
 `,
   )
-  .action(async () => {
+  .action(async (opts) => {
     const globalConfig = readGlobalConfig();
     const projects = listProjects();
     listWatchers(); // cleans stale entries as side effect
     const indexing = isLocked(PATHS.globalRoot);
     const currentRoot = findProjectRoot(process.cwd());
 
-    // Header
-    console.log(
-      `\n${style.bold("gmax")} · ${globalConfig.modelTier} (${globalConfig.vectorDim}d, ${globalConfig.embedMode})${indexing ? style.yellow(" · indexing...") : ""}`,
-    );
+    if (!opts.agent) {
+      // Header
+      console.log(
+        `\n${style.bold("gmax")} · ${globalConfig.modelTier} (${globalConfig.vectorDim}d, ${globalConfig.embedMode})${indexing ? style.yellow(" · indexing...") : ""}`,
+      );
+    }
 
     if (projects.length === 0) {
-      console.log(
-        `\nNo projects added yet. Run ${style.cyan("gmax add")} to get started.\n`,
-      );
+      if (opts.agent) {
+        console.log("(none)");
+      } else {
+        console.log(
+          `\nNo projects added yet. Run ${style.cyan("gmax add")} to get started.\n`,
+        );
+      }
+      await gracefulExit();
+      return;
+    }
+
+    if (opts.agent) {
+      for (const project of projects) {
+        const watcher = getWatcherForProject(project.root);
+        const projectStatus = project.status ?? "indexed";
+        let st: string;
+        if (projectStatus === "pending") st = "pending";
+        else if (projectStatus === "error") st = "error";
+        else if (watcher?.status === "syncing") st = "indexing";
+        else if (watcher) st = "watching";
+        else st = "idle";
+        const isCurrent = project.root === currentRoot;
+        console.log(
+          `${project.name}\t${formatChunks(project.chunkCount)}\t${formatAge(project.lastIndexed)}\t${st}${isCurrent ? "\tcurrent" : ""}`,
+        );
+      }
       await gracefulExit();
       return;
     }

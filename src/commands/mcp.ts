@@ -452,7 +452,9 @@ export const mcp = new Command("mcp")
         );
 
         if (!result.data || result.data.length === 0) {
-          return ok("No matches found.");
+          return ok(
+            "No matches found. Try broadening your query, using fewer keywords, or check `gmax status` to verify the project is indexed.",
+          );
         }
 
         const minScore =
@@ -840,7 +842,9 @@ export const mcp = new Command("mcp")
         const graph = await builder.buildGraphMultiHop(symbol, depth);
 
         if (!graph.center) {
-          return ok(`Symbol '${symbol}' not found in the index.`);
+          return ok(
+            `Symbol '${symbol}' not found in the index. Check \`gmax status\` to see which projects are indexed, or try \`gmax search ${symbol}\` to find similar symbols.`,
+          );
         }
 
         const lines: string[] = [];
@@ -994,7 +998,9 @@ export const mcp = new Command("mcp")
           .slice(0, limit);
 
         if (entries.length === 0) {
-          return ok("No symbols found. Run 'gmax index' to build the index.");
+          return ok(
+            "No symbols found. Run `gmax status` to verify the project is indexed, or `gmax index` to rebuild.",
+          );
         }
 
         const lines = entries.map((e) => {
@@ -1303,7 +1309,9 @@ export const mcp = new Command("mcp")
           .toArray();
 
         if (fileChunks.length === 0) {
-          return ok(`File not found in index: ${file}`);
+          return ok(
+            `File not found in index: ${file}. Check that the path is relative to the project root. Run \`gmax status\` to see indexed projects.`,
+          );
         }
 
         const definedHere = new Set<string>();
@@ -1430,7 +1438,9 @@ export const mcp = new Command("mcp")
           const top = files.slice(0, limit);
 
           if (top.length === 0) {
-            return ok(`No indexed files found for ${root}`);
+            return ok(
+              `No indexed files found for ${root}. Run \`gmax add\` to register and index this project.`,
+            );
           }
 
           const now = Date.now();
