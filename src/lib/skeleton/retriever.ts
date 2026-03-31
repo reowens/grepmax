@@ -10,6 +10,7 @@ export async function getStoredSkeleton(
     // LanceDB query
     const results = await table
       .query()
+      .select(["file_skeleton"])
       .where(`path = '${escapeSqlString(filePath)}' AND is_anchor = true`)
       .limit(1)
       .toArray();

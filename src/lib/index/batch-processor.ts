@@ -68,8 +68,9 @@ export class ProjectBatchProcessor {
       if (this.closed || this.processing) return;
       try {
         await this.vectorDb.createFTSIndex();
+        await this.vectorDb.optimize();
       } catch (err) {
-        console.error(`[${this.wtag}] FTS rebuild failed:`, err);
+        console.error(`[${this.wtag}] FTS rebuild / compaction failed:`, err);
       }
     }, FTS_REBUILD_INTERVAL_MS);
     this.ftsInterval.unref();
