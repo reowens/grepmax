@@ -282,6 +282,20 @@ export class VectorDB {
     }
   }
 
+  async optimize(): Promise<void> {
+    const table = await this.ensureTable();
+    try {
+      await table.optimize({
+        cleanupOlderThan: new Date(),
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!msg.includes("Nothing to do")) {
+        log("vectordb", `Optimize failed: ${msg}`);
+      }
+    }
+  }
+
   async hasAnyRows(): Promise<boolean> {
     const table = await this.ensureTable();
     const rows = await table.query().select(["id"]).limit(1).toArray();
