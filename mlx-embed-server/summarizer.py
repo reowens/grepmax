@@ -148,6 +148,7 @@ async def summarize(request: SummarizeRequest) -> SummarizeResponse:
                 summaries.append(summary)
             except Exception as e:
                 summaries.append(f"(summary failed: {e})")
+        mx.metal.clear_cache()
 
     return SummarizeResponse(summaries=summaries)
 

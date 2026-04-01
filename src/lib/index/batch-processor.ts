@@ -66,10 +66,15 @@ export class ProjectBatchProcessor {
 
     this.ftsInterval = setInterval(async () => {
       if (this.closed || this.processing) return;
+      this.processing = true;
       try {
         await this.vectorDb.runMaintenance();
       } catch (err) {
         console.error(`[${this.wtag}] Maintenance failed:`, err);
+      } finally {
+        this.processing = false;
+        // Process any events that queued during maintenance
+        if (this.pending.size > 0) this.scheduleBatch();
       }
     }, FTS_REBUILD_INTERVAL_MS);
     this.ftsInterval.unref();
@@ -77,12 +82,10 @@ export class ProjectBatchProcessor {
 
   handleFileEvent(event: "change" | "unlink", absPath: string): void {
     if (this.closed) return;
-    if (event !== "unlink") {
-      const ext = path.extname(absPath).toLowerCase();
-      const bn = path.basename(absPath).toLowerCase();
-      if (!INDEXABLE_EXTENSIONS.has(ext) && !INDEXABLE_EXTENSIONS.has(bn))
-        return;
-    }
+    const ext = path.extname(absPath).toLowerCase();
+    const bn = path.basename(absPath).toLowerCase();
+    if (!INDEXABLE_EXTENSIONS.has(ext) && !INDEXABLE_EXTENSIONS.has(bn))
+      return;
     this.pending.set(absPath, event);
     this.onActivity?.();
     this.scheduleBatch();
