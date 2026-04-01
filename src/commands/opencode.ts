@@ -36,7 +36,6 @@ function resolveGmaxBin(): string {
   try {
     return execSync("which gmax", { encoding: "utf-8" }).trim();
   } catch {
-    // Fall back to the path of the current process entry point
     const binDir = path.dirname(process.argv[1]);
     const candidate = path.join(binDir, "gmax");
     if (fs.existsSync(candidate)) return candidate;
@@ -47,76 +46,36 @@ function resolveGmaxBin(): string {
 function buildShimContent(gmaxBin: string) {
   return `
 import { tool } from "@opencode-ai/plugin";
+import { existsSync, realpathSync, readFileSync } from "node:fs";
+import { resolve, dirname, join } from "node:path";
+import { execFileSync } from "node:child_process";
 
-const SKILL = \`
----
-name: gmax
-description: Semantic code search. Use alongside grep - grep for exact strings, gmax for concepts.
----
+// Resolve gmax binary and SKILL dynamically from the installed package.
+// This means npm install -g grepmax@latest automatically updates the SKILL
+// without needing to re-run gmax install-opencode.
+const _gmax = (() => {
+  // Binary: try hardcoded path, fall back to which
+  let bin = "${gmaxBin}";
+  if (!existsSync(bin)) {
+    try {
+      bin = execFileSync("which gmax", { encoding: "utf-8" }).trim();
+    } catch {
+      return { bin: "gmax", skill: "Semantic code search. Run: gmax 'query' --agent" };
+    }
+  }
 
-## When to use what
-
-- **Know the exact string/symbol?** → grep/ripgrep (fastest)
-- **Know the file already?** → Read tool directly
-- **Searching by concept/behavior?** → gmax "query" --agent (semantic search)
-- **Need full function body?** → gmax extract <symbol> (complete source)
-- **Quick symbol overview?** → gmax peek <symbol> (signature + callers + callees)
-- **Need file structure?** → gmax skeleton <path>
-- **Need call flow?** → gmax trace <symbol>
-
-## Primary command
-
-Use --agent for compact, token-efficient output (one line per result):
-
-gmax "where do we handle authentication" --agent
-gmax "database connection pooling" --role ORCHESTRATION --agent -m 5
-gmax "error handling" --lang ts --exclude tests/ --agent
-
-Output: file:line symbol [ROLE] — signature_hint
-
-All search flags: --agent -m <n> --per-file <n> --root <dir> --file <name> --exclude <prefix> --lang <ext> --role <role> --symbol --imports --name <regex> -C <n> --skeleton --explain --context-for-llm --budget <tokens>
-
-## Commands
-
-### Core
-gmax "query" --agent              # semantic search (compact output)
-gmax extract <symbol>             # full function body with line numbers
-gmax peek <symbol>                # signature + callers + callees
-gmax trace <symbol> -d 2          # call graph (multi-hop)
-gmax skeleton <path>              # file structure (signatures only)
-gmax symbols --agent              # list all indexed symbols
-
-### Analysis
-gmax diff [ref] --agent           # search scoped to git changes
-gmax test <symbol> --agent        # find tests via reverse call graph
-gmax impact <symbol> --agent      # dependents + affected tests
-gmax similar <symbol> --agent     # vector-to-vector similarity
-gmax context "topic" --budget 4k  # token-budgeted topic summary
-
-### Project
-gmax project --agent              # languages, structure, key symbols
-gmax related <file> --agent       # dependencies + dependents
-gmax recent --agent               # recently modified files
-gmax status --agent               # all indexed projects
-
-### Management
-gmax add                          # add + index current directory
-gmax index                        # reindex current project
-gmax doctor --fix                 # health check + auto-repair
-
-## Tips
-
-- Be specific. "auth" is vague. "where does the server validate JWT tokens" is specific.
-- Use --role ORCHESTRATION to skip type definitions and find actual logic.
-- Use --symbol when the query is a function/class name — gets search + trace in one shot.
-- Don't search for exact strings — use grep for that. gmax finds concepts.
-- If search returns nothing, run: gmax add
-\`;
-
-const GMAX_BIN = "${gmaxBin}";
+  // SKILL: read from package root
+  try {
+    const root = resolve(dirname(realpathSync(bin)), "..");
+    const skillPath = join(root, "plugins", "grepmax", "skills", "grepmax", "SKILL.md");
+    return { bin, skill: readFileSync(skillPath, "utf-8") };
+  } catch {
+    return { bin, skill: "Semantic code search. Run: gmax 'query' --agent" };
+  }
+})();
 
 export default tool({
-  description: SKILL,
+  description: _gmax.skill,
   args: {
     argv: tool.schema.array(tool.schema.string())
       .describe("Arguments for gmax, e.g. ['search', 'user auth', '--agent']")
@@ -124,7 +83,7 @@ export default tool({
   async execute({ argv }) {
     try {
       // @ts-ignore
-      const out = await Bun.spawn([GMAX_BIN, ...argv], { stdout: "pipe" }).stdout;
+      const out = await Bun.spawn([_gmax.bin, ...argv], { stdout: "pipe" }).stdout;
       const text = await new Response(out).text();
       if (text.includes("Indexing") || text.includes("Building") || text.includes("Syncing")) {
         return \`WARN: The index is currently updating.
@@ -143,12 +102,20 @@ Please wait for indexing to complete before searching.\`;
 }
 
 function buildPluginContent(gmaxBin: string) {
-  return `import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+  return `import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { join, resolve, dirname } from "node:path";
 import { homedir } from "node:os";
 
-const GMAX_BIN = "${gmaxBin}";
+function resolveGmaxBin() {
+  const hardcoded = "${gmaxBin}";
+  if (existsSync(hardcoded)) return hardcoded;
+  try {
+    return execFileSync("which gmax", { encoding: "utf-8" }).trim();
+  } catch {
+    return null;
+  }
+}
 
 function isProjectRegistered() {
   try {
@@ -161,26 +128,23 @@ function isProjectRegistered() {
   }
 }
 
+function startDaemon() {
+  const bin = resolveGmaxBin();
+  if (!bin || !isProjectRegistered()) return;
+  try {
+    execFileSync(bin, ["watch", "--daemon", "-b"], {
+      timeout: 5000,
+      stdio: "ignore",
+    });
+  } catch {}
+}
+
 export const GmaxPlugin = async () => {
-  // Start daemon on session creation if project is indexed
-  if (isProjectRegistered()) {
-    try {
-      execFileSync(GMAX_BIN, ["watch", "--daemon", "-b"], {
-        timeout: 5000,
-        stdio: "ignore",
-      });
-    } catch {}
-  }
+  startDaemon();
 
   return {
     "session.created": async () => {
-      if (!isProjectRegistered()) return;
-      try {
-        execFileSync(GMAX_BIN, ["watch", "--daemon", "-b"], {
-          timeout: 5000,
-          stdio: "ignore",
-        });
-      } catch {}
+      startDaemon();
     },
   };
 };
@@ -190,20 +154,18 @@ export const GmaxPlugin = async () => {
 async function install() {
   try {
     // 1. Delete legacy plugin
-    for (const legacy of [LEGACY_PLUGIN_PATH]) {
-      if (fs.existsSync(legacy)) {
-        try {
-          fs.unlinkSync(legacy);
-          console.log("Deleted legacy plugin at", legacy);
-        } catch {}
-      }
+    if (fs.existsSync(LEGACY_PLUGIN_PATH)) {
+      try {
+        fs.unlinkSync(LEGACY_PLUGIN_PATH);
+        console.log("Deleted legacy plugin at", LEGACY_PLUGIN_PATH);
+      } catch {}
     }
 
     // 2. Resolve absolute path to gmax binary
     const gmaxBin = resolveGmaxBin();
     console.log(`   Resolved gmax binary: ${gmaxBin}`);
 
-    // 3. Create tool shim
+    // 3. Create tool shim (reads SKILL dynamically from package root)
     fs.mkdirSync(path.dirname(TOOL_PATH), { recursive: true });
     fs.writeFileSync(TOOL_PATH, buildShimContent(gmaxBin));
     console.log("✅ Created tool shim at", TOOL_PATH);

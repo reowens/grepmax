@@ -20,6 +20,7 @@ import { project } from "./commands/project";
 import { recent } from "./commands/recent";
 import { related } from "./commands/related";
 import { installOpencode, uninstallOpencode } from "./commands/opencode";
+import { plugin } from "./commands/plugin";
 import { remove } from "./commands/remove";
 import { search } from "./commands/search";
 import { similar } from "./commands/similar";
@@ -93,12 +94,19 @@ program.addCommand(setup);
 program.addCommand(config);
 program.addCommand(doctor);
 
-// Plugin installers
+// Plugins
+program.addCommand(plugin);
+
+// Legacy plugin installers (hidden — use `gmax plugin` instead)
+(installClaudeCode as any)._hidden = true;
 program.addCommand(installClaudeCode);
+(installCodex as any)._hidden = true;
 program.addCommand(installCodex);
+(installDroid as any)._hidden = true;
 program.addCommand(installDroid);
 (uninstallDroid as any)._hidden = true;
 program.addCommand(uninstallDroid);
+(installOpencode as any)._hidden = true;
 program.addCommand(installOpencode);
 (uninstallOpencode as any)._hidden = true;
 program.addCommand(uninstallOpencode);

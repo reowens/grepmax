@@ -64,3 +64,15 @@ for (const ver of versionDirs) {
     // Best-effort — don't fail the install
   }
 }
+
+// Sync OpenCode: re-run installer if tool shim or plugin exists
+const ocToolPath = path.join(os.homedir(), ".config", "opencode", "tool", "gmax.ts");
+const ocPluginPath = path.join(os.homedir(), ".config", "opencode", "plugins", "gmax.ts");
+if (fs.existsSync(ocToolPath) || fs.existsSync(ocPluginPath)) {
+  try {
+    const { execSync: exec } = require("node:child_process");
+    exec("gmax install-opencode", { stdio: "ignore", timeout: 10000 });
+  } catch {
+    // Best-effort — don't fail the install
+  }
+}

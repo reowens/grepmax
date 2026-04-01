@@ -130,6 +130,17 @@ export const setup = new Command("setup")
       }
     }
 
+    // Step 8: Install plugins for detected clients
+    const installPlugins = await p.confirm({
+      message: "Install plugins for detected clients?",
+      initialValue: true,
+    });
+
+    if (!p.isCancel(installPlugins) && installPlugins) {
+      const { plugin: pluginCmd } = await import("./plugin");
+      await pluginCmd.parseAsync(["node", "gmax"]);
+    }
+
     p.outro(
       `Ready — ${selectedTier.label}, ${embedMode === "gpu" ? "GPU" : "CPU"} mode`,
     );
