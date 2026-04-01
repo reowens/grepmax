@@ -15,6 +15,13 @@ const PLUGIN_PATH = path.join(
   os.homedir(),
   ".config",
   "opencode",
+  "plugins",
+  "gmax.ts",
+);
+const LEGACY_PLUGIN_PATH = path.join(
+  os.homedir(),
+  ".config",
+  "opencode",
   "plugin",
   "gmax.ts",
 );
@@ -45,85 +52,65 @@ const SKILL = \`
 ---
 name: gmax
 description: Semantic code search. Use alongside grep - grep for exact strings, gmax for concepts.
-allowed-tools: "Bash(gmax:*), Read"
 ---
 
-## What gmax does
+## When to use what
 
-Finds code by meaning. When you'd ask a colleague "where do we handle auth?", use gmax.
-
-- grep/ripgrep: exact string match, fast
-- gmax: concept match, finds code you couldn't grep for
+- **Know the exact string/symbol?** → grep/ripgrep (fastest)
+- **Know the file already?** → Read tool directly
+- **Searching by concept/behavior?** → gmax "query" --agent (semantic search)
+- **Need full function body?** → gmax extract <symbol> (complete source)
+- **Quick symbol overview?** → gmax peek <symbol> (signature + callers + callees)
+- **Need file structure?** → gmax skeleton <path>
+- **Need call flow?** → gmax trace <symbol>
 
 ## Primary command
 
-gmax "where do we validate user permissions"
+Use --agent for compact, token-efficient output (one line per result):
 
+gmax "where do we handle authentication" --agent
+gmax "database connection pooling" --role ORCHESTRATION --agent -m 5
+gmax "error handling" --lang ts --exclude tests/ --agent
 
-Returns ~10 results with code snippets (15+ lines each). Usually enough to understand what's happening.
+Output: file:line symbol [ROLE] — signature_hint
 
-## Output explained
+All search flags: --agent -m <n> --per-file <n> --root <dir> --file <name> --exclude <prefix> --lang <ext> --role <role> --symbol --imports --name <regex> -C <n> --skeleton --explain --context-for-llm --budget <tokens>
 
-ORCHESTRATION src/auth/handler.ts:45
-Defines: handleAuth | Calls: validate, checkRole, respond | Score: .94
+## Commands
 
-export async function handleAuth(req: Request) {
-  const token = req.headers.get("Authorization");
-  const claims = await validateToken(token);
-  if (!claims) return unauthorized();
-  const allowed = await checkRole(claims.role, req.path);
-  ...
+### Core
+gmax "query" --agent              # semantic search (compact output)
+gmax extract <symbol>             # full function body with line numbers
+gmax peek <symbol>                # signature + callers + callees
+gmax trace <symbol> -d 2          # call graph (multi-hop)
+gmax skeleton <path>              # file structure (signatures only)
+gmax symbols --agent              # list all indexed symbols
 
-- **ORCHESTRATION** = contains logic, coordinates other code
-- **DEFINITION** = types, interfaces, classes
-- **Score** = relevance (1 = best match)
-- **Calls** = what this code calls (helps you trace flow)
+### Analysis
+gmax diff [ref] --agent           # search scoped to git changes
+gmax test <symbol> --agent        # find tests via reverse call graph
+gmax impact <symbol> --agent      # dependents + affected tests
+gmax similar <symbol> --agent     # vector-to-vector similarity
+gmax context "topic" --budget 4k  # token-budgeted topic summary
 
-## When to Read more
+### Project
+gmax project --agent              # languages, structure, key symbols
+gmax related <file> --agent       # dependencies + dependents
+gmax recent --agent               # recently modified files
+gmax status --agent               # all indexed projects
 
-The snippet often has enough context. But if you need more:
-
-# gmax found src/auth/handler.ts:45-90 as ORCH
-Read src/auth/handler.ts:45-120
-
-
-Read the specific line range, not the whole file.
-
-## Other commands
-
-# Trace call graph (who calls X, what X calls)
-gmax trace handleAuth
-
-# Skeleton of a huge file (to find which ranges to read)
-gmax skeleton src/giant-2000-line-file.ts
-
-# Just file paths when you only need locations
-gmax "authentication" --compact
-
-
-## Workflow: architecture questions
-
-# 1. Find entry points
-gmax "where do requests enter the server"
-# Review the ORCH results - code is shown
-
-# 2. If you need deeper context on a specific function
-Read src/server/handler.ts:45-120
-
-# 3. Trace to understand call flow
-gmax trace handleRequest
+### Management
+gmax add                          # add + index current directory
+gmax index                        # reindex current project
+gmax doctor --fix                 # health check + auto-repair
 
 ## Tips
 
-- More words = better results. "auth" is vague. "where does the server validate JWT tokens" is specific.
-- ORCH results contain the logic - prioritize these
-- Don't read entire files. Use the line ranges gmax gives you.
-- If results seem off, rephrase your query like you'd ask a teammate
-
-## If Index is Building
-
-If you see "Indexing" or "Syncing": STOP. Tell the user the index is building. Ask if they want to wait or proceed with partial results.
-
+- Be specific. "auth" is vague. "where does the server validate JWT tokens" is specific.
+- Use --role ORCHESTRATION to skip type definitions and find actual logic.
+- Use --symbol when the query is a function/class name — gets search + trace in one shot.
+- Don't search for exact strings — use grep for that. gmax finds concepts.
+- If search returns nothing, run: gmax add
 \`;
 
 const GMAX_BIN = "${gmaxBin}";
@@ -132,7 +119,7 @@ export default tool({
   description: SKILL,
   args: {
     argv: tool.schema.array(tool.schema.string())
-      .describe("Arguments for gmax, e.g. ['search', 'user auth']")
+      .describe("Arguments for gmax, e.g. ['search', 'user auth', '--agent']")
   },
   async execute({ argv }) {
     try {
@@ -145,7 +132,7 @@ export default tool({
 Output so far:
 \${text.trim()}
 
-PLEASE READ THE "Indexing" WARNING IN MY SKILL DESCRIPTION.\`;
+Please wait for indexing to complete before searching.\`;
       }
       return text.trim();
     } catch (err) {
@@ -155,15 +142,60 @@ PLEASE READ THE "Indexing" WARNING IN MY SKILL DESCRIPTION.\`;
 })`;
 }
 
+function buildPluginContent(gmaxBin: string) {
+  return `import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
+
+const GMAX_BIN = "${gmaxBin}";
+
+function isProjectRegistered() {
+  try {
+    const projectsPath = join(homedir(), ".gmax", "projects.json");
+    const projects = JSON.parse(readFileSync(projectsPath, "utf-8"));
+    const cwd = process.cwd();
+    return projects.some((p) => cwd.startsWith(p.root));
+  } catch {
+    return false;
+  }
+}
+
+export const GmaxPlugin = async () => {
+  // Start daemon on session creation if project is indexed
+  if (isProjectRegistered()) {
+    try {
+      execFileSync(GMAX_BIN, ["watch", "--daemon", "-b"], {
+        timeout: 5000,
+        stdio: "ignore",
+      });
+    } catch {}
+  }
+
+  return {
+    "session.created": async () => {
+      if (!isProjectRegistered()) return;
+      try {
+        execFileSync(GMAX_BIN, ["watch", "--daemon", "-b"], {
+          timeout: 5000,
+          stdio: "ignore",
+        });
+      } catch {}
+    },
+  };
+};
+`;
+}
+
 async function install() {
   try {
     // 1. Delete legacy plugin
-    if (fs.existsSync(PLUGIN_PATH)) {
-      try {
-        fs.unlinkSync(PLUGIN_PATH);
-        console.log("Deleted legacy plugin at", PLUGIN_PATH);
-      } catch (e) {
-        console.warn("mnt: Failed to delete legacy plugin:", e);
+    for (const legacy of [LEGACY_PLUGIN_PATH]) {
+      if (fs.existsSync(legacy)) {
+        try {
+          fs.unlinkSync(legacy);
+          console.log("Deleted legacy plugin at", legacy);
+        } catch {}
       }
     }
 
@@ -176,24 +208,22 @@ async function install() {
     fs.writeFileSync(TOOL_PATH, buildShimContent(gmaxBin));
     console.log("✅ Created tool shim at", TOOL_PATH);
 
-    // 4. Register MCP
-    if (!fs.existsSync(CONFIG_PATH)) {
-      fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
-      fs.writeFileSync(CONFIG_PATH, JSON.stringify({}, null, 2));
+    // 4. Create plugin for daemon startup
+    fs.mkdirSync(path.dirname(PLUGIN_PATH), { recursive: true });
+    fs.writeFileSync(PLUGIN_PATH, buildPluginContent(gmaxBin));
+    console.log("✅ Created plugin at", PLUGIN_PATH);
+
+    // 5. Clean up stale MCP registration if present
+    if (fs.existsSync(CONFIG_PATH)) {
+      try {
+        const config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8") || "{}");
+        if (config.mcp?.gmax) {
+          delete config.mcp.gmax;
+          fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+          console.log("✅ Removed stale MCP registration from", CONFIG_PATH);
+        }
+      } catch {}
     }
-
-    const config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8") || "{}");
-    if (!config.$schema) config.$schema = "https://opencode.ai/config.json";
-    if (!config.mcp) config.mcp = {};
-
-    config.mcp.gmax = {
-      type: "local",
-      command: [gmaxBin, "mcp"],
-      enabled: true,
-    };
-
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
-    console.log("✅ Registered MCP server in", CONFIG_PATH);
   } catch (err) {
     console.error("❌ Installation failed:", err);
   }
@@ -201,26 +231,32 @@ async function install() {
 
 async function uninstall() {
   try {
-    // 1. Remove shim
+    // 1. Remove tool shim
     if (fs.existsSync(TOOL_PATH)) {
       fs.unlinkSync(TOOL_PATH);
       console.log("✅ Removed tool shim.");
     }
 
-    // 2. Unregister MCP
+    // 2. Remove plugin
+    if (fs.existsSync(PLUGIN_PATH)) {
+      fs.unlinkSync(PLUGIN_PATH);
+      console.log("✅ Removed plugin.");
+    }
+
+    // 3. Clean up legacy paths
+    if (fs.existsSync(LEGACY_PLUGIN_PATH)) {
+      fs.unlinkSync(LEGACY_PLUGIN_PATH);
+      console.log("✅ Cleaned up legacy plugin.");
+    }
+
+    // 4. Clean up MCP registration if present
     if (fs.existsSync(CONFIG_PATH)) {
       const config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8") || "{}");
       if (config.mcp?.gmax) {
         delete config.mcp.gmax;
         fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
-        console.log("✅ Unregistered MCP server.");
+        console.log("✅ Removed MCP registration.");
       }
-    }
-
-    // Cleanup plugin just in case
-    if (fs.existsSync(PLUGIN_PATH)) {
-      fs.unlinkSync(PLUGIN_PATH);
-      console.log("✅ Cleaned up plugin file.");
     }
   } catch (err) {
     console.error("❌ Uninstall failed:", err);
