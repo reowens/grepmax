@@ -3,6 +3,7 @@ import * as net from "node:net";
 import * as path from "node:path";
 import * as watcher from "@parcel/watcher";
 import type { AsyncSubscription } from "@parcel/watcher";
+import lockfile from "proper-lockfile";
 import { PATHS } from "../../config";
 import { ProjectBatchProcessor } from "../index/batch-processor";
 import { WATCHER_IGNORE_GLOBS } from "../index/watcher";
@@ -30,6 +31,7 @@ export class Daemon {
   private vectorDb: VectorDB | null = null;
   private metaCache: MetaCache | null = null;
   private server: net.Server | null = null;
+  private releaseLock: (() => Promise<void>) | null = null;
   private lastActivity = Date.now();
   private readonly startTime = Date.now();
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
@@ -40,7 +42,23 @@ export class Daemon {
   async start(): Promise<void> {
     process.title = "gmax-daemon";
 
-    // 1. Kill existing per-project watchers
+    // 1. Acquire exclusive lock — kernel-enforced, atomic, auto-released on death
+    fs.mkdirSync(path.dirname(PATHS.daemonLockFile), { recursive: true });
+    fs.writeFileSync(PATHS.daemonLockFile, "", { flag: "a" }); // ensure file exists
+    try {
+      this.releaseLock = await lockfile.lock(PATHS.daemonLockFile, {
+        retries: 0,
+        stale: 30_000,
+      });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ELOCKED") {
+        console.error("[daemon] Another daemon is already running");
+        process.exit(0);
+      }
+      throw err;
+    }
+
+    // 2. Kill existing per-project watchers
     const existing = listWatchers();
     for (const w of existing) {
       console.log(`[daemon] Taking over from per-project watcher (PID: ${w.pid}, ${path.basename(w.projectRoot)})`);
@@ -48,28 +66,13 @@ export class Daemon {
       unregisterWatcher(w.pid);
     }
 
-    // 2. PID file — atomic dedup guard
-    const pidFile = PATHS.daemonPidFile;
-    try {
-      // Check if another daemon is alive
-      const existingPid = Number.parseInt(
-        fs.readFileSync(pidFile, "utf-8").trim(),
-        10,
-      );
-      if (existingPid && existingPid !== process.pid) {
-        try {
-          process.kill(existingPid, 0); // throws if dead
-          console.error("[daemon] Another daemon is already running (PID:", existingPid + ")");
-          process.exit(0);
-        } catch {}
-      }
-    } catch {}
-    fs.writeFileSync(pidFile, String(process.pid));
+    // 3. Write PID file (informational only — lock is the real guard)
+    fs.writeFileSync(PATHS.daemonPidFile, String(process.pid));
 
-    // 3. Stale socket cleanup
+    // 4. Stale socket cleanup
     try { fs.unlinkSync(PATHS.daemonSocket); } catch {}
 
-    // 3. Open shared resources
+    // 5. Open shared resources
     try {
       fs.mkdirSync(PATHS.cacheDir, { recursive: true });
       fs.mkdirSync(PATHS.lancedbDir, { recursive: true });
@@ -80,10 +83,10 @@ export class Daemon {
       throw err;
     }
 
-    // 4. Register daemon (only after resources are open)
+    // 6. Register daemon (only after resources are open)
     registerDaemon(process.pid);
 
-    // 5. Subscribe to all registered projects (skip missing directories)
+    // 7. Subscribe to all registered projects (skip missing directories)
     const projects = listProjects().filter((p) => p.status === "indexed");
     for (const p of projects) {
       if (!fs.existsSync(p.root)) {
@@ -97,12 +100,12 @@ export class Daemon {
       }
     }
 
-    // 6. Heartbeat
+    // 8. Heartbeat
     this.heartbeatInterval = setInterval(() => {
       heartbeat(process.pid);
     }, HEARTBEAT_INTERVAL_MS);
 
-    // 7. Idle timeout
+    // 9. Idle timeout
     this.idleInterval = setInterval(() => {
       if (Date.now() - this.lastActivity > IDLE_TIMEOUT_MS) {
         console.log("[daemon] Idle for 30 minutes, shutting down");
@@ -110,7 +113,7 @@ export class Daemon {
       }
     }, HEARTBEAT_INTERVAL_MS);
 
-    // 8. Socket server
+    // 10. Socket server
     this.server = net.createServer((conn) => {
       let buf = "";
       conn.on("data", (chunk) => {
@@ -139,7 +142,7 @@ export class Daemon {
       this.server!.on("error", (err) => {
         const code = (err as NodeJS.ErrnoException).code;
         if (code === "EADDRINUSE") {
-          console.error("[daemon] Another daemon is already running");
+          console.error("[daemon] Socket already in use");
           reject(err);
         } else if (code === "EOPNOTSUPP") {
           console.error("[daemon] Filesystem does not support Unix sockets");
@@ -283,10 +286,14 @@ export class Daemon {
     }
     this.subscriptions.clear();
 
-    // Close server + socket + PID file
+    // Close server + socket + PID file + lock
     this.server?.close();
     try { fs.unlinkSync(PATHS.daemonSocket); } catch {}
     try { fs.unlinkSync(PATHS.daemonPidFile); } catch {}
+    if (this.releaseLock) {
+      try { await this.releaseLock(); } catch {}
+      this.releaseLock = null;
+    }
 
     // Unregister all
     for (const root of this.processors.keys()) {

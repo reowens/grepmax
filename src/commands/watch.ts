@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import * as fs from "node:fs";
 import * as path from "node:path";
 import { Command } from "commander";
 import { PATHS } from "../config";
@@ -48,18 +47,6 @@ export const watch = new Command("watch")
       if (options.background) {
         // Skip spawn if daemon already running — prevents process accumulation
         // when SessionStart hook fires on every session/clear/resume
-        const pidFile = PATHS.daemonPidFile;
-        try {
-          const existingPid = Number.parseInt(
-            fs.readFileSync(pidFile, "utf-8").trim(),
-            10,
-          );
-          if (existingPid) {
-            process.kill(existingPid, 0); // throws if dead
-            process.exit(0); // alive — skip
-          }
-        } catch {}
-        // Also check socket as fallback
         const { isDaemonRunning } = await import("../lib/utils/daemon-client");
         if (await isDaemonRunning()) {
           process.exit(0);
