@@ -192,6 +192,7 @@ const TOOLS = [
         ref: { type: "string", description: "Git ref to diff against (e.g. main, HEAD~5)" },
         query: { type: "string", description: "Semantic search within changed files" },
         limit: { type: "number", description: "Max results (default 10)" },
+        role: { type: "string", description: "Filter by role: ORCHESTRATION, DEFINITION, IMPLEMENTATION" },
       },
     },
   },
@@ -227,6 +228,7 @@ const TOOLS = [
       properties: {
         target: { type: "string", description: "Symbol name or file path" },
         limit: { type: "number", description: "Max results (default 5)" },
+        threshold: { type: "number", description: "Min similarity 0-1 (default 0)" },
       },
       required: ["target"],
     },
@@ -1827,6 +1829,7 @@ export const mcp = new Command("mcp")
       const ref = typeof args.ref === "string" ? args.ref : undefined;
       const query = typeof args.query === "string" ? args.query : undefined;
       const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 50);
+      const role = typeof args.role === "string" ? args.role.toUpperCase() : undefined;
 
       try {
         const changedFiles = getChangedFiles(ref, projectRoot);
@@ -1841,7 +1844,8 @@ export const mcp = new Command("mcp")
           const searcher = getSearcher();
           const response = await searcher.search(query, limit, { rerank: true }, {}, projectRoot);
           const changedSet = new Set(changedFiles);
-          const filtered = response.data.filter((r: any) => changedSet.has(String(r.path || "")));
+          let filtered = response.data.filter((r: any) => changedSet.has(String(r.path || "")));
+          if (role) filtered = filtered.filter((r: any) => String(r.role || "").toUpperCase().startsWith(role));
           if (filtered.length === 0) return ok("No indexed results found in changed files for that query.");
           const lines = filtered.slice(0, limit).map((r: any) => {
             const sym = toStringArray(r.defined_symbols)?.[0] ?? "";
@@ -1955,6 +1959,7 @@ export const mcp = new Command("mcp")
       const target = String(args.target || "");
       if (!target) return err("Missing required parameter: target");
       const limit = Math.min(Math.max(Number(args.limit) || 5, 1), 25);
+      const threshold = Number(args.threshold) || 0;
 
       try {
         const db = getVectorDb();
@@ -1986,8 +1991,9 @@ export const mcp = new Command("mcp")
           .where(`path LIKE '${escapeSqlString(projectRoot)}/%'`)
           .limit(limit + 5).toArray();
 
-        const filtered = results.filter((r: any) =>
+        let filtered = results.filter((r: any) =>
           !(r.path === source.path && r.start_line === source.start_line));
+        if (threshold > 0) filtered = filtered.filter((r: any) => 1 / (1 + (r._distance ?? 0)) >= threshold);
 
         if (filtered.length === 0) return ok(`No similar code found for ${target}.`);
 

@@ -71,7 +71,7 @@ All chunks store **absolute file paths**. Search scoping is done via path prefix
 
 `gmax mcp` runs an in-process MCP server over stdio. It searches the centralized VectorDB directly — no HTTP daemon needed.
 
-Tools: `semantic_search` (use `scope: "all"` for cross-project), `code_skeleton`, `trace_calls`, `list_symbols`, `index_status`, `summarize_directory`, `summarize_project`, `related_files`, `recent_changes`
+Tools: `semantic_search` (use `scope: "all"` for cross-project), `search_all`, `code_skeleton`, `trace_calls`, `extract_symbol`, `peek_symbol`, `list_symbols`, `index_status`, `summarize_directory`, `summarize_project`, `related_files`, `recent_changes`, `diff_changes`, `find_tests`, `impact_analysis`, `find_similar`, `build_context`
 
 ### Embedding Modes
 
@@ -89,9 +89,21 @@ Key files:
 - `src/lib/utils/daemon-launcher.ts` — Spawns daemon in background
 - `src/lib/utils/watcher-launcher.ts` — Tries daemon IPC first, falls back to per-project spawn
 
+### Analysis Commands
+
+Built on the search/graph/skeleton primitives:
+- `gmax diff [ref]` — semantic search scoped to git changes
+- `gmax test <symbol|file>` — find tests via reverse call graph
+- `gmax impact <symbol|file>` — dependents + affected tests
+- `gmax similar <symbol|file>` — vector-to-vector similarity search
+- `gmax context <topic> --budget` — token-budgeted topic summary
+- `gmax doctor --fix` — index health diagnostics and auto-repair
+
+Shared library: `src/lib/graph/impact.ts` (isTestPath, findTests, findDependents, resolveTargetSymbols)
+
 ### Plugin System
 
-The Claude Code plugin lives in `plugins/grepmax/`. SessionStart hook starts the daemon and MLX server if needed.
+The Claude Code plugin lives in `plugins/grepmax/`. SessionStart hook starts the daemon and MLX server if needed. CwdChanged hook auto-indexes new project directories. SubagentStart hook injects gmax awareness into subagents. PreToolUse hook suggests semantic search for conceptual grep queries.
 
 ## Key Types
 
