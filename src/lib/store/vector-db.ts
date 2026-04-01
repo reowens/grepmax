@@ -269,17 +269,34 @@ export class VectorDB {
     }
   }
 
-  async createFTSIndex(): Promise<void> {
+  async createFTSIndex(rebuild = false): Promise<void> {
     const table = await this.ensureTable();
+    if (rebuild) {
+      try {
+        await table.dropIndex("content_idx");
+      } catch {}
+    }
     try {
       await table.createIndex("content", {
-        config: lancedb.Index.fts(),
+        config: lancedb.Index.fts({ withPosition: true }),
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      if (!msg.includes("already exists")) {
-        console.warn("Failed to create FTS index:", e);
+      if (msg.includes("already exists")) {
+        return;
       }
+      // If position error, try dropping and recreating
+      if (msg.includes("position")) {
+        try {
+          await table.dropIndex("content_idx");
+          await table.createIndex("content", {
+            config: lancedb.Index.fts({ withPosition: true }),
+          });
+          log("vectordb", "Rebuilt FTS index with position support");
+          return;
+        } catch {}
+      }
+      console.warn("Failed to create FTS index:", e);
     }
   }
 

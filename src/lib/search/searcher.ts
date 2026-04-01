@@ -469,7 +469,16 @@ export class Searcher {
         ftsSearchFailed = true;
         this.ftsAvailable = false;
         const msg = e instanceof Error ? e.message : String(e);
-        console.warn(`[Searcher] FTS search failed (will retry later): ${msg}`);
+        if (msg.includes("position")) {
+          // FTS index lacks positional data — rebuild it
+          try {
+            await this.db.createFTSIndex(true);
+            this.ftsAvailable = true;
+            console.warn("[Searcher] Rebuilt FTS index with position support — retry search");
+          } catch {}
+        } else {
+          console.warn(`[Searcher] FTS search failed (will retry later): ${msg}`);
+        }
       }
     }
 
