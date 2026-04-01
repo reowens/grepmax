@@ -41,3 +41,4 @@ src/bench/generate-benchmark-chart.ts
 __pycache__/
 .venv/
 .gmax.json
+CLAUDE.md

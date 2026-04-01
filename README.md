@@ -20,59 +20,61 @@
 Natural-language search that works like `grep`. Fast, local, and built for coding agents.
 
 - **Semantic:** Finds concepts ("where do transactions get created?"), not just strings.
-- **Call Graph Tracing:** Map dependencies with `trace` to see who calls what.
+- **Call Graph Tracing:** Map dependencies with `trace`, find tests with `test`, measure blast radius with `impact`.
 - **Role Detection:** Distinguishes `ORCHESTRATION` (high-level logic) from `DEFINITION` (types/classes).
 - **Local & Private:** 100% local embeddings via ONNX (CPU) or MLX (Apple Silicon GPU).
 - **Centralized Index:** One database at `~/.gmax/` — index once, search from anywhere.
-- **LLM Summaries:** Optional Qwen3-Coder generates one-line descriptions per code chunk on demand.
-- **Agent-Ready:** Pointer mode returns metadata (symbol, role, calls, summary) — no code snippets, ~80% fewer tokens.
+- **Agent-Ready:** `--agent` flag returns compact one-line output — ~90% fewer tokens than default.
 
 ## Quick Start
 
 ```bash
 npm install -g grepmax        # 1. Install
-cd my-repo && gmax index      # 2. Index (models download automatically)
-gmax "where do we handle auth?"  # 3. Search
+cd my-repo && gmax add        # 2. Add + index
+gmax "where do we handle auth?" --agent  # 3. Search
 ```
 
-That's it. No setup required — gmax auto-detects your platform (GPU on Apple Silicon, CPU elsewhere) and downloads models on first use.
+No setup required — gmax auto-detects your platform (GPU on Apple Silicon, CPU elsewhere) and downloads models on first use.
 
-### Optional: Interactive Setup
-
-```bash
-gmax setup                    # Choose model tier + embedding mode interactively
-```
-
-Run this if you want to:
-- Switch between **CPU** (ONNX, works everywhere) and **GPU** (MLX, Apple Silicon only, ~3x faster)
-- Choose between **small** model (384d, 47M params, fast) and **standard** model (768d, 149M params, better quality)
-
-### Quick Config (Non-Interactive)
+### Setup & Config
 
 ```bash
-gmax config                          # View current settings
-gmax config --embed-mode cpu         # Switch to CPU
-gmax config --embed-mode gpu         # Switch to GPU (Apple Silicon only)
-gmax config --model-tier standard    # Switch to larger model
-```
-
-### Verify Installation
-
-```bash
-gmax doctor                   # Check models, index, servers
+gmax setup                    # Interactive wizard (models, embedding mode, plugins)
+gmax config                   # View current settings
+gmax config --embed-mode gpu  # Switch to GPU (Apple Silicon)
+gmax doctor                   # Health check
+gmax doctor --fix             # Auto-repair (compact, prune, remove stale locks)
 ```
 
 ### Core Commands
 
 ```bash
-gmax "where do we handle auth?"      # Semantic search
-gmax "VectorDB" --symbol --agent     # Search + call graph (compact output)
-gmax trace handleAuth -d 2           # Call graph (2-hop)
-gmax skeleton src/lib/search/        # File structure (directory)
-gmax project                         # Project overview
-gmax related src/lib/syncer.ts       # Dependencies + dependents
-gmax recent                          # Recently modified files
-gmax symbols auth                    # List indexed symbols
+gmax "where do we handle auth?" --agent  # Semantic search (compact output)
+gmax extract handleAuth                  # Full function body with line numbers
+gmax peek handleAuth                     # Signature + callers + callees
+gmax trace handleAuth -d 2              # Call graph (2-hop)
+gmax skeleton src/lib/search/           # File structure (bodies collapsed)
+gmax symbols auth                       # List indexed symbols
+```
+
+### Analysis Commands
+
+```bash
+gmax diff main                           # Changed files vs main
+gmax diff main --query "auth changes"    # Semantic search within changes
+gmax test handleAuth                     # Find tests via reverse call graph
+gmax impact handleAuth                   # Dependents + affected tests
+gmax similar handleAuth                  # Find similar code patterns
+gmax context "auth system" --budget 4000 # Token-budgeted topic summary
+```
+
+### Project Commands
+
+```bash
+gmax project                  # Languages, structure, key symbols
+gmax related src/lib/auth.ts  # Dependencies + dependents
+gmax recent                   # Recently modified files
+gmax status                   # All indexed projects + chunk counts
 ```
 
 In our public benchmarks, `grepmax` can save about 20% of your LLM tokens and deliver a 30% speedup.
@@ -83,334 +85,162 @@ In our public benchmarks, `grepmax` can save about 20% of your LLM tokens and de
 
 ## Agent Plugins
 
-### Claude Code
+gmax integrates with Claude Code, OpenCode, Codex, and Factory Droid. Install all detected clients at once:
 
-1. Run `gmax install-claude-code`
-2. Open Claude Code — the plugin auto-starts the MLX GPU server and a background file watcher.
-3. Claude uses `gmax` for semantic searches automatically via MCP tools.
+```bash
+gmax plugin add               # Install all detected clients
+gmax plugin                   # Show plugin status
+gmax plugin remove             # Remove all plugins
+```
 
-Plugin files (skill instructions, hooks) auto-update when you run `npm update -g grepmax` — no need to re-run `install-claude-code`.
+Or manage individually:
 
-### Opencode
-1. Run `gmax install-opencode`
-2. OC uses `gmax` for semantic searches via MCP.
+```bash
+gmax plugin add claude         # Claude Code only
+gmax plugin add opencode       # OpenCode only
+gmax plugin add codex          # Codex only
+gmax plugin add droid          # Factory Droid only
+gmax plugin remove claude      # Remove specific plugin
+```
 
-### Codex
-1. Run `gmax install-codex`
-2. Codex uses `gmax` for semantic searches.
+Plugins auto-update when you run `npm install -g grepmax@latest` — no need to re-run `gmax plugin add`.
 
-### Factory Droid
-1. Run `gmax install-droid`
-2. To remove: `gmax uninstall-droid`
+### How it works per client
+
+- **Claude Code:** Plugin with hooks (SessionStart, CwdChanged, SubagentStart, PreToolUse). Model uses CLI via `Bash(gmax ... --agent)`.
+- **OpenCode:** Tool shim with dynamic SKILL + session plugin for daemon startup. Model calls gmax tool directly.
+- **Codex:** MCP server registration + AGENTS.md skill instructions.
+- **Factory Droid:** Skills + SessionStart/SessionEnd hooks for daemon lifecycle.
 
 ### MCP Server
 
-`gmax mcp` starts a stdio-based MCP server that searches the centralized index directly — no HTTP daemon needed.
+`gmax mcp` starts a stdio-based MCP server for clients that support MCP but can't run shell commands (Cursor, Windsurf, custom agents).
 
 | Tool | Description |
 | --- | --- |
-| `semantic_search` | Code search by meaning. 16 composable params: query, limit, root, path, detail (pointer/code/full), context_lines, min_score, max_per_file, file, exclude, language, role, mode (symbol), include_imports, name_pattern. |
-| `search_all` | Search ALL indexed code. Same params + `projects`/`exclude_projects` to scope by project name. |
-| `code_skeleton` | Collapsed file structure (~4x fewer tokens). Accepts files, directories, or comma-separated paths. `format: "json"` for structured output. |
-| `trace_calls` | Call graph with importers, callers (multi-hop via `depth`), and callees with file:line locations. |
-| `list_symbols` | List indexed symbols with role (ORCH/DEF/IMPL) and export status. |
-| `summarize_project` | High-level project overview — languages, directory structure, roles, key symbols, entry points. |
-| `related_files` | Find dependencies and dependents of a file by shared symbol references. |
-| `recent_changes` | Recently modified indexed files with relative timestamps. |
-| `index_status` | Check index health: per-project chunk counts, model info, watcher status. |
-| `summarize_directory` | Generate LLM summaries for indexed chunks. Summaries appear in search results. |
+| `semantic_search` | Search by meaning. 16+ params: query, limit, role, language, scope (project/all), etc. |
+| `search_all` | Cross-project search. Same params + project filtering. |
+| `code_skeleton` | File structure with bodies collapsed (~4x fewer tokens). |
+| `trace_calls` | Call graph: importers, callers (multi-hop), callees with file:line. |
+| `extract_symbol` | Complete function/class body by symbol name. |
+| `peek_symbol` | Compact overview: signature + callers + callees. |
+| `list_symbols` | Indexed symbols with role and export status. |
+| `index_status` | Index health: chunks, files, projects, watcher status. |
+| `summarize_project` | Project overview: languages, structure, key symbols, entry points. |
+| `summarize_directory` | Generate LLM summaries for indexed chunks. |
+| `related_files` | Dependencies and dependents by shared symbols. |
+| `recent_changes` | Recently modified indexed files. |
+| `diff_changes` | Search scoped to git changes. |
+| `find_tests` | Find tests via reverse call graph. |
+| `impact_analysis` | Dependents + affected tests for a symbol or file. |
+| `find_similar` | Vector similarity search. |
+| `build_context` | Token-budgeted topic summary. |
 
-## Commands
-
-### `gmax search`
-
-The default command. Searches indexed code using semantic meaning.
+## Search Options
 
 ```bash
-gmax "how is the database connection pooled?"
+gmax "query" [options]
 ```
-
-**Options:**
 
 | Flag | Description | Default |
 | --- | --- | --- |
-| `--agent` | Ultra-compact output for AI agents (one line per result). | `false` |
-| `-m <n>` | Max total results to return. | `5` |
-| `--per-file <n>` | Max matches to show per file. | `3` |
-| `-c`, `--content` | Show full chunk content instead of snippets. | `false` |
-| `-C <n>`, `--context <n>` | Include N lines before/after each result. | `0` |
-| `--scores` | Show relevance scores (0-1) for each result. | `false` |
-| `--min-score <n>` | Filter out results below this score threshold. | `0` |
-| `--root <dir>` | Search a different project directory. | cwd |
-| `--file <name>` | Filter to files matching this name (e.g. `syncer.ts`). | — |
-| `--exclude <prefix>` | Exclude files under this path prefix (e.g. `tests/`). | — |
-| `--lang <ext>` | Filter by file extension (e.g. `ts`, `py`). | — |
-| `--role <role>` | Filter by role: `ORCHESTRATION`, `DEFINITION`, `IMPLEMENTATION`. | — |
-| `--symbol` | Append call graph (importers, callers, callees) after results. | `false` |
-| `--imports` | Prepend file imports to each result. | `false` |
-| `--name <regex>` | Filter results by symbol name regex. | — |
-| `--compact` | Compact hits view (paths + line ranges + role/preview). | `false` |
-| `--skeleton` | Show code skeleton for matching files instead of snippets. | `false` |
-| `--plain` | Disable ANSI colors and use simpler formatting. | `false` |
-| `-s`, `--sync` | Force re-index changed files before searching. | `false` |
+| `--agent` | Compact one-line output for AI agents. | `false` |
+| `-m <n>` | Max results. | `5` |
+| `--per-file <n>` | Max matches per file. | `3` |
+| `--role <role>` | Filter: `ORCHESTRATION`, `DEFINITION`, `IMPLEMENTATION`. | — |
+| `--lang <ext>` | Filter by extension (e.g. `ts`, `py`). | — |
+| `--file <name>` | Filter by filename. | — |
+| `--exclude <prefix>` | Exclude path prefix. | — |
+| `--symbol` | Append call graph after results. | `false` |
+| `--imports` | Prepend file imports per result. | `false` |
+| `--name <regex>` | Filter by symbol name. | — |
+| `--skeleton` | Show file skeletons for top matches. | `false` |
+| `--context-for-llm` | Full function bodies + imports per result. | `false` |
+| `--budget <tokens>` | Cap output tokens (for `--context-for-llm`). | `8000` |
+| `--explain` | Show scoring breakdown per result. | `false` |
+| `-C <n>` | Context lines before/after. | `0` |
+| `--root <dir>` | Search a different project. | cwd |
+| `--min-score <n>` | Minimum relevance score. | `0` |
 
-**Examples:**
+## Background Daemon
 
-```bash
-gmax "API rate limiting logic"
-gmax "auth handler" --role ORCHESTRATION --lang ts --agent
-gmax "database" --file syncer.ts --agent
-gmax "VectorDB" --symbol --agent
-gmax "error handling" -C 5 --imports --plain
-gmax "handler" --name "handle.*" --exclude tests/ --agent
-```
-
-> **For AI agents:** Use `--agent` for the most token-efficient output (~90% fewer tokens than default). Output format: `file:line symbol [role] — summary`
-
-### `gmax index`
-
-Index a directory into the centralized store.
-
-- Respects `.gitignore` and `.gmaxignore`.
-- Only embeds code and config files. Skips binaries, lockfiles, and minified assets.
-- Uses TreeSitter for semantic chunking (TypeScript, JavaScript, Python, Go, Rust, C/C++, Java, C#, Ruby, PHP, Swift, Kotlin, JSON).
-- Files already indexed with matching content are skipped automatically.
+A single daemon watches all registered projects via native OS file events (FSEvents/inotify). Changes are detected in sub-second and incrementally reindexed.
 
 ```bash
-gmax index                        # Index current dir
-gmax index --path ~/workspace     # Index a specific directory
-gmax index --dry-run              # See what would be indexed
-gmax index --verbose              # Watch detailed progress
-gmax index --reset                # Full re-index from scratch
+gmax watch --daemon -b        # Start daemon
+gmax watch stop               # Stop daemon
+gmax status                   # See all projects + watcher status
 ```
 
-### `gmax watch`
-
-Background file watcher for live reindexing. A single daemon process watches all registered projects through native OS file system events (`@parcel/watcher` — FSEvents on macOS, inotify on Linux). File changes are detected in sub-second and incrementally reindexed.
-
-```bash
-gmax watch --daemon -b            # Start daemon (watches all projects)
-gmax watch -b                     # Per-project mode (fallback)
-gmax watch status                 # Show daemon + watcher status
-gmax watch stop                   # Stop daemon
-gmax watch stop --all             # Stop everything
-```
-
-The daemon auto-starts when you run `gmax search` or use MCP tools. It shuts down after 30 minutes of inactivity. CLI commands communicate with the daemon over a Unix domain socket at `~/.gmax/daemon.sock`.
-
-### `gmax summarize`
-
-Generate one-line LLM summaries for indexed chunks. Requires the summarizer server (Qwen3-Coder via MLX on Apple Silicon). Summaries are stored in LanceDB and appear in search results.
-
-```bash
-gmax summarize                    # Summarize all unsummarized chunks
-gmax summarize --path src/lib/    # Only summarize chunks under a directory
-```
-
-Summarization is **on-demand only** — it does not run automatically during indexing or file watching. The `summarize_directory` MCP tool provides the same functionality for AI agents.
-
-### `gmax serve`
-
-HTTP server with live file watching. Useful for non-MCP integrations.
-
-```bash
-gmax serve                        # Foreground, port 4444
-gmax serve --background           # Background mode
-gmax serve --cpu                  # Force CPU-only embeddings
-```
-
-### `gmax trace`
-
-Call graph — who imports a symbol, who calls it, and what it calls.
-
-```bash
-gmax trace handleAuth             # 1-hop trace
-gmax trace handleAuth -d 2        # 2-hop: callers-of-callers
-```
-
-### `gmax skeleton`
-
-Compressed view of a file — signatures with bodies collapsed. Supports files, directories, and batch.
-
-```bash
-gmax skeleton src/lib/auth.ts             # Single file
-gmax skeleton src/lib/search/             # All files in directory
-gmax skeleton src/a.ts,src/b.ts           # Batch
-gmax skeleton src/lib/auth.ts --json      # Structured JSON output
-gmax skeleton AuthService                 # Find symbol, skeletonize its file
-```
-
-**Supported Languages:** TypeScript, JavaScript, Python, Go, Rust, Java, C#, C++, C, Ruby, PHP, Swift, Kotlin.
-
-### `gmax project`
-
-High-level project overview — languages, directory structure, role distribution, key symbols, entry points.
-
-```bash
-gmax project                     # Current project
-gmax project --root ~/workspace  # Different project
-```
-
-### `gmax related`
-
-Find files related by shared symbol references — dependencies and dependents.
-
-```bash
-gmax related src/lib/index/syncer.ts
-gmax related src/commands/mcp.ts -l 5
-```
-
-### `gmax recent`
-
-Show recently modified indexed files with relative timestamps.
-
-```bash
-gmax recent                      # Last 20 modified files
-gmax recent -l 10                # Last 10
-gmax recent --root ~/workspace   # Different project
-```
-
-### `gmax config`
-
-View or update configuration without the full interactive setup.
-
-```bash
-gmax config                          # Show current settings
-gmax config --embed-mode cpu         # Switch to CPU embeddings
-gmax config --embed-mode gpu         # Switch to GPU (MLX)
-gmax config --model-tier standard    # Switch to standard model (768d)
-```
-
-### `gmax doctor`
-
-Checks installation health, model paths, and database integrity.
-
-```bash
-gmax doctor
-```
+The daemon auto-starts via agent plugins and shuts down after 30 minutes of inactivity.
 
 ## Architecture
 
-### Centralized Index
-
 All data lives in `~/.gmax/`:
-- `~/.gmax/lancedb/` — LanceDB vector store (one database for all indexed directories)
-- `~/.gmax/cache/meta.lmdb` — file metadata cache (content hashes, mtimes)
-- `~/.gmax/cache/watchers.lmdb` — watcher/daemon registry (LMDB, crash-safe)
-- `~/.gmax/daemon.sock` — Unix domain socket for daemon IPC
-- `~/.gmax/logs/` — daemon and watcher logs (5MB rotation)
-- `~/.gmax/config.json` — global config (model tier, embed mode)
-- `~/.gmax/models/` — embedding models
-- `~/.gmax/grammars/` — Tree-sitter grammars
-- `~/.gmax/projects.json` — registry of indexed directories
+- `lancedb/` — LanceDB vector store (centralized, all projects)
+- `cache/meta.lmdb` — file metadata cache (hashes, mtimes)
+- `cache/watchers.lmdb` — watcher/daemon registry (LMDB, crash-safe)
+- `daemon.sock` — Unix domain socket for daemon IPC
+- `daemon.pid` — PID file for daemon dedup
+- `logs/` — daemon and server logs (5MB rotation)
+- `config.json` — global config (model tier, embed mode)
+- `models/` — embedding models
+- `grammars/` — Tree-sitter grammars
+- `projects.json` — registry of indexed directories
 
-All chunks store **absolute file paths**. Search scoping is done via path prefix filtering. There are no per-project index directories.
+**Pipeline:** Walk (gitignore-aware) → Chunk (Tree-sitter) → Embed (384-dim Granite via ONNX/MLX) → Store (LanceDB + LMDB) → Search (vector + FTS + RRF fusion + ColBERT rerank)
 
-### Performance
-
-- **Single Daemon:** One process watches all projects via native OS events — no polling, sub-second file change detection. Shared VectorDB, MetaCache, and worker pool across projects.
-- **Native File Watching:** `@parcel/watcher` uses FSEvents (macOS), inotify (Linux), ReadDirectoryChangesW (Windows) — zero CPU overhead, no file descriptor exhaustion.
-- **Automatic Compaction:** LanceDB table fragments from incremental inserts are compacted every 5 minutes, preventing performance degradation over time.
-- **LMDB Caching:** File metadata reads use LRU/LFU caching for the watcher's hot path.
-- **Bounded Concurrency:** Worker threads scale to 50% of CPU cores (min 4). Override with `GMAX_WORKER_THREADS`.
-- **Smart Chunking:** `tree-sitter` splits code by function/class boundaries for complete logical blocks.
-- **Deduplication:** Identical code blocks are embedded once and cached.
-- **Multi-stage Search:** Vector search + FTS + RRF fusion + ColBERT reranking + structural boosting.
-- **Role Classification:** Detects `ORCHESTRATION` (high complexity, many calls) vs `DEFINITION` (types/classes).
-
-### GPU Embeddings (Apple Silicon)
-
-On Macs with Apple Silicon, gmax defaults to MLX for GPU-accelerated embeddings. The MLX embed server runs on port `8100` and is managed automatically by the Claude Code plugin hook.
-
-To force CPU mode: `GMAX_EMBED_MODE=cpu gmax index`
-
-### LLM Summaries
-
-gmax can generate one-line natural language descriptions for every code chunk using a local LLM (Qwen3-Coder-30B-A3B via MLX). Summaries are stored in LanceDB — zero latency at search time.
-
-Summarization is **on-demand**, not automatic. Run `gmax summarize` or use the `summarize_directory` MCP tool after indexing. The summarizer server runs on port `8101` and must be started separately. If unavailable, `gmax summarize` will report the server is not running.
-
-```bash
-gmax summarize                    # Generate summaries for all unsummarized chunks
-gmax summarize --path src/lib/    # Scope to a directory
-gmax doctor                       # Check summarizer status + coverage
-```
-
-Example search output with summaries:
-```
-handleAuth [exported ORCH C:8] src/auth/handler.ts:45-90
-  Validates JWT from Authorization header, checks RBAC permissions, returns 401 on failure
-  parent:AuthController calls:validateToken,checkRole,respond
-```
+**Supported Languages:** TypeScript, JavaScript, Python, Go, Rust, Java, C#, C++, C, Ruby, PHP, Swift, Kotlin, JSON, YAML, Markdown, SQL, Shell.
 
 ## Configuration
 
-### Config File
-
-Settings are stored in `~/.gmax/config.json`:
-
 ```json
+// ~/.gmax/config.json
 {
   "modelTier": "small",
   "vectorDim": 384,
-  "embedMode": "gpu",
-  "mlxModel": "ibm-granite/granite-embedding-small-english-r2"
+  "embedMode": "gpu"
 }
 ```
 
-View and change settings with `gmax config` or run `gmax setup` for interactive configuration.
-
 ### Ignoring Files
 
-gmax respects `.gitignore` and `.gmaxignore` files. Create a `.gmaxignore` in your directory root to exclude additional patterns:
+gmax respects `.gitignore` and `.gmaxignore`:
 
 ```gitignore
-# .gmaxignore — same syntax as .gitignore
+# .gmaxignore
 docs/generated/
 *.test.ts
 fixtures/
 ```
 
-### Index Management
-
-- **View indexed directories:** `gmax list --all`
-- **Index location:** `~/.gmax/lancedb/` (centralized)
-- **Clean up:** `gmax index --reset` re-indexes the current directory from scratch
-- **Full reset:** `rm -rf ~/.gmax/lancedb ~/.gmax/cache` to start completely fresh
-
 ### Environment Variables
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `GMAX_WORKER_THREADS` | Number of worker threads for embedding | 50% of CPU cores |
-| `GMAX_EMBED_MODE` | Force `cpu` or `gpu` embedding mode | Auto-detect |
-| `GMAX_DEBUG` | Enable debug logging (`1` to enable) | Off |
-| `GMAX_VERBOSE` | Enable verbose output (`1` to enable) | Off |
-| `GMAX_WORKER_TASK_TIMEOUT_MS` | Worker task timeout in ms | `120000` |
-| `GMAX_MAX_WORKER_MEMORY_MB` | Max worker memory in MB | 50% of system RAM |
-| `GMAX_MAX_PER_FILE` | Default max results per file in search | `3` |
-| `GMAX_WATCH_POLL` | Force polling mode for file watcher (`1` to enable) | Off (FSEvents on macOS) |
+| `GMAX_EMBED_MODE` | Force `cpu` or `gpu` | Auto-detect |
+| `GMAX_WORKER_THREADS` | Worker threads for embedding | 50% of cores |
+| `GMAX_DEBUG` | Debug logging | Off |
+| `GMAX_SUMMARIZER` | Enable summarizer auto-start (`1`) | Off |
+
+## Troubleshooting
+
+```bash
+gmax doctor                   # Check health
+gmax doctor --fix             # Auto-repair (compact, prune, fix locks)
+gmax doctor --agent           # Machine-readable health output
+gmax index --reset            # Full reindex from scratch
+gmax watch stop && gmax watch --daemon -b  # Restart daemon
+```
 
 ## Contributing
 
 See [CLAUDE.md](CLAUDE.md) for development setup, commands, and architecture details.
 
-## Troubleshooting
-
-- **Index feels stale?** Run `gmax index` to refresh. The daemon auto-reindexes on file changes.
-- **Weird results?** Run `gmax doctor` to verify models.
-- **Index getting stuck?** Run `gmax index --verbose` to see which file is being processed.
-- **Need a fresh start?** `rm -rf ~/.gmax/lancedb ~/.gmax/cache` then `gmax index`.
-- **Daemon issues?** Check `~/.gmax/logs/daemon.log`. Run `gmax watch stop` then `gmax watch --daemon -b` to restart.
-- **MLX server won't start?** Check `~/.gmax/logs/mlx-embed-server.log` for errors. Use `GMAX_EMBED_MODE=cpu` to fall back to CPU.
-
 ## Attribution
 
-grepmax is built upon the foundation of [mgrep](https://github.com/mixedbread-ai/mgrep) by MixedBread. We acknowledge and appreciate the original architectural concepts and design decisions that informed this work.
-
-See the [NOTICE](NOTICE) file for detailed attribution information.
+grepmax is built upon the foundation of [mgrep](https://github.com/mixedbread-ai/mgrep) by MixedBread. See the [NOTICE](NOTICE) file for details.
 
 ## License
 
-Licensed under the Apache License, Version 2.0.
-See [LICENSE](LICENSE) and [Apache-2.0](https://opensource.org/licenses/Apache-2.0) for details.
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
