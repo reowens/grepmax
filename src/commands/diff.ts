@@ -7,12 +7,7 @@ import { gracefulExit } from "../lib/utils/exit";
 import { getChangedFiles } from "../lib/utils/git";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
-function toArr(val: unknown): string[] {
-  if (val && typeof (val as any).toArray === "function") {
-    return (val as any).toArray();
-  }
-  return Array.isArray(val) ? val : [];
-}
+import { toArr } from "../lib/utils/arrow";
 
 export const diff = new Command("diff")
   .description("Search code scoped to git changes")

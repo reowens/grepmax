@@ -6,12 +6,7 @@ import { gracefulExit } from "../lib/utils/exit";
 import { listProjects } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
-function toArr(val: unknown): string[] {
-  if (val && typeof (val as any).toArray === "function") {
-    return (val as any).toArray();
-  }
-  return Array.isArray(val) ? val : [];
-}
+import { toArr } from "../lib/utils/arrow";
 
 export const project = new Command("project")
   .description("Show project overview — languages, structure, key symbols")

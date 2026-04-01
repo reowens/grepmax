@@ -8,12 +8,7 @@ import { escapeSqlString } from "../lib/utils/filter-builder";
 import { gracefulExit } from "../lib/utils/exit";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
-function toArr(val: unknown): string[] {
-  if (val && typeof (val as any).toArray === "function") {
-    return (val as any).toArray();
-  }
-  return Array.isArray(val) ? val : [];
-}
+import { toArr } from "../lib/utils/arrow";
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);

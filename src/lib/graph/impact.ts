@@ -9,12 +9,7 @@ export function isTestPath(filePath: string): boolean {
   return TEST_DIR_RE.test(filePath) || TEST_FILE_RE.test(filePath);
 }
 
-function toArr(val: unknown): string[] {
-  if (val && typeof (val as any).toArray === "function") {
-    return (val as any).toArray();
-  }
-  return Array.isArray(val) ? val : [];
-}
+import { toArr } from "../utils/arrow";
 
 export interface TestHit {
   file: string;
