@@ -46,7 +46,25 @@ export class Daemon {
       unregisterWatcher(w.pid);
     }
 
-    // 2. Stale socket cleanup
+    // 2. PID file — atomic dedup guard
+    const pidFile = PATHS.daemonPidFile;
+    try {
+      // Check if another daemon is alive
+      const existingPid = Number.parseInt(
+        fs.readFileSync(pidFile, "utf-8").trim(),
+        10,
+      );
+      if (existingPid && existingPid !== process.pid) {
+        try {
+          process.kill(existingPid, 0); // throws if dead
+          console.error("[daemon] Another daemon is already running (PID:", existingPid + ")");
+          process.exit(0);
+        } catch {}
+      }
+    } catch {}
+    fs.writeFileSync(pidFile, String(process.pid));
+
+    // 3. Stale socket cleanup
     try { fs.unlinkSync(PATHS.daemonSocket); } catch {}
 
     // 3. Open shared resources
@@ -63,10 +81,18 @@ export class Daemon {
     // 4. Register daemon (only after resources are open)
     registerDaemon(process.pid);
 
-    // 5. Subscribe to all registered projects
+    // 5. Subscribe to all registered projects (skip missing directories)
     const projects = listProjects().filter((p) => p.status === "indexed");
     for (const p of projects) {
-      await this.watchProject(p.root);
+      if (!fs.existsSync(p.root)) {
+        console.log(`[daemon] Skipping ${path.basename(p.root)} — directory not found`);
+        continue;
+      }
+      try {
+        await this.watchProject(p.root);
+      } catch (err) {
+        console.error(`[daemon] Failed to watch ${path.basename(p.root)}:`, err);
+      }
     }
 
     // 6. Heartbeat
@@ -230,9 +256,10 @@ export class Daemon {
     }
     this.subscriptions.clear();
 
-    // Close server + socket
+    // Close server + socket + PID file
     this.server?.close();
     try { fs.unlinkSync(PATHS.daemonSocket); } catch {}
+    try { fs.unlinkSync(PATHS.daemonPidFile); } catch {}
 
     // Unregister all
     for (const root of this.processors.keys()) {

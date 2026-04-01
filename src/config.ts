@@ -88,6 +88,7 @@ export const PATHS = {
   grammars: path.join(GLOBAL_ROOT, "grammars"),
   logsDir: path.join(GLOBAL_ROOT, "logs"),
   daemonSocket: path.join(GLOBAL_ROOT, "daemon.sock"),
+  daemonPidFile: path.join(GLOBAL_ROOT, "daemon.pid"),
   // Centralized index storage — one database for all indexed directories
   lancedbDir: path.join(GLOBAL_ROOT, "lancedb"),
   cacheDir: path.join(GLOBAL_ROOT, "cache"),
