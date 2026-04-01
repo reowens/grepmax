@@ -84,10 +84,14 @@ async function* _walk(
     const relPathToRoot = path.relative(rootDir, absPath);
 
     // 1. Check if ignored by any scope in the stack
+    const isDir = entry.isDirectory();
     let isIgnored = false;
     for (const scope of stack) {
       const relToScope = path.relative(scope.dir, absPath);
-      if (relToScope && scope.filter.ignores(relToScope)) {
+      if (!relToScope) continue;
+      // Append trailing slash for directories so patterns like "dist/" match
+      const testPath = isDir ? `${relToScope}/` : relToScope;
+      if (scope.filter.ignores(testPath)) {
         isIgnored = true;
         break;
       }
