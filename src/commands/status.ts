@@ -1,6 +1,8 @@
 import * as os from "node:os";
 import { Command } from "commander";
+import { PATHS } from "../config";
 import { readGlobalConfig } from "../lib/index/index-config";
+import { escapeSqlString } from "../lib/utils/filter-builder";
 import { gracefulExit } from "../lib/utils/exit";
 import { isLocked } from "../lib/utils/lock";
 import { listProjects } from "../lib/utils/project-registry";
@@ -9,7 +11,6 @@ import {
   getWatcherForProject,
   listWatchers,
 } from "../lib/utils/watcher-store";
-import { PATHS } from "../config";
 
 const style = {
   bold: (s: string) => `\x1b[1m${s}\x1b[22m`,
@@ -69,6 +70,24 @@ Examples:
       );
     }
 
+    // Query live chunk counts from LanceDB
+    const chunkCounts = new Map<string, number>();
+    try {
+      const { VectorDB } = await import("../lib/store/vector-db");
+      const db = new VectorDB(PATHS.lancedbDir);
+      const table = await db.ensureTable();
+      for (const project of projects) {
+        const prefix = project.root.endsWith("/") ? project.root : `${project.root}/`;
+        const rows = await table
+          .query()
+          .select(["id"])
+          .where(`path LIKE '${escapeSqlString(prefix)}%'`)
+          .toArray();
+        chunkCounts.set(project.root, rows.length);
+      }
+      await db.close();
+    } catch {}
+
     if (projects.length === 0) {
       if (opts.agent) {
         console.log("(none)");
@@ -92,8 +111,9 @@ Examples:
         else if (watcher) st = "watching";
         else st = "idle";
         const isCurrent = project.root === currentRoot;
+        const count = chunkCounts.get(project.root) ?? project.chunkCount;
         console.log(
-          `${project.name}\t${formatChunks(project.chunkCount)}\t${formatAge(project.lastIndexed)}\t${st}${isCurrent ? "\tcurrent" : ""}`,
+          `${project.name}\t${formatChunks(count)}\t${formatAge(project.lastIndexed)}\t${st}${isCurrent ? "\tcurrent" : ""}`,
         );
       }
       await gracefulExit();
@@ -124,7 +144,8 @@ Examples:
       }
 
       // Chunks column
-      const chunks = `${formatChunks(project.chunkCount)} chunks`;
+      const count = chunkCounts.get(project.root) ?? project.chunkCount;
+      const chunks = `${formatChunks(count)} chunks`;
 
       // Age column
       const age = formatAge(project.lastIndexed);
