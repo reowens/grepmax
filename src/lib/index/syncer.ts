@@ -227,6 +227,17 @@ export async function initialSync(
       const projectKeys = await metaCache.getKeysWithPrefix(rootPrefix);
       log("index", `Cached files: ${projectKeys.size}`);
 
+      // Coherence check: if LMDB has entries but LanceDB has no vectors for
+      // this project, the vector store was wiped (e.g. compaction failure,
+      // manual cleanup). Clear the stale cache so files get re-embedded.
+      if (projectKeys.size > 0 && !(await vectorDb.hasRowsForPath(rootPrefix))) {
+        log("index", `Stale cache detected: ${projectKeys.size} cached files but no vectors — clearing cache`);
+        for (const key of projectKeys) {
+          metaCache.delete(key);
+        }
+        projectKeys.clear();
+      }
+
       const modelChanged = checkModelMismatch(paths.configPath);
 
       if (reset || modelChanged) {
