@@ -175,9 +175,26 @@ export class Daemon {
             lastIndexed: new Date().toISOString(),
           });
         }
+        // Back to watching after batch completes
+        registerWatcher({
+          pid: process.pid,
+          projectRoot: root,
+          startTime: Date.now(),
+          status: "watching",
+          lastHeartbeat: Date.now(),
+          lastReindex: Date.now(),
+        });
       },
       onActivity: () => {
         this.lastActivity = Date.now();
+        // Mark as syncing while processing
+        registerWatcher({
+          pid: process.pid,
+          projectRoot: root,
+          startTime: Date.now(),
+          status: "syncing",
+          lastHeartbeat: Date.now(),
+        });
       },
     });
 
