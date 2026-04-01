@@ -182,6 +182,67 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: "diff_changes",
+    description: "Search code scoped to git changes. Omit ref for uncommitted changes.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        ref: { type: "string", description: "Git ref to diff against (e.g. main, HEAD~5)" },
+        query: { type: "string", description: "Semantic search within changed files" },
+        limit: { type: "number", description: "Max results (default 10)" },
+      },
+    },
+  },
+  {
+    name: "find_tests",
+    description: "Find tests that exercise a symbol or file via reverse call graph.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        target: { type: "string", description: "Symbol name or file path" },
+        depth: { type: "number", description: "Caller traversal depth 1-3 (default 1)" },
+      },
+      required: ["target"],
+    },
+  },
+  {
+    name: "impact_analysis",
+    description: "Change impact: dependents and affected tests for a symbol or file.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        target: { type: "string", description: "Symbol name or file path" },
+        depth: { type: "number", description: "Caller traversal depth 1-3 (default 1)" },
+      },
+      required: ["target"],
+    },
+  },
+  {
+    name: "find_similar",
+    description: "Find semantically similar code using vector similarity.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        target: { type: "string", description: "Symbol name or file path" },
+        limit: { type: "number", description: "Max results (default 5)" },
+      },
+      required: ["target"],
+    },
+  },
+  {
+    name: "build_context",
+    description: "Token-budgeted topic summary (search + skeleton + extract).",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        topic: { type: "string", description: "Natural language topic or directory path" },
+        budget: { type: "number", description: "Max tokens (default 4000)" },
+        limit: { type: "number", description: "Search result limit (default 10)" },
+      },
+      required: ["topic"],
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1755,6 +1816,244 @@ export const mcp = new Command("mcp")
       }
     }
 
+    // --- New command handlers (Phase 4) ---
+
+    async function handleDiffChanges(
+      args: Record<string, unknown>,
+    ): Promise<ToolResult> {
+      ensureWatcher();
+      const { getChangedFiles } = await import("../lib/utils/git");
+      const ref = typeof args.ref === "string" ? args.ref : undefined;
+      const query = typeof args.query === "string" ? args.query : undefined;
+      const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 50);
+
+      try {
+        const changedFiles = getChangedFiles(ref, projectRoot);
+        if (changedFiles.length === 0) {
+          return ok(ref ? `No changes found relative to ${ref}.` : "No uncommitted changes found.");
+        }
+
+        const rel = (p: string) =>
+          p.startsWith(`${projectRoot}/`) ? p.slice(projectRoot.length + 1) : p;
+
+        if (query) {
+          const searcher = getSearcher();
+          const response = await searcher.search(query, limit, { rerank: true }, {}, projectRoot);
+          const changedSet = new Set(changedFiles);
+          const filtered = response.data.filter((r: any) => changedSet.has(String(r.path || "")));
+          if (filtered.length === 0) return ok("No indexed results found in changed files for that query.");
+          const lines = filtered.slice(0, limit).map((r: any) => {
+            const sym = toStringArray(r.defined_symbols)?.[0] ?? "";
+            return `${rel(r.path)}:${Number(r.start_line ?? 0) + 1} ${sym} [${r.role || "IMPL"}]`;
+          });
+          return ok(lines.join("\n"));
+        }
+
+        const db = getVectorDb();
+        const table = await db.ensureTable();
+        const lines: string[] = [];
+        for (const file of changedFiles) {
+          const chunks = await table.query()
+            .select(["defined_symbols", "role"])
+            .where(`path = '${escapeSqlString(file)}'`)
+            .limit(50).toArray();
+          const symbols = chunks.flatMap((c: any) => toStringArray(c.defined_symbols));
+          lines.push(symbols.length > 0
+            ? `${rel(file)} (${symbols.slice(0, 5).join(", ")}${symbols.length > 5 ? "..." : ""})`
+            : rel(file));
+        }
+        return ok(`${changedFiles.length} changed file${changedFiles.length === 1 ? "" : "s"}${ref ? ` (vs ${ref})` : ""}:\n${lines.join("\n")}`);
+      } catch (e) {
+        return err(`Diff failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
+    async function handleFindTests(
+      args: Record<string, unknown>,
+    ): Promise<ToolResult> {
+      ensureWatcher();
+      const target = String(args.target || "");
+      if (!target) return err("Missing required parameter: target");
+      const depth = Math.min(Math.max(Number(args.depth) || 1, 1), 3);
+
+      try {
+        const { resolveTargetSymbols, findTests } = await import("../lib/graph/impact");
+        const db = getVectorDb();
+        const { symbols } = await resolveTargetSymbols(target, db, projectRoot);
+        if (symbols.length === 0) return ok(`No symbols found for: ${target}`);
+
+        const tests = await findTests(symbols, db, projectRoot, depth);
+        if (tests.length === 0) return ok(`No tests found for ${target}.`);
+
+        const rel = (p: string) =>
+          p.startsWith(`${projectRoot}/`) ? p.slice(projectRoot.length + 1) : p;
+        const lines = tests.map((t) => {
+          const hop = t.hops === 0 ? "direct" : `${t.hops}-hop`;
+          return `${rel(t.file)}:${t.line + 1} ${t.symbol} (${hop})`;
+        });
+        return ok(`Tests for ${target}:\n${lines.join("\n")}`);
+      } catch (e) {
+        return err(`Find tests failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
+    async function handleImpactAnalysis(
+      args: Record<string, unknown>,
+    ): Promise<ToolResult> {
+      ensureWatcher();
+      const target = String(args.target || "");
+      if (!target) return err("Missing required parameter: target");
+      const depth = Math.min(Math.max(Number(args.depth) || 1, 1), 3);
+
+      try {
+        const { resolveTargetSymbols, findTests, findDependents, isTestPath } =
+          await import("../lib/graph/impact");
+        const db = getVectorDb();
+        const { symbols, resolvedAsFile } = await resolveTargetSymbols(target, db, projectRoot);
+        if (symbols.length === 0) return ok(`No symbols found for: ${target}`);
+
+        const targetPath = resolvedAsFile ? path.resolve(projectRoot, target) : undefined;
+        const excludePaths = targetPath ? new Set([targetPath]) : undefined;
+
+        const [dependents, tests] = await Promise.all([
+          findDependents(symbols, db, projectRoot, excludePaths),
+          findTests(symbols, db, projectRoot, depth),
+        ]);
+
+        const nonTestDeps = dependents.filter((d) => !isTestPath(d.file));
+        const rel = (p: string) =>
+          p.startsWith(`${projectRoot}/`) ? p.slice(projectRoot.length + 1) : p;
+
+        const sections: string[] = [`Impact analysis for ${target}:\n`];
+        if (nonTestDeps.length > 0) {
+          sections.push(`Dependents (${nonTestDeps.length}):`);
+          for (const d of nonTestDeps) sections.push(`  ${rel(d.file)} (${d.sharedSymbols} shared)`);
+        } else {
+          sections.push("Dependents: none found");
+        }
+        sections.push("");
+        if (tests.length > 0) {
+          sections.push(`Affected tests (${tests.length}):`);
+          for (const t of tests) {
+            const hop = t.hops === 0 ? "direct" : `${t.hops}-hop`;
+            sections.push(`  ${rel(t.file)}:${t.line + 1} ${t.symbol} (${hop})`);
+          }
+        } else {
+          sections.push("Affected tests: none found");
+        }
+        return ok(sections.join("\n"));
+      } catch (e) {
+        return err(`Impact analysis failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
+    async function handleFindSimilar(
+      args: Record<string, unknown>,
+    ): Promise<ToolResult> {
+      ensureWatcher();
+      const target = String(args.target || "");
+      if (!target) return err("Missing required parameter: target");
+      const limit = Math.min(Math.max(Number(args.limit) || 5, 1), 25);
+
+      try {
+        const db = getVectorDb();
+        const table = await db.ensureTable();
+        const isFile = target.includes("/") || (target.includes(".") && !target.includes(" "));
+
+        let sourceRows: any[];
+        if (isFile) {
+          const absPath = path.resolve(projectRoot, target);
+          sourceRows = await table.query()
+            .select(["vector", "path", "start_line"])
+            .where(`path = '${escapeSqlString(absPath)}'`)
+            .limit(1).toArray();
+        } else {
+          sourceRows = await table.query()
+            .select(["vector", "path", "start_line"])
+            .where(`array_contains(defined_symbols, '${escapeSqlString(target)}')`)
+            .limit(1).toArray();
+        }
+
+        if (sourceRows.length === 0) return ok(isFile ? `File not found: ${target}` : `Symbol not found: ${target}`);
+
+        const source = sourceRows[0];
+        if (!source.vector || source.vector.length === 0) return ok("Source chunk has no embedding.");
+
+        const results = await table
+          .vectorSearch(source.vector)
+          .select(["path", "start_line", "defined_symbols", "role", "_distance"])
+          .where(`path LIKE '${escapeSqlString(projectRoot)}/%'`)
+          .limit(limit + 5).toArray();
+
+        const filtered = results.filter((r: any) =>
+          !(r.path === source.path && r.start_line === source.start_line));
+
+        if (filtered.length === 0) return ok(`No similar code found for ${target}.`);
+
+        const rel = (p: string) =>
+          p.startsWith(`${projectRoot}/`) ? p.slice(projectRoot.length + 1) : p;
+        const lines = filtered.slice(0, limit).map((r: any) => {
+          const sym = toStringArray(r.defined_symbols)?.[0] ?? "";
+          return `${rel(r.path)}:${Number(r.start_line ?? 0) + 1} ${sym} [${r.role || "IMPL"}] d=${(r._distance ?? 0).toFixed(3)}`;
+        });
+        return ok(`Similar to ${target}:\n${lines.join("\n")}`);
+      } catch (e) {
+        return err(`Similar search failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
+    async function handleBuildContext(
+      args: Record<string, unknown>,
+    ): Promise<ToolResult> {
+      ensureWatcher();
+      const topic = String(args.topic || "");
+      if (!topic) return err("Missing required parameter: topic");
+      const budget = Math.max(Number(args.budget) || 4000, 500);
+      const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 25);
+
+      try {
+        const searcher = getSearcher();
+        const response = await searcher.search(topic, limit, { rerank: true }, {}, projectRoot);
+        if (response.data.length === 0) return ok(`No results found for "${topic}".`);
+
+        const rel = (p: string) =>
+          p.startsWith(`${projectRoot}/`) ? p.slice(projectRoot.length + 1) : p;
+        const estTokens = (s: string) => Math.ceil(s.length / 4);
+        let tokensUsed = 0;
+        const sections: string[] = [];
+
+        // Entry points
+        const epLines = response.data.slice(0, 5).map((r: any) => {
+          const sym = toStringArray(r.defined_symbols)?.[0] ?? "";
+          return `${rel(r.path)}:${Number(r.start_line ?? 0) + 1} ${sym} [${r.role || "IMPL"}]`;
+        });
+        const epSection = `## Entry Points\n${epLines.join("\n")}`;
+        sections.push(epSection);
+        tokensUsed += estTokens(epSection);
+
+        // Key function bodies
+        for (const r of response.data.slice(0, 3)) {
+          const absP = String((r as any).path || "");
+          const startLine = Number((r as any).start_line ?? 0);
+          const endLine = Number((r as any).end_line ?? startLine);
+          const sym = toStringArray((r as any).defined_symbols)?.[0] ?? "";
+          try {
+            const content = fs.readFileSync(absP, "utf-8");
+            const body = content.split("\n").slice(startLine, endLine + 1).join("\n");
+            const blob = `\n--- ${rel(absP)}:${startLine + 1} ${sym} ---\n${body}`;
+            if (tokensUsed + estTokens(blob) > budget) break;
+            sections.push(blob);
+            tokensUsed += estTokens(blob);
+          } catch { /* skip unreadable */ }
+        }
+
+        sections.push(`\n(~${tokensUsed}/${budget} tokens)`);
+        return ok(sections.join("\n"));
+      } catch (e) {
+        return err(`Context generation failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
     // --- MCP server setup ---
 
     const transport = new StdioServerTransport();
@@ -1820,6 +2119,21 @@ export const mcp = new Command("mcp")
           break;
         case "recent_changes":
           result = await handleRecentChanges(toolArgs);
+          break;
+        case "diff_changes":
+          result = await handleDiffChanges(toolArgs);
+          break;
+        case "find_tests":
+          result = await handleFindTests(toolArgs);
+          break;
+        case "impact_analysis":
+          result = await handleImpactAnalysis(toolArgs);
+          break;
+        case "find_similar":
+          result = await handleFindSimilar(toolArgs);
+          break;
+        case "build_context":
+          result = await handleBuildContext(toolArgs);
           break;
         default:
           return err(`Unknown tool: ${name}`);

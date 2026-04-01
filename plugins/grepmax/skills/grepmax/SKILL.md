@@ -139,6 +139,44 @@ gmax symbols auth -p src/ --root ~/proj    # filter by name, path, project
 gmax symbols --agent                       # compact: symbol\tpath:line\tcount
 ```
 
+### Diff — `gmax diff [ref]`
+```
+gmax diff                              # uncommitted changes
+gmax diff HEAD~5                       # last 5 commits
+gmax diff main                         # branch changes vs main
+gmax diff main --query "auth changes"  # semantic search within changed files
+gmax diff --agent                      # compact output
+```
+
+### Test — `gmax test <symbol|file>`
+```
+gmax test handleAuth                   # tests calling handleAuth
+gmax test src/lib/auth.ts              # tests for symbols in this file
+gmax test handleAuth -d 2              # 2-hop: tests calling callers too
+gmax test handleAuth --agent           # compact output
+```
+
+### Impact — `gmax impact <symbol|file>`
+```
+gmax impact handleAuth                 # dependents + affected tests
+gmax impact src/lib/auth.ts            # everything depending on this file
+gmax impact handleAuth --agent         # compact output
+```
+
+### Similar — `gmax similar <symbol|file>`
+```
+gmax similar handleAuth                # functions doing similar things
+gmax similar src/lib/auth.ts           # files with similar structure
+gmax similar handleAuth -m 5 --agent   # top 5, compact output
+```
+
+### Context — `gmax context <topic> --budget <tokens>`
+```
+gmax context "authentication system" --budget 4000
+gmax context "payment flow" --budget 8000
+gmax context src/lib/auth/ --budget 3000
+```
+
 ### Other
 ```
 gmax status                                # show all indexed projects
@@ -161,8 +199,13 @@ gmax doctor                                # health check
 6. **Skeleton** — `Bash(gmax skeleton <path>)` before reading large files, or use `--skeleton` on search
 7. **Read** — `Read file:line` for specific ranges identified by search/skeleton
 8. **Trace** — `Bash(gmax trace <symbol>)` for deep call flow (multi-hop)
-9. **Context** — `Bash(gmax related <file>)` to see what else to look at
-10. **Status** — `Bash(gmax status)` to check index state across all projects
+9. **Diff** — `Bash(gmax diff [ref])` to see what changed and search within changes
+10. **Test** — `Bash(gmax test <symbol>)` to find tests covering a symbol before editing
+11. **Impact** — `Bash(gmax impact <symbol>)` for blast radius before significant changes
+12. **Similar** — `Bash(gmax similar <symbol>)` to find similar patterns for DRY analysis
+13. **Context** — `Bash(gmax context "topic" --budget 4000)` for a token-budgeted topic summary
+14. **Related** — `Bash(gmax related <file>)` to see what else to look at
+15. **Status** — `Bash(gmax status)` to check index state across all projects
 
 ## MCP tools
 
