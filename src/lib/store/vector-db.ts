@@ -412,7 +412,17 @@ export class VectorDB {
     for (let i = 0; i < unique.length; i += batchSize) {
       const slice = unique.slice(i, i + batchSize);
       const values = slice.map((p) => `'${escapeSqlString(p)}'`).join(",");
-      await table.delete(`path IN (${values})`);
+      const where = `path IN (${values})`;
+      // Skip no-op deletes to avoid creating empty LanceDB versions
+      const existing = await table
+        .query()
+        .select(["id"])
+        .where(where)
+        .limit(1)
+        .toArray();
+      if (existing.length > 0) {
+        await table.delete(where);
+      }
     }
   }
 
@@ -449,7 +459,16 @@ export class VectorDB {
       const values = slice
         .map((p) => `'${escapeSqlString(p)}'`)
         .join(",");
-      await table.delete(`path IN (${values})${idExclusion}`);
+      const where = `path IN (${values})${idExclusion}`;
+      const existing = await table
+        .query()
+        .select(["id"])
+        .where(where)
+        .limit(1)
+        .toArray();
+      if (existing.length > 0) {
+        await table.delete(where);
+      }
     }
   }
 

@@ -108,8 +108,8 @@ async function main() {
       startPythonServer(serverDir, "server.py", "mlx-embed-server");
     }
 
-    // Start LLM summarizer server (port 8101)
-    if (serverDir && !(await isServerRunning(8101))) {
+    // Start LLM summarizer server (port 8101) — opt-in only
+    if (process.env.GMAX_SUMMARIZER === "1" && serverDir && !(await isServerRunning(8101))) {
       startPythonServer(serverDir, "summarizer.py", "mlx-summarizer");
     }
   }

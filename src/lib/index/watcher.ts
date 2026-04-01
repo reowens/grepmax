@@ -31,6 +31,8 @@ export const WATCHER_IGNORE_GLOBS: string[] = [
   ".next",
   "lancedb",
   ".*", // dotfiles
+  "**/*.tmp.*", // editor atomic save artifacts
+  "**/*.sb-*", // Xcode swap files
 ];
 
 export async function startWatcher(opts: WatcherOptions): Promise<WatcherHandle> {
