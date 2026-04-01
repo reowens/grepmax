@@ -283,9 +283,9 @@ export class VectorDB {
     }
   }
 
-  async optimize(retries = 3): Promise<void> {
+  async optimize(retries = 3, retentionMs = 0): Promise<void> {
     const table = await this.ensureTable();
-    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const cutoff = new Date(Date.now() - retentionMs);
 
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {

@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-function parseLock(lockPath: string): {
+export function parseLock(lockPath: string): {
   pid: number | null;
   startedAt?: string;
 } {
@@ -15,7 +15,7 @@ function parseLock(lockPath: string): {
   }
 }
 
-function isProcessAlive(pid: number | null): boolean {
+export function isProcessAlive(pid: number | null): boolean {
   if (!pid || pid <= 0) return false;
   try {
     process.kill(pid, 0);
@@ -28,7 +28,7 @@ function isProcessAlive(pid: number | null): boolean {
   }
 }
 
-async function removeLock(lockPath: string) {
+export async function removeLock(lockPath: string) {
   try {
     await fs.promises.unlink(lockPath);
   } catch (err) {
