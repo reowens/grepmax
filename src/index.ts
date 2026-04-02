@@ -14,6 +14,7 @@ import { extract } from "./commands/extract";
 import { impact } from "./commands/impact";
 import { installDroid, uninstallDroid } from "./commands/droid";
 import { index } from "./commands/index";
+import { investigateCmd } from "./commands/investigate";
 import { list } from "./commands/list";
 import { llm } from "./commands/llm";
 import { mcp } from "./commands/mcp";
@@ -91,6 +92,7 @@ program.addCommand(watch);
 program.addCommand(mcp);
 program.addCommand(summarize);
 program.addCommand(llm);
+program.addCommand(investigateCmd);
 
 // Setup & diagnostics
 program.addCommand(setup);
