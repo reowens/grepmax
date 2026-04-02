@@ -55,6 +55,19 @@ export class VectorDB {
     this.maintenanceTimer.unref();
   }
 
+  /** Pause the maintenance timer (e.g. during a full index that calls runMaintenance itself). */
+  pauseMaintenanceLoop(): void {
+    if (this.maintenanceTimer) {
+      clearInterval(this.maintenanceTimer);
+      this.maintenanceTimer = null;
+    }
+  }
+
+  /** Resume the maintenance timer after a pause. */
+  resumeMaintenanceLoop(): void {
+    this.startMaintenanceLoop();
+  }
+
   private async getDb(): Promise<lancedb.Connection> {
     if (this.closed) {
       throw new Error("VectorDB connection is closed");

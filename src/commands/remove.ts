@@ -71,36 +71,39 @@ Examples:
         }
       }
 
-      // Stop any watcher — try daemon IPC first, fall back to direct kill
-      const { isDaemonRunning, sendDaemonCommand } = await import("../lib/utils/daemon-client");
+      const { isDaemonRunning, sendStreamingCommand } = await import("../lib/utils/daemon-client");
+
       if (await isDaemonRunning()) {
-        console.log("Unwatching via daemon...");
-        await sendDaemonCommand({ cmd: "unwatch", root: projectRoot });
+        // Daemon mode: IPC handles unwatch + LanceDB delete + MetaCache cleanup
+        const done = await sendStreamingCommand(
+          { cmd: "remove", root: projectRoot },
+          () => {}, // no progress for remove
+        );
+        if (!done.ok) {
+          throw new Error((done.error as string) ?? "daemon remove failed");
+        }
       } else {
+        // Fallback: direct mode — stop watcher + delete directly
         const watcher = getWatcherForProject(projectRoot);
         if (watcher) {
           console.log(`Stopping watcher (PID: ${watcher.pid})...`);
           await killProcess(watcher.pid);
           unregisterWatcher(watcher.pid);
         }
+
+        const paths = ensureProjectPaths(projectRoot);
+        vectorDb = new VectorDB(paths.lancedbDir);
+        await vectorDb.deletePathsWithPrefix(projectRoot);
+
+        metaCache = new MetaCache(paths.lmdbPath);
+        const keys = await metaCache.getKeysWithPrefix(projectRoot);
+        for (const key of keys) {
+          metaCache.delete(key);
+        }
       }
 
-      // Delete vectors from LanceDB
-      const paths = ensureProjectPaths(projectRoot);
-      vectorDb = new VectorDB(paths.lancedbDir);
-      await vectorDb.deletePathsWithPrefix(projectRoot);
-
-      // Clean MetaCache entries
-      metaCache = new MetaCache(paths.lmdbPath);
-      const keys = await metaCache.getKeysWithPrefix(projectRoot);
-      for (const key of keys) {
-        metaCache.delete(key);
-      }
-
-      // Remove from registry
+      // Registry + marker cleanup in both paths
       removeProject(projectRoot);
-
-      // Delete marker file
       removeMarker(projectRoot);
 
       console.log(

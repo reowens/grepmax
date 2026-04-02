@@ -6,6 +6,7 @@ import type { AsyncSubscription } from "@parcel/watcher";
 import lockfile from "proper-lockfile";
 import { PATHS } from "../../config";
 import { ProjectBatchProcessor } from "../index/batch-processor";
+import { initialSync, generateSummaries } from "../index/syncer";
 import { WATCHER_IGNORE_GLOBS } from "../index/watcher";
 import { MetaCache } from "../store/meta-cache";
 import { VectorDB } from "../store/vector-db";
@@ -20,7 +21,7 @@ import {
   unregisterWatcher,
   unregisterWatcherByRoot,
 } from "../utils/watcher-store";
-import { handleCommand } from "./ipc-handler";
+import { handleCommand, writeProgress, writeDone } from "./ipc-handler";
 
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const HEARTBEAT_INTERVAL_MS = 60 * 1000;
@@ -38,6 +39,7 @@ export class Daemon {
   private idleInterval: ReturnType<typeof setInterval> | null = null;
   private shuttingDown = false;
   private readonly pendingOps = new Set<string>();
+  private readonly projectLocks = new Map<string, Promise<void>>();
 
   async start(): Promise<void> {
     process.title = "gmax-daemon";
@@ -131,9 +133,12 @@ export class Daemon {
           conn.end();
           return;
         }
-        handleCommand(this, cmd).then((resp) => {
-          conn.write(`${JSON.stringify(resp)}\n`);
-          conn.end();
+        handleCommand(this, cmd, conn).then((resp) => {
+          // null means the handler is managing the connection (streaming)
+          if (resp !== null) {
+            conn.write(`${JSON.stringify(resp)}\n`);
+            conn.end();
+          }
         });
       });
       conn.on("error", () => {});
@@ -168,7 +173,6 @@ export class Daemon {
       projectRoot: root,
       vectorDb: this.vectorDb,
       metaCache: this.metaCache,
-      dataDir: PATHS.globalRoot,
       onReindex: (files, ms) => {
         console.log(
           `[daemon:${path.basename(root)}] Reindexed ${files} file${files !== 1 ? "s" : ""} (${(ms / 1000).toFixed(1)}s)`,
@@ -265,6 +269,216 @@ export class Daemon {
 
   uptime(): number {
     return Math.floor((Date.now() - this.startTime) / 1000);
+  }
+
+  /** Reset idle timer — call during long-running operations. */
+  resetActivity(): void {
+    this.lastActivity = Date.now();
+  }
+
+  // --- Per-project operation serialization ---
+
+  private async withProjectLock<T>(root: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this.projectLocks.get(root) ?? Promise.resolve();
+    let release!: () => void;
+    const next = new Promise<void>((r) => { release = r; });
+    this.projectLocks.set(root, next);
+
+    await prev;
+    try {
+      return await fn();
+    } finally {
+      release();
+      if (this.projectLocks.get(root) === next) {
+        this.projectLocks.delete(root);
+      }
+    }
+  }
+
+  // --- Streaming write operations (IPC) ---
+
+  async addProject(root: string, conn: net.Socket): Promise<void> {
+    await this.withProjectLock(root, async () => {
+      if (!this.vectorDb || !this.metaCache) {
+        writeDone(conn, { ok: false, error: "daemon resources not ready" });
+        return;
+      }
+
+      this.vectorDb.pauseMaintenanceLoop();
+      let lastProgressTime = 0;
+      try {
+        const result = await initialSync({
+          projectRoot: root,
+          vectorDb: this.vectorDb,
+          metaCache: this.metaCache,
+          onProgress: (info) => {
+            this.resetActivity();
+            const now = Date.now();
+            if (now - lastProgressTime < 100) return;
+            lastProgressTime = now;
+            writeProgress(conn, {
+              processed: info.processed,
+              indexed: info.indexed,
+              total: info.total,
+              filePath: info.filePath,
+            });
+          },
+        });
+
+        await this.watchProject(root);
+
+        writeDone(conn, {
+          ok: true,
+          processed: result.processed,
+          indexed: result.indexed,
+          total: result.total,
+          failedFiles: result.failedFiles,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[daemon] addProject failed for ${path.basename(root)}:`, msg);
+        writeDone(conn, { ok: false, error: msg });
+      } finally {
+        this.vectorDb?.resumeMaintenanceLoop();
+      }
+    });
+  }
+
+  async indexProject(
+    root: string,
+    conn: net.Socket,
+    opts: { reset?: boolean; dryRun?: boolean },
+  ): Promise<void> {
+    await this.withProjectLock(root, async () => {
+      if (!this.vectorDb || !this.metaCache) {
+        writeDone(conn, { ok: false, error: "daemon resources not ready" });
+        return;
+      }
+
+      // Pause the project's batch processor during full index
+      const processor = this.processors.get(root);
+      if (processor) {
+        await processor.close();
+        this.processors.delete(root);
+      }
+      const sub = this.subscriptions.get(root);
+      if (sub) {
+        await sub.unsubscribe();
+        this.subscriptions.delete(root);
+      }
+
+      this.vectorDb.pauseMaintenanceLoop();
+      let lastProgressTime = 0;
+      try {
+        const result = await initialSync({
+          projectRoot: root,
+          reset: opts.reset,
+          dryRun: opts.dryRun,
+          vectorDb: this.vectorDb,
+          metaCache: this.metaCache,
+          onProgress: (info) => {
+            this.resetActivity();
+            const now = Date.now();
+            if (now - lastProgressTime < 100) return;
+            lastProgressTime = now;
+            writeProgress(conn, {
+              processed: info.processed,
+              indexed: info.indexed,
+              total: info.total,
+              filePath: info.filePath,
+            });
+          },
+        });
+
+        writeDone(conn, {
+          ok: true,
+          processed: result.processed,
+          indexed: result.indexed,
+          total: result.total,
+          failedFiles: result.failedFiles,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[daemon] indexProject failed for ${path.basename(root)}:`, msg);
+        writeDone(conn, { ok: false, error: msg });
+      } finally {
+        this.vectorDb?.resumeMaintenanceLoop();
+        // Re-enable watcher
+        try {
+          await this.watchProject(root);
+        } catch (err) {
+          console.error(`[daemon] Failed to re-watch ${path.basename(root)}:`, err);
+        }
+      }
+    });
+  }
+
+  async removeProject(root: string, conn: net.Socket): Promise<void> {
+    await this.withProjectLock(root, async () => {
+      if (!this.vectorDb || !this.metaCache) {
+        writeDone(conn, { ok: false, error: "daemon resources not ready" });
+        return;
+      }
+
+      try {
+        await this.unwatchProject(root);
+
+        const rootPrefix = root.endsWith("/") ? root : `${root}/`;
+        await this.vectorDb.deletePathsWithPrefix(rootPrefix);
+
+        const keys = await this.metaCache.getKeysWithPrefix(rootPrefix);
+        for (const key of keys) {
+          this.metaCache.delete(key);
+        }
+
+        writeDone(conn, { ok: true });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[daemon] removeProject failed for ${path.basename(root)}:`, msg);
+        writeDone(conn, { ok: false, error: msg });
+      }
+    });
+  }
+
+  async summarizeProject(
+    root: string,
+    conn: net.Socket,
+    opts: { limit?: number; pathPrefix?: string },
+  ): Promise<void> {
+    await this.withProjectLock(root, async () => {
+      if (!this.vectorDb) {
+        writeDone(conn, { ok: false, error: "daemon resources not ready" });
+        return;
+      }
+
+      const rootPrefix = opts.pathPrefix ?? (root.endsWith("/") ? root : `${root}/`);
+
+      let lastProgressTime = 0;
+      try {
+        const result = await generateSummaries(
+          this.vectorDb,
+          rootPrefix,
+          (done, total) => {
+            this.resetActivity();
+            const now = Date.now();
+            if (now - lastProgressTime < 100) return;
+            lastProgressTime = now;
+            writeProgress(conn, { summarized: done, total });
+          },
+          opts.limit,
+        );
+
+        writeDone(conn, {
+          ok: true,
+          summarized: result.summarized,
+          remaining: result.remaining,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[daemon] summarizeProject failed for ${path.basename(root)}:`, msg);
+        writeDone(conn, { ok: false, error: msg });
+      }
+    });
   }
 
   async shutdown(): Promise<void> {

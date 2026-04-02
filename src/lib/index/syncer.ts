@@ -30,6 +30,10 @@ type SyncOptions = {
   reset?: boolean;
   onProgress?: (info: InitialSyncProgress) => void;
   signal?: AbortSignal;
+  /** Daemon mode: use shared VectorDB instead of creating a new one */
+  vectorDb?: VectorDB;
+  /** Daemon mode: use shared MetaCache instead of creating a new one */
+  metaCache?: MetaCacheLike;
 };
 
 type MetaCacheLike = Pick<
@@ -208,23 +212,31 @@ export async function initialSync(
   const syncTimer = timer("index", "Total");
   log("index", `Root: ${resolvedRoot}`);
 
-  let lock: LockHandle | null = null;
-  const vectorDb = new VectorDB(paths.lancedbDir);
+  // Daemon mode: caller provides shared resources, skip lock
+  const injected = !!(options.vectorDb && options.metaCache);
+  const ownedVectorDb = injected ? null : new VectorDB(paths.lancedbDir);
+  const vectorDb = options.vectorDb ?? ownedVectorDb!;
   const treatAsEmptyCache = reset && dryRun;
-  let metaCache: MetaCacheLike | null = null;
+  let lock: LockHandle | null = null;
+  let metaCache: MetaCacheLike | null = injected ? options.metaCache! : null;
 
   try {
-    if (!dryRun) {
-      lock = await acquireWriterLockWithRetry(paths.dataDir);
-      // Open MetaCache only after lock is acquired
-      metaCache = new MetaCache(paths.lmdbPath);
-    } else {
-      metaCache = createNoopMetaCache();
+    if (!injected) {
+      if (!dryRun) {
+        lock = await acquireWriterLockWithRetry(paths.dataDir);
+        // Open MetaCache only after lock is acquired
+        metaCache = new MetaCache(paths.lmdbPath);
+      } else {
+        metaCache = createNoopMetaCache();
+      }
     }
+
+    // At this point metaCache is always initialized (injected, created, or noop)
+    const mc = metaCache!;
 
     if (!dryRun) {
       // Scope checks to this project's paths only
-      const projectKeys = await metaCache.getKeysWithPrefix(rootPrefix);
+      const projectKeys = await mc.getKeysWithPrefix(rootPrefix);
       log("index", `Cached files: ${projectKeys.size}`);
 
       // Coherence check: if LMDB has entries but LanceDB has no vectors for
@@ -233,7 +245,7 @@ export async function initialSync(
       if (projectKeys.size > 0 && !(await vectorDb.hasRowsForPath(rootPrefix))) {
         log("index", `Stale cache detected: ${projectKeys.size} cached files but no vectors — clearing cache`);
         for (const key of projectKeys) {
-          metaCache.delete(key);
+          mc.delete(key);
         }
         projectKeys.clear();
       }
@@ -250,7 +262,7 @@ export async function initialSync(
         // Only delete this project's data from the centralized store
         await vectorDb.deletePathsWithPrefix(rootPrefix);
         for (const key of projectKeys) {
-          metaCache.delete(key);
+          mc.delete(key);
         }
       }
     }
@@ -263,7 +275,7 @@ export async function initialSync(
     const cachedPaths =
       dryRun || treatAsEmptyCache
         ? new Set<string>()
-        : await metaCache.getKeysWithPrefix(rootPrefix);
+        : await mc.getKeysWithPrefix(rootPrefix);
     const seenPaths = new Set<string>();
     const visitedRealPaths = new Set<string>();
     const batch: VectorRecord[] = [];
@@ -305,7 +317,7 @@ export async function initialSync(
 
         const currentFlush = flushBatch(
           vectorDb,
-          metaCache!, // Non-null assertion: metaCache is assigned after lock
+          mc,
           toWrite,
           metaEntries,
           deletes,
@@ -411,7 +423,7 @@ export async function initialSync(
           // Use absolute path as the key for MetaCache
           const cached = treatAsEmptyCache
             ? undefined
-            : metaCache!.get(absPath);
+            : mc.get(absPath);
 
           if (
             cached &&
@@ -449,7 +461,7 @@ export async function initialSync(
 
           if (cached && cached.hash === result.hash) {
             if (!dryRun) {
-              metaCache!.put(absPath, metaEntry);
+              mc.put(absPath, metaEntry);
             }
             processed += 1;
             seenPaths.add(absPath);
@@ -487,7 +499,7 @@ export async function initialSync(
             pendingDeletes.add(absPath);
             pendingMeta.delete(absPath);
             if (!dryRun) {
-              metaCache!.delete(absPath);
+              mc.delete(absPath);
             }
             processed += 1;
             markProgress(relPath);
@@ -526,7 +538,7 @@ export async function initialSync(
       log("index", `Stale cleanup: ${stale.length} paths`);
       await vectorDb.deletePaths(stale);
       stale.forEach((p) => {
-        metaCache!.delete(p);
+        mc.delete(p);
       });
     }
 
@@ -557,7 +569,10 @@ export async function initialSync(
     if (lock) {
       await lock.release();
     }
-    await metaCache?.close();
-    await vectorDb.close();
+    // Only close resources we own (not injected by daemon)
+    if (!injected) {
+      await metaCache?.close();
+      await ownedVectorDb?.close();
+    }
   }
 }

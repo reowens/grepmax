@@ -72,3 +72,90 @@ export async function isDaemonRunning(): Promise<boolean> {
   const resp = await sendDaemonCommand({ cmd: "ping" }, { timeoutMs: 2000 });
   return resp.ok === true;
 }
+
+// --- Streaming IPC for long-running commands ---
+
+export interface StreamingProgress {
+  type: "progress";
+  [key: string]: unknown;
+}
+
+export interface StreamingDone {
+  type: "done";
+  ok: boolean;
+  [key: string]: unknown;
+}
+
+const DEFAULT_STREAMING_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+
+/**
+ * Send a streaming command to the daemon. The daemon streams
+ * {type:"progress",...} lines followed by a final {type:"done",...}.
+ * The timeout resets on each progress message.
+ */
+export function sendStreamingCommand(
+  cmd: Record<string, unknown>,
+  onProgress: (msg: StreamingProgress) => void,
+  opts?: { timeoutMs?: number },
+): Promise<StreamingDone> {
+  const timeout = opts?.timeoutMs ?? DEFAULT_STREAMING_TIMEOUT_MS;
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const finish = (result: StreamingDone | Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket.destroy();
+      if (result instanceof Error) reject(result);
+      else resolve(result);
+    };
+
+    const resetTimer = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        finish(new Error("streaming command timed out"));
+      }, timeout);
+    };
+
+    const socket = net.createConnection({ path: PATHS.daemonSocket });
+    resetTimer();
+
+    socket.on("connect", () => {
+      socket.write(`${JSON.stringify(cmd)}\n`);
+    });
+
+    let buf = "";
+    socket.on("data", (chunk) => {
+      buf += chunk.toString();
+      let nl: number;
+      while ((nl = buf.indexOf("\n")) !== -1) {
+        const line = buf.slice(0, nl);
+        buf = buf.slice(nl + 1);
+        try {
+          const msg = JSON.parse(line);
+          if (msg.type === "done") {
+            finish(msg as StreamingDone);
+          } else if (msg.type === "progress") {
+            resetTimer();
+            onProgress(msg as StreamingProgress);
+          }
+        } catch {
+          // ignore partial/malformed lines
+        }
+      }
+    });
+
+    socket.on("error", (err) => {
+      finish(new Error((err as NodeJS.ErrnoException).code ?? err.message));
+    });
+
+    socket.on("close", () => {
+      if (!settled) {
+        finish(new Error("connection closed before done"));
+      }
+    });
+  });
+}

@@ -82,26 +82,74 @@ Examples:
         return;
       }
 
-      const paths = ensureProjectPaths(projectRoot);
-      vectorDb = new VectorDB(paths.lancedbDir);
-
       if (options.reset) {
-        console.log(`Resetting index at ${paths.dataDir}...`);
-        // We do NOT manually drop/rm here anymore to avoid race conditions.
-        // The syncer handles it inside the lock.
+        console.log("Resetting index...");
       }
 
       // Ensure grammars are present before indexing (silent if already exist)
       await ensureGrammars(console.log, { silent: true });
 
-      // Stop any watcher that covers this project — it holds the shared lock
-      let restartWatcher = false;
-      const { isDaemonRunning, sendDaemonCommand } = await import("../lib/utils/daemon-client");
+      const { isDaemonRunning, sendStreamingCommand } = await import("../lib/utils/daemon-client");
+
       if (await isDaemonRunning()) {
-        console.log("Pausing daemon watcher for reindex...");
-        await sendDaemonCommand({ cmd: "unwatch", root: projectRoot });
-        restartWatcher = true;
+        // Daemon mode: IPC streaming — daemon handles watcher pause/resume internally
+        const { spinner, onProgress } = createIndexingSpinner(
+          projectRoot,
+          "Indexing...",
+          { verbose: options.verbose },
+        );
+
+        try {
+          const done = await sendStreamingCommand(
+            { cmd: "index", root: projectRoot, reset: options.reset, dryRun: options.dryRun },
+            (msg) => {
+              onProgress({
+                processed: (msg.processed as number) ?? 0,
+                indexed: (msg.indexed as number) ?? 0,
+                total: (msg.total as number) ?? 0,
+                filePath: msg.filePath as string,
+              });
+            },
+          );
+
+          if (!done.ok) {
+            throw new Error((done.error as string) ?? "daemon index failed");
+          }
+
+          if (options.dryRun) {
+            spinner.succeed(
+              `Dry run complete(${done.processed} / ${done.total}) • would have indexed ${done.indexed} `,
+            );
+            return;
+          }
+
+          const globalConfig = readGlobalConfig();
+          registerProject({
+            root: projectRoot,
+            name: path.basename(projectRoot),
+            vectorDim: globalConfig.vectorDim,
+            modelTier: globalConfig.modelTier,
+            embedMode: globalConfig.embedMode,
+            lastIndexed: new Date().toISOString(),
+            chunkCount: (done.indexed as number) ?? 0,
+            status: "indexed",
+          });
+
+          const failedFiles = (done.failedFiles as number) ?? 0;
+          const failedSuffix = failedFiles > 0 ? ` • ${failedFiles} failed` : "";
+          spinner.succeed(
+            `Indexing complete(${done.processed} / ${done.total}) • indexed ${done.indexed}${failedSuffix} `,
+          );
+        } catch (e) {
+          spinner.fail("Indexing failed");
+          throw e;
+        }
       } else {
+        // Fallback: direct mode with lock — stop any watcher first
+        const paths = ensureProjectPaths(projectRoot);
+        vectorDb = new VectorDB(paths.lancedbDir);
+
+        let restartWatcher = false;
         const watcher = getWatcherCoveringPath(projectRoot);
         if (watcher) {
           console.log(
@@ -117,73 +165,71 @@ Examples:
           unregisterWatcher(watcher.pid);
           restartWatcher = true;
         }
-      }
 
-      const { spinner, onProgress } = createIndexingSpinner(
-        projectRoot,
-        "Indexing...",
-        { verbose: options.verbose },
-      );
-      try {
-        const result = await initialSync({
+        const { spinner, onProgress } = createIndexingSpinner(
           projectRoot,
-          dryRun: options.dryRun,
-          reset: options.reset,
-          onProgress,
-          signal: ac.signal,
-        });
-
-        if (aborted) {
-          spinner.warn(
-            `Indexing interrupted — partial progress saved (${result.indexed} indexed)`,
-          );
-          return;
-        }
-
-        if (options.dryRun) {
-          spinner.succeed(
-            `Dry run complete(${result.processed} / ${result.total}) • would have indexed ${result.indexed} `,
-          );
-          console.log(
-            formatDryRunSummary(result, {
-              actionDescription: "would have indexed",
-              includeTotal: true,
-            }),
-          );
-          return;
-        }
-
-        // Update registry with new stats
-        const globalConfig = readGlobalConfig();
-        registerProject({
-          root: projectRoot,
-          name: path.basename(projectRoot),
-          vectorDim: globalConfig.vectorDim,
-          modelTier: globalConfig.modelTier,
-          embedMode: globalConfig.embedMode,
-          lastIndexed: new Date().toISOString(),
-          chunkCount: result.indexed,
-          status: "indexed",
-        });
-
-        const failedSuffix =
-          result.failedFiles > 0 ? ` • ${result.failedFiles} failed` : "";
-        spinner.succeed(
-          `Indexing complete(${result.processed} / ${result.total}) • indexed ${result.indexed}${failedSuffix} `,
+          "Indexing...",
+          { verbose: options.verbose },
         );
-      } catch (e) {
-        spinner.fail("Indexing failed");
-        throw e;
-      } finally {
-        // Restart the watcher if we stopped one
-        if (restartWatcher) {
-          const launched = await launchWatcher(projectRoot);
-          if (launched.ok) {
-            console.log(
-              `Restarted watcher for ${path.basename(projectRoot)} (PID: ${launched.pid})`,
+        try {
+          const result = await initialSync({
+            projectRoot,
+            dryRun: options.dryRun,
+            reset: options.reset,
+            onProgress,
+            signal: ac.signal,
+          });
+
+          if (aborted) {
+            spinner.warn(
+              `Indexing interrupted — partial progress saved (${result.indexed} indexed)`,
             );
-          } else if (launched.reason === "spawn-failed") {
-            console.warn(`[index] ${launched.message}`);
+            return;
+          }
+
+          if (options.dryRun) {
+            spinner.succeed(
+              `Dry run complete(${result.processed} / ${result.total}) • would have indexed ${result.indexed} `,
+            );
+            console.log(
+              formatDryRunSummary(result, {
+                actionDescription: "would have indexed",
+                includeTotal: true,
+              }),
+            );
+            return;
+          }
+
+          const globalConfig = readGlobalConfig();
+          registerProject({
+            root: projectRoot,
+            name: path.basename(projectRoot),
+            vectorDim: globalConfig.vectorDim,
+            modelTier: globalConfig.modelTier,
+            embedMode: globalConfig.embedMode,
+            lastIndexed: new Date().toISOString(),
+            chunkCount: result.indexed,
+            status: "indexed",
+          });
+
+          const failedSuffix =
+            result.failedFiles > 0 ? ` • ${result.failedFiles} failed` : "";
+          spinner.succeed(
+            `Indexing complete(${result.processed} / ${result.total}) • indexed ${result.indexed}${failedSuffix} `,
+          );
+        } catch (e) {
+          spinner.fail("Indexing failed");
+          throw e;
+        } finally {
+          if (restartWatcher) {
+            const launched = await launchWatcher(projectRoot);
+            if (launched.ok) {
+              console.log(
+                `Restarted watcher for ${path.basename(projectRoot)} (PID: ${launched.pid})`,
+              );
+            } else if (launched.reason === "spawn-failed") {
+              console.warn(`[index] ${launched.message}`);
+            }
           }
         }
       }

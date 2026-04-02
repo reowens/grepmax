@@ -16,7 +16,6 @@ export const summarize = new Command("summarize")
   )
   .action(async (options: { path?: string }) => {
     const paths = ensureProjectPaths(process.cwd());
-    const vectorDb = new VectorDB(paths.lancedbDir);
 
     const rootPrefix = options.path
       ? `${path.resolve(options.path)}/`
@@ -24,27 +23,64 @@ export const summarize = new Command("summarize")
 
     const { spinner } = createIndexingSpinner("", "Summarizing...");
 
-    try {
-      const { summarized, remaining } = await generateSummaries(
-        vectorDb,
-        rootPrefix,
-        (done, total) => {
-          spinner.text = `Summarizing... (${done}/${total})`;
-        },
-      );
+    const { isDaemonRunning, sendStreamingCommand } = await import("../lib/utils/daemon-client");
 
-      if (summarized > 0) {
-        const remainMsg = remaining > 0 ? ` (${remaining}+ remaining — run again)` : "";
-        spinner.succeed(`Summarized ${summarized} chunks${remainMsg}`);
-      } else {
-        spinner.succeed("All chunks already have summaries (or summarizer unavailable)");
+    if (await isDaemonRunning()) {
+      // Daemon mode: IPC streaming
+      try {
+        const done = await sendStreamingCommand(
+          { cmd: "summarize", root: paths.root, pathPrefix: rootPrefix || undefined },
+          (msg) => {
+            spinner.text = `Summarizing... (${msg.summarized ?? 0}/${msg.total ?? 0})`;
+          },
+        );
+
+        if (!done.ok) {
+          throw new Error((done.error as string) ?? "daemon summarize failed");
+        }
+
+        const summarized = (done.summarized as number) ?? 0;
+        const remaining = (done.remaining as number) ?? 0;
+
+        if (summarized > 0) {
+          const remainMsg = remaining > 0 ? ` (${remaining}+ remaining — run again)` : "";
+          spinner.succeed(`Summarized ${summarized} chunks${remainMsg}`);
+        } else {
+          spinner.succeed("All chunks already have summaries (or summarizer unavailable)");
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        spinner.fail(`Summarization failed: ${msg}`);
+        process.exitCode = 1;
+      } finally {
+        await gracefulExit();
       }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      spinner.fail(`Summarization failed: ${msg}`);
-      process.exitCode = 1;
-    } finally {
-      await vectorDb.close();
-      await gracefulExit();
+    } else {
+      // Fallback: direct mode
+      const vectorDb = new VectorDB(paths.lancedbDir);
+
+      try {
+        const { summarized, remaining } = await generateSummaries(
+          vectorDb,
+          rootPrefix,
+          (done, total) => {
+            spinner.text = `Summarizing... (${done}/${total})`;
+          },
+        );
+
+        if (summarized > 0) {
+          const remainMsg = remaining > 0 ? ` (${remaining}+ remaining — run again)` : "";
+          spinner.succeed(`Summarized ${summarized} chunks${remainMsg}`);
+        } else {
+          spinner.succeed("All chunks already have summaries (or summarizer unavailable)");
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        spinner.fail(`Summarization failed: ${msg}`);
+        process.exitCode = 1;
+      } finally {
+        await vectorDb.close();
+        await gracefulExit();
+      }
     }
   });

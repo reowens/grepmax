@@ -96,9 +96,6 @@ Examples:
 
       // Index the project
       await ensureSetup();
-      const paths = ensureProjectPaths(projectRoot);
-      vectorDb = new VectorDB(paths.lancedbDir);
-
       await ensureGrammars(console.log, { silent: true });
 
       const { spinner, onProgress } = createIndexingSpinner(
@@ -106,50 +103,91 @@ Examples:
         `Adding ${projectName}...`,
       );
 
-      try {
-        const result = await initialSync({
-          projectRoot,
-          onProgress,
-        });
+      const { isDaemonRunning, sendStreamingCommand } = await import("../lib/utils/daemon-client");
+      const pendingEntry = {
+        root: projectRoot,
+        name: projectName,
+        vectorDim: globalConfig.vectorDim,
+        modelTier: globalConfig.modelTier,
+        embedMode: globalConfig.embedMode,
+        lastIndexed: "",
+        chunkCount: 0,
+        status: "error" as const,
+      };
 
-        // Update registry: pending → indexed
-        registerProject({
-          root: projectRoot,
-          name: projectName,
-          vectorDim: globalConfig.vectorDim,
-          modelTier: globalConfig.modelTier,
-          embedMode: globalConfig.embedMode,
-          lastIndexed: new Date().toISOString(),
-          chunkCount: result.indexed,
-          status: "indexed",
-        });
+      if (await isDaemonRunning()) {
+        // Daemon mode: IPC streaming
+        try {
+          const done = await sendStreamingCommand(
+            { cmd: "add", root: projectRoot },
+            (msg) => {
+              onProgress({
+                processed: (msg.processed as number) ?? 0,
+                indexed: (msg.indexed as number) ?? 0,
+                total: (msg.total as number) ?? 0,
+                filePath: msg.filePath as string,
+              });
+            },
+          );
 
-        const failedSuffix =
-          result.failedFiles > 0 ? ` · ${result.failedFiles} failed` : "";
-        spinner.succeed(
-          `Added ${projectName} (${result.total} files, ${result.indexed} chunks${failedSuffix})`,
-        );
-      } catch (e) {
-        registerProject({
-          root: projectRoot,
-          name: projectName,
-          vectorDim: globalConfig.vectorDim,
-          modelTier: globalConfig.modelTier,
-          embedMode: globalConfig.embedMode,
-          lastIndexed: "",
-          chunkCount: 0,
-          status: "error",
-        });
-        spinner.fail(`Failed to index ${projectName}`);
-        throw e;
-      }
+          if (!done.ok) {
+            throw new Error((done.error as string) ?? "daemon add failed");
+          }
 
-      // Start watcher
-      const launched = await launchWatcher(projectRoot);
-      if (launched.ok) {
-        console.log(`Watcher started (PID: ${launched.pid})`);
-      } else if (launched.reason === "spawn-failed") {
-        console.warn(`[add] ${launched.message}`);
+          registerProject({
+            ...pendingEntry,
+            lastIndexed: new Date().toISOString(),
+            chunkCount: (done.indexed as number) ?? 0,
+            status: "indexed",
+          });
+
+          const failedFiles = (done.failedFiles as number) ?? 0;
+          const failedSuffix = failedFiles > 0 ? ` · ${failedFiles} failed` : "";
+          spinner.succeed(
+            `Added ${projectName} (${done.total} files, ${done.indexed} chunks${failedSuffix})`,
+          );
+          // Watcher already started by daemon's addProject
+        } catch (e) {
+          registerProject(pendingEntry);
+          spinner.fail(`Failed to index ${projectName}`);
+          throw e;
+        }
+      } else {
+        // Fallback: direct mode with lock
+        const paths = ensureProjectPaths(projectRoot);
+        vectorDb = new VectorDB(paths.lancedbDir);
+
+        try {
+          const result = await initialSync({
+            projectRoot,
+            onProgress,
+          });
+
+          registerProject({
+            ...pendingEntry,
+            lastIndexed: new Date().toISOString(),
+            chunkCount: result.indexed,
+            status: "indexed",
+          });
+
+          const failedSuffix =
+            result.failedFiles > 0 ? ` · ${result.failedFiles} failed` : "";
+          spinner.succeed(
+            `Added ${projectName} (${result.total} files, ${result.indexed} chunks${failedSuffix})`,
+          );
+        } catch (e) {
+          registerProject(pendingEntry);
+          spinner.fail(`Failed to index ${projectName}`);
+          throw e;
+        }
+
+        // Start watcher (only in direct mode — daemon handles it in IPC mode)
+        const launched = await launchWatcher(projectRoot);
+        if (launched.ok) {
+          console.log(`Watcher started (PID: ${launched.pid})`);
+        } else if (launched.reason === "spawn-failed") {
+          console.warn(`[add] ${launched.message}`);
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
