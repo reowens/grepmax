@@ -8,7 +8,7 @@ import { type LlmConfig, getLlmConfig } from "./config";
 const HEALTH_TIMEOUT_MS = 2000;
 const POLL_INTERVAL_MS = 500;
 const STOP_GRACE_MS = 5000;
-const IDLE_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+const DEFAULT_IDLE_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
 export class LlmServer {
   private config: LlmConfig;
@@ -45,7 +45,13 @@ export class LlmServer {
 
   /** Start llama-server, poll until ready, start idle watchdog. */
   async start(): Promise<void> {
-    if (await this.healthy()) return;
+    if (await this.healthy()) {
+      // Adopt an existing server (e.g. after daemon crash + restart)
+      this.lastRequestTime = Date.now();
+      this.startTime = Date.now();
+      this.startIdleWatchdog();
+      return;
+    }
 
     // Validate binary
     const binary = this.config.binary;
@@ -193,6 +199,7 @@ export class LlmServer {
   private startIdleWatchdog(): void {
     this.stopIdleWatchdog();
     const timeoutMs = this.config.idleTimeoutMin * 60 * 1000;
+    const checkInterval = Math.min(DEFAULT_IDLE_CHECK_INTERVAL_MS, timeoutMs);
 
     this.idleTimer = setInterval(async () => {
       if (this.lastRequestTime === 0) return;
@@ -200,7 +207,7 @@ export class LlmServer {
         console.log(`[llm] Server idle for ${this.config.idleTimeoutMin}min, shutting down`);
         await this.stop();
       }
-    }, IDLE_CHECK_INTERVAL_MS);
+    }, checkInterval);
     this.idleTimer.unref();
   }
 
