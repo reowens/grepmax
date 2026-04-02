@@ -98,6 +98,17 @@ export async function handleCommand(
         return null;
       }
 
+      // --- LLM server management ---
+
+      case "llm-start":
+        return await daemon.llmStart();
+
+      case "llm-stop":
+        return await daemon.llmStop();
+
+      case "llm-status":
+        return daemon.llmStatus();
+
       default:
         return { ok: false, error: `unknown command: ${cmd.cmd}` };
     }

@@ -15,6 +15,7 @@ import { impact } from "./commands/impact";
 import { installDroid, uninstallDroid } from "./commands/droid";
 import { index } from "./commands/index";
 import { list } from "./commands/list";
+import { llm } from "./commands/llm";
 import { mcp } from "./commands/mcp";
 import { peek } from "./commands/peek";
 import { project } from "./commands/project";
@@ -89,6 +90,7 @@ program.addCommand(serve);
 program.addCommand(watch);
 program.addCommand(mcp);
 program.addCommand(summarize);
+program.addCommand(llm);
 
 // Setup & diagnostics
 program.addCommand(setup);
