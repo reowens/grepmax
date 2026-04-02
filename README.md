@@ -164,15 +164,15 @@ gmax "query" [options]
 
 ## Background Daemon
 
-A single daemon watches all registered projects via native OS file events (FSEvents/inotify). Changes are detected in sub-second and incrementally reindexed.
+A single daemon watches all registered projects via native OS file events (FSEvents/inotify). Changes are detected in sub-second and incrementally reindexed. All writes to LanceDB are routed through the daemon via IPC, eliminating lock contention.
 
 ```bash
-gmax watch --daemon -b        # Start daemon
+gmax watch --daemon -b        # Start daemon manually
 gmax watch stop               # Stop daemon
 gmax status                   # See all projects + watcher status
 ```
 
-The daemon auto-starts via agent plugins and shuts down after 30 minutes of inactivity.
+The daemon auto-starts when you run `gmax add`, `gmax index`, `gmax remove`, or `gmax summarize`. It shuts down after 30 minutes of inactivity.
 
 ## Architecture
 

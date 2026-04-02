@@ -24,7 +24,7 @@ Bash(gmax "auth handler" --role ORCHESTRATION --lang ts --agent -m 3)
 
 ## Project management
 
-Projects must be added before search works:
+Projects must be added before search works. These commands auto-start the daemon if not running:
 
 ```
 gmax add                        # add + index current directory
