@@ -79,6 +79,17 @@ vi.mock("../src/lib/utils/watcher-launcher", () => ({
   launchWatcher: vi.fn(async () => ({ ok: true, pid: 9999, reused: true })),
 }));
 
+vi.mock("../src/lib/utils/daemon-client", () => ({
+  isDaemonRunning: vi.fn(async () => false),
+  sendStreamingCommand: vi.fn(),
+}));
+
+vi.mock("../src/lib/utils/watcher-store", () => ({
+  getWatcherCoveringPath: vi.fn(() => null),
+  isProcessRunning: vi.fn(() => false),
+  unregisterWatcher: vi.fn(),
+}));
+
 import { index } from "../src/commands/index";
 import { createIndexingSpinner } from "../src/lib/index/sync-helpers";
 import { initialSync } from "../src/lib/index/syncer";
