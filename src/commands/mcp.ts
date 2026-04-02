@@ -246,6 +246,18 @@ const TOOLS = [
       required: ["topic"],
     },
   },
+  {
+    name: "investigate",
+    description: "Agentic codebase Q&A: a local LLM answers questions using search, trace, peek, impact, and related tools. Requires LLM to be enabled (gmax llm on).",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        question: { type: "string", description: "Natural language question about the codebase" },
+        max_rounds: { type: "number", description: "Max tool-call rounds (default 10)" },
+      },
+      required: ["question"],
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -2144,6 +2156,30 @@ export const mcp = new Command("mcp")
         case "build_context":
           result = await handleBuildContext(toolArgs);
           break;
+        case "investigate": {
+          const question = String(toolArgs.question || "");
+          if (!question) { result = err("Missing required parameter: question"); break; }
+          const maxRounds = Math.min(Math.max(Number(toolArgs.max_rounds) || 10, 1), 15);
+          try {
+            const { isDaemonRunning, sendDaemonCommand } = await import("../lib/utils/daemon-client");
+            if (await isDaemonRunning()) {
+              const llmResp = await sendDaemonCommand({ cmd: "llm-start" }, { timeoutMs: 90_000 });
+              if (!llmResp.ok) {
+                result = err(`LLM server not available: ${llmResp.error}. Run \`gmax llm on && gmax llm start\`.`);
+                break;
+              }
+            } else {
+              result = err("LLM server not available. Run `gmax llm on && gmax llm start`.");
+              break;
+            }
+            const { investigate } = await import("../lib/llm/investigate");
+            const inv = await investigate({ question, projectRoot, maxRounds });
+            result = ok(inv.answer);
+          } catch (e) {
+            result = err(`Investigate failed: ${e instanceof Error ? e.message : String(e)}`);
+          }
+          break;
+        }
         default:
           return err(`Unknown tool: ${name}`);
       }
