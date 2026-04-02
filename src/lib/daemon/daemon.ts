@@ -21,6 +21,7 @@ import {
   unregisterWatcher,
   unregisterWatcherByRoot,
 } from "../utils/watcher-store";
+import { LlmServer } from "../llm/server";
 import { handleCommand, writeProgress, writeDone } from "./ipc-handler";
 
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
@@ -40,6 +41,7 @@ export class Daemon {
   private shuttingDown = false;
   private readonly pendingOps = new Set<string>();
   private readonly projectLocks = new Map<string, Promise<void>>();
+  private llmServer: LlmServer | null = null;
 
   async start(): Promise<void> {
     process.title = "gmax-daemon";
@@ -86,7 +88,10 @@ export class Daemon {
       throw err;
     }
 
-    // 6. Register daemon (only after resources are open)
+    // 6. LLM server manager (constructed, not started — starts on first request)
+    this.llmServer = new LlmServer();
+
+    // 7. Register daemon (only after resources are open)
     registerDaemon(process.pid);
 
     // 7. Subscribe to all registered projects (skip missing directories)
@@ -489,6 +494,40 @@ export class Daemon {
     });
   }
 
+  // --- LLM server management ---
+
+  async llmStart(): Promise<{ ok: boolean; [key: string]: unknown }> {
+    if (!this.llmServer) return { ok: false, error: "daemon not initialized" };
+    try {
+      await this.llmServer.start();
+      this.resetActivity();
+      return { ok: true, ...this.llmServer.getStatus() };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: msg };
+    }
+  }
+
+  async llmStop(): Promise<{ ok: boolean; [key: string]: unknown }> {
+    if (!this.llmServer) return { ok: false, error: "daemon not initialized" };
+    try {
+      await this.llmServer.stop();
+      return { ok: true };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: msg };
+    }
+  }
+
+  llmStatus(): { ok: boolean; [key: string]: unknown } {
+    if (!this.llmServer) return { ok: false, error: "daemon not initialized" };
+    return { ok: true, ...this.llmServer.getStatus() };
+  }
+
+  llmTouch(): void {
+    this.llmServer?.touchIdle();
+  }
+
   async shutdown(): Promise<void> {
     if (this.shuttingDown) return;
     this.shuttingDown = true;
@@ -502,6 +541,9 @@ export class Daemon {
     for (const processor of this.processors.values()) {
       await processor.close();
     }
+
+    // Stop LLM server if running
+    try { await this.llmServer?.stop(); } catch {}
 
     // Unsubscribe all watchers
     for (const sub of this.subscriptions.values()) {

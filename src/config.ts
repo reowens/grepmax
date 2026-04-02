@@ -96,6 +96,9 @@ export const PATHS = {
   lmdbPath: path.join(GLOBAL_ROOT, "cache", "meta.lmdb"),
   configPath: path.join(GLOBAL_ROOT, "config.json"),
   lockDir: GLOBAL_ROOT,
+  // LLM server (llama-server)
+  llmPidFile: path.join(GLOBAL_ROOT, "llm-server.pid"),
+  llmLogFile: path.join(GLOBAL_ROOT, "logs", "llm-server.log"),
 };
 
 export const MAX_FILE_SIZE_BYTES = 1024 * 1024 * 2; // 2MB limit for indexing
