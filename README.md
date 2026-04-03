@@ -135,6 +135,9 @@ Plugins auto-update when you run `npm install -g grepmax@latest` — no need to 
 | `impact_analysis` | Dependents + affected tests for a symbol or file. |
 | `find_similar` | Vector similarity search. |
 | `build_context` | Token-budgeted topic summary. |
+| `investigate` | Agentic codebase Q&A using local LLM + gmax tools. |
+| `review_commit` | Review a git commit for bugs, security issues, and breaking changes. |
+| `review_report` | Get accumulated code review findings for the current project. |
 
 ## Search Options
 
@@ -195,6 +198,30 @@ gmax investigate "how does authentication work?"
 gmax investigate "what would break if I changed VectorDB?" -v
 gmax investigate "where are API routes defined?" --root ~/project
 ```
+
+### Review
+
+Automatic code review on git commits. Extracts the diff, gathers codebase context (callers, dependents, related files), and prompts the LLM for structured findings.
+
+```bash
+gmax review                           # Review HEAD
+gmax review --commit abc1234          # Review specific commit
+gmax review --commit HEAD~3 -v        # Verbose — shows context gathering + LLM progress
+gmax review report                    # Show accumulated findings
+gmax review report --json             # Raw JSON output
+gmax review clear                     # Clear report
+```
+
+#### Post-commit hook
+
+Install a git hook that automatically reviews every commit in the background via the daemon:
+
+```bash
+gmax review install                   # Install in current repo
+gmax review install ~/other-repo      # Install in another repo
+```
+
+The hook sends an IPC message to the daemon and returns instantly — it never blocks `git commit`. Findings accumulate in the report.
 
 ### LLM Configuration
 

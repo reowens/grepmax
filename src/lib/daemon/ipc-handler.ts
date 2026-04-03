@@ -100,6 +100,14 @@ export async function handleCommand(
 
       // --- LLM server management ---
 
+      case "review": {
+        const root = String(cmd.root || "");
+        const commitRef = String(cmd.commitRef || "HEAD");
+        if (!root) return { ok: false, error: "missing root" };
+        setImmediate(() => daemon.reviewCommit(root, commitRef));
+        return { ok: true };
+      }
+
       case "llm-start":
         return await daemon.llmStart();
 

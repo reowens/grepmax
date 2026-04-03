@@ -258,6 +258,28 @@ const TOOLS = [
       required: ["question"],
     },
   },
+  {
+    name: "review_commit",
+    description: "Review a git commit for bugs, breaking changes, and security issues using local LLM + codebase context. Returns structured findings. Requires LLM to be enabled (gmax llm on).",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        commit: { type: "string", description: "Git ref to review (default: HEAD)" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "review_report",
+    description: "Get the accumulated code review report for the current project. Returns findings from all reviewed commits.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        json: { type: "boolean", description: "Return raw JSON instead of text (default: false)" },
+      },
+      required: [],
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -2177,6 +2199,51 @@ export const mcp = new Command("mcp")
             result = ok(inv.answer);
           } catch (e) {
             result = err(`Investigate failed: ${e instanceof Error ? e.message : String(e)}`);
+          }
+          break;
+        }
+        case "review_commit": {
+          const commitRef = String(toolArgs.commit || "HEAD");
+          try {
+            const { isDaemonRunning, sendDaemonCommand } = await import("../lib/utils/daemon-client");
+            if (await isDaemonRunning()) {
+              const llmResp = await sendDaemonCommand({ cmd: "llm-start" }, { timeoutMs: 90_000 });
+              if (!llmResp.ok) {
+                result = err(`LLM server not available: ${llmResp.error}. Run \`gmax llm on && gmax llm start\`.`);
+                break;
+              }
+            } else {
+              result = err("LLM server not available. Run `gmax llm on && gmax llm start`.");
+              break;
+            }
+            const { reviewCommit } = await import("../lib/llm/review");
+            const rev = await reviewCommit({ commitRef, projectRoot });
+            if (rev.clean) {
+              result = ok(`Clean commit (${rev.commit}) — no issues found in ${rev.duration}s.`);
+            } else {
+              const { readReport } = await import("../lib/llm/report");
+              const report = readReport(projectRoot);
+              const entry = report?.reviews.find((r) => r.commit === rev.commit);
+              result = ok(JSON.stringify({ commit: rev.commit, findings: entry?.findings ?? [], duration: rev.duration }, null, 2));
+            }
+          } catch (e) {
+            result = err(`Review failed: ${e instanceof Error ? e.message : String(e)}`);
+          }
+          break;
+        }
+        case "review_report": {
+          try {
+            const { readReport, formatReportText } = await import("../lib/llm/report");
+            const report = readReport(projectRoot);
+            if (!report || report.reviews.length === 0) {
+              result = ok("No review findings yet.");
+            } else if (toolArgs.json) {
+              result = ok(JSON.stringify(report, null, 2));
+            } else {
+              result = ok(formatReportText(report));
+            }
+          } catch (e) {
+            result = err(`Report failed: ${e instanceof Error ? e.message : String(e)}`);
           }
           break;
         }

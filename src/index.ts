@@ -22,6 +22,7 @@ import { peek } from "./commands/peek";
 import { project } from "./commands/project";
 import { recent } from "./commands/recent";
 import { related } from "./commands/related";
+import { review } from "./commands/review";
 import { installOpencode, uninstallOpencode } from "./commands/opencode";
 import { plugin } from "./commands/plugin";
 import { remove } from "./commands/remove";
@@ -93,6 +94,7 @@ program.addCommand(mcp);
 program.addCommand(summarize);
 program.addCommand(llm);
 program.addCommand(investigateCmd);
+program.addCommand(review);
 
 // Setup & diagnostics
 program.addCommand(setup);
