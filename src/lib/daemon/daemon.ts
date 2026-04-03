@@ -610,6 +610,26 @@ export class Daemon {
     this.llmServer?.touchIdle();
   }
 
+  async reviewCommit(root: string, commitRef: string): Promise<void> {
+    this.resetActivity();
+    try {
+      if (!this.llmServer) {
+        console.log("[review] daemon not initialized, skipping");
+        return;
+      }
+      await this.llmServer.ensure();
+      const { reviewCommit } = await import("../llm/review");
+      const result = await reviewCommit({ commitRef, projectRoot: root });
+      console.log(
+        `[review] ${result.commit} — ${result.findingCount} finding(s) in ${result.duration}s`,
+      );
+    } catch (err) {
+      console.error(
+        `[review] failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   async shutdown(): Promise<void> {
     if (this.shuttingDown) return;
     this.shuttingDown = true;
