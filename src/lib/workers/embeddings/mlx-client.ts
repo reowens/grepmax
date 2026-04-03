@@ -5,6 +5,7 @@
  */
 
 import * as http from "node:http";
+import { debug } from "../../utils/logger";
 
 const MLX_PORT = parseInt(process.env.MLX_EMBED_PORT || "8100", 10);
 const MLX_HOST = "127.0.0.1";
@@ -18,16 +19,17 @@ let lastMlxWarning = 0;
 const MLX_WARNING_INTERVAL_MS = 60_000;
 
 function postJSON(
-  path: string,
+  reqPath: string,
   body: unknown,
 ): Promise<{ ok: boolean; data?: any }> {
+  const start = performance.now();
   return new Promise((resolve) => {
     const payload = JSON.stringify(body);
     const req = http.request(
       {
         hostname: MLX_HOST,
         port: MLX_PORT,
-        path,
+        path: reqPath,
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -41,15 +43,22 @@ function postJSON(
         res.on("end", () => {
           try {
             const data = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
-            resolve({ ok: res.statusCode === 200, data });
+            const ok = res.statusCode === 200;
+            debug("mlx", `POST ${reqPath} → ${res.statusCode} ${(performance.now() - start).toFixed(0)}ms payload=${payload.length}B`);
+            resolve({ ok, data });
           } catch {
+            debug("mlx", `POST ${reqPath} → parse error ${(performance.now() - start).toFixed(0)}ms`);
             resolve({ ok: false });
           }
         });
       },
     );
-    req.on("error", () => resolve({ ok: false }));
+    req.on("error", (err) => {
+      debug("mlx", `POST ${reqPath} → error: ${err.message} ${(performance.now() - start).toFixed(0)}ms`);
+      resolve({ ok: false });
+    });
     req.on("timeout", () => {
+      debug("mlx", `POST ${reqPath} → timeout after ${MLX_TIMEOUT_MS}ms`);
       req.destroy();
       resolve({ ok: false });
     });
@@ -62,16 +71,23 @@ function postJSON(
  * Check if MLX server is reachable. Caches result for CHECK_INTERVAL_MS.
  */
 async function checkHealth(): Promise<boolean> {
+  const start = performance.now();
   return new Promise<boolean>((resolve) => {
     const req = http.get(
       { hostname: MLX_HOST, port: MLX_PORT, path: "/health", timeout: 2000 },
       (res) => {
         res.resume();
-        resolve(res.statusCode === 200);
+        const ok = res.statusCode === 200;
+        debug("mlx", `health → ${ok ? "ok" : `status=${res.statusCode}`} ${(performance.now() - start).toFixed(0)}ms`);
+        resolve(ok);
       },
     );
-    req.on("error", () => resolve(false));
+    req.on("error", (err) => {
+      debug("mlx", `health → error: ${err.message} ${(performance.now() - start).toFixed(0)}ms`);
+      resolve(false);
+    });
     req.on("timeout", () => {
+      debug("mlx", `health → timeout ${(performance.now() - start).toFixed(0)}ms`);
       req.destroy();
       resolve(false);
     });
@@ -81,6 +97,7 @@ async function checkHealth(): Promise<boolean> {
 export async function isMlxUp(): Promise<boolean> {
   const now = Date.now();
   if (mlxAvailable !== null && now - lastCheck < CHECK_INTERVAL_MS) {
+    debug("mlx", `isMlxUp cached=${mlxAvailable} age=${now - lastCheck}ms`);
     return mlxAvailable;
   }
 
@@ -112,6 +129,7 @@ export async function mlxEmbed(
 ): Promise<Float32Array[] | null> {
   if (EMBED_MODE === "cpu") return null;
   if (!(await isMlxUp())) return null;
+  debug("mlx", `embed ${texts.length} texts`);
 
   let postResult: { ok: boolean; data?: any };
   try {

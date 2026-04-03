@@ -6,7 +6,7 @@ import {
   MAX_FILE_SIZE_BYTES,
   MODEL_IDS,
 } from "../../config";
-import { log, debug, timer } from "../utils/logger";
+import { log, debug, timer, debugEvery } from "../utils/logger";
 import { MetaCache, type MetaEntry } from "../store/meta-cache";
 import type { VectorRecord } from "../store/types";
 import { VectorDB } from "../store/vector-db";
@@ -338,6 +338,8 @@ export async function initialSync(
         pendingMeta.clear();
         pendingDeletes.clear();
 
+        debug("index", `flush: ${toWrite.length} vectors, ${deletes.length} deletes, ${metaEntries.size} meta`);
+        const flushStart = Date.now();
         const currentFlush = flushBatch(
           vectorDb,
           mc,
@@ -350,7 +352,9 @@ export async function initialSync(
         flushPromise = currentFlush;
         try {
           await currentFlush;
+          debug("index", `flush done: ${Date.now() - flushStart}ms`);
         } catch (err) {
+          debug("index", `flush error: ${err}`);
           flushError = err;
           shouldSkipCleanup = true;
           throw err;
@@ -388,6 +392,8 @@ export async function initialSync(
       }
     };
 
+    const walkProgress = debugEvery("index", 100);
+
     const schedule = async (task: () => Promise<void>) => {
       const taskPromise = task();
       activeTasks.push(taskPromise);
@@ -396,6 +402,7 @@ export async function initialSync(
         if (idx !== -1) activeTasks.splice(idx, 1);
       });
       if (activeTasks.length >= maxConcurrency) {
+        debug("index", `schedule: active=${activeTasks.length}/${maxConcurrency} waiting for slot`);
         await Promise.race(activeTasks);
       }
     };
@@ -404,6 +411,7 @@ export async function initialSync(
       additionalPatterns: ["**/.git/**", "**/.gmax/**"],
     })) {
       if (signal?.aborted) {
+        log("index", "abort signal received during walk");
         shouldSkipCleanup = true;
         break;
       }
@@ -420,6 +428,7 @@ export async function initialSync(
         continue;
       }
       walkedFiles++;
+      walkProgress(`walk: ${walkedFiles} found, ${processed} processed, ${indexed} indexed, ${cacheHits} cached, ${failedFiles} failed`);
 
       await schedule(async () => {
         if (signal?.aborted) {
@@ -454,14 +463,14 @@ export async function initialSync(
             cached.size === stats.size
           ) {
             cacheHits++;
-            debug("index", `SKIP ${relPath} (cached)`);
+            debug("index", `file ${relPath}: cached`);
             processed += 1;
             seenPaths.add(absPath);
             markProgress(relPath);
             return;
           }
 
-          debug("index", `EMBED ${relPath}`);
+          debug("index", `file ${relPath}: embedding...`);
           const result = await processFileWithRetry(absPath);
 
           const metaEntry: MetaEntry = {
@@ -471,6 +480,7 @@ export async function initialSync(
           };
 
           if (result.shouldDelete) {
+            debug("index", `file ${relPath}: non-indexable (delete)`);
             if (!dryRun) {
               pendingDeletes.add(absPath);
               pendingMeta.set(absPath, metaEntry);
@@ -483,6 +493,7 @@ export async function initialSync(
           }
 
           if (cached && cached.hash === result.hash) {
+            debug("index", `file ${relPath}: hash unchanged`);
             if (!dryRun) {
               mc.put(absPath, metaEntry);
             }
@@ -503,10 +514,12 @@ export async function initialSync(
           pendingDeletes.add(absPath);
 
           if (result.vectors.length > 0) {
+            debug("index", `file ${relPath}: indexed ${result.vectors.length} vectors`);
             batch.push(...result.vectors);
             pendingMeta.set(absPath, metaEntry);
             indexed += 1;
           } else {
+            debug("index", `file ${relPath}: 0 vectors (meta only)`);
             pendingMeta.set(absPath, metaEntry);
           }
 

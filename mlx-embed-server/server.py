@@ -50,6 +50,7 @@ MODEL_ID = os.environ.get(
 PORT = int(os.environ.get("MLX_EMBED_PORT", "8100"))
 MAX_BATCH = int(os.environ.get("MLX_EMBED_MAX_BATCH", "64"))
 IDLE_TIMEOUT_S = int(os.environ.get("MLX_EMBED_IDLE_TIMEOUT", "1800"))  # 30 min
+DEBUG = os.environ.get("GMAX_DEBUG") == "1"
 
 model = None
 tokenizer = None
@@ -89,6 +90,11 @@ def embed_texts(texts: list[str]) -> mx.array:
     norms = mx.maximum(norms, 1e-12)
     normalized = pooled / norms
     mx.eval(normalized)
+
+    # Free intermediate tensors and clear Metal GPU cache to prevent memory leak
+    del input_ids, attention_mask, outputs, pooled, norms
+    mx.metal.clear_cache()
+
     return normalized
 
 
@@ -104,6 +110,14 @@ def load_model():
 async def idle_watchdog():
     while True:
         await asyncio.sleep(60)
+        if DEBUG:
+            active_mb = mx.metal.get_active_memory() / (1024 * 1024)
+            cache_mb = mx.metal.get_cache_memory() / (1024 * 1024)
+            idle_s = time.time() - last_activity
+            logger.info(
+                f"[mlx-embed] watchdog: idle={idle_s:.0f}s "
+                f"active={active_mb:.0f}MB cache={cache_mb:.0f}MB"
+            )
         if time.time() - last_activity > IDLE_TIMEOUT_S:
             logger.info("[mlx-embed] Idle timeout, shutting down")
             os._exit(0)
@@ -134,10 +148,21 @@ async def embed(request: EmbedRequest) -> EmbedResponse:
     last_activity = time.time()
 
     texts = request.texts[:MAX_BATCH]
+    start = time.monotonic()
 
     async with _mlx_lock:
         vectors = embed_texts(texts)
         vectors_list = vectors.tolist()
+        del vectors
+
+    elapsed_ms = (time.monotonic() - start) * 1000
+    if DEBUG:
+        active_mb = mx.metal.get_active_memory() / (1024 * 1024)
+        cache_mb = mx.metal.get_cache_memory() / (1024 * 1024)
+        logger.info(
+            f"[mlx-embed] embed {len(texts)} texts → {elapsed_ms:.0f}ms "
+            f"(active={active_mb:.0f}MB cache={cache_mb:.0f}MB)"
+        )
 
     return EmbedResponse(
         vectors=vectors_list,

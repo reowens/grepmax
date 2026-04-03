@@ -1,6 +1,7 @@
 import type * as net from "node:net";
 import type { DaemonResponse } from "../utils/daemon-client";
 import type { Daemon } from "./daemon";
+import { debug } from "../utils/logger";
 
 /**
  * Write a streaming progress line to the IPC connection.
@@ -31,6 +32,7 @@ export async function handleCommand(
   conn: net.Socket,
 ): Promise<DaemonResponse | null> {
   try {
+    debug("daemon", `ipc cmd=${cmd.cmd}${cmd.root ? ` root=${cmd.root}` : ""}`);
     switch (cmd.cmd) {
       case "ping":
         return { ok: true, pid: process.pid, uptime: daemon.uptime() };

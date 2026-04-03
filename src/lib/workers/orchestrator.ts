@@ -22,6 +22,7 @@ import { maxSim } from "./colbert-math";
 import { ColbertModel, type HybridResult } from "./embeddings/colbert";
 import { GraniteModel } from "./embeddings/granite";
 import { mlxEmbed } from "./embeddings/mlx-client";
+import { debug as dbg, debugTimer } from "../utils/logger";
 
 let mlxFallbackWarned = false;
 
@@ -84,6 +85,8 @@ export class WorkerOrchestrator {
     }
     if (this.initPromise) return this.initPromise;
 
+    dbg("orch", "loading models...");
+    const stopTimer = debugTimer("orch", "models ready");
     this.initPromise = (async () => {
       await Promise.all([
         this.chunker.init(),
@@ -91,6 +94,7 @@ export class WorkerOrchestrator {
         this.granite.load(),
         this.colbert.load(),
       ]);
+      stopTimer();
     })().finally(() => {
       this.initPromise = null;
     });
@@ -117,6 +121,7 @@ export class WorkerOrchestrator {
     for (let i = 0; i < texts.length; i += BATCH_SIZE) {
       if (i > 0) onProgress?.();
       const batchTexts = texts.slice(i, i + BATCH_SIZE);
+      const batchStart = performance.now();
       // Try MLX GPU server first, fall back to ONNX CPU
       const mlxResult = await mlxEmbed(batchTexts);
       if (!mlxResult && !mlxFallbackWarned) {
@@ -129,6 +134,7 @@ export class WorkerOrchestrator {
         denseBatch,
         this.vectorDimensions,
       );
+      dbg("orch", `embed batch ${i / BATCH_SIZE + 1}/${Math.ceil(texts.length / BATCH_SIZE)} (${batchTexts.length} texts) mlx=${!!mlxResult} ${(performance.now() - batchStart).toFixed(0)}ms`);
       results.push(...colbertBatch);
     }
     onProgress?.();
@@ -217,20 +223,25 @@ export class WorkerOrchestrator {
     input: ProcessFileInput,
     onProgress?: () => void,
   ): Promise<ProcessFileResult> {
+    const fileStart = performance.now();
     const absolutePath = path.isAbsolute(input.path)
       ? input.path
       : input.absolutePath
         ? input.absolutePath
         : path.join(PROJECT_ROOT, input.path);
 
+    dbg("orch", `processFile start: ${input.path}`);
+
     const { buffer, mtimeMs, size } = await readFileSnapshot(absolutePath);
     const hash = computeBufferHash(buffer);
 
     if (!isIndexableFile(absolutePath, size)) {
+      dbg("orch", `skip ${input.path} (non-indexable, size=${size})`);
       return { vectors: [], hash, mtimeMs, size, shouldDelete: true };
     }
 
     if (buffer.length === 0 || hasNullByte(buffer)) {
+      dbg("orch", `skip ${input.path} (empty or binary)`);
       return { vectors: [], hash, mtimeMs, size, shouldDelete: true };
     }
 
@@ -239,6 +250,7 @@ export class WorkerOrchestrator {
     onProgress?.();
 
     const content = buffer.toString("utf-8");
+    const chunkStart = performance.now();
     const chunksPromise = this.chunkFile(input.path, content);
 
     // Generate skeleton in parallel
@@ -254,9 +266,13 @@ export class WorkerOrchestrator {
       chunksPromise,
       skeletonPromise,
     ]);
+    dbg("orch", `chunked ${input.path} → ${chunks.length} chunks ${(performance.now() - chunkStart).toFixed(0)}ms`);
     onProgress?.();
 
-    if (!chunks.length) return { vectors: [], hash, mtimeMs, size };
+    if (!chunks.length) {
+      dbg("orch", `skip ${input.path} (0 chunks)`);
+      return { vectors: [], hash, mtimeMs, size };
+    }
 
     const preparedChunks = this.toPreparedChunks(
       input.path,
@@ -265,10 +281,12 @@ export class WorkerOrchestrator {
       skeletonResult.success ? skeletonResult.skeleton : undefined,
     );
 
+    const embedStart = performance.now();
     const hybrids = await this.computeHybrid(
       preparedChunks.map((chunk) => chunk.content),
       onProgress,
     );
+    dbg("orch", `embedded ${input.path} → ${hybrids.length} vectors ${(performance.now() - embedStart).toFixed(0)}ms`);
 
     const vectors = preparedChunks.map((chunk, idx) => {
       const hybrid = hybrids[idx] ?? {
@@ -287,6 +305,7 @@ export class WorkerOrchestrator {
     });
 
     onProgress?.();
+    dbg("orch", `processFile done: ${input.path} ${vectors.length} vectors ${(performance.now() - fileStart).toFixed(0)}ms`);
     return { vectors, hash, mtimeMs, size };
   }
 

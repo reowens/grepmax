@@ -67,6 +67,7 @@ type PendingTask<M extends TaskMethod = TaskMethod> = {
   reject: (reason?: unknown) => void;
   worker?: ProcessWorker;
   timeout?: NodeJS.Timeout;
+  startTime?: number;
 };
 
 const TASK_TIMEOUT_MS = (() => {
@@ -84,6 +85,7 @@ class ProcessWorker {
   child: childProcess.ChildProcess;
   busy = false;
   pendingTaskId: number | null = null;
+  lastBusyTime = Date.now();
 
   constructor(
     public modulePath: string,
@@ -115,6 +117,8 @@ function resolveProcessWorker(): { filename: string; execArgv: string[] } {
   throw new Error("Process worker file not found");
 }
 
+const IDLE_WORKER_TIMEOUT_MS = 60_000; // reap idle workers after 60s
+
 export class WorkerPool {
   private workers: ProcessWorker[] = [];
   private taskQueue: number[] = [];
@@ -125,18 +129,22 @@ export class WorkerPool {
   private destroyPromise: Promise<void> | null = null;
   private readonly modulePath: string;
   private readonly execArgv: string[];
+  private readonly maxWorkers: number;
   private consecutiveRespawns = 0;
   private static readonly MAX_RESPAWNS = 10;
+  private idleReapInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     const resolved = resolveProcessWorker();
     this.modulePath = resolved.filename;
     this.execArgv = resolved.execArgv;
+    this.maxWorkers = Math.max(1, CONFIG.WORKER_THREADS);
 
-    const workerCount = Math.max(1, CONFIG.WORKER_THREADS);
-    for (let i = 0; i < workerCount; i++) {
-      this.spawnWorker();
-    }
+    // Lazy spawn: start with 1 worker, scale up on demand
+    this.spawnWorker();
+
+    // Periodically reap idle workers back down to 1
+    this.idleReapInterval = setInterval(() => this.reapIdleWorkers(), IDLE_WORKER_TIMEOUT_MS);
   }
 
   isHealthy(): boolean {
@@ -166,6 +174,7 @@ export class WorkerPool {
     if (worker) {
       worker.busy = false;
       worker.pendingTaskId = null;
+      worker.lastBusyTime = Date.now();
     }
   }
 
@@ -180,6 +189,11 @@ export class WorkerPool {
     );
     for (const task of failedTasks) {
       this.clearTaskTimeout(task);
+      const filePath =
+        (task.payload as Record<string, unknown>)?.path ??
+        (task.payload as Record<string, unknown>)?.absolutePath ??
+        "unknown";
+      debug("pool", `exit killed task=${task.id} method=${task.method} file=${filePath}`);
       task.reject(
         new Error(
           `Worker exited unexpectedly${code ? ` (code ${code})` : ""}${
@@ -190,24 +204,32 @@ export class WorkerPool {
       this.completeTask(task, null);
     }
 
-    log("pool", `Worker PID:${worker.child.pid} exited (code:${code} signal:${signal})`);
+    log("pool", `Worker PID:${worker.child.pid} exited (code:${code} signal:${signal} pending=${failedTasks.length})`);
     this.workers = this.workers.filter((w) => w !== worker);
     if (!this.destroyed) {
-      this.consecutiveRespawns++;
-      if (this.consecutiveRespawns > WorkerPool.MAX_RESPAWNS) {
-        console.error(
-          `[pool] Worker respawn limit reached (${WorkerPool.MAX_RESPAWNS}). Not spawning more workers.`,
-        );
-        return;
+      // Only respawn if we have no workers left or there are pending tasks
+      const hasPendingTasks = this.taskQueue.some((id) => {
+        const t = this.tasks.get(id);
+        return t && !t.worker;
+      });
+      if (this.workers.length === 0 || hasPendingTasks) {
+        this.consecutiveRespawns++;
+        log("pool", `respawn #${this.consecutiveRespawns} after exit (workers=${this.workers.length} pending=${hasPendingTasks})`);
+        if (this.consecutiveRespawns > WorkerPool.MAX_RESPAWNS) {
+          console.error(
+            `[pool] Worker respawn limit reached (${WorkerPool.MAX_RESPAWNS}). Not spawning more workers.`,
+          );
+          return;
+        }
+        this.spawnWorker();
       }
-      this.spawnWorker();
       this.dispatch();
     }
   }
 
   private spawnWorker() {
     const worker = new ProcessWorker(this.modulePath, this.execArgv, MAX_WORKER_MEMORY_MB);
-    debug("pool", `Spawned worker PID:${worker.child.pid}`);
+    log("pool", `spawn PID:${worker.child.pid} (${this.workers.length + 1}/${Math.max(1, CONFIG.WORKER_THREADS)})`);
 
     const onMessage = (msg: WorkerMessage) => {
       // Fast cleanup for tasks that were aborted while running
@@ -237,6 +259,11 @@ export class WorkerPool {
       }
 
       if ("error" in msg) {
+        const filePath =
+          (task.payload as Record<string, unknown>)?.path ??
+          (task.payload as Record<string, unknown>)?.absolutePath ??
+          "unknown";
+        debug("pool", `error task=${task.id} method=${task.method} file=${filePath}: ${msg.error}`);
         task.reject(new Error(msg.error));
       } else {
         let result = msg.result as TaskResults[TaskMethod];
@@ -245,6 +272,12 @@ export class WorkerPool {
             result as TaskResults["processFile"],
           ) as TaskResults[TaskMethod];
         }
+        const elapsed = task.startTime ? `${Date.now() - task.startTime}ms` : "?ms";
+        const filePath =
+          (task.payload as Record<string, unknown>)?.path ??
+          (task.payload as Record<string, unknown>)?.absolutePath ??
+          "";
+        debug("pool", `complete task=${task.id} method=${task.method} ${elapsed}${filePath ? ` file=${filePath}` : ""}`);
         task.resolve(result);
       }
 
@@ -345,11 +378,7 @@ export class WorkerPool {
       (task.payload as Record<string, unknown>)?.path ??
       (task.payload as Record<string, unknown>)?.absolutePath ??
       "unknown";
-    if (task.method !== "processFile") {
-      console.warn(
-        `[worker-pool] ${task.method} timed out after ${TASK_TIMEOUT_MS}ms on ${filePath}; restarting worker.`,
-      );
-    }
+    log("pool", `timeout task=${task.id} method=${task.method} file=${filePath} after ${TASK_TIMEOUT_MS}ms — killing worker PID:${worker.child.pid}`);
     this.completeTask(task, null);
     task.reject(
       new Error(
@@ -372,13 +401,21 @@ export class WorkerPool {
 
   private dispatch() {
     if (this.destroyed) return;
-    const idle = this.workers.find((w) => !w.busy);
+    let idle = this.workers.find((w) => !w.busy);
     const nextTaskId = this.taskQueue.find((id) => {
       const t = this.tasks.get(id);
       return t && !t.worker;
     });
 
-    if (!idle || nextTaskId === undefined) return;
+    if (nextTaskId === undefined) return;
+
+    // Lazy spawn: if no idle worker and below max, spawn one
+    if (!idle && this.workers.length < this.maxWorkers) {
+      this.spawnWorker();
+      idle = this.workers[this.workers.length - 1];
+    }
+
+    if (!idle) return;
     const task = this.tasks.get(nextTaskId);
     if (!task) {
       this.removeFromQueue(nextTaskId);
@@ -389,11 +426,19 @@ export class WorkerPool {
     idle.busy = true;
     idle.pendingTaskId = task.id;
     task.worker = idle;
+    task.startTime = Date.now();
 
     task.timeout = setTimeout(
       () => this.handleTaskTimeout(task, idle),
       TASK_TIMEOUT_MS,
     );
+
+    const filePath =
+      (task.payload as Record<string, unknown>)?.path ??
+      (task.payload as Record<string, unknown>)?.absolutePath ??
+      "";
+    const busyCount = this.workers.filter((w) => w.busy).length;
+    debug("pool", `dispatch task=${task.id} method=${task.method}${filePath ? ` file=${filePath}` : ""} → PID:${idle.child.pid} (busy=${busyCount}/${this.workers.length} queue=${this.taskQueue.length})`);
 
     try {
       idle.child.send({
@@ -402,6 +447,7 @@ export class WorkerPool {
         payload: task.payload,
       });
     } catch (err) {
+      debug("pool", `dispatch send failed task=${task.id}: ${err}`);
       this.clearTaskTimeout(task);
       this.completeTask(task, idle);
       task.reject(err);
@@ -423,11 +469,43 @@ export class WorkerPool {
     return this.enqueue("rerank", input, signal);
   }
 
+  /**
+   * Reap idle workers back down to 1. Keeps the most recently active worker.
+   * Called on a timer — never removes the last worker or busy workers.
+   */
+  private reapIdleWorkers() {
+    if (this.destroyed || this.workers.length <= 1) return;
+    const now = Date.now();
+    const toReap = this.workers.filter(
+      (w) => !w.busy && now - w.lastBusyTime > IDLE_WORKER_TIMEOUT_MS,
+    );
+    // Always keep at least 1 worker alive
+    const keepCount = Math.max(1, this.workers.length - toReap.length);
+    const reapCount = this.workers.length - keepCount;
+    if (reapCount <= 0) return;
+
+    // Reap oldest-idle first
+    toReap
+      .sort((a, b) => a.lastBusyTime - b.lastBusyTime)
+      .slice(0, reapCount)
+      .forEach((w) => {
+        log("pool", `reap idle worker PID:${w.child.pid} (idle ${Math.round((now - w.lastBusyTime) / 1000)}s, ${this.workers.length - 1} remaining)`);
+        w.child.removeAllListeners("message");
+        w.child.removeAllListeners("exit");
+        try { w.child.kill("SIGTERM"); } catch {}
+        this.workers = this.workers.filter((x) => x !== w);
+      });
+  }
+
   async destroy(): Promise<void> {
     if (this.destroyPromise) return this.destroyPromise;
     if (this.destroyed) return;
 
     this.destroyed = true;
+    if (this.idleReapInterval) {
+      clearInterval(this.idleReapInterval);
+      this.idleReapInterval = null;
+    }
 
     for (const task of this.tasks.values()) {
       this.clearTaskTimeout(task);

@@ -7,6 +7,7 @@ import processFile, {
   type RerankDoc,
   rerank,
 } from "./worker";
+import { debug } from "../utils/logger";
 
 type IncomingMessage =
   | { id: number; method: "processFile"; payload: ProcessFileInput }
@@ -32,28 +33,34 @@ const send = (msg: OutgoingMessage) => {
 
 process.on("message", async (msg: IncomingMessage) => {
   const { id, method, payload } = msg;
+  const start = performance.now();
+  debug("worker", `recv task=${id} method=${method}${method === "processFile" ? ` file=${(payload as ProcessFileInput).path}` : ""}`);
   try {
     if (method === "processFile") {
       const onProgress = () => {
         send({ id, heartbeat: true });
       };
       const result = await processFile(payload, onProgress);
+      debug("worker", `done task=${id} method=${method} ${(performance.now() - start).toFixed(0)}ms vectors=${result.vectors.length} file=${(payload as ProcessFileInput).path}`);
       send({ id, result });
       return;
     }
     if (method === "encodeQuery") {
       const result = await encodeQuery(payload);
+      debug("worker", `done task=${id} method=${method} ${(performance.now() - start).toFixed(0)}ms`);
       send({ id, result });
       return;
     }
     if (method === "rerank") {
       const result = await rerank(payload);
+      debug("worker", `done task=${id} method=${method} ${(performance.now() - start).toFixed(0)}ms`);
       send({ id, result });
       return;
     }
     send({ id, error: `Unknown method: ${method}` });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    debug("worker", `fail task=${id} method=${method} ${(performance.now() - start).toFixed(0)}ms: ${message}`);
     send({ id, error: message });
   }
 });

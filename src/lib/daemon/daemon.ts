@@ -23,6 +23,13 @@ import {
 } from "../utils/watcher-store";
 import { LlmServer } from "../llm/server";
 import { handleCommand, writeProgress, writeDone } from "./ipc-handler";
+import { log as dlog, debug as dbg } from "../utils/logger";
+import { isDaemonRunning } from "../utils/daemon-client";
+import { isProcessRunning } from "../utils/watcher-store";
+import { readGlobalConfig } from "../index/index-config";
+import { openRotatedLog } from "../utils/log-rotate";
+import { spawn, type ChildProcess } from "node:child_process";
+import * as http from "node:http";
 
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const HEARTBEAT_INTERVAL_MS = 60 * 1000;
@@ -42,18 +49,41 @@ export class Daemon {
   private readonly pendingOps = new Set<string>();
   private readonly projectLocks = new Map<string, Promise<void>>();
   private llmServer: LlmServer | null = null;
+  private mlxChild: ChildProcess | null = null;
 
   async start(): Promise<void> {
     process.title = "gmax-daemon";
 
+    // 0. Singleton enforcement: check PID file for existing daemon
+    try {
+      const pidStr = fs.readFileSync(PATHS.daemonPidFile, "utf-8").trim();
+      const existingPid = parseInt(pidStr, 10);
+      if (existingPid && existingPid !== process.pid && isProcessRunning(existingPid)) {
+        dlog("daemon", `found existing daemon PID:${existingPid}, checking socket...`);
+        const responsive = await isDaemonRunning();
+        if (responsive) {
+          dlog("daemon", "existing daemon is responsive — exiting");
+          process.exit(0);
+        }
+        // Unresponsive but alive — kill it
+        dlog("daemon", `existing daemon PID:${existingPid} unresponsive — killing`);
+        await killProcess(existingPid);
+        dlog("daemon", `killed stale daemon PID:${existingPid}`);
+      }
+    } catch {
+      // No PID file or unreadable — proceed normally
+    }
+
     // 1. Acquire exclusive lock — kernel-enforced, atomic, auto-released on death
     fs.mkdirSync(path.dirname(PATHS.daemonLockFile), { recursive: true });
     fs.writeFileSync(PATHS.daemonLockFile, "", { flag: "a" }); // ensure file exists
+    dbg("daemon", "acquiring lock...");
     try {
       this.releaseLock = await lockfile.lock(PATHS.daemonLockFile, {
         retries: 0,
-        stale: 30_000,
+        stale: 120_000,
       });
+      dbg("daemon", "lock acquired");
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ELOCKED") {
         console.error("[daemon] Another daemon is already running");
@@ -92,6 +122,13 @@ export class Daemon {
 
     // 6. LLM server manager (constructed, not started — starts on first request)
     this.llmServer = new LlmServer();
+
+    // 6b. MLX embed server — start if GPU mode is active
+    const globalConfig = readGlobalConfig();
+    const isAppleSilicon = process.arch === "arm64" && process.platform === "darwin";
+    if (isAppleSilicon && globalConfig.embedMode === "gpu") {
+      await this.ensureMlxServer(globalConfig.mlxModel);
+    }
 
     // 7. Register daemon (only after resources are open)
     registerDaemon(process.pid);
@@ -136,6 +173,7 @@ export class Daemon {
 
     // 10. Socket server
     this.server = net.createServer((conn) => {
+      dbg("daemon", "client connected");
       let buf = "";
       conn.on("data", (chunk) => {
         buf += chunk.toString();
@@ -286,6 +324,8 @@ export class Daemon {
     const seenPaths = new Set<string>();
 
     let queued = 0;
+    let skipped = 0;
+    let debugSamples = 0;
     for await (const relPath of walk(root, {
       additionalPatterns: ["**/.git/**", "**/.gmax/**"],
     })) {
@@ -302,11 +342,32 @@ export class Daemon {
         if (stats.size === 0 || stats.size > MAX_FILE_SIZE_BYTES) continue;
         const cached = this.metaCache!.get(absPath);
         if (!isFileCached(cached, stats)) {
+          // Fast path: if only mtime changed but size is identical and we have a hash,
+          // just verify the hash in-process instead of sending to a worker.
+          if (cached && cached.hash && cached.size === stats.size) {
+            const { computeBufferHash } = await import("../utils/file-utils");
+            const buf = await fs.promises.readFile(absPath);
+            const hash = computeBufferHash(buf);
+            if (hash === cached.hash) {
+              // Content unchanged — update mtime in cache and skip worker
+              this.metaCache!.put(absPath, { ...cached, mtimeMs: stats.mtimeMs });
+              skipped++;
+              continue;
+            }
+          }
+          // Debug: log first few misses to diagnose re-queue loops
+          if (debugSamples < 5) {
+            dbg("catchup", `miss ${relPath}: cached=${cached ? `mtime=${Math.trunc(cached.mtimeMs)} size=${cached.size}` : "null"} stat=mtime=${Math.trunc(stats.mtimeMs)} size=${stats.size}`);
+            debugSamples++;
+          }
           processor.handleFileEvent("change", absPath);
           queued++;
+        } else {
+          skipped++;
         }
       } catch {}
     }
+    dbg("catchup", `${path.basename(root)}: ${queued} queued, ${skipped} skipped (cached ok), ${seenPaths.size} total`);
 
     // Purge files deleted while daemon was offline
     let purged = 0;
@@ -329,7 +390,9 @@ export class Daemon {
     await this.withProjectLock(root, async () => {
       if (!this.vectorDb || !this.metaCache) return;
 
-      console.log(`[daemon] Indexing pending project: ${path.basename(root)}`);
+      const name = path.basename(root);
+      const start = Date.now();
+      dlog("daemon", `indexPendingProject start: ${name} (${root})`);
       this.vectorDb.pauseMaintenanceLoop();
       try {
         const result = await initialSync({
@@ -350,12 +413,10 @@ export class Daemon {
         }
 
         await this.watchProject(root);
-        console.log(
-          `[daemon] Indexed ${path.basename(root)} (${result.total} files, ${result.indexed} chunks)`,
-        );
+        dlog("daemon", `indexPendingProject done: ${name} — ${result.total} files, ${result.indexed} chunks, ${Date.now() - start}ms`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[daemon] indexPendingProject failed for ${path.basename(root)}: ${msg}`);
+        console.error(`[daemon] indexPendingProject failed for ${name} after ${Date.now() - start}ms: ${msg}`);
       } finally {
         this.vectorDb?.resumeMaintenanceLoop();
       }
@@ -663,6 +724,73 @@ export class Daemon {
     }
   }
 
+  // --- MLX embed server management ---
+
+  private async isMlxServerUp(): Promise<boolean> {
+    const port = parseInt(process.env.MLX_EMBED_PORT || "8100", 10);
+    return new Promise<boolean>((resolve) => {
+      const req = http.get(
+        { hostname: "127.0.0.1", port, path: "/health", timeout: 2000 },
+        (res) => { res.resume(); resolve(res.statusCode === 200); },
+      );
+      req.on("error", () => resolve(false));
+      req.on("timeout", () => { req.destroy(); resolve(false); });
+    });
+  }
+
+  private async ensureMlxServer(mlxModel?: string): Promise<void> {
+    if (await this.isMlxServerUp()) {
+      console.log("[daemon] MLX embed server already running");
+      return;
+    }
+
+    // Find mlx-embed-server/server.py relative to the grepmax package
+    const candidates = [
+      path.resolve(__dirname, "../../../mlx-embed-server"),
+      path.resolve(__dirname, "../../mlx-embed-server"),
+    ];
+    const serverDir = candidates.find((d) =>
+      fs.existsSync(path.join(d, "server.py")),
+    );
+    if (!serverDir) {
+      console.warn("[daemon] MLX embed server not found — falling back to CPU embeddings");
+      return;
+    }
+
+    const logFd = openRotatedLog(path.join(PATHS.logsDir, "mlx-embed-server.log"));
+    const env: Record<string, string> = { ...process.env } as Record<string, string>;
+    if (mlxModel) env.MLX_EMBED_MODEL = mlxModel;
+
+    this.mlxChild = spawn("uv", ["run", "python", "server.py"], {
+      cwd: serverDir,
+      detached: true,
+      stdio: ["ignore", logFd, logFd],
+      env,
+    });
+    this.mlxChild.unref();
+    console.log(`[daemon] Starting MLX embed server (PID: ${this.mlxChild.pid})`);
+
+    // Poll for readiness (up to 30s)
+    for (let i = 0; i < 30; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      if (await this.isMlxServerUp()) {
+        console.log("[daemon] MLX embed server ready");
+        return;
+      }
+    }
+    console.error("[daemon] MLX embed server failed to start within 30s — falling back to CPU embeddings");
+    this.mlxChild = null;
+  }
+
+  private stopMlxServer(): void {
+    if (!this.mlxChild?.pid) return;
+    try {
+      process.kill(this.mlxChild.pid, "SIGTERM");
+      console.log(`[daemon] Stopped MLX embed server (PID: ${this.mlxChild.pid})`);
+    } catch {}
+    this.mlxChild = null;
+  }
+
   async shutdown(): Promise<void> {
     if (this.shuttingDown) return;
     this.shuttingDown = true;
@@ -679,6 +807,9 @@ export class Daemon {
 
     // Stop LLM server if running
     try { await this.llmServer?.stop(); } catch {}
+
+    // Stop MLX embed server if we started it
+    this.stopMlxServer();
 
     // Unsubscribe all watchers
     for (const sub of this.subscriptions.values()) {
