@@ -95,8 +95,9 @@ export class Daemon {
     registerDaemon(process.pid);
 
     // 7. Subscribe to all registered projects (skip missing directories)
-    const projects = listProjects().filter((p) => p.status === "indexed");
-    for (const p of projects) {
+    const allProjects = listProjects();
+    const indexed = allProjects.filter((p) => p.status === "indexed");
+    for (const p of indexed) {
       if (!fs.existsSync(p.root)) {
         console.log(`[daemon] Skipping ${path.basename(p.root)} — directory not found`);
         continue;
@@ -106,6 +107,16 @@ export class Daemon {
       } catch (err) {
         console.error(`[daemon] Failed to watch ${path.basename(p.root)}:`, err);
       }
+    }
+
+    // 7b. Index pending projects in the background
+    const pending = allProjects.filter(
+      (p) => p.status === "pending" && fs.existsSync(p.root),
+    );
+    for (const p of pending) {
+      this.indexPendingProject(p.root).catch((err) => {
+        console.error(`[daemon] Failed to index pending ${path.basename(p.root)}:`, err);
+      });
     }
 
     // 8. Heartbeat
@@ -243,8 +254,79 @@ export class Daemon {
       lastHeartbeat: Date.now(),
     });
 
+    // Catchup scan — find files changed while daemon was offline
+    this.catchupScan(root, processor).catch((err) => {
+      console.error(`[daemon:${path.basename(root)}] Catchup scan failed:`, err);
+    });
+
     this.pendingOps.delete(root);
     console.log(`[daemon] Watching ${root}`);
+  }
+
+  private async catchupScan(root: string, processor: ProjectBatchProcessor): Promise<void> {
+    const { walk } = await import("../index/walker");
+    const { INDEXABLE_EXTENSIONS } = await import("../../config");
+    const { isFileCached } = await import("../utils/cache-check");
+
+    let queued = 0;
+    for await (const relPath of walk(root, {
+      additionalPatterns: ["**/.git/**", "**/.gmax/**", "**/.osgrep/**"],
+    })) {
+      const absPath = path.join(root, relPath);
+      const ext = path.extname(absPath).toLowerCase();
+      const bn = path.basename(absPath).toLowerCase();
+      if (!INDEXABLE_EXTENSIONS.has(ext) && !INDEXABLE_EXTENSIONS.has(bn)) continue;
+
+      try {
+        const stats = await fs.promises.stat(absPath);
+        const cached = this.metaCache!.get(absPath);
+        if (!isFileCached(cached, stats)) {
+          processor.handleFileEvent("change", absPath);
+          queued++;
+        }
+      } catch {}
+    }
+
+    if (queued > 0) {
+      console.log(`[daemon:${path.basename(root)}] Catchup: ${queued} file(s) changed while offline`);
+    }
+  }
+
+  private async indexPendingProject(root: string): Promise<void> {
+    await this.withProjectLock(root, async () => {
+      if (!this.vectorDb || !this.metaCache) return;
+
+      console.log(`[daemon] Indexing pending project: ${path.basename(root)}`);
+      this.vectorDb.pauseMaintenanceLoop();
+      try {
+        const result = await initialSync({
+          projectRoot: root,
+          vectorDb: this.vectorDb,
+          metaCache: this.metaCache,
+          onProgress: () => { this.resetActivity(); },
+        });
+
+        const proj = getProject(root);
+        if (proj) {
+          registerProject({
+            ...proj,
+            lastIndexed: new Date().toISOString(),
+            chunkCount: result.indexed,
+            status: "indexed",
+          });
+        }
+
+        await this.watchProject(root);
+        console.log(
+          `[daemon] Indexed ${path.basename(root)} (${result.total} files, ${result.indexed} chunks)`,
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[daemon] indexPendingProject failed for ${path.basename(root)}: ${msg}`);
+      } finally {
+        this.vectorDb?.resumeMaintenanceLoop();
+      }
+    });
   }
 
   async unwatchProject(root: string): Promise<void> {
