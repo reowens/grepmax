@@ -66,6 +66,18 @@ if (legacyProjectData) {
   console.log("   Run 'gmax index' to re-index into the centralized store.");
 }
 
+// Wire global --store to per-command --root so cross-project queries work
+program.hook("preAction", (_thisCommand, actionCommand) => {
+  const globals = actionCommand.optsWithGlobals?.() ?? {};
+  if (globals.store && !actionCommand.getOptionValue?.("root")) {
+    try {
+      actionCommand.setOptionValue("root", globals.store);
+    } catch {
+      // Command may not have --root; that's fine
+    }
+  }
+});
+
 // Core commands
 program.addCommand(search, { isDefault: true });
 program.addCommand(add);

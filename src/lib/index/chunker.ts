@@ -309,6 +309,52 @@ export class TreeSitterChunker {
 
     // Split chunks if too big
     result.chunks = result.chunks.flatMap((c) => this.splitIfTooBig(c));
+
+    // Post-process: extract property function names from chunks.
+    // Catches resolver patterns like `posTableTurnReport: withAuth(scope, async (args) => {`
+    const PROP_FN_RE =
+      /^\s*(\w+)\s*:\s*(?:async\s+)?(?:function\b|\(|[A-Za-z_]\w*\()/gm;
+    for (const c of result.chunks) {
+      if (c.definedSymbols && c.content.length > 100) {
+        const extra: string[] = [];
+        let m: RegExpExecArray | null;
+        while ((m = PROP_FN_RE.exec(c.content)) !== null) {
+          const name = m[1];
+          if (name.length > 1 && !c.definedSymbols.includes(name)) {
+            extra.push(name);
+          }
+        }
+        PROP_FN_RE.lastIndex = 0;
+        if (extra.length > 0) {
+          // Create a new array to avoid shared references from splitIfTooBig
+          c.definedSymbols = [...c.definedSymbols, ...extra];
+        }
+      }
+    }
+
+    // Post-process: extract JSX component references from all chunks (including blocks).
+    // Block chunks from test files miss JSX because extractRefs only runs on definition chunks.
+    const JSX_RE = /<([A-Z][A-Za-z0-9_.]*)/g;
+    for (const c of result.chunks) {
+      if (!c.referencedSymbols) c.referencedSymbols = [];
+      const existing = new Set(c.referencedSymbols);
+      let jm: RegExpExecArray | null;
+      const jsxRefs: string[] = [];
+      while ((jm = JSX_RE.exec(c.content)) !== null) {
+        // Extract base component name (e.g., "Foo" from "Foo.Bar")
+        const full = jm[1];
+        const base = full.split(".")[0];
+        if (!existing.has(base)) {
+          existing.add(base);
+          jsxRefs.push(base);
+        }
+      }
+      JSX_RE.lastIndex = 0;
+      if (jsxRefs.length > 0) {
+        c.referencedSymbols = [...c.referencedSymbols, ...jsxRefs];
+      }
+    }
+
     return result;
   }
 
@@ -382,7 +428,7 @@ export class TreeSitterChunker {
       if (t !== "lexical_declaration" && t !== "variable_declaration")
         return false;
       const parentType = node.parent?.type || "";
-      const allowedParents = ["program", "module", "source_file", "class_body"];
+      const allowedParents = ["program", "module", "source_file", "class_body", "export_statement"];
       if (parentType && !allowedParents.includes(parentType)) return false;
       const text = node.text || "";
       if (text.includes("=>")) return true;
@@ -609,6 +655,29 @@ export class TreeSitterChunker {
                   if (methodId) funcName = methodId.text;
                 }
                 referencedSymbols.push(funcName);
+              }
+            }
+          }
+          // JSX elements: <Component /> or <Component>
+          if (
+            n.type === "jsx_self_closing_element" ||
+            n.type === "jsx_opening_element"
+          ) {
+            const nameChild = (n.namedChildren ?? []).find(
+              (c) =>
+                c.type === "identifier" ||
+                c.type === "member_expression" ||
+                c.type === "nested_identifier",
+            );
+            if (nameChild) {
+              // Only capture PascalCase components (skip HTML tags like div, span)
+              const name =
+                nameChild.type === "member_expression"
+                  ? (nameChild.childForFieldName?.("property")?.text ??
+                    nameChild.text)
+                  : nameChild.text;
+              if (name && /^[A-Z]/.test(name)) {
+                referencedSymbols.push(name);
               }
             }
           }

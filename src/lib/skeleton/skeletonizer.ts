@@ -532,6 +532,30 @@ export class Skeletonizer {
         }
       }
 
+      // JSX elements: <Component /> or <Component>
+      if (
+        n.type === "jsx_self_closing_element" ||
+        n.type === "jsx_opening_element"
+      ) {
+        const nameChild = (n.namedChildren || []).find(
+          (c: TreeSitterNode) =>
+            c.type === "identifier" ||
+            c.type === "member_expression" ||
+            c.type === "nested_identifier",
+        );
+        if (nameChild) {
+          const name =
+            nameChild.type === "member_expression"
+              ? (nameChild.childForFieldName?.("property")?.text ??
+                nameChild.text)
+              : nameChild.text;
+          if (name && /^[A-Z]/.test(name) && !seen.has(name)) {
+            seen.add(name);
+            refs.push(name);
+          }
+        }
+      }
+
       for (const child of n.namedChildren || []) {
         extract(child);
       }

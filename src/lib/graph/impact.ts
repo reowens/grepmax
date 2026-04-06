@@ -4,9 +4,13 @@ import { GraphBuilder } from "./graph-builder";
 
 const TEST_DIR_RE = /(^|\/)(__tests__|tests?|specs?|benchmark)(\/|$)/i;
 const TEST_FILE_RE = /\.(test|spec)\.[cm]?[jt]sx?$/i;
+// Swift/Kotlin/Java: FooTests.swift, FooTest.kt, FooTest.java, or dirs like AppTests/
+const NATIVE_TEST_DIR_RE = /(^|\/)\w+Tests?(\/|$)/;
+const NATIVE_TEST_FILE_RE = /Tests?\.(swift|kt|java)$/;
 
 export function isTestPath(filePath: string): boolean {
-  return TEST_DIR_RE.test(filePath) || TEST_FILE_RE.test(filePath);
+  return TEST_DIR_RE.test(filePath) || TEST_FILE_RE.test(filePath)
+    || NATIVE_TEST_DIR_RE.test(filePath) || NATIVE_TEST_FILE_RE.test(filePath);
 }
 
 import { toArr } from "../utils/arrow";
@@ -56,6 +60,50 @@ export async function resolveTargetSymbols(
 }
 
 /**
+ * For a single symbol, expand to include all symbols defined in the same file.
+ * This catches cases where tests call methods of a class rather than the class name itself
+ * (e.g., Swift tests call `handleNotification()` rather than referencing `DeepLinkRouter`).
+ */
+async function expandFileSymbols(
+  symbols: string[],
+  vectorDb: VectorDB,
+  projectRoot: string,
+): Promise<string[]> {
+  if (symbols.length !== 1) return symbols;
+
+  const table = await vectorDb.ensureTable();
+  const prefix = projectRoot.endsWith("/") ? projectRoot : `${projectRoot}/`;
+
+  // Find the file that defines this symbol
+  const defRows = await table
+    .query()
+    .select(["path"])
+    .where(
+      `array_contains(defined_symbols, '${escapeSqlString(symbols[0])}') AND path LIKE '${escapeSqlString(prefix)}%'`,
+    )
+    .limit(1)
+    .toArray();
+
+  if (defRows.length === 0) return symbols;
+  const filePath = String((defRows[0] as any).path);
+
+  // Get ALL symbols defined in that file
+  const fileRows = await table
+    .query()
+    .select(["defined_symbols"])
+    .where(`path = '${escapeSqlString(filePath)}'`)
+    .toArray();
+
+  const expanded = new Set<string>(symbols);
+  for (const row of fileRows) {
+    for (const s of toArr((row as any).defined_symbols)) {
+      expanded.add(s);
+    }
+  }
+  return [...expanded];
+}
+
+/**
  * Find test files that exercise a set of symbols, using reverse call graph traversal.
  */
 export async function findTests(
@@ -67,7 +115,10 @@ export async function findTests(
   const graphBuilder = new GraphBuilder(vectorDb, projectRoot);
   const testHits = new Map<string, TestHit>(); // key: file+symbol
 
-  for (const symbol of symbols) {
+  // Expand single-symbol targets to include all symbols from the same file
+  const expanded = await expandFileSymbols(symbols, vectorDb, projectRoot);
+
+  for (const symbol of expanded) {
     await walkCallers(symbol, graphBuilder, testHits, 0, depth, new Set());
   }
 

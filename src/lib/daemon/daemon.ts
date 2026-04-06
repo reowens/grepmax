@@ -164,9 +164,13 @@ export class Daemon {
       });
     }
 
-    // 9. Heartbeat
+    // 9. Heartbeat + refresh lockfile mtime to prevent stale detection
     this.heartbeatInterval = setInterval(() => {
       heartbeat(process.pid);
+      try {
+        const now = new Date();
+        fs.utimesSync(PATHS.daemonLockFile, now, now);
+      } catch {}
     }, HEARTBEAT_INTERVAL_MS);
 
     // 10. Idle timeout
