@@ -116,8 +116,7 @@ export class Searcher {
     };
 
     // 1. Aggressive Header Stripping
-    // Prefer display_text (includes breadcrumbs/imports) but strip them for humans
-    const cleanCode = record.display_text || record.content || "";
+    const cleanCode = record.content || "";
 
     // Split by lines
     const lines = cleanCode.split("\n");
@@ -675,7 +674,7 @@ export class Searcher {
       const displayRows = await table
         .query()
         .select([
-          "id", "display_text", "defined_symbols", "imports", "exports",
+          "id", "defined_symbols", "imports", "exports",
           "summary", "file_skeleton",
         ])
         .where(`id IN (${finalIds.join(",")})`)
@@ -687,7 +686,6 @@ export class Searcher {
       for (const item of diversified) {
         const extra = displayMap.get(item.record.id);
         if (extra) {
-          (item.record as any).display_text = extra.display_text;
           (item.record as any).defined_symbols = extra.defined_symbols;
           (item.record as any).imports = extra.imports;
           (item.record as any).exports = extra.exports;

@@ -93,7 +93,7 @@ def embed_texts(texts: list[str]) -> mx.array:
 
     # Free intermediate tensors and clear Metal GPU cache to prevent memory leak
     del input_ids, attention_mask, outputs, pooled, norms
-    mx.metal.clear_cache()
+    mx.clear_cache()
 
     return normalized
 

@@ -18,6 +18,11 @@ export interface BatchProcessorOptions {
   onActivity?: () => void;
 }
 
+// Fast path-segment check to reject events that leak through FSEvents overflow.
+// Matches /node_modules/, /.git/, /dist/, /build/, /.next/, etc. anywhere in path.
+const IGNORED_PATH_SEGMENTS_RE =
+  /\/(?:node_modules|\.git|\.next|\.nuxt|__pycache__|coverage|\.gmax)\//;
+
 const DEBOUNCE_MS = 2000;
 const MAX_RETRIES = 5;
 const MAX_BATCH_SIZE = 50;
@@ -66,6 +71,9 @@ export class ProjectBatchProcessor {
     const bn = path.basename(absPath).toLowerCase();
     if (!INDEXABLE_EXTENSIONS.has(ext) && !INDEXABLE_EXTENSIONS.has(bn))
       return;
+    // Safety net: reject paths with ignored directory segments.
+    // FSEvents can leak events during overflow before the watcher drops them.
+    if (IGNORED_PATH_SEGMENTS_RE.test(absPath)) return;
     this.pending.set(absPath, event);
     this.onActivity?.();
     this.scheduleBatch();

@@ -10,7 +10,6 @@ import { log, debug, timer, debugEvery } from "../utils/logger";
 import { MetaCache, type MetaEntry } from "../store/meta-cache";
 import type { VectorRecord } from "../store/types";
 import { VectorDB } from "../store/vector-db";
-import { escapeSqlString } from "../utils/filter-builder";
 // isIndexableFile no longer used — extension check inlined for performance
 import { acquireWriterLockWithRetry, type LockHandle } from "../utils/lock";
 import { ensureProjectPaths } from "../utils/project-root";
@@ -42,97 +41,13 @@ type MetaCacheLike = Pick<
 >;
 
 export async function generateSummaries(
-  db: VectorDB,
-  pathPrefix: string,
-  onProgress?: (count: number, total: number) => void,
-  maxChunks?: number,
+  _db: VectorDB,
+  _pathPrefix: string,
+  _onProgress?: (count: number, total: number) => void,
+  _maxChunks?: number,
 ): Promise<{ summarized: number; remaining: number }> {
-  let summarizeChunks: typeof import("../workers/summarize/llm-client").summarizeChunks;
-  try {
-    const mod = await import("../workers/summarize/llm-client");
-    summarizeChunks = mod.summarizeChunks;
-  } catch {
-    return { summarized: 0, remaining: 0 };
-  }
-
-  // Quick availability check
-  const test = await summarizeChunks([
-    { code: "test", language: "ts", file: "test" },
-  ]);
-  if (!test) return { summarized: 0, remaining: 0 };
-
-  const queryLimit = maxChunks ?? 50000;
-  const table = await db.ensureTable();
-  const whereFilter = `path LIKE '${escapeSqlString(pathPrefix)}%' AND (summary IS NULL OR summary = '')`;
-  const PAGE_SIZE = 500;
-  const BATCH_SIZE = 5;
-
-  let summarized = 0;
-  let pageOffset = 0;
-  let totalProcessed = 0;
-  let aborted = false;
-
-  while (totalProcessed < queryLimit) {
-    const pageSize = Math.min(PAGE_SIZE, queryLimit - totalProcessed);
-    const rows = await table
-      .query()
-      .select(["id", "path", "content", "defined_symbols"])
-      .where(whereFilter)
-      .limit(pageSize)
-      .offset(pageOffset)
-      .toArray();
-
-    if (rows.length === 0) break;
-    pageOffset += rows.length;
-    totalProcessed += rows.length;
-
-    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-      const batch = rows.slice(i, i + BATCH_SIZE);
-      const chunks = batch.map((r: any) => {
-        const defs = Array.isArray(r.defined_symbols)
-          ? r.defined_symbols.filter((s: unknown) => typeof s === "string")
-          : typeof r.defined_symbols?.toArray === "function"
-            ? r.defined_symbols.toArray()
-            : [];
-        return {
-          code: String(r.content || ""),
-          language:
-            path.extname(String(r.path || "")).replace(/^\./, "") || "unknown",
-          file: String(r.path || ""),
-          symbols: defs as string[],
-        };
-      });
-
-      const summaries = await summarizeChunks(chunks);
-      if (!summaries) {
-        aborted = true;
-        break;
-      }
-
-      const ids: string[] = [];
-      const values: string[] = [];
-      for (let j = 0; j < batch.length; j++) {
-        if (summaries[j]) {
-          ids.push(String((batch[j] as any).id));
-          values.push(summaries[j]);
-        }
-      }
-
-      if (ids.length > 0) {
-        await db.updateRows(ids, "summary", values);
-        summarized += ids.length;
-      }
-
-      onProgress?.(summarized, totalProcessed);
-    }
-
-    if (aborted) break;
-  }
-
-  const remaining = totalProcessed >= queryLimit
-    ? queryLimit - summarized
-    : 0;
-  return { summarized, remaining };
+  // LLM summarizer disabled — it loads a ~21GB model and runs unsolicited.
+  return { summarized: 0, remaining: 0 };
 }
 
 async function flushBatch(
@@ -568,8 +483,15 @@ export async function initialSync(
         : new Error(String(flushError));
     }
 
-    // Stale cleanup: only remove paths scoped to this project's root
-    const stale = computeStaleFiles(cachedPaths, seenPaths);
+    // Stale cleanup: only remove paths scoped to this project's root.
+    // If MetaCache was cleared (coherence check), fall back to LanceDB paths
+    // so we can still detect orphaned vectors from absorbed/removed sub-projects.
+    let staleSource = cachedPaths;
+    if (staleSource.size === 0 && !dryRun && !shouldSkipCleanup) {
+      log("index", "MetaCache empty — querying LanceDB for stale path detection");
+      staleSource = await vectorDb.getDistinctPathsForPrefix(rootPrefix);
+    }
+    const stale = computeStaleFiles(staleSource, seenPaths);
     if (!dryRun && stale.length > 0 && !shouldSkipCleanup) {
       log("index", `Stale cleanup: ${stale.length} paths`);
       await vectorDb.deletePaths(stale);

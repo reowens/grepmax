@@ -68,7 +68,28 @@ Examples:
         console.log(
           `Absorbing ${children.length} sub-project(s): ${names}`,
         );
+
+        const { ensureDaemonRunning: checkDaemon, sendStreamingCommand: sendCmd } =
+          await import("../lib/utils/daemon-client");
+        const daemonUp = await checkDaemon();
+
         for (const child of children) {
+          if (daemonUp) {
+            // Daemon handles unwatch + vector delete + MetaCache cleanup
+            await sendCmd({ cmd: "remove", root: child.root }, () => {});
+          } else {
+            // Direct mode: delete vectors and MetaCache entries
+            const childPaths = ensureProjectPaths(child.root);
+            const db = new VectorDB(childPaths.lancedbDir);
+            const childPrefix = child.root.endsWith("/") ? child.root : `${child.root}/`;
+            await db.deletePathsWithPrefix(childPrefix);
+            const { MetaCache } = await import("../lib/store/meta-cache");
+            const mc = new MetaCache(childPaths.lmdbPath);
+            const keys = await mc.getKeysWithPrefix(childPrefix);
+            for (const key of keys) mc.delete(key);
+            mc.close();
+            await db.close();
+          }
           removeProject(child.root);
         }
       }

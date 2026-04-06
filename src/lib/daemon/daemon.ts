@@ -47,6 +47,8 @@ export class Daemon {
   private idleInterval: ReturnType<typeof setInterval> | null = null;
   private shuttingDown = false;
   private readonly pendingOps = new Set<string>();
+  private readonly watcherFailCount = new Map<string, number>();
+  private readonly pollIntervals = new Map<string, ReturnType<typeof setInterval>>();
   private readonly projectLocks = new Map<string, Promise<void>>();
   private llmServer: LlmServer | null = null;
   private mlxChild: ChildProcess | null = null;
@@ -82,6 +84,10 @@ export class Daemon {
       this.releaseLock = await lockfile.lock(PATHS.daemonLockFile, {
         retries: 0,
         stale: 120_000,
+        onCompromised: () => {
+          console.error("[daemon] Lock compromised — another daemon took over. Shutting down.");
+          this.shutdown();
+        },
       });
       dbg("daemon", "lock acquired");
     } catch (err) {
@@ -133,7 +139,7 @@ export class Daemon {
     // 7. Register daemon (only after resources are open)
     registerDaemon(process.pid);
 
-    // 7. Subscribe to all registered projects (skip missing directories)
+    // 8. Subscribe to all registered projects (skip missing directories)
     const allProjects = listProjects();
     const indexed = allProjects.filter((p) => p.status === "indexed");
     for (const p of indexed) {
@@ -148,7 +154,7 @@ export class Daemon {
       }
     }
 
-    // 7b. Index pending projects in the background
+    // 8b. Index pending projects in the background
     const pending = allProjects.filter(
       (p) => p.status === "pending" && fs.existsSync(p.root),
     );
@@ -158,12 +164,12 @@ export class Daemon {
       });
     }
 
-    // 8. Heartbeat
+    // 9. Heartbeat
     this.heartbeatInterval = setInterval(() => {
       heartbeat(process.pid);
     }, HEARTBEAT_INTERVAL_MS);
 
-    // 9. Idle timeout
+    // 10. Idle timeout
     this.idleInterval = setInterval(() => {
       if (Date.now() - this.lastActivity > IDLE_TIMEOUT_MS) {
         console.log("[daemon] Idle for 30 minutes, shutting down");
@@ -171,7 +177,7 @@ export class Daemon {
       }
     }, HEARTBEAT_INTERVAL_MS);
 
-    // 10. Socket server
+    // 11. Socket server
     this.server = net.createServer((conn) => {
       dbg("daemon", "client connected");
       let buf = "";
@@ -278,24 +284,8 @@ export class Daemon {
     this.processors.set(root, processor);
 
     // Subscribe with @parcel/watcher — native backend, no polling
-    const sub = await watcher.subscribe(
-      root,
-      (err, events) => {
-        if (err) {
-          console.error(`[daemon:${path.basename(root)}] Watcher error:`, err);
-          return;
-        }
-        for (const event of events) {
-          processor.handleFileEvent(
-            event.type === "delete" ? "unlink" : "change",
-            event.path,
-          );
-        }
-        this.lastActivity = Date.now();
-      },
-      { ignore: WATCHER_IGNORE_GLOBS },
-    );
-    this.subscriptions.set(root, sub);
+    await this.subscribeWatcher(root, processor);
+
 
     registerWatcher({
       pid: process.pid,
@@ -312,6 +302,108 @@ export class Daemon {
 
     this.pendingOps.delete(root);
     console.log(`[daemon] Watching ${root}`);
+  }
+
+  private async subscribeWatcher(root: string, processor: ProjectBatchProcessor): Promise<void> {
+    const name = path.basename(root);
+
+    // Unsubscribe existing watcher if any (e.g. during recovery)
+    const existingSub = this.subscriptions.get(root);
+    if (existingSub) {
+      try { await existingSub.unsubscribe(); } catch {}
+      this.subscriptions.delete(root);
+    }
+
+    const sub = await watcher.subscribe(
+      root,
+      (err, events) => {
+        if (err) {
+          console.error(`[daemon:${name}] Watcher error:`, err);
+          this.recoverWatcher(root, processor);
+          return;
+        }
+        // Watcher is healthy — reset fail counter
+        this.watcherFailCount.delete(root);
+        for (const event of events) {
+          processor.handleFileEvent(
+            event.type === "delete" ? "unlink" : "change",
+            event.path,
+          );
+        }
+        this.lastActivity = Date.now();
+      },
+      { ignore: WATCHER_IGNORE_GLOBS },
+    );
+    this.subscriptions.set(root, sub);
+  }
+
+  private recoverWatcher(root: string, processor: ProjectBatchProcessor): void {
+    const name = path.basename(root);
+    if (this.shuttingDown) return;
+
+    // Debounce: avoid multiple overlapping recovery attempts
+    const recoveryKey = `recover:${root}`;
+    if (this.pendingOps.has(recoveryKey)) return;
+    this.pendingOps.add(recoveryKey);
+
+    const fails = (this.watcherFailCount.get(root) ?? 0) + 1;
+    this.watcherFailCount.set(root, fails);
+
+    const MAX_WATCHER_RETRIES = 3;
+    const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+    if (fails > MAX_WATCHER_RETRIES) {
+      // FSEvents can't handle this project — degrade to periodic catchup scans
+      if (!this.pollIntervals.has(root)) {
+        console.error(`[daemon:${name}] FSEvents unreliable after ${fails} failures — switching to poll mode (${POLL_INTERVAL_MS / 60000}min interval)`);
+        // Unsubscribe the broken watcher
+        const sub = this.subscriptions.get(root);
+        if (sub) {
+          sub.unsubscribe().catch(() => {});
+          this.subscriptions.delete(root);
+        }
+        // Run an immediate catchup, then schedule periodic ones
+        this.catchupScan(root, processor).catch((err) => {
+          console.error(`[daemon:${name}] Poll catchup failed:`, err);
+        });
+        const interval = setInterval(() => {
+          if (this.shuttingDown) return;
+          this.lastActivity = Date.now();
+          this.catchupScan(root, processor).catch((err) => {
+            console.error(`[daemon:${name}] Poll catchup failed:`, err);
+          });
+        }, POLL_INTERVAL_MS);
+        this.pollIntervals.set(root, interval);
+        registerWatcher({
+          pid: process.pid,
+          projectRoot: root,
+          startTime: Date.now(),
+          status: "watching",
+          lastHeartbeat: Date.now(),
+        });
+      }
+      this.pendingOps.delete(recoveryKey);
+      return;
+    }
+
+    // Backoff: wait before re-subscribing (3s, 6s, 12s)
+    const delayMs = 3000 * Math.pow(2, fails - 1);
+    console.error(`[daemon:${name}] Recovering watcher (attempt ${fails}/${MAX_WATCHER_RETRIES}, backoff ${delayMs}ms)...`);
+
+    setTimeout(() => {
+      if (this.shuttingDown) { this.pendingOps.delete(recoveryKey); return; }
+      (async () => {
+        try {
+          await this.subscribeWatcher(root, processor);
+          await this.catchupScan(root, processor);
+          console.log(`[daemon:${name}] Watcher recovered`);
+        } catch (err) {
+          console.error(`[daemon:${name}] Watcher recovery failed:`, err);
+        } finally {
+          this.pendingOps.delete(recoveryKey);
+        }
+      })();
+    }, delayMs);
   }
 
   private async catchupScan(root: string, processor: ProjectBatchProcessor): Promise<void> {
@@ -810,6 +902,12 @@ export class Daemon {
 
     // Stop MLX embed server if we started it
     this.stopMlxServer();
+
+    // Stop poll intervals
+    for (const interval of this.pollIntervals.values()) {
+      clearInterval(interval);
+    }
+    this.pollIntervals.clear();
 
     // Unsubscribe all watchers
     for (const sub of this.subscriptions.values()) {

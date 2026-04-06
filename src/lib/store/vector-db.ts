@@ -258,7 +258,7 @@ export class VectorDB {
       }
       (rec as any).vector = vec;
       (rec as any).colbert = toBuffer(rec.colbert);
-      (rec as any).display_text = rec.display_text || rec.content;
+      (rec as any).display_text = "";
       (rec as any).chunk_index = rec.chunk_index ?? null;
       (rec as any).is_anchor = rec.is_anchor ?? false;
       (rec as any).context_prev = rec.context_prev ?? "";
@@ -465,6 +465,10 @@ export class VectorDB {
   }
 
   async countDistinctFilesForPath(pathPrefix: string): Promise<number> {
+    return (await this.getDistinctPathsForPrefix(pathPrefix)).size;
+  }
+
+  async getDistinctPathsForPrefix(pathPrefix: string): Promise<Set<string>> {
     const table = await this.ensureTable();
     const prefix = pathPrefix.endsWith("/") ? pathPrefix : `${pathPrefix}/`;
     const rows = await table
@@ -476,7 +480,7 @@ export class VectorDB {
     for (const r of rows) {
       unique.add(String(r.path));
     }
-    return unique.size;
+    return unique;
   }
 
   async getStats(): Promise<{ chunks: number; totalBytes: number }> {

@@ -90,7 +90,6 @@ export function heartbeat(pid: number): void {
   for (const { key, value } of db.getRange()) {
     if (value && value.pid === pid) {
       db.put(String(key), { ...value, lastHeartbeat: Date.now() });
-      return;
     }
   }
 }
