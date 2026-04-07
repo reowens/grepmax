@@ -21,7 +21,7 @@ export interface BatchProcessorOptions {
 // Fast path-segment check to reject events that leak through FSEvents overflow.
 // Matches /node_modules/, /.git/, /dist/, /build/, /.next/, etc. anywhere in path.
 const IGNORED_PATH_SEGMENTS_RE =
-  /\/(?:node_modules|\.git|\.next|\.nuxt|__pycache__|coverage|\.gmax)\//;
+  /\/(?:node_modules|\.git|\.next|\.nuxt|__pycache__|coverage|\.gmax|\.venv|venv|site-packages|dist|build|out|target|vendor|\.tox|\.gradle|\.m2)\//;
 
 const DEBOUNCE_MS = 2000;
 const MAX_RETRIES = 5;

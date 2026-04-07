@@ -28,7 +28,16 @@ export const WATCHER_IGNORE_GLOBS: string[] = [
   "__pycache__",
   "coverage",
   "venv",
+  ".venv",
+  "site-packages",
+  ".tox",
+  ".mypy_cache",
+  ".pytest_cache",
   ".next",
+  ".nuxt",
+  ".gradle",
+  ".m2",
+  "vendor",
   "lancedb",
   ".*", // dotfiles
   "**/*.tmp.*", // editor atomic save artifacts
