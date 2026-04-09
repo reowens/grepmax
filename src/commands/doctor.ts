@@ -358,11 +358,12 @@ export const doctor = new Command("doctor")
       }
 
       await db.close();
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
       if (opts.agent) {
-        console.log("index_health\terror=could_not_check");
+        console.log(`index_health\terror=${msg.replace(/\t/g, " ")}`);
       } else {
-        console.log("\nWARN  Could not check index health");
+        console.log(`\nWARN  Could not check index health: ${msg}`);
       }
     }
 

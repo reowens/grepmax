@@ -47,7 +47,9 @@ export class LlmServer {
               if (runningModel) {
                 const configBasename = path.basename(this.config.model);
                 if (runningModel !== configBasename && !configBasename.includes(runningModel) && !runningModel.includes(configBasename)) {
-                  console.log(`[llm] Model mismatch: running "${runningModel}" but config expects "${configBasename}"`);
+                  console.log(`[llm] Model mismatch: running "${runningModel}" but config expects "${configBasename}" — will restart`);
+                  resolve(false);
+                  return;
                 }
               }
             } catch {
@@ -82,6 +84,13 @@ export class LlmServer {
       this.startTime = Date.now();
       this.startIdleWatchdog();
       return;
+    }
+
+    // Kill stale/mismatched server before spawning a new one
+    const existingPid = this.readPid();
+    if (existingPid && this.isAlive(existingPid)) {
+      console.log(`[llm] Stopping existing server (PID: ${existingPid}) before restart`);
+      await this.stop();
     }
 
     // Validate binary
