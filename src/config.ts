@@ -103,6 +103,20 @@ export const PATHS = {
 
 export const MAX_FILE_SIZE_BYTES = 1024 * 1024 * 2; // 2MB limit for indexing
 
+// Disk pressure thresholds — writes are suspended below critical, compaction limited below low
+export const DISK_CRITICAL_BYTES = (() => {
+  const gb = Number.parseFloat(process.env.GMAX_DISK_CRITICAL_GB ?? "5");
+  return (Number.isFinite(gb) && gb > 0 ? gb : 5) * 1024 * 1024 * 1024;
+})();
+
+export const DISK_LOW_BYTES = (() => {
+  const gb = Number.parseFloat(process.env.GMAX_DISK_LOW_GB ?? "20");
+  return (Number.isFinite(gb) && gb > 0 ? gb : 20) * 1024 * 1024 * 1024;
+})();
+
+// Trigger compaction when small (uncompacted) fragment count exceeds this
+export const FRAGMENT_COMPACT_THRESHOLD = 50;
+
 // Extensions we consider for indexing to avoid binary noise and improve relevance.
 export const INDEXABLE_EXTENSIONS: Set<string> = new Set([
   ".ts",

@@ -57,6 +57,7 @@ export async function handleCommand(
           pid: process.pid,
           uptime: daemon.uptime(),
           projects: daemon.listProjects(),
+          diskPressure: daemon.getDiskPressure(),
         };
 
       case "shutdown":

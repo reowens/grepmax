@@ -12,11 +12,20 @@ import {
   Schema,
   Utf8,
 } from "apache-arrow";
-import { CONFIG } from "../../config";
+import { CONFIG, DISK_CRITICAL_BYTES, DISK_LOW_BYTES, FRAGMENT_COMPACT_THRESHOLD } from "../../config";
 import { escapeSqlString } from "../utils/filter-builder";
 import { debug, log, timer } from "../utils/logger";
 import { registerCleanup } from "../utils/cleanup";
 import type { VectorRecord } from "./types";
+
+export type DiskPressureLevel = "ok" | "low" | "critical";
+
+export class DiskPressureError extends Error {
+  constructor(message = "Disk critically low — writes suspended") {
+    super(message);
+    this.name = "DiskPressureError";
+  }
+}
 
 const TABLE_NAME = "chunks";
 
@@ -29,6 +38,16 @@ export class VectorDB {
   private readonly vectorDim: number;
   private maintenanceRunning = false;
   private maintenanceTimer: ReturnType<typeof setInterval> | null = null;
+  diskPressure: DiskPressureLevel = "ok";
+  private lastDiskCheckMs = 0;
+  private lastLoggedPressure: DiskPressureLevel = "ok";
+  private static readonly DISK_CHECK_INTERVAL_MS = 30_000;
+
+  // Write gate: async read-write lock where writes are "readers" (shared)
+  // and compaction is the "writer" (exclusive).
+  private activeWrites = 0;
+  private writeDrainResolve: (() => void) | null = null;
+  private compactingPromise: Promise<void> | null = null;
 
   constructor(
     private lancedbDir: string,
@@ -77,6 +96,84 @@ export class VectorDB {
       this.db = await lancedb.connect(this.lancedbDir);
     }
     return this.db;
+  }
+
+  getAvailableBytes(): number {
+    try {
+      const stats = fs.statfsSync(this.lancedbDir);
+      return stats.bavail * stats.bsize;
+    } catch {
+      return Number.MAX_SAFE_INTEGER; // fail-open
+    }
+  }
+
+  checkDiskPressure(): DiskPressureLevel {
+    const now = Date.now();
+    if (now - this.lastDiskCheckMs < VectorDB.DISK_CHECK_INTERVAL_MS) {
+      return this.diskPressure;
+    }
+    this.lastDiskCheckMs = now;
+
+    const avail = this.getAvailableBytes();
+    let level: DiskPressureLevel;
+    if (avail < DISK_CRITICAL_BYTES) {
+      level = "critical";
+    } else if (avail < DISK_LOW_BYTES) {
+      level = "low";
+    } else {
+      level = "ok";
+    }
+
+    if (level !== this.lastLoggedPressure) {
+      const freeStr = `${(avail / 1024 / 1024 / 1024).toFixed(1)}GB`;
+      if (level === "critical") {
+        log("vectordb", `CRITICAL: disk space critically low (${freeStr} free) — writes suspended`);
+      } else if (level === "low") {
+        log("vectordb", `WARNING: disk space low (${freeStr} free) — compaction limited`);
+      } else if (this.lastLoggedPressure !== "ok") {
+        log("vectordb", `Disk pressure resolved (${freeStr} free) — writes resuming`);
+      }
+      this.lastLoggedPressure = level;
+    }
+
+    this.diskPressure = level;
+    return level;
+  }
+
+  private ensureDiskOk(): void {
+    if (this.checkDiskPressure() === "critical") {
+      throw new DiskPressureError();
+    }
+  }
+
+  /**
+   * Wrap a write operation so it coordinates with compaction.
+   * Multiple writes can proceed concurrently (shared access),
+   * but all writes pause when compaction wants exclusive access.
+   */
+  private async withWriteGate<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.compactingPromise) {
+      await this.compactingPromise;
+    }
+    this.activeWrites++;
+    try {
+      return await fn();
+    } finally {
+      this.activeWrites--;
+      if (this.activeWrites === 0 && this.writeDrainResolve) {
+        this.writeDrainResolve();
+        this.writeDrainResolve = null;
+      }
+    }
+  }
+
+  /** Wait for all in-flight writes to complete before compaction. */
+  private drainWrites(): Promise<void> {
+    if (this.activeWrites === 0) return Promise.resolve();
+    debug("vectordb", `Draining ${this.activeWrites} in-flight write(s) before compaction`);
+    return new Promise<void>((resolve) => {
+      this.writeDrainResolve = resolve;
+    });
   }
 
   private seedRow(): VectorRecord {
@@ -202,6 +299,7 @@ export class VectorDB {
 
   async insertBatch(records: VectorRecord[]): Promise<void> {
     if (!records.length) return;
+    this.ensureDiskOk();
     const table = await this.ensureTable();
 
     const toBuffer = (val: unknown): Buffer => {
@@ -286,7 +384,7 @@ export class VectorDB {
     }
 
     try {
-      await table.add(records);
+      await this.withWriteGate(() => table.add(records));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.toLowerCase().includes("found field not in schema")) {
@@ -334,55 +432,75 @@ export class VectorDB {
   }
 
   async optimize(retries = 5, retentionMs = 0): Promise<void> {
+    if (this.compactingPromise) {
+      debug("vectordb", "Optimize already in progress, skipping");
+      return;
+    }
+
     const table = await this.ensureTable();
     const cutoff = new Date(Date.now() - retentionMs);
 
-    for (let attempt = 1; attempt <= retries; attempt++) {
-      try {
-        const done = timer("vectordb", "optimize");
-        const stats = await table.optimize({
-          cleanupOlderThan: cutoff,
-          deleteUnverified: true,
-        });
-        done();
+    let resolveCompacting!: () => void;
+    this.compactingPromise = new Promise<void>((r) => { resolveCompacting = r; });
 
-        const { compaction, prune } = stats;
-        if (
-          compaction.fragmentsRemoved > 0 ||
-          prune.oldVersionsRemoved > 0 ||
-          prune.bytesRemoved > 0
-        ) {
-          log(
-            "vectordb",
-            `Compacted: ${compaction.fragmentsRemoved} frags → ${compaction.fragmentsAdded}, ` +
-              `pruned ${prune.oldVersionsRemoved} versions, ` +
-              `freed ${(prune.bytesRemoved / 1024 / 1024).toFixed(1)}MB`,
-          );
-        } else {
-          debug("vectordb", "Optimize: nothing to compact or prune");
-        }
-        return;
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        if (msg.includes("Nothing to do")) {
-          debug("vectordb", "Optimize: nothing to do");
+    try {
+      for (let attempt = 1; attempt <= retries; attempt++) {
+        await this.drainWrites();
+
+        try {
+          const done = timer("vectordb", "optimize");
+          const stats = await table.optimize({
+            cleanupOlderThan: cutoff,
+            deleteUnverified: true,
+          });
+          done();
+
+          const { compaction, prune } = stats;
+          if (
+            compaction.fragmentsRemoved > 0 ||
+            prune.oldVersionsRemoved > 0 ||
+            prune.bytesRemoved > 0
+          ) {
+            log(
+              "vectordb",
+              `Compacted: ${compaction.fragmentsRemoved} frags → ${compaction.fragmentsAdded}, ` +
+                `pruned ${prune.oldVersionsRemoved} versions, ` +
+                `freed ${(prune.bytesRemoved / 1024 / 1024).toFixed(1)}MB`,
+            );
+          } else {
+            debug("vectordb", "Optimize: nothing to compact or prune");
+          }
+          return;
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          if (msg.includes("Nothing to do")) {
+            debug("vectordb", "Optimize: nothing to do");
+            return;
+          }
+          // ENOSPC: return immediately — retrying will only make things worse
+          if (msg.includes("No space left on device") || msg.includes("os error 28")) {
+            log("vectordb", `Optimize failed (ENOSPC): disk full — skipping retries`);
+            return;
+          }
+          if (
+            attempt < retries &&
+            (msg.includes("conflict") || msg.includes("Retryable"))
+          ) {
+            const delay = 1000 * 2 ** (attempt - 1);
+            log(
+              "vectordb",
+              `Optimize conflict (attempt ${attempt}/${retries}), retrying in ${delay}ms`,
+            );
+            await new Promise((r) => setTimeout(r, delay));
+            continue;
+          }
+          log("vectordb", `Optimize failed: ${msg}`);
           return;
         }
-        if (
-          attempt < retries &&
-          (msg.includes("conflict") || msg.includes("Retryable"))
-        ) {
-          const delay = 1000 * 2 ** (attempt - 1);
-          log(
-            "vectordb",
-            `Optimize conflict (attempt ${attempt}/${retries}), retrying in ${delay}ms`,
-          );
-          await new Promise((r) => setTimeout(r, delay));
-          continue;
-        }
-        log("vectordb", `Optimize failed: ${msg}`);
-        return;
       }
+    } finally {
+      this.compactingPromise = null;
+      resolveCompacting();
     }
   }
 
@@ -398,19 +516,33 @@ export class VectorDB {
     }
     this.maintenanceRunning = true;
     try {
+      const pressure = this.checkDiskPressure();
+
+      if (pressure === "critical") {
+        const freeGb = (this.getAvailableBytes() / 1024 / 1024 / 1024).toFixed(1);
+        log("vectordb", `Maintenance skipped: disk critically low (${freeGb}GB free)`);
+        return;
+      }
+
       await this.createFTSIndex();
+
+      if (pressure === "low") {
+        log("vectordb", `Low disk — single-pass optimize (no bloat retry)`);
+        await this.optimize(1);
+        return;
+      }
+
+      // Normal maintenance: full optimize + bloat check
       await this.optimize();
 
-      // Check for bloat after first optimize pass — if fragments were locked
-      // by concurrent readers, optimize succeeds but skips them. A second pass
-      // after a brief pause catches what the first couldn't.
       const table = await this.ensureTable();
       const stats = await table.stats();
       const diskSize = this.getDirectorySize(this.lancedbDir);
       const logicalSize = stats.totalBytes;
       const bloatRatio = logicalSize > 0 ? diskSize / logicalSize : 0;
 
-      if (bloatRatio > 2.0) {
+      // Only retry if disk is still ok after optimize (don't spiral)
+      if (bloatRatio > 2.0 && this.checkDiskPressure() === "ok") {
         log(
           "vectordb",
           `Bloat detected after optimize: ${(diskSize / 1024 / 1024).toFixed(0)}MB disk vs ${(logicalSize / 1024 / 1024).toFixed(0)}MB logical (${bloatRatio.toFixed(1)}x) — retrying`,
@@ -421,6 +553,32 @@ export class VectorDB {
     } finally {
       this.maintenanceRunning = false;
     }
+  }
+
+  async compactIfNeeded(threshold = FRAGMENT_COMPACT_THRESHOLD): Promise<boolean> {
+    if (this.maintenanceRunning) return false;
+    if (this.checkDiskPressure() !== "ok") return false;
+
+    try {
+      const table = await this.ensureTable();
+      const stats = await table.stats();
+      if (stats.fragmentStats.numSmallFragments > threshold) {
+        log(
+          "vectordb",
+          `Fragment threshold exceeded (${stats.fragmentStats.numSmallFragments} > ${threshold}) — compacting`,
+        );
+        this.maintenanceRunning = true;
+        try {
+          await this.optimize(2);
+        } finally {
+          this.maintenanceRunning = false;
+        }
+        return true;
+      }
+    } catch (err) {
+      debug("vectordb", `compactIfNeeded check failed: ${err}`);
+    }
+    return false;
   }
 
   private getDirectorySize(dirPath: string): number {
@@ -500,24 +658,27 @@ export class VectorDB {
 
   async deletePaths(paths: string[]): Promise<void> {
     if (!paths.length) return;
+    this.ensureDiskOk();
     const table = await this.ensureTable();
     const unique = Array.from(new Set(paths));
     const batchSize = 500;
-    for (let i = 0; i < unique.length; i += batchSize) {
-      const slice = unique.slice(i, i + batchSize);
-      const values = slice.map((p) => `'${escapeSqlString(p)}'`).join(",");
-      const where = `path IN (${values})`;
-      // Skip no-op deletes to avoid creating empty LanceDB versions
-      const existing = await table
-        .query()
-        .select(["id"])
-        .where(where)
-        .limit(1)
-        .toArray();
-      if (existing.length > 0) {
-        await table.delete(where);
+    await this.withWriteGate(async () => {
+      for (let i = 0; i < unique.length; i += batchSize) {
+        const slice = unique.slice(i, i + batchSize);
+        const values = slice.map((p) => `'${escapeSqlString(p)}'`).join(",");
+        const where = `path IN (${values})`;
+        // Skip no-op deletes to avoid creating empty LanceDB versions
+        const existing = await table
+          .query()
+          .select(["id"])
+          .where(where)
+          .limit(1)
+          .toArray();
+        if (existing.length > 0) {
+          await table.delete(where);
+        }
       }
-    }
+    });
   }
 
   async updateRows(
@@ -527,13 +688,15 @@ export class VectorDB {
   ): Promise<void> {
     if (!ids.length) return;
     const table = await this.ensureTable();
-    for (let i = 0; i < ids.length; i++) {
-      const escaped = escapeSqlString(ids[i]);
-      await table.update({
-        where: `id = '${escaped}'`,
-        values: { [field]: values[i] ?? "" },
-      });
-    }
+    await this.withWriteGate(async () => {
+      for (let i = 0; i < ids.length; i++) {
+        const escaped = escapeSqlString(ids[i]);
+        await table.update({
+          where: `id = '${escaped}'`,
+          values: { [field]: values[i] ?? "" },
+        });
+      }
+    });
   }
 
   async deletePathsExcludingIds(
@@ -541,6 +704,7 @@ export class VectorDB {
     excludeIds: string[],
   ): Promise<void> {
     if (!paths.length) return;
+    this.ensureDiskOk();
     const table = await this.ensureTable();
     const unique = Array.from(new Set(paths));
     const batchSize = 500;
@@ -548,27 +712,30 @@ export class VectorDB {
       excludeIds.length > 0
         ? ` AND id NOT IN (${excludeIds.map((id) => `'${escapeSqlString(id)}'`).join(",")})`
         : "";
-    for (let i = 0; i < unique.length; i += batchSize) {
-      const slice = unique.slice(i, i + batchSize);
-      const values = slice
-        .map((p) => `'${escapeSqlString(p)}'`)
-        .join(",");
-      const where = `path IN (${values})${idExclusion}`;
-      const existing = await table
-        .query()
-        .select(["id"])
-        .where(where)
-        .limit(1)
-        .toArray();
-      if (existing.length > 0) {
-        await table.delete(where);
+    await this.withWriteGate(async () => {
+      for (let i = 0; i < unique.length; i += batchSize) {
+        const slice = unique.slice(i, i + batchSize);
+        const values = slice
+          .map((p) => `'${escapeSqlString(p)}'`)
+          .join(",");
+        const where = `path IN (${values})${idExclusion}`;
+        const existing = await table
+          .query()
+          .select(["id"])
+          .where(where)
+          .limit(1)
+          .toArray();
+        if (existing.length > 0) {
+          await table.delete(where);
+        }
       }
-    }
+    });
   }
 
   async deletePathsWithPrefix(prefix: string): Promise<void> {
+    this.ensureDiskOk();
     const table = await this.ensureTable();
-    await table.delete(`path LIKE '${escapeSqlString(prefix)}%'`);
+    await this.withWriteGate(() => table.delete(`path LIKE '${escapeSqlString(prefix)}%'`));
   }
 
   async drop(): Promise<void> {

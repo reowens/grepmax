@@ -5,8 +5,9 @@ import type { VectorRecord } from "../store/types";
 import type { VectorDB } from "../store/vector-db";
 import { INDEXABLE_EXTENSIONS } from "../../config";
 import { isFileCached } from "../utils/cache-check";
-import { isIndexableFile } from "../utils/file-utils";
+import { computeBufferHash, isIndexableFile } from "../utils/file-utils";
 import { log } from "../utils/logger";
+import { DiskPressureError } from "../store/vector-db";
 import { getWorkerPool } from "../workers/pool";
 import { computeRetryAction } from "./watcher-batch";
 
@@ -92,6 +93,15 @@ export class ProjectBatchProcessor {
 
   private async processBatch(): Promise<void> {
     if (this.closed || this.processing || this.pending.size === 0) return;
+
+    // Circuit breaker: don't attempt writes when disk is critically low
+    if (this.vectorDb.diskPressure === "critical") {
+      log(this.wtag, "Disk critically low — deferring batch processing");
+      if (this.debounceTimer) clearTimeout(this.debounceTimer);
+      this.debounceTimer = setTimeout(() => this.processBatch(), 60_000);
+      return;
+    }
+
     this.processing = true;
 
     const batchAc = new AbortController();
@@ -117,6 +127,7 @@ export class ProjectBatchProcessor {
     const start = Date.now();
     let reindexed = 0;
     let processed = 0;
+    let backoffOverrideMs = 0;
 
     try {
       // No lock needed — daemon is the single writer to LanceDB/MetaCache
@@ -150,6 +161,17 @@ export class ProjectBatchProcessor {
           const cached = this.metaCache.get(absPath);
           if (isFileCached(cached, stats)) {
             continue;
+          }
+
+          // Fast path: if only mtime changed but size matches and we have a hash,
+          // verify in-process instead of dispatching to a worker (~220ms saved).
+          if (cached && cached.hash && cached.size === stats.size) {
+            const buf = await fs.promises.readFile(absPath);
+            const hash = computeBufferHash(buf);
+            if (hash === cached.hash) {
+              metaUpdates.set(absPath, { ...cached, mtimeMs: stats.mtimeMs });
+              continue;
+            }
           }
 
           const result = await pool.processFile({
@@ -241,37 +263,60 @@ export class ProjectBatchProcessor {
       for (const absPath of batch.keys()) {
         this.retryCount.delete(absPath);
       }
-    } catch (err) {
-      console.error(`[${this.wtag}] Batch processing failed:`, err);
 
-      const { requeued, dropped, backoffMs } = computeRetryAction(
-        batch,
-        this.retryCount,
-        MAX_RETRIES,
-        false,
-        0,
-        DEBOUNCE_MS,
-      );
-      for (const [absPath, event] of requeued) {
-        if (!this.pending.has(absPath)) {
-          this.pending.set(absPath, event);
+      // Trigger compaction if fragments are accumulating
+      if (reindexed > 0) {
+        try {
+          await this.vectorDb.compactIfNeeded();
+        } catch (e) {
+          log(this.wtag, `Post-batch compaction failed: ${e}`);
         }
       }
-      if (dropped > 0) {
-        console.warn(
-          `[${this.wtag}] Dropped ${dropped} file(s) after ${MAX_RETRIES} failed retries`,
+    } catch (err) {
+      // Disk pressure: requeue without counting as retries (not the file's fault)
+      if (err instanceof DiskPressureError) {
+        for (const [absPath, event] of batch) {
+          if (!this.pending.has(absPath)) {
+            this.pending.set(absPath, event);
+          }
+        }
+        log(this.wtag, "Disk pressure — requeued batch, will retry in 60s");
+        // Use batchTimeoutMs slot to signal finally not to reschedule at 2s
+        backoffOverrideMs = 60_000;
+      } else {
+        console.error(`[${this.wtag}] Batch processing failed:`, err);
+
+        const { requeued, dropped, backoffMs } = computeRetryAction(
+          batch,
+          this.retryCount,
+          MAX_RETRIES,
+          false,
+          0,
+          DEBOUNCE_MS,
         );
-      }
-      if (this.pending.size > 0) {
-        if (this.debounceTimer) clearTimeout(this.debounceTimer);
-        this.debounceTimer = setTimeout(() => this.processBatch(), backoffMs);
+        for (const [absPath, event] of requeued) {
+          if (!this.pending.has(absPath)) {
+            this.pending.set(absPath, event);
+          }
+        }
+        if (dropped > 0) {
+          console.warn(
+            `[${this.wtag}] Dropped ${dropped} file(s) after ${MAX_RETRIES} failed retries`,
+          );
+        }
+        backoffOverrideMs = this.pending.size > 0 ? backoffMs : 0;
       }
     } finally {
       clearTimeout(batchTimeout);
       this.currentBatchAc = null;
       this.processing = false;
       if (this.pending.size > 0) {
-        this.scheduleBatch();
+        if (backoffOverrideMs > 0) {
+          if (this.debounceTimer) clearTimeout(this.debounceTimer);
+          this.debounceTimer = setTimeout(() => this.processBatch(), backoffOverrideMs);
+        } else {
+          this.scheduleBatch();
+        }
       }
     }
   }

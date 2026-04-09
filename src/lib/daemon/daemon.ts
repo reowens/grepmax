@@ -28,7 +28,7 @@ import { isDaemonRunning } from "../utils/daemon-client";
 import { isProcessRunning } from "../utils/watcher-store";
 import { readGlobalConfig } from "../index/index-config";
 import { openRotatedLog } from "../utils/log-rotate";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, execSync, type ChildProcess } from "node:child_process";
 import * as http from "node:http";
 
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
@@ -466,6 +466,13 @@ export class Daemon {
           }
           processor.handleFileEvent("change", absPath);
           queued++;
+
+          // Throttle: pause periodically during large catchup scans to let the
+          // batch processor drain and compaction run between bursts.
+          if (queued % 500 === 0) {
+            dbg("catchup", `${path.basename(root)}: throttle pause at ${queued} queued`);
+            await new Promise(r => setTimeout(r, 5_000));
+          }
         } else {
           skipped++;
         }
@@ -554,6 +561,10 @@ export class Daemon {
 
   uptime(): number {
     return Math.floor((Date.now() - this.startTime) / 1000);
+  }
+
+  getDiskPressure(): string {
+    return this.vectorDb?.diskPressure ?? "unknown";
   }
 
   /** Reset idle timer — call during long-running operations. */
@@ -842,10 +853,30 @@ export class Daemon {
     });
   }
 
+  private getPortPid(port: number): number | null {
+    try {
+      const out = execSync(`lsof -ti :${port}`, { timeout: 5000 }).toString().trim();
+      const pid = parseInt(out.split("\n")[0], 10);
+      return Number.isFinite(pid) ? pid : null;
+    } catch {
+      return null;
+    }
+  }
+
   private async ensureMlxServer(mlxModel?: string): Promise<void> {
     if (await this.isMlxServerUp()) {
       console.log("[daemon] MLX embed server already running");
       return;
+    }
+
+    // Kill stale process holding the port (orphaned from a previous daemon)
+    const port = parseInt(process.env.MLX_EMBED_PORT || "8100", 10);
+    const stalePid = this.getPortPid(port);
+    if (stalePid) {
+      console.log(`[daemon] Killing stale MLX process on port ${port} (PID: ${stalePid})`);
+      await killProcess(stalePid);
+      // Brief pause for OS to release the port
+      await new Promise((r) => setTimeout(r, 500));
     }
 
     // Find mlx-embed-server/server.py relative to the grepmax package

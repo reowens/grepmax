@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Command } from "commander";
-import { MODEL_IDS, MODEL_TIERS, PATHS } from "../config";
+import { DISK_CRITICAL_BYTES, DISK_LOW_BYTES, MODEL_IDS, MODEL_TIERS, PATHS } from "../config";
 import { readGlobalConfig } from "../lib/index/index-config";
 import { gracefulExit } from "../lib/utils/exit";
 import { isProcessAlive, parseLock, removeLock } from "../lib/utils/lock";
@@ -203,12 +203,23 @@ export const doctor = new Command("doctor")
       if (numSmallFragments > 10) needsOptimize = true;
       if (versions.length > 50) needsOptimize = true;
 
+      // Disk space check
+      let availBytes = 0;
+      let diskLevel = "ok";
+      try {
+        const diskStats = fs.statfsSync(PATHS.lancedbDir);
+        availBytes = diskStats.bavail * diskStats.bsize;
+        diskLevel = availBytes < DISK_CRITICAL_BYTES ? "CRITICAL" : availBytes < DISK_LOW_BYTES ? "LOW" : "ok";
+      } catch {}
+
       if (opts.agent) {
         const fields = [
           "index_health",
           `rows=${totalChunks}`,
           `logical=${formatSize(logicalSize)}`,
           `disk=${formatSize(diskSize)}`,
+          `free=${formatSize(availBytes)}`,
+          `disk_pressure=${diskLevel}`,
           `fragments=${numFragments}`,
           `small=${numSmallFragments}`,
           `versions=${versions.length}`,
@@ -219,6 +230,15 @@ export const doctor = new Command("doctor")
         console.log(fields.join("\t"));
       } else {
         console.log("\nIndex Health\n");
+
+        // Disk space
+        if (diskLevel !== "ok") {
+          console.log(
+            `WARN  Disk: ${formatSize(availBytes)} available (${diskLevel})`,
+          );
+        } else {
+          console.log(`ok  Disk: ${formatSize(availBytes)} available`);
+        }
 
         // Storage
         if (bloatRatio > 2.0) {

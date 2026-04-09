@@ -219,7 +219,9 @@ export async function initialSync(
     const batch: VectorRecord[] = [];
     const pendingMeta = new Map<string, MetaEntry>();
     const pendingDeletes = new Set<string>();
-    const batchLimit = Math.max(1, CONFIG.EMBED_BATCH_SIZE);
+    // Use a large flush batch to reduce LanceDB fragment count during sync.
+    // 24 vectors/flush creates ~834 fragments for 10K chunks; 2000 creates ~5.
+    const batchLimit = 2000;
     const maxConcurrency = Math.max(1, CONFIG.WORKER_THREADS);
 
     const activeTasks: Promise<void>[] = [];
@@ -233,6 +235,7 @@ export async function initialSync(
     let flushError: unknown;
     let flushPromise: Promise<void> | null = null;
     let flushLock: Promise<void> = Promise.resolve();
+    let flushCount = 0;
 
     const markProgress = (filePath: string) => {
       onProgress?.({ processed, indexed, total, filePath });
@@ -268,6 +271,11 @@ export async function initialSync(
         try {
           await currentFlush;
           debug("index", `flush done: ${Date.now() - flushStart}ms`);
+          flushCount++;
+          // Periodically compact during sync to prevent fragment accumulation
+          if (flushCount % 10 === 0) {
+            await vectorDb.compactIfNeeded(30);
+          }
         } catch (err) {
           debug("index", `flush error: ${err}`);
           flushError = err;
