@@ -7,6 +7,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import lockfile from "proper-lockfile";
 import { PATHS } from "../../config";
 
 export interface ProjectEntry {
@@ -38,15 +39,33 @@ function saveRegistry(entries: ProjectEntry[]): void {
   fs.renameSync(tmp, REGISTRY_PATH);
 }
 
-export function registerProject(entry: ProjectEntry): void {
-  const entries = loadRegistry();
-  const idx = entries.findIndex((e) => e.root === entry.root);
-  if (idx >= 0) {
-    entries[idx] = entry;
-  } else {
-    entries.push(entry);
+function withRegistryLock<T>(fn: () => T): T {
+  // Ensure the directory exists for the lock target
+  fs.mkdirSync(path.dirname(REGISTRY_PATH), { recursive: true });
+  // Ensure the file exists (lockSync needs it)
+  if (!fs.existsSync(REGISTRY_PATH)) {
+    fs.writeFileSync(REGISTRY_PATH, "[]\n");
   }
-  saveRegistry(entries);
+  let release: (() => void) | undefined;
+  try {
+    release = lockfile.lockSync(REGISTRY_PATH, { stale: 10_000, retries: { retries: 3, minTimeout: 100 } });
+    return fn();
+  } finally {
+    try { release?.(); } catch {}
+  }
+}
+
+export function registerProject(entry: ProjectEntry): void {
+  withRegistryLock(() => {
+    const entries = loadRegistry();
+    const idx = entries.findIndex((e) => e.root === entry.root);
+    if (idx >= 0) {
+      entries[idx] = entry;
+    } else {
+      entries.push(entry);
+    }
+    saveRegistry(entries);
+  });
 }
 
 export function listProjects(): ProjectEntry[] {
@@ -58,8 +77,10 @@ export function getProject(root: string): ProjectEntry | undefined {
 }
 
 export function removeProject(root: string): void {
-  const entries = loadRegistry().filter((e) => e.root !== root);
-  saveRegistry(entries);
+  withRegistryLock(() => {
+    const entries = loadRegistry().filter((e) => e.root !== root);
+    saveRegistry(entries);
+  });
 }
 
 /**
