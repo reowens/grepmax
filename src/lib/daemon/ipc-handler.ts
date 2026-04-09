@@ -1,7 +1,17 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
 import type * as net from "node:net";
 import type { DaemonResponse } from "../utils/daemon-client";
 import type { Daemon } from "./daemon";
 import { debug } from "../utils/logger";
+
+const DAEMON_VERSION = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, "../../../package.json"), "utf-8")).version;
+  } catch {
+    return "unknown";
+  }
+})();
 
 /**
  * Write a streaming progress line to the IPC connection.
@@ -35,7 +45,7 @@ export async function handleCommand(
     debug("daemon", `ipc cmd=${cmd.cmd}${cmd.root ? ` root=${cmd.root}` : ""}`);
     switch (cmd.cmd) {
       case "ping":
-        return { ok: true, pid: process.pid, uptime: daemon.uptime() };
+        return { ok: true, pid: process.pid, uptime: daemon.uptime(), version: DAEMON_VERSION };
 
       case "watch": {
         const root = String(cmd.root || "");

@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import { spawn } from "node:child_process";
 import * as path from "node:path";
 import { Command } from "commander";
@@ -45,11 +46,22 @@ export const watch = new Command("watch")
       }
 
       if (options.background) {
-        // Skip spawn if daemon already running — prevents process accumulation
-        // when SessionStart hook fires on every session/clear/resume
-        const { isDaemonRunning } = await import("../lib/utils/daemon-client");
+        // Skip spawn if daemon already running at the same version.
+        // If version mismatches (e.g. after npm install -g), shut down the old
+        // daemon so we can start a fresh one with the new code.
+        const { isDaemonRunning, sendDaemonCommand } = await import("../lib/utils/daemon-client");
         if (await isDaemonRunning()) {
-          process.exit(0);
+          const cliVersion = JSON.parse(
+            fs.readFileSync(path.join(__dirname, "../../package.json"), "utf-8"),
+          ).version;
+          const resp = await sendDaemonCommand({ cmd: "ping" });
+          if (resp.version && resp.version === cliVersion) {
+            process.exit(0);
+          }
+          console.log(`Daemon version mismatch (${resp.version} → ${cliVersion}), restarting...`);
+          await sendDaemonCommand({ cmd: "shutdown" });
+          // Brief wait for old daemon to release socket/lock
+          await new Promise((r) => setTimeout(r, 2000));
         }
 
         const logFile = path.join(PATHS.logsDir, "daemon.log");
