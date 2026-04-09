@@ -300,9 +300,8 @@ export class ProjectBatchProcessor {
           }
         }
         if (dropped > 0) {
-          console.warn(
-            `[${this.wtag}] Dropped ${dropped} file(s) after ${MAX_RETRIES} failed retries`,
-          );
+          const droppedPaths = [...batch.keys()].filter(p => !requeued.has(p));
+          log(this.wtag, `Dropped ${dropped} file(s) after ${MAX_RETRIES} retries: ${droppedPaths.map(p => path.basename(p)).join(", ")}`);
         }
         backoffOverrideMs = this.pending.size > 0 ? backoffMs : 0;
       }

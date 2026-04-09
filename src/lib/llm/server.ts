@@ -236,6 +236,12 @@ export class LlmServer {
     const checkInterval = Math.min(DEFAULT_IDLE_CHECK_INTERVAL_MS, timeoutMs);
 
     this.idleTimer = setInterval(async () => {
+      const pid = this.readPid();
+      if (pid && !this.isAlive(pid)) {
+        console.error("[llm] Server crashed (stale PID) — cleaning up");
+        this.cleanupPidFile();
+        return;
+      }
       if (this.lastRequestTime === 0) return;
       if (Date.now() - this.lastRequestTime > timeoutMs) {
         console.log(`[llm] Server idle for ${this.config.idleTimeoutMin}min, shutting down`);

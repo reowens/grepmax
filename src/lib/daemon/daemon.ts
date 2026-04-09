@@ -27,7 +27,7 @@ import { log as dlog, debug as dbg } from "../utils/logger";
 import { isDaemonRunning } from "../utils/daemon-client";
 import { isProcessRunning } from "../utils/watcher-store";
 import { readGlobalConfig } from "../index/index-config";
-import { openRotatedLog } from "../utils/log-rotate";
+import { openRotatedLog, rotateLogFds } from "../utils/log-rotate";
 import { spawn, execSync, type ChildProcess } from "node:child_process";
 import * as http from "node:http";
 
@@ -49,6 +49,8 @@ export class Daemon {
   private readonly pendingOps = new Set<string>();
   private readonly watcherFailCount = new Map<string, number>();
   private readonly pollIntervals = new Map<string, ReturnType<typeof setInterval>>();
+  private readonly lastOverflowMs = new Map<string, number>();
+  private readonly lastCatchupEndMs = new Map<string, number>();
   private readonly projectLocks = new Map<string, Promise<void>>();
   private llmServer: LlmServer | null = null;
   private mlxChild: ChildProcess | null = null;
@@ -212,9 +214,9 @@ export class Daemon {
       }
     }
 
-    // 8b. Index pending projects in the background
+    // 8b. Index pending/error projects in the background
     const pending = allProjects.filter(
-      (p) => p.status === "pending" && fs.existsSync(p.root),
+      (p) => (p.status === "pending" || p.status === "error") && fs.existsSync(p.root),
     );
     for (const p of pending) {
       this.indexPendingProject(p.root).catch((err) => {
@@ -229,6 +231,7 @@ export class Daemon {
         const now = new Date();
         fs.utimesSync(PATHS.daemonLockFile, now, now);
       } catch {}
+      rotateLogFds(path.join(PATHS.logsDir, "daemon.log"));
     }, HEARTBEAT_INTERVAL_MS);
 
     // 10. Idle timeout
@@ -334,8 +337,11 @@ export class Daemon {
           this.recoverWatcher(root, processor);
           return;
         }
-        // Watcher is healthy — reset fail counter
-        this.watcherFailCount.delete(root);
+        // Only reset fail counter after sustained health (5min since last overflow)
+        const lastOverflow = this.lastOverflowMs.get(root) ?? 0;
+        if (Date.now() - lastOverflow > 5 * 60 * 1000) {
+          this.watcherFailCount.delete(root);
+        }
         for (const event of events) {
           processor.handleFileEvent(
             event.type === "delete" ? "unlink" : "change",
@@ -360,6 +366,7 @@ export class Daemon {
 
     const fails = (this.watcherFailCount.get(root) ?? 0) + 1;
     this.watcherFailCount.set(root, fails);
+    this.lastOverflowMs.set(root, Date.now());
 
     const MAX_WATCHER_RETRIES = 3;
     const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -407,7 +414,13 @@ export class Daemon {
       (async () => {
         try {
           await this.subscribeWatcher(root, processor);
-          await this.catchupScan(root, processor);
+          const lastCatchup = this.lastCatchupEndMs.get(root) ?? 0;
+          const CATCHUP_COOLDOWN_MS = 60_000;
+          if (Date.now() - lastCatchup < CATCHUP_COOLDOWN_MS) {
+            console.log(`[daemon:${name}] Skipping catchup scan (last completed ${Math.round((Date.now() - lastCatchup) / 1000)}s ago)`);
+          } else {
+            await this.catchupScan(root, processor);
+          }
           console.log(`[daemon:${name}] Watcher recovered`);
         } catch (err) {
           console.error(`[daemon:${name}] Watcher recovery failed:`, err);
@@ -495,6 +508,8 @@ export class Daemon {
       if (purged > 0) parts.push(`${purged} deleted`);
       console.log(`[daemon:${path.basename(root)}] Catchup: ${parts.join(", ")} file(s) while offline`);
     }
+
+    this.lastCatchupEndMs.set(root, Date.now());
   }
 
   private async indexPendingProject(root: string): Promise<void> {
@@ -528,6 +543,10 @@ export class Daemon {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[daemon] indexPendingProject failed for ${name} after ${Date.now() - start}ms: ${msg}`);
+        const proj = getProject(root);
+        if (proj) {
+          registerProject({ ...proj, status: "error" });
+        }
       } finally {
         this.vectorDb?.resumeMaintenanceLoop();
       }
@@ -547,6 +566,8 @@ export class Daemon {
     }
 
     this.processors.delete(root);
+    this.lastOverflowMs.delete(root);
+    this.lastCatchupEndMs.delete(root);
     unregisterWatcherByRoot(root);
 
     console.log(`[daemon] Unwatched ${root}`);

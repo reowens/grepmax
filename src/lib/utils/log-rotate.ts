@@ -23,3 +23,31 @@ export function openRotatedLog(
 
   return fs.openSync(logPath, "a");
 }
+
+/**
+ * Mid-session log rotation for daemon processes.
+ * Renames the log to .prev and reopens stdout/stderr (fd 1, 2) to a fresh file.
+ * Safe on Unix: synchronous close/open guarantees fd 1 and 2 are reassigned.
+ */
+export function rotateLogFds(
+  logPath: string,
+  maxBytes: number = MAX_LOG_BYTES,
+): boolean {
+  try {
+    const stat = fs.statSync(logPath);
+    if (stat.size <= maxBytes) return false;
+  } catch {
+    return false;
+  }
+
+  try {
+    fs.renameSync(logPath, `${logPath}.prev`);
+    fs.closeSync(1);
+    fs.closeSync(2);
+    fs.openSync(logPath, "a"); // gets fd 1 (stdout)
+    fs.openSync(logPath, "a"); // gets fd 2 (stderr)
+    return true;
+  } catch {
+    return false;
+  }
+}

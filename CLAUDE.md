@@ -237,28 +237,6 @@ curl -s http://127.0.0.1:8100/health               # MLX embed server up?
 
 ---
 
-## Known Issues
-
-### Critical
-
-1. ~~Daemon doesn't start MLX embed server.~~ **FIXED.** Daemon now starts MLX in `ensureMlxServer()` (daemon.ts:855) and kills stale orphaned processes on the port before spawning.
-
-2. **Error-status projects are never retried.** If `indexPendingProject` fails, the project stays in `"error"` status forever. The daemon only watches `"indexed"` and indexes `"pending"` — `"error"` is ignored. Requires manual `gmax add` or editing projects.json.
-
-### Moderate
-
-3. ~~Batch processor still sends unchanged files to workers.~~ **FIXED.** Batch processor now has the same in-process hash check as the catchup scan (`batch-processor.ts:167-174`). Files with identical content but different mtime are resolved in <1ms without worker dispatch.
-
-4. **LLM server crash not handled.** If llama-server dies, PID file still points to dead process. `ensure()` checks `isAlive()` via kill(pid, 0) but doesn't restart on failure. No automatic recovery.
-
-5. **No dead-letter tracking.** Files that repeatedly fail processing are dropped after 5 retries with a console.warn but not tracked anywhere persistent.
-
-### Minor
-
-6. **MLX availability cached 30s.** Workers cache `mlxAvailable=false` for 30s. If the embed server starts, workers won't notice for up to 30s. `resetMlxCache()` exists but daemon never calls it.
-
-7. **Daemon.ts has duplicate step numbering.** Lines 121 and 124 are both labeled `// 7.` — steps 8-12 are misnumbered.
-
 ---
 
 ## File Index
