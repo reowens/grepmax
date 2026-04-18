@@ -24,10 +24,10 @@ import {
 import { LlmServer } from "../llm/server";
 import { handleCommand, writeProgress, writeDone } from "./ipc-handler";
 import { log as dlog, debug as dbg } from "../utils/logger";
-import { isDaemonRunning } from "../utils/daemon-client";
-import { isProcessRunning } from "../utils/watcher-store";
+import { isDaemonRunning, isDaemonHeartbeatFresh } from "../utils/daemon-client";
 import { readGlobalConfig } from "../index/index-config";
 import { openRotatedLog, rotateLogFds } from "../utils/log-rotate";
+import { destroyWorkerPool, isWorkerPoolInitialized } from "../workers/pool";
 import { spawn, execSync, type ChildProcess } from "node:child_process";
 import * as http from "node:http";
 
@@ -59,25 +59,8 @@ export class Daemon {
   async start(): Promise<void> {
     process.title = "gmax-daemon";
 
-    // 0. Singleton enforcement: check PID file for existing daemon
-    try {
-      const pidStr = fs.readFileSync(PATHS.daemonPidFile, "utf-8").trim();
-      const existingPid = parseInt(pidStr, 10);
-      if (existingPid && existingPid !== process.pid && isProcessRunning(existingPid)) {
-        dlog("daemon", `found existing daemon PID:${existingPid}, checking socket...`);
-        const responsive = await isDaemonRunning();
-        if (responsive) {
-          dlog("daemon", "existing daemon is responsive — exiting");
-          process.exit(0);
-        }
-        // Unresponsive but alive — kill it
-        dlog("daemon", `existing daemon PID:${existingPid} unresponsive — killing`);
-        await killProcess(existingPid);
-        dlog("daemon", `killed stale daemon PID:${existingPid}`);
-      }
-    } catch {
-      // No PID file or unreadable — proceed normally
-    }
+    // 0. Singleton enforcement: find and kill ALL stale daemon/worker processes
+    await this.killStaleProcesses();
 
     // 1. Acquire exclusive lock — kernel-enforced, atomic, auto-released on death
     fs.mkdirSync(path.dirname(PATHS.daemonLockFile), { recursive: true });
@@ -215,15 +198,21 @@ export class Daemon {
       }
     }
 
-    // 8b. Index pending/error projects in the background
+    // 8b. Index pending/error projects in the background, serialized to avoid
+    // racing on shared LanceDB table creation (only one ensureTable() may win the
+    // first createTable; the rest crash with "Table 'chunks' already exists").
     const pending = allProjects.filter(
       (p) => (p.status === "pending" || p.status === "error") && fs.existsSync(p.root),
     );
-    for (const p of pending) {
-      this.indexPendingProject(p.root).catch((err) => {
-        console.error(`[daemon] Failed to index pending ${path.basename(p.root)}:`, err);
-      });
-    }
+    void (async () => {
+      for (const p of pending) {
+        try {
+          await this.indexPendingProject(p.root);
+        } catch (err) {
+          console.error(`[daemon] Failed to index pending ${path.basename(p.root)}:`, err);
+        }
+      }
+    })();
 
     // 9. Heartbeat + refresh lockfile mtime to prevent stale detection
     this.heartbeatInterval = setInterval(() => {
@@ -948,12 +937,82 @@ export class Daemon {
   }
 
   private stopMlxServer(): void {
-    if (!this.mlxChild?.pid) return;
-    try {
-      process.kill(this.mlxChild.pid, "SIGTERM");
+    // The spawned process is `uv`, which forks `python` then exits. Killing the
+    // recorded PID alone leaves python orphaned (the orphan source for port 8100
+    // collisions across daemon restarts). Always also kill whoever owns the port.
+    if (this.mlxChild?.pid) {
+      try {
+        process.kill(-this.mlxChild.pid, "SIGTERM");
+      } catch {
+        try { process.kill(this.mlxChild.pid, "SIGTERM"); } catch {}
+      }
       console.log(`[daemon] Stopped MLX embed server (PID: ${this.mlxChild.pid})`);
-    } catch {}
-    this.mlxChild = null;
+      this.mlxChild = null;
+    }
+    const port = parseInt(process.env.MLX_EMBED_PORT || "8100", 10);
+    const portOwner = this.getPortPid(port);
+    if (portOwner) {
+      try {
+        process.kill(portOwner, "SIGTERM");
+        console.log(`[daemon] Killed orphan MLX on port ${port} (PID: ${portOwner})`);
+      } catch {}
+    }
+  }
+
+  /**
+   * Find and kill all stale gmax-daemon and gmax-worker processes.
+   * Uses pgrep to scan by process title rather than relying solely on
+   * the PID file, which becomes stale when a daemon is orphaned through
+   * the lock-compromise path.
+   */
+  private async killStaleProcesses(): Promise<void> {
+    // 1. Check for other daemon processes
+    const daemonPids = this.findProcessesByTitle("gmax-daemon")
+      .filter((pid) => pid !== process.pid);
+    const workerPids = this.findProcessesByTitle("gmax-worker");
+
+    if (daemonPids.length === 0 && workerPids.length === 0) {
+      dlog("daemon", "No stale processes found");
+      return;
+    }
+
+    for (const pid of daemonPids) {
+      dlog("daemon", `found stale daemon PID:${pid}, checking socket...`);
+      const responsive = await isDaemonRunning();
+      if (responsive) {
+        dlog("daemon", "existing daemon is responsive — exiting");
+        process.exit(0);
+      }
+      dlog("daemon", `stale daemon PID:${pid} unresponsive — killing`);
+      await killProcess(pid);
+      dlog("daemon", `killed stale daemon PID:${pid}`);
+    }
+
+    // 2. Kill orphaned workers from previous daemon instances.
+    // Safe because this runs before the new daemon's worker pool is initialized.
+    for (const pid of workerPids) {
+      dlog("daemon", `killing orphaned worker PID:${pid}`);
+      await killProcess(pid);
+    }
+
+    dlog("daemon", `Cleaned up ${daemonPids.length} stale daemon(s), ${workerPids.length} orphaned worker(s)`);
+  }
+
+  private findProcessesByTitle(title: string): number[] {
+    try {
+      const out = execSync(`pgrep -x "${title}"`, {
+        timeout: 5000,
+        encoding: "utf-8",
+      }).trim();
+      if (!out) return [];
+      return out
+        .split("\n")
+        .map((s) => parseInt(s.trim(), 10))
+        .filter((n) => Number.isFinite(n) && n > 0);
+    } catch {
+      // pgrep exits 1 when no processes match — not an error
+      return [];
+    }
   }
 
   async shutdown(): Promise<void> {
@@ -987,6 +1046,11 @@ export class Daemon {
 
     // Stop MLX embed server if we started it
     this.stopMlxServer();
+
+    // Destroy worker pool to prevent orphaned child processes
+    if (isWorkerPoolInitialized()) {
+      try { await destroyWorkerPool(); } catch {}
+    }
 
     // Stop poll intervals
     for (const interval of this.pollIntervals.values()) {
