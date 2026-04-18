@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import * as net from "node:net";
 import { PATHS } from "../../config";
 
@@ -7,6 +8,11 @@ export interface DaemonResponse {
 }
 
 const DEFAULT_TIMEOUT_MS = 5000;
+
+// A live daemon refreshes daemon.lock mtime every 60s (HEARTBEAT_INTERVAL_MS).
+// Treat mtime younger than 2.5x that as proof of life, even if a ping times
+// out — a busy daemon with a blocked event loop can still be heartbeating.
+const HEARTBEAT_FRESH_THRESHOLD_MS = 150_000;
 
 /**
  * Send a JSON command to the daemon over the Unix domain socket.
@@ -66,11 +72,28 @@ export function sendDaemonCommand(
 }
 
 /**
- * Check if the daemon is running by sending a ping.
+ * Check if the daemon is running by sending a ping. Pass a larger timeoutMs
+ * when a busy daemon is plausible (e.g. before killing what might be a live
+ * peer) — the default 2s is tight enough that a daemon blocking the event
+ * loop mid-index can miss it.
  */
-export async function isDaemonRunning(): Promise<boolean> {
-  const resp = await sendDaemonCommand({ cmd: "ping" }, { timeoutMs: 2000 });
+export async function isDaemonRunning(opts?: { timeoutMs?: number }): Promise<boolean> {
+  const resp = await sendDaemonCommand({ cmd: "ping" }, { timeoutMs: opts?.timeoutMs ?? 2000 });
   return resp.ok === true;
+}
+
+/**
+ * Lock-file-based liveness probe. A running daemon refreshes daemon.lock's
+ * mtime every 60s via its heartbeat loop; a fresh mtime means the daemon is
+ * alive even if its socket ping times out under load.
+ */
+export function isDaemonHeartbeatFresh(): boolean {
+  try {
+    const stats = fs.statSync(PATHS.daemonLockFile);
+    return Date.now() - stats.mtimeMs < HEARTBEAT_FRESH_THRESHOLD_MS;
+  } catch {
+    return false;
+  }
 }
 
 /**

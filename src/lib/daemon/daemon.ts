@@ -201,11 +201,15 @@ export class Daemon {
     // 8b. Index pending/error projects in the background, serialized to avoid
     // racing on shared LanceDB table creation (only one ensureTable() may win the
     // first createTable; the rest crash with "Table 'chunks' already exists").
+    // Re-check shuttingDown each iteration: shutdown's pendingLocks drain is a
+    // snapshot, so a new project op kicked off after the snapshot would race
+    // with vectorDb.close() and fail with "VectorDB connection is closed".
     const pending = allProjects.filter(
       (p) => (p.status === "pending" || p.status === "error") && fs.existsSync(p.root),
     );
     void (async () => {
       for (const p of pending) {
+        if (this.shuttingDown) return;
         try {
           await this.indexPendingProject(p.root);
         } catch (err) {
@@ -504,6 +508,10 @@ export class Daemon {
 
   private async indexPendingProject(root: string): Promise<void> {
     await this.withProjectLock(root, async () => {
+      // Bail if shutdown raced ahead of us between IIFE iteration and lock
+      // acquisition — otherwise we'd start writing to a DB that shutdown is
+      // about to close, leaving the project status as "error".
+      if (this.shuttingDown) return;
       if (!this.vectorDb || !this.metaCache) return;
 
       const name = path.basename(root);
@@ -977,13 +985,25 @@ export class Daemon {
     }
 
     for (const pid of daemonPids) {
-      dlog("daemon", `found stale daemon PID:${pid}, checking socket...`);
-      const responsive = await isDaemonRunning();
-      if (responsive) {
-        dlog("daemon", "existing daemon is responsive — exiting");
+      dlog("daemon", `found daemon PID:${pid}, checking liveness...`);
+
+      // A busy daemon (mid-index, compaction, big LMDB write) can block the
+      // event loop long enough to miss a ping. Two independent liveness
+      // probes — if either says "alive", defer to the running peer instead
+      // of killing its workers mid-flight.
+      //   1. daemon.lock mtime (refreshed by heartbeat every 60s)
+      //   2. socket ping with a generous 10s timeout
+      const heartbeatFresh = isDaemonHeartbeatFresh();
+      const responsive = await isDaemonRunning({ timeoutMs: 10_000 });
+
+      if (heartbeatFresh || responsive) {
+        dlog(
+          "daemon",
+          `existing daemon PID:${pid} is alive (heartbeat=${heartbeatFresh} ping=${responsive}) — exiting`,
+        );
         process.exit(0);
       }
-      dlog("daemon", `stale daemon PID:${pid} unresponsive — killing`);
+      dlog("daemon", `stale daemon PID:${pid} unresponsive and heartbeat stale — killing`);
       await killProcess(pid);
       dlog("daemon", `killed stale daemon PID:${pid}`);
     }

@@ -49,7 +49,8 @@ export const watch = new Command("watch")
         // Skip spawn if daemon already running at the same version.
         // If version mismatches (e.g. after npm install -g), shut down the old
         // daemon so we can start a fresh one with the new code.
-        const { isDaemonRunning, sendDaemonCommand } = await import("../lib/utils/daemon-client");
+        const { isDaemonRunning, isDaemonHeartbeatFresh, sendDaemonCommand } =
+          await import("../lib/utils/daemon-client");
         if (await isDaemonRunning()) {
           const cliVersion = JSON.parse(
             fs.readFileSync(path.join(__dirname, "../../package.json"), "utf-8"),
@@ -62,6 +63,11 @@ export const watch = new Command("watch")
           await sendDaemonCommand({ cmd: "shutdown" });
           // Brief wait for old daemon to release socket/lock
           await new Promise((r) => setTimeout(r, 2000));
+        } else if (isDaemonHeartbeatFresh()) {
+          // Ping failed but daemon.lock mtime is fresh — another daemon is
+          // alive but too busy to answer (e.g. mid-index). Don't spawn a
+          // competitor; the startup code would only kill the busy peer.
+          process.exit(0);
         }
 
         const logFile = path.join(PATHS.logsDir, "daemon.log");
