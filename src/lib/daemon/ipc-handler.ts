@@ -70,10 +70,19 @@ export async function handleCommand(
           diskPressure: daemon.getDiskPressure(),
         };
 
-      case "shutdown":
-        // Respond before shutting down so the client gets the response
+      case "shutdown": {
+        const reason = String(cmd.reason ?? "unknown");
+        const fromPid = cmd.from_pid ?? "?";
+        const fromPpid = cmd.from_ppid ?? "?";
+        const fromVer = cmd.from_version ?? "?";
+        const fromArgv = Array.isArray(cmd.from_argv) ? cmd.from_argv.join(" ") : "?";
+        const fromParentCmd = cmd.from_parent_cmd ?? "?";
+        console.log(
+          `[daemon] shutdown command received via IPC: reason=${reason} from_pid=${fromPid} from_ppid=${fromPpid} from_version=${fromVer} from_argv=[${fromArgv}] from_parent_cmd=[${fromParentCmd}]`,
+        );
         setImmediate(() => daemon.shutdown());
         return { ok: true };
+      }
 
       // --- Streaming commands (daemon manages connection) ---
 

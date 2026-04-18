@@ -60,7 +60,14 @@ export const watch = new Command("watch")
             process.exit(0);
           }
           console.log(`Daemon version mismatch (${resp.version} → ${cliVersion}), restarting...`);
-          await sendDaemonCommand({ cmd: "shutdown" });
+          await sendDaemonCommand({
+            cmd: "shutdown",
+            reason: "version-mismatch",
+            from_pid: process.pid,
+            from_ppid: process.ppid,
+            from_version: cliVersion,
+            from_argv: process.argv.slice(0, 4),
+          });
           // Brief wait for old daemon to release socket/lock
           await new Promise((r) => setTimeout(r, 2000));
         } else if (isDaemonHeartbeatFresh()) {
@@ -324,7 +331,19 @@ watch
 
     // Try shutting down daemon first
     if (await isDaemonRunning()) {
-      await sendDaemonCommand({ cmd: "shutdown" });
+      let parentCmd = "?";
+      try {
+        const { execSync } = await import("node:child_process");
+        parentCmd = execSync(`ps -o command= -p ${process.ppid}`, { encoding: "utf8" }).trim();
+      } catch {}
+      await sendDaemonCommand({
+        cmd: "shutdown",
+        reason: "gmax-watch-stop",
+        from_pid: process.pid,
+        from_ppid: process.ppid,
+        from_argv: process.argv.slice(0, 4),
+        from_parent_cmd: parentCmd,
+      });
       console.log("Daemon stopped.");
       stoppedDaemon = true;
     }
