@@ -5,6 +5,7 @@ import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
 import { escapeSqlString } from "../lib/utils/filter-builder";
 import { extractImportsFromContent } from "../lib/utils/import-extractor";
+import { groupByLanguage } from "../lib/utils/language";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
 const useColors = process.stdout.isTTY && !process.env.NO_COLOR;
@@ -119,6 +120,29 @@ export const extract = new Command("extract")
             ),
           );
         }
+        console.log(lines.join("\n"));
+        process.exitCode = 1;
+        return;
+      }
+
+      // Cross-language disambiguation: when the symbol is defined in 2+
+      // languages, refuse to silently pick one. Listing all matches with a
+      // recovery hint avoids the dogfooded failure mode where peek picked
+      // Swift but listed TS callers.
+      const byLang = groupByLanguage(chunks);
+      if (byLang.size >= 2) {
+        const rel = (p: string) =>
+          p.startsWith(projectRoot) ? p.slice(projectRoot.length + 1) : p;
+        const lines = [
+          `Symbol '${symbol}' is defined in multiple languages:`,
+        ];
+        for (const [lang, group] of byLang) {
+          const c = group[0];
+          lines.push(`  ${lang.padEnd(6)} ${rel(c.path)}:${c.startLine + 1}`);
+        }
+        lines.push(
+          `Disambiguate with --root or pin to a path: gmax extract ${symbol} --root <project-root>`,
+        );
         console.log(lines.join("\n"));
         process.exitCode = 1;
         return;
