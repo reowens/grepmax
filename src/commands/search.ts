@@ -275,6 +275,7 @@ async function outputSkeletons(
   projectRoot: string,
   limit: number,
   db?: VectorDB | null,
+  precomputed?: Record<string, string>,
 ): Promise<void> {
   const seenPaths = new Set<string>();
   const filesToProcess: string[] = [];
@@ -316,6 +317,17 @@ async function outputSkeletons(
     const absPath = path.isAbsolute(filePath)
       ? filePath
       : path.resolve(projectRoot, filePath);
+
+    // 0. Daemon-supplied (preferred — already-warm DB lookup, no cold open)
+    const fromDaemon = precomputed?.[absPath] ?? precomputed?.[filePath];
+    if (fromDaemon) {
+      skeletonResults.push({
+        file: filePath,
+        skeleton: fromDaemon,
+        tokens: Math.ceil(fromDaemon.length / 4),
+      });
+      continue;
+    }
 
     // 1. Try DB cache
     if (db) {
@@ -627,7 +639,80 @@ Examples:
         );
       }
 
-      vectorDb = new VectorDB(paths.lancedbDir);
+      // Compute effective paths + filters early — both the daemon-mediated
+      // and in-process search paths need them.
+      const effectiveRoot = options.root
+        ? findProjectRoot(path.resolve(options.root)) ?? path.resolve(options.root)
+        : projectRoot;
+      const searchPathPrefix = exec_path
+        ? path.resolve(exec_path)
+        : effectiveRoot;
+      const pathFilter = searchPathPrefix.endsWith("/")
+        ? searchPathPrefix
+        : `${searchPathPrefix}/`;
+      const searchFilters: Record<string, string> = {};
+      if (options.file) searchFilters.file = options.file;
+      if (options.exclude) searchFilters.exclude = options.exclude;
+      if (options.lang) searchFilters.language = options.lang;
+      if (options.role) searchFilters.role = options.role;
+
+      // Daemon-mediated search: ships query+args over IPC, daemon runs the
+      // hybrid+rerank against its already-warm VectorDB and worker pool.
+      // Drops cold-start cost (~17s wall, 6GB RAM in the CLI) to <1s. Falls
+      // back to in-process on any failure.
+      let searchResult: SearchResponse | null = null;
+      let precomputedSkeletons: Record<string, string> | undefined;
+      let precomputedGraph: any | undefined;
+      if (!options.sync && !options.dryRun) {
+        try {
+          const { isDaemonRunning, sendDaemonCommand } = await import(
+            "../lib/utils/daemon-client"
+          );
+          if (await isDaemonRunning()) {
+            const resp = await sendDaemonCommand(
+              {
+                cmd: "search",
+                projectRoot: effectiveRoot,
+                query: pattern,
+                limit: parseInt(options.m, 10),
+                filters:
+                  Object.keys(searchFilters).length > 0
+                    ? searchFilters
+                    : undefined,
+                pathPrefix: pathFilter,
+                rerank: true,
+                explain: options.explain,
+                includeSkeletons: options.skeleton,
+                includeGraph: options.symbol,
+              },
+              { timeoutMs: 60_000 },
+            );
+            if (resp.ok) {
+              searchResult = {
+                data: resp.data as SearchResponse["data"],
+                warnings: resp.warnings as string[] | undefined,
+              };
+              precomputedSkeletons = resp.skeletons as
+                | Record<string, string>
+                | undefined;
+              precomputedGraph = resp.graph;
+            } else if (process.env.GMAX_DEBUG === "1") {
+              console.error(
+                `[search] daemon path unavailable: ${resp.error ?? "unknown"}`,
+              );
+            }
+          }
+        } catch (err) {
+          if (process.env.GMAX_DEBUG === "1") {
+            console.error("[search] daemon attempt threw:", err);
+          }
+        }
+      }
+
+      // In-process fallback: open VectorDB, ensure index, run Searcher.
+      // Only entered when the daemon path didn't produce results.
+      if (!searchResult) {
+        vectorDb = new VectorDB(paths.lancedbDir);
 
       // Check for active indexing lock and warn if present
       if (!options.agent && isLocked(paths.dataDir)) {
@@ -724,31 +809,14 @@ Examples:
 
       const searcher = new Searcher(vectorDb);
 
-      // Use --root or fall back to project root
-      const effectiveRoot = options.root
-        ? findProjectRoot(path.resolve(options.root)) ?? path.resolve(options.root)
-        : projectRoot;
-      const searchPathPrefix = exec_path
-        ? path.resolve(exec_path)
-        : effectiveRoot;
-      const pathFilter = searchPathPrefix.endsWith("/")
-        ? searchPathPrefix
-        : `${searchPathPrefix}/`;
-
-      // Build filters from CLI options
-      const searchFilters: Record<string, string> = {};
-      if (options.file) searchFilters.file = options.file;
-      if (options.exclude) searchFilters.exclude = options.exclude;
-      if (options.lang) searchFilters.language = options.lang;
-      if (options.role) searchFilters.role = options.role;
-
-      const searchResult = await searcher.search(
+      searchResult = await searcher.search(
         pattern,
         parseInt(options.m, 10),
         { rerank: true, explain: options.explain },
         Object.keys(searchFilters).length > 0 ? searchFilters : undefined,
         pathFilter,
       );
+      } // end if (!searchResult) — in-process fallback
 
       if (!options.agent && searchResult.warnings?.length) {
         for (const w of searchResult.warnings) {
@@ -855,14 +923,18 @@ Examples:
         }
 
         // Agent trace (compact)
-        if (options.symbol && vectorDb && filteredData.length > 0) {
+        if (options.symbol && filteredData.length > 0) {
           try {
-            const { GraphBuilder } = await import(
-              "../lib/graph/graph-builder"
-            );
-            const builder = new GraphBuilder(vectorDb, effectiveRoot);
-            const graph = await builder.buildGraphMultiHop(pattern, 1);
-            if (graph.center) {
+            let graph: any = precomputedGraph;
+            if (!graph) {
+              if (!vectorDb) throw new Error("no graph source");
+              const { GraphBuilder } = await import(
+                "../lib/graph/graph-builder"
+              );
+              const builder = new GraphBuilder(vectorDb, effectiveRoot);
+              graph = await builder.buildGraphMultiHop(pattern, 1);
+            }
+            if (graph?.center) {
               console.log("---");
               for (const t of graph.callerTree) {
                 const rel = t.node.file.startsWith(effectiveRoot)
@@ -892,6 +964,7 @@ Examples:
           projectRoot,
           parseInt(options.m, 10),
           vectorDb,
+          precomputedSkeletons,
         );
         return;
       }
@@ -1054,14 +1127,18 @@ Examples:
       }
 
       // Symbol mode: append call graph
-      if (options.symbol && vectorDb) {
+      if (options.symbol) {
         try {
-          const { GraphBuilder } = await import(
-            "../lib/graph/graph-builder"
-          );
-          const builder = new GraphBuilder(vectorDb, effectiveRoot);
-          const graph = await builder.buildGraphMultiHop(pattern, 1);
-          if (graph.center) {
+          let graph: any = precomputedGraph;
+          if (!graph) {
+            if (!vectorDb) throw new Error("no graph source");
+            const { GraphBuilder } = await import(
+              "../lib/graph/graph-builder"
+            );
+            const builder = new GraphBuilder(vectorDb, effectiveRoot);
+            graph = await builder.buildGraphMultiHop(pattern, 1);
+          }
+          if (graph?.center) {
             const lines: string[] = ["\n--- Call graph ---"];
             const centerRel = path.relative(
               effectiveRoot,
@@ -1072,7 +1149,7 @@ Examples:
             );
             if (graph.importers.length > 0) {
               const filtered = graph.importers.filter(
-                (p) => p !== graph.center!.file,
+                (p: string) => p !== graph.center.file,
               );
               if (filtered.length > 0) {
                 lines.push("Imported by:");

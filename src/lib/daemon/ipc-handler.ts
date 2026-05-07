@@ -84,6 +84,46 @@ export async function handleCommand(
         return { ok: true };
       }
 
+      case "search": {
+        const projectRoot = String(cmd.projectRoot || "");
+        if (!projectRoot) return { ok: false, error: "missing projectRoot" };
+        const query = String(cmd.query || "");
+        if (!query) return { ok: false, error: "missing query" };
+
+        // Bind abort to socket close so client ctrl-C cancels the in-flight
+        // search instead of letting it run on uselessly.
+        const ac = new AbortController();
+        const onClose = () => ac.abort();
+        conn.on("close", onClose);
+        try {
+          const limitRaw = typeof cmd.limit === "number" ? cmd.limit : 10;
+          const skeletonLimitRaw =
+            typeof cmd.skeletonLimit === "number" ? cmd.skeletonLimit : undefined;
+          const filters =
+            cmd.filters && typeof cmd.filters === "object" && !Array.isArray(cmd.filters)
+              ? (cmd.filters as Record<string, string>)
+              : undefined;
+          const resp = await daemon.search(
+            {
+              projectRoot,
+              query,
+              limit: limitRaw,
+              filters,
+              pathPrefix: typeof cmd.pathPrefix === "string" ? cmd.pathPrefix : undefined,
+              rerank: cmd.rerank !== false,
+              explain: cmd.explain === true,
+              includeSkeletons: cmd.includeSkeletons === true,
+              skeletonLimit: skeletonLimitRaw,
+              includeGraph: cmd.includeGraph === true,
+            },
+            ac.signal,
+          );
+          return resp;
+        } finally {
+          conn.off("close", onClose);
+        }
+      }
+
       // --- Streaming commands (daemon manages connection) ---
 
       case "add": {
