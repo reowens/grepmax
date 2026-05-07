@@ -914,11 +914,14 @@ Examples:
             }
             const sym = symbol ? ` ${symbol}` : "";
             const rl = role ? ` [${role}]` : "";
+            const score = (r as any).score;
+            const scoreCol =
+              typeof score === "number" ? `\ts=${score.toFixed(3)}` : "";
             const explainSuffix =
               options.explain && (r as any).scoreBreakdown
                 ? `\texplain:rerank=${(r as any).scoreBreakdown.rerank.toFixed(3)},fused=${(r as any).scoreBreakdown.fused.toFixed(3)},boost=${(r as any).scoreBreakdown.boost.toFixed(2)}x,score=${(r as any).scoreBreakdown.normalized.toFixed(3)}`
                 : "";
-            console.log(`${relPath}:${startLine}${sym}${rl}${hint}${explainSuffix}`);
+            console.log(`${relPath}:${startLine}${scoreCol}${sym}${rl}${hint}${explainSuffix}`);
           }
         }
 
