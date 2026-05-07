@@ -355,8 +355,23 @@ export class Daemon {
 
     this.processors.set(root, processor);
 
-    // Subscribe with @parcel/watcher — native backend, no polling
-    await this.subscribeWatcher(root, processor);
+    // Subscribe with @parcel/watcher — native backend, no polling.
+    // If the kernel refuses (e.g. FSEvents slots stuck after a prior kill -9
+    // — see docs/known-limitations.md), fall straight through to poll mode.
+    // The retry/backoff path inside recoverWatcher is for transient overflows,
+    // not hard kernel-level subscribe failures, so we skip it on startup by
+    // priming failCount past MAX before invoking it.
+    try {
+      await this.subscribeWatcher(root, processor);
+    } catch (err) {
+      const name = path.basename(root);
+      console.error(
+        `[daemon:${name}] Subscribe failed at startup (${err instanceof Error ? err.message : err}) — switching to poll mode`,
+      );
+      this.watcherFailCount.set(root, 1_000); // > MAX_WATCHER_RETRIES
+      this.lastOverflowMs.set(root, Date.now());
+      this.recoverWatcher(root, processor);
+    }
 
 
     registerWatcher({
