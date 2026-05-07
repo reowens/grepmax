@@ -17,7 +17,6 @@ import { ensureSetup } from "../lib/setup/setup-helpers";
 import { getStoredSkeleton } from "../lib/skeleton/retriever";
 import { Skeletonizer } from "../lib/skeleton/skeletonizer";
 import { VectorDB } from "../lib/store/vector-db";
-import { isIndexableFile } from "../lib/utils/file-utils";
 import { gracefulExit } from "../lib/utils/exit";
 import { listProjects } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
@@ -142,38 +141,22 @@ Examples:
       // Determine mode based on target
       const resolvedTarget = path.resolve(target);
 
-      // Directory mode
+      // Directory mode is unsupported. Auto-picking files from a directory
+      // was confusingly magical (and on '.' it fell through to the resolver
+      // path and skeletonized .gitignore). Refuse and point at the file form.
       if (
         fs.existsSync(resolvedTarget) &&
         fs.statSync(resolvedTarget).isDirectory()
       ) {
-        const entries = fs.readdirSync(resolvedTarget, {
-          withFileTypes: true,
-        });
-        const files = entries
-          .filter(
-            (e) =>
-              e.isFile() &&
-              isIndexableFile(path.join(resolvedTarget, e.name)),
-          )
-          .map((e) => path.join(resolvedTarget, e.name))
-          .slice(0, Number.parseInt(options.limit, 10));
-
-        if (files.length === 0) {
-          console.error(`No indexable files in ${target}`);
-          process.exitCode = 1;
-          return;
-        }
-
-        for (const filePath of files) {
-          const content = fs.readFileSync(filePath, "utf-8");
-          const result = await skeletonizer.skeletonizeFile(
-            filePath,
-            content,
-            skeletonOpts,
-          );
-          outputResult(result, options);
-        }
+        console.error(
+          [
+            "skeleton expects a file or symbol, not a directory.",
+            "Try:",
+            "  gmax skeleton src/foo.ts        # one file's structure",
+            '  gmax search "<topic>" --agent   # find relevant files first',
+          ].join("\n"),
+        );
+        process.exitCode = 1;
         return;
       }
 
