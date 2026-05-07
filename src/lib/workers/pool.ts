@@ -119,8 +119,17 @@ function resolveProcessWorker(): { filename: string; execArgv: string[] } {
 
 const IDLE_WORKER_TIMEOUT_MS = 60_000; // reap idle workers after 60s
 
+// Methods that must skip the indexing backlog. encodeQuery is the search hot
+// path: a single query is ~17ms but waits behind every queued processFile.
+// rerank is similarly small and latency-sensitive.
+const PRIORITY_METHODS: ReadonlySet<TaskMethod> = new Set(["encodeQuery", "rerank"]);
+
 export class WorkerPool {
   private workers: ProcessWorker[] = [];
+  // Two queues so searches don't wait behind a long indexing backlog. Priority
+  // tasks (encodeQuery/rerank) are dispatched first; processFile tasks queue
+  // in the regular queue. FIFO is preserved within each priority class.
+  private priorityQueue: number[] = [];
   private taskQueue: number[] = [];
   private tasks = new Map<number, PendingTask<TaskMethod>>();
   private abortedTasks = new Set<number>();
@@ -159,6 +168,8 @@ export class WorkerPool {
   }
 
   private removeFromQueue(taskId: number) {
+    const pi = this.priorityQueue.indexOf(taskId);
+    if (pi !== -1) this.priorityQueue.splice(pi, 1);
     const idx = this.taskQueue.indexOf(taskId);
     if (idx !== -1) this.taskQueue.splice(idx, 1);
   }
@@ -208,10 +219,13 @@ export class WorkerPool {
     this.workers = this.workers.filter((w) => w !== worker);
     if (!this.destroyed) {
       // Only respawn if we have no workers left or there are pending tasks
-      const hasPendingTasks = this.taskQueue.some((id) => {
-        const t = this.tasks.get(id);
-        return t && !t.worker;
-      });
+      const hasUnassigned = (queue: number[]) =>
+        queue.some((id) => {
+          const t = this.tasks.get(id);
+          return t && !t.worker;
+        });
+      const hasPendingTasks =
+        hasUnassigned(this.priorityQueue) || hasUnassigned(this.taskQueue);
       if (this.workers.length === 0 || hasPendingTasks) {
         this.consecutiveRespawns++;
         log("pool", `respawn #${this.consecutiveRespawns} after exit (workers=${this.workers.length} pending=${hasPendingTasks})`);
@@ -336,10 +350,12 @@ export class WorkerPool {
         signal.addEventListener(
           "abort",
           () => {
-            // If task is still in queue, remove it
+            // If task is still queued (in either queue), remove it
+            const pi = this.priorityQueue.indexOf(id);
+            if (pi !== -1) this.priorityQueue.splice(pi, 1);
             const idx = this.taskQueue.indexOf(id);
-            if (idx !== -1) {
-              this.taskQueue.splice(idx, 1);
+            if (pi !== -1 || idx !== -1) {
+              if (idx !== -1) this.taskQueue.splice(idx, 1);
               this.tasks.delete(id);
               const err = new Error("Aborted");
               err.name = "AbortError";
@@ -362,7 +378,11 @@ export class WorkerPool {
       }
 
       this.tasks.set(id, task as unknown as PendingTask<TaskMethod>);
-      this.taskQueue.push(id);
+      if (PRIORITY_METHODS.has(method)) {
+        this.priorityQueue.push(id);
+      } else {
+        this.taskQueue.push(id);
+      }
       this.dispatch();
     });
   }
@@ -402,10 +422,15 @@ export class WorkerPool {
   private dispatch() {
     if (this.destroyed) return;
     let idle = this.workers.find((w) => !w.busy);
-    const nextTaskId = this.taskQueue.find((id) => {
-      const t = this.tasks.get(id);
-      return t && !t.worker;
-    });
+    // Drain priority queue first so search tasks never wait behind an
+    // indexing batch.
+    const findUnassigned = (queue: number[]): number | undefined =>
+      queue.find((id) => {
+        const t = this.tasks.get(id);
+        return t && !t.worker;
+      });
+    const nextTaskId =
+      findUnassigned(this.priorityQueue) ?? findUnassigned(this.taskQueue);
 
     if (nextTaskId === undefined) return;
 
@@ -438,7 +463,7 @@ export class WorkerPool {
       (task.payload as Record<string, unknown>)?.absolutePath ??
       "";
     const busyCount = this.workers.filter((w) => w.busy).length;
-    debug("pool", `dispatch task=${task.id} method=${task.method}${filePath ? ` file=${filePath}` : ""} → PID:${idle.child.pid} (busy=${busyCount}/${this.workers.length} queue=${this.taskQueue.length})`);
+    debug("pool", `dispatch task=${task.id} method=${task.method}${filePath ? ` file=${filePath}` : ""} → PID:${idle.child.pid} (busy=${busyCount}/${this.workers.length} queue=${this.taskQueue.length}+${this.priorityQueue.length}p)`);
 
     try {
       idle.child.send({
@@ -470,17 +495,20 @@ export class WorkerPool {
   }
 
   /**
-   * Reap idle workers back down to 1. Keeps the most recently active worker.
-   * Called on a timer — never removes the last worker or busy workers.
+   * Reap idle workers back down to MIN_KEEP. Keeps the most recently active.
+   * Called on a timer — never removes busy workers. Min=2 so a search task
+   * always has spare capacity even when one worker is busy with a long
+   * indexing batch (a fresh worker takes 10–15s to boot + load models, which
+   * dwarfs a ~13ms encodeQuery).
    */
   private reapIdleWorkers() {
-    if (this.destroyed || this.workers.length <= 1) return;
+    const MIN_KEEP = 2;
+    if (this.destroyed || this.workers.length <= MIN_KEEP) return;
     const now = Date.now();
     const toReap = this.workers.filter(
       (w) => !w.busy && now - w.lastBusyTime > IDLE_WORKER_TIMEOUT_MS,
     );
-    // Always keep at least 1 worker alive
-    const keepCount = Math.max(1, this.workers.length - toReap.length);
+    const keepCount = Math.max(MIN_KEEP, this.workers.length - toReap.length);
     const reapCount = this.workers.length - keepCount;
     if (reapCount <= 0) return;
 
@@ -513,6 +541,7 @@ export class WorkerPool {
     }
     this.tasks.clear();
     this.taskQueue = [];
+    this.priorityQueue = [];
 
     const killPromises = this.workers.map(
       (w) =>

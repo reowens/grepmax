@@ -31,7 +31,18 @@ import { destroyWorkerPool, isWorkerPoolInitialized } from "../workers/pool";
 import { spawn, execSync, type ChildProcess } from "node:child_process";
 import * as http from "node:http";
 
-const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+// 30 min was too aggressive — every shutdown is a chance for races, FSEvents
+// drops, and orphan MLX cleanup. 4 hours keeps the daemon resident through a
+// normal workday while still freeing resources overnight. Override with
+// GMAX_DAEMON_IDLE_TIMEOUT_MS=<ms>; set to 0 (or negative) to disable.
+const DEFAULT_IDLE_TIMEOUT_MS = 4 * 60 * 60 * 1000;
+const IDLE_TIMEOUT_MS = (() => {
+  const raw = process.env.GMAX_DAEMON_IDLE_TIMEOUT_MS;
+  if (raw == null) return DEFAULT_IDLE_TIMEOUT_MS;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return DEFAULT_IDLE_TIMEOUT_MS;
+  return parsed; // <= 0 disables the idle check below
+})();
 const HEARTBEAT_INTERVAL_MS = 60 * 1000;
 
 export class Daemon {
@@ -228,15 +239,59 @@ export class Daemon {
       rotateLogFds(path.join(PATHS.logsDir, "daemon.log"));
     }, HEARTBEAT_INTERVAL_MS);
 
-    // 10. Idle timeout
-    this.idleInterval = setInterval(() => {
-      if (Date.now() - this.lastActivity > IDLE_TIMEOUT_MS) {
-        console.log("[daemon] Idle for 30 minutes, shutting down");
+    // 10. Idle timeout (skip when disabled via env)
+    if (IDLE_TIMEOUT_MS > 0) {
+      this.idleInterval = setInterval(() => {
+        if (Date.now() - this.lastActivity <= IDLE_TIMEOUT_MS) return;
+        // Don't kick off shutdown on top of a live maintenance pass — let it
+        // finish and check again next tick. close() awaits this anyway, but
+        // postponing keeps shutdown paths clean and timestamps coherent.
+        if (this.vectorDb?.isMaintenanceActive()) return;
+        const minutes = Math.round(IDLE_TIMEOUT_MS / 60_000);
+        console.log(`[daemon] Idle for ${minutes} minutes, shutting down`);
         this.shutdown();
-      }
-    }, HEARTBEAT_INTERVAL_MS);
+      }, HEARTBEAT_INTERVAL_MS);
+    } else {
+      console.log("[daemon] Idle shutdown disabled (GMAX_DAEMON_IDLE_TIMEOUT_MS<=0)");
+    }
 
     console.log(`[daemon] Started (PID: ${process.pid}, ${this.processors.size} projects)`);
+
+    // Pre-warm the search hot path so the first user-facing search doesn't
+    // pay daemon-side cold costs:
+    //   - LanceDB connection open + first openTable() (~10–15s on a 5GB
+    //     index — this is the dominant cost)
+    //   - FTS index "already exists" round-trip
+    //   - Two parallel encodeQuery calls so the worker pool spawns + warms
+    //     two workers (the reaper keeps min 2 alive). With one worker busy
+    //     on a long indexing batch, the second is always free for searches.
+    // Fire-and-forget; failures are non-fatal — the next real search just
+    // pays the cost once. Delay a few seconds so we don't compete with the
+    // catchup scans dispatched on startup.
+    setTimeout(() => {
+      if (this.shuttingDown) return;
+      void (async () => {
+        const t0 = Date.now();
+        try {
+          if (this.vectorDb) {
+            await this.vectorDb.ensureTable();
+            await this.vectorDb.createFTSIndex();
+          }
+          const { getWorkerPool } = await import("../workers/pool");
+          const pool = getWorkerPool();
+          // Two parallel encodes force the pool to spawn two workers and
+          // warm both (each worker loads Granite + ColBERT lazily on first
+          // encode — once warmed, subsequent encodes are ~13ms).
+          await Promise.all([
+            pool.encodeQuery("warmup-a"),
+            pool.encodeQuery("warmup-b"),
+          ]);
+          console.log(`[daemon] Search hot path pre-warmed (${Date.now() - t0}ms)`);
+        } catch (err) {
+          console.log(`[daemon] Search warmup failed (non-fatal): ${err}`);
+        }
+      })();
+    }, 5000).unref();
   }
 
   async watchProject(root: string): Promise<void> {
