@@ -88,6 +88,30 @@ describe("buildWhereClause", () => {
     expect(result).toBe("(role = 'DEFINITION' OR array_length(defined_symbols) > 0)");
   });
 
+  it("emits multiple NOT LIKE for excludePrefixes array", () => {
+    const result = buildWhereClause(
+      "/p/app/",
+      { excludePrefixes: ["/p/app/tests/", "/p/app/docs/"] },
+      defaultIntent,
+    );
+    expect(result).toContain("path LIKE '/p/app/%'");
+    expect(result).toContain("path NOT LIKE '/p/app/tests/%'");
+    expect(result).toContain("path NOT LIKE '/p/app/docs/%'");
+  });
+
+  it("emits OR group for multi-element inPrefixes", () => {
+    const result = buildWhereClause(
+      "/p/app/",
+      {
+        inPrefixes: ["/p/app/packages/api/", "/p/app/packages/web/"],
+      },
+      defaultIntent,
+    );
+    expect(result).toContain(
+      "(path LIKE '/p/app/packages/api/%' OR path LIKE '/p/app/packages/web/%')",
+    );
+  });
+
   it("def filter overrides DEFINITION intent", () => {
     const intent: SearchIntent = {
       type: "DEFINITION",

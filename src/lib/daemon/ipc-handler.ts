@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type * as net from "node:net";
+import type { SearchFilter } from "../store/types";
 import type { DaemonResponse } from "../utils/daemon-client";
 import type { Daemon } from "./daemon";
 import { debug } from "../utils/logger";
@@ -99,9 +100,13 @@ export async function handleCommand(
           const limitRaw = typeof cmd.limit === "number" ? cmd.limit : 10;
           const skeletonLimitRaw =
             typeof cmd.skeletonLimit === "number" ? cmd.skeletonLimit : undefined;
+          // Accept both the legacy single-string `exclude` and the new
+          // `excludePrefixes`/`inPrefixes` arrays (--in/--exclude on the CLI).
+          // Daemon may outlive a CLI restart, so keep both wire shapes for
+          // one release; drop the single-string form in v0.17.x.
           const filters =
             cmd.filters && typeof cmd.filters === "object" && !Array.isArray(cmd.filters)
-              ? (cmd.filters as Record<string, string>)
+              ? (cmd.filters as SearchFilter)
               : undefined;
           const resp = await daemon.search(
             {

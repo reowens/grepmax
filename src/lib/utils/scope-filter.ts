@@ -1,0 +1,66 @@
+import * as path from "node:path";
+
+export interface ScopeOptions {
+  projectRoot: string;
+  in?: string | string[];
+  exclude?: string | string[];
+}
+
+export interface ResolvedScope {
+  /** Single base path scope. Equals projectRoot/ when no --in is supplied,
+   *  or projectRoot/<in>/ when exactly one --in is given. Multi-`--in` keeps
+   *  this at projectRoot/ and uses inPrefixes for the OR clause. */
+  pathPrefix: string;
+  /** All --in values resolved to absolute prefixes; empty when --in collapses
+   *  into pathPrefix. */
+  inPrefixes: string[];
+  /** All --exclude values resolved to absolute prefixes. */
+  excludePrefixes: string[];
+}
+
+function toArray(value: string | string[] | undefined): string[] {
+  if (value === undefined) return [];
+  const arr = Array.isArray(value) ? value : [value];
+  // Support comma-separated values within each occurrence so agents can pass
+  // either `--in a --in b` or `--in a,b` interchangeably.
+  return arr
+    .flatMap((v) => v.split(","))
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
+function joinSubpath(projectRoot: string, sub: string): string {
+  const rootWithSlash = projectRoot.endsWith("/") ? projectRoot : `${projectRoot}/`;
+  if (path.isAbsolute(sub)) return sub.endsWith("/") ? sub : `${sub}/`;
+  if (sub.startsWith(rootWithSlash)) return sub.endsWith("/") ? sub : `${sub}/`;
+  const joined = path.join(rootWithSlash, sub);
+  return joined.endsWith("/") ? joined : `${joined}/`;
+}
+
+export function resolveScope(opts: ScopeOptions): ResolvedScope {
+  const { projectRoot } = opts;
+  const ins = toArray(opts.in);
+  const excludes = toArray(opts.exclude);
+
+  const projectPrefix = projectRoot.endsWith("/")
+    ? projectRoot
+    : `${projectRoot}/`;
+
+  const inPrefixesAll = ins.map((v) => joinSubpath(projectRoot, v));
+  const excludePrefixes = excludes.map((v) => joinSubpath(projectRoot, v));
+
+  // Collapse a single --in into pathPrefix to keep WHERE clauses simple.
+  if (inPrefixesAll.length === 1) {
+    return {
+      pathPrefix: inPrefixesAll[0],
+      inPrefixes: [],
+      excludePrefixes,
+    };
+  }
+
+  return {
+    pathPrefix: projectPrefix,
+    inPrefixes: inPrefixesAll,
+    excludePrefixes,
+  };
+}

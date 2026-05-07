@@ -37,6 +37,34 @@ export function buildWhereClause(
     parts.push(`path NOT LIKE '${escapeSqlString(absExclude)}%'`);
   }
 
+  // New array-shape: pre-resolved absolute exclude prefixes from
+  // resolveScope (or daemon IPC). Each becomes its own NOT LIKE clause.
+  const excludePrefixes = filters?.excludePrefixes;
+  if (Array.isArray(excludePrefixes)) {
+    for (const p of excludePrefixes) {
+      if (typeof p === "string" && p) {
+        const norm = normalizePath(p);
+        parts.push(`path NOT LIKE '${escapeSqlString(norm)}%'`);
+      }
+    }
+  }
+
+  // Multi-`--in` becomes an OR group of LIKE clauses. Single `--in`
+  // collapses into pathPrefix on the resolveScope side, so we don't see
+  // it here.
+  const inPrefixes = filters?.inPrefixes;
+  if (Array.isArray(inPrefixes) && inPrefixes.length > 0) {
+    const clauses: string[] = [];
+    for (const p of inPrefixes) {
+      if (typeof p === "string" && p) {
+        const norm = normalizePath(p);
+        clauses.push(`path LIKE '${escapeSqlString(norm)}%'`);
+      }
+    }
+    if (clauses.length === 1) parts.push(clauses[0]);
+    else if (clauses.length > 1) parts.push(`(${clauses.join(" OR ")})`);
+  }
+
   const langFilter = filters?.language;
   if (typeof langFilter === "string" && langFilter) {
     const ext = langFilter.startsWith(".") ? langFilter : `.${langFilter}`;

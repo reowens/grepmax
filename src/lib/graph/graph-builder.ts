@@ -19,15 +19,29 @@ export interface CallerTree {
 
 export class GraphBuilder {
   private pathPrefix: string | undefined;
+  private excludePrefixes: string[];
 
-  constructor(private db: VectorDB, pathPrefix?: string) {
+  constructor(
+    private db: VectorDB,
+    pathPrefix?: string,
+    excludePrefixes?: string[],
+  ) {
     // Normalize to ensure trailing slash for LIKE queries
     this.pathPrefix = pathPrefix ? (pathPrefix.endsWith("/") ? pathPrefix : `${pathPrefix}/`) : undefined;
+    this.excludePrefixes = (excludePrefixes ?? []).map((p) =>
+      p.endsWith("/") ? p : `${p}/`,
+    );
   }
 
   private scopeWhere(condition: string): string {
-    if (!this.pathPrefix) return condition;
-    return `${condition} AND path LIKE '${escapeSqlString(this.pathPrefix)}%'`;
+    let result = condition;
+    if (this.pathPrefix) {
+      result = `${result} AND path LIKE '${escapeSqlString(this.pathPrefix)}%'`;
+    }
+    for (const ex of this.excludePrefixes) {
+      result = `${result} AND path NOT LIKE '${escapeSqlString(ex)}%'`;
+    }
+    return result;
   }
 
   /**

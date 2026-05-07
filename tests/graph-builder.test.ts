@@ -141,6 +141,36 @@ describe("GraphBuilder", () => {
     expect(importers).toContain("/src/commands/mcp.ts");
   });
 
+  it("scopeWhere appends NOT LIKE for each excludePrefix", async () => {
+    let capturedWhere = "";
+    const captureDb = {
+      ensureTable: async () => ({
+        query: () => {
+          const chain = {
+            where: (clause: string) => {
+              capturedWhere = clause;
+              return chain;
+            },
+            select: () => chain,
+            limit: () => chain,
+            toArray: async () => [],
+          };
+          return chain;
+        },
+      }),
+    } as any;
+
+    const builder = new GraphBuilder(captureDb, "/p/app", [
+      "/p/app/tests",
+      "/p/app/docs/",
+    ]);
+    await builder.getCallers("foo");
+
+    expect(capturedWhere).toContain("path LIKE '/p/app/%'");
+    expect(capturedWhere).toContain("path NOT LIKE '/p/app/tests/%'");
+    expect(capturedWhere).toContain("path NOT LIKE '/p/app/docs/%'");
+  });
+
   it("unresolved callees have empty file", async () => {
     const db = createMockDb({
       "defined_symbols, 'fn'": [makeRow("fn", "/a.ts", 1, ["unknownFn"])],
