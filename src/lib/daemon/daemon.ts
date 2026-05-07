@@ -47,6 +47,9 @@ const IDLE_TIMEOUT_MS = (() => {
   return parsed; // <= 0 disables the idle check below
 })();
 const HEARTBEAT_INTERVAL_MS = 60 * 1000;
+// Watcher health windows used for FSEvents auto-recovery.
+const FSEVENTS_RECOVERY_INTERVAL_MS = 60 * 60 * 1000; // try recovery hourly
+const FSEVENTS_HEALTH_WINDOW_MS = 5 * 60 * 1000; // 5 min of quiet = "healthy"
 
 export class Daemon {
   private readonly processors = new Map<string, ProjectBatchProcessor>();
@@ -64,6 +67,7 @@ export class Daemon {
   private readonly pendingOps = new Set<string>();
   private readonly watcherFailCount = new Map<string, number>();
   private readonly pollIntervals = new Map<string, ReturnType<typeof setInterval>>();
+  private readonly pollRecoveryTimers = new Map<string, ReturnType<typeof setInterval>>();
   private readonly lastOverflowMs = new Map<string, number>();
   private readonly lastCatchupEndMs = new Map<string, number>();
   private readonly projectLocks = new Map<string, Promise<void>>();
@@ -426,14 +430,16 @@ export class Daemon {
 
     if (fails > MAX_WATCHER_RETRIES) {
       // FSEvents can't handle this project — degrade to periodic catchup scans
+      // Always tear down the broken sub, even if poll mode is already active —
+      // this can happen if a recovery attempt resubscribed successfully then
+      // re-overflowed during the 5-min health window.
+      const sub = this.subscriptions.get(root);
+      if (sub) {
+        sub.unsubscribe().catch(() => {});
+        this.subscriptions.delete(root);
+      }
       if (!this.pollIntervals.has(root)) {
         console.error(`[daemon:${name}] FSEvents unreliable after ${fails} failures — switching to poll mode (${POLL_INTERVAL_MS / 60000}min interval)`);
-        // Unsubscribe the broken watcher
-        const sub = this.subscriptions.get(root);
-        if (sub) {
-          sub.unsubscribe().catch(() => {});
-          this.subscriptions.delete(root);
-        }
         // Run an immediate catchup, then schedule periodic ones
         this.catchupScan(root, processor).catch((err) => {
           console.error(`[daemon:${name}] Poll catchup failed:`, err);
@@ -446,6 +452,10 @@ export class Daemon {
           });
         }, POLL_INTERVAL_MS);
         this.pollIntervals.set(root, interval);
+        // Schedule periodic attempts to climb back to native FSEvents — after
+        // a transient burst (large git checkout, npm install) the kernel
+        // buffer often calms down within an hour.
+        this.schedulePollModeRecovery(root, processor);
         registerWatcher({
           pid: process.pid,
           projectRoot: root,
@@ -482,6 +492,70 @@ export class Daemon {
         }
       })();
     }, delayMs);
+  }
+
+  /**
+   * Once a project has fallen back to poll mode, periodically try to upgrade
+   * back to native FSEvents. The buffer overflows that triggered the fallback
+   * are usually transient (big git checkout, npm install, build output) — no
+   * point staying in 5-min poll mode forever.
+   */
+  private schedulePollModeRecovery(
+    root: string,
+    processor: ProjectBatchProcessor,
+  ): void {
+    if (this.pollRecoveryTimers.has(root)) return;
+    const name = path.basename(root);
+    const timer = setInterval(() => {
+      if (this.shuttingDown) return;
+      // Skip if a watcher recovery is already in flight or we're not in poll mode anymore.
+      if (!this.pollIntervals.has(root)) {
+        const t = this.pollRecoveryTimers.get(root);
+        if (t) clearInterval(t);
+        this.pollRecoveryTimers.delete(root);
+        return;
+      }
+      if (this.pendingOps.has(`recover:${root}`)) return;
+
+      void (async () => {
+        console.log(`[daemon:${name}] Attempting to leave poll mode and reattach FSEvents...`);
+        try {
+          // Reset failure counter so subscribeWatcher's error path treats this
+          // as a fresh start. If it fails again, we'll fall right back into
+          // poll mode via the same recoverWatcher path.
+          this.watcherFailCount.delete(root);
+          await this.subscribeWatcher(root, processor);
+
+          // Wait one health window — if the new subscription survives without
+          // another overflow, we consider it recovered and tear down poll mode.
+          await new Promise((r) => setTimeout(r, FSEVENTS_HEALTH_WINDOW_MS));
+          if (this.shuttingDown) return;
+
+          const lastOverflow = this.lastOverflowMs.get(root) ?? 0;
+          if (Date.now() - lastOverflow < FSEVENTS_HEALTH_WINDOW_MS) {
+            console.log(`[daemon:${name}] FSEvents recovery aborted — fresh overflow within health window, staying in poll mode`);
+            return; // recoverWatcher will have re-armed poll mode if needed
+          }
+
+          // Healthy — drop poll mode.
+          const pollInterval = this.pollIntervals.get(root);
+          if (pollInterval) {
+            clearInterval(pollInterval);
+            this.pollIntervals.delete(root);
+          }
+          const recoveryTimer = this.pollRecoveryTimers.get(root);
+          if (recoveryTimer) {
+            clearInterval(recoveryTimer);
+            this.pollRecoveryTimers.delete(root);
+          }
+          console.log(`[daemon:${name}] FSEvents recovered — poll mode disabled`);
+        } catch (err) {
+          console.error(`[daemon:${name}] Poll-mode recovery attempt failed:`, err);
+        }
+      })();
+    }, FSEVENTS_RECOVERY_INTERVAL_MS);
+    timer.unref();
+    this.pollRecoveryTimers.set(root, timer);
   }
 
   private async catchupScan(root: string, processor: ProjectBatchProcessor): Promise<void> {
@@ -1263,11 +1337,15 @@ export class Daemon {
       try { await destroyWorkerPool(); } catch {}
     }
 
-    // Stop poll intervals
+    // Stop poll intervals + their FSEvents recovery probes
     for (const interval of this.pollIntervals.values()) {
       clearInterval(interval);
     }
     this.pollIntervals.clear();
+    for (const interval of this.pollRecoveryTimers.values()) {
+      clearInterval(interval);
+    }
+    this.pollRecoveryTimers.clear();
 
     // Unsubscribe all watchers
     for (const sub of this.subscriptions.values()) {
