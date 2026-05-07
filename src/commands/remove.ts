@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import * as path from "node:path";
 import * as readline from "node:readline";
 import { Command } from "commander";
@@ -8,6 +9,7 @@ import { killProcess } from "../lib/utils/process";
 import { removeMarker } from "../lib/utils/project-marker";
 import {
   getProject,
+  listProjects,
   removeProject,
 } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
@@ -31,14 +33,15 @@ function confirm(message: string): Promise<boolean> {
 
 export const remove = new Command("remove")
   .description("Remove a project from the gmax index")
-  .argument("[dir]", "Directory to remove (defaults to current directory)")
+  .argument("[dir-or-name]", "Directory or registered project name (defaults to current directory)")
   .option("-f, --force", "Skip confirmation prompt", false)
   .addHelpText(
     "after",
     `
 Examples:
   gmax remove                  Remove the current project
-  gmax remove ~/projects/app   Remove a specific project
+  gmax remove ~/projects/app   Remove a specific project by path
+  gmax remove my-app           Remove a registered project by name
   gmax remove --force          Skip confirmation
 `,
   )
@@ -47,7 +50,43 @@ Examples:
     let metaCache: MetaCache | null = null;
 
     try {
-      const targetDir = dir ? path.resolve(dir) : process.cwd();
+      // Resolve name → registered root when arg has no path separator and isn't a dir.
+      // Avoids the footgun where a typo'd name silently removed the cwd project.
+      let resolvedDir = dir;
+      if (
+        dir &&
+        !dir.includes("/") &&
+        !dir.includes("\\") &&
+        !fs.existsSync(path.resolve(dir))
+      ) {
+        const matches = listProjects().filter((p) => p.name === dir);
+        if (matches.length === 0) {
+          console.error(`No registered project named "${dir}".`);
+          const all = listProjects();
+          if (all.length > 0) {
+            console.error("Available projects:");
+            for (const p of all) {
+              console.error(`  ${p.name.padEnd(24)} ${p.root}`);
+            }
+          } else {
+            console.error("No projects are currently registered.");
+          }
+          process.exitCode = 1;
+          return;
+        }
+        if (matches.length > 1) {
+          console.error(`Multiple registered projects named "${dir}":`);
+          for (const p of matches) {
+            console.error(`  ${p.root}`);
+          }
+          console.error("Pass an absolute path to disambiguate.");
+          process.exitCode = 1;
+          return;
+        }
+        resolvedDir = matches[0].root;
+      }
+
+      const targetDir = resolvedDir ? path.resolve(resolvedDir) : process.cwd();
       const projectRoot = findProjectRoot(targetDir) ?? targetDir;
       const projectName = path.basename(projectRoot);
       const project = getProject(projectRoot);
