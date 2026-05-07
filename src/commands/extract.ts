@@ -1,11 +1,11 @@
 import * as fs from "node:fs";
-import * as path from "node:path";
 import { Command } from "commander";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
 import { escapeSqlString } from "../lib/utils/filter-builder";
 import { extractImportsFromContent } from "../lib/utils/import-extractor";
 import { groupByLanguage } from "../lib/utils/language";
+import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
 const useColors = process.stdout.isTTY && !process.env.NO_COLOR;
@@ -84,7 +84,8 @@ export const extract = new Command("extract")
   .option("--imports", "Prepend file imports", false)
   .action(async (symbol, opts) => {
     let vectorDb: VectorDB | null = null;
-    const root = opts.root ? path.resolve(opts.root) : process.cwd();
+    const root = resolveRootOrExit(opts.root);
+    if (root === null) return;
 
     try {
       const projectRoot = findProjectRoot(root) ?? root;

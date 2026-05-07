@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { Command } from "commander";
 import { gracefulExit } from "../lib/utils/exit";
+import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { findProjectRoot } from "../lib/utils/project-root";
 
 export const review = new Command("review")
@@ -27,7 +28,8 @@ Subcommands:
   )
   .action(async (opts) => {
     try {
-      const root = opts.root ? path.resolve(opts.root) : process.cwd();
+      const root = resolveRootOrExit(opts.root);
+      if (root === null) return;
       const projectRoot = findProjectRoot(root) ?? root;
       const commitRef = opts.commit;
 
@@ -107,7 +109,8 @@ review
   .option("--root <dir>", "Project root directory")
   .action(async (opts) => {
     try {
-      const root = opts.root ? path.resolve(opts.root) : process.cwd();
+      const root = resolveRootOrExit(opts.root);
+      if (root === null) return;
       const projectRoot = findProjectRoot(root) ?? root;
 
       const { readReport, formatReportText } = await import(
@@ -140,7 +143,8 @@ review
   .option("--root <dir>", "Project root directory")
   .action(async (opts) => {
     try {
-      const root = opts.root ? path.resolve(opts.root) : process.cwd();
+      const root = resolveRootOrExit(opts.root);
+      if (root === null) return;
       const projectRoot = findProjectRoot(root) ?? root;
 
       const { clearReport } = await import("../lib/llm/report");

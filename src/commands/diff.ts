@@ -1,10 +1,10 @@
-import * as path from "node:path";
 import { Command } from "commander";
 import { Searcher } from "../lib/search/searcher";
 import { VectorDB } from "../lib/store/vector-db";
 import { escapeSqlString } from "../lib/utils/filter-builder";
 import { gracefulExit } from "../lib/utils/exit";
 import { getChangedFiles } from "../lib/utils/git";
+import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
 import { toArr } from "../lib/utils/arrow";
@@ -25,7 +25,8 @@ export const diff = new Command("diff")
     let vectorDb: VectorDB | null = null;
 
     try {
-      const root = opts.root ? path.resolve(opts.root) : process.cwd();
+      const root = resolveRootOrExit(opts.root);
+      if (root === null) return;
       const projectRoot = findProjectRoot(root) ?? root;
       const paths = ensureProjectPaths(projectRoot);
       vectorDb = new VectorDB(paths.lancedbDir);

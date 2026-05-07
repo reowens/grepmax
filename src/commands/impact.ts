@@ -8,6 +8,7 @@ import {
 } from "../lib/graph/impact";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
+import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
 export const impact = new Command("impact")
@@ -24,7 +25,8 @@ export const impact = new Command("impact")
     let vectorDb: VectorDB | null = null;
 
     try {
-      const root = opts.root ? path.resolve(opts.root) : process.cwd();
+      const root = resolveRootOrExit(opts.root);
+      if (root === null) return;
       const projectRoot = findProjectRoot(root) ?? root;
       const paths = ensureProjectPaths(projectRoot);
       vectorDb = new VectorDB(paths.lancedbDir);

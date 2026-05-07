@@ -22,7 +22,10 @@ import { gracefulExit } from "../lib/utils/exit";
 import { formatTextResults, type TextResult } from "../lib/utils/formatter";
 import { extractImports } from "../lib/utils/import-extractor";
 import { isLocked } from "../lib/utils/lock";
-import { getProject } from "../lib/utils/project-registry";
+import {
+  getProject,
+  resolveRootOrExit,
+} from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import { getServerForProject } from "../lib/utils/server-registry";
 
@@ -622,9 +625,14 @@ Examples:
       process.env.GMAX_PROJECT_ROOT = projectRoot;
 
       // Check if project is registered
-      const checkRoot = options.root
-        ? findProjectRoot(path.resolve(options.root)) ?? path.resolve(options.root)
-        : projectRoot;
+      let checkRoot: string;
+      if (options.root) {
+        const resolved = resolveRootOrExit(options.root);
+        if (resolved === null) return;
+        checkRoot = findProjectRoot(resolved) ?? resolved;
+      } else {
+        checkRoot = projectRoot;
+      }
       const project = getProject(checkRoot);
       if (!project) {
         console.error(
@@ -640,10 +648,9 @@ Examples:
       }
 
       // Compute effective paths + filters early — both the daemon-mediated
-      // and in-process search paths need them.
-      const effectiveRoot = options.root
-        ? findProjectRoot(path.resolve(options.root)) ?? path.resolve(options.root)
-        : projectRoot;
+      // and in-process search paths need them. Reuse the resolved checkRoot
+      // so --root <name> only resolves once per invocation.
+      const effectiveRoot = checkRoot;
       const searchPathPrefix = exec_path
         ? path.resolve(exec_path)
         : effectiveRoot;

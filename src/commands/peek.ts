@@ -1,11 +1,11 @@
 import * as fs from "node:fs";
-import * as path from "node:path";
 import { Command } from "commander";
 import { GraphBuilder } from "../lib/graph/graph-builder";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
 import { escapeSqlString } from "../lib/utils/filter-builder";
 import { groupByLanguage } from "../lib/utils/language";
+import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
 const useColors = process.stdout.isTTY && !process.env.NO_COLOR;
@@ -62,7 +62,8 @@ export const peek = new Command("peek")
   .option("--agent", "Compact output for AI agents", false)
   .action(async (symbol, opts) => {
     let vectorDb: VectorDB | null = null;
-    const root = opts.root ? path.resolve(opts.root) : process.cwd();
+    const root = resolveRootOrExit(opts.root);
+    if (root === null) return;
     const depth = Math.min(
       Math.max(Number.parseInt(opts.depth || "1", 10), 1),
       3,

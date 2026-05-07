@@ -4,6 +4,7 @@ import { PATHS } from "../config";
 import { MetaCache } from "../lib/store/meta-cache";
 import { gracefulExit } from "../lib/utils/exit";
 import { formatTimeAgo } from "../lib/utils/format-helpers";
+import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { findProjectRoot } from "../lib/utils/project-root";
 
 export const recent = new Command("recent")
@@ -18,9 +19,9 @@ export const recent = new Command("recent")
     );
 
     try {
-      const root = opts.root
-        ? findProjectRoot(path.resolve(opts.root)) ?? path.resolve(opts.root)
-        : findProjectRoot(process.cwd()) ?? process.cwd();
+      const resolvedRoot = resolveRootOrExit(opts.root);
+      if (resolvedRoot === null) return;
+      const root = findProjectRoot(resolvedRoot) ?? resolvedRoot;
       const prefix = root.endsWith("/") ? root : `${root}/`;
 
       const metaCache = new MetaCache(PATHS.lmdbPath);

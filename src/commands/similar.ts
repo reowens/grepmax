@@ -3,6 +3,7 @@ import { Command } from "commander";
 import { VectorDB } from "../lib/store/vector-db";
 import { escapeSqlString } from "../lib/utils/filter-builder";
 import { gracefulExit } from "../lib/utils/exit";
+import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
 import { toArr } from "../lib/utils/arrow";
@@ -23,7 +24,8 @@ export const similar = new Command("similar")
     let vectorDb: VectorDB | null = null;
 
     try {
-      const root = opts.root ? path.resolve(opts.root) : process.cwd();
+      const root = resolveRootOrExit(opts.root);
+      if (root === null) return;
       const projectRoot = findProjectRoot(root) ?? root;
       const paths = ensureProjectPaths(projectRoot);
       vectorDb = new VectorDB(paths.lancedbDir);

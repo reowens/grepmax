@@ -3,7 +3,10 @@ import { Command } from "commander";
 import { VectorDB } from "../lib/store/vector-db";
 import { escapeSqlString } from "../lib/utils/filter-builder";
 import { gracefulExit } from "../lib/utils/exit";
-import { listProjects } from "../lib/utils/project-registry";
+import {
+  listProjects,
+  resolveRootOrExit,
+} from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
 import { toArr } from "../lib/utils/arrow";
@@ -16,9 +19,9 @@ export const project = new Command("project")
     let vectorDb: VectorDB | null = null;
 
     try {
-      const root = opts.root
-        ? findProjectRoot(path.resolve(opts.root)) ?? path.resolve(opts.root)
-        : findProjectRoot(process.cwd()) ?? process.cwd();
+      const resolvedRoot = resolveRootOrExit(opts.root);
+      if (resolvedRoot === null) return;
+      const root = findProjectRoot(resolvedRoot) ?? resolvedRoot;
       const prefix = root.endsWith("/") ? root : `${root}/`;
       const projectName = path.basename(root);
       const paths = ensureProjectPaths(root);

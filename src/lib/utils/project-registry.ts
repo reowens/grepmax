@@ -104,6 +104,22 @@ export function getChildProjects(root: string): ProjectEntry[] {
 }
 
 /**
+ * Resolve a `--root` argument with cwd fallback, printing the helper's
+ * error message and setting process.exitCode = 1 on failure. Returns
+ * null when the caller should bail out. Used at command entry points.
+ */
+export function resolveRootOrExit(arg: string | undefined): string | null {
+  if (!arg) return process.cwd();
+  try {
+    return resolveProjectRoot(arg);
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exitCode = 1;
+    return null;
+  }
+}
+
+/**
  * Resolve a `--root` argument that may be either a path or a registered
  * project name. Throws on no-match or duplicate-name so callers can
  * report a uniform error.

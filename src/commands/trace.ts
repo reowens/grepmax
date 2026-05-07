@@ -1,9 +1,9 @@
-import * as path from "node:path";
 import { Command } from "commander";
 import { GraphBuilder } from "../lib/graph/graph-builder";
 import { formatTrace } from "../lib/output/formatter";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
+import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
 function formatTraceAgent(graph: {
@@ -47,7 +47,8 @@ export const trace = new Command("trace")
       Math.max(Number.parseInt(opts.depth || "1", 10), 1),
       3,
     );
-    const root = opts.root ? path.resolve(opts.root) : process.cwd();
+    const root = resolveRootOrExit(opts.root);
+    if (root === null) return;
     let vectorDb: VectorDB | null = null;
 
     try {

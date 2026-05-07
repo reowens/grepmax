@@ -3,6 +3,7 @@ import { Command } from "commander";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
 import { escapeSqlString, normalizePath } from "../lib/utils/filter-builder";
+import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
 const style = {
@@ -158,7 +159,8 @@ export const symbols = new Command("symbols")
   .option("--root <dir>", "Project root directory")
   .option("--agent", "Compact output for AI agents", false)
   .action(async (pattern, cmd) => {
-    const root = cmd.root ? path.resolve(cmd.root) : process.cwd();
+    const root = resolveRootOrExit(cmd.root);
+    if (root === null) return;
     const projectRoot = findProjectRoot(root) ?? root;
     const limit = Number.parseInt(cmd.limit, 10);
     // Auto-scope to project root; --path narrows further within it

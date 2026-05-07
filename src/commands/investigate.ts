@@ -1,6 +1,6 @@
-import * as path from "node:path";
 import { Command } from "commander";
 import { gracefulExit } from "../lib/utils/exit";
+import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { findProjectRoot } from "../lib/utils/project-root";
 
 export const investigateCmd = new Command("investigate")
@@ -22,7 +22,8 @@ Examples:
   )
   .action(async (question, opts) => {
     try {
-      const root = opts.root ? path.resolve(opts.root) : process.cwd();
+      const root = resolveRootOrExit(opts.root);
+      if (root === null) return;
       const projectRoot = findProjectRoot(root) ?? root;
       const maxRounds = Math.min(
         Math.max(Number.parseInt(opts.rounds || "10", 10), 1),
