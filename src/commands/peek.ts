@@ -70,6 +70,7 @@ export const peek = new Command("peek")
     (value: string, prev: string[] | undefined) => (prev ? [...prev, value] : [value]),
   )
   .option("--agent", "Compact output for AI agents", false)
+  .option("--no-tests", "Suppress the tests footer")
   .action(async (symbol, opts) => {
     let vectorDb: VectorDB | null = null;
     const root = resolveRootOrExit(opts.root);
@@ -253,6 +254,22 @@ export const peek = new Command("peek")
         if (calleeList.length > MAX_CALLEES) {
           console.log(`-> ... ${calleeList.length - MAX_CALLEES} more`);
         }
+        if (opts.tests !== false) {
+          const { fetchTestsForFooter, renderTestsFooterAgent } = await import(
+            "../lib/utils/tests-footer"
+          );
+          const tests = await fetchTestsForFooter(
+            symbol,
+            vectorDb,
+            scope.pathPrefix,
+            scope.excludePrefixes,
+          );
+          if (tests && tests.length > 0) {
+            for (const line of renderTestsFooterAgent(tests, projectRoot)) {
+              console.log(line);
+            }
+          }
+        }
       } else {
         // Rich output
         const exportedStr = exported ? ", exported" : "";
@@ -320,6 +337,23 @@ export const peek = new Command("peek")
           }
         } else {
           console.log(style.dim("No known callees."));
+        }
+
+        if (opts.tests !== false) {
+          const { fetchTestsForFooter, renderTestsFooterHuman } = await import(
+            "../lib/utils/tests-footer"
+          );
+          const tests = await fetchTestsForFooter(
+            symbol,
+            vectorDb,
+            scope.pathPrefix,
+            scope.excludePrefixes,
+          );
+          if (tests && tests.length > 0) {
+            for (const line of renderTestsFooterHuman(tests, projectRoot)) {
+              console.log(line);
+            }
+          }
         }
       }
     } catch (error) {

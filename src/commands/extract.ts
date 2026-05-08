@@ -88,6 +88,7 @@ export const extract = new Command("extract")
   )
   .option("--agent", "Compact output for AI agents", false)
   .option("--imports", "Prepend file imports", false)
+  .option("--no-tests", "Suppress the tests footer")
   .action(async (symbol, opts) => {
     let vectorDb: VectorDB | null = null;
     const root = resolveRootOrExit(opts.root);
@@ -185,6 +186,23 @@ export const extract = new Command("extract")
         }
         console.log(`${relPath}:${startLine + 1}-${endLine + 1}`);
         console.log(body.join("\n"));
+        if (opts.tests !== false) {
+          const { fetchTestsForFooter, renderTestsFooterAgent } = await import(
+            "../lib/utils/tests-footer"
+          );
+          const tests = await fetchTestsForFooter(
+            symbol,
+            vectorDb,
+            scope.pathPrefix,
+            scope.excludePrefixes,
+          );
+          if (tests && tests.length > 0) {
+            console.log("--- tests:");
+            for (const line of renderTestsFooterAgent(tests, projectRoot)) {
+              console.log(line);
+            }
+          }
+        }
       } else {
         // Rich output with line numbers
         if (opts.imports) {
@@ -222,6 +240,23 @@ export const extract = new Command("extract")
         console.log(
           `\n${style.dim(`Also defined in: ${otherLocs}`)}`,
         );
+      }
+
+      if (!opts.agent && opts.tests !== false) {
+        const { fetchTestsForFooter, renderTestsFooterHuman } = await import(
+          "../lib/utils/tests-footer"
+        );
+        const tests = await fetchTestsForFooter(
+          symbol,
+          vectorDb,
+          scope.pathPrefix,
+          scope.excludePrefixes,
+        );
+        if (tests && tests.length > 0) {
+          for (const line of renderTestsFooterHuman(tests, projectRoot)) {
+            console.log(line);
+          }
+        }
       }
     } catch (error) {
       const message =
