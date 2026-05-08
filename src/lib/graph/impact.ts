@@ -110,6 +110,11 @@ async function expandFileSymbols(
 
 /**
  * Find test files that exercise a set of symbols, using reverse call graph traversal.
+ * When the call-graph walk returns nothing, falls back to test files that
+ * reference the symbol via referenced_symbols or textual content match —
+ * catching the common case where a test imports a symbol but doesn't call it
+ * through the graph the chunker captures (UI components, mocked modules, etc).
+ * Fallback hits are tagged with hops = -1.
  */
 export async function findTests(
   symbols: string[],
@@ -133,7 +138,71 @@ export async function findTests(
     await walkCallers(symbol, graphBuilder, testHits, 0, depth, new Set());
   }
 
+  if (testHits.size === 0) {
+    const importFiles = await findImportFallbackTests(
+      expanded,
+      vectorDb,
+      projectRoot,
+      excludePrefixes,
+    );
+    for (const file of importFiles) {
+      testHits.set(`${file}:(referenced)`, {
+        file,
+        symbol: "(referenced)",
+        line: 0,
+        hops: -1,
+      });
+    }
+  }
+
   return [...testHits.values()].sort((a, b) => a.hops - b.hops || a.file.localeCompare(b.file));
+}
+
+async function findImportFallbackTests(
+  symbols: string[],
+  vectorDb: VectorDB,
+  projectRoot: string,
+  excludePrefixes?: string[],
+): Promise<Set<string>> {
+  const files = new Set<string>();
+
+  // Signal 1: referenced_symbols match (precise; works when the chunker
+  // captured call references in test bodies).
+  const dependents = await findDependents(
+    symbols,
+    vectorDb,
+    projectRoot,
+    undefined,
+    50,
+    excludePrefixes,
+  );
+  for (const d of dependents) {
+    if (isTestPath(d.file)) files.add(d.file);
+  }
+
+  // Signal 2: content LIKE match (textual; survives chunker quirks where a
+  // test body's referenced_symbols ends up empty).
+  const table = await vectorDb.ensureTable();
+  const prefix = projectRoot.endsWith("/") ? projectRoot : `${projectRoot}/`;
+  let pathScope = `path LIKE '${escapeSqlString(prefix)}%'`;
+  for (const ex of excludePrefixes ?? []) {
+    const exNorm = ex.endsWith("/") ? ex : `${ex}/`;
+    pathScope += ` AND path NOT LIKE '${escapeSqlString(exNorm)}%'`;
+  }
+  for (const sym of symbols) {
+    const rows = await table
+      .query()
+      .select(["path"])
+      .where(`content LIKE '%${escapeSqlString(sym)}%' AND ${pathScope}`)
+      .limit(100)
+      .toArray();
+    for (const row of rows) {
+      const p = String((row as any).path || "");
+      if (isTestPath(p)) files.add(p);
+    }
+  }
+
+  return files;
 }
 
 async function walkCallers(
