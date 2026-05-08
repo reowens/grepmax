@@ -900,51 +900,27 @@ Examples:
           console.log("(none)");
           process.exitCode = 1;
         } else {
-          // In agent mode, print imports header per file
-          const seenImportFiles = new Set<string>();
+          // Pre-pass: group by absolute path in first-occurrence order so we
+          // can collapse same-file repeats under a one-line header. Score
+          // order is preserved globally for first-of-file; siblings cluster
+          // under their first hit's rank.
+          const groups = new Map<string, any[]>();
           for (const r of filteredData) {
             const absP = (r as any).path ?? (r as any).metadata?.path ?? "";
+            const arr = groups.get(absP);
+            if (arr) {
+              arr.push(r);
+            } else {
+              groups.set(absP, [r]);
+            }
+          }
+
+          const seenImportFiles = new Set<string>();
+          for (const [absP, members] of groups) {
             const relPath = absP.startsWith(effectiveRoot)
               ? absP.slice(effectiveRoot.length + 1)
               : absP;
-            const startLine = Math.max(
-              1,
-              ((r as any).startLine ??
-                (r as any).start_line ??
-                (r as any).generated_metadata?.start_line ??
-                0) + 1,
-            );
-            const defs = Array.isArray((r as any).defined_symbols)
-              ? (r as any).defined_symbols
-              : [];
-            const symbol = defs[0] || "";
-            const role = ((r as any).role ?? "")
-              .slice(0, 4)
-              .toUpperCase();
-            let hint = "";
-            if ((r as any).summary) {
-              hint = ` — ${(r as any).summary}`;
-            } else {
-              // Extract first meaningful signature line from content
-              const raw = (r as any).content ?? (r as any).text ?? "";
-              const lines = raw.split("\n");
-              for (const line of lines) {
-                const trimmed = line.trim();
-                // Skip empty, comments, imports, braces, and mid-line fragments
-                if (!trimmed || trimmed.length < 5) continue;
-                if (trimmed.startsWith("//") || trimmed.startsWith("/*") || trimmed.startsWith("*")) continue;
-                if (trimmed.startsWith("import ") || trimmed.startsWith("#") || trimmed.startsWith("File:")) continue;
-                if (trimmed === "{" || trimmed === "}") continue;
-                // Skip lines that look like continuations (start with punctuation, closing braces, or spread)
-                if (/^[.),;:}\]|&(+`'"!~]/.test(trimmed)) continue;
-                if (trimmed.startsWith("} ") || trimmed.startsWith("- ") || trimmed.startsWith("...")) continue;
-                // Skip lines that look like mid-expression fragments (no keyword/declaration prefix)
-                if (/^[a-z]/.test(trimmed) && !/^(export|function|class|interface|type|const|let|var|async|return|if|for|while|switch|enum|struct|pub |fn |def |impl |mod |use )/.test(trimmed)) continue;
-                hint = ` — ${trimmed.length > 120 ? trimmed.slice(0, 117) + "..." : trimmed}`;
-                break;
-              }
-            }
-            // Print file imports once per file when --imports is used
+
             if (options.imports && absP && !seenImportFiles.has(absP)) {
               seenImportFiles.add(absP);
               const imports = getImportsForFile(absP);
@@ -952,16 +928,64 @@ Examples:
                 console.log(`[imports ${relPath}] ${imports.split("\n").join(" | ")}`);
               }
             }
-            const sym = symbol ? ` ${symbol}` : "";
-            const rl = role ? ` [${role}]` : "";
-            const score = (r as any).score;
-            const scoreCol =
-              typeof score === "number" ? `\ts=${score.toFixed(3)}` : "";
-            const explainSuffix =
-              options.explain && (r as any).scoreBreakdown
-                ? `\texplain:rerank=${(r as any).scoreBreakdown.rerank.toFixed(3)},fused=${(r as any).scoreBreakdown.fused.toFixed(3)},boost=${(r as any).scoreBreakdown.boost.toFixed(2)}x,score=${(r as any).scoreBreakdown.normalized.toFixed(3)}`
-                : "";
-            console.log(`${relPath}:${startLine}${scoreCol}${sym}${rl}${hint}${explainSuffix}`);
+
+            const grouped = members.length > 1;
+            if (grouped) {
+              console.log(`${relPath} (${members.length} hits):`);
+            }
+
+            for (const r of members) {
+              const startLine = Math.max(
+                1,
+                ((r as any).startLine ??
+                  (r as any).start_line ??
+                  (r as any).generated_metadata?.start_line ??
+                  0) + 1,
+              );
+              const defs = Array.isArray((r as any).defined_symbols)
+                ? (r as any).defined_symbols
+                : [];
+              const symbol = defs[0] || "";
+              const role = ((r as any).role ?? "")
+                .slice(0, 4)
+                .toUpperCase();
+              let hint = "";
+              if ((r as any).summary) {
+                hint = ` — ${(r as any).summary}`;
+              } else {
+                // Extract first meaningful signature line from content
+                const raw = (r as any).content ?? (r as any).text ?? "";
+                const lines = raw.split("\n");
+                for (const line of lines) {
+                  const trimmed = line.trim();
+                  // Skip empty, comments, imports, braces, and mid-line fragments
+                  if (!trimmed || trimmed.length < 5) continue;
+                  if (trimmed.startsWith("//") || trimmed.startsWith("/*") || trimmed.startsWith("*")) continue;
+                  if (trimmed.startsWith("import ") || trimmed.startsWith("#") || trimmed.startsWith("File:")) continue;
+                  if (trimmed === "{" || trimmed === "}") continue;
+                  // Skip lines that look like continuations (start with punctuation, closing braces, or spread)
+                  if (/^[.),;:}\]|&(+`'"!~]/.test(trimmed)) continue;
+                  if (trimmed.startsWith("} ") || trimmed.startsWith("- ") || trimmed.startsWith("...")) continue;
+                  // Skip lines that look like mid-expression fragments (no keyword/declaration prefix)
+                  if (/^[a-z]/.test(trimmed) && !/^(export|function|class|interface|type|const|let|var|async|return|if|for|while|switch|enum|struct|pub |fn |def |impl |mod |use )/.test(trimmed)) continue;
+                  hint = ` — ${trimmed.length > 120 ? trimmed.slice(0, 117) + "..." : trimmed}`;
+                  break;
+                }
+              }
+              const sym = symbol ? ` ${symbol}` : "";
+              const rl = role ? ` [${role}]` : "";
+              const score = (r as any).score;
+              const scoreCol =
+                typeof score === "number" ? `\ts=${score.toFixed(3)}` : "";
+              const explainSuffix =
+                options.explain && (r as any).scoreBreakdown
+                  ? `\texplain:rerank=${(r as any).scoreBreakdown.rerank.toFixed(3)},fused=${(r as any).scoreBreakdown.fused.toFixed(3)},boost=${(r as any).scoreBreakdown.boost.toFixed(2)}x,score=${(r as any).scoreBreakdown.normalized.toFixed(3)}`
+                  : "";
+              const locator = grouped
+                ? `  :${startLine}`
+                : `${relPath}:${startLine}`;
+              console.log(`${locator}${scoreCol}${sym}${rl}${hint}${explainSuffix}`);
+            }
           }
         }
 

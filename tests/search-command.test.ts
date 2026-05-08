@@ -370,6 +370,92 @@ describe("search filter passthrough", () => {
   });
 });
 
+describe("agent file-level grouping", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    spinner.text = "";
+    (search as Command).exitOverride();
+  });
+
+  it("groups multiple hits in the same file under one header", async () => {
+    mockSearcher.search.mockResolvedValueOnce({
+      data: [
+        {
+          path: "/tmp/project/src/dup.ts",
+          score: 0.9,
+          start_line: 9,
+          defined_symbols: ["alpha"],
+          role: "DEFINITION",
+          text: "export function alpha() { return 1; }",
+        },
+        {
+          path: "/tmp/project/src/dup.ts",
+          score: 0.7,
+          start_line: 19,
+          defined_symbols: ["beta"],
+          role: "DEFINITION",
+          text: "export function beta() { return 2; }",
+        },
+        {
+          path: "/tmp/project/src/solo.ts",
+          score: 0.5,
+          start_line: 4,
+          defined_symbols: ["gamma"],
+          role: "DEFINITION",
+          text: "export function gamma() { return 3; }",
+        },
+      ],
+    });
+
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await (search as Command).parseAsync(["query", "--agent"], { from: "user" });
+    const lines = consoleSpy.mock.calls.map((c) => String(c[0]));
+    consoleSpy.mockRestore();
+
+    const out = lines.join("\n");
+    expect(out).toContain("src/dup.ts (2 hits):");
+    // children indented and path-stripped
+    expect(out).toMatch(/  :10\ts=0\.900 alpha \[DEFI\]/);
+    expect(out).toMatch(/  :20\ts=0\.700 beta \[DEFI\]/);
+    // single-hit file unchanged
+    expect(out).toContain("src/solo.ts:5\ts=0.500 gamma [DEFI]");
+    // no group header on the single-hit file
+    expect(out).not.toContain("src/solo.ts (1 hits):");
+  });
+
+  it("renders flat (no headers) when every file has exactly one hit", async () => {
+    mockSearcher.search.mockResolvedValueOnce({
+      data: [
+        {
+          path: "/tmp/project/src/a.ts",
+          score: 0.9,
+          start_line: 4,
+          defined_symbols: ["a"],
+          role: "DEFINITION",
+          text: "export const a = 1;",
+        },
+        {
+          path: "/tmp/project/src/b.ts",
+          score: 0.7,
+          start_line: 9,
+          defined_symbols: ["b"],
+          role: "DEFINITION",
+          text: "export const b = 2;",
+        },
+      ],
+    });
+
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await (search as Command).parseAsync(["query", "--agent"], { from: "user" });
+    const out = consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    consoleSpy.mockRestore();
+
+    expect(out).not.toContain("hits):");
+    expect(out).toContain("src/a.ts:5");
+    expect(out).toContain("src/b.ts:10");
+  });
+});
+
 describe("unknown option handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
