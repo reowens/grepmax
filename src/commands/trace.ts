@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import { Command } from "commander";
 import { GraphBuilder } from "../lib/graph/graph-builder";
 import { formatTrace } from "../lib/output/formatter";
@@ -5,6 +6,10 @@ import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
+
+const useColors = process.stdout.isTTY && !process.env.NO_COLOR;
+const dim = (s: string) => (useColors ? `\x1b[2m${s}\x1b[22m` : s);
+const bold = (s: string) => (useColors ? `\x1b[1m${s}\x1b[22m` : s);
 
 function formatTraceAgent(graph: {
   center: { symbol: string; file: string; line: number; role: string } | null;
@@ -36,6 +41,152 @@ function formatTraceAgent(graph: {
   return lines.join("\n");
 }
 
+interface InboundCaller {
+  symbol: string;
+  file: string;
+  line: number;
+  snippet: string | null;
+  snippetLine: number | null;
+  callers: InboundCaller[];
+}
+
+function findCallSiteSnippet(
+  fileCache: Map<string, string[]>,
+  callerFile: string,
+  callerLine: number,
+  targetSymbol: string,
+): { snippet: string; snippetLine: number } | null {
+  if (!callerFile) return null;
+  let lines = fileCache.get(callerFile);
+  if (!lines) {
+    try {
+      lines = fs.readFileSync(callerFile, "utf-8").split("\n");
+    } catch {
+      return null;
+    }
+    fileCache.set(callerFile, lines);
+  }
+  // Search a bounded window starting at the caller's definition line.
+  const start = Math.max(0, callerLine);
+  const end = Math.min(lines.length, callerLine + 200);
+  const wordRe = new RegExp(`\\b${targetSymbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`);
+  for (let i = start; i < end; i++) {
+    if (wordRe.test(lines[i])) {
+      return { snippet: lines[i].trim(), snippetLine: i };
+    }
+  }
+  // Window didn't contain the symbol — chunker rolled the reference up to a
+  // parent scope. Skip the snippet rather than showing a misleading default;
+  // the caller's file:line is still emitted.
+  return null;
+}
+
+function buildInboundTree(
+  callerTree: Array<{ node: { symbol: string; file: string; line: number }; callers: any[] }>,
+  targetSymbol: string,
+  fileCache: Map<string, string[]>,
+  withSnippets: boolean,
+  limit: number,
+): InboundCaller[] {
+  const out: InboundCaller[] = [];
+  // Dedupe by call-site location: when getCallers returns multiple chunks of
+  // the same file (e.g. several methods of a class) that all reference the
+  // target on the same line, collapse them into one row.
+  const seen = new Set<string>();
+  for (const t of callerTree) {
+    const snippet = withSnippets
+      ? findCallSiteSnippet(fileCache, t.node.file, t.node.line, targetSymbol)
+      : null;
+    const dedupeKey = `${t.node.file}:${snippet?.snippetLine ?? t.node.line}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    out.push({
+      symbol: t.node.symbol,
+      file: t.node.file,
+      line: t.node.line,
+      snippet: snippet?.snippet ?? null,
+      snippetLine: snippet?.snippetLine ?? null,
+      callers: buildInboundTree(t.callers, t.node.symbol, fileCache, withSnippets, limit),
+    });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function formatInboundAgent(
+  center: { symbol: string; file: string; line: number; role: string },
+  tree: InboundCaller[],
+  projectRoot: string,
+  withSnippets: boolean,
+): string {
+  const rel = (p: string) =>
+    p.startsWith(projectRoot) ? p.slice(projectRoot.length + 1) : p;
+  const lines: string[] = [];
+  lines.push(
+    `${center.symbol}\t${rel(center.file)}:${center.line + 1}\t${center.role}`,
+  );
+  const walk = (nodes: InboundCaller[], depth: number) => {
+    for (const n of nodes) {
+      const prefix = "  ".repeat(depth);
+      const loc = n.file ? `${rel(n.file)}:${(n.snippetLine ?? n.line) + 1}` : "(not indexed)";
+      const cols = withSnippets
+        ? `${loc}\t${n.symbol}\t${n.snippet ?? ""}`
+        : `${loc}\t${n.symbol}`;
+      lines.push(`${prefix}${cols}`);
+      walk(n.callers, depth + 1);
+    }
+  };
+  walk(tree, 0);
+  return lines.join("\n");
+}
+
+function formatInboundHuman(
+  center: { symbol: string; file: string; line: number; role: string },
+  tree: InboundCaller[],
+  projectRoot: string,
+  withSnippets: boolean,
+): string {
+  const rel = (p: string) =>
+    p.startsWith(projectRoot) ? p.slice(projectRoot.length + 1) : p;
+  const flatCount = (() => {
+    let n = 0;
+    const walk = (nodes: InboundCaller[]) => {
+      for (const node of nodes) {
+        n++;
+        walk(node.callers);
+      }
+    };
+    walk(tree);
+    return n;
+  })();
+  const lines: string[] = [];
+  lines.push(
+    `${bold(`inbound callers of ${center.symbol}`)} ${dim(`(${flatCount})`)}`,
+  );
+  lines.push(
+    `  ${dim(`${rel(center.file)}:${center.line + 1}  [${center.role}]`)}`,
+  );
+  if (tree.length === 0) {
+    lines.push(dim("  (none in scope)"));
+    return lines.join("\n");
+  }
+  const walk = (nodes: InboundCaller[], depth: number) => {
+    for (const n of nodes) {
+      const indent = "  ".repeat(depth + 1);
+      const loc = n.file
+        ? `${rel(n.file)}:${(n.snippetLine ?? n.line) + 1}`
+        : "(not indexed)";
+      lines.push(`${indent}${n.symbol}  ${dim(loc)}`);
+      if (withSnippets && n.snippet) {
+        lines.push(`${indent}  ${dim(n.snippet)}`);
+      }
+      walk(n.callers, depth + 1);
+    }
+  };
+  walk(tree, 0);
+  return lines.join("\n");
+}
+
 export const trace = new Command("trace")
   .description("Trace the call graph for a symbol")
   .argument("<symbol>", "The symbol to trace")
@@ -52,10 +203,17 @@ export const trace = new Command("trace")
     (value: string, prev: string[] | undefined) => (prev ? [...prev, value] : [value]),
   )
   .option("--agent", "Compact output for AI agents", false)
+  .option("--inbound", "Show only callers, with call-site snippets", false)
+  .option("--no-snippets", "Suppress call-site snippets in --inbound output")
+  .option("--limit <n>", "Max callers shown per node in --inbound (default 10)", "10")
   .action(async (symbol, opts) => {
     const depth = Math.min(
       Math.max(Number.parseInt(opts.depth || "1", 10), 1),
       3,
+    );
+    const inboundLimit = Math.min(
+      Math.max(Number.parseInt(opts.limit || "10", 10), 1),
+      30,
     );
     const root = resolveRootOrExit(opts.root);
     if (root === null) return;
@@ -79,13 +237,37 @@ export const trace = new Command("trace")
         scope.excludePrefixes,
       );
       const graph = await graphBuilder.buildGraphMultiHop(symbol, depth);
-      if (opts.agent) {
+
+      if (opts.inbound) {
+        if (!graph.center) {
+          console.log(opts.agent ? "(not found)" : `Symbol not found: ${symbol}`);
+          process.exitCode = 1;
+        } else {
+          const fileCache = new Map<string, string[]>();
+          const withSnippets = opts.snippets !== false;
+          const tree = buildInboundTree(
+            graph.callerTree,
+            symbol,
+            fileCache,
+            withSnippets,
+            inboundLimit,
+          );
+          if (opts.agent) {
+            console.log(
+              formatInboundAgent(graph.center, tree, projectRoot, withSnippets),
+            );
+          } else {
+            console.log(
+              formatInboundHuman(graph.center, tree, projectRoot, withSnippets),
+            );
+          }
+        }
+      } else if (opts.agent) {
         console.log(formatTraceAgent(graph, projectRoot));
+        if (!graph.center) process.exitCode = 1;
       } else {
         console.log(formatTrace(graph, { symbol }));
-      }
-      if (!graph.center) {
-        process.exitCode = 1;
+        if (!graph.center) process.exitCode = 1;
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
