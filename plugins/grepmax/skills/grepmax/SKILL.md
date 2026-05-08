@@ -125,9 +125,18 @@ gmax related src/lib/index/syncer.ts       # dependencies + dependents
 gmax related src/lib/index/syncer.ts --root ~/project
 ```
 
-### Recent changes — `gmax recent`
+### Commit history — `gmax log <path-or-symbol>`
 ```
-gmax recent                                # recently modified files
+gmax log src/lib/auth.ts                   # commits touching this file
+gmax log src/lib/                          # commits touching this directory
+gmax log handleAuth                        # commits across all files defining the symbol
+gmax log handleAuth --in src/              # restrict symbol resolution to a sub-path
+gmax log src/lib/auth.ts --limit 5         # last 5 commits
+gmax log src/lib/auth.ts --from main       # commits since main (range main..HEAD)
+gmax log src/lib/auth.ts --since "2 weeks ago"
+gmax log src/lib/auth.ts --author Robert
+gmax log src/lib/auth.ts --no-follow       # disable rename tracking (default: on for files)
+gmax log src/lib/auth.ts --agent           # TSV: hash\tisoDate\tauthor\tsubject\tfilesChanged\tins\tdel\ttouchedFiles
 ```
 
 ### Symbols — `gmax symbols`
@@ -135,15 +144,6 @@ gmax recent                                # recently modified files
 gmax symbols                               # list indexed symbols
 gmax symbols auth -p src/ --root ~/proj    # filter by name, path, project
 gmax symbols --agent                       # compact: symbol\tpath:line\tcount
-```
-
-### Diff — `gmax diff [ref]`
-```
-gmax diff                              # uncommitted changes
-gmax diff HEAD~5                       # last 5 commits
-gmax diff main                         # branch changes vs main
-gmax diff main --query "auth changes"  # semantic search within changed files
-gmax diff --agent                      # compact output
 ```
 
 ### Test — `gmax test <symbol|file>`
