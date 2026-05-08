@@ -53,7 +53,7 @@ gmax "auth" --root ~/other/project --agent # search a different project
 gmax "auth" --imports --agent              # show file imports per file
 ```
 
-Output: `file:line symbol [ROLE] — signature_hint` (one line per result)
+Output: `file:line symbol [ROLE] — signature_hint` (one line per result). When multiple hits land in the same file, they collapse under a `path/to/file.ts (N hits):` header with indented children — saves the repeated path prefix.
 
 All search flags: `--agent --plain -m <n> --per-file <n> --min-score <n> --root <dir> --file <name> --exclude <prefix> --lang <ext> --role <role> --symbol --imports --name <regex> -C <n> --compact --content --scores --skeleton --explain --context-for-llm --budget <tokens>`
 
@@ -87,6 +87,9 @@ gmax trace handleAuth                      # 1-hop: callers + callees
 gmax trace handleAuth -d 2                 # 2-hop: callers-of-callers
 gmax trace handleAuth --root ~/project     # trace in a different project
 gmax trace handleAuth --agent              # compact: symbol\tpath:line, <- callers, -> callees
+gmax trace handleAuth --inbound --agent    # callers-only with call-site snippets (path:line\tsymbol\tsnippet)
+gmax trace handleAuth --inbound --no-snippets   # drop the snippet column
+gmax trace handleAuth --inbound --limit 20      # show up to 20 callers (default 10, max 30)
 ```
 
 ### Extract — `gmax extract <symbol>`
@@ -95,7 +98,9 @@ gmax extract handleAuth                    # full function body with line number
 gmax extract handleAuth --agent            # compact: path:start-end then raw code
 gmax extract handleAuth --imports          # prepend file imports
 gmax extract handleAuth --root ~/project   # extract from different project
+gmax extract handleAuth --no-tests         # suppress tests footer (default-on)
 ```
+Output ends with a `--- tests:` footer listing tests that exercise the symbol (default-on; opt-out with `--no-tests`).
 
 ### Peek — `gmax peek <symbol>`
 ```
@@ -103,7 +108,9 @@ gmax peek handleAuth                       # signature + callers + callees
 gmax peek handleAuth --agent               # compact TSV output
 gmax peek handleAuth -d 2                  # 2-hop callers
 gmax peek handleAuth --root ~/project      # peek in different project
+gmax peek handleAuth --no-tests            # suppress tests footer (default-on)
 ```
+Agent output ends with `t: <test-file>:line\t<test-symbol>\t<hop-label>` rows where hop-label is `direct`, `N-hop`, or `via-import`.
 
 ### Skeleton — `gmax skeleton <target>`
 ```
@@ -124,6 +131,7 @@ gmax project --root ~/other/project        # different project
 gmax related src/lib/index/syncer.ts       # dependencies + dependents
 gmax related src/lib/index/syncer.ts --root ~/project
 ```
+When both directions are empty, falls back to files mentioning the input file's basename. Generic basenames (`index`, `main`, `lib`, etc.) skip the fallback.
 
 ### Commit history — `gmax log <path-or-symbol>`
 ```
@@ -148,11 +156,12 @@ gmax symbols --agent                       # compact: symbol\tpath:line\tcount
 
 ### Test — `gmax test <symbol|file>`
 ```
-gmax test handleAuth                   # tests calling handleAuth
+gmax test handleAuth                   # tests calling handleAuth (call-graph + import-fallback)
 gmax test src/lib/auth.ts              # tests for symbols in this file
 gmax test handleAuth -d 2              # 2-hop: tests calling callers too
 gmax test handleAuth --agent           # compact output
 ```
+Hop labels: `direct` (calls the symbol), `N-hop` (calls a transitive caller), `via-import` (test references the symbol via import or mock when no call-graph match exists).
 
 ### Impact — `gmax impact <symbol|file>`
 ```
