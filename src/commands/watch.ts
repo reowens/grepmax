@@ -328,9 +328,21 @@ watch
   .action(async (options: { all?: boolean }) => {
     const { isDaemonRunning, sendDaemonCommand } = await import("../lib/utils/daemon-client");
     let stoppedDaemon = false;
+    let daemonPid: number | undefined;
 
     // Try shutting down daemon first
     if (await isDaemonRunning()) {
+      // Capture PID before IPC shutdown so the --all loop below can skip the
+      // daemon's own watcher-store entries (it registers itself under every
+      // watched project's PID — racing killProcess against the in-flight
+      // graceful shutdown is what produced "did not exit after SIGKILL"
+      // storms and the orphaned pid/sock/lock files this code path used to
+      // leave behind).
+      try {
+        const pidRaw = await fs.promises.readFile(PATHS.daemonPidFile, "utf-8");
+        const parsed = parseInt(pidRaw.trim(), 10);
+        if (Number.isFinite(parsed) && parsed > 0) daemonPid = parsed;
+      } catch {}
       let parentCmd = "?";
       try {
         const { execSync } = await import("node:child_process");
@@ -344,21 +356,36 @@ watch
         from_argv: process.argv.slice(0, 4),
         from_parent_cmd: parentCmd,
       });
+      // Wait for the daemon to actually exit before we start killing watcher
+      // entries — many of those entries share the daemon's PID. Poll for up
+      // to 10s; shutdown work can take a few seconds on large indexes.
+      if (daemonPid) {
+        for (let i = 0; i < 100; i++) {
+          if (!isProcessRunning(daemonPid)) break;
+          await new Promise((r) => setTimeout(r, 100));
+        }
+      }
       console.log("Daemon stopped.");
       stoppedDaemon = true;
     }
 
     if (options.all) {
       const watchers = listWatchers();
+      const seenPids = new Set<number>();
+      let projectStops = 0;
       for (const w of watchers) {
+        if (daemonPid && w.pid === daemonPid) continue;
+        if (seenPids.has(w.pid)) continue;
+        seenPids.add(w.pid);
         const killed = await killProcess(w.pid);
         unregisterWatcher(w.pid);
+        projectStops++;
         if (!killed) {
           console.warn(`Warning: PID ${w.pid} did not exit after SIGKILL`);
         }
       }
-      if (watchers.length > 0) {
-        console.log(`Stopped ${watchers.length} per-project watcher(s).`);
+      if (projectStops > 0) {
+        console.log(`Stopped ${projectStops} per-project watcher(s).`);
       } else if (!stoppedDaemon) {
         console.log("No running watchers.");
       }

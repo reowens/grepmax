@@ -1321,6 +1321,19 @@ export class Daemon {
 
     console.log("[daemon] Shutting down...");
 
+    // Drop external liveness markers FIRST so the next daemon start isn't
+    // fooled by leftover state if the long cleanup below is interrupted
+    // (uncaught exception, second SIGTERM, OOM kill mid-shutdown). The
+    // fresh-lock check in isDaemonHeartbeatFresh keyed on these — orphans
+    // here used to cause silent no-op spawns for up to 150s.
+    try { fs.unlinkSync(PATHS.daemonSocket); } catch {}
+    try { fs.unlinkSync(PATHS.daemonPidFile); } catch {}
+    if (this.releaseLock) {
+      const release = this.releaseLock;
+      this.releaseLock = null;
+      release().catch(() => {});
+    }
+
     if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
     if (this.idleInterval) clearInterval(this.idleInterval);
 
@@ -1368,14 +1381,8 @@ export class Daemon {
     }
     this.subscriptions.clear();
 
-    // Close server + socket + PID file + lock
+    // Close server (socket/pid/lock already dropped at the top of shutdown)
     this.server?.close();
-    try { fs.unlinkSync(PATHS.daemonSocket); } catch {}
-    try { fs.unlinkSync(PATHS.daemonPidFile); } catch {}
-    if (this.releaseLock) {
-      try { await this.releaseLock(); } catch {}
-      this.releaseLock = null;
-    }
 
     // Unregister all
     for (const root of this.processors.keys()) {

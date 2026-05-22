@@ -86,11 +86,25 @@ export async function isDaemonRunning(opts?: { timeoutMs?: number }): Promise<bo
  * Lock-file-based liveness probe. A running daemon refreshes daemon.lock's
  * mtime every 60s via its heartbeat loop; a fresh mtime means the daemon is
  * alive even if its socket ping times out under load.
+ *
+ * A fresh mtime alone is not proof of life — a SIGKILL'd (or OOM-killed,
+ * panicked, power-lost) daemon leaves the lock file behind with its last
+ * heartbeat mtime, fooling this check for up to HEARTBEAT_FRESH_THRESHOLD_MS.
+ * Cross-check that the PID file points at an actually-running process.
  */
 export function isDaemonHeartbeatFresh(): boolean {
   try {
     const stats = fs.statSync(PATHS.daemonLockFile);
-    return Date.now() - stats.mtimeMs < HEARTBEAT_FRESH_THRESHOLD_MS;
+    if (Date.now() - stats.mtimeMs >= HEARTBEAT_FRESH_THRESHOLD_MS) return false;
+    const pidRaw = fs.readFileSync(PATHS.daemonPidFile, "utf-8").trim();
+    const pid = parseInt(pidRaw, 10);
+    if (!Number.isFinite(pid) || pid <= 0) return false;
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
   } catch {
     return false;
   }
