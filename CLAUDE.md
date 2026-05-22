@@ -29,11 +29,14 @@ gmax-mcp (N instances, one per Claude Code session)
 
 ### Singleton enforcement (daemon)
 
-1. Read `~/.gmax/daemon.pid` — if PID alive, socket-ping it
-2. If responsive, exit (another daemon is healthy)
-3. If alive but unresponsive, SIGTERM/SIGKILL it
-4. Acquire `~/.gmax/daemon.lock` (proper-lockfile, stale after 120s)
-5. If ELOCKED, exit
+1. `killStaleProcesses()` — `pgrep -x gmax-daemon` finds every daemon process (not just whatever `daemon.pid` last named). For each:
+   - Two independent liveness probes:
+     - `isDaemonHeartbeatFresh()` — `daemon.lock` mtime within 150 s **and** the PID file points at a live process (the PID check defends against SIGKILL/OOM/panic leaving a fresh-mtime orphan)
+     - Socket ping with 10 s timeout (covers a busy daemon whose event loop is blocked)
+   - If either probe says alive → exit 0 (defer to the running peer)
+   - Otherwise → kill it. Also kill any orphaned `gmax-worker` processes.
+2. Acquire `~/.gmax/daemon.lock` (proper-lockfile, kernel-enforced, stale after 120 s). On `ELOCKED` → exit 0.
+3. Unlink any stale socket file, then start listening on the socket **before** writing the PID file — so anyone who reads the PID can immediately ping and get a response.
 
 ---
 
@@ -167,15 +170,23 @@ MLX client (`mlx-client.ts`) caches availability for 30s. No mechanism to start 
 
 ```
  1. Set shuttingDown flag
- 2. Clear heartbeat + idle intervals
- 3. Close all batch processors (awaited)
- 4. Stop LLM server
- 5. Unsubscribe all file watchers
- 6. Close socket server
- 7. Unlink socket + PID files
- 8. Release lock
- 9. Unregister all watchers
-10. Close MetaCache + VectorDB
+ 2. Drop external liveness markers FIRST: unlink socket + PID file,
+    release lock. Done before the long-running cleanup below so that an
+    interrupted shutdown (uncaught exception, second SIGTERM, OOM kill)
+    still leaves clean state — otherwise a stale daemon.lock with a
+    fresh mtime keeps the next start silently no-op'ing.
+ 3. Clear heartbeat + idle intervals
+ 4. Abort in-flight index/add operations (AbortController)
+ 5. Await pending project-lock operations
+ 6. Close all batch processors
+ 7. Stop LLM server
+ 8. Stop MLX embed server (also kills whoever owns port 8100)
+ 9. Destroy worker pool
+10. Clear poll intervals + FSEvents recovery timers
+11. Unsubscribe all file watchers
+12. Close socket server (file already unlinked in step 2)
+13. Unregister all watchers, unregister daemon entry
+14. Close MetaCache + VectorDB
 ```
 
 ---
