@@ -113,10 +113,13 @@ jobs:
           fi
           echo "Tarball audit passed — no unexpected files."
 
+      # Publish via npm CLI with OIDC (trusted publishing on npmjs.com).
+      # No NPM_TOKEN needed — id-token: write on this job lets npm exchange
+      # a short-lived OIDC token for a publish credential. Provenance is
+      # auto-generated for public repos publishing public packages, so no
+      # --provenance flag. Install/build above still use pnpm.
       - name: Publish to npm
-        run: pnpm publish --access public --provenance --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
 
       - name: Create GitHub Release (tag only, no assets)
         run: gh release create "${{ github.ref_name }}" --generate-notes --title "${{ github.ref_name }}" || true
