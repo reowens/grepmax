@@ -157,11 +157,3 @@ export async function mlxEmbed(
 
   return data.vectors.map((v: number[]) => new Float32Array(v));
 }
-
-/**
- * Reset availability cache (e.g., after starting the server).
- */
-export function resetMlxCache(): void {
-  mlxAvailable = null;
-  lastCheck = 0;
-}

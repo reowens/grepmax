@@ -92,7 +92,7 @@ Status values: `"pending"` | `"indexed"` | `"error"`
  0. Set process title "gmax-daemon"
  1. Singleton check: PID file -> socket ping -> kill stale
  2. Acquire exclusive lock (daemon.lock, stale=120s)
- 3. Kill leftover per-project watchers (legacy migration)
+ 3. Kill any per-project `gmax watch` processes so the daemon can take over their projects
  4. Write PID file
  5. Clean stale socket
  6. Open LanceDB + MetaCache (shared resources)
@@ -164,7 +164,7 @@ processFile(path)
   Return vectors + hash + meta
 ```
 
-MLX client (`mlx-client.ts`) caches availability for 30s. No mechanism to start the server or notify the daemon. `resetMlxCache()` exists but is never called by the daemon.
+MLX client (`mlx-client.ts`) caches availability for 30s. The cache is module-level state inside each worker process, so the daemon cannot invalidate it directly — recovery relies on the TTL expiring and on `mlxEmbed` flipping `mlxAvailable = false` on POST failure to force a re-probe.
 
 ### Shutdown (`daemon.ts:shutdown()`)
 

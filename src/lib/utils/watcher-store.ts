@@ -155,32 +155,6 @@ export function listWatchers(): WatcherInfo[] {
   return alive;
 }
 
-/**
- * Migrate from legacy watchers.json if it exists.
- * Call once on startup.
- */
-export function migrateFromJson(): void {
-  const jsonPath = path.join(PATHS.globalRoot, "watchers.json");
-  if (!fs.existsSync(jsonPath)) return;
-
-  try {
-    const raw = fs.readFileSync(jsonPath, "utf-8");
-    const entries = JSON.parse(raw) as WatcherInfo[];
-    const db = getDb();
-
-    for (const entry of entries) {
-      if (entry.projectRoot && isProcessRunning(entry.pid)) {
-        db.put(entry.projectRoot, { ...entry, lastHeartbeat: Date.now() });
-      }
-    }
-
-    // Remove legacy file
-    fs.unlinkSync(jsonPath);
-  } catch {
-    // Best effort — ignore
-  }
-}
-
 // --- Daemon registry ---
 
 export const DAEMON_KEY = "__daemon__";

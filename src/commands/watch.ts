@@ -20,7 +20,6 @@ import {
   heartbeat,
   isProcessRunning,
   listWatchers,
-  migrateFromJson,
   registerWatcher,
   unregisterWatcher,
   updateWatcherStatus,
@@ -93,7 +92,6 @@ export const watch = new Command("watch")
       }
 
       // Daemon foreground
-      migrateFromJson();
       const { Daemon } = await import("../lib/daemon/daemon");
       const daemon = new Daemon();
 
@@ -162,9 +160,6 @@ export const watch = new Command("watch")
     }
 
     // --- Per-project foreground mode ---
-
-    // Migrate legacy watchers.json to LMDB on first use
-    migrateFromJson();
 
     // Watcher requires project to be registered
     if (!getProject(projectRoot)) {
