@@ -10,8 +10,8 @@ gmax runs as cooperating processes. Only `gmax-mcp` may have multiple instances.
 
 ```
 gmax-daemon (singleton via lockfile)
-  |-- gmax-worker (1-7 child processes, lazy-spawned, reaped after 60s idle)
-  |-- [gmax-embed] (MLX GPU server on port 8100) ** SEE KNOWN BUG #1 **
+  |-- gmax-worker (1-7 child processes, lazy-spawned, reaped after 60s idle, min 2 kept alive)
+  |-- [gmax-embed] (MLX GPU server on port 8100; daemon heartbeat respawns it if zombie)
   +-- Unix socket server (~/.gmax/daemon.sock)
 
 gmax-mcp (N instances, one per Claude Code session)
@@ -22,8 +22,8 @@ gmax-mcp (N instances, one per Claude Code session)
 | Process | Started by | Lifecycle | Code |
 |---------|-----------|-----------|------|
 | gmax-daemon | `gmax watch --daemon -b` (SessionStart hook or manual) | Singleton. 30min idle timeout. | `src/commands/watch.ts` |
-| gmax-worker | Daemon's WorkerPool, lazy on first task | Reaped after 60s idle, min 1 kept alive | `src/lib/workers/pool.ts` |
-| gmax-embed | Daemon's `ensureMlxServer()` or `gmax serve` | 30min idle timeout | `src/lib/daemon/daemon.ts:855` |
+| gmax-worker | Daemon's WorkerPool, lazy on first task | Reaped after 60s idle, min 2 kept alive | `src/lib/workers/pool.ts` |
+| gmax-embed | Daemon's `ensureMlxServer()` (startup + 5min heartbeat health check) or `gmax serve` | 30min idle timeout | `src/lib/daemon/daemon.ts` |
 | gmax-mcp | Claude Code (one per session) | Session lifetime | `src/commands/mcp.ts` |
 | llama-server (LLM) | Daemon's LlmServer, on first `llm-start` IPC or `reviewCommit` | 10min idle timeout | `src/lib/llm/server.ts` |
 
@@ -100,7 +100,7 @@ Status values: `"pending"` | `"indexed"` | `"error"`
  8. Register daemon in watcher store
  9. Watch all "indexed" projects (subscribe + catchup)
  9b. Index all "pending" projects (background, async)
-10. Start heartbeat (60s interval)
+10. Start heartbeat (60s interval; every 5 ticks probes MLX `/health` and respawns the embed server if it's zombie — port held but unresponsive)
 11. Start idle checker (30min timeout)
 12. Start IPC socket server on daemon.sock
 
@@ -145,7 +145,7 @@ File event (from watcher or catchup) -> pending map -> debounce 2s -> processBat
 
 - Starts with 1 worker, scales up to `floor(cores * 0.5)` on demand in `dispatch()`
 - Workers are child processes (not threads) — isolates ONNX Runtime segfaults
-- Idle workers reaped after 60s back down to 1
+- Idle workers reaped after 60s back down to `MIN_KEEP = 2`. Reap sends SIGTERM, then escalates to SIGKILL after 5s if the worker is still alive (defends against a worker stuck inside a native ONNX matmul tight loop that won't service signals)
 - Task timeout: 120s (env: `GMAX_WORKER_TASK_TIMEOUT_MS`) -> SIGKILL worker -> respawn if tasks pending
 - Max consecutive respawns: 10, then pool stops spawning
 - Respawn counter resets on each successful task completion
@@ -276,7 +276,7 @@ curl -s http://127.0.0.1:8100/health               # MLX embed server up?
 
 ### Embed Server
 - `mlx-embed-server/server.py` — FastAPI, MLX GPU embeddings, idle timeout, Metal cache management
-- `src/commands/serve.ts` — **The only place that starts the MLX embed server** (`startMlxServer()` line 45)
+- `src/commands/serve.ts` — `startMlxServer()`: spawns MLX for the `gmax serve` standalone-HTTP path. The daemon spawns its own via `daemon.ts:ensureMlxServer()` (called at startup + by the 5-min heartbeat health check).
 
 ### Storage
 - `src/lib/store/vector-db.ts` — LanceDB wrapper (insert, delete, search, maintenance loop)

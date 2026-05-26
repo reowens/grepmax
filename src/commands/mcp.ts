@@ -114,6 +114,19 @@ const TOOLS = [
     },
   },
   {
+    name: "dead",
+    description:
+      "Report whether a symbol has zero inbound callers in the indexed call graph. Returns DEAD, PUBLIC EXPORT (exported with no internal callers), or LIVE with caller count. Hypothesis, not proof: dynamic dispatch, reflection, and string-built call sites won't show up.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        symbol: { type: "string", description: "Symbol name to check" },
+        root: { type: "string", description: "Project root (absolute path)" },
+      },
+      required: ["symbol"],
+    },
+  },
+  {
     name: "list_symbols",
     description: "List indexed symbols with role and export status.",
     inputSchema: {
@@ -1266,6 +1279,71 @@ export const mcp = new Command("mcp")
       }
     }
 
+    async function handleDead(
+      args: Record<string, unknown>,
+    ): Promise<ToolResult> {
+      ensureWatcher();
+      const symbol = String(args.symbol || "");
+      if (!symbol) return err("Missing required parameter: symbol");
+
+      try {
+        const root =
+          typeof args.root === "string" && args.root
+            ? args.root
+            : projectRoot;
+        const db = getVectorDb();
+        const table = await db.ensureTable();
+        const prefix = root.endsWith("/") ? root : `${root}/`;
+
+        const defRows = await table
+          .query()
+          .select(["path", "start_line", "is_exported"])
+          .where(
+            `array_contains(defined_symbols, '${escapeSqlString(symbol)}') AND path LIKE '${escapeSqlString(prefix)}%'`,
+          )
+          .limit(1)
+          .toArray();
+
+        if (defRows.length === 0) {
+          return ok(
+            `Symbol '${symbol}' not found in the index. Check \`gmax status\` to see which projects are indexed, or try \`gmax search ${symbol}\` to find similar symbols.`,
+          );
+        }
+
+        const defRow = defRows[0] as any;
+        const defPath = String(defRow.path || "");
+        const defLine = Number(defRow.start_line || 0);
+        const isExported = Boolean(defRow.is_exported);
+
+        const builder = new GraphBuilder(db, root);
+        const callers = await builder.getCallers(symbol);
+        const rel = (p: string) =>
+          p.startsWith(root) ? p.slice(root.length + 1) : p;
+        const defLoc = `${rel(defPath)}:${defLine + 1}`;
+
+        if (callers.length === 0) {
+          if (isExported) {
+            return ok(
+              `PUBLIC EXPORT  ${defLoc} defines ${symbol} — no internal callers found; check external usage`,
+            );
+          }
+          return ok(`DEAD  ${defLoc} defines ${symbol}`);
+        }
+
+        const top = callers.slice(0, 3);
+        const lines = [
+          `LIVE  ${defLoc} defines ${symbol} — ${callers.length} inbound caller${callers.length === 1 ? "" : "s"} (top ${top.length}):`,
+        ];
+        for (const c of top) {
+          lines.push(`  ${rel(c.file)}:${c.line + 1}`);
+        }
+        return ok(lines.join("\n"));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return err(`Dead check failed: ${msg}`);
+      }
+    }
+
     async function handleListSymbols(
       args: Record<string, unknown>,
     ): Promise<ToolResult> {
@@ -2089,6 +2167,9 @@ export const mcp = new Command("mcp")
           break;
         case "peek_symbol":
           result = await handlePeekSymbol(toolArgs);
+          break;
+        case "dead":
+          result = await handleDead(toolArgs);
           break;
         case "list_symbols":
           result = await handleListSymbols(toolArgs);
