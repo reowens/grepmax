@@ -2,14 +2,14 @@
 type: doc
 status: reference
 created: 2026-04-09
-updated: 2026-05-25
+updated: 2026-05-26
 summary: Live catalog of open gmax limitations with detection + recovery steps.
 audience: internal
 ---
 
 # Known Limitations
 
-Last updated 2026-05-25.
+Last updated 2026-05-26.
 
 ## `gmax dead` is a hypothesis, not a proof
 
@@ -57,6 +57,33 @@ If you're indexing a single-file library, large generated/bundled code, or a dat
 **Where the default lives:** `src/lib/search/searcher.ts` — `doRerank = _search_options?.rerank ?? false`. CLI and MCP wrappers read `process.env.GMAX_RERANK === "1"`.
 
 **Not a fix-target right now.** A "candidate-concentration heuristic" — auto-enable rerank when the top-K candidates concentrate ≥80% in one file — would be the principled fix but requires more measurement work. Revisit if user reports of monolithic-file repos come in.
+
+## PageRank tiebreaker is opt-in (same shape-sensitivity as ColBERT)
+
+Added 2026-05-26. Implementation `src/lib/search/pagerank.ts` + wiring in `src/lib/search/searcher.ts`. Default off.
+
+Global PageRank computed per-project over the call graph (nodes = `defined_symbols`, edges = `referenced_symbols` within a chunk), normalized to [0, 1], and added as `PR_WEIGHT * normalizedPR(chunk.defined_symbols)` to the post-fusion/post-boost score. Same 4-fixture instrument as ColBERT, at `PR_WEIGHT=0.05` (default):
+
+| Dataset | Code shape | PR-off MRR | PR-on MRR | Δ MRR | Δ R@10 |
+|---|---|---|---|---|---|
+| gmax (97 cases, scoped) | modular TS | 0.4960 | 0.4680 | **−0.028** | −0.010 |
+| express 4.21.1 (9 cases) | modular CommonJS | 0.6519 | 0.6519 | 0.000 | 0.000 |
+| platform (15 cases, private) | modular monorepo | 0.5467 | 0.5467 | 0.000 | 0.000 |
+| lodash 4.17.21 (10 cases) | monolithic IIFE | 0.3667 | **0.4333** | **+0.067** | **+0.200** |
+
+Same shape-sensitivity as ColBERT: modular regresses or stays flat, monolithic lifts. Weight sweep (`GMAX_PR_WEIGHT` ∈ {0.05 … 2.0}) only widens the gap — higher weights push lodash further up and crush express (0.65 → 0.32 at PR_WEIGHT=1.0). Root cause is structural, confirmed against IR literature: global PageRank is a query-independent popularity prior, so it preferentially weights "glue" code (utilities, framework base classes, barrels) which is precisely what users *don't* query by bare symbol name in modular repos. In lodash's monolithic IIFE, high-PR nodes (`map`, `filter`, core collection ops) *are* what users query, so the prior aligns with intent.
+
+**Opt in per-process:**
+
+```bash
+GMAX_PAGERANK=1 gmax search "query"
+# tune the additive weight (default 0.05):
+GMAX_PAGERANK=1 GMAX_PR_WEIGHT=0.1 gmax search "query"
+```
+
+Reproduce the table: `GMAX_PAGERANK=1 pnpm bench:oss:json` (express/lodash/platform); for gmax-self scoping use `GMAX_PAGERANK=1 GMAX_EVAL_PATH_PREFIX=/abs/path/to/gmax/ pnpm bench:recall:json`. Cache lives under `~/.gmax/pagerank/<sha1-of-pathPrefix>.json`, 1h TTL (tunable via `GMAX_PAGERANK_TTL_MS`).
+
+**Not a fix-target right now.** Tiebreaker is the wrong abstraction; per the plan-doc G1' note, the path with literature backing is **personalized PageRank or k-hop expansion seeded on first-stage hits** (candidate-recovery, not tiebreaker). That's a different feature, unscoped until an agent-side request makes the hard-miss pattern urgent. See [2026-05-25-semantic-search-landscape.md](plans/2026-05-25-semantic-search-landscape.md) — Bundle B section.
 
 ## LanceDB manifest references a missing fragment file
 
