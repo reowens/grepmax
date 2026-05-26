@@ -13,6 +13,7 @@ allowed-tools: "Bash(gmax:*), Read"
 - **Quick symbol overview?** → `Bash(gmax peek <symbol>)` (signature + callers + callees)
 - **Need file structure?** → `Bash(gmax skeleton <path>)`
 - **Need call flow?** → `Bash(gmax trace <symbol>)`
+- **Is a symbol unused?** → `Bash(gmax dead <symbol>)` (call-graph check — hypothesis, not proof)
 
 ## Quick start
 
@@ -40,7 +41,7 @@ If search returns "This project hasn't been added to gmax yet", run `Bash(gmax a
 
 ### Search — `gmax "query" --agent`
 
-The `--agent` flag produces compact, token-efficient output for AI agents. It works on most commands — `search`, `peek`, `extract`, `trace`, `test`, `impact`, `similar`, `log`, `related`, `symbols`, `status`, `project`, `context`, `skeleton`, and `doctor`.
+The `--agent` flag produces compact, token-efficient output for AI agents. It works on most commands — `search`, `peek`, `extract`, `trace`, `test`, `impact`, `similar`, `dead`, `log`, `related`, `symbols`, `status`, `project`, `context`, `skeleton`, and `doctor`.
 
 ```
 gmax "where do we handle authentication" --agent
@@ -177,6 +178,14 @@ gmax similar src/lib/auth.ts           # files with similar structure
 gmax similar handleAuth -m 5 --agent   # top 5, compact output
 ```
 
+### Dead — `gmax dead <symbol>`
+```
+gmax dead handleAuth                   # zero-inbound-callers check via the call graph
+gmax dead handleAuth --agent           # TSV: status\tdef:line\tcaller_count\tcallers_top3
+gmax dead handleAuth --in src/         # restrict to a sub-path
+```
+Status is `DEAD` (no callers, not exported), `PUBLIC EXPORT` (no internal callers but the defining chunk is exported — check external usage), or `LIVE` (with caller count + top-3 file:line). The call graph reflects what tree-sitter chunked: dynamic dispatch, reflection, eval, and string-built call sites won't show up — `DEAD` is a hypothesis, not a proof.
+
 ### Context — `gmax context <topic> --budget <tokens>`
 ```
 gmax context "authentication system" --budget 4000
@@ -219,13 +228,14 @@ gmax llm on/off/start/stop/status          # manage local LLM server
 10. **Test** — `Bash(gmax test <symbol>)` to find tests covering a symbol before editing
 11. **Impact** — `Bash(gmax impact <symbol>)` for blast radius before significant changes
 12. **Similar** — `Bash(gmax similar <symbol>)` to find similar patterns for DRY analysis
-13. **Context** — `Bash(gmax context "topic" --budget 4000)` for a token-budgeted topic summary
-14. **Related** — `Bash(gmax related <file>)` to see what else to look at
-15. **Status** — `Bash(gmax status)` to check index state across all projects
+13. **Dead** — `Bash(gmax dead <symbol>)` to check if a symbol has zero inbound callers (hypothesis, not proof)
+14. **Context** — `Bash(gmax context "topic" --budget 4000)` for a token-budgeted topic summary
+15. **Related** — `Bash(gmax related <file>)` to see what else to look at
+16. **Status** — `Bash(gmax status)` to check index state across all projects
 
 ## Tips
 
-- **Use `--agent` for compact output** — works on most commands: search, peek, extract, trace, log, test, impact, similar, related, status, project, doctor.
+- **Use `--agent` for compact output** — works on most commands: search, peek, extract, trace, log, test, impact, similar, dead, related, status, project, doctor.
 - **Be specific.** 5+ words. "auth" returns noise. "where does the server validate JWT tokens" is specific.
 - **Use `--role ORCHESTRATION`** to skip type definitions and find the actual logic.
 - **Use `--symbol`** when the query is a function/class name — gets search + trace in one call.

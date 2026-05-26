@@ -11,6 +11,22 @@ audience: internal
 
 Last updated 2026-05-25.
 
+## `gmax dead` is a hypothesis, not a proof
+
+Added 2026-05-25 (v0.17.2).
+
+`gmax dead <symbol>` reports zero inbound callers in the **indexed call graph**, which only contains what tree-sitter chunked statically. The following call sites are invisible to it and will produce false `DEAD` reports:
+
+- **Dynamic dispatch** — method calls resolved at runtime through interfaces/protocols/duck typing.
+- **Reflection / `eval`** — `getattr`, `Function.prototype.apply`, `eval`, `import()` with a runtime string.
+- **String-built call sites** — `obj[methodName]()` where `methodName` is computed.
+- **Cross-language calls** — a Python caller of a TypeScript exported function (and vice-versa) — graph is built per-language.
+- **External consumers** — anything outside the indexed project tree.
+
+Exported public-API symbols correctly downgrade to `PUBLIC EXPORT — no internal callers found; check external usage` when the defining chunk has `is_exported === true`. Treat `DEAD` as a starting point for removal, not a green light. Cross-check with `grep -r <symbol>` before deleting.
+
+**Not a fix-target:** the prompt-doc anti-scope explicitly rules out detecting dynamic-dispatch or string-call sites — both are hard to define correctly. The output is "the call graph as indexed shows N callers"; the user judges what that means.
+
 ## ColBERT rerank is opt-in (regresses MRR on the internal eval)
 
 Added 2026-05-25 (v0.17.1).

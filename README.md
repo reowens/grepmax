@@ -64,6 +64,7 @@ gmax log src/lib/auth.ts                 # Git commit history for a path or symb
 gmax test handleAuth                     # Find tests via reverse call graph
 gmax impact handleAuth                   # Dependents + affected tests
 gmax similar handleAuth                  # Find similar code patterns
+gmax dead handleAuth                     # Unused-symbol check via call graph (DEAD / PUBLIC EXPORT / LIVE)
 gmax context "auth system" --budget 4000 # Token-budgeted topic summary
 ```
 
@@ -121,6 +122,7 @@ Plugins auto-update when you run `npm install -g grepmax@latest` — no need to 
 | `trace_calls` | Call graph: importers, callers (multi-hop), callees with file:line. |
 | `extract_symbol` | Complete function/class body by symbol name. |
 | `peek_symbol` | Compact overview: signature + callers + callees. |
+| `dead` | Unused-symbol check via call graph. Returns `DEAD`, `PUBLIC EXPORT`, or `LIVE` with caller count. |
 | `list_symbols` | Indexed symbols with role and export status. |
 | `index_status` | Index health: chunks, files, projects, watcher status. |
 | `summarize_project` | Project overview: languages, structure, key symbols, entry points. |
@@ -277,6 +279,7 @@ fixtures/
 | `GMAX_WORKER_THREADS` | Worker threads for embedding | 50% of cores |
 | `GMAX_DEBUG` | Debug logging | Off |
 | `GMAX_SUMMARIZER` | Enable summarizer auto-start (`1`) | Off |
+| `GMAX_RERANK` | Enable ColBERT rerank (`1`) — off by default since v0.17.1 ([why](docs/known-limitations.md)) | Off |
 
 ## Troubleshooting
 
