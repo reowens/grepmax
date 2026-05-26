@@ -28,6 +28,8 @@
     "benchmark:chart": "npx tsx src/bench/generate-benchmark-chart.ts",
     "bench:recall": "npx tsx src/eval.ts",
     "bench:recall:json": "GMAX_EVAL_JSON=1 npx tsx src/eval.ts",
+    "bench:oss": "npx tsx src/eval-oss.ts all",
+    "bench:oss:json": "GMAX_EVAL_JSON=1 npx tsx src/eval-oss.ts all",
     "format": "biome check --write .",
     "format:check": "biome check .",
     "lint": "biome lint .",

@@ -296,6 +296,20 @@ gmax watch stop && gmax watch --daemon -b  # Restart daemon
 
 See [CLAUDE.md](CLAUDE.md) for development setup, commands, and architecture details.
 
+### Benchmarks
+
+Two evaluation harnesses live in the repo. Both emit stable JSON via `:json` variants.
+
+```bash
+pnpm bench:recall          # 97-case internal eval against gmax's own repo
+pnpm bench:recall:json
+pnpm bench:oss             # P1 definition-lookup across express, lodash, platform (sverklo-bench fixtures)
+pnpm bench:oss:json
+GMAX_EVAL_RERANK=1 pnpm bench:oss   # toggle ColBERT rerank
+```
+
+The OSS bench requires the fixture repos to be indexed first — see [`docs/known-limitations.md`](docs/known-limitations.md) for the most recent rerank-on-vs-off comparison across 4 datasets / 131 cases.
+
 ## Attribution
 
 grepmax is built upon the foundation of [mgrep](https://github.com/mixedbread-ai/mgrep) by MixedBread. See the [NOTICE](NOTICE) file for details.

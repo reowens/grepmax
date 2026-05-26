@@ -627,10 +627,15 @@ async function run() {
   // changes show up clearly. Set GMAX_EVAL_RERANK=1 to measure the full
   // production pipeline (slower, but more representative).
   const rerank = process.env.GMAX_EVAL_RERANK === "1";
+  // Optional pathPrefix scoping — needed by PageRank tiebreaker (which is
+  // per-project) and to isolate this bench from cross-project chunks indexed
+  // by the same daemon. Defaults to unscoped so historical numbers stay
+  // comparable.
+  const evalPathPrefix = process.env.GMAX_EVAL_PATH_PREFIX || undefined;
 
   for (const c of cases) {
     const queryStart = performance.now();
-    const res = await searcher.search(c.query, topK, { rerank });
+    const res = await searcher.search(c.query, topK, { rerank }, undefined, evalPathPrefix);
     const queryEnd = performance.now();
     const timeMs = queryEnd - queryStart;
 

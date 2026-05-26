@@ -10,6 +10,7 @@ import type { VectorDB } from "../store/vector-db";
 import { escapeSqlString, normalizePath } from "../utils/filter-builder";
 import { getWorkerPool } from "../workers/pool";
 import { detectIntent, type SearchIntent } from "./intent";
+import { loadOrComputePageRank, pageRankBoostForSymbols } from "./pagerank";
 
 export function buildWhereClause(
   pathPrefix: string | undefined,
@@ -465,10 +466,15 @@ export class Searcher {
     }
 
     // Phase A: Lightweight retrieval — only columns needed for RRF, cosine, boost, dedup
+    // PageRank tiebreaker needs defined_symbols for the per-chunk lookup; include
+    // it in the lightweight path only when the flag is on so we don't bloat the
+    // default query path.
+    const pagerankEnabled = process.env.GMAX_PAGERANK === "1" && !!pathPrefix;
     const LIGHTWEIGHT_COLUMNS = [
       "id", "path", "hash", "chunk_index", "start_line", "end_line",
       "is_anchor", "chunk_type", "role", "complexity", "is_exported",
       "content", "parent_symbol", "referenced_symbols", "pooled_colbert_48d",
+      ...(pagerankEnabled ? ["defined_symbols"] : []),
     ];
     // _distance is auto-added by vectorSearch, _score by FTS — include each
     // in the respective query to suppress LanceDB deprecation warnings
@@ -670,6 +676,41 @@ export class Searcher {
           : undefined,
       };
     });
+
+    // PageRank tiebreaker (opt-in via GMAX_PAGERANK=1). Small additive delta on
+    // top of the post-boost score, sourced from the per-project call graph. Read
+    // docs/plans/2026-05-25-semantic-search-landscape.md (Bundle B / G1) for the
+    // measurement criterion that decides whether this flag becomes default-on.
+    if (pagerankEnabled && pathPrefix) {
+      try {
+        const { scores: prScores, max: prMax } = await loadOrComputePageRank(
+          this.db,
+          pathPrefix,
+        );
+        if (prMax > 0) {
+          const envWeight = Number.parseFloat(process.env.GMAX_PR_WEIGHT ?? "");
+          const PR_WEIGHT = Number.isFinite(envWeight) && envWeight >= 0 ? envWeight : 0.05;
+          for (const item of scored) {
+            const raw = (item.record as { defined_symbols?: unknown }).defined_symbols;
+            let defs: string[] = [];
+            if (Array.isArray(raw)) {
+              defs = raw.filter((v): v is string => typeof v === "string");
+            } else if (raw && typeof (raw as { toArray?: () => unknown }).toArray === "function") {
+              try {
+                const arr = (raw as { toArray: () => unknown }).toArray();
+                if (Array.isArray(arr)) {
+                  defs = arr.filter((v): v is string => typeof v === "string");
+                }
+              } catch {}
+            }
+            const norm = pageRankBoostForSymbols(defs, prScores, prMax);
+            item.score += PR_WEIGHT * norm;
+          }
+        }
+      } catch (e) {
+        console.warn(`[Searcher] PageRank tiebreaker failed: ${e}`);
+      }
+    }
 
     // Note: "boosted" was not previously declared -- fix to use "scored"
     scored.sort((a: ScoredItem, b: ScoredItem) => b.score - a.score);
