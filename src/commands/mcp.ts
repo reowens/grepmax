@@ -523,7 +523,7 @@ export const mcp = new Command("mcp")
         const result = await searcher.search(
           query,
           limit,
-          { rerank: true },
+          { rerank: process.env.GMAX_RERANK === "1" },
           Object.keys(filters).length > 0 ? filters : undefined,
           pathPrefix,
         );
@@ -1826,7 +1826,7 @@ export const mcp = new Command("mcp")
 
         if (query) {
           const searcher = getSearcher();
-          const response = await searcher.search(query, limit, { rerank: true }, {}, projectRoot);
+          const response = await searcher.search(query, limit, { rerank: process.env.GMAX_RERANK === "1" }, {}, projectRoot);
           const changedSet = new Set(changedFiles);
           let filtered = response.data.filter((r: any) => changedSet.has(String(r.path || "")));
           if (role) filtered = filtered.filter((r: any) => String(r.role || "").toUpperCase().startsWith(role));
@@ -2004,7 +2004,7 @@ export const mcp = new Command("mcp")
 
       try {
         const searcher = getSearcher();
-        const response = await searcher.search(topic, limit, { rerank: true }, {}, projectRoot);
+        const response = await searcher.search(topic, limit, { rerank: process.env.GMAX_RERANK === "1" }, {}, projectRoot);
         if (response.data.length === 0) return ok(`No results found for "${topic}".`);
 
         const rel = (p: string) =>

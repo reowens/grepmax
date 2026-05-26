@@ -718,7 +718,7 @@ Examples:
                     ? searchFilters
                     : undefined,
                 pathPrefix: pathFilter,
-                rerank: true,
+                rerank: process.env.GMAX_RERANK === "1",
                 explain: options.explain,
                 includeSkeletons: options.skeleton,
                 includeGraph: options.symbol,
@@ -850,7 +850,7 @@ Examples:
       searchResult = await searcher.search(
         pattern,
         parseInt(options.m, 10),
-        { rerank: true, explain: options.explain },
+        { rerank: process.env.GMAX_RERANK === "1", explain: options.explain },
         Object.keys(searchFilters).length > 0
           ? (searchFilters as SearchFilter)
           : undefined,

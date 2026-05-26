@@ -80,6 +80,13 @@ const TASK_TIMEOUT_MS = (() => {
 })();
 
 const FORCE_KILL_GRACE_MS = 200;
+// Longer grace for idle reaps: the worker isn't urgently in the way, and a
+// graceful SIGTERM lets ONNX free ~1GB of model memory. But if SIGTERM is
+// ignored (a worker burning 100% CPU inside a native ONNX matmul tight loop
+// won't service signals — the 42h zombie we saw in v0.17.0 validation),
+// escalate to SIGKILL. ~5s is well above ONNX teardown time but short
+// enough that the reap loop self-heals within a minute.
+const REAP_FORCE_KILL_GRACE_MS = 5_000;
 
 class ProcessWorker {
   child: childProcess.ChildProcess;
@@ -541,8 +548,23 @@ export class WorkerPool {
         w.child.removeAllListeners("message");
         w.child.removeAllListeners("exit");
         w.child.removeAllListeners("error");
+        const pid = w.child.pid;
         try { w.child.kill("SIGTERM"); } catch {}
         this.workers = this.workers.filter((x) => x !== w);
+        // SIGTERM is ignored by a worker stuck inside a native ONNX matmul
+        // tight loop. Escalate to SIGKILL if the process is still alive after
+        // the grace period. Rare; warn-level so it's visible if it fires.
+        if (pid !== undefined) {
+          setTimeout(() => {
+            try {
+              process.kill(pid, 0);
+              log("pool", `reap escalation: SIGTERM ignored by PID:${pid}, sending SIGKILL`);
+              try { process.kill(pid, "SIGKILL"); } catch {}
+            } catch {
+              // ESRCH — process already gone, nothing to do.
+            }
+          }, REAP_FORCE_KILL_GRACE_MS);
+        }
       });
   }
 

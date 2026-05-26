@@ -63,6 +63,8 @@ export class Daemon {
   private readonly startTime = Date.now();
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private idleInterval: ReturnType<typeof setInterval> | null = null;
+  private heartbeatTick = 0;
+  private mlxRecoveryInFlight = false;
   private shuttingDown = false;
   private readonly pendingOps = new Set<string>();
   private readonly watcherFailCount = new Map<string, number>();
@@ -245,6 +247,14 @@ export class Daemon {
         fs.utimesSync(PATHS.daemonLockFile, now, now);
       } catch {}
       rotateLogFds(path.join(PATHS.logsDir, "daemon.log"));
+      // Every 5 ticks (5 min), probe the MLX embed server and respawn if
+      // it's gone zombie (port held but /health unresponsive). Closes the
+      // 42h-degradation window where workers silently fell back to ONNX CPU
+      // after a frozen MLX process kept the port bound (v0.17.0 bug #1).
+      this.heartbeatTick++;
+      if (this.heartbeatTick % 5 === 0) {
+        void this.checkMlxHealth();
+      }
     }, HEARTBEAT_INTERVAL_MS);
 
     // 10. Idle timeout (skip when disabled via env)
@@ -778,7 +788,7 @@ export class Daemon {
       result = await searcher.search(
         payload.query,
         payload.limit,
-        { rerank: payload.rerank !== false, explain: payload.explain === true },
+        { rerank: payload.rerank === true, explain: payload.explain === true },
         payload.filters,
         payload.pathPrefix,
         undefined,
@@ -1185,6 +1195,29 @@ export class Daemon {
       return Number.isFinite(pid) ? pid : null;
     } catch {
       return null;
+    }
+  }
+
+  private async checkMlxHealth(): Promise<void> {
+    if (this.shuttingDown || this.mlxRecoveryInFlight) return;
+    if (await this.isMlxServerUp()) return;
+    const port = parseInt(process.env.MLX_EMBED_PORT || "8100", 10);
+    const stalePid = this.getPortPid(port);
+    if (!stalePid) return; // No process — let the next user-facing path spawn it.
+    this.mlxRecoveryInFlight = true;
+    try {
+      console.log(
+        `[daemon] MLX zombie detected on port ${port} (PID ${stalePid}) — killing and respawning`,
+      );
+      await killProcess(stalePid);
+      await new Promise((r) => setTimeout(r, 500));
+      await this.ensureMlxServer();
+    } catch (err) {
+      console.error(
+        `[daemon] MLX recovery failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      this.mlxRecoveryInFlight = false;
     }
   }
 

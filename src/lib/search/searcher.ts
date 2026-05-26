@@ -397,7 +397,11 @@ export class Searcher {
     signal?: AbortSignal,
   ): Promise<SearchResponse> {
     const finalLimit = top_k ?? 10;
-    const doRerank = _search_options?.rerank ?? true;
+    // ColBERT rerank is opt-in as of v0.17.1. On the 97-case eval it
+    // regresses MRR@10 by ~3% and doubles query latency; sweep across
+    // FUSED_WEIGHT ∈ {0,0.1,0.5,1,2} showed rerank scores dominate
+    // fused scores ~30:1 so blend tuning can't recover the loss.
+    const doRerank = _search_options?.rerank ?? false;
     const explain = _search_options?.explain ?? false;
     const searchIntent = intent || detectIntent(query);
 

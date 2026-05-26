@@ -2,14 +2,30 @@
 type: doc
 status: reference
 created: 2026-04-09
-updated: 2026-05-23
+updated: 2026-05-25
 summary: Live catalog of open gmax limitations with detection + recovery steps.
 audience: internal
 ---
 
 # Known Limitations
 
-Last updated 2026-05-21.
+Last updated 2026-05-25.
+
+## ColBERT rerank is opt-in (regresses MRR on the internal eval)
+
+Added 2026-05-25 (v0.17.1).
+
+ColBERT late-interaction rerank now defaults to **off**. On the 97-case internal eval (`pnpm bench:recall:json`) rerank-on consistently regressed MRR@10 (0.5677 vs 0.5853 baseline) and dropped hits@1 by 1 across every blend value swept ({0.0, 0.1, 0.5, 1.0, 2.0}), while doubling query latency (~75ms → ~155ms). The rerank score magnitudes (~30) dominate the fused score magnitudes (~0–1) by ~30:1, so `GMAX_RERANK_BLEND` has no recoverable effect on final ordering at any reasonable value.
+
+**Opt in per-process:**
+
+```bash
+GMAX_RERANK=1 gmax search "query"
+```
+
+**Where the default lives:** `src/lib/search/searcher.ts` — `doRerank = _search_options?.rerank ?? false`. CLI and MCP wrappers read `process.env.GMAX_RERANK === "1"`.
+
+**Not a fix-target:** the finding is that ColBERT-as-shipped (Granite ColBERTv2 small) doesn't help on our query mix. Whether it helps on an OSS fixture set (express/lodash etc.) is a separate question; revisit if/when public benchmarks become a priority.
 
 ## LanceDB manifest references a missing fragment file
 

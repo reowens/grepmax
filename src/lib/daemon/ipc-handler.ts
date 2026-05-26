@@ -137,7 +137,7 @@ export async function handleCommand(
               limit: limitRaw,
               filters,
               pathPrefix: typeof cmd.pathPrefix === "string" ? cmd.pathPrefix : undefined,
-              rerank: cmd.rerank !== false,
+              rerank: cmd.rerank === true,
               explain: cmd.explain === true,
               includeSkeletons: cmd.includeSkeletons === true,
               skeletonLimit: skeletonLimitRaw,
