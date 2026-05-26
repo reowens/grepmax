@@ -27,11 +27,24 @@ Exported public-API symbols correctly downgrade to `PUBLIC EXPORT — no interna
 
 **Not a fix-target:** the prompt-doc anti-scope explicitly rules out detecting dynamic-dispatch or string-call sites — both are hard to define correctly. The output is "the call graph as indexed shows N callers"; the user judges what that means.
 
-## ColBERT rerank is opt-in (regresses MRR on the internal eval)
+## ColBERT rerank is opt-in (shape-sensitive: helps monolithic files, hurts modular repos)
 
-Added 2026-05-25 (v0.17.1).
+Added 2026-05-25 (v0.17.1). Refined 2026-05-25 with OSS-fixture evidence.
 
-ColBERT late-interaction rerank now defaults to **off**. On the 97-case internal eval (`pnpm bench:recall:json`) rerank-on consistently regressed MRR@10 (0.5677 vs 0.5853 baseline) and dropped hits@1 by 1 across every blend value swept ({0.0, 0.1, 0.5, 1.0, 2.0}), while doubling query latency (~75ms → ~155ms). The rerank score magnitudes (~30) dominate the fused score magnitudes (~0–1) by ~30:1, so `GMAX_RERANK_BLEND` has no recoverable effect on final ordering at any reasonable value.
+ColBERT late-interaction rerank defaults to **off**. Three fixture sets across two code shapes:
+
+| Dataset | Code shape | rerank-off MRR | rerank-on MRR | Δ MRR | R@10 off→on | hits@1 off→on |
+|---|---|---|---|---|---|---|
+| gmax (97 cases) | modular TS | 0.5938 | 0.5657 | **−0.028** | 0.804 → 0.794 | 47 → 44 |
+| express 4.21.1 (9 cases) | modular CommonJS | 0.6519 | 0.4778 | **−0.174** | 0.889 → 0.889 | 5 → 3 |
+| platform (15 cases, private) | modular monorepo (pnpm) | 0.5467 | 0.3962 | **−0.151** | 0.733 → 0.733 | 6 → 4 |
+| lodash 4.17.21 (10 cases) | monolithic IIFE | 0.3667 | 0.6500 | **+0.283** | 0.600 → 0.900 | 2 → 5 |
+
+Fixtures are sverklo-bench P1 (definition lookup) ported verbatim from [sverklo/sverklo-bench](https://github.com/sverklo/sverklo-bench); platform fixtures hand-curated against a private monorepo using the same bare-symbol query methodology. Reproduce via `npx tsx src/eval-oss.ts <dataset>` (or `all`) with `GMAX_EVAL_RERANK=1` to toggle. Rerank doubles query latency in all cases (~75ms → ~155ms).
+
+Note that for every modular dataset, **recall@10 is unchanged** between modes — rerank perturbs the top-10 ordering but never promotes a new file *into* the top-10. The hits@1 drop is the entire user-visible cost.
+
+**The shape-sensitivity pattern.** On modular codebases each expected hit lives in its own file; fusion already picks the right file from filename/path signals, and ColBERT perturbs ranks within the correct candidate pool — usually for the worse. On monolithic single-file repos (lodash.js is 17K lines, hundreds of chunks) fusion can't discriminate within the file, and ColBERT's token-level scoring is the only mechanism that promotes the right chunk to the top.
 
 **Opt in per-process:**
 
@@ -39,9 +52,11 @@ ColBERT late-interaction rerank now defaults to **off**. On the 97-case internal
 GMAX_RERANK=1 gmax search "query"
 ```
 
+If you're indexing a single-file library, large generated/bundled code, or a datalake-style repo, the +30% recall is probably worth the latency. For modular projects, leave it off.
+
 **Where the default lives:** `src/lib/search/searcher.ts` — `doRerank = _search_options?.rerank ?? false`. CLI and MCP wrappers read `process.env.GMAX_RERANK === "1"`.
 
-**Not a fix-target:** the finding is that ColBERT-as-shipped (Granite ColBERTv2 small) doesn't help on our query mix. Whether it helps on an OSS fixture set (express/lodash etc.) is a separate question; revisit if/when public benchmarks become a priority.
+**Not a fix-target right now.** A "candidate-concentration heuristic" — auto-enable rerank when the top-K candidates concentrate ≥80% in one file — would be the principled fix but requires more measurement work. Revisit if user reports of monolithic-file repos come in.
 
 ## LanceDB manifest references a missing fragment file
 
