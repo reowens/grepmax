@@ -43,3 +43,5 @@ __pycache__/
 .gmax.json
 CLAUDE.md
 NEXT.md
+.dotmd/
+.claude/

@@ -25,7 +25,7 @@ import {
   unregisterWatcherByRoot,
 } from "../utils/watcher-store";
 import { LlmServer } from "../llm/server";
-import { handleCommand, writeProgress, writeDone } from "./ipc-handler";
+import { handleCommand, writeProgress, writeDone, startHeartbeat } from "./ipc-handler";
 import { log as dlog, debug as dbg } from "../utils/logger";
 import { isDaemonRunning, isDaemonHeartbeatFresh } from "../utils/daemon-client";
 import { readGlobalConfig } from "../index/index-config";
@@ -904,6 +904,7 @@ export class Daemon {
       this.shutdownAbortControllers.add(ac);
 
       this.vectorDb.pauseMaintenanceLoop();
+      const stopHeartbeat = startHeartbeat(conn);
       let lastProgressTime = 0;
       try {
         const result = await initialSync({
@@ -929,6 +930,7 @@ export class Daemon {
           await this.watchProject(root);
         }
 
+        stopHeartbeat();
         writeDone(conn, {
           ok: true,
           processed: result.processed,
@@ -939,8 +941,10 @@ export class Daemon {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[daemon] addProject failed for ${path.basename(root)}:`, msg);
+        stopHeartbeat();
         writeDone(conn, { ok: false, error: msg });
       } finally {
+        stopHeartbeat();
         this.shutdownAbortControllers.delete(ac);
         this.vectorDb?.resumeMaintenanceLoop();
       }
@@ -975,6 +979,7 @@ export class Daemon {
       this.shutdownAbortControllers.add(ac);
 
       this.vectorDb.pauseMaintenanceLoop();
+      const stopHeartbeat = startHeartbeat(conn);
       let lastProgressTime = 0;
       try {
         const result = await initialSync({
@@ -998,6 +1003,7 @@ export class Daemon {
           },
         });
 
+        stopHeartbeat();
         writeDone(conn, {
           ok: true,
           processed: result.processed,
@@ -1008,8 +1014,10 @@ export class Daemon {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[daemon] indexProject failed for ${path.basename(root)}:`, msg);
+        stopHeartbeat();
         writeDone(conn, { ok: false, error: msg });
       } finally {
+        stopHeartbeat();
         this.shutdownAbortControllers.delete(ac);
         this.vectorDb?.resumeMaintenanceLoop();
         // Re-enable watcher (skip if shutting down)
@@ -1031,6 +1039,7 @@ export class Daemon {
         return;
       }
 
+      const stopHeartbeat = startHeartbeat(conn);
       try {
         await this.unwatchProject(root);
 
@@ -1042,11 +1051,15 @@ export class Daemon {
           this.metaCache.delete(key);
         }
 
+        stopHeartbeat();
         writeDone(conn, { ok: true });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[daemon] removeProject failed for ${path.basename(root)}:`, msg);
+        stopHeartbeat();
         writeDone(conn, { ok: false, error: msg });
+      } finally {
+        stopHeartbeat();
       }
     });
   }
@@ -1064,6 +1077,7 @@ export class Daemon {
 
       const rootPrefix = opts.pathPrefix ?? (root.endsWith("/") ? root : `${root}/`);
 
+      const stopHeartbeat = startHeartbeat(conn);
       let lastProgressTime = 0;
       try {
         const result = await generateSummaries(
@@ -1079,6 +1093,7 @@ export class Daemon {
           opts.limit,
         );
 
+        stopHeartbeat();
         writeDone(conn, {
           ok: true,
           summarized: result.summarized,
@@ -1087,7 +1102,10 @@ export class Daemon {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[daemon] summarizeProject failed for ${path.basename(root)}:`, msg);
+        stopHeartbeat();
         writeDone(conn, { ok: false, error: msg });
+      } finally {
+        stopHeartbeat();
       }
     });
   }

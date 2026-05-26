@@ -1,3 +1,12 @@
+---
+type: doc
+status: archived
+created: 2026-04-03
+updated: 2026-04-03
+summary: Historical hardening plan from 2026-04-03. All items shipped in v0.14.x.
+audience: internal
+---
+
 # gmax Hardening Plan
 
 **Date:** 2026-04-03

@@ -614,13 +614,23 @@ async function run() {
   }
 
   const results: EvalResult[] = [];
+  const jsonModeEarly =
+    process.env.GMAX_EVAL_JSON === "1" || process.argv.includes("--json");
 
-  console.log("Starting evaluation...\n");
+  // In JSON mode, route all human-readable preamble to stderr so stdout
+  // stays a single parseable JSON object.
+  const log = jsonModeEarly ? console.error : console.log;
+  log("Starting evaluation...\n");
   const startTime = performance.now();
+
+  // Rerank is OFF by default — measures pre-rerank quality so ranking-only
+  // changes show up clearly. Set GMAX_EVAL_RERANK=1 to measure the full
+  // production pipeline (slower, but more representative).
+  const rerank = process.env.GMAX_EVAL_RERANK === "1";
 
   for (const c of cases) {
     const queryStart = performance.now();
-    const res = await searcher.search(c.query, topK, { rerank: false });
+    const res = await searcher.search(c.query, topK, { rerank });
     const queryEnd = performance.now();
     const timeMs = queryEnd - queryStart;
 
@@ -633,30 +643,52 @@ async function run() {
     results.reduce((sum, r) => sum + r.recall, 0) / results.length;
   const avgTime =
     results.reduce((sum, r) => sum + r.timeMs, 0) / results.length;
+  const summary = {
+    cases: results.length,
+    found: results.filter((r) => r.found).length,
+    hitsAt1: results.filter((r) => r.rr === 1).length,
+    mrrAt10: Number(mrr.toFixed(4)),
+    recallAt10: Number(recallAt10.toFixed(4)),
+    avgTimeMs: Math.round(avgTime),
+    totalTimeMs: Math.round(totalTime),
+    storePath: paths.lancedbDir,
+    rerank,
+  };
 
-  console.log("=".repeat(80));
-  console.log(`Eval results for store at: ${paths.lancedbDir}`);
-  console.log("=".repeat(80));
-  results.forEach((r) => {
-    const status = r.found ? `rank ${(1 / r.rr).toFixed(0)}` : "❌ missed";
-    const emoji = r.found ? (r.rr === 1 ? "🎯" : "✓") : "❌";
-    console.log(`${emoji} ${r.query}`);
-    console.log(
-      `   => ${status} (target: ${r.path}) [${r.timeMs.toFixed(0)}ms]`,
+  // JSON mode (GMAX_EVAL_JSON=1 or --json arg) emits a single stable object
+  // on stdout for tooling. Human output goes to stderr so both can be
+  // captured separately. Public-compatible shape — adding fixtures later
+  // doesn't change the schema.
+  const jsonMode =
+    process.env.GMAX_EVAL_JSON === "1" || process.argv.includes("--json");
+
+  if (jsonMode) {
+    process.stdout.write(
+      `${JSON.stringify({ summary, results }, null, 2)}\n`,
     );
-    if (r.note) {
-      console.log(`   // ${r.note}`);
-    }
-  });
-  console.log("=".repeat(80));
-  console.log(`MRR: ${mrr.toFixed(3)}`);
-  console.log(`Recall@10: ${recallAt10.toFixed(3)}`);
-  console.log(`Avg query time: ${avgTime.toFixed(0)}ms`);
-  console.log(`Total time: ${totalTime.toFixed(0)}ms`);
-  console.log(
-    `Found: ${results.filter((r) => r.found).length}/${results.length}`,
-  );
-  console.log("=".repeat(80));
+  } else {
+    console.log("=".repeat(80));
+    console.log(`Eval results for store at: ${paths.lancedbDir}`);
+    console.log("=".repeat(80));
+    results.forEach((r) => {
+      const status = r.found ? `rank ${(1 / r.rr).toFixed(0)}` : "❌ missed";
+      const emoji = r.found ? (r.rr === 1 ? "🎯" : "✓") : "❌";
+      console.log(`${emoji} ${r.query}`);
+      console.log(
+        `   => ${status} (target: ${r.path}) [${r.timeMs.toFixed(0)}ms]`,
+      );
+      if (r.note) {
+        console.log(`   // ${r.note}`);
+      }
+    });
+    console.log("=".repeat(80));
+    console.log(`MRR: ${mrr.toFixed(3)}`);
+    console.log(`Recall@10: ${recallAt10.toFixed(3)}`);
+    console.log(`Avg query time: ${avgTime.toFixed(0)}ms`);
+    console.log(`Total time: ${totalTime.toFixed(0)}ms`);
+    console.log(`Found: ${summary.found}/${results.length}`);
+    console.log("=".repeat(80));
+  }
 
   await gracefulExit(0);
 }

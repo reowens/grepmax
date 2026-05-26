@@ -31,6 +31,28 @@ export function writeDone(conn: net.Socket, data: Record<string, unknown>): void
   conn.end();
 }
 
+const HEARTBEAT_INTERVAL_MS = 5_000;
+
+/**
+ * Emit periodic heartbeat lines so the client's watchdog timer resets even
+ * when no progress is reported (e.g., during a long DB flush or compaction).
+ * The client treats heartbeat lines as proof-of-life but not as progress.
+ *
+ * Returns a stop function; caller MUST call it before writeDone to avoid a
+ * stray heartbeat racing the done line.
+ */
+export function startHeartbeat(conn: net.Socket, intervalMs = HEARTBEAT_INTERVAL_MS): () => void {
+  const timer = setInterval(() => {
+    if (!conn.writable) {
+      clearInterval(timer);
+      return;
+    }
+    conn.write(`${JSON.stringify({ type: "heartbeat", ts: Date.now() })}\n`);
+  }, intervalMs);
+  conn.once("close", () => clearInterval(timer));
+  return () => clearInterval(timer);
+}
+
 /**
  * Handle a single IPC command.
  *

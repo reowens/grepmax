@@ -45,6 +45,42 @@ export type RerankDoc = {
   token_ids?: number[];
 };
 
+/**
+ * Normalize a colbert payload received over IPC into an Int8Array.
+ *
+ * Node `child_process.send` serializes payloads as JSON, which doesn't
+ * preserve TypedArrays. An Int8Array sent over IPC arrives as a plain
+ * object with numeric keys (`{0: byte, 1: byte, ...}`). Without explicitly
+ * handling that shape, the rerank pipeline silently no-ops (empty matrix
+ * → maxSim returns 0 → final ranking falls back to fusion-only). Caught
+ * 2026-05-25 when the eval harness showed rerank-on producing identical
+ * scores to rerank-off across 97 cases.
+ */
+export function coerceColbertBytes(col: unknown): Int8Array {
+  if (col instanceof Int8Array) return col;
+  if (Buffer.isBuffer(col)) {
+    return new Int8Array(col.buffer, col.byteOffset, col.byteLength);
+  }
+  if (Array.isArray(col)) return new Int8Array(col as number[]);
+  if (col && typeof col === "object") {
+    // {type:"Buffer", data:[...]} — Node Buffer.toJSON output
+    const asUnknown = col as { type?: unknown; data?: unknown };
+    if (asUnknown.type === "Buffer" && Array.isArray(asUnknown.data)) {
+      return new Int8Array(asUnknown.data as number[]);
+    }
+    // {0: byte, 1: byte, ...} — Int8Array after IPC JSON serialization
+    const keys = Object.keys(col as object);
+    if (keys.length > 0 && keys.every((k) => /^\d+$/.test(k))) {
+      const arr = new Int8Array(keys.length);
+      for (const k of keys) {
+        arr[Number(k)] = (col as Record<string, number>)[k];
+      }
+      return arr;
+    }
+  }
+  return new Int8Array(0);
+}
+
 const CACHE_DIR = PATHS.models;
 const LOG_MODELS =
   process.env.GMAX_DEBUG_MODELS === "1" ||
@@ -408,27 +444,7 @@ export class WorkerOrchestrator {
     );
 
     return input.docs.map((doc) => {
-      const col = doc.colbert;
-      let colbert: Int8Array;
-
-      if (col instanceof Int8Array) {
-        colbert = col;
-      } else if (Buffer.isBuffer(col)) {
-        colbert = new Int8Array(col.buffer, col.byteOffset, col.byteLength);
-      } else if (
-        col &&
-        typeof col === "object" &&
-        "type" in col &&
-        (col as any).type === "Buffer" &&
-        Array.isArray((col as any).data)
-      ) {
-        // IPC serialization fallback (still copies, but unavoidable without SharedArrayBuffer)
-        colbert = new Int8Array((col as any).data);
-      } else if (Array.isArray(col)) {
-        colbert = new Int8Array(col);
-      } else {
-        colbert = new Int8Array(0);
-      }
+      const colbert = coerceColbertBytes(doc.colbert);
 
       const seqLen = Math.floor(colbert.length / input.colbertDim);
       const docMatrix: Float32Array[] = [];

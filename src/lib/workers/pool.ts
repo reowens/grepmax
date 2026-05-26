@@ -86,6 +86,10 @@ class ProcessWorker {
   busy = false;
   pendingTaskId: number | null = null;
   lastBusyTime = Date.now();
+  // Set when the pool has cleaned up after this worker (via exit or error
+  // event). Guards against handleWorkerExit running twice when both events
+  // fire for the same crash.
+  cleanedUp = false;
 
   constructor(
     public modulePath: string,
@@ -193,7 +197,14 @@ export class WorkerPool {
     worker: ProcessWorker,
     code: number | null,
     signal: NodeJS.Signals | null,
+    reason: "exit" | "error" = "exit",
+    err?: Error,
   ) {
+    // Crash paths can fire both 'error' and 'exit'. Either is sufficient
+    // to clean up; running this twice would double-respawn.
+    if (worker.cleanedUp) return;
+    worker.cleanedUp = true;
+
     worker.busy = false;
     const failedTasks = Array.from(this.tasks.values()).filter(
       (t) => t.worker === worker,
@@ -204,18 +215,17 @@ export class WorkerPool {
         (task.payload as Record<string, unknown>)?.path ??
         (task.payload as Record<string, unknown>)?.absolutePath ??
         "unknown";
-      debug("pool", `exit killed task=${task.id} method=${task.method} file=${filePath}`);
+      debug("pool", `${reason} killed task=${task.id} method=${task.method} file=${filePath}`);
+      const exitDetail = err
+        ? `: ${err.message}`
+        : `${code ? ` (code ${code})` : ""}${signal ? ` signal ${signal}` : ""}`;
       task.reject(
-        new Error(
-          `Worker exited unexpectedly${code ? ` (code ${code})` : ""}${
-            signal ? ` signal ${signal}` : ""
-          }`,
-        ),
+        new Error(`Worker ${reason === "error" ? "errored" : "exited unexpectedly"}${exitDetail}`),
       );
       this.completeTask(task, null);
     }
 
-    log("pool", `Worker PID:${worker.child.pid} exited (code:${code} signal:${signal} pending=${failedTasks.length})`);
+    log("pool", `Worker PID:${worker.child.pid} ${reason} (code:${code} signal:${signal}${err ? ` err:${err.message}` : ""} pending=${failedTasks.length})`);
     this.workers = this.workers.filter((w) => w !== worker);
     if (!this.destroyed) {
       // Only respawn if we have no workers left or there are pending tasks
@@ -301,10 +311,17 @@ export class WorkerPool {
     };
 
     const onExit = (code: number | null, signal: NodeJS.Signals | null) =>
-      this.handleWorkerExit(worker, code, signal);
+      this.handleWorkerExit(worker, code, signal, "exit");
+
+    // 'error' fires when spawn fails, IPC send fails async, or the child
+    // can't be killed. Without this handler the worker stays in
+    // this.workers as a zombie that the next dispatch tries to send to.
+    const onError = (err: Error) =>
+      this.handleWorkerExit(worker, null, null, "error", err);
 
     worker.child.on("message", onMessage);
     worker.child.on("exit", onExit);
+    worker.child.on("error", onError);
     this.workers.push(worker);
   }
 
@@ -406,8 +423,10 @@ export class WorkerPool {
       ),
     );
 
+    worker.cleanedUp = true;
     worker.child.removeAllListeners("message");
     worker.child.removeAllListeners("exit");
+    worker.child.removeAllListeners("error");
     try {
       worker.child.kill("SIGKILL");
     } catch {}
@@ -518,8 +537,10 @@ export class WorkerPool {
       .slice(0, reapCount)
       .forEach((w) => {
         log("pool", `reap idle worker PID:${w.child.pid} (idle ${Math.round((now - w.lastBusyTime) / 1000)}s, ${this.workers.length - 1} remaining)`);
+        w.cleanedUp = true;
         w.child.removeAllListeners("message");
         w.child.removeAllListeners("exit");
+        w.child.removeAllListeners("error");
         try { w.child.kill("SIGTERM"); } catch {}
         this.workers = this.workers.filter((x) => x !== w);
       });
@@ -546,8 +567,10 @@ export class WorkerPool {
     const killPromises = this.workers.map(
       (w) =>
         new Promise<void>((resolve) => {
+          w.cleanedUp = true;
           w.child.removeAllListeners("message");
           w.child.removeAllListeners("exit");
+          w.child.removeAllListeners("error");
           w.child.once("exit", () => resolve());
           w.child.kill("SIGTERM");
           const force = setTimeout(() => {

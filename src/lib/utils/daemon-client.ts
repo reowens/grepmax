@@ -196,6 +196,10 @@ export function sendStreamingCommand(
           } else if (msg.type === "progress") {
             resetTimer();
             onProgress(msg as StreamingProgress);
+          } else if (msg.type === "heartbeat") {
+            // Proof-of-life from a daemon doing slow non-emitting work
+            // (DB flush, compaction). Reset the watchdog; do not surface.
+            resetTimer();
           }
         } catch {
           console.warn("[daemon-client] Malformed response line:", line.slice(0, 200));

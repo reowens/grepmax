@@ -14,7 +14,12 @@ vi.mock("../src/config", async () => {
   };
 });
 
-import { isDaemonRunning, sendDaemonCommand } from "../src/lib/utils/daemon-client";
+import {
+  isDaemonRunning,
+  sendDaemonCommand,
+  sendStreamingCommand,
+  type StreamingProgress,
+} from "../src/lib/utils/daemon-client";
 
 function startMockServer(handler: (data: string, socket: net.Socket) => void): net.Server {
   const server = net.createServer((socket) => {
@@ -81,6 +86,48 @@ describe("daemon-client", () => {
         const resp = await sendDaemonCommand({ cmd: "ping" });
         expect(resp.ok).toBe(false);
         expect(resp.error).toBe("invalid response");
+      } finally {
+        server.close();
+      }
+    });
+  });
+
+  describe("sendStreamingCommand", () => {
+    it("heartbeat lines reset the watchdog and are not surfaced as progress", async () => {
+      // Watchdog is 100ms. Server emits a heartbeat at 70ms (resets deadline
+      // to 170ms) then `done` at 130ms. Without heartbeat handling, the
+      // watchdog would fire at 100ms before `done` arrives.
+      const server = startMockServer((_data, socket) => {
+        setTimeout(() => {
+          socket.write(`${JSON.stringify({ type: "heartbeat", ts: Date.now() })}\n`);
+        }, 70);
+        setTimeout(() => {
+          socket.write(`${JSON.stringify({ type: "done", ok: true })}\n`);
+        }, 130);
+      });
+
+      const progressMessages: StreamingProgress[] = [];
+      try {
+        const resp = await sendStreamingCommand(
+          { cmd: "index" },
+          (msg) => progressMessages.push(msg),
+          { timeoutMs: 100 },
+        );
+        expect(resp.ok).toBe(true);
+        // heartbeats must not bubble through onProgress
+        expect(progressMessages).toEqual([]);
+      } finally {
+        server.close();
+      }
+    });
+
+    it("times out without heartbeats or progress", async () => {
+      // Server accepts but emits nothing. Should hit the watchdog.
+      const server = startMockServer(() => {});
+      try {
+        await expect(
+          sendStreamingCommand({ cmd: "index" }, () => {}, { timeoutMs: 100 }),
+        ).rejects.toThrow("streaming command timed out");
       } finally {
         server.close();
       }

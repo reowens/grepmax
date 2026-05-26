@@ -26,6 +26,8 @@
     "benchmark:index": "./run-benchmark.sh $HOME/gmax-benchmarks --index",
     "benchmark:agent": "npx tsx src/bench/benchmark-agent.ts",
     "benchmark:chart": "npx tsx src/bench/generate-benchmark-chart.ts",
+    "bench:recall": "npx tsx src/eval.ts",
+    "bench:recall:json": "GMAX_EVAL_JSON=1 npx tsx src/eval.ts",
     "format": "biome check --write .",
     "format:check": "biome check .",
     "lint": "biome lint .",
