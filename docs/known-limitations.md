@@ -2,7 +2,7 @@
 type: doc
 status: reference
 created: 2026-04-09
-updated: 2026-05-26
+updated: 2026-05-26T14:00:00Z
 summary: Live catalog of open gmax limitations with detection + recovery steps.
 audience: internal
 ---
@@ -10,6 +10,36 @@ audience: internal
 # Known Limitations
 
 Last updated 2026-05-26.
+
+## Chunker `referenced_symbols` extracts call-expression names, not identifier-as-value references
+
+Added 2026-05-26. Confirmed during Bundle B G1' Phase 0 sanity check.
+
+The chunker writes `referenced_symbols` per chunk to support `gmax trace`, `gmax dead`, and any graph-derived ranking signal. Today the extraction tracks **call-expression callees** — names that appear in a syntactic call position. It does **not** track identifier references that aren't calls: class names used as values (`new BeyondError(…)`, `instanceof BeyondError`, `throw new ValidationError(…)`), constants/enums referenced as values (`ErrorCodes.NOT_FOUND`, `ErrorCodes.VALIDATION`), or types referenced in expression position.
+
+Evidence (platform monorepo, ~123k chunks, scoped via `pathPrefix`):
+
+| Target symbol | def-chunks | ref-chunks (whole corpus) |
+|---|---|---|
+| `BeyondError` | 1 | 0 |
+| `ErrorCodes` | 0 | 0 |
+| `resolveActor` | 3 | 0 |
+| `errorHandler` | 3 | 0 |
+
+Despite 14.0% of platform chunks having non-empty `referenced_symbols` (avg 82 refs/chunk where non-empty), zero chunks in the entire indexed corpus have any of these four symbols in `referenced_symbols`. Spot-check on a known caller file (`packages/api/src/middleware/error.ts`, where `errorHandler` clearly handles `BeyondError`): the chunk's 40 refs are `[now, createRequestLogger, get, get, warn, annotateActiveSpan, logRequest, json, …]` — all method/function call sites, no class-as-value references.
+
+**Impact:**
+- `gmax dead <ClassName>` will under-count callers — any usage that's purely `new ClassName(…)`/`instanceof ClassName`/`ClassName.MEMBER` is invisible to the graph. The current `gmax dead` output already disclaims dynamic dispatch and string-built call sites (see entry below); the class-as-value blind spot is in the same family.
+- `gmax trace --inbound <ClassName>` will look sparse for the same reason.
+- Any graph-derived ranking signal (PageRank, k-hop recall recovery, PPR) inherits the same blind spot. Bundle B's G1' was aborted at Phase 0 for exactly this reason — see [the plan doc](plans/2026-05-25-semantic-search-landscape.md) Bundle B section.
+
+**Not a fix-target right now.** Fixing it means revisiting tree-sitter capture queries per-language (TS/JS, Python, Go, Rust, Java, C#, Ruby, Kotlin, Swift, Bash, Scala — 11+ grammars) to also capture identifier references in expression position, while keeping the existing call-expression coverage. That's substantial scope and a measurement open question (does denser ref extraction improve downstream consumers enough to justify the chunk size growth?). Reopen if a concrete consumer (e.g., an agent that hits the dead-call-by-class-name pattern often enough to matter) provides demand evidence.
+
+**Repro:**
+```bash
+npx tsx src/eval-graph-totals.ts     # whole-corpus ref counts on platform
+npx tsx src/eval-graph-spotcheck.ts  # raw referenced_symbols for known callers
+```
 
 ## `gmax dead` is a hypothesis, not a proof
 
@@ -20,6 +50,7 @@ Added 2026-05-25 (v0.17.2).
 - **Dynamic dispatch** — method calls resolved at runtime through interfaces/protocols/duck typing.
 - **Reflection / `eval`** — `getattr`, `Function.prototype.apply`, `eval`, `import()` with a runtime string.
 - **String-built call sites** — `obj[methodName]()` where `methodName` is computed.
+- **Identifier-as-value references** — `new ClassName(…)`, `instanceof ClassName`, `Enum.MEMBER`, types in expression position. The chunker tracks call-expression callees only; see the "Chunker `referenced_symbols`…" entry above.
 - **Cross-language calls** — a Python caller of a TypeScript exported function (and vice-versa) — graph is built per-language.
 - **External consumers** — anything outside the indexed project tree.
 
