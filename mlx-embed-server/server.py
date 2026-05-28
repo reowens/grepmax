@@ -25,6 +25,30 @@ os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
 os.environ["HF_HUB_VERBOSITY"] = "error"
 os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+# Auto-enable offline mode when the model is already cached, so steady-state
+# startups don't HEAD-check huggingface.co (annoying firewall prompts, slow
+# starts on flaky networks). First run with an empty cache stays online so
+# the model can be fetched. Force one or the other with GMAX_HF_ONLINE=1
+# or GMAX_HF_OFFLINE=1.
+def _hf_cache_has_model(model_id: str) -> bool:
+    hf_home = os.environ.get("HF_HOME") or os.path.expanduser(
+        os.path.join("~", ".cache", "huggingface")
+    )
+    cache_dir = os.path.join(
+        hf_home, "hub", "models--" + model_id.replace("/", "--")
+    )
+    return os.path.isdir(cache_dir) and bool(os.listdir(cache_dir))
+
+_model_id_for_cache_check = os.environ.get(
+    "MLX_EMBED_MODEL", "ibm-granite/granite-embedding-small-english-r2"
+)
+if os.environ.get("GMAX_HF_OFFLINE") == "1" or (
+    os.environ.get("GMAX_HF_ONLINE") != "1"
+    and _hf_cache_has_model(_model_id_for_cache_check)
+):
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
 warnings.filterwarnings("ignore", message=".*PyTorch.*")
 warnings.filterwarnings("ignore", message=".*resource_tracker.*")
 logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
