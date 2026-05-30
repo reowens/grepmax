@@ -186,12 +186,14 @@ gmax dead handleAuth --in src/         # restrict to a sub-path
 ```
 Status is `DEAD` (no callers, not exported), `PUBLIC EXPORT` (no internal callers but the defining chunk is exported — check external usage), or `LIVE` (with caller count + top-3 file:line). The call graph reflects what tree-sitter chunked: dynamic dispatch, reflection, eval, and string-built call sites won't show up — `DEAD` is a hypothesis, not a proof.
 
-### Context — `gmax context <topic> --budget <tokens>`
+### Context — `gmax context <topic-or-path> --budget <tokens>`
 ```
 gmax context "authentication system" --budget 4000
 gmax context "payment flow" --budget 8000
+gmax context src/lib/auth.ts --budget 3000
 gmax context src/lib/auth/ --budget 3000
 ```
+Use the path form when you already know the file or directory; it skips semantic search and gives deterministic structure/excerpt context.
 
 ### Investigate — `gmax investigate "question"` (requires LLM)
 ```
@@ -229,7 +231,7 @@ gmax llm on/off/start/stop/status          # manage local LLM server
 11. **Impact** — `Bash(gmax impact <symbol>)` for blast radius before significant changes
 12. **Similar** — `Bash(gmax similar <symbol>)` to find similar patterns for DRY analysis
 13. **Dead** — `Bash(gmax dead <symbol>)` to check if a symbol has zero inbound callers (hypothesis, not proof)
-14. **Context** — `Bash(gmax context "topic" --budget 4000)` for a token-budgeted topic summary
+14. **Context** — `Bash(gmax context "topic-or-path" --budget 4000)` for token-budgeted topic or path context
 15. **Related** — `Bash(gmax related <file>)` to see what else to look at
 16. **Status** — `Bash(gmax status)` to check index state across all projects
 

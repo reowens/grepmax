@@ -66,6 +66,7 @@ gmax impact handleAuth                   # Dependents + affected tests
 gmax similar handleAuth                  # Find similar code patterns
 gmax dead handleAuth                     # Unused-symbol check via call graph (DEAD / PUBLIC EXPORT / LIVE)
 gmax context "auth system" --budget 4000 # Token-budgeted topic summary
+gmax context src/lib/auth.ts --budget 4000 # Deterministic file/path context
 ```
 
 ### Project Commands
@@ -117,7 +118,7 @@ Plugins auto-update when you run `npm install -g grepmax@latest` — no need to 
 
 | Tool | Description |
 | --- | --- |
-| `semantic_search` | Search by meaning. 16+ params: query, limit, role, language, scope (project/all), project filtering, etc. |
+| `semantic_search` | Search by meaning. Pointer mode matches CLI `--agent` output; `detail=code/full` returns snippets. |
 | `code_skeleton` | File structure with bodies collapsed (~4x fewer tokens). |
 | `trace_calls` | Call graph: importers, callers (multi-hop), callees with file:line. |
 | `extract_symbol` | Complete function/class body by symbol name. |

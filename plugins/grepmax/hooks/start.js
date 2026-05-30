@@ -192,7 +192,7 @@ Understand:
 Survey:
   gmax project                       codebase overview (langs, structure, key symbols)
   gmax skeleton <file>               file structure (file path, NOT a directory)
-  gmax context "topic" --budget 4000 multi-file topic summary
+  gmax context "topic-or-path" --budget 4000 topic summary or deterministic file/dir context
   gmax log <path-or-symbol>          git commits (replaces recent/diff)
   gmax status                        indexed projects
 
