@@ -8,6 +8,7 @@ import {
   formatDryRunSummary,
 } from "../lib/index/sync-helpers";
 import { initialSync } from "../lib/index/syncer";
+import { formatAgentSearchResults } from "../lib/output/agent-search-formatter";
 import { Searcher } from "../lib/search/searcher";
 import { ensureSetup } from "../lib/setup/setup-helpers";
 import { Skeletonizer } from "../lib/skeleton";
@@ -23,10 +24,7 @@ import { gracefulExit } from "../lib/utils/exit";
 import { formatTextResults, type TextResult } from "../lib/utils/formatter";
 import { extractImports } from "../lib/utils/import-extractor";
 import { isLocked } from "../lib/utils/lock";
-import {
-  getProject,
-  resolveRootOrExit,
-} from "../lib/utils/project-registry";
+import { getProject, resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import { getServerForProject } from "../lib/utils/server-registry";
 
@@ -186,7 +184,9 @@ function formatCompactTSV(
     const conf = compactConf(hit.confidence);
     const defs = (hit.defined ?? []).join(",");
     const summary = hit.summary ?? "";
-    lines.push([relPath, hit.range, score, role, conf, defs, summary].join("\t"));
+    lines.push(
+      [relPath, hit.range, score, role, conf, defs, summary].join("\t"),
+    );
   }
   return lines.join("\n");
 }
@@ -387,9 +387,7 @@ function resultCountHeader(results: any[], maxCount: number): string {
     if (p) files.add(p);
   }
   const showing =
-    results.length < maxCount
-      ? `${results.length}`
-      : `top ${results.length}`;
+    results.length < maxCount ? `${results.length}` : `top ${results.length}`;
   return `Found ${results.length} match${results.length === 1 ? "" : "es"} (showing ${showing}) across ${files.size} file${files.size === 1 ? "" : "s"}`;
 }
 
@@ -404,8 +402,16 @@ export const search: Command = new CommanderCommand("search")
   .option("--per-file <n>", "Number of matches to show per file", "3")
   .option("--scores", "Show relevance scores", false)
   .option("--explain", "Show scoring breakdown per result", false)
-  .option("--context-for-llm", "Return full function body + imports per result", false)
-  .option("--budget <tokens>", "Max tokens for --context-for-llm output (default 8000)", "8000")
+  .option(
+    "--context-for-llm",
+    "Return full function body + imports per result",
+    false,
+  )
+  .option(
+    "--budget <tokens>",
+    "Max tokens for --context-for-llm output (default 8000)",
+    "8000",
+  )
   .option(
     "--min-score <score>",
     "Minimum relevance score (0-1) to include in results",
@@ -434,25 +440,40 @@ export const search: Command = new CommanderCommand("search")
     false,
   )
   .option("--root <dir>", "Search a different project directory")
-  .option("--file <name>", "Filter to files matching this name (e.g. 'syncer.ts')")
+  .option(
+    "--file <name>",
+    "Filter to files matching this name (e.g. 'syncer.ts')",
+  )
   .option(
     "--in <subpath>",
     "Restrict to a sub-path of the project (repeatable; comma-separated also accepted)",
-    (value: string, prev: string[] | undefined) => (prev ? [...prev, value] : [value]),
+    (value: string, prev: string[] | undefined) =>
+      prev ? [...prev, value] : [value],
   )
   .option(
     "--exclude <subpath>",
     "Exclude a sub-path of the project (repeatable; e.g. 'tests/')",
-    (value: string, prev: string[] | undefined) => (prev ? [...prev, value] : [value]),
+    (value: string, prev: string[] | undefined) =>
+      prev ? [...prev, value] : [value],
   )
   .option("--lang <ext>", "Filter by file extension (e.g. 'ts', 'py')")
-  .option("--role <role>", "Filter by role: ORCHESTRATION, DEFINITION, IMPLEMENTATION")
+  .option(
+    "--role <role>",
+    "Filter by role: ORCHESTRATION, DEFINITION, IMPLEMENTATION",
+  )
   .option("--symbol", "Append call graph after search results", false)
   .option("--imports", "Prepend file imports to each result", false)
   .option("--name <regex>", "Filter results by symbol name regex")
   .option("-C, --context <n>", "Include N lines before/after each result")
-  .option("--agent", "Ultra-compact output for AI agents (one line per result)", false)
-  .argument("<pattern>", "Natural language query (e.g. \"where do we handle auth?\")")
+  .option(
+    "--agent",
+    "Ultra-compact output for AI agents (one line per result)",
+    false,
+  )
+  .argument(
+    "<pattern>",
+    'Natural language query (e.g. "where do we handle auth?")',
+  )
   .argument("[path]", "Restrict search to this path prefix")
   .addHelpText(
     "after",
@@ -578,6 +599,25 @@ Examples:
             return; // EXIT
           }
 
+          if (options.agent) {
+            const importCache = new Map<string, string>();
+            const getImportsForFile = (absPath: string): string => {
+              if (!options.imports || !absPath) return "";
+              if (!importCache.has(absPath)) {
+                importCache.set(absPath, extractImports(absPath));
+              }
+              return importCache.get(absPath) ?? "";
+            };
+            console.log(
+              formatAgentSearchResults(filteredData, projectRootForServer, {
+                includeImports: options.imports,
+                getImportsForFile,
+                explain: options.explain,
+              }),
+            );
+            return; // EXIT
+          }
+
           const isTTY = process.stdout.isTTY;
           const shouldBePlain = options.plain || !isTTY;
 
@@ -667,9 +707,7 @@ Examples:
       // positional [path] when both are given (positional was the older
       // shape; --in is canonical going forward).
       if (exec_path && options.in && options.in.length > 0) {
-        console.warn(
-          "Warning: --in overrides positional [path]; using --in.",
-        );
+        console.warn("Warning: --in overrides positional [path]; using --in.");
       }
       const { resolveScope } = await import("../lib/utils/scope-filter");
       const scope = resolveScope({
@@ -690,7 +728,8 @@ Examples:
       if (options.file) searchFilters.file = options.file;
       if (options.lang) searchFilters.language = options.lang;
       if (options.role) searchFilters.role = options.role;
-      if (scope.inPrefixes.length > 0) searchFilters.inPrefixes = scope.inPrefixes;
+      if (scope.inPrefixes.length > 0)
+        searchFilters.inPrefixes = scope.inPrefixes;
       if (scope.excludePrefixes.length > 0)
         searchFilters.excludePrefixes = scope.excludePrefixes;
 
@@ -752,110 +791,116 @@ Examples:
       if (!searchResult) {
         vectorDb = new VectorDB(paths.lancedbDir);
 
-      // Check for active indexing lock and warn if present
-      if (!options.agent && isLocked(paths.dataDir)) {
-        console.warn(
-          "⚠️  Warning: Indexing in progress... search results may be incomplete.",
-        );
-      }
-
-      const hasRows = await vectorDb.hasAnyRows();
-      const needsSync = options.sync || !hasRows;
-
-      if (needsSync) {
-        const isTTY = process.stdout.isTTY;
-        let abortController: AbortController | undefined;
-        let signal: AbortSignal | undefined;
-
-        if (!isTTY) {
-          abortController = new AbortController();
-          signal = abortController.signal;
-          setTimeout(() => {
-            abortController?.abort();
-          }, 60000); // 60 seconds timeout for non-TTY auto-indexing
-        }
-
-        const { spinner, onProgress } = createIndexingSpinner(
-          projectRoot,
-          options.sync ? "Indexing..." : "Indexing repository (first run)...",
-        );
-
-        try {
-          await ensureGrammars(console.log, { silent: true });
-          const result = await initialSync({
-            projectRoot,
-            dryRun: options.dryRun,
-            onProgress,
-            signal,
-          });
-
-          if (signal?.aborted) {
-            spinner.warn(
-              `Indexing timed out (${result.processed}/${result.total}). Results may be partial.`,
-            );
-          }
-
-          if (options.dryRun) {
-            spinner.succeed(
-              `Dry run complete (${result.processed}/${result.total}) • would have indexed ${result.indexed}`,
-            );
-            console.log(
-              formatDryRunSummary(result, {
-                actionDescription: "would have indexed",
-                includeTotal: true,
-              }),
-            );
-            return;
-          }
-
-          await vectorDb.createFTSIndex();
-
-          // Update registry after sync
-          const { readGlobalConfig } = await import("../lib/index/index-config");
-          const { registerProject } = await import("../lib/utils/project-registry");
-          const gc = readGlobalConfig();
-          registerProject({
-            root: projectRoot,
-            name: path.basename(projectRoot),
-            vectorDim: gc.vectorDim,
-            modelTier: gc.modelTier,
-            embedMode: gc.embedMode,
-            lastIndexed: new Date().toISOString(),
-            chunkCount: result.indexed,
-            status: "indexed",
-          });
-
-          const failedSuffix =
-            result.failedFiles > 0 ? ` • ${result.failedFiles} failed` : "";
-          spinner.succeed(
-            `${options.sync ? "Indexing" : "Initial indexing"} complete (${result.processed}/${result.total}) • indexed ${result.indexed}${failedSuffix}`,
+        // Check for active indexing lock and warn if present
+        if (!options.agent && isLocked(paths.dataDir)) {
+          console.warn(
+            "⚠️  Warning: Indexing in progress... search results may be incomplete.",
           );
-        } catch (e) {
-          spinner.fail("Indexing failed");
-          throw e;
         }
-      }
 
-      // Ensure a watcher is running for live reindexing
-      if (!process.env.VITEST && !process.env.NODE_ENV?.includes("test")) {
-        const { launchWatcher } = await import("../lib/utils/watcher-launcher");
-        const launched = await launchWatcher(projectRoot);
-        if (!launched.ok && launched.reason === "spawn-failed") {
-          console.warn(`[search] ${launched.message}`);
+        const hasRows = await vectorDb.hasAnyRows();
+        const needsSync = options.sync || !hasRows;
+
+        if (needsSync) {
+          const isTTY = process.stdout.isTTY;
+          let abortController: AbortController | undefined;
+          let signal: AbortSignal | undefined;
+
+          if (!isTTY) {
+            abortController = new AbortController();
+            signal = abortController.signal;
+            setTimeout(() => {
+              abortController?.abort();
+            }, 60000); // 60 seconds timeout for non-TTY auto-indexing
+          }
+
+          const { spinner, onProgress } = createIndexingSpinner(
+            projectRoot,
+            options.sync ? "Indexing..." : "Indexing repository (first run)...",
+          );
+
+          try {
+            await ensureGrammars(console.log, { silent: true });
+            const result = await initialSync({
+              projectRoot,
+              dryRun: options.dryRun,
+              onProgress,
+              signal,
+            });
+
+            if (signal?.aborted) {
+              spinner.warn(
+                `Indexing timed out (${result.processed}/${result.total}). Results may be partial.`,
+              );
+            }
+
+            if (options.dryRun) {
+              spinner.succeed(
+                `Dry run complete (${result.processed}/${result.total}) • would have indexed ${result.indexed}`,
+              );
+              console.log(
+                formatDryRunSummary(result, {
+                  actionDescription: "would have indexed",
+                  includeTotal: true,
+                }),
+              );
+              return;
+            }
+
+            await vectorDb.createFTSIndex();
+
+            // Update registry after sync
+            const { readGlobalConfig } = await import(
+              "../lib/index/index-config"
+            );
+            const { registerProject } = await import(
+              "../lib/utils/project-registry"
+            );
+            const gc = readGlobalConfig();
+            registerProject({
+              root: projectRoot,
+              name: path.basename(projectRoot),
+              vectorDim: gc.vectorDim,
+              modelTier: gc.modelTier,
+              embedMode: gc.embedMode,
+              lastIndexed: new Date().toISOString(),
+              chunkCount: result.indexed,
+              status: "indexed",
+            });
+
+            const failedSuffix =
+              result.failedFiles > 0 ? ` • ${result.failedFiles} failed` : "";
+            spinner.succeed(
+              `${options.sync ? "Indexing" : "Initial indexing"} complete (${result.processed}/${result.total}) • indexed ${result.indexed}${failedSuffix}`,
+            );
+          } catch (e) {
+            spinner.fail("Indexing failed");
+            throw e;
+          }
         }
-      }
 
-      const searcher = new Searcher(vectorDb);
+        // Ensure a watcher is running for live reindexing
+        if (!process.env.VITEST && !process.env.NODE_ENV?.includes("test")) {
+          const { launchWatcher } = await import(
+            "../lib/utils/watcher-launcher"
+          );
+          const launched = await launchWatcher(projectRoot);
+          if (!launched.ok && launched.reason === "spawn-failed") {
+            console.warn(`[search] ${launched.message}`);
+          }
+        }
 
-      searchResult = await searcher.search(
-        pattern,
-        parseInt(options.m, 10),
-        { rerank: process.env.GMAX_RERANK === "1", explain: options.explain },
-        Object.keys(searchFilters).length > 0
-          ? (searchFilters as SearchFilter)
-          : undefined,
-        pathFilter,
-      );
+        const searcher = new Searcher(vectorDb);
+
+        searchResult = await searcher.search(
+          pattern,
+          parseInt(options.m, 10),
+          { rerank: process.env.GMAX_RERANK === "1", explain: options.explain },
+          Object.keys(searchFilters).length > 0
+            ? (searchFilters as SearchFilter)
+            : undefined,
+          pathFilter,
+        );
       } // end if (!searchResult) — in-process fallback
 
       if (!options.agent && searchResult.warnings?.length) {
@@ -900,93 +945,13 @@ Examples:
           console.log("(none)");
           process.exitCode = 1;
         } else {
-          // Pre-pass: group by absolute path in first-occurrence order so we
-          // can collapse same-file repeats under a one-line header. Score
-          // order is preserved globally for first-of-file; siblings cluster
-          // under their first hit's rank.
-          const groups = new Map<string, any[]>();
-          for (const r of filteredData) {
-            const absP = (r as any).path ?? (r as any).metadata?.path ?? "";
-            const arr = groups.get(absP);
-            if (arr) {
-              arr.push(r);
-            } else {
-              groups.set(absP, [r]);
-            }
-          }
-
-          const seenImportFiles = new Set<string>();
-          for (const [absP, members] of groups) {
-            const relPath = absP.startsWith(effectiveRoot)
-              ? absP.slice(effectiveRoot.length + 1)
-              : absP;
-
-            if (options.imports && absP && !seenImportFiles.has(absP)) {
-              seenImportFiles.add(absP);
-              const imports = getImportsForFile(absP);
-              if (imports) {
-                console.log(`[imports ${relPath}] ${imports.split("\n").join(" | ")}`);
-              }
-            }
-
-            const grouped = members.length > 1;
-            if (grouped) {
-              console.log(`${relPath} (${members.length} hits):`);
-            }
-
-            for (const r of members) {
-              const startLine = Math.max(
-                1,
-                ((r as any).startLine ??
-                  (r as any).start_line ??
-                  (r as any).generated_metadata?.start_line ??
-                  0) + 1,
-              );
-              const defs = Array.isArray((r as any).defined_symbols)
-                ? (r as any).defined_symbols
-                : [];
-              const symbol = defs[0] || "";
-              const role = ((r as any).role ?? "")
-                .slice(0, 4)
-                .toUpperCase();
-              let hint = "";
-              if ((r as any).summary) {
-                hint = ` — ${(r as any).summary}`;
-              } else {
-                // Extract first meaningful signature line from content
-                const raw = (r as any).content ?? (r as any).text ?? "";
-                const lines = raw.split("\n");
-                for (const line of lines) {
-                  const trimmed = line.trim();
-                  // Skip empty, comments, imports, braces, and mid-line fragments
-                  if (!trimmed || trimmed.length < 5) continue;
-                  if (trimmed.startsWith("//") || trimmed.startsWith("/*") || trimmed.startsWith("*")) continue;
-                  if (trimmed.startsWith("import ") || trimmed.startsWith("#") || trimmed.startsWith("File:")) continue;
-                  if (trimmed === "{" || trimmed === "}") continue;
-                  // Skip lines that look like continuations (start with punctuation, closing braces, or spread)
-                  if (/^[.),;:}\]|&(+`'"!~]/.test(trimmed)) continue;
-                  if (trimmed.startsWith("} ") || trimmed.startsWith("- ") || trimmed.startsWith("...")) continue;
-                  // Skip lines that look like mid-expression fragments (no keyword/declaration prefix)
-                  if (/^[a-z]/.test(trimmed) && !/^(export|function|class|interface|type|const|let|var|async|return|if|for|while|switch|enum|struct|pub |fn |def |impl |mod |use )/.test(trimmed)) continue;
-                  hint = ` — ${trimmed.length > 120 ? trimmed.slice(0, 117) + "..." : trimmed}`;
-                  break;
-                }
-              }
-              const sym = symbol ? ` ${symbol}` : "";
-              const rl = role ? ` [${role}]` : "";
-              const score = (r as any).score;
-              const scoreCol =
-                typeof score === "number" ? `\ts=${score.toFixed(3)}` : "";
-              const explainSuffix =
-                options.explain && (r as any).scoreBreakdown
-                  ? `\texplain:rerank=${(r as any).scoreBreakdown.rerank.toFixed(3)},fused=${(r as any).scoreBreakdown.fused.toFixed(3)},boost=${(r as any).scoreBreakdown.boost.toFixed(2)}x,score=${(r as any).scoreBreakdown.normalized.toFixed(3)}`
-                  : "";
-              const locator = grouped
-                ? `  :${startLine}`
-                : `${relPath}:${startLine}`;
-              console.log(`${locator}${scoreCol}${sym}${rl}${hint}${explainSuffix}`);
-            }
-          }
+          console.log(
+            formatAgentSearchResults(filteredData, effectiveRoot, {
+              includeImports: options.imports,
+              getImportsForFile,
+              explain: options.explain,
+            }),
+          );
         }
 
         // Agent trace (compact)
@@ -1007,9 +972,7 @@ Examples:
                 const rel = t.node.file.startsWith(effectiveRoot)
                   ? t.node.file.slice(effectiveRoot.length + 1)
                   : t.node.file;
-                console.log(
-                  `<- ${t.node.symbol} ${rel}:${t.node.line + 1}`,
-                );
+                console.log(`<- ${t.node.symbol} ${rel}:${t.node.line + 1}`);
               }
               for (const c of graph.callees.slice(0, 10)) {
                 if (c.file) {
@@ -1068,9 +1031,7 @@ Examples:
         let tokensUsed = 0;
         let shown = 0;
 
-        console.log(
-          resultCountHeader(filteredData, parseInt(options.m, 10)),
-        );
+        console.log(resultCountHeader(filteredData, parseInt(options.m, 10)));
 
         for (const r of filteredData) {
           const absP = (r as any).path ?? (r as any).metadata?.path ?? "";
@@ -1135,9 +1096,7 @@ Examples:
       const shouldBePlain = options.plain || !isTTY;
 
       if (!options.agent && !options.compact) {
-        console.log(
-          resultCountHeader(filteredData, parseInt(options.m, 10)),
-        );
+        console.log(resultCountHeader(filteredData, parseInt(options.m, 10)));
         console.log();
       }
 
@@ -1199,18 +1158,13 @@ Examples:
           let graph: any = precomputedGraph;
           if (!graph) {
             if (!vectorDb) throw new Error("no graph source");
-            const { GraphBuilder } = await import(
-              "../lib/graph/graph-builder"
-            );
+            const { GraphBuilder } = await import("../lib/graph/graph-builder");
             const builder = new GraphBuilder(vectorDb, effectiveRoot);
             graph = await builder.buildGraphMultiHop(pattern, 1);
           }
           if (graph?.center) {
             const lines: string[] = ["\n--- Call graph ---"];
-            const centerRel = path.relative(
-              effectiveRoot,
-              graph.center.file,
-            );
+            const centerRel = path.relative(effectiveRoot, graph.center.file);
             lines.push(
               `${graph.center.symbol} [${graph.center.role}] ${centerRel}:${graph.center.line + 1}`,
             );
@@ -1221,9 +1175,7 @@ Examples:
               if (filtered.length > 0) {
                 lines.push("Imported by:");
                 for (const imp of filtered.slice(0, 10)) {
-                  lines.push(
-                    `  ${path.relative(effectiveRoot, imp)}`,
-                  );
+                  lines.push(`  ${path.relative(effectiveRoot, imp)}`);
                 }
               }
             }

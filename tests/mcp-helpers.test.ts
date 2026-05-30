@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { err, ok, toStringArray } from "../src/commands/mcp";
+import {
+  err,
+  filterMcpSearchResults,
+  formatMcpPointerSearchResults,
+  ok,
+  toStringArray,
+} from "../src/commands/mcp";
+import type { ChunkType } from "../src/lib/store/types";
 
 describe("toStringArray", () => {
   it("returns strings from a string array", () => {
@@ -58,5 +65,82 @@ describe("err", () => {
       content: [{ type: "text", text: "failure" }],
       isError: true,
     });
+  });
+});
+
+function chunk(
+  file: string,
+  line: number,
+  symbol: string,
+  score: number,
+): ChunkType {
+  return {
+    type: "text",
+    text: `export function ${symbol}() {}`,
+    score,
+    metadata: { path: `/tmp/project/${file}`, hash: "" },
+    generated_metadata: { start_line: line, end_line: line, type: "function" },
+    defined_symbols: [symbol],
+    role: "DEFINITION",
+  };
+}
+
+describe("filterMcpSearchResults", () => {
+  it("applies score, max-per-file, and name filters", () => {
+    const data = [
+      chunk("src/a.ts", 0, "alpha", 0.9),
+      chunk("src/a.ts", 4, "beta", 0.8),
+      chunk("src/b.ts", 2, "alphaHelper", 0.4),
+      chunk("src/c.ts", 1, "gamma", 0.95),
+    ];
+
+    const filtered = filterMcpSearchResults(data, {
+      minScore: 0.5,
+      maxPerFile: 1,
+      namePattern: "alpha|beta",
+    });
+
+    expect(filtered.map((r) => r.defined_symbols?.[0])).toEqual(["alpha"]);
+  });
+
+  it("ignores invalid name regexes", () => {
+    const data = [chunk("src/a.ts", 0, "alpha", 0.9)];
+    expect(
+      filterMcpSearchResults(data, { namePattern: "[" }).map(
+        (r) => r.defined_symbols?.[0],
+      ),
+    ).toEqual(["alpha"]);
+  });
+});
+
+describe("formatMcpPointerSearchResults", () => {
+  it("uses the shared agent pointer format and groups same-file hits", () => {
+    const output = formatMcpPointerSearchResults(
+      [
+        chunk("src/a.ts", 0, "alpha", 0.9),
+        chunk("src/a.ts", 4, "beta", 0.8),
+        chunk("src/b.ts", 2, "gamma", 0.7),
+      ],
+      "/tmp/project",
+    );
+
+    expect(output).toContain("src/a.ts (2 hits):");
+    expect(output).toContain("  :1\ts=0.900 alpha [DEFI]");
+    expect(output).toContain("  :5\ts=0.800 beta [DEFI]");
+    expect(output).toContain("src/b.ts:3\ts=0.700 gamma [DEFI]");
+  });
+
+  it("can prepend imports once per file", () => {
+    const output = formatMcpPointerSearchResults(
+      [chunk("src/a.ts", 0, "alpha", 0.9)],
+      "/tmp/project",
+      {
+        includeImports: true,
+        getImportsForFile: () => "import { x } from './x';",
+      },
+    );
+
+    expect(output).toContain("[imports src/a.ts] import { x } from './x';");
+    expect(output).toContain("src/a.ts:1");
   });
 });
