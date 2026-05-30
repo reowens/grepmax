@@ -1,17 +1,156 @@
 import * as fs from "node:fs";
+import * as path from "node:path";
 import { Command } from "commander";
 import { Searcher } from "../lib/search/searcher";
 import { Skeletonizer } from "../lib/skeleton";
+import type { ChunkType, FileMetadata } from "../lib/store/types";
 import { VectorDB } from "../lib/store/vector-db";
-import { escapeSqlString } from "../lib/utils/filter-builder";
+import { toArr } from "../lib/utils/arrow";
 import { gracefulExit } from "../lib/utils/exit";
+import { escapeSqlString } from "../lib/utils/filter-builder";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
-import { toArr } from "../lib/utils/arrow";
-
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
+}
+
+type BudgetedSections = {
+  sections: string[];
+  tokensUsed: number;
+};
+
+function addSection(
+  state: BudgetedSections,
+  text: string,
+  budget: number,
+): boolean {
+  const tokens = estimateTokens(text);
+  if (state.tokensUsed + tokens > budget) return false;
+  state.sections.push(text);
+  state.tokensUsed += tokens;
+  return true;
+}
+
+function relPath(projectRoot: string, p: string): string {
+  return p.startsWith(`${projectRoot}/`) ? p.slice(projectRoot.length + 1) : p;
+}
+
+function chunkPath(chunk: ChunkType): string {
+  const metadata = chunk.metadata as FileMetadata | undefined;
+  return String((chunk as any).path || metadata?.path || "");
+}
+
+function chunkStartLine(chunk: ChunkType): number {
+  return Number(
+    (chunk as any).start_line ??
+      (chunk as any).startLine ??
+      chunk.generated_metadata?.start_line ??
+      0,
+  );
+}
+
+function chunkEndLine(chunk: ChunkType): number {
+  const start = chunkStartLine(chunk);
+  return Number(
+    (chunk as any).end_line ??
+      (chunk as any).endLine ??
+      chunk.generated_metadata?.end_line ??
+      start,
+  );
+}
+
+function resolveExistingPath(
+  target: string,
+  root: string,
+  projectRoot: string,
+): string | null {
+  const candidates = [
+    path.isAbsolute(target) ? target : path.resolve(root, target),
+    path.resolve(projectRoot, target),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+async function renderPathContext(
+  target: string,
+  absPath: string,
+  projectRoot: string,
+  budget: number,
+): Promise<BudgetedSections> {
+  const state: BudgetedSections = {
+    sections: [],
+    tokensUsed: 0,
+  };
+  const header = `=== Context: "${target}" ===`;
+  addSection(state, header, budget);
+
+  const stat = fs.statSync(absPath);
+  const targetSection = [
+    "\n## Target",
+    `${relPath(projectRoot, absPath)} [${stat.isDirectory() ? "directory" : "file"}]`,
+  ].join("\n");
+  addSection(state, targetSection, budget);
+
+  if (stat.isDirectory()) {
+    const entries = fs
+      .readdirSync(absPath, { withFileTypes: true })
+      .filter((entry) => !entry.name.startsWith("."))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .slice(0, 40)
+      .map((entry) => `${entry.isDirectory() ? "dir " : "file"} ${entry.name}`);
+    if (entries.length > 0) {
+      addSection(
+        state,
+        ["\n## Directory Entries", ...entries].join("\n"),
+        budget,
+      );
+    }
+    return state;
+  }
+
+  const content = fs.readFileSync(absPath, "utf-8");
+  const skeletonizer = new Skeletonizer();
+  await skeletonizer.init();
+  if (skeletonizer.isSupported(absPath).supported) {
+    try {
+      const result = await skeletonizer.skeletonizeFile(absPath, content);
+      if (result.success) {
+        addSection(
+          state,
+          [
+            "\n## File Structure",
+            `--- ${relPath(projectRoot, absPath)} (skeleton, ~${result.tokenEstimate} tokens) ---`,
+            result.skeleton,
+          ].join("\n"),
+          budget,
+        );
+      }
+    } catch {
+      // Skeleton is a convenience in path mode; fall through to excerpt.
+    }
+  }
+
+  const lines = content.split("\n");
+  const excerptLines = lines.slice(0, Math.min(lines.length, 120));
+  const omitted =
+    lines.length > excerptLines.length
+      ? `\n... (+${lines.length - excerptLines.length} more lines)`
+      : "";
+  addSection(
+    state,
+    [
+      "\n## File Excerpt",
+      `--- ${relPath(projectRoot, absPath)}:1 ---`,
+      `${excerptLines.join("\n")}${omitted}`,
+    ].join("\n"),
+    budget,
+  );
+
+  return state;
 }
 
 export const context = new Command("context")
@@ -38,13 +177,32 @@ export const context = new Command("context")
       const projectRoot = findProjectRoot(root) ?? root;
       const paths = ensureProjectPaths(projectRoot);
       vectorDb = new VectorDB(paths.lancedbDir);
+
+      const pathTarget = resolveExistingPath(topic, root, projectRoot);
+      if (pathTarget) {
+        const rendered = await renderPathContext(
+          topic,
+          pathTarget,
+          projectRoot,
+          budget,
+        );
+        rendered.sections.push(
+          `\n(~${rendered.tokensUsed}/${budget} tokens used)`,
+        );
+        console.log(rendered.sections.join("\n"));
+        return;
+      }
+
       const searcher = new Searcher(vectorDb);
 
-      const rel = (p: string) =>
-        p.startsWith(`${projectRoot}/`) ? p.slice(projectRoot.length + 1) : p;
-
       // Phase 1: Semantic search
-      const response = await searcher.search(topic, maxResults, { rerank: true }, {}, projectRoot);
+      const response = await searcher.search(
+        topic,
+        maxResults,
+        { rerank: true },
+        {},
+        projectRoot,
+      );
       if (response.data.length === 0) {
         console.log(`No results found for "${topic}".`);
         return;
@@ -67,11 +225,13 @@ export const context = new Command("context")
 
       const epSection: string[] = ["\n## Entry Points"];
       for (const r of entryPoints.slice(0, 5)) {
-        const p = String((r as any).path || (r.metadata as any)?.path || "");
-        const line = Number((r as any).start_line ?? 0);
+        const p = chunkPath(r);
+        const line = chunkStartLine(r);
         const sym = toArr((r as any).defined_symbols)?.[0] ?? "";
         const role = String((r as any).role || "IMPLEMENTATION");
-        epSection.push(`${rel(p)}:${line + 1} ${sym} [${role}]`);
+        epSection.push(
+          `${relPath(projectRoot, p)}:${line + 1} ${sym} [${role}]`,
+        );
       }
       const epText = epSection.join("\n");
       if (tokensUsed + estimateTokens(epText) <= budget) {
@@ -83,9 +243,9 @@ export const context = new Command("context")
       const topChunks = entryPoints.slice(0, 3);
       const bodySection: string[] = ["\n## Key Functions"];
       for (const r of topChunks) {
-        const absP = String((r as any).path || "");
-        const startLine = Number((r as any).start_line ?? 0);
-        const endLine = Number((r as any).end_line ?? startLine);
+        const absP = chunkPath(r);
+        const startLine = chunkStartLine(r);
+        const endLine = chunkEndLine(r);
         const sym = toArr((r as any).defined_symbols)?.[0] ?? "";
 
         try {
@@ -95,7 +255,7 @@ export const context = new Command("context")
             .slice(startLine, Math.min(endLine + 1, allLines.length))
             .join("\n");
 
-          const blob = `\n--- ${rel(absP)}:${startLine + 1} ${sym} ---\n${body}`;
+          const blob = `\n--- ${relPath(projectRoot, absP)}:${startLine + 1} ${sym} ---\n${body}`;
           const blobTokens = estimateTokens(blob);
           if (tokensUsed + blobTokens > budget) break;
           bodySection.push(blob);
@@ -110,11 +270,7 @@ export const context = new Command("context")
 
       // Phase 4: File skeletons for unique files
       const uniqueFiles = [
-        ...new Set(
-          response.data
-            .map((r) => String((r as any).path || ""))
-            .filter(Boolean),
-        ),
+        ...new Set(response.data.map((r) => chunkPath(r)).filter(Boolean)),
       ].slice(0, 5);
 
       const skelSection: string[] = ["\n## File Structure"];
@@ -128,7 +284,7 @@ export const context = new Command("context")
           const result = await skeletonizer.skeletonizeFile(absP, content);
           if (!result.success) continue;
 
-          const blob = `\n--- ${rel(absP)} (skeleton, ~${result.tokenEstimate} tokens) ---\n${result.skeleton}`;
+          const blob = `\n--- ${relPath(projectRoot, absP)} (skeleton, ~${result.tokenEstimate} tokens) ---\n${result.skeleton}`;
           const blobTokens = estimateTokens(blob);
           if (tokensUsed + blobTokens > budget) break;
           skelSection.push(blob);
@@ -177,7 +333,7 @@ export const context = new Command("context")
           const relSection: string[] = ["\n## Related Files"];
           for (const [p, count] of topRelated) {
             relSection.push(
-              `${rel(p)} — ${count} shared symbol${count > 1 ? "s" : ""}`,
+              `${relPath(projectRoot, p)} — ${count} shared symbol${count > 1 ? "s" : ""}`,
             );
           }
           const relText = relSection.join("\n");
@@ -198,7 +354,9 @@ export const context = new Command("context")
       process.exitCode = 1;
     } finally {
       if (vectorDb) {
-        try { await vectorDb.close(); } catch {}
+        try {
+          await vectorDb.close();
+        } catch {}
       }
       await gracefulExit();
     }

@@ -11,12 +11,14 @@ import { MODEL_TIERS, PATHS } from "../config";
 import { type CallerTree, GraphBuilder } from "../lib/graph/graph-builder";
 import { readGlobalConfig, readIndexConfig } from "../lib/index/index-config";
 import { generateSummaries } from "../lib/index/syncer";
-import { MetaCache } from "../lib/store/meta-cache";
+import { formatAgentSearchResults } from "../lib/output/agent-search-formatter";
 import { Searcher } from "../lib/search/searcher";
 import { annotateSkeletonLines } from "../lib/skeleton/annotator";
 import { getStoredSkeleton } from "../lib/skeleton/retriever";
-import { extractSymbolsFromSkeleton } from "../lib/skeleton/symbol-extractor";
 import { Skeletonizer } from "../lib/skeleton/skeletonizer";
+import { extractSymbolsFromSkeleton } from "../lib/skeleton/symbol-extractor";
+import { MetaCache } from "../lib/store/meta-cache";
+import type { ChunkType, FileMetadata } from "../lib/store/types";
 import { VectorDB } from "../lib/store/vector-db";
 import { isIndexableFile } from "../lib/utils/file-utils";
 import { escapeSqlString, normalizePath } from "../lib/utils/filter-builder";
@@ -39,24 +41,72 @@ const TOOLS = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        query: { type: "string", description: "Natural language query (5+ words recommended)" },
-        limit: { type: "number", description: "Max results (default 3, max 50)" },
-        root: { type: "string", description: "Search a different directory (absolute path)" },
-        path: { type: "string", description: "Path prefix filter (e.g. 'src/auth/')" },
-        detail: { type: "string", description: "'pointer' (default), 'code', or 'full'" },
+        query: {
+          type: "string",
+          description: "Natural language query (5+ words recommended)",
+        },
+        limit: {
+          type: "number",
+          description: "Max results (default 3, max 50)",
+        },
+        root: {
+          type: "string",
+          description: "Search a different directory (absolute path)",
+        },
+        path: {
+          type: "string",
+          description: "Path prefix filter (e.g. 'src/auth/')",
+        },
+        detail: {
+          type: "string",
+          description: "'pointer' (default), 'code', or 'full'",
+        },
         min_score: { type: "number", description: "Min score 0-1 (default 0)" },
         max_per_file: { type: "number", description: "Max results per file" },
-        file: { type: "string", description: "Filename filter (e.g. 'syncer.ts')" },
-        exclude: { type: "string", description: "Exclude path prefix (e.g. 'tests/')" },
-        language: { type: "string", description: "Extension filter (e.g. 'ts', 'py')" },
-        role: { type: "string", description: "'ORCHESTRATION', 'DEFINITION', or 'IMPLEMENTATION'" },
-        context_lines: { type: "number", description: "Lines before/after chunk (max 20)" },
-        mode: { type: "string", description: "'default' or 'symbol' (appends call graph)" },
-        include_imports: { type: "boolean", description: "Prepend file imports to results" },
-        name_pattern: { type: "string", description: "Regex filter on symbol name" },
-        scope: { type: "string", description: "'project' (default) or 'all' (search everything)" },
-        projects: { type: "string", description: "Project names to include (comma-separated)" },
-        exclude_projects: { type: "string", description: "Project names to exclude (comma-separated)" },
+        file: {
+          type: "string",
+          description: "Filename filter (e.g. 'syncer.ts')",
+        },
+        exclude: {
+          type: "string",
+          description: "Exclude path prefix (e.g. 'tests/')",
+        },
+        language: {
+          type: "string",
+          description: "Extension filter (e.g. 'ts', 'py')",
+        },
+        role: {
+          type: "string",
+          description: "'ORCHESTRATION', 'DEFINITION', or 'IMPLEMENTATION'",
+        },
+        context_lines: {
+          type: "number",
+          description: "Lines before/after chunk (max 20)",
+        },
+        mode: {
+          type: "string",
+          description: "'default' or 'symbol' (appends call graph)",
+        },
+        include_imports: {
+          type: "boolean",
+          description: "Prepend file imports to results",
+        },
+        name_pattern: {
+          type: "string",
+          description: "Regex filter on symbol name",
+        },
+        scope: {
+          type: "string",
+          description: "'project' (default) or 'all' (search everything)",
+        },
+        projects: {
+          type: "string",
+          description: "Project names to include (comma-separated)",
+        },
+        exclude_projects: {
+          type: "string",
+          description: "Project names to exclude (comma-separated)",
+        },
       },
       required: ["query"],
     },
@@ -68,8 +118,14 @@ const TOOLS = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        target: { type: "string", description: "File, directory, or comma-separated paths" },
-        limit: { type: "number", description: "Max files for directory mode (default 10)" },
+        target: {
+          type: "string",
+          description: "File, directory, or comma-separated paths",
+        },
+        limit: {
+          type: "number",
+          description: "Max files for directory mode (default 10)",
+        },
         format: { type: "string", description: "'text' (default) or 'json'" },
       },
       required: ["target"],
@@ -77,12 +133,16 @@ const TOOLS = [
   },
   {
     name: "trace_calls",
-    description: "Call graph: importers, callers (multi-hop), callees with file:line.",
+    description:
+      "Call graph: importers, callers (multi-hop), callees with file:line.",
     inputSchema: {
       type: "object" as const,
       properties: {
         symbol: { type: "string", description: "Function/class name to trace" },
-        depth: { type: "number", description: "Caller depth (default 1, max 3)" },
+        depth: {
+          type: "number",
+          description: "Caller depth (default 1, max 3)",
+        },
       },
       required: ["symbol"],
     },
@@ -95,7 +155,10 @@ const TOOLS = [
       properties: {
         symbol: { type: "string", description: "Symbol name to extract" },
         root: { type: "string", description: "Project root (absolute path)" },
-        include_imports: { type: "boolean", description: "Prepend file imports" },
+        include_imports: {
+          type: "boolean",
+          description: "Prepend file imports",
+        },
       },
       required: ["symbol"],
     },
@@ -108,7 +171,10 @@ const TOOLS = [
       properties: {
         symbol: { type: "string", description: "Symbol name" },
         root: { type: "string", description: "Project root (absolute path)" },
-        depth: { type: "number", description: "Caller depth (default 1, max 3)" },
+        depth: {
+          type: "number",
+          description: "Caller depth (default 1, max 3)",
+        },
       },
       required: ["symbol"],
     },
@@ -132,7 +198,10 @@ const TOOLS = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        pattern: { type: "string", description: "Name filter (case-insensitive)" },
+        pattern: {
+          type: "string",
+          description: "Name filter (case-insensitive)",
+        },
         limit: { type: "number", description: "Max results (default 20)" },
         path: { type: "string", description: "Path prefix filter" },
       },
@@ -150,29 +219,46 @@ const TOOLS = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        path: { type: "string", description: "Directory to summarize (default: project root)" },
-        limit: { type: "number", description: "Max chunks (default 200, max 5000)" },
+        path: {
+          type: "string",
+          description: "Directory to summarize (default: project root)",
+        },
+        limit: {
+          type: "number",
+          description: "Max chunks (default 200, max 5000)",
+        },
       },
     },
   },
   {
     name: "summarize_project",
-    description: "Project overview: languages, structure, roles, key symbols, entry points.",
+    description:
+      "Project overview: languages, structure, roles, key symbols, entry points.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        root: { type: "string", description: "Project root (default: current)" },
+        root: {
+          type: "string",
+          description: "Project root (default: current)",
+        },
       },
     },
   },
   {
     name: "related_files",
-    description: "Find dependencies and dependents of a file by shared symbols.",
+    description:
+      "Find dependencies and dependents of a file by shared symbols.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        file: { type: "string", description: "File path relative to project root" },
-        limit: { type: "number", description: "Max results per direction (default 10)" },
+        file: {
+          type: "string",
+          description: "File path relative to project root",
+        },
+        limit: {
+          type: "number",
+          description: "Max results per direction (default 10)",
+        },
       },
       required: ["file"],
     },
@@ -189,45 +275,63 @@ const TOOLS = [
         },
         root: {
           type: "string",
-          description:
-            "Project root (defaults to current project)",
+          description: "Project root (defaults to current project)",
         },
       },
     },
   },
   {
     name: "diff_changes",
-    description: "Search code scoped to git changes. Omit ref for uncommitted changes.",
+    description:
+      "Search code scoped to git changes. Omit ref for uncommitted changes.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        ref: { type: "string", description: "Git ref to diff against (e.g. main, HEAD~5)" },
-        query: { type: "string", description: "Semantic search within changed files" },
+        ref: {
+          type: "string",
+          description: "Git ref to diff against (e.g. main, HEAD~5)",
+        },
+        query: {
+          type: "string",
+          description: "Semantic search within changed files",
+        },
         limit: { type: "number", description: "Max results (default 10)" },
-        role: { type: "string", description: "Filter by role: ORCHESTRATION, DEFINITION, IMPLEMENTATION" },
+        role: {
+          type: "string",
+          description:
+            "Filter by role: ORCHESTRATION, DEFINITION, IMPLEMENTATION",
+        },
       },
     },
   },
   {
     name: "find_tests",
-    description: "Find tests that exercise a symbol or file via reverse call graph.",
+    description:
+      "Find tests that exercise a symbol or file via reverse call graph.",
     inputSchema: {
       type: "object" as const,
       properties: {
         target: { type: "string", description: "Symbol name or file path" },
-        depth: { type: "number", description: "Caller traversal depth 1-3 (default 1)" },
+        depth: {
+          type: "number",
+          description: "Caller traversal depth 1-3 (default 1)",
+        },
       },
       required: ["target"],
     },
   },
   {
     name: "impact_analysis",
-    description: "Change impact: dependents and affected tests for a symbol or file.",
+    description:
+      "Change impact: dependents and affected tests for a symbol or file.",
     inputSchema: {
       type: "object" as const,
       properties: {
         target: { type: "string", description: "Symbol name or file path" },
-        depth: { type: "number", description: "Caller traversal depth 1-3 (default 1)" },
+        depth: {
+          type: "number",
+          description: "Caller traversal depth 1-3 (default 1)",
+        },
       },
       required: ["target"],
     },
@@ -240,7 +344,10 @@ const TOOLS = [
       properties: {
         target: { type: "string", description: "Symbol name or file path" },
         limit: { type: "number", description: "Max results (default 5)" },
-        threshold: { type: "number", description: "Min similarity 0-1 (default 0)" },
+        threshold: {
+          type: "number",
+          description: "Min similarity 0-1 (default 0)",
+        },
       },
       required: ["target"],
     },
@@ -251,43 +358,64 @@ const TOOLS = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        topic: { type: "string", description: "Natural language topic or directory path" },
+        topic: {
+          type: "string",
+          description: "Natural language topic or directory path",
+        },
         budget: { type: "number", description: "Max tokens (default 4000)" },
-        limit: { type: "number", description: "Search result limit (default 10)" },
+        limit: {
+          type: "number",
+          description: "Search result limit (default 10)",
+        },
       },
       required: ["topic"],
     },
   },
   {
     name: "investigate",
-    description: "Agentic codebase Q&A: a local LLM answers questions using search, trace, peek, impact, and related tools. Requires LLM to be enabled (gmax llm on).",
+    description:
+      "Agentic codebase Q&A: a local LLM answers questions using search, trace, peek, impact, and related tools. Requires LLM to be enabled (gmax llm on).",
     inputSchema: {
       type: "object" as const,
       properties: {
-        question: { type: "string", description: "Natural language question about the codebase" },
-        max_rounds: { type: "number", description: "Max tool-call rounds (default 10)" },
+        question: {
+          type: "string",
+          description: "Natural language question about the codebase",
+        },
+        max_rounds: {
+          type: "number",
+          description: "Max tool-call rounds (default 10)",
+        },
       },
       required: ["question"],
     },
   },
   {
     name: "review_commit",
-    description: "Review a git commit for bugs, breaking changes, and security issues using local LLM + codebase context. Returns structured findings. Requires LLM to be enabled (gmax llm on).",
+    description:
+      "Review a git commit for bugs, breaking changes, and security issues using local LLM + codebase context. Returns structured findings. Requires LLM to be enabled (gmax llm on).",
     inputSchema: {
       type: "object" as const,
       properties: {
-        commit: { type: "string", description: "Git ref to review (default: HEAD)" },
+        commit: {
+          type: "string",
+          description: "Git ref to review (default: HEAD)",
+        },
       },
       required: [],
     },
   },
   {
     name: "review_report",
-    description: "Get the accumulated code review report for the current project. Returns findings from all reviewed commits.",
+    description:
+      "Get the accumulated code review report for the current project. Returns findings from all reviewed commits.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        json: { type: "boolean", description: "Return raw JSON instead of text (default: false)" },
+        json: {
+          type: "boolean",
+          description: "Return raw JSON instead of text (default: false)",
+        },
       },
       required: [],
     },
@@ -322,6 +450,79 @@ export function ok(text: string): ToolResult {
 
 export function err(text: string): ToolResult {
   return { content: [{ type: "text", text }], isError: true };
+}
+
+type McpSearchFilterOptions = {
+  minScore?: number;
+  maxPerFile?: number;
+  namePattern?: string;
+};
+
+type McpPointerFormatOptions = McpSearchFilterOptions & {
+  includeImports?: boolean;
+  getImportsForFile?: (absPath: string) => string;
+};
+
+function chunkAbsPath(chunk: ChunkType): string {
+  const metadata = chunk.metadata as FileMetadata | undefined;
+  return String((chunk as any).path || metadata?.path || "");
+}
+
+function chunkSymbols(chunk: ChunkType): string[] {
+  return toStringArray((chunk as any).definedSymbols ?? chunk.defined_symbols);
+}
+
+export function filterMcpSearchResults(
+  data: ChunkType[],
+  options: McpSearchFilterOptions = {},
+): ChunkType[] {
+  let results = data;
+  const minScore = options.minScore ?? 0;
+  if (minScore > 0) {
+    results = results.filter(
+      (r) => typeof r.score !== "number" || r.score >= minScore,
+    );
+  }
+
+  const maxPerFile = options.maxPerFile ?? 0;
+  if (maxPerFile > 0) {
+    const counts = new Map<string, number>();
+    results = results.filter((r) => {
+      const absPath = chunkAbsPath(r);
+      const count = counts.get(absPath) || 0;
+      if (count >= maxPerFile) return false;
+      counts.set(absPath, count + 1);
+      return true;
+    });
+  }
+
+  if (options.namePattern) {
+    try {
+      const regex = new RegExp(options.namePattern, "i");
+      results = results.filter((r) =>
+        chunkSymbols(r).some((symbol) => regex.test(symbol)),
+      );
+    } catch {
+      // Preserve existing MCP behavior: invalid regex means no name filter.
+    }
+  }
+
+  return results;
+}
+
+export function formatMcpPointerSearchResults(
+  data: ChunkType[],
+  displayRoot: string,
+  options: McpPointerFormatOptions = {},
+): string {
+  return formatAgentSearchResults(
+    filterMcpSearchResults(data, options),
+    displayRoot,
+    {
+      includeImports: options.includeImports,
+      getImportsForFile: options.getImportsForFile,
+    },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -426,7 +627,9 @@ export const mcp = new Command("mcp")
       try {
         const result = await launchWatcher(projectRoot);
         if (result.ok && !result.reused) {
-          console.log(`[MCP] Started background watcher for ${projectRoot} (PID: ${result.pid})`);
+          console.log(
+            `[MCP] Started background watcher for ${projectRoot} (PID: ${result.pid})`,
+          );
         }
       } catch (err) {
         console.error("[MCP] Watcher startup failed:", err);
@@ -477,9 +680,7 @@ export const mcp = new Command("mcp")
           }
 
           displayRoot = searchRoot;
-          pathPrefix = searchRoot.endsWith("/")
-            ? searchRoot
-            : `${searchRoot}/`;
+          pathPrefix = searchRoot.endsWith("/") ? searchRoot : `${searchRoot}/`;
 
           if (typeof args.path === "string") {
             pathPrefix = path.join(searchRoot, args.path);
@@ -503,13 +704,9 @@ export const mcp = new Command("mcp")
         if (searchAll) {
           const allProjects = listProjects();
           if (typeof args.projects === "string" && args.projects) {
-            const names = args.projects
-              .split(",")
-              .map((s: string) => s.trim());
+            const names = args.projects.split(",").map((s: string) => s.trim());
             const roots = names
-              .map(
-                (n: string) => allProjects.find((p) => p.name === n)?.root,
-              )
+              .map((n: string) => allProjects.find((p) => p.name === n)?.root)
               .filter(Boolean);
             if (roots.length > 0) {
               filters.project_roots = roots.join(",");
@@ -523,9 +720,7 @@ export const mcp = new Command("mcp")
               .split(",")
               .map((s: string) => s.trim());
             const roots = names
-              .map(
-                (n: string) => allProjects.find((p) => p.name === n)?.root,
-              )
+              .map((n: string) => allProjects.find((p) => p.name === n)?.root)
               .filter(Boolean);
             if (roots.length > 0) {
               filters.exclude_project_roots = roots.join(",");
@@ -555,6 +750,34 @@ export const mcp = new Command("mcp")
           typeof args.detail === "string" ? args.detail : "pointer";
         const includeImports = Boolean(args.include_imports);
         const importCache = new Map<string, string>();
+        const namePattern =
+          typeof args.name_pattern === "string" ? args.name_pattern : "";
+        const mode = typeof args.mode === "string" ? args.mode : "default";
+        const getImportsForFile = (absPath: string): string => {
+          if (!includeImports || !absPath) return "";
+          if (!importCache.has(absPath)) {
+            importCache.set(absPath, extractImports(absPath));
+          }
+          return importCache.get(absPath) ?? "";
+        };
+
+        if (detail === "pointer" && mode !== "symbol") {
+          const output = formatMcpPointerSearchResults(
+            result.data,
+            displayRoot,
+            {
+              minScore,
+              maxPerFile,
+              namePattern,
+              includeImports,
+              getImportsForFile,
+            },
+          );
+          if (result.warnings?.length) {
+            return ok(`${result.warnings.join("\n")}\n\n${output}`);
+          }
+          return ok(output);
+        }
 
         let results = result.data.map((r: any) => {
           const absPath = r.path ?? r.metadata?.path ?? "";
@@ -564,9 +787,7 @@ export const mcp = new Command("mcp")
           const startLine =
             r.startLine ?? r.generated_metadata?.start_line ?? 0;
           const endLine = r.endLine ?? r.generated_metadata?.end_line ?? 0;
-          const defs = toStringArray(
-            r.definedSymbols ?? r.defined_symbols,
-          );
+          const defs = toStringArray(r.definedSymbols ?? r.defined_symbols);
           const refs = toStringArray(
             r.referenced_symbols ?? r.referencedSymbols,
           );
@@ -577,21 +798,14 @@ export const mcp = new Command("mcp")
             typeof r.complexity === "number" && r.complexity > 0
               ? ` C:${Math.round(r.complexity)}`
               : "";
-          const parentStr = r.parent_symbol
-            ? `parent:${r.parent_symbol} `
-            : "";
+          const parentStr = r.parent_symbol ? `parent:${r.parent_symbol} ` : "";
           const callsStr =
-            refs.length > 0
-              ? `calls:${refs.slice(0, 8).join(",")}`
-              : "";
+            refs.length > 0 ? `calls:${refs.slice(0, 8).join(",")}` : "";
 
           const line1 = `${symbol} [${exported}${role}${complexity}] ${relPath}:${startLine + 1}-${endLine + 1}`;
-          const summaryStr =
-            r.summary ? `  ${r.summary}` : "";
+          const summaryStr = r.summary ? `  ${r.summary}` : "";
           const line2 =
-            parentStr || callsStr
-              ? `  ${parentStr}${callsStr}`
-              : "";
+            parentStr || callsStr ? `  ${parentStr}${callsStr}` : "";
 
           let snippet = "";
           const contextN =
@@ -613,10 +827,7 @@ export const mcp = new Command("mcp")
                   "\n" +
                   fileLines
                     .slice(ctxStart, ctxEnd)
-                    .map(
-                      (l: string, i: number) =>
-                        `${ctxStart + i + 1}│${l}`,
-                    )
+                    .map((l: string, i: number) => `${ctxStart + i + 1}│${l}`)
                     .join("\n");
               } catch {
                 // Fall through to chunk content
@@ -635,10 +846,7 @@ export const mcp = new Command("mcp")
               snippet =
                 "\n" +
                 linesToShow
-                  .map(
-                    (l: string, i: number) =>
-                      `${startLine + i + 1}│${l}`,
-                  )
+                  .map((l: string, i: number) => `${startLine + i + 1}│${l}`)
                   .join("\n");
             }
           }
@@ -650,10 +858,7 @@ export const mcp = new Command("mcp")
             snippet;
 
           if (includeImports && absPath) {
-            if (!importCache.has(absPath)) {
-              importCache.set(absPath, extractImports(absPath));
-            }
-            const imports = importCache.get(absPath)!;
+            const imports = getImportsForFile(absPath);
             if (imports) {
               text = `imports:\n${imports}\n\n${text}`;
             }
@@ -681,10 +886,6 @@ export const mcp = new Command("mcp")
           });
         }
 
-        const namePattern =
-          typeof args.name_pattern === "string"
-            ? args.name_pattern
-            : "";
         if (namePattern) {
           try {
             const regex = new RegExp(namePattern, "i");
@@ -699,8 +900,6 @@ export const mcp = new Command("mcp")
         let output = results.map((r) => r.text).join("\n\n");
 
         // Symbol mode: append call graph
-        const mode =
-          typeof args.mode === "string" ? args.mode : "default";
         if (mode === "symbol" && !searchAll) {
           try {
             const db = getVectorDb();
@@ -739,9 +938,7 @@ export const mcp = new Command("mcp")
                       `  -> ${callee.symbol} ${rel}:${callee.line + 1}`,
                     );
                   } else {
-                    traceLines.push(
-                      `  -> ${callee.symbol} (not indexed)`,
-                    );
+                    traceLines.push(`  -> ${callee.symbol} (not indexed)`);
                   }
                 }
               }
@@ -770,10 +967,7 @@ export const mcp = new Command("mcp")
       const target = String(args.target || "");
       if (!target) return err("Missing required parameter: target");
 
-      const fileLimit = Math.min(
-        Math.max(Number(args.limit) || 10, 1),
-        20,
-      );
+      const fileLimit = Math.min(Math.max(Number(args.limit) || 10, 1), 20);
 
       // Determine targets: comma-separated, directory, or single file
       let targets: string[];
@@ -789,13 +983,9 @@ export const mcp = new Command("mcp")
           const entries = fs.readdirSync(absPath, { withFileTypes: true });
           targets = entries
             .filter(
-              (e) =>
-                e.isFile() &&
-                isIndexableFile(path.join(absPath, e.name)),
+              (e) => e.isFile() && isIndexableFile(path.join(absPath, e.name)),
             )
-            .map((e) =>
-              path.relative(projectRoot, path.join(absPath, e.name)),
-            )
+            .map((e) => path.relative(projectRoot, path.join(absPath, e.name)))
             .slice(0, fileLimit);
           if (targets.length === 0) {
             return err(`No indexable files found in ${target}`);
@@ -805,8 +995,7 @@ export const mcp = new Command("mcp")
         }
       }
 
-      const fmt =
-        typeof args.format === "string" ? args.format : "text";
+      const fmt = typeof args.format === "string" ? args.format : "text";
 
       // Generate skeletons for all targets
       const parts: string[] = [];
@@ -828,8 +1017,7 @@ export const mcp = new Command("mcp")
         const absPath = path.resolve(projectRoot, t);
 
         if (!fs.existsSync(absPath)) {
-          if (fmt !== "json")
-            parts.push(`// ${t} — file not found`);
+          if (fmt !== "json") parts.push(`// ${t} — file not found`);
           continue;
         }
 
@@ -856,8 +1044,7 @@ export const mcp = new Command("mcp")
         // Generate live if no cache
         if (!skeleton) {
           try {
-            const content =
-              sourceContent || fs.readFileSync(absPath, "utf-8");
+            const content = sourceContent || fs.readFileSync(absPath, "utf-8");
             const result = await skel.skeletonizeFile(absPath, content);
             if (result.success) {
               skeleton = result.skeleton;
@@ -870,8 +1057,7 @@ export const mcp = new Command("mcp")
             }
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            if (fmt !== "json")
-              parts.push(`// ${t} — error: ${msg}`);
+            if (fmt !== "json") parts.push(`// ${t} — error: ${msg}`);
             continue;
           }
         }
@@ -893,17 +1079,13 @@ export const mcp = new Command("mcp")
           const annotated = sourceContent
             ? annotateSkeletonLines(skeleton, sourceContent)
             : skeleton;
-          parts.push(
-            `// ${t} (~${tokenEstimate} tokens)\n\n${annotated}`,
-          );
+          parts.push(`// ${t} (~${tokenEstimate} tokens)\n\n${annotated}`);
         }
       }
 
       if (fmt === "json") {
         const output =
-          jsonFiles.length === 1
-            ? jsonFiles[0]
-            : { files: jsonFiles };
+          jsonFiles.length === 1 ? jsonFiles[0] : { files: jsonFiles };
         return ok(JSON.stringify(output, null, 2));
       }
       return ok(parts.join("\n\n---\n\n"));
@@ -926,10 +1108,7 @@ export const mcp = new Command("mcp")
       try {
         const db = getVectorDb();
         const builder = new GraphBuilder(db);
-        const depth = Math.min(
-          Math.max(Number(args.depth) || 1, 1),
-          3,
-        );
+        const depth = Math.min(Math.max(Number(args.depth) || 1, 1), 3);
         const graph = await builder.buildGraphMultiHop(symbol, depth);
 
         if (!graph.center) {
@@ -964,18 +1143,13 @@ export const mcp = new Command("mcp")
         }
 
         // Callers (recursive tree)
-        function formatCallerTree(
-          trees: CallerTree[],
-          indent: number,
-        ): void {
+        function formatCallerTree(trees: CallerTree[], indent: number): void {
           for (const t of trees) {
             const rel = t.node.file.startsWith(projectRoot)
               ? t.node.file.slice(projectRoot.length + 1)
               : t.node.file;
             const pad = "  ".repeat(indent);
-            lines.push(
-              `${pad}<- ${t.node.symbol} ${rel}:${t.node.line + 1}`,
-            );
+            lines.push(`${pad}<- ${t.node.symbol} ${rel}:${t.node.line + 1}`);
             formatCallerTree(t.callers, indent + 1);
           }
         }
@@ -1023,9 +1197,7 @@ export const mcp = new Command("mcp")
 
       try {
         const root =
-          typeof args.root === "string" && args.root
-            ? args.root
-            : projectRoot;
+          typeof args.root === "string" && args.root ? args.root : projectRoot;
         const db = getVectorDb();
         const table = await db.ensureTable();
         const prefix = root.endsWith("/") ? root : `${root}/`;
@@ -1134,13 +1306,8 @@ export const mcp = new Command("mcp")
 
       try {
         const root =
-          typeof args.root === "string" && args.root
-            ? args.root
-            : projectRoot;
-        const depth = Math.min(
-          Math.max(Number(args.depth || 1), 1),
-          3,
-        );
+          typeof args.root === "string" && args.root ? args.root : projectRoot;
+        const depth = Math.min(Math.max(Number(args.depth || 1), 1), 3);
 
         const db = getVectorDb();
         const { GraphBuilder } = await import("../lib/graph/graph-builder");
@@ -1244,9 +1411,7 @@ export const mcp = new Command("mcp")
             parts.push(`  <- ${c.symbol}  ${loc}`);
           }
           if (callerList.length > maxCallers) {
-            parts.push(
-              `  ... and ${callerList.length - maxCallers} more`,
-            );
+            parts.push(`  ... and ${callerList.length - maxCallers} more`);
           }
         } else {
           parts.push("No known callers.");
@@ -1264,9 +1429,7 @@ export const mcp = new Command("mcp")
             parts.push(`  -> ${c.symbol}  ${loc}`);
           }
           if (graph.callees.length > maxCallees) {
-            parts.push(
-              `  ... and ${graph.callees.length - maxCallees} more`,
-            );
+            parts.push(`  ... and ${graph.callees.length - maxCallees} more`);
           }
         } else {
           parts.push("No known callees.");
@@ -1288,9 +1451,7 @@ export const mcp = new Command("mcp")
 
       try {
         const root =
-          typeof args.root === "string" && args.root
-            ? args.root
-            : projectRoot;
+          typeof args.root === "string" && args.root ? args.root : projectRoot;
         const db = getVectorDb();
         const table = await db.ensureTable();
         const prefix = root.endsWith("/") ? root : `${root}/`;
@@ -1366,7 +1527,13 @@ export const mcp = new Command("mcp")
 
         let query = table
           .query()
-          .select(["defined_symbols", "path", "start_line", "role", "is_exported"])
+          .select([
+            "defined_symbols",
+            "path",
+            "start_line",
+            "role",
+            "is_exported",
+          ])
           .where("array_length(defined_symbols) > 0")
           .limit(pattern ? 10000 : Math.max(limit * 50, 2000));
 
@@ -1384,7 +1551,14 @@ export const mcp = new Command("mcp")
 
         const map = new Map<
           string,
-          { symbol: string; count: number; path: string; line: number; role: string; exported: boolean }
+          {
+            symbol: string;
+            count: number;
+            path: string;
+            line: number;
+            role: string;
+            exported: boolean;
+          }
         >();
         for (const row of rows) {
           const defs = toStringArray((row as any).defined_symbols);
@@ -1468,9 +1642,7 @@ export const mcp = new Command("mcp")
         const lines = [
           `Index: ~/.gmax/lancedb (${stats.chunks} chunks, ${fileCount} files)`,
           `Model: ${globalConfig.embedMode === "gpu" ? (MODEL_TIERS[globalConfig.modelTier]?.mlxModel ?? config?.embedModel ?? "unknown") : (config?.embedModel ?? "unknown")} (${config?.vectorDim ?? "?"}d, ${globalConfig.embedMode})`,
-          config?.indexedAt
-            ? `Last indexed: ${config.indexedAt}`
-            : "",
+          config?.indexedAt ? `Last indexed: ${config.indexedAt}` : "",
           watcherLine,
           "",
           "Indexed directories:",
@@ -1503,14 +1675,9 @@ export const mcp = new Command("mcp")
       args: Record<string, unknown>,
     ): Promise<ToolResult> {
       const dir =
-        typeof args.path === "string"
-          ? path.resolve(args.path)
-          : projectRoot;
+        typeof args.path === "string" ? path.resolve(args.path) : projectRoot;
       const prefix = dir.endsWith("/") ? dir : `${dir}/`;
-      const limit = Math.min(
-        Math.max(Number(args.limit) || 200, 1),
-        5000,
-      );
+      const limit = Math.min(Math.max(Number(args.limit) || 200, 1), 5000);
 
       try {
         const db = getVectorDb();
@@ -1528,9 +1695,10 @@ export const mcp = new Command("mcp")
             "No chunks to summarize (all have summaries or summarizer unavailable)",
           );
         }
-        const remainMsg = remaining > 0
-          ? ` (${remaining}+ remaining — run again to continue)`
-          : "";
+        const remainMsg =
+          remaining > 0
+            ? ` (${remaining}+ remaining — run again to continue)`
+            : "";
         return ok(
           `Summarized ${summarized} chunks in ${path.basename(dir)}/${remainMsg}`,
         );
@@ -1544,9 +1712,7 @@ export const mcp = new Command("mcp")
       args: Record<string, unknown>,
     ): Promise<ToolResult> {
       const root =
-        typeof args.root === "string"
-          ? path.resolve(args.root)
-          : projectRoot;
+        typeof args.root === "string" ? path.resolve(args.root) : projectRoot;
       const prefix = root.endsWith("/") ? root : `${root}/`;
       const projectName = path.basename(root);
 
@@ -1594,13 +1760,10 @@ export const mcp = new Command("mcp")
 
           files.add(p);
 
-          const ext =
-            path.extname(p).toLowerCase() || path.basename(p);
+          const ext = path.extname(p).toLowerCase() || path.basename(p);
           extCounts.set(ext, (extCounts.get(ext) || 0) + 1);
 
-          const rel = p.startsWith(prefix)
-            ? p.slice(prefix.length)
-            : p;
+          const rel = p.startsWith(prefix) ? p.slice(prefix.length) : p;
           const parts = rel.split("/");
           const dir =
             parts.length > 2
@@ -1627,9 +1790,7 @@ export const mcp = new Command("mcp")
             complexity >= 5 &&
             defs.length > 0
           ) {
-            const relPath = p.startsWith(prefix)
-              ? p.slice(prefix.length)
-              : p;
+            const relPath = p.startsWith(prefix) ? p.slice(prefix.length) : p;
             entryPoints.push({ symbol: defs[0], path: relPath });
           }
         }
@@ -1684,9 +1845,7 @@ export const mcp = new Command("mcp")
         if (topSymbols.length > 0) {
           lines.push("Key symbols (by reference count):");
           for (const [sym, count] of topSymbols) {
-            lines.push(
-              `  ${sym.padEnd(25)} (referenced ${count}x)`,
-            );
+            lines.push(`  ${sym.padEnd(25)} (referenced ${count}x)`);
           }
           lines.push("");
         }
@@ -1736,9 +1895,7 @@ export const mcp = new Command("mcp")
         for (const chunk of fileChunks) {
           for (const s of toStringArray((chunk as any).defined_symbols))
             definedHere.add(s);
-          for (const s of toStringArray(
-            (chunk as any).referenced_symbols,
-          ))
+          for (const s of toStringArray((chunk as any).referenced_symbols))
             referencedHere.add(s);
         }
 
@@ -1749,9 +1906,7 @@ export const mcp = new Command("mcp")
           const rows = await table
             .query()
             .select(["path"])
-            .where(
-              `array_contains(defined_symbols, '${escapeSqlString(sym)}')`,
-            )
+            .where(`array_contains(defined_symbols, '${escapeSqlString(sym)}')`)
             .limit(3)
             .toArray();
           for (const row of rows) {
@@ -1829,24 +1984,16 @@ export const mcp = new Command("mcp")
       args: Record<string, unknown>,
     ): Promise<ToolResult> {
       ensureWatcher();
-      const limit = Math.min(
-        Math.max(Number(args.limit) || 20, 1),
-        50,
-      );
+      const limit = Math.min(Math.max(Number(args.limit) || 20, 1), 50);
       const root =
-        typeof args.root === "string"
-          ? path.resolve(args.root)
-          : projectRoot;
+        typeof args.root === "string" ? path.resolve(args.root) : projectRoot;
       const prefix = root.endsWith("/") ? root : `${root}/`;
 
       try {
         const metaCache = new MetaCache(PATHS.lmdbPath);
         try {
           const files: Array<{ path: string; mtimeMs: number }> = [];
-          for await (const {
-            path: p,
-            entry,
-          } of metaCache.entries()) {
+          for await (const { path: p, entry } of metaCache.entries()) {
             if (p.startsWith(prefix)) {
               files.push({ path: p, mtimeMs: entry.mtimeMs });
             }
@@ -1891,12 +2038,17 @@ export const mcp = new Command("mcp")
       const ref = typeof args.ref === "string" ? args.ref : undefined;
       const query = typeof args.query === "string" ? args.query : undefined;
       const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 50);
-      const role = typeof args.role === "string" ? args.role.toUpperCase() : undefined;
+      const role =
+        typeof args.role === "string" ? args.role.toUpperCase() : undefined;
 
       try {
         const changedFiles = getChangedFiles(ref, projectRoot);
         if (changedFiles.length === 0) {
-          return ok(ref ? `No changes found relative to ${ref}.` : "No uncommitted changes found.");
+          return ok(
+            ref
+              ? `No changes found relative to ${ref}.`
+              : "No uncommitted changes found.",
+          );
         }
 
         const rel = (p: string) =>
@@ -1904,11 +2056,27 @@ export const mcp = new Command("mcp")
 
         if (query) {
           const searcher = getSearcher();
-          const response = await searcher.search(query, limit, { rerank: process.env.GMAX_RERANK === "1" }, {}, projectRoot);
+          const response = await searcher.search(
+            query,
+            limit,
+            { rerank: process.env.GMAX_RERANK === "1" },
+            {},
+            projectRoot,
+          );
           const changedSet = new Set(changedFiles);
-          let filtered = response.data.filter((r: any) => changedSet.has(String(r.path || "")));
-          if (role) filtered = filtered.filter((r: any) => String(r.role || "").toUpperCase().startsWith(role));
-          if (filtered.length === 0) return ok("No indexed results found in changed files for that query.");
+          let filtered = response.data.filter((r: any) =>
+            changedSet.has(String(r.path || "")),
+          );
+          if (role)
+            filtered = filtered.filter((r: any) =>
+              String(r.role || "")
+                .toUpperCase()
+                .startsWith(role),
+            );
+          if (filtered.length === 0)
+            return ok(
+              "No indexed results found in changed files for that query.",
+            );
           const lines = filtered.slice(0, limit).map((r: any) => {
             const sym = toStringArray(r.defined_symbols)?.[0] ?? "";
             return `${rel(r.path)}:${Number(r.start_line ?? 0) + 1} ${sym} [${r.role || "IMPL"}]`;
@@ -1920,18 +2088,28 @@ export const mcp = new Command("mcp")
         const table = await db.ensureTable();
         const lines: string[] = [];
         for (const file of changedFiles) {
-          const chunks = await table.query()
+          const chunks = await table
+            .query()
             .select(["defined_symbols", "role"])
             .where(`path = '${escapeSqlString(file)}'`)
-            .limit(50).toArray();
-          const symbols = chunks.flatMap((c: any) => toStringArray(c.defined_symbols));
-          lines.push(symbols.length > 0
-            ? `${rel(file)} (${symbols.slice(0, 5).join(", ")}${symbols.length > 5 ? "..." : ""})`
-            : rel(file));
+            .limit(50)
+            .toArray();
+          const symbols = chunks.flatMap((c: any) =>
+            toStringArray(c.defined_symbols),
+          );
+          lines.push(
+            symbols.length > 0
+              ? `${rel(file)} (${symbols.slice(0, 5).join(", ")}${symbols.length > 5 ? "..." : ""})`
+              : rel(file),
+          );
         }
-        return ok(`${changedFiles.length} changed file${changedFiles.length === 1 ? "" : "s"}${ref ? ` (vs ${ref})` : ""}:\n${lines.join("\n")}`);
+        return ok(
+          `${changedFiles.length} changed file${changedFiles.length === 1 ? "" : "s"}${ref ? ` (vs ${ref})` : ""}:\n${lines.join("\n")}`,
+        );
       } catch (e) {
-        return err(`Diff failed: ${e instanceof Error ? e.message : String(e)}`);
+        return err(
+          `Diff failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
       }
     }
 
@@ -1944,7 +2122,9 @@ export const mcp = new Command("mcp")
       const depth = Math.min(Math.max(Number(args.depth) || 1, 1), 3);
 
       try {
-        const { resolveTargetSymbols, findTests } = await import("../lib/graph/impact");
+        const { resolveTargetSymbols, findTests } = await import(
+          "../lib/graph/impact"
+        );
         const db = getVectorDb();
         const { symbols } = await resolveTargetSymbols(target, db, projectRoot);
         if (symbols.length === 0) return ok(`No symbols found for: ${target}`);
@@ -1960,7 +2140,9 @@ export const mcp = new Command("mcp")
         });
         return ok(`Tests for ${target}:\n${lines.join("\n")}`);
       } catch (e) {
-        return err(`Find tests failed: ${e instanceof Error ? e.message : String(e)}`);
+        return err(
+          `Find tests failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
       }
     }
 
@@ -1976,10 +2158,16 @@ export const mcp = new Command("mcp")
         const { resolveTargetSymbols, findTests, findDependents, isTestPath } =
           await import("../lib/graph/impact");
         const db = getVectorDb();
-        const { symbols, resolvedAsFile } = await resolveTargetSymbols(target, db, projectRoot);
+        const { symbols, resolvedAsFile } = await resolveTargetSymbols(
+          target,
+          db,
+          projectRoot,
+        );
         if (symbols.length === 0) return ok(`No symbols found for: ${target}`);
 
-        const targetPath = resolvedAsFile ? path.resolve(projectRoot, target) : undefined;
+        const targetPath = resolvedAsFile
+          ? path.resolve(projectRoot, target)
+          : undefined;
         const excludePaths = targetPath ? new Set([targetPath]) : undefined;
 
         const [dependents, tests] = await Promise.all([
@@ -1994,7 +2182,8 @@ export const mcp = new Command("mcp")
         const sections: string[] = [`Impact analysis for ${target}:\n`];
         if (nonTestDeps.length > 0) {
           sections.push(`Dependents (${nonTestDeps.length}):`);
-          for (const d of nonTestDeps) sections.push(`  ${rel(d.file)} (${d.sharedSymbols} shared)`);
+          for (const d of nonTestDeps)
+            sections.push(`  ${rel(d.file)} (${d.sharedSymbols} shared)`);
         } else {
           sections.push("Dependents: none found");
         }
@@ -2003,14 +2192,18 @@ export const mcp = new Command("mcp")
           sections.push(`Affected tests (${tests.length}):`);
           for (const t of tests) {
             const hop = t.hops === 0 ? "direct" : `${t.hops}-hop`;
-            sections.push(`  ${rel(t.file)}:${t.line + 1} ${t.symbol} (${hop})`);
+            sections.push(
+              `  ${rel(t.file)}:${t.line + 1} ${t.symbol} (${hop})`,
+            );
           }
         } else {
           sections.push("Affected tests: none found");
         }
         return ok(sections.join("\n"));
       } catch (e) {
-        return err(`Impact analysis failed: ${e instanceof Error ? e.message : String(e)}`);
+        return err(
+          `Impact analysis failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
       }
     }
 
@@ -2026,38 +2219,65 @@ export const mcp = new Command("mcp")
       try {
         const db = getVectorDb();
         const table = await db.ensureTable();
-        const isFile = target.includes("/") || (target.includes(".") && !target.includes(" "));
+        const isFile =
+          target.includes("/") ||
+          (target.includes(".") && !target.includes(" "));
 
         let sourceRows: any[];
         if (isFile) {
           const absPath = path.resolve(projectRoot, target);
-          sourceRows = await table.query()
+          sourceRows = await table
+            .query()
             .select(["vector", "path", "start_line"])
             .where(`path = '${escapeSqlString(absPath)}'`)
-            .limit(1).toArray();
+            .limit(1)
+            .toArray();
         } else {
-          sourceRows = await table.query()
+          sourceRows = await table
+            .query()
             .select(["vector", "path", "start_line"])
-            .where(`array_contains(defined_symbols, '${escapeSqlString(target)}')`)
-            .limit(1).toArray();
+            .where(
+              `array_contains(defined_symbols, '${escapeSqlString(target)}')`,
+            )
+            .limit(1)
+            .toArray();
         }
 
-        if (sourceRows.length === 0) return ok(isFile ? `File not found: ${target}` : `Symbol not found: ${target}`);
+        if (sourceRows.length === 0)
+          return ok(
+            isFile
+              ? `File not found: ${target}`
+              : `Symbol not found: ${target}`,
+          );
 
         const source = sourceRows[0];
-        if (!source.vector || source.vector.length === 0) return ok("Source chunk has no embedding.");
+        if (!source.vector || source.vector.length === 0)
+          return ok("Source chunk has no embedding.");
 
         const results = await table
           .vectorSearch(source.vector)
-          .select(["path", "start_line", "defined_symbols", "role", "_distance"])
+          .select([
+            "path",
+            "start_line",
+            "defined_symbols",
+            "role",
+            "_distance",
+          ])
           .where(`path LIKE '${escapeSqlString(projectRoot)}/%'`)
-          .limit(limit + 5).toArray();
+          .limit(limit + 5)
+          .toArray();
 
-        let filtered = results.filter((r: any) =>
-          !(r.path === source.path && r.start_line === source.start_line));
-        if (threshold > 0) filtered = filtered.filter((r: any) => 1 / (1 + (r._distance ?? 0)) >= threshold);
+        let filtered = results.filter(
+          (r: any) =>
+            !(r.path === source.path && r.start_line === source.start_line),
+        );
+        if (threshold > 0)
+          filtered = filtered.filter(
+            (r: any) => 1 / (1 + (r._distance ?? 0)) >= threshold,
+          );
 
-        if (filtered.length === 0) return ok(`No similar code found for ${target}.`);
+        if (filtered.length === 0)
+          return ok(`No similar code found for ${target}.`);
 
         const rel = (p: string) =>
           p.startsWith(`${projectRoot}/`) ? p.slice(projectRoot.length + 1) : p;
@@ -2067,7 +2287,9 @@ export const mcp = new Command("mcp")
         });
         return ok(`Similar to ${target}:\n${lines.join("\n")}`);
       } catch (e) {
-        return err(`Similar search failed: ${e instanceof Error ? e.message : String(e)}`);
+        return err(
+          `Similar search failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
       }
     }
 
@@ -2082,8 +2304,15 @@ export const mcp = new Command("mcp")
 
       try {
         const searcher = getSearcher();
-        const response = await searcher.search(topic, limit, { rerank: process.env.GMAX_RERANK === "1" }, {}, projectRoot);
-        if (response.data.length === 0) return ok(`No results found for "${topic}".`);
+        const response = await searcher.search(
+          topic,
+          limit,
+          { rerank: process.env.GMAX_RERANK === "1" },
+          {},
+          projectRoot,
+        );
+        if (response.data.length === 0)
+          return ok(`No results found for "${topic}".`);
 
         const rel = (p: string) =>
           p.startsWith(`${projectRoot}/`) ? p.slice(projectRoot.length + 1) : p;
@@ -2108,18 +2337,25 @@ export const mcp = new Command("mcp")
           const sym = toStringArray((r as any).defined_symbols)?.[0] ?? "";
           try {
             const content = fs.readFileSync(absP, "utf-8");
-            const body = content.split("\n").slice(startLine, endLine + 1).join("\n");
+            const body = content
+              .split("\n")
+              .slice(startLine, endLine + 1)
+              .join("\n");
             const blob = `\n--- ${rel(absP)}:${startLine + 1} ${sym} ---\n${body}`;
             if (tokensUsed + estTokens(blob) > budget) break;
             sections.push(blob);
             tokensUsed += estTokens(blob);
-          } catch { /* skip unreadable */ }
+          } catch {
+            /* skip unreadable */
+          }
         }
 
         sections.push(`\n(~${tokensUsed}/${budget} tokens)`);
         return ok(sections.join("\n"));
       } catch (e) {
-        return err(`Context generation failed: ${e instanceof Error ? e.message : String(e)}`);
+        return err(
+          `Context generation failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
       }
     }
 
@@ -2206,60 +2442,104 @@ export const mcp = new Command("mcp")
           break;
         case "investigate": {
           const question = String(toolArgs.question || "");
-          if (!question) { result = err("Missing required parameter: question"); break; }
-          const maxRounds = Math.min(Math.max(Number(toolArgs.max_rounds) || 10, 1), 15);
+          if (!question) {
+            result = err("Missing required parameter: question");
+            break;
+          }
+          const maxRounds = Math.min(
+            Math.max(Number(toolArgs.max_rounds) || 10, 1),
+            15,
+          );
           try {
-            const { isDaemonRunning, sendDaemonCommand } = await import("../lib/utils/daemon-client");
+            const { isDaemonRunning, sendDaemonCommand } = await import(
+              "../lib/utils/daemon-client"
+            );
             if (await isDaemonRunning()) {
-              const llmResp = await sendDaemonCommand({ cmd: "llm-start" }, { timeoutMs: 90_000 });
+              const llmResp = await sendDaemonCommand(
+                { cmd: "llm-start" },
+                { timeoutMs: 90_000 },
+              );
               if (!llmResp.ok) {
-                result = err(`LLM server not available: ${llmResp.error}. Run \`gmax llm on && gmax llm start\`.`);
+                result = err(
+                  `LLM server not available: ${llmResp.error}. Run \`gmax llm on && gmax llm start\`.`,
+                );
                 break;
               }
             } else {
-              result = err("LLM server not available. Run `gmax llm on && gmax llm start`.");
+              result = err(
+                "LLM server not available. Run `gmax llm on && gmax llm start`.",
+              );
               break;
             }
             const { investigate } = await import("../lib/llm/investigate");
             const inv = await investigate({ question, projectRoot, maxRounds });
             result = ok(inv.answer);
           } catch (e) {
-            result = err(`Investigate failed: ${e instanceof Error ? e.message : String(e)}`);
+            result = err(
+              `Investigate failed: ${e instanceof Error ? e.message : String(e)}`,
+            );
           }
           break;
         }
         case "review_commit": {
           const commitRef = String(toolArgs.commit || "HEAD");
           try {
-            const { isDaemonRunning, sendDaemonCommand } = await import("../lib/utils/daemon-client");
+            const { isDaemonRunning, sendDaemonCommand } = await import(
+              "../lib/utils/daemon-client"
+            );
             if (await isDaemonRunning()) {
-              const llmResp = await sendDaemonCommand({ cmd: "llm-start" }, { timeoutMs: 90_000 });
+              const llmResp = await sendDaemonCommand(
+                { cmd: "llm-start" },
+                { timeoutMs: 90_000 },
+              );
               if (!llmResp.ok) {
-                result = err(`LLM server not available: ${llmResp.error}. Run \`gmax llm on && gmax llm start\`.`);
+                result = err(
+                  `LLM server not available: ${llmResp.error}. Run \`gmax llm on && gmax llm start\`.`,
+                );
                 break;
               }
             } else {
-              result = err("LLM server not available. Run `gmax llm on && gmax llm start`.");
+              result = err(
+                "LLM server not available. Run `gmax llm on && gmax llm start`.",
+              );
               break;
             }
             const { reviewCommit } = await import("../lib/llm/review");
             const rev = await reviewCommit({ commitRef, projectRoot });
             if (rev.clean) {
-              result = ok(`Clean commit (${rev.commit}) — no issues found in ${rev.duration}s.`);
+              result = ok(
+                `Clean commit (${rev.commit}) — no issues found in ${rev.duration}s.`,
+              );
             } else {
               const { readReport } = await import("../lib/llm/report");
               const report = readReport(projectRoot);
-              const entry = report?.reviews.find((r) => r.commit === rev.commit);
-              result = ok(JSON.stringify({ commit: rev.commit, findings: entry?.findings ?? [], duration: rev.duration }, null, 2));
+              const entry = report?.reviews.find(
+                (r) => r.commit === rev.commit,
+              );
+              result = ok(
+                JSON.stringify(
+                  {
+                    commit: rev.commit,
+                    findings: entry?.findings ?? [],
+                    duration: rev.duration,
+                  },
+                  null,
+                  2,
+                ),
+              );
             }
           } catch (e) {
-            result = err(`Review failed: ${e instanceof Error ? e.message : String(e)}`);
+            result = err(
+              `Review failed: ${e instanceof Error ? e.message : String(e)}`,
+            );
           }
           break;
         }
         case "review_report": {
           try {
-            const { readReport, formatReportText } = await import("../lib/llm/report");
+            const { readReport, formatReportText } = await import(
+              "../lib/llm/report"
+            );
             const report = readReport(projectRoot);
             if (!report || report.reviews.length === 0) {
               result = ok("No review findings yet.");
@@ -2269,7 +2549,9 @@ export const mcp = new Command("mcp")
               result = ok(formatReportText(report));
             }
           } catch (e) {
-            result = err(`Report failed: ${e instanceof Error ? e.message : String(e)}`);
+            result = err(
+              `Report failed: ${e instanceof Error ? e.message : String(e)}`,
+            );
           }
           break;
         }
@@ -2286,7 +2568,9 @@ export const mcp = new Command("mcp")
           ts: new Date().toISOString(),
           source: "mcp",
           tool: name,
-          query: String(toolArgs.query ?? toolArgs.symbol ?? toolArgs.target ?? ""),
+          query: String(
+            toolArgs.query ?? toolArgs.symbol ?? toolArgs.target ?? "",
+          ),
           project: projectRoot,
           results: resultLines,
           ms: Date.now() - startMs,
