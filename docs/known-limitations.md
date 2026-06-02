@@ -2,7 +2,7 @@
 type: doc
 status: reference
 created: 2026-04-09
-updated: 2026-05-26T14:00:00Z
+updated: 2026-06-02T18:00:00Z
 summary: Live catalog of open gmax limitations with detection + recovery steps.
 audience: internal
 related_plans:
@@ -13,7 +13,7 @@ related_docs:
 
 # Known Limitations
 
-Last updated 2026-05-26.
+Last updated 2026-06-02.
 
 ## Chunker `referenced_symbols` extracts call-expression names, not identifier-as-value references
 
@@ -32,7 +32,7 @@ Corpus-wide chunk-level density (eval-graph-totals reproduced fan-free over 121k
 
 The two in-scope class/enum targets go from an empty graph to real caller edges. The other two were mis-grouped in the original Phase-0 set: neither is an identifier-as-value class/enum reference.
 
-**Still open:** (1) recall-bench impact (`bench:oss`/`bench:recall`) is structurally unmeasurable until a graph consumer reads these edges at query time — Phase 3 PPR/k-hop; the default search path ignores `referenced_symbols` today; (2) other grammars (Python, Go, Rust, Java, C#, Ruby, Kotlin, Swift, Bash, Scala) still capture call-expressions only; (3) type-position references and bare-identifier-as-callback-value references (e.g. `emitter.on('x', errorHandler)`) remain uncaptured — distinct, broader shapes than the three above.
+**Still open:** (1) no query-time consumer reads these `referenced_symbols` edges yet. The intended consumer (Phase 3 PPR/k-hop) is **deferred** — its design probe found the platform hard-miss defs are already in-pool, so there's nothing to recover (see the PageRank entry's "Next direction" below). The v0.17.9 symbol-definition promotion that fixed those cases reads `defined_symbols`, not the `referenced_symbols` graph edges, so it doesn't exercise this work. The edges still benefit `gmax dead`/`gmax trace --inbound`; (2) other grammars (Python, Go, Rust, Java, C#, Ruby, Kotlin, Swift, Bash, Scala) still capture call-expressions only; (3) type-position references and bare-identifier-as-callback-value references (e.g. `emitter.on('x', errorHandler)`) remain uncaptured — distinct, broader shapes than the three above.
 
 The chunker writes `referenced_symbols` per chunk to support `gmax trace`, `gmax dead`, and any graph-derived ranking signal. Today the extraction tracks **call-expression callees** — names that appear in a syntactic call position. It does **not** track identifier references that aren't calls: class names used as values (`new BeyondError(…)`, `instanceof BeyondError`, `throw new ValidationError(…)`), constants/enums referenced as values (`ErrorCodes.NOT_FOUND`, `ErrorCodes.VALIDATION`), or types referenced in expression position.
 
@@ -75,11 +75,11 @@ Added 2026-05-25 (v0.17.2).
 
 Exported public-API symbols correctly downgrade to `PUBLIC EXPORT — no internal callers found; check external usage` when the defining chunk has `is_exported === true`. Treat `DEAD` as a starting point for removal, not a green light. Cross-check with `grep -r <symbol>` before deleting.
 
-**What is in scope.** The identifier-as-value class — `new ClassName`, `instanceof ClassName`, `Enum.MEMBER` — is fixable via the chunker work above, and **landed for TS/JS on 2026-06-02**, so `gmax dead <ClassName>` is meaningfully more accurate for TS/JS class/enum targets (pending a corpus reindex to take effect at query time). Other grammars and the callback-value shape are still open. Dynamic dispatch, reflection, and string-built call sites stay outside what a static graph can claim — that's a property of the static-analysis approach, not a deferral.
+**What is in scope.** The identifier-as-value class — `new ClassName`, `instanceof ClassName`, `Enum.MEMBER` — is fixable via the chunker work above, and **landed for TS/JS on 2026-06-02** (a full platform `--reset` reindex on 2026-06-02 made the edges live at query time: `BeyondError` 0→12, `ErrorCodes` 0→62 caller chunks), so `gmax dead <ClassName>` is meaningfully more accurate for TS/JS class/enum targets. Other grammars and the callback-value shape are still open. Dynamic dispatch, reflection, and string-built call sites stay outside what a static graph can claim — that's a property of the static-analysis approach, not a deferral.
 
 ## ColBERT rerank is opt-in (shape-sensitive: helps monolithic files, hurts modular repos)
 
-Added 2026-05-25 (v0.17.1). Refined 2026-05-25 with OSS-fixture evidence.
+Added 2026-05-25 (v0.17.1). Refined 2026-05-25 with OSS-fixture evidence. Concentration auto-gate shipped v0.17.7 (2026-06-02) — see end of entry.
 
 ColBERT late-interaction rerank defaults to **off**. Three fixture sets across two code shapes:
 
@@ -104,9 +104,9 @@ GMAX_RERANK=1 gmax search "query"
 
 If you're indexing a single-file library, large generated/bundled code, or a datalake-style repo, the +30% recall is probably worth the latency. For modular projects, leave it off.
 
-**Where the default lives:** `src/lib/search/searcher.ts` — `doRerank = _search_options?.rerank ?? false`. CLI and MCP wrappers read `process.env.GMAX_RERANK === "1"`.
+**Where the default lives:** `src/lib/search/searcher.ts` — `let doRerank = _search_options?.rerank ?? false`, then flipped on by the concentration gate below. CLI and MCP wrappers read `process.env.GMAX_RERANK === "1"`.
 
-**Open work item — candidate-concentration heuristic.** Auto-enable rerank when the top-K candidates concentrate ≥80% in one file. The signal exists in the fusion pool already (file-path histogram of the top-K). Implementation is ~20 lines in `searcher.ts`; the work is measurement — sweep the threshold against the 4-fixture instrument to find where the modular regression flips. Eval harness is in place (`pnpm bench:oss`) so the loop is fast.
+**Resolved — candidate-concentration auto-gate (shipped v0.17.7, 2026-06-02).** After RRF fusion, `searcher.ts` histograms the top-10 pool by file path; if the largest file's share ≥ `GMAX_CONCENTRATION_THRESHOLD` (default **0.7**, set > 1 to disable) it flips `doRerank` on. Only ever *adds* rerank-on — an explicit `GMAX_RERANK=1` is never overridden off. Threshold chosen by sweeping {0.6…0.9} against `pnpm bench:oss`: 0.7 is the highest value that retains lodash's +0.15 MRR lift (recall 0.600→0.800) while leaving express/platform flat. The cutoff is **global, not per-language** — express (JS, like lodash) never trips it at any threshold down to 0.6, so the signal is shape-based. This converts the shape-sensitivity from a manual opt-in into an automatic per-query decision for the concentrated regime.
 
 ## PageRank tiebreaker is opt-in (same shape-sensitivity as ColBERT)
 
@@ -133,7 +133,17 @@ GMAX_PAGERANK=1 GMAX_PR_WEIGHT=0.1 gmax search "query"
 
 Reproduce the table: `GMAX_PAGERANK=1 pnpm bench:oss:json` (express/lodash/platform); for gmax-self scoping use `GMAX_PAGERANK=1 GMAX_EVAL_PATH_PREFIX=/abs/path/to/gmax/ pnpm bench:recall:json`. Cache lives under `~/.gmax/pagerank/<sha1-of-pathPrefix>.json`, 1h TTL (tunable via `GMAX_PAGERANK_TTL_MS`).
 
-**Next direction — personalized PageRank / k-hop candidate-recovery.** Tiebreaker is the wrong abstraction; the IR literature backs **PPR or k-hop expansion seeded on first-stage hits** (candidate-recovery, not within-pool reordering). Blocked on the chunker `referenced_symbols` work above — the Phase 0 sanity check confirmed the current graph has zero edges for any of the four platform hard-miss targets, so PPR has nothing to walk. Sequence: (1) extend chunker to capture identifier-as-value references, (2) verify the graph now has edges for those targets, (3) implement PPR-on-first-stage-hits, (4) measure against the 4-fixture instrument. See [2026-05-25-semantic-search-landscape.md](plans/2026-05-25-semantic-search-landscape.md) — Bundle B section.
+**Next direction — personalized PageRank / k-hop candidate-recovery (DEFERRED 2026-06-02, premise invalidated).** Tiebreaker is the wrong abstraction; the IR literature backs **PPR or k-hop expansion seeded on first-stage hits** (candidate-recovery, not within-pool reordering). Steps (1) extend chunker and (2) verify graph edges are **done** (TS/JS edges live post-reindex; `BeyondError`/`ErrorCodes` recoverable). But before implementing (3), a design probe (`src/eval-graph-recovery-probe.ts`) showed all 10 platform "hard-miss" definition chunks are **already inside the top-200 fusion pool** (pool#1–#106) — there is nothing *outside* the pool to recover, so PPR/k-hop has no validatable target on the current fixtures. The in-pool ranking gaps it was meant to fix turned out to be a stale-instrument artifact plus a ranking issue, both since resolved (see the symbol-definition promotion entry below). PPR/k-hop is deferred until a fixture set with genuine outside-pool misses exists. See [2026-05-25-semantic-search-landscape.md](plans/2026-05-25-semantic-search-landscape.md) — Phase 3 section.
+
+## Bare-symbol queries promote the symbol's definition over its usages
+
+Added 2026-06-02 (v0.17.9). Implementation `src/lib/search/searcher.ts` — `asSymbolQuery` + the symbol-definition promotion (inject + ×5 boost).
+
+A query that is a single bare identifier (`BeyondError`, `requireAuth`, `map`) is treated as a symbol lookup: the chunk whose `defined_symbols` includes the query is injected into the rerank set (so the stage-2 / `RERANK_TOP` cuts can't drop it) and multiplicatively boosted (`GMAX_DEF_BOOST`, default 5) so it outranks its own method-child chunks and wins overlap dedup. This fixed three distinct drop mechanisms on the platform set and lifted bench:oss hits@1 sharply (platform 7→14/15, lodash 4→9/10, express 5→8/9).
+
+**Tradeoff / limitation:** for a bare-symbol query the **definition is promoted to the top**, ahead of usage/caller sites. This is the right default for "find X" (the overwhelmingly common intent), and usages still rank below — but if you specifically want callers, use `gmax trace --inbound <symbol>` or `gmax impact <symbol>` rather than a bare search. The promotion is **gated to single-identifier queries** via `asSymbolQuery`, so natural-language queries (anything with a space, dot, or punctuation) are completely unaffected. Disable per-process with `GMAX_DEF_BOOST=1` (neutralizes the score boost; injection still runs).
+
+**Measurement note.** The same investigation fixed the OSS bench instrument (`eval-oss.ts` `chunkMatches`, v0.17.8): it now credits a file + `defined_symbols`-includes-query match, not just a line-range hit. Stale hand-curated `expectedLine` values had been scoring surfaced definitions as misses (platform recall read 0.333 vs a true ~0.800). Keep this in mind when comparing pre-v0.17.8 bench numbers in older entries above — they understate recall on symbol-lookup cases.
 
 ## LanceDB manifest references a missing fragment file
 
