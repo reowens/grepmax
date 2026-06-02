@@ -5,6 +5,10 @@ created: 2026-04-09
 updated: 2026-05-26T14:00:00Z
 summary: Live catalog of open gmax limitations with detection + recovery steps.
 audience: internal
+related_plans:
+  - docs/plans/2026-05-25-semantic-search-landscape.md
+related_docs:
+  - docs/agent-ux-proposals.md
 ---
 
 # Known Limitations
@@ -33,7 +37,7 @@ Despite 14.0% of platform chunks having non-empty `referenced_symbols` (avg 82 r
 - `gmax trace --inbound <ClassName>` will look sparse for the same reason.
 - Any graph-derived ranking signal (PageRank, k-hop recall recovery, PPR) inherits the same blind spot. Bundle B's G1' was aborted at Phase 0 for exactly this reason — see [the plan doc](plans/2026-05-25-semantic-search-landscape.md) Bundle B section.
 
-**Not a fix-target right now.** Fixing it means revisiting tree-sitter capture queries per-language (TS/JS, Python, Go, Rust, Java, C#, Ruby, Kotlin, Swift, Bash, Scala — 11+ grammars) to also capture identifier references in expression position, while keeping the existing call-expression coverage. That's substantial scope and a measurement open question (does denser ref extraction improve downstream consumers enough to justify the chunk size growth?). Reopen if a concrete consumer (e.g., an agent that hits the dead-call-by-class-name pattern often enough to matter) provides demand evidence.
+**Scope of fix.** Revisit tree-sitter capture queries per-language (TS/JS, Python, Go, Rust, Java, C#, Ruby, Kotlin, Swift, Bash, Scala — 11+ grammars) to also capture identifier references in expression position, while keeping the existing call-expression coverage. This is the upstream lever for `gmax dead <ClassName>` accuracy, `gmax trace --inbound <ClassName>` density, and any future graph-derived ranking signal (PageRank, PPR, k-hop recovery — all blocked on this). Measurement target: does the new edge density help downstream consumers enough to justify the chunk-size growth? Track via the eval harness once edges land.
 
 **Repro:**
 ```bash
@@ -56,7 +60,7 @@ Added 2026-05-25 (v0.17.2).
 
 Exported public-API symbols correctly downgrade to `PUBLIC EXPORT — no internal callers found; check external usage` when the defining chunk has `is_exported === true`. Treat `DEAD` as a starting point for removal, not a green light. Cross-check with `grep -r <symbol>` before deleting.
 
-**Not a fix-target:** the prompt-doc anti-scope explicitly rules out detecting dynamic-dispatch or string-call sites — both are hard to define correctly. The output is "the call graph as indexed shows N callers"; the user judges what that means.
+**What is in scope.** The identifier-as-value class — `new ClassName`, `instanceof ClassName`, `Enum.MEMBER` — is fixable via the chunker work above. Once that lands, `gmax dead <ClassName>` becomes meaningfully more accurate. Dynamic dispatch, reflection, and string-built call sites stay outside what a static graph can claim — that's a property of the static-analysis approach, not a deferral.
 
 ## ColBERT rerank is opt-in (shape-sensitive: helps monolithic files, hurts modular repos)
 
@@ -87,7 +91,7 @@ If you're indexing a single-file library, large generated/bundled code, or a dat
 
 **Where the default lives:** `src/lib/search/searcher.ts` — `doRerank = _search_options?.rerank ?? false`. CLI and MCP wrappers read `process.env.GMAX_RERANK === "1"`.
 
-**Not a fix-target right now.** A "candidate-concentration heuristic" — auto-enable rerank when the top-K candidates concentrate ≥80% in one file — would be the principled fix but requires more measurement work. Revisit if user reports of monolithic-file repos come in.
+**Open work item — candidate-concentration heuristic.** Auto-enable rerank when the top-K candidates concentrate ≥80% in one file. The signal exists in the fusion pool already (file-path histogram of the top-K). Implementation is ~20 lines in `searcher.ts`; the work is measurement — sweep the threshold against the 4-fixture instrument to find where the modular regression flips. Eval harness is in place (`pnpm bench:oss`) so the loop is fast.
 
 ## PageRank tiebreaker is opt-in (same shape-sensitivity as ColBERT)
 
@@ -114,7 +118,7 @@ GMAX_PAGERANK=1 GMAX_PR_WEIGHT=0.1 gmax search "query"
 
 Reproduce the table: `GMAX_PAGERANK=1 pnpm bench:oss:json` (express/lodash/platform); for gmax-self scoping use `GMAX_PAGERANK=1 GMAX_EVAL_PATH_PREFIX=/abs/path/to/gmax/ pnpm bench:recall:json`. Cache lives under `~/.gmax/pagerank/<sha1-of-pathPrefix>.json`, 1h TTL (tunable via `GMAX_PAGERANK_TTL_MS`).
 
-**Not a fix-target right now.** Tiebreaker is the wrong abstraction; per the plan-doc G1' note, the path with literature backing is **personalized PageRank or k-hop expansion seeded on first-stage hits** (candidate-recovery, not tiebreaker). That's a different feature, unscoped until an agent-side request makes the hard-miss pattern urgent. See [2026-05-25-semantic-search-landscape.md](plans/2026-05-25-semantic-search-landscape.md) — Bundle B section.
+**Next direction — personalized PageRank / k-hop candidate-recovery.** Tiebreaker is the wrong abstraction; the IR literature backs **PPR or k-hop expansion seeded on first-stage hits** (candidate-recovery, not within-pool reordering). Blocked on the chunker `referenced_symbols` work above — the Phase 0 sanity check confirmed the current graph has zero edges for any of the four platform hard-miss targets, so PPR has nothing to walk. Sequence: (1) extend chunker to capture identifier-as-value references, (2) verify the graph now has edges for those targets, (3) implement PPR-on-first-stage-hits, (4) measure against the 4-fixture instrument. See [2026-05-25-semantic-search-landscape.md](plans/2026-05-25-semantic-search-landscape.md) — Bundle B section.
 
 ## LanceDB manifest references a missing fragment file
 
