@@ -1,8 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { buildWhereClause } from "../src/lib/search/searcher";
+import { asSymbolQuery, buildWhereClause } from "../src/lib/search/searcher";
 import type { SearchIntent } from "../src/lib/search/intent";
 
 const defaultIntent: SearchIntent = { type: "GENERAL" };
+
+describe("asSymbolQuery", () => {
+  it("accepts bare identifiers (symbol lookups)", () => {
+    for (const q of ["BeyondError", "ErrorCodes", "map", "requireAuth", "_private", "$jq", "a1_b2"]) {
+      expect(asSymbolQuery(q)).toBe(q);
+    }
+  });
+
+  it("trims surrounding whitespace", () => {
+    expect(asSymbolQuery("  BeyondError  ")).toBe("BeyondError");
+  });
+
+  it("rejects natural-language and multi-token queries", () => {
+    for (const q of ["how does auth work", "create application", "BeyondError extends", "a.b", "foo()", "1abc", ""]) {
+      expect(asSymbolQuery(q)).toBeNull();
+    }
+  });
+});
 
 describe("buildWhereClause", () => {
   it("returns undefined with no filters or prefix", () => {

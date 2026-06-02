@@ -12,6 +12,32 @@ import { getWorkerPool } from "../workers/pool";
 import { detectIntent, type SearchIntent } from "./intent";
 import { loadOrComputePageRank, pageRankBoostForSymbols } from "./pagerank";
 
+// Reads a defined_symbols / referenced_symbols column that may arrive as a plain
+// array or a LanceDB Arrow proxy (.toArray()).
+function readSymbolArray(val: unknown): string[] {
+  if (!val) return [];
+  if (Array.isArray(val)) return val.filter((v): v is string => typeof v === "string");
+  const maybe = val as { toArray?: () => unknown };
+  if (typeof maybe.toArray === "function") {
+    try {
+      const a = maybe.toArray();
+      return Array.isArray(a) ? a.filter((v): v is string => typeof v === "string") : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+// A query that is a single bare identifier ("BeyondError", "requireAuth", "map")
+// is almost always a symbol lookup — the user wants the chunk that *defines*
+// that symbol. Returns the trimmed identifier, or null for natural-language
+// queries. Drives the symbol-definition promotion in search().
+export function asSymbolQuery(query: string): string | null {
+  const q = query.trim();
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(q) ? q : null;
+}
+
 export function buildWhereClause(
   pathPrefix: string | undefined,
   filters: SearchFilter | undefined,
@@ -405,6 +431,8 @@ export class Searcher {
     let doRerank = _search_options?.rerank ?? false;
     const explain = _search_options?.explain ?? false;
     const searchIntent = intent || detectIntent(query);
+    // Bare-identifier queries get symbol-definition promotion (see below).
+    const symbolQuery = asSymbolQuery(query);
 
     const pool = getWorkerPool();
 
@@ -470,11 +498,14 @@ export class Searcher {
     // it in the lightweight path only when the flag is on so we don't bloat the
     // default query path.
     const pagerankEnabled = process.env.GMAX_PAGERANK === "1" && !!pathPrefix;
+    // Symbol-definition promotion needs defined_symbols on every candidate, not
+    // just the final display set — load it for bare-symbol queries too.
+    const needDefinedSymbols = pagerankEnabled || symbolQuery !== null;
     const LIGHTWEIGHT_COLUMNS = [
       "id", "path", "hash", "chunk_index", "start_line", "end_line",
       "is_anchor", "chunk_type", "role", "complexity", "is_exported",
       "content", "parent_symbol", "referenced_symbols", "pooled_colbert_48d",
-      ...(pagerankEnabled ? ["defined_symbols"] : []),
+      ...(needDefinedSymbols ? ["defined_symbols"] : []),
     ];
     // _distance is auto-added by vectorSearch, _score by FTS — include each
     // in the respective query to suppress LanceDB deprecation warnings
@@ -645,6 +676,31 @@ export class Searcher {
 
     const rerankCandidates = stage2Candidates.slice(0, RERANK_TOP);
 
+    // Symbol-definition promotion (1/2): membership. For a bare-symbol query,
+    // ensure the chunk(s) that actually DEFINE the symbol reach the rerank set
+    // even when the cosine / RERANK_TOP cuts would drop them — e.g. ErrorCodes
+    // sits at pooled-cosine rank 24 (> RERANK_TOP=20) and resolveActor at fusion
+    // rank 91 (> the stage-2 cut). Pulled from the top-200 fusion pool, bounded
+    // so the rerank batch stays small. Must run before Phase B so the injected
+    // chunks get their colbert data fetched for reranking. The score boost in
+    // (2/2) below then lets them win dedup over their own method-child chunks.
+    if (symbolQuery && rerankCandidates.length > 0) {
+      const present = new Set(
+        rerankCandidates.map((d) => d.id).filter(Boolean) as string[],
+      );
+      const MAX_INJECT = 5;
+      let injected = 0;
+      for (const d of topCandidates) {
+        if (injected >= MAX_INJECT) break;
+        if (!d.id || present.has(d.id)) continue;
+        if (readSymbolArray((d as { defined_symbols?: unknown }).defined_symbols).includes(symbolQuery)) {
+          rerankCandidates.push(d);
+          present.add(d.id);
+          injected++;
+        }
+      }
+    }
+
     // Phase B: Lazy-load colbert data only for the ~20 rerank candidates
     if (doRerank && rerankCandidates.length > 0) {
       const rerankIds = rerankCandidates
@@ -702,12 +758,28 @@ export class Searcher {
       breakdown?: { rerank: number; fused: number; boost: number; normalized: number };
     };
 
+    // Symbol-definition promotion (2/2): score. Multiplicatively boost any
+    // candidate that defines the queried symbol so the definition chunk outranks
+    // its own method-child chunks (e.g. the `BeyondError` class chunk vs its
+    // constructor/toJSON, which otherwise score higher on the literal and evict
+    // the parent in overlap dedup). Multiplicative keeps it scale-invariant
+    // across the rerank-on (ColBERT maxsim) and rerank-off (fusion) score ranges.
+    const envDefBoost = Number.parseFloat(process.env.GMAX_DEF_BOOST ?? "");
+    const DEF_MATCH_BOOST =
+      Number.isFinite(envDefBoost) && envDefBoost >= 1 ? envDefBoost : 5;
+
     const scored: ScoredItem[] = rerankCandidates.map((doc, idx) => {
       const base = scores?.[idx] ?? 0;
       const key = doc.id || `${doc.path}:${doc.chunk_index}`;
       const fusedScore = candidateScores.get(key) ?? 0;
       const blended = base + FUSED_WEIGHT * fusedScore;
-      const boosted = this.applyStructureBoost(doc, blended, searchIntent);
+      let boosted = this.applyStructureBoost(doc, blended, searchIntent);
+      if (
+        symbolQuery &&
+        readSymbolArray((doc as { defined_symbols?: unknown }).defined_symbols).includes(symbolQuery)
+      ) {
+        boosted *= DEF_MATCH_BOOST;
+      }
       return {
         record: doc,
         score: boosted,
