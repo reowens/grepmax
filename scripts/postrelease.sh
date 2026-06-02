@@ -45,8 +45,40 @@ fi
 echo "==> Watching run ${RUN_ID}"
 gh run watch "${RUN_ID}" --exit-status
 
+# `gh run watch` returns the instant CI marks the publish job done, but npm's
+# registry CDN takes a few more seconds to serve the new version to a fresh
+# install. Installing immediately races that propagation and loses with
+# `ETARGET No matching version found` (observed on v0.17.14). Poll `npm view`
+# until the version is actually servable, then install with a retry backstop.
+echo "==> Waiting for grepmax@${VERSION} to propagate to the npm registry"
+for i in $(seq 1 30); do
+  PUBLISHED="$(npm view "grepmax@${VERSION}" version 2>/dev/null || true)"
+  if [ "${PUBLISHED}" = "${VERSION}" ]; then
+    echo "    visible on registry (after ${i} poll(s))"
+    break
+  fi
+  sleep 3
+done
+
 echo "==> Installing grepmax@${VERSION} globally"
 npm cache clean --force
-npm install -g "grepmax@${VERSION}"
+INSTALLED=""
+for i in $(seq 1 5); do
+  if npm install -g "grepmax@${VERSION}"; then
+    INSTALLED=1
+    break
+  fi
+  echo "    install attempt ${i} failed (registry propagation lag?) — retrying in 5s" >&2
+  sleep 5
+done
+
+if [ -z "${INSTALLED}" ]; then
+  echo "ERROR: global install of grepmax@${VERSION} failed after 5 attempts." >&2
+  echo "       The release itself is live (pushed, GH release cut, npm published)." >&2
+  echo "       Finish manually once propagated:" >&2
+  echo "         npm cache clean --force && npm install -g grepmax@${VERSION}" >&2
+  echo "       Then restart the daemon: pkill -x gmax-daemon; gmax watch --daemon -b" >&2
+  exit 1
+fi
 
 echo "==> Release ${TAG} complete"
