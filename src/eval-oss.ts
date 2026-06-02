@@ -125,30 +125,48 @@ interface OssResult {
   note?: string;
 }
 
-// A chunk matches when its file path ends with the expected file AND the
-// expected line falls within [start_line, end_line]. end_line falls back
-// to start_line + 200 when missing (lodash's mega-IIFE chunks are
-// typically much smaller than this, but the guard avoids false negatives
-// from short tail chunks).
+// A chunk matches when its file path ends with the expected file AND either:
+//   (b) it declares the queried symbol (`defined_symbols` includes it), OR
+//   (a) the expected line falls within [start_line, end_line].
+//
+// (b) is the primary, drift-robust criterion for these symbol-lookup cases: it
+// credits the searcher for surfacing the chunk that *defines* the symbol,
+// regardless of where the hand-curated `expectedLine` lands relative to
+// post-reindex chunk boundaries. Before this, stale expectedLine values (e.g.
+// `requireAuth` def moved to lines 57-76 but the case said 45) and one-line
+// boundary off-by-ones (BeyondError chunk starts at line 37; the line check
+// tested `36 >= 37`) scored 7/15 platform cases as misses even though the
+// defining chunk was returned at ranks 1-3 — masking real recall (0.333 → 0.800).
+// (a) is kept as a fallback for re-export / binding-site cases (express `query`,
+// lodash `merge`) whose answer chunk legitimately doesn't carry the symbol in
+// `defined_symbols`. end_line falls back to start_line + 200 when missing.
 function chunkMatches(
   chunk: SearchResponse["data"][number],
   expectedFile: string,
   expectedLine: number,
+  expectedSymbol?: string,
 ): boolean {
   const path = String(chunk.metadata?.path || "").toLowerCase();
   if (!path.endsWith(`/${expectedFile.toLowerCase()}`) && !path.endsWith(expectedFile.toLowerCase())) {
     return false;
   }
+  // (b) defining-chunk match
+  if (expectedSymbol) {
+    const defs = (chunk as any).defined_symbols;
+    if (Array.isArray(defs) && defs.includes(expectedSymbol)) return true;
+  }
+  // (a) line-range match — chunks are 0-indexed start_line; expected line is 1-indexed
   const start = Number(chunk.generated_metadata?.start_line ?? (chunk as any).start_line ?? 0);
   const numLines = Number(chunk.generated_metadata?.num_lines ?? 0);
   const end = numLines > 0 ? start + numLines : start + 200;
-  // chunks are 0-indexed start_line; expected line is 1-indexed
   return expectedLine - 1 >= start && expectedLine - 1 <= end;
 }
 
 function evaluateOss(response: SearchResponse, c: OssCase, timeMs: number): OssResult {
   const idx = response.data.findIndex((chunk) =>
-    chunkMatches(chunk, c.expectedFile, c.expectedLine),
+    // `query` is the symbol name (sverklo P1 shape), so it doubles as the
+    // expected defined-symbol for the drift-robust match branch.
+    chunkMatches(chunk, c.expectedFile, c.expectedLine, c.query),
   );
   const rank = idx + 1; // 0 = miss
   const rr = rank > 0 ? 1 / rank : 0;
