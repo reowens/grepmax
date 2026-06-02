@@ -8,6 +8,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { Command } from "commander";
 import { MODEL_TIERS, PATHS } from "../config";
+import { computeAudit } from "./audit";
 import { type CallerTree, GraphBuilder } from "../lib/graph/graph-builder";
 import { readGlobalConfig, readIndexConfig } from "../lib/index/index-config";
 import { generateSummaries } from "../lib/index/syncer";
@@ -190,6 +191,24 @@ const TOOLS = [
         root: { type: "string", description: "Project root (absolute path)" },
       },
       required: ["symbol"],
+    },
+  },
+  {
+    name: "audit",
+    description:
+      "Graph-summary of the indexed project in one call: god nodes (most depended-upon symbols), hub files (most depended-upon files), and dead-code candidates (non-exported symbols with zero inbound references). Built from the static call graph — dynamic dispatch, reflection, eval, and type-position-only references are invisible, so dead candidates are hypotheses; verify with the `dead` tool before acting.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        root: {
+          type: "string",
+          description: "Project root (default: current)",
+        },
+        top: {
+          type: "number",
+          description: "How many of each category to return (default 10)",
+        },
+      },
     },
   },
   {
@@ -1505,6 +1524,95 @@ export const mcp = new Command("mcp")
       }
     }
 
+    async function handleAudit(
+      args: Record<string, unknown>,
+    ): Promise<ToolResult> {
+      ensureWatcher();
+      const root =
+        typeof args.root === "string" && args.root
+          ? path.resolve(args.root)
+          : projectRoot;
+      const prefix = root.endsWith("/") ? root : `${root}/`;
+      const top = Math.min(Math.max(Number(args.top) || 10, 1), 50);
+
+      try {
+        const db = getVectorDb();
+        const table = await db.ensureTable();
+        const rows = await table
+          .query()
+          .select([
+            "path",
+            "start_line",
+            "defined_symbols",
+            "referenced_symbols",
+            "is_exported",
+          ])
+          .where(`path LIKE '${escapeSqlString(prefix)}%'`)
+          .limit(500000)
+          .toArray();
+
+        if (rows.length === 0) {
+          return ok(
+            `No indexed data found for ${root}. Run: gmax index --path ${root}`,
+          );
+        }
+
+        const audit = computeAudit(
+          rows.map((r) => ({
+            path: String((r as any).path || ""),
+            start_line: Number((r as any).start_line || 0),
+            is_exported: Boolean((r as any).is_exported),
+            defined_symbols: toStringArray((r as any).defined_symbols),
+            referenced_symbols: toStringArray((r as any).referenced_symbols),
+          })),
+          prefix,
+          top,
+        );
+
+        const lines: string[] = [];
+        lines.push(
+          `Audit — ${audit.scannedChunks} chunks across ${audit.scannedFiles} files`,
+        );
+        lines.push("");
+        lines.push("God nodes (most depended-upon symbols):");
+        for (const g of audit.godNodes) {
+          lines.push(
+            `  ${g.symbol} — ${g.inboundFiles} files, ${g.totalRefs} refs (${g.file}:${g.line + 1})`,
+          );
+        }
+        if (audit.godNodes.length === 0) lines.push("  none");
+        lines.push("");
+        lines.push("Hub files (most depended-upon files):");
+        for (const h of audit.hubFiles) {
+          lines.push(
+            `  ${h.file} — ${h.dependents} dependents, ${h.defines} defs, fan-out ${h.fanOut}`,
+          );
+        }
+        if (audit.hubFiles.length === 0) lines.push("  none");
+        lines.push("");
+        lines.push(
+          `Dead-code candidates (${audit.deadTotal} non-exported symbols with zero inbound refs):`,
+        );
+        for (const d of audit.deadCandidates) {
+          lines.push(`  ${d.symbol} (${d.file}:${d.line + 1})`);
+        }
+        if (audit.deadCandidates.length === 0) lines.push("  none");
+        if (audit.deadTotal > audit.deadCandidates.length) {
+          lines.push(
+            `  … and ${audit.deadTotal - audit.deadCandidates.length} more`,
+          );
+        }
+        lines.push("");
+        lines.push(
+          "Static call graph: dynamic dispatch, reflection, eval, and type-position-only references are invisible. Dead candidates are hypotheses — verify with the `dead` tool before removing.",
+        );
+        return ok(lines.join("\n"));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return err(`Audit failed: ${msg}`);
+      }
+    }
+
     async function handleListSymbols(
       args: Record<string, unknown>,
     ): Promise<ToolResult> {
@@ -2406,6 +2514,9 @@ export const mcp = new Command("mcp")
           break;
         case "dead":
           result = await handleDead(toolArgs);
+          break;
+        case "audit":
+          result = await handleAudit(toolArgs);
           break;
         case "list_symbols":
           result = await handleListSymbols(toolArgs);
