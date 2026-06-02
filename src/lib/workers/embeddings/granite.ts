@@ -57,6 +57,13 @@ export class GraniteModel {
       intraOpNumThreads: ONNX_THREADS,
       interOpNumThreads: 1,
       graphOptimizationLevel: "all",
+      // Embedding inputs are variable-length, so the CPU memory arena and
+      // memory-pattern optimizer don't get reused across batches — they just
+      // retain the largest tensor a worker ever saw (a long/minified file can
+      // pin ~2 GB for the worker's lifetime). Disabling both bounds native
+      // memory at the cost of a small per-inference allocation.
+      enableCpuMemArena: false,
+      enableMemPattern: false,
     };
     this.session = await ort.InferenceSession.create(modelPath, sessionOptions);
   }
@@ -118,6 +125,10 @@ export class GraniteModel {
   }
 
   async runBatch(texts: string[]): Promise<Float32Array[]> {
+    // Lazy-load: in the normal path MLX/GPU handles dense embedding and this
+    // ONNX model is never used, so we avoid paying its resident cost in every
+    // worker. load() is idempotent and only runs on the first fallback batch.
+    await this.load();
     if (!this.session || !this.tokenizer) return [];
 
     const encoded = await this.tokenizer(texts, {

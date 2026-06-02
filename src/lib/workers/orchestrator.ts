@@ -116,7 +116,10 @@ export class WorkerOrchestrator {
   }
 
   private async ensureReady() {
-    if (this.granite.isReady() && this.colbert.isReady()) {
+    // Granite (dense ONNX) is loaded lazily on first fallback use inside
+    // granite.runBatch — in the normal MLX/GPU path it's never loaded, so we
+    // don't gate readiness on it or pay its resident cost per worker.
+    if (this.colbert.isReady()) {
       return;
     }
     if (this.initPromise) return this.initPromise;
@@ -127,7 +130,6 @@ export class WorkerOrchestrator {
       await Promise.all([
         this.chunker.init(),
         this.skeletonizer.init(),
-        this.granite.load(),
         this.colbert.load(),
       ]);
       stopTimer();

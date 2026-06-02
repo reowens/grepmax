@@ -25,9 +25,13 @@ type OutgoingMessage =
   | { id: number; error: string }
   | { id: number; heartbeat: true };
 
+// Every outgoing message also carries `rss` (see send()).
+
 const send = (msg: OutgoingMessage) => {
   if (process.send) {
-    process.send(msg);
+    // Attach current RSS so the pool can recycle workers whose native (ONNX)
+    // memory has ballooned — the V8 --max-old-space-size cap can't see it.
+    process.send({ ...msg, rss: process.memoryUsage().rss });
   }
 };
 

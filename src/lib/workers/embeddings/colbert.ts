@@ -45,6 +45,11 @@ export class ColbertModel {
       intraOpNumThreads: ONNX_THREADS,
       interOpNumThreads: 1,
       graphOptimizationLevel: "all",
+      // ColBERT runs locally on every batch (MLX only covers dense), so its
+      // arena is the worker's main memory hog. Variable-length inputs mean the
+      // arena/mem-pattern never amortize — disable both to keep RSS bounded.
+      enableCpuMemArena: false,
+      enableMemPattern: false,
     };
 
     log(`Worker: Loading ColBERT ONNX session from ${modelPath}`);

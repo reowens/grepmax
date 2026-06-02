@@ -30,7 +30,12 @@ import { log as dlog, debug as dbg } from "../utils/logger";
 import { isDaemonRunning, isDaemonHeartbeatFresh } from "../utils/daemon-client";
 import { readGlobalConfig } from "../index/index-config";
 import { openRotatedLog, rotateLogFds } from "../utils/log-rotate";
-import { destroyWorkerPool, isWorkerPoolInitialized } from "../workers/pool";
+import {
+  destroyWorkerPool,
+  isWorkerPoolInitialized,
+  getWorkerPool,
+} from "../workers/pool";
+import { spawnDaemon } from "../utils/daemon-launcher";
 import { spawn, execSync, type ChildProcess } from "node:child_process";
 import * as http from "node:http";
 
@@ -47,6 +52,24 @@ const IDLE_TIMEOUT_MS = (() => {
   return parsed; // <= 0 disables the idle check below
 })();
 const HEARTBEAT_INTERVAL_MS = 60 * 1000;
+
+// Self-recycle. Under continuous load (a busy monorepo) the idle timeout never
+// fires, so a long-lived daemon never gets a fresh start. The 24h age trigger
+// is the primary hygiene mechanism. The RSS trigger is a backstop for a genuine
+// runaway only: the daemon's memory is dominated by LanceDB working set, which
+// legitimately spikes to ~1.7 GB during compaction (then frees) on a ~250k-chunk
+// store, so the ceiling sits well above that to avoid recycling on normal
+// spikes. The maintenance-active guard in maybeRecycle() also defers during
+// compaction. Either ceiling <= 0 disables that trigger.
+const envNum = (name: string, fallback: number): number => {
+  const raw = process.env[name];
+  if (raw == null) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+const MAX_LIFETIME_MS = envNum("GMAX_DAEMON_MAX_LIFETIME_MS", 24 * 60 * 60 * 1000);
+const RSS_WATERMARK_MB = envNum("GMAX_DAEMON_RSS_WATERMARK_MB", 2560);
+
 // Watcher health windows used for FSEvents auto-recovery.
 const FSEVENTS_RECOVERY_INTERVAL_MS = 60 * 60 * 1000; // try recovery hourly
 const FSEVENTS_HEALTH_WINDOW_MS = 5 * 60 * 1000; // 5 min of quiet = "healthy"
@@ -66,6 +89,11 @@ export class Daemon {
   private heartbeatTick = 0;
   private mlxRecoveryInFlight = false;
   private shuttingDown = false;
+  private recycling = false;
+  // PIDs flagged as orphan workers on the previous sweep. A worker must look
+  // orphaned twice in a row before we kill it, so a worker the pool forked
+  // between our process snapshot and its array update is never killed by a race.
+  private suspectedOrphanWorkers = new Set<number>();
   private readonly pendingOps = new Set<string>();
   private readonly watcherFailCount = new Map<string, number>();
   private readonly pollIntervals = new Map<string, ReturnType<typeof setInterval>>();
@@ -254,6 +282,8 @@ export class Daemon {
       this.heartbeatTick++;
       if (this.heartbeatTick % 5 === 0) {
         void this.checkMlxHealth();
+        this.sweepOrphanWorkers();
+        this.maybeRecycle();
       }
     }, HEARTBEAT_INTERVAL_MS);
 
@@ -1304,6 +1334,75 @@ export class Daemon {
    * the PID file, which becomes stale when a daemon is orphaned through
    * the lock-compromise path.
    */
+  /**
+   * Gracefully hand off to a fresh daemon when this one has grown too old or
+   * too large. Only fires when quiet — no active compaction and no in-flight
+   * project operations — so a recycle never interrupts indexing work. The
+   * successor re-runs catchup on startup, so nothing is lost.
+   */
+  private maybeRecycle(): void {
+    if (this.shuttingDown || this.recycling) return;
+    const ageMs = process.uptime() * 1000;
+    const rssMb = process.memoryUsage().rss / (1024 * 1024);
+    const ageExceeded = MAX_LIFETIME_MS > 0 && ageMs > MAX_LIFETIME_MS;
+    const rssExceeded = RSS_WATERMARK_MB > 0 && rssMb > RSS_WATERMARK_MB;
+    if (!ageExceeded && !rssExceeded) return;
+
+    // Defer while busy; we'll re-check next tick.
+    if (this.vectorDb?.isMaintenanceActive()) return;
+    if (this.projectLocks.size > 0) return;
+
+    const reason = ageExceeded
+      ? `age ${(ageMs / 3_600_000).toFixed(1)}h > ${(MAX_LIFETIME_MS / 3_600_000).toFixed(1)}h`
+      : `rss ${Math.round(rssMb)}MB > ${RSS_WATERMARK_MB}MB`;
+    console.log(`[daemon] Recycling (${reason}) — handing off to a fresh daemon`);
+    this.recycling = true;
+    void this.shutdown({ relaunch: true }).finally(() => process.exit(0));
+  }
+
+  /**
+   * Kill gmax-worker processes that are children of THIS daemon but the worker
+   * pool no longer tracks — strays left behind if a kill ever failed silently.
+   * Filters by parent PID so a per-project `gmax watch`'s own workers are never
+   * touched. Requires a worker to look orphaned on two consecutive sweeps so a
+   * just-forked worker can't be killed by a snapshot race.
+   */
+  private sweepOrphanWorkers(): void {
+    if (this.shuttingDown || !isWorkerPoolInitialized()) return;
+    const tracked = new Set(getWorkerPool().getWorkerPids());
+    const workerPids = new Set(this.findProcessesByTitle("gmax-worker"));
+    const ourChildren = this.findChildPids();
+    const orphans = ourChildren.filter(
+      (pid) => workerPids.has(pid) && !tracked.has(pid),
+    );
+
+    const confirmed = orphans.filter((pid) => this.suspectedOrphanWorkers.has(pid));
+    this.suspectedOrphanWorkers = new Set(orphans);
+
+    for (const pid of confirmed) {
+      console.log(`[daemon] Killing orphan worker PID:${pid} (untracked by pool)`);
+      try { process.kill(pid, "SIGKILL"); } catch {}
+      this.suspectedOrphanWorkers.delete(pid);
+    }
+  }
+
+  /** Child PIDs of this process (workers, MLX, llama-server). */
+  private findChildPids(): number[] {
+    try {
+      const out = execSync(`pgrep -P ${process.pid}`, {
+        timeout: 5000,
+        encoding: "utf-8",
+      }).trim();
+      if (!out) return [];
+      return out
+        .split("\n")
+        .map((s) => parseInt(s.trim(), 10))
+        .filter((n) => Number.isFinite(n) && n > 0);
+    } catch {
+      return [];
+    }
+  }
+
   private async killStaleProcesses(): Promise<void> {
     // 1. Check for other daemon processes
     const daemonPids = this.findProcessesByTitle("gmax-daemon")
@@ -1366,7 +1465,7 @@ export class Daemon {
     }
   }
 
-  async shutdown(): Promise<void> {
+  async shutdown(opts: { relaunch?: boolean } = {}): Promise<void> {
     if (this.shuttingDown) return;
     this.shuttingDown = true;
 
@@ -1445,6 +1544,15 @@ export class Daemon {
     // Close shared resources
     try { await this.metaCache?.close(); } catch {}
     try { await this.vectorDb?.close(); } catch {}
+
+    // Hand off to a successor only after every resource is released and the
+    // liveness markers (socket/pid/lock) are already gone — so the fresh
+    // daemon's singleton check sees a clean slate and opens LanceDB/LMDB
+    // without contending with this exiting process.
+    if (opts.relaunch) {
+      const pid = spawnDaemon();
+      console.log(`[daemon] Spawned successor daemon${pid ? ` (PID: ${pid})` : " (spawn failed)"}`);
+    }
 
     console.log("[daemon] Shutdown complete");
   }
