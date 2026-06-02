@@ -95,3 +95,50 @@ function example() {}`;
     expect(displayText).toContain("code");
   });
 });
+
+describe("TreeSitterChunker identifier-as-value references (TS/JS)", () => {
+  const SOURCE = `import { BeyondError, ErrorCodes } from "./errors";
+
+export function handle(x: unknown) {
+  if (x instanceof BeyondError) {
+    throw new BeyondError(ErrorCodes.VALIDATION, "bad");
+  }
+  const code = ErrorCodes.NOT_FOUND;
+  logger.error(code);
+  this.cache.clear();
+  return new Foo.Bar();
+}
+`;
+
+  it("captures new / instanceof / member-access class references", async () => {
+    const chunker = new TreeSitterChunker();
+    const { chunks } = await chunker.chunk("handler.ts", SOURCE);
+    const chunk = chunks.find((c) => c.definedSymbols?.includes("handle"));
+    expect(chunk).toBeDefined();
+    const refs = chunk?.referencedSymbols ?? [];
+
+    // new ClassName(...) and `instanceof ClassName`
+    expect(refs).toContain("BeyondError");
+    // Enum.MEMBER / ClassName.MEMBER object captured (twice in source -> deduped)
+    expect(refs).toContain("ErrorCodes");
+    expect(refs.filter((r) => r === "ErrorCodes")).toHaveLength(1);
+    // `new ns.ClassName()` captures both the namespace and the constructor
+    expect(refs).toContain("Foo");
+    expect(refs).toContain("Bar");
+  });
+
+  it("does not capture lowercase objects or `this` as references", async () => {
+    const chunker = new TreeSitterChunker();
+    const { chunks } = await chunker.chunk("handler.ts", SOURCE);
+    const chunk = chunks.find((c) => c.definedSymbols?.includes("handle"));
+    const refs = chunk?.referencedSymbols ?? [];
+
+    // member-access object capture is gated to Capitalized identifiers
+    expect(refs).not.toContain("logger");
+    expect(refs).not.toContain("this");
+    expect(refs).not.toContain("cache");
+    // existing call-expression coverage stays intact
+    expect(refs).toContain("error"); // logger.error(...)
+    expect(refs).toContain("clear"); // this.cache.clear()
+  });
+});

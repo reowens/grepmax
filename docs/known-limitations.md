@@ -19,6 +19,21 @@ Last updated 2026-05-26.
 
 Added 2026-05-26. Confirmed during Bundle B G1' Phase 0 sanity check.
 
+**Partially fixed 2026-06-02 (TS/JS).** The chunker now emits identifier-as-value edges for `new ClassName(…)`, `instanceof ClassName`, and `ClassName.MEMBER` / `Enum.MEMBER` (member access gated to Capitalized objects). Verified on real platform source: `BeyondError` and `ErrorCodes` now produce `referenced_symbols` edges in their caller chunks, and `GraphBuilder.buildGraph` surfaces those callers (test: `tests/graph-edges.identifier-as-value.test.ts`). Read-only A/B over the platform corpus: +1.1% `referenced_symbols` bytes, 0% embedded-content growth.
+
+Corpus-wide chunk-level density (eval-graph-totals reproduced fan-free over 121k platform TS/JS chunks; `ref-chunks` is a pure chunking property, so no reindex needed to measure it):
+
+| Target | Shape | Before | After |
+|---|---|---|---|
+| `BeyondError` | class (`new`/`instanceof`) | 0 | **12** |
+| `ErrorCodes` | enum (`.MEMBER`) | 0 | **62** |
+| `resolveActor` | ordinary call (already-covered shape; current code references `resolveActorV2`) | 0 | 0 |
+| `errorHandler` | callback-as-value (out of scope) | 0 | 0 |
+
+The two in-scope class/enum targets go from an empty graph to real caller edges. The other two were mis-grouped in the original Phase-0 set: neither is an identifier-as-value class/enum reference.
+
+**Still open:** (1) recall-bench impact (`bench:oss`/`bench:recall`) is structurally unmeasurable until a graph consumer reads these edges at query time — Phase 3 PPR/k-hop; the default search path ignores `referenced_symbols` today; (2) other grammars (Python, Go, Rust, Java, C#, Ruby, Kotlin, Swift, Bash, Scala) still capture call-expressions only; (3) type-position references and bare-identifier-as-callback-value references (e.g. `emitter.on('x', errorHandler)`) remain uncaptured — distinct, broader shapes than the three above.
+
 The chunker writes `referenced_symbols` per chunk to support `gmax trace`, `gmax dead`, and any graph-derived ranking signal. Today the extraction tracks **call-expression callees** — names that appear in a syntactic call position. It does **not** track identifier references that aren't calls: class names used as values (`new BeyondError(…)`, `instanceof BeyondError`, `throw new ValidationError(…)`), constants/enums referenced as values (`ErrorCodes.NOT_FOUND`, `ErrorCodes.VALIDATION`), or types referenced in expression position.
 
 Evidence (platform monorepo, ~123k chunks, scoped via `pathPrefix`):
@@ -54,13 +69,13 @@ Added 2026-05-25 (v0.17.2).
 - **Dynamic dispatch** — method calls resolved at runtime through interfaces/protocols/duck typing.
 - **Reflection / `eval`** — `getattr`, `Function.prototype.apply`, `eval`, `import()` with a runtime string.
 - **String-built call sites** — `obj[methodName]()` where `methodName` is computed.
-- **Identifier-as-value references** — `new ClassName(…)`, `instanceof ClassName`, `Enum.MEMBER`, types in expression position. The chunker tracks call-expression callees only; see the "Chunker `referenced_symbols`…" entry above.
+- **Identifier-as-value references** — `new ClassName(…)`, `instanceof ClassName`, `Enum.MEMBER`, types in expression position. **TS/JS now captured** as of 2026-06-02 (other grammars still call-expression only); types in expression position and callback-value references remain uncaptured. See the "Chunker `referenced_symbols`…" entry above.
 - **Cross-language calls** — a Python caller of a TypeScript exported function (and vice-versa) — graph is built per-language.
 - **External consumers** — anything outside the indexed project tree.
 
 Exported public-API symbols correctly downgrade to `PUBLIC EXPORT — no internal callers found; check external usage` when the defining chunk has `is_exported === true`. Treat `DEAD` as a starting point for removal, not a green light. Cross-check with `grep -r <symbol>` before deleting.
 
-**What is in scope.** The identifier-as-value class — `new ClassName`, `instanceof ClassName`, `Enum.MEMBER` — is fixable via the chunker work above. Once that lands, `gmax dead <ClassName>` becomes meaningfully more accurate. Dynamic dispatch, reflection, and string-built call sites stay outside what a static graph can claim — that's a property of the static-analysis approach, not a deferral.
+**What is in scope.** The identifier-as-value class — `new ClassName`, `instanceof ClassName`, `Enum.MEMBER` — is fixable via the chunker work above, and **landed for TS/JS on 2026-06-02**, so `gmax dead <ClassName>` is meaningfully more accurate for TS/JS class/enum targets (pending a corpus reindex to take effect at query time). Other grammars and the callback-value shape are still open. Dynamic dispatch, reflection, and string-built call sites stay outside what a static graph can claim — that's a property of the static-analysis approach, not a deferral.
 
 ## ColBERT rerank is opt-in (shape-sensitive: helps monolithic files, hurts modular repos)
 

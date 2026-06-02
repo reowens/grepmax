@@ -616,6 +616,24 @@ export class TreeSitterChunker {
         if (name) definedSymbols.push(name);
 
         const referencedSymbols: string[] = [];
+        // Reduce a constructor / instanceof operand to a simple symbol name:
+        // bare identifier -> its text; `ns.ClassName` member -> the rightmost
+        // property (`ClassName`). Returns null for shapes we can't name.
+        const simpleRefName = (node: TreeSitterNode | null): string | null => {
+          if (!node) return null;
+          if (node.type === "member_expression") {
+            const prop = node.childForFieldName
+              ? node.childForFieldName("property")
+              : null;
+            return prop?.text ?? null;
+          }
+          return node.text ?? null;
+        };
+        const addRef = (name: string | null | undefined) => {
+          if (name && !referencedSymbols.includes(name)) {
+            referencedSymbols.push(name);
+          }
+        };
         const extractRefs = (n: TreeSitterNode) => {
           // Handle JS/TS (call_expression), Python (call), Lua (function_call)
           if (
@@ -687,6 +705,39 @@ export class TreeSitterChunker {
               if (name && /^[A-Z]/.test(name)) {
                 referencedSymbols.push(name);
               }
+            }
+          }
+          // Identifier-as-value references (TS/JS): edges the call-expression
+          // capture above misses. These feed the graph-walk consumers (PPR,
+          // `gmax dead <ClassName>`, audit) that need class/enum references,
+          // not just method-call names.
+          if (n.type === "new_expression") {
+            // `new ClassName(...)` — constructor is always a type reference.
+            const ctor = n.childForFieldName
+              ? n.childForFieldName("constructor")
+              : null;
+            addRef(simpleRefName(ctor));
+          } else if (n.type === "binary_expression") {
+            // `x instanceof ClassName` — the right operand is a type reference.
+            const op = n.childForFieldName
+              ? n.childForFieldName("operator")
+              : null;
+            if (op?.text === "instanceof") {
+              const right = n.childForFieldName
+                ? n.childForFieldName("right")
+                : null;
+              addRef(simpleRefName(right));
+            }
+          } else if (n.type === "member_expression") {
+            // `ClassName.MEMBER` / `Enum.MEMBER` — capture the object only when
+            // it looks like a type/namespace (Capitalized identifier), so we
+            // get `ErrorCodes` from `ErrorCodes.VALIDATION` without flooding
+            // the graph with `this.x` / `req.body` / lowercase-local access.
+            const obj = n.childForFieldName
+              ? n.childForFieldName("object")
+              : null;
+            if (obj && obj.type === "identifier" && /^[A-Z]/.test(obj.text)) {
+              addRef(obj.text);
             }
           }
           for (const child of n.namedChildren ?? []) {
