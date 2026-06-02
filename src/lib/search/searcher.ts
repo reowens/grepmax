@@ -402,7 +402,7 @@ export class Searcher {
     // regresses MRR@10 by ~3% and doubles query latency; sweep across
     // FUSED_WEIGHT ∈ {0,0.1,0.5,1,2} showed rerank scores dominate
     // fused scores ~30:1 so blend tuning can't recover the loss.
-    const doRerank = _search_options?.rerank ?? false;
+    let doRerank = _search_options?.rerank ?? false;
     const explain = _search_options?.explain ?? false;
     const searchIntent = intent || detectIntent(query);
 
@@ -552,6 +552,46 @@ export class Searcher {
     // Free raw search results — docMap holds the only needed references
     vectorResults.length = 0;
     ftsResults.length = 0;
+
+    // Candidate-concentration gate (Bundle B, v0.17.2 OSS-fixture finding):
+    // ColBERT rerank is shape-sensitive. When the post-fusion pool clusters
+    // into one file (single-file-repo / concentrated shape, e.g. lodash) rerank
+    // lifts recall sharply (+0.283 MRR on the OSS bench); on modular/spread
+    // pools (express, platform) it regresses. So detect the concentrated regime
+    // here and *add* rerank-on for it. This only ever flips doRerank false→true:
+    // an explicit GMAX_RERANK=1 (doRerank already true) is never overridden off.
+    if (!doRerank) {
+      const envConcThreshold = Number.parseFloat(
+        process.env.GMAX_CONCENTRATION_THRESHOLD ?? "",
+      );
+      // <= 0 (or NaN with the default) keeps the gate active at 0.7; a value > 1
+      // disables it (no possible share reaches it), giving a rerank-fully-off
+      // baseline for sweeps without touching the doRerank default. 0.7 is the
+      // sweep winner: highest threshold (least spurious firing) that still
+      // retains lodash's +0.15 MRR lift while leaving express/platform flat.
+      const CONCENTRATION_THRESHOLD =
+        Number.isFinite(envConcThreshold) && envConcThreshold > 0
+          ? envConcThreshold
+          : 0.7;
+      // Histogram a fixed top-K window (not finalLimit) so the threshold stays
+      // calibrated across callers regardless of the result window they request.
+      const CONCENTRATION_K = 10;
+      const window = fused.slice(0, CONCENTRATION_K);
+      if (window.length > 0 && CONCENTRATION_THRESHOLD <= 1) {
+        const buckets = new Map<string, number>();
+        for (const doc of window) {
+          buckets.set(doc.path, (buckets.get(doc.path) ?? 0) + 1);
+        }
+        let maxBucket = 0;
+        for (const count of buckets.values()) {
+          if (count > maxBucket) maxBucket = count;
+        }
+        const share = maxBucket / window.length;
+        if (share >= CONCENTRATION_THRESHOLD) {
+          doRerank = true;
+        }
+      }
+    }
 
     // Item 8: Widen PRE_RERANK_K
     // Retrieve a wide set for Stage 1 filtering
