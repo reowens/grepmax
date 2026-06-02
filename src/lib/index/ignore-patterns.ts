@@ -56,6 +56,11 @@ export const DEFAULT_IGNORE_PATTERNS = [
   "*.designer.cs", // C# designer
   "*.generated.ts",
   "*.generated.tsx", // graphql-codegen / common TS
+  // graphql-codegen client-preset output dir (emits no @generated banner, so
+  // the header sniff can't catch these — match the canonical filenames).
+  "**/gql/graphql.ts",
+  "**/gql/gql.ts",
+  "**/gql/fragment-masking.ts",
   // Test fixtures and benchmark data
   "**/fixtures/**",
   "**/benchmark/**",

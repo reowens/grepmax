@@ -51,6 +51,10 @@ describe("DEFAULT_IGNORE_PATTERNS — generated filenames", () => {
     expect(ignored("lib/model.freezed.dart")).toBe(true);
     expect(ignored("src/__generated__/types.ts")).toBe(true);
     expect(ignored("packages/ios/BeyondApp/GraphQL/Generated/BeyondGraphQL.graphql.swift")).toBe(true);
+    // graphql-codegen client-preset (no @generated banner)
+    expect(ignored("packages/web-atlas/src/gql/graphql.ts")).toBe(true);
+    expect(ignored("packages/web/src/gql/gql.ts")).toBe(true);
+    expect(ignored("packages/web/src/gql/fragment-masking.ts")).toBe(true);
   });
 
   it("leaves hand-written source untouched", () => {
