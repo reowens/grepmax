@@ -212,6 +212,68 @@ const TOOLS = [
     },
   },
   {
+    name: "get_neighbors",
+    description:
+      "Graph primitive: symbols reachable from a node along call edges within N hops. direction 'callees' = what it calls (outbound), 'callers' = what calls it (inbound). Each result carries its hop distance and definition location. Static call graph — same caveats as `dead`/`audit`.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        symbol: { type: "string", description: "Starting symbol" },
+        direction: {
+          type: "string",
+          enum: ["callers", "callees"],
+          description: "Edge direction (default callees)",
+        },
+        max_hops: {
+          type: "number",
+          description: "Max hops (default 2, max 5)",
+        },
+        root: { type: "string", description: "Project root (absolute path)" },
+      },
+      required: ["symbol"],
+    },
+  },
+  {
+    name: "find_paths",
+    description:
+      "Graph primitive: shortest call-graph path between two symbols, as a symbol sequence. direction 'callees' searches outward from `from` (does `from` transitively call `to`?), 'callers' searches inward. Returns 'no path' if unreachable within max_hops.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        from: { type: "string", description: "Start symbol" },
+        to: { type: "string", description: "Target symbol" },
+        direction: {
+          type: "string",
+          enum: ["callers", "callees"],
+          description: "Search direction (default callees)",
+        },
+        max_hops: {
+          type: "number",
+          description: "Max hops (default 6, max 10)",
+        },
+        root: { type: "string", description: "Project root (absolute path)" },
+      },
+      required: ["from", "to"],
+    },
+  },
+  {
+    name: "subgraph_for_files",
+    description:
+      "Graph primitive: the local dependency subgraph for a set of files — symbols they define, the call edges among those symbols, and their outbound external dependencies. Paths may be absolute or project-root-relative.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        files: {
+          type: "array",
+          items: { type: "string" },
+          description: "File paths (absolute or root-relative)",
+        },
+        root: { type: "string", description: "Project root (absolute path)" },
+      },
+      required: ["files"],
+    },
+  },
+  {
     name: "list_symbols",
     description: "List indexed symbols with role and export status.",
     inputSchema: {
@@ -1613,6 +1675,127 @@ export const mcp = new Command("mcp")
       }
     }
 
+    async function handleGetNeighbors(
+      args: Record<string, unknown>,
+    ): Promise<ToolResult> {
+      ensureWatcher();
+      const symbol = String(args.symbol || "");
+      if (!symbol) return err("Missing required parameter: symbol");
+      const direction = args.direction === "callers" ? "callers" : "callees";
+      const maxHops = Math.min(Math.max(Number(args.max_hops) || 2, 1), 5);
+      try {
+        const root =
+          typeof args.root === "string" && args.root ? args.root : projectRoot;
+        const builder = new GraphBuilder(getVectorDb(), root);
+        const hits = await builder.getNeighbors(symbol, direction, maxHops);
+        if (hits.length === 0) {
+          return ok(
+            `No ${direction} found for '${symbol}' within ${maxHops} hop(s). Check it is indexed (\`gmax status\`) or try the \`dead\` tool.`,
+          );
+        }
+        const rel = (p: string) =>
+          p.startsWith(root) ? p.slice(root.length + 1) : p;
+        const lines = [
+          `${direction} of ${symbol} (≤${maxHops} hops, ${hits.length} found):`,
+        ];
+        for (const h of hits.slice(0, 100)) {
+          const loc = h.file ? ` ${rel(h.file)}:${h.line + 1}` : " (external)";
+          lines.push(`  [${h.hops}h] ${h.symbol}${loc}`);
+        }
+        if (hits.length > 100) lines.push(`  … and ${hits.length - 100} more`);
+        return ok(lines.join("\n"));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return err(`get_neighbors failed: ${msg}`);
+      }
+    }
+
+    async function handleFindPaths(
+      args: Record<string, unknown>,
+    ): Promise<ToolResult> {
+      ensureWatcher();
+      const from = String(args.from || "");
+      const to = String(args.to || "");
+      if (!from || !to) {
+        return err("Missing required parameters: from and to");
+      }
+      const direction = args.direction === "callers" ? "callers" : "callees";
+      const maxHops = Math.min(Math.max(Number(args.max_hops) || 6, 1), 10);
+      try {
+        const root =
+          typeof args.root === "string" && args.root ? args.root : projectRoot;
+        const builder = new GraphBuilder(getVectorDb(), root);
+        const pathSyms = await builder.findPaths(from, to, direction, maxHops);
+        if (!pathSyms) {
+          return ok(
+            `No ${direction} path from '${from}' to '${to}' within ${maxHops} hops.`,
+          );
+        }
+        const arrow = direction === "callees" ? " → " : " ← ";
+        const hops = pathSyms.length - 1;
+        return ok(
+          `Path (${hops} hop${hops === 1 ? "" : "s"}): ${pathSyms.join(arrow)}`,
+        );
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return err(`find_paths failed: ${msg}`);
+      }
+    }
+
+    async function handleSubgraphForFiles(
+      args: Record<string, unknown>,
+    ): Promise<ToolResult> {
+      ensureWatcher();
+      const filesIn = Array.isArray(args.files)
+        ? (args.files as unknown[]).map((f) => String(f)).filter(Boolean)
+        : [];
+      if (filesIn.length === 0) {
+        return err("Missing required parameter: files (non-empty array)");
+      }
+      try {
+        const root =
+          typeof args.root === "string" && args.root ? args.root : projectRoot;
+        const abs = filesIn.map((f) =>
+          path.isAbsolute(f) ? f : path.resolve(root, f),
+        );
+        const builder = new GraphBuilder(getVectorDb(), root);
+        const sg = await builder.subgraphForFiles(abs);
+        if (sg.symbols.length === 0) {
+          return ok(
+            `No indexed symbols found in: ${filesIn.join(", ")}. Check the paths and \`gmax status\`.`,
+          );
+        }
+        const rel = (p: string) =>
+          p.startsWith(root) ? p.slice(root.length + 1) : p;
+        const cap = (arr: string[], n: number) =>
+          arr.length > n
+            ? `${arr.slice(0, n).join(", ")} … (+${arr.length - n})`
+            : arr.join(", ");
+        const lines: string[] = [];
+        lines.push(
+          `Subgraph for ${sg.files.length} file(s): ${sg.symbols.length} symbols, ${sg.internalEdges.length} internal edges, ${sg.externalDeps.length} external deps`,
+        );
+        lines.push(`Files: ${sg.files.map(rel).join(", ")}`);
+        lines.push("");
+        lines.push(`Symbols: ${cap(sg.symbols, 50)}`);
+        lines.push("");
+        lines.push("Internal edges:");
+        for (const e of sg.internalEdges.slice(0, 80)) {
+          lines.push(`  ${e.from} → ${e.to}`);
+        }
+        if (sg.internalEdges.length === 0) lines.push("  none");
+        if (sg.internalEdges.length > 80) {
+          lines.push(`  … and ${sg.internalEdges.length - 80} more`);
+        }
+        lines.push("");
+        lines.push(`External deps: ${cap(sg.externalDeps, 50) || "none"}`);
+        return ok(lines.join("\n"));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return err(`subgraph_for_files failed: ${msg}`);
+      }
+    }
+
     async function handleListSymbols(
       args: Record<string, unknown>,
     ): Promise<ToolResult> {
@@ -2517,6 +2700,15 @@ export const mcp = new Command("mcp")
           break;
         case "audit":
           result = await handleAudit(toolArgs);
+          break;
+        case "get_neighbors":
+          result = await handleGetNeighbors(toolArgs);
+          break;
+        case "find_paths":
+          result = await handleFindPaths(toolArgs);
+          break;
+        case "subgraph_for_files":
+          result = await handleSubgraphForFiles(toolArgs);
           break;
         case "list_symbols":
           result = await handleListSymbols(toolArgs);

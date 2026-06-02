@@ -1,6 +1,15 @@
 import type { VectorRecord } from "../store/types";
 import type { VectorDB } from "../store/vector-db";
 import { escapeSqlString } from "../utils/filter-builder";
+import {
+  type FileSubgraph,
+  type NeighborHit,
+  bfsNeighbors,
+  buildFileSubgraph,
+  findPath,
+} from "./graph-traversal";
+
+export type EdgeDirection = "callers" | "callees";
 
 export interface GraphNode {
   symbol: string;
@@ -246,6 +255,110 @@ export class GraphBuilder {
       trees.push({ node: caller, callers: subCallers });
     }
     return trees;
+  }
+
+  // --- MCP graph primitives (Phase 7) -----------------------------------
+
+  /** Symbols the given symbol references (outbound edges). */
+  async calleesOf(symbol: string): Promise<string[]> {
+    return this.getCallees(symbol);
+  }
+
+  /** Distinct symbols that reference the given symbol (inbound edges). */
+  async callersOf(symbol: string): Promise<string[]> {
+    const nodes = await this.getCallers(symbol);
+    const out: string[] = [];
+    for (const n of nodes) {
+      if (n.symbol && n.symbol !== "unknown" && !out.includes(n.symbol)) {
+        out.push(n.symbol);
+      }
+    }
+    return out;
+  }
+
+  private neighborFn(direction: EdgeDirection): (s: string) => Promise<string[]> {
+    return direction === "callers"
+      ? (s) => this.callersOf(s)
+      : (s) => this.calleesOf(s);
+  }
+
+  /**
+   * Symbols reachable from `symbol` along `direction` within `maxHops`, each
+   * annotated with hop distance and resolved to a definition location when one
+   * is indexed.
+   */
+  async getNeighbors(
+    symbol: string,
+    direction: EdgeDirection,
+    maxHops: number,
+  ): Promise<Array<NeighborHit & { file: string; line: number }>> {
+    const hits = await bfsNeighbors(symbol, this.neighborFn(direction), maxHops);
+    const out: Array<NeighborHit & { file: string; line: number }> = [];
+    for (const h of hits) {
+      const loc = await this.resolveLocation(h.symbol);
+      out.push({ ...h, file: loc?.file ?? "", line: loc?.line ?? 0 });
+    }
+    return out;
+  }
+
+  /** Shortest path `[from, …, to]` along `direction`, or null. */
+  async findPaths(
+    from: string,
+    to: string,
+    direction: EdgeDirection,
+    maxHops = 6,
+  ): Promise<string[] | null> {
+    return findPath(from, to, this.neighborFn(direction), maxHops);
+  }
+
+  /** Resolve a symbol to its first defining chunk's file:line, if indexed. */
+  async resolveLocation(
+    symbol: string,
+  ): Promise<{ file: string; line: number } | null> {
+    const table = await this.db.ensureTable();
+    const escaped = escapeSqlString(symbol);
+    const rows = await table
+      .query()
+      .select(["path", "start_line"])
+      .where(this.scopeWhere(`array_contains(defined_symbols, '${escaped}')`))
+      .limit(1)
+      .toArray();
+    if (rows.length === 0) return null;
+    const r = rows[0] as any;
+    return { file: String(r.path || ""), line: Number(r.start_line || 0) };
+  }
+
+  /**
+   * Build the local dependency subgraph for a set of files: every symbol they
+   * define, the edges among those symbols, and their outbound external deps.
+   */
+  async subgraphForFiles(files: string[]): Promise<FileSubgraph> {
+    if (files.length === 0) {
+      return { files: [], symbols: [], internalEdges: [], externalDeps: [] };
+    }
+    const table = await this.db.ensureTable();
+    const orClause = files
+      .map((f) => `path = '${escapeSqlString(f)}'`)
+      .join(" OR ");
+    const rows = await table
+      .query()
+      .select(["path", "defined_symbols", "referenced_symbols"])
+      .where(this.scopeWhere(`(${orClause})`))
+      .limit(100000)
+      .toArray();
+
+    const toArray = (val: any): string[] => {
+      if (val && typeof val.toArray === "function") return val.toArray();
+      return Array.isArray(val) ? val : [];
+    };
+
+    return buildFileSubgraph(
+      rows.map((r) => ({
+        path: String((r as any).path || ""),
+        defined_symbols: toArray((r as any).defined_symbols),
+        referenced_symbols: toArray((r as any).referenced_symbols),
+      })),
+    );
   }
 
   private mapRowToNode(
