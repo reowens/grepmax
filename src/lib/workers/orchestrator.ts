@@ -15,6 +15,7 @@ import type { PreparedChunk, VectorRecord } from "../store/types";
 import {
   computeBufferHash,
   hasNullByte,
+  isGeneratedContent,
   isIndexableFile,
   readFileSnapshot,
 } from "../utils/file-utils";
@@ -280,6 +281,11 @@ export class WorkerOrchestrator {
 
     if (buffer.length === 0 || hasNullByte(buffer)) {
       dbg("orch", `skip ${input.path} (empty or binary)`);
+      return { vectors: [], hash, mtimeMs, size, shouldDelete: true };
+    }
+
+    if (isGeneratedContent(buffer)) {
+      dbg("orch", `skip ${input.path} (machine-generated header)`);
       return { vectors: [], hash, mtimeMs, size, shouldDelete: true };
     }
 

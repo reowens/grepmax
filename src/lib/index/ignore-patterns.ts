@@ -38,6 +38,24 @@ export const DEFAULT_IGNORE_PATTERNS = [
   "*.min.css",
   "*.map",
   "*.wasm",
+  // Machine-generated source (floods the index + ranks codegen as god nodes).
+  // Content-based @generated/DO-NOT-EDIT header sniff (file-utils.ts) catches the
+  // rest; these are the unambiguous filename/dir conventions.
+  "**/__generated__/**", // Relay / graphql-codegen
+  "**/Generated/**", // Apollo iOS, Xcode codegen
+  "*.graphql.swift", // Apollo iOS operations
+  "*.pb.go", // protobuf (Go)
+  "*.pb.cc",
+  "*.pb.h", // protobuf (C++)
+  "*_pb2.py",
+  "*_pb2.pyi",
+  "*_pb2_grpc.py", // protobuf (Python)
+  "*.g.dart",
+  "*.freezed.dart",
+  "*.gr.dart", // Dart codegen
+  "*.designer.cs", // C# designer
+  "*.generated.ts",
+  "*.generated.tsx", // graphql-codegen / common TS
   // Test fixtures and benchmark data
   "**/fixtures/**",
   "**/benchmark/**",
