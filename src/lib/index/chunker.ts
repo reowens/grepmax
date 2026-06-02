@@ -634,6 +634,73 @@ export class TreeSitterChunker {
             referencedSymbols.push(name);
           }
         };
+        // Leaf identifier node types across grammars (a bare name with no
+        // named children — `ErrorCodes`, not `a.ErrorCodes`).
+        const LEAF_ID_TYPES = new Set([
+          "identifier",
+          "type_identifier",
+          "constant", // Ruby
+          "name", // PHP
+          "simple_identifier", // Kotlin, Swift
+          "property_identifier",
+          "field_identifier", // Go
+        ]);
+        const isLeafId = (n: TreeSitterNode | null): boolean =>
+          !!n &&
+          LEAF_ID_TYPES.has(n.type) &&
+          (n.namedChildren?.length ?? 0) === 0;
+        const firstNamed = (n: TreeSitterNode): TreeSitterNode | null =>
+          (n.namedChildren ?? [])[0] ?? null;
+        // Resolve the type name out of an instantiation node (`new Foo`,
+        // `Foo{}`, `new Foo()`), preferring an explicit `type` field and
+        // falling back to the first named child (qualified names reduce to
+        // their rightmost segment via simpleRefName).
+        const instantiatedTypeName = (n: TreeSitterNode): string | null => {
+          const typed =
+            (n.childForFieldName ? n.childForFieldName("type") : null) ??
+            firstNamed(n);
+          if (!typed) return null;
+          if (isLeafId(typed)) return typed.text;
+          return simpleRefName(typed);
+        };
+        // First `type_identifier` reachable directly or via a `user_type`
+        // wrapper — covers Java `instanceof_expression` and Kotlin/Swift
+        // `check_expression` (`x is T`).
+        const firstTypeIdent = (n: TreeSitterNode): string | null => {
+          for (const c of n.namedChildren ?? []) {
+            if (c.type === "type_identifier") return c.text;
+            if (c.type === "user_type") {
+              const t = (c.namedChildren ?? []).find(
+                (x) => x.type === "type_identifier",
+              );
+              if (t?.text) return t.text;
+            }
+          }
+          return null;
+        };
+        // Member / scope access node types, one per grammar. We capture the
+        // head (object/scope) only when it is a Capitalized leaf identifier,
+        // so `ErrorCodes.VALIDATION` / `ErrorCodes::NOT_FOUND` yield an edge
+        // to `ErrorCodes` while `this.x` / `req.body` / lowercase locals do not.
+        const MEMBER_ACCESS_TYPES = new Set([
+          "member_expression", // TS/JS
+          "attribute", // Python
+          "selector_expression", // Go
+          "field_access", // Java
+          "member_access_expression", // C#
+          "scoped_identifier", // Rust
+          "scope_resolution", // Ruby
+          "navigation_expression", // Kotlin, Swift
+          "field_expression", // Scala
+          "class_constant_access_expression", // PHP
+        ]);
+        // Instantiation node types whose first/`type` child names a type.
+        const INSTANTIATION_TYPES = new Set([
+          "object_creation_expression", // Java, C#, PHP
+          "composite_literal", // Go
+          "struct_expression", // Rust
+          "instance_expression", // Scala
+        ]);
         const extractRefs = (n: TreeSitterNode) => {
           // Handle JS/TS (call_expression), Python (call), Lua (function_call)
           if (
@@ -707,18 +774,27 @@ export class TreeSitterChunker {
               }
             }
           }
-          // Identifier-as-value references (TS/JS): edges the call-expression
-          // capture above misses. These feed the graph-walk consumers (PPR,
+          // Identifier-as-value references: edges the call-expression capture
+          // above misses. These feed the graph-walk consumers (PPR,
           // `gmax dead <ClassName>`, audit) that need class/enum references,
-          // not just method-call names.
+          // not just method-call names. Node types are grammar-specific but
+          // each falls into one of three shapes — instantiation, type-test, or
+          // member/scope access — handled uniformly across the 14 grammars.
+
+          // Shape 1 — instantiation: `new ClassName(...)`, `ClassName{...}`.
           if (n.type === "new_expression") {
-            // `new ClassName(...)` — constructor is always a type reference.
+            // TS/JS — constructor may be qualified (`ns.ClassName`).
             const ctor = n.childForFieldName
               ? n.childForFieldName("constructor")
               : null;
             addRef(simpleRefName(ctor));
-          } else if (n.type === "binary_expression") {
-            // `x instanceof ClassName` — the right operand is a type reference.
+          } else if (INSTANTIATION_TYPES.has(n.type)) {
+            addRef(instantiatedTypeName(n));
+          }
+
+          // Shape 2 — type-test: `x instanceof T`, `x is T`.
+          if (n.type === "binary_expression") {
+            // TS/JS, PHP — instanceof is a binary operator.
             const op = n.childForFieldName
               ? n.childForFieldName("operator")
               : null;
@@ -728,16 +804,26 @@ export class TreeSitterChunker {
                 : null;
               addRef(simpleRefName(right));
             }
-          } else if (n.type === "member_expression") {
-            // `ClassName.MEMBER` / `Enum.MEMBER` — capture the object only when
-            // it looks like a type/namespace (Capitalized identifier), so we
-            // get `ErrorCodes` from `ErrorCodes.VALIDATION` without flooding
-            // the graph with `this.x` / `req.body` / lowercase-local access.
-            const obj = n.childForFieldName
-              ? n.childForFieldName("object")
-              : null;
-            if (obj && obj.type === "identifier" && /^[A-Z]/.test(obj.text)) {
-              addRef(obj.text);
+          } else if (
+            n.type === "instanceof_expression" || // Java
+            n.type === "check_expression" // Kotlin, Swift (`x is T`)
+          ) {
+            addRef(firstTypeIdent(n));
+          } else if (n.type === "is_pattern_expression") {
+            // C# — `x is BeyondError`: the type sits in a constant_pattern.
+            const cp = (n.namedChildren ?? []).find(
+              (c) => c.type === "constant_pattern",
+            );
+            const id = cp ? firstNamed(cp) : null;
+            if (isLeafId(id) && id && /^[A-Z]/.test(id.text)) addRef(id.text);
+          }
+
+          // Shape 3 — member / scope access: `ErrorCodes.MEMBER`,
+          // `ErrorCodes::MEMBER`. Capitalized head only (skip `this.x`).
+          if (MEMBER_ACCESS_TYPES.has(n.type)) {
+            const head = firstNamed(n);
+            if (head && isLeafId(head) && /^[A-Z]/.test(head.text)) {
+              addRef(head.text);
             }
           }
           for (const child of n.namedChildren ?? []) {
