@@ -8,10 +8,13 @@ import { PATHS } from "../../config";
 import { ProjectBatchProcessor } from "../index/batch-processor";
 import { initialSync, generateSummaries } from "../index/syncer";
 import { WATCHER_IGNORE_GLOBS } from "../index/watcher";
-import { Searcher } from "../search/searcher";
-import { getStoredSkeleton } from "../skeleton/retriever";
-import type { ChunkType, SearchFilter } from "../store/types";
+import type { Searcher } from "../search/searcher";
 import type { IndexState } from "../output/index-state-footer";
+import {
+  type DaemonSearchPayload,
+  type DaemonSearchResult,
+  handleDaemonSearch,
+} from "./search-handler";
 import { MetaCache } from "../store/meta-cache";
 import { VectorDB } from "../store/vector-db";
 import { killProcess } from "../utils/process";
@@ -807,145 +810,26 @@ export class Daemon {
   }
 
   async search(
-    payload: {
-      projectRoot: string;
-      query: string;
-      limit: number;
-      filters?: SearchFilter;
-      pathPrefix?: string;
-      rerank?: boolean;
-      explain?: boolean;
-      seeds?: { files?: string[]; symbols?: string[] };
-      includeSkeletons?: boolean;
-      skeletonLimit?: number;
-      includeGraph?: boolean;
-    },
+    payload: DaemonSearchPayload,
     signal: AbortSignal,
-  ): Promise<{
-    ok: boolean;
-    data?: ChunkType[];
-    warnings?: string[];
-    skeletons?: Record<string, string>;
-    graph?: unknown;
-    indexState?: IndexState;
-    error?: string;
-    hint?: string;
-  }> {
-    if (!this.vectorDb) {
-      return { ok: false, error: "daemon not ready" };
-    }
-    const root = payload.projectRoot;
-    if (!this.processors.has(root)) {
-      // A full index (--reset) or the initial index removes/defers the
-      // processor while (re)building. The partial index is still queryable, so
-      // answer the search and flag it partial (below) rather than erroring —
-      // only truly-unwatched, not-indexing projects get "not watched".
-      const indexingNow =
-        this.indexProgress.has(root) || getProject(root)?.status === "pending";
-      if (!indexingNow) {
-        return {
-          ok: false,
-          error: "project not watched",
-          hint: `run: gmax add ${root}`,
-        };
-      }
-    }
-
-    let searcher = this.searchers.get(root);
-    if (!searcher) {
-      searcher = new Searcher(this.vectorDb);
-      this.searchers.set(root, searcher);
-    }
-
-    this.lastActivity = Date.now();
-
-    let result;
-    try {
-      result = await searcher.search(
-        payload.query,
-        payload.limit,
-        {
-          rerank: payload.rerank === true,
-          explain: payload.explain === true,
-          seeds: payload.seeds,
+  ): Promise<DaemonSearchResult> {
+    // Search handling lives in search-handler.ts (Phase 12 split). The daemon
+    // supplies its warm VectorDB + watcher/index bookkeeping; the handler runs
+    // the query and assembles the response.
+    return handleDaemonSearch(
+      {
+        vectorDb: this.vectorDb,
+        processors: this.processors,
+        indexProgress: this.indexProgress,
+        searchers: this.searchers,
+        getIndexState: (root) => this.indexState(root),
+        touchActivity: () => {
+          this.lastActivity = Date.now();
         },
-        payload.filters,
-        payload.pathPrefix,
-        undefined,
-        signal,
-      );
-    } catch (err) {
-      if ((err as Error)?.name === "AbortError") {
-        return { ok: false, error: "aborted" };
-      }
-      const msg = err instanceof Error ? err.message : String(err);
-      return { ok: false, error: "search_failed", hint: msg };
-    }
-
-    const response: {
-      ok: boolean;
-      data: ChunkType[];
-      warnings?: string[];
-      skeletons?: Record<string, string>;
-      graph?: unknown;
-      indexState?: IndexState;
-    } = { ok: true, data: result.data };
-    if (result.warnings?.length) response.warnings = result.warnings;
-
-    // Annotate partial results when the index is still catching up, so an
-    // agent can caveat or retry. Only attached when actually indexing (the
-    // formatter suppresses the settled case anyway).
-    const idx = this.indexState(root);
-    if (idx.indexing) response.indexState = idx;
-
-    // --skeleton support: fetch per-file skeletons inline so the CLI doesn't
-    // have to open its own VectorDB. getStoredSkeleton is a single LIMIT-1
-    // lookup; cheap enough to call for the top N distinct paths.
-    if (payload.includeSkeletons && result.data.length > 0) {
-      const limit = payload.skeletonLimit && payload.skeletonLimit > 0 ? payload.skeletonLimit : 5;
-      const seen = new Set<string>();
-      const skeletons: Record<string, string> = {};
-      for (const chunk of result.data) {
-        const p =
-          (chunk as unknown as { path?: string }).path ??
-          (chunk.metadata?.path as string | undefined);
-        if (!p || seen.has(p)) continue;
-        seen.add(p);
-        if (seen.size > limit) break;
-        try {
-          const sk = await getStoredSkeleton(this.vectorDb, p);
-          if (sk) skeletons[p] = sk;
-        } catch {
-          // best-effort — drop the entry, keep the search result
-        }
-      }
-      if (Object.keys(skeletons).length > 0) response.skeletons = skeletons;
-    }
-
-    // --symbol support: build a 1-hop graph using the warm vectorDb. ~5
-    // LanceDB queries; doesn't touch the worker pool.
-    if (payload.includeGraph) {
-      try {
-        const { GraphBuilder } = await import("../graph/graph-builder");
-        const builder = new GraphBuilder(this.vectorDb, root);
-        response.graph = await builder.buildGraphMultiHop(payload.query, 1);
-      } catch {
-        // best-effort — drop graph, keep results
-      }
-    }
-
-    // 2 MB cap on the JSON line. Lance can return huge chunks for unusual
-    // queries (very long markdown blobs). Above this we fall back to the
-    // in-process path which writes to stdout instead of a socket.
-    const serialized = JSON.stringify(response);
-    if (serialized.length > 2 * 1024 * 1024) {
-      return {
-        ok: false,
-        error: "oversize",
-        hint: `${serialized.length} bytes — falling back to in-process search`,
-      };
-    }
-    return response;
+      },
+      payload,
+      signal,
+    );
   }
 
   listProjects(): Array<{ root: string; status: string }> {
