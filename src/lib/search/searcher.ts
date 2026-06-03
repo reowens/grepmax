@@ -337,10 +337,6 @@ export class Searcher {
       }
     }
 
-    if (record.role === "DOCS") {
-      adjusted *= 0.6;
-    }
-
     const pathStr = (record.path || "").toLowerCase();
 
     // Use path-segment and filename patterns to avoid false positives like "latest"
@@ -353,17 +349,24 @@ export class Searcher {
         Number.parseFloat(process.env.GMAX_TEST_PENALTY ?? "") || 0.5;
       adjusted *= testPenalty;
     }
-    if (
+
+    // Downweight docs/data — applied ONCE whether the chunk is classified DOCS
+    // by role OR lives in a doc/data file. GMAX_DOC_PENALTY tunes both. (S2: the
+    // role branch was previously a hardcoded 0.6 that stacked with the path
+    // branch, double-penalizing a DOCS-role chunk in a .md / /docs/ path to
+    // 0.36 — and the role half was not env-tunable.)
+    const isDocOrData =
+      record.role === "DOCS" ||
       pathStr.endsWith(".md") ||
       pathStr.endsWith(".mdx") ||
       pathStr.endsWith(".txt") ||
       pathStr.endsWith(".json") ||
       pathStr.endsWith(".lock") ||
-      pathStr.includes("/docs/")
-    ) {
+      pathStr.includes("/docs/");
+    if (isDocOrData) {
       const docPenalty =
         Number.parseFloat(process.env.GMAX_DOC_PENALTY ?? "") || 0.6;
-      adjusted *= docPenalty; // Downweight docs/data
+      adjusted *= docPenalty;
     }
     // Import-only penalty
     if ((record.content || "").length < 50 && !record.is_exported) {

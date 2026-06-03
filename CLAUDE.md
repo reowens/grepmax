@@ -10,7 +10,7 @@ gmax runs as cooperating processes. Only `gmax-mcp` may have multiple instances.
 
 ```
 gmax-daemon (singleton via lockfile)
-  |-- gmax-worker (1-7 child processes, lazy-spawned, reaped after 60s idle, min 2 kept alive)
+  |-- gmax-worker (1-7 child processes, lazy-spawned, reaped after 60s idle, min 1 kept alive)
   |-- [gmax-embed] (MLX GPU server on port 8100; daemon heartbeat respawns it if zombie)
   +-- Unix socket server (~/.gmax/daemon.sock)
 
@@ -22,7 +22,7 @@ gmax-mcp (N instances, one per Claude Code session)
 | Process | Started by | Lifecycle | Code |
 |---------|-----------|-----------|------|
 | gmax-daemon | `gmax watch --daemon -b` (SessionStart hook or manual) | Singleton. 30min idle timeout. | `src/commands/watch.ts` |
-| gmax-worker | Daemon's WorkerPool, lazy on first task | Reaped after 60s idle, min 2 kept alive | `src/lib/workers/pool.ts` |
+| gmax-worker | Daemon's WorkerPool, lazy on first task | Reaped after 60s idle, min 1 kept alive | `src/lib/workers/pool.ts` |
 | gmax-embed | Daemon's `ensureMlxServer()` (startup + 5min heartbeat health check) or `gmax serve` | 30min idle timeout | `src/lib/daemon/daemon.ts` |
 | gmax-mcp | Claude Code (one per session) | Session lifetime | `src/commands/mcp.ts` |
 | llama-server (LLM) | Daemon's LlmServer, on first `llm-start` IPC or `reviewCommit` | 10min idle timeout | `src/lib/llm/server.ts` |
@@ -145,7 +145,7 @@ File event (from watcher or catchup) -> pending map -> debounce 2s -> processBat
 
 - Starts with 1 worker, scales up to `floor(cores * 0.5)` on demand in `dispatch()`
 - Workers are child processes (not threads) — isolates ONNX Runtime segfaults
-- Idle workers reaped after 60s back down to `MIN_KEEP = 2`. Reap sends SIGTERM, then escalates to SIGKILL after 5s if the worker is still alive (defends against a worker stuck inside a native ONNX matmul tight loop that won't service signals)
+- Idle workers reaped after 60s back down to `MIN_KEEP_WORKERS = 1` (favors low resident memory over search warmth — an idle worker holds ~300MB–1GB; the rare search pays a one-off cold start). Reap sends SIGTERM, then escalates to SIGKILL after 5s if the worker is still alive (defends against a worker stuck inside a native ONNX matmul tight loop that won't service signals)
 - Task timeout: 120s (env: `GMAX_WORKER_TASK_TIMEOUT_MS`) -> SIGKILL worker -> respawn if tasks pending
 - Max consecutive respawns: 10, then pool stops spawning
 - Respawn counter resets on each successful task completion

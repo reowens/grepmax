@@ -319,8 +319,9 @@ export class Daemon {
     //     index — this is the dominant cost)
     //   - FTS index "already exists" round-trip
     //   - Two parallel encodeQuery calls so the worker pool spawns + warms
-    //     two workers (the reaper keeps min 2 alive). With one worker busy
-    //     on a long indexing batch, the second is always free for searches.
+    //     workers ahead of the first real search. The reaper floor is
+    //     MIN_KEEP_WORKERS = 1 (pool.ts), so only one worker stays resident
+    //     long-term — but the prewarm still pays the model-load cost up front.
     // Fire-and-forget; failures are non-fatal — the next real search just
     // pays the cost once. Delay a few seconds so we don't compete with the
     // catchup scans dispatched on startup.
