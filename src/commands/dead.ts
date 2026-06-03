@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { GraphBuilder, type GraphNode } from "../lib/graph/graph-builder";
 import { VectorDB } from "../lib/store/vector-db";
+import { symbolNotFoundLines } from "../lib/utils/agent-errors";
 import { gracefulExit } from "../lib/utils/exit";
 import { escapeSqlString } from "../lib/utils/filter-builder";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
@@ -129,7 +130,7 @@ export const dead = new Command("dead")
 
       if (defRows.length === 0) {
         console.log(
-          opts.agent ? "(not found)" : `Symbol not found: ${symbol}`,
+          symbolNotFoundLines(symbol, { agent: opts.agent }).join("\n"),
         );
         process.exitCode = 1;
         return;

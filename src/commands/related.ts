@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import { Command } from "commander";
 import { VectorDB } from "../lib/store/vector-db";
+import { fileNotFoundLines } from "../lib/utils/agent-errors";
 import { escapeSqlString } from "../lib/utils/filter-builder";
 import { gracefulExit } from "../lib/utils/exit";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
@@ -57,9 +58,8 @@ export const related = new Command("related")
         .toArray();
 
       if (fileChunks.length === 0) {
-        console.log(`File not found in index: ${file}`);
         console.log(
-          "\nCheck that the path is relative to the project root. Run `gmax status` to see indexed projects.",
+          fileNotFoundLines(file, { agent: opts.agent }).join("\n"),
         );
         process.exitCode = 1;
         return;

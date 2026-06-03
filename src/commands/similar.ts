@@ -1,6 +1,10 @@
 import * as path from "node:path";
 import { Command } from "commander";
 import { VectorDB } from "../lib/store/vector-db";
+import {
+  fileNotFoundLines,
+  symbolNotFoundLines,
+} from "../lib/utils/agent-errors";
 import { escapeSqlString } from "../lib/utils/filter-builder";
 import { gracefulExit } from "../lib/utils/exit";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
@@ -67,9 +71,10 @@ export const similar = new Command("similar")
 
       if (sourceRows.length === 0) {
         console.log(
-          isFile
-            ? `File not found in index: ${target}`
-            : `Symbol not found: ${target}`,
+          (isFile
+            ? fileNotFoundLines(target, { agent: opts.agent })
+            : symbolNotFoundLines(target, { agent: opts.agent })
+          ).join("\n"),
         );
         process.exitCode = 1;
         return;

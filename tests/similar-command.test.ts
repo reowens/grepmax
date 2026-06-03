@@ -56,7 +56,11 @@ describe("similar command", () => {
   it("reports symbol not found", async () => {
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
     await (similar as Command).parseAsync(["nonexistent"], { from: "user" });
-    expect(spy).toHaveBeenCalledWith("Symbol not found: nonexistent");
+    // Human mode now emits the unified rich not-found block (Phase 3a/3c);
+    // the first line is still the canonical "Symbol not found: <name>".
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining("Symbol not found: nonexistent"),
+    );
     spy.mockRestore();
   });
 

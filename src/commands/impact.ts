@@ -7,6 +7,7 @@ import {
   resolveTargetSymbols,
 } from "../lib/graph/impact";
 import { VectorDB } from "../lib/store/vector-db";
+import { symbolNotFoundLines } from "../lib/utils/agent-errors";
 import { gracefulExit } from "../lib/utils/exit";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
@@ -51,7 +52,7 @@ export const impact = new Command("impact")
         console.log(
           resolvedAsFile
             ? `No symbols found in file: ${target}`
-            : `Symbol not found: ${target}`,
+            : symbolNotFoundLines(target, { agent: opts.agent }).join("\n"),
         );
         process.exitCode = 1;
         return;

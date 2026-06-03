@@ -3,6 +3,7 @@ import { Command } from "commander";
 import { GraphBuilder } from "../lib/graph/graph-builder";
 import { formatTrace } from "../lib/output/formatter";
 import { VectorDB } from "../lib/store/vector-db";
+import { symbolNotFoundLines } from "../lib/utils/agent-errors";
 import { gracefulExit } from "../lib/utils/exit";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
@@ -240,7 +241,9 @@ export const trace = new Command("trace")
 
       if (opts.inbound) {
         if (!graph.center) {
-          console.log(opts.agent ? "(not found)" : `Symbol not found: ${symbol}`);
+          console.log(
+            symbolNotFoundLines(symbol, { agent: opts.agent }).join("\n"),
+          );
           process.exitCode = 1;
         } else {
           const fileCache = new Map<string, string[]>();

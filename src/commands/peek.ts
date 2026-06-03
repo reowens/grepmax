@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import { Command } from "commander";
 import { GraphBuilder } from "../lib/graph/graph-builder";
 import { VectorDB } from "../lib/store/vector-db";
+import { symbolNotFoundLines } from "../lib/utils/agent-errors";
 import { gracefulExit } from "../lib/utils/exit";
 import { escapeSqlString } from "../lib/utils/filter-builder";
 import { groupByLanguage } from "../lib/utils/language";
@@ -145,33 +146,13 @@ export const peek = new Command("peek")
       const graph = await graphBuilder.buildGraph(symbol);
 
       if (!graph.center) {
-        const lines = [
-          `Symbol not found: ${opts.agent ? symbol : style.bold(symbol)}`,
-        ];
-        if (!opts.agent) {
-          lines.push(
-            "",
-            style.dim("Possible reasons:"),
-            style.dim(
-              "  \u2022 The symbol doesn't exist in any indexed project",
-            ),
-            style.dim(
-              "  \u2022 The containing file hasn't been indexed yet",
-            ),
-            style.dim(
-              "  \u2022 The name is spelled differently in the source",
-            ),
-            "",
-            style.dim("Try:"),
-            style.dim(
-              "  gmax status          \u2014 see which projects are indexed",
-            ),
-            style.dim(
-              "  gmax search <name>   \u2014 fuzzy search for similar symbols",
-            ),
-          );
-        }
-        console.log(lines.join("\n"));
+        console.log(
+          symbolNotFoundLines(symbol, {
+            agent: opts.agent,
+            dim: style.dim,
+            bold: style.bold,
+          }).join("\n"),
+        );
         process.exitCode = 1;
         return;
       }
