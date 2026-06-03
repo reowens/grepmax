@@ -11,6 +11,12 @@ export const review = new Command("review")
   .option("--commit <ref>", "Commit to review", "HEAD")
   .option("--root <dir>", "Project root directory")
   .option("--background", "Run review asynchronously via daemon", false)
+  .option(
+    "--risk",
+    "Deterministic risk ranking of changed symbols (no LLM)",
+    false,
+  )
+  .option("--agent", "Ultra-compact output for AI agents", false)
   .option("-v, --verbose", "Print progress to stderr", false)
   .addHelpText(
     "after",
@@ -18,6 +24,8 @@ export const review = new Command("review")
 Examples:
   gmax review                           Review HEAD
   gmax review --commit abc1234          Review specific commit
+  gmax review --risk                    Rank changed symbols by risk (no LLM)
+  gmax review --risk --agent            Risk ranking, compact for agents
   gmax review --background              Run async via daemon
 
 Subcommands:
@@ -32,6 +40,37 @@ Subcommands:
       if (root === null) return;
       const projectRoot = findProjectRoot(root) ?? root;
       const commitRef = opts.commit;
+
+      // Deterministic risk ranking — no LLM, no daemon LLM-start. Pure graph +
+      // git over the diff (Phase 8).
+      if (opts.risk) {
+        const { VectorDB } = await import("../lib/store/vector-db");
+        const { GraphBuilder } = await import("../lib/graph/graph-builder");
+        const { ensureProjectPaths } = await import(
+          "../lib/utils/project-root"
+        );
+        const {
+          gatherRiskInputs,
+          computeRiskTable,
+          formatRiskTable,
+        } = await import("../lib/review/risk");
+
+        const paths = ensureProjectPaths(projectRoot);
+        const vectorDb = new VectorDB(paths.lancedbDir);
+        try {
+          const graphBuilder = new GraphBuilder(vectorDb, projectRoot);
+          const inputs = await gatherRiskInputs(commitRef, projectRoot, {
+            vectorDb,
+            graphBuilder,
+          });
+          const rows = computeRiskTable(inputs);
+          console.log(formatRiskTable(rows, { agent: !!opts.agent }));
+          if (rows.length === 0) process.exitCode = 1;
+        } finally {
+          await vectorDb.close();
+        }
+        return;
+      }
 
       if (opts.background) {
         // Fire-and-forget via daemon

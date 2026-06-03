@@ -15,6 +15,11 @@ import {
 } from "./diff";
 import { appendReview, type Finding, type ReviewEntry } from "./report";
 import { type InvestigateContext, executeTool } from "./tools";
+import {
+  computeRiskTable,
+  formatRiskTable,
+  gatherRiskInputs,
+} from "../review/risk";
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -61,6 +66,7 @@ export async function reviewCommit(
 
   // 4. Gather context via gmax internal APIs
   let contextStr = "";
+  let riskStr = "";
   const paths = ensureProjectPaths(projectRoot);
   const vectorDb = new VectorDB(paths.lancedbDir);
   try {
@@ -68,7 +74,20 @@ export async function reviewCommit(
     const graphBuilder = new GraphBuilder(vectorDb, projectRoot);
     const ctx: InvestigateContext = { vectorDb, searcher, graphBuilder, projectRoot };
 
-    contextStr = await gatherContext(symbols, changedFiles, ctx, verbose);
+    // Deterministic risk ranking (Phase 8) — gives the LLM an explicit
+    // blast-radius × tests × churn ordering to anchor its judgement, rather
+    // than inferring importance from prose alone.
+    const [context, riskInputs] = await Promise.all([
+      gatherContext(symbols, changedFiles, ctx, verbose),
+      gatherRiskInputs(commitRef, projectRoot, { vectorDb, graphBuilder }).catch(
+        () => [],
+      ),
+    ]);
+    contextStr = context;
+    const riskRows = computeRiskTable(riskInputs);
+    if (riskRows.length > 0) {
+      riskStr = formatRiskTable(riskRows, { agent: false });
+    }
   } catch (err) {
     if (verbose) {
       process.stderr.write(`[review] context gathering failed: ${err instanceof Error ? err.message : String(err)}\n`);
@@ -79,7 +98,7 @@ export async function reviewCommit(
 
   // 5. Build prompts
   const systemPrompt = buildSystemPrompt(languages);
-  const userPrompt = buildUserPrompt(info, diff, symbols, contextStr);
+  const userPrompt = buildUserPrompt(info, diff, symbols, contextStr, riskStr);
 
   // 6. Call LLM (single shot)
   const config = getLlmConfig();
@@ -332,6 +351,7 @@ function buildUserPrompt(
   diff: string,
   symbols: string[],
   context: string,
+  risk: string,
 ): string {
   let prompt = `## Commit
 ${info.short} — ${info.message}
@@ -344,6 +364,10 @@ ${diff}
 
   if (symbols.length > 0) {
     prompt += `### Changed Symbols\n${symbols.join("\n")}\n\n`;
+  }
+
+  if (risk) {
+    prompt += `### ${risk}\n\n`;
   }
 
   if (context) {

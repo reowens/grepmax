@@ -501,6 +501,21 @@ const TOOLS = [
       required: [],
     },
   },
+  {
+    name: "review_risk",
+    description:
+      "Deterministic risk ranking of the symbols a commit's diff touches, ordered by blast radius (inbound callers) × test presence × file churn. No LLM required — fast, graph + git only. Use to triage what a change endangers before a deep review.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        commit: {
+          type: "string",
+          description: "Git ref to analyze (default: HEAD)",
+        },
+      },
+      required: [],
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -2834,6 +2849,30 @@ export const mcp = new Command("mcp")
           } catch (e) {
             result = err(
               `Review failed: ${e instanceof Error ? e.message : String(e)}`,
+            );
+          }
+          break;
+        }
+        case "review_risk": {
+          ensureWatcher();
+          const commitRef = String(toolArgs.commit || "HEAD");
+          try {
+            const db = getVectorDb();
+            const builder = new GraphBuilder(db, projectRoot);
+            const { gatherRiskInputs, computeRiskTable, formatRiskTable } =
+              await import("../lib/review/risk");
+            const inputs = await gatherRiskInputs(commitRef, projectRoot, {
+              vectorDb: db,
+              graphBuilder: builder,
+            });
+            const rows = computeRiskTable(inputs);
+            result =
+              rows.length === 0
+                ? ok("(no changed symbols in this diff)")
+                : ok(formatRiskTable(rows, { agent: true }));
+          } catch (e) {
+            result = err(
+              `Risk ranking failed: ${e instanceof Error ? e.message : String(e)}`,
             );
           }
           break;

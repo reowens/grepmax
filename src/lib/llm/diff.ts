@@ -95,6 +95,26 @@ export function extractChangedFiles(ref: string, root: string): string[] {
 }
 
 /**
+ * Churn: number of commits that have touched a file across history. A simple,
+ * deterministic instability proxy for the risk preamble (Phase 8) — frequently
+ * rewritten files are historically more bug-prone. `file` may be absolute or
+ * root-relative; git resolves it against `root`. Returns 0 on any error.
+ */
+export function fileChurn(file: string, root: string): number {
+  if (!file) return 0;
+  try {
+    const rel = file.startsWith(root)
+      ? file.slice(root.endsWith("/") ? root.length : root.length + 1)
+      : file;
+    const raw = git(["rev-list", "--count", "HEAD", "--", rel], root).trim();
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * Extract symbol names from a unified diff.
  * Pass 1: hunk headers (git auto-detects enclosing function/class).
  * Pass 2: added-line declaration patterns.
