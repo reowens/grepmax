@@ -11,6 +11,7 @@ import { WATCHER_IGNORE_GLOBS } from "../index/watcher";
 import { Searcher } from "../search/searcher";
 import { getStoredSkeleton } from "../skeleton/retriever";
 import type { ChunkType, SearchFilter } from "../store/types";
+import type { IndexState } from "../output/index-state-footer";
 import { MetaCache } from "../store/meta-cache";
 import { VectorDB } from "../store/vector-db";
 import { killProcess } from "../utils/process";
@@ -101,6 +102,13 @@ export class Daemon {
   private readonly lastOverflowMs = new Map<string, number>();
   private readonly lastCatchupEndMs = new Map<string, number>();
   private readonly projectLocks = new Map<string, Promise<void>>();
+  // Full-index progress per root while initialSync runs (--reset / initial
+  // index). Presence = a full index is in flight; value drives the partial-
+  // result pending count (Phase 6). Cleared in the indexProject finally.
+  private readonly indexProgress = new Map<
+    string,
+    { processed: number; total: number }
+  >();
   private readonly shutdownAbortControllers = new Set<AbortController>();
   private llmServer: LlmServer | null = null;
   private mlxChild: ChildProcess | null = null;
@@ -770,6 +778,33 @@ export class Daemon {
    * caller is responsible for binding `signal` to socket close so we abort if
    * the client disconnects mid-search.
    */
+  /**
+   * Live (re)index progress for a project: whether indexing is underway and how
+   * many files are still queued. Derived from the batch processor's pending map
+   * plus the registry's initial-index status. Cheap (in-memory) — safe to call
+   * on every search to annotate partial-result responses (Phase 6).
+   */
+  indexState(root: string): IndexState {
+    const processor = this.processors.get(root);
+    const batchPending = processor?.progress.pendingFiles ?? 0;
+    const processing = processor?.progress.processing ?? false;
+    // status === "pending" means the initial full index hasn't completed.
+    const initialPending = getProject(root)?.status === "pending";
+    // A full index (--reset / initial) bypasses the batch processor; its
+    // onProgress feeds indexProgress, giving a real remaining count.
+    const fullIdx = this.indexProgress.get(root);
+
+    let pendingFiles = batchPending;
+    if (fullIdx && fullIdx.total > 0) {
+      pendingFiles = Math.max(pendingFiles, fullIdx.total - fullIdx.processed);
+    }
+    return {
+      indexing:
+        !!fullIdx || processing || batchPending > 0 || initialPending,
+      pendingFiles,
+    };
+  }
+
   async search(
     payload: {
       projectRoot: string;
@@ -790,6 +825,7 @@ export class Daemon {
     warnings?: string[];
     skeletons?: Record<string, string>;
     graph?: unknown;
+    indexState?: IndexState;
     error?: string;
     hint?: string;
   }> {
@@ -798,11 +834,19 @@ export class Daemon {
     }
     const root = payload.projectRoot;
     if (!this.processors.has(root)) {
-      return {
-        ok: false,
-        error: "project not watched",
-        hint: `run: gmax add ${root}`,
-      };
+      // A full index (--reset) or the initial index removes/defers the
+      // processor while (re)building. The partial index is still queryable, so
+      // answer the search and flag it partial (below) rather than erroring —
+      // only truly-unwatched, not-indexing projects get "not watched".
+      const indexingNow =
+        this.indexProgress.has(root) || getProject(root)?.status === "pending";
+      if (!indexingNow) {
+        return {
+          ok: false,
+          error: "project not watched",
+          hint: `run: gmax add ${root}`,
+        };
+      }
     }
 
     let searcher = this.searchers.get(root);
@@ -838,8 +882,15 @@ export class Daemon {
       warnings?: string[];
       skeletons?: Record<string, string>;
       graph?: unknown;
+      indexState?: IndexState;
     } = { ok: true, data: result.data };
     if (result.warnings?.length) response.warnings = result.warnings;
+
+    // Annotate partial results when the index is still catching up, so an
+    // agent can caveat or retry. Only attached when actually indexing (the
+    // formatter suppresses the settled case anyway).
+    const idx = this.indexState(root);
+    if (idx.indexing) response.indexState = idx;
 
     // --skeleton support: fetch per-file skeletons inline so the CLI doesn't
     // have to open its own VectorDB. getStoredSkeleton is a single LIMIT-1
@@ -1021,6 +1072,9 @@ export class Daemon {
       this.vectorDb.pauseMaintenanceLoop();
       const stopHeartbeat = startHeartbeat(conn);
       let lastProgressTime = 0;
+      // Mark this root as full-indexing so concurrent searches get a
+      // partial-result footer (Phase 6); seeded at 0/0 until the first tick.
+      this.indexProgress.set(root, { processed: 0, total: 0 });
       try {
         const result = await initialSync({
           projectRoot: root,
@@ -1031,6 +1085,10 @@ export class Daemon {
           signal: ac.signal,
           onProgress: (info) => {
             this.resetActivity();
+            this.indexProgress.set(root, {
+              processed: info.processed,
+              total: info.total,
+            });
             const now = Date.now();
             if (now - lastProgressTime < 100) return;
             lastProgressTime = now;
@@ -1058,6 +1116,7 @@ export class Daemon {
         writeDone(conn, { ok: false, error: msg });
       } finally {
         stopHeartbeat();
+        this.indexProgress.delete(root);
         this.shutdownAbortControllers.delete(ac);
         this.vectorDb?.resumeMaintenanceLoop();
         // Re-enable watcher (skip if shutting down)

@@ -81,6 +81,11 @@ export class ProjectBatchProcessor {
     this.scheduleBatch();
   }
 
+  /** Live (re)index progress: files queued + whether a batch is running. */
+  get progress(): { pendingFiles: number; processing: boolean } {
+    return { pendingFiles: this.pending.size, processing: this.processing };
+  }
+
   async close(): Promise<void> {
     this.closed = true;
     this.currentBatchAc?.abort();

@@ -9,6 +9,10 @@ import {
 } from "../lib/index/sync-helpers";
 import { initialSync } from "../lib/index/syncer";
 import { formatAgentSearchResults } from "../lib/output/agent-search-formatter";
+import {
+  type IndexState,
+  formatIndexStateFooter,
+} from "../lib/output/index-state-footer";
 import { Searcher } from "../lib/search/searcher";
 import { ensureSetup } from "../lib/setup/setup-helpers";
 import { Skeletonizer } from "../lib/skeleton";
@@ -740,6 +744,7 @@ Examples:
       let searchResult: SearchResponse | null = null;
       let precomputedSkeletons: Record<string, string> | undefined;
       let precomputedGraph: any | undefined;
+      let indexState: IndexState | undefined;
       if (!options.sync && !options.dryRun) {
         try {
           const { isDaemonRunning, sendDaemonCommand } = await import(
@@ -773,6 +778,7 @@ Examples:
                 | Record<string, string>
                 | undefined;
               precomputedGraph = resp.graph;
+              indexState = resp.indexState as IndexState | undefined;
             } else if (process.env.GMAX_DEBUG === "1") {
               console.error(
                 `[search] daemon path unavailable: ${resp.error ?? "unknown"}`,
@@ -792,10 +798,17 @@ Examples:
         vectorDb = new VectorDB(paths.lancedbDir);
 
         // Check for active indexing lock and warn if present
-        if (!options.agent && isLocked(paths.dataDir)) {
+        const locked = isLocked(paths.dataDir);
+        if (!options.agent && locked) {
           console.warn(
             "⚠️  Warning: Indexing in progress... search results may be incomplete.",
           );
+        }
+        // No daemon here, so no precise pending count — surface the coarse
+        // signal (active lock or initial index not yet complete) so agent mode
+        // still gets a partial-index footer.
+        if (!indexState && (locked || project.status === "pending")) {
+          indexState = { indexing: true, pendingFiles: 0 };
         }
 
         const hasRows = await vectorDb.hasAnyRows();
@@ -909,6 +922,14 @@ Examples:
         }
       }
 
+      // Partial-index signal (Phase 6): when the index is mid-catchup, results
+      // may be incomplete. Non-agent renders it now as a warning; agent mode
+      // appends a machine-readable footer after the results below.
+      if (!options.agent) {
+        const footer = formatIndexStateFooter(indexState, { agent: false });
+        if (footer) console.warn(footer);
+      }
+
       let filteredData = searchResult.data.filter(
         (r) => typeof r.score !== "number" || r.score >= minScore,
       );
@@ -985,6 +1006,12 @@ Examples:
             }
           } catch {}
         }
+
+        // Partial-index footer last, so it's the final line the agent reads —
+        // and emitted even on "(none)", where an empty result may just mean the
+        // relevant files aren't indexed yet.
+        const footer = formatIndexStateFooter(indexState, { agent: true });
+        if (footer) console.log(footer);
         return;
       }
 
