@@ -731,15 +731,23 @@ export class Searcher {
 
     if (queryPooled && topCandidates.length > STAGE2_K) {
       const cosineScores = topCandidates.map((doc) => {
-        if (!doc.pooled_colbert_48d) return -1;
+        const docVec = doc.pooled_colbert_48d;
+        // Reject missing or short vectors. Also treat an all-zero vector as
+        // "no pooled signal" rather than a genuine cosine of 0 — chunks indexed
+        // before the pooled-IPC fix (orchestrator.ts) stored all-zero padding,
+        // and on a mixed index those must sort below chunks that carry real
+        // pooled vectors, not tie with orthogonal ones.
+        if (!docVec || docVec.length < queryPooled.length) return -1;
         // Manual cosine sim since we don't have helper here easily
         // Assuming vectors are normalized (which they should be from orchestrator)
         let dot = 0;
-        const docVec = doc.pooled_colbert_48d;
+        let nonZero = false;
         for (let i = 0; i < queryPooled.length; i++) {
-          dot += queryPooled[i] * (docVec[i] || 0);
+          const c = docVec[i] || 0;
+          if (c !== 0) nonZero = true;
+          dot += queryPooled[i] * c;
         }
-        return dot;
+        return nonZero ? dot : -1;
       });
 
       // Sort by cosine score and keep top N

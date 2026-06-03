@@ -343,7 +343,14 @@ export class WorkerOrchestrator {
         vector: hybrid.dense,
         colbert: Buffer.from(hybrid.colbert),
         colbert_scale: hybrid.scale,
-        pooled_colbert_48d: hybrid.pooled_colbert_48d,
+        // Convert the pooled Float32Array to a plain number[] so it survives
+        // the JSON IPC hop to the parent (process-child.ts → pool.ts). A typed
+        // array JSON-serializes to a length-less {"0":..} object, which then
+        // Array.from()s to [] on insert and pads to 48 zeros — silently making
+        // the stage-1 cosine prefilter a no-op (searcher.ts:732).
+        pooled_colbert_48d: hybrid.pooled_colbert_48d
+          ? Array.from(hybrid.pooled_colbert_48d)
+          : undefined,
         doc_token_ids: hybrid.token_ids,
       };
     });
