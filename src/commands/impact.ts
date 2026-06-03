@@ -27,12 +27,18 @@ export const impact = new Command("impact")
     "Exclude a sub-path of the project (repeatable)",
     (value: string, prev: string[] | undefined) => (prev ? [...prev, value] : [value]),
   )
+  .option(
+    "--no-tests",
+    "Skip affected-test analysis; show production blast radius only",
+  )
   .option("--agent", "Compact output for AI agents", false)
   .action(async (target, opts) => {
     const depth = Math.min(
       Math.max(Number.parseInt(opts.depth || "1", 10), 1),
       3,
     );
+    // commander maps --no-tests → opts.tests === false (defaults true).
+    const includeTests = opts.tests !== false;
     let vectorDb: VectorDB | null = null;
 
     try {
@@ -79,7 +85,9 @@ export const impact = new Command("impact")
           ? scope.pathPrefix.replace(/\/$/, "")
           : projectRoot;
 
-      // Run dependents and tests in parallel
+      // Run dependents and tests in parallel. --no-tests skips the test
+      // traversal entirely so the affected-tests section is omitted (not just
+      // empty) below.
       const [dependents, tests] = await Promise.all([
         findDependents(
           symbols,
@@ -89,7 +97,9 @@ export const impact = new Command("impact")
           undefined,
           scope.excludePrefixes,
         ),
-        findTests(symbols, vectorDb, queryRoot, depth, scope.excludePrefixes),
+        includeTests
+          ? findTests(symbols, vectorDb, queryRoot, depth, scope.excludePrefixes)
+          : Promise.resolve([]),
       ]);
 
       // Separate test files from non-test dependents
@@ -123,17 +133,19 @@ export const impact = new Command("impact")
           console.log("Direct dependents: none found");
         }
 
-        console.log("");
+        if (includeTests) {
+          console.log("");
 
-        if (tests.length > 0) {
-          console.log(`Affected tests (${tests.length}):`);
-          for (const t of tests) {
-            const hopLabel =
-              t.hops === 0 ? "calls directly" : `${t.hops} hop${t.hops > 1 ? "s" : ""} away`;
-            console.log(`  ${rel(t.file)}:${t.line + 1}  ${t.symbol}  (${hopLabel})`);
+          if (tests.length > 0) {
+            console.log(`Affected tests (${tests.length}):`);
+            for (const t of tests) {
+              const hopLabel =
+                t.hops === 0 ? "calls directly" : `${t.hops} hop${t.hops > 1 ? "s" : ""} away`;
+              console.log(`  ${rel(t.file)}:${t.line + 1}  ${t.symbol}  (${hopLabel})`);
+            }
+          } else {
+            console.log("Affected tests: none found");
           }
-        } else {
-          console.log("Affected tests: none found");
         }
       }
     } catch (error) {

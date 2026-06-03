@@ -85,4 +85,39 @@ describe("impact command", () => {
     expect(output).not.toContain("Impact analysis");
     spy.mockRestore();
   });
+
+  it("--no-tests skips the test traversal and omits the section", async () => {
+    mockFindDependents.mockResolvedValueOnce([
+      { file: "/tmp/project/src/router.ts", sharedSymbols: 2 },
+    ]);
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await (impact as Command).parseAsync(["handleAuth", "--no-tests"], {
+      from: "user",
+    });
+    const output = spy.mock.calls.map((c) => c[0]).join("\n");
+
+    // findTests must not run, and the affected-tests section is omitted
+    // entirely (not rendered as "none found").
+    expect(mockFindTests).not.toHaveBeenCalled();
+    expect(output).toContain("Direct dependents");
+    expect(output).not.toContain("Affected tests");
+    spy.mockRestore();
+  });
+
+  it("--no-tests in agent mode emits only dep lines", async () => {
+    mockFindDependents.mockResolvedValueOnce([
+      { file: "/tmp/project/src/router.ts", sharedSymbols: 1 },
+    ]);
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await (impact as Command).parseAsync(["handleAuth", "--no-tests", "--agent"], {
+      from: "user",
+    });
+    const output = spy.mock.calls.map((c) => c[0]).join("\n");
+    expect(mockFindTests).not.toHaveBeenCalled();
+    expect(output).toContain("dep:");
+    expect(output).not.toContain("test:");
+    spy.mockRestore();
+  });
 });
