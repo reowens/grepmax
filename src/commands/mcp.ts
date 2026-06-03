@@ -108,6 +108,16 @@ const TOOLS = [
           type: "string",
           description: "Project names to exclude (comma-separated)",
         },
+        seed_files: {
+          type: "string",
+          description:
+            "Bias results toward your working context: comma-separated paths you have open (e.g. 'src/lib/llm/server.ts'). On-topic chunks in these files get lifted; off-topic ones are not.",
+        },
+        seed_symbols: {
+          type: "string",
+          description:
+            "Bias results toward identifiers you're working with: comma-separated symbol names. Chunks defining a seeded symbol are preferred over mere callers.",
+        },
       },
       required: ["query"],
     },
@@ -824,10 +834,29 @@ export const mcp = new Command("mcp")
           }
         }
 
+        // Aider-style seeding: the agent passes its open files / discussed
+        // symbols; the searcher biases candidate generation toward them.
+        const parseSeedList = (v: unknown): string[] | undefined => {
+          const items = (
+            Array.isArray(v)
+              ? v.map((x) => String(x))
+              : typeof v === "string"
+                ? v.split(",")
+                : []
+          )
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0);
+          return items.length > 0 ? items : undefined;
+        };
+        const seedFiles = parseSeedList(args.seed_files);
+        const seedSymbols = parseSeedList(args.seed_symbols);
+        const seeds =
+          seedFiles || seedSymbols ? { files: seedFiles, symbols: seedSymbols } : undefined;
+
         const result = await searcher.search(
           query,
           limit,
-          { rerank: process.env.GMAX_RERANK === "1" },
+          { rerank: process.env.GMAX_RERANK === "1", seeds },
           Object.keys(filters).length > 0 ? filters : undefined,
           pathPrefix,
         );

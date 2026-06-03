@@ -139,6 +139,10 @@ export async function handleCommand(
               pathPrefix: typeof cmd.pathPrefix === "string" ? cmd.pathPrefix : undefined,
               rerank: cmd.rerank === true,
               explain: cmd.explain === true,
+              seeds:
+                cmd.seeds && typeof cmd.seeds === "object" && !Array.isArray(cmd.seeds)
+                  ? (cmd.seeds as { files?: string[]; symbols?: string[] })
+                  : undefined,
               includeSkeletons: cmd.includeSkeletons === true,
               skeletonLimit: skeletonLimitRaw,
               includeGraph: cmd.includeGraph === true,

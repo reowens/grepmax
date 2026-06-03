@@ -11,6 +11,13 @@ import { escapeSqlString, normalizePath } from "../utils/filter-builder";
 import { getWorkerPool } from "../workers/pool";
 import { detectIntent, type SearchIntent } from "./intent";
 import { loadOrComputePageRank, pageRankBoostForSymbols } from "./pagerank";
+import {
+  buildSeedContext,
+  matchesSeedFile,
+  matchesSeedSymbol,
+  seedBoost,
+  seedParamsFromEnv,
+} from "./seed-weight";
 
 // Reads a defined_symbols / referenced_symbols column that may arrive as a plain
 // array or a LanceDB Arrow proxy (.toArray()).
@@ -417,7 +424,18 @@ export class Searcher {
   async search(
     query: string,
     top_k?: number,
-    _search_options?: { rerank?: boolean; explain?: boolean },
+    _search_options?: {
+      rerank?: boolean;
+      explain?: boolean;
+      /**
+       * Aider-style seeding (Phase 4): bias candidate generation toward the
+       * agent's working context. `files` = paths the agent has open (chat
+       * files); `symbols` = identifiers the agent is discussing. Applied as a
+       * candidate-generation weight, NOT a rerank tiebreaker (Bundle B showed a
+       * tiebreaker over a saturated pool is a no-op). Empty/absent → no-op.
+       */
+      seeds?: { files?: string[]; symbols?: string[] };
+    },
     _filters?: SearchFilter,
     pathPrefix?: string,
     intent?: SearchIntent,
@@ -430,6 +448,10 @@ export class Searcher {
     // fused scores ~30:1 so blend tuning can't recover the loss.
     let doRerank = _search_options?.rerank ?? false;
     const explain = _search_options?.explain ?? false;
+    // Aider-style seeding (Phase 4): bias candidate generation toward the
+    // agent's working context. Inert unless the caller supplied seed files or
+    // symbols, so the default search path is unchanged.
+    const seedCtx = buildSeedContext(_search_options?.seeds);
     const searchIntent = intent || detectIntent(query);
     // Bare-identifier queries get symbol-definition promotion (see below).
     const symbolQuery = asSymbolQuery(query);
@@ -500,7 +522,10 @@ export class Searcher {
     const pagerankEnabled = process.env.GMAX_PAGERANK === "1" && !!pathPrefix;
     // Symbol-definition promotion needs defined_symbols on every candidate, not
     // just the final display set — load it for bare-symbol queries too.
-    const needDefinedSymbols = pagerankEnabled || symbolQuery !== null;
+    // Seed-symbol matching reads defined_symbols (referenced_symbols is always
+    // loaded), so pull it into the lightweight path when symbols were seeded.
+    const needDefinedSymbols =
+      pagerankEnabled || symbolQuery !== null || seedCtx.symbols.size > 0;
     const LIGHTWEIGHT_COLUMNS = [
       "id", "path", "hash", "chunk_index", "start_line", "end_line",
       "is_anchor", "chunk_type", "role", "complexity", "is_exported",
@@ -560,12 +585,23 @@ export class Searcher {
     const RRF_K = 60;
     const candidateScores = new Map<string, number>();
     const docMap = new Map<string, VectorRecord>();
+    // Best (lowest) 1-indexed rank each candidate reached in any retriever —
+    // the relevance gate for seeding (see the seed block below). Only tracked
+    // when seeding is active; otherwise it stays empty and costs nothing.
+    const bestRank = new Map<string, number>();
+    const noteRank = seedCtx.active
+      ? (key: string, rank: number) => {
+          const prev = bestRank.get(key);
+          if (prev === undefined || rank + 1 < prev) bestRank.set(key, rank + 1);
+        }
+      : () => {};
 
     vectorResults.forEach((doc, rank) => {
       const key = doc.id || `${doc.path}:${doc.chunk_index}`;
       docMap.set(key, doc);
       const score = 1.0 / (RRF_K + rank + 1);
       candidateScores.set(key, (candidateScores.get(key) || 0) + score);
+      noteRank(key, rank);
     });
 
     ftsResults.forEach((doc, rank) => {
@@ -573,6 +609,7 @@ export class Searcher {
       if (!docMap.has(key)) docMap.set(key, doc);
       const score = 1.0 / (RRF_K + rank + 1);
       candidateScores.set(key, (candidateScores.get(key) || 0) + score);
+      noteRank(key, rank);
     });
 
     const fused = Array.from(candidateScores.entries())
@@ -583,6 +620,50 @@ export class Searcher {
     // Free raw search results — docMap holds the only needed references
     vectorResults.length = 0;
     ftsResults.length = 0;
+
+    // Aider-style seeding (Phase 4): bump the RRF score of candidates matching
+    // the agent's working context, gated by each candidate's own relevance so
+    // off-topic seed files are never injected (the safety invariant). Because
+    // the final ordering also reads candidateScores, this one bump propagates
+    // through the stage-1 cosine cut, the stage-2 window, the rerank set, AND
+    // the final score — and can recover a candidate fusion buried below the
+    // display cut, which a rerank-only seed could not. See ./seed-weight.ts.
+    if (seedCtx.active) {
+      // Bound the scan to the relevant head of the pool. The gate is each
+      // candidate's best retriever rank (bestRank), so off-topic seed chunks
+      // that only appear deep in the pool are never lifted.
+      const SEED_WINDOW = 200;
+      const seedParams = seedParamsFromEnv();
+      let boosted = false;
+      for (const doc of fused.slice(0, SEED_WINDOW)) {
+        const sym =
+          seedCtx.symbols.size > 0
+            ? matchesSeedSymbol(
+                seedCtx,
+                readSymbolArray((doc as { defined_symbols?: unknown }).defined_symbols),
+                readSymbolArray((doc as { referenced_symbols?: unknown }).referenced_symbols),
+              )
+            : { def: false, ref: false };
+        const match = {
+          file: matchesSeedFile(seedCtx, doc.path),
+          symbolDef: sym.def,
+          symbolRef: sym.ref && !sym.def,
+        };
+        const key = doc.id || `${doc.path}:${doc.chunk_index}`;
+        const bonus = seedBoost(match, bestRank.get(key) ?? Infinity, seedParams);
+        if (bonus > 0) {
+          candidateScores.set(key, (candidateScores.get(key) ?? 0) + bonus);
+          boosted = true;
+        }
+      }
+      if (boosted) {
+        fused.sort((a, b) => {
+          const ka = a.id || `${a.path}:${a.chunk_index}`;
+          const kb = b.id || `${b.path}:${b.chunk_index}`;
+          return (candidateScores.get(kb) ?? 0) - (candidateScores.get(ka) ?? 0);
+        });
+      }
+    }
 
     // Candidate-concentration gate (Bundle B, v0.17.2 OSS-fixture finding):
     // ColBERT rerank is shape-sensitive. When the post-fusion pool clusters

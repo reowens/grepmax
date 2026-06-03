@@ -814,6 +814,7 @@ export class Daemon {
       pathPrefix?: string;
       rerank?: boolean;
       explain?: boolean;
+      seeds?: { files?: string[]; symbols?: string[] };
       includeSkeletons?: boolean;
       skeletonLimit?: number;
       includeGraph?: boolean;
@@ -862,7 +863,11 @@ export class Daemon {
       result = await searcher.search(
         payload.query,
         payload.limit,
-        { rerank: payload.rerank === true, explain: payload.explain === true },
+        {
+          rerank: payload.rerank === true,
+          explain: payload.explain === true,
+          seeds: payload.seeds,
+        },
         payload.filters,
         payload.pathPrefix,
         undefined,

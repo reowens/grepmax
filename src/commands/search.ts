@@ -474,6 +474,16 @@ export const search: Command = new CommanderCommand("search")
     "Ultra-compact output for AI agents (one line per result)",
     false,
   )
+  .option(
+    "--seed-file <path>",
+    "Bias results toward your working context (repeatable; comma-separated also accepted)",
+    (value: string, prev: string[] | undefined) => (prev ? [...prev, value] : [value]),
+  )
+  .option(
+    "--seed-symbol <name>",
+    "Bias results toward an identifier you're working with (repeatable; comma-separated also accepted)",
+    (value: string, prev: string[] | undefined) => (prev ? [...prev, value] : [value]),
+  )
   .argument(
     "<pattern>",
     'Natural language query (e.g. "where do we handle auth?")',
@@ -517,6 +527,8 @@ Examples:
       explain: boolean;
       contextForLlm: boolean;
       budget: string;
+      seedFile?: string[];
+      seedSymbol?: string[];
     } = cmd.optsWithGlobals();
 
     const root = process.cwd();
@@ -737,6 +749,21 @@ Examples:
       if (scope.excludePrefixes.length > 0)
         searchFilters.excludePrefixes = scope.excludePrefixes;
 
+      // Aider-style seeding: --seed-file / --seed-symbol (repeatable, also
+      // comma-separated) bias candidate generation toward the caller's working
+      // context. Absent → undefined → inert.
+      const splitSeeds = (vals: string[] | undefined): string[] | undefined => {
+        const items = (vals ?? [])
+          .flatMap((v) => v.split(","))
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
+        return items.length > 0 ? items : undefined;
+      };
+      const seedFiles = splitSeeds(options.seedFile as string[] | undefined);
+      const seedSymbols = splitSeeds(options.seedSymbol as string[] | undefined);
+      const seeds =
+        seedFiles || seedSymbols ? { files: seedFiles, symbols: seedSymbols } : undefined;
+
       // Daemon-mediated search: ships query+args over IPC, daemon runs the
       // hybrid+rerank against its already-warm VectorDB and worker pool.
       // Drops cold-start cost (~17s wall, 6GB RAM in the CLI) to <1s. Falls
@@ -764,6 +791,7 @@ Examples:
                 pathPrefix: pathFilter,
                 rerank: process.env.GMAX_RERANK === "1",
                 explain: options.explain,
+                seeds,
                 includeSkeletons: options.skeleton,
                 includeGraph: options.symbol,
               },
@@ -908,7 +936,7 @@ Examples:
         searchResult = await searcher.search(
           pattern,
           parseInt(options.m, 10),
-          { rerank: process.env.GMAX_RERANK === "1", explain: options.explain },
+          { rerank: process.env.GMAX_RERANK === "1", explain: options.explain, seeds },
           Object.keys(searchFilters).length > 0
             ? (searchFilters as SearchFilter)
             : undefined,
