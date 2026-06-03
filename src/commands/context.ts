@@ -6,6 +6,7 @@ import { Skeletonizer } from "../lib/skeleton";
 import type { ChunkType, FileMetadata } from "../lib/store/types";
 import { VectorDB } from "../lib/store/vector-db";
 import { toArr } from "../lib/utils/arrow";
+import { packByBudget } from "../lib/utils/budget-pack";
 import { gracefulExit } from "../lib/utils/exit";
 import { escapeSqlString } from "../lib/utils/filter-builder";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
@@ -239,33 +240,42 @@ export const context = new Command("context")
         tokensUsed += estimateTokens(epText);
       }
 
-      // Phase 3: Key function bodies (top 2-3 results)
+      // Phase 3: Key function bodies (top 2-3 results). Token-aware packing
+      // (knapsack-continue): an oversized body is skipped so a smaller, still-
+      // relevant one can fill the remaining budget instead of aborting the rest.
       const topChunks = entryPoints.slice(0, 3);
-      const bodySection: string[] = ["\n## Key Functions"];
-      for (const r of topChunks) {
+      const bodyBlobs = topChunks.map((r) => {
         const absP = chunkPath(r);
         const startLine = chunkStartLine(r);
         const endLine = chunkEndLine(r);
         const sym = toArr((r as any).defined_symbols)?.[0] ?? "";
-
         try {
           const content = fs.readFileSync(absP, "utf-8");
           const allLines = content.split("\n");
           const body = allLines
             .slice(startLine, Math.min(endLine + 1, allLines.length))
             .join("\n");
-
-          const blob = `\n--- ${relPath(projectRoot, absP)}:${startLine + 1} ${sym} ---\n${body}`;
-          const blobTokens = estimateTokens(blob);
-          if (tokensUsed + blobTokens > budget) break;
-          bodySection.push(blob);
-          tokensUsed += blobTokens;
+          return `\n--- ${relPath(projectRoot, absP)}:${startLine + 1} ${sym} ---\n${body}`;
         } catch {
-          // File not readable — skip
+          return null; // File not readable — drop
         }
+      });
+      const bodyCandidates = bodyBlobs.map((blob, idx) => ({
+        tokens: blob ? estimateTokens(blob) : Number.POSITIVE_INFINITY,
+        score: topChunks.length - idx, // preserve relevance order
+      }));
+      const bodyPack = packByBudget(bodyCandidates, budget - tokensUsed, {
+        atLeastOne: false,
+      });
+      const bodySection: string[] = ["\n## Key Functions"];
+      for (const i of bodyPack.selected) {
+        const blob = bodyBlobs[i];
+        if (!blob) continue;
+        bodySection.push(blob);
       }
       if (bodySection.length > 1) {
         sections.push(bodySection.join(""));
+        tokensUsed += bodyPack.tokensUsed;
       }
 
       // Phase 4: File skeletons for unique files
@@ -286,7 +296,9 @@ export const context = new Command("context")
 
           const blob = `\n--- ${relPath(projectRoot, absP)} (skeleton, ~${result.tokenEstimate} tokens) ---\n${result.skeleton}`;
           const blobTokens = estimateTokens(blob);
-          if (tokensUsed + blobTokens > budget) break;
+          // Skip an oversized skeleton but keep trying smaller ones (a verbose
+          // file shouldn't starve the rest of the budget).
+          if (tokensUsed + blobTokens > budget) continue;
           skelSection.push(blob);
           tokensUsed += blobTokens;
         } catch {

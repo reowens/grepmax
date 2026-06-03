@@ -1238,13 +1238,16 @@ Examples:
         const { extractImportsFromContent } = await import(
           "../lib/utils/import-extractor"
         );
+        const { packByBudget } = await import("../lib/utils/budget-pack");
         const budget = parseInt(options.budget, 10) || 8000;
-        let tokensUsed = 0;
-        let shown = 0;
 
         console.log(resultCountHeader(filteredData, parseInt(options.m, 10)));
 
-        for (const r of filteredData) {
+        // Build every candidate blob up front (token cost needs the rendered
+        // text), then pack to budget. Token-aware packing skips an oversized
+        // chunk and keeps filling with smaller, still-relevant ones rather than
+        // aborting the loop — recovering budget the old greedy `break` wasted.
+        const candidates = filteredData.map((r, idx) => {
           const absP = (r as any).path ?? (r as any).metadata?.path ?? "";
           const startLine =
             (r as any).startLine ??
@@ -1266,6 +1269,7 @@ Examples:
               ? (r as any).defined_symbols[0]
               : "";
 
+          let blobText: string;
           try {
             const content = fs.readFileSync(absP, "utf-8");
             const allLines = content.split("\n");
@@ -1273,32 +1277,36 @@ Examples:
               .slice(startLine, Math.min(endLine + 1, allLines.length))
               .join("\n");
             const imports = extractImportsFromContent(content);
-
             const blob = [
               `--- ${relPath}:${startLine + 1}${symbol ? ` ${symbol}` : ""} [${role}] ---`,
             ];
-            if (imports) {
-              blob.push("[imports]", imports, "");
-            }
+            if (imports) blob.push("[imports]", imports, "");
             blob.push("[body]", body);
-
-            const blobText = blob.join("\n");
-            const blobTokens = Math.ceil(blobText.length / 4);
-
-            if (tokensUsed + blobTokens > budget && shown > 0) {
-              console.log(
-                `\n(budget exhausted at ~${tokensUsed} tokens, ${filteredData.length - shown} more results not shown)`,
-              );
-              break;
-            }
-
-            console.log(`\n${blobText}`);
-            tokensUsed += blobTokens;
-            shown++;
+            blobText = blob.join("\n");
           } catch {
-            console.log(`\n--- ${relPath} (file not readable) ---`);
-            shown++;
+            blobText = `--- ${relPath} (file not readable) ---`;
           }
+
+          // Preserve relevance order when scores are absent (rank-derived
+          // fallback) so the density tiebreaker never reshuffles arbitrarily.
+          const score =
+            typeof r.score === "number"
+              ? r.score
+              : (filteredData.length - idx) / filteredData.length;
+          return { blobText, tokens: Math.ceil(blobText.length / 4), score };
+        });
+
+        const pack = packByBudget(
+          candidates.map((c) => ({ tokens: c.tokens, score: c.score })),
+          budget,
+        );
+        for (const i of pack.selected) {
+          console.log(`\n${candidates[i].blobText}`);
+        }
+        if (pack.dropped > 0) {
+          console.log(
+            `\n(budget: ~${pack.tokensUsed}/${budget} tokens, ${pack.dropped} lower-density result${pack.dropped > 1 ? "s" : ""} not shown)`,
+          );
         }
         return;
       }
