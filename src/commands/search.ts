@@ -24,6 +24,11 @@ import type {
   SearchResponse,
 } from "../lib/store/types";
 import { VectorDB } from "../lib/store/vector-db";
+import {
+  type CrossProjectScope,
+  groupResultsByProject,
+  resolveCrossProjectScope,
+} from "../lib/utils/cross-project";
 import { gracefulExit } from "../lib/utils/exit";
 import { formatTextResults, type TextResult } from "../lib/utils/formatter";
 import { extractImports } from "../lib/utils/import-extractor";
@@ -460,6 +465,19 @@ export const search: Command = new CommanderCommand("search")
     (value: string, prev: string[] | undefined) =>
       prev ? [...prev, value] : [value],
   )
+  .option(
+    "--all-projects",
+    "Search across every indexed project, not just the current one",
+    false,
+  )
+  .option(
+    "--projects <list>",
+    "Search only these indexed projects (comma-separated names)",
+  )
+  .option(
+    "--exclude-projects <list>",
+    "With --all-projects, skip these projects (comma-separated names)",
+  )
   .option("--lang <ext>", "Filter by file extension (e.g. 'ts', 'py')")
   .option(
     "--role <role>",
@@ -499,6 +517,8 @@ Examples:
   gmax "VectorDB" --symbol --plain
   gmax "error handling" -C 5 --imports --plain
   gmax "handler" --name "handle.*" --exclude tests/
+  gmax "rate limiter" --all-projects --agent
+  gmax "auth middleware" --projects api,gateway --plain
 `,
   )
   .action(async (pattern, exec_path, _options, cmd) => {
@@ -517,6 +537,9 @@ Examples:
       file: string;
       in?: string[];
       exclude?: string[];
+      allProjects?: boolean;
+      projects?: string;
+      excludeProjects?: string;
       lang: string;
       role: string;
       symbol: boolean;
@@ -540,11 +563,51 @@ Examples:
     let _searchResultCount = 0;
     let _searchError: string | undefined;
 
-    // Check for running server
+    // Cross-project scope (Phase 6): --all-projects / --projects / --exclude-projects.
+    // When active, single-project path scoping is dropped in favor of the
+    // project_roots filter clauses, and results are grouped by owning project.
+    const crossProject: CrossProjectScope = resolveCrossProjectScope({
+      allProjects: options.allProjects,
+      projects: options.projects,
+      excludeProjects: options.excludeProjects,
+    });
+    if (crossProject.active) {
+      // These modifiers are inherently single-project (one skeleton root, one
+      // call-graph center, one budget rollup). Reject the combination up front
+      // rather than emit confusing cross-root output.
+      const conflict = options.skeleton
+        ? "--skeleton"
+        : options.contextForLlm
+          ? "--context-for-llm"
+          : options.symbol
+            ? "--symbol"
+            : null;
+      if (conflict) {
+        console.error(
+          `${conflict} is single-project; drop --all-projects/--projects or ${conflict}.`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+      for (const w of crossProject.warnings) console.warn(`Warning: ${w}`);
+      if (!crossProject.roots.length) {
+        console.error(
+          "No matching indexed projects. Run `gmax status` to list them.",
+        );
+        process.exitCode = 1;
+        return;
+      }
+    }
+
+    // Check for running server. The per-project HTTP server can't answer
+    // cross-project queries, so cross-project mode skips it and uses the
+    // daemon-mediated / in-process path (both query the shared table).
     const execPathForServer = exec_path ? path.resolve(exec_path) : root;
     const projectRootForServer =
       findProjectRoot(execPathForServer) ?? execPathForServer;
-    const server = getServerForProject(projectRootForServer);
+    const server = crossProject.active
+      ? null
+      : getServerForProject(projectRootForServer);
 
     if (server) {
       try {
@@ -731,8 +794,17 @@ Examples:
         in: options.in,
         exclude: options.exclude,
       });
-      const pathFilter =
-        options.in && options.in.length > 0
+      // Cross-project mode drops the single-project path prefix (and any
+      // --in/[path] sub-scoping, which is meaningless across roots) in favor of
+      // the project_roots filter clauses computed below.
+      if (crossProject.active && (exec_path || options.in?.length)) {
+        console.warn(
+          "Warning: --in / [path] are single-project; ignored under --all-projects/--projects.",
+        );
+      }
+      const pathFilter = crossProject.active
+        ? undefined
+        : options.in && options.in.length > 0
           ? scope.pathPrefix
           : exec_path
             ? (() => {
@@ -744,10 +816,18 @@ Examples:
       if (options.file) searchFilters.file = options.file;
       if (options.lang) searchFilters.language = options.lang;
       if (options.role) searchFilters.role = options.role;
-      if (scope.inPrefixes.length > 0)
-        searchFilters.inPrefixes = scope.inPrefixes;
-      if (scope.excludePrefixes.length > 0)
-        searchFilters.excludePrefixes = scope.excludePrefixes;
+      if (crossProject.active) {
+        if (crossProject.projectRootsCsv)
+          searchFilters.project_roots = crossProject.projectRootsCsv;
+        if (crossProject.excludeProjectRootsCsv)
+          searchFilters.exclude_project_roots =
+            crossProject.excludeProjectRootsCsv;
+      } else {
+        if (scope.inPrefixes.length > 0)
+          searchFilters.inPrefixes = scope.inPrefixes;
+        if (scope.excludePrefixes.length > 0)
+          searchFilters.excludePrefixes = scope.excludePrefixes;
+      }
 
       // Aider-style seeding: --seed-file / --seed-symbol (repeatable, also
       // comma-separated) bias candidate generation toward the caller's working
@@ -989,6 +1069,82 @@ Examples:
 
       // Agent mode: ultra-compact one-line-per-result output
       _searchResultCount = filteredData.length;
+
+      // Cross-project (Phase 6): render grouped by owning project so idioms
+      // from different stacks don't blur into one flat list. Only the
+      // string-formatter modes reach here — skeleton/context-for-llm/symbol
+      // were rejected up front.
+      if (crossProject.active) {
+        const emitFooter = () => {
+          const footer = formatIndexStateFooter(indexState, {
+            agent: !!options.agent,
+          });
+          if (footer) {
+            if (options.agent) console.log(footer);
+            else console.warn(footer);
+          }
+        };
+
+        if (!filteredData.length) {
+          console.log(options.agent ? "(none)" : "No matches found.");
+          process.exitCode = 1;
+          emitFooter();
+          return;
+        }
+
+        const getPath = (r: ChunkType): string =>
+          String(
+            (r as { path?: string }).path ??
+              (r.metadata as FileMetadata | undefined)?.path ??
+              "",
+          );
+        const groups = groupResultsByProject(
+          filteredData,
+          crossProject.roots,
+          getPath,
+        );
+
+        const isTTY = process.stdout.isTTY;
+        const shouldBePlain = options.plain || !isTTY;
+        const blocks: string[] = [];
+        for (const g of groups) {
+          let body: string;
+          if (options.agent) {
+            body = formatAgentSearchResults(g.items, g.root, {
+              includeImports: options.imports,
+              getImportsForFile,
+              explain: options.explain,
+            });
+          } else if (options.compact) {
+            body = formatCompactTable(toCompactHits(g.items), g.root, pattern, {
+              isTTY: !!isTTY,
+              plain: !!options.plain,
+            });
+          } else if (shouldBePlain) {
+            body = formatTextResults(toTextResults(g.items), pattern, g.root, {
+              isPlain: true,
+              compact: options.compact,
+              content: options.content,
+              perFile: parseInt(options.perFile, 10),
+              showScores: options.scores,
+            });
+          } else {
+            const { formatResults } = await import("../lib/output/formatter");
+            body = formatResults(g.items, g.root, {
+              content: options.content,
+              explain: options.explain,
+            });
+          }
+          const header = options.agent
+            ? `## ${g.name} (${g.items.length})`
+            : `=== ${g.name} (${g.items.length}) ===`;
+          blocks.push(`${header}\n${body}`);
+        }
+        console.log(blocks.join("\n\n"));
+        emitFooter();
+        return;
+      }
+
       if (options.agent) {
         if (!filteredData.length) {
           console.log("(none)");

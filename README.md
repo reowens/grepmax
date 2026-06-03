@@ -163,6 +163,9 @@ gmax "query" [options]
 | `--explain` | Show scoring breakdown per result. | `false` |
 | `-C <n>` | Context lines before/after. | `0` |
 | `--root <dir>` | Search a different project. | cwd |
+| `--all-projects` | Search every indexed project; results grouped by project. | `false` |
+| `--projects <list>` | Search only these projects (comma-separated names). | — |
+| `--exclude-projects <list>` | With `--all-projects`, skip these projects. | — |
 | `--min-score <n>` | Minimum relevance score. | `0` |
 
 ## Background Daemon
