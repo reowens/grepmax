@@ -6,6 +6,13 @@ import {
   isTestPath,
   resolveTargetSymbols,
 } from "../lib/graph/impact";
+import {
+  formatViaAgent,
+  formatViaHuman,
+  groupTestHitsByFile,
+  hopLabelAgent,
+  hopLabelHuman,
+} from "../lib/graph/test-hits";
 import { VectorDB } from "../lib/store/vector-db";
 import { symbolNotFoundLines } from "../lib/utils/agent-errors";
 import { gracefulExit } from "../lib/utils/exit";
@@ -104,6 +111,8 @@ export const impact = new Command("impact")
 
       // Separate test files from non-test dependents
       const nonTestDeps = dependents.filter((d) => !isTestPath(d.file));
+      // One line per test file; caller symbols inside it become `via` detail.
+      const groupedTests = groupTestHitsByFile(tests);
 
       const rel = (p: string) =>
         p.startsWith(`${projectRoot}/`) ? p.slice(projectRoot.length + 1) : p;
@@ -112,10 +121,10 @@ export const impact = new Command("impact")
         for (const d of nonTestDeps) {
           console.log(`dep: ${rel(d.file)}\t${d.sharedSymbols}`);
         }
-        for (const t of tests) {
-          const hopLabel =
-            t.hops === -1 ? "via-import" : t.hops === 0 ? "direct" : `${t.hops}-hop`;
-          console.log(`test: ${rel(t.file)}:${t.line + 1}\t${t.symbol}\t${hopLabel}`);
+        for (const t of groupedTests) {
+          console.log(
+            `test: ${rel(t.file)}:${t.line + 1}\t${hopLabelAgent(t.hops)}${formatViaAgent(t.via)}`,
+          );
         }
         if (!nonTestDeps.length && !tests.length) {
           console.log("(no impact detected)");
@@ -137,16 +146,12 @@ export const impact = new Command("impact")
         if (includeTests) {
           console.log("");
 
-          if (tests.length > 0) {
-            console.log(`Affected tests (${tests.length}):`);
-            for (const t of tests) {
-              const hopLabel =
-                t.hops === -1
-                  ? "via import"
-                  : t.hops === 0
-                    ? "calls directly"
-                    : `${t.hops} hop${t.hops > 1 ? "s" : ""} away`;
-              console.log(`  ${rel(t.file)}:${t.line + 1}  ${t.symbol}  (${hopLabel})`);
+          if (groupedTests.length > 0) {
+            console.log(`Affected tests (${groupedTests.length}):`);
+            for (const t of groupedTests) {
+              console.log(
+                `  ${rel(t.file)}:${t.line + 1}  (${hopLabelHuman(t.hops)}${formatViaHuman(t.via)})`,
+              );
             }
           } else {
             console.log("Affected tests: none found");

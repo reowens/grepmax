@@ -1,5 +1,12 @@
 import { Command } from "commander";
 import { findTests, resolveTargetSymbols } from "../lib/graph/impact";
+import {
+  formatViaAgent,
+  formatViaHuman,
+  groupTestHitsByFile,
+  hopLabelAgent,
+  hopLabelHuman,
+} from "../lib/graph/test-hits";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
@@ -77,26 +84,21 @@ export const testFind = new Command("test")
       const rel = (p: string) =>
         p.startsWith(`${projectRoot}/`) ? p.slice(projectRoot.length + 1) : p;
 
+      // One line per test file: the file is what the reader runs; caller
+      // symbols inside it (often internal helpers) are detail, not the lead.
+      const grouped = groupTestHitsByFile(tests);
       if (opts.agent) {
-        for (const t of tests) {
-          const hopLabel =
-            t.hops === -1
-              ? "via-import"
-              : t.hops === 0
-                ? "direct"
-                : `${t.hops}-hop`;
-          console.log(`${rel(t.file)}:${t.line + 1}\t${t.symbol}\t${hopLabel}`);
+        for (const t of grouped) {
+          console.log(
+            `${rel(t.file)}:${t.line + 1}\t${hopLabelAgent(t.hops)}${formatViaAgent(t.via)}`,
+          );
         }
       } else {
         console.log(`Tests for ${target}:\n`);
-        for (const t of tests) {
-          const hopLabel =
-            t.hops === -1
-              ? "via import"
-              : t.hops === 0
-                ? "calls directly"
-                : `${t.hops} hop${t.hops > 1 ? "s" : ""} away`;
-          console.log(`  ${rel(t.file)}:${t.line + 1}  ${t.symbol}  (${hopLabel})`);
+        for (const t of grouped) {
+          console.log(
+            `  ${rel(t.file)}:${t.line + 1}  (${hopLabelHuman(t.hops)}${formatViaHuman(t.via)})`,
+          );
         }
       }
     } catch (error) {
