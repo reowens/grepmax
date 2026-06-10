@@ -237,7 +237,7 @@ export const doctor = new Command("doctor")
         console.log(fields.join("\t"));
         if (staleChunkerProjects.length > 0) {
           console.log(
-            `stale_chunker_fix: run 'gmax index' in: ${staleChunkerProjects
+            `stale_chunker_fix: run 'gmax index --reset' in: ${staleChunkerProjects
               .map((p) => p.name || path.basename(p.root))
               .join(", ")}`,
           );
@@ -306,7 +306,7 @@ export const doctor = new Command("doctor")
           );
           for (const p of staleChunkerProjects) {
             console.log(
-              `       - ${p.name || path.basename(p.root)}: run 'gmax index' in ${p.root}`,
+              `       - ${p.name || path.basename(p.root)}: run 'gmax index --reset' in ${p.root}`,
             );
           }
         }

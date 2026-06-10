@@ -75,13 +75,21 @@ Examples:
       const projectRoot = findProjectRoot(indexRoot) ?? indexRoot;
 
       // Project must be registered before reindexing
-      if (!getProject(projectRoot)) {
+      const existingEntry = getProject(projectRoot);
+      if (!existingEntry) {
         console.error(
           `This project hasn't been added yet.\n\nRun: gmax add ${projectRoot}\n`,
         );
         process.exitCode = 1;
         return;
       }
+
+      // Only a reset rechunks cached files, so only a reset may claim the
+      // current chunker version — a plain index would clear the doctor
+      // stale-chunker warning without regenerating any chunks.
+      const stampedChunkerVersion = options.reset
+        ? CONFIG.CHUNKER_VERSION
+        : (existingEntry.chunkerVersion ?? 1);
 
       if (options.reset) {
         console.log("Resetting index...");
@@ -134,7 +142,7 @@ Examples:
             lastIndexed: new Date().toISOString(),
             chunkCount: (done.indexed as number) ?? 0,
             status: "indexed",
-            chunkerVersion: CONFIG.CHUNKER_VERSION,
+            chunkerVersion: stampedChunkerVersion,
           });
 
           const failedFiles = (done.failedFiles as number) ?? 0;
@@ -212,7 +220,7 @@ Examples:
             lastIndexed: new Date().toISOString(),
             chunkCount: result.indexed,
             status: "indexed",
-            chunkerVersion: CONFIG.CHUNKER_VERSION,
+            chunkerVersion: stampedChunkerVersion,
           });
 
           const failedSuffix =
