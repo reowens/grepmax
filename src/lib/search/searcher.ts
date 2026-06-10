@@ -951,7 +951,7 @@ export class Searcher {
       const displayRows = await table
         .query()
         .select([
-          "id", "defined_symbols", "imports", "exports",
+          "id", "defined_symbols", "parent_symbol", "imports", "exports",
           "summary", "file_skeleton",
         ])
         .where(`id IN (${finalIds.join(",")})`)
@@ -964,6 +964,7 @@ export class Searcher {
         const extra = displayMap.get(item.record.id);
         if (extra) {
           (item.record as any).defined_symbols = extra.defined_symbols;
+          (item.record as any).parent_symbol = extra.parent_symbol;
           (item.record as any).imports = extra.imports;
           (item.record as any).exports = extra.exports;
           (item.record as any).summary = extra.summary;

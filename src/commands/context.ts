@@ -61,6 +61,29 @@ function chunkEndLine(chunk: ChunkType): number {
   );
 }
 
+/**
+ * The definition line of `parentSymbol` nearest above `startLine` — used to
+ * give a mid-function sub-chunk extract its enclosing signature. Requires a
+ * definition-shaped line, not just any mention, so recursive calls or
+ * references between the definition and the chunk don't win.
+ */
+export function findEnclosingSignature(
+  lines: string[],
+  startLine: number,
+  parentSymbol: string,
+): { text: string; line: number } | null {
+  if (!parentSymbol || !/^\w+$/.test(parentSymbol)) return null;
+  const defRe = new RegExp(
+    `(?:\\b(?:class|function|interface|enum|struct|trait|impl|def|fn|type|const|let|var)\\b[^=]*\\b${parentSymbol}\\b|\\b${parentSymbol}\\b\\s*[(:=])`,
+  );
+  for (let i = Math.min(startLine, lines.length) - 1; i >= 0; i--) {
+    if (defRe.test(lines[i])) {
+      return { text: lines[i].trim(), line: i };
+    }
+  }
+  return null;
+}
+
 function resolveExistingPath(
   target: string,
   root: string,
@@ -228,7 +251,10 @@ export const context = new Command("context")
       for (const r of entryPoints.slice(0, 5)) {
         const p = chunkPath(r);
         const line = chunkStartLine(r);
-        const sym = toArr((r as any).defined_symbols)?.[0] ?? "";
+        const parentSym = String((r as any).parent_symbol || "");
+        const sym =
+          toArr((r as any).defined_symbols)?.[0] ??
+          (parentSym ? `(in ${parentSym})` : "");
         const role = String((r as any).role || "IMPLEMENTATION");
         epSection.push(
           `${relPath(projectRoot, p)}:${line + 1} ${sym} [${role}]`,
@@ -249,13 +275,26 @@ export const context = new Command("context")
         const startLine = chunkStartLine(r);
         const endLine = chunkEndLine(r);
         const sym = toArr((r as any).defined_symbols)?.[0] ?? "";
+        const parentSym = String((r as any).parent_symbol || "");
         try {
           const content = fs.readFileSync(absP, "utf-8");
           const allLines = content.split("\n");
           const body = allLines
             .slice(startLine, Math.min(endLine + 1, allLines.length))
             .join("\n");
-          return `\n--- ${relPath(projectRoot, absP)}:${startLine + 1} ${sym} ---\n${body}`;
+          // A sub-chunk that starts mid-function has no defined symbol of its
+          // own — prepend the enclosing definition's signature so the extract
+          // isn't headless code.
+          let enclosing = "";
+          let label = sym;
+          if (!sym && parentSym) {
+            label = `(in ${parentSym})`;
+            const sig = findEnclosingSignature(allLines, startLine, parentSym);
+            if (sig) {
+              enclosing = `${sig.text}  // :${sig.line + 1}\n// ...\n`;
+            }
+          }
+          return `\n--- ${relPath(projectRoot, absP)}:${startLine + 1} ${label} ---\n${enclosing}${body}`;
         } catch {
           return null; // File not readable — drop
         }

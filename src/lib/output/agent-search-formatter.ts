@@ -5,6 +5,9 @@ export type AgentSearchFormatOptions = {
   includeImports?: boolean;
   getImportsForFile?: (absPath: string) => string;
   explain?: boolean;
+  /** The search query — hint lines prefer the chunk line matching its terms
+   * over the chunk's first signature line. */
+  query?: string;
 };
 
 function chunkPath(chunk: ChunkType): string {
@@ -88,11 +91,63 @@ function firstSignatureLine(chunk: ChunkType): string {
   return "";
 }
 
-function hintFor(chunk: ChunkType): string {
+const QUERY_STOPWORDS = new Set([
+  "the", "and", "for", "with", "that", "this", "from", "into", "where",
+  "when", "how", "what", "does", "not", "are", "was", "has", "have", "its",
+  "all", "can", "use", "uses", "using", "code",
+]);
+
+function extractQueryTerms(query: string | undefined): string[] {
+  if (!query) return [];
+  const terms = query
+    .toLowerCase()
+    .split(/[^a-z0-9_]+/)
+    .filter((t) => t.length >= 3 && !QUERY_STOPWORDS.has(t));
+  return [...new Set(terms)];
+}
+
+function truncateHint(line: string): string {
+  return line.length > 120 ? `${line.slice(0, 117)}...` : line;
+}
+
+/**
+ * The chunk line that best matches the query terms — it shows *why* this
+ * chunk hit, where the first signature line only shows what the chunk is.
+ * Most distinct terms wins; code beats comments on a tie; earliest otherwise.
+ */
+function queryMatchingLine(chunk: ChunkType, terms: string[]): string {
+  if (!terms.length) return "";
+  const raw = String((chunk as any).content ?? chunk.text ?? "");
+  let best = "";
+  let bestScore = 0;
+  let bestIsComment = true;
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.length < 5) continue;
+    if (trimmed.startsWith("import ") || trimmed.startsWith("File:")) continue;
+    if (trimmed === "{" || trimmed === "}") continue;
+    const lower = trimmed.toLowerCase();
+    let score = 0;
+    for (const t of terms) if (lower.includes(t)) score++;
+    if (score === 0) continue;
+    const isComment = /^(\/\/|\/\*|\*|#)/.test(trimmed);
+    if (
+      score > bestScore ||
+      (score === bestScore && bestIsComment && !isComment)
+    ) {
+      best = trimmed;
+      bestScore = score;
+      bestIsComment = isComment;
+    }
+  }
+  return truncateHint(best);
+}
+
+function hintFor(chunk: ChunkType, queryTerms: string[]): string {
   if (typeof chunk.summary === "string" && chunk.summary) {
     return chunk.summary;
   }
-  return firstSignatureLine(chunk);
+  return queryMatchingLine(chunk, queryTerms) || firstSignatureLine(chunk);
 }
 
 function explainSuffix(chunk: ChunkType, enabled?: boolean): string {
@@ -108,6 +163,7 @@ export function formatAgentSearchResults(
 ): string {
   if (!results.length) return "(none)";
 
+  const queryTerms = extractQueryTerms(options.query);
   const groups = new Map<string, ChunkType[]>();
   for (const result of results) {
     const absPath = chunkPath(result);
@@ -148,7 +204,7 @@ export function formatAgentSearchResults(
         typeof result.score === "number"
           ? `\ts=${result.score.toFixed(3)}`
           : "";
-      const hint = hintFor(result);
+      const hint = hintFor(result, queryTerms);
       const locator = grouped
         ? `  :${chunkStartLine(result)}`
         : `${rel}:${chunkStartLine(result)}`;

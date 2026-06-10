@@ -567,6 +567,7 @@ type McpSearchFilterOptions = {
 type McpPointerFormatOptions = McpSearchFilterOptions & {
   includeImports?: boolean;
   getImportsForFile?: (absPath: string) => string;
+  query?: string;
 };
 
 function chunkAbsPath(chunk: ChunkType): string {
@@ -627,6 +628,7 @@ export function formatMcpPointerSearchResults(
     {
       includeImports: options.includeImports,
       getImportsForFile: options.getImportsForFile,
+      query: options.query,
     },
   );
 }
@@ -896,6 +898,7 @@ export const mcp = new Command("mcp")
               namePattern,
               includeImports,
               getImportsForFile,
+              query,
             },
           );
           if (result.warnings?.length) {

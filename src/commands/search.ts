@@ -286,6 +286,7 @@ Examples:
             console.log(
               formatAgentSearchResults(filteredData, projectRootForServer, {
                 includeImports: options.imports,
+                query: pattern,
                 getImportsForFile,
                 explain: options.explain,
               }),
@@ -547,6 +548,7 @@ Examples:
           if (options.agent) {
             body = formatAgentSearchResults(g.items, g.root, {
               includeImports: options.imports,
+              query: pattern,
               getImportsForFile,
               explain: options.explain,
             });
@@ -588,6 +590,7 @@ Examples:
           console.log(
             formatAgentSearchResults(filteredData, effectiveRoot, {
               includeImports: options.imports,
+              query: pattern,
               getImportsForFile,
               explain: options.explain,
             }),
