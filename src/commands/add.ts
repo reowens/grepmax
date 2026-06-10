@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Command } from "commander";
+import { CONFIG } from "../config";
 import { ensureGrammars } from "../lib/index/grammar-loader";
 import { readGlobalConfig } from "../lib/index/index-config";
 import {
@@ -235,6 +236,7 @@ Examples:
             lastIndexed: new Date().toISOString(),
             chunkCount: (done.indexed as number) ?? 0,
             status: "indexed",
+            chunkerVersion: CONFIG.CHUNKER_VERSION,
           });
 
           const failedFiles = (done.failedFiles as number) ?? 0;
@@ -264,6 +266,7 @@ Examples:
             lastIndexed: new Date().toISOString(),
             chunkCount: result.indexed,
             status: "indexed",
+            chunkerVersion: CONFIG.CHUNKER_VERSION,
           });
 
           const failedSuffix =

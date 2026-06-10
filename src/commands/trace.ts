@@ -1,5 +1,5 @@
-import * as fs from "node:fs";
 import { Command } from "commander";
+import { findCallSiteSnippet } from "../lib/graph/callsites";
 import { GraphBuilder } from "../lib/graph/graph-builder";
 import { formatTrace } from "../lib/output/formatter";
 import { VectorDB } from "../lib/store/vector-db";
@@ -49,37 +49,6 @@ interface InboundCaller {
   snippet: string | null;
   snippetLine: number | null;
   callers: InboundCaller[];
-}
-
-function findCallSiteSnippet(
-  fileCache: Map<string, string[]>,
-  callerFile: string,
-  callerLine: number,
-  targetSymbol: string,
-): { snippet: string; snippetLine: number } | null {
-  if (!callerFile) return null;
-  let lines = fileCache.get(callerFile);
-  if (!lines) {
-    try {
-      lines = fs.readFileSync(callerFile, "utf-8").split("\n");
-    } catch {
-      return null;
-    }
-    fileCache.set(callerFile, lines);
-  }
-  // Search a bounded window starting at the caller's definition line.
-  const start = Math.max(0, callerLine);
-  const end = Math.min(lines.length, callerLine + 200);
-  const wordRe = new RegExp(`\\b${targetSymbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`);
-  for (let i = start; i < end; i++) {
-    if (wordRe.test(lines[i])) {
-      return { snippet: lines[i].trim(), snippetLine: i };
-    }
-  }
-  // Window didn't contain the symbol — chunker rolled the reference up to a
-  // parent scope. Skip the snippet rather than showing a misleading default;
-  // the caller's file:line is still emitted.
-  return null;
 }
 
 function buildInboundTree(

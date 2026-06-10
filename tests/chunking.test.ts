@@ -38,6 +38,48 @@ describe("TreeSitterChunker fallback and splitting", () => {
     expect(chunks.length).toBeGreaterThan(1);
     expect(chunks[0].content.length).toBeLessThanOrEqual(2000);
   });
+
+  it("scopes sub-chunk symbol lists to their content slice", () => {
+    const chunker = new TreeSitterChunker() as any;
+
+    const lines: string[] = ["class Daemon {"];
+    lines.push("  start() { isFileCached(); }");
+    for (let i = 0; i < 200; i++) lines.push(`  // filler ${i}`);
+    lines.push("  shutdown() { closeAll(); }");
+    lines.push("}");
+
+    const subs = chunker.splitIfTooBig({
+      content: lines.join("\n"),
+      startLine: 0,
+      endLine: lines.length - 1,
+      type: "class",
+      definedSymbols: ["Daemon", "start", "shutdown"],
+      referencedSymbols: ["isFileCached", "closeAll"],
+    });
+
+    expect(subs.length).toBeGreaterThan(1);
+
+    // No sub-chunk may claim a symbol that does not occur in its own slice —
+    // inherited full lists fabricate one phantom graph edge per sub-chunk.
+    for (const sc of subs) {
+      for (const s of [...sc.definedSymbols, ...sc.referencedSymbols]) {
+        expect(sc.content).toMatch(new RegExp(`\\b${s}\\b`));
+      }
+    }
+
+    // The reference must survive in the sub-chunk(s) containing the call
+    // site, and must NOT be smeared across all sub-chunks.
+    const withRef = subs.filter((sc: any) =>
+      sc.referencedSymbols.includes("isFileCached"),
+    );
+    expect(withRef.length).toBeGreaterThan(0);
+    expect(withRef.length).toBeLessThan(subs.length);
+    const withShutdown = subs.filter((sc: any) =>
+      sc.definedSymbols.includes("shutdown"),
+    );
+    expect(withShutdown.length).toBeGreaterThan(0);
+    expect(withShutdown.length).toBeLessThan(subs.length);
+  });
 });
 
 describe("LocalStore chunk formatting helpers", () => {

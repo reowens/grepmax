@@ -54,6 +54,11 @@ export const CONFIG = {
   EMBED_BATCH_SIZE: 24,
   WORKER_THREADS: DEFAULT_WORKER_THREADS,
   QUERY_PREFIX: "",
+  // Bump when chunk metadata semantics change in a way that requires a full
+  // reindex to take effect. v2: sub-chunk symbol lists scoped to the chunk's
+  // own content (previously every split sub-chunk inherited the parent's
+  // full defined/referenced symbol lists, fabricating graph edges).
+  CHUNKER_VERSION: 2,
 };
 
 export const WORKER_TIMEOUT_MS = Number.parseInt(

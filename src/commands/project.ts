@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import { Command } from "commander";
+import { isBuiltinCallee } from "../lib/graph/callsites";
 import { VectorDB } from "../lib/store/vector-db";
 import { escapeSqlString } from "../lib/utils/filter-builder";
 import { gracefulExit } from "../lib/utils/exit";
@@ -58,7 +59,9 @@ export const project = new Command("project")
       >();
       const roleCounts = new Map<string, number>();
       const symbolRefs = new Map<string, number>();
+      const definedInProject = new Set<string>();
       const entryPoints: Array<{ symbol: string; path: string }> = [];
+      const seenEntryPoints = new Set<string>();
 
       for (const row of rows) {
         const p = String((row as any).path || "");
@@ -87,14 +90,19 @@ export const project = new Command("project")
         dc.chunks++;
 
         roleCounts.set(role, (roleCounts.get(role) || 0) + 1);
+        for (const d of defs) definedInProject.add(d);
         for (const ref of refs)
           symbolRefs.set(ref, (symbolRefs.get(ref) || 0) + 1);
 
         if (exported && role === "ORCHESTRATION" && complexity >= 5 && defs.length > 0) {
-          entryPoints.push({
-            symbol: defs[0],
-            path: p.startsWith(prefix) ? p.slice(prefix.length) : p,
-          });
+          const epKey = `${defs[0]}:${p}`;
+          if (!seenEntryPoints.has(epKey)) {
+            seenEntryPoints.add(epKey);
+            entryPoints.push({
+              symbol: defs[0],
+              path: p.startsWith(prefix) ? p.slice(prefix.length) : p,
+            });
+          }
         }
       }
 
@@ -104,7 +112,11 @@ export const project = new Command("project")
       const extEntries = Array.from(extCounts.entries())
         .sort((a, b) => b[1] - a[1])
         .slice(0, 8);
+      // Key symbols must be the project's own: raw referenced_symbols counts
+      // are dominated by JS builtins (push, slice, map, …) which say nothing
+      // about the codebase.
       const topSymbols = Array.from(symbolRefs.entries())
+        .filter(([s]) => definedInProject.has(s) && !isBuiltinCallee(s))
         .sort((a, b) => b[1] - a[1])
         .slice(0, 8);
 

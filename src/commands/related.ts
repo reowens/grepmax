@@ -6,6 +6,7 @@ import { escapeSqlString } from "../lib/utils/filter-builder";
 import { gracefulExit } from "../lib/utils/exit";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
+import { withQueryTimeout } from "../lib/utils/query-timeout";
 
 import { toArr } from "../lib/utils/arrow";
 
@@ -143,14 +144,18 @@ export const related = new Command("related")
         if (basename.length < 4 || GENERIC_BASENAMES.has(basename.toLowerCase())) {
           basenameRejected = true;
         } else {
-          const rows = await table
-            .query()
-            .select(["path"])
-            .where(
-              `content LIKE '%${escapeSqlString(basename)}%' AND ${pathScope}`,
-            )
-            .limit(limit * 4)
-            .toArray();
+          // No .limit() here: LIKE + limit deadlocks in @lancedb 0.27.x when
+          // more rows match than the limit (verified). The loop below caps.
+          const rows = await withQueryTimeout(
+            table
+              .query()
+              .select(["path"])
+              .where(
+                `content LIKE '%${escapeSqlString(basename)}%' AND ${pathScope}`,
+              )
+              .toArray(),
+            `content LIKE %${basename}% (related mentions)`,
+          );
           const seen = new Set<string>();
           for (const row of rows) {
             const p = String((row as any).path || "");

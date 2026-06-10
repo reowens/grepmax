@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import { Command } from "commander";
+import { isBuiltinCallee, resolveCallSites } from "../lib/graph/callsites";
 import { GraphBuilder } from "../lib/graph/graph-builder";
 import { VectorDB } from "../lib/store/vector-db";
 import { symbolNotFoundLines } from "../lib/utils/agent-errors";
@@ -25,33 +26,50 @@ function extractSignature(
   filePath: string,
   startLine: number,
   endLine: number,
-): { signature: string; bodyLines: number } {
+): { signature: string; signatureOnly: string; bodyLines: number } {
   try {
     const content = fs.readFileSync(filePath, "utf-8");
     const lines = content.split("\n");
     const chunk = lines.slice(startLine, endLine + 1);
     const bodyLines = chunk.length;
 
-    // Find the signature: everything up to and including the opening brace
+    // Find the signature: everything up to and including the opening brace.
+    // Only treat `{` / `=>` as the body boundary once the parameter list's
+    // parens are balanced — object-literal param types (`cached: { … }`)
+    // contain braces mid-signature and must not end it.
     const sigLines: string[] = [];
+    let parenDepth = 0;
     for (const line of chunk) {
       sigLines.push(line);
-      if (line.includes("{") || line.includes("=>")) break;
+      for (const ch of line) {
+        if (ch === "(") parenDepth++;
+        else if (ch === ")") parenDepth--;
+      }
+      if (parenDepth <= 0 && (line.includes("{") || line.includes("=>"))) {
+        break;
+      }
+      if (sigLines.length >= 12) break; // degenerate input — bail
     }
 
     // If we only got one line and it's the whole function, collapse it
     if (sigLines.length >= bodyLines) {
-      return { signature: chunk.join("\n"), bodyLines: 0 };
+      const whole = chunk.join("\n");
+      return { signature: whole, signatureOnly: whole, bodyLines: 0 };
     }
 
     const sig = sigLines.join("\n");
     const remaining = bodyLines - sigLines.length;
     return {
       signature: `${sig}\n    // ... (${remaining} lines)\n  }`,
+      signatureOnly: sig,
       bodyLines,
     };
   } catch {
-    return { signature: "(source not available)", bodyLines: 0 };
+    return {
+      signature: "(source not available)",
+      signatureOnly: "(source not available)",
+      bodyLines: 0,
+    };
   }
 }
 
@@ -100,6 +118,9 @@ export const peek = new Command("peek")
       // languages, refuse to silently pick one. The graph builder otherwise
       // picks one chunk arbitrarily and lists callers from a different
       // language — verified failure mode.
+      // Same-language multi-definition is reported as a note instead (below):
+      // the first definition still wins, but the agent learns it guessed.
+      let otherDefs: Array<{ path: string; startLine: number }> = [];
       {
         const tableForCheck = await vectorDb.ensureTable();
         const allDefs = await tableForCheck
@@ -116,6 +137,13 @@ export const peek = new Command("peek")
           path: String(row.path || ""),
           startLine: Number(row.start_line || 0),
         }));
+        // Dedupe by file: split sub-chunks of one definition share a path,
+        // while genuine ambiguity (same name defined elsewhere) crosses files.
+        const distinct = new Map<string, { path: string; startLine: number }>();
+        for (const c of chunks) {
+          if (!distinct.has(c.path)) distinct.set(c.path, c);
+        }
+        otherDefs = [...distinct.values()];
         const byLang = groupByLanguage(chunks);
         if (byLang.size >= 2) {
           const rel = (p: string) =>
@@ -201,11 +229,31 @@ export const peek = new Command("peek")
         }));
       }
 
-      const calleeList = graph.callees.map((c) => ({
+      // Re-anchor chunk-level caller rows to actual call sites and dedupe —
+      // getCallers() returns one row per chunk, which multiplies callers for
+      // classes split across many chunks (verified: 3 real call sites → 66).
+      const resolvedCallers = resolveCallSites(callerList, symbol).map((c) => ({
         symbol: c.symbol,
         file: c.file,
-        line: c.line,
+        line: c.snippetLine ?? c.line,
       }));
+
+      // Builtins listed as "(not indexed)" callees (trunc, now, filter, …)
+      // are noise; project symbols always resolve so they're unaffected.
+      // Dedupe by symbol — repeated references arrive once per chunk.
+      const seenCallees = new Set<string>();
+      const calleeList = graph.callees
+        .filter((c) => c.file || !isBuiltinCallee(c.symbol))
+        .filter((c) => {
+          if (seenCallees.has(c.symbol)) return false;
+          seenCallees.add(c.symbol);
+          return true;
+        })
+        .map((c) => ({
+          symbol: c.symbol,
+          file: c.file,
+          line: c.line,
+        }));
 
       if (opts.agent) {
         // Compact TSV output
@@ -213,18 +261,38 @@ export const peek = new Command("peek")
         console.log(
           `${center.symbol}\t${rel(center.file)}:${center.line + 1}\t${center.role}\t${exportedStr}`,
         );
-        // Signature (first line only)
-        const { signature } = extractSignature(center.file, startLine, endLine);
-        const firstLine = signature.split("\n")[0].trim();
-        console.log(`sig: ${firstLine}`);
+        if (otherDefs.length > 1) {
+          const others = otherDefs
+            .filter((d) => d.path !== center.file)
+            .slice(0, 4)
+            .map((d) => `${rel(d.path)}:${d.startLine + 1}`);
+          if (others.length > 0) {
+            console.log(
+              `also-defined: ${others.join(", ")} — showing the first; pin with --in <subpath>`,
+            );
+          }
+        }
+        // Signature — all lines up to the opening brace, collapsed to one
+        // line so parameters survive (first-line-only loses them).
+        const { signatureOnly } = extractSignature(
+          center.file,
+          startLine,
+          endLine,
+        );
+        const sigOnly = signatureOnly
+          .split("\n")
+          .map((l) => l.trim())
+          .join(" ")
+          .replace(/\s+/g, " ");
+        console.log(`sig: ${sigOnly}`);
         // Callers
-        for (const c of callerList.slice(0, MAX_CALLERS)) {
+        for (const c of resolvedCallers.slice(0, MAX_CALLERS)) {
           console.log(
             `<- ${c.symbol}\t${c.file ? `${rel(c.file)}:${c.line + 1}` : "(not indexed)"}`,
           );
         }
-        if (callerList.length > MAX_CALLERS) {
-          console.log(`<- ... ${callerList.length - MAX_CALLERS} more`);
+        if (resolvedCallers.length > MAX_CALLERS) {
+          console.log(`<- ... ${resolvedCallers.length - MAX_CALLERS} more`);
         }
         // Callees
         for (const c of calleeList.slice(0, MAX_CALLEES)) {
@@ -257,6 +325,19 @@ export const peek = new Command("peek")
         console.log(
           `${style.bold(`peek: ${center.symbol}`)}  ${style.dim(`${rel(center.file)}:${center.line + 1}`)}  ${style.dim(`[${center.role}${exportedStr}]`)}`,
         );
+        if (otherDefs.length > 1) {
+          const others = otherDefs
+            .filter((d) => d.path !== center.file)
+            .slice(0, 4)
+            .map((d) => `${rel(d.path)}:${d.startLine + 1}`);
+          if (others.length > 0) {
+            console.log(
+              style.dim(
+                `  also defined in: ${others.join(", ")} — showing the first; pin with --in <subpath>`,
+              ),
+            );
+          }
+        }
         console.log();
 
         // Signature with collapsed body
@@ -267,10 +348,10 @@ export const peek = new Command("peek")
         console.log();
 
         // Callers
-        if (callerList.length > 0) {
-          const shown = callerList.slice(0, MAX_CALLERS);
+        if (resolvedCallers.length > 0) {
+          const shown = resolvedCallers.slice(0, MAX_CALLERS);
           console.log(
-            style.bold(`callers (${callerList.length}):`),
+            style.bold(`callers (${resolvedCallers.length}):`),
           );
           for (const c of shown) {
             if (c.file) {
@@ -283,9 +364,9 @@ export const peek = new Command("peek")
               );
             }
           }
-          if (callerList.length > MAX_CALLERS) {
+          if (resolvedCallers.length > MAX_CALLERS) {
             console.log(
-              style.dim(`  ... and ${callerList.length - MAX_CALLERS} more`),
+              style.dim(`  ... and ${resolvedCallers.length - MAX_CALLERS} more`),
             );
           }
         } else {

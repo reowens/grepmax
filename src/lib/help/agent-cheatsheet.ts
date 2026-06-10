@@ -37,6 +37,10 @@ Survey:
 
 Scope flags: --root <name|path>, --in <subpath>, --exclude <subpath>.
 Roles in results: [DEFI] [ORCH] [IMPL] [DOCS].
+Notation: s=/d= score/distance (higher s / lower d = better) · C:n complexity ·
+  <- caller / -> callee · dep:/rev: outbound/inbound file deps (count = shared symbols) ·
+  test hops: direct = calls it, N-hop = N calls away, via-import = imports but call unseen ·
+  (not indexed) = external/builtin, no definition in the index.
 Recovery: "not added yet" → gmax add; stale → gmax index; broken → gmax doctor --fix.`;
 
 /** Full SessionStart context = prefix + cheatsheet. */

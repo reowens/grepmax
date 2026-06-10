@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Command } from "commander";
-import { DISK_CRITICAL_BYTES, DISK_LOW_BYTES, MODEL_IDS, MODEL_TIERS, PATHS } from "../config";
+import { CONFIG, DISK_CRITICAL_BYTES, DISK_LOW_BYTES, MODEL_IDS, MODEL_TIERS, PATHS } from "../config";
 import { readGlobalConfig } from "../lib/index/index-config";
 import { gracefulExit } from "../lib/utils/exit";
 import { isProcessAlive, parseLock, removeLock } from "../lib/utils/lock";
@@ -212,6 +212,12 @@ export const doctor = new Command("doctor")
         diskLevel = availBytes < DISK_CRITICAL_BYTES ? "CRITICAL" : availBytes < DISK_LOW_BYTES ? "LOW" : "ok";
       } catch {}
 
+      const staleChunkerProjects = projects.filter(
+        (p) =>
+          p.status === "indexed" &&
+          (p.chunkerVersion ?? 1) < CONFIG.CHUNKER_VERSION,
+      );
+
       if (opts.agent) {
         const fields = [
           "index_health",
@@ -226,8 +232,16 @@ export const doctor = new Command("doctor")
           `lock=${lockStatus.split(" ")[0]}`,
           `daemon=${daemonUp ? "running" : "stopped"}`,
           `orphaned=${orphanedProjects.length}`,
+          `stale_chunker=${staleChunkerProjects.length}`,
         ];
         console.log(fields.join("\t"));
+        if (staleChunkerProjects.length > 0) {
+          console.log(
+            `stale_chunker_fix: run 'gmax index' in: ${staleChunkerProjects
+              .map((p) => p.name || path.basename(p.root))
+              .join(", ")}`,
+          );
+        }
       } else {
         console.log("\nIndex Health\n");
 
@@ -284,6 +298,18 @@ export const doctor = new Command("doctor")
         console.log(
           `${daemonUp ? "ok" : "INFO"}  Daemon: ${daemonUp ? "running" : "not running"}`,
         );
+
+        // Index built by an older chunker — graph metadata fixes need a reindex
+        if (staleChunkerProjects.length > 0) {
+          console.log(
+            `WARN  Stale chunker: ${staleChunkerProjects.length} project(s) indexed before chunker v${CONFIG.CHUNKER_VERSION} — graph commands (peek/impact/trace) may overcount callers`,
+          );
+          for (const p of staleChunkerProjects) {
+            console.log(
+              `       - ${p.name || path.basename(p.root)}: run 'gmax index' in ${p.root}`,
+            );
+          }
+        }
 
         // Projects
         if (orphanedProjects.length > 0) {

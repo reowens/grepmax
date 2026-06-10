@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { isBuiltinCallee } from "../lib/graph/callsites";
 import { toArr } from "../lib/utils/arrow";
 import { gracefulExit } from "../lib/utils/exit";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
@@ -27,6 +28,10 @@ interface GodNode {
   line: number;
   inboundFiles: number;
   totalRefs: number;
+  /** Files defining this name. >1 means the attribution (file:line) is a
+   * first-definition-wins guess and inbound counts merge all same-name
+   * symbols. */
+  defFiles: number;
 }
 
 interface HubFile {
@@ -81,6 +86,9 @@ export function computeAudit(
 ): AuditResult {
   // First definition of a symbol wins (matches GraphBuilder semantics).
   const defs = new Map<string, DefInfo>();
+  // Distinct files defining each name — name-based edges can't tell same-name
+  // symbols apart, so multi-file definitions get flagged in the output.
+  const defFileCounts = new Map<string, Set<string>>();
   // Distinct files that reference a symbol (cross-file inbound edges).
   const inboundFiles = new Map<string, Set<string>>();
   const inboundTotal = new Map<string, number>();
@@ -101,6 +109,8 @@ export function computeAudit(
       if (!defs.has(s)) {
         defs.set(s, { file, line, exported, complexity: 0 });
       }
+      if (!defFileCounts.has(s)) defFileCounts.set(s, new Set());
+      defFileCounts.get(s)!.add(file);
       if (!fileDefs.has(file)) fileDefs.set(file, new Set());
       fileDefs.get(file)!.add(s);
     }
@@ -117,6 +127,9 @@ export function computeAudit(
   const godNodes: GodNode[] = [];
   for (const [symbol, info] of defs) {
     if (symbol.length < MIN_GOD_NAME_LEN) continue;
+    // Builtin method names (get, set, push, …) leak in via prototype/member
+    // definitions and their inbound counts are meaningless name collisions.
+    if (isBuiltinCallee(symbol)) continue;
     const refFiles = inboundFiles.get(symbol);
     if (!refFiles) continue;
     let external = 0;
@@ -128,6 +141,7 @@ export function computeAudit(
       line: info.line,
       inboundFiles: external,
       totalRefs: inboundTotal.get(symbol) || 0,
+      defFiles: defFileCounts.get(symbol)?.size ?? 1,
     });
   }
   godNodes.sort(
@@ -190,8 +204,12 @@ function formatHuman(r: AuditResult): string {
     out.push(style.dim("  none"));
   } else {
     for (const g of r.godNodes) {
+      const ambiguous =
+        g.defFiles > 1
+          ? style.dim(`  ~defined in ${g.defFiles} files, location is a guess`)
+          : "";
       out.push(
-        `  ${style.cyan(g.symbol.padEnd(28))} ${style.dim(`${g.inboundFiles} files`)}, ${g.totalRefs} refs  ${style.dim(`${g.file}:${g.line + 1}`)}`,
+        `  ${style.cyan(g.symbol.padEnd(28))} ${style.dim(`${g.inboundFiles} files`)}, ${g.totalRefs} refs  ${style.dim(`${g.file}:${g.line + 1}`)}${ambiguous}`,
       );
     }
   }
@@ -245,8 +263,9 @@ function formatAgent(r: AuditResult): string {
   const lines: string[] = [];
   lines.push(`scanned\t${r.scannedChunks}\t${r.scannedFiles}`);
   for (const g of r.godNodes) {
+    const ambiguous = g.defFiles > 1 ? `\tdefs=${g.defFiles}` : "";
     lines.push(
-      `god\t${g.symbol}\t${g.file}:${g.line + 1}\t${g.inboundFiles}\t${g.totalRefs}`,
+      `god\t${g.symbol}\t${g.file}:${g.line + 1}\t${g.inboundFiles}\t${g.totalRefs}${ambiguous}`,
     );
   }
   for (const h of r.hubFiles) {

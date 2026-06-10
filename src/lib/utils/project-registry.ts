@@ -19,6 +19,11 @@ export interface ProjectEntry {
   lastIndexed: string;
   chunkCount?: number;
   status?: "pending" | "indexed" | "error";
+  /** CONFIG.CHUNKER_VERSION at the time of the last full index. Stamped only
+   * by full-sync completion paths (not incremental batches) — a mismatch with
+   * the current constant means the index needs `gmax index` to pick up
+   * chunk-metadata fixes. */
+  chunkerVersion?: number;
 }
 
 const REGISTRY_PATH = path.join(PATHS.globalRoot, "projects.json");

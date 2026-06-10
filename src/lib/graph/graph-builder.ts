@@ -1,6 +1,7 @@
 import type { VectorRecord } from "../store/types";
 import type { VectorDB } from "../store/vector-db";
 import { escapeSqlString } from "../utils/filter-builder";
+import { withQueryTimeout } from "../utils/query-timeout";
 import {
   type FileSubgraph,
   type NeighborHit,
@@ -177,16 +178,21 @@ export class GraphBuilder {
   async getImporters(symbol: string): Promise<string[]> {
     const table = await this.db.ensureTable();
     const escaped = escapeSqlString(symbol);
-    const rows = await table
-      .query()
-      .select(["path"])
-      .where(this.scopeWhere(`content LIKE '%import%${escaped}%'`))
-      .limit(100)
-      .toArray();
+    // No .limit() here: LIKE + limit deadlocks in @lancedb 0.27.x when more
+    // rows match than the limit (verified). Unlimited scan is fast; cap in JS.
+    const rows = await withQueryTimeout(
+      table
+        .query()
+        .select(["path"])
+        .where(this.scopeWhere(`content LIKE '%import%${escaped}%'`))
+        .toArray(),
+      `content LIKE %import%${symbol}% (importers)`,
+    );
 
     const files = new Set<string>();
     for (const row of rows) {
       files.add(String((row as any).path || ""));
+      if (files.size >= 100) break;
     }
     return Array.from(files);
   }

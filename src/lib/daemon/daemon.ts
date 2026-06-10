@@ -4,7 +4,7 @@ import * as path from "node:path";
 import * as watcher from "@parcel/watcher";
 import type { AsyncSubscription } from "@parcel/watcher";
 import lockfile from "proper-lockfile";
-import { PATHS } from "../../config";
+import { CONFIG, PATHS } from "../../config";
 import { ProjectBatchProcessor } from "../index/batch-processor";
 import { initialSync, generateSummaries } from "../index/syncer";
 import { WATCHER_IGNORE_GLOBS } from "../index/watcher";
@@ -733,6 +733,7 @@ export class Daemon {
             lastIndexed: new Date().toISOString(),
             chunkCount: result.indexed,
             status: "indexed",
+            chunkerVersion: CONFIG.CHUNKER_VERSION,
           });
         }
 

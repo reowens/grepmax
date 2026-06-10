@@ -1,5 +1,6 @@
 import type { VectorDB } from "../store/vector-db";
 import { escapeSqlString } from "../utils/filter-builder";
+import { withQueryTimeout } from "../utils/query-timeout";
 import { GraphBuilder } from "./graph-builder";
 
 const TEST_DIR_RE = /(^|\/)(__tests__|tests?|specs?|benchmark)(\/|$)/i;
@@ -105,7 +106,11 @@ async function expandFileSymbols(
       expanded.add(s);
     }
   }
-  return [...expanded];
+  // Cap the fan-out: a large class file can define 50+ symbols, and every
+  // expanded symbol costs one caller-scan (and more in the fallback). The
+  // original target stays first; co-defined symbols are best-effort extras.
+  const MAX_EXPANDED = 15;
+  return [...expanded].slice(0, MAX_EXPANDED);
 }
 
 /**
@@ -141,6 +146,7 @@ export async function findTests(
   if (testHits.size === 0) {
     const importFiles = await findImportFallbackTests(
       expanded,
+      symbols,
       vectorDb,
       projectRoot,
       excludePrefixes,
@@ -159,7 +165,8 @@ export async function findTests(
 }
 
 async function findImportFallbackTests(
-  symbols: string[],
+  expandedSymbols: string[],
+  originalSymbols: string[],
   vectorDb: VectorDB,
   projectRoot: string,
   excludePrefixes?: string[],
@@ -167,9 +174,10 @@ async function findImportFallbackTests(
   const files = new Set<string>();
 
   // Signal 1: referenced_symbols match (precise; works when the chunker
-  // captured call references in test bodies).
+  // captured call references in test bodies). Uses the expanded set so tests
+  // that call a method of the target class still match.
   const dependents = await findDependents(
-    symbols,
+    expandedSymbols,
     vectorDb,
     projectRoot,
     undefined,
@@ -189,14 +197,21 @@ async function findImportFallbackTests(
     const exNorm = ex.endsWith("/") ? ex : `${ex}/`;
     pathScope += ` AND path NOT LIKE '${escapeSqlString(exNorm)}%'`;
   }
-  for (const sym of symbols) {
-    const rows = await table
-      .query()
-      .select(["path"])
-      .where(`content LIKE '%${escapeSqlString(sym)}%' AND ${pathScope}`)
-      .limit(100)
-      .toArray();
-    for (const row of rows) {
+  // Textual matching runs on the ORIGINAL targets only: matching co-defined
+  // file symbols (helpers like `log`) textually drags in every test file
+  // that mentions them, drowning the answer in false positives.
+  for (const sym of originalSymbols) {
+    // No .limit() here: LIKE + limit deadlocks in @lancedb 0.27.x when more
+    // rows match than the limit (verified). Unlimited scan is fast; cap in JS.
+    const rows = await withQueryTimeout(
+      table
+        .query()
+        .select(["path"])
+        .where(`content LIKE '%${escapeSqlString(sym)}%' AND ${pathScope}`)
+        .toArray(),
+      `content LIKE %${sym}% (test fallback)`,
+    );
+    for (const row of rows.slice(0, 500)) {
       const p = String((row as any).path || "");
       if (isTestPath(p)) files.add(p);
     }
@@ -258,13 +273,16 @@ export async function findDependents(
   const counts = new Map<string, number>();
 
   for (const sym of symbols) {
+    // 200, not 20: with per-chunk rows a popular symbol easily exceeds 20
+    // chunks, and truncation here silently drops whole dependent files.
+    // (array_contains + limit does not hit the LIKE+limit native hang.)
     const rows = await table
       .query()
       .select(["path"])
       .where(
         `array_contains(referenced_symbols, '${escapeSqlString(sym)}') AND ${pathScope}`,
       )
-      .limit(20)
+      .limit(200)
       .toArray();
 
     for (const row of rows) {

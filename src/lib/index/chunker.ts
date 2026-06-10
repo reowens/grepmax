@@ -914,6 +914,40 @@ export class TreeSitterChunker {
     return { chunks: combined, metadata };
   }
 
+  /**
+   * Restrict a sub-chunk's symbol lists to names that actually occur in its
+   * content slice. `{...chunk}` would otherwise copy the parent's full
+   * definedSymbols/referencedSymbols into every sub-chunk, fabricating graph
+   * edges: each sub-chunk of a large class "defines" the class and
+   * "references" everything the class references, so caller/dependent queries
+   * return one phantom hit per sub-chunk (verified: 3 real call sites → 66).
+   */
+  private static scopeSymbolsToContent(sub: Chunk): Chunk {
+    const occurs = (s: string): boolean => {
+      if (!s) return false;
+      if (/^\w+$/.test(s)) {
+        return new RegExp(`\\b${s}\\b`).test(sub.content);
+      }
+      // Names with non-word chars ($foo, a.b) — substring match is the best
+      // we can do without a parser; over-keeping is safer than dropping edges.
+      return sub.content.includes(s);
+    };
+    if (sub.definedSymbols) {
+      const original = sub.definedSymbols;
+      sub.definedSymbols = original.filter(occurs);
+      // A mid-body slice defines nothing itself — keep the enclosing
+      // definition's name as parentSymbol so graph consumers can attribute
+      // the chunk ("Daemon" beats "unknown").
+      if (sub.definedSymbols.length === 0 && !sub.parentSymbol && original[0]) {
+        sub.parentSymbol = original[0];
+      }
+    }
+    if (sub.referencedSymbols) {
+      sub.referencedSymbols = sub.referencedSymbols.filter(occurs);
+    }
+    return sub;
+  }
+
   private splitIfTooBig(chunk: Chunk): Chunk[] {
     const charCount = chunk.content.length;
     const lines = chunk.content.split("\n");
@@ -939,12 +973,14 @@ export class TreeSitterChunker {
       const subLines = lines.slice(i, end);
       if (subLines.length < 3 && i > 0) continue;
 
-      subChunks.push({
-        ...chunk,
-        content: subLines.join("\n"),
-        startLine: chunk.startLine + i,
-        endLine: chunk.startLine + end - 1,
-      });
+      subChunks.push(
+        TreeSitterChunker.scopeSymbolsToContent({
+          ...chunk,
+          content: subLines.join("\n"),
+          startLine: chunk.startLine + i,
+          endLine: chunk.startLine + end - 1,
+        }),
+      );
     }
 
     return subChunks.flatMap((sc) =>
@@ -964,12 +1000,14 @@ export class TreeSitterChunker {
       const prefixLines = chunk.content.slice(0, i).split("\n").length - 1;
       const subLineCount = sub.split("\n").length;
 
-      res.push({
-        ...chunk,
-        content: sub,
-        startLine: chunk.startLine + prefixLines,
-        endLine: chunk.startLine + prefixLines + subLineCount - 1,
-      });
+      res.push(
+        TreeSitterChunker.scopeSymbolsToContent({
+          ...chunk,
+          content: sub,
+          startLine: chunk.startLine + prefixLines,
+          endLine: chunk.startLine + prefixLines + subLineCount - 1,
+        }),
+      );
     }
 
     return res;

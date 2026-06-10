@@ -113,7 +113,8 @@ export const impact = new Command("impact")
           console.log(`dep: ${rel(d.file)}\t${d.sharedSymbols}`);
         }
         for (const t of tests) {
-          const hopLabel = t.hops === 0 ? "direct" : `${t.hops}-hop`;
+          const hopLabel =
+            t.hops === -1 ? "via-import" : t.hops === 0 ? "direct" : `${t.hops}-hop`;
           console.log(`test: ${rel(t.file)}:${t.line + 1}\t${t.symbol}\t${hopLabel}`);
         }
         if (!nonTestDeps.length && !tests.length) {
@@ -140,7 +141,11 @@ export const impact = new Command("impact")
             console.log(`Affected tests (${tests.length}):`);
             for (const t of tests) {
               const hopLabel =
-                t.hops === 0 ? "calls directly" : `${t.hops} hop${t.hops > 1 ? "s" : ""} away`;
+                t.hops === -1
+                  ? "via import"
+                  : t.hops === 0
+                    ? "calls directly"
+                    : `${t.hops} hop${t.hops > 1 ? "s" : ""} away`;
               console.log(`  ${rel(t.file)}:${t.line + 1}  ${t.symbol}  (${hopLabel})`);
             }
           } else {
