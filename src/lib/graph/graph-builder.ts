@@ -3,11 +3,11 @@ import type { VectorDB } from "../store/vector-db";
 import { escapeSqlString } from "../utils/filter-builder";
 import { withQueryTimeout } from "../utils/query-timeout";
 import {
-  type FileSubgraph,
-  type NeighborHit,
   bfsNeighbors,
   buildFileSubgraph,
+  type FileSubgraph,
   findPath,
+  type NeighborHit,
 } from "./graph-traversal";
 
 export type EdgeDirection = "callers" | "callees";
@@ -37,7 +37,11 @@ export class GraphBuilder {
     excludePrefixes?: string[],
   ) {
     // Normalize to ensure trailing slash for LIKE queries
-    this.pathPrefix = pathPrefix ? (pathPrefix.endsWith("/") ? pathPrefix : `${pathPrefix}/`) : undefined;
+    this.pathPrefix = pathPrefix
+      ? pathPrefix.endsWith("/")
+        ? pathPrefix
+        : `${pathPrefix}/`
+      : undefined;
     this.excludePrefixes = (excludePrefixes ?? []).map((p) =>
       p.endsWith("/") ? p : `${p}/`,
     );
@@ -61,14 +65,26 @@ export class GraphBuilder {
     const table = await this.db.ensureTable();
     const escaped = escapeSqlString(symbol);
 
-    // Find chunks where referenced_symbols contains the symbol
+    // Find chunks that reference the symbol from a call position
+    // (referenced_symbols) OR a type position (type_referenced_symbols). The
+    // two are stored separately so type edges never inflate the call-edge count
+    // used for ranking; navigation unions them.
     const rows = await table
       .query()
       .select([
-        "path", "start_line", "defined_symbols", "referenced_symbols",
-        "role", "parent_symbol", "complexity",
+        "path",
+        "start_line",
+        "defined_symbols",
+        "referenced_symbols",
+        "role",
+        "parent_symbol",
+        "complexity",
       ])
-      .where(this.scopeWhere(`array_contains(referenced_symbols, '${escaped}')`))
+      .where(
+        this.scopeWhere(
+          `(array_contains(referenced_symbols, '${escaped}') OR array_contains(type_referenced_symbols, '${escaped}'))`,
+        ),
+      )
       .limit(100)
       .toArray();
 
@@ -114,8 +130,13 @@ export class GraphBuilder {
     const centerRows = await table
       .query()
       .select([
-        "path", "start_line", "defined_symbols", "referenced_symbols",
-        "role", "parent_symbol", "complexity",
+        "path",
+        "start_line",
+        "defined_symbols",
+        "referenced_symbols",
+        "role",
+        "parent_symbol",
+        "complexity",
       ])
       .where(this.scopeWhere(`array_contains(defined_symbols, '${escaped}')`))
       .limit(1)
@@ -154,11 +175,7 @@ export class GraphBuilder {
         .toArray();
       if (rows.length > 0) {
         calleeNodes.push(
-          this.mapRowToNode(
-            rows[0] as unknown as VectorRecord,
-            name,
-            "center",
-          ),
+          this.mapRowToNode(rows[0] as unknown as VectorRecord, name, "center"),
         );
       } else {
         calleeNodes.push({
@@ -227,7 +244,12 @@ export class GraphBuilder {
       visited,
     );
 
-    return { center: graph.center, callerTree, callees: graph.callees, importers };
+    return {
+      center: graph.center,
+      callerTree,
+      callees: graph.callees,
+      importers,
+    };
   }
 
   private static readonly MAX_VISITED = 500;
@@ -282,7 +304,9 @@ export class GraphBuilder {
     return out;
   }
 
-  private neighborFn(direction: EdgeDirection): (s: string) => Promise<string[]> {
+  private neighborFn(
+    direction: EdgeDirection,
+  ): (s: string) => Promise<string[]> {
     return direction === "callers"
       ? (s) => this.callersOf(s)
       : (s) => this.calleesOf(s);
@@ -298,7 +322,11 @@ export class GraphBuilder {
     direction: EdgeDirection,
     maxHops: number,
   ): Promise<Array<NeighborHit & { file: string; line: number }>> {
-    const hits = await bfsNeighbors(symbol, this.neighborFn(direction), maxHops);
+    const hits = await bfsNeighbors(
+      symbol,
+      this.neighborFn(direction),
+      maxHops,
+    );
     const out: Array<NeighborHit & { file: string; line: number }> = [];
     for (const h of hits) {
       const loc = await this.resolveLocation(h.symbol);

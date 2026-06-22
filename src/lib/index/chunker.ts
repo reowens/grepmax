@@ -53,6 +53,10 @@ export interface Chunk {
   isExported?: boolean;
   definedSymbols?: string[];
   referencedSymbols?: string[];
+  /** Capitalized symbols referenced in type position (`: T`, `<T>`, `as T`),
+   * kept separate from referencedSymbols so they never inflate the call-edge
+   * count used for role/search ranking. */
+  typeReferencedSymbols?: string[];
   role?: string;
   parentSymbol?: string;
 }
@@ -428,14 +432,23 @@ export class TreeSitterChunker {
       if (t !== "lexical_declaration" && t !== "variable_declaration")
         return false;
       const parentType = node.parent?.type || "";
-      const allowedParents = ["program", "module", "source_file", "class_body", "export_statement"];
+      const allowedParents = [
+        "program",
+        "module",
+        "source_file",
+        "class_body",
+        "export_statement",
+      ];
       if (parentType && !allowedParents.includes(parentType)) return false;
       // Exported declarations are part of the API surface, so always index
       // them regardless of RHS shape. Without this, files whose only export
       // is `export const typeDefs = gql\`...\`` (template literals, object
       // literals, or non-PascalCase consts) had no defined_symbols entry
       // and peek/extract returned "Symbol not found".
-      if (parentType === "export_statement" || parentType === "export_declaration") {
+      if (
+        parentType === "export_statement" ||
+        parentType === "export_declaration"
+      ) {
         return true;
       }
       const text = node.text || "";
@@ -634,6 +647,15 @@ export class TreeSitterChunker {
             referencedSymbols.push(name);
           }
         };
+        // Type-position references go in a SEPARATE list so they never inflate
+        // referencedSymbols.length (which drives role classification below and
+        // the search structural boost). Navigation consumers union the two.
+        const typeReferencedSymbols: string[] = [];
+        const addTypeRef = (n: string | null | undefined) => {
+          if (n && !typeReferencedSymbols.includes(n)) {
+            typeReferencedSymbols.push(n);
+          }
+        };
         // Leaf identifier node types across grammars (a bare name with no
         // named children — `ErrorCodes`, not `a.ErrorCodes`).
         const LEAF_ID_TYPES = new Set([
@@ -826,10 +848,39 @@ export class TreeSitterChunker {
               addRef(head.text);
             }
           }
+
+          // Shape 4 — type-position reference (TS/TSX): `: T`, `<T>`, `T[]`,
+          // `as T`, `interface X extends T`, type aliases. TS uses a distinct
+          // `type_identifier` node for type names (primitives are
+          // `predefined_type`, so they never reach here). Capture Capitalized
+          // ones, skipping the chunk's own name and any locally-declared type
+          // parameter (`<T>` and its uses `value: T`). Constraints
+          // (`T extends Foo`) still yield `Foo`. Type list, never referencedSymbols.
+          if (
+            n.type === "type_identifier" &&
+            /^[A-Z]/.test(n.text) &&
+            n.text !== name &&
+            !declaredTypeParams.has(n.text)
+          ) {
+            addTypeRef(n.text);
+          }
+
           for (const child of n.namedChildren ?? []) {
             extractRefs(child);
           }
         };
+        // Collect locally-declared type-parameter names (`<T, K>`) so their
+        // *uses* (`value: T`) are excluded from type refs, not just their
+        // declarations. Chunk-scoped, which matches single-definition chunks.
+        const declaredTypeParams = new Set<string>();
+        const collectTypeParams = (n: TreeSitterNode) => {
+          if (n.type === "type_parameter") {
+            const nm = firstNamed(n);
+            if (nm?.type === "type_identifier") declaredTypeParams.add(nm.text);
+          }
+          for (const child of n.namedChildren ?? []) collectTypeParams(child);
+        };
+        collectTypeParams(effective);
         extractRefs(effective);
 
         // Classify role
@@ -850,6 +901,7 @@ export class TreeSitterChunker {
           isExported,
           definedSymbols,
           referencedSymbols,
+          typeReferencedSymbols,
           role,
           parentSymbol:
             stack.length > 1
@@ -944,6 +996,9 @@ export class TreeSitterChunker {
     }
     if (sub.referencedSymbols) {
       sub.referencedSymbols = sub.referencedSymbols.filter(occurs);
+    }
+    if (sub.typeReferencedSymbols) {
+      sub.typeReferencedSymbols = sub.typeReferencedSymbols.filter(occurs);
     }
     return sub;
   }

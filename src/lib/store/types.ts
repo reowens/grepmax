@@ -21,6 +21,11 @@ export type PreparedChunk = {
   is_exported?: boolean;
   defined_symbols?: string[];
   referenced_symbols?: string[];
+  /** Capitalized symbols referenced in type position (`: T`, `<T>`, `as T`).
+   * Kept separate from referenced_symbols so it never inflates the call-edge
+   * count that feeds search ranking / role classification; navigation consumers
+   * (getCallers, dead, impact, audit) union the two. */
+  type_referenced_symbols?: string[];
   imports?: string[];
   exports?: string[];
   role?: string;
@@ -62,6 +67,7 @@ export interface ChunkType extends MetadataRecord {
   is_exported?: boolean;
   defined_symbols?: string[];
   referenced_symbols?: string[];
+  type_referenced_symbols?: string[];
   imports?: string[];
   exports?: string[];
   role?: string;

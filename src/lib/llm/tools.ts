@@ -34,10 +34,22 @@ export const TOOLS: ChatCompletionTool[] = [
       parameters: {
         type: "object",
         properties: {
-          query: { type: "string", description: "Natural language search query" },
-          max_count: { type: "integer", description: "Max results (default 5)" },
-          lang: { type: "string", description: "Filter by extension (e.g. 'ts', 'py')" },
-          file: { type: "string", description: "Filter to files matching this name" },
+          query: {
+            type: "string",
+            description: "Natural language search query",
+          },
+          max_count: {
+            type: "integer",
+            description: "Max results (default 5)",
+          },
+          lang: {
+            type: "string",
+            description: "Filter by extension (e.g. 'ts', 'py')",
+          },
+          file: {
+            type: "string",
+            description: "Filter to files matching this name",
+          },
         },
         required: ["query"],
       },
@@ -53,7 +65,10 @@ export const TOOLS: ChatCompletionTool[] = [
         type: "object",
         properties: {
           symbol: { type: "string", description: "Symbol name to trace" },
-          depth: { type: "integer", description: "Caller depth 1-3 (default 1)" },
+          depth: {
+            type: "integer",
+            description: "Caller depth 1-3 (default 1)",
+          },
         },
         required: ["symbol"],
       },
@@ -63,13 +78,15 @@ export const TOOLS: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "peek",
-      description:
-        "Compact symbol overview — signature, callers, and callees.",
+      description: "Compact symbol overview — signature, callers, and callees.",
       parameters: {
         type: "object",
         properties: {
           symbol: { type: "string", description: "Symbol name to peek at" },
-          depth: { type: "integer", description: "Caller depth 1-3 (default 1)" },
+          depth: {
+            type: "integer",
+            description: "Caller depth 1-3 (default 1)",
+          },
         },
         required: ["symbol"],
       },
@@ -85,7 +102,10 @@ export const TOOLS: ChatCompletionTool[] = [
         type: "object",
         properties: {
           target: { type: "string", description: "Symbol name or file path" },
-          depth: { type: "integer", description: "Traversal depth 1-3 (default 1)" },
+          depth: {
+            type: "integer",
+            description: "Traversal depth 1-3 (default 1)",
+          },
         },
         required: ["target"],
       },
@@ -95,12 +115,14 @@ export const TOOLS: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "related",
-      description:
-        "Find files related by shared symbol references.",
+      description: "Find files related by shared symbol references.",
       parameters: {
         type: "object",
         properties: {
-          file: { type: "string", description: "File path relative to project root" },
+          file: {
+            type: "string",
+            description: "File path relative to project root",
+          },
         },
         required: ["file"],
       },
@@ -145,16 +167,18 @@ async function executeSearch(
   if (!resp.data || resp.data.length === 0) return "(no results)";
 
   const lines = resp.data.map((r: any) => {
-    const absPath = String(
-      r.metadata?.path ?? r.path ?? "",
-    );
+    const absPath = String(r.metadata?.path ?? r.path ?? "");
     const rp = rel(absPath, ctx.projectRoot);
     const defs = toArr(r.definedSymbols ?? r.defined_symbols);
     const sym = defs[0] || "(anonymous)";
-    const role = String(r.role ?? "IMPL").slice(0, 4).toUpperCase();
+    const role = String(r.role ?? "IMPL")
+      .slice(0, 4)
+      .toUpperCase();
     const startLine =
       r.startLine ?? r.generated_metadata?.start_line ?? r.start_line ?? 0;
-    const hint = String(r.text ?? r.content ?? "").split("\n")[0].slice(0, 100);
+    const hint = String(r.text ?? r.content ?? "")
+      .split("\n")[0]
+      .slice(0, 100);
     return `${rp}:${startLine} ${sym} [${role}] — ${hint}`;
   });
 
@@ -225,9 +249,16 @@ async function executePeek(
     .limit(1)
     .toArray();
 
-  const exported = metaRows.length > 0 && Boolean((metaRows[0] as any).is_exported);
-  const startLine = metaRows.length > 0 ? Number((metaRows[0] as any).start_line || 0) : center.line;
-  const endLine = metaRows.length > 0 ? Number((metaRows[0] as any).end_line || 0) : center.line;
+  const exported =
+    metaRows.length > 0 && Boolean((metaRows[0] as any).is_exported);
+  const startLine =
+    metaRows.length > 0
+      ? Number((metaRows[0] as any).start_line || 0)
+      : center.line;
+  const endLine =
+    metaRows.length > 0
+      ? Number((metaRows[0] as any).end_line || 0)
+      : center.line;
 
   // Extract signature
   let sig = "(source not available)";
@@ -302,7 +333,8 @@ async function executeImpact(
     lines.push(`dep: ${rel(d.file, ctx.projectRoot)}\t${d.sharedSymbols}`);
   }
   for (const t of tests) {
-    const hopLabel = t.hops === 0 ? "direct" : `${t.hops} hop${t.hops > 1 ? "s" : ""}`;
+    const hopLabel =
+      t.hops === 0 ? "direct" : `${t.hops} hop${t.hops > 1 ? "s" : ""}`;
     lines.push(
       `test: ${rel(t.file, ctx.projectRoot)}:${t.line}\t${t.symbol}\t${hopLabel}`,
     );
@@ -324,7 +356,11 @@ async function executeRelated(
   // Get file's symbols
   const fileChunks = await table
     .query()
-    .select(["defined_symbols", "referenced_symbols"])
+    .select([
+      "defined_symbols",
+      "referenced_symbols",
+      "type_referenced_symbols",
+    ])
     .where(`path = '${escapeSqlString(absPath)}'`)
     .toArray();
 
@@ -334,7 +370,10 @@ async function executeRelated(
   const referencedHere = new Set<string>();
   for (const chunk of fileChunks) {
     for (const s of toArr((chunk as any).defined_symbols)) definedHere.add(s);
-    for (const s of toArr((chunk as any).referenced_symbols)) referencedHere.add(s);
+    for (const s of toArr((chunk as any).referenced_symbols))
+      referencedHere.add(s);
+    for (const s of toArr((chunk as any).type_referenced_symbols))
+      referencedHere.add(s);
   }
 
   // Dependencies: files that DEFINE symbols this file REFERENCES
@@ -360,7 +399,9 @@ async function executeRelated(
     const rows = await table
       .query()
       .select(["path"])
-      .where(`array_contains(referenced_symbols, '${escapeSqlString(sym)}')`)
+      .where(
+        `(array_contains(referenced_symbols, '${escapeSqlString(sym)}') OR array_contains(type_referenced_symbols, '${escapeSqlString(sym)}'))`,
+      )
       .limit(20)
       .toArray();
     for (const row of rows) {
@@ -370,8 +411,12 @@ async function executeRelated(
     }
   }
 
-  const topDeps = [...depCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
-  const topRevs = [...revCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const topDeps = [...depCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10);
+  const topRevs = [...revCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10);
 
   if (topDeps.length === 0 && topRevs.length === 0) return "(none)";
 

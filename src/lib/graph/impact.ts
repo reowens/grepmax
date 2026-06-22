@@ -10,8 +10,12 @@ const NATIVE_TEST_DIR_RE = /(^|\/)\w+Tests?(\/|$)/;
 const NATIVE_TEST_FILE_RE = /Tests?\.(swift|kt|java)$/;
 
 export function isTestPath(filePath: string): boolean {
-  return TEST_DIR_RE.test(filePath) || TEST_FILE_RE.test(filePath)
-    || NATIVE_TEST_DIR_RE.test(filePath) || NATIVE_TEST_FILE_RE.test(filePath);
+  return (
+    TEST_DIR_RE.test(filePath) ||
+    TEST_FILE_RE.test(filePath) ||
+    NATIVE_TEST_DIR_RE.test(filePath) ||
+    NATIVE_TEST_FILE_RE.test(filePath)
+  );
 }
 
 import { toArr } from "../utils/arrow";
@@ -161,7 +165,9 @@ export async function findTests(
     }
   }
 
-  return [...testHits.values()].sort((a, b) => a.hops - b.hops || a.file.localeCompare(b.file));
+  return [...testHits.values()].sort(
+    (a, b) => a.hops - b.hops || a.file.localeCompare(b.file),
+  );
 }
 
 async function findImportFallbackTests(
@@ -247,7 +253,14 @@ async function walkCallers(
 
     // Continue walking callers if within depth
     if (currentHop < maxDepth - 1) {
-      await walkCallers(caller.symbol, graphBuilder, testHits, currentHop + 1, maxDepth, visited);
+      await walkCallers(
+        caller.symbol,
+        graphBuilder,
+        testHits,
+        currentHop + 1,
+        maxDepth,
+        visited,
+      );
     }
   }
 }
@@ -280,7 +293,7 @@ export async function findDependents(
       .query()
       .select(["path"])
       .where(
-        `array_contains(referenced_symbols, '${escapeSqlString(sym)}') AND ${pathScope}`,
+        `(array_contains(referenced_symbols, '${escapeSqlString(sym)}') OR array_contains(type_referenced_symbols, '${escapeSqlString(sym)}')) AND ${pathScope}`,
       )
       .limit(200)
       .toArray();

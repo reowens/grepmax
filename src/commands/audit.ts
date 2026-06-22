@@ -1,10 +1,10 @@
 import { Command } from "commander";
 import { isBuiltinCallee } from "../lib/graph/callsites";
+import { VectorDB } from "../lib/store/vector-db";
 import { toArr } from "../lib/utils/arrow";
 import { gracefulExit } from "../lib/utils/exit";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
-import { VectorDB } from "../lib/store/vector-db";
 
 const useColors = process.stdout.isTTY && !process.env.NO_COLOR;
 const style = {
@@ -199,7 +199,9 @@ function formatHuman(r: AuditResult): string {
   );
 
   out.push("");
-  out.push(style.bold("God nodes") + style.dim(" (most depended-upon symbols)"));
+  out.push(
+    style.bold("God nodes") + style.dim(" (most depended-upon symbols)"),
+  );
   if (r.godNodes.length === 0) {
     out.push(style.dim("  none"));
   } else {
@@ -332,6 +334,7 @@ export const audit = new Command("audit")
           "start_line",
           "defined_symbols",
           "referenced_symbols",
+          "type_referenced_symbols",
           "is_exported",
         ])
         .where(buildScopeWhere(scope))
@@ -354,15 +357,20 @@ export const audit = new Command("audit")
           start_line: Number((r as any).start_line || 0),
           is_exported: Boolean((r as any).is_exported),
           defined_symbols: toArr((r as any).defined_symbols),
-          referenced_symbols: toArr((r as any).referenced_symbols),
+          // Union call-position + type-position edges so god-node ranking and
+          // dead-candidate detection see references made purely in type position.
+          referenced_symbols: [
+            ...new Set([
+              ...toArr((r as any).referenced_symbols),
+              ...toArr((r as any).type_referenced_symbols),
+            ]),
+          ],
         })),
         prefix,
         top,
       );
 
-      console.log(
-        opts.agent ? formatAgent(result) : formatHuman(result),
-      );
+      console.log(opts.agent ? formatAgent(result) : formatHuman(result));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       console.error("Audit failed:", message);

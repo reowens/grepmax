@@ -19,11 +19,11 @@ import {
   isIndexableFile,
   readFileSnapshot,
 } from "../utils/file-utils";
+import { debug as dbg, debugTimer } from "../utils/logger";
 import { maxSim } from "./colbert-math";
 import { ColbertModel, type HybridResult } from "./embeddings/colbert";
 import { GraniteModel } from "./embeddings/granite";
 import { mlxEmbed } from "./embeddings/mlx-client";
-import { debug as dbg, debugTimer } from "../utils/logger";
 
 let mlxFallbackWarned = false;
 
@@ -173,7 +173,10 @@ export class WorkerOrchestrator {
         denseBatch,
         this.vectorDimensions,
       );
-      dbg("orch", `embed batch ${i / BATCH_SIZE + 1}/${Math.ceil(texts.length / BATCH_SIZE)} (${batchTexts.length} texts) mlx=${!!mlxResult} ${(performance.now() - batchStart).toFixed(0)}ms`);
+      dbg(
+        "orch",
+        `embed batch ${i / BATCH_SIZE + 1}/${Math.ceil(texts.length / BATCH_SIZE)} (${batchTexts.length} texts) mlx=${!!mlxResult} ${(performance.now() - batchStart).toFixed(0)}ms`,
+      );
       results.push(...colbertBatch);
     }
     onProgress?.();
@@ -249,6 +252,7 @@ export class WorkerOrchestrator {
         is_exported: chunk.isExported,
         defined_symbols: chunk.definedSymbols,
         referenced_symbols: chunk.referencedSymbols,
+        type_referenced_symbols: chunk.typeReferencedSymbols,
         role: chunk.role,
         parent_symbol: chunk.parentSymbol,
         file_skeleton: chunk.isAnchor ? skeleton : undefined,
@@ -310,7 +314,10 @@ export class WorkerOrchestrator {
       chunksPromise,
       skeletonPromise,
     ]);
-    dbg("orch", `chunked ${input.path} → ${chunks.length} chunks ${(performance.now() - chunkStart).toFixed(0)}ms`);
+    dbg(
+      "orch",
+      `chunked ${input.path} → ${chunks.length} chunks ${(performance.now() - chunkStart).toFixed(0)}ms`,
+    );
     onProgress?.();
 
     if (!chunks.length) {
@@ -330,7 +337,10 @@ export class WorkerOrchestrator {
       preparedChunks.map((chunk) => chunk.content),
       onProgress,
     );
-    dbg("orch", `embedded ${input.path} → ${hybrids.length} vectors ${(performance.now() - embedStart).toFixed(0)}ms`);
+    dbg(
+      "orch",
+      `embedded ${input.path} → ${hybrids.length} vectors ${(performance.now() - embedStart).toFixed(0)}ms`,
+    );
 
     const vectors = preparedChunks.map((chunk, idx) => {
       const hybrid = hybrids[idx] ?? {
@@ -356,7 +366,10 @@ export class WorkerOrchestrator {
     });
 
     onProgress?.();
-    dbg("orch", `processFile done: ${input.path} ${vectors.length} vectors ${(performance.now() - fileStart).toFixed(0)}ms`);
+    dbg(
+      "orch",
+      `processFile done: ${input.path} ${vectors.length} vectors ${(performance.now() - fileStart).toFixed(0)}ms`,
+    );
     return { vectors, hash, mtimeMs, size };
   }
 

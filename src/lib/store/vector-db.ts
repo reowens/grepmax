@@ -12,10 +12,15 @@ import {
   Schema,
   Utf8,
 } from "apache-arrow";
-import { CONFIG, DISK_CRITICAL_BYTES, DISK_LOW_BYTES, FRAGMENT_COMPACT_THRESHOLD } from "../../config";
+import {
+  CONFIG,
+  DISK_CRITICAL_BYTES,
+  DISK_LOW_BYTES,
+  FRAGMENT_COMPACT_THRESHOLD,
+} from "../../config";
+import { registerCleanup } from "../utils/cleanup";
 import { escapeSqlString } from "../utils/filter-builder";
 import { debug, log, timer } from "../utils/logger";
-import { registerCleanup } from "../utils/cleanup";
 import type { VectorRecord } from "./types";
 
 export type DiskPressureLevel = "ok" | "low" | "critical";
@@ -89,7 +94,8 @@ export class VectorDB {
           // a tick microseconds before shutdown sets `closed`, in which case
           // getDb() throws after we've nulled `db`.
           const msg = err instanceof Error ? err.message : String(err);
-          if (this.closed && msg.includes("VectorDB connection is closed")) return;
+          if (this.closed && msg.includes("VectorDB connection is closed"))
+            return;
           if (isLanceCorruptionError(err)) {
             // Log once per hour at most — repeating this every 5 min is just noise.
             const now = Date.now();
@@ -173,11 +179,20 @@ export class VectorDB {
     if (level !== this.lastLoggedPressure) {
       const freeStr = `${(avail / 1024 / 1024 / 1024).toFixed(1)}GB`;
       if (level === "critical") {
-        log("vectordb", `CRITICAL: disk space critically low (${freeStr} free) — writes suspended`);
+        log(
+          "vectordb",
+          `CRITICAL: disk space critically low (${freeStr} free) — writes suspended`,
+        );
       } else if (level === "low") {
-        log("vectordb", `WARNING: disk space low (${freeStr} free) — compaction limited`);
+        log(
+          "vectordb",
+          `WARNING: disk space low (${freeStr} free) — compaction limited`,
+        );
       } else if (this.lastLoggedPressure !== "ok") {
-        log("vectordb", `Disk pressure resolved (${freeStr} free) — writes resuming`);
+        log(
+          "vectordb",
+          `Disk pressure resolved (${freeStr} free) — writes resuming`,
+        );
       }
       this.lastLoggedPressure = level;
     }
@@ -216,7 +231,10 @@ export class VectorDB {
   /** Wait for all in-flight writes to complete before compaction. */
   private drainWrites(): Promise<void> {
     if (this.activeWrites === 0) return Promise.resolve();
-    debug("vectordb", `Draining ${this.activeWrites} in-flight write(s) before compaction`);
+    debug(
+      "vectordb",
+      `Draining ${this.activeWrites} in-flight write(s) before compaction`,
+    );
     return new Promise<void>((resolve) => {
       this.writeDrainResolve = resolve;
     });
@@ -245,6 +263,7 @@ export class VectorDB {
       doc_token_ids: [],
       defined_symbols: [],
       referenced_symbols: [],
+      type_referenced_symbols: [],
       imports: [],
       exports: [],
       role: "",
@@ -317,6 +336,11 @@ export class VectorDB {
         new List(new Field("item", new Utf8(), true)),
         true,
       ),
+      new Field(
+        "type_referenced_symbols",
+        new List(new Field("item", new Utf8(), true)),
+        true,
+      ),
       new Field("imports", new List(new Field("item", new Utf8(), true)), true),
       new Field("exports", new List(new Field("item", new Utf8(), true)), true),
       new Field("role", new Utf8(), true),
@@ -326,11 +350,40 @@ export class VectorDB {
     ]);
   }
 
+  /**
+   * In-place, non-breaking schema evolution for additive list columns. Older
+   * tables predate `type_referenced_symbols`; adding it via `addColumns` (rather
+   * than forcing `gmax index --reset`) keeps a live daemon's incremental writes
+   * working — existing rows read back as empty until their file is reindexed,
+   * which is when the new edges would populate anyway. Idempotent: re-adding an
+   * existing column throws, which we swallow.
+   */
+  private async evolveSchema(table: lancedb.Table): Promise<void> {
+    const schema = await table.schema();
+    const fields = new Set(schema.fields.map((f) => f.name));
+    if (fields.has("type_referenced_symbols")) return;
+    try {
+      await table.addColumns(
+        new Field(
+          "type_referenced_symbols",
+          new List(new Field("item", new Utf8(), true)),
+          true,
+        ),
+      );
+      log("db", "Added type_referenced_symbols column to existing table");
+    } catch (err) {
+      // Lost a race with another writer that already added it, or a transient
+      // commit conflict — the next ensureTable() re-checks and no-ops.
+      debug("vectordb", `evolveSchema skipped: ${(err as Error).message}`);
+    }
+  }
+
   async ensureTable(): Promise<lancedb.Table> {
     const db = await this.getDb();
     try {
       const table = await db.openTable(TABLE_NAME);
       await this.validateSchema(table);
+      await this.evolveSchema(table);
       return table;
     } catch (_err) {
       log("db", `Creating table (${this.vectorDim}d)`);
@@ -421,6 +474,7 @@ export class VectorDB {
         : null;
       (rec as any).defined_symbols = rec.defined_symbols ?? [];
       (rec as any).referenced_symbols = rec.referenced_symbols ?? [];
+      (rec as any).type_referenced_symbols = rec.type_referenced_symbols ?? [];
       (rec as any).imports = rec.imports ?? [];
       (rec as any).exports = rec.exports ?? [];
       (rec as any).role = rec.role ?? "";
@@ -505,7 +559,9 @@ export class VectorDB {
     const cutoff = new Date(Date.now() - retentionMs);
 
     let resolveCompacting!: () => void;
-    this.compactingPromise = new Promise<void>((r) => { resolveCompacting = r; });
+    this.compactingPromise = new Promise<void>((r) => {
+      resolveCompacting = r;
+    });
 
     try {
       for (let attempt = 1; attempt <= retries; attempt++) {
@@ -542,8 +598,14 @@ export class VectorDB {
             return;
           }
           // ENOSPC: return immediately — retrying will only make things worse
-          if (msg.includes("No space left on device") || msg.includes("os error 28")) {
-            log("vectordb", `Optimize failed (ENOSPC): disk full — skipping retries`);
+          if (
+            msg.includes("No space left on device") ||
+            msg.includes("os error 28")
+          ) {
+            log(
+              "vectordb",
+              `Optimize failed (ENOSPC): disk full — skipping retries`,
+            );
             return;
           }
           if (
@@ -583,8 +645,13 @@ export class VectorDB {
       const pressure = this.checkDiskPressure();
 
       if (pressure === "critical") {
-        const freeGb = (this.getAvailableBytes() / 1024 / 1024 / 1024).toFixed(1);
-        log("vectordb", `Maintenance skipped: disk critically low (${freeGb}GB free)`);
+        const freeGb = (this.getAvailableBytes() / 1024 / 1024 / 1024).toFixed(
+          1,
+        );
+        log(
+          "vectordb",
+          `Maintenance skipped: disk critically low (${freeGb}GB free)`,
+        );
         return;
       }
 
@@ -619,7 +686,9 @@ export class VectorDB {
     }
   }
 
-  async compactIfNeeded(threshold = FRAGMENT_COMPACT_THRESHOLD): Promise<boolean> {
+  async compactIfNeeded(
+    threshold = FRAGMENT_COMPACT_THRESHOLD,
+  ): Promise<boolean> {
     if (this.maintenanceRunning) return false;
     if (this.checkDiskPressure() !== "ok") return false;
 
@@ -779,9 +848,7 @@ export class VectorDB {
     await this.withWriteGate(async () => {
       for (let i = 0; i < unique.length; i += batchSize) {
         const slice = unique.slice(i, i + batchSize);
-        const values = slice
-          .map((p) => `'${escapeSqlString(p)}'`)
-          .join(",");
+        const values = slice.map((p) => `'${escapeSqlString(p)}'`).join(",");
         const where = `path IN (${values})${idExclusion}`;
         const existing = await table
           .query()
@@ -799,7 +866,9 @@ export class VectorDB {
   async deletePathsWithPrefix(prefix: string): Promise<void> {
     this.ensureDiskOk();
     const table = await this.ensureTable();
-    await this.withWriteGate(() => table.delete(`path LIKE '${escapeSqlString(prefix)}%'`));
+    await this.withWriteGate(() =>
+      table.delete(`path LIKE '${escapeSqlString(prefix)}%'`),
+    );
   }
 
   async drop(): Promise<void> {
