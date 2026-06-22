@@ -42,8 +42,22 @@
   "keywords": [
     "grepmax",
     "grep",
-    "glob",
-    "search"
+    "search",
+    "semantic-search",
+    "code-search",
+    "code-intelligence",
+    "embeddings",
+    "vector-search",
+    "rag",
+    "mcp",
+    "claude-code",
+    "coding-agent",
+    "ai-agent",
+    "llm",
+    "call-graph",
+    "tree-sitter",
+    "lancedb",
+    "cli"
   ],
   "files": [
     "dist",
