@@ -46,17 +46,16 @@ export function maybeWarnStaleChunker(
   const name = project.name || projectRoot;
 
   if (opts?.agent) {
-    process.stderr.write(
-      [
-        "stale_chunker",
-        `project=${name}`,
-        `indexed_v=${gap.fromVersion}`,
-        `current_v=${gap.toVersion}`,
-        `severity=${gap.severity}`,
-        `note=${gap.notes.join("; ")}`,
-        "fix=gmax index --reset",
-      ].join("\t") + "\n",
-    );
+    const fields = [
+      "stale_chunker",
+      `project=${name}`,
+      `indexed_v=${gap.fromVersion}`,
+      `current_v=${gap.toVersion}`,
+      `severity=${gap.severity}`,
+      `note=${gap.notes.join("; ")}`,
+      "fix=gmax index --reset",
+    ].join("\t");
+    process.stderr.write(`${fields}\n`);
     return;
   }
 
