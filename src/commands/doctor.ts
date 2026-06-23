@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Command } from "commander";
-import { CONFIG, DISK_CRITICAL_BYTES, DISK_LOW_BYTES, MODEL_IDS, MODEL_TIERS, PATHS } from "../config";
+import { CONFIG, DISK_CRITICAL_BYTES, DISK_LOW_BYTES, describeChunkerGap, MODEL_IDS, MODEL_TIERS, PATHS } from "../config";
 import { readGlobalConfig } from "../lib/index/index-config";
 import { gracefulExit } from "../lib/utils/exit";
 import { isProcessAlive, parseLock, removeLock } from "../lib/utils/lock";
@@ -235,11 +235,19 @@ export const doctor = new Command("doctor")
           `stale_chunker=${staleChunkerProjects.length}`,
         ];
         console.log(fields.join("\t"));
-        if (staleChunkerProjects.length > 0) {
+        for (const p of staleChunkerProjects) {
+          const gap = describeChunkerGap(p.chunkerVersion);
+          if (!gap) continue;
           console.log(
-            `stale_chunker_fix: run 'gmax index --reset' in: ${staleChunkerProjects
-              .map((p) => p.name || path.basename(p.root))
-              .join(", ")}`,
+            [
+              "stale_chunker_project",
+              `name=${p.name || path.basename(p.root)}`,
+              `indexed_v=${gap.fromVersion}`,
+              `current_v=${gap.toVersion}`,
+              `severity=${gap.severity}`,
+              `note=${gap.notes.join("; ")}`,
+              `fix=gmax index --reset (in ${p.root})`,
+            ].join("\t"),
           );
         }
       } else {
@@ -299,15 +307,24 @@ export const doctor = new Command("doctor")
           `${daemonUp ? "ok" : "INFO"}  Daemon: ${daemonUp ? "running" : "not running"}`,
         );
 
-        // Index built by an older chunker — graph metadata fixes need a reindex
+        // Index built by an older chunker — graph metadata fixes need a reindex.
+        // Severity (and the WARN/INFO label) is driven by CHUNKER_VERSION_HISTORY:
+        // a breaking gap means stale metadata is wrong, an additive gap only
+        // means newer edges are missing.
         if (staleChunkerProjects.length > 0) {
+          const anyBreaking = staleChunkerProjects.some(
+            (p) => describeChunkerGap(p.chunkerVersion)?.severity === "breaking",
+          );
           console.log(
-            `WARN  Stale chunker: ${staleChunkerProjects.length} project(s) indexed before chunker v${CONFIG.CHUNKER_VERSION} — graph commands (peek/impact/trace) may overcount callers`,
+            `${anyBreaking ? "WARN" : "INFO"}  Stale chunker: ${staleChunkerProjects.length} project(s) indexed before chunker v${CONFIG.CHUNKER_VERSION}`,
           );
           for (const p of staleChunkerProjects) {
+            const gap = describeChunkerGap(p.chunkerVersion);
+            if (!gap) continue;
             console.log(
-              `       - ${p.name || path.basename(p.root)}: run 'gmax index --reset' in ${p.root}`,
+              `       - ${p.name || path.basename(p.root)} (v${gap.fromVersion}→v${gap.toVersion}, ${gap.severity}): ${gap.notes.join(" ")}`,
             );
+            console.log(`         run 'gmax index --reset' in ${p.root}`);
           }
         }
 

@@ -17,6 +17,7 @@ import { VectorDB } from "../lib/store/vector-db";
 import { symbolNotFoundLines } from "../lib/utils/agent-errors";
 import { gracefulExit } from "../lib/utils/exit";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
+import { maybeWarnStaleChunker } from "../lib/utils/stale-hint";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
 export const impact = new Command("impact")
@@ -52,6 +53,7 @@ export const impact = new Command("impact")
       const root = resolveRootOrExit(opts.root);
       if (root === null) return;
       const projectRoot = findProjectRoot(root) ?? root;
+      maybeWarnStaleChunker(projectRoot, { agent: opts.agent });
       const paths = ensureProjectPaths(projectRoot);
       vectorDb = new VectorDB(paths.lancedbDir);
 

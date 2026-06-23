@@ -6,6 +6,7 @@ import { VectorDB } from "../lib/store/vector-db";
 import { symbolNotFoundLines } from "../lib/utils/agent-errors";
 import { gracefulExit } from "../lib/utils/exit";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
+import { maybeWarnStaleChunker } from "../lib/utils/stale-hint";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
 const useColors = process.stdout.isTTY && !process.env.NO_COLOR;
@@ -191,6 +192,7 @@ export const trace = new Command("trace")
 
     try {
       const projectRoot = findProjectRoot(root) ?? root;
+      maybeWarnStaleChunker(projectRoot, { agent: opts.agent });
       const paths = ensureProjectPaths(projectRoot);
 
       vectorDb = new VectorDB(paths.lancedbDir);

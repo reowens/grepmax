@@ -9,6 +9,7 @@ import { escapeSqlString } from "../lib/utils/filter-builder";
 import { gracefulExit } from "../lib/utils/exit";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
+import { maybeWarnStaleChunker } from "../lib/utils/stale-hint";
 
 import { toArr } from "../lib/utils/arrow";
 
@@ -41,6 +42,7 @@ export const similar = new Command("similar")
       const root = resolveRootOrExit(opts.root);
       if (root === null) return;
       const projectRoot = findProjectRoot(root) ?? root;
+      maybeWarnStaleChunker(projectRoot, { agent: opts.agent });
       const paths = ensureProjectPaths(projectRoot);
       vectorDb = new VectorDB(paths.lancedbDir);
 

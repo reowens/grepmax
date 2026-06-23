@@ -23,6 +23,7 @@ import { extractImports } from "../lib/utils/import-extractor";
 import { getProject, resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import { getServerForProject } from "../lib/utils/server-registry";
+import { maybeWarnStaleChunker } from "../lib/utils/stale-hint";
 import { runSearch, type SearchOptions } from "./search-run";
 import { outputSkeletons } from "./search-skeletons";
 
@@ -373,6 +374,7 @@ Examples:
           "This project is still being indexed. Results may be incomplete.\n",
         );
       }
+      maybeWarnStaleChunker(checkRoot, { agent: options.agent });
 
       // Compute effective paths + filters early — both the daemon-mediated
       // and in-process search paths need them. Reuse the resolved checkRoot

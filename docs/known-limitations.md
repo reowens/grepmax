@@ -60,25 +60,27 @@ npx tsx src/eval-graph-totals.ts     # whole-corpus ref counts on platform
 npx tsx src/eval-graph-spotcheck.ts  # raw referenced_symbols for known callers
 ```
 
-## Stale-index reindex nudge is thin (only `gmax doctor` surfaces it)
+## Stale-index reindex nudge (a+b+c shipped 2026-06-22)
 
-Added 2026-06-22. Fix designed + approved (a+b+c, see plan `next_step` latest4 + `docs/prompts/resume-chunker-version-nudge.md`), **not yet built**.
+Added 2026-06-22; **fix built same day** (a+b+c). One residual gap remains (see end).
 
-When the chunker's metadata semantics change (new edge kinds, new columns), existing indexes keep their old data until a `gmax index --reset`. The signal that tells a user "you should reindex" is `CONFIG.CHUNKER_VERSION` (currently **2**), stamped per project at its last full index and compared in `gmax doctor`. Three gaps make this unreliable:
+When the chunker's metadata semantics change (new edge kinds, new columns), existing indexes keep their old data until a `gmax index --reset`. The signal that tells a user "you should reindex" is `CONFIG.CHUNKER_VERSION` (now **3**), stamped per project at its last full index. Until 2026-06-22 only `gmax doctor` read it, the warning text was hardcoded to the v2 over-count case, and the version had been left at 2 across three additive chunk changes.
 
-- **Only `doctor` reads it.** The query commands where staleness actually degrades results — `search`, `trace`, `dead`, `peek`, `impact` — never check `chunkerVersion`. A user only learns their index is stale if they proactively run `gmax doctor`.
-- **`doctor --fix` doesn't fix it.** For stale-chunker projects it only *prints* `run 'gmax index --reset'` (`doctor.ts:240, 303-312`); it does not reindex.
-- **The message is wrong for additive changes.** The warning is hardcoded to `graph commands (peek/impact/trace) may overcount callers` — which fits only the v2 over-count fix. Additive changes (the identifier-as-value edges, and the type-position edges above) *under*-report until reindex; they don't overcount. And in practice the bump was skipped on all three of those changes, so the signal never even fired.
+**What shipped:**
 
-**Impact:** downstream users silently run on stale indexes — missing identifier-as-value / type-position edges in `dead`/`trace` — with no prompt to reindex unless they happen to run `doctor`.
+- **(a) Query-time hint.** `search`, `trace`, `dead`, `peek`, `impact`, `similar`, `related`, `test` now emit a one-line staleness nudge to **STDERR** when the resolved project's index predates `CONFIG.CHUNKER_VERSION`. Wired through one helper — `maybeWarnStaleChunker()` in `src/lib/utils/stale-hint.ts` — called once per command after the project root resolves. Never touches stdout, so `--json` / `--agent` machine output stays byte-identical; `--agent` renders a parseable `stale_chunker\t…` TSV record on stderr instead of prose. Suppress with `GMAX_NO_STALE_HINT=1`; fires at most once per process.
+- **(b) Version with intent.** `CHUNKER_VERSION_HISTORY` + `describeChunkerGap()` (`src/config.ts`) replace the bare int's single hardcoded message. Each entry is `{v, severity: 'additive'|'breaking', note}`; the gap helper unions the notes for every version an index is missing and reports `breaking` if any missed version was breaking. `severity` sets tone — additive → `hint`/`INFO`, breaking → `WARN`. `gmax doctor` (human + `--agent`) and the hint both render from this one source. History: v2 = breaking (sub-chunk symbol scoping; graph overcounted callers before this), v3 = additive (type-position edges; `dead`/`trace` miss type-only callers until reindex).
+- **(c) Bumped to 3** for the type-position edges (additive).
 
-**Planned fix (a+b+c):** (a) emit a one-line staleness hint to stderr from the query commands (suppressible `GMAX_NO_STALE_HINT=1`, structured field in `--agent`); (b) replace the bare `CHUNKER_VERSION` int with a `{v, severity, note}` history so doctor + the hint render the correct, per-change message and tone; (c) bump to 3 for the type-position edges. See the plan for the re-stamp gotcha (repos reindexed 2026-06-22 carry the edges but are stamped v2).
+Verified live: stale repos (lean/proctor/cram/quorm/dotmd/furni/cokemusic-extractor) nudge; the 5 repos reindexed on 2026-06-22 with the new chunker were re-stamped v2→3 in `~/.gmax/projects.json` (no reindex needed — they already carry the edges) and stay silent. `bench:oss` byte-identical (express 0.889 / lodash 0.900). Regression net: `tests/stale-hint.test.ts`.
 
-**Detection / recovery (today):**
+**Detection / recovery:**
 ```bash
-gmax doctor            # "WARN  Stale chunker: N project(s)…"
+gmax doctor            # "INFO/WARN  Stale chunker: N project(s)…" with per-gap note + fix
 cd <project> && gmax index --reset
 ```
+
+**Residual gap (not in a+b+c scope):** `doctor --fix` still only *prints* `gmax index --reset` for stale-chunker projects; it does not reindex them. Reindex is heavy and per-project, so auto-running it inside `--fix` was deliberately left out.
 
 ## `gmax dead` is a hypothesis, not a proof
 

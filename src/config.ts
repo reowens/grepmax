@@ -55,11 +55,71 @@ export const CONFIG = {
   WORKER_THREADS: DEFAULT_WORKER_THREADS,
   QUERY_PREFIX: "",
   // Bump when chunk metadata semantics change in a way that requires a full
-  // reindex to take effect. v2: sub-chunk symbol lists scoped to the chunk's
-  // own content (previously every split sub-chunk inherited the parent's
-  // full defined/referenced symbol lists, fabricating graph edges).
-  CHUNKER_VERSION: 2,
+  // reindex to take effect. Must equal the latest entry's `v` in
+  // CHUNKER_VERSION_HISTORY below — see that list for per-version severity and
+  // the user-facing note rendered by `gmax doctor` and the staleness hint.
+  CHUNKER_VERSION: 3,
 };
+
+/**
+ * Per-version record of what changed in the chunker and how much it matters to
+ * an already-built index. `severity` drives tone: an "additive" change only
+ * adds new metadata (older indexes under-cover but aren't wrong), while a
+ * "breaking" change means older indexes carry incorrect metadata until a
+ * reindex. The `note` is shown verbatim to the user for the versions their
+ * index is missing. CONFIG.CHUNKER_VERSION must equal the highest `v` here.
+ */
+export const CHUNKER_VERSION_HISTORY: ReadonlyArray<{
+  v: number;
+  severity: "additive" | "breaking";
+  note: string;
+}> = [
+  {
+    v: 2,
+    severity: "breaking",
+    note: "sub-chunk symbol scoping; graph overcounted callers before this.",
+  },
+  {
+    v: 3,
+    severity: "additive",
+    note: "type-position edges; dead/trace miss type-only callers until reindex.",
+  },
+];
+
+export interface ChunkerGap {
+  /** The version the index was last built with (1 if never stamped). */
+  fromVersion: number;
+  /** The current chunker version it should be at. */
+  toVersion: number;
+  /** "breaking" if any missed version was breaking, else "additive". */
+  severity: "additive" | "breaking";
+  /** User-facing notes for every version the index is missing. */
+  notes: string[];
+}
+
+/**
+ * Describe the gap between an index's stamped chunker version and the current
+ * one, or null when the index is already current. Shared by `gmax doctor` and
+ * the query-time staleness hint so both render the same severity + notes.
+ */
+export function describeChunkerGap(
+  indexedVersion: number | undefined,
+): ChunkerGap | null {
+  const fromVersion = indexedVersion ?? 1;
+  if (fromVersion >= CONFIG.CHUNKER_VERSION) return null;
+  const missed = CHUNKER_VERSION_HISTORY.filter(
+    (h) => h.v > fromVersion && h.v <= CONFIG.CHUNKER_VERSION,
+  );
+  const severity = missed.some((h) => h.severity === "breaking")
+    ? "breaking"
+    : "additive";
+  return {
+    fromVersion,
+    toVersion: CONFIG.CHUNKER_VERSION,
+    severity,
+    notes: missed.map((h) => h.note),
+  };
+}
 
 export const WORKER_TIMEOUT_MS = Number.parseInt(
   process.env.GMAX_WORKER_TIMEOUT_MS || "60000",
