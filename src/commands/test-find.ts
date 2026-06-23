@@ -11,7 +11,10 @@ import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
-import { maybeWarnStaleChunker } from "../lib/utils/stale-hint";
+import {
+  maybeWarnStaleChunker,
+  maybeWarnStaleEmbedding,
+} from "../lib/utils/stale-hint";
 
 export const testFind = new Command("test")
   .description("Find tests that exercise a symbol or file")
@@ -41,6 +44,7 @@ export const testFind = new Command("test")
       if (root === null) return;
       const projectRoot = findProjectRoot(root) ?? root;
       maybeWarnStaleChunker(projectRoot, { agent: opts.agent });
+      maybeWarnStaleEmbedding(projectRoot, { agent: opts.agent });
       const paths = ensureProjectPaths(projectRoot);
       vectorDb = new VectorDB(paths.lancedbDir);
 

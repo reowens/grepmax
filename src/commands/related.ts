@@ -7,7 +7,10 @@ import { gracefulExit } from "../lib/utils/exit";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import { withQueryTimeout } from "../lib/utils/query-timeout";
-import { maybeWarnStaleChunker } from "../lib/utils/stale-hint";
+import {
+  maybeWarnStaleChunker,
+  maybeWarnStaleEmbedding,
+} from "../lib/utils/stale-hint";
 
 import { toArr } from "../lib/utils/arrow";
 
@@ -39,6 +42,7 @@ export const related = new Command("related")
       if (root === null) return;
       const projectRoot = findProjectRoot(root) ?? root;
       maybeWarnStaleChunker(projectRoot, { agent: opts.agent });
+      maybeWarnStaleEmbedding(projectRoot, { agent: opts.agent });
       const paths = ensureProjectPaths(projectRoot);
       vectorDb = new VectorDB(paths.lancedbDir);
 

@@ -8,7 +8,10 @@ import { gracefulExit } from "../lib/utils/exit";
 import { escapeSqlString } from "../lib/utils/filter-builder";
 import { groupByLanguage } from "../lib/utils/language";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
-import { maybeWarnStaleChunker } from "../lib/utils/stale-hint";
+import {
+  maybeWarnStaleChunker,
+  maybeWarnStaleEmbedding,
+} from "../lib/utils/stale-hint";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
 const useColors = process.stdout.isTTY && !process.env.NO_COLOR;
@@ -103,6 +106,7 @@ export const peek = new Command("peek")
     try {
       const projectRoot = findProjectRoot(root) ?? root;
       maybeWarnStaleChunker(projectRoot, { agent: opts.agent });
+      maybeWarnStaleEmbedding(projectRoot, { agent: opts.agent });
       const paths = ensureProjectPaths(projectRoot);
       vectorDb = new VectorDB(paths.lancedbDir);
 

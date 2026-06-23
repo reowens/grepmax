@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Command } from "commander";
-import { CONFIG, DISK_CRITICAL_BYTES, DISK_LOW_BYTES, describeChunkerGap, MODEL_IDS, MODEL_TIERS, PATHS } from "../config";
+import { CONFIG, DISK_CRITICAL_BYTES, DISK_LOW_BYTES, describeChunkerGap, describeEmbeddingGap, MODEL_IDS, MODEL_TIERS, PATHS } from "../config";
 import { readGlobalConfig } from "../lib/index/index-config";
 import { gracefulExit } from "../lib/utils/exit";
 import { isProcessAlive, parseLock, removeLock } from "../lib/utils/lock";
@@ -218,6 +218,19 @@ export const doctor = new Command("doctor")
           (p.chunkerVersion ?? 1) < CONFIG.CHUNKER_VERSION,
       );
 
+      // Projects whose stored embedding model/dim no longer matches the global
+      // config. Visibility only — recovery is a manual `gmax index --reset`
+      // (a dim change can't be auto-fixed in the shared fixed-dim table; that's
+      // the deferred Phase 1B re-embed work).
+      const staleEmbeddingProjects = projects.filter(
+        (p) =>
+          p.status === "indexed" &&
+          describeEmbeddingGap(
+            { modelTier: p.modelTier, vectorDim: p.vectorDim },
+            { modelTier: globalConfig.modelTier, vectorDim: globalConfig.vectorDim },
+          ) !== null,
+      );
+
       if (opts.agent) {
         const fields = [
           "index_health",
@@ -233,6 +246,7 @@ export const doctor = new Command("doctor")
           `daemon=${daemonUp ? "running" : "stopped"}`,
           `orphaned=${orphanedProjects.length}`,
           `stale_chunker=${staleChunkerProjects.length}`,
+          `stale_embedding=${staleEmbeddingProjects.length}`,
         ];
         console.log(fields.join("\t"));
         for (const p of staleChunkerProjects) {
@@ -246,6 +260,26 @@ export const doctor = new Command("doctor")
               `current_v=${gap.toVersion}`,
               `severity=${gap.severity}`,
               `note=${gap.notes.join("; ")}`,
+              `fix=gmax index --reset (in ${p.root})`,
+            ].join("\t"),
+          );
+        }
+        for (const p of staleEmbeddingProjects) {
+          const gap = describeEmbeddingGap(
+            { modelTier: p.modelTier, vectorDim: p.vectorDim },
+            { modelTier: globalConfig.modelTier, vectorDim: globalConfig.vectorDim },
+          );
+          if (!gap) continue;
+          console.log(
+            [
+              "stale_embedding_project",
+              `name=${p.name || path.basename(p.root)}`,
+              `indexed_model=${gap.fromModel}`,
+              `current_model=${gap.toModel}`,
+              `indexed_dim=${gap.fromDim}`,
+              `current_dim=${gap.toDim}`,
+              `dim_changed=${gap.dimChanged}`,
+              `severity=${gap.severity}`,
               `fix=gmax index --reset (in ${p.root})`,
             ].join("\t"),
           );
@@ -326,6 +360,36 @@ export const doctor = new Command("doctor")
             );
             console.log(`         run 'gmax index --reset' in ${p.root}`);
           }
+        }
+
+        // Index built with a different embedding model/dim than the current
+        // config. A dim change is breaking (search scores are invalid until a
+        // re-embed); a same-dim model swap is additive. Unlike the stale-chunker
+        // case this is NOT auto-fixed by `--fix`: a dim change can't coexist in
+        // the shared fixed-dim table (deferred Phase 1B), so we point at the
+        // manual reset instead.
+        if (staleEmbeddingProjects.length > 0) {
+          const gaps = staleEmbeddingProjects.map((p) =>
+            describeEmbeddingGap(
+              { modelTier: p.modelTier, vectorDim: p.vectorDim },
+              { modelTier: globalConfig.modelTier, vectorDim: globalConfig.vectorDim },
+            ),
+          );
+          const anyBreaking = gaps.some((g) => g?.severity === "breaking");
+          console.log(
+            `${anyBreaking ? "WARN" : "INFO"}  Stale embedding: ${staleEmbeddingProjects.length} project(s) indexed with a different embedding model/dim — run 'gmax index --reset' per project`,
+          );
+          staleEmbeddingProjects.forEach((p, i) => {
+            const gap = gaps[i];
+            if (!gap) return;
+            const change = gap.dimChanged
+              ? `${gap.fromDim}d→${gap.toDim}d`
+              : `model ${gap.fromModel}→${gap.toModel}`;
+            console.log(
+              `       - ${p.name || path.basename(p.root)} (${change}, ${gap.severity})`,
+            );
+            console.log(`         run 'gmax index --reset' in ${p.root}`);
+          });
         }
 
         // Projects

@@ -121,6 +121,72 @@ export function describeChunkerGap(
   };
 }
 
+/** A built index's embedding identity — the model tier and vector width its
+ * vectors were produced with. Sourced from `ProjectEntry.{modelTier,vectorDim}`
+ * (registry) or `IndexConfig`. Fields are optional so partial/legacy records
+ * fall back to the tier's canonical dim (or CONFIG.VECTOR_DIM). */
+export interface EmbeddingIdentity {
+  modelTier?: string;
+  vectorDim?: number;
+}
+
+export interface EmbeddingGap {
+  /** Model tier the index was built with. */
+  fromModel: string;
+  /** Model tier the current global config would build with. */
+  toModel: string;
+  /** Vector width of the stored index. */
+  fromDim: number;
+  /** Vector width the current config produces. */
+  toDim: number;
+  /** True when the width differs — stored vectors and a fresh query embedding
+   * are structurally incompatible (the shared LanceDB table silently pads or
+   * truncates to its fixed width, so scores are garbage). */
+  dimChanged: boolean;
+  /** "breaking" when the dim changed (search invalid until re-embed); "additive"
+   * for a same-width model swap (search still runs, just mixed-model quality). */
+  severity: "additive" | "breaking";
+}
+
+/**
+ * Describe the gap between an index's stored embedding identity (model tier +
+ * vector dim) and the current global config, or null when they already agree.
+ *
+ * A dimension change is `breaking`: vectors of differing widths cannot be
+ * compared, and the single fixed-dim `chunks` table silently pads/truncates a
+ * mismatched query embedding, yielding meaningless scores. A same-width model
+ * swap is `additive`: the stored vectors are a different model's output but the
+ * same width, so search keeps working with mixed-model quality until a re-embed.
+ *
+ * Mirrors describeChunkerGap so `gmax doctor` and the query-time hint render the
+ * same severity. Pure over MODEL_TIERS — callers pass the current identity (read
+ * from the global config) so this module stays free of config I/O.
+ */
+export function describeEmbeddingGap(
+  stored: EmbeddingIdentity,
+  current: EmbeddingIdentity,
+): EmbeddingGap | null {
+  const fromModel = stored.modelTier ?? DEFAULT_MODEL_TIER;
+  const toModel = current.modelTier ?? DEFAULT_MODEL_TIER;
+  const fromDim =
+    stored.vectorDim ?? MODEL_TIERS[fromModel]?.vectorDim ?? CONFIG.VECTOR_DIM;
+  const toDim =
+    current.vectorDim ?? MODEL_TIERS[toModel]?.vectorDim ?? CONFIG.VECTOR_DIM;
+
+  const dimChanged = fromDim !== toDim;
+  const modelChanged = fromModel !== toModel;
+  if (!dimChanged && !modelChanged) return null;
+
+  return {
+    fromModel,
+    toModel,
+    fromDim,
+    toDim,
+    dimChanged,
+    severity: dimChanged ? "breaking" : "additive",
+  };
+}
+
 export const WORKER_TIMEOUT_MS = Number.parseInt(
   process.env.GMAX_WORKER_TIMEOUT_MS || "60000",
   10,

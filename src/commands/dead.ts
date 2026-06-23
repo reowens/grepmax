@@ -5,7 +5,10 @@ import { symbolNotFoundLines } from "../lib/utils/agent-errors";
 import { gracefulExit } from "../lib/utils/exit";
 import { escapeSqlString } from "../lib/utils/filter-builder";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
-import { maybeWarnStaleChunker } from "../lib/utils/stale-hint";
+import {
+  maybeWarnStaleChunker,
+  maybeWarnStaleEmbedding,
+} from "../lib/utils/stale-hint";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
 const useColors = process.stdout.isTTY && !process.env.NO_COLOR;
@@ -104,6 +107,7 @@ export const dead = new Command("dead")
     try {
       const projectRoot = findProjectRoot(root) ?? root;
       maybeWarnStaleChunker(projectRoot, { agent: opts.agent });
+      maybeWarnStaleEmbedding(projectRoot, { agent: opts.agent });
       const paths = ensureProjectPaths(projectRoot);
       vectorDb = new VectorDB(paths.lancedbDir);
 
