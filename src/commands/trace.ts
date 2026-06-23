@@ -21,18 +21,56 @@ function formatTraceAgent(graph: {
   callerTree: Array<{ node: { symbol: string; file: string; line: number }; callers: any[] }>;
   callees: Array<{ symbol: string; file: string; line: number }>;
   importers: string[];
-}, projectRoot: string): string {
+}, projectRoot: string, raw = false): string {
   if (!graph.center) return "(not found)";
+  const center = graph.center;
   const rel = (p: string) =>
     p.startsWith(projectRoot) ? p.slice(projectRoot.length + 1) : p;
   const lines: string[] = [];
   lines.push(
-    `${graph.center.symbol}\t${rel(graph.center.file)}:${graph.center.line}\t${graph.center.role}`,
+    `${center.symbol}\t${rel(center.file)}:${center.line}\t${center.role}`,
   );
+  // A "self edge" is the traced symbol referencing itself (recursion) or its own
+  // definition chunk surfacing as a caller — noise in nearly every trace. Hidden
+  // by default; --raw brings them back.
+  const isSelfEdge = (n: { symbol: string; file: string; line: number }) =>
+    n.symbol === center.symbol ||
+    (n.file === center.file && n.line === center.line);
+
   function walkCallers(tree: any[], depth: number) {
+    if (raw) {
+      for (const t of tree) {
+        lines.push(`${"  ".repeat(depth)}<- ${t.node.symbol}\t${rel(t.node.file)}:${t.node.line}`);
+        walkCallers(t.callers, depth + 1);
+      }
+      return;
+    }
+    // Collapse repeated callers: the common flood is ONE caller symbol matched at
+    // many call-sites (e.g. `mcp` ×9). Group by (symbol, file), merge their lines
+    // onto a single row, and recurse into the union of their sub-callers.
+    const groups = new Map<
+      string,
+      { symbol: string; file: string; lineSet: Set<number>; sub: any[] }
+    >();
+    const order: string[] = [];
     for (const t of tree) {
-      lines.push(`${"  ".repeat(depth)}<- ${t.node.symbol}\t${rel(t.node.file)}:${t.node.line}`);
-      walkCallers(t.callers, depth + 1);
+      if (isSelfEdge(t.node)) continue;
+      const key = `${t.node.symbol}\t${t.node.file}`;
+      let g = groups.get(key);
+      if (!g) {
+        g = { symbol: t.node.symbol, file: t.node.file, lineSet: new Set(), sub: [] };
+        groups.set(key, g);
+        order.push(key);
+      }
+      g.lineSet.add(t.node.line);
+      g.sub.push(...t.callers);
+    }
+    for (const key of order) {
+      const g = groups.get(key)!;
+      const locs = [...g.lineSet].sort((a, b) => a - b).join(",");
+      const loc = g.file ? `${rel(g.file)}:${locs}` : "(not indexed)";
+      lines.push(`${"  ".repeat(depth)}<- ${g.symbol}\t${loc}`);
+      walkCallers(g.sub, depth + 1);
     }
   }
   walkCallers(graph.callerTree, 0);
@@ -180,6 +218,11 @@ export const trace = new Command("trace")
   .option("--inbound", "Show only callers, with call-site snippets", false)
   .option("--no-snippets", "Suppress call-site snippets in --inbound output")
   .option("--limit <n>", "Max callers shown per node in --inbound (default 10)", "10")
+  .option(
+    "--raw",
+    "In --agent mode, list every call-site without collapsing repeated callers or hiding self-edges",
+    false,
+  )
   .action(async (symbol, opts) => {
     const depth = Math.min(
       Math.max(Number.parseInt(opts.depth || "1", 10), 1),
@@ -241,7 +284,7 @@ export const trace = new Command("trace")
           }
         }
       } else if (opts.agent) {
-        console.log(formatTraceAgent(graph, projectRoot));
+        console.log(formatTraceAgent(graph, projectRoot, opts.raw));
         if (!graph.center) process.exitCode = 1;
       } else {
         console.log(formatTrace(graph, { symbol }));

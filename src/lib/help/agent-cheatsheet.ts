@@ -37,7 +37,7 @@ Survey:
 
 Scope flags: --root <name|path>, --in <subpath>, --exclude <subpath>.
 Roles in results: [DEFI] [ORCH] [IMPL] [DOCS].
-Notation: s=/d= score/distance (higher s / lower d = better) · C:n complexity ·
+Notation: s=/d= score/distance (higher s / lower d = better; s is per-query-normalized — top hit ≈1.0, relative to this query, not absolute confidence) · C:n complexity ·
   <- caller / -> callee · dep:/rev: outbound/inbound file deps (count = shared symbols) ·
   test hops: direct = calls it, N-hop = N calls away, via-import = imports but call unseen ·
   test via=X,Y: caller symbols inside the test file (often helpers, not the tests) ·

@@ -246,4 +246,91 @@ describe("trace --inbound", () => {
     // No call-site snippet column
     expect(out).not.toContain("const result = doWork(arg);");
   });
+
+  it("collapses repeated caller symbols into one row in --agent", async () => {
+    buildGraphMultiHop.mockResolvedValueOnce({
+      center: {
+        symbol: "doWork",
+        file: `${tmpRoot}/src/lib.ts`,
+        line: 0,
+        role: "DEFINITION",
+      },
+      callerTree: [
+        { node: { symbol: "runSearch", file: callerFile, line: 0 }, callers: [] },
+        { node: { symbol: "runSearch", file: callerFile, line: 2 }, callers: [] },
+      ],
+      callees: [],
+      importers: [],
+    });
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await (trace as Command).parseAsync(["doWork", "--agent"], { from: "user" });
+    const out = spy.mock.calls.map((c) => String(c[0])).join("\n");
+    spy.mockRestore();
+
+    const runSearchLines = out
+      .split("\n")
+      .filter((l) => l.includes("<- runSearch"));
+    expect(runSearchLines).toHaveLength(1);
+    expect(runSearchLines[0]).toContain("src/caller.ts:0,2");
+  });
+
+  it("suppresses self-edges in --agent", async () => {
+    buildGraphMultiHop.mockResolvedValueOnce({
+      center: {
+        symbol: "doWork",
+        file: `${tmpRoot}/src/lib.ts`,
+        line: 0,
+        role: "DEFINITION",
+      },
+      callerTree: [
+        // Self-edge: the traced symbol referencing itself — should be hidden.
+        { node: { symbol: "doWork", file: `${tmpRoot}/src/lib.ts`, line: 0 }, callers: [] },
+        { node: { symbol: "helper", file: callerFile, line: 0 }, callers: [] },
+      ],
+      callees: [],
+      importers: [],
+    });
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await (trace as Command).parseAsync(["doWork", "--agent"], { from: "user" });
+    const out = spy.mock.calls.map((c) => String(c[0])).join("\n");
+    spy.mockRestore();
+
+    expect(out).toMatch(/<-\s+helper/);
+    expect(out).not.toMatch(/<-\s+doWork/);
+  });
+
+  it("--raw lists every call-site and keeps self-edges", async () => {
+    buildGraphMultiHop.mockResolvedValueOnce({
+      center: {
+        symbol: "doWork",
+        file: `${tmpRoot}/src/lib.ts`,
+        line: 0,
+        role: "DEFINITION",
+      },
+      callerTree: [
+        { node: { symbol: "runSearch", file: callerFile, line: 0 }, callers: [] },
+        { node: { symbol: "runSearch", file: callerFile, line: 2 }, callers: [] },
+        { node: { symbol: "doWork", file: `${tmpRoot}/src/lib.ts`, line: 0 }, callers: [] },
+      ],
+      callees: [],
+      importers: [],
+    });
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await (trace as Command).parseAsync(["doWork", "--agent", "--raw"], {
+      from: "user",
+    });
+    const out = spy.mock.calls.map((c) => String(c[0])).join("\n");
+    spy.mockRestore();
+
+    // Not collapsed: both call-sites listed separately.
+    const runSearchLines = out
+      .split("\n")
+      .filter((l) => l.includes("<- runSearch"));
+    expect(runSearchLines).toHaveLength(2);
+    // Self-edge retained under --raw.
+    expect(out).toMatch(/<-\s+doWork/);
+  });
 });

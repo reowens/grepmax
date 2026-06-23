@@ -42,7 +42,7 @@ export const search: Command = new CommanderCommand("search")
   )
   .option(
     "--min-score <score>",
-    "Minimum relevance score (0-1) to include in results",
+    "Minimum relevance score to include. Scores are per-query-normalized (top hit = 1.0), so this is relative to the best match in THIS query, not an absolute confidence threshold.",
     "0",
   )
   .option(
