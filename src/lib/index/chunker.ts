@@ -723,26 +723,29 @@ export class TreeSitterChunker {
           "struct_expression", // Rust
           "instance_expression", // Scala
         ]);
-        // Harvest Capitalized type names out of a Python annotation subtree
-        // (a `type` node, or the `superclasses` argument_list). Python spells
-        // type names as plain `identifier` nodes — `EmbedRequest`,
-        // `Optional[Foo]` (subscript), `models.Base` (attribute) — so we walk
-        // the WHOLE annotation subtree and keep every Capitalized leaf, which
-        // is safe precisely because we only ever enter from a type position.
-        // Skips the chunk's own name; lowercase builtins (`list`, `str`) and
-        // qualifiers (`models`) fall out via the Capitalized gate.
-        const harvestPyTypes = (typeNode: TreeSitterNode | null) => {
-          if (!typeNode) return;
-          if (
-            typeNode.type === "identifier" &&
-            (typeNode.namedChildren?.length ?? 0) === 0
-          ) {
-            if (/^[A-Z]/.test(typeNode.text) && typeNode.text !== name) {
-              addTypeRef(typeNode.text);
+        // Harvest Capitalized type names out of an annotation subtree, for the
+        // grammars whose type names are NOT `type_identifier` nodes (so Shape 4
+        // can't see them): Python/C# spell them `identifier`, PHP spells them
+        // `name`. We walk the WHOLE subtree and keep every Capitalized leaf of
+        // those kinds — safe because we only ever enter from a type position (a
+        // `type` / `return_type` / `returns` field, or a base/heritage list).
+        // Excludes the chunk's own name; lowercase builtins (`list`, `int`,
+        // `string`) and non-name leaves (`predefined_type`, `string_content`
+        // in `Literal["x"]`) fall out via the kind + Capitalized gates.
+        const TYPE_NAME_LEAF_TYPES = new Set(["identifier", "name"]);
+        const harvestTypeLeaves = (node: TreeSitterNode | null) => {
+          if (!node) return;
+          if ((node.namedChildren?.length ?? 0) === 0) {
+            if (
+              TYPE_NAME_LEAF_TYPES.has(node.type) &&
+              /^[A-Z]/.test(node.text) &&
+              node.text !== name
+            ) {
+              addTypeRef(node.text);
             }
             return;
           }
-          for (const c of typeNode.namedChildren ?? []) harvestPyTypes(c);
+          for (const c of node.namedChildren ?? []) harvestTypeLeaves(c);
         };
         const extractRefs = (n: TreeSitterNode) => {
           // Handle JS/TS (call_expression), Python (call), Lua (function_call)
@@ -899,27 +902,63 @@ export class TreeSitterChunker {
             }
           }
 
-          // Shape 6 — Python type-position references: parameter / return /
-          // variable annotations (`x: Foo`, `-> Bar`, `v: Baz = …`) and class
-          // bases (`class C(Base)`). Python has no `type_identifier` node, so
-          // Shape 4 can't reach these; instead we read the annotation off the
-          // node's type field and harvest from that subtree only — never the
+          // Shape 6 — type-position references for grammars whose type names
+          // are plain `identifier` / `name` nodes (not `type_identifier`), so
+          // Shape 4 can't reach them. Read the annotation off the carrier
+          // node's type field and harvest from THAT subtree only — never the
           // node as a whole — so value expressions stay out of the type list.
-          // Gated to the Python grammar because these carrier node/field names
-          // (`function_definition`, `assignment`, `class_definition`) collide
-          // with other grammars that spell these positions differently.
+          // Each grammar is gated by `lang` because the carrier node/field
+          // names collide across grammars (`function_definition`,
+          // `method_declaration`, `assignment`, …). The other typed grammars
+          // (Go/Rust/Java/Kotlin/Scala/Swift) spell type names as
+          // `type_identifier` and are already covered by Shape 4.
           if (lang === "python") {
+            // `x: Foo`, `-> Bar`, `v: Baz = …`, and `class C(Base)` bases.
             if (
               n.type === "typed_parameter" ||
               n.type === "typed_default_parameter"
             ) {
-              harvestPyTypes(n.childForFieldName?.("type") ?? null);
+              harvestTypeLeaves(n.childForFieldName?.("type") ?? null);
             } else if (n.type === "function_definition") {
-              harvestPyTypes(n.childForFieldName?.("return_type") ?? null);
+              harvestTypeLeaves(n.childForFieldName?.("return_type") ?? null);
             } else if (n.type === "assignment") {
-              harvestPyTypes(n.childForFieldName?.("type") ?? null);
+              harvestTypeLeaves(n.childForFieldName?.("type") ?? null);
             } else if (n.type === "class_definition") {
-              harvestPyTypes(n.childForFieldName?.("superclasses") ?? null);
+              harvestTypeLeaves(n.childForFieldName?.("superclasses") ?? null);
+            }
+          } else if (lang === "c_sharp") {
+            // Method return (`returns`), parameter / property / variable
+            // (`type`), and the base/interface list.
+            if (
+              n.type === "parameter" ||
+              n.type === "property_declaration" ||
+              n.type === "variable_declaration"
+            ) {
+              harvestTypeLeaves(n.childForFieldName?.("type") ?? null);
+            } else if (n.type === "method_declaration") {
+              harvestTypeLeaves(n.childForFieldName?.("returns") ?? null);
+            } else if (n.type === "base_list") {
+              harvestTypeLeaves(n);
+            }
+          } else if (lang === "php") {
+            // Types are `name` inside `named_type` / `optional_type`.
+            // Parameter / property (`type`), function & method return
+            // (`return_type`), and the extends / implements clauses.
+            if (
+              n.type === "simple_parameter" ||
+              n.type === "property_declaration"
+            ) {
+              harvestTypeLeaves(n.childForFieldName?.("type") ?? null);
+            } else if (
+              n.type === "function_definition" ||
+              n.type === "method_declaration"
+            ) {
+              harvestTypeLeaves(n.childForFieldName?.("return_type") ?? null);
+            } else if (
+              n.type === "base_clause" ||
+              n.type === "class_interface_clause"
+            ) {
+              harvestTypeLeaves(n);
             }
           }
 
