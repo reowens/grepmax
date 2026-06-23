@@ -60,6 +60,26 @@ npx tsx src/eval-graph-totals.ts     # whole-corpus ref counts on platform
 npx tsx src/eval-graph-spotcheck.ts  # raw referenced_symbols for known callers
 ```
 
+## Stale-index reindex nudge is thin (only `gmax doctor` surfaces it)
+
+Added 2026-06-22. Fix designed + approved (a+b+c, see plan `next_step` latest4 + `docs/prompts/resume-chunker-version-nudge.md`), **not yet built**.
+
+When the chunker's metadata semantics change (new edge kinds, new columns), existing indexes keep their old data until a `gmax index --reset`. The signal that tells a user "you should reindex" is `CONFIG.CHUNKER_VERSION` (currently **2**), stamped per project at its last full index and compared in `gmax doctor`. Three gaps make this unreliable:
+
+- **Only `doctor` reads it.** The query commands where staleness actually degrades results — `search`, `trace`, `dead`, `peek`, `impact` — never check `chunkerVersion`. A user only learns their index is stale if they proactively run `gmax doctor`.
+- **`doctor --fix` doesn't fix it.** For stale-chunker projects it only *prints* `run 'gmax index --reset'` (`doctor.ts:240, 303-312`); it does not reindex.
+- **The message is wrong for additive changes.** The warning is hardcoded to `graph commands (peek/impact/trace) may overcount callers` — which fits only the v2 over-count fix. Additive changes (the identifier-as-value edges, and the type-position edges above) *under*-report until reindex; they don't overcount. And in practice the bump was skipped on all three of those changes, so the signal never even fired.
+
+**Impact:** downstream users silently run on stale indexes — missing identifier-as-value / type-position edges in `dead`/`trace` — with no prompt to reindex unless they happen to run `doctor`.
+
+**Planned fix (a+b+c):** (a) emit a one-line staleness hint to stderr from the query commands (suppressible `GMAX_NO_STALE_HINT=1`, structured field in `--agent`); (b) replace the bare `CHUNKER_VERSION` int with a `{v, severity, note}` history so doctor + the hint render the correct, per-change message and tone; (c) bump to 3 for the type-position edges. See the plan for the re-stamp gotcha (repos reindexed 2026-06-22 carry the edges but are stamped v2).
+
+**Detection / recovery (today):**
+```bash
+gmax doctor            # "WARN  Stale chunker: N project(s)…"
+cd <project> && gmax index --reset
+```
+
 ## `gmax dead` is a hypothesis, not a proof
 
 Added 2026-05-25 (v0.17.2).
