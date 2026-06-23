@@ -865,6 +865,19 @@ export class TreeSitterChunker {
             addTypeRef(n.text);
           }
 
+          // Shape 5 — class heritage `class A extends B`: the superclass is an
+          // `identifier` (a runtime value), not a `type_identifier`, so Shape 4
+          // misses it. `implements I` and `interface X extends Y` use
+          // type_identifier and are already covered. Reduce `extends ns.Base`
+          // to `Base`; skip type arguments (Shape 4 handles those).
+          if (n.type === "extends_clause") {
+            for (const c of n.namedChildren ?? []) {
+              if (c.type === "type_arguments") continue;
+              const sup = simpleRefName(c);
+              if (sup && /^[A-Z]/.test(sup) && sup !== name) addTypeRef(sup);
+            }
+          }
+
           for (const child of n.namedChildren ?? []) {
             extractRefs(child);
           }

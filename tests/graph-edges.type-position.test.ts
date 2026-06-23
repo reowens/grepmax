@@ -161,4 +161,38 @@ describe("type-position edges reach the graph but stay out of call edges", () =>
     expect(boxRow!.type_referenced_symbols).not.toContain("T");
     expect(boxRow!.type_referenced_symbols).not.toContain("Box");
   });
+
+  it("captures class heritage: `extends Base` (identifier) and `implements I`", async () => {
+    const chunker = new TreeSitterChunker();
+    const source = `import { Base } from "./base";
+import type { Drawable } from "./drawable";
+
+export class Widget extends Base implements Drawable {
+  render(): number {
+    return 1;
+  }
+}
+`;
+    const rows = await chunkToRows(chunker, "widget.ts", source);
+    const widget = rows.find((r) => r.defined_symbols.includes("Widget"));
+    expect(widget).toBeDefined();
+    // `extends Base` — Base is an identifier (runtime value), captured via Shape 5.
+    expect(widget!.type_referenced_symbols).toContain("Base");
+    // `implements Drawable` — type_identifier, captured via Shape 4.
+    expect(widget!.type_referenced_symbols).toContain("Drawable");
+    // Neither is a call edge.
+    expect(widget!.referenced_symbols).not.toContain("Base");
+    expect(widget!.referenced_symbols).not.toContain("Drawable");
+  });
+
+  it("reduces a qualified superclass `extends ns.Base` to Base", async () => {
+    const chunker = new TreeSitterChunker();
+    const source = `import * as ns from "./ns";
+export class Widget extends ns.Base {}
+`;
+    const rows = await chunkToRows(chunker, "widget.ts", source);
+    const widget = rows.find((r) => r.defined_symbols.includes("Widget"));
+    expect(widget).toBeDefined();
+    expect(widget!.type_referenced_symbols).toContain("Base");
+  });
 });
