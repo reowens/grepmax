@@ -22,37 +22,37 @@ describe("Daemon orphan worker sweep", () => {
   it("kills a worker only after it looks orphaned on two consecutive sweeps", () => {
     setTrackedPids([100, 200]); // pool tracks these
     // 999 is a gmax-worker, our child, untracked → orphan candidate.
-    vi.spyOn(daemon, "findProcessesByTitle").mockReturnValue([100, 200, 999]);
-    vi.spyOn(daemon, "findChildPids").mockReturnValue([100, 200, 999]);
+    vi.spyOn(daemon.processManager, "findProcessesByTitle").mockReturnValue([100, 200, 999]);
+    vi.spyOn(daemon.processManager, "findChildPids").mockReturnValue([100, 200, 999]);
     const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
 
-    daemon.sweepOrphanWorkers();
+    daemon.processManager.sweepOrphanWorkers();
     expect(killSpy).not.toHaveBeenCalled(); // first sighting: only suspected
 
-    daemon.sweepOrphanWorkers();
+    daemon.processManager.sweepOrphanWorkers();
     expect(killSpy).toHaveBeenCalledWith(999, "SIGKILL"); // confirmed → killed
   });
 
   it("never kills a non-worker child (MLX / llama-server)", () => {
     setTrackedPids([100]);
-    vi.spyOn(daemon, "findProcessesByTitle").mockReturnValue([100]); // 555 is not a worker
-    vi.spyOn(daemon, "findChildPids").mockReturnValue([100, 555]);
+    vi.spyOn(daemon.processManager, "findProcessesByTitle").mockReturnValue([100]); // 555 is not a worker
+    vi.spyOn(daemon.processManager, "findChildPids").mockReturnValue([100, 555]);
     const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
 
-    daemon.sweepOrphanWorkers();
-    daemon.sweepOrphanWorkers();
+    daemon.processManager.sweepOrphanWorkers();
+    daemon.processManager.sweepOrphanWorkers();
     expect(killSpy).not.toHaveBeenCalled();
   });
 
   it("never kills a worker owned by another process (not our child)", () => {
     setTrackedPids([100]);
     // 777 is a gmax-worker but belongs to e.g. a per-project `gmax watch`.
-    vi.spyOn(daemon, "findProcessesByTitle").mockReturnValue([100, 777]);
-    vi.spyOn(daemon, "findChildPids").mockReturnValue([100]); // not our child
+    vi.spyOn(daemon.processManager, "findProcessesByTitle").mockReturnValue([100, 777]);
+    vi.spyOn(daemon.processManager, "findChildPids").mockReturnValue([100]); // not our child
     const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
 
-    daemon.sweepOrphanWorkers();
-    daemon.sweepOrphanWorkers();
+    daemon.processManager.sweepOrphanWorkers();
+    daemon.processManager.sweepOrphanWorkers();
     expect(killSpy).not.toHaveBeenCalled();
   });
 });
