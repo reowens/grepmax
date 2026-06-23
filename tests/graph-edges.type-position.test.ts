@@ -196,3 +196,94 @@ export class Widget extends ns.Base {}
     expect(widget!.type_referenced_symbols).toContain("Base");
   });
 });
+
+/**
+ * Python type-position edges (Shape 6). Python spells type names as plain
+ * `identifier` nodes (no `type_identifier`), so the TS path (Shape 4) can't see
+ * them. These mirror `mlx-embed-server/server.py`: `EmbedRequest` is a Pydantic
+ * model used ONLY as a parameter annotation (the canonical `gmax dead` false
+ * positive), while `EmbedResponse` is both annotated AND constructed.
+ */
+const PY_DEF_SOURCE = `from pydantic import BaseModel
+
+class EmbedRequest(BaseModel):
+    texts: list[str]
+
+class EmbedResponse(BaseModel):
+    vectors: list[list[float]]
+    dim: int
+`;
+
+const PY_CALLER_SOURCE = `from models import EmbedRequest, EmbedResponse, VectorRecord
+
+async def embed(request: EmbedRequest, opt: Optional[Foo] = None) -> EmbedResponse:
+    cache: Dict[str, VectorRecord] = {}
+    return EmbedResponse()
+
+def noise(self, req):
+    a = self.state
+    return req.body.value
+`;
+
+describe("Python type-position edges reach the graph but stay out of call edges", () => {
+  it("captures a parameter-annotation-only model as a type edge, not a call edge", async () => {
+    const chunker = new TreeSitterChunker();
+    const rows = await chunkToRows(chunker, "server.py", PY_CALLER_SOURCE);
+    const embed = rows.find((r) => r.defined_symbols.includes("embed"));
+    expect(embed).toBeDefined();
+    // `request: EmbedRequest` — annotation only, so a TYPE edge…
+    expect(embed!.type_referenced_symbols).toContain("EmbedRequest");
+    // …and NOT a call edge (must not inflate referenced_symbols).
+    expect(embed!.referenced_symbols).not.toContain("EmbedRequest");
+    // `cache: Dict[str, VectorRecord]` — generic subscript, inner type kept.
+    expect(embed!.type_referenced_symbols).toContain("VectorRecord");
+    // `opt: Optional[Foo]` — both the wrapper and the argument.
+    expect(embed!.type_referenced_symbols).toContain("Optional");
+    expect(embed!.type_referenced_symbols).toContain("Foo");
+  });
+
+  it("keeps a constructed-and-annotated model in BOTH lists", async () => {
+    const chunker = new TreeSitterChunker();
+    const rows = await chunkToRows(chunker, "server.py", PY_CALLER_SOURCE);
+    const embed = rows.find((r) => r.defined_symbols.includes("embed"));
+    expect(embed).toBeDefined();
+    // `return EmbedResponse()` is a call/construct edge.
+    expect(embed!.referenced_symbols).toContain("EmbedResponse");
+    // `-> EmbedResponse` is a type edge.
+    expect(embed!.type_referenced_symbols).toContain("EmbedResponse");
+  });
+
+  it("surfaces the annotation-only caller via getCallers", async () => {
+    const chunker = new TreeSitterChunker();
+    const rows = [
+      ...(await chunkToRows(chunker, "models.py", PY_DEF_SOURCE)),
+      ...(await chunkToRows(chunker, "server.py", PY_CALLER_SOURCE)),
+    ];
+    const builder = new GraphBuilder(createIndexDb(rows));
+    const graph = await builder.buildGraph("EmbedRequest");
+    expect(graph.center?.symbol).toBe("EmbedRequest");
+    // `dead EmbedRequest` / `trace --inbound EmbedRequest` now see the
+    // annotation-only consumer the call graph alone misses.
+    expect(graph.callers.map((c) => c.symbol)).toContain("embed");
+  });
+
+  it("captures class bases (`class C(Base)`) as type edges", async () => {
+    const chunker = new TreeSitterChunker();
+    const rows = await chunkToRows(chunker, "models.py", PY_DEF_SOURCE);
+    const model = rows.find((r) => r.defined_symbols.includes("EmbedRequest"));
+    expect(model).toBeDefined();
+    expect(model!.type_referenced_symbols).toContain("BaseModel");
+    expect(model!.referenced_symbols).not.toContain("BaseModel");
+  });
+
+  it("does not flood lowercase-local member access (self/req)", async () => {
+    const chunker = new TreeSitterChunker();
+    const rows = await chunkToRows(chunker, "server.py", PY_CALLER_SOURCE);
+    const noise = rows.find((r) => r.defined_symbols.includes("noise"));
+    expect(noise).toBeDefined();
+    // `self.state` / `req.body` are lowercase heads — no type or call edges.
+    expect(noise!.type_referenced_symbols).toHaveLength(0);
+    expect(noise!.referenced_symbols).not.toContain("state");
+    expect(noise!.referenced_symbols).not.toContain("body");
+  });
+});

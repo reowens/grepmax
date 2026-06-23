@@ -45,6 +45,12 @@ import { escapeSqlString } from "./lib/utils/filter-builder";
 
 const GMAX_ROOT = path.resolve(__dirname, "..");
 const SELF = "src/eval-graph-nav.ts"; // exclude from grep + graph (self-reference)
+// Files that embed the fixture symbols as *string* data (template-literal
+// source, `.toContain("…")` assertions) rather than real type/call references.
+// grep can't tell those apart from genuine uses, so they would manufacture
+// phantom "expected callers" that no correct graph ever surfaces. Excluded from
+// both the grep truth and the getCallers set so the exclusion stays symmetric.
+const FIXTURE_FILES = new Set([SELF, "tests/graph-edges.type-position.test.ts"]);
 const rel = (p: string) => p.replace(`${GMAX_ROOT}/`, "");
 
 // "callable": reached via call/construct sites the graph captures — its
@@ -111,6 +117,18 @@ const INBOUND_SYMBOLS: NavSymbol[] = [
     character: "type-only",
     note: "string-literal type alias, pure type position",
   },
+  // ── Python (mlx-embed-server/server.py): proves Shape 6 closes the gap in a
+  //    grammar with no `type_identifier` node. ─────────────────────────────────
+  {
+    symbol: "EmbedResponse",
+    character: "callable",
+    note: "Python: Pydantic model via `EmbedResponse(...)` construct site",
+  },
+  {
+    symbol: "EmbedRequest",
+    character: "type-only",
+    note: "Python: Pydantic model in `request: EmbedRequest` annotation only",
+  },
 ];
 
 // Dead-precision truth is derived (LIVE iff grep finds any use beyond def/import).
@@ -120,6 +138,7 @@ const DEAD_SYMBOLS = [
   "DeadResult", // non-exported, type-only users → today DEAD (false positive)
   "EdgeDirection", // exported, type-only users → today PUBLIC_EXPORT (masked)
   "ResolvedCaller", // exported, type-only users → today PUBLIC_EXPORT (masked)
+  "EmbedRequest", // Python: annotation-only Pydantic model — the canonical false-dead, now LIVE via Shape 6
 ];
 
 type RefKind = "import" | "def" | "call" | "type" | "other";
@@ -159,7 +178,15 @@ function referenceTruth(symbol: string): {
   try {
     raw = execFileSync(
       "git",
-      ["grep", "-nwF", symbol, "--", "*.ts", "*.py", `:!${SELF}`],
+      [
+        "grep",
+        "-nwF",
+        symbol,
+        "--",
+        "*.ts",
+        "*.py",
+        ...[...FIXTURE_FILES].map((f) => `:!${f}`),
+      ],
       { cwd: GMAX_ROOT, encoding: "utf-8" },
     );
   } catch {
@@ -188,7 +215,9 @@ async function callerFiles(
   symbol: string,
 ): Promise<Set<string>> {
   const callers = await builder.getCallers(symbol);
-  return new Set(callers.map((g) => rel(g.file)).filter((f) => f !== SELF));
+  return new Set(
+    callers.map((g) => rel(g.file)).filter((f) => !FIXTURE_FILES.has(f)),
+  );
 }
 
 function recall(

@@ -723,6 +723,27 @@ export class TreeSitterChunker {
           "struct_expression", // Rust
           "instance_expression", // Scala
         ]);
+        // Harvest Capitalized type names out of a Python annotation subtree
+        // (a `type` node, or the `superclasses` argument_list). Python spells
+        // type names as plain `identifier` nodes — `EmbedRequest`,
+        // `Optional[Foo]` (subscript), `models.Base` (attribute) — so we walk
+        // the WHOLE annotation subtree and keep every Capitalized leaf, which
+        // is safe precisely because we only ever enter from a type position.
+        // Skips the chunk's own name; lowercase builtins (`list`, `str`) and
+        // qualifiers (`models`) fall out via the Capitalized gate.
+        const harvestPyTypes = (typeNode: TreeSitterNode | null) => {
+          if (!typeNode) return;
+          if (
+            typeNode.type === "identifier" &&
+            (typeNode.namedChildren?.length ?? 0) === 0
+          ) {
+            if (/^[A-Z]/.test(typeNode.text) && typeNode.text !== name) {
+              addTypeRef(typeNode.text);
+            }
+            return;
+          }
+          for (const c of typeNode.namedChildren ?? []) harvestPyTypes(c);
+        };
         const extractRefs = (n: TreeSitterNode) => {
           // Handle JS/TS (call_expression), Python (call), Lua (function_call)
           if (
@@ -875,6 +896,30 @@ export class TreeSitterChunker {
               if (c.type === "type_arguments") continue;
               const sup = simpleRefName(c);
               if (sup && /^[A-Z]/.test(sup) && sup !== name) addTypeRef(sup);
+            }
+          }
+
+          // Shape 6 — Python type-position references: parameter / return /
+          // variable annotations (`x: Foo`, `-> Bar`, `v: Baz = …`) and class
+          // bases (`class C(Base)`). Python has no `type_identifier` node, so
+          // Shape 4 can't reach these; instead we read the annotation off the
+          // node's type field and harvest from that subtree only — never the
+          // node as a whole — so value expressions stay out of the type list.
+          // Gated to the Python grammar because these carrier node/field names
+          // (`function_definition`, `assignment`, `class_definition`) collide
+          // with other grammars that spell these positions differently.
+          if (lang === "python") {
+            if (
+              n.type === "typed_parameter" ||
+              n.type === "typed_default_parameter"
+            ) {
+              harvestPyTypes(n.childForFieldName?.("type") ?? null);
+            } else if (n.type === "function_definition") {
+              harvestPyTypes(n.childForFieldName?.("return_type") ?? null);
+            } else if (n.type === "assignment") {
+              harvestPyTypes(n.childForFieldName?.("type") ?? null);
+            } else if (n.type === "class_definition") {
+              harvestPyTypes(n.childForFieldName?.("superclasses") ?? null);
             }
           }
 

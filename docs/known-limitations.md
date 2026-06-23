@@ -2,7 +2,7 @@
 type: doc
 status: reference
 created: 2026-04-09
-updated: 2026-06-02T18:00:00Z
+updated: 2026-06-22T18:00:00Z
 summary: Live catalog of open gmax limitations with detection + recovery steps.
 audience: internal
 related_plans:
@@ -13,7 +13,7 @@ related_docs:
 
 # Known Limitations
 
-Last updated 2026-06-02.
+Last updated 2026-06-22.
 
 ## Chunker `referenced_symbols` extracts call-expression names, not identifier-as-value references
 
@@ -32,7 +32,7 @@ Corpus-wide chunk-level density (eval-graph-totals reproduced fan-free over 121k
 
 The two in-scope class/enum targets go from an empty graph to real caller edges. The other two were mis-grouped in the original Phase-0 set: neither is an identifier-as-value class/enum reference.
 
-**Still open:** (1) no query-time consumer reads these `referenced_symbols` edges yet. The intended consumer (Phase 3 PPR/k-hop) is **deferred** — its design probe found the platform hard-miss defs are already in-pool, so there's nothing to recover (see the PageRank entry's "Next direction" below). The v0.17.9 symbol-definition promotion that fixed those cases reads `defined_symbols`, not the `referenced_symbols` graph edges, so it doesn't exercise this work. The edges still benefit `gmax dead`/`gmax trace --inbound`; (2) ~~other grammars still capture call-expressions only~~ — **resolved 2026-06-02**: the three identifier-as-value shapes now cover all 14 grammars (a `--reset` reindex of a non-TS repo is still required to make its edges live at query time); (3) type-position references (`: ClassName`, `<ClassName>`, `extends ClassName`, `as ClassName`, type aliases) — **TS/JS captured 2026-06-22** into a separate `type_referenced_symbols` column (kept out of `referenced_symbols` so they never inflate the call-edge count that drives role/search ranking; navigation consumers union the two). `class extends Base` heritage included. Measured via `src/eval-graph-nav.ts`: type-position recall 23%→100% on gmax-self, `dead` false-positives → 0, bench:oss byte-identical (express 0.889 / lodash 0.900). **Still uncaptured:** the other 10 grammars' type positions (Python `: Foo` / `-> Bar`, Rust, Go, Java, C#, …) and the bare-identifier-as-callback-value shape (`emitter.on('x', errorHandler)`) — the latter stays deferred because capturing bare lowercase-identifier values would flood the graph with every local. A `--reset` reindex (and a daemon on new code) is required to make the TS/JS edges live.
+**Still open:** (1) no query-time consumer reads these `referenced_symbols` edges yet. The intended consumer (Phase 3 PPR/k-hop) is **deferred** — its design probe found the platform hard-miss defs are already in-pool, so there's nothing to recover (see the PageRank entry's "Next direction" below). The v0.17.9 symbol-definition promotion that fixed those cases reads `defined_symbols`, not the `referenced_symbols` graph edges, so it doesn't exercise this work. The edges still benefit `gmax dead`/`gmax trace --inbound`; (2) ~~other grammars still capture call-expressions only~~ — **resolved 2026-06-02**: the three identifier-as-value shapes now cover all 14 grammars (a `--reset` reindex of a non-TS repo is still required to make its edges live at query time); (3) type-position references (`: ClassName`, `<ClassName>`, `extends ClassName`, `as ClassName`, type aliases) — **TS/JS + Python captured 2026-06-22** into a separate `type_referenced_symbols` column (kept out of `referenced_symbols` so they never inflate the call-edge count that drives role/search ranking; navigation consumers union the two). TS/JS read the grammar's `type_identifier` node (Shapes 4/5, `class extends Base` heritage included); Python — which has **no** `type_identifier` node, spelling type names as plain `identifier` — harvests Capitalized names from each annotation's `type`-field subtree (Shape 6, gated to the Python grammar: `x: Foo`, `-> Bar`, `v: Baz = …`, and `class C(Base)` bases). Measured via `src/eval-graph-nav.ts`: TS/JS type-position recall 23%→100% on gmax-self, `dead` false-positives → 0, bench:oss byte-identical (express 0.889 / lodash 0.900); Python proven by the `EmbedRequest` / `EmbedResponse` fixtures (from `mlx-embed-server/server.py`), which close the canonical Pydantic `: EmbedRequest` dead-FP once reindexed. **Still uncaptured:** the remaining grammars' type positions — Rust `: Foo` / `-> Bar`, Go, etc. (the C-family `type_identifier` grammars — Java, C#, Kotlin, Scala — are reached *incidentally* by Shape 4 but remain unbenched); Python string forward-refs (`-> "Foo"`) and module-level `TypeVar`s (declared outside chunk scope, so a handful of `T`/`K` self-edges may leak); and the bare-identifier-as-callback-value shape (`emitter.on('x', errorHandler)`), deferred because capturing bare lowercase-identifier values would flood the graph with every local. A `--reset` reindex (and a daemon on new code) is required to make the edges live.
 
 The chunker writes `referenced_symbols` per chunk to support `gmax trace`, `gmax dead`, and any graph-derived ranking signal. Today the extraction tracks **call-expression callees** — names that appear in a syntactic call position. It does **not** track identifier references that aren't calls: class names used as values (`new BeyondError(…)`, `instanceof BeyondError`, `throw new ValidationError(…)`), constants/enums referenced as values (`ErrorCodes.NOT_FOUND`, `ErrorCodes.VALIDATION`), or types referenced in expression position.
 
@@ -69,7 +69,7 @@ Added 2026-05-25 (v0.17.2).
 - **Dynamic dispatch** — method calls resolved at runtime through interfaces/protocols/duck typing.
 - **Reflection / `eval`** — `getattr`, `Function.prototype.apply`, `eval`, `import()` with a runtime string.
 - **String-built call sites** — `obj[methodName]()` where `methodName` is computed.
-- **Identifier-as-value references** — `new ClassName(…)`, `instanceof ClassName`, `Enum.MEMBER`. **Captured across all 14 grammars** (2026-06-02). **Type-position references** (`: T`, `<T>`, `extends T`, `as T`) — **TS/JS captured 2026-06-22** (separate `type_referenced_symbols` column, unioned by `dead`/`trace`); other grammars + the callback-value shape remain uncaptured. A non-TS repo (and any repo for type-position) needs a `--reset` reindex on new code for its edges to go live. See the "Chunker `referenced_symbols`…" entry above.
+- **Identifier-as-value references** — `new ClassName(…)`, `instanceof ClassName`, `Enum.MEMBER`. **Captured across all 14 grammars** (2026-06-02). **Type-position references** (`: T`, `<T>`, `extends T`, `as T`, Python annotations + class bases) — **TS/JS + Python captured 2026-06-22** (separate `type_referenced_symbols` column, unioned by `dead`/`trace`); the remaining grammars + the callback-value shape remain uncaptured. A non-TS repo (and any repo for type-position) needs a `--reset` reindex on new code for its edges to go live. See the "Chunker `referenced_symbols`…" entry above.
 - **Cross-language calls** — a Python caller of a TypeScript exported function (and vice-versa) — graph is built per-language.
 - **External consumers** — anything outside the indexed project tree.
 
