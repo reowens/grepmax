@@ -60,9 +60,9 @@ npx tsx src/eval-graph-totals.ts     # whole-corpus ref counts on platform
 npx tsx src/eval-graph-spotcheck.ts  # raw referenced_symbols for known callers
 ```
 
-## Stale-index reindex nudge (a+b+c shipped 2026-06-22)
+## Stale-index reindex nudge (a+b+c shipped 2026-06-22; `doctor --fix` reindexes)
 
-Added 2026-06-22; **fix built same day** (a+b+c). One residual gap remains (see end).
+Added 2026-06-22; **fix built same day** (a+b+c, plus `doctor --fix` reindex — see end).
 
 When the chunker's metadata semantics change (new edge kinds, new columns), existing indexes keep their old data until a `gmax index --reset`. The signal that tells a user "you should reindex" is `CONFIG.CHUNKER_VERSION` (now **3**), stamped per project at its last full index. Until 2026-06-22 only `gmax doctor` read it, the warning text was hardcoded to the v2 over-count case, and the version had been left at 2 across three additive chunk changes.
 
@@ -77,10 +77,10 @@ Verified live: stale repos (lean/proctor/cram/quorm/dotmd/furni/cokemusic-extrac
 **Detection / recovery:**
 ```bash
 gmax doctor            # "INFO/WARN  Stale chunker: N project(s)…" with per-gap note + fix
-cd <project> && gmax index --reset
+gmax doctor --fix      # reindexes every stale project (--reset) and re-stamps it
 ```
 
-**Residual gap (not in a+b+c scope):** `doctor --fix` still only *prints* `gmax index --reset` for stale-chunker projects; it does not reindex them. Reindex is heavy and per-project, so auto-running it inside `--fix` was deliberately left out.
+**`doctor --fix` reindexes stale-chunker projects** (added 2026-06-22, closing the original residual gap). When the daemon is running, `--fix` runs a `--reset` reindex per stale project (routed through the daemon's streaming `index` command) and re-stamps each to `CONFIG.CHUNKER_VERSION` on success; if the daemon is down it falls back to printing the manual command. This is heavier than the other `--fix` remediations (stale-lock removal, compaction/prune, orphan cleanup), so it runs last. Verified 2026-06-22: a single `gmax doctor --fix` reindexed all 7 stale repos and `gmax doctor` then reported `stale_chunker=0`.
 
 ## `gmax dead` is a hypothesis, not a proof
 

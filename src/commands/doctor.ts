@@ -6,7 +6,7 @@ import { CONFIG, DISK_CRITICAL_BYTES, DISK_LOW_BYTES, describeChunkerGap, MODEL_
 import { readGlobalConfig } from "../lib/index/index-config";
 import { gracefulExit } from "../lib/utils/exit";
 import { isProcessAlive, parseLock, removeLock } from "../lib/utils/lock";
-import { listProjects, removeProject } from "../lib/utils/project-registry";
+import { listProjects, registerProject, removeProject } from "../lib/utils/project-registry";
 import { findProjectRoot } from "../lib/utils/project-root";
 
 function formatSize(bytes: number): string {
@@ -316,7 +316,7 @@ export const doctor = new Command("doctor")
             (p) => describeChunkerGap(p.chunkerVersion)?.severity === "breaking",
           );
           console.log(
-            `${anyBreaking ? "WARN" : "INFO"}  Stale chunker: ${staleChunkerProjects.length} project(s) indexed before chunker v${CONFIG.CHUNKER_VERSION}`,
+            `${anyBreaking ? "WARN" : "INFO"}  Stale chunker: ${staleChunkerProjects.length} project(s) indexed before chunker v${CONFIG.CHUNKER_VERSION} — run 'gmax doctor --fix' to reindex`,
           );
           for (const p of staleChunkerProjects) {
             const gap = describeChunkerGap(p.chunkerVersion);
@@ -393,6 +393,48 @@ export const doctor = new Command("doctor")
               `ok  Removed ${orphanedProjects.length} orphaned project(s) from registry`,
             );
           fixed++;
+        }
+
+        // Reindex projects whose index predates the current chunker. This is a
+        // full `--reset` reindex per project (routed through the daemon), so it
+        // can be slow on large repos — unlike the cheap fixes above.
+        if (staleChunkerProjects.length > 0) {
+          const { ensureDaemonRunning, sendStreamingCommand } = await import(
+            "../lib/utils/daemon-client"
+          );
+          if (!(await ensureDaemonRunning())) {
+            if (!opts.agent)
+              console.log(
+                "WARN  Stale chunker: daemon not running — start it (gmax watch --daemon -b) or run 'gmax index --reset' per project",
+              );
+          } else {
+            for (const p of staleChunkerProjects) {
+              const name = p.name || path.basename(p.root);
+              if (!opts.agent) console.log(`...  Reindexing ${name} (--reset)...`);
+              const done = await sendStreamingCommand(
+                { cmd: "index", root: p.root, reset: true },
+                () => {},
+              ).catch((e) => ({ ok: false, error: String(e) }) as const);
+              if (done.ok) {
+                registerProject({
+                  ...p,
+                  status: "indexed",
+                  chunkerVersion: CONFIG.CHUNKER_VERSION,
+                  lastIndexed: new Date().toISOString(),
+                  chunkCount: (done.indexed as number) ?? p.chunkCount,
+                });
+                const chunks = (done.indexed as number) ?? 0;
+                if (opts.agent) {
+                  console.log(`stale_chunker_reindexed\tname=${name}\tchunks=${chunks}`);
+                } else {
+                  console.log(`ok  ${name} reindexed (${chunks} chunks)`);
+                }
+                fixed++;
+              } else if (!opts.agent) {
+                console.log(`FAIL  ${name}: reindex failed (${done.error})`);
+              }
+            }
+          }
         }
 
         if (fixed === 0) {
