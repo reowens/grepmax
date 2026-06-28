@@ -11,7 +11,7 @@ import type { Searcher } from "../search/searcher";
 import type { SearchFilter } from "../store/types";
 import type { VectorDB } from "../store/vector-db";
 import { toArr } from "../utils/arrow";
-import { escapeSqlString } from "../utils/filter-builder";
+import { escapeSqlString, pathStartsWith } from "../utils/filter-builder";
 
 export interface InvestigateContext {
   vectorDb: VectorDB;
@@ -244,7 +244,7 @@ async function executePeek(
     .query()
     .select(["is_exported", "start_line", "end_line"])
     .where(
-      `array_contains(defined_symbols, '${escapeSqlString(symbol)}') AND path LIKE '${escapeSqlString(prefix)}%'`,
+      `array_contains(defined_symbols, '${escapeSqlString(symbol)}') AND ${pathStartsWith(prefix)}`,
     )
     .limit(1)
     .toArray();

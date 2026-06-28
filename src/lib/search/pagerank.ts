@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { PATHS } from "../../config";
 import type { VectorDB } from "../store/vector-db";
-import { escapeSqlString } from "../utils/filter-builder";
+import { pathStartsWith } from "../utils/filter-builder";
 
 export interface PageRankGraph {
   nodes: string[];
@@ -126,7 +126,7 @@ export async function buildGraphFromDb(
   const rows = await table
     .query()
     .select(["defined_symbols", "referenced_symbols"])
-    .where(`path LIKE '${escapeSqlString(prefix)}%'`)
+    .where(pathStartsWith(prefix))
     .toArray();
 
   const nodes = new Set<string>();

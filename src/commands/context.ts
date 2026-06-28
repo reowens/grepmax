@@ -8,7 +8,7 @@ import { VectorDB } from "../lib/store/vector-db";
 import { toArr } from "../lib/utils/arrow";
 import { packByBudget } from "../lib/utils/budget-pack";
 import { gracefulExit } from "../lib/utils/exit";
-import { escapeSqlString } from "../lib/utils/filter-builder";
+import { escapeSqlString, pathStartsWith } from "../lib/utils/filter-builder";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
@@ -356,7 +356,7 @@ export const context = new Command("context")
       }
 
       if (allSymbols.size > 0) {
-        const pathScope = `path LIKE '${escapeSqlString(projectRoot)}/%'`;
+        const pathScope = pathStartsWith(`${projectRoot}/`);
         const relatedCounts = new Map<string, number>();
         const searchedFiles = new Set(uniqueFiles);
 

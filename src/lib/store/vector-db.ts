@@ -19,7 +19,7 @@ import {
   FRAGMENT_COMPACT_THRESHOLD,
 } from "../../config";
 import { registerCleanup } from "../utils/cleanup";
-import { escapeSqlString } from "../utils/filter-builder";
+import { escapeSqlString, pathStartsWith } from "../utils/filter-builder";
 import { debug, log, timer } from "../utils/logger";
 import type { VectorRecord } from "./types";
 
@@ -743,7 +743,7 @@ export class VectorDB {
     const rows = await table
       .query()
       .select(["id"])
-      .where(`path LIKE '${escapeSqlString(prefix)}%'`)
+      .where(pathStartsWith(prefix))
       .limit(1)
       .toArray();
     return rows.length > 0;
@@ -752,7 +752,7 @@ export class VectorDB {
   async countRowsForPath(pathPrefix: string): Promise<number> {
     const table = await this.ensureTable();
     const prefix = pathPrefix.endsWith("/") ? pathPrefix : `${pathPrefix}/`;
-    return table.countRows(`path LIKE '${escapeSqlString(prefix)}%'`);
+    return table.countRows(pathStartsWith(prefix));
   }
 
   async countDistinctFilesForPath(pathPrefix: string): Promise<number> {
@@ -765,7 +765,7 @@ export class VectorDB {
     const rows = await table
       .query()
       .select(["path"])
-      .where(`path LIKE '${escapeSqlString(prefix)}%'`)
+      .where(pathStartsWith(prefix))
       .toArray();
     const unique = new Set<string>();
     for (const r of rows) {
@@ -866,9 +866,12 @@ export class VectorDB {
   async deletePathsWithPrefix(prefix: string): Promise<void> {
     this.ensureDiskOk();
     const table = await this.ensureTable();
-    await this.withWriteGate(() =>
-      table.delete(`path LIKE '${escapeSqlString(prefix)}%'`),
-    );
+    // Slash-terminate so a project root can't bleed into a sibling
+    // (`/repo/app` must not delete `/repo/app2`), and use starts_with so `_`/`%`
+    // in the path are literal, not LIKE wildcards. Destructive path — keep this
+    // self-protective even if a caller forgets to normalize.
+    const dirPrefix = prefix.endsWith("/") ? prefix : `${prefix}/`;
+    await this.withWriteGate(() => table.delete(pathStartsWith(dirPrefix)));
   }
 
   async drop(): Promise<void> {

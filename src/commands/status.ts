@@ -3,7 +3,7 @@ import { Command } from "commander";
 import { PATHS } from "../config";
 import { readGlobalConfig } from "../lib/index/index-config";
 import { gracefulExit } from "../lib/utils/exit";
-import { escapeSqlString } from "../lib/utils/filter-builder";
+import { pathStartsWith } from "../lib/utils/filter-builder";
 import { isLocked } from "../lib/utils/lock";
 import { listProjects } from "../lib/utils/project-registry";
 import { findProjectRoot } from "../lib/utils/project-root";
@@ -80,7 +80,7 @@ Examples:
         const rows = await table
           .query()
           .select(["id"])
-          .where(`path LIKE '${escapeSqlString(prefix)}%'`)
+          .where(pathStartsWith(prefix))
           .toArray();
         chunkCounts.set(project.root, rows.length);
       }

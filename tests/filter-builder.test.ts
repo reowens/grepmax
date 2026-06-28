@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   escapeSqlString,
   normalizePath,
+  pathNotStartsWith,
+  pathStartsWith,
 } from "../src/lib/utils/filter-builder";
 
 describe("escapeSqlString", () => {
@@ -43,5 +45,40 @@ describe("normalizePath", () => {
 
   it("handles empty string", () => {
     expect(normalizePath("")).toBe("");
+  });
+});
+
+describe("pathStartsWith", () => {
+  it("emits a starts_with predicate, not a LIKE clause", () => {
+    expect(pathStartsWith("/repo/app/")).toBe(
+      "starts_with(path, '/repo/app/')",
+    );
+  });
+
+  it("keeps `_` literal so a sibling project can't be matched", () => {
+    // `path LIKE '/repo/my_app/%'` would also match `/repo/myXapp/` because `_`
+    // is a LIKE wildcard. starts_with() has no wildcard semantics, so the
+    // underscore is matched literally.
+    expect(pathStartsWith("/repo/my_app/")).toBe(
+      "starts_with(path, '/repo/my_app/')",
+    );
+  });
+
+  it("keeps `%` literal", () => {
+    expect(pathStartsWith("/repo/100%done/")).toBe(
+      "starts_with(path, '/repo/100%done/')",
+    );
+  });
+
+  it("escapes single quotes in the prefix", () => {
+    expect(pathStartsWith("/repo/it's/")).toBe(
+      "starts_with(path, '/repo/it''s/')",
+    );
+  });
+
+  it("negates with pathNotStartsWith", () => {
+    expect(pathNotStartsWith("/repo/app/tests/")).toBe(
+      "NOT starts_with(path, '/repo/app/tests/')",
+    );
   });
 });

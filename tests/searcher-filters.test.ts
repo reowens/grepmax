@@ -45,9 +45,9 @@ describe("buildWhereClause", () => {
     ).toBeUndefined();
   });
 
-  it("builds path prefix LIKE clause", () => {
+  it("builds path prefix starts_with clause", () => {
     const result = buildWhereClause("/usr/src/", undefined, defaultIntent);
-    expect(result).toBe("path LIKE '/usr/src/%'");
+    expect(result).toBe("starts_with(path, '/usr/src/')");
   });
 
   it("builds file name filter", () => {
@@ -59,23 +59,23 @@ describe("buildWhereClause", () => {
     expect(result).toBe("path LIKE '%/syncer.ts'");
   });
 
-  it("builds exclude NOT LIKE clause with path prefix", () => {
+  it("builds exclude clause with path prefix", () => {
     const result = buildWhereClause(
       "/usr/src/",
       { exclude: "tests/" },
       defaultIntent,
     );
-    expect(result).toContain("path LIKE '/usr/src/%'");
-    expect(result).toContain("path NOT LIKE '/usr/src/tests/%'");
+    expect(result).toContain("starts_with(path, '/usr/src/')");
+    expect(result).toContain("NOT starts_with(path, '/usr/src/tests/')");
   });
 
-  it("builds exclude NOT LIKE clause without path prefix", () => {
+  it("builds exclude clause without path prefix", () => {
     const result = buildWhereClause(
       undefined,
       { exclude: "dist/" },
       defaultIntent,
     );
-    expect(result).toBe("path NOT LIKE 'dist/%'");
+    expect(result).toBe("NOT starts_with(path, 'dist/')");
   });
 
   it("builds language extension filter", () => {
@@ -111,17 +111,19 @@ describe("buildWhereClause", () => {
       { project_roots: "/a,/b" },
       defaultIntent,
     );
-    expect(result).toBe("(path LIKE '/a/%' OR path LIKE '/b/%')");
+    expect(result).toBe(
+      "(starts_with(path, '/a/') OR starts_with(path, '/b/'))",
+    );
   });
 
-  it("builds exclude_project_roots NOT LIKE clauses", () => {
+  it("builds exclude_project_roots exclusion clauses", () => {
     const result = buildWhereClause(
       undefined,
       { exclude_project_roots: "/a,/b" },
       defaultIntent,
     );
-    expect(result).toContain("path NOT LIKE '/a/%'");
-    expect(result).toContain("path NOT LIKE '/b/%'");
+    expect(result).toContain("NOT starts_with(path, '/a/')");
+    expect(result).toContain("NOT starts_with(path, '/b/')");
   });
 
   it("builds def filter with array_contains", () => {
@@ -148,7 +150,7 @@ describe("buildWhereClause", () => {
       { language: "ts", role: "ORCHESTRATION" },
       defaultIntent,
     );
-    expect(result).toContain("path LIKE '/src/%'");
+    expect(result).toContain("starts_with(path, '/src/')");
     expect(result).toContain("path LIKE '%.ts'");
     expect(result).toContain("role = 'ORCHESTRATION'");
     expect(result!.split(" AND ").length).toBe(3);
@@ -174,15 +176,15 @@ describe("buildWhereClause", () => {
     );
   });
 
-  it("emits multiple NOT LIKE for excludePrefixes array", () => {
+  it("emits multiple exclusions for excludePrefixes array", () => {
     const result = buildWhereClause(
       "/p/app/",
       { excludePrefixes: ["/p/app/tests/", "/p/app/docs/"] },
       defaultIntent,
     );
-    expect(result).toContain("path LIKE '/p/app/%'");
-    expect(result).toContain("path NOT LIKE '/p/app/tests/%'");
-    expect(result).toContain("path NOT LIKE '/p/app/docs/%'");
+    expect(result).toContain("starts_with(path, '/p/app/')");
+    expect(result).toContain("NOT starts_with(path, '/p/app/tests/')");
+    expect(result).toContain("NOT starts_with(path, '/p/app/docs/')");
   });
 
   it("emits OR group for multi-element inPrefixes", () => {
@@ -194,7 +196,7 @@ describe("buildWhereClause", () => {
       defaultIntent,
     );
     expect(result).toContain(
-      "(path LIKE '/p/app/packages/api/%' OR path LIKE '/p/app/packages/web/%')",
+      "(starts_with(path, '/p/app/packages/api/') OR starts_with(path, '/p/app/packages/web/'))",
     );
   });
 

@@ -180,9 +180,9 @@ describe("GraphBuilder", () => {
     ]);
     await builder.getCallers("foo");
 
-    expect(capturedWhere).toContain("path LIKE '/p/app/%'");
-    expect(capturedWhere).toContain("path NOT LIKE '/p/app/tests/%'");
-    expect(capturedWhere).toContain("path NOT LIKE '/p/app/docs/%'");
+    expect(capturedWhere).toContain("starts_with(path, '/p/app/')");
+    expect(capturedWhere).toContain("NOT starts_with(path, '/p/app/tests/')");
+    expect(capturedWhere).toContain("NOT starts_with(path, '/p/app/docs/')");
   });
 
   it("unresolved callees have empty file", async () => {

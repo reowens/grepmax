@@ -4,7 +4,7 @@ import { isBuiltinCallee } from "../lib/graph/callsites";
 import { VectorDB } from "../lib/store/vector-db";
 import { toArr } from "../lib/utils/arrow";
 import { gracefulExit } from "../lib/utils/exit";
-import { escapeSqlString } from "../lib/utils/filter-builder";
+import { pathStartsWith } from "../lib/utils/filter-builder";
 import { listProjects, resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
@@ -35,7 +35,7 @@ export const project = new Command("project")
           "defined_symbols",
           "referenced_symbols",
         ])
-        .where(`path LIKE '${escapeSqlString(prefix)}%'`)
+        .where(pathStartsWith(prefix))
         .limit(200000)
         .toArray();
 

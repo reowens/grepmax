@@ -9,7 +9,7 @@ import { startWatcher } from "../lib/index/watcher";
 import { MetaCache } from "../lib/store/meta-cache";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
-import { escapeSqlString } from "../lib/utils/filter-builder";
+import { pathStartsWith } from "../lib/utils/filter-builder";
 import { openRotatedLog } from "../lib/utils/log-rotate";
 import { killProcess } from "../lib/utils/process";
 import { getProject, registerProject } from "../lib/utils/project-registry";
@@ -216,7 +216,7 @@ export const watch = new Command("watch")
       const indexed = await table
         .query()
         .select(["id"])
-        .where(`path LIKE '${escapeSqlString(prefix)}%'`)
+        .where(pathStartsWith(prefix))
         .limit(1)
         .toArray();
 

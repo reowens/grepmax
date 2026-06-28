@@ -113,11 +113,18 @@ Examples:
         }
 
         const paths = ensureProjectPaths(projectRoot);
+        // Slash-terminate so removing /repo/app can't also delete the sibling
+        // /repo/app2 — VectorDB matches `path LIKE prefix%` and MetaCache
+        // matches `key.startsWith(prefix)`, both of which bleed across siblings
+        // without the trailing slash. Mirrors the daemon remove path.
+        const rootPrefix = projectRoot.endsWith("/")
+          ? projectRoot
+          : `${projectRoot}/`;
         vectorDb = new VectorDB(paths.lancedbDir);
-        await vectorDb.deletePathsWithPrefix(projectRoot);
+        await vectorDb.deletePathsWithPrefix(rootPrefix);
 
         metaCache = new MetaCache(paths.lmdbPath);
-        const keys = await metaCache.getKeysWithPrefix(projectRoot);
+        const keys = await metaCache.getKeysWithPrefix(rootPrefix);
         for (const key of keys) {
           metaCache.delete(key);
         }

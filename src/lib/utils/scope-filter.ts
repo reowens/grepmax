@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { escapeSqlString } from "./filter-builder";
+import { pathNotStartsWith, pathStartsWith } from "./filter-builder";
 
 export interface ScopeOptions {
   projectRoot: string;
@@ -80,14 +80,12 @@ export function buildScopeWhere(
 ): string {
   const parts: string[] = [];
   if (condition) parts.push(condition);
-  parts.push(`path LIKE '${escapeSqlString(scope.pathPrefix)}%'`);
+  parts.push(pathStartsWith(scope.pathPrefix));
   for (const ex of scope.excludePrefixes) {
-    parts.push(`path NOT LIKE '${escapeSqlString(ex)}%'`);
+    parts.push(pathNotStartsWith(ex));
   }
   if (scope.inPrefixes.length > 0) {
-    const ors = scope.inPrefixes
-      .map((p) => `path LIKE '${escapeSqlString(p)}%'`)
-      .join(" OR ");
+    const ors = scope.inPrefixes.map((p) => pathStartsWith(p)).join(" OR ");
     parts.push(`(${ors})`);
   }
   return parts.join(" AND ");

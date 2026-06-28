@@ -18,7 +18,11 @@ import { MetaCache } from "../lib/store/meta-cache";
 import type { ChunkType, FileMetadata } from "../lib/store/types";
 import { VectorDB } from "../lib/store/vector-db";
 import { isIndexableFile } from "../lib/utils/file-utils";
-import { escapeSqlString, normalizePath } from "../lib/utils/filter-builder";
+import {
+  escapeSqlString,
+  normalizePath,
+  pathStartsWith,
+} from "../lib/utils/filter-builder";
 import { formatTimeAgo } from "../lib/utils/format-helpers";
 import { extractImports } from "../lib/utils/import-extractor";
 import { getProject, listProjects } from "../lib/utils/project-registry";
@@ -883,7 +887,7 @@ export const mcp = new Command("mcp")
             "defined_symbols",
           ])
           .where(
-            `array_contains(defined_symbols, '${escapeSqlString(symbol)}') AND path LIKE '${escapeSqlString(prefix)}%'`,
+            `array_contains(defined_symbols, '${escapeSqlString(symbol)}') AND ${pathStartsWith(prefix)}`,
           )
           .limit(10)
           .toArray();
@@ -1001,7 +1005,7 @@ export const mcp = new Command("mcp")
           .query()
           .select(["is_exported", "start_line", "end_line"])
           .where(
-            `array_contains(defined_symbols, '${escapeSqlString(symbol)}') AND path LIKE '${escapeSqlString(prefix)}%'`,
+            `array_contains(defined_symbols, '${escapeSqlString(symbol)}') AND ${pathStartsWith(prefix)}`,
           )
           .limit(1)
           .toArray();
@@ -1130,7 +1134,7 @@ export const mcp = new Command("mcp")
           .query()
           .select(["path", "start_line", "is_exported"])
           .where(
-            `array_contains(defined_symbols, '${escapeSqlString(symbol)}') AND path LIKE '${escapeSqlString(prefix)}%'`,
+            `array_contains(defined_symbols, '${escapeSqlString(symbol)}') AND ${pathStartsWith(prefix)}`,
           )
           .limit(1)
           .toArray();
@@ -1198,7 +1202,7 @@ export const mcp = new Command("mcp")
             "referenced_symbols",
             "is_exported",
           ])
-          .where(`path LIKE '${escapeSqlString(prefix)}%'`)
+          .where(pathStartsWith(prefix))
           .limit(500000)
           .toArray();
 
@@ -1422,9 +1426,7 @@ export const mcp = new Command("mcp")
           const absPrefix = path.isAbsolute(pathPrefix)
             ? pathPrefix
             : path.resolve(projectRoot, pathPrefix);
-          query = query.where(
-            `path LIKE '${escapeSqlString(normalizePath(absPrefix))}%'`,
-          );
+          query = query.where(pathStartsWith(normalizePath(absPrefix)));
         }
 
         const rows = await query.toArray();
@@ -1623,7 +1625,7 @@ export const mcp = new Command("mcp")
             "defined_symbols",
             "referenced_symbols",
           ])
-          .where(`path LIKE '${escapeSqlString(prefix)}%'`)
+          .where(pathStartsWith(prefix))
           .limit(200000)
           .toArray();
 
@@ -2158,7 +2160,7 @@ export const mcp = new Command("mcp")
             "role",
             "_distance",
           ])
-          .where(`path LIKE '${escapeSqlString(projectRoot)}/%'`)
+          .where(pathStartsWith(`${projectRoot}/`))
           .limit(limit + 5)
           .toArray();
 

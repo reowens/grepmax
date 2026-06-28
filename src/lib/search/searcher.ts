@@ -7,7 +7,12 @@ import type {
   VectorRecord,
 } from "../store/types";
 import type { VectorDB } from "../store/vector-db";
-import { escapeSqlString, normalizePath } from "../utils/filter-builder";
+import {
+  escapeSqlString,
+  normalizePath,
+  pathNotStartsWith,
+  pathStartsWith,
+} from "../utils/filter-builder";
 import { getWorkerPool } from "../workers/pool";
 import { detectIntent, type SearchIntent } from "./intent";
 import { loadOrComputePageRank, pageRankBoostForSymbols } from "./pagerank";
@@ -56,7 +61,7 @@ export function buildWhereClause(
   const parts: string[] = [];
 
   if (pathPrefix) {
-    parts.push(`path LIKE '${escapeSqlString(normalizePath(pathPrefix))}%'`);
+    parts.push(pathStartsWith(normalizePath(pathPrefix)));
   }
 
   const fileFilter = filters?.file;
@@ -69,7 +74,7 @@ export function buildWhereClause(
     const absExclude = pathPrefix
       ? normalizePath(pathPrefix + excludeFilter)
       : excludeFilter;
-    parts.push(`path NOT LIKE '${escapeSqlString(absExclude)}%'`);
+    parts.push(pathNotStartsWith(absExclude));
   }
 
   // New array-shape: pre-resolved absolute exclude prefixes from
@@ -79,7 +84,7 @@ export function buildWhereClause(
     for (const p of excludePrefixes) {
       if (typeof p === "string" && p) {
         const norm = normalizePath(p);
-        parts.push(`path NOT LIKE '${escapeSqlString(norm)}%'`);
+        parts.push(pathNotStartsWith(norm));
       }
     }
   }
@@ -93,7 +98,7 @@ export function buildWhereClause(
     for (const p of inPrefixes) {
       if (typeof p === "string" && p) {
         const norm = normalizePath(p);
-        clauses.push(`path LIKE '${escapeSqlString(norm)}%'`);
+        clauses.push(pathStartsWith(norm));
       }
     }
     if (clauses.length === 1) parts.push(clauses[0]);
@@ -116,7 +121,7 @@ export function buildWhereClause(
     const roots = projectRoots.split(",");
     const clauses = roots.map((r) => {
       const prefix = r.endsWith("/") ? r : `${r}/`;
-      return `path LIKE '${escapeSqlString(prefix)}%'`;
+      return pathStartsWith(prefix);
     });
     parts.push(`(${clauses.join(" OR ")})`);
   }
@@ -125,7 +130,7 @@ export function buildWhereClause(
   if (typeof excludeRoots === "string" && excludeRoots) {
     for (const r of excludeRoots.split(",")) {
       const prefix = r.endsWith("/") ? r : `${r}/`;
-      parts.push(`path NOT LIKE '${escapeSqlString(prefix)}%'`);
+      parts.push(pathNotStartsWith(prefix));
     }
   }
 

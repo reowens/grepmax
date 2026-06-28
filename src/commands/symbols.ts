@@ -2,7 +2,7 @@ import * as path from "node:path";
 import { Command } from "commander";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
-import { escapeSqlString, normalizePath } from "../lib/utils/filter-builder";
+import { normalizePath, pathStartsWith } from "../lib/utils/filter-builder";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
@@ -56,9 +56,7 @@ async function collectSymbols(options: {
       const absPrefix = path.isAbsolute(options.pathPrefix)
         ? options.pathPrefix
         : path.resolve(options.projectRoot, options.pathPrefix);
-      query = query.where(
-        `path LIKE '${escapeSqlString(normalizePath(absPrefix))}%'`,
-      );
+      query = query.where(pathStartsWith(normalizePath(absPrefix)));
     }
 
     const rows = await query.toArray();

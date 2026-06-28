@@ -1,6 +1,10 @@
 import type { VectorRecord } from "../store/types";
 import type { VectorDB } from "../store/vector-db";
-import { escapeSqlString } from "../utils/filter-builder";
+import {
+  escapeSqlString,
+  pathNotStartsWith,
+  pathStartsWith,
+} from "../utils/filter-builder";
 import { withQueryTimeout } from "../utils/query-timeout";
 import {
   bfsNeighbors,
@@ -50,10 +54,10 @@ export class GraphBuilder {
   private scopeWhere(condition: string): string {
     let result = condition;
     if (this.pathPrefix) {
-      result = `${result} AND path LIKE '${escapeSqlString(this.pathPrefix)}%'`;
+      result = `${result} AND ${pathStartsWith(this.pathPrefix)}`;
     }
     for (const ex of this.excludePrefixes) {
-      result = `${result} AND path NOT LIKE '${escapeSqlString(ex)}%'`;
+      result = `${result} AND ${pathNotStartsWith(ex)}`;
     }
     return result;
   }
