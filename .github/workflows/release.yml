@@ -89,11 +89,11 @@ jobs:
       # architecture details, employee-only code paths, and A/B test
       # infrastructure were all publicly readable on the registry.
       #
-      # Our "files" field in package.json whitelists: dist/, plugins/,
-      # mlx-embed-server/, and scripts/postinstall.js. This step verifies
-      # that ONLY those paths end up in the tarball. If something unexpected
-      # appears — a src/ file, a .env, test fixtures, internal docs — this
-      # fails the release before it reaches the registry.
+      # Our "files" field in package.json whitelists: dist/, .claude-plugin/,
+      # plugins/, mlx-embed-server/, and scripts/postinstall.js. This step
+      # verifies that ONLY those paths end up in the tarball. If something
+      # unexpected appears — a src/ file, a .env, test fixtures, internal docs
+      # — this fails the release before it reaches the registry.
       #
       # Run `npm pack --dry-run` locally to preview what would ship.
       - name: Audit npm tarball for source leaks
@@ -104,7 +104,7 @@ jobs:
           while IFS= read -r FILE; do
             [ -z "$FILE" ] && continue
             case "$FILE" in
-              dist/*|plugins/*|mlx-embed-server/*|scripts/postinstall.js|package.json|README.md|LICENSE|NOTICE) ;;
+              dist/*|.claude-plugin/*|plugins/*|mlx-embed-server/*|scripts/postinstall.js|package.json|README.md|LICENSE|NOTICE) ;;
               *) LEAKED="${LEAKED}  - ${FILE}\n" ;;
             esac
           done <<< "$FILES"
