@@ -30,6 +30,7 @@ import { project } from "./commands/project";
 import { recent } from "./commands/recent";
 import { related } from "./commands/related";
 import { remove } from "./commands/remove";
+import { repair } from "./commands/repair";
 import { review } from "./commands/review";
 import { search } from "./commands/search";
 import { serve } from "./commands/serve";
@@ -119,6 +120,7 @@ program.addCommand(review);
 program.addCommand(setup);
 program.addCommand(config);
 program.addCommand(doctor);
+program.addCommand(repair);
 
 // Plugins
 program.addCommand(plugin);

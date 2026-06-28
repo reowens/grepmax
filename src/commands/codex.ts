@@ -75,8 +75,11 @@ function writeSkillToAgents(skill: string): void {
 
 async function installPlugin() {
   try {
-    // 1. Register MCP tool
-    await execAsync("codex mcp add gmax gmax mcp", {
+    // 1. Register MCP tool. Codex requires the stdio command after `--`:
+    //   codex mcp add [OPTIONS] <NAME> -- <COMMAND>...
+    // Without the separator the launch command is misparsed. AGENTS.md is only
+    // written after this resolves, so a failed registration leaves it untouched.
+    await execAsync("codex mcp add gmax -- gmax mcp", {
       shell,
       env: process.env,
     });

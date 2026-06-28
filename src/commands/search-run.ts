@@ -170,7 +170,19 @@ export async function runSearch(
         indexState = { indexing: true, pendingFiles: 0 };
       }
 
-      const hasRows = await vectorDb.hasAnyRows();
+      // Decide first-run auto-index by whether the project being searched has
+      // rows — NOT whether the shared store has any rows at all. The store is
+      // centralized, so a global hasAnyRows() lets a sibling project's rows
+      // suppress this project's first-run index. Cross-project mode keeps the
+      // global check: it spans already-indexed projects and must not first-run
+      // a single directory just because the cwd happens to be unindexed.
+      const crossProject =
+        !!options.allProjects ||
+        !!options.projects ||
+        !!options.excludeProjects;
+      const hasRows = crossProject
+        ? await vectorDb.hasAnyRows()
+        : await vectorDb.hasRowsForPath(effectiveRoot);
       const needsSync = options.sync || !hasRows;
 
       if (needsSync) {

@@ -76,18 +76,46 @@ function parseJsonWithComments(content: string): Record<string, unknown> {
     .split("\n")
     .map((line) => line.replace(/^\s*\/\/.*$/, ""))
     .join("\n");
-  try {
-    return JSON.parse(stripped);
-  } catch {
-    return {};
-  }
+  // An empty / whitespace-only file is a legitimate "no settings yet" -> {}.
+  // Anything else that fails to parse is a real, user-owned file we must NOT
+  // silently coerce to {} (that would clobber it on the next save) — let the
+  // caller decide.
+  if (stripped.trim() === "") return {};
+  return JSON.parse(stripped);
 }
 
 function loadSettings(settingsPath: string): Settings {
   if (!fs.existsSync(settingsPath)) return {};
-  return parseJsonWithComments(
-    fs.readFileSync(settingsPath, "utf-8"),
-  ) as Settings;
+  const raw = fs.readFileSync(settingsPath, "utf-8");
+  try {
+    return parseJsonWithComments(raw) as Settings;
+  } catch (err) {
+    throw new Error(
+      `Refusing to touch ${settingsPath}: it contains invalid JSON ` +
+        `(${(err as Error).message}). Fix or remove the file, then re-run.`,
+    );
+  }
+}
+
+/** True when a hook entry was installed by gmax — its command points at our
+ *  hooks dir. Used to remove only gmax entries on uninstall. */
+function isGmaxHookEntry(entry: HookEntry, hooksDir: string): boolean {
+  return entry.hooks?.some((h) => h.command?.includes(hooksDir)) ?? false;
+}
+
+/** Strip gmax hook entries from settings.hooks in place, preserving unrelated
+ *  user hooks. Returns true if anything was removed. */
+function removeGmaxHooks(settings: Settings, hooksDir: string): boolean {
+  if (!settings.hooks) return false;
+  let changed = false;
+  for (const [event, entries] of Object.entries(settings.hooks)) {
+    const kept = entries.filter((e) => !isGmaxHookEntry(e, hooksDir));
+    if (kept.length !== entries.length) changed = true;
+    if (kept.length > 0) settings.hooks[event] = kept;
+    else delete settings.hooks[event];
+  }
+  if (Object.keys(settings.hooks).length === 0) delete settings.hooks;
+  return changed;
 }
 
 function saveSettings(
@@ -120,10 +148,16 @@ function mergeHooks(
 
 async function installPlugin() {
   const root = resolveDroidRoot();
+  const settingsPath = path.join(root, "settings.json");
+
+  // Validate/parse settings BEFORE writing anything. A malformed, user-owned
+  // settings.json aborts the install here — otherwise we'd either clobber it
+  // with {} or leave half-written hook scripts behind on the failure path.
+  const settings = loadSettings(settingsPath);
+
   const gmaxBin = resolveGmaxBin();
   const hooksDir = path.join(root, "hooks", "gmax");
   const skillsDir = path.join(root, "skills", "gmax");
-  const settingsPath = path.join(root, "settings.json");
 
   // 1. Install hook scripts (start/stop daemon)
   const startScript = `
@@ -190,7 +224,6 @@ try { execFileSync("gmax", ["watch", "stop", "--all"], { stdio: "ignore", timeou
     ],
   };
 
-  const settings = loadSettings(settingsPath);
   settings.enableHooks = true;
   settings.allowBackgroundProcesses = true;
   settings.hooks = mergeHooks(settings.hooks as HooksConfig, hookConfig);
@@ -203,16 +236,30 @@ async function uninstallPlugin() {
   const root = resolveDroidRoot();
   const hooksDir = path.join(root, "hooks", "gmax");
   const skillsDir = path.join(root, "skills", "gmax");
+  const settingsPath = path.join(root, "settings.json");
 
   if (fs.existsSync(hooksDir))
     fs.rmSync(hooksDir, { recursive: true, force: true });
   if (fs.existsSync(skillsDir))
     fs.rmSync(skillsDir, { recursive: true, force: true });
 
+  // Remove only gmax hook entries from settings.json, preserving unrelated user
+  // hooks. enableHooks/allowBackgroundProcesses are left alone — other hooks may
+  // depend on them.
+  if (fs.existsSync(settingsPath)) {
+    try {
+      const settings = loadSettings(settingsPath);
+      if (removeGmaxHooks(settings, hooksDir)) {
+        saveSettings(settingsPath, settings);
+        console.log("✅ Removed gmax hooks from settings.json");
+      }
+    } catch (err) {
+      // Don't clobber an invalid settings file on uninstall either.
+      console.warn(`⚠️  Skipped settings cleanup: ${(err as Error).message}`);
+    }
+  }
+
   console.log("✅ gmax removed from Factory Droid");
-  console.log(
-    "NOTE: You may want to manually clean up 'hooks' in ~/.factory/settings.json",
-  );
 }
 
 export const installDroid = new Command("install-droid")

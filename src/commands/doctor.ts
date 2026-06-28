@@ -8,9 +8,12 @@ import {
   DISK_LOW_BYTES,
   describeChunkerGap,
   describeEmbeddingGap,
+  describeSchemaDimGap,
   MODEL_IDS,
   MODEL_TIERS,
   PATHS,
+  REBUILD_COMMAND,
+  schemaDimAgentRow,
 } from "../config";
 import { readGlobalConfig } from "../lib/index/index-config";
 import { gracefulExit } from "../lib/utils/exit";
@@ -172,6 +175,17 @@ export const doctor = new Command("doctor")
       const table = await db.ensureTable();
       const totalChunks = await table.countRows();
 
+      // Physical schema-width check: the shared `chunks` table is fixed-width at
+      // creation, so a tier/dim change strands it at the old width and every
+      // write throws. This is independent of the per-project registry drift
+      // checked below — the table can match the registry yet still be physically
+      // stranded — so we surface it as its own line.
+      const physicalDim = await db.getSchemaVectorDim();
+      const schemaGap = describeSchemaDimGap(
+        physicalDim,
+        globalConfig.vectorDim,
+      );
+
       // Summary coverage (existing check)
       if (!opts.agent && totalChunks > 0) {
         const withSummary = (
@@ -281,8 +295,13 @@ export const doctor = new Command("doctor")
           `orphaned=${orphanedProjects.length}`,
           `stale_chunker=${staleChunkerProjects.length}`,
           `stale_embedding=${staleEmbeddingProjects.length}`,
+          `schema_dim=${physicalDim ?? "none"}`,
+          `schema_dim_ok=${schemaGap ? "false" : "true"}`,
         ];
         console.log(fields.join("\t"));
+        if (schemaGap) {
+          console.log(schemaDimAgentRow(schemaGap));
+        }
         for (const p of staleChunkerProjects) {
           const gap = describeChunkerGap(p.chunkerVersion);
           if (!gap) continue;
@@ -317,12 +336,28 @@ export const doctor = new Command("doctor")
               `current_dim=${gap.toDim}`,
               `dim_changed=${gap.dimChanged}`,
               `severity=${gap.severity}`,
-              `fix=gmax index --reset (in ${p.root})`,
+              // A dim change can't be fixed by a per-project reset (the shared
+              // table is fixed-width) — point at the global rebuild instead.
+              `fix=${gap.dimChanged ? REBUILD_COMMAND : `gmax index --reset (in ${p.root})`}`,
             ].join("\t"),
           );
         }
       } else {
         console.log("\nIndex Health\n");
+
+        // Physical schema width — a mismatch means every write throws until a
+        // global rebuild (the shared fixed-width table can't be reshaped by a
+        // per-project reset). Surfaced first because it's the most severe.
+        if (schemaGap) {
+          console.log(
+            `FAIL  Schema: vector table is ${schemaGap.tableDim}d, config expects ${schemaGap.configDim}d`,
+          );
+          console.log(
+            `       run '${REBUILD_COMMAND}' (drops + reindexes all projects at the new width)`,
+          );
+        } else if (physicalDim) {
+          console.log(`ok  Schema: vector table is ${physicalDim}d`);
+        }
 
         // Disk space
         if (diskLevel !== "ok") {
@@ -402,10 +437,10 @@ export const doctor = new Command("doctor")
 
         // Index built with a different embedding model/dim than the current
         // config. A dim change is breaking (search scores are invalid until a
-        // re-embed); a same-dim model swap is additive. Unlike the stale-chunker
-        // case this is NOT auto-fixed by `--fix`: a dim change can't coexist in
-        // the shared fixed-dim table (deferred Phase 1B), so we point at the
-        // manual reset instead.
+        // re-embed); a same-dim model swap is additive. Recovery differs by kind:
+        // a same-dim model swap is fixed by a per-project `gmax index --reset`,
+        // but a dim change can't be — the shared table is fixed-width, so it
+        // needs the global rebuild (see the Schema check above).
         if (staleEmbeddingProjects.length > 0) {
           const gaps = staleEmbeddingProjects.map((p) =>
             describeEmbeddingGap(
@@ -417,8 +452,12 @@ export const doctor = new Command("doctor")
             ),
           );
           const anyBreaking = gaps.some((g) => g?.severity === "breaking");
+          const anyDimChange = gaps.some((g) => g?.dimChanged);
+          const headerFix = anyDimChange
+            ? `run '${REBUILD_COMMAND}' (dim change needs a full rebuild)`
+            : "run 'gmax index --reset' per project";
           console.log(
-            `${anyBreaking ? "WARN" : "INFO"}  Stale embedding: ${staleEmbeddingProjects.length} project(s) indexed with a different embedding model/dim — run 'gmax index --reset' per project`,
+            `${anyBreaking ? "WARN" : "INFO"}  Stale embedding: ${staleEmbeddingProjects.length} project(s) indexed with a different embedding model/dim — ${headerFix}`,
           );
           staleEmbeddingProjects.forEach((p, i) => {
             const gap = gaps[i];
@@ -429,7 +468,11 @@ export const doctor = new Command("doctor")
             console.log(
               `       - ${p.name || path.basename(p.root)} (${change}, ${gap.severity})`,
             );
-            console.log(`         run 'gmax index --reset' in ${p.root}`);
+            console.log(
+              gap.dimChanged
+                ? `         run '${REBUILD_COMMAND}'`
+                : `         run 'gmax index --reset' in ${p.root}`,
+            );
           });
         }
 

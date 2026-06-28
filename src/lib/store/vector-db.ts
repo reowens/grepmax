@@ -17,6 +17,7 @@ import {
   DISK_CRITICAL_BYTES,
   DISK_LOW_BYTES,
   FRAGMENT_COMPACT_THRESHOLD,
+  REBUILD_COMMAND,
 } from "../../config";
 import { readGlobalConfig } from "../index/index-config";
 import { registerCleanup } from "../utils/cleanup";
@@ -277,6 +278,29 @@ export class VectorDB {
     };
   }
 
+  /**
+   * Read the physical width of the on-disk `vector` column, or null if the
+   * table doesn't exist yet. Non-throwing and validation-free on purpose: doctor
+   * uses it to detect a table stranded at an old width after a tier change, and
+   * must see the truth even when the table is incompatible with the current
+   * config (a throwing ensureTable would mask exactly the mismatch we're hunting).
+   */
+  async getSchemaVectorDim(): Promise<number | null> {
+    const db = await this.getDb();
+    let table: lancedb.Table;
+    try {
+      table = await db.openTable(TABLE_NAME);
+    } catch {
+      return null; // no table on disk yet
+    }
+    const schema = await table.schema();
+    const field = schema.fields.find((f) => f.name === "vector");
+    if (!field) return null;
+    // The `vector` column is a FixedSizeList; its listSize is the vector width.
+    const listSize = (field.type as { listSize?: number }).listSize;
+    return typeof listSize === "number" ? listSize : null;
+  }
+
   private async validateSchema(table: lancedb.Table) {
     const schema = await table.schema();
     const fields = new Set(schema.fields.map((f) => f.name));
@@ -459,7 +483,9 @@ export class VectorDB {
       if (vec.length !== this.vectorDim) {
         throw new Error(
           `Vector dimension mismatch: got ${vec.length}d, expected ${this.vectorDim}d. ` +
-            "The embedding model tier likely changed without a rebuild — run `gmax index --reset`.",
+            "The embedding model tier likely changed without a rebuild — the shared " +
+            `table is fixed-width, so run \`${REBUILD_COMMAND}\` (a per-project ` +
+            "`gmax index --reset` cannot change the table width).",
         );
       }
       (rec as any).vector = vec;

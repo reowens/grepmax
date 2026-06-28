@@ -212,6 +212,13 @@ export async function handleCommand(
         return null;
       }
 
+      case "repair": {
+        // Global drop-and-rebuild recovery for a physical table-width mismatch.
+        // Streams per-project progress; daemon manages the connection.
+        daemon.repairRebuild(conn);
+        return null;
+      }
+
       case "summarize": {
         const root = String(cmd.root || "");
         if (!root) return { ok: false, error: "missing root" };

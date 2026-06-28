@@ -78,14 +78,19 @@ const mockSearcher = {
   search: vi.fn(),
 };
 
+// Shared instance so tests can steer first-run auto-index decisions.
+// hasRowsForPath drives single-project mode; hasAnyRows drives cross-project.
+const mockVectorDb = {
+  listPaths: vi.fn(async () => new Map()),
+  hasAnyRows: vi.fn(async () => false),
+  hasRowsForPath: vi.fn(async () => false),
+  createFTSIndex: vi.fn(async () => {}),
+  close: vi.fn(async () => {}),
+};
+
 vi.mock("../src/lib/store/vector-db", () => ({
   VectorDB: vi.fn(function () {
-    return {
-      listPaths: vi.fn(async () => new Map()),
-      hasAnyRows: vi.fn(async () => false),
-      createFTSIndex: vi.fn(async () => {}),
-      close: vi.fn(async () => {}),
-    };
+    return mockVectorDb;
   }),
 }));
 
@@ -95,12 +100,19 @@ vi.mock("../src/lib/search/searcher", () => ({
   }),
 }));
 
+// Force the in-process search path (no daemon), so first-run auto-index logic is
+// exercised deterministically regardless of whether a daemon happens to be up.
+vi.mock("../src/lib/utils/daemon-client", () => ({
+  isDaemonRunning: vi.fn(async () => false),
+  sendDaemonCommand: vi.fn(async () => ({ ok: false })),
+  ensureDaemonRunning: vi.fn(async () => false),
+  sendStreamingCommand: vi.fn(async () => ({ ok: true, type: "done" })),
+}));
+
 import { search } from "../src/commands/search";
 import { initialSync } from "../src/lib/index/syncer";
 
 describe("search command", () => {
-  const originalCwd = process.cwd();
-
   beforeEach(() => {
     vi.clearAllMocks();
     spinner.text = "";
@@ -119,7 +131,6 @@ describe("search command", () => {
   });
 
   it("auto-syncs when store is empty and performs search", async () => {
-    const _tmpDir = originalCwd;
     await (search as Command).parseAsync(["query"], { from: "user" });
 
     expect(initialSync).toHaveBeenCalled();
@@ -544,5 +555,47 @@ describe("unknown option handling", () => {
         from: "user",
       }),
     ).resolves.not.toThrow();
+  });
+});
+
+describe("first-run auto-index scoping", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    spinner.text = "";
+    (search as Command).exitOverride();
+    mockSearcher.search.mockResolvedValue({ data: [] });
+    // Reset to defaults; individual tests override.
+    mockVectorDb.hasRowsForPath.mockResolvedValue(false);
+    mockVectorDb.hasAnyRows.mockResolvedValue(false);
+  });
+
+  it("triggers initial sync when the searched project has no rows even if siblings do", async () => {
+    // The store is centralized: a sibling project's rows (hasAnyRows -> true)
+    // must NOT suppress this project's first-run index. The decision is scoped
+    // to the searched project (hasRowsForPath -> false).
+    mockVectorDb.hasAnyRows.mockResolvedValue(true);
+    mockVectorDb.hasRowsForPath.mockResolvedValue(false);
+
+    await (search as Command).parseAsync(["query"], { from: "user" });
+
+    expect(mockVectorDb.hasRowsForPath).toHaveBeenCalledWith("/tmp/project");
+    expect(initialSync).toHaveBeenCalled();
+  });
+
+  it("does not auto-sync when the current project already has rows", async () => {
+    mockVectorDb.hasRowsForPath.mockResolvedValue(true);
+
+    await (search as Command).parseAsync(["query"], { from: "user" });
+
+    expect(initialSync).not.toHaveBeenCalled();
+    expect(mockSearcher.search).toHaveBeenCalled();
+  });
+
+  it("auto-syncs an already-indexed project when --sync is passed", async () => {
+    mockVectorDb.hasRowsForPath.mockResolvedValue(true);
+
+    await (search as Command).parseAsync(["query", "--sync"], { from: "user" });
+
+    expect(initialSync).toHaveBeenCalled();
   });
 });

@@ -187,6 +187,54 @@ export function describeEmbeddingGap(
   };
 }
 
+/**
+ * The single sanctioned recovery for a physical table-width mismatch. The shared
+ * `chunks` table is fixed-width at creation, so a tier/dim change strands it at
+ * the old width and every write throws. A per-project `gmax index --reset` only
+ * deletes rows — it can't change the shared table's width — so the real fix is a
+ * global drop-and-rebuild. doctor, the insertBatch failure, and the staleness
+ * hint all point here so the guidance never contradicts itself.
+ */
+export const REBUILD_COMMAND = "gmax repair --rebuild";
+
+export interface SchemaDimGap {
+  /** Physical width of the `vector` column in the on-disk `chunks` table. */
+  tableDim: number;
+  /** Vector width the current global config produces. */
+  configDim: number;
+}
+
+/**
+ * Describe the gap between the LanceDB table's PHYSICAL `vector` width and the
+ * width the current global config would produce, or null when they agree (or no
+ * table exists yet). This is distinct from {@link describeEmbeddingGap}: that one
+ * compares the project REGISTRY's recorded `{modelTier, vectorDim}` to config
+ * (logical drift, fixable per project), while this compares the actual on-disk
+ * table schema to config (physical drift — every write throws until a global
+ * rebuild). A table can match the registry yet still be physically stranded, so
+ * doctor reports both independently.
+ */
+export function describeSchemaDimGap(
+  tableDim: number | null | undefined,
+  configDim: number,
+): SchemaDimGap | null {
+  if (tableDim == null) return null; // no table on disk yet — nothing to compare
+  if (tableDim === configDim) return null;
+  return { tableDim, configDim };
+}
+
+/** Stable, tab-delimited doctor `--agent` row for a physical schema-dim
+ * mismatch. Kept here (pure) so the wire format is testable without running the
+ * full doctor command. */
+export function schemaDimAgentRow(gap: SchemaDimGap): string {
+  return [
+    "schema_dim_mismatch",
+    `table_dim=${gap.tableDim}`,
+    `current_dim=${gap.configDim}`,
+    `fix=${REBUILD_COMMAND}`,
+  ].join("\t");
+}
+
 export const WORKER_TIMEOUT_MS = Number.parseInt(
   process.env.GMAX_WORKER_TIMEOUT_MS || "60000",
   10,
@@ -221,6 +269,11 @@ export const PATHS = {
   daemonSocket: path.join(GLOBAL_ROOT, "daemon.sock"),
   daemonPidFile: path.join(GLOBAL_ROOT, "daemon.pid"),
   daemonLockFile: path.join(GLOBAL_ROOT, "daemon.lock"),
+  // Written by a daemon while it is gracefully shutting down (draining workers,
+  // closing LanceDB). A successor's killStaleProcesses() respects this so it
+  // never SIGKILLs a peer mid-cleanup once the peer has already dropped its
+  // socket/PID/lock liveness markers.
+  daemonDrainingFile: path.join(GLOBAL_ROOT, "daemon.draining"),
   // Centralized index storage — one database for all indexed directories
   lancedbDir: path.join(GLOBAL_ROOT, "lancedb"),
   cacheDir: path.join(GLOBAL_ROOT, "cache"),

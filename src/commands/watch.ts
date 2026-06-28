@@ -94,7 +94,8 @@ export const watch = new Command("watch")
               const exited = await waitForProcessExit(oldPid, 20_000);
               if (!exited) {
                 console.log(
-                  `Old daemon (PID ${oldPid}) still draining after 20s — starting anyway`,
+                  `Old daemon (PID ${oldPid}) still draining after 20s — starting anyway ` +
+                    `(its draining marker keeps the successor from killing it mid-cleanup)`,
                 );
               }
             } else {

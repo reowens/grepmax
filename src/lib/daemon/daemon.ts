@@ -12,6 +12,10 @@ import type { IndexState } from "../output/index-state-footer";
 import type { Searcher } from "../search/searcher";
 import { MetaCache } from "../store/meta-cache";
 import { VectorDB } from "../store/vector-db";
+import {
+  clearDrainingMarker,
+  writeDrainingMarker,
+} from "../utils/daemon-client";
 import { spawnDaemon } from "../utils/daemon-launcher";
 import { rotateLogFds } from "../utils/log-rotate";
 import { debug as dbg, log as dlog } from "../utils/logger";
@@ -626,6 +630,83 @@ export class Daemon {
     });
   }
 
+  /**
+   * Core full-(re)index of one project: quiesce its batch processor + watcher,
+   * run initialSync, then re-watch in the finally. Shared by indexProject (one
+   * project per IPC connection) and repairRebuild (all projects after a global
+   * table drop). The caller owns the project lock, the maintenance pause, the
+   * heartbeat, and the AbortController; this method owns the watcher handoff and
+   * the indexProgress bookkeeping (so concurrent searches get a partial-result
+   * footer while it runs — Phase 6).
+   */
+  private async reindexOneProject(
+    root: string,
+    opts: { reset?: boolean; dryRun?: boolean },
+    signal: AbortSignal,
+    onProgress: (info: {
+      processed: number;
+      indexed: number;
+      total: number;
+      filePath?: string;
+    }) => void,
+  ): Promise<{
+    processed: number;
+    indexed: number;
+    total: number;
+    failedFiles: number;
+  }> {
+    if (!this.vectorDb || !this.metaCache) {
+      throw new Error("daemon resources not ready");
+    }
+
+    // Pause the project's batch processor during full index
+    const processor = this.processors.get(root);
+    if (processor) {
+      await processor.close();
+      this.processors.delete(root);
+    }
+    const sub = this.subscriptions.get(root);
+    if (sub) {
+      await sub.unsubscribe();
+      this.subscriptions.delete(root);
+    }
+
+    // Mark this root as full-indexing so concurrent searches get a
+    // partial-result footer (Phase 6); seeded at 0/0 until the first tick.
+    this.indexProgress.set(root, { processed: 0, total: 0 });
+    try {
+      return await initialSync({
+        projectRoot: root,
+        reset: opts.reset,
+        dryRun: opts.dryRun,
+        vectorDb: this.vectorDb,
+        metaCache: this.metaCache,
+        signal,
+        onProgress: (info) => {
+          this.resetActivity();
+          this.indexProgress.set(root, {
+            processed: info.processed,
+            total: info.total,
+          });
+          onProgress(info);
+        },
+      });
+    } finally {
+      this.indexProgress.delete(root);
+      // Re-enable watcher (skip if shutting down)
+      if (!this.shuttingDown) {
+        try {
+          await this.watchProject(root);
+        } catch (err) {
+          console.error(
+            `[daemon] Failed to re-watch ${path.basename(root)}:`,
+            err,
+          );
+        }
+      }
+    }
+  }
+
   async indexProject(
     root: string,
     conn: net.Socket,
@@ -637,18 +718,6 @@ export class Daemon {
         return;
       }
 
-      // Pause the project's batch processor during full index
-      const processor = this.processors.get(root);
-      if (processor) {
-        await processor.close();
-        this.processors.delete(root);
-      }
-      const sub = this.subscriptions.get(root);
-      if (sub) {
-        await sub.unsubscribe();
-        this.subscriptions.delete(root);
-      }
-
       const ac = new AbortController();
       conn.on("close", () => ac.abort());
       this.shutdownAbortControllers.add(ac);
@@ -656,23 +725,12 @@ export class Daemon {
       this.vectorDb.pauseMaintenanceLoop();
       const stopHeartbeat = startHeartbeat(conn);
       let lastProgressTime = 0;
-      // Mark this root as full-indexing so concurrent searches get a
-      // partial-result footer (Phase 6); seeded at 0/0 until the first tick.
-      this.indexProgress.set(root, { processed: 0, total: 0 });
       try {
-        const result = await initialSync({
-          projectRoot: root,
-          reset: opts.reset,
-          dryRun: opts.dryRun,
-          vectorDb: this.vectorDb,
-          metaCache: this.metaCache,
-          signal: ac.signal,
-          onProgress: (info) => {
-            this.resetActivity();
-            this.indexProgress.set(root, {
-              processed: info.processed,
-              total: info.total,
-            });
+        const result = await this.reindexOneProject(
+          root,
+          opts,
+          ac.signal,
+          (info) => {
             const now = Date.now();
             if (now - lastProgressTime < 100) return;
             lastProgressTime = now;
@@ -683,7 +741,7 @@ export class Daemon {
               filePath: info.filePath,
             });
           },
-        });
+        );
 
         stopHeartbeat();
         writeDone(conn, {
@@ -703,22 +761,113 @@ export class Daemon {
         writeDone(conn, { ok: false, error: msg });
       } finally {
         stopHeartbeat();
-        this.indexProgress.delete(root);
         this.shutdownAbortControllers.delete(ac);
         this.vectorDb?.resumeMaintenanceLoop();
-        // Re-enable watcher (skip if shutting down)
-        if (!this.shuttingDown) {
-          try {
-            await this.watchProject(root);
-          } catch (err) {
-            console.error(
-              `[daemon] Failed to re-watch ${path.basename(root)}:`,
-              err,
-            );
-          }
-        }
       }
     });
+  }
+
+  /**
+   * Global recovery for a physical table-width mismatch (the chosen "global
+   * rebuild" strategy): drop the shared `chunks` table and re-index every
+   * registered project at the configured dim. The table is fixed-width at
+   * creation, so this is the only way to move it from e.g. 384d to 768d after a
+   * tier change. Streams per-project progress over `conn`. Each project is
+   * reindexed under its own lock with `reset: true`, which also clears that
+   * project's stale MetaCache entries so everything re-embeds into the freshly
+   * recreated (lazily, at config width) table.
+   */
+  async repairRebuild(conn: net.Socket): Promise<void> {
+    if (!this.vectorDb || !this.metaCache) {
+      writeDone(conn, { ok: false, error: "daemon resources not ready" });
+      return;
+    }
+
+    const ac = new AbortController();
+    conn.on("close", () => ac.abort());
+    this.shutdownAbortControllers.add(ac);
+
+    this.vectorDb.pauseMaintenanceLoop();
+    const stopHeartbeat = startHeartbeat(conn);
+
+    // Reindex every project the daemon would normally index on startup.
+    const projects = listProjects().filter(
+      (p) => p.status === "indexed" || p.status === "pending",
+    );
+    const globalConfig = readGlobalConfig();
+    let rebuilt = 0;
+    let totalIndexed = 0;
+    let lastProgressTime = 0;
+    try {
+      // Drop the shared table — recreated lazily at the configured width on the
+      // first insert of the reindex below.
+      writeProgress(conn, { phase: "drop", projectsTotal: projects.length });
+      await this.vectorDb.drop();
+
+      for (const p of projects) {
+        if (ac.signal.aborted) break;
+        const name = p.name || path.basename(p.root);
+        await this.withProjectLock(p.root, async () => {
+          const result = await this.reindexOneProject(
+            p.root,
+            { reset: true },
+            ac.signal,
+            (info) => {
+              const now = Date.now();
+              if (now - lastProgressTime < 100) return;
+              lastProgressTime = now;
+              writeProgress(conn, {
+                phase: "reindex",
+                project: name,
+                projectsDone: rebuilt,
+                projectsTotal: projects.length,
+                processed: info.processed,
+                indexed: info.indexed,
+                total: info.total,
+                filePath: info.filePath,
+              });
+            },
+          );
+          totalIndexed += result.indexed;
+          const proj = getProject(p.root);
+          if (proj) {
+            registerProject({
+              ...proj,
+              vectorDim: globalConfig.vectorDim,
+              modelTier: globalConfig.modelTier,
+              embedMode: globalConfig.embedMode,
+              lastIndexed: new Date().toISOString(),
+              chunkCount: result.indexed,
+              status: "indexed",
+              chunkerVersion: CONFIG.CHUNKER_VERSION,
+            });
+          }
+        });
+        rebuilt++;
+      }
+
+      stopHeartbeat();
+      writeDone(conn, {
+        ok: true,
+        projects: rebuilt,
+        projectsTotal: projects.length,
+        indexed: totalIndexed,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[daemon] repairRebuild failed:", msg);
+      stopHeartbeat();
+      writeDone(conn, {
+        ok: false,
+        error: msg,
+        projects: rebuilt,
+        indexed: totalIndexed,
+      });
+    } finally {
+      stopHeartbeat();
+      this.shutdownAbortControllers.delete(ac);
+      this.vectorDb?.resumeMaintenanceLoop();
+    }
   }
 
   async removeProject(root: string, conn: net.Socket): Promise<void> {
@@ -894,6 +1043,11 @@ export class Daemon {
 
     console.log("[daemon] Shutting down...");
 
+    // Announce graceful shutdown BEFORE dropping the liveness markers below, so a
+    // successor spawned during the (possibly long) drain sees the draining marker
+    // and defers instead of SIGKILLing us mid-cleanup.
+    writeDrainingMarker(process.pid);
+
     // Drop external liveness markers FIRST so the next daemon start isn't
     // fooled by leftover state if the long cleanup below is interrupted
     // (uncaught exception, second SIGTERM, OOM kill mid-shutdown). The
@@ -979,6 +1133,10 @@ export class Daemon {
         `[daemon] Spawned successor daemon${pid ? ` (PID: ${pid})` : " (spawn failed)"}`,
       );
     }
+
+    // Cleanly drained — drop the marker so a later start doesn't defer to a
+    // process that's already gone (it self-expires after DRAIN_GRACE_MS anyway).
+    clearDrainingMarker();
 
     console.log("[daemon] Shutdown complete");
   }

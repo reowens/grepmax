@@ -155,6 +155,60 @@ export async function waitForProcessExit(
   return false;
 }
 
+// A daemon's graceful shutdown can run well past the 20s restart wait — worker
+// SIGTERM→SIGKILL escalation (5s), maintenance drain (10s), LanceDB close (5s),
+// LLM/MLX teardown. Treat a draining marker as authoritative for this long; past
+// it, assume the draining daemon wedged and let killStaleProcesses reclaim it.
+const DRAIN_GRACE_MS = 90_000;
+
+/**
+ * Record that this daemon (pid) has begun graceful shutdown, so a successor's
+ * killStaleProcesses() won't SIGKILL it mid-cleanup after it drops its
+ * socket/PID/lock liveness markers. Best-effort; cleared by clearDrainingMarker
+ * on a clean exit and otherwise self-expires after DRAIN_GRACE_MS.
+ */
+export function writeDrainingMarker(pid: number): void {
+  try {
+    fs.mkdirSync(PATHS.globalRoot, { recursive: true });
+    fs.writeFileSync(
+      PATHS.daemonDrainingFile,
+      JSON.stringify({ pid, ts: Date.now() }),
+    );
+  } catch {}
+}
+
+/** Remove the draining marker (clean end of shutdown). */
+export function clearDrainingMarker(): void {
+  try {
+    fs.unlinkSync(PATHS.daemonDrainingFile);
+  } catch {}
+}
+
+/**
+ * True if `pid` is a daemon currently inside graceful shutdown: a fresh draining
+ * marker naming that exact PID, and the process is still alive. A stale marker
+ * (older than DRAIN_GRACE_MS), a mismatched PID, or a dead process all read as
+ * "not draining" so a wedged or already-exited predecessor is still reclaimable.
+ */
+export function isDaemonDraining(pid: number): boolean {
+  try {
+    const { pid: markerPid, ts } = JSON.parse(
+      fs.readFileSync(PATHS.daemonDrainingFile, "utf-8"),
+    );
+    if (markerPid !== pid) return false;
+    if (typeof ts !== "number" || Date.now() - ts > DRAIN_GRACE_MS)
+      return false;
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false; // process already gone — done draining
+    }
+  } catch {
+    return false; // no marker / unreadable
+  }
+}
+
 /**
  * Ensure the daemon is running — start it if needed, poll up to 5s.
  * Returns true if daemon is ready, false if it couldn't be started.

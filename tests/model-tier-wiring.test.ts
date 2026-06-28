@@ -84,6 +84,17 @@ describe("VectorDB dimension handling", () => {
     ).rejects.toThrow(/expected 768d/);
   });
 
+  it("points dimension-mismatch errors at the global rebuild command", async () => {
+    // The shared table is fixed-width, so a per-project `index --reset` can't
+    // fix a width mismatch — the failure must steer users to `gmax repair
+    // --rebuild` instead.
+    const db = new VectorDB("/tmp/gmax-dim-test", 768);
+    stubStore(db);
+    await expect(
+      db.insertBatch([makeRecord(new Array(384).fill(0.1))]),
+    ).rejects.toThrow(/gmax repair --rebuild/);
+  });
+
   it("accepts a vector of exactly the configured width", async () => {
     const db = new VectorDB("/tmp/gmax-dim-test", 768);
     const table = stubStore(db);
