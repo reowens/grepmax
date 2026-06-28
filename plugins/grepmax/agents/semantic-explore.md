@@ -41,7 +41,7 @@ gmax trace handleAuth -d 2
 
 **File structure** — collapsed signatures (~4x fewer tokens than reading):
 ```
-gmax skeleton src/lib/auth/
+gmax skeleton src/lib/auth.ts
 ```
 
 **Project overview** — languages, structure, key entry points:

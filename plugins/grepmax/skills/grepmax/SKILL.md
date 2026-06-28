@@ -116,7 +116,7 @@ Agent output ends with `t: <test-file>:line\t<test-symbol>\t<hop-label>` rows wh
 ### Skeleton — `gmax skeleton <target>`
 ```
 gmax skeleton src/lib/auth.ts              # single file
-gmax skeleton src/lib/search/              # entire directory
+gmax skeleton handleAuth                   # by symbol name (finds its file)
 gmax skeleton src/a.ts,src/b.ts            # batch
 gmax skeleton src/lib/auth.ts --json       # structured JSON output
 ```
