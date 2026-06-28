@@ -61,7 +61,7 @@ gmax "where do we handle auth?" --agent  # Semantic search (compact output)
 gmax extract handleAuth                  # Full function body with line numbers
 gmax peek handleAuth                     # Signature + callers + callees
 gmax trace handleAuth -d 2              # Call graph (2-hop)
-gmax skeleton src/lib/search/           # File structure (bodies collapsed)
+gmax skeleton src/lib/auth.ts           # File structure (bodies collapsed)
 gmax symbols auth                       # List indexed symbols
 ```
 
