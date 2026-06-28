@@ -33,6 +33,45 @@ function stripThinkTags(text: string): string {
   return text.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/g, "").trim();
 }
 
+/**
+ * Detect raw model tool-call markup leaking into `message.content`.
+ *
+ * Some local models (notably Qwen3.5-35B-A3B, which emits Qwen-XML tool calls)
+ * trip a known llama.cpp `peg-native` parser bug: the call is never extracted
+ * into structured `tool_calls` and instead leaks into `content` as raw markup
+ * like `<tool_call>…`, `<function=peek>…`, or `<parameter=…>`. Returning that
+ * verbatim as the "answer" is what this guards against.
+ */
+export function looksLikeRawToolCall(text: string): boolean {
+  return /<tool_call\b|<\/?function[=\s>]|<parameter[=\s>]/i.test(text);
+}
+
+/** Guidance shown when a non-tool-calling model leaks raw tool-call markup. */
+export function toolCallLeakHint(modelName: string): string {
+  return (
+    `The investigate tool needs a model that emits structured tool calls, but ` +
+    `"${modelName}" returned raw tool-call markup instead. This is a known ` +
+    `llama.cpp limitation for Qwen-XML tool-calling models — switch GMAX_LLM_MODEL ` +
+    `to a Hermes-JSON tool-calling model (e.g. Qwen3-30B-A3B-Instruct-2507), or ` +
+    `use review_commit / the gmax CLI search tools for this question.`
+  );
+}
+
+/**
+ * Turn a model message's content into the final answer: detect a tool-call leak
+ * (return a clear hint), otherwise strip reasoning tags.
+ */
+export function finalizeAnswer(
+  content: string | null | undefined,
+  modelName: string,
+): string {
+  if (content && looksLikeRawToolCall(content)) {
+    return toolCallLeakHint(modelName);
+  }
+  const stripped = content ? stripThinkTags(content) : "";
+  return stripped || "(no response)";
+}
+
 export async function investigate(
   opts: InvestigateOptions,
 ): Promise<InvestigateResult> {
@@ -102,9 +141,7 @@ export async function investigate(
         if (verbose) {
           process.stderr.write(`[R${round}] Final answer (${roundMs}ms)\n`);
         }
-        const answer = message.content
-          ? stripThinkTags(message.content)
-          : "(no response)";
+        const answer = finalizeAnswer(message.content, modelName);
         return {
           answer,
           rounds,
@@ -194,6 +231,10 @@ export async function investigate(
 
     messages.push({ role: "user", content: FORCE_FINAL_MESSAGE });
 
+    // No tools on the synthesis call. Note: tool_choice:"none" does NOT stop this
+    // model from emitting a stray tool call here (verified 2026-06-28 — it still
+    // leaks raw markup into content), so the finalizeAnswer guard is what protects
+    // this path rather than a request-shape tweak.
     const response = await client.chat.completions.create({
       model: modelName,
       messages,
@@ -204,9 +245,7 @@ export async function investigate(
       throw new Error("LLM returned empty response");
     }
 
-    const answer = response.choices[0].message.content
-      ? stripThinkTags(response.choices[0].message.content)
-      : "(no response)";
+    const answer = finalizeAnswer(response.choices[0].message.content, modelName);
 
     return {
       answer,

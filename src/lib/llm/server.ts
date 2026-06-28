@@ -120,22 +120,26 @@ export class LlmServer {
 
     const logFd = openRotatedLog(PATHS.llmLogFile);
 
-    const child = spawn(
-      binary,
-      [
-        "-m",
-        this.config.model,
-        "--host",
-        this.config.host,
-        "--port",
-        String(this.config.port),
-        "-ngl",
-        String(this.config.ngl),
-        "--ctx-size",
-        String(this.config.ctxSize),
-      ],
-      { detached: true, stdio: ["ignore", logFd, logFd] },
-    );
+    const args = [
+      "-m",
+      this.config.model,
+      "--host",
+      this.config.host,
+      "--port",
+      String(this.config.port),
+      "-ngl",
+      String(this.config.ngl),
+      "--ctx-size",
+      String(this.config.ctxSize),
+    ];
+    if (this.config.reasoningFormat) {
+      args.push("--reasoning-format", this.config.reasoningFormat);
+    }
+
+    const child = spawn(binary, args, {
+      detached: true,
+      stdio: ["ignore", logFd, logFd],
+    });
     child.unref();
     fs.closeSync(logFd);
 

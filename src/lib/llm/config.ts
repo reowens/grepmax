@@ -8,6 +8,14 @@ export interface LlmConfig {
   maxTokens: number;
   idleTimeoutMin: number;
   startupWaitSec: number;
+  /**
+   * llama-server `--reasoning-format`. Defaults to "deepseek": extracts thoughts
+   * into `message.reasoning_content` so tool calls are parsed into structured
+   * `tool_calls` instead of leaking into `content` — required for the `investigate`
+   * agentic loop with Qwen-XML models (e.g. Qwen3.5-35B-A3B). Set
+   * GMAX_LLM_REASONING_FORMAT="" to omit the flag, or e.g. "none" to override.
+   */
+  reasoningFormat?: string;
 }
 
 const DEFAULT_MODEL =
@@ -31,5 +39,6 @@ export function getLlmConfig(): LlmConfig {
     maxTokens: envInt("GMAX_LLM_MAX_TOKENS", 8192),
     idleTimeoutMin: envInt("GMAX_LLM_IDLE_TIMEOUT", 30),
     startupWaitSec: envInt("GMAX_LLM_STARTUP_WAIT", 60),
+    reasoningFormat: process.env.GMAX_LLM_REASONING_FORMAT ?? "deepseek",
   };
 }
