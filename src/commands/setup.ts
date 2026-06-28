@@ -137,8 +137,10 @@ export const setup = new Command("setup")
     });
 
     if (!p.isCancel(installPlugins) && installPlugins) {
-      const { plugin: pluginCmd } = await import("./plugin");
-      await pluginCmd.parseAsync(["node", "gmax"]);
+      // Call installAll() directly, not `plugin` (bare status) or the `add`
+      // subcommand — both gracefulExit() before setup's outro can run.
+      const { installAll } = await import("./plugin");
+      await installAll();
     }
 
     p.outro(

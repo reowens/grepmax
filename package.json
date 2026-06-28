@@ -65,6 +65,7 @@
   ],
   "files": [
     "dist",
+    ".claude-plugin",
     "plugins",
     "scripts/postinstall.js",
     "mlx-embed-server",

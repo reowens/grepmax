@@ -132,6 +132,40 @@ function getClients(): Client[] {
   ];
 }
 
+/**
+ * Install gmax plugins for every detected client; returns the number installed.
+ * Deliberately does NOT call gracefulExit — callers decide how to finish. This
+ * lets `gmax setup` keep running (and print its outro) after installing, while
+ * the `add` subcommand still exits the process itself.
+ */
+export async function installAll(): Promise<number> {
+  const clients = getClients();
+  console.log("gmax plugin add — detecting clients...\n");
+  let installed = 0;
+  for (const client of clients) {
+    if (!client.detect()) {
+      console.log(`  skip  ${client.name} — not found`);
+      continue;
+    }
+    try {
+      await client.install();
+      installed++;
+    } catch (err) {
+      console.error(
+        `  FAIL  ${client.name} — ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+  if (installed === 0) {
+    console.log(
+      "\nNo supported clients found. Install one of: claude, opencode, codex, droid",
+    );
+  } else {
+    console.log(`\n${installed} plugin(s) installed.`);
+  }
+  return installed;
+}
+
 // --- Subcommands ---
 
 const addCmd = new Command("add")
@@ -163,29 +197,7 @@ const addCmd = new Command("add")
     }
 
     // Install all detected
-    console.log("gmax plugin add — detecting clients...\n");
-    let installed = 0;
-    for (const client of clients) {
-      if (!client.detect()) {
-        console.log(`  skip  ${client.name} — not found`);
-        continue;
-      }
-      try {
-        await client.install();
-        installed++;
-      } catch (err) {
-        console.error(
-          `  FAIL  ${client.name} — ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-    }
-    if (installed === 0) {
-      console.log(
-        "\nNo supported clients found. Install one of: claude, opencode, codex, droid",
-      );
-    } else {
-      console.log(`\n${installed} plugin(s) installed.`);
-    }
+    await installAll();
     await gracefulExit();
   });
 
