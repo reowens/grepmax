@@ -78,6 +78,25 @@ function chunkSymbols(chunk: ChunkType): string[] {
   return toStringArray((chunk as any).definedSymbols ?? chunk.defined_symbols);
 }
 
+// searcher.search() returns mapped ChunkType objects: the absolute path lives in
+// metadata.path and line numbers in generated_metadata, never at the top level.
+// Handlers that consume search results must read through these — reading r.path /
+// r.start_line directly yields undefined (and crashed build_context's rel()).
+// Use nullish (not ||) so a legitimate line 0 isn't skipped.
+export function searchResultPath(r: any): string {
+  return String(r?.path ?? r?.metadata?.path ?? "");
+}
+
+export function searchResultStartLine(r: any): number {
+  return Number(r?.start_line ?? r?.generated_metadata?.start_line ?? 0);
+}
+
+export function searchResultEndLine(r: any, fallbackStart = 0): number {
+  return Number(
+    r?.end_line ?? r?.generated_metadata?.end_line ?? fallbackStart,
+  );
+}
+
 export function filterMcpSearchResults(
   data: ChunkType[],
   options: McpSearchFilterOptions = {},
@@ -1938,8 +1957,10 @@ export const mcp = new Command("mcp")
             projectRoot,
           );
           const changedSet = new Set(changedFiles);
+          // searcher.search() returns mapped chunks (path under metadata.path);
+          // changedFiles are absolute, so match on the resolved absolute path.
           let filtered = response.data.filter((r: any) =>
-            changedSet.has(String(r.path || "")),
+            changedSet.has(searchResultPath(r)),
           );
           if (role)
             filtered = filtered.filter((r: any) =>
@@ -1953,7 +1974,7 @@ export const mcp = new Command("mcp")
             );
           const lines = filtered.slice(0, limit).map((r: any) => {
             const sym = toStringArray(r.defined_symbols)?.[0] ?? "";
-            return `${rel(r.path)}:${Number(r.start_line ?? 0) + 1} ${sym} [${r.role || "IMPL"}]`;
+            return `${rel(searchResultPath(r))}:${searchResultStartLine(r) + 1} ${sym} [${r.role || "IMPL"}]`;
           });
           return ok(lines.join("\n"));
         }
@@ -2194,10 +2215,11 @@ export const mcp = new Command("mcp")
         let tokensUsed = 0;
         const sections: string[] = [];
 
-        // Entry points
+        // Entry points. searcher.search() returns mapped chunks, so the path and
+        // line live under metadata/generated_metadata — read via the helpers.
         const epLines = response.data.slice(0, 5).map((r: any) => {
           const sym = toStringArray(r.defined_symbols)?.[0] ?? "";
-          return `${rel(r.path)}:${Number(r.start_line ?? 0) + 1} ${sym} [${r.role || "IMPL"}]`;
+          return `${rel(searchResultPath(r))}:${searchResultStartLine(r) + 1} ${sym} [${r.role || "IMPL"}]`;
         });
         const epSection = `## Entry Points\n${epLines.join("\n")}`;
         sections.push(epSection);
@@ -2205,9 +2227,9 @@ export const mcp = new Command("mcp")
 
         // Key function bodies
         for (const r of response.data.slice(0, 3)) {
-          const absP = String((r as any).path || "");
-          const startLine = Number((r as any).start_line ?? 0);
-          const endLine = Number((r as any).end_line ?? startLine);
+          const absP = searchResultPath(r);
+          const startLine = searchResultStartLine(r);
+          const endLine = searchResultEndLine(r, startLine);
           const sym = toStringArray((r as any).defined_symbols)?.[0] ?? "";
           try {
             const content = fs.readFileSync(absP, "utf-8");
