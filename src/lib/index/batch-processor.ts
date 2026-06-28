@@ -6,7 +6,7 @@ import type { VectorRecord } from "../store/types";
 import type { VectorDB } from "../store/vector-db";
 import { DiskPressureError, isLanceCorruptionError } from "../store/vector-db";
 import { isFileCached } from "../utils/cache-check";
-import { computeBufferHash, isIndexableFile } from "../utils/file-utils";
+import { computeContentHash, isIndexableFile } from "../utils/file-utils";
 import { log } from "../utils/logger";
 import { getWorkerPool } from "../workers/pool";
 import { computeRetryAction } from "./watcher-batch";
@@ -190,7 +190,7 @@ export class ProjectBatchProcessor {
           // verify in-process instead of dispatching to a worker (~220ms saved).
           if (cached?.hash && cached.size === stats.size) {
             const buf = await fs.promises.readFile(absPath);
-            const hash = computeBufferHash(buf);
+            const hash = computeContentHash(buf, absPath);
             if (hash === cached.hash) {
               metaUpdates.set(absPath, { ...cached, mtimeMs: stats.mtimeMs });
               continue;

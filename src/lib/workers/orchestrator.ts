@@ -13,7 +13,7 @@ import {
 import { Skeletonizer } from "../skeleton";
 import type { PreparedChunk, VectorRecord } from "../store/types";
 import {
-  computeBufferHash,
+  computeContentHash,
   hasNullByte,
   isGeneratedContent,
   isIndexableFile,
@@ -276,7 +276,7 @@ export class WorkerOrchestrator {
     dbg("orch", `processFile start: ${input.path}`);
 
     const { buffer, mtimeMs, size } = await readFileSnapshot(absolutePath);
-    const hash = computeBufferHash(buffer);
+    const hash = computeContentHash(buffer, absolutePath);
 
     if (!isIndexableFile(absolutePath, size)) {
       dbg("orch", `skip ${input.path} (non-indexable, size=${size})`);

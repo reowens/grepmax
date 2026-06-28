@@ -8,6 +8,41 @@ export function computeBufferHash(buffer: Buffer): string {
   return createHash("sha256").update(buffer).digest("hex");
 }
 
+// Files whose leading YAML frontmatter is metadata, not content. A status:/tags:
+// edit bumps mtime and changes the bytes, but the embedding ignores frontmatter —
+// so hashing it would force a needless GPU re-embed on every metadata touch.
+const FRONTMATTER_EXTENSIONS = new Set([".md", ".mdx"]);
+
+// Leading YAML frontmatter: a whole `---` line at the very top (NOT a bare
+// `startsWith("---")`, which would also match a `---` thematic break or `--- x`),
+// through the next whole `---`/`...` line. Anchored at string start (no `m` flag)
+// with an optional BOM, so only true file-leading frontmatter matches; a doc that
+// opens with a thematic break and no closing fence is left untouched.
+const FRONTMATTER_BLOCK =
+  /^\uFEFF?---[ \t]*\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/;
+
+/** Strip leading YAML frontmatter from markdown bytes; returns input unchanged otherwise. */
+export function stripMarkdownFrontmatter(buffer: Buffer): Buffer {
+  const text = buffer.toString("utf8");
+  const match = text.match(FRONTMATTER_BLOCK);
+  if (!match) return buffer;
+  return Buffer.from(text.slice(match[0].length), "utf8");
+}
+
+/**
+ * Hash file content for change detection. For markdown, YAML frontmatter is
+ * stripped first so a metadata-only edit doesn't bust `isFileCached` and trigger
+ * a re-embed; every other file hashes its exact bytes. Must be used identically
+ * across the catchup, watcher, and worker hash paths or they will disagree and
+ * re-index in a loop.
+ */
+export function computeContentHash(buffer: Buffer, filePath: string): string {
+  if (FRONTMATTER_EXTENSIONS.has(extname(filePath).toLowerCase())) {
+    return computeBufferHash(stripMarkdownFrontmatter(buffer));
+  }
+  return computeBufferHash(buffer);
+}
+
 export function hasNullByte(buffer: Buffer, sampleLength = 1024): boolean {
   const length = Math.min(buffer.length, sampleLength);
   for (let i = 0; i < length; i++) {

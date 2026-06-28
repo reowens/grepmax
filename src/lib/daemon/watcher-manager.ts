@@ -397,9 +397,9 @@ export class WatcherManager {
           // Fast path: if only mtime changed but size is identical and we have a hash,
           // just verify the hash in-process instead of sending to a worker.
           if (cached?.hash && cached.size === stats.size) {
-            const { computeBufferHash } = await import("../utils/file-utils");
+            const { computeContentHash } = await import("../utils/file-utils");
             const buf = await fs.promises.readFile(absPath);
-            const hash = computeBufferHash(buf);
+            const hash = computeContentHash(buf, absPath);
             if (hash === cached.hash) {
               // Content unchanged — update mtime in cache and skip worker
               metaCache.put(absPath, { ...cached, mtimeMs: stats.mtimeMs });
