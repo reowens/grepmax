@@ -1,5 +1,8 @@
 import { execSync } from "node:child_process";
-import { isDaemonHeartbeatFresh, isDaemonRunning } from "../utils/daemon-client";
+import {
+  isDaemonHeartbeatFresh,
+  isDaemonRunning,
+} from "../utils/daemon-client";
 import { log as dlog } from "../utils/logger";
 import { killProcess } from "../utils/process";
 import { getWorkerPool, isWorkerPoolInitialized } from "../workers/pool";
@@ -36,12 +39,18 @@ export class ProcessManager {
       (pid) => workerPids.has(pid) && !tracked.has(pid),
     );
 
-    const confirmed = orphans.filter((pid) => this.suspectedOrphanWorkers.has(pid));
+    const confirmed = orphans.filter((pid) =>
+      this.suspectedOrphanWorkers.has(pid),
+    );
     this.suspectedOrphanWorkers = new Set(orphans);
 
     for (const pid of confirmed) {
-      console.log(`[daemon] Killing orphan worker PID:${pid} (untracked by pool)`);
-      try { process.kill(pid, "SIGKILL"); } catch {}
+      console.log(
+        `[daemon] Killing orphan worker PID:${pid} (untracked by pool)`,
+      );
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {}
       this.suspectedOrphanWorkers.delete(pid);
     }
   }
@@ -71,8 +80,9 @@ export class ProcessManager {
    */
   async killStaleProcesses(): Promise<void> {
     // 1. Check for other daemon processes
-    const daemonPids = this.findProcessesByTitle("gmax-daemon")
-      .filter((pid) => pid !== process.pid);
+    const daemonPids = this.findProcessesByTitle("gmax-daemon").filter(
+      (pid) => pid !== process.pid,
+    );
     const workerPids = this.findProcessesByTitle("gmax-worker");
 
     if (daemonPids.length === 0 && workerPids.length === 0) {
@@ -99,7 +109,10 @@ export class ProcessManager {
         );
         process.exit(0);
       }
-      dlog("daemon", `stale daemon PID:${pid} unresponsive and heartbeat stale — killing`);
+      dlog(
+        "daemon",
+        `stale daemon PID:${pid} unresponsive and heartbeat stale — killing`,
+      );
       await killProcess(pid);
       dlog("daemon", `killed stale daemon PID:${pid}`);
     }
@@ -111,7 +124,10 @@ export class ProcessManager {
       await killProcess(pid);
     }
 
-    dlog("daemon", `Cleaned up ${daemonPids.length} stale daemon(s), ${workerPids.length} orphaned worker(s)`);
+    dlog(
+      "daemon",
+      `Cleaned up ${daemonPids.length} stale daemon(s), ${workerPids.length} orphaned worker(s)`,
+    );
   }
 
   findProcessesByTitle(title: string): number[] {

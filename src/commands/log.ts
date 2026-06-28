@@ -68,7 +68,11 @@ function printHuman(
     if (targetPaths && targetPaths.length > 1) {
       const targetSet = new Set(targetPaths);
       const touched = c.numstatLines
-        .filter((n) => targetSet.has(n.path) || targetSet.has(path.resolve(projectRoot, n.path)))
+        .filter(
+          (n) =>
+            targetSet.has(n.path) ||
+            targetSet.has(path.resolve(projectRoot, n.path)),
+        )
         .map((n) => relativize(n.path, projectRoot));
       if (touched.length > 0) {
         console.log(`  ${style.dim(`via: ${touched.join(", ")}`)}`);
@@ -91,7 +95,8 @@ function printAgent(
       const touchedPaths = c.numstatLines
         .filter(
           (n) =>
-            targetSet.has(n.path) || targetSet.has(path.resolve(projectRoot, n.path)),
+            targetSet.has(n.path) ||
+            targetSet.has(path.resolve(projectRoot, n.path)),
         )
         .map((n) => relativize(n.path, projectRoot));
       touched = touchedPaths.join(",");

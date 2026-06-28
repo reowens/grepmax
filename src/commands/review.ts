@@ -49,11 +49,8 @@ Subcommands:
         const { ensureProjectPaths } = await import(
           "../lib/utils/project-root"
         );
-        const {
-          gatherRiskInputs,
-          computeRiskTable,
-          formatRiskTable,
-        } = await import("../lib/review/risk");
+        const { gatherRiskInputs, computeRiskTable, formatRiskTable } =
+          await import("../lib/review/risk");
 
         const paths = ensureProjectPaths(projectRoot);
         const vectorDb = new VectorDB(paths.lancedbDir);

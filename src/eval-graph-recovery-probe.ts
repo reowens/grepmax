@@ -19,7 +19,10 @@ import { gracefulExit } from "./lib/utils/exit";
 import { getWorkerPool } from "./lib/workers/pool";
 import { escapeSqlString } from "./lib/utils/filter-builder";
 
-const PLATFORM_ROOT = path.join(process.env.HOME ?? "", "Development/beyond/platform");
+const PLATFORM_ROOT = path.join(
+  process.env.HOME ?? "",
+  "Development/beyond/platform",
+);
 const PRE_K = 500;
 const STAGE1_K = 200;
 const SEED_K = 20;
@@ -41,12 +44,15 @@ const CASES: Array<[string, string]> = [
 
 function toStrArr(val: unknown): string[] {
   if (!val) return [];
-  if (Array.isArray(val)) return val.filter((v): v is string => typeof v === "string");
+  if (Array.isArray(val))
+    return val.filter((v): v is string => typeof v === "string");
   const m = val as { toArray?: () => unknown };
   if (typeof m.toArray === "function") {
     try {
       const a = m.toArray();
-      return Array.isArray(a) ? a.filter((v): v is string => typeof v === "string") : [];
+      return Array.isArray(a)
+        ? a.filter((v): v is string => typeof v === "string")
+        : [];
     } catch {
       return [];
     }
@@ -57,23 +63,51 @@ function toStrArr(val: unknown): string[] {
 async function probe(table: any, sym: string, expectedFile: string) {
   const pool = getWorkerPool();
   const { dense } = await pool.encodeQuery(sym);
-  const prefix = PLATFORM_ROOT.endsWith("/") ? PLATFORM_ROOT : `${PLATFORM_ROOT}/`;
+  const prefix = PLATFORM_ROOT.endsWith("/")
+    ? PLATFORM_ROOT
+    : `${PLATFORM_ROOT}/`;
   const where = `path LIKE '${escapeSqlString(prefix)}%'`;
-  const columns = ["id", "path", "chunk_index", "defined_symbols", "referenced_symbols"];
+  const columns = [
+    "id",
+    "path",
+    "chunk_index",
+    "defined_symbols",
+    "referenced_symbols",
+  ];
 
-  const vectorRows = (await table.vectorSearch(dense).select([...columns, "_distance"]).where(where).limit(PRE_K).toArray()) as any[];
+  const vectorRows = (await table
+    .vectorSearch(dense)
+    .select([...columns, "_distance"])
+    .where(where)
+    .limit(PRE_K)
+    .toArray()) as any[];
   let ftsRows: any[] = [];
   try {
-    ftsRows = (await table.search(sym).select([...columns, "_score"]).where(where).limit(PRE_K).toArray()) as any[];
+    ftsRows = (await table
+      .search(sym)
+      .select([...columns, "_score"])
+      .where(where)
+      .limit(PRE_K)
+      .toArray()) as any[];
   } catch {}
 
   const scores = new Map<string, number>();
   const docMap = new Map<string, any>();
   const keyOf = (d: any) => (d.id as string) || `${d.path}:${d.chunk_index}`;
-  vectorRows.forEach((d, r) => { const k = keyOf(d); docMap.set(k, d); scores.set(k, (scores.get(k) || 0) + 1 / (RRF_K + r + 1)); });
-  ftsRows.forEach((d, r) => { const k = keyOf(d); if (!docMap.has(k)) docMap.set(k, d); scores.set(k, (scores.get(k) || 0) + 1 / (RRF_K + r + 1)); });
+  vectorRows.forEach((d, r) => {
+    const k = keyOf(d);
+    docMap.set(k, d);
+    scores.set(k, (scores.get(k) || 0) + 1 / (RRF_K + r + 1));
+  });
+  ftsRows.forEach((d, r) => {
+    const k = keyOf(d);
+    if (!docMap.has(k)) docMap.set(k, d);
+    scores.set(k, (scores.get(k) || 0) + 1 / (RRF_K + r + 1));
+  });
 
-  const fusedKeys = Array.from(scores.entries()).sort((a, b) => b[1] - a[1]).map(([k]) => k);
+  const fusedKeys = Array.from(scores.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([k]) => k);
   const fused = fusedKeys.map((k) => docMap.get(k));
 
   // Locate the expected definition chunk among retrieved rows.
@@ -96,8 +130,17 @@ async function probe(table: any, sym: string, expectedFile: string) {
   // If not in the union, query directly to confirm it exists in the index.
   let defExistsInIndex = defInUnion;
   if (!defInUnion) {
-    const direct = (await table.query().select(columns).where(`${where} AND array_contains(defined_symbols, '${escapeSqlString(sym)}')`).limit(50).toArray()) as any[];
-    defExistsInIndex = direct.some((d) => String(d.path).toLowerCase().endsWith(`/${expectedFile.toLowerCase()}`));
+    const direct = (await table
+      .query()
+      .select(columns)
+      .where(
+        `${where} AND array_contains(defined_symbols, '${escapeSqlString(sym)}')`,
+      )
+      .limit(50)
+      .toArray()) as any[];
+    defExistsInIndex = direct.some((d) =>
+      String(d.path).toLowerCase().endsWith(`/${expectedFile.toLowerCase()}`),
+    );
   }
 
   // ref->def reachability: among top-SEED_K fusion seeds, how many reference `sym`?
@@ -111,9 +154,14 @@ async function probe(table: any, sym: string, expectedFile: string) {
     }
   });
 
-  const loc = defRetrievalRank > 0
-    ? (defInPool ? `pool#${defRetrievalRank}` : `union#${defRetrievalRank}(>200)`)
-    : (defExistsInIndex ? "OUTSIDE-500" : "NOT-IN-INDEX?");
+  const loc =
+    defRetrievalRank > 0
+      ? defInPool
+        ? `pool#${defRetrievalRank}`
+        : `union#${defRetrievalRank}(>200)`
+      : defExistsInIndex
+        ? "OUTSIDE-500"
+        : "NOT-IN-INDEX?";
 
   return { sym, expectedFile, loc, seedsRefSym, firstRefSeedRank };
 }
@@ -121,7 +169,9 @@ async function probe(table: any, sym: string, expectedFile: string) {
 async function main() {
   const db = new VectorDB(PATHS.lancedbDir);
   const table = await db.ensureTable();
-  console.log("sym             expectedDefChunk         seeds_ref  firstRefSeed");
+  console.log(
+    "sym             expectedDefChunk         seeds_ref  firstRefSeed",
+  );
   for (const [sym, file] of CASES) {
     const r = await probe(table, sym, file);
     console.log(
@@ -132,4 +182,7 @@ async function main() {
   await gracefulExit(0);
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

@@ -22,12 +22,14 @@ export const related = new Command("related")
   .option(
     "--in <subpath>",
     "Restrict to a sub-path of the project (repeatable)",
-    (value: string, prev: string[] | undefined) => (prev ? [...prev, value] : [value]),
+    (value: string, prev: string[] | undefined) =>
+      prev ? [...prev, value] : [value],
   )
   .option(
     "--exclude <subpath>",
     "Exclude a sub-path of the project (repeatable)",
-    (value: string, prev: string[] | undefined) => (prev ? [...prev, value] : [value]),
+    (value: string, prev: string[] | undefined) =>
+      prev ? [...prev, value] : [value],
   )
   .option("--agent", "Compact output for AI agents", false)
   .action(async (file, opts) => {
@@ -65,9 +67,7 @@ export const related = new Command("related")
         .toArray();
 
       if (fileChunks.length === 0) {
-        console.log(
-          fileNotFoundLines(file, { agent: opts.agent }).join("\n"),
-        );
+        console.log(fileNotFoundLines(file, { agent: opts.agent }).join("\n"));
         process.exitCode = 1;
         return;
       }
@@ -147,7 +147,10 @@ export const related = new Command("related")
       if (topDeps.length === 0 && topRevs.length === 0) {
         const ext = path.extname(absPath);
         basename = path.basename(absPath, ext);
-        if (basename.length < 4 || GENERIC_BASENAMES.has(basename.toLowerCase())) {
+        if (
+          basename.length < 4 ||
+          GENERIC_BASENAMES.has(basename.toLowerCase())
+        ) {
           basenameRejected = true;
         } else {
           // No .limit() here: LIKE + limit deadlocks in @lancedb 0.27.x when
@@ -176,9 +179,7 @@ export const related = new Command("related")
 
       if (opts.agent) {
         const rel = (p: string) =>
-          p.startsWith(`${projectRoot}/`)
-            ? p.slice(projectRoot.length + 1)
-            : p;
+          p.startsWith(`${projectRoot}/`) ? p.slice(projectRoot.length + 1) : p;
         for (const [p, count] of topDeps) {
           console.log(`dep: ${rel(p)}\t${count}`);
         }

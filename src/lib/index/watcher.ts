@@ -44,7 +44,9 @@ export const WATCHER_IGNORE_GLOBS: string[] = [
   "**/*.sb-*", // Xcode swap files
 ];
 
-export async function startWatcher(opts: WatcherOptions): Promise<WatcherHandle> {
+export async function startWatcher(
+  opts: WatcherOptions,
+): Promise<WatcherHandle> {
   const { projectRoot } = opts;
   const wtag = `watch:${projectRoot.split("/").pop()}`;
 

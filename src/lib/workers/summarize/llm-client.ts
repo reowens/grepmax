@@ -9,10 +9,7 @@
 
 import * as http from "node:http";
 
-const SUMMARY_PORT = parseInt(
-  process.env.GMAX_SUMMARY_PORT || "8101",
-  10,
-);
+const SUMMARY_PORT = parseInt(process.env.GMAX_SUMMARY_PORT || "8101", 10);
 const SUMMARY_HOST = "127.0.0.1";
 const SUMMARY_TIMEOUT_MS = 120_000;
 

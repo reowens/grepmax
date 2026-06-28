@@ -136,12 +136,7 @@ type Row = {
   complexity: number;
 };
 
-function mkRow(
-  path: string,
-  defs: string[],
-  refs: string[],
-  line = 0,
-): Row {
+function mkRow(path: string, defs: string[], refs: string[], line = 0): Row {
   return {
     path,
     start_line: line,

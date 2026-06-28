@@ -64,7 +64,14 @@ describe("computeRiskTable", () => {
 
 describe("formatRiskTable", () => {
   const rows = computeRiskTable([
-    mk({ symbol: "BeyondError", file: "src/errors.ts", line: 10, callerCount: 12, hasTests: false, churn: 8 }),
+    mk({
+      symbol: "BeyondError",
+      file: "src/errors.ts",
+      line: 10,
+      callerCount: 12,
+      hasTests: false,
+      churn: 8,
+    }),
   ]);
 
   it("emits a machine-readable TSV line per symbol in agent mode", () => {

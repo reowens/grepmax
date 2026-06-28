@@ -2,7 +2,15 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { Command } from "commander";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 // Real project root with a temp dir + real source file so the snippet
 // reader (sync fs.readFileSync) finds something believable. Mocks the
@@ -96,7 +104,9 @@ describe("trace --inbound", () => {
 
     expect(out).toContain("doWork\tsrc/lib.ts:1\tDEFINITION");
     // snippet line found inside the caller's chunk window
-    expect(out).toMatch(/src\/caller\.ts:3\thelper\tconst result = doWork\(arg\);/);
+    expect(out).toMatch(
+      /src\/caller\.ts:3\thelper\tconst result = doWork\(arg\);/,
+    );
   });
 
   it("--no-snippets drops the snippet column", async () => {
@@ -175,7 +185,9 @@ describe("trace --inbound", () => {
     const out = spy.mock.calls.map((c) => String(c[0])).join("\n");
     spy.mockRestore();
 
-    const callerLines = out.split("\n").filter((l) => l.includes("caller.ts:3"));
+    const callerLines = out
+      .split("\n")
+      .filter((l) => l.includes("caller.ts:3"));
     expect(callerLines).toHaveLength(1);
   });
 
@@ -203,7 +215,9 @@ describe("trace --inbound", () => {
     });
 
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    await (trace as Command).parseAsync(["doWork", "--inbound"], { from: "user" });
+    await (trace as Command).parseAsync(["doWork", "--inbound"], {
+      from: "user",
+    });
     const out = spy.mock.calls.map((c) => String(c[0])).join("\n");
     spy.mockRestore();
 
@@ -237,7 +251,9 @@ describe("trace --inbound", () => {
     });
 
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    await (trace as Command).parseAsync(["doWork", "--agent"], { from: "user" });
+    await (trace as Command).parseAsync(["doWork", "--agent"], {
+      from: "user",
+    });
     const out = spy.mock.calls.map((c) => String(c[0])).join("\n");
     spy.mockRestore();
 
@@ -256,15 +272,23 @@ describe("trace --inbound", () => {
         role: "DEFINITION",
       },
       callerTree: [
-        { node: { symbol: "runSearch", file: callerFile, line: 0 }, callers: [] },
-        { node: { symbol: "runSearch", file: callerFile, line: 2 }, callers: [] },
+        {
+          node: { symbol: "runSearch", file: callerFile, line: 0 },
+          callers: [],
+        },
+        {
+          node: { symbol: "runSearch", file: callerFile, line: 2 },
+          callers: [],
+        },
       ],
       callees: [],
       importers: [],
     });
 
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    await (trace as Command).parseAsync(["doWork", "--agent"], { from: "user" });
+    await (trace as Command).parseAsync(["doWork", "--agent"], {
+      from: "user",
+    });
     const out = spy.mock.calls.map((c) => String(c[0])).join("\n");
     spy.mockRestore();
 
@@ -285,7 +309,10 @@ describe("trace --inbound", () => {
       },
       callerTree: [
         // Self-edge: the traced symbol referencing itself — should be hidden.
-        { node: { symbol: "doWork", file: `${tmpRoot}/src/lib.ts`, line: 0 }, callers: [] },
+        {
+          node: { symbol: "doWork", file: `${tmpRoot}/src/lib.ts`, line: 0 },
+          callers: [],
+        },
         { node: { symbol: "helper", file: callerFile, line: 0 }, callers: [] },
       ],
       callees: [],
@@ -293,7 +320,9 @@ describe("trace --inbound", () => {
     });
 
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    await (trace as Command).parseAsync(["doWork", "--agent"], { from: "user" });
+    await (trace as Command).parseAsync(["doWork", "--agent"], {
+      from: "user",
+    });
     const out = spy.mock.calls.map((c) => String(c[0])).join("\n");
     spy.mockRestore();
 
@@ -310,9 +339,18 @@ describe("trace --inbound", () => {
         role: "DEFINITION",
       },
       callerTree: [
-        { node: { symbol: "runSearch", file: callerFile, line: 0 }, callers: [] },
-        { node: { symbol: "runSearch", file: callerFile, line: 2 }, callers: [] },
-        { node: { symbol: "doWork", file: `${tmpRoot}/src/lib.ts`, line: 0 }, callers: [] },
+        {
+          node: { symbol: "runSearch", file: callerFile, line: 0 },
+          callers: [],
+        },
+        {
+          node: { symbol: "runSearch", file: callerFile, line: 2 },
+          callers: [],
+        },
+        {
+          node: { symbol: "doWork", file: `${tmpRoot}/src/lib.ts`, line: 0 },
+          callers: [],
+        },
       ],
       callees: [],
       importers: [],

@@ -43,10 +43,18 @@ describe("formatIndexStateFooter", () => {
 
   it("uses a human-readable warning shape in non-agent mode", () => {
     expect(
-      formatIndexStateFooter({ indexing: true, pendingFiles: 7 }, { agent: false }),
-    ).toBe("⚠️  Index still syncing (~7 files pending) — results may be incomplete.");
+      formatIndexStateFooter(
+        { indexing: true, pendingFiles: 7 },
+        { agent: false },
+      ),
+    ).toBe(
+      "⚠️  Index still syncing (~7 files pending) — results may be incomplete.",
+    );
     expect(
-      formatIndexStateFooter({ indexing: true, pendingFiles: 0 }, { agent: false }),
+      formatIndexStateFooter(
+        { indexing: true, pendingFiles: 0 },
+        { agent: false },
+      ),
     ).toBe("⚠️  Index still syncing — results may be incomplete.");
   });
 });

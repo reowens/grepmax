@@ -140,7 +140,11 @@ export function groupResultsByProject<T>(
     const key = owner?.root ?? "(unknown)";
     let bucket = buckets.get(key);
     if (!bucket) {
-      bucket = { name: owner?.name ?? "(unknown)", root: owner?.root ?? "", items: [] };
+      bucket = {
+        name: owner?.name ?? "(unknown)",
+        root: owner?.root ?? "",
+        items: [],
+      };
       buckets.set(key, bucket);
       order.push(key);
     }

@@ -80,12 +80,14 @@ export const extract = new Command("extract")
   .option(
     "--in <subpath>",
     "Restrict to a sub-path of the project (repeatable)",
-    (value: string, prev: string[] | undefined) => (prev ? [...prev, value] : [value]),
+    (value: string, prev: string[] | undefined) =>
+      prev ? [...prev, value] : [value],
   )
   .option(
     "--exclude <subpath>",
     "Exclude a sub-path of the project (repeatable)",
-    (value: string, prev: string[] | undefined) => (prev ? [...prev, value] : [value]),
+    (value: string, prev: string[] | undefined) =>
+      prev ? [...prev, value] : [value],
   )
   .option("--agent", "Compact output for AI agents", false)
   .option("--imports", "Prepend file imports", false)
@@ -134,9 +136,7 @@ export const extract = new Command("extract")
       if (byLang.size >= 2) {
         const rel = (p: string) =>
           p.startsWith(projectRoot) ? p.slice(projectRoot.length + 1) : p;
-        const lines = [
-          `Symbol '${symbol}' is defined in multiple languages:`,
-        ];
+        const lines = [`Symbol '${symbol}' is defined in multiple languages:`];
         for (const [lang, group] of byLang) {
           const c = group[0];
           lines.push(`  ${lang.padEnd(6)} ${rel(c.path)}:${c.startLine + 1}`);
@@ -218,9 +218,7 @@ export const extract = new Command("extract")
             return `${r}:${c.startLine + 1}`;
           })
           .join(", ");
-        console.log(
-          `\n${style.dim(`Also defined in: ${otherLocs}`)}`,
-        );
+        console.log(`\n${style.dim(`Also defined in: ${otherLocs}`)}`);
       }
 
       if (!opts.agent && opts.tests !== false) {
@@ -240,8 +238,7 @@ export const extract = new Command("extract")
         }
       }
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unknown error";
+      const message = error instanceof Error ? error.message : "Unknown error";
       console.error("Extract failed:", message);
       process.exitCode = 1;
     } finally {

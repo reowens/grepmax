@@ -56,7 +56,9 @@ function withRegistryLock<T>(fn: () => T): T {
     release = lockfile.lockSync(REGISTRY_PATH, { stale: 10_000 });
     return fn();
   } finally {
-    try { release?.(); } catch {}
+    try {
+      release?.();
+    } catch {}
   }
 }
 
@@ -94,7 +96,9 @@ export function removeProject(root: string): void {
 export function getParentProject(root: string): ProjectEntry | undefined {
   const resolved = root.endsWith("/") ? root : `${root}/`;
   return loadRegistry().find(
-    (e) => e.root !== root && resolved.startsWith(e.root.endsWith("/") ? e.root : `${e.root}/`),
+    (e) =>
+      e.root !== root &&
+      resolved.startsWith(e.root.endsWith("/") ? e.root : `${e.root}/`),
   );
 }
 

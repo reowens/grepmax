@@ -133,14 +133,17 @@ describe("type-position edges — multi-grammar", () => {
   for (const { lang, file, code } of CASES) {
     it(`${lang}: captures param + return annotations as type edges, not call edges`, async () => {
       const { type, ref } = await symbols(file, code);
-      expect(type.has(REQ), `${lang} missing param-type edge ${REQ}`).toBe(true);
+      expect(type.has(REQ), `${lang} missing param-type edge ${REQ}`).toBe(
+        true,
+      );
       expect(type.has(RESP), `${lang} missing return-type edge ${RESP}`).toBe(
         true,
       );
       // Invariant: annotation-only types never become call edges.
-      expect(ref.has(REQ), `${lang} leaked ${REQ} into referenced_symbols`).toBe(
-        false,
-      );
+      expect(
+        ref.has(REQ),
+        `${lang} leaked ${REQ} into referenced_symbols`,
+      ).toBe(false);
       expect(
         ref.has(RESP),
         `${lang} leaked ${RESP} into referenced_symbols`,

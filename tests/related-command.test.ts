@@ -121,7 +121,9 @@ describe("related command", () => {
       from: "user",
     });
     const output = spy.mock.calls.map((c) => c[0]).join("\n");
-    expect(output).toContain("(no semantic neighbors; showing 2 files mentioning 'widget')");
+    expect(output).toContain(
+      "(no semantic neighbors; showing 2 files mentioning 'widget')",
+    );
     expect(output).toContain("imp: src/app/page.tsx");
     expect(output).toContain("imp: tests/widget.test.ts");
     expect(output).not.toContain("imp: src/lib/widget.ts");
@@ -141,7 +143,9 @@ describe("related command", () => {
       from: "user",
     });
     const output = spy.mock.calls.map((c) => c[0]).join("\n");
-    expect(output).toContain("(no semantic neighbors; basename 'index' too generic to fall back)");
+    expect(output).toContain(
+      "(no semantic neighbors; basename 'index' too generic to fall back)",
+    );
     expect(output).not.toContain("imp:");
     spy.mockRestore();
   });
@@ -159,9 +163,11 @@ describe("related command", () => {
     ];
 
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    await (related as Command).parseAsync(["src/lib/widget.ts"], { from: "user" });
+    await (related as Command).parseAsync(["src/lib/widget.ts"], {
+      from: "user",
+    });
     const output = spy.mock.calls.map((c) => c[0]).join("\n");
-    expect(output).toContain("Mentions of \"widget\" in other files:");
+    expect(output).toContain('Mentions of "widget" in other files:');
     expect(output).toContain("src/app/page.tsx");
     spy.mockRestore();
   });

@@ -98,7 +98,9 @@ Examples:
       // Ensure grammars are present before indexing (silent if already exist)
       await ensureGrammars(console.log, { silent: true });
 
-      const { ensureDaemonRunning, sendStreamingCommand } = await import("../lib/utils/daemon-client");
+      const { ensureDaemonRunning, sendStreamingCommand } = await import(
+        "../lib/utils/daemon-client"
+      );
 
       if (await ensureDaemonRunning()) {
         // Daemon mode: IPC streaming — daemon handles watcher pause/resume internally
@@ -110,7 +112,12 @@ Examples:
 
         try {
           const done = await sendStreamingCommand(
-            { cmd: "index", root: projectRoot, reset: options.reset, dryRun: options.dryRun },
+            {
+              cmd: "index",
+              root: projectRoot,
+              reset: options.reset,
+              dryRun: options.dryRun,
+            },
             (msg) => {
               onProgress({
                 processed: (msg.processed as number) ?? 0,
@@ -146,7 +153,8 @@ Examples:
           });
 
           const failedFiles = (done.failedFiles as number) ?? 0;
-          const failedSuffix = failedFiles > 0 ? ` • ${failedFiles} failed` : "";
+          const failedSuffix =
+            failedFiles > 0 ? ` • ${failedFiles} failed` : "";
           spinner.succeed(
             `Indexing complete(${done.processed} / ${done.total}) • indexed ${done.indexed}${failedSuffix} `,
           );

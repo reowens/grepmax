@@ -158,19 +158,32 @@ export async function initialSync(
       // has distinct files, the vector store is out of sync (e.g. batch
       // timeouts wrote MetaCache but not vectors, compaction failure, etc.).
       // Clear the stale cache entries so those files get re-embedded.
-      const vectorFileCount = await vectorDb.countDistinctFilesForPath(rootPrefix);
+      const vectorFileCount =
+        await vectorDb.countDistinctFilesForPath(rootPrefix);
       if (projectKeys.size > 0) {
         const pct = Math.round((vectorFileCount / projectKeys.size) * 100);
-        log("index", `Coherence: ${vectorFileCount} vectors / ${projectKeys.size} cached (${pct}%)`);
+        log(
+          "index",
+          `Coherence: ${vectorFileCount} vectors / ${projectKeys.size} cached (${pct}%)`,
+        );
       }
       if (projectKeys.size > 0 && vectorFileCount === 0) {
-        log("index", `Stale cache detected: ${projectKeys.size} cached files but no vectors — clearing cache`);
+        log(
+          "index",
+          `Stale cache detected: ${projectKeys.size} cached files but no vectors — clearing cache`,
+        );
         for (const key of projectKeys) {
           mc.delete(key);
         }
         projectKeys.clear();
-      } else if (projectKeys.size > 0 && vectorFileCount < projectKeys.size * 0.8) {
-        log("index", `Partial cache detected: ${vectorFileCount} files in vectors vs ${projectKeys.size} in cache — clearing cache to re-embed missing files`);
+      } else if (
+        projectKeys.size > 0 &&
+        vectorFileCount < projectKeys.size * 0.8
+      ) {
+        log(
+          "index",
+          `Partial cache detected: ${vectorFileCount} files in vectors vs ${projectKeys.size} in cache — clearing cache to re-embed missing files`,
+        );
         for (const key of projectKeys) {
           mc.delete(key);
         }
@@ -182,7 +195,10 @@ export async function initialSync(
       if (reset || modelChanged) {
         if (modelChanged) {
           const stored = readIndexConfig(paths.configPath);
-          log("index", `Reset: model changed (${stored?.embedModel} → ${MODEL_IDS.embed})`);
+          log(
+            "index",
+            `Reset: model changed (${stored?.embedModel} → ${MODEL_IDS.embed})`,
+          );
         } else {
           log("index", "Reset: --reset flag");
         }
@@ -205,7 +221,10 @@ export async function initialSync(
       const { isMlxUp } = await import("../workers/embeddings/mlx-client");
       const mlxReady = await isMlxUp();
       if (!mlxReady) {
-        log("index", "WARNING: MLX embed server not running — using CPU embeddings (slower)");
+        log(
+          "index",
+          "WARNING: MLX embed server not running — using CPU embeddings (slower)",
+        );
       }
     }
 
@@ -256,7 +275,10 @@ export async function initialSync(
         pendingMeta.clear();
         pendingDeletes.clear();
 
-        debug("index", `flush: ${toWrite.length} vectors, ${deletes.length} deletes, ${metaEntries.size} meta`);
+        debug(
+          "index",
+          `flush: ${toWrite.length} vectors, ${deletes.length} deletes, ${metaEntries.size} meta`,
+        );
         const flushStart = Date.now();
         const currentFlush = flushBatch(
           vectorDb,
@@ -325,7 +347,10 @@ export async function initialSync(
         if (idx !== -1) activeTasks.splice(idx, 1);
       });
       if (activeTasks.length >= maxConcurrency) {
-        debug("index", `schedule: active=${activeTasks.length}/${maxConcurrency} waiting for slot`);
+        debug(
+          "index",
+          `schedule: active=${activeTasks.length}/${maxConcurrency} waiting for slot`,
+        );
         await Promise.race(activeTasks);
       }
     };
@@ -351,7 +376,9 @@ export async function initialSync(
         continue;
       }
       walkedFiles++;
-      walkProgress(`walk: ${walkedFiles} found, ${processed} processed, ${indexed} indexed, ${cacheHits} cached, ${failedFiles} failed`);
+      walkProgress(
+        `walk: ${walkedFiles} found, ${processed} processed, ${indexed} indexed, ${cacheHits} cached, ${failedFiles} failed`,
+      );
 
       await schedule(async () => {
         if (signal?.aborted) {
@@ -371,14 +398,16 @@ export async function initialSync(
               return; // Broken symlink
             }
           }
-          if (!stats.isFile() || stats.size === 0 || stats.size > MAX_FILE_SIZE_BYTES) {
+          if (
+            !stats.isFile() ||
+            stats.size === 0 ||
+            stats.size > MAX_FILE_SIZE_BYTES
+          ) {
             return;
           }
 
           // Use absolute path as the key for MetaCache
-          const cached = treatAsEmptyCache
-            ? undefined
-            : mc.get(absPath);
+          const cached = treatAsEmptyCache ? undefined : mc.get(absPath);
 
           if (
             cached &&
@@ -437,7 +466,10 @@ export async function initialSync(
           pendingDeletes.add(absPath);
 
           if (result.vectors.length > 0) {
-            debug("index", `file ${relPath}: indexed ${result.vectors.length} vectors`);
+            debug(
+              "index",
+              `file ${relPath}: indexed ${result.vectors.length} vectors`,
+            );
             batch.push(...result.vectors);
             pendingMeta.set(absPath, metaEntry);
             indexed += 1;
@@ -477,7 +509,10 @@ export async function initialSync(
     await Promise.allSettled(activeTasks);
     walkTimer();
     log("index", `Walk: ${walkedFiles} files`);
-    log("index", `Embed: ${indexed} new, ${cacheHits} cached, ${failedFiles} failed`);
+    log(
+      "index",
+      `Embed: ${indexed} new, ${cacheHits} cached, ${failedFiles} failed`,
+    );
 
     if (signal?.aborted) {
       shouldSkipCleanup = true;
@@ -496,7 +531,10 @@ export async function initialSync(
     // so we can still detect orphaned vectors from absorbed/removed sub-projects.
     let staleSource = cachedPaths;
     if (staleSource.size === 0 && !dryRun && !shouldSkipCleanup) {
-      log("index", "MetaCache empty — querying LanceDB for stale path detection");
+      log(
+        "index",
+        "MetaCache empty — querying LanceDB for stale path detection",
+      );
       staleSource = await vectorDb.getDistinctPathsForPrefix(rootPrefix);
     }
     const stale = computeStaleFiles(staleSource, seenPaths);

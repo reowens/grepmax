@@ -30,9 +30,7 @@ export interface InvestigateResult {
 }
 
 function stripThinkTags(text: string): string {
-  return text
-    .replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/g, "")
-    .trim();
+  return text.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/g, "").trim();
 }
 
 export async function investigate(
@@ -62,7 +60,12 @@ export async function investigate(
   const vectorDb = new VectorDB(paths.lancedbDir);
   const searcher = new Searcher(vectorDb);
   const graphBuilder = new GraphBuilder(vectorDb, projectRoot);
-  const ctx: InvestigateContext = { vectorDb, searcher, graphBuilder, projectRoot };
+  const ctx: InvestigateContext = {
+    vectorDb,
+    searcher,
+    graphBuilder,
+    projectRoot,
+  };
 
   const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: SYSTEM_PROMPT },
@@ -151,7 +154,11 @@ export async function investigate(
             if (verbose) {
               process.stderr.write(`  ${fn.name}() — BLOCKED (limit)\n`);
             }
-            messages.push({ role: "tool", tool_call_id: tc.id, content: result });
+            messages.push({
+              role: "tool",
+              tool_call_id: tc.id,
+              content: result,
+            });
             continue;
           }
         }

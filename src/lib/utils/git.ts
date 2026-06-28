@@ -52,11 +52,12 @@ export function getMainRepoRoot(worktreeRoot: string): string | null {
  * Get files changed relative to a git ref (or uncommitted changes if no ref).
  * Returns absolute paths. Includes both staged and unstaged changes.
  */
-export function getChangedFiles(
-  ref?: string,
-  cwd?: string,
-): string[] {
-  const opts = { cwd: cwd ?? process.cwd(), encoding: "utf-8" as const, timeout: 10_000 };
+export function getChangedFiles(ref?: string, cwd?: string): string[] {
+  const opts = {
+    cwd: cwd ?? process.cwd(),
+    encoding: "utf-8" as const,
+    timeout: 10_000,
+  };
   try {
     let output: string;
     if (ref) {
@@ -64,11 +65,23 @@ export function getChangedFiles(
       output = execFileSync("git", ["diff", "--name-only", ref], opts);
     } else {
       // Uncommitted changes (staged + unstaged)
-      const unstaged = execFileSync("git", ["diff", "--name-only", "HEAD"], opts);
-      const staged = execFileSync("git", ["diff", "--name-only", "--cached"], opts);
+      const unstaged = execFileSync(
+        "git",
+        ["diff", "--name-only", "HEAD"],
+        opts,
+      );
+      const staged = execFileSync(
+        "git",
+        ["diff", "--name-only", "--cached"],
+        opts,
+      );
       output = unstaged + staged;
     }
-    const root = execFileSync("git", ["rev-parse", "--show-toplevel"], opts).trim();
+    const root = execFileSync(
+      "git",
+      ["rev-parse", "--show-toplevel"],
+      opts,
+    ).trim();
     return [
       ...new Set(
         output
@@ -192,10 +205,22 @@ export function getCommitHistory(opts: CommitHistoryOpts): Commit[] {
  * Returns absolute paths.
  */
 export function getUntrackedFiles(cwd?: string): string[] {
-  const opts = { cwd: cwd ?? process.cwd(), encoding: "utf-8" as const, timeout: 10_000 };
+  const opts = {
+    cwd: cwd ?? process.cwd(),
+    encoding: "utf-8" as const,
+    timeout: 10_000,
+  };
   try {
-    const output = execFileSync("git", ["ls-files", "--others", "--exclude-standard"], opts);
-    const root = execFileSync("git", ["rev-parse", "--show-toplevel"], opts).trim();
+    const output = execFileSync(
+      "git",
+      ["ls-files", "--others", "--exclude-standard"],
+      opts,
+    );
+    const root = execFileSync(
+      "git",
+      ["rev-parse", "--show-toplevel"],
+      opts,
+    ).trim();
     return output
       .split("\n")
       .map((f) => f.trim())

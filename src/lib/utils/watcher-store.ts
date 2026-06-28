@@ -49,7 +49,10 @@ function isProcessRunning(pid: number): boolean {
 function isAlive(info: WatcherInfo): boolean {
   if (!isProcessRunning(info.pid)) return false;
   // If heartbeat exists and is stale, treat as dead (possibly deadlocked)
-  if (info.lastHeartbeat && Date.now() - info.lastHeartbeat > HEARTBEAT_STALE_MS) {
+  if (
+    info.lastHeartbeat &&
+    Date.now() - info.lastHeartbeat > HEARTBEAT_STALE_MS
+  ) {
     return false;
   }
   return true;
@@ -116,9 +119,7 @@ export function getWatcherForProject(
   return undefined;
 }
 
-export function getWatcherCoveringPath(
-  dir: string,
-): WatcherInfo | undefined {
+export function getWatcherCoveringPath(dir: string): WatcherInfo | undefined {
   const resolved = dir.endsWith("/") ? dir : `${dir}/`;
   const db = getDb();
   for (const { key, value } of db.getRange()) {
@@ -179,7 +180,9 @@ export function getDaemonInfo(): WatcherInfo | undefined {
   const info = getDb().get(DAEMON_KEY);
   if (info && isAlive(info)) return info;
   if (info) {
-    try { getDb().remove(DAEMON_KEY); } catch {}
+    try {
+      getDb().remove(DAEMON_KEY);
+    } catch {}
   }
   return undefined;
 }

@@ -25,12 +25,14 @@ export const similar = new Command("similar")
   .option(
     "--in <subpath>",
     "Restrict to a sub-path of the project (repeatable)",
-    (value: string, prev: string[] | undefined) => (prev ? [...prev, value] : [value]),
+    (value: string, prev: string[] | undefined) =>
+      prev ? [...prev, value] : [value],
   )
   .option(
     "--exclude <subpath>",
     "Exclude a sub-path of the project (repeatable)",
-    (value: string, prev: string[] | undefined) => (prev ? [...prev, value] : [value]),
+    (value: string, prev: string[] | undefined) =>
+      prev ? [...prev, value] : [value],
   )
   .option("--agent", "Compact output for AI agents", false)
   .action(async (target, opts) => {
@@ -70,7 +72,9 @@ export const similar = new Command("similar")
         sourceRows = await table
           .query()
           .select(["vector", "path", "defined_symbols", "start_line"])
-          .where(`array_contains(defined_symbols, '${escapeSqlString(target)}')`)
+          .where(
+            `array_contains(defined_symbols, '${escapeSqlString(target)}')`,
+          )
           .limit(1)
           .toArray();
       }
@@ -123,7 +127,8 @@ export const similar = new Command("similar")
 
       // Filter out self and apply threshold
       const filtered = results.filter((r: any) => {
-        if (r.path === sourcePath && r.start_line === source.start_line) return false;
+        if (r.path === sourcePath && r.start_line === source.start_line)
+          return false;
         if (threshold > 0) {
           // LanceDB returns L2 distance; convert to similarity
           const sim = 1 / (1 + (r._distance || 0));
@@ -155,7 +160,9 @@ export const similar = new Command("similar")
           const line = (r.start_line ?? 0) + 1;
           const role = r.role || "IMPLEMENTATION";
           const dist = (r._distance ?? 0).toFixed(3);
-          console.log(`  ${rel(r.path)}:${line}  ${sym}  [${role}]  (distance: ${dist})`);
+          console.log(
+            `  ${rel(r.path)}:${line}  ${sym}  [${role}]  (distance: ${dist})`,
+          );
         }
       }
     } catch (error) {
@@ -164,7 +171,9 @@ export const similar = new Command("similar")
       process.exitCode = 1;
     } finally {
       if (vectorDb) {
-        try { await vectorDb.close(); } catch {}
+        try {
+          await vectorDb.close();
+        } catch {}
       }
       await gracefulExit();
     }

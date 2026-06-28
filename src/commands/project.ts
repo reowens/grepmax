@@ -4,10 +4,7 @@ import { isBuiltinCallee } from "../lib/graph/callsites";
 import { VectorDB } from "../lib/store/vector-db";
 import { escapeSqlString } from "../lib/utils/filter-builder";
 import { gracefulExit } from "../lib/utils/exit";
-import {
-  listProjects,
-  resolveRootOrExit,
-} from "../lib/utils/project-registry";
+import { listProjects, resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
 import { toArr } from "../lib/utils/arrow";
@@ -94,7 +91,12 @@ export const project = new Command("project")
         for (const ref of refs)
           symbolRefs.set(ref, (symbolRefs.get(ref) || 0) + 1);
 
-        if (exported && role === "ORCHESTRATION" && complexity >= 5 && defs.length > 0) {
+        if (
+          exported &&
+          role === "ORCHESTRATION" &&
+          complexity >= 5 &&
+          defs.length > 0
+        ) {
           const epKey = `${defs[0]}:${p}`;
           if (!seenEntryPoints.has(epKey)) {
             seenEntryPoints.add(epKey);
@@ -126,20 +128,23 @@ export const project = new Command("project")
         console.log(`chunks\t${rows.length}`);
         console.log(`files\t${files.size}`);
         console.log(`last_indexed\t${proj?.lastIndexed ?? "unknown"}`);
+        console.log(`languages\t${extEntries.map(([ext]) => ext).join(",")}`);
         console.log(
-          `languages\t${extEntries.map(([ext]) => ext).join(",")}`,
-        );
-        console.log(
-          `top_dirs\t${Array.from(dirCounts.entries()).sort((a, b) => b[1].chunks - a[1].chunks).slice(0, 8).map(([d]) => d).join(",")}`,
+          `top_dirs\t${Array.from(dirCounts.entries())
+            .sort((a, b) => b[1].chunks - a[1].chunks)
+            .slice(0, 8)
+            .map(([d]) => d)
+            .join(",")}`,
         );
         if (topSymbols.length > 0) {
-          console.log(
-            `key_symbols\t${topSymbols.map(([s]) => s).join(",")}`,
-          );
+          console.log(`key_symbols\t${topSymbols.map(([s]) => s).join(",")}`);
         }
         if (entryPoints.length > 0) {
           console.log(
-            `entry_points\t${entryPoints.slice(0, 10).map((e) => e.symbol).join(",")}`,
+            `entry_points\t${entryPoints
+              .slice(0, 10)
+              .map((e) => e.symbol)
+              .join(",")}`,
           );
         }
       } else {

@@ -21,7 +21,9 @@ import {
   type StreamingProgress,
 } from "../src/lib/utils/daemon-client";
 
-function startMockServer(handler: (data: string, socket: net.Socket) => void): net.Server {
+function startMockServer(
+  handler: (data: string, socket: net.Socket) => void,
+): net.Server {
   const server = net.createServer((socket) => {
     let buf = "";
     socket.on("data", (chunk) => {
@@ -38,7 +40,9 @@ function startMockServer(handler: (data: string, socket: net.Socket) => void): n
 }
 
 afterEach(() => {
-  try { fs.unlinkSync(tmpSocket); } catch {}
+  try {
+    fs.unlinkSync(tmpSocket);
+  } catch {}
 });
 
 describe("daemon-client", () => {
@@ -69,7 +73,10 @@ describe("daemon-client", () => {
       const server = startMockServer(() => {});
 
       try {
-        const resp = await sendDaemonCommand({ cmd: "ping" }, { timeoutMs: 200 });
+        const resp = await sendDaemonCommand(
+          { cmd: "ping" },
+          { timeoutMs: 200 },
+        );
         expect(resp.ok).toBe(false);
         expect(resp.error).toBe("timeout");
       } finally {
@@ -99,7 +106,9 @@ describe("daemon-client", () => {
       // watchdog would fire at 100ms before `done` arrives.
       const server = startMockServer((_data, socket) => {
         setTimeout(() => {
-          socket.write(`${JSON.stringify({ type: "heartbeat", ts: Date.now() })}\n`);
+          socket.write(
+            `${JSON.stringify({ type: "heartbeat", ts: Date.now() })}\n`,
+          );
         }, 70);
         setTimeout(() => {
           socket.write(`${JSON.stringify({ type: "done", ok: true })}\n`);

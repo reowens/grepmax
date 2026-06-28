@@ -16,7 +16,11 @@ import {
 import { MetaCache } from "../store/meta-cache";
 import { VectorDB } from "../store/vector-db";
 import { killProcess } from "../utils/process";
-import { getProject, listProjects, registerProject } from "../utils/project-registry";
+import {
+  getProject,
+  listProjects,
+  registerProject,
+} from "../utils/project-registry";
 import {
   heartbeat,
   listWatchers,
@@ -26,7 +30,12 @@ import {
   unregisterWatcherByRoot,
 } from "../utils/watcher-store";
 import { LlmServer } from "../llm/server";
-import { handleCommand, writeProgress, writeDone, startHeartbeat } from "./ipc-handler";
+import {
+  handleCommand,
+  writeProgress,
+  writeDone,
+  startHeartbeat,
+} from "./ipc-handler";
 import { ProcessManager } from "./process-manager";
 import { MlxServerManager } from "./mlx-server-manager";
 import { WatcherManager } from "./watcher-manager";
@@ -64,7 +73,10 @@ const envNum = (name: string, fallback: number): number => {
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? parsed : fallback;
 };
-const MAX_LIFETIME_MS = envNum("GMAX_DAEMON_MAX_LIFETIME_MS", 24 * 60 * 60 * 1000);
+const MAX_LIFETIME_MS = envNum(
+  "GMAX_DAEMON_MAX_LIFETIME_MS",
+  24 * 60 * 60 * 1000,
+);
 const RSS_WATERMARK_MB = envNum("GMAX_DAEMON_RSS_WATERMARK_MB", 2560);
 
 export class Daemon {
@@ -94,8 +106,12 @@ export class Daemon {
     getVectorDb: () => this.vectorDb,
     getMetaCache: () => this.metaCache,
     getShuttingDown: () => this.shuttingDown,
-    touchActivity: () => { this.lastActivity = Date.now(); },
-    evictSearcher: (root) => { this.searchers.delete(root); },
+    touchActivity: () => {
+      this.lastActivity = Date.now();
+    },
+    evictSearcher: (root) => {
+      this.searchers.delete(root);
+    },
   });
   private readonly projectLocks = new Map<string, Promise<void>>();
   // Full-index progress per root while initialSync runs (--reset / initial
@@ -123,7 +139,9 @@ export class Daemon {
         retries: 0,
         stale: 120_000,
         onCompromised: () => {
-          console.error("[daemon] Lock compromised — another daemon took over. Shutting down.");
+          console.error(
+            "[daemon] Lock compromised — another daemon took over. Shutting down.",
+          );
           // Force exit after timeout — shutdown() is async and may not fully
           // clear event loop references, leaving zombie daemon processes.
           setTimeout(() => process.exit(1), 10_000).unref();
@@ -145,7 +163,9 @@ export class Daemon {
     // that can't respond to pings. Without this, the slow initialization
     // steps below (LanceDB, MLX, project watchers) create a window where
     // new daemons kill this one as "unresponsive".
-    try { fs.unlinkSync(PATHS.daemonSocket); } catch {}
+    try {
+      fs.unlinkSync(PATHS.daemonSocket);
+    } catch {}
 
     this.server = net.createServer((conn) => {
       dbg("daemon", "client connected");
@@ -164,7 +184,9 @@ export class Daemon {
         try {
           cmd = JSON.parse(line);
         } catch {
-          conn.write(`${JSON.stringify({ ok: false, error: "invalid JSON" })}\n`);
+          conn.write(
+            `${JSON.stringify({ ok: false, error: "invalid JSON" })}\n`,
+          );
           conn.end();
           return;
         }
@@ -203,7 +225,9 @@ export class Daemon {
     // 4. Kill existing per-project watchers
     const existing = listWatchers();
     for (const w of existing) {
-      console.log(`[daemon] Taking over from per-project watcher (PID: ${w.pid}, ${path.basename(w.projectRoot)})`);
+      console.log(
+        `[daemon] Taking over from per-project watcher (PID: ${w.pid}, ${path.basename(w.projectRoot)})`,
+      );
       await killProcess(w.pid);
       unregisterWatcher(w.pid);
     }
@@ -227,7 +251,8 @@ export class Daemon {
 
     // 6b. MLX embed server — start if GPU mode is active
     const globalConfig = readGlobalConfig();
-    const isAppleSilicon = process.arch === "arm64" && process.platform === "darwin";
+    const isAppleSilicon =
+      process.arch === "arm64" && process.platform === "darwin";
     if (isAppleSilicon && globalConfig.embedMode === "gpu") {
       await this.mlxServerManager.ensureMlxServer(globalConfig.mlxModel);
     }
@@ -240,13 +265,18 @@ export class Daemon {
     const indexed = allProjects.filter((p) => p.status === "indexed");
     for (const p of indexed) {
       if (!fs.existsSync(p.root)) {
-        console.log(`[daemon] Skipping ${path.basename(p.root)} — directory not found`);
+        console.log(
+          `[daemon] Skipping ${path.basename(p.root)} — directory not found`,
+        );
         continue;
       }
       try {
         await this.watchProject(p.root);
       } catch (err) {
-        console.error(`[daemon] Failed to watch ${path.basename(p.root)}:`, err);
+        console.error(
+          `[daemon] Failed to watch ${path.basename(p.root)}:`,
+          err,
+        );
       }
     }
 
@@ -257,7 +287,9 @@ export class Daemon {
     // snapshot, so a new project op kicked off after the snapshot would race
     // with vectorDb.close() and fail with "VectorDB connection is closed".
     const pending = allProjects.filter(
-      (p) => (p.status === "pending" || p.status === "error") && fs.existsSync(p.root),
+      (p) =>
+        (p.status === "pending" || p.status === "error") &&
+        fs.existsSync(p.root),
     );
     void (async () => {
       for (const p of pending) {
@@ -265,7 +297,10 @@ export class Daemon {
         try {
           await this.indexPendingProject(p.root);
         } catch (err) {
-          console.error(`[daemon] Failed to index pending ${path.basename(p.root)}:`, err);
+          console.error(
+            `[daemon] Failed to index pending ${path.basename(p.root)}:`,
+            err,
+          );
         }
       }
     })();
@@ -303,10 +338,14 @@ export class Daemon {
         this.shutdown();
       }, HEARTBEAT_INTERVAL_MS);
     } else {
-      console.log("[daemon] Idle shutdown disabled (GMAX_DAEMON_IDLE_TIMEOUT_MS<=0)");
+      console.log(
+        "[daemon] Idle shutdown disabled (GMAX_DAEMON_IDLE_TIMEOUT_MS<=0)",
+      );
     }
 
-    console.log(`[daemon] Started (PID: ${process.pid}, ${this.processors.size} projects)`);
+    console.log(
+      `[daemon] Started (PID: ${process.pid}, ${this.processors.size} projects)`,
+    );
 
     // Pre-warm the search hot path so the first user-facing search doesn't
     // pay daemon-side cold costs:
@@ -338,7 +377,9 @@ export class Daemon {
             pool.encodeQuery("warmup-a"),
             pool.encodeQuery("warmup-b"),
           ]);
-          console.log(`[daemon] Search hot path pre-warmed (${Date.now() - t0}ms)`);
+          console.log(
+            `[daemon] Search hot path pre-warmed (${Date.now() - t0}ms)`,
+          );
         } catch (err) {
           console.log(`[daemon] Search warmup failed (non-fatal): ${err}`);
         }
@@ -367,7 +408,9 @@ export class Daemon {
           projectRoot: root,
           vectorDb: this.vectorDb,
           metaCache: this.metaCache,
-          onProgress: () => { this.resetActivity(); },
+          onProgress: () => {
+            this.resetActivity();
+          },
         });
 
         const proj = getProject(root);
@@ -382,10 +425,15 @@ export class Daemon {
         }
 
         await this.watchProject(root);
-        dlog("daemon", `indexPendingProject done: ${name} — ${result.total} files, ${result.indexed} chunks, ${Date.now() - start}ms`);
+        dlog(
+          "daemon",
+          `indexPendingProject done: ${name} — ${result.total} files, ${result.indexed} chunks, ${Date.now() - start}ms`,
+        );
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[daemon] indexPendingProject failed for ${name} after ${Date.now() - start}ms: ${msg}`);
+        console.error(
+          `[daemon] indexPendingProject failed for ${name} after ${Date.now() - start}ms: ${msg}`,
+        );
         const proj = getProject(root);
         if (proj) {
           registerProject({ ...proj, status: "error" });
@@ -431,8 +479,7 @@ export class Daemon {
       pendingFiles = Math.max(pendingFiles, fullIdx.total - fullIdx.processed);
     }
     return {
-      indexing:
-        !!fullIdx || processing || batchPending > 0 || initialPending,
+      indexing: !!fullIdx || processing || batchPending > 0 || initialPending,
       pendingFiles,
     };
   }
@@ -482,10 +529,15 @@ export class Daemon {
 
   // --- Per-project operation serialization ---
 
-  private async withProjectLock<T>(root: string, fn: () => Promise<T>): Promise<T> {
+  private async withProjectLock<T>(
+    root: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
     const prev = this.projectLocks.get(root) ?? Promise.resolve();
     let release!: () => void;
-    const next = new Promise<void>((r) => { release = r; });
+    const next = new Promise<void>((r) => {
+      release = r;
+    });
     this.projectLocks.set(root, next);
 
     await prev;
@@ -549,7 +601,10 @@ export class Daemon {
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[daemon] addProject failed for ${path.basename(root)}:`, msg);
+        console.error(
+          `[daemon] addProject failed for ${path.basename(root)}:`,
+          msg,
+        );
         stopHeartbeat();
         writeDone(conn, { ok: false, error: msg });
       } finally {
@@ -629,7 +684,10 @@ export class Daemon {
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[daemon] indexProject failed for ${path.basename(root)}:`, msg);
+        console.error(
+          `[daemon] indexProject failed for ${path.basename(root)}:`,
+          msg,
+        );
         stopHeartbeat();
         writeDone(conn, { ok: false, error: msg });
       } finally {
@@ -642,7 +700,10 @@ export class Daemon {
           try {
             await this.watchProject(root);
           } catch (err) {
-            console.error(`[daemon] Failed to re-watch ${path.basename(root)}:`, err);
+            console.error(
+              `[daemon] Failed to re-watch ${path.basename(root)}:`,
+              err,
+            );
           }
         }
       }
@@ -672,7 +733,10 @@ export class Daemon {
         writeDone(conn, { ok: true });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[daemon] removeProject failed for ${path.basename(root)}:`, msg);
+        console.error(
+          `[daemon] removeProject failed for ${path.basename(root)}:`,
+          msg,
+        );
         stopHeartbeat();
         writeDone(conn, { ok: false, error: msg });
       } finally {
@@ -692,7 +756,8 @@ export class Daemon {
         return;
       }
 
-      const rootPrefix = opts.pathPrefix ?? (root.endsWith("/") ? root : `${root}/`);
+      const rootPrefix =
+        opts.pathPrefix ?? (root.endsWith("/") ? root : `${root}/`);
 
       const stopHeartbeat = startHeartbeat(conn);
       let lastProgressTime = 0;
@@ -718,7 +783,10 @@ export class Daemon {
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[daemon] summarizeProject failed for ${path.basename(root)}:`, msg);
+        console.error(
+          `[daemon] summarizeProject failed for ${path.basename(root)}:`,
+          msg,
+        );
         stopHeartbeat();
         writeDone(conn, { ok: false, error: msg });
       } finally {
@@ -802,7 +870,9 @@ export class Daemon {
     const reason = ageExceeded
       ? `age ${(ageMs / 3_600_000).toFixed(1)}h > ${(MAX_LIFETIME_MS / 3_600_000).toFixed(1)}h`
       : `rss ${Math.round(rssMb)}MB > ${RSS_WATERMARK_MB}MB`;
-    console.log(`[daemon] Recycling (${reason}) — handing off to a fresh daemon`);
+    console.log(
+      `[daemon] Recycling (${reason}) — handing off to a fresh daemon`,
+    );
     this.recycling = true;
     void this.shutdown({ relaunch: true }).finally(() => process.exit(0));
   }
@@ -818,8 +888,12 @@ export class Daemon {
     // (uncaught exception, second SIGTERM, OOM kill mid-shutdown). The
     // fresh-lock check in isDaemonHeartbeatFresh keyed on these — orphans
     // here used to cause silent no-op spawns for up to 150s.
-    try { fs.unlinkSync(PATHS.daemonSocket); } catch {}
-    try { fs.unlinkSync(PATHS.daemonPidFile); } catch {}
+    try {
+      fs.unlinkSync(PATHS.daemonSocket);
+    } catch {}
+    try {
+      fs.unlinkSync(PATHS.daemonPidFile);
+    } catch {}
     if (this.releaseLock) {
       const release = this.releaseLock;
       this.releaseLock = null;
@@ -837,7 +911,9 @@ export class Daemon {
     // Wait for in-flight project operations to finish (they check shuttingDown/signal)
     const pendingLocks = [...this.projectLocks.values()];
     if (pendingLocks.length > 0) {
-      console.log(`[daemon] Waiting for ${pendingLocks.length} in-flight operation(s)...`);
+      console.log(
+        `[daemon] Waiting for ${pendingLocks.length} in-flight operation(s)...`,
+      );
       await Promise.allSettled(pendingLocks);
     }
 
@@ -847,14 +923,18 @@ export class Daemon {
     }
 
     // Stop LLM server if running
-    try { await this.llmServer?.stop(); } catch {}
+    try {
+      await this.llmServer?.stop();
+    } catch {}
 
     // Stop MLX embed server if we started it
     this.mlxServerManager.stopMlxServer();
 
     // Destroy worker pool to prevent orphaned child processes
     if (isWorkerPoolInitialized()) {
-      try { await destroyWorkerPool(); } catch {}
+      try {
+        await destroyWorkerPool();
+      } catch {}
     }
 
     // Stop watcher poll intervals + FSEvents recovery probes, unsubscribe all
@@ -871,8 +951,12 @@ export class Daemon {
     this.processors.clear();
 
     // Close shared resources
-    try { await this.metaCache?.close(); } catch {}
-    try { await this.vectorDb?.close(); } catch {}
+    try {
+      await this.metaCache?.close();
+    } catch {}
+    try {
+      await this.vectorDb?.close();
+    } catch {}
 
     // Hand off to a successor only after every resource is released and the
     // liveness markers (socket/pid/lock) are already gone — so the fresh
@@ -880,7 +964,9 @@ export class Daemon {
     // without contending with this exiting process.
     if (opts.relaunch) {
       const pid = spawnDaemon();
-      console.log(`[daemon] Spawned successor daemon${pid ? ` (PID: ${pid})` : " (spawn failed)"}`);
+      console.log(
+        `[daemon] Spawned successor daemon${pid ? ` (PID: ${pid})` : " (spawn failed)"}`,
+      );
     }
 
     console.log("[daemon] Shutdown complete");

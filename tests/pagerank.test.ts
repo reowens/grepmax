@@ -9,7 +9,9 @@ import {
   pageRankBoostForSymbols,
 } from "../src/lib/search/pagerank";
 
-function mockDbWithRows(rows: Array<{ defined_symbols: string[]; referenced_symbols: string[] }>) {
+function mockDbWithRows(
+  rows: Array<{ defined_symbols: string[]; referenced_symbols: string[] }>,
+) {
   const ensureTable = vi.fn(async () => ({
     query: () => ({
       select: () => ({
@@ -81,9 +83,7 @@ describe("computePageRank", () => {
 
   it("handles dangling nodes (no out-edges) without losing mass", () => {
     // A→B, B (dangling)
-    const edges = new Map<string, Set<string>>([
-      ["A", new Set(["B"])],
-    ]);
+    const edges = new Map<string, Set<string>>([["A", new Set(["B"])]]);
     const result = computePageRank(
       { nodes: ["A", "B"], edges },
       0.85,
@@ -144,7 +144,10 @@ describe("pageRankBoostForSymbols", () => {
 
   it("returns max-normalized score across symbols", () => {
     expect(pageRankBoostForSymbols(["bar"], scores, max)).toBeCloseTo(0.4, 6);
-    expect(pageRankBoostForSymbols(["foo", "bar"], scores, max)).toBeCloseTo(1.0, 6);
+    expect(pageRankBoostForSymbols(["foo", "bar"], scores, max)).toBeCloseTo(
+      1.0,
+      6,
+    );
   });
 
   it("returns 0 when max is 0", () => {
@@ -168,10 +171,15 @@ describe("loadOrComputePageRank cache", () => {
       { defined_symbols: ["a"], referenced_symbols: ["b"] },
       { defined_symbols: ["b"], referenced_symbols: ["a"] },
     ]);
-    const { scores: s1, max: m1 } = await loadOrComputePageRank(db, TEST_PREFIX);
+    const { scores: s1, max: m1 } = await loadOrComputePageRank(
+      db,
+      TEST_PREFIX,
+    );
     expect(s1.size).toBe(2);
     expect(m1).toBeGreaterThan(0);
-    const ensureTableMock = (db as unknown as { ensureTable: ReturnType<typeof vi.fn> }).ensureTable;
+    const ensureTableMock = (
+      db as unknown as { ensureTable: ReturnType<typeof vi.fn> }
+    ).ensureTable;
     expect(ensureTableMock).toHaveBeenCalledTimes(1);
 
     await loadOrComputePageRank(db, TEST_PREFIX);
@@ -188,7 +196,9 @@ describe("loadOrComputePageRank cache", () => {
     expect(fs.existsSync(file)).toBe(true);
 
     _clearMemoryCacheForTests();
-    const ensureTableMock = (db as unknown as { ensureTable: ReturnType<typeof vi.fn> }).ensureTable;
+    const ensureTableMock = (
+      db as unknown as { ensureTable: ReturnType<typeof vi.fn> }
+    ).ensureTable;
     ensureTableMock.mockClear();
 
     const { scores: s2 } = await loadOrComputePageRank(db, TEST_PREFIX);

@@ -16,12 +16,19 @@ const useColors = process.stdout.isTTY && !process.env.NO_COLOR;
 const dim = (s: string) => (useColors ? `\x1b[2m${s}\x1b[22m` : s);
 const bold = (s: string) => (useColors ? `\x1b[1m${s}\x1b[22m` : s);
 
-function formatTraceAgent(graph: {
-  center: { symbol: string; file: string; line: number; role: string } | null;
-  callerTree: Array<{ node: { symbol: string; file: string; line: number }; callers: any[] }>;
-  callees: Array<{ symbol: string; file: string; line: number }>;
-  importers: string[];
-}, projectRoot: string, raw = false): string {
+function formatTraceAgent(
+  graph: {
+    center: { symbol: string; file: string; line: number; role: string } | null;
+    callerTree: Array<{
+      node: { symbol: string; file: string; line: number };
+      callers: any[];
+    }>;
+    callees: Array<{ symbol: string; file: string; line: number }>;
+    importers: string[];
+  },
+  projectRoot: string,
+  raw = false,
+): string {
   if (!graph.center) return "(not found)";
   const center = graph.center;
   const rel = (p: string) =>
@@ -40,7 +47,9 @@ function formatTraceAgent(graph: {
   function walkCallers(tree: any[], depth: number) {
     if (raw) {
       for (const t of tree) {
-        lines.push(`${"  ".repeat(depth)}<- ${t.node.symbol}\t${rel(t.node.file)}:${t.node.line}`);
+        lines.push(
+          `${"  ".repeat(depth)}<- ${t.node.symbol}\t${rel(t.node.file)}:${t.node.line}`,
+        );
         walkCallers(t.callers, depth + 1);
       }
       return;
@@ -58,7 +67,12 @@ function formatTraceAgent(graph: {
       const key = `${t.node.symbol}\t${t.node.file}`;
       let g = groups.get(key);
       if (!g) {
-        g = { symbol: t.node.symbol, file: t.node.file, lineSet: new Set(), sub: [] };
+        g = {
+          symbol: t.node.symbol,
+          file: t.node.file,
+          lineSet: new Set(),
+          sub: [],
+        };
         groups.set(key, g);
         order.push(key);
       }
@@ -94,7 +108,10 @@ interface InboundCaller {
 }
 
 function buildInboundTree(
-  callerTree: Array<{ node: { symbol: string; file: string; line: number }; callers: any[] }>,
+  callerTree: Array<{
+    node: { symbol: string; file: string; line: number };
+    callers: any[];
+  }>,
   targetSymbol: string,
   fileCache: Map<string, string[]>,
   withSnippets: boolean,
@@ -118,7 +135,13 @@ function buildInboundTree(
       line: t.node.line,
       snippet: snippet?.snippet ?? null,
       snippetLine: snippet?.snippetLine ?? null,
-      callers: buildInboundTree(t.callers, t.node.symbol, fileCache, withSnippets, limit),
+      callers: buildInboundTree(
+        t.callers,
+        t.node.symbol,
+        fileCache,
+        withSnippets,
+        limit,
+      ),
     });
     if (out.length >= limit) break;
   }
@@ -140,7 +163,9 @@ function formatInboundAgent(
   const walk = (nodes: InboundCaller[], depth: number) => {
     for (const n of nodes) {
       const prefix = "  ".repeat(depth);
-      const loc = n.file ? `${rel(n.file)}:${(n.snippetLine ?? n.line) + 1}` : "(not indexed)";
+      const loc = n.file
+        ? `${rel(n.file)}:${(n.snippetLine ?? n.line) + 1}`
+        : "(not indexed)";
       const cols = withSnippets
         ? `${loc}\t${n.symbol}\t${n.snippet ?? ""}`
         : `${loc}\t${n.symbol}`;
@@ -207,17 +232,23 @@ export const trace = new Command("trace")
   .option(
     "--in <subpath>",
     "Restrict to a sub-path of the project (repeatable)",
-    (value: string, prev: string[] | undefined) => (prev ? [...prev, value] : [value]),
+    (value: string, prev: string[] | undefined) =>
+      prev ? [...prev, value] : [value],
   )
   .option(
     "--exclude <subpath>",
     "Exclude a sub-path of the project (repeatable)",
-    (value: string, prev: string[] | undefined) => (prev ? [...prev, value] : [value]),
+    (value: string, prev: string[] | undefined) =>
+      prev ? [...prev, value] : [value],
   )
   .option("--agent", "Compact output for AI agents", false)
   .option("--inbound", "Show only callers, with call-site snippets", false)
   .option("--no-snippets", "Suppress call-site snippets in --inbound output")
-  .option("--limit <n>", "Max callers shown per node in --inbound (default 10)", "10")
+  .option(
+    "--limit <n>",
+    "Max callers shown per node in --inbound (default 10)",
+    "10",
+  )
   .option(
     "--raw",
     "In --agent mode, list every call-site without collapsing repeated callers or hiding self-edges",

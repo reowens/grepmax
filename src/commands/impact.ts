@@ -31,12 +31,14 @@ export const impact = new Command("impact")
   .option(
     "--in <subpath>",
     "Restrict to a sub-path of the project (repeatable)",
-    (value: string, prev: string[] | undefined) => (prev ? [...prev, value] : [value]),
+    (value: string, prev: string[] | undefined) =>
+      prev ? [...prev, value] : [value],
   )
   .option(
     "--exclude <subpath>",
     "Exclude a sub-path of the project (repeatable)",
-    (value: string, prev: string[] | undefined) => (prev ? [...prev, value] : [value]),
+    (value: string, prev: string[] | undefined) =>
+      prev ? [...prev, value] : [value],
   )
   .option(
     "--no-tests",
@@ -79,7 +81,9 @@ export const impact = new Command("impact")
 
       // Resolve the target's own file path for exclusion
       const targetPath = resolvedAsFile
-        ? (target.startsWith("/") ? target : path.resolve(projectRoot, target))
+        ? target.startsWith("/")
+          ? target
+          : path.resolve(projectRoot, target)
         : undefined;
       const excludePaths = targetPath ? new Set([targetPath]) : undefined;
 
@@ -111,7 +115,13 @@ export const impact = new Command("impact")
           scope.excludePrefixes,
         ),
         includeTests
-          ? findTests(symbols, vectorDb, queryRoot, depth, scope.excludePrefixes)
+          ? findTests(
+              symbols,
+              vectorDb,
+              queryRoot,
+              depth,
+              scope.excludePrefixes,
+            )
           : Promise.resolve([]),
       ]);
 
@@ -170,7 +180,9 @@ export const impact = new Command("impact")
       process.exitCode = 1;
     } finally {
       if (vectorDb) {
-        try { await vectorDb.close(); } catch {}
+        try {
+          await vectorDb.close();
+        } catch {}
       }
       await gracefulExit();
     }

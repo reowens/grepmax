@@ -155,11 +155,7 @@ export const dead = new Command("dead")
       const callers: GraphNode[] = await builder.getCallers(symbol);
 
       const status: Status =
-        callers.length === 0
-          ? isExported
-            ? "PUBLIC_EXPORT"
-            : "DEAD"
-          : "LIVE";
+        callers.length === 0 ? (isExported ? "PUBLIC_EXPORT" : "DEAD") : "LIVE";
 
       const topCallers = callers
         .slice(0, TOP_CALLERS)

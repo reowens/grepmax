@@ -8,7 +8,9 @@ import { debug } from "../utils/logger";
 
 const DAEMON_VERSION = (() => {
   try {
-    return JSON.parse(fs.readFileSync(path.join(__dirname, "../../../package.json"), "utf-8")).version;
+    return JSON.parse(
+      fs.readFileSync(path.join(__dirname, "../../../package.json"), "utf-8"),
+    ).version;
   } catch {
     return "unknown";
   }
@@ -17,7 +19,10 @@ const DAEMON_VERSION = (() => {
 /**
  * Write a streaming progress line to the IPC connection.
  */
-export function writeProgress(conn: net.Socket, data: Record<string, unknown>): void {
+export function writeProgress(
+  conn: net.Socket,
+  data: Record<string, unknown>,
+): void {
   if (!conn.writable) return;
   conn.write(`${JSON.stringify({ type: "progress", ...data })}\n`);
 }
@@ -25,7 +30,10 @@ export function writeProgress(conn: net.Socket, data: Record<string, unknown>): 
 /**
  * Write the final streaming done line and end the connection.
  */
-export function writeDone(conn: net.Socket, data: Record<string, unknown>): void {
+export function writeDone(
+  conn: net.Socket,
+  data: Record<string, unknown>,
+): void {
   if (!conn.writable) return;
   conn.write(`${JSON.stringify({ type: "done", ...data })}\n`);
   conn.end();
@@ -41,7 +49,10 @@ const HEARTBEAT_INTERVAL_MS = 5_000;
  * Returns a stop function; caller MUST call it before writeDone to avoid a
  * stray heartbeat racing the done line.
  */
-export function startHeartbeat(conn: net.Socket, intervalMs = HEARTBEAT_INTERVAL_MS): () => void {
+export function startHeartbeat(
+  conn: net.Socket,
+  intervalMs = HEARTBEAT_INTERVAL_MS,
+): () => void {
   const timer = setInterval(() => {
     if (!conn.writable) {
       clearInterval(timer);
@@ -68,7 +79,12 @@ export async function handleCommand(
     debug("daemon", `ipc cmd=${cmd.cmd}${cmd.root ? ` root=${cmd.root}` : ""}`);
     switch (cmd.cmd) {
       case "ping":
-        return { ok: true, pid: process.pid, uptime: daemon.uptime(), version: DAEMON_VERSION };
+        return {
+          ok: true,
+          pid: process.pid,
+          uptime: daemon.uptime(),
+          version: DAEMON_VERSION,
+        };
 
       case "watch": {
         const root = String(cmd.root || "");
@@ -98,7 +114,9 @@ export async function handleCommand(
         const fromPid = cmd.from_pid ?? "?";
         const fromPpid = cmd.from_ppid ?? "?";
         const fromVer = cmd.from_version ?? "?";
-        const fromArgv = Array.isArray(cmd.from_argv) ? cmd.from_argv.join(" ") : "?";
+        const fromArgv = Array.isArray(cmd.from_argv)
+          ? cmd.from_argv.join(" ")
+          : "?";
         const fromParentCmd = cmd.from_parent_cmd ?? "?";
         console.log(
           `[daemon] shutdown command received via IPC: reason=${reason} from_pid=${fromPid} from_ppid=${fromPpid} from_version=${fromVer} from_argv=[${fromArgv}] from_parent_cmd=[${fromParentCmd}]`,
@@ -121,13 +139,17 @@ export async function handleCommand(
         try {
           const limitRaw = typeof cmd.limit === "number" ? cmd.limit : 10;
           const skeletonLimitRaw =
-            typeof cmd.skeletonLimit === "number" ? cmd.skeletonLimit : undefined;
+            typeof cmd.skeletonLimit === "number"
+              ? cmd.skeletonLimit
+              : undefined;
           // Accept both the legacy single-string `exclude` and the new
           // `excludePrefixes`/`inPrefixes` arrays (--in/--exclude on the CLI).
           // Daemon may outlive a CLI restart, so keep both wire shapes for
           // one release; drop the single-string form in v0.17.x.
           const filters =
-            cmd.filters && typeof cmd.filters === "object" && !Array.isArray(cmd.filters)
+            cmd.filters &&
+            typeof cmd.filters === "object" &&
+            !Array.isArray(cmd.filters)
               ? (cmd.filters as SearchFilter)
               : undefined;
           const resp = await daemon.search(
@@ -136,11 +158,14 @@ export async function handleCommand(
               query,
               limit: limitRaw,
               filters,
-              pathPrefix: typeof cmd.pathPrefix === "string" ? cmd.pathPrefix : undefined,
+              pathPrefix:
+                typeof cmd.pathPrefix === "string" ? cmd.pathPrefix : undefined,
               rerank: cmd.rerank === true,
               explain: cmd.explain === true,
               seeds:
-                cmd.seeds && typeof cmd.seeds === "object" && !Array.isArray(cmd.seeds)
+                cmd.seeds &&
+                typeof cmd.seeds === "object" &&
+                !Array.isArray(cmd.seeds)
                   ? (cmd.seeds as { files?: string[]; symbols?: string[] })
                   : undefined,
               includeSkeletons: cmd.includeSkeletons === true,
@@ -186,7 +211,8 @@ export async function handleCommand(
         if (!root) return { ok: false, error: "missing root" };
         daemon.summarizeProject(root, conn, {
           limit: typeof cmd.limit === "number" ? cmd.limit : undefined,
-          pathPrefix: typeof cmd.pathPrefix === "string" ? cmd.pathPrefix : undefined,
+          pathPrefix:
+            typeof cmd.pathPrefix === "string" ? cmd.pathPrefix : undefined,
         });
         return null;
       }

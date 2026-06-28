@@ -8,9 +8,24 @@ import {
 describe("groupTestHitsByFile", () => {
   it("collapses multiple helper hits in one file to a single line", () => {
     const grouped = groupTestHitsByFile([
-      { file: "/p/tests/pool.test.ts", symbol: "setTrackedPids", line: 170, hops: 1 },
-      { file: "/p/tests/pool.test.ts", symbol: "spawnFakeWorker", line: 12, hops: 0 },
-      { file: "/p/tests/pool.test.ts", symbol: "setTrackedPids", line: 170, hops: 2 },
+      {
+        file: "/p/tests/pool.test.ts",
+        symbol: "setTrackedPids",
+        line: 170,
+        hops: 1,
+      },
+      {
+        file: "/p/tests/pool.test.ts",
+        symbol: "spawnFakeWorker",
+        line: 12,
+        hops: 0,
+      },
+      {
+        file: "/p/tests/pool.test.ts",
+        symbol: "setTrackedPids",
+        line: 170,
+        hops: 2,
+      },
     ]);
     expect(grouped).toHaveLength(1);
     const g = grouped[0];

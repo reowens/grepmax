@@ -272,10 +272,9 @@ describe("search filter passthrough", () => {
 
   it("passes --lang as language filter", async () => {
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    await (search as Command).parseAsync(
-      ["query", "--lang", "ts", "--plain"],
-      { from: "user" },
-    );
+    await (search as Command).parseAsync(["query", "--lang", "ts", "--plain"], {
+      from: "user",
+    });
     expect(mockSearcher.search).toHaveBeenCalledWith(
       "query",
       expect.any(Number),
@@ -408,7 +407,9 @@ describe("agent file-level grouping", () => {
     });
 
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    await (search as Command).parseAsync(["query", "--agent"], { from: "user" });
+    await (search as Command).parseAsync(["query", "--agent"], {
+      from: "user",
+    });
     const lines = consoleSpy.mock.calls.map((c) => String(c[0]));
     consoleSpy.mockRestore();
 
@@ -446,7 +447,9 @@ describe("agent file-level grouping", () => {
     });
 
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    await (search as Command).parseAsync(["query", "--agent"], { from: "user" });
+    await (search as Command).parseAsync(["query", "--agent"], {
+      from: "user",
+    });
     const out = consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
     consoleSpy.mockRestore();
 

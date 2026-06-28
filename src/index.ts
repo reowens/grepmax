@@ -44,9 +44,7 @@ import { watch } from "./commands/watch";
 
 program
   .name("gmax")
-  .description(
-    "Semantic code search — finds code by meaning, not just strings",
-  )
+  .description("Semantic code search — finds code by meaning, not just strings")
   .version(
     JSON.parse(
       fs.readFileSync(path.join(__dirname, "../package.json"), {

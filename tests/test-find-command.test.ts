@@ -51,7 +51,12 @@ describe("test-find command", () => {
 
   it("lists tests that call the symbol", async () => {
     mockFindTests.mockResolvedValueOnce([
-      { file: "/tmp/project/tests/auth.test.ts", symbol: "testLogin", line: 10, hops: 0 },
+      {
+        file: "/tmp/project/tests/auth.test.ts",
+        symbol: "testLogin",
+        line: 10,
+        hops: 0,
+      },
     ]);
 
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -65,7 +70,12 @@ describe("test-find command", () => {
 
   it("reports multi-hop tests", async () => {
     mockFindTests.mockResolvedValueOnce([
-      { file: "/tmp/project/tests/login.test.ts", symbol: "testLoginFlow", line: 20, hops: 1 },
+      {
+        file: "/tmp/project/tests/login.test.ts",
+        symbol: "testLoginFlow",
+        line: 20,
+        hops: 1,
+      },
     ]);
 
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -88,11 +98,18 @@ describe("test-find command", () => {
 
   it("uses agent format with --agent", async () => {
     mockFindTests.mockResolvedValueOnce([
-      { file: "/tmp/project/tests/auth.test.ts", symbol: "testLogin", line: 10, hops: 0 },
+      {
+        file: "/tmp/project/tests/auth.test.ts",
+        symbol: "testLogin",
+        line: 10,
+        hops: 0,
+      },
     ]);
 
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    await (testFind as Command).parseAsync(["handleAuth", "--agent"], { from: "user" });
+    await (testFind as Command).parseAsync(["handleAuth", "--agent"], {
+      from: "user",
+    });
     const output = spy.mock.calls.map((c) => c[0]).join("\n");
     expect(output).toContain("direct");
     expect(output).not.toContain("Tests for");
@@ -101,10 +118,17 @@ describe("test-find command", () => {
 
   it("renders via-import label for hops=-1 fallback hits", async () => {
     mockFindTests.mockResolvedValueOnce([
-      { file: "/tmp/project/tests/auth.test.ts", symbol: "(referenced)", line: 0, hops: -1 },
+      {
+        file: "/tmp/project/tests/auth.test.ts",
+        symbol: "(referenced)",
+        line: 0,
+        hops: -1,
+      },
     ]);
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    await (testFind as Command).parseAsync(["handleAuth", "--agent"], { from: "user" });
+    await (testFind as Command).parseAsync(["handleAuth", "--agent"], {
+      from: "user",
+    });
     const output = spy.mock.calls.map((c) => c[0]).join("\n");
     expect(output).toContain("via-import");
     expect(output).toContain("tests/auth.test.ts");
@@ -113,7 +137,12 @@ describe("test-find command", () => {
 
   it("renders 'via import' label in human mode", async () => {
     mockFindTests.mockResolvedValueOnce([
-      { file: "/tmp/project/tests/auth.test.ts", symbol: "(referenced)", line: 0, hops: -1 },
+      {
+        file: "/tmp/project/tests/auth.test.ts",
+        symbol: "(referenced)",
+        line: 0,
+        hops: -1,
+      },
     ]);
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
     await (testFind as Command).parseAsync(["handleAuth"], { from: "user" });

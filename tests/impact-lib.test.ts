@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isTestPath, resolveTargetSymbols, findDependents } from "../src/lib/graph/impact";
+import {
+  isTestPath,
+  resolveTargetSymbols,
+  findDependents,
+} from "../src/lib/graph/impact";
 
 function createMockDb(data: Record<string, any[]>) {
   const mockTable = {
@@ -7,9 +11,15 @@ function createMockDb(data: Record<string, any[]>) {
       let whereClause = "";
       let limitVal = 100;
       const chain = {
-        where: (clause: string) => { whereClause = clause; return chain; },
+        where: (clause: string) => {
+          whereClause = clause;
+          return chain;
+        },
         select: () => chain,
-        limit: (n: number) => { limitVal = n; return chain; },
+        limit: (n: number) => {
+          limitVal = n;
+          return chain;
+        },
         toArray: async () => {
           for (const [pattern, rows] of Object.entries(data)) {
             if (whereClause.includes(pattern)) return rows.slice(0, limitVal);
@@ -115,7 +125,12 @@ describe("findDependents", () => {
       ],
     });
     const exclude = new Set(["/project/src/auth.ts"]);
-    const result = await findDependents(["handleAuth"], db, "/project", exclude);
+    const result = await findDependents(
+      ["handleAuth"],
+      db,
+      "/project",
+      exclude,
+    );
     expect(result.length).toBe(1);
     expect(result[0].file).toBe("/project/src/router.ts");
   });

@@ -34,52 +34,140 @@ export const watch = new Command("watch")
   .option("-d, --daemon", "Run as centralized daemon watching all projects")
   .option("-p, --path <dir>", "Directory to watch (defaults to project root)")
   .option("--no-idle-timeout", "Disable the 30-minute idle shutdown")
-  .action(async (options: { background?: boolean; daemon?: boolean; path?: string; idleTimeout?: boolean }) => {
+  .action(
+    async (options: {
+      background?: boolean;
+      daemon?: boolean;
+      path?: string;
+      idleTimeout?: boolean;
+    }) => {
+      // --- Daemon mode ---
+      if (options.daemon) {
+        if (options.path) {
+          console.error(
+            "Error: --daemon watches all projects globally; --path is not allowed with --daemon",
+          );
+          process.exitCode = 1;
+          return;
+        }
 
-    // --- Daemon mode ---
-    if (options.daemon) {
-      if (options.path) {
-        console.error("Error: --daemon watches all projects globally; --path is not allowed with --daemon");
-        process.exitCode = 1;
-        return;
-      }
-
-      if (options.background) {
-        // Skip spawn if daemon already running at the same version.
-        // If version mismatches (e.g. after npm install -g), shut down the old
-        // daemon so we can start a fresh one with the new code.
-        const { isDaemonRunning, isDaemonHeartbeatFresh, sendDaemonCommand } =
-          await import("../lib/utils/daemon-client");
-        if (await isDaemonRunning()) {
-          const cliVersion = JSON.parse(
-            fs.readFileSync(path.join(__dirname, "../../package.json"), "utf-8"),
-          ).version;
-          const resp = await sendDaemonCommand({ cmd: "ping" });
-          if (resp.version && resp.version === cliVersion) {
+        if (options.background) {
+          // Skip spawn if daemon already running at the same version.
+          // If version mismatches (e.g. after npm install -g), shut down the old
+          // daemon so we can start a fresh one with the new code.
+          const { isDaemonRunning, isDaemonHeartbeatFresh, sendDaemonCommand } =
+            await import("../lib/utils/daemon-client");
+          if (await isDaemonRunning()) {
+            const cliVersion = JSON.parse(
+              fs.readFileSync(
+                path.join(__dirname, "../../package.json"),
+                "utf-8",
+              ),
+            ).version;
+            const resp = await sendDaemonCommand({ cmd: "ping" });
+            if (resp.version && resp.version === cliVersion) {
+              process.exit(0);
+            }
+            console.log(
+              `Daemon version mismatch (${resp.version} → ${cliVersion}), restarting...`,
+            );
+            await sendDaemonCommand({
+              cmd: "shutdown",
+              reason: "version-mismatch",
+              from_pid: process.pid,
+              from_ppid: process.ppid,
+              from_version: cliVersion,
+              from_argv: process.argv.slice(0, 4),
+            });
+            // Brief wait for old daemon to release socket/lock
+            await new Promise((r) => setTimeout(r, 2000));
+          } else if (isDaemonHeartbeatFresh()) {
+            // Ping failed but daemon.lock mtime is fresh — another daemon is
+            // alive but too busy to answer (e.g. mid-index). Don't spawn a
+            // competitor; the startup code would only kill the busy peer.
             process.exit(0);
           }
-          console.log(`Daemon version mismatch (${resp.version} → ${cliVersion}), restarting...`);
-          await sendDaemonCommand({
-            cmd: "shutdown",
-            reason: "version-mismatch",
-            from_pid: process.pid,
-            from_ppid: process.ppid,
-            from_version: cliVersion,
-            from_argv: process.argv.slice(0, 4),
-          });
-          // Brief wait for old daemon to release socket/lock
-          await new Promise((r) => setTimeout(r, 2000));
-        } else if (isDaemonHeartbeatFresh()) {
-          // Ping failed but daemon.lock mtime is fresh — another daemon is
-          // alive but too busy to answer (e.g. mid-index). Don't spawn a
-          // competitor; the startup code would only kill the busy peer.
+
+          const logFile = path.join(PATHS.logsDir, "daemon.log");
+          const out = openRotatedLog(logFile);
+
+          const child = spawn(
+            process.argv[0],
+            [process.argv[1], "watch", "--daemon"],
+            {
+              detached: true,
+              stdio: ["ignore", out, out],
+              cwd: process.cwd(),
+              env: { ...process.env, GMAX_BACKGROUND: "true" },
+            },
+          );
+          child.unref();
+
+          console.log(`Daemon started (PID: ${child.pid}, log: ${logFile})`);
           process.exit(0);
         }
 
-        const logFile = path.join(PATHS.logsDir, "daemon.log");
+        // Daemon foreground
+        const { Daemon } = await import("../lib/daemon/daemon");
+        const daemon = new Daemon();
+
+        try {
+          await daemon.start();
+        } catch (err) {
+          const code = (err as NodeJS.ErrnoException)?.code;
+          if (code === "EADDRINUSE") {
+            // Another daemon already running — not an error
+            process.exit(0);
+          }
+          console.error("[daemon] Failed to start:", err);
+          process.exitCode = 1;
+          return;
+        }
+
+        process.on("SIGINT", () =>
+          daemon.shutdown().then(() => gracefulExit()),
+        );
+        process.on("SIGTERM", () =>
+          daemon.shutdown().then(() => gracefulExit()),
+        );
+        process.on("uncaughtException", (err) => {
+          console.error("[daemon] uncaughtException:", err);
+          daemon.shutdown().then(() => gracefulExit(1));
+        });
+        process.on("unhandledRejection", (reason) => {
+          console.error("[daemon] unhandledRejection:", reason);
+        });
+        return;
+      }
+
+      // --- Per-project mode ---
+      const projectRoot = options.path
+        ? path.resolve(options.path)
+        : (findProjectRoot(process.cwd()) ?? process.cwd());
+      const projectName = path.basename(projectRoot);
+
+      // Check if watcher already running (exact match or parent covering this dir)
+      const existing =
+        getWatcherForProject(projectRoot) ??
+        getWatcherCoveringPath(projectRoot);
+      if (existing && isProcessRunning(existing.pid)) {
+        console.log(
+          `Watcher already running for ${path.basename(existing.projectRoot)} (PID: ${existing.pid})`,
+        );
+        return;
+      }
+
+      // Background spawn
+      if (options.background) {
+        const args = process.argv
+          .slice(2)
+          .filter((arg) => arg !== "-b" && arg !== "--background");
+
+        const safeName = projectName.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const logFile = path.join(PATHS.logsDir, `watch-${safeName}.log`);
         const out = openRotatedLog(logFile);
 
-        const child = spawn(process.argv[0], [process.argv[1], "watch", "--daemon"], {
+        const child = spawn(process.argv[0], [process.argv[1], ...args], {
           detached: true,
           stdio: ["ignore", out, out],
           cwd: process.cwd(),
@@ -87,192 +175,129 @@ export const watch = new Command("watch")
         });
         child.unref();
 
-        console.log(`Daemon started (PID: ${child.pid}, log: ${logFile})`);
+        console.log(
+          `Watcher started for ${projectName} (PID: ${child.pid}, log: ${logFile})`,
+        );
         process.exit(0);
       }
 
-      // Daemon foreground
-      const { Daemon } = await import("../lib/daemon/daemon");
-      const daemon = new Daemon();
+      // --- Per-project foreground mode ---
 
-      try {
-        await daemon.start();
-      } catch (err) {
-        const code = (err as NodeJS.ErrnoException)?.code;
-        if (code === "EADDRINUSE") {
-          // Another daemon already running — not an error
-          process.exit(0);
-        }
-        console.error("[daemon] Failed to start:", err);
+      // Watcher requires project to be registered
+      if (!getProject(projectRoot)) {
+        console.error(
+          `[watch:${projectName}] Project not registered. Run: gmax add ${projectRoot}`,
+        );
         process.exitCode = 1;
         return;
       }
 
-      process.on("SIGINT", () => daemon.shutdown().then(() => gracefulExit()));
-      process.on("SIGTERM", () => daemon.shutdown().then(() => gracefulExit()));
-      process.on("uncaughtException", (err) => {
-        console.error("[daemon] uncaughtException:", err);
-        daemon.shutdown().then(() => gracefulExit(1));
-      });
-      process.on("unhandledRejection", (reason) => {
-        console.error("[daemon] unhandledRejection:", reason);
-      });
-      return;
-    }
+      const paths = ensureProjectPaths(projectRoot);
 
-    // --- Per-project mode ---
-    const projectRoot = options.path
-      ? path.resolve(options.path)
-      : findProjectRoot(process.cwd()) ?? process.cwd();
-    const projectName = path.basename(projectRoot);
+      // Propagate project root to worker processes
+      process.env.GMAX_PROJECT_ROOT = paths.root;
 
-    // Check if watcher already running (exact match or parent covering this dir)
-    const existing = getWatcherForProject(projectRoot) ?? getWatcherCoveringPath(projectRoot);
-    if (existing && isProcessRunning(existing.pid)) {
-      console.log(
-        `Watcher already running for ${path.basename(existing.projectRoot)} (PID: ${existing.pid})`,
-      );
-      return;
-    }
+      console.log(`[watch:${projectName}] Starting...`);
 
-    // Background spawn
-    if (options.background) {
-      const args = process.argv
-        .slice(2)
-        .filter((arg) => arg !== "-b" && arg !== "--background");
-
-      const safeName = projectName.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const logFile = path.join(PATHS.logsDir, `watch-${safeName}.log`);
-      const out = openRotatedLog(logFile);
-
-      const child = spawn(process.argv[0], [process.argv[1], ...args], {
-        detached: true,
-        stdio: ["ignore", out, out],
-        cwd: process.cwd(),
-        env: { ...process.env, GMAX_BACKGROUND: "true" },
-      });
-      child.unref();
-
-      console.log(
-        `Watcher started for ${projectName} (PID: ${child.pid}, log: ${logFile})`,
-      );
-      process.exit(0);
-    }
-
-    // --- Per-project foreground mode ---
-
-    // Watcher requires project to be registered
-    if (!getProject(projectRoot)) {
-      console.error(
-        `[watch:${projectName}] Project not registered. Run: gmax add ${projectRoot}`,
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    const paths = ensureProjectPaths(projectRoot);
-
-    // Propagate project root to worker processes
-    process.env.GMAX_PROJECT_ROOT = paths.root;
-
-    console.log(`[watch:${projectName}] Starting...`);
-
-    // Register early so MCP can see status
-    registerWatcher({
-      pid: process.pid,
-      projectRoot,
-      startTime: Date.now(),
-      status: "syncing",
-    });
-
-    // Initial sync if this directory isn't indexed yet
-    const vectorDb = new VectorDB(paths.lancedbDir);
-    const table = await vectorDb.ensureTable();
-    const prefix = projectRoot.endsWith("/") ? projectRoot : `${projectRoot}/`;
-    const indexed = await table
-      .query()
-      .select(["id"])
-      .where(`path LIKE '${escapeSqlString(prefix)}%'`)
-      .limit(1)
-      .toArray();
-
-    if (indexed.length === 0) {
-      console.log(
-        `[watch:${projectName}] No index found for ${projectRoot}, running initial sync...`,
-      );
-      const syncResult = await initialSync({ projectRoot });
-
-      // Update registry after sync
-      const globalConfig = readGlobalConfig();
-      registerProject({
-        root: projectRoot,
-        name: projectName,
-        vectorDim: globalConfig.vectorDim,
-        modelTier: globalConfig.modelTier,
-        embedMode: globalConfig.embedMode,
-        lastIndexed: new Date().toISOString(),
-        chunkCount: syncResult.indexed,
-        status: "indexed",
+      // Register early so MCP can see status
+      registerWatcher({
+        pid: process.pid,
+        projectRoot,
+        startTime: Date.now(),
+        status: "syncing",
       });
 
-      console.log(`[watch:${projectName}] Initial sync complete.`);
-    }
+      // Initial sync if this directory isn't indexed yet
+      const vectorDb = new VectorDB(paths.lancedbDir);
+      const table = await vectorDb.ensureTable();
+      const prefix = projectRoot.endsWith("/")
+        ? projectRoot
+        : `${projectRoot}/`;
+      const indexed = await table
+        .query()
+        .select(["id"])
+        .where(`path LIKE '${escapeSqlString(prefix)}%'`)
+        .limit(1)
+        .toArray();
 
-    updateWatcherStatus(process.pid, "watching");
-
-    // Open resources for watcher
-    const metaCache = new MetaCache(paths.lmdbPath);
-
-    // Start watching
-    const watcher = await startWatcher({
-      projectRoot,
-      vectorDb,
-      metaCache,
-      dataDir: paths.dataDir,
-      onReindex: (files, ms) => {
+      if (indexed.length === 0) {
         console.log(
-          `[watch:${projectName}] Reindexed ${files} file${files !== 1 ? "s" : ""} (${(ms / 1000).toFixed(1)}s)`,
+          `[watch:${projectName}] No index found for ${projectRoot}, running initial sync...`,
         );
-        lastActivity = Date.now();
-        updateWatcherStatus(process.pid, "watching", Date.now());
-      },
-    });
+        const syncResult = await initialSync({ projectRoot });
 
-    console.log(`[watch:${projectName}] File watcher active`);
+        // Update registry after sync
+        const globalConfig = readGlobalConfig();
+        registerProject({
+          root: projectRoot,
+          name: projectName,
+          vectorDim: globalConfig.vectorDim,
+          modelTier: globalConfig.modelTier,
+          embedMode: globalConfig.embedMode,
+          lastIndexed: new Date().toISOString(),
+          chunkCount: syncResult.indexed,
+          status: "indexed",
+        });
 
-    // Heartbeat — update LMDB every 60s so other processes can detect liveliness
-    const heartbeatInterval = setInterval(() => {
-      heartbeat(process.pid);
-    }, IDLE_CHECK_INTERVAL_MS);
+        console.log(`[watch:${projectName}] Initial sync complete.`);
+      }
 
-    // Idle timeout
-    let lastActivity = Date.now();
-    if (options.idleTimeout !== false) {
-      setInterval(() => {
-        if (Date.now() - lastActivity > IDLE_TIMEOUT_MS) {
+      updateWatcherStatus(process.pid, "watching");
+
+      // Open resources for watcher
+      const metaCache = new MetaCache(paths.lmdbPath);
+
+      // Start watching
+      const watcher = await startWatcher({
+        projectRoot,
+        vectorDb,
+        metaCache,
+        dataDir: paths.dataDir,
+        onReindex: (files, ms) => {
           console.log(
-            `[watch:${projectName}] Idle for 30 minutes, shutting down`,
+            `[watch:${projectName}] Reindexed ${files} file${files !== 1 ? "s" : ""} (${(ms / 1000).toFixed(1)}s)`,
           );
-          shutdown();
-        }
+          lastActivity = Date.now();
+          updateWatcherStatus(process.pid, "watching", Date.now());
+        },
+      });
+
+      console.log(`[watch:${projectName}] File watcher active`);
+
+      // Heartbeat — update LMDB every 60s so other processes can detect liveliness
+      const heartbeatInterval = setInterval(() => {
+        heartbeat(process.pid);
       }, IDLE_CHECK_INTERVAL_MS);
-    }
 
-    // Graceful shutdown
-    async function shutdown() {
-      clearInterval(heartbeatInterval);
-      try {
-        await watcher.close();
-      } catch {}
-      await metaCache.close();
-      await vectorDb.close();
-      unregisterWatcher(process.pid);
-      await gracefulExit();
-    }
+      // Idle timeout
+      let lastActivity = Date.now();
+      if (options.idleTimeout !== false) {
+        setInterval(() => {
+          if (Date.now() - lastActivity > IDLE_TIMEOUT_MS) {
+            console.log(
+              `[watch:${projectName}] Idle for 30 minutes, shutting down`,
+            );
+            shutdown();
+          }
+        }, IDLE_CHECK_INTERVAL_MS);
+      }
 
-    process.on("SIGINT", shutdown);
-    process.on("SIGTERM", shutdown);
-  });
+      // Graceful shutdown
+      async function shutdown() {
+        clearInterval(heartbeatInterval);
+        try {
+          await watcher.close();
+        } catch {}
+        await metaCache.close();
+        await vectorDb.close();
+        unregisterWatcher(process.pid);
+        await gracefulExit();
+      }
+
+      process.on("SIGINT", shutdown);
+      process.on("SIGTERM", shutdown);
+    },
+  );
 
 // --- Subcommands ---
 
@@ -321,7 +346,9 @@ watch
   .description("Stop watcher for current project")
   .option("--all", "Stop all running watchers")
   .action(async (options: { all?: boolean }) => {
-    const { isDaemonRunning, sendDaemonCommand } = await import("../lib/utils/daemon-client");
+    const { isDaemonRunning, sendDaemonCommand } = await import(
+      "../lib/utils/daemon-client"
+    );
     let stoppedDaemon = false;
     let daemonPid: number | undefined;
 
@@ -341,7 +368,9 @@ watch
       let parentCmd = "?";
       try {
         const { execSync } = await import("node:child_process");
-        parentCmd = execSync(`ps -o command= -p ${process.ppid}`, { encoding: "utf8" }).trim();
+        parentCmd = execSync(`ps -o command= -p ${process.ppid}`, {
+          encoding: "utf8",
+        }).trim();
       } catch {}
       await sendDaemonCommand({
         cmd: "shutdown",

@@ -11,10 +11,7 @@ import { ensureProjectPaths } from "../lib/utils/project-root";
 
 export const config = new Command("config")
   .description("View or update gmax configuration")
-  .option(
-    "--embed-mode <mode>",
-    "Set embedding mode: cpu or gpu",
-  )
+  .option("--embed-mode <mode>", "Set embedding mode: cpu or gpu")
   .option(
     "--model-tier <tier>",
     "Set model tier: small (384d) or standard (768d)",
@@ -51,10 +48,11 @@ Examples:
 
     if (!hasUpdates) {
       // Show current config
-      const tier =
-        MODEL_TIERS[globalConfig.modelTier] ?? MODEL_TIERS.small;
+      const tier = MODEL_TIERS[globalConfig.modelTier] ?? MODEL_TIERS.small;
       console.log("gmax configuration (~/.gmax/config.json)\n");
-      console.log(`  Model tier:  ${globalConfig.modelTier} (${tier.vectorDim}d, ${tier.params})`);
+      console.log(
+        `  Model tier:  ${globalConfig.modelTier} (${tier.vectorDim}d, ${tier.params})`,
+      );
       console.log(`  Embed mode:  ${globalConfig.embedMode}`);
       console.log(
         `  Embed model: ${globalConfig.embedMode === "gpu" ? tier.mlxModel : tier.onnxModel}`,
@@ -72,7 +70,9 @@ Examples:
 
     // Validate inputs
     if (options.embedMode && !["cpu", "gpu"].includes(options.embedMode)) {
-      console.error(`Invalid embed mode: ${options.embedMode} (use cpu or gpu)`);
+      console.error(
+        `Invalid embed mode: ${options.embedMode} (use cpu or gpu)`,
+      );
       await gracefulExit(1);
       return;
     }
@@ -128,7 +128,9 @@ Examples:
       modelTier: newTier,
     });
 
-    console.log(`Updated: embed-mode=${newMode}, model-tier=${newTier} (${tier.vectorDim}d)`);
+    console.log(
+      `Updated: embed-mode=${newMode}, model-tier=${newTier} (${tier.vectorDim}d)`,
+    );
 
     if (tierChanged) {
       console.log(

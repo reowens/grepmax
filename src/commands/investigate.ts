@@ -4,9 +4,7 @@ import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { findProjectRoot } from "../lib/utils/project-root";
 
 export const investigateCmd = new Command("investigate")
-  .description(
-    "Ask a question about the codebase using local LLM + gmax tools",
-  )
+  .description("Ask a question about the codebase using local LLM + gmax tools")
   .argument("<question>", "Natural language question about the codebase")
   .option("--root <dir>", "Project root directory")
   .option("--rounds <n>", "Max tool-call rounds (default 10)", "10")

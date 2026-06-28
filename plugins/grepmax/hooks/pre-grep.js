@@ -28,7 +28,8 @@ const SNAKE_CASE = /_[a-z]/;
 const ALL_CAPS = /^[A-Z_]+$/;
 const HAS_DOT = /\./;
 const HAS_QUOTE = /['"]/;
-const CODE_KEYWORDS = /\b(class|function|const|let|var|import|export|return|extends|implements|interface|type|enum|struct|def|async|await)\b/;
+const CODE_KEYWORDS =
+  /\b(class|function|const|let|var|import|export|return|extends|implements|interface|type|enum|struct|def|async|await)\b/;
 
 /**
  * Conservative heuristic: returns true only when the pattern is very

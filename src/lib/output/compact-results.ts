@@ -1,10 +1,6 @@
 import * as path from "node:path";
 import type { TextResult } from "../utils/formatter";
-import type {
-  ChunkType,
-  FileMetadata,
-  SearchResponse,
-} from "../store/types";
+import type { ChunkType, FileMetadata, SearchResponse } from "../store/types";
 
 export function toTextResults(data: SearchResponse["data"]): TextResult[] {
   return data.map((r) => {

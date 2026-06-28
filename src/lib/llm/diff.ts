@@ -12,17 +12,63 @@ export const DIFF_MAX_LINES = 500;
 export const SYMBOL_MAX = 10;
 
 const KEYWORD_SKIP = new Set([
-  "public", "private", "internal", "protected", "open", "final", "static",
-  "override", "class", "struct", "enum", "func", "function", "def", "const",
-  "let", "var", "export", "async", "await", "import", "return", "if", "else",
-  "for", "while", "switch", "case", "guard", "interface", "abstract", "sealed",
-  "data", "suspend", "inline", "typealias", "extension", "protocol", "throws",
-  "mutating", "nonmutating", "convenience", "required", "weak", "unowned",
-  "lazy", "dynamic", "optional", "objc", "nonisolated", "isolated",
-  "consuming", "borrowing",
+  "public",
+  "private",
+  "internal",
+  "protected",
+  "open",
+  "final",
+  "static",
+  "override",
+  "class",
+  "struct",
+  "enum",
+  "func",
+  "function",
+  "def",
+  "const",
+  "let",
+  "var",
+  "export",
+  "async",
+  "await",
+  "import",
+  "return",
+  "if",
+  "else",
+  "for",
+  "while",
+  "switch",
+  "case",
+  "guard",
+  "interface",
+  "abstract",
+  "sealed",
+  "data",
+  "suspend",
+  "inline",
+  "typealias",
+  "extension",
+  "protocol",
+  "throws",
+  "mutating",
+  "nonmutating",
+  "convenience",
+  "required",
+  "weak",
+  "unowned",
+  "lazy",
+  "dynamic",
+  "optional",
+  "objc",
+  "nonisolated",
+  "isolated",
+  "consuming",
+  "borrowing",
 ]);
 
-const DECL_RE = /(?:function|class|struct|enum|interface|func|def)\s+([a-zA-Z_][a-zA-Z0-9_]*)/g;
+const DECL_RE =
+  /(?:function|class|struct|enum|interface|func|def)\s+([a-zA-Z_][a-zA-Z0-9_]*)/g;
 const IDENT_RE = /[a-zA-Z_][a-zA-Z0-9_]*/g;
 
 const LANG_MAP: [RegExp, string][] = [
@@ -87,7 +133,10 @@ export function readCommitInfo(ref: string, root: string): CommitInfo {
  */
 export function extractChangedFiles(ref: string, root: string): string[] {
   try {
-    const raw = git(["diff-tree", "--no-commit-id", "--name-only", "-r", ref], root);
+    const raw = git(
+      ["diff-tree", "--no-commit-id", "--name-only", "-r", ref],
+      root,
+    );
     return raw.trim().split("\n").filter(Boolean);
   } catch {
     return [];
@@ -148,9 +197,7 @@ export function extractSymbols(diff: string): string[] {
   }
 
   // Filter short identifiers and cap
-  return [...symbols]
-    .filter((s) => s.length >= 2)
-    .slice(0, SYMBOL_MAX);
+  return [...symbols].filter((s) => s.length >= 2).slice(0, SYMBOL_MAX);
 }
 
 /**

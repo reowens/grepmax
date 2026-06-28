@@ -101,7 +101,8 @@ export function computePageRank(
 
 function toStringArray(val: unknown): string[] {
   if (!val) return [];
-  if (Array.isArray(val)) return val.filter((v): v is string => typeof v === "string");
+  if (Array.isArray(val))
+    return val.filter((v): v is string => typeof v === "string");
   const maybe = val as { toArray?: () => unknown };
   if (typeof maybe.toArray === "function") {
     try {
@@ -132,8 +133,12 @@ export async function buildGraphFromDb(
   const edges = new Map<string, Set<string>>();
 
   for (const row of rows) {
-    const defs = toStringArray((row as { defined_symbols?: unknown }).defined_symbols);
-    const refs = toStringArray((row as { referenced_symbols?: unknown }).referenced_symbols);
+    const defs = toStringArray(
+      (row as { defined_symbols?: unknown }).defined_symbols,
+    );
+    const refs = toStringArray(
+      (row as { referenced_symbols?: unknown }).referenced_symbols,
+    );
     for (const d of defs) nodes.add(d);
     if (refs.length === 0) continue;
     for (const d of defs) {

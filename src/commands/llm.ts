@@ -7,9 +7,13 @@ async function showStatus() {
   const config = readGlobalConfig();
   const enabled = config.llmEnabled === true;
 
-  const { isDaemonRunning, sendDaemonCommand } = await import("../lib/utils/daemon-client");
+  const { isDaemonRunning, sendDaemonCommand } = await import(
+    "../lib/utils/daemon-client"
+  );
   if (!(await isDaemonRunning())) {
-    console.log(`LLM: ${enabled ? "enabled" : "disabled"} · server not running (daemon not started)`);
+    console.log(
+      `LLM: ${enabled ? "enabled" : "disabled"} · server not running (daemon not started)`,
+    );
     return;
   }
   const resp = await sendDaemonCommand({ cmd: "llm-status" });
@@ -23,11 +27,15 @@ async function showStatus() {
     const uptime = Number(resp.uptime) || 0;
     const mins = Math.floor(uptime / 60);
     const secs = uptime % 60;
-    console.log(`LLM: enabled · running (PID: ${resp.pid}, port: ${resp.port})`);
+    console.log(
+      `LLM: enabled · running (PID: ${resp.pid}, port: ${resp.port})`,
+    );
     console.log(`  Model: ${model}`);
     console.log(`  Uptime: ${mins}m ${secs}s`);
   } else {
-    console.log(`LLM: ${enabled ? "enabled" : "disabled"} · server not running`);
+    console.log(
+      `LLM: ${enabled ? "enabled" : "disabled"} · server not running`,
+    );
   }
 }
 
@@ -46,7 +54,9 @@ llm
   .description("Start the LLM server")
   .action(async () => {
     try {
-      const { ensureDaemonRunning, sendDaemonCommand } = await import("../lib/utils/daemon-client");
+      const { ensureDaemonRunning, sendDaemonCommand } = await import(
+        "../lib/utils/daemon-client"
+      );
       if (!(await ensureDaemonRunning())) {
         console.error("Failed to start daemon");
         process.exitCode = 1;
@@ -63,7 +73,9 @@ llm
         return;
       }
       const model = path.basename(String(resp.model));
-      console.log(`LLM server ready (PID: ${resp.pid}, port: ${resp.port}, model: ${model})`);
+      console.log(
+        `LLM server ready (PID: ${resp.pid}, port: ${resp.port}, model: ${model})`,
+      );
     } finally {
       await gracefulExit();
     }
@@ -74,7 +86,9 @@ llm
   .description("Stop the LLM server")
   .action(async () => {
     try {
-      const { isDaemonRunning, sendDaemonCommand } = await import("../lib/utils/daemon-client");
+      const { isDaemonRunning, sendDaemonCommand } = await import(
+        "../lib/utils/daemon-client"
+      );
       if (!(await isDaemonRunning())) {
         console.log("Daemon not running");
         return;
@@ -122,7 +136,9 @@ llm
   .action(async () => {
     try {
       // Stop server if running
-      const { isDaemonRunning, sendDaemonCommand } = await import("../lib/utils/daemon-client");
+      const { isDaemonRunning, sendDaemonCommand } = await import(
+        "../lib/utils/daemon-client"
+      );
       if (await isDaemonRunning()) {
         const status = await sendDaemonCommand({ cmd: "llm-status" });
         if (status.ok && status.running) {

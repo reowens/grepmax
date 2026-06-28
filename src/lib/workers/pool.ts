@@ -134,9 +134,7 @@ class ProcessWorker {
     public execArgv: string[],
     maxMemoryMb?: number,
   ) {
-    const memArgs = maxMemoryMb
-      ? [`--max-old-space-size=${maxMemoryMb}`]
-      : [];
+    const memArgs = maxMemoryMb ? [`--max-old-space-size=${maxMemoryMb}`] : [];
     this.child = childProcess.fork(modulePath, {
       execArgv: [...memArgs, ...execArgv],
       env: { ...process.env },
@@ -172,7 +170,10 @@ const MIN_KEEP_WORKERS = 1;
 // worker that processed one big file can stay pinned at ~2 GB. Replacing it
 // with a fresh worker reclaims that. 0 (or negative) disables the check.
 const WORKER_RSS_RECYCLE_MB = (() => {
-  const fromEnv = Number.parseInt(process.env.GMAX_WORKER_RSS_RECYCLE_MB ?? "", 10);
+  const fromEnv = Number.parseInt(
+    process.env.GMAX_WORKER_RSS_RECYCLE_MB ?? "",
+    10,
+  );
   if (Number.isFinite(fromEnv)) return fromEnv;
   return 800;
 })();
@@ -180,7 +181,10 @@ const WORKER_RSS_RECYCLE_MB = (() => {
 // Methods that must skip the indexing backlog. encodeQuery is the search hot
 // path: a single query is ~17ms but waits behind every queued processFile.
 // rerank is similarly small and latency-sensitive.
-const PRIORITY_METHODS: ReadonlySet<TaskMethod> = new Set(["encodeQuery", "rerank"]);
+const PRIORITY_METHODS: ReadonlySet<TaskMethod> = new Set([
+  "encodeQuery",
+  "rerank",
+]);
 
 export class WorkerPool {
   private workers: ProcessWorker[] = [];
@@ -287,17 +291,25 @@ export class WorkerPool {
         (task.payload as Record<string, unknown>)?.path ??
         (task.payload as Record<string, unknown>)?.absolutePath ??
         "unknown";
-      debug("pool", `${reason} killed task=${task.id} method=${task.method} file=${filePath}`);
+      debug(
+        "pool",
+        `${reason} killed task=${task.id} method=${task.method} file=${filePath}`,
+      );
       const exitDetail = err
         ? `: ${err.message}`
         : `${code ? ` (code ${code})` : ""}${signal ? ` signal ${signal}` : ""}`;
       task.reject(
-        new Error(`Worker ${reason === "error" ? "errored" : "exited unexpectedly"}${exitDetail}`),
+        new Error(
+          `Worker ${reason === "error" ? "errored" : "exited unexpectedly"}${exitDetail}`,
+        ),
       );
       this.completeTask(task, null);
     }
 
-    log("pool", `Worker PID:${worker.child.pid} ${reason} (code:${code} signal:${signal}${err ? ` err:${err.message}` : ""} pending=${failedTasks.length})`);
+    log(
+      "pool",
+      `Worker PID:${worker.child.pid} ${reason} (code:${code} signal:${signal}${err ? ` err:${err.message}` : ""} pending=${failedTasks.length})`,
+    );
     this.workers = this.workers.filter((w) => w !== worker);
     if (!this.destroyed) {
       // Only respawn if we have no workers left or there are pending tasks
@@ -310,7 +322,10 @@ export class WorkerPool {
         hasUnassigned(this.priorityQueue) || hasUnassigned(this.taskQueue);
       if (this.workers.length === 0 || hasPendingTasks) {
         this.consecutiveRespawns++;
-        log("pool", `respawn #${this.consecutiveRespawns} after exit (workers=${this.workers.length} pending=${hasPendingTasks})`);
+        log(
+          "pool",
+          `respawn #${this.consecutiveRespawns} after exit (workers=${this.workers.length} pending=${hasPendingTasks})`,
+        );
         if (this.consecutiveRespawns > WorkerPool.MAX_RESPAWNS) {
           console.error(
             `[pool] Worker respawn limit reached (${WorkerPool.MAX_RESPAWNS}). Not spawning more workers.`,
@@ -324,8 +339,15 @@ export class WorkerPool {
   }
 
   private spawnWorker() {
-    const worker = new ProcessWorker(this.modulePath, this.execArgv, MAX_WORKER_MEMORY_MB);
-    log("pool", `spawn PID:${worker.child.pid} (${this.workers.length + 1}/${Math.max(1, CONFIG.WORKER_THREADS)})`);
+    const worker = new ProcessWorker(
+      this.modulePath,
+      this.execArgv,
+      MAX_WORKER_MEMORY_MB,
+    );
+    log(
+      "pool",
+      `spawn PID:${worker.child.pid} (${this.workers.length + 1}/${Math.max(1, CONFIG.WORKER_THREADS)})`,
+    );
 
     const onMessage = (msg: WorkerMessage) => {
       if (typeof msg.rss === "number") worker.lastRssBytes = msg.rss;
@@ -366,7 +388,10 @@ export class WorkerPool {
           (task.payload as Record<string, unknown>)?.path ??
           (task.payload as Record<string, unknown>)?.absolutePath ??
           "unknown";
-        debug("pool", `error task=${task.id} method=${task.method} file=${filePath}: ${msg.error}`);
+        debug(
+          "pool",
+          `error task=${task.id} method=${task.method} file=${filePath}: ${msg.error}`,
+        );
         task.reject(new Error(msg.error));
       } else {
         let result = msg.result as TaskResults[TaskMethod];
@@ -375,12 +400,17 @@ export class WorkerPool {
             result as TaskResults["processFile"],
           ) as TaskResults[TaskMethod];
         }
-        const elapsed = task.startTime ? `${Date.now() - task.startTime}ms` : "?ms";
+        const elapsed = task.startTime
+          ? `${Date.now() - task.startTime}ms`
+          : "?ms";
         const filePath =
           (task.payload as Record<string, unknown>)?.path ??
           (task.payload as Record<string, unknown>)?.absolutePath ??
           "";
-        debug("pool", `complete task=${task.id} method=${task.method} ${elapsed}${filePath ? ` file=${filePath}` : ""}`);
+        debug(
+          "pool",
+          `complete task=${task.id} method=${task.method} ${elapsed}${filePath ? ` file=${filePath}` : ""}`,
+        );
         task.resolve(result);
       }
 
@@ -492,12 +522,16 @@ export class WorkerPool {
     if (this.destroyed || !this.tasks.has(task.id)) return;
 
     this.clearTaskTimeout(task);
-    const limitMs = reason === "hard deadline" ? HARD_DEADLINE_MS : TASK_TIMEOUT_MS;
+    const limitMs =
+      reason === "hard deadline" ? HARD_DEADLINE_MS : TASK_TIMEOUT_MS;
     const filePath =
       (task.payload as Record<string, unknown>)?.path ??
       (task.payload as Record<string, unknown>)?.absolutePath ??
       "unknown";
-    log("pool", `timeout task=${task.id} method=${task.method} file=${filePath} (${reason}, ${limitMs}ms) — killing worker PID:${worker.child.pid}`);
+    log(
+      "pool",
+      `timeout task=${task.id} method=${task.method} file=${filePath} (${reason}, ${limitMs}ms) — killing worker PID:${worker.child.pid}`,
+    );
     this.completeTask(task, null);
     task.reject(
       new Error(
@@ -571,7 +605,10 @@ export class WorkerPool {
       (task.payload as Record<string, unknown>)?.absolutePath ??
       "";
     const busyCount = this.workers.filter((w) => w.busy).length;
-    debug("pool", `dispatch task=${task.id} method=${task.method}${filePath ? ` file=${filePath}` : ""} → PID:${idle.child.pid} (busy=${busyCount}/${this.workers.length} queue=${this.taskQueue.length}+${this.priorityQueue.length}p)`);
+    debug(
+      "pool",
+      `dispatch task=${task.id} method=${task.method}${filePath ? ` file=${filePath}` : ""} → PID:${idle.child.pid} (busy=${busyCount}/${this.workers.length} queue=${this.taskQueue.length}+${this.priorityQueue.length}p)`,
+    );
 
     try {
       idle.child.send({
@@ -614,7 +651,8 @@ export class WorkerPool {
     if (this.destroyed) return;
     const now = Date.now();
     const stuck = this.workers.filter(
-      (w) => w.busy && w.busySince !== null && now - w.busySince > STUCK_BUSY_MS,
+      (w) =>
+        w.busy && w.busySince !== null && now - w.busySince > STUCK_BUSY_MS,
     );
     for (const w of stuck) {
       const busyMs = w.busySince !== null ? now - w.busySince : 0;
@@ -687,7 +725,9 @@ export class WorkerPool {
     w.child.removeAllListeners("exit");
     w.child.removeAllListeners("error");
     const pid = w.child.pid;
-    try { w.child.kill("SIGTERM"); } catch {}
+    try {
+      w.child.kill("SIGTERM");
+    } catch {}
     this.workers = this.workers.filter((x) => x !== w);
     // Escalate to SIGKILL if SIGTERM is ignored (a worker mid native-call
     // won't service signals).
@@ -695,7 +735,9 @@ export class WorkerPool {
       setTimeout(() => {
         try {
           process.kill(pid, 0);
-          try { process.kill(pid, "SIGKILL"); } catch {}
+          try {
+            process.kill(pid, "SIGKILL");
+          } catch {}
         } catch {
           // ESRCH — already gone.
         }
@@ -728,13 +770,18 @@ export class WorkerPool {
       .sort((a, b) => a.lastBusyTime - b.lastBusyTime)
       .slice(0, reapCount)
       .forEach((w) => {
-        log("pool", `reap idle worker PID:${w.child.pid} (idle ${Math.round((now - w.lastBusyTime) / 1000)}s, ${this.workers.length - 1} remaining)`);
+        log(
+          "pool",
+          `reap idle worker PID:${w.child.pid} (idle ${Math.round((now - w.lastBusyTime) / 1000)}s, ${this.workers.length - 1} remaining)`,
+        );
         w.cleanedUp = true;
         w.child.removeAllListeners("message");
         w.child.removeAllListeners("exit");
         w.child.removeAllListeners("error");
         const pid = w.child.pid;
-        try { w.child.kill("SIGTERM"); } catch {}
+        try {
+          w.child.kill("SIGTERM");
+        } catch {}
         this.workers = this.workers.filter((x) => x !== w);
         // SIGTERM is ignored by a worker stuck inside a native ONNX matmul
         // tight loop. Escalate to SIGKILL if the process is still alive after
@@ -743,8 +790,13 @@ export class WorkerPool {
           setTimeout(() => {
             try {
               process.kill(pid, 0);
-              log("pool", `reap escalation: SIGTERM ignored by PID:${pid}, sending SIGKILL`);
-              try { process.kill(pid, "SIGKILL"); } catch {}
+              log(
+                "pool",
+                `reap escalation: SIGTERM ignored by PID:${pid}, sending SIGKILL`,
+              );
+              try {
+                process.kill(pid, "SIGKILL");
+              } catch {}
             } catch {
               // ESRCH — process already gone, nothing to do.
             }

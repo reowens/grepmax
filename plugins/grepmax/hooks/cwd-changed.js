@@ -41,7 +41,10 @@ async function main() {
   if (!isProjectRegistered(newCwd)) return;
 
   try {
-    execFileSync("gmax", ["watch", "--daemon", "-b"], { timeout: 5000, stdio: "ignore" });
+    execFileSync("gmax", ["watch", "--daemon", "-b"], {
+      timeout: 5000,
+      stdio: "ignore",
+    });
   } catch {
     try {
       execFileSync("gmax", ["watch", "-b"], { timeout: 5000, stdio: "ignore" });

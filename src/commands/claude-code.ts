@@ -51,9 +51,7 @@ async function installPlugin() {
       "marketplace.json",
     );
     if (!fs.existsSync(marketplaceJson)) {
-      console.error(
-        `❌ Could not find marketplace.json at ${marketplaceJson}`,
-      );
+      console.error(`❌ Could not find marketplace.json at ${marketplaceJson}`);
       console.error("   Is gmax installed correctly?");
       process.exitCode = 1;
       return;
@@ -78,17 +76,12 @@ async function installPlugin() {
 
     console.log("\nNext steps:");
     console.log("1. Restart Claude Code if it's running");
-    console.log(
-      "2. Run `gmax add` in your project to index it",
-    );
+    console.log("2. Run `gmax add` in your project to index it");
     console.log(
       "3. Claude will use gmax for semantic code search automatically",
     );
-    console.log(
-      "\nTo update the plugin after upgrading gmax:");
-    console.log(
-      "  gmax install-claude-code",
-    );
+    console.log("\nTo update the plugin after upgrading gmax:");
+    console.log("  gmax install-claude-code");
   } catch (error) {
     console.error("❌ Error installing plugin:");
     console.error(error);

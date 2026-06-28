@@ -70,10 +70,13 @@ export async function processBatchCore(
         continue;
       }
 
-      const result = await pool.processFile({
-        path: absPath,
-        absolutePath: absPath,
-      }, signal);
+      const result = await pool.processFile(
+        {
+          path: absPath,
+          absolutePath: absPath,
+        },
+        signal,
+      );
 
       const metaEntry: MetaEntry = {
         hash: result.hash,
@@ -159,10 +162,7 @@ export function computeRetryAction(
   }
 
   const effectiveFailures = isLockError ? consecutiveLockFailures + 1 : 0;
-  const backoffMs = Math.min(
-    debounceMs * 2 ** effectiveFailures,
-    30_000,
-  );
+  const backoffMs = Math.min(debounceMs * 2 ** effectiveFailures, 30_000);
 
   return { requeued, dropped, backoffMs };
 }

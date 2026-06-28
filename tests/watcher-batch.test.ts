@@ -31,7 +31,11 @@ vi.mock("node:fs", async () => {
     ...(actual as any),
     promises: {
       ...(actual as any).promises,
-      stat: vi.fn(async () => ({ size: 100, mtimeMs: 2000, isFile: () => true })),
+      stat: vi.fn(async () => ({
+        size: 100,
+        mtimeMs: 2000,
+        isFile: () => true,
+      })),
     },
   };
 });
@@ -193,9 +197,15 @@ describe("flushBatchToDb", () => {
   it("inserts before deleting with exclusion", async () => {
     const callOrder: string[] = [];
     const db = {
-      insertBatch: vi.fn(async () => { callOrder.push("insert"); }),
-      deletePathsExcludingIds: vi.fn(async () => { callOrder.push("deleteExcluding"); }),
-      deletePaths: vi.fn(async () => { callOrder.push("delete"); }),
+      insertBatch: vi.fn(async () => {
+        callOrder.push("insert");
+      }),
+      deletePathsExcludingIds: vi.fn(async () => {
+        callOrder.push("deleteExcluding");
+      }),
+      deletePaths: vi.fn(async () => {
+        callOrder.push("delete");
+      }),
     };
 
     await flushBatchToDb(

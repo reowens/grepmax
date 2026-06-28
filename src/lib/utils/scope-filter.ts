@@ -31,7 +31,9 @@ function toArray(value: string | string[] | undefined): string[] {
 }
 
 function joinSubpath(projectRoot: string, sub: string): string {
-  const rootWithSlash = projectRoot.endsWith("/") ? projectRoot : `${projectRoot}/`;
+  const rootWithSlash = projectRoot.endsWith("/")
+    ? projectRoot
+    : `${projectRoot}/`;
   if (path.isAbsolute(sub)) return sub.endsWith("/") ? sub : `${sub}/`;
   if (sub.startsWith(rootWithSlash)) return sub.endsWith("/") ? sub : `${sub}/`;
   const joined = path.join(rootWithSlash, sub);

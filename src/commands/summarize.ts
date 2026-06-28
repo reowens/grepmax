@@ -7,29 +7,28 @@ import { gracefulExit } from "../lib/utils/exit";
 import { ensureProjectPaths } from "../lib/utils/project-root";
 
 export const summarize = new Command("summarize")
-  .description(
-    "Generate LLM summaries for indexed chunks without re-indexing",
-  )
-  .option(
-    "-p, --path <dir>",
-    "Only summarize chunks under this directory",
-  )
+  .description("Generate LLM summaries for indexed chunks without re-indexing")
+  .option("-p, --path <dir>", "Only summarize chunks under this directory")
   .action(async (options: { path?: string }) => {
     const paths = ensureProjectPaths(process.cwd());
 
-    const rootPrefix = options.path
-      ? `${path.resolve(options.path)}/`
-      : "";
+    const rootPrefix = options.path ? `${path.resolve(options.path)}/` : "";
 
     const { spinner } = createIndexingSpinner("", "Summarizing...");
 
-    const { isDaemonRunning, sendStreamingCommand } = await import("../lib/utils/daemon-client");
+    const { isDaemonRunning, sendStreamingCommand } = await import(
+      "../lib/utils/daemon-client"
+    );
 
     if (await isDaemonRunning()) {
       // Daemon mode: IPC streaming
       try {
         const done = await sendStreamingCommand(
-          { cmd: "summarize", root: paths.root, pathPrefix: rootPrefix || undefined },
+          {
+            cmd: "summarize",
+            root: paths.root,
+            pathPrefix: rootPrefix || undefined,
+          },
           (msg) => {
             spinner.text = `Summarizing... (${msg.summarized ?? 0}/${msg.total ?? 0})`;
           },
@@ -43,10 +42,13 @@ export const summarize = new Command("summarize")
         const remaining = (done.remaining as number) ?? 0;
 
         if (summarized > 0) {
-          const remainMsg = remaining > 0 ? ` (${remaining}+ remaining — run again)` : "";
+          const remainMsg =
+            remaining > 0 ? ` (${remaining}+ remaining — run again)` : "";
           spinner.succeed(`Summarized ${summarized} chunks${remainMsg}`);
         } else {
-          spinner.succeed("All chunks already have summaries (or summarizer unavailable)");
+          spinner.succeed(
+            "All chunks already have summaries (or summarizer unavailable)",
+          );
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -69,10 +71,13 @@ export const summarize = new Command("summarize")
         );
 
         if (summarized > 0) {
-          const remainMsg = remaining > 0 ? ` (${remaining}+ remaining — run again)` : "";
+          const remainMsg =
+            remaining > 0 ? ` (${remaining}+ remaining — run again)` : "";
           spinner.succeed(`Summarized ${summarized} chunks${remainMsg}`);
         } else {
-          spinner.succeed("All chunks already have summaries (or summarizer unavailable)");
+          spinner.succeed(
+            "All chunks already have summaries (or summarizer unavailable)",
+          );
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

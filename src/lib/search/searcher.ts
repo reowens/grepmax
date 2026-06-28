@@ -23,12 +23,15 @@ import {
 // array or a LanceDB Arrow proxy (.toArray()).
 function readSymbolArray(val: unknown): string[] {
   if (!val) return [];
-  if (Array.isArray(val)) return val.filter((v): v is string => typeof v === "string");
+  if (Array.isArray(val))
+    return val.filter((v): v is string => typeof v === "string");
   const maybe = val as { toArray?: () => unknown };
   if (typeof maybe.toArray === "function") {
     try {
       const a = maybe.toArray();
-      return Array.isArray(a) ? a.filter((v): v is string => typeof v === "string") : [];
+      return Array.isArray(a)
+        ? a.filter((v): v is string => typeof v === "string")
+        : [];
     } catch {
       return [];
     }
@@ -53,9 +56,7 @@ export function buildWhereClause(
   const parts: string[] = [];
 
   if (pathPrefix) {
-    parts.push(
-      `path LIKE '${escapeSqlString(normalizePath(pathPrefix))}%'`,
-    );
+    parts.push(`path LIKE '${escapeSqlString(normalizePath(pathPrefix))}%'`);
   }
 
   const fileFilter = filters?.file;
@@ -137,9 +138,7 @@ export function buildWhereClause(
     searchIntent.type === "DEFINITION" &&
     searchIntent.filters?.definitionsOnly
   ) {
-    parts.push(
-      `(role = 'DEFINITION' OR array_length(defined_symbols) > 0)`,
-    );
+    parts.push(`(role = 'DEFINITION' OR array_length(defined_symbols) > 0)`);
   }
 
   const refFilter = filters?.ref;
@@ -530,9 +529,21 @@ export class Searcher {
     const needDefinedSymbols =
       pagerankEnabled || symbolQuery !== null || seedCtx.symbols.size > 0;
     const LIGHTWEIGHT_COLUMNS = [
-      "id", "path", "hash", "chunk_index", "start_line", "end_line",
-      "is_anchor", "chunk_type", "role", "complexity", "is_exported",
-      "content", "parent_symbol", "referenced_symbols", "pooled_colbert_48d",
+      "id",
+      "path",
+      "hash",
+      "chunk_index",
+      "start_line",
+      "end_line",
+      "is_anchor",
+      "chunk_type",
+      "role",
+      "complexity",
+      "is_exported",
+      "content",
+      "parent_symbol",
+      "referenced_symbols",
+      "pooled_colbert_48d",
       ...(needDefinedSymbols ? ["defined_symbols"] : []),
     ];
     // _distance is auto-added by vectorSearch, _score by FTS — include each
@@ -547,7 +558,9 @@ export class Searcher {
     if (whereClause) {
       vectorQuery = vectorQuery.where(whereClause);
     }
-    let vectorResults = (await vectorQuery.toArray()).map((r: any) => ({ ...r })) as VectorRecord[];
+    let vectorResults = (await vectorQuery.toArray()).map((r: any) => ({
+      ...r,
+    })) as VectorRecord[];
 
     let ftsResults: VectorRecord[] = [];
     let ftsSearchFailed = false;
@@ -560,7 +573,9 @@ export class Searcher {
         if (whereClause) {
           ftsQuery = ftsQuery.where(whereClause);
         }
-        ftsResults = (await ftsQuery.toArray()).map((r: any) => ({ ...r })) as VectorRecord[];
+        ftsResults = (await ftsQuery.toArray()).map((r: any) => ({
+          ...r,
+        })) as VectorRecord[];
       } catch (e) {
         ftsSearchFailed = true;
         this.ftsAvailable = false;
@@ -570,10 +585,14 @@ export class Searcher {
           try {
             await this.db.createFTSIndex(true);
             this.ftsAvailable = true;
-            console.warn("[Searcher] Rebuilt FTS index with position support — retry search");
+            console.warn(
+              "[Searcher] Rebuilt FTS index with position support — retry search",
+            );
           } catch {}
         } else {
-          console.warn(`[Searcher] FTS search failed (will retry later): ${msg}`);
+          console.warn(
+            `[Searcher] FTS search failed (will retry later): ${msg}`,
+          );
         }
       }
     }
@@ -595,7 +614,8 @@ export class Searcher {
     const noteRank = seedCtx.active
       ? (key: string, rank: number) => {
           const prev = bestRank.get(key);
-          if (prev === undefined || rank + 1 < prev) bestRank.set(key, rank + 1);
+          if (prev === undefined || rank + 1 < prev)
+            bestRank.set(key, rank + 1);
         }
       : () => {};
 
@@ -643,8 +663,12 @@ export class Searcher {
           seedCtx.symbols.size > 0
             ? matchesSeedSymbol(
                 seedCtx,
-                readSymbolArray((doc as { defined_symbols?: unknown }).defined_symbols),
-                readSymbolArray((doc as { referenced_symbols?: unknown }).referenced_symbols),
+                readSymbolArray(
+                  (doc as { defined_symbols?: unknown }).defined_symbols,
+                ),
+                readSymbolArray(
+                  (doc as { referenced_symbols?: unknown }).referenced_symbols,
+                ),
               )
             : { def: false, ref: false };
         const match = {
@@ -653,7 +677,11 @@ export class Searcher {
           symbolRef: sym.ref && !sym.def,
         };
         const key = doc.id || `${doc.path}:${doc.chunk_index}`;
-        const bonus = seedBoost(match, bestRank.get(key) ?? Infinity, seedParams);
+        const bonus = seedBoost(
+          match,
+          bestRank.get(key) ?? Infinity,
+          seedParams,
+        );
         if (bonus > 0) {
           candidateScores.set(key, (candidateScores.get(key) ?? 0) + bonus);
           boosted = true;
@@ -663,7 +691,9 @@ export class Searcher {
         fused.sort((a, b) => {
           const ka = a.id || `${a.path}:${a.chunk_index}`;
           const kb = b.id || `${b.path}:${b.chunk_index}`;
-          return (candidateScores.get(kb) ?? 0) - (candidateScores.get(ka) ?? 0);
+          return (
+            (candidateScores.get(kb) ?? 0) - (candidateScores.get(ka) ?? 0)
+          );
         });
       }
     }
@@ -785,7 +815,11 @@ export class Searcher {
       for (const d of topCandidates) {
         if (injected >= MAX_INJECT) break;
         if (!d.id || present.has(d.id)) continue;
-        if (readSymbolArray((d as { defined_symbols?: unknown }).defined_symbols).includes(symbolQuery)) {
+        if (
+          readSymbolArray(
+            (d as { defined_symbols?: unknown }).defined_symbols,
+          ).includes(symbolQuery)
+        ) {
           rerankCandidates.push(d);
           present.add(d.id);
           injected++;
@@ -806,9 +840,7 @@ export class Searcher {
           .where(`id IN (${rerankIds.join(",")})`)
           .limit(rerankIds.length)
           .toArray();
-        const colbertMap = new Map(
-          colbertRows.map((r: any) => [r.id, r]),
-        );
+        const colbertMap = new Map(colbertRows.map((r: any) => [r.id, r]));
         for (const doc of rerankCandidates) {
           const extra = colbertMap.get(doc.id);
           if (extra) {
@@ -847,7 +879,12 @@ export class Searcher {
     type ScoredItem = {
       record: (typeof rerankCandidates)[number];
       score: number;
-      breakdown?: { rerank: number; fused: number; boost: number; normalized: number };
+      breakdown?: {
+        rerank: number;
+        fused: number;
+        boost: number;
+        normalized: number;
+      };
     };
 
     // Symbol-definition promotion (2/2): score. Multiplicatively boost any
@@ -868,7 +905,9 @@ export class Searcher {
       let boosted = this.applyStructureBoost(doc, blended, searchIntent);
       if (
         symbolQuery &&
-        readSymbolArray((doc as { defined_symbols?: unknown }).defined_symbols).includes(symbolQuery)
+        readSymbolArray(
+          (doc as { defined_symbols?: unknown }).defined_symbols,
+        ).includes(symbolQuery)
       ) {
         boosted *= DEF_MATCH_BOOST;
       }
@@ -876,7 +915,12 @@ export class Searcher {
         record: doc,
         score: boosted,
         breakdown: explain
-          ? { rerank: base, fused: fusedScore, boost: blended > 0 ? boosted / blended : 1, normalized: 0 }
+          ? {
+              rerank: base,
+              fused: fusedScore,
+              boost: blended > 0 ? boosted / blended : 1,
+              normalized: 0,
+            }
           : undefined,
       };
     });
@@ -893,13 +937,18 @@ export class Searcher {
         );
         if (prMax > 0) {
           const envWeight = Number.parseFloat(process.env.GMAX_PR_WEIGHT ?? "");
-          const PR_WEIGHT = Number.isFinite(envWeight) && envWeight >= 0 ? envWeight : 0.05;
+          const PR_WEIGHT =
+            Number.isFinite(envWeight) && envWeight >= 0 ? envWeight : 0.05;
           for (const item of scored) {
-            const raw = (item.record as { defined_symbols?: unknown }).defined_symbols;
+            const raw = (item.record as { defined_symbols?: unknown })
+              .defined_symbols;
             let defs: string[] = [];
             if (Array.isArray(raw)) {
               defs = raw.filter((v): v is string => typeof v === "string");
-            } else if (raw && typeof (raw as { toArray?: () => unknown }).toArray === "function") {
+            } else if (
+              raw &&
+              typeof (raw as { toArray?: () => unknown }).toArray === "function"
+            ) {
               try {
                 const arr = (raw as { toArray: () => unknown }).toArray();
                 if (Array.isArray(arr)) {
@@ -951,15 +1000,18 @@ export class Searcher {
       const displayRows = await table
         .query()
         .select([
-          "id", "defined_symbols", "parent_symbol", "imports", "exports",
-          "summary", "file_skeleton",
+          "id",
+          "defined_symbols",
+          "parent_symbol",
+          "imports",
+          "exports",
+          "summary",
+          "file_skeleton",
         ])
         .where(`id IN (${finalIds.join(",")})`)
         .limit(finalIds.length)
         .toArray();
-      const displayMap = new Map(
-        displayRows.map((r: any) => [r.id, r]),
-      );
+      const displayMap = new Map(displayRows.map((r: any) => [r.id, r]));
       for (const item of diversified) {
         const extra = displayMap.get(item.record.id);
         if (extra) {

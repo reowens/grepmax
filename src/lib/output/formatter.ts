@@ -156,9 +156,7 @@ export function formatTrace(
 
   // 1. Importers
   if (graph.importers.length > 0) {
-    const filtered = graph.importers.filter(
-      (p) => p !== graph.center!.file,
-    );
+    const filtered = graph.importers.filter((p) => p !== graph.center!.file);
     if (filtered.length > 0) {
       lines.push(style.bold("Imported by:"));
       for (const imp of filtered.slice(0, 10)) {

@@ -8,7 +8,10 @@ import type { MetaCache } from "../store/meta-cache";
 import type { VectorDB } from "../store/vector-db";
 import { debug as dbg } from "../utils/logger";
 import { getProject, registerProject } from "../utils/project-registry";
-import { registerWatcher, unregisterWatcherByRoot } from "../utils/watcher-store";
+import {
+  registerWatcher,
+  unregisterWatcherByRoot,
+} from "../utils/watcher-store";
 
 // Watcher health windows used for FSEvents auto-recovery.
 const FSEVENTS_RECOVERY_INTERVAL_MS = 60 * 60 * 1000; // try recovery hourly
@@ -41,8 +44,14 @@ export interface WatcherManagerDeps {
 export class WatcherManager {
   private readonly pendingOps = new Set<string>();
   private readonly watcherFailCount = new Map<string, number>();
-  private readonly pollIntervals = new Map<string, ReturnType<typeof setInterval>>();
-  private readonly pollRecoveryTimers = new Map<string, ReturnType<typeof setInterval>>();
+  private readonly pollIntervals = new Map<
+    string,
+    ReturnType<typeof setInterval>
+  >();
+  private readonly pollRecoveryTimers = new Map<
+    string,
+    ReturnType<typeof setInterval>
+  >();
   private readonly lastOverflowMs = new Map<string, number>();
   private readonly lastCatchupEndMs = new Map<string, number>();
 
@@ -70,7 +79,9 @@ export class WatcherManager {
           try {
             chunkCount = await vectorDb.countRowsForPath(root);
           } catch (err) {
-            console.warn(`[daemon:${path.basename(root)}] Failed to query chunk count: ${err}`);
+            console.warn(
+              `[daemon:${path.basename(root)}] Failed to query chunk count: ${err}`,
+            );
           }
           registerProject({
             ...proj,
@@ -121,7 +132,6 @@ export class WatcherManager {
       this.recoverWatcher(root, processor);
     }
 
-
     registerWatcher({
       pid: process.pid,
       projectRoot: root,
@@ -132,20 +142,28 @@ export class WatcherManager {
 
     // Catchup scan — find files changed while daemon was offline
     this.catchupScan(root, processor).catch((err) => {
-      console.error(`[daemon:${path.basename(root)}] Catchup scan failed:`, err);
+      console.error(
+        `[daemon:${path.basename(root)}] Catchup scan failed:`,
+        err,
+      );
     });
 
     this.pendingOps.delete(root);
     console.log(`[daemon] Watching ${root}`);
   }
 
-  private async subscribeWatcher(root: string, processor: ProjectBatchProcessor): Promise<void> {
+  private async subscribeWatcher(
+    root: string,
+    processor: ProjectBatchProcessor,
+  ): Promise<void> {
     const name = path.basename(root);
 
     // Unsubscribe existing watcher if any (e.g. during recovery)
     const existingSub = this.deps.subscriptions.get(root);
     if (existingSub) {
-      try { await existingSub.unsubscribe(); } catch {}
+      try {
+        await existingSub.unsubscribe();
+      } catch {}
       this.deps.subscriptions.delete(root);
     }
 
@@ -202,7 +220,9 @@ export class WatcherManager {
         this.deps.subscriptions.delete(root);
       }
       if (!this.pollIntervals.has(root)) {
-        console.error(`[daemon:${name}] FSEvents unreliable after ${fails} failures — switching to poll mode (${POLL_INTERVAL_MS / 60000}min interval)`);
+        console.error(
+          `[daemon:${name}] FSEvents unreliable after ${fails} failures — switching to poll mode (${POLL_INTERVAL_MS / 60000}min interval)`,
+        );
         // Run an immediate catchup, then schedule periodic ones
         this.catchupScan(root, processor).catch((err) => {
           console.error(`[daemon:${name}] Poll catchup failed:`, err);
@@ -233,17 +253,24 @@ export class WatcherManager {
 
     // Backoff: wait before re-subscribing (3s, 6s, 12s)
     const delayMs = 3000 * Math.pow(2, fails - 1);
-    console.error(`[daemon:${name}] Recovering watcher (attempt ${fails}/${MAX_WATCHER_RETRIES}, backoff ${delayMs}ms)...`);
+    console.error(
+      `[daemon:${name}] Recovering watcher (attempt ${fails}/${MAX_WATCHER_RETRIES}, backoff ${delayMs}ms)...`,
+    );
 
     setTimeout(() => {
-      if (this.deps.getShuttingDown()) { this.pendingOps.delete(recoveryKey); return; }
+      if (this.deps.getShuttingDown()) {
+        this.pendingOps.delete(recoveryKey);
+        return;
+      }
       (async () => {
         try {
           await this.subscribeWatcher(root, processor);
           const lastCatchup = this.lastCatchupEndMs.get(root) ?? 0;
           const CATCHUP_COOLDOWN_MS = 60_000;
           if (Date.now() - lastCatchup < CATCHUP_COOLDOWN_MS) {
-            console.log(`[daemon:${name}] Skipping catchup scan (last completed ${Math.round((Date.now() - lastCatchup) / 1000)}s ago)`);
+            console.log(
+              `[daemon:${name}] Skipping catchup scan (last completed ${Math.round((Date.now() - lastCatchup) / 1000)}s ago)`,
+            );
           } else {
             await this.catchupScan(root, processor);
           }
@@ -281,7 +308,9 @@ export class WatcherManager {
       if (this.pendingOps.has(`recover:${root}`)) return;
 
       void (async () => {
-        console.log(`[daemon:${name}] Attempting to leave poll mode and reattach FSEvents...`);
+        console.log(
+          `[daemon:${name}] Attempting to leave poll mode and reattach FSEvents...`,
+        );
         try {
           // Reset failure counter so subscribeWatcher's error path treats this
           // as a fresh start. If it fails again, we'll fall right back into
@@ -296,7 +325,9 @@ export class WatcherManager {
 
           const lastOverflow = this.lastOverflowMs.get(root) ?? 0;
           if (Date.now() - lastOverflow < FSEVENTS_HEALTH_WINDOW_MS) {
-            console.log(`[daemon:${name}] FSEvents recovery aborted — fresh overflow within health window, staying in poll mode`);
+            console.log(
+              `[daemon:${name}] FSEvents recovery aborted — fresh overflow within health window, staying in poll mode`,
+            );
             return; // recoverWatcher will have re-armed poll mode if needed
           }
 
@@ -311,9 +342,14 @@ export class WatcherManager {
             clearInterval(recoveryTimer);
             this.pollRecoveryTimers.delete(root);
           }
-          console.log(`[daemon:${name}] FSEvents recovered — poll mode disabled`);
+          console.log(
+            `[daemon:${name}] FSEvents recovered — poll mode disabled`,
+          );
         } catch (err) {
-          console.error(`[daemon:${name}] Poll-mode recovery attempt failed:`, err);
+          console.error(
+            `[daemon:${name}] Poll-mode recovery attempt failed:`,
+            err,
+          );
         }
       })();
     }, FSEVENTS_RECOVERY_INTERVAL_MS);
@@ -321,9 +357,14 @@ export class WatcherManager {
     this.pollRecoveryTimers.set(root, timer);
   }
 
-  private async catchupScan(root: string, processor: ProjectBatchProcessor): Promise<void> {
+  private async catchupScan(
+    root: string,
+    processor: ProjectBatchProcessor,
+  ): Promise<void> {
     const { walk } = await import("../index/walker");
-    const { INDEXABLE_EXTENSIONS, MAX_FILE_SIZE_BYTES } = await import("../../config");
+    const { INDEXABLE_EXTENSIONS, MAX_FILE_SIZE_BYTES } = await import(
+      "../../config"
+    );
     const { isFileCached } = await import("../utils/cache-check");
 
     const metaCache = this.deps.getMetaCache()!;
@@ -340,7 +381,8 @@ export class WatcherManager {
       const absPath = path.join(root, relPath);
       const ext = path.extname(absPath).toLowerCase();
       const bn = path.basename(absPath).toLowerCase();
-      if (!INDEXABLE_EXTENSIONS.has(ext) && !INDEXABLE_EXTENSIONS.has(bn)) continue;
+      if (!INDEXABLE_EXTENSIONS.has(ext) && !INDEXABLE_EXTENSIONS.has(bn))
+        continue;
 
       seenPaths.add(absPath);
 
@@ -365,7 +407,10 @@ export class WatcherManager {
           }
           // Debug: log first few misses to diagnose re-queue loops
           if (debugSamples < 5) {
-            dbg("catchup", `miss ${relPath}: cached=${cached ? `mtime=${Math.trunc(cached.mtimeMs)} size=${cached.size}` : "null"} stat=mtime=${Math.trunc(stats.mtimeMs)} size=${stats.size}`);
+            dbg(
+              "catchup",
+              `miss ${relPath}: cached=${cached ? `mtime=${Math.trunc(cached.mtimeMs)} size=${cached.size}` : "null"} stat=mtime=${Math.trunc(stats.mtimeMs)} size=${stats.size}`,
+            );
             debugSamples++;
           }
           processor.handleFileEvent("change", absPath);
@@ -374,15 +419,21 @@ export class WatcherManager {
           // Throttle: pause periodically during large catchup scans to let the
           // batch processor drain and compaction run between bursts.
           if (queued % 500 === 0) {
-            dbg("catchup", `${path.basename(root)}: throttle pause at ${queued} queued`);
-            await new Promise(r => setTimeout(r, 5_000));
+            dbg(
+              "catchup",
+              `${path.basename(root)}: throttle pause at ${queued} queued`,
+            );
+            await new Promise((r) => setTimeout(r, 5_000));
           }
         } else {
           skipped++;
         }
       } catch {}
     }
-    dbg("catchup", `${path.basename(root)}: ${queued} queued, ${skipped} skipped (cached ok), ${seenPaths.size} total`);
+    dbg(
+      "catchup",
+      `${path.basename(root)}: ${queued} queued, ${skipped} skipped (cached ok), ${seenPaths.size} total`,
+    );
 
     // Purge files deleted while daemon was offline
     let purged = 0;
@@ -397,7 +448,9 @@ export class WatcherManager {
       const parts: string[] = [];
       if (queued > 0) parts.push(`${queued} changed`);
       if (purged > 0) parts.push(`${purged} deleted`);
-      console.log(`[daemon:${path.basename(root)}] Catchup: ${parts.join(", ")} file(s) while offline`);
+      console.log(
+        `[daemon:${path.basename(root)}] Catchup: ${parts.join(", ")} file(s) while offline`,
+      );
     }
 
     this.lastCatchupEndMs.set(root, Date.now());
@@ -440,7 +493,9 @@ export class WatcherManager {
     this.pollRecoveryTimers.clear();
 
     for (const sub of this.deps.subscriptions.values()) {
-      try { await sub.unsubscribe(); } catch {}
+      try {
+        await sub.unsubscribe();
+      } catch {}
     }
     this.deps.subscriptions.clear();
   }

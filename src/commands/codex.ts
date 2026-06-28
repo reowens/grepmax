@@ -61,10 +61,9 @@ function writeSkillToAgents(skill: string): void {
     );
     const cleaned = content.replace(markerRe, "");
     // Remove legacy content (everything between --- blocks mentioning gmax)
-    const withoutLegacy = cleaned.replace(
-      /---[\s\S]*?(?:gmax|--compact)[\s\S]*?(?=\n<!-- |$)/,
-      "",
-    ).trim();
+    const withoutLegacy = cleaned
+      .replace(/---[\s\S]*?(?:gmax|--compact)[\s\S]*?(?=\n<!-- |$)/, "")
+      .trim();
     fs.writeFileSync(
       AGENTS_PATH,
       withoutLegacy ? `${withoutLegacy}\n\n${block}` : block,

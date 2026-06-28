@@ -24,7 +24,9 @@ describe("buildSeedContext", () => {
   });
 
   it("normalizes file suffixes (lowercase, strips leading ./ and /)", () => {
-    const ctx = buildSeedContext({ files: ["./src/Lib/Server.ts", "/abs/Path.ts", "  ", ""] });
+    const ctx = buildSeedContext({
+      files: ["./src/Lib/Server.ts", "/abs/Path.ts", "  ", ""],
+    });
     expect(ctx.fileSuffixes).toEqual(["src/lib/server.ts", "abs/path.ts"]);
     expect(ctx.active).toBe(true);
   });
@@ -39,19 +41,27 @@ describe("matchesSeedFile", () => {
   const ctx = buildSeedContext({ files: ["src/lib/llm/server.ts"] });
 
   it("matches an absolute path by suffix", () => {
-    expect(matchesSeedFile(ctx, "/Users/x/proj/src/lib/llm/server.ts")).toBe(true);
+    expect(matchesSeedFile(ctx, "/Users/x/proj/src/lib/llm/server.ts")).toBe(
+      true,
+    );
   });
 
   it("is case-insensitive", () => {
-    expect(matchesSeedFile(ctx, "/Users/x/proj/SRC/LIB/LLM/Server.ts")).toBe(true);
+    expect(matchesSeedFile(ctx, "/Users/x/proj/SRC/LIB/LLM/Server.ts")).toBe(
+      true,
+    );
   });
 
   it("does not match a different file that merely shares a basename stem", () => {
-    expect(matchesSeedFile(ctx, "/Users/x/proj/src/lib/http/server.ts")).toBe(false);
+    expect(matchesSeedFile(ctx, "/Users/x/proj/src/lib/http/server.ts")).toBe(
+      false,
+    );
   });
 
   it("never matches when no files were seeded", () => {
-    expect(matchesSeedFile(buildSeedContext({ symbols: ["X"] }), "/a/b.ts")).toBe(false);
+    expect(
+      matchesSeedFile(buildSeedContext({ symbols: ["X"] }), "/a/b.ts"),
+    ).toBe(false);
   });
 });
 
@@ -59,19 +69,34 @@ describe("matchesSeedSymbol", () => {
   const ctx = buildSeedContext({ symbols: ["LlmServer"] });
 
   it("flags a definition", () => {
-    expect(matchesSeedSymbol(ctx, ["LlmServer"], [])).toEqual({ def: true, ref: false });
+    expect(matchesSeedSymbol(ctx, ["LlmServer"], [])).toEqual({
+      def: true,
+      ref: false,
+    });
   });
 
   it("flags a reference", () => {
-    expect(matchesSeedSymbol(ctx, ["Other"], ["LlmServer"])).toEqual({ def: false, ref: true });
+    expect(matchesSeedSymbol(ctx, ["Other"], ["LlmServer"])).toEqual({
+      def: false,
+      ref: true,
+    });
   });
 
   it("reports both when a chunk defines and references", () => {
-    expect(matchesSeedSymbol(ctx, ["LlmServer"], ["LlmServer"])).toEqual({ def: true, ref: true });
+    expect(matchesSeedSymbol(ctx, ["LlmServer"], ["LlmServer"])).toEqual({
+      def: true,
+      ref: true,
+    });
   });
 
   it("is empty when no symbols were seeded", () => {
-    expect(matchesSeedSymbol(buildSeedContext({ files: ["a.ts"] }), ["LlmServer"], [])).toEqual({
+    expect(
+      matchesSeedSymbol(
+        buildSeedContext({ files: ["a.ts"] }),
+        ["LlmServer"],
+        [],
+      ),
+    ).toEqual({
       def: false,
       ref: false,
     });
@@ -113,7 +138,9 @@ describe("seedBoost", () => {
 
   it("does not double-count def + ref, but adds file + symbol", () => {
     // def supersedes ref
-    expect(seedBoost(m({ symbolDef: true, symbolRef: true }), 1, P)).toBe(P.symbolDefWeight);
+    expect(seedBoost(m({ symbolDef: true, symbolRef: true }), 1, P)).toBe(
+      P.symbolDefWeight,
+    );
     // file and symbol are additive
     expect(seedBoost(m({ file: true, symbolDef: true }), 1, P)).toBeCloseTo(
       P.fileWeight + P.symbolDefWeight,
@@ -124,7 +151,9 @@ describe("seedBoost", () => {
 describe("seedParamsFromEnv", () => {
   it("falls back to defaults on absent/invalid env", () => {
     expect(seedParamsFromEnv({})).toEqual(DEFAULT_SEED_PARAMS);
-    expect(seedParamsFromEnv({ GMAX_SEED_MAX_RANK: "nope" })).toEqual(DEFAULT_SEED_PARAMS);
+    expect(seedParamsFromEnv({ GMAX_SEED_MAX_RANK: "nope" })).toEqual(
+      DEFAULT_SEED_PARAMS,
+    );
   });
 
   it("reads overrides", () => {
@@ -134,11 +163,18 @@ describe("seedParamsFromEnv", () => {
       GMAX_SEED_SYMBOL_REF_W: "0.01",
       GMAX_SEED_MAX_RANK: "8",
     });
-    expect(p).toEqual({ fileWeight: 0.05, symbolDefWeight: 0.04, symbolRefWeight: 0.01, maxRank: 8 });
+    expect(p).toEqual({
+      fileWeight: 0.05,
+      symbolDefWeight: 0.04,
+      symbolRefWeight: 0.01,
+      maxRank: 8,
+    });
   });
 
   it("rejects out-of-range values (maxRank must be ≥ 1)", () => {
-    expect(seedParamsFromEnv({ GMAX_SEED_MAX_RANK: "0" }).maxRank).toBe(DEFAULT_SEED_PARAMS.maxRank);
+    expect(seedParamsFromEnv({ GMAX_SEED_MAX_RANK: "0" }).maxRank).toBe(
+      DEFAULT_SEED_PARAMS.maxRank,
+    );
     expect(seedParamsFromEnv({ GMAX_SEED_FILE_W: "-1" }).fileWeight).toBe(
       DEFAULT_SEED_PARAMS.fileWeight,
     );

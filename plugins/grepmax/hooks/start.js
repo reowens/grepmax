@@ -127,21 +127,35 @@ function startPythonServer(serverDir, scriptName, logName, processName) {
       VIRTUAL_ENV: "",
       CONDA_DEFAULT_ENV: "",
       GMAX_PROCESS_NAME: processName || logName,
-      HF_TOKEN_PATH: process.env.HF_TOKEN_PATH || _path.join(require("node:os").homedir(), ".cache", "huggingface", "token"),
+      HF_TOKEN_PATH:
+        process.env.HF_TOKEN_PATH ||
+        _path.join(
+          require("node:os").homedir(),
+          ".cache",
+          "huggingface",
+          "token",
+        ),
     },
   });
   child.unref();
 }
 
 // --- Crash counter (Item 14) ---
-const CRASH_FILE = _path.join(require("node:os").homedir(), ".gmax", "mlx-embed-crashes.json");
+const CRASH_FILE = _path.join(
+  require("node:os").homedir(),
+  ".gmax",
+  "mlx-embed-crashes.json",
+);
 const MAX_CRASHES = 3;
 const CRASH_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 
 function readCrashCount() {
   try {
     const data = JSON.parse(fs.readFileSync(CRASH_FILE, "utf-8"));
-    if (data.lastCrash && Date.now() - new Date(data.lastCrash).getTime() > CRASH_WINDOW_MS) {
+    if (
+      data.lastCrash &&
+      Date.now() - new Date(data.lastCrash).getTime() > CRASH_WINDOW_MS
+    ) {
       return { count: 0, lastCrash: null }; // Window expired, reset
     }
     return { count: data.count || 0, lastCrash: data.lastCrash };
@@ -157,7 +171,9 @@ function writeCrashCount(count, lastCrash) {
 }
 
 function resetCrashCount() {
-  try { fs.unlinkSync(CRASH_FILE); } catch {}
+  try {
+    fs.unlinkSync(CRASH_FILE);
+  } catch {}
 }
 
 function isProjectRegistered() {
@@ -167,7 +183,9 @@ function isProjectRegistered() {
       ".gmax",
       "projects.json",
     );
-    const projects = JSON.parse(require("node:fs").readFileSync(projectsPath, "utf-8"));
+    const projects = JSON.parse(
+      require("node:fs").readFileSync(projectsPath, "utf-8"),
+    );
     const cwd = process.cwd();
     return projects.some((p) => cwd.startsWith(p.root));
   } catch {
@@ -178,7 +196,10 @@ function isProjectRegistered() {
 function startWatcher() {
   if (!isProjectRegistered()) return;
   try {
-    execFileSync("gmax", ["watch", "--daemon", "-b"], { timeout: 5000, stdio: "ignore" });
+    execFileSync("gmax", ["watch", "--daemon", "-b"], {
+      timeout: 5000,
+      stdio: "ignore",
+    });
   } catch {
     // Fallback to per-project mode (older gmax without --daemon)
     try {
@@ -200,14 +221,19 @@ async function main() {
     if (serverDir && !embedRunning) {
       const crashes = readCrashCount();
       if (crashes.count < MAX_CRASHES) {
-        startPythonServer(serverDir, "server.py", "mlx-embed-server", "gmax-embed");
+        startPythonServer(
+          serverDir,
+          "server.py",
+          "mlx-embed-server",
+          "gmax-embed",
+        );
 
         // Fire-and-forget health verification (Item 13)
         (async () => {
           const maxAttempts = 5;
           const delayMs = 2000;
           for (let i = 0; i < maxAttempts; i++) {
-            await new Promise(r => setTimeout(r, delayMs));
+            await new Promise((r) => setTimeout(r, delayMs));
             if (await isServerRunning(8100)) {
               resetCrashCount();
               return;
@@ -223,8 +249,17 @@ async function main() {
     }
 
     // Start LLM summarizer server (port 8101) — opt-in only
-    if (process.env.GMAX_SUMMARIZER === "1" && serverDir && !(await isServerRunning(8101))) {
-      startPythonServer(serverDir, "summarizer.py", "mlx-summarizer", "gmax-summarizer");
+    if (
+      process.env.GMAX_SUMMARIZER === "1" &&
+      serverDir &&
+      !(await isServerRunning(8101))
+    ) {
+      startPythonServer(
+        serverDir,
+        "summarizer.py",
+        "mlx-summarizer",
+        "gmax-summarizer",
+      );
     }
   }
 

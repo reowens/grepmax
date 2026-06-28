@@ -102,8 +102,12 @@ export function appendReview(projectRoot: string, entry: ReviewEntry): void {
     fs.renameSync(tmp, p);
   } catch (err) {
     // Clean up tmp on failure
-    try { fs.unlinkSync(tmp); } catch {}
-    console.error(`[review] failed to write report: ${err instanceof Error ? err.message : String(err)}`);
+    try {
+      fs.unlinkSync(tmp);
+    } catch {}
+    console.error(
+      `[review] failed to write report: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }
 
@@ -124,7 +128,9 @@ export function formatReportText(report: ReviewReport): string {
   lines.push("");
 
   for (const rev of report.reviews) {
-    lines.push(`--- ${rev.commit} — ${rev.message} (${rev.duration_seconds}s) ---`);
+    lines.push(
+      `--- ${rev.commit} — ${rev.message} (${rev.duration_seconds}s) ---`,
+    );
 
     if (rev.findings.length === 0) {
       lines.push("  clean");

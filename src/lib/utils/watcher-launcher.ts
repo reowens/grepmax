@@ -18,7 +18,9 @@ export type LaunchResult =
   | { ok: true; pid: number; reused: boolean }
   | { ok: false; reason: "not-registered" | "spawn-failed"; message: string };
 
-export async function launchWatcher(projectRoot: string): Promise<LaunchResult> {
+export async function launchWatcher(
+  projectRoot: string,
+): Promise<LaunchResult> {
   // 1. Project must be registered
   const project = getProject(projectRoot);
   if (!project) {
@@ -31,8 +33,7 @@ export async function launchWatcher(projectRoot: string): Promise<LaunchResult> 
 
   // 2. Check if watcher already running (daemon registers per-project entries)
   const existing =
-    getWatcherForProject(projectRoot) ??
-    getWatcherCoveringPath(projectRoot);
+    getWatcherForProject(projectRoot) ?? getWatcherCoveringPath(projectRoot);
   if (existing && isProcessRunning(existing.pid)) {
     return { ok: true, pid: existing.pid, reused: true };
   }
@@ -56,7 +57,10 @@ export async function launchWatcher(projectRoot: string): Promise<LaunchResult> 
       for (let i = 0; i < 25; i++) {
         await new Promise((r) => setTimeout(r, 200));
         try {
-          const retry = await sendDaemonCommand({ cmd: "watch", root: projectRoot });
+          const retry = await sendDaemonCommand({
+            cmd: "watch",
+            root: projectRoot,
+          });
           if (retry.ok && typeof retry.pid === "number") {
             return { ok: true, pid: retry.pid, reused: false };
           }

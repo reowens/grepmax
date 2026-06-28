@@ -129,7 +129,8 @@ async function allRefs(file: string, code: string): Promise<Set<string>> {
   const chunker = new TreeSitterChunker();
   const { chunks } = await chunker.chunk(file, code);
   const refs = new Set<string>();
-  for (const c of chunks) for (const r of c.referencedSymbols ?? []) refs.add(r);
+  for (const c of chunks)
+    for (const r of c.referencedSymbols ?? []) refs.add(r);
   return refs;
 }
 

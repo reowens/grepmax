@@ -94,7 +94,9 @@ function getClients(): Client[] {
       isInstalled: () => {
         const p = path.join(os.homedir(), ".codex", "AGENTS.md");
         try {
-          return fs.existsSync(p) && fs.readFileSync(p, "utf-8").includes("gmax");
+          return (
+            fs.existsSync(p) && fs.readFileSync(p, "utf-8").includes("gmax")
+          );
         } catch {
           return false;
         }
@@ -134,7 +136,10 @@ function getClients(): Client[] {
 
 const addCmd = new Command("add")
   .description("Install or update gmax plugins")
-  .argument("[client]", "Client to install (claude, opencode, codex, droid, all)")
+  .argument(
+    "[client]",
+    "Client to install (claude, opencode, codex, droid, all)",
+  )
   .action(async (clientArg?: string) => {
     const clients = getClients();
     const onlyId = clientArg && clientArg !== "all" ? clientArg : undefined;
@@ -186,7 +191,10 @@ const addCmd = new Command("add")
 
 const removeCmd = new Command("remove")
   .description("Remove gmax plugins")
-  .argument("[client]", "Client to remove (claude, opencode, codex, droid, all)")
+  .argument(
+    "[client]",
+    "Client to remove (claude, opencode, codex, droid, all)",
+  )
   .action(async (clientArg?: string) => {
     const clients = getClients();
 

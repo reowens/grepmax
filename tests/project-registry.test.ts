@@ -7,9 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gmax-registry-test-"));
 
 vi.mock("../src/config", async () => {
-  const actual = await vi.importActual<typeof import("../src/config")>(
-    "../src/config",
-  );
+  const actual =
+    await vi.importActual<typeof import("../src/config")>("../src/config");
   return {
     ...actual,
     PATHS: { ...actual.PATHS, globalRoot: tmpRoot },

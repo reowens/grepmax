@@ -19,9 +19,8 @@ export function extractSymbolsFromSkeleton(
       const sig = m[2].trim();
       const exported = sig.includes("export ");
       const type =
-        sig.match(
-          /\b(class|interface|type|function|def|fn|func)\b/,
-        )?.[1] || "other";
+        sig.match(/\b(class|interface|type|function|def|fn|func)\b/)?.[1] ||
+        "other";
       const name =
         sig.match(
           /(?:function|class|interface|type|def|fn|func)\s+(\w+)/,
@@ -37,7 +36,6 @@ export function extractSymbolsFromSkeleton(
       };
     })
     .filter(
-      (s): s is NonNullable<typeof s> =>
-        s !== null && s.name !== "unknown",
+      (s): s is NonNullable<typeof s> => s !== null && s.name !== "unknown",
     );
 }

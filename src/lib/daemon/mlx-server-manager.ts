@@ -26,16 +26,24 @@ export class MlxServerManager {
     return new Promise<boolean>((resolve) => {
       const req = http.get(
         { hostname: "127.0.0.1", port, path: "/health", timeout: 2000 },
-        (res) => { res.resume(); resolve(res.statusCode === 200); },
+        (res) => {
+          res.resume();
+          resolve(res.statusCode === 200);
+        },
       );
       req.on("error", () => resolve(false));
-      req.on("timeout", () => { req.destroy(); resolve(false); });
+      req.on("timeout", () => {
+        req.destroy();
+        resolve(false);
+      });
     });
   }
 
   private getPortPid(port: number): number | null {
     try {
-      const out = execSync(`lsof -ti :${port}`, { timeout: 5000 }).toString().trim();
+      const out = execSync(`lsof -ti :${port}`, { timeout: 5000 })
+        .toString()
+        .trim();
       const pid = parseInt(out.split("\n")[0], 10);
       return Number.isFinite(pid) ? pid : null;
     } catch {
@@ -76,7 +84,9 @@ export class MlxServerManager {
     const port = parseInt(process.env.MLX_EMBED_PORT || "8100", 10);
     const stalePid = this.getPortPid(port);
     if (stalePid) {
-      console.log(`[daemon] Killing stale MLX process on port ${port} (PID: ${stalePid})`);
+      console.log(
+        `[daemon] Killing stale MLX process on port ${port} (PID: ${stalePid})`,
+      );
       await killProcess(stalePid);
       // Brief pause for OS to release the port
       await new Promise((r) => setTimeout(r, 500));
@@ -91,12 +101,19 @@ export class MlxServerManager {
       fs.existsSync(path.join(d, "server.py")),
     );
     if (!serverDir) {
-      console.warn("[daemon] MLX embed server not found — falling back to CPU embeddings");
+      console.warn(
+        "[daemon] MLX embed server not found — falling back to CPU embeddings",
+      );
       return;
     }
 
-    const logFd = openRotatedLog(path.join(PATHS.logsDir, "mlx-embed-server.log"));
-    const env: Record<string, string> = { ...process.env } as Record<string, string>;
+    const logFd = openRotatedLog(
+      path.join(PATHS.logsDir, "mlx-embed-server.log"),
+    );
+    const env: Record<string, string> = { ...process.env } as Record<
+      string,
+      string
+    >;
     if (mlxModel) env.MLX_EMBED_MODEL = mlxModel;
 
     this.mlxChild = spawn("uv", ["run", "python", "server.py"], {
@@ -106,7 +123,9 @@ export class MlxServerManager {
       env,
     });
     this.mlxChild.unref();
-    console.log(`[daemon] Starting MLX embed server (PID: ${this.mlxChild.pid})`);
+    console.log(
+      `[daemon] Starting MLX embed server (PID: ${this.mlxChild.pid})`,
+    );
 
     // Poll for readiness (up to 30s)
     for (let i = 0; i < 30; i++) {
@@ -116,7 +135,9 @@ export class MlxServerManager {
         return;
       }
     }
-    console.error("[daemon] MLX embed server failed to start within 30s — falling back to CPU embeddings");
+    console.error(
+      "[daemon] MLX embed server failed to start within 30s — falling back to CPU embeddings",
+    );
     this.mlxChild = null;
   }
 
@@ -128,9 +149,13 @@ export class MlxServerManager {
       try {
         process.kill(-this.mlxChild.pid, "SIGTERM");
       } catch {
-        try { process.kill(this.mlxChild.pid, "SIGTERM"); } catch {}
+        try {
+          process.kill(this.mlxChild.pid, "SIGTERM");
+        } catch {}
       }
-      console.log(`[daemon] Stopped MLX embed server (PID: ${this.mlxChild.pid})`);
+      console.log(
+        `[daemon] Stopped MLX embed server (PID: ${this.mlxChild.pid})`,
+      );
       this.mlxChild = null;
     }
     const port = parseInt(process.env.MLX_EMBED_PORT || "8100", 10);
@@ -138,7 +163,9 @@ export class MlxServerManager {
     if (portOwner) {
       try {
         process.kill(portOwner, "SIGTERM");
-        console.log(`[daemon] Killed orphan MLX on port ${port} (PID: ${portOwner})`);
+        console.log(
+          `[daemon] Killed orphan MLX on port ${port} (PID: ${portOwner})`,
+        );
       } catch {}
     }
   }

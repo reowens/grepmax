@@ -59,7 +59,10 @@ export function sendDaemonCommand(
 
     socket.on("error", (err) => {
       clearTimeout(timer);
-      finish({ ok: false, error: (err as NodeJS.ErrnoException).code ?? err.message });
+      finish({
+        ok: false,
+        error: (err as NodeJS.ErrnoException).code ?? err.message,
+      });
     });
 
     socket.on("close", () => {
@@ -77,8 +80,13 @@ export function sendDaemonCommand(
  * peer) — the default 2s is tight enough that a daemon blocking the event
  * loop mid-index can miss it.
  */
-export async function isDaemonRunning(opts?: { timeoutMs?: number }): Promise<boolean> {
-  const resp = await sendDaemonCommand({ cmd: "ping" }, { timeoutMs: opts?.timeoutMs ?? 2000 });
+export async function isDaemonRunning(opts?: {
+  timeoutMs?: number;
+}): Promise<boolean> {
+  const resp = await sendDaemonCommand(
+    { cmd: "ping" },
+    { timeoutMs: opts?.timeoutMs ?? 2000 },
+  );
   return resp.ok === true;
 }
 
@@ -95,7 +103,8 @@ export async function isDaemonRunning(opts?: { timeoutMs?: number }): Promise<bo
 export function isDaemonHeartbeatFresh(): boolean {
   try {
     const stats = fs.statSync(PATHS.daemonLockFile);
-    if (Date.now() - stats.mtimeMs >= HEARTBEAT_FRESH_THRESHOLD_MS) return false;
+    if (Date.now() - stats.mtimeMs >= HEARTBEAT_FRESH_THRESHOLD_MS)
+      return false;
     const pidRaw = fs.readFileSync(PATHS.daemonPidFile, "utf-8").trim();
     const pid = parseInt(pidRaw, 10);
     if (!Number.isFinite(pid) || pid <= 0) return false;
@@ -202,7 +211,10 @@ export function sendStreamingCommand(
             resetTimer();
           }
         } catch {
-          console.warn("[daemon-client] Malformed response line:", line.slice(0, 200));
+          console.warn(
+            "[daemon-client] Malformed response line:",
+            line.slice(0, 200),
+          );
         }
       }
     });

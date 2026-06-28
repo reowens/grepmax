@@ -30,7 +30,9 @@ const TARGETS = ["BeyondError", "ErrorCodes", "resolveActor", "errorHandler"];
 async function main() {
   const db = new VectorDB(PATHS.lancedbDir);
   const table = await db.ensureTable();
-  const pathPrefix = PLATFORM_ROOT.endsWith("/") ? PLATFORM_ROOT : `${PLATFORM_ROOT}/`;
+  const pathPrefix = PLATFORM_ROOT.endsWith("/")
+    ? PLATFORM_ROOT
+    : `${PLATFORM_ROOT}/`;
   const scope = `path LIKE '${escapeSqlString(pathPrefix)}%'`;
 
   console.log(`Platform graph density check — pathPrefix=${PLATFORM_ROOT}\n`);
@@ -67,11 +69,16 @@ async function main() {
   for (const row of allRows) {
     const raw = (row as { referenced_symbols?: unknown }).referenced_symbols;
     let arr: string[] = [];
-    if (Array.isArray(raw)) arr = raw.filter((v): v is string => typeof v === "string");
-    else if (raw && typeof (raw as { toArray?: () => unknown }).toArray === "function") {
+    if (Array.isArray(raw))
+      arr = raw.filter((v): v is string => typeof v === "string");
+    else if (
+      raw &&
+      typeof (raw as { toArray?: () => unknown }).toArray === "function"
+    ) {
       try {
         const a = (raw as { toArray: () => unknown }).toArray();
-        if (Array.isArray(a)) arr = a.filter((v): v is string => typeof v === "string");
+        if (Array.isArray(a))
+          arr = a.filter((v): v is string => typeof v === "string");
       } catch {}
     }
     if (arr.length > 0) {
@@ -81,8 +88,8 @@ async function main() {
   }
   console.log(
     `\nPlatform corpus: ${allRows.length} chunks sampled (cap 20k), ` +
-    `${nonEmpty} with non-empty referenced_symbols (${((nonEmpty / allRows.length) * 100).toFixed(1)}%), ` +
-    `avg refs/chunk = ${(totalRefs / Math.max(1, nonEmpty)).toFixed(1)}`,
+      `${nonEmpty} with non-empty referenced_symbols (${((nonEmpty / allRows.length) * 100).toFixed(1)}%), ` +
+      `avg refs/chunk = ${(totalRefs / Math.max(1, nonEmpty)).toFixed(1)}`,
   );
 
   await db.close();

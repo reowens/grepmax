@@ -22,8 +22,12 @@ describe("Daemon orphan worker sweep", () => {
   it("kills a worker only after it looks orphaned on two consecutive sweeps", () => {
     setTrackedPids([100, 200]); // pool tracks these
     // 999 is a gmax-worker, our child, untracked → orphan candidate.
-    vi.spyOn(daemon.processManager, "findProcessesByTitle").mockReturnValue([100, 200, 999]);
-    vi.spyOn(daemon.processManager, "findChildPids").mockReturnValue([100, 200, 999]);
+    vi.spyOn(daemon.processManager, "findProcessesByTitle").mockReturnValue([
+      100, 200, 999,
+    ]);
+    vi.spyOn(daemon.processManager, "findChildPids").mockReturnValue([
+      100, 200, 999,
+    ]);
     const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
 
     daemon.processManager.sweepOrphanWorkers();
@@ -35,8 +39,12 @@ describe("Daemon orphan worker sweep", () => {
 
   it("never kills a non-worker child (MLX / llama-server)", () => {
     setTrackedPids([100]);
-    vi.spyOn(daemon.processManager, "findProcessesByTitle").mockReturnValue([100]); // 555 is not a worker
-    vi.spyOn(daemon.processManager, "findChildPids").mockReturnValue([100, 555]);
+    vi.spyOn(daemon.processManager, "findProcessesByTitle").mockReturnValue([
+      100,
+    ]); // 555 is not a worker
+    vi.spyOn(daemon.processManager, "findChildPids").mockReturnValue([
+      100, 555,
+    ]);
     const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
 
     daemon.processManager.sweepOrphanWorkers();
@@ -47,7 +55,9 @@ describe("Daemon orphan worker sweep", () => {
   it("never kills a worker owned by another process (not our child)", () => {
     setTrackedPids([100]);
     // 777 is a gmax-worker but belongs to e.g. a per-project `gmax watch`.
-    vi.spyOn(daemon.processManager, "findProcessesByTitle").mockReturnValue([100, 777]);
+    vi.spyOn(daemon.processManager, "findProcessesByTitle").mockReturnValue([
+      100, 777,
+    ]);
     vi.spyOn(daemon.processManager, "findChildPids").mockReturnValue([100]); // not our child
     const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
 
@@ -69,8 +79,12 @@ describe("Daemon self-recycle", () => {
   });
 
   it("recycles when RSS exceeds the watermark and the daemon is quiet", async () => {
-    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
-    const shutdownSpy = vi.spyOn(daemon, "shutdown").mockResolvedValue(undefined);
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation((() => {}) as never);
+    const shutdownSpy = vi
+      .spyOn(daemon, "shutdown")
+      .mockResolvedValue(undefined);
     vi.spyOn(process, "memoryUsage").mockReturnValue({
       rss: 4096 * 1024 * 1024,
     } as unknown as NodeJS.MemoryUsage);
@@ -88,7 +102,9 @@ describe("Daemon self-recycle", () => {
 
   it("does not recycle while a project operation is in flight", () => {
     vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
-    const shutdownSpy = vi.spyOn(daemon, "shutdown").mockResolvedValue(undefined);
+    const shutdownSpy = vi
+      .spyOn(daemon, "shutdown")
+      .mockResolvedValue(undefined);
     vi.spyOn(process, "memoryUsage").mockReturnValue({
       rss: 4096 * 1024 * 1024,
     } as unknown as NodeJS.MemoryUsage);
@@ -100,7 +116,9 @@ describe("Daemon self-recycle", () => {
   });
 
   it("does not recycle when under both ceilings", () => {
-    const shutdownSpy = vi.spyOn(daemon, "shutdown").mockResolvedValue(undefined);
+    const shutdownSpy = vi
+      .spyOn(daemon, "shutdown")
+      .mockResolvedValue(undefined);
     vi.spyOn(process, "memoryUsage").mockReturnValue({
       rss: 100 * 1024 * 1024,
     } as unknown as NodeJS.MemoryUsage);

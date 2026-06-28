@@ -105,7 +105,7 @@ function example() {}`;
   it("indexes exported const declarations regardless of RHS shape", async () => {
     const chunker = new TreeSitterChunker();
     const content = [
-      'export const typeDefs = `',
+      "export const typeDefs = `",
       "  type Query { hello: String }",
       "`;",
       "",

@@ -85,12 +85,14 @@ export const peek = new Command("peek")
   .option(
     "--in <subpath>",
     "Restrict to a sub-path of the project (repeatable)",
-    (value: string, prev: string[] | undefined) => (prev ? [...prev, value] : [value]),
+    (value: string, prev: string[] | undefined) =>
+      prev ? [...prev, value] : [value],
   )
   .option(
     "--exclude <subpath>",
     "Exclude a sub-path of the project (repeatable)",
-    (value: string, prev: string[] | undefined) => (prev ? [...prev, value] : [value]),
+    (value: string, prev: string[] | undefined) =>
+      prev ? [...prev, value] : [value],
   )
   .option("--agent", "Compact output for AI agents", false)
   .option("--no-tests", "Suppress the tests footer")
@@ -159,9 +161,7 @@ export const peek = new Command("peek")
           ];
           for (const [lang, group] of byLang) {
             const c = group[0];
-            lines.push(
-              `  ${lang.padEnd(6)} ${rel(c.path)}:${c.startLine + 1}`,
-            );
+            lines.push(`  ${lang.padEnd(6)} ${rel(c.path)}:${c.startLine + 1}`);
           }
           lines.push(
             `Disambiguate with --root or pin to a path: gmax peek ${symbol} --root <project-root>`,
@@ -193,9 +193,7 @@ export const peek = new Command("peek")
 
       const center = graph.center;
       const rel = (p: string) =>
-        p.startsWith(projectRoot)
-          ? p.slice(projectRoot.length + 1)
-          : p;
+        p.startsWith(projectRoot) ? p.slice(projectRoot.length + 1) : p;
 
       // Get chunk metadata for is_exported and end_line
       const table = await vectorDb.ensureTable();
@@ -209,9 +207,16 @@ export const peek = new Command("peek")
         )
         .limit(1)
         .toArray();
-      const exported = metaRows.length > 0 && Boolean((metaRows[0] as any).is_exported);
-      const startLine = metaRows.length > 0 ? Number((metaRows[0] as any).start_line || 0) : center.line;
-      const endLine = metaRows.length > 0 ? Number((metaRows[0] as any).end_line || 0) : center.line;
+      const exported =
+        metaRows.length > 0 && Boolean((metaRows[0] as any).is_exported);
+      const startLine =
+        metaRows.length > 0
+          ? Number((metaRows[0] as any).start_line || 0)
+          : center.line;
+      const endLine =
+        metaRows.length > 0
+          ? Number((metaRows[0] as any).end_line || 0)
+          : center.line;
 
       // Get multi-hop callers if depth > 1
       let callerList: Array<{ symbol: string; file: string; line: number }>;
@@ -221,7 +226,11 @@ export const peek = new Command("peek")
         const flat: Array<{ symbol: string; file: string; line: number }> = [];
         function walkCallers(tree: any[]) {
           for (const t of tree) {
-            flat.push({ symbol: t.node.symbol, file: t.node.file, line: t.node.line });
+            flat.push({
+              symbol: t.node.symbol,
+              file: t.node.file,
+              line: t.node.line,
+            });
             walkCallers(t.callers);
           }
         }
@@ -356,9 +365,7 @@ export const peek = new Command("peek")
         // Callers
         if (resolvedCallers.length > 0) {
           const shown = resolvedCallers.slice(0, MAX_CALLERS);
-          console.log(
-            style.bold(`callers (${resolvedCallers.length}):`),
-          );
+          console.log(style.bold(`callers (${resolvedCallers.length}):`));
           for (const c of shown) {
             if (c.file) {
               console.log(
@@ -372,7 +379,9 @@ export const peek = new Command("peek")
           }
           if (resolvedCallers.length > MAX_CALLERS) {
             console.log(
-              style.dim(`  ... and ${resolvedCallers.length - MAX_CALLERS} more`),
+              style.dim(
+                `  ... and ${resolvedCallers.length - MAX_CALLERS} more`,
+              ),
             );
           }
         } else {
@@ -384,9 +393,7 @@ export const peek = new Command("peek")
         // Callees
         if (calleeList.length > 0) {
           const shown = calleeList.slice(0, MAX_CALLEES);
-          console.log(
-            style.bold(`callees (${calleeList.length}):`),
-          );
+          console.log(style.bold(`callees (${calleeList.length}):`));
           for (const c of shown) {
             if (c.file) {
               console.log(
@@ -425,8 +432,7 @@ export const peek = new Command("peek")
         }
       }
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unknown error";
+      const message = error instanceof Error ? error.message : "Unknown error";
       console.error("Peek failed:", message);
       process.exitCode = 1;
     } finally {

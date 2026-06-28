@@ -46,8 +46,14 @@ export class LlmServer {
               const runningModel: string | undefined = body?.data?.[0]?.id;
               if (runningModel) {
                 const configBasename = path.basename(this.config.model);
-                if (runningModel !== configBasename && !configBasename.includes(runningModel) && !runningModel.includes(configBasename)) {
-                  console.log(`[llm] Model mismatch: running "${runningModel}" but config expects "${configBasename}" — will restart`);
+                if (
+                  runningModel !== configBasename &&
+                  !configBasename.includes(runningModel) &&
+                  !runningModel.includes(configBasename)
+                ) {
+                  console.log(
+                    `[llm] Model mismatch: running "${runningModel}" but config expects "${configBasename}" — will restart`,
+                  );
                   resolve(false);
                   return;
                 }
@@ -89,7 +95,9 @@ export class LlmServer {
     // Kill stale/mismatched server before spawning a new one
     const existingPid = this.readPid();
     if (existingPid && this.isAlive(existingPid)) {
-      console.log(`[llm] Stopping existing server (PID: ${existingPid}) before restart`);
+      console.log(
+        `[llm] Stopping existing server (PID: ${existingPid}) before restart`,
+      );
       await this.stop();
     }
 
@@ -115,11 +123,16 @@ export class LlmServer {
     const child = spawn(
       binary,
       [
-        "-m", this.config.model,
-        "--host", this.config.host,
-        "--port", String(this.config.port),
-        "-ngl", String(this.config.ngl),
-        "--ctx-size", String(this.config.ctxSize),
+        "-m",
+        this.config.model,
+        "--host",
+        this.config.host,
+        "--port",
+        String(this.config.port),
+        "-ngl",
+        String(this.config.ngl),
+        "--ctx-size",
+        String(this.config.ctxSize),
       ],
       { detached: true, stdio: ["ignore", logFd, logFd] },
     );
@@ -132,7 +145,9 @@ export class LlmServer {
     }
 
     fs.writeFileSync(PATHS.llmPidFile, String(pid));
-    console.log(`[llm] Starting llama-server (PID: ${pid}, port: ${this.config.port})`);
+    console.log(
+      `[llm] Starting llama-server (PID: ${pid}, port: ${this.config.port})`,
+    );
 
     // Poll until ready
     const deadline = Date.now() + this.config.startupWaitSec * 1000;
@@ -158,8 +173,12 @@ export class LlmServer {
     }
 
     // Timeout — kill the process
-    try { process.kill(pid, "SIGKILL"); } catch {}
-    try { fs.unlinkSync(PATHS.llmPidFile); } catch {}
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {}
+    try {
+      fs.unlinkSync(PATHS.llmPidFile);
+    } catch {}
     throw new Error(
       `llama-server startup timed out after ${this.config.startupWaitSec}s — check ${PATHS.llmLogFile}`,
     );
@@ -181,7 +200,9 @@ export class LlmServer {
     }
 
     // SIGTERM
-    try { process.kill(pid, "SIGTERM"); } catch {}
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {}
 
     // Wait up to 5s
     const deadline = Date.now() + STOP_GRACE_MS;
@@ -198,7 +219,9 @@ export class LlmServer {
     }
 
     // Force kill
-    try { process.kill(pid, "SIGKILL"); } catch {}
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {}
     this.cleanupPidFile();
     console.log(`[llm] Server force-killed (PID: ${pid})`);
   }
@@ -235,7 +258,10 @@ export class LlmServer {
       pid: alive ? pid : null,
       port: this.config.port,
       model: this.config.model,
-      uptime: alive && this.startTime ? Math.floor((Date.now() - this.startTime) / 1000) : 0,
+      uptime:
+        alive && this.startTime
+          ? Math.floor((Date.now() - this.startTime) / 1000)
+          : 0,
     };
   }
 
@@ -253,7 +279,9 @@ export class LlmServer {
       }
       if (this.lastRequestTime === 0) return;
       if (Date.now() - this.lastRequestTime > timeoutMs) {
-        console.log(`[llm] Server idle for ${this.config.idleTimeoutMin}min, shutting down`);
+        console.log(
+          `[llm] Server idle for ${this.config.idleTimeoutMin}min, shutting down`,
+        );
         await this.stop();
       }
     }, checkInterval);
@@ -287,7 +315,9 @@ export class LlmServer {
   }
 
   private cleanupPidFile(): void {
-    try { fs.unlinkSync(PATHS.llmPidFile); } catch {}
+    try {
+      fs.unlinkSync(PATHS.llmPidFile);
+    } catch {}
     this.startTime = 0;
   }
 }

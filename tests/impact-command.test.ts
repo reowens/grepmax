@@ -52,7 +52,12 @@ describe("impact command", () => {
       { file: "/tmp/project/src/router.ts", sharedSymbols: 2 },
     ]);
     mockFindTests.mockResolvedValueOnce([
-      { file: "/tmp/project/tests/auth.test.ts", symbol: "testAuth", line: 5, hops: 0 },
+      {
+        file: "/tmp/project/tests/auth.test.ts",
+        symbol: "testAuth",
+        line: 5,
+        hops: 0,
+      },
     ]);
 
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -79,7 +84,9 @@ describe("impact command", () => {
     ]);
 
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    await (impact as Command).parseAsync(["handleAuth", "--agent"], { from: "user" });
+    await (impact as Command).parseAsync(["handleAuth", "--agent"], {
+      from: "user",
+    });
     const output = spy.mock.calls.map((c) => c[0]).join("\n");
     expect(output).toContain("dep:");
     expect(output).not.toContain("Impact analysis");
@@ -111,9 +118,12 @@ describe("impact command", () => {
     ]);
 
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    await (impact as Command).parseAsync(["handleAuth", "--no-tests", "--agent"], {
-      from: "user",
-    });
+    await (impact as Command).parseAsync(
+      ["handleAuth", "--no-tests", "--agent"],
+      {
+        from: "user",
+      },
+    );
     const output = spy.mock.calls.map((c) => c[0]).join("\n");
     expect(mockFindTests).not.toHaveBeenCalled();
     expect(output).toContain("dep:");

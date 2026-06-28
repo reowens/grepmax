@@ -5,9 +5,7 @@ import { Command } from "commander";
 import { CONFIG } from "../config";
 import { ensureGrammars } from "../lib/index/grammar-loader";
 import { readGlobalConfig } from "../lib/index/index-config";
-import {
-  createIndexingSpinner,
-} from "../lib/index/sync-helpers";
+import { createIndexingSpinner } from "../lib/index/sync-helpers";
 import { initialSync } from "../lib/index/syncer";
 import { ensureSetup } from "../lib/setup/setup-helpers";
 import { VectorDB } from "../lib/store/vector-db";
@@ -45,7 +43,11 @@ function getBlockedRoots(): Set<string> {
   );
 }
 
-function logBlockedAttempt(reason: string, attempted: string, extra?: Record<string, unknown>): void {
+function logBlockedAttempt(
+  reason: string,
+  attempted: string,
+  extra?: Record<string, unknown>,
+): void {
   try {
     const logPath = path.join(os.homedir(), ".gmax", "logs", "blocked-add.log");
     fs.mkdirSync(path.dirname(logPath), { recursive: true });
@@ -109,7 +111,9 @@ Examples:
         console.log(
           `${projectName} is already added (${existing.chunkCount ?? 0} chunks).`,
         );
-        console.log(`Run \`gmax index\` to re-index, or \`gmax index --reset\` for a full rebuild.`);
+        console.log(
+          `Run \`gmax index\` to re-index, or \`gmax index --reset\` for a full rebuild.`,
+        );
         return;
       }
 
@@ -141,12 +145,12 @@ Examples:
         }
 
         const names = children.map((c) => c.name).join(", ");
-        console.log(
-          `Absorbing ${children.length} sub-project(s): ${names}`,
-        );
+        console.log(`Absorbing ${children.length} sub-project(s): ${names}`);
 
-        const { ensureDaemonRunning: checkDaemon, sendStreamingCommand: sendCmd } =
-          await import("../lib/utils/daemon-client");
+        const {
+          ensureDaemonRunning: checkDaemon,
+          sendStreamingCommand: sendCmd,
+        } = await import("../lib/utils/daemon-client");
         const daemonUp = await checkDaemon();
 
         for (const child of children) {
@@ -157,7 +161,9 @@ Examples:
             // Direct mode: delete vectors and MetaCache entries
             const childPaths = ensureProjectPaths(child.root);
             const db = new VectorDB(childPaths.lancedbDir);
-            const childPrefix = child.root.endsWith("/") ? child.root : `${child.root}/`;
+            const childPrefix = child.root.endsWith("/")
+              ? child.root
+              : `${child.root}/`;
             await db.deletePathsWithPrefix(childPrefix);
             const { MetaCache } = await import("../lib/store/meta-cache");
             const mc = new MetaCache(childPaths.lmdbPath);
@@ -187,7 +193,9 @@ Examples:
       });
 
       if (!opts.index) {
-        console.log(`Registered ${projectName}. Run \`gmax index\` when ready to index.`);
+        console.log(
+          `Registered ${projectName}. Run \`gmax index\` when ready to index.`,
+        );
         return;
       }
 
@@ -200,7 +208,9 @@ Examples:
         `Adding ${projectName}...`,
       );
 
-      const { ensureDaemonRunning, sendStreamingCommand } = await import("../lib/utils/daemon-client");
+      const { ensureDaemonRunning, sendStreamingCommand } = await import(
+        "../lib/utils/daemon-client"
+      );
       const pendingEntry = {
         root: projectRoot,
         name: projectName,
@@ -240,7 +250,8 @@ Examples:
           });
 
           const failedFiles = (done.failedFiles as number) ?? 0;
-          const failedSuffix = failedFiles > 0 ? ` · ${failedFiles} failed` : "";
+          const failedSuffix =
+            failedFiles > 0 ? ` · ${failedFiles} failed` : "";
           spinner.succeed(
             `Added ${projectName} (${done.total} files, ${done.indexed} chunks${failedSuffix})`,
           );

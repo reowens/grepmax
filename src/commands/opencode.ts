@@ -178,7 +178,9 @@ async function install() {
     // 5. Clean up stale MCP registration if present
     if (fs.existsSync(CONFIG_PATH)) {
       try {
-        const config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8") || "{}");
+        const config = JSON.parse(
+          fs.readFileSync(CONFIG_PATH, "utf-8") || "{}",
+        );
         if (config.mcp?.gmax) {
           delete config.mcp.gmax;
           fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));

@@ -9,9 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gmax-stalehint-test-"));
 
 vi.mock("../src/config", async () => {
-  const actual = await vi.importActual<typeof import("../src/config")>(
-    "../src/config",
-  );
+  const actual =
+    await vi.importActual<typeof import("../src/config")>("../src/config");
   return {
     ...actual,
     PATHS: { ...actual.PATHS, globalRoot: tmpRoot },
@@ -116,7 +115,9 @@ describe("maybeWarnStaleChunker", () => {
 
   it("warns on STDERR for a stale, indexed project", async () => {
     writeRegistry([{ name: "foo", root: "/proj/foo", chunkerVersion: 2 }]);
-    const { maybeWarnStaleChunker } = await import("../src/lib/utils/stale-hint");
+    const { maybeWarnStaleChunker } = await import(
+      "../src/lib/utils/stale-hint"
+    );
     maybeWarnStaleChunker("/proj/foo");
     const out = emitted();
     expect(out).toMatch(/foo/);
@@ -127,9 +128,15 @@ describe("maybeWarnStaleChunker", () => {
   it("stays silent for a current index", async () => {
     const { CONFIG } = await import("../src/config");
     writeRegistry([
-      { name: "foo", root: "/proj/foo", chunkerVersion: CONFIG.CHUNKER_VERSION },
+      {
+        name: "foo",
+        root: "/proj/foo",
+        chunkerVersion: CONFIG.CHUNKER_VERSION,
+      },
     ]);
-    const { maybeWarnStaleChunker } = await import("../src/lib/utils/stale-hint");
+    const { maybeWarnStaleChunker } = await import(
+      "../src/lib/utils/stale-hint"
+    );
     maybeWarnStaleChunker("/proj/foo");
     expect(emitted()).toBe("");
   });
@@ -137,14 +144,18 @@ describe("maybeWarnStaleChunker", () => {
   it("respects GMAX_NO_STALE_HINT=1", async () => {
     process.env.GMAX_NO_STALE_HINT = "1";
     writeRegistry([{ name: "foo", root: "/proj/foo", chunkerVersion: 2 }]);
-    const { maybeWarnStaleChunker } = await import("../src/lib/utils/stale-hint");
+    const { maybeWarnStaleChunker } = await import(
+      "../src/lib/utils/stale-hint"
+    );
     maybeWarnStaleChunker("/proj/foo");
     expect(emitted()).toBe("");
   });
 
   it("emits at most once per process", async () => {
     writeRegistry([{ name: "foo", root: "/proj/foo", chunkerVersion: 2 }]);
-    const { maybeWarnStaleChunker } = await import("../src/lib/utils/stale-hint");
+    const { maybeWarnStaleChunker } = await import(
+      "../src/lib/utils/stale-hint"
+    );
     maybeWarnStaleChunker("/proj/foo");
     maybeWarnStaleChunker("/proj/foo");
     expect(errSpy.mock.calls.length).toBe(1);
@@ -154,21 +165,27 @@ describe("maybeWarnStaleChunker", () => {
     writeRegistry([
       { name: "foo", root: "/proj/foo", chunkerVersion: 2, status: "pending" },
     ]);
-    const { maybeWarnStaleChunker } = await import("../src/lib/utils/stale-hint");
+    const { maybeWarnStaleChunker } = await import(
+      "../src/lib/utils/stale-hint"
+    );
     maybeWarnStaleChunker("/proj/foo");
     expect(emitted()).toBe("");
   });
 
   it("stays silent for an unregistered root", async () => {
     writeRegistry([{ name: "foo", root: "/proj/foo", chunkerVersion: 2 }]);
-    const { maybeWarnStaleChunker } = await import("../src/lib/utils/stale-hint");
+    const { maybeWarnStaleChunker } = await import(
+      "../src/lib/utils/stale-hint"
+    );
     maybeWarnStaleChunker("/proj/other");
     expect(emitted()).toBe("");
   });
 
   it("renders a parseable TSV record in --agent mode", async () => {
     writeRegistry([{ name: "foo", root: "/proj/foo", chunkerVersion: 2 }]);
-    const { maybeWarnStaleChunker } = await import("../src/lib/utils/stale-hint");
+    const { maybeWarnStaleChunker } = await import(
+      "../src/lib/utils/stale-hint"
+    );
     maybeWarnStaleChunker("/proj/foo", { agent: true });
     const out = emitted();
     expect(out).toMatch(/^stale_chunker\t/);

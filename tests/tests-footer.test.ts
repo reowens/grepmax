@@ -53,9 +53,7 @@ describe("tests-footer", () => {
   describe("renderTestsFooterHuman", () => {
     it("emits a tests (N): header and indented lines", () => {
       const lines = renderTestsFooterHuman(
-        [
-          { file: "/proj/tests/a.test.ts", symbol: "testA", line: 9, hops: 0 },
-        ],
+        [{ file: "/proj/tests/a.test.ts", symbol: "testA", line: 9, hops: 0 }],
         "/proj",
       );
       expect(lines[0]).toBe("");
@@ -79,7 +77,12 @@ describe("tests-footer", () => {
       vi.mocked(findTests).mockResolvedValueOnce([
         { file: "/proj/tests/a.test.ts", symbol: "testA", line: 9, hops: 0 },
       ]);
-      const result = await fetchTestsForFooter("foo", fakeDb, "/proj/", undefined);
+      const result = await fetchTestsForFooter(
+        "foo",
+        fakeDb,
+        "/proj/",
+        undefined,
+      );
       expect(result).toHaveLength(1);
     });
 
@@ -88,7 +91,12 @@ describe("tests-footer", () => {
         () => new Promise((resolve) => setTimeout(() => resolve([]), 5000)),
       );
       const start = Date.now();
-      const result = await fetchTestsForFooter("foo", fakeDb, "/proj/", undefined);
+      const result = await fetchTestsForFooter(
+        "foo",
+        fakeDb,
+        "/proj/",
+        undefined,
+      );
       const elapsed = Date.now() - start;
       expect(result).toBeNull();
       expect(elapsed).toBeLessThan(2000);

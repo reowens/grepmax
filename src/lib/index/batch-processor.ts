@@ -60,19 +60,14 @@ export class ProjectBatchProcessor {
       );
       return Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : 120_000;
     })();
-    this.batchTimeoutMs = Math.max(
-      Math.ceil(taskTimeoutMs * 1.5),
-      120_000,
-    );
-
+    this.batchTimeoutMs = Math.max(Math.ceil(taskTimeoutMs * 1.5), 120_000);
   }
 
   handleFileEvent(event: "change" | "unlink", absPath: string): void {
     if (this.closed) return;
     const ext = path.extname(absPath).toLowerCase();
     const bn = path.basename(absPath).toLowerCase();
-    if (!INDEXABLE_EXTENSIONS.has(ext) && !INDEXABLE_EXTENSIONS.has(bn))
-      return;
+    if (!INDEXABLE_EXTENSIONS.has(ext) && !INDEXABLE_EXTENSIONS.has(bn)) return;
     // Safety net: reject paths with ignored directory segments.
     // FSEvents can leak events during overflow before the watcher drops them.
     if (IGNORED_PATH_SEGMENTS_RE.test(absPath)) return;
@@ -113,7 +108,10 @@ export class ProjectBatchProcessor {
     const batchAc = new AbortController();
     this.currentBatchAc = batchAc;
     const batchTimeout = setTimeout(() => {
-      log(this.wtag, `Batch timed out after ${this.batchTimeoutMs}ms, aborting`);
+      log(
+        this.wtag,
+        `Batch timed out after ${this.batchTimeoutMs}ms, aborting`,
+      );
       batchAc.abort();
     }, this.batchTimeoutMs);
 
@@ -128,7 +126,10 @@ export class ProjectBatchProcessor {
       this.pending.delete(key);
     }
     const filenames = [...batch.keys()].map((p) => path.basename(p));
-    log(this.wtag, `Processing ${batch.size} changed files: ${filenames.join(", ")}`);
+    log(
+      this.wtag,
+      `Processing ${batch.size} changed files: ${filenames.join(", ")}`,
+    );
 
     const start = Date.now();
     let reindexed = 0;
@@ -148,8 +149,14 @@ export class ProjectBatchProcessor {
         if (batchAc.signal.aborted) break;
         attempted.add(absPath);
         processed++;
-        if (batch.size > 10 && (processed % 10 === 0 || processed === batch.size)) {
-          log(this.wtag, `Progress: ${processed}/${batch.size} (${reindexed} reindexed)`);
+        if (
+          batch.size > 10 &&
+          (processed % 10 === 0 || processed === batch.size)
+        ) {
+          log(
+            this.wtag,
+            `Progress: ${processed}/${batch.size} (${reindexed} reindexed)`,
+          );
         }
 
         if (event === "unlink") {
@@ -180,10 +187,13 @@ export class ProjectBatchProcessor {
             }
           }
 
-          const result = await pool.processFile({
-            path: absPath,
-            absolutePath: absPath,
-          }, batchAc.signal);
+          const result = await pool.processFile(
+            {
+              path: absPath,
+              absolutePath: absPath,
+            },
+            batchAc.signal,
+          );
 
           const metaEntry: MetaEntry = {
             hash: result.hash,
@@ -234,7 +244,6 @@ export class ProjectBatchProcessor {
           this.pending.set(absPath, event);
         }
       }
-
 
       // Flush to VectorDB: insert first, then delete old (preserving new)
       const newIds = vectors.map((v) => v.id);
@@ -323,8 +332,13 @@ export class ProjectBatchProcessor {
           }
         }
         if (dropped > 0) {
-          const droppedPaths = [...batch.keys()].filter(p => !requeued.has(p));
-          log(this.wtag, `Dropped ${dropped} file(s) after ${MAX_RETRIES} retries: ${droppedPaths.map(p => path.basename(p)).join(", ")}`);
+          const droppedPaths = [...batch.keys()].filter(
+            (p) => !requeued.has(p),
+          );
+          log(
+            this.wtag,
+            `Dropped ${dropped} file(s) after ${MAX_RETRIES} retries: ${droppedPaths.map((p) => path.basename(p)).join(", ")}`,
+          );
         }
         backoffOverrideMs = this.pending.size > 0 ? backoffMs : 0;
       }
@@ -335,7 +349,10 @@ export class ProjectBatchProcessor {
       if (this.pending.size > 0) {
         if (backoffOverrideMs > 0) {
           if (this.debounceTimer) clearTimeout(this.debounceTimer);
-          this.debounceTimer = setTimeout(() => this.processBatch(), backoffOverrideMs);
+          this.debounceTimer = setTimeout(
+            () => this.processBatch(),
+            backoffOverrideMs,
+          );
         } else {
           this.scheduleBatch();
         }

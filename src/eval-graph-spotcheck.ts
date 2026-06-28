@@ -21,12 +21,15 @@ const CANDIDATES = [
 
 function toStrArr(v: unknown): string[] {
   if (!v) return [];
-  if (Array.isArray(v)) return v.filter((x): x is string => typeof x === "string");
+  if (Array.isArray(v))
+    return v.filter((x): x is string => typeof x === "string");
   const m = v as { toArray?: () => unknown };
   if (typeof m.toArray === "function") {
     try {
       const a = m.toArray();
-      return Array.isArray(a) ? a.filter((x): x is string => typeof x === "string") : [];
+      return Array.isArray(a)
+        ? a.filter((x): x is string => typeof x === "string")
+        : [];
     } catch {
       return [];
     }
@@ -41,7 +44,13 @@ async function main() {
     console.log(`\n── ${file}`);
     const rows = (await table
       .query()
-      .select(["start_line", "end_line", "chunk_type", "defined_symbols", "referenced_symbols"])
+      .select([
+        "start_line",
+        "end_line",
+        "chunk_type",
+        "defined_symbols",
+        "referenced_symbols",
+      ])
       .where(`path = '${escapeSqlString(file)}'`)
       .limit(20)
       .toArray()) as Record<string, unknown>[];
@@ -55,9 +64,9 @@ async function main() {
       const hasBE = refs.includes("BeyondError");
       console.log(
         `  lines ${r.start_line}-${r.end_line} (${r.chunk_type})  ` +
-        `defs=[${defs.slice(0, 4).join(",")}${defs.length > 4 ? "…" : ""}]  ` +
-        `refs(${refs.length})=[${refs.slice(0, 8).join(",")}${refs.length > 8 ? "…" : ""}]  ` +
-        `BeyondError-ref=${hasBE ? "✓" : "✗"}`,
+          `defs=[${defs.slice(0, 4).join(",")}${defs.length > 4 ? "…" : ""}]  ` +
+          `refs(${refs.length})=[${refs.slice(0, 8).join(",")}${refs.length > 8 ? "…" : ""}]  ` +
+          `BeyondError-ref=${hasBE ? "✓" : "✗"}`,
       );
     }
   }

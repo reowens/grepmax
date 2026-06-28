@@ -160,7 +160,9 @@ describe("log command", () => {
     expect(callArgs.paths).toContain("/tmp/project/src/b.ts");
     expect(callArgs.follow).toBe(false);
 
-    const tsvLine = spy.mock.calls.map((c) => String(c[0])).find((l) => l.includes("abc1234"));
+    const tsvLine = spy.mock.calls
+      .map((c) => String(c[0]))
+      .find((l) => l.includes("abc1234"));
     expect(tsvLine).toBeDefined();
     const touchedFiles = (tsvLine as string).split("\t")[7];
     expect(touchedFiles).toContain("src/a.ts");
@@ -216,9 +218,12 @@ describe("log command", () => {
     (getCommitHistory as ReturnType<typeof vi.fn>).mockReturnValue([]);
 
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    await (log as Command).parseAsync(["src/auth.ts", "--no-follow", "--agent"], {
-      from: "user",
-    });
+    await (log as Command).parseAsync(
+      ["src/auth.ts", "--no-follow", "--agent"],
+      {
+        from: "user",
+      },
+    );
     const callArgs = (getCommitHistory as ReturnType<typeof vi.fn>).mock
       .calls[0][0];
     expect(callArgs.follow).toBe(false);

@@ -37,7 +37,12 @@ function createMockDb(data: Record<string, any[]>) {
   return { ensureTable: async () => mockTable } as any;
 }
 
-function makeRow(symbol: string, file: string, line: number, refs: string[] = []) {
+function makeRow(
+  symbol: string,
+  file: string,
+  line: number,
+  refs: string[] = [],
+) {
   return {
     path: file,
     start_line: line,
@@ -53,10 +58,16 @@ function makeRow(symbol: string, file: string, line: number, refs: string[] = []
 describe("GraphBuilder", () => {
   it("buildGraph returns center with callers and callees", async () => {
     const db = createMockDb({
-      "defined_symbols, 'handleAuth'": [makeRow("handleAuth", "/src/auth.ts", 10, ["validate", "respond"])],
-      "referenced_symbols, 'handleAuth'": [makeRow("router", "/src/router.ts", 5, ["handleAuth"])],
+      "defined_symbols, 'handleAuth'": [
+        makeRow("handleAuth", "/src/auth.ts", 10, ["validate", "respond"]),
+      ],
+      "referenced_symbols, 'handleAuth'": [
+        makeRow("router", "/src/router.ts", 5, ["handleAuth"]),
+      ],
       "defined_symbols, 'validate'": [makeRow("validate", "/src/jwt.ts", 20)],
-      "defined_symbols, 'respond'": [makeRow("respond", "/src/response.ts", 30)],
+      "defined_symbols, 'respond'": [
+        makeRow("respond", "/src/response.ts", 30),
+      ],
     });
     const builder = new GraphBuilder(db);
     const graph = await builder.buildGraph("handleAuth");
@@ -128,8 +139,11 @@ describe("GraphBuilder", () => {
 
   it("getImporters finds files with import statements", async () => {
     const db = createMockDb({
-      "import": [
-        { path: "/src/commands/mcp.ts", content: 'import { VectorDB } from "../store"' },
+      import: [
+        {
+          path: "/src/commands/mcp.ts",
+          content: 'import { VectorDB } from "../store"',
+        },
         { path: "/src/index.ts", content: 'import { VectorDB } from "./db"' },
         { path: "/src/store.ts", content: "export class VectorDB {}" },
       ],

@@ -7,10 +7,7 @@ import { gracefulExit } from "../lib/utils/exit";
 import { isLocked } from "../lib/utils/lock";
 import { listProjects } from "../lib/utils/project-registry";
 import { findProjectRoot } from "../lib/utils/project-root";
-import {
-  getWatcherForProject,
-  listWatchers,
-} from "../lib/utils/watcher-store";
+import { getWatcherForProject, listWatchers } from "../lib/utils/watcher-store";
 
 const style = {
   bold: (s: string) => `\x1b[1m${s}\x1b[22m`,
@@ -77,7 +74,9 @@ Examples:
       const db = new VectorDB(PATHS.lancedbDir);
       const table = await db.ensureTable();
       for (const project of projects) {
-        const prefix = project.root.endsWith("/") ? project.root : `${project.root}/`;
+        const prefix = project.root.endsWith("/")
+          ? project.root
+          : `${project.root}/`;
         const rows = await table
           .query()
           .select(["id"])
@@ -87,7 +86,9 @@ Examples:
       }
       await db.close();
     } catch (err) {
-      console.warn(`[status] Failed to query LanceDB for live chunk counts, using cached counts`);
+      console.warn(
+        `[status] Failed to query LanceDB for live chunk counts, using cached counts`,
+      );
     }
 
     if (projects.length === 0) {
@@ -162,9 +163,7 @@ Examples:
     }
 
     if (currentRoot) {
-      console.log(
-        `\n${style.dim("Current")}: ${shortenPath(currentRoot)}`,
-      );
+      console.log(`\n${style.dim("Current")}: ${shortenPath(currentRoot)}`);
     }
 
     console.log();

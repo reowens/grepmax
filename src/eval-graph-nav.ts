@@ -50,7 +50,10 @@ const SELF = "src/eval-graph-nav.ts"; // exclude from grep + graph (self-referen
 // grep can't tell those apart from genuine uses, so they would manufacture
 // phantom "expected callers" that no correct graph ever surfaces. Excluded from
 // both the grep truth and the getCallers set so the exclusion stays symmetric.
-const FIXTURE_FILES = new Set([SELF, "tests/graph-edges.type-position.test.ts"]);
+const FIXTURE_FILES = new Set([
+  SELF,
+  "tests/graph-edges.type-position.test.ts",
+]);
 const rel = (p: string) => p.replace(`${GMAX_ROOT}/`, "");
 
 // "callable": reached via call/construct sites the graph captures — its

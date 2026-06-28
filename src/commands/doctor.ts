@@ -2,11 +2,24 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Command } from "commander";
-import { CONFIG, DISK_CRITICAL_BYTES, DISK_LOW_BYTES, describeChunkerGap, describeEmbeddingGap, MODEL_IDS, MODEL_TIERS, PATHS } from "../config";
+import {
+  CONFIG,
+  DISK_CRITICAL_BYTES,
+  DISK_LOW_BYTES,
+  describeChunkerGap,
+  describeEmbeddingGap,
+  MODEL_IDS,
+  MODEL_TIERS,
+  PATHS,
+} from "../config";
 import { readGlobalConfig } from "../lib/index/index-config";
 import { gracefulExit } from "../lib/utils/exit";
 import { isProcessAlive, parseLock, removeLock } from "../lib/utils/lock";
-import { listProjects, registerProject, removeProject } from "../lib/utils/project-registry";
+import {
+  listProjects,
+  registerProject,
+  removeProject,
+} from "../lib/utils/project-registry";
 import { findProjectRoot } from "../lib/utils/project-root";
 
 function formatSize(bytes: number): string {
@@ -36,7 +49,11 @@ function getDirectorySize(dirPath: string): number {
 
 export const doctor = new Command("doctor")
   .description("Check installation health, models, and index status")
-  .option("--fix", "Auto-fix detected issues (compact, prune, remove stale locks)", false)
+  .option(
+    "--fix",
+    "Auto-fix detected issues (compact, prune, remove stale locks)",
+    false,
+  )
   .option("--agent", "Compact output for AI agents", false)
   .action(async (opts) => {
     if (!opts.agent) console.log("gmax Doctor\n");
@@ -59,7 +76,9 @@ export const doctor = new Command("doctor")
     const globalConfig = readGlobalConfig();
     const tier = MODEL_TIERS[globalConfig.modelTier] ?? MODEL_TIERS.small;
     if (!MODEL_TIERS[globalConfig.modelTier]) {
-      console.log(`WARN  Unknown model tier '${globalConfig.modelTier}', falling back to 'small'`);
+      console.log(
+        `WARN  Unknown model tier '${globalConfig.modelTier}', falling back to 'small'`,
+      );
     }
     const embedModel =
       globalConfig.embedMode === "gpu" ? tier.mlxModel : tier.onnxModel;
@@ -77,7 +96,9 @@ export const doctor = new Command("doctor")
       });
 
       modelStatuses.forEach(({ id, exists }) => {
-        console.log(`${exists ? "ok" : "WARN"}  ${id}: ${exists ? "downloaded" : "will download on first use"}`);
+        console.log(
+          `${exists ? "ok" : "WARN"}  ${id}: ${exists ? "downloaded" : "will download on first use"}`,
+        );
       });
 
       console.log(`\nLocal Project: ${process.cwd()}`);
@@ -98,7 +119,10 @@ export const doctor = new Command("doctor")
         const res = await fetch("http://127.0.0.1:8100/health");
         embedUp = res.ok;
       } catch (err: any) {
-        embedError = err.code === "ECONNREFUSED" ? "connection refused" : (err.message || String(err));
+        embedError =
+          err.code === "ECONNREFUSED"
+            ? "connection refused"
+            : err.message || String(err);
       }
       console.log(
         `${embedUp ? "ok" : "WARN"}  MLX Embed: ${embedUp ? "running (port 8100)" : `not running${embedError ? ` (${embedError})` : ""}`}`,
@@ -119,7 +143,9 @@ export const doctor = new Command("doctor")
           if (dim === expectedDim) {
             console.log(`ok  Embedding: working (${dim}d, ${ms}ms)`);
           } else {
-            console.log(`FAIL  Embedding: wrong dimensions (got ${dim}, expected ${expectedDim})`);
+            console.log(
+              `FAIL  Embedding: wrong dimensions (got ${dim}, expected ${expectedDim})`,
+            );
           }
         } catch (err: any) {
           console.log(`FAIL  Embedding: test failed (${err.message || err})`);
@@ -209,7 +235,12 @@ export const doctor = new Command("doctor")
       try {
         const diskStats = fs.statfsSync(PATHS.lancedbDir);
         availBytes = diskStats.bavail * diskStats.bsize;
-        diskLevel = availBytes < DISK_CRITICAL_BYTES ? "CRITICAL" : availBytes < DISK_LOW_BYTES ? "LOW" : "ok";
+        diskLevel =
+          availBytes < DISK_CRITICAL_BYTES
+            ? "CRITICAL"
+            : availBytes < DISK_LOW_BYTES
+              ? "LOW"
+              : "ok";
       } catch {}
 
       const staleChunkerProjects = projects.filter(
@@ -227,7 +258,10 @@ export const doctor = new Command("doctor")
           p.status === "indexed" &&
           describeEmbeddingGap(
             { modelTier: p.modelTier, vectorDim: p.vectorDim },
-            { modelTier: globalConfig.modelTier, vectorDim: globalConfig.vectorDim },
+            {
+              modelTier: globalConfig.modelTier,
+              vectorDim: globalConfig.vectorDim,
+            },
           ) !== null,
       );
 
@@ -267,7 +301,10 @@ export const doctor = new Command("doctor")
         for (const p of staleEmbeddingProjects) {
           const gap = describeEmbeddingGap(
             { modelTier: p.modelTier, vectorDim: p.vectorDim },
-            { modelTier: globalConfig.modelTier, vectorDim: globalConfig.vectorDim },
+            {
+              modelTier: globalConfig.modelTier,
+              vectorDim: globalConfig.vectorDim,
+            },
           );
           if (!gap) continue;
           console.log(
@@ -347,7 +384,8 @@ export const doctor = new Command("doctor")
         // means newer edges are missing.
         if (staleChunkerProjects.length > 0) {
           const anyBreaking = staleChunkerProjects.some(
-            (p) => describeChunkerGap(p.chunkerVersion)?.severity === "breaking",
+            (p) =>
+              describeChunkerGap(p.chunkerVersion)?.severity === "breaking",
           );
           console.log(
             `${anyBreaking ? "WARN" : "INFO"}  Stale chunker: ${staleChunkerProjects.length} project(s) indexed before chunker v${CONFIG.CHUNKER_VERSION} — run 'gmax doctor --fix' to reindex`,
@@ -372,7 +410,10 @@ export const doctor = new Command("doctor")
           const gaps = staleEmbeddingProjects.map((p) =>
             describeEmbeddingGap(
               { modelTier: p.modelTier, vectorDim: p.vectorDim },
-              { modelTier: globalConfig.modelTier, vectorDim: globalConfig.vectorDim },
+              {
+                modelTier: globalConfig.modelTier,
+                vectorDim: globalConfig.vectorDim,
+              },
             ),
           );
           const anyBreaking = gaps.some((g) => g?.severity === "breaking");
@@ -413,14 +454,20 @@ export const doctor = new Command("doctor")
             const { MetaCache } = await import("../lib/store/meta-cache");
             const mc = new MetaCache(PATHS.lmdbPath);
 
-            for (const project of projects.filter(p => p.status === "indexed")) {
-              const prefix = project.root.endsWith("/") ? project.root : `${project.root}/`;
+            for (const project of projects.filter(
+              (p) => p.status === "indexed",
+            )) {
+              const prefix = project.root.endsWith("/")
+                ? project.root
+                : `${project.root}/`;
               const cachedCount = (await mc.getKeysWithPrefix(prefix)).size;
               const vectorCount = await db.countDistinctFilesForPath(prefix);
               if (cachedCount > 0) {
                 const pct = Math.round((vectorCount / cachedCount) * 100);
                 const status = pct >= 80 ? "ok" : "WARN";
-                console.log(`${status}  ${project.name || path.basename(project.root)}: ${vectorCount} indexed / ${cachedCount} cached (${pct}%)`);
+                console.log(
+                  `${status}  ${project.name || path.basename(project.root)}: ${vectorCount} indexed / ${cachedCount} cached (${pct}%)`,
+                );
               }
             }
 
@@ -442,7 +489,8 @@ export const doctor = new Command("doctor")
         }
 
         if (needsOptimize) {
-          if (!opts.agent) console.log("...  Running optimize (compact + prune)...");
+          if (!opts.agent)
+            console.log("...  Running optimize (compact + prune)...");
           await db.optimize(3, 0);
           if (!opts.agent) console.log("ok  Optimize complete");
           fixed++;
@@ -474,7 +522,8 @@ export const doctor = new Command("doctor")
           } else {
             for (const p of staleChunkerProjects) {
               const name = p.name || path.basename(p.root);
-              if (!opts.agent) console.log(`...  Reindexing ${name} (--reset)...`);
+              if (!opts.agent)
+                console.log(`...  Reindexing ${name} (--reset)...`);
               const done = await sendStreamingCommand(
                 { cmd: "index", root: p.root, reset: true },
                 () => {},
@@ -489,7 +538,9 @@ export const doctor = new Command("doctor")
                 });
                 const chunks = (done.indexed as number) ?? 0;
                 if (opts.agent) {
-                  console.log(`stale_chunker_reindexed\tname=${name}\tchunks=${chunks}`);
+                  console.log(
+                    `stale_chunker_reindexed\tname=${name}\tchunks=${chunks}`,
+                  );
                 } else {
                   console.log(`ok  ${name} reindexed (${chunks} chunks)`);
                 }

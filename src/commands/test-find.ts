@@ -24,12 +24,14 @@ export const testFind = new Command("test")
   .option(
     "--in <subpath>",
     "Restrict to a sub-path of the project (repeatable)",
-    (value: string, prev: string[] | undefined) => (prev ? [...prev, value] : [value]),
+    (value: string, prev: string[] | undefined) =>
+      prev ? [...prev, value] : [value],
   )
   .option(
     "--exclude <subpath>",
     "Exclude a sub-path of the project (repeatable)",
-    (value: string, prev: string[] | undefined) => (prev ? [...prev, value] : [value]),
+    (value: string, prev: string[] | undefined) =>
+      prev ? [...prev, value] : [value],
   )
   .option("--agent", "Compact output for AI agents", false)
   .action(async (target, opts) => {
@@ -113,7 +115,9 @@ export const testFind = new Command("test")
       process.exitCode = 1;
     } finally {
       if (vectorDb) {
-        try { await vectorDb.close(); } catch {}
+        try {
+          await vectorDb.close();
+        } catch {}
       }
       await gracefulExit();
     }

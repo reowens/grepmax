@@ -76,7 +76,10 @@ interface SeedCase {
 // the honest place to assert "an irrelevant seed must not displace the winner".
 const REPO_ROOTS: Record<NonNullable<SeedCase["repo"]>, string> = {
   gmax: path.join(process.env.HOME ?? "", "Development/beyond/tools/gmax"),
-  express: path.join(process.env.HOME ?? "", "Development/sandbox/bench-fixtures/express"),
+  express: path.join(
+    process.env.HOME ?? "",
+    "Development/sandbox/bench-fixtures/express",
+  ),
 };
 
 const GMAX_CASES: SeedCase[] = [
@@ -212,7 +215,8 @@ function judge(kind: SeedKind, baseline: number, seeded: number): boolean {
 }
 
 async function run() {
-  const jsonMode = process.argv.includes("--json") || process.env.GMAX_EVAL_JSON === "1";
+  const jsonMode =
+    process.argv.includes("--json") || process.env.GMAX_EVAL_JSON === "1";
   const topK = 25;
   const rerank = process.env.GMAX_EVAL_RERANK === "1";
 
@@ -222,7 +226,13 @@ async function run() {
   const results: SeedResult[] = [];
   for (const c of GMAX_CASES) {
     const pathPrefix = `${REPO_ROOTS[c.repo ?? "gmax"]}/`;
-    const baseRes = await searcher.search(c.query, topK, { rerank }, undefined, pathPrefix);
+    const baseRes = await searcher.search(
+      c.query,
+      topK,
+      { rerank },
+      undefined,
+      pathPrefix,
+    );
     const seededRes = await searcher.search(
       c.query,
       topK,
@@ -251,13 +261,24 @@ async function run() {
   const summary = {
     cases: results.length,
     passes,
-    route: { total: byKind("route").length, pass: byKind("route").filter((r) => r.pass).length },
-    recover: { total: byKind("recover").length, pass: byKind("recover").filter((r) => r.pass).length },
-    guard: { total: byKind("guard").length, pass: byKind("guard").filter((r) => r.pass).length },
+    route: {
+      total: byKind("route").length,
+      pass: byKind("route").filter((r) => r.pass).length,
+    },
+    recover: {
+      total: byKind("recover").length,
+      pass: byKind("recover").filter((r) => r.pass).length,
+    },
+    guard: {
+      total: byKind("guard").length,
+      pass: byKind("guard").filter((r) => r.pass).length,
+    },
   };
 
   if (jsonMode) {
-    process.stdout.write(`${JSON.stringify({ rerank, summary, results }, null, 2)}\n`);
+    process.stdout.write(
+      `${JSON.stringify({ rerank, summary, results }, null, 2)}\n`,
+    );
   } else {
     console.log(`Seed eval (rerank=${rerank ? "on" : "off"})\n`);
     const fmtRank = (r: number) => (r === 0 ? "—" : `#${r}`);
@@ -265,7 +286,9 @@ async function run() {
       const arrow = `${fmtRank(r.baselineRank)} → ${fmtRank(r.seededRank)}`;
       const mark = r.pass ? "✓" : "✗";
       const seed = `[${r.kind}]`;
-      console.log(`  ${mark} ${r.id.padEnd(18)} ${seed.padEnd(10)} ${arrow.padEnd(12)} ${r.expectedFile}`);
+      console.log(
+        `  ${mark} ${r.id.padEnd(18)} ${seed.padEnd(10)} ${arrow.padEnd(12)} ${r.expectedFile}`,
+      );
       if (r.note) console.log(`      ${r.note}`);
     }
     console.log(

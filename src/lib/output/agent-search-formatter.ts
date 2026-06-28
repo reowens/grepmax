@@ -92,9 +92,31 @@ function firstSignatureLine(chunk: ChunkType): string {
 }
 
 const QUERY_STOPWORDS = new Set([
-  "the", "and", "for", "with", "that", "this", "from", "into", "where",
-  "when", "how", "what", "does", "not", "are", "was", "has", "have", "its",
-  "all", "can", "use", "uses", "using", "code",
+  "the",
+  "and",
+  "for",
+  "with",
+  "that",
+  "this",
+  "from",
+  "into",
+  "where",
+  "when",
+  "how",
+  "what",
+  "does",
+  "not",
+  "are",
+  "was",
+  "has",
+  "have",
+  "its",
+  "all",
+  "can",
+  "use",
+  "uses",
+  "using",
+  "code",
 ]);
 
 function extractQueryTerms(query: string | undefined): string[] {

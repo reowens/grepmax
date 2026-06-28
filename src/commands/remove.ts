@@ -32,7 +32,10 @@ function confirm(message: string): Promise<boolean> {
 
 export const remove = new Command("remove")
   .description("Remove a project from the gmax index")
-  .argument("[dir-or-name]", "Directory or registered project name (defaults to current directory)")
+  .argument(
+    "[dir-or-name]",
+    "Directory or registered project name (defaults to current directory)",
+  )
   .option("-f, --force", "Skip confirmation prompt", false)
   .addHelpText(
     "after",
@@ -87,7 +90,9 @@ Examples:
         }
       }
 
-      const { isDaemonRunning, sendStreamingCommand } = await import("../lib/utils/daemon-client");
+      const { isDaemonRunning, sendStreamingCommand } = await import(
+        "../lib/utils/daemon-client"
+      );
 
       if (await isDaemonRunning()) {
         // Daemon mode: IPC handles unwatch + LanceDB delete + MetaCache cleanup
@@ -122,9 +127,7 @@ Examples:
       removeProject(projectRoot);
       removeMarker(projectRoot);
 
-      console.log(
-        `Removed ${projectName}${chunkStr}.`,
-      );
+      console.log(`Removed ${projectName}${chunkStr}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       console.error("Failed to remove project:", message);

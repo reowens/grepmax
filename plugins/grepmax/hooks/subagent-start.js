@@ -33,10 +33,7 @@ function isProjectRegistered() {
 }
 
 // Agents that already know about gmax or can't use Bash
-const SKIP_AGENT_TYPES = [
-  "grepmax:semantic-explore",
-  "statusline-setup",
-];
+const SKIP_AGENT_TYPES = ["grepmax:semantic-explore", "statusline-setup"];
 
 async function main() {
   const input = await readStdin();

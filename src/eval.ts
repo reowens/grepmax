@@ -635,7 +635,13 @@ async function run() {
 
   for (const c of cases) {
     const queryStart = performance.now();
-    const res = await searcher.search(c.query, topK, { rerank }, undefined, evalPathPrefix);
+    const res = await searcher.search(
+      c.query,
+      topK,
+      { rerank },
+      undefined,
+      evalPathPrefix,
+    );
     const queryEnd = performance.now();
     const timeMs = queryEnd - queryStart;
 
@@ -668,9 +674,7 @@ async function run() {
     process.env.GMAX_EVAL_JSON === "1" || process.argv.includes("--json");
 
   if (jsonMode) {
-    process.stdout.write(
-      `${JSON.stringify({ summary, results }, null, 2)}\n`,
-    );
+    process.stdout.write(`${JSON.stringify({ summary, results }, null, 2)}\n`);
   } else {
     console.log("=".repeat(80));
     console.log(`Eval results for store at: ${paths.lancedbDir}`);

@@ -44,17 +44,26 @@ function postJSON(
           try {
             const data = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
             const ok = res.statusCode === 200;
-            debug("mlx", `POST ${reqPath} → ${res.statusCode} ${(performance.now() - start).toFixed(0)}ms payload=${payload.length}B`);
+            debug(
+              "mlx",
+              `POST ${reqPath} → ${res.statusCode} ${(performance.now() - start).toFixed(0)}ms payload=${payload.length}B`,
+            );
             resolve({ ok, data });
           } catch {
-            debug("mlx", `POST ${reqPath} → parse error ${(performance.now() - start).toFixed(0)}ms`);
+            debug(
+              "mlx",
+              `POST ${reqPath} → parse error ${(performance.now() - start).toFixed(0)}ms`,
+            );
             resolve({ ok: false });
           }
         });
       },
     );
     req.on("error", (err) => {
-      debug("mlx", `POST ${reqPath} → error: ${err.message} ${(performance.now() - start).toFixed(0)}ms`);
+      debug(
+        "mlx",
+        `POST ${reqPath} → error: ${err.message} ${(performance.now() - start).toFixed(0)}ms`,
+      );
       resolve({ ok: false });
     });
     req.on("timeout", () => {
@@ -78,16 +87,25 @@ async function checkHealth(): Promise<boolean> {
       (res) => {
         res.resume();
         const ok = res.statusCode === 200;
-        debug("mlx", `health → ${ok ? "ok" : `status=${res.statusCode}`} ${(performance.now() - start).toFixed(0)}ms`);
+        debug(
+          "mlx",
+          `health → ${ok ? "ok" : `status=${res.statusCode}`} ${(performance.now() - start).toFixed(0)}ms`,
+        );
         resolve(ok);
       },
     );
     req.on("error", (err) => {
-      debug("mlx", `health → error: ${err.message} ${(performance.now() - start).toFixed(0)}ms`);
+      debug(
+        "mlx",
+        `health → error: ${err.message} ${(performance.now() - start).toFixed(0)}ms`,
+      );
       resolve(false);
     });
     req.on("timeout", () => {
-      debug("mlx", `health → timeout ${(performance.now() - start).toFixed(0)}ms`);
+      debug(
+        "mlx",
+        `health → timeout ${(performance.now() - start).toFixed(0)}ms`,
+      );
       req.destroy();
       resolve(false);
     });
@@ -148,8 +166,17 @@ export async function mlxEmbed(
     const wasPreviouslyAvailable = mlxAvailable !== false;
     mlxAvailable = false;
     const now = Date.now();
-    if (wasPreviouslyAvailable || now - lastMlxWarning >= MLX_WARNING_INTERVAL_MS) {
-      console.error("[mlx] Embed server failed: bad response (ok=" + ok + ", hasVectors=" + !!data?.vectors + ")");
+    if (
+      wasPreviouslyAvailable ||
+      now - lastMlxWarning >= MLX_WARNING_INTERVAL_MS
+    ) {
+      console.error(
+        "[mlx] Embed server failed: bad response (ok=" +
+          ok +
+          ", hasVectors=" +
+          !!data?.vectors +
+          ")",
+      );
       lastMlxWarning = now;
     }
     return null;

@@ -1,11 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Fake child processes so the pool never forks a real ONNX worker. Shared
 // state lives in a hoisted block because vi.mock factories are hoisted above

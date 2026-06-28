@@ -61,9 +61,7 @@ export function formatRiskTable(
   opts: { agent: boolean },
 ): string {
   if (rows.length === 0) {
-    return opts.agent
-      ? "(no changed symbols)"
-      : "No changed symbols to rank.";
+    return opts.agent ? "(no changed symbols)" : "No changed symbols to rank.";
   }
 
   if (opts.agent) {
@@ -99,7 +97,8 @@ export async function gatherRiskInputs(
   if (symbols.length === 0) return [];
 
   const root = projectRoot.endsWith("/") ? projectRoot : `${projectRoot}/`;
-  const relativize = (f: string) => (f.startsWith(root) ? f.slice(root.length) : f);
+  const relativize = (f: string) =>
+    f.startsWith(root) ? f.slice(root.length) : f;
 
   const inputs = await Promise.all(
     symbols.map(async (symbol): Promise<RiskInput> => {

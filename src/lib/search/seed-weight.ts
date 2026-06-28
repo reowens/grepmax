@@ -82,15 +82,29 @@ export const DEFAULT_SEED_PARAMS: SeedWeightParams = {
 };
 
 /** Resolve params from env, falling back to DEFAULT_SEED_PARAMS per field. */
-export function seedParamsFromEnv(env: NodeJS.ProcessEnv = process.env): SeedWeightParams {
-  const num = (raw: string | undefined, fallback: number, min: number): number => {
+export function seedParamsFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): SeedWeightParams {
+  const num = (
+    raw: string | undefined,
+    fallback: number,
+    min: number,
+  ): number => {
     const v = Number.parseFloat(raw ?? "");
     return Number.isFinite(v) && v >= min ? v : fallback;
   };
   return {
     fileWeight: num(env.GMAX_SEED_FILE_W, DEFAULT_SEED_PARAMS.fileWeight, 0),
-    symbolDefWeight: num(env.GMAX_SEED_SYMBOL_DEF_W, DEFAULT_SEED_PARAMS.symbolDefWeight, 0),
-    symbolRefWeight: num(env.GMAX_SEED_SYMBOL_REF_W, DEFAULT_SEED_PARAMS.symbolRefWeight, 0),
+    symbolDefWeight: num(
+      env.GMAX_SEED_SYMBOL_DEF_W,
+      DEFAULT_SEED_PARAMS.symbolDefWeight,
+      0,
+    ),
+    symbolRefWeight: num(
+      env.GMAX_SEED_SYMBOL_REF_W,
+      DEFAULT_SEED_PARAMS.symbolRefWeight,
+      0,
+    ),
     maxRank: num(env.GMAX_SEED_MAX_RANK, DEFAULT_SEED_PARAMS.maxRank, 1),
   };
 }
@@ -98,9 +112,16 @@ export function seedParamsFromEnv(env: NodeJS.ProcessEnv = process.env): SeedWei
 /** Normalize a seed spec into a matchable context. */
 export function buildSeedContext(spec?: SeedSpec): SeedContext {
   const fileSuffixes = (spec?.files ?? [])
-    .map((f) => f.trim().toLowerCase().replace(/^\.?\//, ""))
+    .map((f) =>
+      f
+        .trim()
+        .toLowerCase()
+        .replace(/^\.?\//, ""),
+    )
     .filter((f) => f.length > 0);
-  const symbols = new Set((spec?.symbols ?? []).map((s) => s.trim()).filter((s) => s.length > 0));
+  const symbols = new Set(
+    (spec?.symbols ?? []).map((s) => s.trim()).filter((s) => s.length > 0),
+  );
   return {
     fileSuffixes,
     symbols,
@@ -117,10 +138,15 @@ export interface SeedMatch {
 }
 
 /** Does a candidate match any seed file (by path suffix)? */
-export function matchesSeedFile(ctx: SeedContext, candidatePath: string): boolean {
+export function matchesSeedFile(
+  ctx: SeedContext,
+  candidatePath: string,
+): boolean {
   if (ctx.fileSuffixes.length === 0) return false;
   const p = candidatePath.toLowerCase();
-  return ctx.fileSuffixes.some((suffix) => p.endsWith(`/${suffix}`) || p === suffix || p.endsWith(suffix));
+  return ctx.fileSuffixes.some(
+    (suffix) => p.endsWith(`/${suffix}`) || p === suffix || p.endsWith(suffix),
+  );
 }
 
 /**
@@ -158,7 +184,11 @@ export function matchesSeedSymbol(
  * never retrieved near the top and is therefore ineligible. File and symbol
  * bonuses are additive; a definition match supersedes a reference match.
  */
-export function seedBoost(match: SeedMatch, bestRank: number, params: SeedWeightParams): number {
+export function seedBoost(
+  match: SeedMatch,
+  bestRank: number,
+  params: SeedWeightParams,
+): number {
   if (!match.file && !match.symbolDef && !match.symbolRef) return 0;
   if (!(bestRank >= 1) || bestRank > params.maxRank) return 0;
   let bonus = match.file ? params.fileWeight : 0;

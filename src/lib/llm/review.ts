@@ -38,9 +38,7 @@ export interface ReviewResult {
   clean: boolean;
 }
 
-export async function reviewCommit(
-  opts: ReviewOptions,
-): Promise<ReviewResult> {
+export async function reviewCommit(opts: ReviewOptions): Promise<ReviewResult> {
   const { commitRef, projectRoot, verbose = false } = opts;
   const wallStart = Date.now();
 
@@ -53,7 +51,8 @@ export async function reviewCommit(
 
   // 2. Commit metadata
   const info = readCommitInfo(commitRef, projectRoot);
-  if (verbose) process.stderr.write(`[review] ${info.short} — ${info.message}\n`);
+  if (verbose)
+    process.stderr.write(`[review] ${info.short} — ${info.message}\n`);
 
   // 3. Changed files & symbols
   const changedFiles = extractChangedFiles(commitRef, projectRoot);
@@ -61,7 +60,9 @@ export async function reviewCommit(
   const languages = detectLanguages(changedFiles);
 
   if (verbose) {
-    process.stderr.write(`[review] files: ${changedFiles.length}, symbols: ${symbols.length}, langs: ${languages.join(", ")}\n`);
+    process.stderr.write(
+      `[review] files: ${changedFiles.length}, symbols: ${symbols.length}, langs: ${languages.join(", ")}\n`,
+    );
   }
 
   // 4. Gather context via gmax internal APIs
@@ -72,16 +73,22 @@ export async function reviewCommit(
   try {
     const searcher = new Searcher(vectorDb);
     const graphBuilder = new GraphBuilder(vectorDb, projectRoot);
-    const ctx: InvestigateContext = { vectorDb, searcher, graphBuilder, projectRoot };
+    const ctx: InvestigateContext = {
+      vectorDb,
+      searcher,
+      graphBuilder,
+      projectRoot,
+    };
 
     // Deterministic risk ranking (Phase 8) — gives the LLM an explicit
     // blast-radius × tests × churn ordering to anchor its judgement, rather
     // than inferring importance from prose alone.
     const [context, riskInputs] = await Promise.all([
       gatherContext(symbols, changedFiles, ctx, verbose),
-      gatherRiskInputs(commitRef, projectRoot, { vectorDb, graphBuilder }).catch(
-        () => [],
-      ),
+      gatherRiskInputs(commitRef, projectRoot, {
+        vectorDb,
+        graphBuilder,
+      }).catch(() => []),
     ]);
     contextStr = context;
     const riskRows = computeRiskTable(riskInputs);
@@ -90,7 +97,9 @@ export async function reviewCommit(
     }
   } catch (err) {
     if (verbose) {
-      process.stderr.write(`[review] context gathering failed: ${err instanceof Error ? err.message : String(err)}\n`);
+      process.stderr.write(
+        `[review] context gathering failed: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
     }
   } finally {
     await vectorDb.close();
@@ -138,7 +147,9 @@ export async function reviewCommit(
   const duration = Math.round((Date.now() - wallStart) / 1000);
 
   if (verbose) {
-    process.stderr.write(`[review] ${findings.length} finding(s) in ${duration}s\n`);
+    process.stderr.write(
+      `[review] ${findings.length} finding(s) in ${duration}s\n`,
+    );
   }
 
   // 8. Append to report
@@ -187,8 +198,12 @@ async function gatherContext(
 
   const allPromises = [
     ...peekPromises.map((p) => p.then((r) => ({ type: "peek", result: r }))),
-    ...impactPromises.map((p) => p.then((r) => ({ type: "impact", result: r }))),
-    ...relatedPromises.map((p) => p.then((r) => ({ type: "related", result: r }))),
+    ...impactPromises.map((p) =>
+      p.then((r) => ({ type: "impact", result: r })),
+    ),
+    ...relatedPromises.map((p) =>
+      p.then((r) => ({ type: "related", result: r })),
+    ),
   ];
 
   // Race against timeout
@@ -209,7 +224,14 @@ async function gatherContext(
     for (const s of settled) {
       if (s.status !== "fulfilled") continue;
       const { type, result } = s.value;
-      if (result.startsWith("(") && (result.includes("not found") || result.includes("error") || result.includes("not indexed") || result.includes("none"))) continue;
+      if (
+        result.startsWith("(") &&
+        (result.includes("not found") ||
+          result.includes("error") ||
+          result.includes("not indexed") ||
+          result.includes("none"))
+      )
+        continue;
       if (type === "peek") peekResults.push(result);
       else if (type === "impact") impactResults.push(result);
       else relatedResults.push(result);
@@ -240,7 +262,9 @@ async function gatherContext(
   }
 
   if (verbose) {
-    process.stderr.write(`[review] context: ${peekResults.length} peek, ${impactResults.length} impact, ${relatedResults.length} related\n`);
+    process.stderr.write(
+      `[review] context: ${peekResults.length} peek, ${impactResults.length} impact, ${relatedResults.length} related\n`,
+    );
   }
 
   return sections.join("\n");
@@ -384,13 +408,17 @@ ${diff}
 // ---------------------------------------------------------------------------
 
 function stripThinkTags(text: string): string {
-  return text
-    .replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/g, "")
-    .trim();
+  return text.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/g, "").trim();
 }
 
-function parseFindings(content: string): { findings: Finding[]; summary: string } {
-  const empty = { findings: [], summary: "Parse error — could not extract findings from model output." };
+function parseFindings(content: string): {
+  findings: Finding[];
+  summary: string;
+} {
+  const empty = {
+    findings: [],
+    summary: "Parse error — could not extract findings from model output.",
+  };
   if (!content) return empty;
 
   // Strip think tags and markdown fences
