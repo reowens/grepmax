@@ -19,6 +19,7 @@ import {
   type StreamingProgress,
   sendDaemonCommand,
   sendStreamingCommand,
+  waitForProcessExit,
 } from "../src/lib/utils/daemon-client";
 
 function startMockServer(
@@ -159,5 +160,21 @@ describe("daemon-client", () => {
     it("returns false when no daemon", async () => {
       expect(await isDaemonRunning()).toBe(false);
     });
+  });
+});
+
+describe("waitForProcessExit", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("resolves true once the process is gone (ESRCH)", async () => {
+    vi.spyOn(process, "kill").mockImplementation(() => {
+      throw Object.assign(new Error("no such process"), { code: "ESRCH" });
+    });
+    expect(await waitForProcessExit(123456, 1000)).toBe(true);
+  });
+
+  it("resolves false on timeout while the process stays alive", async () => {
+    vi.spyOn(process, "kill").mockImplementation(() => true);
+    expect(await waitForProcessExit(process.pid, 250)).toBe(false);
   });
 });

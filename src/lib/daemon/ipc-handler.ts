@@ -77,6 +77,12 @@ export async function handleCommand(
 ): Promise<DaemonResponse | null> {
   try {
     debug("daemon", `ipc cmd=${cmd.cmd}${cmd.root ? ` root=${cmd.root}` : ""}`);
+    // The socket listens before LanceDB/MetaCache are open so liveness probes
+    // succeed during slow startup. Gate resource-dependent commands until those
+    // stores exist; ping/shutdown must always work (probes + restart).
+    if (cmd.cmd !== "ping" && cmd.cmd !== "shutdown" && !daemon.isReady()) {
+      return { ok: false, error: "daemon initializing" };
+    }
     switch (cmd.cmd) {
       case "ping":
         return {

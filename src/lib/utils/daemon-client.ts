@@ -119,6 +119,42 @@ export function isDaemonHeartbeatFresh(): boolean {
   }
 }
 
+/** Read the daemon's PID from the PID file, or null if absent/invalid. */
+export function readDaemonPid(): number | null {
+  try {
+    const pid = parseInt(
+      fs.readFileSync(PATHS.daemonPidFile, "utf-8").trim(),
+      10,
+    );
+    return Number.isFinite(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Poll until a process has fully exited, or the timeout elapses. Used before
+ * spawning a successor daemon: shutdown() drops the socket/lock immediately but
+ * keeps draining in-flight work, and a successor that starts in that window
+ * classifies the still-draining predecessor as stale and SIGKILLs it. Waiting
+ * for the actual process exit closes that race. Returns true if it exited.
+ */
+export async function waitForProcessExit(
+  pid: number,
+  timeoutMs: number,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return true; // ESRCH — process is gone
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return false;
+}
+
 /**
  * Ensure the daemon is running — start it if needed, poll up to 5s.
  * Returns true if daemon is ready, false if it couldn't be started.

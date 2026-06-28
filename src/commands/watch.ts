@@ -55,8 +55,13 @@ export const watch = new Command("watch")
           // Skip spawn if daemon already running at the same version.
           // If version mismatches (e.g. after npm install -g), shut down the old
           // daemon so we can start a fresh one with the new code.
-          const { isDaemonRunning, isDaemonHeartbeatFresh, sendDaemonCommand } =
-            await import("../lib/utils/daemon-client");
+          const {
+            isDaemonRunning,
+            isDaemonHeartbeatFresh,
+            sendDaemonCommand,
+            readDaemonPid,
+            waitForProcessExit,
+          } = await import("../lib/utils/daemon-client");
           if (await isDaemonRunning()) {
             const cliVersion = JSON.parse(
               fs.readFileSync(
@@ -71,6 +76,12 @@ export const watch = new Command("watch")
             console.log(
               `Daemon version mismatch (${resp.version} → ${cliVersion}), restarting...`,
             );
+            // Capture the old PID before shutdown removes the PID file, so we
+            // can wait for the process to fully EXIT rather than guessing with a
+            // fixed sleep. Spawning the successor while the old daemon is still
+            // draining lets the successor's killStaleProcesses() classify it as
+            // stale and SIGKILL it mid-cleanup.
+            const oldPid = readDaemonPid();
             await sendDaemonCommand({
               cmd: "shutdown",
               reason: "version-mismatch",
@@ -79,8 +90,16 @@ export const watch = new Command("watch")
               from_version: cliVersion,
               from_argv: process.argv.slice(0, 4),
             });
-            // Brief wait for old daemon to release socket/lock
-            await new Promise((r) => setTimeout(r, 2000));
+            if (oldPid) {
+              const exited = await waitForProcessExit(oldPid, 20_000);
+              if (!exited) {
+                console.log(
+                  `Old daemon (PID ${oldPid}) still draining after 20s — starting anyway`,
+                );
+              }
+            } else {
+              await new Promise((r) => setTimeout(r, 2000));
+            }
           } else if (isDaemonHeartbeatFresh()) {
             // Ping failed but daemon.lock mtime is fresh — another daemon is
             // alive but too busy to answer (e.g. mid-index). Don't spawn a
@@ -120,6 +139,12 @@ export const watch = new Command("watch")
             process.exit(0);
           }
           console.error("[daemon] Failed to start:", err);
+          // Tear down any half-opened state — the listening socket, PID, and
+          // lock — so we don't leave a zombie that answers pings but has no
+          // resources. The socket also keeps the event loop alive otherwise.
+          try {
+            await daemon.shutdown();
+          } catch {}
           process.exitCode = 1;
           return;
         }

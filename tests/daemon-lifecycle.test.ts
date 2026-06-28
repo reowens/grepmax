@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Daemon } from "../src/lib/daemon/daemon";
+import { handleCommand } from "../src/lib/daemon/ipc-handler";
 import { getWorkerPool } from "../src/lib/workers/pool";
 
 // tests/setup.ts mocks the pool module; augment its stub pool with the
@@ -64,6 +65,35 @@ describe("Daemon orphan worker sweep", () => {
     daemon.processManager.sweepOrphanWorkers();
     daemon.processManager.sweepOrphanWorkers();
     expect(killSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("Daemon readiness gate (IPC)", () => {
+  let daemon: any;
+  const conn = {} as any;
+
+  beforeEach(() => {
+    daemon = new Daemon();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("answers ping before resources are open", async () => {
+    expect(daemon.isReady()).toBe(false);
+    const resp = await handleCommand(daemon, { cmd: "ping" }, conn);
+    expect(resp?.ok).toBe(true);
+  });
+
+  it("rejects resource-dependent commands until ready", async () => {
+    const resp = await handleCommand(daemon, { cmd: "status" }, conn);
+    expect(resp).toEqual({ ok: false, error: "daemon initializing" });
+  });
+
+  it("allows resource-dependent commands once ready", async () => {
+    daemon.ready = true;
+    const resp = await handleCommand(daemon, { cmd: "status" }, conn);
+    expect(resp?.ok).toBe(true);
   });
 });
 

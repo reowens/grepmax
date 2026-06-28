@@ -94,6 +94,10 @@ export class Daemon {
   private heartbeatTick = 0;
   private shuttingDown = false;
   private recycling = false;
+  // False until LanceDB + MetaCache are open. The socket starts listening early
+  // (so liveness probes succeed during slow init), so commands that need those
+  // resources must be gated on this to avoid hitting null stores mid-startup.
+  private ready = false;
   private readonly processManager = new ProcessManager({
     getShuttingDown: () => this.shuttingDown,
   });
@@ -241,6 +245,8 @@ export class Daemon {
       this.vectorDb.startMaintenanceLoop();
       console.log("[daemon] Opening MetaCache:", PATHS.lmdbPath);
       this.metaCache = new MetaCache(PATHS.lmdbPath);
+      // Resources are open — only now may resource-dependent IPC commands run.
+      this.ready = true;
     } catch (err) {
       console.error("[daemon] Failed to open shared resources:", err);
       throw err;
@@ -516,6 +522,11 @@ export class Daemon {
 
   uptime(): number {
     return Math.floor((Date.now() - this.startTime) / 1000);
+  }
+
+  /** True once shared resources (LanceDB + MetaCache) are open. */
+  isReady(): boolean {
+    return this.ready;
   }
 
   getDiskPressure(): string {
