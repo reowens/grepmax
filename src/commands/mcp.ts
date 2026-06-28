@@ -2043,30 +2043,15 @@ export const mcp = new Command("mcp")
           }
         }
 
+        // Health overview only. The per-project listing (names, roots,
+        // per-project chunk counts) lives in `list_projects` — keep this tool
+        // focused on index health and avoid the N-project LanceDB scans.
         const lines = [
           `Index: ~/.gmax/lancedb (${stats.chunks} chunks, ${fileCount} files)`,
           `Model: ${globalConfig.embedMode === "gpu" ? (MODEL_TIERS[globalConfig.modelTier]?.mlxModel ?? config?.embedModel ?? "unknown") : (config?.embedModel ?? "unknown")} (${config?.vectorDim ?? "?"}d, ${globalConfig.embedMode})`,
           config?.indexedAt ? `Last indexed: ${config.indexedAt}` : "",
           watcherLine,
-          "",
-          "Indexed directories:",
-          ...(await Promise.all(
-            projects.map(async (p) => {
-              const prefix = p.root.endsWith("/") ? p.root : `${p.root}/`;
-              try {
-                const table = await db.ensureTable();
-                const rows = await table
-                  .query()
-                  .select(["id"])
-                  .where(`path LIKE '${escapeSqlString(prefix)}%'`)
-                  .limit(100000)
-                  .toArray();
-                return `  ${p.name}\t${p.root}\t${p.lastIndexed ?? "unknown"}\t(${rows.length} chunks)`;
-              } catch {
-                return `  ${p.name}\t${p.root}\t${p.lastIndexed ?? "unknown"}`;
-              }
-            }),
-          )),
+          `Projects: ${projects.length} indexed (call list_projects for names + per-project chunk counts)`,
         ].filter(Boolean);
         return ok(lines.join("\n"));
       } catch (e) {
