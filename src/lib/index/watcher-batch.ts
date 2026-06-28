@@ -63,7 +63,17 @@ export async function processBatchCore(
 
     try {
       const stats = await fs.promises.stat(absPath);
-      if (!isIndexableFile(absPath, stats.size)) continue;
+      if (!isIndexableFile(absPath, stats.size)) {
+        // File became non-indexable (emptied or now too large). If we indexed
+        // it before, drop its chunks + meta so search stops returning stale
+        // content; otherwise there's nothing to clean up.
+        if (metaCache.get(absPath)) {
+          deletes.push(absPath);
+          metaDeletes.push(absPath);
+          reindexed++;
+        }
+        continue;
+      }
 
       const cached = metaCache.get(absPath);
       if (isFileCached(cached, stats)) {

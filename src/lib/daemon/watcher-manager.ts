@@ -384,12 +384,14 @@ export class WatcherManager {
       if (!INDEXABLE_EXTENSIONS.has(ext) && !INDEXABLE_EXTENSIONS.has(bn))
         continue;
 
-      seenPaths.add(absPath);
-
       try {
         const stats = await fs.promises.stat(absPath);
-        // Skip files that are too large or empty — they'll never be indexed
+        // Skip files that are too large or empty — they'll never be indexed.
+        // Leave them OUT of seenPaths so a file that became empty/oversized is
+        // treated as deleted by the purge sweep below and its now-stale chunks
+        // are removed, rather than lingering as unsearchable-but-present rows.
         if (stats.size === 0 || stats.size > MAX_FILE_SIZE_BYTES) continue;
+        seenPaths.add(absPath);
         const cached = metaCache.get(absPath);
         if (!isFileCached(cached, stats)) {
           // Fast path: if only mtime changed but size is identical and we have a hash,

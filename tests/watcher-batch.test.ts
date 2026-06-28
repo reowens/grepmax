@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import {
   computeRetryAction,
@@ -113,6 +114,48 @@ describe("processBatchCore", () => {
 
     expect(result.deletes).toContain("/src/temp.ts");
     expect(result.reindexed).toBe(1);
+  });
+
+  it("deletes stale chunks when a previously-indexed file becomes empty", async () => {
+    const pool = mockPool();
+    const cache = mockMetaCache({
+      "/src/a.ts": { hash: "oldhash", mtimeMs: 1000, size: 100 },
+    });
+    // File now reads as empty → isIndexableFile returns false
+    vi.mocked(fs.promises.stat).mockResolvedValueOnce({
+      size: 0,
+      mtimeMs: 3000,
+      isFile: () => true,
+    } as any);
+
+    const batch = new Map<string, "change" | "unlink">([
+      ["/src/a.ts", "change"],
+    ]);
+    const result = await processBatchCore(batch, cache, pool);
+
+    expect(pool.processFile).not.toHaveBeenCalled();
+    expect(result.deletes).toContain("/src/a.ts");
+    expect(result.metaDeletes).toContain("/src/a.ts");
+    expect(result.reindexed).toBe(1);
+  });
+
+  it("ignores a never-indexed empty file (nothing to clean up)", async () => {
+    const pool = mockPool();
+    const cache = mockMetaCache(); // no prior entry
+    vi.mocked(fs.promises.stat).mockResolvedValueOnce({
+      size: 0,
+      mtimeMs: 3000,
+      isFile: () => true,
+    } as any);
+
+    const batch = new Map<string, "change" | "unlink">([
+      ["/src/new-empty.ts", "change"],
+    ]);
+    const result = await processBatchCore(batch, cache, pool);
+
+    expect(result.deletes).not.toContain("/src/new-empty.ts");
+    expect(result.metaDeletes.length).toBe(0);
+    expect(result.reindexed).toBe(0);
   });
 
   it("tracks changedIds from new vectors", async () => {
