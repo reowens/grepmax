@@ -459,6 +459,20 @@ export class WatcherManager {
   }
 
   async unwatchProject(root: string): Promise<void> {
+    // Stop poll-mode timers + their FSEvents recovery probe first, so a removed
+    // project can't keep scanning until full daemon shutdown. These live
+    // independently of the processor, so clear them even on the early return.
+    const pollInterval = this.pollIntervals.get(root);
+    if (pollInterval) {
+      clearInterval(pollInterval);
+      this.pollIntervals.delete(root);
+    }
+    const recoveryTimer = this.pollRecoveryTimers.get(root);
+    if (recoveryTimer) {
+      clearInterval(recoveryTimer);
+      this.pollRecoveryTimers.delete(root);
+    }
+
     const processor = this.deps.processors.get(root);
     if (!processor) return;
 
