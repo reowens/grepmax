@@ -289,6 +289,45 @@ All data lives in `~/.gmax/`:
 }
 ```
 
+### Model Tier
+
+gmax embeds with IBM's Granite r2 code-embedding models. Two tiers are available:
+
+| Tier | Model | Dim | Params |
+| --- | --- | --- | --- |
+| `small` (default) | `granite-embedding-small-english-r2` | 384 | 47M |
+| `standard` | `granite-embedding-english-r2` | 768 | 149M |
+
+**384d is the default — and benchmarking says keep it.** On gmax's own 97-case
+retrieval eval (`pnpm bench:recall`), the larger 768d model scored **~10 points
+*worse* on Recall@10** than 384d, consistently on both the MLX GPU and ONNX CPU
+embedding paths, with and without ColBERT rerank:
+
+| Model | Recall@10 | MRR@10 |
+| --- | --- | --- |
+| `small` / 384d | **0.72** | **0.51** |
+| `standard` / 768d | 0.62 | 0.44 |
+
+<sub>gmax repo, 97 cases, MLX GPU, rerank off (the shipped default). The CPU/q4
+path and the rerank-on path show the same ~0.10 Recall@10 gap, so it isn't a
+quantization artifact — the bigger model just retrieves worse on code here.</sub>
+
+Bigger isn't better for this workload: 768d roughly doubles embedding compute,
+worker RAM, and dense-vector storage while *lowering* recall on code search.
+Unless you have a measured reason to switch (e.g. a recall complaint on a very
+large repo — benchmark it first), stay on 384d.
+
+To change tiers:
+
+```bash
+gmax config --model-tier standard   # a dim change needs a full re-embed
+gmax repair --rebuild               # drops the shared table, re-embeds every project at the new dim
+```
+
+A vector-dimension change can't be applied by a per-project `gmax index --reset`
+— the shared `chunks` table is fixed-width, so `gmax repair --rebuild` is the
+sanctioned path.
+
 ### Ignoring Files
 
 gmax respects `.gitignore` and `.gmaxignore`:
@@ -338,6 +377,8 @@ GMAX_EVAL_RERANK=1 pnpm bench:oss   # toggle ColBERT rerank
 ```
 
 The OSS bench requires the fixture repos to be indexed first — see [`docs/known-limitations.md`](docs/known-limitations.md) for the most recent rerank-on-vs-off comparison across 4 datasets / 131 cases.
+
+`pnpm bench:recall` also drives the model-tier comparison behind the 384d default — see [Model Tier](#model-tier) for why the larger 768d model is *not* the default.
 
 ## Attribution
 
