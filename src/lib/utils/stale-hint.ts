@@ -18,6 +18,7 @@ import {
   describeChunkerGap,
   describeEmbeddingGap,
   MODEL_TIERS,
+  REBUILD_COMMAND,
 } from "../../config";
 import { readGlobalConfig } from "../index/index-config";
 import { getProject, listProjects } from "./project-registry";
@@ -118,7 +119,9 @@ export function maybeWarnStaleEmbedding(
       `current_dim=${gap.toDim}`,
       `dim_changed=${gap.dimChanged}`,
       `severity=${gap.severity}`,
-      "fix=gmax index --reset",
+      // A dim change needs the global rebuild (shared table is fixed-width); a
+      // same-dim model swap can use a per-project reset.
+      `fix=${gap.dimChanged ? REBUILD_COMMAND : "gmax index --reset"}`,
     ].join("\t");
     process.stderr.write(`${fields}\n`);
     return;
@@ -128,8 +131,11 @@ export function maybeWarnStaleEmbedding(
   const detail = gap.dimChanged
     ? `vector dim ${gap.fromDim}→${gap.toDim} (incompatible — scores invalid until re-embed)`
     : `model '${gap.fromModel}'→'${gap.toModel}' (same dim; results mix models until re-embed)`;
+  const fix = gap.dimChanged
+    ? `Run '${REBUILD_COMMAND}'`
+    : "Run 'gmax index --reset'";
   process.stderr.write(
-    `${label}  gmax: '${name}' indexed with embedding ${detail}. Run 'gmax index --reset'. (silence: GMAX_NO_STALE_HINT=1)\n`,
+    `${label}  gmax: '${name}' indexed with embedding ${detail}. ${fix}. (silence: GMAX_NO_STALE_HINT=1)\n`,
   );
 }
 

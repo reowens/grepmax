@@ -291,7 +291,9 @@ describe("maybeWarnStaleEmbedding", () => {
     expect(out).toMatch(/foo/);
     expect(out).toMatch(/384/);
     expect(out).toMatch(/768/);
-    expect(out).toMatch(/index --reset/);
+    // A dim change needs the global rebuild, not a per-project reset.
+    expect(out).toMatch(/gmax repair --rebuild/);
+    expect(out).not.toMatch(/index --reset/);
     expect(out).toMatch(/^WARN/);
   });
 
@@ -392,7 +394,7 @@ describe("maybeWarnStaleEmbedding", () => {
     expect(out).toMatch(/severity=breaking/);
     expect(out).toMatch(/indexed_dim=384/);
     expect(out).toMatch(/current_dim=768/);
-    expect(out).toMatch(/fix=gmax index --reset/);
+    expect(out).toMatch(/fix=gmax repair --rebuild/);
   });
 
   it("fires independently of the chunker latch", async () => {

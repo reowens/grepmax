@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { MODEL_TIERS } from "../config";
+import { MODEL_TIERS, REBUILD_COMMAND } from "../config";
 import {
   readGlobalConfig,
   readIndexConfig,
@@ -113,6 +113,7 @@ Examples:
     const tier = MODEL_TIERS[newTier] ?? MODEL_TIERS.small;
 
     const tierChanged = newTier !== globalConfig.modelTier;
+    const dimChanged = tier.vectorDim !== globalConfig.vectorDim;
 
     writeGlobalConfig({
       modelTier: newTier,
@@ -133,8 +134,13 @@ Examples:
     );
 
     if (tierChanged) {
+      // A dimension change can't be fixed by a per-project `gmax index --reset`:
+      // the shared `chunks` table is fixed-width, so it must be dropped and
+      // rebuilt. A same-dim model swap (future tiers) can use a per-project reset.
       console.log(
-        "⚠️  Model tier changed — run `gmax index --reset` to rebuild with new dimensions.",
+        dimChanged
+          ? `⚠️  Model tier changed (${globalConfig.vectorDim}d → ${tier.vectorDim}d). The shared vector table is fixed-width — run \`${REBUILD_COMMAND}\` to drop it and re-embed every project at the new dim.`
+          : "⚠️  Model tier changed — run `gmax index --reset` per project to re-embed with the new model.",
       );
     }
 

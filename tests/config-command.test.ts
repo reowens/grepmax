@@ -114,13 +114,18 @@ describe("config command", () => {
       spy.mockRestore();
     });
 
-    it("warns when model tier changes", async () => {
+    it("warns when model tier changes and points a dim change at the rebuild", async () => {
+      // small(384) -> standard(768) is a dim change: the shared fixed-width table
+      // can't be reshaped by a per-project reset, so the hint must steer to the
+      // global rebuild, not `gmax index --reset`.
       const spy = vi.spyOn(console, "log").mockImplementation(() => {});
       await (config as Command).parseAsync(["--model-tier", "standard"], {
         from: "user",
       });
       const output = spy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("Model tier changed");
+      expect(output).toContain("gmax repair --rebuild");
+      expect(output).not.toContain("index --reset");
       spy.mockRestore();
     });
 
