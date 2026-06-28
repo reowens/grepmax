@@ -60,12 +60,22 @@ async function flushBatch(
 ) {
   if (dryRun) return;
 
-  // 1. Write to VectorDB first (source of truth for data)
-  if (pendingDeletes.length > 0) {
-    await db.deletePaths(pendingDeletes);
-  }
+  // 1. Insert the new vectors FIRST, then delete the old chunks for those paths
+  //    (excluding the just-inserted ids). Deleting first would leave a file
+  //    unsearchable if the insert then fails — the old, still-valid chunks would
+  //    already be gone. Mirrors batch-processor's insert-first flush. Paths in
+  //    pendingDeletes with no new vectors (emptied / non-indexable files) match
+  //    no excluded id, so all their old chunks are removed.
+  const newIds = vectors.map((v) => v.id);
   if (vectors.length > 0) {
     await db.insertBatch(vectors);
+  }
+  if (pendingDeletes.length > 0) {
+    if (newIds.length > 0) {
+      await db.deletePathsExcludingIds(pendingDeletes, newIds);
+    } else {
+      await db.deletePaths(pendingDeletes);
+    }
   }
 
   // 2. Update MetaCache only after VectorDB write succeeds
