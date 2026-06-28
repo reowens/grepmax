@@ -29,6 +29,8 @@
     "bench:recall:json": "GMAX_EVAL_JSON=1 npx tsx src/eval.ts",
     "bench:oss": "npx tsx src/eval-oss.ts all",
     "bench:oss:json": "GMAX_EVAL_JSON=1 npx tsx src/eval-oss.ts all",
+    "bench:tokens": "npx tsx src/eval-tokens.ts",
+    "bench:tokens:json": "GMAX_EVAL_JSON=1 npx tsx src/eval-tokens.ts",
     "format": "biome format --write .",
     "format:check": "biome check .",
     "lint": "biome lint .",
