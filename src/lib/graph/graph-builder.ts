@@ -1,3 +1,4 @@
+import { languageFamilyForPath } from "../core/languages";
 import type { VectorRecord } from "../store/types";
 import type { VectorDB } from "../store/vector-db";
 import {
@@ -64,8 +65,16 @@ export class GraphBuilder {
 
   /**
    * Find all chunks that call the given symbol.
+   *
+   * `anchorFamily` (the language family of the symbol's definition) enables the
+   * cross-language phantom-edge guard: the shared table matches a bare symbol
+   * name across every language, so without it a `render` defined in one language
+   * picks up callers that merely reference an unrelated `render` in another.
    */
-  async getCallers(symbol: string): Promise<GraphNode[]> {
+  async getCallers(
+    symbol: string,
+    anchorFamily?: string | null,
+  ): Promise<GraphNode[]> {
     const table = await this.db.ensureTable();
     const escaped = escapeSqlString(symbol);
 
@@ -92,7 +101,18 @@ export class GraphBuilder {
       .limit(100)
       .toArray();
 
-    return rows.map((row) =>
+    // Cross-language phantom-edge guard. When the anchor family is known, drop
+    // callers from a *different known* family; callers we can't classify (unknown
+    // extension) are kept so a real edge is never lost. No anchor → no filter.
+    const guarded =
+      anchorFamily == null
+        ? rows
+        : rows.filter((row) => {
+            const fam = languageFamilyForPath(String((row as any).path ?? ""));
+            return fam == null || fam === anchorFamily;
+          });
+
+    return guarded.map((row) =>
       this.mapRowToNode(row as unknown as VectorRecord, symbol, "caller"),
     );
   }
@@ -155,8 +175,10 @@ export class GraphBuilder {
           )
         : null;
 
-    // 2. Get Callers
-    const callers = await this.getCallers(symbol);
+    // 2. Get Callers — anchored to the center definition's language family so a
+    // bare name shared across languages doesn't pull in cross-language callers.
+    const anchorFamily = center ? languageFamilyForPath(center.file) : null;
+    const callers = await this.getCallers(symbol, anchorFamily);
 
     // 3. Get Callees — resolve each to a GraphNode with file:line
     const calleeNames = center ? center.calls.slice(0, 15) : [];
@@ -277,7 +299,10 @@ export class GraphBuilder {
 
       let subCallers: CallerTree[] = [];
       if (remainingDepth > 0) {
-        const upstreamCallers = await this.getCallers(caller.symbol);
+        const upstreamCallers = await this.getCallers(
+          caller.symbol,
+          languageFamilyForPath(caller.file),
+        );
         subCallers = await this.expandCallers(
           upstreamCallers,
           remainingDepth - 1,
@@ -298,7 +323,13 @@ export class GraphBuilder {
 
   /** Distinct symbols that reference the given symbol (inbound edges). */
   async callersOf(symbol: string): Promise<string[]> {
-    const nodes = await this.getCallers(symbol);
+    // Anchor the guard to this symbol's own definition language family so the
+    // bare name doesn't pull in callers from an unrelated language.
+    const loc = await this.resolveLocation(symbol);
+    const nodes = await this.getCallers(
+      symbol,
+      loc ? languageFamilyForPath(loc.file) : null,
+    );
     const out: string[] = [];
     for (const n of nodes) {
       if (n.symbol && n.symbol !== "unknown" && !out.includes(n.symbol)) {
@@ -331,9 +362,13 @@ export class GraphBuilder {
       this.neighborFn(direction),
       maxHops,
     );
+    // Resolve the origin once to anchor every neighbor's location lookup to the
+    // same language family, so a shared name doesn't resolve to a foreign file.
+    const origin = await this.resolveLocation(symbol);
+    const anchorFamily = origin ? languageFamilyForPath(origin.file) : null;
     const out: Array<NeighborHit & { file: string; line: number }> = [];
     for (const h of hits) {
-      const loc = await this.resolveLocation(h.symbol);
+      const loc = await this.resolveLocation(h.symbol, anchorFamily);
       out.push({ ...h, file: loc?.file ?? "", line: loc?.line ?? 0 });
     }
     return out;
@@ -349,9 +384,15 @@ export class GraphBuilder {
     return findPath(from, to, this.neighborFn(direction), maxHops);
   }
 
-  /** Resolve a symbol to its first defining chunk's file:line, if indexed. */
+  /**
+   * Resolve a symbol to a defining chunk's file:line, if indexed. With
+   * `anchorFamily` set, prefer the definition in that language family rather than
+   * an arbitrary cross-language match (the shared table can hold the same name in
+   * several languages); falls back to the first definition when none match.
+   */
   async resolveLocation(
     symbol: string,
+    anchorFamily?: string | null,
   ): Promise<{ file: string; line: number } | null> {
     const table = await this.db.ensureTable();
     const escaped = escapeSqlString(symbol);
@@ -359,10 +400,20 @@ export class GraphBuilder {
       .query()
       .select(["path", "start_line"])
       .where(this.scopeWhere(`array_contains(defined_symbols, '${escaped}')`))
-      .limit(1)
+      // No anchor → keep the cheap single-row fetch. With one, pull a few
+      // candidates so we can pick the same-family definition instead of guessing.
+      .limit(anchorFamily ? 25 : 1)
       .toArray();
     if (rows.length === 0) return null;
-    const r = rows[0] as any;
+    let r = rows[0] as any;
+    if (anchorFamily) {
+      const match = rows.find(
+        (row) =>
+          languageFamilyForPath(String((row as any).path ?? "")) ===
+          anchorFamily,
+      );
+      if (match) r = match as any;
+    }
     return { file: String(r.path || ""), line: Number(r.start_line || 0) };
   }
 

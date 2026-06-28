@@ -185,6 +185,55 @@ describe("GraphBuilder", () => {
     expect(capturedWhere).toContain("NOT starts_with(path, '/p/app/docs/')");
   });
 
+  it("suppresses cross-language phantom callers", async () => {
+    // `render` is defined in Python; a TSX chunk references an unrelated
+    // `render`. The TSX caller must NOT cross-connect to the Python definition,
+    // while a same-language (Python) caller is kept.
+    const db = createMockDb({
+      "defined_symbols, 'render'": [makeRow("render", "/app/view.py", 10)],
+      "referenced_symbols, 'render'": [
+        makeRow("Component", "/app/widget.tsx", 5, ["render"]),
+        makeRow("main", "/app/cli.py", 8, ["render"]),
+      ],
+    });
+    const builder = new GraphBuilder(db);
+    const graph = await builder.buildGraph("render");
+
+    expect(graph.center!.file).toBe("/app/view.py");
+    expect(graph.callers.map((c) => c.file)).toEqual(["/app/cli.py"]);
+  });
+
+  it("keeps callers across the JS/TS family (ts ↔ tsx)", async () => {
+    // tsx and ts share a call namespace, so a .ts definition keeps its .tsx
+    // caller — the guard must not over-filter within a family.
+    const db = createMockDb({
+      "defined_symbols, 'useStore'": [makeRow("useStore", "/app/store.ts", 3)],
+      "referenced_symbols, 'useStore'": [
+        makeRow("Panel", "/app/Panel.tsx", 12, ["useStore"]),
+      ],
+    });
+    const builder = new GraphBuilder(db);
+    const graph = await builder.buildGraph("useStore");
+
+    expect(graph.callers.map((c) => c.file)).toEqual(["/app/Panel.tsx"]);
+  });
+
+  it("does not filter callers when the definition language is unknown", async () => {
+    // Symbol not locally defined (no center) → anchor is null → keep every
+    // caller regardless of language (no regression for external symbols).
+    const db = createMockDb({
+      "referenced_symbols, 'ext'": [
+        makeRow("a", "/app/a.tsx", 1, ["ext"]),
+        makeRow("b", "/app/b.py", 2, ["ext"]),
+      ],
+    });
+    const builder = new GraphBuilder(db);
+    const graph = await builder.buildGraph("ext");
+
+    expect(graph.center).toBeNull();
+    expect(graph.callers.length).toBe(2);
+  });
+
   it("unresolved callees have empty file", async () => {
     const db = createMockDb({
       "defined_symbols, 'fn'": [makeRow("fn", "/a.ts", 1, ["unknownFn"])],

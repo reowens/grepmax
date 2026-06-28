@@ -1,3 +1,5 @@
+import { extname } from "node:path";
+
 export interface LanguageDefinition {
   id: string;
   extensions: string[];
@@ -265,6 +267,45 @@ export function getLanguageByExtension(
 ): LanguageDefinition | undefined {
   const normalized = ext.toLowerCase();
   return LANGUAGES.find((lang) => lang.extensions.includes(normalized));
+}
+
+// ---------------------------------------------------------------------------
+// Language families — for cross-language phantom-edge suppression
+// ---------------------------------------------------------------------------
+
+// The shared LanceDB table holds every language's chunks, scoped only by path.
+// A bare-name call-graph match (`array_contains(referenced_symbols, 'render')`)
+// therefore cross-connects a `render` defined in Python to a `render` referenced
+// in TSX. To suppress those phantom edges we collapse languages that genuinely
+// share a call namespace into one "family" and only keep edges within it.
+// Languages absent from this map are their own family (their `id`). The grouping
+// is deliberately conservative: only languages that directly call across one
+// another are merged, so a real cross-file edge is never dropped.
+const LANGUAGE_FAMILIES: Record<string, string> = {
+  // JS/TS ecosystem — these freely import and call across one another.
+  typescript: "js_ts",
+  tsx: "js_ts",
+  javascript: "js_ts",
+  // C and C++ share headers and C++ calls into C.
+  c: "c_cpp",
+  cpp: "c_cpp",
+};
+
+/** The call-namespace family for a language id (defaults to the id itself). */
+export function languageFamily(langId: string): string {
+  return LANGUAGE_FAMILIES[langId] ?? langId;
+}
+
+/**
+ * The language family for a file path, or null when the extension is unknown or
+ * absent. Null means "unclassifiable, do not filter" — callers must keep edges
+ * they can't classify and only drop edges whose family is known *and* differs.
+ */
+export function languageFamilyForPath(path: string): string | null {
+  const ext = extname(path).toLowerCase();
+  if (!ext) return null;
+  const lang = getLanguageByExtension(ext);
+  return lang ? languageFamily(lang.id) : null;
 }
 
 export function getGrammarUrl(grammarName: string): string | undefined {

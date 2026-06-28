@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   getGrammarUrl,
   getLanguageByExtension,
+  languageFamily,
+  languageFamilyForPath,
 } from "../src/lib/core/languages";
 
 describe("getLanguageByExtension", () => {
@@ -86,6 +88,50 @@ describe("getLanguageByExtension", () => {
     const lang = getLanguageByExtension(".yaml");
     expect(lang?.id).toBe("yaml");
     expect(lang?.grammar).toBeUndefined();
+  });
+});
+
+describe("languageFamily", () => {
+  it("collapses the JS/TS ecosystem into one family", () => {
+    expect(languageFamily("typescript")).toBe("js_ts");
+    expect(languageFamily("tsx")).toBe("js_ts");
+    expect(languageFamily("javascript")).toBe("js_ts");
+  });
+
+  it("groups C and C++ together", () => {
+    expect(languageFamily("c")).toBe("c_cpp");
+    expect(languageFamily("cpp")).toBe("c_cpp");
+  });
+
+  it("leaves other languages as their own family", () => {
+    expect(languageFamily("python")).toBe("python");
+    expect(languageFamily("go")).toBe("go");
+    expect(languageFamily("rust")).toBe("rust");
+  });
+});
+
+describe("languageFamilyForPath", () => {
+  it("maps .ts/.tsx/.jsx paths to the js_ts family", () => {
+    expect(languageFamilyForPath("/a/b/foo.ts")).toBe("js_ts");
+    expect(languageFamilyForPath("/a/b/Comp.tsx")).toBe("js_ts");
+    expect(languageFamilyForPath("/a/b/bar.jsx")).toBe("js_ts");
+  });
+
+  it("separates python from the js_ts family", () => {
+    expect(languageFamilyForPath("/a/b/view.py")).toBe("python");
+    expect(languageFamilyForPath("/a/b/view.py")).not.toBe(
+      languageFamilyForPath("/a/b/view.tsx"),
+    );
+  });
+
+  it("returns null for unknown or extension-less paths (unclassifiable)", () => {
+    expect(languageFamilyForPath("/a/b/data.unknown")).toBeNull();
+    expect(languageFamilyForPath("/a/b/Makefile")).toBeNull();
+    expect(languageFamilyForPath("")).toBeNull();
+  });
+
+  it("is case-insensitive on the extension", () => {
+    expect(languageFamilyForPath("/a/B.TS")).toBe("js_ts");
   });
 });
 
