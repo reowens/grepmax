@@ -5,11 +5,11 @@ import { symbolNotFoundLines } from "../lib/utils/agent-errors";
 import { gracefulExit } from "../lib/utils/exit";
 import { escapeSqlString } from "../lib/utils/filter-builder";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
+import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import {
   maybeWarnStaleChunker,
   maybeWarnStaleEmbedding,
 } from "../lib/utils/stale-hint";
-import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
 const useColors = process.stdout.isTTY && !process.env.NO_COLOR;
 const style = {

@@ -1,5 +1,8 @@
 import process from "node:process";
+
 process.title = "gmax-worker";
+
+import { debug } from "../utils/logger";
 import processFile, {
   encodeQuery,
   type ProcessFileInput,
@@ -7,7 +10,6 @@ import processFile, {
   type RerankDoc,
   rerank,
 } from "./worker";
-import { debug } from "../utils/logger";
 
 type IncomingMessage =
   | { id: number; method: "processFile"; payload: ProcessFileInput }

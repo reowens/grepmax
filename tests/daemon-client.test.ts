@@ -16,9 +16,9 @@ vi.mock("../src/config", async () => {
 
 import {
   isDaemonRunning,
+  type StreamingProgress,
   sendDaemonCommand,
   sendStreamingCommand,
-  type StreamingProgress,
 } from "../src/lib/utils/daemon-client";
 
 function startMockServer(

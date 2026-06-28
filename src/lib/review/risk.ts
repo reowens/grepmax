@@ -1,7 +1,7 @@
 import type { GraphBuilder } from "../graph/graph-builder";
 import { findTests } from "../graph/impact";
-import type { VectorDB } from "../store/vector-db";
 import { extractDiff, extractSymbols, fileChurn } from "../llm/diff";
+import type { VectorDB } from "../store/vector-db";
 
 // Phase 8 — diff-aware risk preamble. A deterministic, LLM-free ranking of the
 // symbols a change touches by how dangerous they are to break: blast radius

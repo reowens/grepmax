@@ -5,16 +5,15 @@ import {
   fileNotFoundLines,
   symbolNotFoundLines,
 } from "../lib/utils/agent-errors";
-import { escapeSqlString } from "../lib/utils/filter-builder";
+import { toArr } from "../lib/utils/arrow";
 import { gracefulExit } from "../lib/utils/exit";
+import { escapeSqlString } from "../lib/utils/filter-builder";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import {
   maybeWarnStaleChunker,
   maybeWarnStaleEmbedding,
 } from "../lib/utils/stale-hint";
-
-import { toArr } from "../lib/utils/arrow";
 
 export const similar = new Command("similar")
   .description("Find semantically similar code to a symbol or file")

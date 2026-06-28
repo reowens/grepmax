@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { GraphBuilder } from "../src/lib/graph/graph-builder";
 import {
-  type NeighborFn,
   bfsNeighbors,
   buildFileSubgraph,
   findPath,
+  type NeighborFn,
 } from "../src/lib/graph/graph-traversal";
 
 /**

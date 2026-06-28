@@ -1,15 +1,15 @@
-import * as fs from "node:fs";
 import { spawn } from "node:child_process";
+import * as fs from "node:fs";
 import * as path from "node:path";
 import { Command } from "commander";
 import { PATHS } from "../config";
 import { readGlobalConfig } from "../lib/index/index-config";
-import { escapeSqlString } from "../lib/utils/filter-builder";
 import { initialSync } from "../lib/index/syncer";
 import { startWatcher } from "../lib/index/watcher";
 import { MetaCache } from "../lib/store/meta-cache";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
+import { escapeSqlString } from "../lib/utils/filter-builder";
 import { openRotatedLog } from "../lib/utils/log-rotate";
 import { killProcess } from "../lib/utils/process";
 import { getProject, registerProject } from "../lib/utils/project-registry";

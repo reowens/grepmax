@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { TreeSitterChunker } from "../src/lib/index/chunker";
 import { GraphBuilder } from "../src/lib/graph/graph-builder";
+import { TreeSitterChunker } from "../src/lib/index/chunker";
 
 /**
  * End-to-end (minus embedding) proof that the chunker's identifier-as-value

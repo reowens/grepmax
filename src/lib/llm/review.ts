@@ -1,25 +1,25 @@
 import * as path from "node:path";
 import OpenAI from "openai";
 import { GraphBuilder } from "../graph/graph-builder";
-import { Searcher } from "../search/searcher";
-import { VectorDB } from "../store/vector-db";
-import { ensureProjectPaths } from "../utils/project-root";
-import { getLlmConfig } from "./config";
-import {
-  extractDiff,
-  readCommitInfo,
-  extractChangedFiles,
-  extractSymbols,
-  detectLanguages,
-  type CommitInfo,
-} from "./diff";
-import { appendReview, type Finding, type ReviewEntry } from "./report";
-import { type InvestigateContext, executeTool } from "./tools";
 import {
   computeRiskTable,
   formatRiskTable,
   gatherRiskInputs,
 } from "../review/risk";
+import { Searcher } from "../search/searcher";
+import { VectorDB } from "../store/vector-db";
+import { ensureProjectPaths } from "../utils/project-root";
+import { getLlmConfig } from "./config";
+import {
+  type CommitInfo,
+  detectLanguages,
+  extractChangedFiles,
+  extractDiff,
+  extractSymbols,
+  readCommitInfo,
+} from "./diff";
+import { appendReview, type Finding, type ReviewEntry } from "./report";
+import { executeTool, type InvestigateContext } from "./tools";
 
 // ---------------------------------------------------------------------------
 // Public API

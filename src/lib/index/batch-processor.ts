@@ -1,13 +1,13 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { INDEXABLE_EXTENSIONS } from "../../config";
 import type { MetaCache, MetaEntry } from "../store/meta-cache";
 import type { VectorRecord } from "../store/types";
 import type { VectorDB } from "../store/vector-db";
-import { INDEXABLE_EXTENSIONS } from "../../config";
+import { DiskPressureError, isLanceCorruptionError } from "../store/vector-db";
 import { isFileCached } from "../utils/cache-check";
 import { computeBufferHash, isIndexableFile } from "../utils/file-utils";
 import { log } from "../utils/logger";
-import { DiskPressureError, isLanceCorruptionError } from "../store/vector-db";
 import { getWorkerPool } from "../workers/pool";
 import { computeRetryAction } from "./watcher-batch";
 
@@ -178,7 +178,7 @@ export class ProjectBatchProcessor {
 
           // Fast path: if only mtime changed but size matches and we have a hash,
           // verify in-process instead of dispatching to a worker (~220ms saved).
-          if (cached && cached.hash && cached.size === stats.size) {
+          if (cached?.hash && cached.size === stats.size) {
             const buf = await fs.promises.readFile(absPath);
             const hash = computeBufferHash(buf);
             if (hash === cached.hash) {

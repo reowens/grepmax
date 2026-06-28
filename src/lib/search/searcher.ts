@@ -558,7 +558,7 @@ export class Searcher {
     if (whereClause) {
       vectorQuery = vectorQuery.where(whereClause);
     }
-    let vectorResults = (await vectorQuery.toArray()).map((r: any) => ({
+    const vectorResults = (await vectorQuery.toArray()).map((r: any) => ({
       ...r,
     })) as VectorRecord[];
 

@@ -16,8 +16,8 @@ import * as path from "node:path";
 import { PATHS } from "./config";
 import { VectorDB } from "./lib/store/vector-db";
 import { gracefulExit } from "./lib/utils/exit";
-import { getWorkerPool } from "./lib/workers/pool";
 import { escapeSqlString } from "./lib/utils/filter-builder";
+import { getWorkerPool } from "./lib/workers/pool";
 
 const PLATFORM_ROOT = path.join(
   process.env.HOME ?? "",

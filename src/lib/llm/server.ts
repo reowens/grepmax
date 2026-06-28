@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { PATHS } from "../../config";
 import { readGlobalConfig } from "../index/index-config";
 import { openRotatedLog } from "../utils/log-rotate";
-import { type LlmConfig, getLlmConfig } from "./config";
+import { getLlmConfig, type LlmConfig } from "./config";
 
 const HEALTH_TIMEOUT_MS = 2000;
 const POLL_INTERVAL_MS = 500;

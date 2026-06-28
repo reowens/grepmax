@@ -4,9 +4,9 @@ import {
   DEFAULT_SEED_PARAMS,
   matchesSeedFile,
   matchesSeedSymbol,
+  type SeedMatch,
   seedBoost,
   seedParamsFromEnv,
-  type SeedMatch,
 } from "../src/lib/search/seed-weight";
 
 /**

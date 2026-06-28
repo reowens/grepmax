@@ -3,10 +3,10 @@
  * to ensure the ONNX Runtime segfaults do not crash the main process.
  */
 import * as childProcess from "node:child_process";
-import { log, debug } from "../utils/logger";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { CONFIG, MAX_WORKER_MEMORY_MB, WORKER_TIMEOUT_MS } from "../../config";
+import { debug, log } from "../utils/logger";
 import type { ProcessFileInput, ProcessFileResult, RerankDoc } from "./worker";
 
 type TaskMethod = "processFile" | "encodeQuery" | "rerank";

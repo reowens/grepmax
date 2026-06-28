@@ -22,7 +22,7 @@ export function formatIndexStateFooter(
   state: IndexState | undefined,
   opts: { agent: boolean },
 ): string | null {
-  if (!state || !state.indexing) return null;
+  if (!state?.indexing) return null;
 
   const count =
     state.pendingFiles > 0 ? `~${state.pendingFiles} files pending` : null;

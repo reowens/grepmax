@@ -13,7 +13,7 @@ import {
   SYSTEM_PROMPT,
   searchLimitMessage,
 } from "./prompts";
-import { type InvestigateContext, TOOLS, executeTool } from "./tools";
+import { executeTool, type InvestigateContext, TOOLS } from "./tools";
 
 export interface InvestigateOptions {
   question: string;

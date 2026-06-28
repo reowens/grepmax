@@ -179,6 +179,7 @@ export function extractSymbols(diff: string): string[] {
       const idents: string[] = [];
       let m: RegExpExecArray | null;
       IDENT_RE.lastIndex = 0;
+      // biome-ignore lint/suspicious/noAssignInExpressions: idiomatic regex exec loop
       while ((m = IDENT_RE.exec(ctx)) !== null) {
         if (!KEYWORD_SKIP.has(m[0])) idents.push(m[0]);
       }
@@ -190,6 +191,7 @@ export function extractSymbols(diff: string): string[] {
     if (line.startsWith("+") && !line.startsWith("+++")) {
       DECL_RE.lastIndex = 0;
       let m: RegExpExecArray | null;
+      // biome-ignore lint/suspicious/noAssignInExpressions: idiomatic regex exec loop
       while ((m = DECL_RE.exec(line)) !== null) {
         symbols.add(m[1]);
       }

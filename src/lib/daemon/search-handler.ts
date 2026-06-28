@@ -86,7 +86,7 @@ export async function handleDaemonSearch(
 
   deps.touchActivity();
 
-  let result;
+  let result: Awaited<ReturnType<typeof searcher.search>>;
   try {
     result = await searcher.search(
       payload.query,

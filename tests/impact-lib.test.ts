@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  findDependents,
   isTestPath,
   resolveTargetSymbols,
-  findDependents,
 } from "../src/lib/graph/impact";
 
 function createMockDb(data: Record<string, any[]>) {

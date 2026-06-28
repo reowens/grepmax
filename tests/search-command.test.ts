@@ -416,8 +416,8 @@ describe("agent file-level grouping", () => {
     const out = lines.join("\n");
     expect(out).toContain("src/dup.ts (2 hits):");
     // children indented and path-stripped
-    expect(out).toMatch(/  :10\ts=0\.900 alpha \[DEFI\]/);
-    expect(out).toMatch(/  :20\ts=0\.700 beta \[DEFI\]/);
+    expect(out).toMatch(/ {2}:10\ts=0\.900 alpha \[DEFI\]/);
+    expect(out).toMatch(/ {2}:20\ts=0\.700 beta \[DEFI\]/);
     // single-hit file unchanged
     expect(out).toContain("src/solo.ts:5\ts=0.500 gamma [DEFI]");
     // no group header on the single-hit file

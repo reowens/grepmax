@@ -2,12 +2,11 @@ import * as path from "node:path";
 import { Command } from "commander";
 import { isBuiltinCallee } from "../lib/graph/callsites";
 import { VectorDB } from "../lib/store/vector-db";
-import { escapeSqlString } from "../lib/utils/filter-builder";
+import { toArr } from "../lib/utils/arrow";
 import { gracefulExit } from "../lib/utils/exit";
+import { escapeSqlString } from "../lib/utils/filter-builder";
 import { listProjects, resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
-
-import { toArr } from "../lib/utils/arrow";
 
 export const project = new Command("project")
   .description("Show project overview — languages, structure, key symbols")

@@ -1,10 +1,10 @@
 import * as fs from "node:fs";
-import * as path from "node:path";
 import type * as net from "node:net";
+import * as path from "node:path";
 import type { SearchFilter } from "../store/types";
 import type { DaemonResponse } from "../utils/daemon-client";
-import type { Daemon } from "./daemon";
 import { debug } from "../utils/logger";
+import type { Daemon } from "./daemon";
 
 const DAEMON_VERSION = (() => {
   try {

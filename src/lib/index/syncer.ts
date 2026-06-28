@@ -6,12 +6,12 @@ import {
   MAX_FILE_SIZE_BYTES,
   MODEL_IDS,
 } from "../../config";
-import { log, debug, timer, debugEvery } from "../utils/logger";
 import { MetaCache, type MetaEntry } from "../store/meta-cache";
 import type { VectorRecord } from "../store/types";
 import { VectorDB } from "../store/vector-db";
 // isIndexableFile no longer used — extension check inlined for performance
 import { acquireWriterLockWithRetry, type LockHandle } from "../utils/lock";
+import { debug, debugEvery, log, timer } from "../utils/logger";
 import { ensureProjectPaths } from "../utils/project-root";
 import { getWorkerPool } from "../workers/pool";
 import type { ProcessFileResult } from "../workers/worker";

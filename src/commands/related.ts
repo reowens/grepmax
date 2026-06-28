@@ -2,8 +2,9 @@ import * as path from "node:path";
 import { Command } from "commander";
 import { VectorDB } from "../lib/store/vector-db";
 import { fileNotFoundLines } from "../lib/utils/agent-errors";
-import { escapeSqlString } from "../lib/utils/filter-builder";
+import { toArr } from "../lib/utils/arrow";
 import { gracefulExit } from "../lib/utils/exit";
+import { escapeSqlString } from "../lib/utils/filter-builder";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import { withQueryTimeout } from "../lib/utils/query-timeout";
@@ -11,8 +12,6 @@ import {
   maybeWarnStaleChunker,
   maybeWarnStaleEmbedding,
 } from "../lib/utils/stale-hint";
-
-import { toArr } from "../lib/utils/arrow";
 
 export const related = new Command("related")
   .description("Find files related by shared symbol references")
@@ -141,7 +140,7 @@ export const related = new Command("related")
         "common",
         "shared",
       ]);
-      let mentions: string[] = [];
+      const mentions: string[] = [];
       let basename = "";
       let basenameRejected = false;
       if (topDeps.length === 0 && topRevs.length === 0) {

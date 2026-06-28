@@ -322,6 +322,7 @@ export class TreeSitterChunker {
       if (c.definedSymbols && c.content.length > 100) {
         const extra: string[] = [];
         let m: RegExpExecArray | null;
+        // biome-ignore lint/suspicious/noAssignInExpressions: idiomatic regex exec loop
         while ((m = PROP_FN_RE.exec(c.content)) !== null) {
           const name = m[1];
           if (name.length > 1 && !c.definedSymbols.includes(name)) {
@@ -344,6 +345,7 @@ export class TreeSitterChunker {
       const existing = new Set(c.referencedSymbols);
       let jm: RegExpExecArray | null;
       const jsxRefs: string[] = [];
+      // biome-ignore lint/suspicious/noAssignInExpressions: idiomatic regex exec loop
       while ((jm = JSX_RE.exec(c.content)) !== null) {
         // Extract base component name (e.g., "Foo" from "Foo.Bar")
         const full = jm[1];

@@ -195,6 +195,7 @@ export function sendStreamingCommand(
     socket.on("data", (chunk) => {
       buf += chunk.toString();
       let nl: number;
+      // biome-ignore lint/suspicious/noAssignInExpressions: idiomatic buffer-split loop
       while ((nl = buf.indexOf("\n")) !== -1) {
         const line = buf.slice(0, nl);
         buf = buf.slice(nl + 1);

@@ -17,11 +17,11 @@ import { VectorDB } from "../lib/store/vector-db";
 import { symbolNotFoundLines } from "../lib/utils/agent-errors";
 import { gracefulExit } from "../lib/utils/exit";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
+import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import {
   maybeWarnStaleChunker,
   maybeWarnStaleEmbedding,
 } from "../lib/utils/stale-hint";
-import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
 export const impact = new Command("impact")
   .description("Analyze change impact: dependents and affected tests")

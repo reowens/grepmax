@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  type RiskInput,
   computeRiskTable,
   formatRiskTable,
+  type RiskInput,
 } from "../src/lib/review/risk";
 
 /**

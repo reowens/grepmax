@@ -2,8 +2,8 @@ import * as os from "node:os";
 import { Command } from "commander";
 import { PATHS } from "../config";
 import { readGlobalConfig } from "../lib/index/index-config";
-import { escapeSqlString } from "../lib/utils/filter-builder";
 import { gracefulExit } from "../lib/utils/exit";
+import { escapeSqlString } from "../lib/utils/filter-builder";
 import { isLocked } from "../lib/utils/lock";
 import { listProjects } from "../lib/utils/project-registry";
 import { findProjectRoot } from "../lib/utils/project-root";
@@ -85,7 +85,7 @@ Examples:
         chunkCounts.set(project.root, rows.length);
       }
       await db.close();
-    } catch (err) {
+    } catch {
       console.warn(
         `[status] Failed to query LanceDB for live chunk counts, using cached counts`,
       );

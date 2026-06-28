@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { asSymbolQuery, buildWhereClause } from "../src/lib/search/searcher";
 import type { SearchIntent } from "../src/lib/search/intent";
+import { asSymbolQuery, buildWhereClause } from "../src/lib/search/searcher";
 
 const defaultIntent: SearchIntent = { type: "GENERAL" };
 

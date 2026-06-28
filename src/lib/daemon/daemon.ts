@@ -4,17 +4,17 @@ import * as path from "node:path";
 import type { AsyncSubscription } from "@parcel/watcher";
 import lockfile from "proper-lockfile";
 import { CONFIG, PATHS } from "../../config";
-import { ProjectBatchProcessor } from "../index/batch-processor";
-import { initialSync, generateSummaries } from "../index/syncer";
-import type { Searcher } from "../search/searcher";
+import type { ProjectBatchProcessor } from "../index/batch-processor";
+import { readGlobalConfig } from "../index/index-config";
+import { generateSummaries, initialSync } from "../index/syncer";
+import { LlmServer } from "../llm/server";
 import type { IndexState } from "../output/index-state-footer";
-import {
-  type DaemonSearchPayload,
-  type DaemonSearchResult,
-  handleDaemonSearch,
-} from "./search-handler";
+import type { Searcher } from "../search/searcher";
 import { MetaCache } from "../store/meta-cache";
 import { VectorDB } from "../store/vector-db";
+import { spawnDaemon } from "../utils/daemon-launcher";
+import { rotateLogFds } from "../utils/log-rotate";
+import { debug as dbg, log as dlog } from "../utils/logger";
 import { killProcess } from "../utils/process";
 import {
   getProject,
@@ -29,21 +29,21 @@ import {
   unregisterWatcher,
   unregisterWatcherByRoot,
 } from "../utils/watcher-store";
-import { LlmServer } from "../llm/server";
+import { destroyWorkerPool, isWorkerPoolInitialized } from "../workers/pool";
 import {
   handleCommand,
-  writeProgress,
-  writeDone,
   startHeartbeat,
+  writeDone,
+  writeProgress,
 } from "./ipc-handler";
-import { ProcessManager } from "./process-manager";
 import { MlxServerManager } from "./mlx-server-manager";
+import { ProcessManager } from "./process-manager";
+import {
+  type DaemonSearchPayload,
+  type DaemonSearchResult,
+  handleDaemonSearch,
+} from "./search-handler";
 import { WatcherManager } from "./watcher-manager";
-import { log as dlog, debug as dbg } from "../utils/logger";
-import { readGlobalConfig } from "../index/index-config";
-import { rotateLogFds } from "../utils/log-rotate";
-import { destroyWorkerPool, isWorkerPoolInitialized } from "../workers/pool";
-import { spawnDaemon } from "../utils/daemon-launcher";
 
 // 30 min was too aggressive — every shutdown is a chance for races, FSEvents
 // drops, and orphan MLX cleanup. 4 hours keeps the daemon resident through a

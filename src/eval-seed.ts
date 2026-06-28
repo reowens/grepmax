@@ -39,11 +39,11 @@
 process.env.GMAX_WORKER_COUNT ??= "1";
 
 import * as path from "node:path";
+import { PATHS } from "./config";
 import { Searcher } from "./lib/search/searcher";
 import type { SearchResponse } from "./lib/store/types";
 import { VectorDB } from "./lib/store/vector-db";
 import { gracefulExit } from "./lib/utils/exit";
-import { PATHS } from "./config";
 
 type SeedKind = "route" | "recover" | "guard";
 

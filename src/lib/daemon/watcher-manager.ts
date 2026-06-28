@@ -1,7 +1,7 @@
-import type { AsyncSubscription } from "@parcel/watcher";
-import * as watcher from "@parcel/watcher";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { AsyncSubscription } from "@parcel/watcher";
+import * as watcher from "@parcel/watcher";
 import { ProjectBatchProcessor } from "../index/batch-processor";
 import { WATCHER_IGNORE_GLOBS } from "../index/watcher";
 import type { MetaCache } from "../store/meta-cache";
@@ -252,7 +252,7 @@ export class WatcherManager {
     }
 
     // Backoff: wait before re-subscribing (3s, 6s, 12s)
-    const delayMs = 3000 * Math.pow(2, fails - 1);
+    const delayMs = 3000 * 2 ** (fails - 1);
     console.error(
       `[daemon:${name}] Recovering watcher (attempt ${fails}/${MAX_WATCHER_RETRIES}, backoff ${delayMs}ms)...`,
     );
@@ -394,7 +394,7 @@ export class WatcherManager {
         if (!isFileCached(cached, stats)) {
           // Fast path: if only mtime changed but size is identical and we have a hash,
           // just verify the hash in-process instead of sending to a worker.
-          if (cached && cached.hash && cached.size === stats.size) {
+          if (cached?.hash && cached.size === stats.size) {
             const { computeBufferHash } = await import("../utils/file-utils");
             const buf = await fs.promises.readFile(absPath);
             const hash = computeBufferHash(buf);
