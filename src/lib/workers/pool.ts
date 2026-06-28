@@ -6,6 +6,7 @@ import * as childProcess from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { CONFIG, MAX_WORKER_MEMORY_MB, WORKER_TIMEOUT_MS } from "../../config";
+import { getModelIdsForTier, readGlobalConfig } from "../index/index-config";
 import { debug, log } from "../utils/logger";
 import type { ProcessFileInput, ProcessFileResult, RerankDoc } from "./worker";
 
@@ -114,6 +115,23 @@ const FORCE_KILL_GRACE_MS = 200;
 // enough that the reap loop self-heals within a minute.
 const REAP_FORCE_KILL_GRACE_MS = 5_000;
 
+/**
+ * Embedding env derived from the active model tier, injected into every spawned
+ * worker so the worker's VectorDB dim (GMAX_VECTOR_DIM) and CPU ONNX model
+ * (GMAX_EMBED_ONNX_MODEL) match the configured tier. Without this, workers fall
+ * back to the hard-wired small tier (384d) regardless of config. One spot covers
+ * every worker user (index, add, search, daemon, mcp). Merged so process.env can
+ * override — see the spread order at fork().
+ */
+export function embeddingEnv(): Record<string, string> {
+  const { modelTier } = readGlobalConfig();
+  const ids = getModelIdsForTier(modelTier);
+  return {
+    GMAX_VECTOR_DIM: String(ids.vectorDim),
+    GMAX_EMBED_ONNX_MODEL: ids.embed,
+  };
+}
+
 class ProcessWorker {
   child: childProcess.ChildProcess;
   busy = false;
@@ -135,9 +153,11 @@ class ProcessWorker {
     maxMemoryMb?: number,
   ) {
     const memArgs = maxMemoryMb ? [`--max-old-space-size=${maxMemoryMb}`] : [];
+    // embeddingEnv() first so a manually-exported GMAX_VECTOR_DIM /
+    // GMAX_EMBED_ONNX_MODEL in process.env still wins (spread last).
     this.child = childProcess.fork(modulePath, {
       execArgv: [...memArgs, ...execArgv],
-      env: { ...process.env },
+      env: { ...embeddingEnv(), ...process.env },
     });
   }
 }

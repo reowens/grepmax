@@ -18,6 +18,7 @@ import {
   DISK_LOW_BYTES,
   FRAGMENT_COMPACT_THRESHOLD,
 } from "../../config";
+import { readGlobalConfig } from "../index/index-config";
 import { registerCleanup } from "../utils/cleanup";
 import { escapeSqlString, pathStartsWith } from "../utils/filter-builder";
 import { debug, log, timer } from "../utils/logger";
@@ -70,7 +71,10 @@ export class VectorDB {
     private lancedbDir: string,
     vectorDim?: number,
   ) {
-    this.vectorDim = vectorDim ?? CONFIG.VECTOR_DIM;
+    // Default to the configured tier's dim (not the hard-wired small-tier 384)
+    // so a `standard`-tier index actually stores 768d vectors. An explicit
+    // arg still wins (eval scripts, tests).
+    this.vectorDim = vectorDim ?? readGlobalConfig().vectorDim;
     this.unregisterCleanup = registerCleanup(() => this.close());
   }
 
@@ -448,10 +452,15 @@ export class VectorDB {
     // Callers (syncer flushBatch) splice records before passing — they're never reused.
     for (const rec of records) {
       const vec = toNumberArray(rec.vector);
-      if (vec.length < this.vectorDim) {
-        vec.push(...Array(this.vectorDim - vec.length).fill(0));
-      } else if (vec.length > this.vectorDim) {
-        vec.length = this.vectorDim;
+      // Never silently pad/truncate: a width mismatch means the embedding tier
+      // and this table disagree (wrong model wired, or a stale index after a
+      // tier change). Reshaping would store garbage that scores meaninglessly.
+      // Fail loudly and point at the fix instead.
+      if (vec.length !== this.vectorDim) {
+        throw new Error(
+          `Vector dimension mismatch: got ${vec.length}d, expected ${this.vectorDim}d. ` +
+            "The embedding model tier likely changed without a rebuild — run `gmax index --reset`.",
+        );
       }
       (rec as any).vector = vec;
       (rec as any).colbert = toBuffer(rec.colbert);

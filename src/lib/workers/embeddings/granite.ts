@@ -26,7 +26,10 @@ export class GraniteModel {
   }
 
   private resolvePaths(): { modelPath: string; tokenizerPath: string } {
-    const basePath = path.join(CACHE_DIR, MODEL_IDS.embed);
+    // Honor the active tier's ONNX model (propagated from the pool); fall back
+    // to the small-tier default when unset (standalone/test invocations).
+    const modelId = process.env.GMAX_EMBED_ONNX_MODEL || MODEL_IDS.embed;
+    const basePath = path.join(CACHE_DIR, modelId);
     const onnxDir = path.join(basePath, "onnx");
     const candidates = ["model_q4.onnx", "model.onnx"];
 
