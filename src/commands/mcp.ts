@@ -8,7 +8,6 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { Command } from "commander";
 import { MODEL_TIERS, PATHS } from "../config";
-import { computeAudit } from "./audit";
 import { type CallerTree, GraphBuilder } from "../lib/graph/graph-builder";
 import { readGlobalConfig, readIndexConfig } from "../lib/index/index-config";
 import { generateSummaries } from "../lib/index/syncer";
@@ -29,6 +28,7 @@ import { getProject, listProjects } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import { launchWatcher } from "../lib/utils/watcher-launcher";
 import { getWatcherCoveringPath } from "../lib/utils/watcher-store";
+import { computeAudit } from "./audit";
 
 // ---------------------------------------------------------------------------
 // Tool definitions
@@ -301,6 +301,13 @@ const TOOLS = [
   {
     name: "index_status",
     description: "Index health: chunks, files, projects, watcher status.",
+    inputSchema: { type: "object" as const, properties: {} },
+    _meta: { "anthropic/alwaysLoad": true },
+  },
+  {
+    name: "list_projects",
+    description:
+      "List every gmax-indexed project (name, root, status, chunk count). Use this to pick a search scope when you're not inside a specific repo: feed a name into semantic_search's projects: param, or use scope:'all'. The working-directory project is marked (current).",
     inputSchema: { type: "object" as const, properties: {} },
     _meta: { "anthropic/alwaysLoad": true },
   },
@@ -752,19 +759,38 @@ export const mcp = new Command("mcp")
     ): Promise<ToolResult> {
       const query = String(args.query || "");
       if (!query) return err("Missing required parameter: query");
-      const searchAll = isSearchAll || args.scope === "all";
+      let searchAll = isSearchAll || args.scope === "all";
 
       const limit = Math.min(Math.max(Number(args.limit) || 3, 1), 50);
 
       ensureWatcher();
 
+      // Project resolution. The server is pinned to whatever cwd it launched in
+      // (resolved once at startup). When that cwd ISN'T an indexed project and
+      // the caller hasn't pinned an explicit --root, fall back to cross-project
+      // search instead of dead-ending — this is what makes the server usable
+      // from a session that isn't sitting inside a registered repo.
+      let scopeNote = "";
       const proj = getProject(projectRoot);
-      if (!proj) {
+      if (!proj && typeof args.root !== "string") {
+        const indexed = listProjects().filter(
+          (p) => p.status !== "pending" && (p.chunkCount ?? 0) > 0,
+        );
+        if (indexed.length === 0) {
+          return err(
+            "No indexed projects yet. cd into a repo and run `gmax add` to index it first.",
+          );
+        }
+        searchAll = true;
+        scopeNote =
+          `Note: ${path.basename(projectRoot)}/ isn't an indexed gmax project — ` +
+          `searching all ${indexed.length} indexed project(s). ` +
+          `Call list_projects to see them, then pass projects:"name" to narrow.`;
+      } else if (!proj) {
         return err(
           "Project not added to gmax yet. Run `gmax add` to index it first.",
         );
-      }
-      if (proj.status === "pending" || proj.chunkCount === 0) {
+      } else if (proj.status === "pending" || proj.chunkCount === 0) {
         return err(
           "Project not indexed yet. Run `gmax add` to index it first.",
         );
@@ -853,7 +879,9 @@ export const mcp = new Command("mcp")
         const seedFiles = parseSeedList(args.seed_files);
         const seedSymbols = parseSeedList(args.seed_symbols);
         const seeds =
-          seedFiles || seedSymbols ? { files: seedFiles, symbols: seedSymbols } : undefined;
+          seedFiles || seedSymbols
+            ? { files: seedFiles, symbols: seedSymbols }
+            : undefined;
 
         const result = await searcher.search(
           query,
@@ -863,9 +891,18 @@ export const mcp = new Command("mcp")
           pathPrefix,
         );
 
+        // Prepend the scope-fallback note (if any) + searcher warnings to
+        // whatever body we return, so the agent learns it searched all projects.
+        const prefixNotes = (body: string): string => {
+          const notes = [scopeNote, ...(result.warnings ?? [])].filter(Boolean);
+          return notes.length ? `${notes.join("\n")}\n\n${body}` : body;
+        };
+
         if (!result.data || result.data.length === 0) {
           return ok(
-            "No matches found. Try broadening your query, using fewer keywords, or check `gmax status` to verify the project is indexed.",
+            prefixNotes(
+              "No matches found. Try broadening your query, using fewer keywords, or check `gmax status` to verify the project is indexed.",
+            ),
           );
         }
 
@@ -901,10 +938,7 @@ export const mcp = new Command("mcp")
               query,
             },
           );
-          if (result.warnings?.length) {
-            return ok(`${result.warnings.join("\n")}\n\n${output}`);
-          }
-          return ok(output);
+          return ok(prefixNotes(output));
         }
 
         let results = result.data.map((r: any) => {
@@ -1078,10 +1112,7 @@ export const mcp = new Command("mcp")
           }
         }
 
-        if (result.warnings?.length) {
-          return ok(`${result.warnings.join("\n")}\n\n${output}`);
-        }
-        return ok(output);
+        return ok(prefixNotes(output));
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         return err(`Search failed: ${msg}`);
@@ -1952,6 +1983,34 @@ export const mcp = new Command("mcp")
       }
     }
 
+    async function handleListProjects(): Promise<ToolResult> {
+      try {
+        const projects = listProjects();
+        if (projects.length === 0) {
+          return ok(
+            "No projects indexed yet. cd into a repo and run `gmax add` to index it.",
+          );
+        }
+        const currentName = getProject(projectRoot)?.name;
+        const lines = projects.map((p) => {
+          const here = p.name === currentName ? " (current)" : "";
+          const chunks =
+            typeof p.chunkCount === "number"
+              ? `\t(${p.chunkCount} chunks)`
+              : "";
+          return `${p.name}${here}\t${p.root}\t${p.status}${chunks}`;
+        });
+        return ok(
+          `${projects.length} indexed project(s). ` +
+            `Pass a name to semantic_search via projects:"name", or use scope:"all".\n\n` +
+            lines.join("\n"),
+        );
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return err(`Listing projects failed: ${msg}`);
+      }
+    }
+
     async function handleIndexStatus(): Promise<ToolResult> {
       try {
         const config = readIndexConfig(PATHS.configPath);
@@ -2713,6 +2772,16 @@ export const mcp = new Command("mcp")
         capabilities: {
           tools: {},
         },
+        instructions:
+          "gmax is a local semantic code-search index over one or more projects. " +
+          "By default tools operate on the project at the server's working directory. " +
+          "If you are NOT inside a specific repo, or want a different one: call " +
+          '`list_projects` to see what\'s indexed, then pass `projects:"name"` (or ' +
+          '`scope:"all"`) to `semantic_search`. When the working directory isn\'t an ' +
+          "indexed project, `semantic_search` automatically searches all of them and " +
+          "says so. Prefer `semantic_search` (detail:'pointer') for discovery, then " +
+          "`extract_symbol`/`peek_symbol`/`code_skeleton` to read, and " +
+          "`trace_calls`/`impact_analysis`/`find_tests` for call-graph questions.",
       },
     );
 
@@ -2762,6 +2831,9 @@ export const mcp = new Command("mcp")
           break;
         case "index_status":
           result = await handleIndexStatus();
+          break;
+        case "list_projects":
+          result = await handleListProjects();
           break;
         case "summarize_directory":
           result = await handleSummarizeDirectory(toolArgs);

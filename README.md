@@ -24,7 +24,7 @@ Natural-language search that works like `grep`. Fast, local, and built for codin
 - **Role Detection:** Distinguishes `ORCHESTRATION` (high-level logic) from `DEFINITION` (types/classes).
 - **Local & Private:** 100% local embeddings via ONNX (CPU) or MLX (Apple Silicon GPU).
 - **Centralized Index:** One database at `~/.gmax/` — index once, search from anywhere.
-- **Agent-Ready:** `--agent` flag returns compact one-line output — ~90% fewer tokens than default.
+- **Agent-Ready:** `--agent` flag returns compact one-line output — ~89% fewer tokens than default.
 
 ## Quick Start
 
@@ -124,7 +124,12 @@ Plugins auto-update when you run `npm install -g grepmax@latest` — no need to 
 | `extract_symbol` | Complete function/class body by symbol name. |
 | `peek_symbol` | Compact overview: signature + callers + callees. |
 | `dead` | Unused-symbol check via call graph. Returns `DEAD`, `PUBLIC EXPORT`, or `LIVE` with caller count. |
+| `audit` | Graph summary: god nodes, hub files, and dead-code candidates in one call. |
+| `get_neighbors` | Graph primitive: symbols reachable from a node along call edges within N hops. |
+| `find_paths` | Graph primitive: shortest call-graph path between two symbols. |
+| `subgraph_for_files` | Graph primitive: local dependency subgraph for a set of files. |
 | `list_symbols` | Indexed symbols with role and export status. |
+| `list_projects` | List every indexed project (name, root, status, chunks) to pick a search scope. |
 | `index_status` | Index health: chunks, files, projects, watcher status. |
 | `summarize_project` | Project overview: languages, structure, key symbols, entry points. |
 | `summarize_directory` | Generate LLM summaries for indexed chunks. |
@@ -138,6 +143,7 @@ Plugins auto-update when you run `npm install -g grepmax@latest` — no need to 
 | `investigate` | Agentic codebase Q&A using local LLM + gmax tools. |
 | `review_commit` | Review a git commit for bugs, security issues, and breaking changes. |
 | `review_report` | Get accumulated code review findings for the current project. |
+| `review_risk` | Deterministic risk ranking of symbols a commit touches (blast radius × tests × churn). No LLM. |
 
 ## Search Options
 
@@ -157,11 +163,19 @@ gmax "query" [options]
 | `--symbol` | Append call graph after results. | `false` |
 | `--imports` | Prepend file imports per result. | `false` |
 | `--name <regex>` | Filter by symbol name. | — |
+| `--in <subpath>` | Restrict to a sub-path of the project (repeatable). | — |
+| `--seed-file <path>` | Bias results toward files in your working context (repeatable). | — |
+| `--seed-symbol <name>` | Bias results toward an identifier you're working with (repeatable). | — |
 | `--skeleton` | Show file skeletons for top matches. | `false` |
 | `--context-for-llm` | Full function bodies + imports per result. | `false` |
 | `--budget <tokens>` | Cap output tokens (for `--context-for-llm`). | `8000` |
 | `--explain` | Show scoring breakdown per result. | `false` |
+| `--scores` | Show relevance scores. | `false` |
+| `--compact` | Compact hits view (paths + line ranges + role/preview). | `false` |
+| `--plain` | Disable ANSI colors and use simpler formatting. | `false` |
+| `-c, --content` | Show full chunk content instead of snippets. | `false` |
 | `-C <n>` | Context lines before/after. | `0` |
+| `-s, --sync` | Sync local files to the store before searching. | `false` |
 | `--root <dir>` | Search a different project. | cwd |
 | `--all-projects` | Search every indexed project; results grouped by project. | `false` |
 | `--projects <list>` | Search only these projects (comma-separated names). | — |
@@ -251,7 +265,10 @@ All data lives in `~/.gmax/`:
 
 **Pipeline:** Walk (gitignore-aware) → Chunk (Tree-sitter) → Embed (384-dim Granite via ONNX/MLX) → Store (LanceDB + LMDB) → Search (vector + FTS + RRF fusion + ColBERT rerank)
 
-**Supported Languages:** TypeScript, JavaScript, Python, Go, Rust, Java, C#, C++, C, Ruby, PHP, Swift, Kotlin, JSON, YAML, Markdown, SQL, Shell.
+**Supported Languages:**
+
+- *Structure-aware* (Tree-sitter chunking + call graph): TypeScript, JavaScript/JSX, Python, Go, Rust, Java, C#, C++, C, Ruby, PHP, Swift, Kotlin, Scala, Lua, Bash, JSON.
+- *Text-indexed* (semantic search only, no call graph): Markdown, YAML, CSS, HTML, SQL, TOML, XML, and other common formats.
 
 ## Configuration
 
