@@ -1,19 +1,9 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-// Intentionally the low-level `Server`, not `McpServer`. The SDK marks `Server`
-// @deprecated for the high-level API but explicitly sanctions it "for advanced
-// use cases" — ours qualifies: 26 tools dispatched through a single
-// CallToolRequestSchema switch with custom `_meta` (alwaysLoad) and hand-written
-// JSON-Schema inputs. Migrating would mean rewriting every schema as a Zod shape
-// for no runtime gain. The deprecation surfaces only as an editor hint; `tsc`
-// passes clean. See README/commit history for the scoping notes.
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
 import { Command } from "commander";
+import { z } from "zod";
 import { MODEL_TIERS, PATHS } from "../config";
 import { type CallerTree, GraphBuilder } from "../lib/graph/graph-builder";
 import { readGlobalConfig, readIndexConfig } from "../lib/index/index-config";
@@ -36,511 +26,6 @@ import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import { launchWatcher } from "../lib/utils/watcher-launcher";
 import { getWatcherCoveringPath } from "../lib/utils/watcher-store";
 import { computeAudit } from "./audit";
-
-// ---------------------------------------------------------------------------
-// Tool definitions
-// ---------------------------------------------------------------------------
-
-const TOOLS = [
-  {
-    name: "semantic_search",
-    description:
-      "Search code by meaning. Use scope:'all' for cross-project. Prefer CLI: gmax \"query\" --plain",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        query: {
-          type: "string",
-          description: "Natural language query (5+ words recommended)",
-        },
-        limit: {
-          type: "number",
-          description: "Max results (default 3, max 50)",
-        },
-        root: {
-          type: "string",
-          description: "Search a different directory (absolute path)",
-        },
-        path: {
-          type: "string",
-          description: "Path prefix filter (e.g. 'src/auth/')",
-        },
-        detail: {
-          type: "string",
-          description: "'pointer' (default), 'code', or 'full'",
-        },
-        min_score: { type: "number", description: "Min score 0-1 (default 0)" },
-        max_per_file: { type: "number", description: "Max results per file" },
-        file: {
-          type: "string",
-          description: "Filename filter (e.g. 'syncer.ts')",
-        },
-        exclude: {
-          type: "string",
-          description: "Exclude path prefix (e.g. 'tests/')",
-        },
-        language: {
-          type: "string",
-          description: "Extension filter (e.g. 'ts', 'py')",
-        },
-        role: {
-          type: "string",
-          description: "'ORCHESTRATION', 'DEFINITION', or 'IMPLEMENTATION'",
-        },
-        context_lines: {
-          type: "number",
-          description: "Lines before/after chunk (max 20)",
-        },
-        mode: {
-          type: "string",
-          description: "'default' or 'symbol' (appends call graph)",
-        },
-        include_imports: {
-          type: "boolean",
-          description: "Prepend file imports to results",
-        },
-        name_pattern: {
-          type: "string",
-          description: "Regex filter on symbol name",
-        },
-        scope: {
-          type: "string",
-          description: "'project' (default) or 'all' (search everything)",
-        },
-        projects: {
-          type: "string",
-          description: "Project names to include (comma-separated)",
-        },
-        exclude_projects: {
-          type: "string",
-          description: "Project names to exclude (comma-separated)",
-        },
-        seed_files: {
-          type: "string",
-          description:
-            "Bias results toward your working context: comma-separated paths you have open (e.g. 'src/lib/llm/server.ts'). On-topic chunks in these files get lifted; off-topic ones are not.",
-        },
-        seed_symbols: {
-          type: "string",
-          description:
-            "Bias results toward identifiers you're working with: comma-separated symbol names. Chunks defining a seeded symbol are preferred over mere callers.",
-        },
-      },
-      required: ["query"],
-    },
-  },
-  {
-    name: "code_skeleton",
-    description:
-      "File structure with bodies collapsed (~4x fewer tokens). Accepts file, directory, or comma-separated paths.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        target: {
-          type: "string",
-          description: "File, directory, or comma-separated paths",
-        },
-        limit: {
-          type: "number",
-          description: "Max files for directory mode (default 10)",
-        },
-        format: { type: "string", description: "'text' (default) or 'json'" },
-      },
-      required: ["target"],
-    },
-  },
-  {
-    name: "trace_calls",
-    description:
-      "Call graph: importers, callers (multi-hop), callees with file:line.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        symbol: { type: "string", description: "Function/class name to trace" },
-        depth: {
-          type: "number",
-          description: "Caller depth (default 1, max 3)",
-        },
-      },
-      required: ["symbol"],
-    },
-  },
-  {
-    name: "extract_symbol",
-    description: "Extract complete function/class body by symbol name.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        symbol: { type: "string", description: "Symbol name to extract" },
-        root: { type: "string", description: "Project root (absolute path)" },
-        include_imports: {
-          type: "boolean",
-          description: "Prepend file imports",
-        },
-      },
-      required: ["symbol"],
-    },
-  },
-  {
-    name: "peek_symbol",
-    description: "Compact symbol overview: signature + callers + callees.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        symbol: { type: "string", description: "Symbol name" },
-        root: { type: "string", description: "Project root (absolute path)" },
-        depth: {
-          type: "number",
-          description: "Caller depth (default 1, max 3)",
-        },
-      },
-      required: ["symbol"],
-    },
-  },
-  {
-    name: "dead",
-    description:
-      "Report whether a symbol has zero inbound callers in the indexed call graph. Returns DEAD, PUBLIC EXPORT (exported with no internal callers), or LIVE with caller count. Hypothesis, not proof: dynamic dispatch, reflection, and string-built call sites won't show up.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        symbol: { type: "string", description: "Symbol name to check" },
-        root: { type: "string", description: "Project root (absolute path)" },
-      },
-      required: ["symbol"],
-    },
-  },
-  {
-    name: "audit",
-    description:
-      "Graph-summary of the indexed project in one call: god nodes (most depended-upon symbols), hub files (most depended-upon files), and dead-code candidates (non-exported symbols with zero inbound references). Built from the static call graph — dynamic dispatch, reflection, eval, and type-position-only references are invisible, so dead candidates are hypotheses; verify with the `dead` tool before acting.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        root: {
-          type: "string",
-          description: "Project root (default: current)",
-        },
-        top: {
-          type: "number",
-          description: "How many of each category to return (default 10)",
-        },
-      },
-    },
-  },
-  {
-    name: "get_neighbors",
-    description:
-      "Graph primitive: symbols reachable from a node along call edges within N hops. direction 'callees' = what it calls (outbound), 'callers' = what calls it (inbound). Each result carries its hop distance and definition location. Static call graph — same caveats as `dead`/`audit`.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        symbol: { type: "string", description: "Starting symbol" },
-        direction: {
-          type: "string",
-          enum: ["callers", "callees"],
-          description: "Edge direction (default callees)",
-        },
-        max_hops: {
-          type: "number",
-          description: "Max hops (default 2, max 5)",
-        },
-        root: { type: "string", description: "Project root (absolute path)" },
-      },
-      required: ["symbol"],
-    },
-  },
-  {
-    name: "find_paths",
-    description:
-      "Graph primitive: shortest call-graph path between two symbols, as a symbol sequence. direction 'callees' searches outward from `from` (does `from` transitively call `to`?), 'callers' searches inward. Returns 'no path' if unreachable within max_hops.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        from: { type: "string", description: "Start symbol" },
-        to: { type: "string", description: "Target symbol" },
-        direction: {
-          type: "string",
-          enum: ["callers", "callees"],
-          description: "Search direction (default callees)",
-        },
-        max_hops: {
-          type: "number",
-          description: "Max hops (default 6, max 10)",
-        },
-        root: { type: "string", description: "Project root (absolute path)" },
-      },
-      required: ["from", "to"],
-    },
-  },
-  {
-    name: "subgraph_for_files",
-    description:
-      "Graph primitive: the local dependency subgraph for a set of files — symbols they define, the call edges among those symbols, and their outbound external dependencies. Paths may be absolute or project-root-relative.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        files: {
-          type: "array",
-          items: { type: "string" },
-          description: "File paths (absolute or root-relative)",
-        },
-        root: { type: "string", description: "Project root (absolute path)" },
-      },
-      required: ["files"],
-    },
-  },
-  {
-    name: "list_symbols",
-    description: "List indexed symbols with role and export status.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        pattern: {
-          type: "string",
-          description: "Name filter (case-insensitive)",
-        },
-        limit: { type: "number", description: "Max results (default 20)" },
-        path: { type: "string", description: "Path prefix filter" },
-      },
-    },
-  },
-  {
-    name: "index_status",
-    description: "Index health: chunks, files, projects, watcher status.",
-    inputSchema: { type: "object" as const, properties: {} },
-    _meta: { "anthropic/alwaysLoad": true },
-  },
-  {
-    name: "list_projects",
-    description:
-      "List every gmax-indexed project (name, root, status, chunk count). Use this to pick a search scope when you're not inside a specific repo: feed a name into semantic_search's projects: param, or use scope:'all'. The working-directory project is marked (current).",
-    inputSchema: { type: "object" as const, properties: {} },
-    _meta: { "anthropic/alwaysLoad": true },
-  },
-  {
-    name: "summarize_directory",
-    description: "Generate LLM summaries for indexed chunks.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        path: {
-          type: "string",
-          description: "Directory to summarize (default: project root)",
-        },
-        limit: {
-          type: "number",
-          description: "Max chunks (default 200, max 5000)",
-        },
-      },
-    },
-  },
-  {
-    name: "summarize_project",
-    description:
-      "Project overview: languages, structure, roles, key symbols, entry points.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        root: {
-          type: "string",
-          description: "Project root (default: current)",
-        },
-      },
-    },
-  },
-  {
-    name: "related_files",
-    description:
-      "Find dependencies and dependents of a file by shared symbols.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        file: {
-          type: "string",
-          description: "File path relative to project root",
-        },
-        limit: {
-          type: "number",
-          description: "Max results per direction (default 10)",
-        },
-      },
-      required: ["file"],
-    },
-  },
-  {
-    name: "recent_changes",
-    description: "Recently modified indexed files with timestamps.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        limit: {
-          type: "number",
-          description: "Max files to return (default 20)",
-        },
-        root: {
-          type: "string",
-          description: "Project root (defaults to current project)",
-        },
-      },
-    },
-  },
-  {
-    name: "diff_changes",
-    description:
-      "Search code scoped to git changes. Omit ref for uncommitted changes.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        ref: {
-          type: "string",
-          description: "Git ref to diff against (e.g. main, HEAD~5)",
-        },
-        query: {
-          type: "string",
-          description: "Semantic search within changed files",
-        },
-        limit: { type: "number", description: "Max results (default 10)" },
-        role: {
-          type: "string",
-          description:
-            "Filter by role: ORCHESTRATION, DEFINITION, IMPLEMENTATION",
-        },
-      },
-    },
-  },
-  {
-    name: "find_tests",
-    description:
-      "Find tests that exercise a symbol or file via reverse call graph.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        target: { type: "string", description: "Symbol name or file path" },
-        depth: {
-          type: "number",
-          description: "Caller traversal depth 1-3 (default 1)",
-        },
-      },
-      required: ["target"],
-    },
-  },
-  {
-    name: "impact_analysis",
-    description:
-      "Change impact: dependents and affected tests for a symbol or file.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        target: { type: "string", description: "Symbol name or file path" },
-        depth: {
-          type: "number",
-          description: "Caller traversal depth 1-3 (default 1)",
-        },
-      },
-      required: ["target"],
-    },
-  },
-  {
-    name: "find_similar",
-    description: "Find semantically similar code using vector similarity.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        target: { type: "string", description: "Symbol name or file path" },
-        limit: { type: "number", description: "Max results (default 5)" },
-        threshold: {
-          type: "number",
-          description: "Min similarity 0-1 (default 0)",
-        },
-      },
-      required: ["target"],
-    },
-  },
-  {
-    name: "build_context",
-    description: "Token-budgeted topic summary (search + skeleton + extract).",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        topic: {
-          type: "string",
-          description: "Natural language topic or directory path",
-        },
-        budget: { type: "number", description: "Max tokens (default 4000)" },
-        limit: {
-          type: "number",
-          description: "Search result limit (default 10)",
-        },
-      },
-      required: ["topic"],
-    },
-  },
-  {
-    name: "investigate",
-    description:
-      "Agentic codebase Q&A: a local LLM answers questions using search, trace, peek, impact, and related tools. Requires LLM to be enabled (gmax llm on).",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        question: {
-          type: "string",
-          description: "Natural language question about the codebase",
-        },
-        max_rounds: {
-          type: "number",
-          description: "Max tool-call rounds (default 10)",
-        },
-      },
-      required: ["question"],
-    },
-  },
-  {
-    name: "review_commit",
-    description:
-      "Review a git commit for bugs, breaking changes, and security issues using local LLM + codebase context. Returns structured findings. Requires LLM to be enabled (gmax llm on).",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        commit: {
-          type: "string",
-          description: "Git ref to review (default: HEAD)",
-        },
-      },
-      required: [],
-    },
-  },
-  {
-    name: "review_report",
-    description:
-      "Get the accumulated code review report for the current project. Returns findings from all reviewed commits.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        json: {
-          type: "boolean",
-          description: "Return raw JSON instead of text (default: false)",
-        },
-      },
-      required: [],
-    },
-  },
-  {
-    name: "review_risk",
-    description:
-      "Deterministic risk ranking of the symbols a commit's diff touches, ordered by blast radius (inbound callers) × test presence × file churn. No LLM required — fast, graph + git only. Use to triage what a change endangers before a deep review.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        commit: {
-          type: "string",
-          description: "Git ref to analyze (default: HEAD)",
-        },
-      },
-      required: [],
-    },
-  },
-];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -2748,10 +2233,148 @@ export const mcp = new Command("mcp")
       }
     }
 
+    // --- Review/LLM tool handlers (extracted from the old dispatch switch) ---
+
+    async function handleInvestigate(
+      args: Record<string, unknown>,
+    ): Promise<ToolResult> {
+      const question = String(args.question || "");
+      if (!question) return err("Missing required parameter: question");
+      const maxRounds = Math.min(
+        Math.max(Number(args.max_rounds) || 10, 1),
+        15,
+      );
+      try {
+        const { isDaemonRunning, sendDaemonCommand } = await import(
+          "../lib/utils/daemon-client"
+        );
+        if (await isDaemonRunning()) {
+          const llmResp = await sendDaemonCommand(
+            { cmd: "llm-start" },
+            { timeoutMs: 90_000 },
+          );
+          if (!llmResp.ok) {
+            return err(
+              `LLM server not available: ${llmResp.error}. Run \`gmax llm on && gmax llm start\`.`,
+            );
+          }
+        } else {
+          return err(
+            "LLM server not available. Run `gmax llm on && gmax llm start`.",
+          );
+        }
+        const { investigate } = await import("../lib/llm/investigate");
+        const inv = await investigate({ question, projectRoot, maxRounds });
+        return ok(inv.answer);
+      } catch (e) {
+        return err(
+          `Investigate failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
+
+    async function handleReviewCommit(
+      args: Record<string, unknown>,
+    ): Promise<ToolResult> {
+      const commitRef = String(args.commit || "HEAD");
+      try {
+        const { isDaemonRunning, sendDaemonCommand } = await import(
+          "../lib/utils/daemon-client"
+        );
+        if (await isDaemonRunning()) {
+          const llmResp = await sendDaemonCommand(
+            { cmd: "llm-start" },
+            { timeoutMs: 90_000 },
+          );
+          if (!llmResp.ok) {
+            return err(
+              `LLM server not available: ${llmResp.error}. Run \`gmax llm on && gmax llm start\`.`,
+            );
+          }
+        } else {
+          return err(
+            "LLM server not available. Run `gmax llm on && gmax llm start`.",
+          );
+        }
+        const { reviewCommit } = await import("../lib/llm/review");
+        const rev = await reviewCommit({ commitRef, projectRoot });
+        if (rev.clean) {
+          return ok(
+            `Clean commit (${rev.commit}) — no issues found in ${rev.duration}s.`,
+          );
+        }
+        const { readReport } = await import("../lib/llm/report");
+        const report = readReport(projectRoot);
+        const entry = report?.reviews.find((r) => r.commit === rev.commit);
+        return ok(
+          JSON.stringify(
+            {
+              commit: rev.commit,
+              findings: entry?.findings ?? [],
+              duration: rev.duration,
+            },
+            null,
+            2,
+          ),
+        );
+      } catch (e) {
+        return err(
+          `Review failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
+
+    async function handleReviewRisk(
+      args: Record<string, unknown>,
+    ): Promise<ToolResult> {
+      ensureWatcher();
+      const commitRef = String(args.commit || "HEAD");
+      try {
+        const db = getVectorDb();
+        const builder = new GraphBuilder(db, projectRoot);
+        const { gatherRiskInputs, computeRiskTable, formatRiskTable } =
+          await import("../lib/review/risk");
+        const inputs = await gatherRiskInputs(commitRef, projectRoot, {
+          vectorDb: db,
+          graphBuilder: builder,
+        });
+        const rows = computeRiskTable(inputs);
+        return rows.length === 0
+          ? ok("(no changed symbols in this diff)")
+          : ok(formatRiskTable(rows, { agent: true }));
+      } catch (e) {
+        return err(
+          `Risk ranking failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
+
+    async function handleReviewReport(
+      args: Record<string, unknown>,
+    ): Promise<ToolResult> {
+      try {
+        const { readReport, formatReportText } = await import(
+          "../lib/llm/report"
+        );
+        const report = readReport(projectRoot);
+        if (!report || report.reviews.length === 0) {
+          return ok("No review findings yet.");
+        }
+        if (args.json) {
+          return ok(JSON.stringify(report, null, 2));
+        }
+        return ok(formatReportText(report));
+      } catch (e) {
+        return err(
+          `Report failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
+
     // --- MCP server setup ---
 
     const transport = new StdioServerTransport();
-    const server = new Server(
+    const server = new McpServer(
       {
         name: "gmax",
         version: JSON.parse(
@@ -2777,227 +2400,14 @@ export const mcp = new Command("mcp")
       },
     );
 
-    server.setRequestHandler(ListToolsRequestSchema, async () => {
-      return { tools: TOOLS };
-    });
-
-    server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      const { name, arguments: args } = request.params;
-      const toolArgs = (args ?? {}) as Record<string, unknown>;
-      const startMs = Date.now();
-
-      let result: ToolResult;
-      switch (name) {
-        case "semantic_search":
-          result = await handleSemanticSearch(toolArgs, false);
-          break;
-        case "code_skeleton":
-          result = await handleCodeSkeleton(toolArgs);
-          break;
-        case "trace_calls":
-          result = await handleTraceCalls(toolArgs);
-          break;
-        case "extract_symbol":
-          result = await handleExtractSymbol(toolArgs);
-          break;
-        case "peek_symbol":
-          result = await handlePeekSymbol(toolArgs);
-          break;
-        case "dead":
-          result = await handleDead(toolArgs);
-          break;
-        case "audit":
-          result = await handleAudit(toolArgs);
-          break;
-        case "get_neighbors":
-          result = await handleGetNeighbors(toolArgs);
-          break;
-        case "find_paths":
-          result = await handleFindPaths(toolArgs);
-          break;
-        case "subgraph_for_files":
-          result = await handleSubgraphForFiles(toolArgs);
-          break;
-        case "list_symbols":
-          result = await handleListSymbols(toolArgs);
-          break;
-        case "index_status":
-          result = await handleIndexStatus();
-          break;
-        case "list_projects":
-          result = await handleListProjects();
-          break;
-        case "summarize_directory":
-          result = await handleSummarizeDirectory(toolArgs);
-          break;
-        case "summarize_project":
-          result = await handleSummarizeProject(toolArgs);
-          break;
-        case "related_files":
-          result = await handleRelatedFiles(toolArgs);
-          break;
-        case "recent_changes":
-          result = await handleRecentChanges(toolArgs);
-          break;
-        case "diff_changes":
-          result = await handleDiffChanges(toolArgs);
-          break;
-        case "find_tests":
-          result = await handleFindTests(toolArgs);
-          break;
-        case "impact_analysis":
-          result = await handleImpactAnalysis(toolArgs);
-          break;
-        case "find_similar":
-          result = await handleFindSimilar(toolArgs);
-          break;
-        case "build_context":
-          result = await handleBuildContext(toolArgs);
-          break;
-        case "investigate": {
-          const question = String(toolArgs.question || "");
-          if (!question) {
-            result = err("Missing required parameter: question");
-            break;
-          }
-          const maxRounds = Math.min(
-            Math.max(Number(toolArgs.max_rounds) || 10, 1),
-            15,
-          );
-          try {
-            const { isDaemonRunning, sendDaemonCommand } = await import(
-              "../lib/utils/daemon-client"
-            );
-            if (await isDaemonRunning()) {
-              const llmResp = await sendDaemonCommand(
-                { cmd: "llm-start" },
-                { timeoutMs: 90_000 },
-              );
-              if (!llmResp.ok) {
-                result = err(
-                  `LLM server not available: ${llmResp.error}. Run \`gmax llm on && gmax llm start\`.`,
-                );
-                break;
-              }
-            } else {
-              result = err(
-                "LLM server not available. Run `gmax llm on && gmax llm start`.",
-              );
-              break;
-            }
-            const { investigate } = await import("../lib/llm/investigate");
-            const inv = await investigate({ question, projectRoot, maxRounds });
-            result = ok(inv.answer);
-          } catch (e) {
-            result = err(
-              `Investigate failed: ${e instanceof Error ? e.message : String(e)}`,
-            );
-          }
-          break;
-        }
-        case "review_commit": {
-          const commitRef = String(toolArgs.commit || "HEAD");
-          try {
-            const { isDaemonRunning, sendDaemonCommand } = await import(
-              "../lib/utils/daemon-client"
-            );
-            if (await isDaemonRunning()) {
-              const llmResp = await sendDaemonCommand(
-                { cmd: "llm-start" },
-                { timeoutMs: 90_000 },
-              );
-              if (!llmResp.ok) {
-                result = err(
-                  `LLM server not available: ${llmResp.error}. Run \`gmax llm on && gmax llm start\`.`,
-                );
-                break;
-              }
-            } else {
-              result = err(
-                "LLM server not available. Run `gmax llm on && gmax llm start`.",
-              );
-              break;
-            }
-            const { reviewCommit } = await import("../lib/llm/review");
-            const rev = await reviewCommit({ commitRef, projectRoot });
-            if (rev.clean) {
-              result = ok(
-                `Clean commit (${rev.commit}) — no issues found in ${rev.duration}s.`,
-              );
-            } else {
-              const { readReport } = await import("../lib/llm/report");
-              const report = readReport(projectRoot);
-              const entry = report?.reviews.find(
-                (r) => r.commit === rev.commit,
-              );
-              result = ok(
-                JSON.stringify(
-                  {
-                    commit: rev.commit,
-                    findings: entry?.findings ?? [],
-                    duration: rev.duration,
-                  },
-                  null,
-                  2,
-                ),
-              );
-            }
-          } catch (e) {
-            result = err(
-              `Review failed: ${e instanceof Error ? e.message : String(e)}`,
-            );
-          }
-          break;
-        }
-        case "review_risk": {
-          ensureWatcher();
-          const commitRef = String(toolArgs.commit || "HEAD");
-          try {
-            const db = getVectorDb();
-            const builder = new GraphBuilder(db, projectRoot);
-            const { gatherRiskInputs, computeRiskTable, formatRiskTable } =
-              await import("../lib/review/risk");
-            const inputs = await gatherRiskInputs(commitRef, projectRoot, {
-              vectorDb: db,
-              graphBuilder: builder,
-            });
-            const rows = computeRiskTable(inputs);
-            result =
-              rows.length === 0
-                ? ok("(no changed symbols in this diff)")
-                : ok(formatRiskTable(rows, { agent: true }));
-          } catch (e) {
-            result = err(
-              `Risk ranking failed: ${e instanceof Error ? e.message : String(e)}`,
-            );
-          }
-          break;
-        }
-        case "review_report": {
-          try {
-            const { readReport, formatReportText } = await import(
-              "../lib/llm/report"
-            );
-            const report = readReport(projectRoot);
-            if (!report || report.reviews.length === 0) {
-              result = ok("No review findings yet.");
-            } else if (toolArgs.json) {
-              result = ok(JSON.stringify(report, null, 2));
-            } else {
-              result = ok(formatReportText(report));
-            }
-          } catch (e) {
-            result = err(
-              `Report failed: ${e instanceof Error ? e.message : String(e)}`,
-            );
-          }
-          break;
-        }
-        default:
-          return err(`Unknown tool: ${name}`);
-      }
-
-      // Best-effort query logging
+    // Best-effort query logging, applied uniformly to every tool exactly as the
+    // old single CallToolRequestSchema dispatch did before each return.
+    const logToolCall = async (
+      name: string,
+      toolArgs: Record<string, unknown>,
+      startMs: number,
+      result: ToolResult,
+    ): Promise<void> => {
       try {
         const { logQuery } = await import("../lib/utils/query-log");
         const text = result.content?.[0]?.text ?? "";
@@ -3015,9 +2425,536 @@ export const mcp = new Command("mcp")
           error: result.isError ? text.slice(0, 200) : undefined,
         });
       } catch {}
+    };
 
-      return result;
-    });
+    // Register a tool, wrapping its handler with timing + query logging. Zod raw
+    // shapes give us free input validation (the SDK rejects calls that violate
+    // the schema before the handler runs); handlers stay defensively coded.
+    function tool(
+      name: string,
+      config: {
+        description: string;
+        inputSchema: z.ZodRawShape;
+        _meta?: Record<string, unknown>;
+      },
+      handler: (args: Record<string, unknown>) => Promise<ToolResult>,
+    ): void {
+      server.registerTool(name, config, async (rawArgs) => {
+        const args = (rawArgs ?? {}) as Record<string, unknown>;
+        const startMs = Date.now();
+        const result = await handler(args);
+        await logToolCall(name, args, startMs, result);
+        return result;
+      });
+    }
+
+    tool(
+      "semantic_search",
+      {
+        description:
+          "Search code by meaning. Use scope:'all' for cross-project. Prefer CLI: gmax \"query\" --plain",
+        inputSchema: {
+          query: z
+            .string()
+            .describe("Natural language query (5+ words recommended)"),
+          limit: z
+            .number()
+            .describe("Max results (default 3, max 50)")
+            .optional(),
+          root: z
+            .string()
+            .describe("Search a different directory (absolute path)")
+            .optional(),
+          path: z
+            .string()
+            .describe("Path prefix filter (e.g. 'src/auth/')")
+            .optional(),
+          detail: z
+            .string()
+            .describe("'pointer' (default), 'code', or 'full'")
+            .optional(),
+          min_score: z
+            .number()
+            .describe("Min score 0-1 (default 0)")
+            .optional(),
+          max_per_file: z.number().describe("Max results per file").optional(),
+          file: z
+            .string()
+            .describe("Filename filter (e.g. 'syncer.ts')")
+            .optional(),
+          exclude: z
+            .string()
+            .describe("Exclude path prefix (e.g. 'tests/')")
+            .optional(),
+          language: z
+            .string()
+            .describe("Extension filter (e.g. 'ts', 'py')")
+            .optional(),
+          role: z
+            .string()
+            .describe("'ORCHESTRATION', 'DEFINITION', or 'IMPLEMENTATION'")
+            .optional(),
+          context_lines: z
+            .number()
+            .describe("Lines before/after chunk (max 20)")
+            .optional(),
+          mode: z
+            .string()
+            .describe("'default' or 'symbol' (appends call graph)")
+            .optional(),
+          include_imports: z
+            .boolean()
+            .describe("Prepend file imports to results")
+            .optional(),
+          name_pattern: z
+            .string()
+            .describe("Regex filter on symbol name")
+            .optional(),
+          scope: z
+            .string()
+            .describe("'project' (default) or 'all' (search everything)")
+            .optional(),
+          projects: z
+            .string()
+            .describe("Project names to include (comma-separated)")
+            .optional(),
+          exclude_projects: z
+            .string()
+            .describe("Project names to exclude (comma-separated)")
+            .optional(),
+          seed_files: z
+            .string()
+            .describe(
+              "Bias results toward your working context: comma-separated paths you have open (e.g. 'src/lib/llm/server.ts'). On-topic chunks in these files get lifted; off-topic ones are not.",
+            )
+            .optional(),
+          seed_symbols: z
+            .string()
+            .describe(
+              "Bias results toward identifiers you're working with: comma-separated symbol names. Chunks defining a seeded symbol are preferred over mere callers.",
+            )
+            .optional(),
+        },
+      },
+      handleSemanticSearch,
+    );
+
+    tool(
+      "code_skeleton",
+      {
+        description:
+          "File structure with bodies collapsed (~4x fewer tokens). Accepts file, directory, or comma-separated paths.",
+        inputSchema: {
+          target: z
+            .string()
+            .describe("File, directory, or comma-separated paths"),
+          limit: z
+            .number()
+            .describe("Max files for directory mode (default 10)")
+            .optional(),
+          format: z.string().describe("'text' (default) or 'json'").optional(),
+        },
+      },
+      handleCodeSkeleton,
+    );
+
+    tool(
+      "trace_calls",
+      {
+        description:
+          "Call graph: importers, callers (multi-hop), callees with file:line.",
+        inputSchema: {
+          symbol: z.string().describe("Function/class name to trace"),
+          depth: z
+            .number()
+            .describe("Caller depth (default 1, max 3)")
+            .optional(),
+        },
+      },
+      handleTraceCalls,
+    );
+
+    tool(
+      "extract_symbol",
+      {
+        description: "Extract complete function/class body by symbol name.",
+        inputSchema: {
+          symbol: z.string().describe("Symbol name to extract"),
+          root: z.string().describe("Project root (absolute path)").optional(),
+          include_imports: z
+            .boolean()
+            .describe("Prepend file imports")
+            .optional(),
+        },
+      },
+      handleExtractSymbol,
+    );
+
+    tool(
+      "peek_symbol",
+      {
+        description: "Compact symbol overview: signature + callers + callees.",
+        inputSchema: {
+          symbol: z.string().describe("Symbol name"),
+          root: z.string().describe("Project root (absolute path)").optional(),
+          depth: z
+            .number()
+            .describe("Caller depth (default 1, max 3)")
+            .optional(),
+        },
+      },
+      handlePeekSymbol,
+    );
+
+    tool(
+      "dead",
+      {
+        description:
+          "Report whether a symbol has zero inbound callers in the indexed call graph. Returns DEAD, PUBLIC EXPORT (exported with no internal callers), or LIVE with caller count. Hypothesis, not proof: dynamic dispatch, reflection, and string-built call sites won't show up.",
+        inputSchema: {
+          symbol: z.string().describe("Symbol name to check"),
+          root: z.string().describe("Project root (absolute path)").optional(),
+        },
+      },
+      handleDead,
+    );
+
+    tool(
+      "audit",
+      {
+        description:
+          "Graph-summary of the indexed project in one call: god nodes (most depended-upon symbols), hub files (most depended-upon files), and dead-code candidates (non-exported symbols with zero inbound references). Built from the static call graph — dynamic dispatch, reflection, eval, and type-position-only references are invisible, so dead candidates are hypotheses; verify with the `dead` tool before acting.",
+        inputSchema: {
+          root: z
+            .string()
+            .describe("Project root (default: current)")
+            .optional(),
+          top: z
+            .number()
+            .describe("How many of each category to return (default 10)")
+            .optional(),
+        },
+      },
+      handleAudit,
+    );
+
+    tool(
+      "get_neighbors",
+      {
+        description:
+          "Graph primitive: symbols reachable from a node along call edges within N hops. direction 'callees' = what it calls (outbound), 'callers' = what calls it (inbound). Each result carries its hop distance and definition location. Static call graph — same caveats as `dead`/`audit`.",
+        inputSchema: {
+          symbol: z.string().describe("Starting symbol"),
+          direction: z
+            .enum(["callers", "callees"])
+            .describe("Edge direction (default callees)")
+            .optional(),
+          max_hops: z
+            .number()
+            .describe("Max hops (default 2, max 5)")
+            .optional(),
+          root: z.string().describe("Project root (absolute path)").optional(),
+        },
+      },
+      handleGetNeighbors,
+    );
+
+    tool(
+      "find_paths",
+      {
+        description:
+          "Graph primitive: shortest call-graph path between two symbols, as a symbol sequence. direction 'callees' searches outward from `from` (does `from` transitively call `to`?), 'callers' searches inward. Returns 'no path' if unreachable within max_hops.",
+        inputSchema: {
+          from: z.string().describe("Start symbol"),
+          to: z.string().describe("Target symbol"),
+          direction: z
+            .enum(["callers", "callees"])
+            .describe("Search direction (default callees)")
+            .optional(),
+          max_hops: z
+            .number()
+            .describe("Max hops (default 6, max 10)")
+            .optional(),
+          root: z.string().describe("Project root (absolute path)").optional(),
+        },
+      },
+      handleFindPaths,
+    );
+
+    tool(
+      "subgraph_for_files",
+      {
+        description:
+          "Graph primitive: the local dependency subgraph for a set of files — symbols they define, the call edges among those symbols, and their outbound external dependencies. Paths may be absolute or project-root-relative.",
+        inputSchema: {
+          files: z
+            .array(z.string())
+            .describe("File paths (absolute or root-relative)"),
+          root: z.string().describe("Project root (absolute path)").optional(),
+        },
+      },
+      handleSubgraphForFiles,
+    );
+
+    tool(
+      "list_symbols",
+      {
+        description: "List indexed symbols with role and export status.",
+        inputSchema: {
+          pattern: z
+            .string()
+            .describe("Name filter (case-insensitive)")
+            .optional(),
+          limit: z.number().describe("Max results (default 20)").optional(),
+          path: z.string().describe("Path prefix filter").optional(),
+        },
+      },
+      handleListSymbols,
+    );
+
+    tool(
+      "index_status",
+      {
+        description: "Index health: chunks, files, projects, watcher status.",
+        inputSchema: {},
+        _meta: { "anthropic/alwaysLoad": true },
+      },
+      handleIndexStatus,
+    );
+
+    tool(
+      "list_projects",
+      {
+        description:
+          "List every gmax-indexed project (name, root, status, chunk count). Use this to pick a search scope when you're not inside a specific repo: feed a name into semantic_search's projects: param, or use scope:'all'. The working-directory project is marked (current).",
+        inputSchema: {},
+        _meta: { "anthropic/alwaysLoad": true },
+      },
+      handleListProjects,
+    );
+
+    tool(
+      "summarize_directory",
+      {
+        description: "Generate LLM summaries for indexed chunks.",
+        inputSchema: {
+          path: z
+            .string()
+            .describe("Directory to summarize (default: project root)")
+            .optional(),
+          limit: z
+            .number()
+            .describe("Max chunks (default 200, max 5000)")
+            .optional(),
+        },
+      },
+      handleSummarizeDirectory,
+    );
+
+    tool(
+      "summarize_project",
+      {
+        description:
+          "Project overview: languages, structure, roles, key symbols, entry points.",
+        inputSchema: {
+          root: z
+            .string()
+            .describe("Project root (default: current)")
+            .optional(),
+        },
+      },
+      handleSummarizeProject,
+    );
+
+    tool(
+      "related_files",
+      {
+        description:
+          "Find dependencies and dependents of a file by shared symbols.",
+        inputSchema: {
+          file: z.string().describe("File path relative to project root"),
+          limit: z
+            .number()
+            .describe("Max results per direction (default 10)")
+            .optional(),
+        },
+      },
+      handleRelatedFiles,
+    );
+
+    tool(
+      "recent_changes",
+      {
+        description: "Recently modified indexed files with timestamps.",
+        inputSchema: {
+          limit: z
+            .number()
+            .describe("Max files to return (default 20)")
+            .optional(),
+          root: z
+            .string()
+            .describe("Project root (defaults to current project)")
+            .optional(),
+        },
+      },
+      handleRecentChanges,
+    );
+
+    tool(
+      "diff_changes",
+      {
+        description:
+          "Search code scoped to git changes. Omit ref for uncommitted changes.",
+        inputSchema: {
+          ref: z
+            .string()
+            .describe("Git ref to diff against (e.g. main, HEAD~5)")
+            .optional(),
+          query: z
+            .string()
+            .describe("Semantic search within changed files")
+            .optional(),
+          limit: z.number().describe("Max results (default 10)").optional(),
+          role: z
+            .string()
+            .describe(
+              "Filter by role: ORCHESTRATION, DEFINITION, IMPLEMENTATION",
+            )
+            .optional(),
+        },
+      },
+      handleDiffChanges,
+    );
+
+    tool(
+      "find_tests",
+      {
+        description:
+          "Find tests that exercise a symbol or file via reverse call graph.",
+        inputSchema: {
+          target: z.string().describe("Symbol name or file path"),
+          depth: z
+            .number()
+            .describe("Caller traversal depth 1-3 (default 1)")
+            .optional(),
+        },
+      },
+      handleFindTests,
+    );
+
+    tool(
+      "impact_analysis",
+      {
+        description:
+          "Change impact: dependents and affected tests for a symbol or file.",
+        inputSchema: {
+          target: z.string().describe("Symbol name or file path"),
+          depth: z
+            .number()
+            .describe("Caller traversal depth 1-3 (default 1)")
+            .optional(),
+        },
+      },
+      handleImpactAnalysis,
+    );
+
+    tool(
+      "find_similar",
+      {
+        description: "Find semantically similar code using vector similarity.",
+        inputSchema: {
+          target: z.string().describe("Symbol name or file path"),
+          limit: z.number().describe("Max results (default 5)").optional(),
+          threshold: z
+            .number()
+            .describe("Min similarity 0-1 (default 0)")
+            .optional(),
+        },
+      },
+      handleFindSimilar,
+    );
+
+    tool(
+      "build_context",
+      {
+        description:
+          "Token-budgeted topic summary (search + skeleton + extract).",
+        inputSchema: {
+          topic: z
+            .string()
+            .describe("Natural language topic or directory path"),
+          budget: z.number().describe("Max tokens (default 4000)").optional(),
+          limit: z
+            .number()
+            .describe("Search result limit (default 10)")
+            .optional(),
+        },
+      },
+      handleBuildContext,
+    );
+
+    tool(
+      "investigate",
+      {
+        description:
+          "Agentic codebase Q&A: a local LLM answers questions using search, trace, peek, impact, and related tools. Requires LLM to be enabled (gmax llm on).",
+        inputSchema: {
+          question: z
+            .string()
+            .describe("Natural language question about the codebase"),
+          max_rounds: z
+            .number()
+            .describe("Max tool-call rounds (default 10)")
+            .optional(),
+        },
+      },
+      handleInvestigate,
+    );
+
+    tool(
+      "review_commit",
+      {
+        description:
+          "Review a git commit for bugs, breaking changes, and security issues using local LLM + codebase context. Returns structured findings. Requires LLM to be enabled (gmax llm on).",
+        inputSchema: {
+          commit: z
+            .string()
+            .describe("Git ref to review (default: HEAD)")
+            .optional(),
+        },
+      },
+      handleReviewCommit,
+    );
+
+    tool(
+      "review_report",
+      {
+        description:
+          "Get the accumulated code review report for the current project. Returns findings from all reviewed commits.",
+        inputSchema: {
+          json: z
+            .boolean()
+            .describe("Return raw JSON instead of text (default: false)")
+            .optional(),
+        },
+      },
+      handleReviewReport,
+    );
+
+    tool(
+      "review_risk",
+      {
+        description:
+          "Deterministic risk ranking of the symbols a commit's diff touches, ordered by blast radius (inbound callers) × test presence × file churn. No LLM required — fast, graph + git only. Use to triage what a change endangers before a deep review.",
+        inputSchema: {
+          commit: z
+            .string()
+            .describe("Git ref to analyze (default: HEAD)")
+            .optional(),
+        },
+      },
+      handleReviewRisk,
+    );
 
     await server.connect(transport);
 
