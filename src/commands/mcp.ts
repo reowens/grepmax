@@ -1,5 +1,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+// Intentionally the low-level `Server`, not `McpServer`. The SDK marks `Server`
+// @deprecated for the high-level API but explicitly sanctions it "for advanced
+// use cases" — ours qualifies: 26 tools dispatched through a single
+// CallToolRequestSchema switch with custom `_meta` (alwaysLoad) and hand-written
+// JSON-Schema inputs. Migrating would mean rewriting every schema as a Zod shape
+// for no runtime gain. The deprecation surfaces only as an editor hint; `tsc`
+// passes clean. See README/commit history for the scoping notes.
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
