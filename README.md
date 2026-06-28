@@ -2,6 +2,14 @@
   <h1>grepmax</h1>
   <p><em>Slash tokens. Save time. Semantic search for your coding agent.</em></p>
 
+  <a href="https://www.npmjs.com/package/grepmax">
+    <img src="https://img.shields.io/npm/v/grepmax.svg" alt="npm version" />
+  </a>
+
+  <a href="https://www.npmjs.com/package/grepmax">
+    <img src="https://img.shields.io/npm/dm/grepmax.svg" alt="npm downloads" />
+  </a>
+
   <a href="https://opensource.org/licenses/Apache-2.0">
     <img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License: Apache 2.0" />
   </a>
