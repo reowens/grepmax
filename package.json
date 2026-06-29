@@ -31,6 +31,8 @@
     "bench:oss:json": "GMAX_EVAL_JSON=1 npx tsx src/eval-oss.ts all",
     "bench:tokens": "npx tsx src/eval-tokens.ts",
     "bench:tokens:json": "GMAX_EVAL_JSON=1 npx tsx src/eval-tokens.ts",
+    "bench:surprises": "npx tsx src/eval-surprising-connections.ts",
+    "bench:surprises:json": "GMAX_EVAL_JSON=1 npx tsx src/eval-surprising-connections.ts",
     "format": "biome format --write .",
     "format:check": "biome check .",
     "lint": "biome lint .",
