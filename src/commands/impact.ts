@@ -63,11 +63,8 @@ export const impact = new Command("impact")
       const paths = ensureProjectPaths(projectRoot);
       vectorDb = new VectorDB(paths.lancedbDir);
 
-      const { symbols, resolvedAsFile } = await resolveTargetSymbols(
-        target,
-        vectorDb,
-        projectRoot,
-      );
+      const { symbols, resolvedAsFile, symbolFamilies } =
+        await resolveTargetSymbols(target, vectorDb, projectRoot);
 
       if (symbols.length === 0) {
         console.log(
@@ -113,6 +110,7 @@ export const impact = new Command("impact")
           excludePaths,
           undefined,
           scope.excludePrefixes,
+          symbolFamilies,
         ),
         includeTests
           ? findTests(
@@ -121,6 +119,7 @@ export const impact = new Command("impact")
               queryRoot,
               depth,
               scope.excludePrefixes,
+              symbolFamilies,
             )
           : Promise.resolve([]),
       ]);

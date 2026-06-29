@@ -50,11 +50,8 @@ export const testFind = new Command("test")
       const paths = ensureProjectPaths(projectRoot);
       vectorDb = new VectorDB(paths.lancedbDir);
 
-      const { symbols, resolvedAsFile } = await resolveTargetSymbols(
-        target,
-        vectorDb,
-        projectRoot,
-      );
+      const { symbols, resolvedAsFile, symbolFamilies } =
+        await resolveTargetSymbols(target, vectorDb, projectRoot);
 
       if (symbols.length === 0) {
         console.log(
@@ -82,6 +79,7 @@ export const testFind = new Command("test")
         queryRoot,
         depth,
         scope.excludePrefixes,
+        symbolFamilies,
       );
 
       if (tests.length === 0) {

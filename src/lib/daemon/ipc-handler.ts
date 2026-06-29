@@ -87,6 +87,7 @@ export async function handleCommand(
       case "ping":
         return {
           ok: true,
+          ready: daemon.isReady(),
           pid: process.pid,
           uptime: daemon.uptime(),
           version: DAEMON_VERSION,

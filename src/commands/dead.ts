@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { languageFamilyForPath } from "../lib/core/languages";
 import { GraphBuilder, type GraphNode } from "../lib/graph/graph-builder";
 import { VectorDB } from "../lib/store/vector-db";
 import { symbolNotFoundLines } from "../lib/utils/agent-errors";
@@ -152,7 +153,10 @@ export const dead = new Command("dead")
         scope.pathPrefix,
         scope.excludePrefixes,
       );
-      const callers: GraphNode[] = await builder.getCallers(symbol);
+      const callers: GraphNode[] = await builder.getCallers(
+        symbol,
+        languageFamilyForPath(defPath),
+      );
 
       const status: Status =
         callers.length === 0 ? (isExported ? "PUBLIC_EXPORT" : "DEAD") : "LIVE";

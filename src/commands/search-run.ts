@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { CONFIG } from "../config";
 import { ensureGrammars } from "../lib/index/grammar-loader";
 import {
   createIndexingSpinner,
@@ -250,6 +251,7 @@ export async function runSearch(
             lastIndexed: new Date().toISOString(),
             chunkCount: result.indexed,
             status: "indexed",
+            chunkerVersion: CONFIG.CHUNKER_VERSION,
           });
 
           const failedSuffix =

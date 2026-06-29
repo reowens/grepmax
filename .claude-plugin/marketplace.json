@@ -15,9 +15,7 @@
         "name": "Robert Owens",
         "email": "robowens@me.com"
       },
-      "skills": [
-        "./skills/grepmax"
-      ]
+      "skills": ["./skills/grepmax"]
     }
   ]
 }

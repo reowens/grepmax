@@ -103,16 +103,36 @@ describe("GraphBuilder", () => {
     expect(graph.callees[0].line).toBe(42);
   });
 
+  it("buildGraph callee prefers same language when no self-file candidate exists", async () => {
+    const db = createMockDb({
+      "defined_symbols, 'handle'": [
+        makeRow("handle", "/src/view.py", 10, ["validate"]),
+      ],
+      "referenced_symbols, 'handle'": [],
+      // TS appears first, but the Python center should resolve the Python callee.
+      "defined_symbols, 'validate'": [
+        makeRow("validate", "/src/validate.ts", 1),
+        makeRow("validate", "/src/validate.py", 2),
+      ],
+    });
+    const builder = new GraphBuilder(db);
+    const graph = await builder.buildGraph("handle");
+
+    expect(graph.callees.length).toBe(1);
+    expect(graph.callees[0].file).toBe("/src/validate.py");
+    expect(graph.callees[0].line).toBe(2);
+  });
+
   it("buildGraph callee falls back to first row when none is self-file", async () => {
     const db = createMockDb({
       "defined_symbols, 'handleAuth'": [
-        makeRow("handleAuth", "/src/auth.ts", 10, ["validate"]),
+        makeRow("handleAuth", "/src/auth.py", 10, ["validate"]),
       ],
       "referenced_symbols, 'handleAuth'": [],
-      // Neither definition is in the center's file → unchanged first-row behaviour.
+      // No definition is in the center's file or language family → first-row fallback.
       "defined_symbols, 'validate'": [
         makeRow("validate", "/src/a.ts", 1),
-        makeRow("validate", "/src/b.ts", 2),
+        makeRow("validate", "/src/b.rb", 2),
       ],
     });
     const builder = new GraphBuilder(db);
@@ -244,6 +264,19 @@ describe("GraphBuilder", () => {
 
     expect(graph.center!.file).toBe("/app/view.py");
     expect(graph.callers.map((c) => c.file)).toEqual(["/app/cli.py"]);
+  });
+
+  it("getCallers applies an explicit language-family anchor", async () => {
+    const db = createMockDb({
+      "referenced_symbols, 'render'": [
+        makeRow("Component", "/app/widget.tsx", 5, ["render"]),
+        makeRow("main", "/app/cli.py", 8, ["render"]),
+      ],
+    });
+    const builder = new GraphBuilder(db);
+    const callers = await builder.getCallers("render", "python");
+
+    expect(callers.map((c) => c.file)).toEqual(["/app/cli.py"]);
   });
 
   it("keeps callers across the JS/TS family (ts ↔ tsx)", async () => {

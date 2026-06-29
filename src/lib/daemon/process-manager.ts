@@ -3,6 +3,7 @@ import {
   isDaemonDraining,
   isDaemonHeartbeatFresh,
   isDaemonRunning,
+  waitForDaemonDrain,
 } from "../utils/daemon-client";
 import { log as dlog } from "../utils/logger";
 import { killProcess } from "../utils/process";
@@ -84,7 +85,7 @@ export class ProcessManager {
     const daemonPids = this.findProcessesByTitle("gmax-daemon").filter(
       (pid) => pid !== process.pid,
     );
-    const workerPids = this.findProcessesByTitle("gmax-worker");
+    let workerPids = this.findProcessesByTitle("gmax-worker");
 
     if (daemonPids.length === 0 && workerPids.length === 0) {
       dlog("daemon", "No stale processes found");
@@ -94,19 +95,28 @@ export class ProcessManager {
     // A peer that's gracefully shutting down has already dropped its
     // socket/PID/lock (so the liveness probes below read "stale") yet is still
     // mid-cleanup — destroying workers, closing LanceDB. Killing it now corrupts
-    // that teardown. Defer to its draining marker: don't kill it, and don't
-    // sweep its workers (it's reaping them itself); just take over the free lock.
-    let anyDraining = false;
+    // that teardown. Defer to its draining marker until the process exits; only
+    // after the marker grace elapses do we treat it like any other stale daemon.
     for (const pid of daemonPids) {
       dlog("daemon", `found daemon PID:${pid}, checking liveness...`);
 
       if (isDaemonDraining(pid)) {
-        anyDraining = true;
         dlog(
           "daemon",
-          `daemon PID:${pid} is gracefully draining — leaving it to exit, taking over`,
+          `daemon PID:${pid} is gracefully draining — waiting for it to exit`,
         );
-        continue;
+        const exited = await waitForDaemonDrain(pid);
+        if (exited) {
+          dlog("daemon", `daemon PID:${pid} finished draining`);
+          // The peer may have reaped its workers while we waited. Rescan before
+          // sweeping so we don't act on a stale process snapshot.
+          workerPids = this.findProcessesByTitle("gmax-worker");
+          continue;
+        }
+        dlog(
+          "daemon",
+          `daemon PID:${pid} still exists after drain grace — checking stale probes`,
+        );
       }
 
       // A busy daemon (mid-index, compaction, big LMDB write) can block the
@@ -135,18 +145,9 @@ export class ProcessManager {
 
     // 2. Kill orphaned workers from previous daemon instances.
     // Safe because this runs before the new daemon's worker pool is initialized.
-    // Skipped while a peer is draining — those workers belong to it and it's
-    // tearing them down; sweeping them here would race its own cleanup.
-    if (anyDraining) {
-      dlog(
-        "daemon",
-        "skipping orphan-worker sweep — a peer is draining its own workers",
-      );
-    } else {
-      for (const pid of workerPids) {
-        dlog("daemon", `killing orphaned worker PID:${pid}`);
-        await killProcess(pid);
-      }
+    for (const pid of workerPids) {
+      dlog("daemon", `killing orphaned worker PID:${pid}`);
+      await killProcess(pid);
     }
 
     dlog(

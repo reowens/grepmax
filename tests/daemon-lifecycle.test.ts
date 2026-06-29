@@ -83,6 +83,14 @@ describe("Daemon readiness gate (IPC)", () => {
     expect(daemon.isReady()).toBe(false);
     const resp = await handleCommand(daemon, { cmd: "ping" }, conn);
     expect(resp?.ok).toBe(true);
+    expect(resp?.ready).toBe(false);
+  });
+
+  it("reports ready on ping once resources are open", async () => {
+    daemon.ready = true;
+    const resp = await handleCommand(daemon, { cmd: "ping" }, conn);
+    expect(resp?.ok).toBe(true);
+    expect(resp?.ready).toBe(true);
   });
 
   it("rejects resource-dependent commands until ready", async () => {

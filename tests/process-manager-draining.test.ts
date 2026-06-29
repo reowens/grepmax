@@ -4,6 +4,7 @@ vi.mock("../src/lib/utils/daemon-client", () => ({
   isDaemonDraining: vi.fn(() => false),
   isDaemonHeartbeatFresh: vi.fn(() => false),
   isDaemonRunning: vi.fn(async () => false),
+  waitForDaemonDrain: vi.fn(async () => true),
 }));
 
 vi.mock("../src/lib/utils/process", () => ({
@@ -15,17 +16,18 @@ import {
   isDaemonDraining,
   isDaemonHeartbeatFresh,
   isDaemonRunning,
+  waitForDaemonDrain,
 } from "../src/lib/utils/daemon-client";
 import { killProcess } from "../src/lib/utils/process";
 
 const OLD_DAEMON_PID = 12345;
 const OLD_WORKER_PID = 999;
 
-function makeManager(): ProcessManager {
+function makeManager(workerPids = [OLD_WORKER_PID]): ProcessManager {
   const pm = new ProcessManager({ getShuttingDown: () => false });
   // Pretend the OS reports one other daemon and one worker.
   vi.spyOn(pm, "findProcessesByTitle").mockImplementation((title: string) =>
-    title === "gmax-daemon" ? [OLD_DAEMON_PID] : [OLD_WORKER_PID],
+    title === "gmax-daemon" ? [OLD_DAEMON_PID] : workerPids,
   );
   return pm;
 }
@@ -45,20 +47,31 @@ describe("killStaleProcesses draining handoff", () => {
     vi.clearAllMocks();
     vi.mocked(isDaemonHeartbeatFresh).mockReturnValue(false);
     vi.mocked(isDaemonRunning).mockResolvedValue(false);
+    vi.mocked(waitForDaemonDrain).mockResolvedValue(true);
     exitSpy = vi.spyOn(process, "exit").mockImplementation(((code?: number) => {
       throw new ExitSignal(code);
     }) as never);
   });
 
-  it("does not kill a peer that is gracefully draining, and takes over", async () => {
+  it("waits for a gracefully draining peer to exit without killing it", async () => {
     vi.mocked(isDaemonDraining).mockReturnValue(true);
+
+    await makeManager([]).killStaleProcesses();
+
+    expect(waitForDaemonDrain).toHaveBeenCalledWith(OLD_DAEMON_PID);
+    expect(killProcess).not.toHaveBeenCalled();
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it("kills a draining peer only after drain grace and stale probes fail", async () => {
+    vi.mocked(isDaemonDraining).mockReturnValue(true);
+    vi.mocked(waitForDaemonDrain).mockResolvedValue(false);
 
     await makeManager().killStaleProcesses();
 
-    // The draining peer is left to finish its own teardown, its workers are not
-    // swept (it's reaping them itself), and the successor takes over rather than
-    // deferring (exit) to it.
-    expect(killProcess).not.toHaveBeenCalled();
+    expect(waitForDaemonDrain).toHaveBeenCalledWith(OLD_DAEMON_PID);
+    expect(killProcess).toHaveBeenCalledWith(OLD_DAEMON_PID);
+    expect(killProcess).toHaveBeenCalledWith(OLD_WORKER_PID);
     expect(exitSpy).not.toHaveBeenCalled();
   });
 

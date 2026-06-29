@@ -40,6 +40,7 @@ export class ProjectBatchProcessor {
   private readonly pending = new Map<string, "change" | "unlink">();
   private readonly retryCount = new Map<string, number>();
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private activeBatch: Promise<void> | null = null;
   private processing = false;
   private closed = false;
   private currentBatchAc: AbortController | null = null;
@@ -84,12 +85,32 @@ export class ProjectBatchProcessor {
   async close(): Promise<void> {
     this.closed = true;
     this.currentBatchAc?.abort();
-    if (this.debounceTimer) clearTimeout(this.debounceTimer);
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
+    if (this.activeBatch) {
+      await this.activeBatch;
+    }
   }
 
   private scheduleBatch(): void {
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
-    this.debounceTimer = setTimeout(() => this.processBatch(), DEBOUNCE_MS);
+    this.debounceTimer = setTimeout(() => {
+      this.debounceTimer = null;
+      this.startBatch();
+    }, DEBOUNCE_MS);
+  }
+
+  private startBatch(): void {
+    if (this.activeBatch) return;
+    const run = this.processBatch().catch((err) => {
+      console.error(`[${this.wtag}] Batch processing failed:`, err);
+    });
+    this.activeBatch = run;
+    void run.finally(() => {
+      if (this.activeBatch === run) this.activeBatch = null;
+    });
   }
 
   private async processBatch(): Promise<void> {
@@ -99,7 +120,10 @@ export class ProjectBatchProcessor {
     if (this.vectorDb.diskPressure === "critical") {
       log(this.wtag, "Disk critically low — deferring batch processing");
       if (this.debounceTimer) clearTimeout(this.debounceTimer);
-      this.debounceTimer = setTimeout(() => this.processBatch(), 60_000);
+      this.debounceTimer = setTimeout(() => {
+        this.debounceTimer = null;
+        this.startBatch();
+      }, 60_000);
       return;
     }
 
@@ -143,11 +167,10 @@ export class ProjectBatchProcessor {
       const vectors: VectorRecord[] = [];
       const metaUpdates = new Map<string, MetaEntry>();
       const metaDeletes: string[] = [];
-      const attempted = new Set<string>();
+      const completed = new Set<string>();
 
       for (const [absPath, event] of batch) {
         if (batchAc.signal.aborted) break;
-        attempted.add(absPath);
         processed++;
         if (
           batch.size > 10 &&
@@ -163,6 +186,7 @@ export class ProjectBatchProcessor {
           deletes.push(absPath);
           metaDeletes.push(absPath);
           reindexed++;
+          completed.add(absPath);
           continue;
         }
 
@@ -178,11 +202,13 @@ export class ProjectBatchProcessor {
               metaDeletes.push(absPath);
               reindexed++;
             }
+            completed.add(absPath);
             continue;
           }
 
           const cached = this.metaCache.get(absPath);
           if (isFileCached(cached, stats)) {
+            completed.add(absPath);
             continue;
           }
 
@@ -193,6 +219,7 @@ export class ProjectBatchProcessor {
             const hash = computeContentHash(buf, absPath);
             if (hash === cached.hash) {
               metaUpdates.set(absPath, { ...cached, mtimeMs: stats.mtimeMs });
+              completed.add(absPath);
               continue;
             }
           }
@@ -213,6 +240,7 @@ export class ProjectBatchProcessor {
 
           if (cached && cached.hash === result.hash) {
             metaUpdates.set(absPath, metaEntry);
+            completed.add(absPath);
             continue;
           }
 
@@ -220,6 +248,7 @@ export class ProjectBatchProcessor {
             deletes.push(absPath);
             metaUpdates.set(absPath, metaEntry);
             reindexed++;
+            completed.add(absPath);
             continue;
           }
 
@@ -229,6 +258,7 @@ export class ProjectBatchProcessor {
           }
           metaUpdates.set(absPath, metaEntry);
           reindexed++;
+          completed.add(absPath);
         } catch (err) {
           if (batchAc.signal.aborted) break;
           const code = (err as NodeJS.ErrnoException)?.code;
@@ -236,6 +266,7 @@ export class ProjectBatchProcessor {
             deletes.push(absPath);
             metaDeletes.push(absPath);
             reindexed++;
+            completed.add(absPath);
           } else {
             console.error(`[${this.wtag}] Failed to process ${absPath}:`, err);
             if (!pool.isHealthy()) {
@@ -244,13 +275,15 @@ export class ProjectBatchProcessor {
               );
               break;
             }
+            completed.add(absPath);
           }
         }
       }
 
-      // Requeue files that weren't attempted (aborted or pool unhealthy)
+      // Requeue files that didn't reach a terminal outcome. This includes the
+      // file whose worker was in flight when the batch was aborted.
       for (const [absPath, event] of batch) {
-        if (!attempted.has(absPath) && !this.pending.has(absPath)) {
+        if (!completed.has(absPath) && !this.pending.has(absPath)) {
           this.pending.set(absPath, event);
         }
       }
@@ -356,13 +389,13 @@ export class ProjectBatchProcessor {
       clearTimeout(batchTimeout);
       this.currentBatchAc = null;
       this.processing = false;
-      if (this.pending.size > 0) {
+      if (!this.closed && this.pending.size > 0) {
         if (backoffOverrideMs > 0) {
           if (this.debounceTimer) clearTimeout(this.debounceTimer);
-          this.debounceTimer = setTimeout(
-            () => this.processBatch(),
-            backoffOverrideMs,
-          );
+          this.debounceTimer = setTimeout(() => {
+            this.debounceTimer = null;
+            this.startBatch();
+          }, backoffOverrideMs);
         } else {
           this.scheduleBatch();
         }

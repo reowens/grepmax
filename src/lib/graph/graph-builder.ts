@@ -28,6 +28,13 @@ export interface GraphNode {
   complexity?: number;
 }
 
+export interface GraphDefinition {
+  file: string;
+  line: number;
+  family: string | null;
+  isExported?: boolean;
+}
+
 export interface CallerTree {
   node: GraphNode;
   callers: CallerTree[];
@@ -178,8 +185,8 @@ export class GraphBuilder {
 
     // 2. Get Callers — anchored to the center definition's language family so a
     // bare name shared across languages doesn't pull in cross-language callers.
-    const anchorFamily = center ? languageFamilyForPath(center.file) : null;
-    const callers = await this.getCallers(symbol, anchorFamily);
+    const centerFamily = center ? languageFamilyForPath(center.file) : null;
+    const callers = await this.getCallers(symbol, centerFamily);
 
     // 3. Get Callees — resolve each to a GraphNode with file:line
     const calleeNames = center ? center.calls.slice(0, 15) : [];
@@ -206,15 +213,21 @@ export class GraphBuilder {
         .limit(25)
         .toArray();
       if (rows.length > 0) {
-        // Prefer-self-file: a callee the center also defines locally is almost
-        // certainly that local definition. Falls back to the first row when no
-        // candidate is in the center's file (unchanged behaviour then).
+        // Prefer-self-file, then same-language-family. Only fall back to the
+        // first row when no candidate shares the center's file or family.
         const selfRow = rows.find(
           (r) => String((r as any).path ?? "") === centerFile,
         );
+        const familyRow = centerFamily
+          ? rows.find(
+              (r) =>
+                languageFamilyForPath(String((r as any).path ?? "")) ===
+                centerFamily,
+            )
+          : undefined;
         calleeNodes.push(
           this.mapRowToNode(
-            (selfRow ?? rows[0]) as unknown as VectorRecord,
+            (selfRow ?? familyRow ?? rows[0]) as unknown as VectorRecord,
             name,
             "center",
           ),
@@ -344,13 +357,7 @@ export class GraphBuilder {
 
   /** Distinct symbols that reference the given symbol (inbound edges). */
   async callersOf(symbol: string): Promise<string[]> {
-    // Anchor the guard to this symbol's own definition language family so the
-    // bare name doesn't pull in callers from an unrelated language.
-    const loc = await this.resolveLocation(symbol);
-    const nodes = await this.getCallers(
-      symbol,
-      loc ? languageFamilyForPath(loc.file) : null,
-    );
+    const nodes = await this.getAnchoredCallers(symbol);
     const out: string[] = [];
     for (const n of nodes) {
       if (n.symbol && n.symbol !== "unknown" && !out.includes(n.symbol)) {
@@ -419,11 +426,20 @@ export class GraphBuilder {
     symbol: string,
     anchorFamily?: string | null,
   ): Promise<{ file: string; line: number } | null> {
+    const def = await this.resolveDefinition(symbol, anchorFamily);
+    return def ? { file: def.file, line: def.line } : null;
+  }
+
+  /** Resolve a symbol to its defining chunk plus language family metadata. */
+  async resolveDefinition(
+    symbol: string,
+    anchorFamily?: string | null,
+  ): Promise<GraphDefinition | null> {
     const table = await this.db.ensureTable();
     const escaped = escapeSqlString(symbol);
     const rows = await table
       .query()
-      .select(["path", "start_line"])
+      .select(["path", "start_line", "is_exported"])
       .where(this.scopeWhere(`array_contains(defined_symbols, '${escaped}')`))
       // No anchor → keep the cheap single-row fetch. With one, pull a few
       // candidates so we can pick the same-family definition instead of guessing.
@@ -439,7 +455,18 @@ export class GraphBuilder {
       );
       if (match) r = match as any;
     }
-    return { file: String(r.path || ""), line: Number(r.start_line || 0) };
+    const file = String(r.path || "");
+    return {
+      file,
+      line: Number(r.start_line || 0),
+      family: languageFamilyForPath(file),
+      isExported: Boolean(r.is_exported),
+    };
+  }
+
+  async getAnchoredCallers(symbol: string): Promise<GraphNode[]> {
+    const def = await this.resolveDefinition(symbol);
+    return this.getCallers(symbol, def?.family ?? null);
   }
 
   /**

@@ -193,7 +193,16 @@ Examples:
     // Check for running server. The per-project HTTP server can't answer
     // cross-project queries, so cross-project mode skips it and uses the
     // daemon-mediated / in-process path (both query the shared table).
-    const execPathForServer = exec_path ? path.resolve(exec_path) : root;
+    let resolvedOptionRoot: string | null | undefined;
+    if (options.root && !crossProject.active) {
+      resolvedOptionRoot = resolveRootOrExit(options.root);
+      if (resolvedOptionRoot === null) return;
+    }
+    const execPathForServer = resolvedOptionRoot
+      ? resolvedOptionRoot
+      : exec_path
+        ? path.resolve(exec_path)
+        : root;
     const projectRootForServer =
       findProjectRoot(execPathForServer) ?? execPathForServer;
     const server = crossProject.active
@@ -218,21 +227,25 @@ Examples:
     try {
       await ensureSetup();
       const searchRoot = exec_path ? path.resolve(exec_path) : root;
-      const projectRoot = findProjectRoot(searchRoot) ?? searchRoot;
+      const cwdProjectRoot = findProjectRoot(searchRoot) ?? searchRoot;
+
+      let checkRoot = cwdProjectRoot;
+      if (options.root) {
+        const resolved =
+          resolvedOptionRoot !== undefined
+            ? resolvedOptionRoot
+            : resolveRootOrExit(options.root);
+        if (resolved === null) return;
+        checkRoot = findProjectRoot(resolved) ?? resolved;
+      }
+
+      const projectRoot = crossProject.active ? cwdProjectRoot : checkRoot;
       const paths = ensureProjectPaths(projectRoot);
 
       // Propagate project root to worker processes
       process.env.GMAX_PROJECT_ROOT = projectRoot;
 
       // Check if project is registered
-      let checkRoot: string;
-      if (options.root) {
-        const resolved = resolveRootOrExit(options.root);
-        if (resolved === null) return;
-        checkRoot = findProjectRoot(resolved) ?? resolved;
-      } else {
-        checkRoot = projectRoot;
-      }
       const project = getProject(checkRoot);
       if (!project) {
         console.error(

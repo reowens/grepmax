@@ -78,6 +78,7 @@ describe("dead command", () => {
     expect(out).toContain("src/util/foo.ts:42");
     expect(out).toContain("defines foo");
     expect(out).not.toContain("PUBLIC EXPORT");
+    expect(getCallers).toHaveBeenCalledWith("foo", "js_ts");
   });
 
   it("downgrades to PUBLIC EXPORT when symbol has zero callers but is exported", async () => {

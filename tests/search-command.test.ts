@@ -12,13 +12,13 @@ vi.mock("../src/lib/setup/setup-helpers", () => ({
 }));
 
 vi.mock("../src/lib/utils/project-root", () => ({
-  ensureProjectPaths: vi.fn(() => ({
-    root: "/tmp/project",
-    dataDir: "/tmp/project/.gmax",
-    lancedbDir: "/tmp/project/.gmax/lancedb",
-    cacheDir: "/tmp/project/.gmax/cache",
-    lmdbPath: "/tmp/project/.gmax/cache/meta.lmdb",
-    configPath: "/tmp/project/.gmax/config.json",
+  ensureProjectPaths: vi.fn((root = "/tmp/project") => ({
+    root,
+    dataDir: `${root}/.gmax`,
+    lancedbDir: `${root}/.gmax/lancedb`,
+    cacheDir: `${root}/.gmax/cache`,
+    lmdbPath: `${root}/.gmax/cache/meta.lmdb`,
+    configPath: `${root}/.gmax/config.json`,
   })),
   findProjectRoot: vi.fn(() => "/tmp/project"),
 }));
@@ -35,6 +35,7 @@ vi.mock("../src/lib/utils/project-registry", () => ({
     status: "indexed",
   })),
   registerProject: vi.fn(),
+  resolveRootOrExit: vi.fn((arg?: string) => arg ?? "/tmp/project"),
 }));
 
 vi.mock("../src/lib/index/index-config", () => ({
@@ -110,7 +111,11 @@ vi.mock("../src/lib/utils/daemon-client", () => ({
 }));
 
 import { search } from "../src/commands/search";
+import { CONFIG } from "../src/config";
 import { initialSync } from "../src/lib/index/syncer";
+import { registerProject } from "../src/lib/utils/project-registry";
+import { findProjectRoot } from "../src/lib/utils/project-root";
+import { launchWatcher } from "../src/lib/utils/watcher-launcher";
 
 describe("search command", () => {
   beforeEach(() => {
@@ -597,5 +602,46 @@ describe("first-run auto-index scoping", () => {
     await (search as Command).parseAsync(["query", "--sync"], { from: "user" });
 
     expect(initialSync).toHaveBeenCalled();
+  });
+
+  it("uses --root for sync, registry, watcher, and row checks", async () => {
+    vi.mocked(findProjectRoot).mockImplementation((p: string) =>
+      p.includes("/tmp/other") ? "/tmp/other" : "/tmp/project",
+    );
+    mockVectorDb.hasRowsForPath.mockResolvedValue(true);
+
+    const oldVitest = process.env.VITEST;
+    const oldNodeEnv = process.env.NODE_ENV;
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation((() => {}) as never);
+    process.exitCode = 0;
+    delete process.env.VITEST;
+    process.env.NODE_ENV = "";
+    try {
+      await (search as Command).parseAsync(
+        ["query", "--root", "/tmp/other", "--sync"],
+        { from: "user" },
+      );
+    } finally {
+      if (oldVitest === undefined) delete process.env.VITEST;
+      else process.env.VITEST = oldVitest;
+      if (oldNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = oldNodeEnv;
+      exitSpy.mockRestore();
+      process.exitCode = 0;
+    }
+
+    expect(mockVectorDb.hasRowsForPath).toHaveBeenCalledWith("/tmp/other");
+    expect(initialSync).toHaveBeenCalledWith(
+      expect.objectContaining({ projectRoot: "/tmp/other" }),
+    );
+    expect(registerProject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        root: "/tmp/other",
+        chunkerVersion: CONFIG.CHUNKER_VERSION,
+      }),
+    );
+    expect(launchWatcher).toHaveBeenCalledWith("/tmp/other");
   });
 });

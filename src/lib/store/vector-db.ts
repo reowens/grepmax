@@ -44,6 +44,17 @@ export function isLanceCorruptionError(err: unknown): boolean {
   return /Not found:.*\.lance(?:[^a-z]|$)/i.test(msg);
 }
 
+function isMissingTableError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  const tableMissing =
+    /table.*chunks.*(?:not found|does not exist)/i.test(msg) ||
+    /(?:not found|does not exist).*table.*chunks/i.test(msg) ||
+    /no such table.*chunks/i.test(msg);
+  if (tableMissing) return true;
+  if (isLanceCorruptionError(err)) return false;
+  return false;
+}
+
 const TABLE_NAME = "chunks";
 
 const MAINTENANCE_INTERVAL_MS = 5 * 60 * 1000;
@@ -424,20 +435,23 @@ export class VectorDB {
 
   async ensureTable(): Promise<lancedb.Table> {
     const db = await this.getDb();
+    let table: lancedb.Table;
     try {
-      const table = await db.openTable(TABLE_NAME);
-      await this.validateSchema(table);
-      await this.evolveSchema(table);
-      return table;
-    } catch (_err) {
+      table = await db.openTable(TABLE_NAME);
+    } catch (err) {
+      if (!isMissingTableError(err)) throw err;
       log("db", `Creating table (${this.vectorDim}d)`);
       const schema = this.buildSchema();
-      const table = await db.createTable(TABLE_NAME, [this.seedRow()], {
+      table = await db.createTable(TABLE_NAME, [this.seedRow()], {
         schema,
       });
       await table.delete('id = "seed"');
       return table;
     }
+
+    await this.validateSchema(table);
+    await this.evolveSchema(table);
+    return table;
   }
 
   async insertBatch(records: VectorRecord[]): Promise<void> {

@@ -8,6 +8,8 @@ export interface DaemonResponse {
 }
 
 const DEFAULT_TIMEOUT_MS = 5000;
+const DAEMON_READY_TIMEOUT_MS = 30_000;
+const DAEMON_READY_POLL_MS = 200;
 
 // A live daemon refreshes daemon.lock mtime every 60s (HEARTBEAT_INTERVAL_MS).
 // Treat mtime younger than 2.5x that as proof of life, even if a ping times
@@ -90,6 +92,16 @@ export async function isDaemonRunning(opts?: {
   return resp.ok === true;
 }
 
+async function isDaemonReady(opts?: { timeoutMs?: number }): Promise<boolean> {
+  const resp = await sendDaemonCommand(
+    { cmd: "ping" },
+    { timeoutMs: opts?.timeoutMs ?? 2000 },
+  );
+  // Old daemons do not include `ready`; treat missing as ready so an upgraded
+  // CLI does not hang on a still-running daemon from the previous release.
+  return resp.ok === true && resp.ready !== false;
+}
+
 /**
  * Lock-file-based liveness probe. A running daemon refreshes daemon.lock's
  * mtime every 60s via its heartbeat loop; a fresh mtime means the daemon is
@@ -161,6 +173,13 @@ export async function waitForProcessExit(
 // it, assume the draining daemon wedged and let killStaleProcesses reclaim it.
 const DRAIN_GRACE_MS = 90_000;
 
+export async function waitForDaemonDrain(
+  pid: number,
+  timeoutMs = DRAIN_GRACE_MS,
+): Promise<boolean> {
+  return waitForProcessExit(pid, timeoutMs);
+}
+
 /**
  * Record that this daemon (pid) has begun graceful shutdown, so a successor's
  * killStaleProcesses() won't SIGKILL it mid-cleanup after it drops its
@@ -210,19 +229,22 @@ export function isDaemonDraining(pid: number): boolean {
 }
 
 /**
- * Ensure the daemon is running — start it if needed, poll up to 5s.
+ * Ensure the daemon is running — start it if needed, then wait for resources.
  * Returns true if daemon is ready, false if it couldn't be started.
  */
 export async function ensureDaemonRunning(): Promise<boolean> {
-  if (await isDaemonRunning()) return true;
+  if (await isDaemonReady()) return true;
 
-  const { spawnDaemon } = await import("./daemon-launcher");
-  const pid = spawnDaemon();
-  if (!pid) return false;
+  if (!(await isDaemonRunning())) {
+    const { spawnDaemon } = await import("./daemon-launcher");
+    const pid = spawnDaemon();
+    if (!pid) return false;
+  }
 
-  for (let i = 0; i < 25; i++) {
-    await new Promise((r) => setTimeout(r, 200));
-    if (await isDaemonRunning()) return true;
+  const deadline = Date.now() + DAEMON_READY_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, DAEMON_READY_POLL_MS));
+    if (await isDaemonReady()) return true;
   }
   return false;
 }
@@ -300,6 +322,12 @@ export function sendStreamingCommand(
             // Proof-of-life from a daemon doing slow non-emitting work
             // (DB flush, compaction). Reset the watchdog; do not surface.
             resetTimer();
+          } else if (msg.ok === false) {
+            const error =
+              typeof msg.error === "string"
+                ? msg.error
+                : "daemon command failed";
+            finish(new Error(error));
           }
         } catch {
           console.warn(

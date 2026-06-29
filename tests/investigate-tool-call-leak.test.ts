@@ -24,9 +24,7 @@ describe("looksLikeRawToolCall", () => {
 
   it("detects markup leaked inside a think block", () => {
     expect(
-      looksLikeRawToolCall(
-        "<think>I should call <function=peek></think>",
-      ),
+      looksLikeRawToolCall("<think>I should call <function=peek></think>"),
     ).toBe(true);
   });
 

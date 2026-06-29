@@ -14,12 +14,12 @@ jobs:
       id-token: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@b0f76dfb45f55f8421693e4803ac7bb65143bd34 # v6
         with:
           version: 10
           run_install: false
@@ -29,7 +29,7 @@ jobs:
       # back to an unauthenticated PUT, which the registry answers with a
       # 404 (looks like "package not found" but is really an auth mismatch).
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
@@ -50,6 +50,15 @@ jobs:
 
       - name: Check types
         run: pnpm run typecheck
+
+      - name: Run tests
+        run: pnpm run test
+
+      - name: Check formatting
+        run: pnpm run format:check
+
+      - name: Audit production dependencies
+        run: pnpm audit --prod
 
       - name: Verify tag matches package.json version
         run: |
@@ -96,24 +105,20 @@ jobs:
       # Run `npm pack --dry-run` locally to preview what would ship.
       - name: Audit npm tarball for source leaks
         run: |
-          # Extract just the file paths from npm pack output (lines with a size like "8.2kB")
-          FILES=$(npm pack --dry-run 2>&1 | sed -n 's/^npm notice [0-9][0-9.]*[kMG]*B[[:space:]]*//p')
-          LEAKED=""
-          while IFS= read -r FILE; do
-            [ -z "$FILE" ] && continue
-            case "$FILE" in
-              dist/*|.claude-plugin/*|plugins/*|mlx-embed-server/*|scripts/postinstall.js|package.json|README.md|LICENSE|NOTICE) ;;
-              *) LEAKED="${LEAKED}  - ${FILE}\n" ;;
-            esac
-          done <<< "$FILES"
-          if [ -n "$LEAKED" ]; then
-            printf "ERROR: Unexpected files in npm tarball:\n%b" "$LEAKED"
-            echo ""
-            echo "If these files are intentional, add them to the case pattern"
-            echo "in this workflow step and to \"files\" in package.json."
-            exit 1
-          fi
-          echo "Tarball audit passed — no unexpected files."
+          npm pack --dry-run --ignore-scripts --json > pack.json
+          node <<'NODE'
+          const fs = require('node:fs');
+          const pack = JSON.parse(fs.readFileSync('pack.json', 'utf8'))[0];
+          const allowed = /^(dist\/|\.claude-plugin\/|plugins\/|mlx-embed-server\/|scripts\/postinstall\.js$|package\.json$|README\.md$|LICENSE$|NOTICE$)/;
+          const leaked = pack.files.map((f) => f.path).filter((p) => !allowed.test(p));
+          if (leaked.length) {
+            console.error('ERROR: Unexpected files in npm tarball:');
+            for (const file of leaked) console.error(`  - ${file}`);
+            console.error('If these files are intentional, add them to package.json files and this audit allow-list.');
+            process.exit(1);
+          }
+          console.log('Tarball audit passed — no unexpected files.');
+          NODE
 
       # Publish via npm CLI with OIDC (trusted publishing on npmjs.com).
       # No NPM_TOKEN needed — id-token: write on this job lets npm exchange
@@ -124,6 +129,11 @@ jobs:
         run: npm publish --access public
 
       - name: Create GitHub Release (tag only, no assets)
-        run: gh release create "${{ github.ref_name }}" --generate-notes --title "${{ github.ref_name }}" || true
+        run: |
+          if gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
+            echo "GitHub Release ${{ github.ref_name }} already exists."
+          else
+            gh release create "${{ github.ref_name }}" --generate-notes --title "${{ github.ref_name }}"
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   findDependents,
+  findTests,
   isTestPath,
   resolveTargetSymbols,
 } from "../src/lib/graph/impact";
@@ -31,6 +32,23 @@ function createMockDb(data: Record<string, any[]>) {
     },
   };
   return { ensureTable: async () => mockTable } as any;
+}
+
+function makeRow(
+  symbol: string,
+  file: string,
+  line: number,
+  refs: string[] = [],
+) {
+  return {
+    path: file,
+    start_line: line,
+    defined_symbols: [symbol],
+    referenced_symbols: refs,
+    role: "ORCHESTRATION",
+    parent_symbol: null,
+    complexity: 1,
+  };
 }
 
 describe("isTestPath", () => {
@@ -93,6 +111,7 @@ describe("resolveTargetSymbols", () => {
     expect(result.resolvedAsFile).toBe(true);
     expect(result.symbols).toContain("handleAuth");
     expect(result.symbols).toContain("validateToken");
+    expect(result.symbolFamilies?.get("handleAuth")).toBe("js_ts");
   });
 
   it("returns empty for unindexed file", async () => {
@@ -117,6 +136,20 @@ describe("findDependents", () => {
     expect(result[0].sharedSymbols).toBe(1);
   });
 
+  it("counts each target symbol once per dependent file", async () => {
+    const db = createMockDb({
+      "referenced_symbols, 'Foo'": [
+        { path: "/project/src/use.ts" },
+        { path: "/project/src/use.ts" },
+      ],
+      "referenced_symbols, 'Bar'": [{ path: "/project/src/use.ts" }],
+    });
+
+    const result = await findDependents(["Foo", "Bar"], db, "/project");
+
+    expect(result).toEqual([{ file: "/project/src/use.ts", sharedSymbols: 2 }]);
+  });
+
   it("excludes specified paths", async () => {
     const db = createMockDb({
       "referenced_symbols, 'handleAuth'": [
@@ -133,5 +166,40 @@ describe("findDependents", () => {
     );
     expect(result.length).toBe(1);
     expect(result[0].file).toBe("/project/src/router.ts");
+  });
+
+  it("filters same-name dependents to the target definition family", async () => {
+    const db = createMockDb({
+      "defined_symbols, 'render'": [
+        makeRow("render", "/project/src/view.py", 1),
+      ],
+      "referenced_symbols, 'render'": [
+        { path: "/project/src/Widget.tsx" },
+        { path: "/project/src/cli.py" },
+      ],
+    });
+
+    const result = await findDependents(["render"], db, "/project");
+
+    expect(result.map((r) => r.file)).toEqual(["/project/src/cli.py"]);
+  });
+});
+
+describe("findTests", () => {
+  it("does not count cross-language test callers for same-name symbols", async () => {
+    const db = createMockDb({
+      "defined_symbols, 'render'": [
+        makeRow("render", "/project/src/view.py", 1),
+      ],
+      "/project/src/view.py": [{ defined_symbols: ["render"] }],
+      "referenced_symbols, 'render'": [
+        makeRow("testWidget", "/project/tests/widget.test.tsx", 10, ["render"]),
+        makeRow("test_render", "/project/tests/view.test.py", 12, ["render"]),
+      ],
+    });
+
+    const result = await findTests(["render"], db, "/project");
+
+    expect(result.map((r) => r.file)).toEqual(["/project/tests/view.test.py"]);
   });
 });

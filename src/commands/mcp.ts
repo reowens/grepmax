@@ -5,6 +5,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { Command } from "commander";
 import { z } from "zod";
 import { MODEL_TIERS, PATHS } from "../config";
+import { languageFamilyForPath } from "../lib/core/languages";
 import { type CallerTree, GraphBuilder } from "../lib/graph/graph-builder";
 import { readGlobalConfig, readIndexConfig } from "../lib/index/index-config";
 import { generateSummaries } from "../lib/index/syncer";
@@ -1151,7 +1152,10 @@ export const mcp = new Command("mcp")
         const isExported = Boolean(defRow.is_exported);
 
         const builder = new GraphBuilder(db, root);
-        const callers = await builder.getCallers(symbol);
+        const callers = await builder.getCallers(
+          symbol,
+          languageFamilyForPath(defPath),
+        );
         const rel = (p: string) =>
           p.startsWith(root) ? p.slice(root.length + 1) : p;
         const defLoc = `${rel(defPath)}:${defLine + 1}`;
@@ -2023,10 +2027,21 @@ export const mcp = new Command("mcp")
           "../lib/graph/impact"
         );
         const db = getVectorDb();
-        const { symbols } = await resolveTargetSymbols(target, db, projectRoot);
+        const { symbols, symbolFamilies } = await resolveTargetSymbols(
+          target,
+          db,
+          projectRoot,
+        );
         if (symbols.length === 0) return ok(`No symbols found for: ${target}`);
 
-        const tests = await findTests(symbols, db, projectRoot, depth);
+        const tests = await findTests(
+          symbols,
+          db,
+          projectRoot,
+          depth,
+          undefined,
+          symbolFamilies,
+        );
         if (tests.length === 0) return ok(`No tests found for ${target}.`);
 
         const rel = (p: string) =>
@@ -2055,11 +2070,8 @@ export const mcp = new Command("mcp")
         const { resolveTargetSymbols, findTests, findDependents, isTestPath } =
           await import("../lib/graph/impact");
         const db = getVectorDb();
-        const { symbols, resolvedAsFile } = await resolveTargetSymbols(
-          target,
-          db,
-          projectRoot,
-        );
+        const { symbols, resolvedAsFile, symbolFamilies } =
+          await resolveTargetSymbols(target, db, projectRoot);
         if (symbols.length === 0) return ok(`No symbols found for: ${target}`);
 
         const targetPath = resolvedAsFile
@@ -2068,8 +2080,16 @@ export const mcp = new Command("mcp")
         const excludePaths = targetPath ? new Set([targetPath]) : undefined;
 
         const [dependents, tests] = await Promise.all([
-          findDependents(symbols, db, projectRoot, excludePaths),
-          findTests(symbols, db, projectRoot, depth),
+          findDependents(
+            symbols,
+            db,
+            projectRoot,
+            excludePaths,
+            undefined,
+            undefined,
+            symbolFamilies,
+          ),
+          findTests(symbols, db, projectRoot, depth, undefined, symbolFamilies),
         ]);
 
         const nonTestDeps = dependents.filter((d) => !isTestPath(d.file));

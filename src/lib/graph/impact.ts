@@ -1,3 +1,4 @@
+import { languageFamilyForPath } from "../core/languages";
 import type { VectorDB } from "../store/vector-db";
 import {
   escapeSqlString,
@@ -36,6 +37,14 @@ export interface DependentHit {
   sharedSymbols: number;
 }
 
+export type SymbolFamilyMap = Map<string, string | null>;
+
+export interface ResolvedTargetSymbols {
+  symbols: string[];
+  resolvedAsFile: boolean;
+  symbolFamilies?: SymbolFamilyMap;
+}
+
 /**
  * Resolve a target (symbol name or file path) to a list of defined symbols.
  */
@@ -43,7 +52,7 @@ export async function resolveTargetSymbols(
   target: string,
   vectorDb: VectorDB,
   projectRoot: string,
-): Promise<{ symbols: string[]; resolvedAsFile: boolean }> {
+): Promise<ResolvedTargetSymbols> {
   // If target looks like a file path (contains / or .)
   if (target.includes("/") || (target.includes(".") && !target.includes(" "))) {
     const absPath = target.startsWith("/")
@@ -62,10 +71,59 @@ export async function resolveTargetSymbols(
         symbols.add(s);
       }
     }
-    return { symbols: [...symbols], resolvedAsFile: true };
+    const family = languageFamilyForPath(absPath);
+    return {
+      symbols: [...symbols],
+      resolvedAsFile: true,
+      symbolFamilies: new Map([...symbols].map((s) => [s, family])),
+    };
   }
 
   return { symbols: [target], resolvedAsFile: false };
+}
+
+function familyMatchesPath(
+  anchorFamily: string | null,
+  filePath: string,
+): boolean {
+  if (anchorFamily == null) return true;
+  const family = languageFamilyForPath(filePath);
+  return family == null || family === anchorFamily;
+}
+
+async function resolveSymbolFamilies(
+  symbols: string[],
+  vectorDb: VectorDB,
+  projectRoot: string,
+  excludePrefixes?: string[],
+  seed?: SymbolFamilyMap,
+): Promise<SymbolFamilyMap> {
+  const families = new Map(seed);
+  const missing = symbols.filter((s) => !families.has(s));
+  if (missing.length === 0) return families;
+
+  const table = await vectorDb.ensureTable();
+  const prefix = projectRoot.endsWith("/") ? projectRoot : `${projectRoot}/`;
+  let pathScope = pathStartsWith(prefix);
+  for (const ex of excludePrefixes ?? []) {
+    const exNorm = ex.endsWith("/") ? ex : `${ex}/`;
+    pathScope += ` AND ${pathNotStartsWith(exNorm)}`;
+  }
+
+  for (const sym of missing) {
+    const rows = await table
+      .query()
+      .select(["path"])
+      .where(
+        `array_contains(defined_symbols, '${escapeSqlString(sym)}') AND ${pathScope}`,
+      )
+      .limit(25)
+      .toArray();
+    const file = String((rows[0] as any)?.path || "");
+    families.set(sym, file ? languageFamilyForPath(file) : null);
+  }
+
+  return families;
 }
 
 /**
@@ -135,6 +193,7 @@ export async function findTests(
   projectRoot: string,
   depth = 1,
   excludePrefixes?: string[],
+  symbolFamilies?: SymbolFamilyMap,
 ): Promise<TestHit[]> {
   const graphBuilder = new GraphBuilder(vectorDb, projectRoot, excludePrefixes);
   const testHits = new Map<string, TestHit>(); // key: file+symbol
@@ -146,9 +205,24 @@ export async function findTests(
     projectRoot,
     excludePrefixes,
   );
+  const families = await resolveSymbolFamilies(
+    expanded,
+    vectorDb,
+    projectRoot,
+    excludePrefixes,
+    symbolFamilies,
+  );
 
   for (const symbol of expanded) {
-    await walkCallers(symbol, graphBuilder, testHits, 0, depth, new Set());
+    await walkCallers(
+      symbol,
+      graphBuilder,
+      testHits,
+      0,
+      depth,
+      new Set(),
+      families.get(symbol) ?? null,
+    );
   }
 
   if (testHits.size === 0) {
@@ -158,6 +232,7 @@ export async function findTests(
       vectorDb,
       projectRoot,
       excludePrefixes,
+      families,
     );
     for (const file of importFiles) {
       testHits.set(`${file}:(referenced)`, {
@@ -180,6 +255,7 @@ async function findImportFallbackTests(
   vectorDb: VectorDB,
   projectRoot: string,
   excludePrefixes?: string[],
+  symbolFamilies?: SymbolFamilyMap,
 ): Promise<Set<string>> {
   const files = new Set<string>();
 
@@ -193,6 +269,7 @@ async function findImportFallbackTests(
     undefined,
     50,
     excludePrefixes,
+    symbolFamilies,
   );
   for (const d of dependents) {
     if (isTestPath(d.file)) files.add(d.file);
@@ -211,6 +288,7 @@ async function findImportFallbackTests(
   // file symbols (helpers like `log`) textually drags in every test file
   // that mentions them, drowning the answer in false positives.
   for (const sym of originalSymbols) {
+    const family = symbolFamilies?.get(sym) ?? null;
     // No .limit() here: LIKE + limit deadlocks in @lancedb 0.27.x when more
     // rows match than the limit (verified). Unlimited scan is fast; cap in JS.
     const rows = await withQueryTimeout(
@@ -223,7 +301,7 @@ async function findImportFallbackTests(
     );
     for (const row of rows.slice(0, 500)) {
       const p = String((row as any).path || "");
-      if (isTestPath(p)) files.add(p);
+      if (isTestPath(p) && familyMatchesPath(family, p)) files.add(p);
     }
   }
 
@@ -237,11 +315,12 @@ async function walkCallers(
   currentHop: number,
   maxDepth: number,
   visited: Set<string>,
+  anchorFamily: string | null,
 ): Promise<void> {
   if (visited.has(symbol)) return;
   visited.add(symbol);
 
-  const callers = await graphBuilder.getCallers(symbol);
+  const callers = await graphBuilder.getCallers(symbol, anchorFamily);
   for (const caller of callers) {
     if (isTestPath(caller.file)) {
       const key = `${caller.file}:${caller.symbol}`;
@@ -264,6 +343,7 @@ async function walkCallers(
         currentHop + 1,
         maxDepth,
         visited,
+        languageFamilyForPath(caller.file),
       );
     }
   }
@@ -280,6 +360,7 @@ export async function findDependents(
   excludePaths?: Set<string>,
   limit = 10,
   excludePrefixes?: string[],
+  symbolFamilies?: SymbolFamilyMap,
 ): Promise<DependentHit[]> {
   const table = await vectorDb.ensureTable();
   let pathScope = pathStartsWith(`${projectRoot}/`);
@@ -287,9 +368,17 @@ export async function findDependents(
     const exNorm = ex.endsWith("/") ? ex : `${ex}/`;
     pathScope += ` AND ${pathNotStartsWith(exNorm)}`;
   }
-  const counts = new Map<string, number>();
+  const symbolsByFile = new Map<string, Set<string>>();
+  const families = await resolveSymbolFamilies(
+    symbols,
+    vectorDb,
+    projectRoot,
+    excludePrefixes,
+    symbolFamilies,
+  );
 
   for (const sym of symbols) {
+    const family = families.get(sym) ?? null;
     // 200, not 20: with per-chunk rows a popular symbol easily exceeds 20
     // chunks, and truncation here silently drops whole dependent files.
     // (array_contains + limit does not hit the LIKE+limit native hang.)
@@ -305,12 +394,15 @@ export async function findDependents(
     for (const row of rows) {
       const p = String((row as any).path || "");
       if (excludePaths?.has(p)) continue;
-      counts.set(p, (counts.get(p) || 0) + 1);
+      if (!familyMatchesPath(family, p)) continue;
+      const set = symbolsByFile.get(p) ?? new Set<string>();
+      set.add(sym);
+      symbolsByFile.set(p, set);
     }
   }
 
-  return Array.from(counts.entries())
-    .sort((a, b) => b[1] - a[1])
+  return Array.from(symbolsByFile.entries())
+    .sort((a, b) => b[1].size - a[1].size)
     .slice(0, limit)
-    .map(([file, sharedSymbols]) => ({ file, sharedSymbols }));
+    .map(([file, symbols]) => ({ file, sharedSymbols: symbols.size }));
 }

@@ -801,6 +801,18 @@ export class Searcher {
       return { data: [] };
     }
 
+    const envMaxPerFile = Number.parseInt(
+      process.env.GMAX_MAX_PER_FILE ?? "",
+      10,
+    );
+    const MAX_PER_FILE =
+      Number.isFinite(envMaxPerFile) && envMaxPerFile > 0 ? envMaxPerFile : 3;
+
+    const displayWindow = Math.min(
+      stage2Candidates.length,
+      Math.max(finalLimit * MAX_PER_FILE, finalLimit, RERANK_TOP),
+    );
+    const displayCandidates = stage2Candidates.slice(0, displayWindow);
     const rerankCandidates = stage2Candidates.slice(0, RERANK_TOP);
 
     // Symbol-definition promotion (1/2): membership. For a bare-symbol query,
@@ -815,6 +827,9 @@ export class Searcher {
       const present = new Set(
         rerankCandidates.map((d) => d.id).filter(Boolean) as string[],
       );
+      const displayPresent = new Set(
+        displayCandidates.map((d) => d.id).filter(Boolean) as string[],
+      );
       const MAX_INJECT = 5;
       let injected = 0;
       for (const d of topCandidates) {
@@ -827,6 +842,10 @@ export class Searcher {
         ) {
           rerankCandidates.push(d);
           present.add(d.id);
+          if (!displayPresent.has(d.id)) {
+            displayCandidates.push(d);
+            displayPresent.add(d.id);
+          }
           injected++;
         }
       }
@@ -857,32 +876,31 @@ export class Searcher {
       }
     }
 
-    const scores = doRerank
-      ? await pool.rerank(
-          {
-            query: queryMatrixRaw,
-            docs: rerankCandidates.map((doc) => ({
-              colbert: (doc.colbert as Buffer | Int8Array | number[]) ?? [],
-              scale:
-                typeof doc.colbert_scale === "number" ? doc.colbert_scale : 1,
-              token_ids: Array.isArray((doc as any).doc_token_ids)
-                ? ((doc as any).doc_token_ids as number[])
-                : undefined,
-            })),
-            colbertDim,
-          },
-          signal,
-        )
-      : rerankCandidates.map((doc, idx) => {
-          // If rerank is disabled, fall back to fusion ordering with structural boost
-          const key = doc.id || `${doc.path}:${doc.chunk_index}`;
-          const fusedScore = candidateScores.get(key) ?? 0;
-          // Small tie-breaker so later items don't all share 0
-          return fusedScore || 1 / (idx + 1);
-        });
+    const rerankScoreByKey = new Map<string, number>();
+    if (doRerank && rerankCandidates.length > 0) {
+      const scores = await pool.rerank(
+        {
+          query: queryMatrixRaw,
+          docs: rerankCandidates.map((doc) => ({
+            colbert: (doc.colbert as Buffer | Int8Array | number[]) ?? [],
+            scale:
+              typeof doc.colbert_scale === "number" ? doc.colbert_scale : 1,
+            token_ids: Array.isArray((doc as any).doc_token_ids)
+              ? ((doc as any).doc_token_ids as number[])
+              : undefined,
+          })),
+          colbertDim,
+        },
+        signal,
+      );
+      for (const [idx, doc] of rerankCandidates.entries()) {
+        const key = doc.id || `${doc.path}:${doc.chunk_index}`;
+        rerankScoreByKey.set(key, scores?.[idx] ?? 0);
+      }
+    }
 
     type ScoredItem = {
-      record: (typeof rerankCandidates)[number];
+      record: (typeof displayCandidates)[number];
       score: number;
       breakdown?: {
         rerank: number;
@@ -902,10 +920,10 @@ export class Searcher {
     const DEF_MATCH_BOOST =
       Number.isFinite(envDefBoost) && envDefBoost >= 1 ? envDefBoost : 5;
 
-    const scored: ScoredItem[] = rerankCandidates.map((doc, idx) => {
-      const base = scores?.[idx] ?? 0;
+    const scored: ScoredItem[] = displayCandidates.map((doc, idx) => {
       const key = doc.id || `${doc.path}:${doc.chunk_index}`;
       const fusedScore = candidateScores.get(key) ?? 0;
+      const base = rerankScoreByKey.get(key) ?? (fusedScore || 1 / (idx + 1));
       const blended = base + FUSED_WEIGHT * fusedScore;
       let boosted = this.applyStructureBoost(doc, blended, searchIntent);
       if (
@@ -979,12 +997,6 @@ export class Searcher {
     // Item 10: Per-file diversification
     const seenFiles = new Map<string, number>();
     const diversified: ScoredItem[] = [];
-    const envMaxPerFile = Number.parseInt(
-      process.env.GMAX_MAX_PER_FILE ?? "",
-      10,
-    );
-    const MAX_PER_FILE =
-      Number.isFinite(envMaxPerFile) && envMaxPerFile > 0 ? envMaxPerFile : 3;
 
     for (const item of uniqueScored) {
       const path = item.record.path || "";

@@ -10,7 +10,7 @@
     "type": "git",
     "url": "https://github.com/reowens/grepmax.git"
   },
-  "main": "index.js",
+  "main": "dist/index.js",
   "bin": {
     "gmax": "dist/index.js"
   },
@@ -19,7 +19,7 @@
   },
   "scripts": {
     "postinstall": "node scripts/postinstall.js",
-    "prebuild": "mkdir -p dist",
+    "prebuild": "rm -rf dist tsconfig.tsbuildinfo && mkdir -p dist",
     "build": "tsc",
     "postbuild": "chmod +x dist/index.js",
     "dev": "npx tsc && node dist/index.js",
@@ -95,6 +95,11 @@
     "uuid": "^14.0.1",
     "web-tree-sitter": "^0.26.9",
     "zod": "^4.4.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "mathjs": "15.2.0"
+    }
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.10",

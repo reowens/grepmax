@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 // Must compute inside factory — vi.mock is hoisted above variable declarations
 const tmpSocket = path.join(os.tmpdir(), `gmax-test-daemon.sock`);
+const spawnDaemonMock = vi.hoisted(() => vi.fn(() => 12345));
 vi.mock("../src/config", async () => {
   const p = await import("node:path");
   const o = await import("node:os");
@@ -13,8 +14,12 @@ vi.mock("../src/config", async () => {
     PATHS: { daemonSocket: p.join(o.tmpdir(), "gmax-test-daemon.sock") },
   };
 });
+vi.mock("../src/lib/utils/daemon-launcher", () => ({
+  spawnDaemon: spawnDaemonMock,
+}));
 
 import {
+  ensureDaemonRunning,
   isDaemonRunning,
   type StreamingProgress,
   sendDaemonCommand,
@@ -41,6 +46,7 @@ function startMockServer(
 }
 
 afterEach(() => {
+  spawnDaemonMock.mockClear();
   try {
     fs.unlinkSync(tmpSocket);
   } catch {}
@@ -142,6 +148,21 @@ describe("daemon-client", () => {
         server.close();
       }
     });
+
+    it("surfaces non-streaming daemon errors directly", async () => {
+      const server = startMockServer((_data, socket) => {
+        socket.write(
+          `${JSON.stringify({ ok: false, error: "daemon initializing" })}\n`,
+        );
+      });
+      try {
+        await expect(
+          sendStreamingCommand({ cmd: "index" }, () => {}, { timeoutMs: 100 }),
+        ).rejects.toThrow("daemon initializing");
+      } finally {
+        server.close();
+      }
+    });
   });
 
   describe("isDaemonRunning", () => {
@@ -159,6 +180,26 @@ describe("daemon-client", () => {
 
     it("returns false when no daemon", async () => {
       expect(await isDaemonRunning()).toBe(false);
+    });
+  });
+
+  describe("ensureDaemonRunning", () => {
+    it("waits for an existing daemon to become ready without spawning", async () => {
+      let pings = 0;
+      const server = startMockServer((_data, socket) => {
+        pings++;
+        socket.write(
+          `${JSON.stringify({ ok: true, ready: pings >= 2, pid: 12345 })}\n`,
+        );
+      });
+
+      try {
+        await expect(ensureDaemonRunning()).resolves.toBe(true);
+        expect(pings).toBeGreaterThanOrEqual(2);
+        expect(spawnDaemonMock).not.toHaveBeenCalled();
+      } finally {
+        server.close();
+      }
     });
   });
 });

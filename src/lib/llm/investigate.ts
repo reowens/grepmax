@@ -245,7 +245,10 @@ export async function investigate(
       throw new Error("LLM returned empty response");
     }
 
-    const answer = finalizeAnswer(response.choices[0].message.content, modelName);
+    const answer = finalizeAnswer(
+      response.choices[0].message.content,
+      modelName,
+    );
 
     return {
       answer,

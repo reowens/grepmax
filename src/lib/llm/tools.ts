@@ -309,11 +309,8 @@ async function executeImpact(
   if (!target) return "(error: missing target)";
 
   const depth = clampDepth(args.depth);
-  const { symbols, resolvedAsFile } = await resolveTargetSymbols(
-    target,
-    ctx.vectorDb,
-    ctx.projectRoot,
-  );
+  const { symbols, resolvedAsFile, symbolFamilies } =
+    await resolveTargetSymbols(target, ctx.vectorDb, ctx.projectRoot);
 
   if (symbols.length === 0) return "(not found)";
 
@@ -322,8 +319,23 @@ async function executeImpact(
     : undefined;
 
   const [deps, tests] = await Promise.all([
-    findDependents(symbols, ctx.vectorDb, ctx.projectRoot, excludePaths),
-    findTests(symbols, ctx.vectorDb, ctx.projectRoot, depth),
+    findDependents(
+      symbols,
+      ctx.vectorDb,
+      ctx.projectRoot,
+      excludePaths,
+      undefined,
+      undefined,
+      symbolFamilies,
+    ),
+    findTests(
+      symbols,
+      ctx.vectorDb,
+      ctx.projectRoot,
+      depth,
+      undefined,
+      symbolFamilies,
+    ),
   ]);
 
   if (deps.length === 0 && tests.length === 0) return "(no impact detected)";

@@ -168,38 +168,48 @@ export async function installAll(): Promise<number> {
 
 // --- Subcommands ---
 
+async function installAction(clientArg?: string): Promise<void> {
+  const clients = getClients();
+  const onlyId = clientArg && clientArg !== "all" ? clientArg : undefined;
+
+  if (onlyId) {
+    const client = clients.find((c) => c.id === onlyId);
+    if (!client) {
+      console.error(`Unknown client: ${onlyId}`);
+      console.error(`Available: ${clients.map((c) => c.id).join(", ")}`);
+      await gracefulExit(1);
+      return;
+    }
+    if (!client.detect()) {
+      console.error(`${client.name} not found on this system`);
+      await gracefulExit(1);
+      return;
+    }
+    await client.install();
+    await gracefulExit();
+    return;
+  }
+
+  // Install all detected
+  await installAll();
+  await gracefulExit();
+}
+
 const addCmd = new Command("add")
   .description("Install or update gmax plugins")
   .argument(
     "[client]",
     "Client to install (claude, opencode, codex, droid, all)",
   )
-  .action(async (clientArg?: string) => {
-    const clients = getClients();
-    const onlyId = clientArg && clientArg !== "all" ? clientArg : undefined;
+  .action(installAction);
 
-    if (onlyId) {
-      const client = clients.find((c) => c.id === onlyId);
-      if (!client) {
-        console.error(`Unknown client: ${onlyId}`);
-        console.error(`Available: ${clients.map((c) => c.id).join(", ")}`);
-        await gracefulExit(1);
-        return;
-      }
-      if (!client.detect()) {
-        console.error(`${client.name} not found on this system`);
-        await gracefulExit(1);
-        return;
-      }
-      await client.install();
-      await gracefulExit();
-      return;
-    }
-
-    // Install all detected
-    await installAll();
-    await gracefulExit();
-  });
+const updateCmd = new Command("update")
+  .description("Update gmax plugins")
+  .argument(
+    "[client]",
+    "Client to update (claude, opencode, codex, droid, all)",
+  )
+  .action(installAction);
 
 const removeCmd = new Command("remove")
   .description("Remove gmax plugins")
@@ -267,6 +277,8 @@ async function statusAction() {
   console.log("\nCommands:");
   console.log("  gmax plugin add               Install all detected clients");
   console.log("  gmax plugin add <client>      Install a specific client");
+  console.log("  gmax plugin update            Update all detected clients");
+  console.log("  gmax plugin update <client>   Update a specific client");
   console.log("  gmax plugin remove            Remove all installed plugins");
   console.log("  gmax plugin remove <client>   Remove a specific plugin");
   await gracefulExit();
@@ -276,4 +288,5 @@ export const plugin = new Command("plugin")
   .description("Manage gmax plugins for AI coding clients")
   .action(statusAction)
   .addCommand(addCmd)
+  .addCommand(updateCmd)
   .addCommand(removeCmd);
