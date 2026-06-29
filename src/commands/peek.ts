@@ -219,17 +219,24 @@ export const peek = new Command("peek")
           : center.line;
 
       // Get multi-hop callers if depth > 1
-      let callerList: Array<{ symbol: string; file: string; line: number }>;
+      type CallerEntry = {
+        symbol: string;
+        file: string;
+        line: number;
+        edgeKind?: "free" | "member" | "type";
+      };
+      let callerList: CallerEntry[];
       if (depth > 1) {
         const multiHop = await graphBuilder.buildGraphMultiHop(symbol, depth);
         // Flatten caller tree
-        const flat: Array<{ symbol: string; file: string; line: number }> = [];
+        const flat: CallerEntry[] = [];
         function walkCallers(tree: any[]) {
           for (const t of tree) {
             flat.push({
               symbol: t.node.symbol,
               file: t.node.file,
               line: t.node.line,
+              edgeKind: t.node.edgeKind,
             });
             walkCallers(t.callers);
           }
@@ -241,7 +248,15 @@ export const peek = new Command("peek")
           symbol: c.symbol,
           file: c.file,
           line: c.line,
+          edgeKind: c.edgeKind,
         }));
+      }
+
+      // Confidence per caller symbol: getCallers sorts free calls first, so the
+      // first edgeKind seen for a symbol is its highest-confidence one.
+      const edgeKindBySym = new Map<string, CallerEntry["edgeKind"]>();
+      for (const c of callerList) {
+        if (!edgeKindBySym.has(c.symbol)) edgeKindBySym.set(c.symbol, c.edgeKind);
       }
 
       // Re-anchor chunk-level caller rows to actual call sites and dedupe —
@@ -251,6 +266,7 @@ export const peek = new Command("peek")
         symbol: c.symbol,
         file: c.file,
         line: c.snippetLine ?? c.line,
+        edgeKind: edgeKindBySym.get(c.symbol),
       }));
 
       // Builtins listed as "(not indexed)" callees (trunc, now, filter, …)
@@ -269,6 +285,12 @@ export const peek = new Command("peek")
           file: c.file,
           line: c.line,
         }));
+
+      // Inferred-caller marker: `member` = receiver-unverified `x.T()`, `type` =
+      // a type-position reference (not a call). Free calls render clean — the
+      // trustworthy default — so only guesses carry a tag.
+      const kindTag = (k?: "free" | "member" | "type") =>
+        k === "member" || k === "type" ? ` (${k})` : "";
 
       if (opts.agent) {
         // Compact TSV output
@@ -303,7 +325,7 @@ export const peek = new Command("peek")
         // Callers
         for (const c of resolvedCallers.slice(0, MAX_CALLERS)) {
           console.log(
-            `<- ${c.symbol}\t${c.file ? `${rel(c.file)}:${c.line + 1}` : "(not indexed)"}`,
+            `<- ${c.symbol}\t${c.file ? `${rel(c.file)}:${c.line + 1}` : "(not indexed)"}${kindTag(c.edgeKind)}`,
           );
         }
         if (resolvedCallers.length > MAX_CALLERS) {
@@ -369,11 +391,11 @@ export const peek = new Command("peek")
           for (const c of shown) {
             if (c.file) {
               console.log(
-                `  ${style.blue("\u2190")} ${style.green(c.symbol.padEnd(25))} ${style.dim(`${rel(c.file)}:${c.line + 1}`)}`,
+                `  ${style.blue("\u2190")} ${style.green(c.symbol.padEnd(25))} ${style.dim(`${rel(c.file)}:${c.line + 1}`)}${style.dim(kindTag(c.edgeKind))}`,
               );
             } else {
               console.log(
-                `  ${style.blue("\u2190")} ${c.symbol.padEnd(25)} ${style.dim("(not indexed)")}`,
+                `  ${style.blue("\u2190")} ${c.symbol.padEnd(25)} ${style.dim("(not indexed)")}${style.dim(kindTag(c.edgeKind))}`,
               );
             }
           }

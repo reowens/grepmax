@@ -1039,13 +1039,19 @@ export const mcp = new Command("mcp")
         } catch {}
 
         // Get callers
-        let callerList: Array<{ symbol: string; file: string; line: number }>;
+        let callerList: Array<{
+          symbol: string;
+          file: string;
+          line: number;
+          edgeKind?: "free" | "member" | "type";
+        }>;
         if (depth > 1) {
           const multiHop = await builder.buildGraphMultiHop(symbol, depth);
           const flat: Array<{
             symbol: string;
             file: string;
             line: number;
+            edgeKind?: "free" | "member" | "type";
           }> = [];
           function walkCallers(tree: any[]) {
             for (const t of tree) {
@@ -1053,6 +1059,7 @@ export const mcp = new Command("mcp")
                 symbol: t.node.symbol,
                 file: t.node.file,
                 line: t.node.line,
+                edgeKind: t.node.edgeKind,
               });
               walkCallers(t.callers);
             }
@@ -1083,7 +1090,13 @@ export const mcp = new Command("mcp")
             const loc = c.file
               ? `${rel(c.file)}:${c.line + 1}`
               : "(not indexed)";
-            parts.push(`  <- ${c.symbol}  ${loc}`);
+            // `(member)`/`(type)` flag inferred edges (receiver-unverified call
+            // or a type-position ref) so they don't read as confirmed callers.
+            const tag =
+              c.edgeKind === "member" || c.edgeKind === "type"
+                ? ` (${c.edgeKind})`
+                : "";
+            parts.push(`  <- ${c.symbol}  ${loc}${tag}`);
           }
           if (callerList.length > maxCallers) {
             parts.push(`  ... and ${callerList.length - maxCallers} more`);

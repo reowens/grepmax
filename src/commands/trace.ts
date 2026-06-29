@@ -16,6 +16,12 @@ const useColors = process.stdout.isTTY && !process.env.NO_COLOR;
 const dim = (s: string) => (useColors ? `\x1b[2m${s}\x1b[22m` : s);
 const bold = (s: string) => (useColors ? `\x1b[1m${s}\x1b[22m` : s);
 
+// Inferred-edge marker for caller rows: `member` = receiver-unverified `x.T()`,
+// `type` = a type-position reference (not a call). Free calls stay unmarked —
+// the trustworthy default — so only guesses carry a tag.
+const kindTag = (k?: "free" | "member" | "type") =>
+  k === "member" || k === "type" ? ` (${k})` : "";
+
 function formatTraceAgent(
   graph: {
     center: { symbol: string; file: string; line: number; role: string } | null;
@@ -48,7 +54,7 @@ function formatTraceAgent(
     if (raw) {
       for (const t of tree) {
         lines.push(
-          `${"  ".repeat(depth)}<- ${t.node.symbol}\t${rel(t.node.file)}:${t.node.line}`,
+          `${"  ".repeat(depth)}<- ${t.node.symbol}\t${rel(t.node.file)}:${t.node.line}${kindTag(t.node.edgeKind)}`,
         );
         walkCallers(t.callers, depth + 1);
       }
@@ -59,7 +65,13 @@ function formatTraceAgent(
     // onto a single row, and recurse into the union of their sub-callers.
     const groups = new Map<
       string,
-      { symbol: string; file: string; lineSet: Set<number>; sub: any[] }
+      {
+        symbol: string;
+        file: string;
+        lineSet: Set<number>;
+        sub: any[];
+        edgeKind?: "free" | "member" | "type";
+      }
     >();
     const order: string[] = [];
     for (const t of tree) {
@@ -72,6 +84,9 @@ function formatTraceAgent(
           file: t.node.file,
           lineSet: new Set(),
           sub: [],
+          // Callers arrive free-first (getCallers sorts), so the first edgeKind
+          // seen for this group is its highest-confidence one.
+          edgeKind: t.node.edgeKind,
         };
         groups.set(key, g);
         order.push(key);
@@ -83,7 +98,7 @@ function formatTraceAgent(
       const g = groups.get(key)!;
       const locs = [...g.lineSet].sort((a, b) => a - b).join(",");
       const loc = g.file ? `${rel(g.file)}:${locs}` : "(not indexed)";
-      lines.push(`${"  ".repeat(depth)}<- ${g.symbol}\t${loc}`);
+      lines.push(`${"  ".repeat(depth)}<- ${g.symbol}\t${loc}${kindTag(g.edgeKind)}`);
       walkCallers(g.sub, depth + 1);
     }
   }
@@ -104,12 +119,18 @@ interface InboundCaller {
   line: number;
   snippet: string | null;
   snippetLine: number | null;
+  edgeKind?: "free" | "member" | "type";
   callers: InboundCaller[];
 }
 
 function buildInboundTree(
   callerTree: Array<{
-    node: { symbol: string; file: string; line: number };
+    node: {
+      symbol: string;
+      file: string;
+      line: number;
+      edgeKind?: "free" | "member" | "type";
+    };
     callers: any[];
   }>,
   targetSymbol: string,
@@ -135,6 +156,7 @@ function buildInboundTree(
       line: t.node.line,
       snippet: snippet?.snippet ?? null,
       snippetLine: snippet?.snippetLine ?? null,
+      edgeKind: t.node.edgeKind,
       callers: buildInboundTree(
         t.callers,
         t.node.symbol,
@@ -167,8 +189,8 @@ function formatInboundAgent(
         ? `${rel(n.file)}:${(n.snippetLine ?? n.line) + 1}`
         : "(not indexed)";
       const cols = withSnippets
-        ? `${loc}\t${n.symbol}\t${n.snippet ?? ""}`
-        : `${loc}\t${n.symbol}`;
+        ? `${loc}\t${n.symbol}${kindTag(n.edgeKind)}\t${n.snippet ?? ""}`
+        : `${loc}\t${n.symbol}${kindTag(n.edgeKind)}`;
       lines.push(`${prefix}${cols}`);
       walk(n.callers, depth + 1);
     }
@@ -213,7 +235,7 @@ function formatInboundHuman(
       const loc = n.file
         ? `${rel(n.file)}:${(n.snippetLine ?? n.line) + 1}`
         : "(not indexed)";
-      lines.push(`${indent}${n.symbol}  ${dim(loc)}`);
+      lines.push(`${indent}${n.symbol}  ${dim(loc)}${dim(kindTag(n.edgeKind))}`);
       if (withSnippets && n.snippet) {
         lines.push(`${indent}  ${dim(n.snippet)}`);
       }
