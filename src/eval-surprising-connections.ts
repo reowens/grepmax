@@ -49,6 +49,35 @@ type SurprisePair = {
   target: ChunkRow;
 };
 
+type ScoreParts = {
+  base: number;
+  sameSymbolBoost: number;
+  symbolShapeBoost: number;
+  implementationBoost: number;
+  supportBoost: number;
+  tinyHelperPenalty: number;
+  typeConstantPenalty: number;
+  wrapperPenalty: number;
+  score: number;
+  reasons: string[];
+};
+
+type ScoredPair = SurprisePair & {
+  scoreParts: ScoreParts;
+};
+
+type FilePairFinding = {
+  fileA: string;
+  fileB: string;
+  pairCount: number;
+  maxSimilarity: number;
+  medianSimilarity: number;
+  representative: ScoredPair;
+  score: number;
+  reasons: string[];
+  topSimilarities: number[];
+};
+
 type Options = {
   root: string;
   sample: number;
@@ -103,7 +132,7 @@ function isTestPath(filePath: string): boolean {
 function isEvalPath(filePath: string): boolean {
   return (
     /(^|\/)src\/eval[^/]*\.ts$/i.test(filePath) ||
-    /(^|\/)(benchmarks?|scripts)(\/|$)/i.test(filePath)
+    /(^|\/)(benchmarks?|experiments|scripts)(\/|$)/i.test(filePath)
   );
 }
 
@@ -192,9 +221,154 @@ function pairKey(a: ChunkRow, b: ChunkRow): string {
   return [rowKey(a), rowKey(b)].sort().join("\0");
 }
 
+function filePairKey(a: ChunkRow, b: ChunkRow): string {
+  return [a.path, b.path].sort().join("\0");
+}
+
 function lineLabel(row: ChunkRow): string {
   const sym = row.definedSymbols[0] ? ` ${row.definedSymbols[0]}` : "";
   return `${row.relPath}:${row.startLine + 1}${sym}`;
+}
+
+function primarySymbol(row: ChunkRow): string {
+  return row.definedSymbols.find((symbol) => !isBuiltinCallee(symbol)) ?? "";
+}
+
+function symbolTokens(symbol: string): Set<string> {
+  const spaced = symbol
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .toLowerCase();
+  return new Set(
+    spaced.split(/[^a-z0-9]+/).filter((token) => token.length > 1),
+  );
+}
+
+function exactSharedSymbols(a: ChunkRow, b: ChunkRow): string[] {
+  const left = new Set(a.definedSymbols.filter((s) => !isBuiltinCallee(s)));
+  return b.definedSymbols.filter((s) => left.has(s) && !isBuiltinCallee(s));
+}
+
+function symbolShapeSimilarity(a: ChunkRow, b: ChunkRow): number {
+  const left = symbolTokens(primarySymbol(a));
+  const right = symbolTokens(primarySymbol(b));
+  if (left.size === 0 || right.size === 0) return 0;
+  let overlap = 0;
+  for (const token of left) if (right.has(token)) overlap++;
+  const union = new Set([...left, ...right]).size;
+  return union === 0 ? 0 : overlap / union;
+}
+
+function lineCount(row: ChunkRow): number {
+  return Math.max(1, row.endLine - row.startLine + 1);
+}
+
+function isTinyHelper(row: ChunkRow): boolean {
+  return row.content.trim().length < 220 || lineCount(row) <= 8;
+}
+
+function isTypeLike(row: ChunkRow): boolean {
+  return /^(export\s+)?(type|interface)\s+/m.test(row.content.trim());
+}
+
+function isConstantLike(row: ChunkRow): boolean {
+  if (row.definedSymbols.length === 0) return false;
+  return row.definedSymbols.every(
+    (symbol) => /^[A-Z][A-Z0-9_]{2,}$/.test(symbol) || /_RE$/.test(symbol),
+  );
+}
+
+function isImplementationLike(row: ChunkRow): boolean {
+  if (isTypeLike(row) || isConstantLike(row)) return false;
+  return row.content.trim().length >= 300 && lineCount(row) >= 8;
+}
+
+function isCommandLibraryPair(a: ChunkRow, b: ChunkRow): boolean {
+  return (
+    (a.relPath.startsWith("src/commands/") &&
+      b.relPath.startsWith("src/lib/")) ||
+    (b.relPath.startsWith("src/commands/") && a.relPath.startsWith("src/lib/"))
+  );
+}
+
+function addReason(reasons: Set<string>, condition: boolean, reason: string) {
+  if (condition) reasons.add(reason);
+}
+
+function scorePair(pair: SurprisePair, pairCount: number): ScoreParts {
+  const sharedSymbols = exactSharedSymbols(pair.source, pair.target);
+  const primaryMatch =
+    primarySymbol(pair.source) !== "" &&
+    primarySymbol(pair.source) === primarySymbol(pair.target);
+  const symbolShape = symbolShapeSimilarity(pair.source, pair.target);
+  const bothImplementation =
+    isImplementationLike(pair.source) && isImplementationLike(pair.target);
+  const anyImplementation =
+    isImplementationLike(pair.source) || isImplementationLike(pair.target);
+  const strongSymbol =
+    primaryMatch || sharedSymbols.length > 0 || symbolShape >= 0.5;
+  const sourceTiny = isTinyHelper(pair.source);
+  const targetTiny = isTinyHelper(pair.target);
+  const sourceTypeConstant =
+    isTypeLike(pair.source) || isConstantLike(pair.source);
+  const targetTypeConstant =
+    isTypeLike(pair.target) || isConstantLike(pair.target);
+  const commandWrapper = isCommandLibraryPair(pair.source, pair.target);
+
+  const reasons = new Set<string>();
+  addReason(reasons, primaryMatch || sharedSymbols.length > 0, "same-symbol");
+  addReason(reasons, !primaryMatch && symbolShape >= 0.5, "similar-symbol");
+  addReason(reasons, bothImplementation, "implementation");
+  addReason(reasons, pairCount > 1, "multi-pair");
+  addReason(reasons, sourceTiny || targetTiny, "tiny-helper");
+  addReason(reasons, sourceTypeConstant || targetTypeConstant, "type-constant");
+  addReason(reasons, commandWrapper, "command-wrapper");
+
+  const sameSymbolBoost = primaryMatch
+    ? 0.08
+    : sharedSymbols.length > 0
+      ? 0.05
+      : 0;
+  const symbolShapeBoost =
+    !primaryMatch && sharedSymbols.length === 0 && symbolShape >= 0.5
+      ? Math.min(0.05, symbolShape * 0.08)
+      : 0;
+  const implementationBoost = bothImplementation
+    ? 0.04
+    : anyImplementation
+      ? 0.015
+      : 0;
+  const supportBoost = Math.min(0.06, Math.log2(pairCount + 1) * 0.018);
+  const tinyHelperPenalty = strongSymbol
+    ? 0
+    : Math.min(0.06, (sourceTiny ? 0.03 : 0) + (targetTiny ? 0.03 : 0));
+  const typeConstantPenalty = Math.min(
+    0.1,
+    (sourceTypeConstant ? 0.05 : 0) + (targetTypeConstant ? 0.05 : 0),
+  );
+  const wrapperPenalty = commandWrapper ? 0.06 : 0;
+  const score =
+    pair.similarity +
+    sameSymbolBoost +
+    symbolShapeBoost +
+    implementationBoost +
+    supportBoost -
+    tinyHelperPenalty -
+    typeConstantPenalty -
+    wrapperPenalty;
+
+  return {
+    base: Number(pair.similarity.toFixed(3)),
+    sameSymbolBoost: Number(sameSymbolBoost.toFixed(3)),
+    symbolShapeBoost: Number(symbolShapeBoost.toFixed(3)),
+    implementationBoost: Number(implementationBoost.toFixed(3)),
+    supportBoost: Number(supportBoost.toFixed(3)),
+    tinyHelperPenalty: Number(tinyHelperPenalty.toFixed(3)),
+    typeConstantPenalty: Number(typeConstantPenalty.toFixed(3)),
+    wrapperPenalty: Number(wrapperPenalty.toFixed(3)),
+    score: Number(score.toFixed(3)),
+    reasons: [...reasons].sort(),
+  };
 }
 
 function toChunkRow(raw: RawRow, prefix: string): ChunkRow {
@@ -288,6 +462,60 @@ function filterableCodeRow(
   if (vectorLength(row.vector) === 0) return false;
   if (row.content.trim().length < 80) return false;
   return row.definedSymbols.length > 0;
+}
+
+function buildFindings(pairs: SurprisePair[]): FilePairFinding[] {
+  const groups = new Map<string, SurprisePair[]>();
+  for (const pair of pairs) {
+    const key = filePairKey(pair.source, pair.target);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(pair);
+  }
+
+  const findings: FilePairFinding[] = [];
+  for (const group of groups.values()) {
+    const scoredPairs: ScoredPair[] = group.map((pair) => ({
+      ...pair,
+      scoreParts: scorePair(pair, group.length),
+    }));
+    scoredPairs.sort(
+      (a, b) =>
+        b.scoreParts.score - a.scoreParts.score ||
+        b.similarity - a.similarity ||
+        a.distance - b.distance,
+    );
+    const representative = scoredPairs[0];
+    const files = [representative.source, representative.target].sort((a, b) =>
+      a.path.localeCompare(b.path),
+    );
+    const similaritiesAsc = group
+      .map((pair) => pair.similarity)
+      .sort((a, b) => a - b);
+    findings.push({
+      fileA: files[0].relPath,
+      fileB: files[1].relPath,
+      pairCount: group.length,
+      maxSimilarity: Number(
+        (similaritiesAsc[similaritiesAsc.length - 1] ?? 0).toFixed(3),
+      ),
+      medianSimilarity: Number(quantile(similaritiesAsc, 0.5).toFixed(3)),
+      representative,
+      score: representative.scoreParts.score,
+      reasons: representative.scoreParts.reasons,
+      topSimilarities: [...similaritiesAsc]
+        .reverse()
+        .slice(0, 5)
+        .map((value) => Number(value.toFixed(3))),
+    });
+  }
+
+  return findings.sort(
+    (a, b) =>
+      b.score - a.score ||
+      b.maxSimilarity - a.maxSimilarity ||
+      b.pairCount - a.pairCount ||
+      `${a.fileA}\0${a.fileB}`.localeCompare(`${b.fileA}\0${b.fileB}`),
+  );
 }
 
 async function run() {
@@ -402,10 +630,11 @@ async function run() {
     }
   }
 
-  const ranked = [...pairs.values()].sort(
+  const acceptedPairs = [...pairs.values()].sort(
     (a, b) => a.distance - b.distance || b.similarity - a.similarity,
   );
-  const topPairs = ranked.slice(0, opts.top);
+  const findings = buildFindings(acceptedPairs);
+  const topFindings = findings.slice(0, opts.top);
   const summary = {
     projectRoot,
     rows: rows.length,
@@ -414,9 +643,11 @@ async function run() {
     graphFileEdges: fileEdges.size,
     options: opts,
     filters,
-    acceptedPairs: ranked.length,
-    similarity: stats(ranked.map((pair) => pair.similarity)),
-    distance: stats(ranked.map((pair) => pair.distance)),
+    acceptedPairs: acceptedPairs.length,
+    acceptedFilePairs: findings.length,
+    similarity: stats(acceptedPairs.map((pair) => pair.similarity)),
+    distance: stats(acceptedPairs.map((pair) => pair.distance)),
+    actionabilityScore: stats(findings.map((finding) => finding.score)),
   };
 
   if (opts.json) {
@@ -424,20 +655,36 @@ async function run() {
       `${JSON.stringify(
         {
           summary,
-          topPairs: topPairs.map((pair) => ({
-            similarity: Number(pair.similarity.toFixed(3)),
-            distance: Number(pair.distance.toFixed(3)),
-            source: {
-              file: pair.source.relPath,
-              line: pair.source.startLine + 1,
-              symbols: pair.source.definedSymbols.slice(0, 4),
-              role: pair.source.role,
-            },
-            target: {
-              file: pair.target.relPath,
-              line: pair.target.startLine + 1,
-              symbols: pair.target.definedSymbols.slice(0, 4),
-              role: pair.target.role,
+          findings: topFindings.map((finding) => ({
+            score: finding.score,
+            maxSimilarity: finding.maxSimilarity,
+            medianSimilarity: finding.medianSimilarity,
+            pairCount: finding.pairCount,
+            files: [finding.fileA, finding.fileB],
+            reasons: finding.reasons,
+            topSimilarities: finding.topSimilarities,
+            representative: {
+              similarity: Number(finding.representative.similarity.toFixed(3)),
+              distance: Number(finding.representative.distance.toFixed(3)),
+              scoreParts: finding.representative.scoreParts,
+              source: {
+                file: finding.representative.source.relPath,
+                line: finding.representative.source.startLine + 1,
+                symbols: finding.representative.source.definedSymbols.slice(
+                  0,
+                  4,
+                ),
+                role: finding.representative.source.role,
+              },
+              target: {
+                file: finding.representative.target.relPath,
+                line: finding.representative.target.startLine + 1,
+                symbols: finding.representative.target.definedSymbols.slice(
+                  0,
+                  4,
+                ),
+                role: finding.representative.target.role,
+              },
             },
           })),
         },
@@ -451,23 +698,33 @@ async function run() {
     console.log(`  rows/code rows: ${rows.length}/${codeRows.length}`);
     console.log(`  sampled anchors: ${anchors.length}`);
     console.log(`  graph file edges: ${fileEdges.size}`);
-    console.log(`  accepted pairs: ${ranked.length}`);
+    console.log(
+      `  accepted pairs/file-pairs: ${acceptedPairs.length}/${findings.length}`,
+    );
     console.log(
       `  similarity p50/p90/max: ${summary.similarity.p50}/${summary.similarity.p90}/${summary.similarity.max}`,
+    );
+    console.log(
+      `  score p50/p90/max: ${summary.actionabilityScore.p50}/${summary.actionabilityScore.p90}/${summary.actionabilityScore.max}`,
     );
     console.log(
       `  filtered: same-file ${filters.sameFile}, same-dir ${filters.sameDirBucket}, graph-edge ${filters.graphEdge}, tests ${filters.tests}`,
     );
 
-    console.log("\nTop candidate surprising connections");
-    if (topPairs.length === 0) {
+    console.log("\nTop grouped surprising connections");
+    if (topFindings.length === 0) {
       console.log("  none");
     } else {
-      for (const pair of topPairs) {
+      for (const finding of topFindings) {
+        const pair = finding.representative;
         console.log(
-          `  sim=${pair.similarity.toFixed(3)} d=${pair.distance.toFixed(3)}  ${lineLabel(pair.source)}`,
+          `  score=${finding.score.toFixed(3)} sim=${finding.maxSimilarity.toFixed(3)} pairs=${finding.pairCount}  ${finding.fileA}`,
         );
-        console.log(`      <-> ${lineLabel(pair.target)}`);
+        console.log(`      <-> ${finding.fileB}`);
+        console.log(
+          `      best: ${lineLabel(pair.source)} <-> ${lineLabel(pair.target)}`,
+        );
+        console.log(`      reasons: ${finding.reasons.join(", ") || "none"}`);
       }
     }
   }
