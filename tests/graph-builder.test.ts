@@ -42,12 +42,16 @@ function makeRow(
   file: string,
   line: number,
   refs: string[] = [],
+  memberRefs: string[] = [],
 ) {
   return {
     path: file,
     start_line: line,
     defined_symbols: [symbol],
     referenced_symbols: refs,
+    // member names are additive — they also appear in referenced_symbols.
+    member_referenced_symbols: memberRefs,
+    type_referenced_symbols: [],
     role: "ORCHESTRATION",
     parent_symbol: null,
     complexity: 5,
@@ -141,6 +145,46 @@ describe("GraphBuilder", () => {
     expect(graph.callees.length).toBe(1);
     expect(graph.callees[0].file).toBe("/src/a.ts");
     expect(graph.callees[0].line).toBe(1);
+  });
+
+  it("getCallers tags free vs member edges and sorts free (EXTRACTED) first", async () => {
+    const db = createMockDb({
+      "defined_symbols, 'save'": [makeRow("save", "/src/db.ts", 10)],
+      // Scan order: member caller first, free caller second. The confidence sort
+      // must surface the free call ahead of the member call.
+      "referenced_symbols, 'save'": [
+        makeRow("memberCaller", "/src/a.ts", 5, ["save"], ["save"]),
+        makeRow("freeCaller", "/src/b.ts", 7, ["save"], []),
+      ],
+    });
+    const builder = new GraphBuilder(db);
+    const graph = await builder.buildGraph("save");
+
+    expect(graph.callers.length).toBe(2);
+    expect(graph.callers[0].symbol).toBe("freeCaller");
+    expect(graph.callers[0].edgeKind).toBe("free");
+    expect(graph.callers[0].confidence).toBe("EXTRACTED");
+    expect(graph.callers[1].symbol).toBe("memberCaller");
+    expect(graph.callers[1].edgeKind).toBe("member");
+    expect(graph.callers[1].confidence).toBe("INFERRED");
+  });
+
+  it("getCallers suppresses member callers of a builtin-named symbol", async () => {
+    // Tracing `get` (a builtin name): `x.get()` member callers are stdlib noise
+    // and dropped; a free `get()` caller is kept.
+    const db = createMockDb({
+      "defined_symbols, 'get'": [makeRow("get", "/src/store.ts", 3)],
+      "referenced_symbols, 'get'": [
+        makeRow("memberNoise", "/src/a.ts", 5, ["get"], ["get"]),
+        makeRow("realCaller", "/src/b.ts", 7, ["get"], []),
+      ],
+    });
+    const builder = new GraphBuilder(db);
+    // null anchorFamily → isolate the builtin-member suppression from the
+    // cross-language family guard.
+    const callers = await builder.getCallers("get", null);
+
+    expect(callers.map((c) => c.symbol)).toEqual(["realCaller"]);
   });
 
   it("buildGraph returns null center when symbol not found", async () => {

@@ -26,6 +26,16 @@ export interface GraphNode {
   calls: string[];
   calledBy: string[];
   complexity?: number;
+  /**
+   * Edge provenance for a caller node (how this chunk references the target):
+   * `free` = a free call `T()` (call position, high confidence) ·
+   * `member` = a member call `x.T()` (receiver unknown, low confidence) ·
+   * `type` = a type-position reference `: T` (not a call at all, lowest).
+   * Undefined for center/callee nodes. Drives the confidence sort + tag.
+   */
+  edgeKind?: "free" | "member" | "type";
+  /** EXTRACTED = a direct free call (trustworthy); INFERRED = member/type edge. */
+  confidence?: "EXTRACTED" | "INFERRED";
 }
 
 export interface GraphDefinition {
@@ -38,6 +48,20 @@ export interface GraphDefinition {
 export interface CallerTree {
   node: GraphNode;
   callers: CallerTree[];
+}
+
+/** Sort key for the caller confidence tier: free call < member call < type ref. */
+function edgeRank(node: GraphNode): number {
+  switch (node.edgeKind) {
+    case "free":
+      return 0;
+    case "member":
+      return 1;
+    case "type":
+      return 2;
+    default:
+      return 3;
+  }
 }
 
 export class GraphBuilder {
@@ -97,6 +121,10 @@ export class GraphBuilder {
         "start_line",
         "defined_symbols",
         "referenced_symbols",
+        // member_/type_ are needed so each caller edge can be tagged free vs
+        // member vs type (the confidence tier + builtin-member suppression).
+        "member_referenced_symbols",
+        "type_referenced_symbols",
         "role",
         "parent_symbol",
         "complexity",
@@ -120,9 +148,27 @@ export class GraphBuilder {
             return fam == null || fam === anchorFamily;
           });
 
-    return guarded.map((row) =>
+    const nodes = guarded.map((row) =>
       this.mapRowToNode(row as unknown as VectorRecord, symbol, "caller"),
     );
+
+    // Caller-side builtin-member suppression. A member call `x.T()` to a builtin
+    // name T (`.get`/`.map`/`.forEach`) is almost always an unrelated stdlib
+    // method, not a real caller of the project symbol T — mirrors the callee-side
+    // guard in buildGraph. Only fires when T itself is a builtin name, so a normal
+    // symbol that merely has member callers is untouched.
+    const filtered = isBuiltinCallee(symbol)
+      ? nodes.filter((n) => n.edgeKind !== "member")
+      : nodes;
+
+    // Confidence sort: free calls (EXTRACTED) first, then member, then type,
+    // preserving scan order within a tier (Array.sort is stable). Keeps the
+    // trustworthy callers above the display caps (peek MAX_CALLERS, MCP limits)
+    // so guesses don't read as facts.
+    return filtered
+      .map((n, i) => ({ n, i }))
+      .sort((a, b) => edgeRank(a.n) - edgeRank(b.n) || a.i - b.i)
+      .map(({ n }) => n);
   }
 
   /**
@@ -527,6 +573,25 @@ export class GraphBuilder {
       symbol = targetSymbol;
     }
 
+    // Classify HOW a caller references the target, for the confidence tier. Check
+    // member first: member names are ALSO in referenced_symbols (additive column),
+    // so a plain `referencedSymbols.includes` can't tell the two apart. Center and
+    // callee nodes get no edgeKind (not applicable).
+    let edgeKind: GraphNode["edgeKind"];
+    let confidence: GraphNode["confidence"];
+    if (type === "caller") {
+      if (toArray(row.member_referenced_symbols).includes(targetSymbol)) {
+        edgeKind = "member";
+        confidence = "INFERRED";
+      } else if (referencedSymbols.includes(targetSymbol)) {
+        edgeKind = "free";
+        confidence = "EXTRACTED";
+      } else if (toArray(row.type_referenced_symbols).includes(targetSymbol)) {
+        edgeKind = "type";
+        confidence = "INFERRED";
+      }
+    }
+
     return {
       symbol,
       file: row.path,
@@ -535,6 +600,8 @@ export class GraphBuilder {
       calls: referencedSymbols,
       calledBy: [], // To be filled if we do reverse lookup
       complexity: row.complexity,
+      edgeKind,
+      confidence,
     };
   }
 }
