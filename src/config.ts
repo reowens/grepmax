@@ -58,7 +58,7 @@ export const CONFIG = {
   // reindex to take effect. Must equal the latest entry's `v` in
   // CHUNKER_VERSION_HISTORY below — see that list for per-version severity and
   // the user-facing note rendered by `gmax doctor` and the staleness hint.
-  CHUNKER_VERSION: 3,
+  CHUNKER_VERSION: 4,
 };
 
 /**
@@ -83,6 +83,11 @@ export const CHUNKER_VERSION_HISTORY: ReadonlyArray<{
     v: 3,
     severity: "additive",
     note: "type-position edges; dead/trace miss type-only callers until reindex.",
+  },
+  {
+    v: 4,
+    severity: "additive",
+    note: "member-call edges recorded separately (obj.method()); substrate for receiver-aware call resolution, no query effect until reindex.",
   },
 ];
 

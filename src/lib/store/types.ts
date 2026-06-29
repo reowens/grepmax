@@ -26,6 +26,10 @@ export type PreparedChunk = {
    * count that feeds search ranking / role classification; navigation consumers
    * (getCallers, dead, impact, audit) union the two. */
   type_referenced_symbols?: string[];
+  /** Names called via member syntax (`obj.method()`). Recorded additively —
+   * these names are also in referenced_symbols, so recall/ranking are unchanged.
+   * Dormant substrate for a future receiver-aware call resolver. */
+  member_referenced_symbols?: string[];
   imports?: string[];
   exports?: string[];
   role?: string;
@@ -68,6 +72,7 @@ export interface ChunkType extends MetadataRecord {
   defined_symbols?: string[];
   referenced_symbols?: string[];
   type_referenced_symbols?: string[];
+  member_referenced_symbols?: string[];
   imports?: string[];
   exports?: string[];
   role?: string;

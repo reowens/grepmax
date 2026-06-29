@@ -253,6 +253,7 @@ export class WorkerOrchestrator {
         defined_symbols: chunk.definedSymbols,
         referenced_symbols: chunk.referencedSymbols,
         type_referenced_symbols: chunk.typeReferencedSymbols,
+        member_referenced_symbols: chunk.memberReferencedSymbols,
         role: chunk.role,
         parent_symbol: chunk.parentSymbol,
         file_skeleton: chunk.isAnchor ? skeleton : undefined,

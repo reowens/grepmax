@@ -269,6 +269,7 @@ export class VectorDB {
       defined_symbols: [],
       referenced_symbols: [],
       type_referenced_symbols: [],
+      member_referenced_symbols: [],
       imports: [],
       exports: [],
       role: "",
@@ -369,6 +370,11 @@ export class VectorDB {
         new List(new Field("item", new Utf8(), true)),
         true,
       ),
+      new Field(
+        "member_referenced_symbols",
+        new List(new Field("item", new Utf8(), true)),
+        true,
+      ),
       new Field("imports", new List(new Field("item", new Utf8(), true)), true),
       new Field("exports", new List(new Field("item", new Utf8(), true)), true),
       new Field("role", new Utf8(), true),
@@ -389,20 +395,30 @@ export class VectorDB {
   private async evolveSchema(table: lancedb.Table): Promise<void> {
     const schema = await table.schema();
     const fields = new Set(schema.fields.map((f) => f.name));
-    if (fields.has("type_referenced_symbols")) return;
-    try {
-      await table.addColumns(
-        new Field(
-          "type_referenced_symbols",
-          new List(new Field("item", new Utf8(), true)),
-          true,
-        ),
-      );
-      log("db", "Added type_referenced_symbols column to existing table");
-    } catch (err) {
-      // Lost a race with another writer that already added it, or a transient
-      // commit conflict — the next ensureTable() re-checks and no-ops.
-      debug("vectordb", `evolveSchema skipped: ${(err as Error).message}`);
+    // Additive list columns that older tables may predate. Each is checked and
+    // added INDEPENDENTLY: a single early-return on the first existing column
+    // (as this used to do) would permanently strand every table that already has
+    // `type_referenced_symbols` — i.e. all of them — without ever gaining a newer
+    // column like `member_referenced_symbols`.
+    const additiveListColumns = [
+      "type_referenced_symbols",
+      "member_referenced_symbols",
+    ];
+    for (const col of additiveListColumns) {
+      if (fields.has(col)) continue;
+      try {
+        await table.addColumns(
+          new Field(col, new List(new Field("item", new Utf8(), true)), true),
+        );
+        log("db", `Added ${col} column to existing table`);
+      } catch (err) {
+        // Lost a race with another writer that already added it, or a transient
+        // commit conflict — the next ensureTable() re-checks and no-ops.
+        debug(
+          "vectordb",
+          `evolveSchema ${col} skipped: ${(err as Error).message}`,
+        );
+      }
     }
   }
 
@@ -510,6 +526,8 @@ export class VectorDB {
       (rec as any).defined_symbols = rec.defined_symbols ?? [];
       (rec as any).referenced_symbols = rec.referenced_symbols ?? [];
       (rec as any).type_referenced_symbols = rec.type_referenced_symbols ?? [];
+      (rec as any).member_referenced_symbols =
+        rec.member_referenced_symbols ?? [];
       (rec as any).imports = rec.imports ?? [];
       (rec as any).exports = rec.exports ?? [];
       (rec as any).role = rec.role ?? "";

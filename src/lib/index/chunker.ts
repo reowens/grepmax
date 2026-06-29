@@ -57,6 +57,13 @@ export interface Chunk {
    * kept separate from referencedSymbols so they never inflate the call-edge
    * count used for role/search ranking. */
   typeReferencedSymbols?: string[];
+  /** Names called via member/attribute syntax (`obj.method()`), recorded
+   * ADDITIVELY: these names are ALSO present in referencedSymbols, so call-graph
+   * recall and the role/ranking ref-count are unchanged. This column is dormant
+   * substrate for a future receiver-aware resolver that can tell `db.query()`
+   * (resolve to the indexed method) from `someMap.get()` (a phantom) — only then
+   * can member calls be split out of referencedSymbols without gutting recall. */
+  memberReferencedSymbols?: string[];
   role?: string;
   parentSymbol?: string;
 }
@@ -658,6 +665,15 @@ export class TreeSitterChunker {
             typeReferencedSymbols.push(n);
           }
         };
+        // Member-call names (`obj.method()`), recorded additively alongside
+        // referencedSymbols (see Chunk.memberReferencedSymbols). Deduped, like
+        // type refs — a future resolver queries membership, not occurrence count.
+        const memberReferencedSymbols: string[] = [];
+        const addMemberRef = (n: string | null | undefined) => {
+          if (n && !memberReferencedSymbols.includes(n)) {
+            memberReferencedSymbols.push(n);
+          }
+        };
         // Leaf identifier node types across grammars (a bare name with no
         // named children — `ErrorCodes`, not `a.ErrorCodes`).
         const LEAF_ID_TYPES = new Set([
@@ -761,6 +777,7 @@ export class TreeSitterChunker {
               : null;
             if (func) {
               let funcName = func.text;
+              let isMemberCall = false;
 
               // Handle member access (obj.method) to extract just 'method'
               if (func.type === "member_expression") {
@@ -768,22 +785,32 @@ export class TreeSitterChunker {
                 const prop = func.childForFieldName
                   ? func.childForFieldName("property")
                   : null;
-                if (prop) funcName = prop.text;
+                if (prop) {
+                  funcName = prop.text;
+                  isMemberCall = true;
+                }
               } else if (func.type === "attribute") {
                 // Python: object.attribute
                 const attr = func.childForFieldName
                   ? func.childForFieldName("attribute")
                   : null;
-                if (attr) funcName = attr.text;
+                if (attr) {
+                  funcName = attr.text;
+                  isMemberCall = true;
+                }
               }
 
               referencedSymbols.push(funcName);
+              // Additive: member calls ALSO go here. referencedSymbols is left
+              // untouched (no recall loss); this just tags which were members.
+              if (isMemberCall) addMemberRef(funcName);
             } else {
               // Swift/Kotlin: call_expression has no "function" field;
               // the callable is a positional child
               const firstChild = (n.namedChildren ?? [])[0];
               if (firstChild) {
                 let funcName = firstChild.text;
+                let isMemberCall = false;
                 if (firstChild.type === "navigation_expression") {
                   const suffix = (firstChild.namedChildren ?? []).find(
                     (c) => c.type === "navigation_suffix",
@@ -793,9 +820,13 @@ export class TreeSitterChunker {
                         (c) => c.type === "simple_identifier",
                       )
                     : null;
-                  if (methodId) funcName = methodId.text;
+                  if (methodId) {
+                    funcName = methodId.text;
+                    isMemberCall = true;
+                  }
                 }
                 referencedSymbols.push(funcName);
+                if (isMemberCall) addMemberRef(funcName);
               }
             }
           }
@@ -1001,6 +1032,7 @@ export class TreeSitterChunker {
           definedSymbols,
           referencedSymbols,
           typeReferencedSymbols,
+          memberReferencedSymbols,
           role,
           parentSymbol:
             stack.length > 1
@@ -1098,6 +1130,9 @@ export class TreeSitterChunker {
     }
     if (sub.typeReferencedSymbols) {
       sub.typeReferencedSymbols = sub.typeReferencedSymbols.filter(occurs);
+    }
+    if (sub.memberReferencedSymbols) {
+      sub.memberReferencedSymbols = sub.memberReferencedSymbols.filter(occurs);
     }
     return sub;
   }
