@@ -246,4 +246,40 @@ describe("GraphBuilder", () => {
     expect(graph.callees[0].symbol).toBe("unknownFn");
     expect(graph.callees[0].file).toBe("");
   });
+
+  it("buildGraph drops unresolved builtin callees but keeps resolved ones", async () => {
+    // `forEach` is a builtin with no project definition → phantom edge, suppress.
+    // `realFn` resolves → kept. `get` is a builtin NAME but the project defines
+    // it (cache/store method) → resolves → kept (resolution-aware, not blanket).
+    const db = createMockDb({
+      "defined_symbols, 'fn'": [
+        makeRow("fn", "/a.ts", 1, ["forEach", "realFn", "get"]),
+      ],
+      "referenced_symbols, 'fn'": [],
+      "defined_symbols, 'realFn'": [makeRow("realFn", "/b.ts", 5)],
+      "defined_symbols, 'get'": [makeRow("get", "/cache.ts", 9)],
+    });
+    const builder = new GraphBuilder(db);
+    const graph = await builder.buildGraph("fn");
+
+    const names = graph.callees.map((c) => c.symbol);
+    expect(names).toContain("realFn");
+    expect(names).toContain("get"); // shadows a builtin but is indexed → kept
+    expect(names).not.toContain("forEach"); // unresolved builtin → suppressed
+  });
+
+  it("getNeighbors drops unresolved builtin callee neighbors", async () => {
+    // `map` is an unresolved builtin reached via a callee edge → suppress;
+    // `helper` resolves → kept.
+    const db = createMockDb({
+      "defined_symbols, 'fn'": [makeRow("fn", "/a.ts", 1, ["map", "helper"])],
+      "defined_symbols, 'helper'": [makeRow("helper", "/b.ts", 5)],
+    });
+    const builder = new GraphBuilder(db);
+    const hits = await builder.getNeighbors("fn", "callees", 1);
+
+    const names = hits.map((h) => h.symbol);
+    expect(names).toContain("helper");
+    expect(names).not.toContain("map");
+  });
 });

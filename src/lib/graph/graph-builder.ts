@@ -7,6 +7,7 @@ import {
   pathStartsWith,
 } from "../utils/filter-builder";
 import { withQueryTimeout } from "../utils/query-timeout";
+import { isBuiltinCallee } from "./callsites";
 import {
   bfsNeighbors,
   buildFileSubgraph,
@@ -203,7 +204,12 @@ export class GraphBuilder {
         calleeNodes.push(
           this.mapRowToNode(rows[0] as unknown as VectorRecord, name, "center"),
         );
-      } else {
+      } else if (!isBuiltinCallee(name)) {
+        // Unresolved + a known builtin (.map/.get/forEach) → suppress the
+        // phantom callee edge instead of emitting a "(not indexed)" stub.
+        // Mirrors the display-layer guard (peek.ts: `c.file || !isBuiltinCallee`):
+        // a project symbol that shadows a builtin name still resolves above and
+        // is kept, so only genuine builtins are dropped.
         calleeNodes.push({
           symbol: name,
           file: "",
@@ -369,6 +375,10 @@ export class GraphBuilder {
     const out: Array<NeighborHit & { file: string; line: number }> = [];
     for (const h of hits) {
       const loc = await this.resolveLocation(h.symbol, anchorFamily);
+      // Drop unresolved builtins (.map/.get/forEach) reached via callee edges —
+      // same resolution-aware rule as buildGraph/peek. A neighbor that resolves
+      // to an indexed definition is kept even if it shadows a builtin name.
+      if (!loc && isBuiltinCallee(h.symbol)) continue;
       out.push({ ...h, file: loc?.file ?? "", line: loc?.line ?? 0 });
     }
     return out;
