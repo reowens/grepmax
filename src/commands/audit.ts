@@ -41,6 +41,11 @@ interface HubFile {
   fanOut: number; // distinct in-project symbols this file references
 }
 
+interface FileCycle {
+  files: string[];
+  edgeCount: number;
+}
+
 interface DeadCandidate {
   symbol: string;
   file: string;
@@ -52,6 +57,7 @@ interface AuditResult {
   scannedFiles: number;
   godNodes: GodNode[];
   hubFiles: HubFile[];
+  fileCycles: FileCycle[];
   deadCandidates: DeadCandidate[];
   deadTotal: number;
 }
@@ -70,6 +76,84 @@ const MIN_GOD_NAME_LEN = 3;
 
 function rel(p: string, prefix: string): string {
   return p.startsWith(prefix) ? p.slice(prefix.length) : p;
+}
+
+function findFileCycles(
+  deps: Map<string, Set<string>>,
+  prefix: string,
+  top: number,
+): FileCycle[] {
+  const indexByFile = new Map<string, number>();
+  const lowlink = new Map<string, number>();
+  const stack: string[] = [];
+  const onStack = new Set<string>();
+  const components: string[][] = [];
+  let index = 0;
+
+  const strongConnect = (file: string) => {
+    indexByFile.set(file, index);
+    lowlink.set(file, index);
+    index++;
+    stack.push(file);
+    onStack.add(file);
+
+    for (const dep of deps.get(file) ?? []) {
+      if (!indexByFile.has(dep)) {
+        strongConnect(dep);
+        lowlink.set(
+          file,
+          Math.min(lowlink.get(file) ?? 0, lowlink.get(dep) ?? 0),
+        );
+      } else if (onStack.has(dep)) {
+        lowlink.set(
+          file,
+          Math.min(lowlink.get(file) ?? 0, indexByFile.get(dep) ?? 0),
+        );
+      }
+    }
+
+    if (lowlink.get(file) !== indexByFile.get(file)) return;
+
+    const component: string[] = [];
+    while (stack.length > 0) {
+      const dep = stack.pop()!;
+      onStack.delete(dep);
+      component.push(dep);
+      if (dep === file) break;
+    }
+    if (component.length > 1) components.push(component);
+  };
+
+  const files = new Set<string>();
+  for (const [file, targets] of deps) {
+    files.add(file);
+    for (const target of targets) files.add(target);
+  }
+  for (const file of [...files].sort()) {
+    if (!indexByFile.has(file)) strongConnect(file);
+  }
+
+  return components
+    .map((component) => {
+      const set = new Set(component);
+      let edgeCount = 0;
+      for (const file of component) {
+        for (const dep of deps.get(file) ?? []) {
+          if (set.has(dep)) edgeCount++;
+        }
+      }
+      return {
+        files: component.map((f) => rel(f, prefix)).sort(),
+        edgeCount,
+      };
+    })
+    .sort(
+      (a, b) =>
+        b.files.length - a.files.length ||
+        b.edgeCount - a.edgeCount ||
+        a.files.join("\0").localeCompare(b.files.join("\0")),
+    )
+    .slice(0, top);
 }
 
 /**
@@ -172,6 +256,20 @@ export function computeAudit(
   }
   hubFiles.sort((a, b) => b.dependents - a.dependents || b.defines - a.defines);
 
+  const fileDeps = new Map<string, Set<string>>();
+  for (const [file, refs] of fileOutRefs) {
+    for (const s of refs) {
+      if (isBuiltinCallee(s)) continue;
+      const defFiles = defFileCounts.get(s);
+      if (!defFiles || defFiles.size !== 1) continue;
+      const [depFile] = defFiles;
+      if (!depFile || depFile === file) continue;
+      if (!fileDeps.has(file)) fileDeps.set(file, new Set());
+      fileDeps.get(file)!.add(depFile);
+    }
+  }
+  const fileCycles = findFileCycles(fileDeps, prefix, top);
+
   // Dead candidates — non-exported in-project symbols with zero inbound
   // references anywhere (including their own file).
   const deadAll: DeadCandidate[] = [];
@@ -187,9 +285,18 @@ export function computeAudit(
     scannedFiles: files.size,
     godNodes: godNodes.slice(0, top),
     hubFiles: hubFiles.filter((h) => h.dependents > 0).slice(0, top),
+    fileCycles,
     deadCandidates: deadAll.slice(0, top),
     deadTotal: deadAll.length,
   };
+}
+
+function formatCycle(files: string[]): string {
+  const shown =
+    files.length > 6
+      ? [...files.slice(0, 6), `... ${files.length - 6} more`]
+      : files;
+  return shown.join(", ");
 }
 
 function formatHuman(r: AuditResult): string {
@@ -224,6 +331,21 @@ function formatHuman(r: AuditResult): string {
     for (const h of r.hubFiles) {
       out.push(
         `  ${h.file.padEnd(44)} ${style.dim(`${h.dependents} dependents, ${h.defines} defs, fan-out ${h.fanOut}`)}`,
+      );
+    }
+  }
+
+  out.push("");
+  out.push(
+    style.bold("File dependency cycles") +
+      style.dim(" (symbol-derived, bounded SCCs)"),
+  );
+  if (r.fileCycles.length === 0) {
+    out.push(style.dim("  none"));
+  } else {
+    for (const c of r.fileCycles) {
+      out.push(
+        `  ${formatCycle(c.files)}  ${style.dim(`${c.files.length} files, ${c.edgeCount} internal edges`)}`,
       );
     }
   }
@@ -272,6 +394,11 @@ function formatAgent(r: AuditResult): string {
   }
   for (const h of r.hubFiles) {
     lines.push(`hub\t${h.file}\t${h.dependents}\t${h.defines}\t${h.fanOut}`);
+  }
+  for (const c of r.fileCycles) {
+    lines.push(
+      `cycle\t${c.files.join(",")}\t${c.files.length}\t${c.edgeCount}`,
+    );
   }
   for (const d of r.deadCandidates) {
     lines.push(`dead\t${d.symbol}\t${d.file}:${d.line + 1}`);

@@ -89,6 +89,35 @@ describe("computeAudit", () => {
     expect(consumer!.fanOut).toBe(1);
   });
 
+  it("reports file dependency cycles from in-project symbol references", () => {
+    const rows: AuditRow[] = [
+      row("a.ts", 0, true, ["A"], ["B"]),
+      row("b.ts", 0, true, ["B"], ["C"]),
+      row("c.ts", 0, true, ["C"], ["A"]),
+      row("leaf.ts", 0, true, ["Leaf"], ["A"]),
+    ];
+
+    const r = computeAudit(rows, PREFIX, 10);
+
+    expect(r.fileCycles).toEqual([
+      { files: ["a.ts", "b.ts", "c.ts"], edgeCount: 3 },
+    ]);
+  });
+
+  it("does not report file cycles through builtin or ambiguous symbols", () => {
+    const rows: AuditRow[] = [
+      row("builtin-a.ts", 0, true, ["push"], ["Helper"]),
+      row("builtin-b.ts", 0, true, ["Helper"], ["push"]),
+      row("ambiguous-a.ts", 0, true, ["Shared"], ["Caller"]),
+      row("ambiguous-b.ts", 0, true, ["Shared"], []),
+      row("caller.ts", 0, true, ["Caller"], ["Shared"]),
+    ];
+
+    const r = computeAudit(rows, PREFIX, 10);
+
+    expect(r.fileCycles).toEqual([]);
+  });
+
   it("flags non-exported zero-inbound symbols as dead, never exported ones", () => {
     const rows: AuditRow[] = [
       row("a.ts", 5, false, ["unusedPrivate"], []),

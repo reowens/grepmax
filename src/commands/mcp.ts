@@ -1217,6 +1217,7 @@ export const mcp = new Command("mcp")
             "start_line",
             "defined_symbols",
             "referenced_symbols",
+            "type_referenced_symbols",
             "is_exported",
           ])
           .where(pathStartsWith(prefix))
@@ -1235,7 +1236,12 @@ export const mcp = new Command("mcp")
             start_line: Number((r as any).start_line || 0),
             is_exported: Boolean((r as any).is_exported),
             defined_symbols: toStringArray((r as any).defined_symbols),
-            referenced_symbols: toStringArray((r as any).referenced_symbols),
+            referenced_symbols: [
+              ...new Set([
+                ...toStringArray((r as any).referenced_symbols),
+                ...toStringArray((r as any).type_referenced_symbols),
+              ]),
+            ],
           })),
           prefix,
           top,
@@ -1261,6 +1267,14 @@ export const mcp = new Command("mcp")
           );
         }
         if (audit.hubFiles.length === 0) lines.push("  none");
+        lines.push("");
+        lines.push("File dependency cycles (symbol-derived):");
+        for (const c of audit.fileCycles) {
+          lines.push(
+            `  ${c.files.join(", ")} - ${c.files.length} files, ${c.edgeCount} internal edges`,
+          );
+        }
+        if (audit.fileCycles.length === 0) lines.push("  none");
         lines.push("");
         lines.push(
           `Dead-code candidates (${audit.deadTotal} non-exported symbols with zero inbound refs):`,
