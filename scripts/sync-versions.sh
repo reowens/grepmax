@@ -13,4 +13,12 @@ mv /tmp/plugin.json.tmp plugins/grepmax/.claude-plugin/plugin.json
 jq --arg v "$VERSION" '.plugins[0].version = $v' .claude-plugin/marketplace.json > /tmp/marketplace.json.tmp
 mv /tmp/marketplace.json.tmp .claude-plugin/marketplace.json
 
+# jq pretty-prints arrays multi-line, which biome's formatter rejects — so the
+# release CI `format:check` gate would fail on the very files this script writes
+# (this exact issue hollowed the first v0.22.0 cut). Re-format them to biome's
+# canonical style here so the version-bump commit is gate-clean.
+npx biome format --write \
+  plugins/grepmax/.claude-plugin/plugin.json \
+  .claude-plugin/marketplace.json
+
 echo "Done. plugin.json and marketplace.json now at v$VERSION"

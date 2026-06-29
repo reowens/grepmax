@@ -37,7 +37,7 @@
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "pnpm build",
-    "preversion": "pnpm test && pnpm typecheck",
+    "preversion": "pnpm test && pnpm typecheck && pnpm run format:check",
     "version": "bash scripts/sync-versions.sh && git add -A",
     "postversion": "bash scripts/postrelease.sh"
   },
