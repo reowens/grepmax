@@ -222,6 +222,7 @@ export class WorkerPool {
   private readonly execArgv: string[];
   private readonly maxWorkers: number;
   private consecutiveRespawns = 0;
+  private respawnLimitReached = false;
   private static readonly MAX_RESPAWNS = 10;
   private idleReapInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -271,6 +272,41 @@ export class WorkerPool {
     if (pi !== -1) this.priorityQueue.splice(pi, 1);
     const idx = this.taskQueue.indexOf(taskId);
     if (idx !== -1) this.taskQueue.splice(idx, 1);
+  }
+
+  private hasUnassignedTasks(): boolean {
+    const hasUnassigned = (queue: number[]) =>
+      queue.some((id) => {
+        const t = this.tasks.get(id);
+        return t && !t.worker;
+      });
+    return hasUnassigned(this.priorityQueue) || hasUnassigned(this.taskQueue);
+  }
+
+  private rejectUnassignedTasks(message: string): void {
+    for (const task of Array.from(this.tasks.values())) {
+      if (task.worker) continue;
+      task.reject(new Error(message));
+      this.completeTask(task, null);
+    }
+  }
+
+  private maybeRespawn(reason: string, hasPendingTasks: boolean): boolean {
+    if (this.destroyed || this.respawnLimitReached) return false;
+    this.consecutiveRespawns++;
+    log(
+      "pool",
+      `respawn #${this.consecutiveRespawns} after ${reason} (workers=${this.workers.length} pending=${hasPendingTasks})`,
+    );
+    if (this.consecutiveRespawns > WorkerPool.MAX_RESPAWNS) {
+      this.respawnLimitReached = true;
+      const message = `Worker respawn limit reached (${WorkerPool.MAX_RESPAWNS}). Not spawning more workers.`;
+      console.error(`[pool] ${message}`);
+      if (this.workers.length === 0) this.rejectUnassignedTasks(message);
+      return false;
+    }
+    this.spawnWorker();
+    return true;
   }
 
   private completeTask<M extends TaskMethod>(
@@ -333,26 +369,9 @@ export class WorkerPool {
     this.workers = this.workers.filter((w) => w !== worker);
     if (!this.destroyed) {
       // Only respawn if we have no workers left or there are pending tasks
-      const hasUnassigned = (queue: number[]) =>
-        queue.some((id) => {
-          const t = this.tasks.get(id);
-          return t && !t.worker;
-        });
-      const hasPendingTasks =
-        hasUnassigned(this.priorityQueue) || hasUnassigned(this.taskQueue);
+      const hasPendingTasks = this.hasUnassignedTasks();
       if (this.workers.length === 0 || hasPendingTasks) {
-        this.consecutiveRespawns++;
-        log(
-          "pool",
-          `respawn #${this.consecutiveRespawns} after exit (workers=${this.workers.length} pending=${hasPendingTasks})`,
-        );
-        if (this.consecutiveRespawns > WorkerPool.MAX_RESPAWNS) {
-          console.error(
-            `[pool] Worker respawn limit reached (${WorkerPool.MAX_RESPAWNS}). Not spawning more workers.`,
-          );
-          return;
-        }
-        this.spawnWorker();
+        this.maybeRespawn(reason, hasPendingTasks);
       }
       this.dispatch();
     }
@@ -436,6 +455,7 @@ export class WorkerPool {
 
       this.completeTask(task, worker);
       this.consecutiveRespawns = 0;
+      this.respawnLimitReached = false;
       this.recycleIfBloated(worker);
       this.dispatch();
     };
@@ -569,7 +589,7 @@ export class WorkerPool {
 
     this.workers = this.workers.filter((w) => w !== worker);
     if (!this.destroyed) {
-      this.spawnWorker();
+      this.maybeRespawn(`timeout (${reason})`, this.hasUnassignedTasks());
     }
     this.dispatch();
   }
@@ -591,6 +611,14 @@ export class WorkerPool {
 
     // Lazy spawn: if no idle worker and below max, spawn one
     if (!idle && this.workers.length < this.maxWorkers) {
+      if (this.respawnLimitReached) {
+        if (this.workers.length === 0) {
+          this.rejectUnassignedTasks(
+            `Worker respawn limit reached (${WorkerPool.MAX_RESPAWNS}). Not spawning more workers.`,
+          );
+        }
+        return;
+      }
       this.spawnWorker();
       idle = this.workers[this.workers.length - 1];
     }
@@ -846,21 +874,30 @@ export class WorkerPool {
     const killPromises = this.workers.map(
       (w) =>
         new Promise<void>((resolve) => {
+          let settled = false;
+          let force: ReturnType<typeof setTimeout> | undefined;
+          let fallback: ReturnType<typeof setTimeout> | undefined;
+          const cleanup = () => {
+            if (settled) return;
+            settled = true;
+            if (force) clearTimeout(force);
+            if (fallback) clearTimeout(fallback);
+            resolve();
+          };
           w.cleanedUp = true;
           w.child.removeAllListeners("message");
           w.child.removeAllListeners("exit");
           w.child.removeAllListeners("error");
-          w.child.once("exit", () => resolve());
-          w.child.kill("SIGTERM");
-          const force = setTimeout(() => {
+          w.child.once("exit", cleanup);
+          force = setTimeout(() => {
             try {
               w.child.kill("SIGKILL");
             } catch {}
           }, FORCE_KILL_GRACE_MS);
-          setTimeout(() => {
-            clearTimeout(force);
-            resolve();
-          }, WORKER_TIMEOUT_MS);
+          force.unref?.();
+          fallback = setTimeout(cleanup, WORKER_TIMEOUT_MS);
+          fallback.unref?.();
+          w.child.kill("SIGTERM");
         }),
     );
 

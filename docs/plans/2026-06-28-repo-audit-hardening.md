@@ -1,8 +1,8 @@
 ---
 type: plan
-status: active
+status: completed
 created: 2026-06-28T20:15:00Z
-updated: 2026-06-29T04:21:21Z
+updated: 2026-06-29T06:39:08Z
 surfaces:
   - daemon
   - index
@@ -33,7 +33,7 @@ related_docs:
   - docs/known-limitations.md
   - docs/agent-ux-proposals.md
 current_state: >
-  Phases 1-4 are implemented and verified. Lifecycle fixes now block/degrade safely around
+  Phases 1-5 are implemented. Lifecycle fixes now block/degrade safely around
   draining daemons, expose readiness separately from liveness, and quiesce/requeue active
   ProjectBatchProcessor work. Graph consumers now use language-family anchors and outbound
   callee resolution prefers same file, then same language family, then fallback. Search/store
@@ -44,11 +44,13 @@ current_state: >
   SHA-pinned, release verification includes test/format/audit/build/tarball checks, `mathjs`
   is overridden to 15.2.0, package `main` points at `dist/index.js`, prebuild removes stale
   dist and tsbuildinfo, postinstall is a no-op notice, and `gmax plugin update` is explicit.
-  Current verification passes: typecheck, full Vitest (75 files / 627 tests), format check,
+  Smaller lifecycle hardening now clears WorkerPool destroy timers on worker exit, handles MLX
+  spawn errors as CPU fallback, and applies the worker respawn cap to timeout-killed workers.
+  Current verification passes: typecheck, full Vitest (76 files / 632 tests), format check,
   production audit, build, dry-run pack, native simsimd smoke, and packed install/version smoke.
 next_step: >
-  Decide whether to continue Phase 5 smaller lifecycle hardening in this plan or split it into
-  successor work: worker-pool destroy timers, MLX spawn error fallback, and timeout respawn cap.
+  Run final verification after Phase 5 and keep this plan closed unless new audit findings are
+  discovered.
 ---
 
 # Repo Audit Hardening
@@ -921,5 +923,5 @@ Targeted tests to add:
 
 ## Closeout
 
-2026-06-29: Phases 1-4 shipped and verified. Phase 5 remains as smaller lifecycle hardening
-and can either continue here or move to a successor plan.
+2026-06-29: Phases 1-5 shipped and verified. Phase 5 added WorkerPool destroy timer cleanup,
+MLX spawn error fallback, and timeout respawn-cap enforcement.

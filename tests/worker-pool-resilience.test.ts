@@ -49,6 +49,7 @@ describe("WorkerPool resilience", () => {
       // Mark destroyed first so timers/respawns stop, then best-effort cleanup.
       pool.destroyed = true;
     }
+    if (pool?.idleReapInterval) clearInterval(pool.idleReapInterval);
     pool = null;
   });
 
@@ -171,5 +172,45 @@ describe("WorkerPool resilience", () => {
 
     expect(worker.child.kill).toHaveBeenCalledWith("SIGKILL");
     await expect(p).rejects.toThrow(/hard deadline/);
+  });
+
+  it("destroy clears force-kill timers when the worker exits after SIGTERM", async () => {
+    vi.useFakeTimers();
+    pool = new WorkerPool();
+    const worker = pool.workers[0];
+    worker.child.kill.mockImplementation((signal: NodeJS.Signals) => {
+      if (signal === "SIGTERM") worker.child.emit("exit", null, "SIGTERM");
+      return true;
+    });
+
+    await pool.destroy();
+
+    expect(worker.child.kill).toHaveBeenCalledWith("SIGTERM");
+    worker.child.kill.mockClear();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(worker.child.kill).not.toHaveBeenCalled();
+  });
+
+  it("stops respawning and rejects queued tasks after the timeout respawn cap", async () => {
+    vi.useFakeTimers();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    pool = new WorkerPool();
+    pool.maxWorkers = 1;
+    pool.consecutiveRespawns = (WorkerPool as any).MAX_RESPAWNS;
+
+    const active = pool.processFile({ path: "/stuck.ts" } as any);
+    const queued = pool.processFile({ path: "/queued.ts" } as any);
+    const activeCheck = expect(active).rejects.toThrow(/exceeded no progress/);
+    const queuedCheck = expect(queued).rejects.toThrow(
+      /respawn limit reached/i,
+    );
+
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    await activeCheck;
+    await queuedCheck;
+    expect(h.children).toHaveLength(1);
+    expect(pool.workers).toHaveLength(0);
+    errorSpy.mockRestore();
   });
 });

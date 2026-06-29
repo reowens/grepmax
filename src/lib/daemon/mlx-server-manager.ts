@@ -116,25 +116,69 @@ export class MlxServerManager {
     >;
     if (mlxModel) env.MLX_EMBED_MODEL = mlxModel;
 
-    this.mlxChild = spawn("uv", ["run", "python", "server.py"], {
-      cwd: serverDir,
-      detached: true,
-      stdio: ["ignore", logFd, logFd],
-      env,
+    const closeLogFd = () => {
+      try {
+        fs.closeSync(logFd);
+      } catch {}
+    };
+
+    try {
+      this.mlxChild = spawn("uv", ["run", "python", "server.py"], {
+        cwd: serverDir,
+        detached: true,
+        stdio: ["ignore", logFd, logFd],
+        env,
+      });
+    } catch (err) {
+      closeLogFd();
+      console.error(
+        `[daemon] MLX embed server failed to spawn: ${err instanceof Error ? err.message : String(err)} — falling back to CPU embeddings`,
+      );
+      this.mlxChild = null;
+      return;
+    }
+
+    const child = this.mlxChild;
+    let startupSettled = false;
+    let resolveStartupError!: (err: Error) => void;
+    const startupError = new Promise<Error>((resolve) => {
+      resolveStartupError = resolve;
     });
-    this.mlxChild.unref();
-    console.log(
-      `[daemon] Starting MLX embed server (PID: ${this.mlxChild.pid})`,
-    );
+    const onChildError = (err: Error) => {
+      if (!startupSettled) {
+        resolveStartupError(err);
+        return;
+      }
+      console.error(`[daemon] MLX embed server process error: ${err.message}`);
+      if (this.mlxChild === child) this.mlxChild = null;
+    };
+    child.on("error", onChildError);
+    child.unref();
+    console.log(`[daemon] Starting MLX embed server (PID: ${child.pid})`);
 
     // Poll for readiness (up to 30s)
     for (let i = 0; i < 30; i++) {
-      await new Promise((r) => setTimeout(r, 1000));
+      const spawnError = await Promise.race([
+        startupError,
+        new Promise<null>((r) => setTimeout(() => r(null), 1000)),
+      ]);
+      if (spawnError) {
+        startupSettled = true;
+        child.off("error", onChildError);
+        closeLogFd();
+        console.error(
+          `[daemon] MLX embed server failed to spawn: ${spawnError.message} — falling back to CPU embeddings`,
+        );
+        if (this.mlxChild === child) this.mlxChild = null;
+        return;
+      }
       if (await this.isMlxServerUp()) {
+        startupSettled = true;
         console.log("[daemon] MLX embed server ready");
         return;
       }
     }
+    startupSettled = true;
     console.error(
       "[daemon] MLX embed server failed to start within 30s — falling back to CPU embeddings",
     );
