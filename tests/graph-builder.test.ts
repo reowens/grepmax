@@ -80,6 +80,49 @@ describe("GraphBuilder", () => {
     expect(graph.callees.length).toBe(2);
   });
 
+  it("buildGraph callee prefers a definition in the center's own file", async () => {
+    const db = createMockDb({
+      "defined_symbols, 'handleAuth'": [
+        makeRow("handleAuth", "/src/auth.ts", 10, ["validate"]),
+      ],
+      "referenced_symbols, 'handleAuth'": [],
+      // `validate` is defined twice: an unrelated module first (what the old
+      // arbitrary .limit(1) would have picked) and the center's own file second.
+      "defined_symbols, 'validate'": [
+        makeRow("validate", "/src/other.ts", 99),
+        makeRow("validate", "/src/auth.ts", 42),
+      ],
+    });
+    const builder = new GraphBuilder(db);
+    const graph = await builder.buildGraph("handleAuth");
+
+    expect(graph.callees.length).toBe(1);
+    expect(graph.callees[0].symbol).toBe("validate");
+    // prefer-self: resolves to the center's file, not the first (other.ts) row.
+    expect(graph.callees[0].file).toBe("/src/auth.ts");
+    expect(graph.callees[0].line).toBe(42);
+  });
+
+  it("buildGraph callee falls back to first row when none is self-file", async () => {
+    const db = createMockDb({
+      "defined_symbols, 'handleAuth'": [
+        makeRow("handleAuth", "/src/auth.ts", 10, ["validate"]),
+      ],
+      "referenced_symbols, 'handleAuth'": [],
+      // Neither definition is in the center's file → unchanged first-row behaviour.
+      "defined_symbols, 'validate'": [
+        makeRow("validate", "/src/a.ts", 1),
+        makeRow("validate", "/src/b.ts", 2),
+      ],
+    });
+    const builder = new GraphBuilder(db);
+    const graph = await builder.buildGraph("handleAuth");
+
+    expect(graph.callees.length).toBe(1);
+    expect(graph.callees[0].file).toBe("/src/a.ts");
+    expect(graph.callees[0].line).toBe(1);
+  });
+
   it("buildGraph returns null center when symbol not found", async () => {
     const db = createMockDb({});
     const builder = new GraphBuilder(db);

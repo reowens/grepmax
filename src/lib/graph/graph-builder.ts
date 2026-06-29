@@ -183,9 +183,14 @@ export class GraphBuilder {
 
     // 3. Get Callees — resolve each to a GraphNode with file:line
     const calleeNames = center ? center.calls.slice(0, 15) : [];
+    const centerFile = center ? center.file : "";
     const calleeNodes: GraphNode[] = [];
     for (const name of calleeNames) {
       const esc = escapeSqlString(name);
+      // Pull a few candidates (was .limit(1)) so a callee name defined in more
+      // than one file can prefer the center's OWN file instead of an arbitrary
+      // same-named definition in an unrelated module — the cheapest correct
+      // disambiguation, and strictly better than the old first-row guess.
       const rows = await table
         .query()
         .where(this.scopeWhere(`array_contains(defined_symbols, '${esc}')`))
@@ -198,11 +203,21 @@ export class GraphBuilder {
           "parent_symbol",
           "complexity",
         ])
-        .limit(1)
+        .limit(25)
         .toArray();
       if (rows.length > 0) {
+        // Prefer-self-file: a callee the center also defines locally is almost
+        // certainly that local definition. Falls back to the first row when no
+        // candidate is in the center's file (unchanged behaviour then).
+        const selfRow = rows.find(
+          (r) => String((r as any).path ?? "") === centerFile,
+        );
         calleeNodes.push(
-          this.mapRowToNode(rows[0] as unknown as VectorRecord, name, "center"),
+          this.mapRowToNode(
+            (selfRow ?? rows[0]) as unknown as VectorRecord,
+            name,
+            "center",
+          ),
         );
       } else if (!isBuiltinCallee(name)) {
         // Unresolved + a known builtin (.map/.get/forEach) → suppress the
