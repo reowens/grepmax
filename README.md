@@ -72,6 +72,7 @@ gmax log src/lib/auth.ts                 # Git commit history for a path or symb
 gmax test handleAuth                     # Find tests via reverse call graph
 gmax impact handleAuth                   # Dependents + affected tests
 gmax similar handleAuth                  # Find similar code patterns
+gmax audit --top 10                      # God nodes, hub files, file cycles, dead candidates
 gmax dead handleAuth                     # Unused-symbol check via call graph (DEAD / PUBLIC EXPORT / LIVE)
 gmax context "auth system" --budget 4000 # Token-budgeted topic summary
 gmax context src/lib/auth.ts --budget 4000 # Deterministic file/path context
@@ -132,7 +133,7 @@ Plugins auto-update when you run `npm install -g grepmax@latest` — no need to 
 | `extract_symbol` | Complete function/class body by symbol name. |
 | `peek_symbol` | Compact overview: signature + callers + callees. |
 | `dead` | Unused-symbol check via call graph. Returns `DEAD`, `PUBLIC EXPORT`, or `LIVE` with caller count. |
-| `audit` | Graph summary: god nodes, hub files, and dead-code candidates in one call. |
+| `audit` | Graph summary: god nodes, hub files, symbol-derived file dependency cycles, and dead-code candidates. |
 | `get_neighbors` | Graph primitive: symbols reachable from a node along call edges within N hops. |
 | `find_paths` | Graph primitive: shortest call-graph path between two symbols. |
 | `subgraph_for_files` | Graph primitive: local dependency subgraph for a set of files. |

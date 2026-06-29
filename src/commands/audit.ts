@@ -409,11 +409,12 @@ function formatAgent(r: AuditResult): string {
 
 export const audit = new Command("audit")
   .description(
-    "Graph-summary of the indexed project — god nodes (most depended-upon " +
-      "symbols), hub files (most depended-upon files), and dead-code candidates " +
-      "(non-exported symbols with zero inbound references). One pass over the " +
-      "static call graph; dynamic dispatch / reflection / eval are invisible, so " +
-      "dead candidates are hypotheses, not proof.",
+    "Graph-summary of the indexed project: god nodes (most depended-upon " +
+      "symbols), hub files (most depended-upon files), symbol-derived file " +
+      "dependency cycles, and dead-code candidates (non-exported symbols with " +
+      "zero inbound references). One pass over the static reference graph; " +
+      "dynamic dispatch / reflection / eval are invisible, so dead candidates " +
+      "are hypotheses, not proof.",
   )
   .option("--root <dir>", "Project root directory")
   .option(

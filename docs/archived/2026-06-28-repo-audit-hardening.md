@@ -1,8 +1,8 @@
 ---
 type: plan
-status: completed
+status: archived
 created: 2026-06-28T20:15:00Z
-updated: 2026-06-29T06:39:08Z
+updated: 2026-06-29T08:42:28Z
 surfaces:
   - daemon
   - index
@@ -27,11 +27,11 @@ domain: repository audit follow-ups (correctness, lifecycle, release hardening)
 audience: internal
 parent_plan:
 related_plans:
-  - docs/plans/graphify-derived-improvements.md
-  - docs/plans/mcp-server-migration.md
+  - ../plans/graphify-derived-improvements.md
+  - ../plans/mcp-server-migration.md
 related_docs:
-  - docs/known-limitations.md
-  - docs/agent-ux-proposals.md
+  - ../known-limitations.md
+  - ../agent-ux-proposals.md
 current_state: >
   Phases 1-5 are implemented. Lifecycle fixes now block/degrade safely around
   draining daemons, expose readiness separately from liveness, and quiesce/requeue active
@@ -46,11 +46,10 @@ current_state: >
   dist and tsbuildinfo, postinstall is a no-op notice, and `gmax plugin update` is explicit.
   Smaller lifecycle hardening now clears WorkerPool destroy timers on worker exit, handles MLX
   spawn errors as CPU fallback, and applies the worker respawn cap to timeout-killed workers.
-  Current verification passes: typecheck, full Vitest (76 files / 632 tests), format check,
+  Current verification passes: typecheck, full Vitest (76 files / 634 tests), format check,
   production audit, build, dry-run pack, native simsimd smoke, and packed install/version smoke.
 next_step: >
-  Run final verification after Phase 5 and keep this plan closed unless new audit findings are
-  discovered.
+  None. Plan closed; reopen only for new audit findings.
 ---
 
 # Repo Audit Hardening
