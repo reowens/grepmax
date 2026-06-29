@@ -256,7 +256,8 @@ export const peek = new Command("peek")
       // first edgeKind seen for a symbol is its highest-confidence one.
       const edgeKindBySym = new Map<string, CallerEntry["edgeKind"]>();
       for (const c of callerList) {
-        if (!edgeKindBySym.has(c.symbol)) edgeKindBySym.set(c.symbol, c.edgeKind);
+        if (!edgeKindBySym.has(c.symbol))
+          edgeKindBySym.set(c.symbol, c.edgeKind);
       }
 
       // Re-anchor chunk-level caller rows to actual call sites and dedupe —

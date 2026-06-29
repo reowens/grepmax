@@ -98,7 +98,9 @@ function formatTraceAgent(
       const g = groups.get(key)!;
       const locs = [...g.lineSet].sort((a, b) => a - b).join(",");
       const loc = g.file ? `${rel(g.file)}:${locs}` : "(not indexed)";
-      lines.push(`${"  ".repeat(depth)}<- ${g.symbol}\t${loc}${kindTag(g.edgeKind)}`);
+      lines.push(
+        `${"  ".repeat(depth)}<- ${g.symbol}\t${loc}${kindTag(g.edgeKind)}`,
+      );
       walkCallers(g.sub, depth + 1);
     }
   }
@@ -235,7 +237,9 @@ function formatInboundHuman(
       const loc = n.file
         ? `${rel(n.file)}:${(n.snippetLine ?? n.line) + 1}`
         : "(not indexed)";
-      lines.push(`${indent}${n.symbol}  ${dim(loc)}${dim(kindTag(n.edgeKind))}`);
+      lines.push(
+        `${indent}${n.symbol}  ${dim(loc)}${dim(kindTag(n.edgeKind))}`,
+      );
       if (withSnippets && n.snippet) {
         lines.push(`${indent}  ${dim(n.snippet)}`);
       }
