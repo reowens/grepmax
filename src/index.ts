@@ -39,6 +39,7 @@ import { similar } from "./commands/similar";
 import { skeleton } from "./commands/skeleton";
 import { status } from "./commands/status";
 import { summarize } from "./commands/summarize";
+import { surprises } from "./commands/surprises";
 import { symbols } from "./commands/symbols";
 import { testFind } from "./commands/test-find";
 import { trace } from "./commands/trace";
@@ -105,6 +106,7 @@ program.addCommand(diff);
 program.addCommand(testFind);
 program.addCommand(impact);
 program.addCommand(similar);
+program.addCommand(surprises);
 program.addCommand(context);
 
 // Services
