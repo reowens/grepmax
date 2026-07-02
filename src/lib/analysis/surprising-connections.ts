@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import { isBuiltinCallee } from "../graph/callsites";
 import { toArr } from "../utils/arrow";
-import { pathStartsWith } from "../utils/filter-builder";
+import { buildScopeWhere, resolveScope } from "../utils/scope-filter";
 
 type RawRow = Record<string, unknown>;
 
@@ -35,6 +35,7 @@ export type ScoreParts = {
   tinyHelperPenalty: number;
   typeConstantPenalty: number;
   wrapperPenalty: number;
+  genericSymbolPenalty: number;
   score: number;
   reasons: string[];
 };
@@ -50,6 +51,7 @@ export type FilePairFinding = {
   maxSimilarity: number;
   medianSimilarity: number;
   representative: ScoredPair;
+  examples?: ScoredPair[];
   score: number;
   reasons: string[];
   topSimilarities: number[];
@@ -63,6 +65,8 @@ export type SurpriseAnalysisOptions = {
   maxRows: number;
   includeTests: boolean;
   includeEval: boolean;
+  in?: string | string[];
+  exclude?: string | string[];
 };
 
 export type SurpriseAnalysisSummary = {
@@ -77,6 +81,7 @@ export type SurpriseAnalysisSummary = {
     sameChunk: number;
     sameFile: number;
     nonCode: number;
+    weakCode: number;
     tests: number;
     evalHarness: number;
     sameDirBucket: number;
@@ -105,6 +110,8 @@ export const DEFAULT_SURPRISE_OPTIONS: SurpriseAnalysisOptions = {
   includeTests: false,
   includeEval: false,
 };
+
+export const MAX_SURPRISE_ROWS = 100_000;
 
 export const SURPRISE_COLUMNS = [
   "id",
@@ -172,7 +179,10 @@ export function normalizeSurpriseOptions(
     ),
     maxRows: Math.max(
       1,
-      Math.floor(opts.maxRows ?? DEFAULT_SURPRISE_OPTIONS.maxRows),
+      Math.min(
+        MAX_SURPRISE_ROWS,
+        Math.floor(opts.maxRows ?? DEFAULT_SURPRISE_OPTIONS.maxRows),
+      ),
     ),
     includeTests: opts.includeTests ?? DEFAULT_SURPRISE_OPTIONS.includeTests,
     includeEval: opts.includeEval ?? DEFAULT_SURPRISE_OPTIONS.includeEval,
@@ -204,10 +214,50 @@ export function lineLabel(row: ChunkRow): string {
   return `${row.relPath}:${row.startLine + 1}${sym}`;
 }
 
-function dirBucket(rel: string, depth: number): string {
+export function directoryBucket(rel: string, depth: number): string {
   const dir = path.dirname(rel);
   if (dir === ".") return ".";
   return dir.split(path.sep).slice(0, depth).join(path.sep) || ".";
+}
+
+export function findingBucketLabel(
+  finding: Pick<FilePairFinding, "fileA" | "fileB">,
+  dirDepth: number,
+): string {
+  return `${directoryBucket(finding.fileA, dirDepth)}<->${directoryBucket(
+    finding.fileB,
+    dirDepth,
+  )}`;
+}
+
+export function findingExamples(
+  finding: Pick<FilePairFinding, "representative" | "examples">,
+  limit = 2,
+): ScoredPair[] {
+  const examples = finding.examples?.length
+    ? finding.examples
+    : [finding.representative];
+  return examples.slice(0, limit);
+}
+
+export function formatPenaltySummary(parts: ScoreParts): string {
+  const entries = [
+    ["tiny", parts.tinyHelperPenalty],
+    ["type", parts.typeConstantPenalty],
+    ["wrapper", parts.wrapperPenalty],
+    ["generic", parts.genericSymbolPenalty],
+  ].filter(([, value]) => Number(value) > 0);
+  return entries.length === 0
+    ? "none"
+    : entries.map(([name, value]) => `${name}:${value}`).join(",");
+}
+
+export function skeletonHint(
+  finding: Pick<FilePairFinding, "fileA" | "fileB">,
+): string {
+  return `gmax skeleton ${JSON.stringify(finding.fileA)} | gmax skeleton ${JSON.stringify(
+    finding.fileB,
+  )}`;
 }
 
 function isCodePath(filePath: string): boolean {
@@ -296,6 +346,40 @@ function isConstantLike(row: ChunkRow): boolean {
   );
 }
 
+const GENERIC_SYMBOLS = new Set([
+  "constructor",
+  "context",
+  "data",
+  "default",
+  "fmt",
+  "get",
+  "height",
+  "kind",
+  "main",
+  "new",
+  "options",
+  "rel",
+  "relpath",
+  "resolve",
+  "root",
+  "run",
+  "set",
+  "style",
+  "styles",
+  "toarray",
+  "tostringarray",
+  "type",
+  "types",
+  "value",
+  "values",
+  "width",
+]);
+
+function isGenericSymbol(symbol: string): boolean {
+  const normalized = symbol.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  return normalized.length <= 1 || GENERIC_SYMBOLS.has(normalized);
+}
+
 function isImplementationLike(row: ChunkRow): boolean {
   if (isTypeLike(row) || isConstantLike(row)) return false;
   return row.content.trim().length >= 300 && lineCount(row) >= 8;
@@ -315,16 +399,20 @@ function addReason(reasons: Set<string>, condition: boolean, reason: string) {
 
 export function scorePair(pair: SurprisePair, pairCount: number): ScoreParts {
   const sharedSymbols = exactSharedSymbols(pair.source, pair.target);
-  const primaryMatch =
-    primarySymbol(pair.source) !== "" &&
-    primarySymbol(pair.source) === primarySymbol(pair.target);
+  const sourcePrimary = primarySymbol(pair.source);
+  const targetPrimary = primarySymbol(pair.target);
+  const primaryMatch = sourcePrimary !== "" && sourcePrimary === targetPrimary;
+  const genericExactSymbol =
+    (primaryMatch && isGenericSymbol(sourcePrimary)) ||
+    sharedSymbols.some((symbol) => isGenericSymbol(symbol));
   const symbolShape = symbolShapeSimilarity(pair.source, pair.target);
   const bothImplementation =
     isImplementationLike(pair.source) && isImplementationLike(pair.target);
   const anyImplementation =
     isImplementationLike(pair.source) || isImplementationLike(pair.target);
   const strongSymbol =
-    primaryMatch || sharedSymbols.length > 0 || symbolShape >= 0.5;
+    !genericExactSymbol &&
+    (primaryMatch || sharedSymbols.length > 0 || symbolShape >= 0.5);
   const sourceTiny = isTinyHelper(pair.source);
   const targetTiny = isTinyHelper(pair.target);
   const sourceTypeConstant =
@@ -341,12 +429,15 @@ export function scorePair(pair: SurprisePair, pairCount: number): ScoreParts {
   addReason(reasons, sourceTiny || targetTiny, "tiny-helper");
   addReason(reasons, sourceTypeConstant || targetTypeConstant, "type-constant");
   addReason(reasons, commandWrapper, "command-wrapper");
+  addReason(reasons, genericExactSymbol, "generic-symbol");
 
-  const sameSymbolBoost = primaryMatch
-    ? 0.08
-    : sharedSymbols.length > 0
-      ? 0.05
-      : 0;
+  const sameSymbolBoost = genericExactSymbol
+    ? 0
+    : primaryMatch
+      ? 0.08
+      : sharedSymbols.length > 0
+        ? 0.05
+        : 0;
   const symbolShapeBoost =
     !primaryMatch && sharedSymbols.length === 0 && symbolShape >= 0.5
       ? Math.min(0.05, symbolShape * 0.08)
@@ -357,14 +448,16 @@ export function scorePair(pair: SurprisePair, pairCount: number): ScoreParts {
       ? 0.015
       : 0;
   const supportBoost = Math.min(0.06, Math.log2(pairCount + 1) * 0.018);
+  const tinyHelperBase = (sourceTiny ? 0.06 : 0) + (targetTiny ? 0.06 : 0);
   const tinyHelperPenalty = strongSymbol
-    ? 0
-    : Math.min(0.06, (sourceTiny ? 0.03 : 0) + (targetTiny ? 0.03 : 0));
+    ? Math.min(0.04, tinyHelperBase / 2)
+    : Math.min(0.12, tinyHelperBase);
   const typeConstantPenalty = Math.min(
-    0.1,
-    (sourceTypeConstant ? 0.05 : 0) + (targetTypeConstant ? 0.05 : 0),
+    0.18,
+    (sourceTypeConstant ? 0.09 : 0) + (targetTypeConstant ? 0.09 : 0),
   );
-  const wrapperPenalty = commandWrapper ? 0.06 : 0;
+  const wrapperPenalty = commandWrapper ? 0.12 : 0;
+  const genericSymbolPenalty = genericExactSymbol ? 0.08 : 0;
   const score =
     pair.similarity +
     sameSymbolBoost +
@@ -373,7 +466,8 @@ export function scorePair(pair: SurprisePair, pairCount: number): ScoreParts {
     supportBoost -
     tinyHelperPenalty -
     typeConstantPenalty -
-    wrapperPenalty;
+    wrapperPenalty -
+    genericSymbolPenalty;
 
   return {
     base: Number(pair.similarity.toFixed(3)),
@@ -384,6 +478,7 @@ export function scorePair(pair: SurprisePair, pairCount: number): ScoreParts {
     tinyHelperPenalty: Number(tinyHelperPenalty.toFixed(3)),
     typeConstantPenalty: Number(typeConstantPenalty.toFixed(3)),
     wrapperPenalty: Number(wrapperPenalty.toFixed(3)),
+    genericSymbolPenalty: Number(genericSymbolPenalty.toFixed(3)),
     score: Number(score.toFixed(3)),
     reasons: [...reasons].sort(),
   };
@@ -513,6 +608,7 @@ export function buildFindings(pairs: SurprisePair[]): FilePairFinding[] {
       ),
       medianSimilarity: Number(quantile(similaritiesAsc, 0.5).toFixed(3)),
       representative,
+      examples: scoredPairs.slice(0, 3),
       score: representative.scoreParts.score,
       reasons: representative.scoreParts.reasons,
       topSimilarities: [...similaritiesAsc]
@@ -538,10 +634,16 @@ export async function analyzeSurprisingConnections(
 ): Promise<SurpriseAnalysisResult> {
   const opts = normalizeSurpriseOptions(partialOptions);
   const prefix = projectRoot.endsWith("/") ? projectRoot : `${projectRoot}/`;
+  const scope = resolveScope({
+    projectRoot,
+    in: opts.in,
+    exclude: opts.exclude,
+  });
+  const where = buildScopeWhere(scope);
   const rawRows = (await table
     .query()
     .select(SURPRISE_COLUMNS)
-    .where(pathStartsWith(prefix))
+    .where(where)
     .limit(opts.maxRows)
     .toArray()) as RawRow[];
   const rows = rawRows.map((row) => toChunkRow(row, prefix));
@@ -555,6 +657,7 @@ export async function analyzeSurprisingConnections(
     sameChunk: 0,
     sameFile: 0,
     nonCode: 0,
+    weakCode: 0,
     tests: 0,
     evalHarness: 0,
     sameDirBucket: 0,
@@ -567,7 +670,7 @@ export async function analyzeSurprisingConnections(
     const neighbors = (await table
       .vectorSearch(source.vector as number[])
       .select([...SURPRISE_COLUMNS, "_distance"])
-      .where(pathStartsWith(prefix))
+      .where(where)
       .limit(opts.neighbors + 8)
       .toArray()) as RawRow[];
 
@@ -586,6 +689,13 @@ export async function analyzeSurprisingConnections(
         filters.nonCode++;
         continue;
       }
+      if (
+        target.content.trim().length < 80 ||
+        target.definedSymbols.length === 0
+      ) {
+        filters.weakCode++;
+        continue;
+      }
       if (!opts.includeTests && isTestPath(target.relPath)) {
         filters.tests++;
         continue;
@@ -595,8 +705,8 @@ export async function analyzeSurprisingConnections(
         continue;
       }
       if (
-        dirBucket(source.relPath, opts.dirDepth) ===
-        dirBucket(target.relPath, opts.dirDepth)
+        directoryBucket(source.relPath, opts.dirDepth) ===
+        directoryBucket(target.relPath, opts.dirDepth)
       ) {
         filters.sameDirBucket++;
         continue;

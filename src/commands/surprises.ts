@@ -2,7 +2,12 @@ import { Command } from "commander";
 import {
   analyzeSurprisingConnections,
   DEFAULT_SURPRISE_OPTIONS,
+  findingBucketLabel,
+  findingExamples,
+  formatPenaltySummary,
   lineLabel,
+  MAX_SURPRISE_ROWS,
+  skeletonHint,
 } from "../lib/analysis/surprising-connections";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
@@ -57,6 +62,10 @@ function formatAgent(
         lineLabel(pair.source),
         lineLabel(pair.target),
         finding.reasons.join(","),
+        `buckets=${findingBucketLabel(finding, summary.options.dirDepth)}`,
+        `top_sims=${finding.topSimilarities.join(",")}`,
+        `penalties=${formatPenaltySummary(pair.scoreParts)}`,
+        `next=${skeletonHint(finding)}`,
       ].join("\t"),
     );
   }
@@ -98,7 +107,29 @@ function formatHuman(
     out.push(
       `      best: ${lineLabel(pair.source)} <-> ${lineLabel(pair.target)}`,
     );
-    out.push(`      reasons: ${finding.reasons.join(", ") || "none"}`);
+    out.push(
+      `      detail: no static file edge; buckets=${findingBucketLabel(
+        finding,
+        summary.options.dirDepth,
+      )}; top_sims=${finding.topSimilarities.join(",")}`,
+    );
+    out.push(
+      `      reasons: ${finding.reasons.join(", ") || "none"}; penalties=${formatPenaltySummary(
+        pair.scoreParts,
+      )}`,
+    );
+    const examples = findingExamples(finding, 2);
+    if (examples.length > 1) {
+      out.push(
+        `      examples: ${examples
+          .map(
+            (example) =>
+              `${lineLabel(example.source)} <-> ${lineLabel(example.target)}`,
+          )
+          .join("; ")}`,
+      );
+    }
+    out.push(`      next: ${skeletonHint(finding)}`);
   }
   return out.join("\n");
 }
@@ -136,11 +167,23 @@ export const surprises = new Command("surprises")
   )
   .option(
     "--max-rows <n>",
-    "Maximum indexed rows to scan",
+    `Maximum indexed rows to scan (capped at ${MAX_SURPRISE_ROWS})`,
     String(DEFAULT_SURPRISE_OPTIONS.maxRows),
   )
   .option("--include-tests", "Include test files", false)
   .option("--include-eval", "Include eval/experiment/script files", false)
+  .option(
+    "--in <subpath>",
+    "Restrict to a sub-path of the project (repeatable)",
+    (value: string, prev: string[] | undefined) =>
+      prev ? [...prev, value] : [value],
+  )
+  .option(
+    "--exclude <subpath>",
+    "Exclude a sub-path of the project (repeatable)",
+    (value: string, prev: string[] | undefined) =>
+      prev ? [...prev, value] : [value],
+  )
   .option("--agent", "Compact TSV output for AI agents", false)
   .action(async (opts) => {
     if (!opts.experimental) {
@@ -182,10 +225,12 @@ export const surprises = new Command("surprises")
         maxRows: parseIntOption(
           opts.maxRows,
           DEFAULT_SURPRISE_OPTIONS.maxRows,
-          500_000,
+          MAX_SURPRISE_ROWS,
         ),
         includeTests: Boolean(opts.includeTests),
         includeEval: Boolean(opts.includeEval),
+        in: opts.in,
+        exclude: opts.exclude,
       });
 
       console.log(

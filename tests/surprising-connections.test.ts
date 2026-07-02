@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { surprises } from "../src/commands/surprises";
 import {
+  analyzeSurprisingConnections,
   buildFindings,
   type ChunkRow,
   type SurprisePair,
@@ -43,12 +44,100 @@ function pair(
   };
 }
 
+function rawChunk(relPath: string, symbol: string) {
+  return {
+    id: `${relPath}:${symbol}`,
+    path: `${PREFIX}${relPath}`,
+    start_line: 10,
+    end_line: 24,
+    role: "IMPLEMENTATION",
+    content:
+      "function scopedThing() {\n" +
+      "  const value = computeOneThingAndThenAnotherThing();\n" +
+      "  return value + computeFollowupThing();\n" +
+      "}\n",
+    vector: [0.1, 0.2, 0.3],
+    defined_symbols: [symbol],
+    referenced_symbols: [],
+    type_referenced_symbols: [],
+  };
+}
+
+function fakeTable(
+  rows: Record<string, unknown>[],
+  neighborRows: Record<string, unknown>[] = [],
+) {
+  const wheres: string[] = [];
+  const chain = (resultRows: Record<string, unknown>[]) => ({
+    select() {
+      return this;
+    },
+    where(where: string) {
+      wheres.push(where);
+      return this;
+    },
+    limit() {
+      return this;
+    },
+    async toArray() {
+      return resultRows;
+    },
+  });
+  return {
+    wheres,
+    table: {
+      query: () => chain(rows),
+      vectorSearch: () => chain(neighborRows),
+    },
+  };
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   process.exitCode = undefined;
 });
 
 describe("surprising connection scoring", () => {
+  it("applies scope filters to row scans and neighbor searches", async () => {
+    const { table, wheres } = fakeTable([
+      rawChunk("src/commands/a.ts", "scopedThing"),
+    ]);
+
+    await analyzeSurprisingConnections(table, "/repo", {
+      sample: 1,
+      neighbors: 1,
+      in: "src/commands",
+      exclude: "src/commands/generated",
+    });
+
+    expect(wheres).toHaveLength(2);
+    for (const where of wheres) {
+      expect(where).toContain("starts_with(path, '/repo/src/commands/')");
+      expect(where).toContain(
+        "NOT starts_with(path, '/repo/src/commands/generated/')",
+      );
+    }
+  });
+
+  it("drops vector neighbors without usable symbols", async () => {
+    const weakNeighbor = {
+      ...rawChunk("src/other.ts", "otherThing"),
+      defined_symbols: [],
+    };
+    const { table } = fakeTable(
+      [rawChunk("src/source.ts", "sourceThing")],
+      [weakNeighbor],
+    );
+
+    const result = await analyzeSurprisingConnections(table, "/repo", {
+      sample: 1,
+      neighbors: 1,
+    });
+
+    expect(result.summary.filters.weakCode).toBe(1);
+    expect(result.summary.acceptedPairs).toBe(0);
+  });
+
   it("groups chunk pairs by file pair and keeps the strongest representative", () => {
     const a1 = chunk("src/a.ts", "sharedHelper");
     const b1 = chunk("src/b.ts", "sharedHelper");

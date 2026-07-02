@@ -32,6 +32,21 @@ function argValue(name: string): string | undefined {
   return undefined;
 }
 
+function argValues(name: string): string[] | undefined {
+  const values: string[] = [];
+  const prefix = `${name}=`;
+  for (let i = 2; i < process.argv.length; i++) {
+    const arg = process.argv[i];
+    if (arg === name && process.argv[i + 1]) {
+      values.push(process.argv[i + 1]);
+      i++;
+    } else if (arg.startsWith(prefix)) {
+      values.push(arg.slice(prefix.length));
+    }
+  }
+  return values.length > 0 ? values : undefined;
+}
+
 function hasFlag(name: string): boolean {
   return process.argv.includes(name);
 }
@@ -86,6 +101,8 @@ async function run() {
     ),
     includeTests: hasFlag("--include-tests"),
     includeEval: hasFlag("--include-eval"),
+    in: argValues("--in"),
+    exclude: argValues("--exclude"),
   });
   const { summary, findings } = result;
   const topFindings = findings.slice(0, top);
