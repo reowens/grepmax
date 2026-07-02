@@ -81,6 +81,10 @@ const DEFAULT_OPTIONS: Required<SkeletonOptions> = {
   maxCallsInSummary: 4,
 };
 
+const SQL_TEMPLATE_LANGS = new Set(["typescript", "tsx", "javascript"]);
+const SQL_IDENTIFIER_PATTERN =
+  '(?:"[^"]+"|\\[[^\\]]+\\]|`[^`]+`|[A-Za-z_][\\w$]*)(?:\\s*\\.\\s*(?:"[^"]+"|\\[[^\\]]+\\]|`[^`]+`|[A-Za-z_][\\w$]*)){0,2}';
+
 // WASM locator (same as chunker.ts)
 function resolveTreeSitterWasmLocator(): string {
   try {
@@ -313,11 +317,13 @@ export class Skeletonizer {
 
     // Extract metadata from the body
     const referencedSymbols = this.extractReferencedSymbols(bodyNode);
+    const sqlTemplates = this.extractSqlTemplateSummaries(bodyNode, langId);
     const complexity = this.calculateComplexity(bodyNode);
     const role = this.classifyRole(complexity, referencedSymbols.length);
 
     const metadata: ChunkMetadata = {
       referencedSymbols,
+      sqlTemplates,
       complexity,
       role,
     };
@@ -563,6 +569,168 @@ export class Skeletonizer {
 
     extract(node);
     return refs;
+  }
+
+  /**
+   * Surface SQL tagged templates hidden inside elided JS/TS function bodies.
+   * This is intentionally a lightweight skeleton hint, not a SQL parser.
+   */
+  private extractSqlTemplateSummaries(
+    node: TreeSitterNode,
+    langId: string,
+  ): string[] {
+    if (!SQL_TEMPLATE_LANGS.has(langId)) return [];
+
+    const summaries: string[] = [];
+    const seen = new Set<string>();
+
+    const extract = (n: TreeSitterNode) => {
+      const template = (n.namedChildren || []).find(
+        (child) => child.type === "template_string",
+      );
+      if (template && this.isSqlTaggedTemplate(n, template)) {
+        const summary = this.summarizeSqlTemplate(template);
+        if (summary && !seen.has(summary)) {
+          seen.add(summary);
+          summaries.push(summary);
+        }
+        return;
+      }
+
+      for (const child of n.namedChildren || []) {
+        extract(child);
+      }
+    };
+
+    extract(node);
+    return summaries;
+  }
+
+  private isSqlTaggedTemplate(
+    node: TreeSitterNode,
+    template: TreeSitterNode,
+  ): boolean {
+    const tagText = node.text
+      .slice(0, template.startIndex - node.startIndex)
+      .trim();
+    return /(?:^|[.\s])sql(?:$|[.<(])/.test(tagText);
+  }
+
+  private summarizeSqlTemplate(template: TreeSitterNode): string | null {
+    const sqlText = this.extractTemplateText(template)
+      .replace(/--[^\n]*/g, " ")
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!sqlText) return null;
+
+    const op = sqlText.match(
+      /\b(select|insert|update|delete|merge|create|alter|drop|truncate)\b/i,
+    )?.[1];
+    if (!op) return "SQL";
+
+    const operation = op.toUpperCase();
+    const tables = this.extractSqlTables(sqlText, operation);
+    if (tables.length === 0) return operation;
+
+    const tableList = tables.slice(0, 2);
+    if (tables.length > tableList.length) tableList.push("...");
+    return `${operation} ${tableList.join(", ")}`;
+  }
+
+  private extractTemplateText(template: TreeSitterNode): string {
+    const parts: string[] = [];
+    for (const child of template.namedChildren || []) {
+      if (child.type === "string_fragment") {
+        parts.push(child.text);
+      } else if (child.type === "template_substitution") {
+        parts.push(" ? ");
+      }
+    }
+
+    if (parts.length > 0) return parts.join("");
+    return template.text.slice(1, -1).replace(/\$\{[^}]*\}/g, " ? ");
+  }
+
+  private extractSqlTables(sqlText: string, operation: string): string[] {
+    const tables: string[] = [];
+    const seen = new Set<string>();
+
+    const addMatches = (pattern: RegExp) => {
+      for (const match of sqlText.matchAll(pattern)) {
+        const table = this.normalizeSqlIdentifier(match[1]);
+        if (table && !seen.has(table)) {
+          seen.add(table);
+          tables.push(table);
+        }
+      }
+    };
+
+    switch (operation) {
+      case "SELECT":
+        addMatches(
+          new RegExp(`\\b(?:from|join)\\s+(${SQL_IDENTIFIER_PATTERN})`, "gi"),
+        );
+        break;
+      case "INSERT":
+        addMatches(
+          new RegExp(`\\binsert\\s+into\\s+(${SQL_IDENTIFIER_PATTERN})`, "gi"),
+        );
+        break;
+      case "UPDATE":
+        addMatches(
+          new RegExp(`\\bupdate\\s+(${SQL_IDENTIFIER_PATTERN})`, "gi"),
+        );
+        break;
+      case "DELETE":
+        addMatches(
+          new RegExp(`\\bdelete\\s+from\\s+(${SQL_IDENTIFIER_PATTERN})`, "gi"),
+        );
+        break;
+      case "MERGE":
+        addMatches(
+          new RegExp(`\\bmerge\\s+into\\s+(${SQL_IDENTIFIER_PATTERN})`, "gi"),
+        );
+        break;
+      case "CREATE":
+        addMatches(
+          new RegExp(
+            `\\bcreate\\s+(?:or\\s+replace\\s+)?(?:table|view|materialized\\s+view|index)\\s+(?:if\\s+not\\s+exists\\s+)?(${SQL_IDENTIFIER_PATTERN})`,
+            "gi",
+          ),
+        );
+        break;
+      case "ALTER":
+      case "DROP":
+        addMatches(
+          new RegExp(
+            `\\b${operation.toLowerCase()}\\s+(?:table|view|materialized\\s+view|index)\\s+(?:if\\s+(?:exists|not\\s+exists)\\s+)?(${SQL_IDENTIFIER_PATTERN})`,
+            "gi",
+          ),
+        );
+        break;
+      case "TRUNCATE":
+        addMatches(
+          new RegExp(
+            `\\btruncate\\s+(?:table\\s+)?(${SQL_IDENTIFIER_PATTERN})`,
+            "gi",
+          ),
+        );
+        break;
+    }
+
+    return tables;
+  }
+
+  private normalizeSqlIdentifier(
+    identifier: string | undefined,
+  ): string | null {
+    const normalized = identifier
+      ?.replace(/\s*\.\s*/g, ".")
+      .replace(/["`[\]]/g, "")
+      .trim();
+    if (!normalized || normalized === "?") return null;
+    return normalized;
   }
 
   /**

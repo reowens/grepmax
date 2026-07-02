@@ -73,6 +73,7 @@ gmax test handleAuth                     # Find tests via reverse call graph
 gmax impact handleAuth                   # Dependents + affected tests
 gmax similar handleAuth                  # Find similar code patterns
 gmax audit --top 10                      # God nodes, hub files, file cycles, dead candidates
+gmax surprises --experimental --agent    # Experimental: similar but graph-disconnected file pairs
 gmax dead handleAuth                     # Unused-symbol check via call graph (DEAD / PUBLIC EXPORT / LIVE)
 gmax context "auth system" --budget 4000 # Token-budgeted topic summary
 gmax context src/lib/auth.ts --budget 4000 # Deterministic file/path context
@@ -134,6 +135,7 @@ Plugins auto-update when you run `npm install -g grepmax@latest` — no need to 
 | `peek_symbol` | Compact overview: signature + callers + callees. |
 | `dead` | Unused-symbol check via call graph. Returns `DEAD`, `PUBLIC EXPORT`, or `LIVE` with caller count. |
 | `audit` | Graph summary: god nodes, hub files, symbol-derived file dependency cycles, and dead-code candidates. |
+| `surprising_connections` | Experimental orientation signal: embedding-similar file pairs with no direct indexed static file edge. Requires `experimental:true`. |
 | `get_neighbors` | Graph primitive: symbols reachable from a node along call edges within N hops. |
 | `find_paths` | Graph primitive: shortest call-graph path between two symbols. |
 | `subgraph_for_files` | Graph primitive: local dependency subgraph for a set of files. |
@@ -177,6 +179,18 @@ gmax "query" [options]
 | `--seed-symbol <name>` | Bias results toward an identifier you're working with (repeatable). | — |
 | `--skeleton` | Show file skeletons for top matches. | `false` |
 | `--context-for-llm` | Full function bodies + imports per result. | `false` |
+
+## Experimental Orientation
+
+`gmax surprises --experimental` finds file pairs that are semantically similar but not already connected by the indexed static graph. Use it for architecture orientation, duplicate-logic sweeps, and cross-package drift checks, not as proof that two files are unrelated.
+
+```bash
+gmax surprises --experimental --agent
+gmax surprises --experimental --in packages/app/src --dir-depth 4 --agent
+gmax surprises --experimental --exclude generated --top 10
+```
+
+The CLI and MCP output include score, max similarity, pair count, representative symbols, directory buckets, top similarities, applied penalties, and `gmax skeleton` follow-up hints. On large monorepos, prefer `--in`/`--exclude`; the default scan is capped at 50,000 rows and user-provided `--max-rows` is capped at 100,000. If a narrow `--in` scope returns no findings, increase `--dir-depth` so subdirectories are compared inside the scope.
 | `--budget <tokens>` | Cap output tokens (for `--context-for-llm`). | `8000` |
 | `--explain` | Show scoring breakdown per result. | `false` |
 | `--scores` | Show relevance scores. | `false` |

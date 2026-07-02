@@ -11,6 +11,7 @@ export interface ChunkMetadata {
   referencedSymbols?: string[];
   complexity?: number;
   role?: string;
+  sqlTemplates?: string[];
 }
 
 export interface SummaryOptions {
@@ -52,6 +53,14 @@ export function formatSummary(
       calls.push("...");
     }
     parts.push(`→ ${calls.join(", ")}`);
+  }
+
+  if (metadata.sqlTemplates?.length) {
+    const templates = metadata.sqlTemplates.slice(0, 3);
+    if (metadata.sqlTemplates.length > templates.length) {
+      templates.push("...");
+    }
+    parts.push(`SQL: ${templates.join("; ")}`);
   }
 
   // Complexity (only if > 1, trivial functions don't need it)

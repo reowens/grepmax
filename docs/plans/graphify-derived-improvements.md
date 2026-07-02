@@ -1,8 +1,8 @@
 ---
 type: plan
-status: active
+status: completed
 created: 2026-06-28T22:05:47Z
-updated: 2026-06-29T08:40:18Z
+updated: 2026-06-30T00:45:00Z
 surfaces:
   - graph
   - search
@@ -18,23 +18,19 @@ domain: call-graph precision + token-efficiency improvements derived from a grap
 audience: internal
 summary: Graphify-derived roadmap for call-graph precision, audit cycle detection, and remaining orientation signals.
 parent_plan:
-related_plans: ../agent-ux-proposals.md
+related_plans:
+  - ../agent-ux-proposals.md
+  - ../archived/2026-06-28-repo-audit-hardening.md
 related_docs:
 current_state: >
-  Phase 1 is shipped. Phase 2 call-graph precision is effectively complete through the
-  v0.21.2-v0.22.0 line: builtin callee suppression, the additive
-  `member_referenced_symbols` substrate, same-file/same-family callee preference,
-  language-family anchoring for inbound consumers, caller-side builtin-member suppression,
-  confidence tiers, peek/trace/MCP edge-kind presentation, and `gmax audit` file dependency
-  cycles as bounded SCCs over unambiguous in-project symbol references. The plain member split
-  was rejected after measuring a real ~1,100 project-method edge recall loss. The import-evidence
-  resolver was remeasured on a member-populated index and is not worth building now (~181
-  occurrences, mostly `log`). Remaining Graphify-derived roadmap is Phase 3 orientation:
-  embedding-native "surprising connections" only.
+  Completed in working tree. Phase 1 and Phase 2 are shipped or rejected by measurement. Audit file
+  dependency cycles are shipped. Phase 3A-3E are complete for the embedding-native orientation
+  surface: `gmax surprises --experimental` and MCP `surprising_connections` have protocol coverage,
+  corpus calibration, tuned scoring/filtering, actionable output, scale measurements, docs, and
+  known-limitations coverage.
 next_step: >
-  If continuing Graphify work, evaluate embedding-native "surprising connections" as a
-  measure-first orientation signal. Do not build the plain member split, general import-evidence
-  resolver, or literal import-cycle detector unless new corpus measurements change the premise.
+  None for Graphify. Disposition: keep `gmax surprises` / MCP `surprising_connections`
+  experimental; revisit only if new corpus measurements justify promotion or a different signal.
 ---
 
 # Graphify Derived Improvements
@@ -125,19 +121,178 @@ overlapping.
    peek/trace/MCP surface low-confidence member/type edges instead of presenting every edge as
    equally factual.
 
-### Phase 3 — Orientation signal (medium effort, embedding-native) 🟡 in-progress
+### Phase 3 — Orientation Signal Completion Arc 🟡 active
 
-7. **Embedding-native "surprising connections."** graphify *infers* semantic
-   similarity; gmax has real vectors. Cross `find_similar` (`mcp.ts:2107`) with the
-   call graph to surface pairs highly similar in embedding space but with **no call
-   edge and in different directories** = duplicate/parallel logic. A genuine
-   orientation signal `project` lacks, computed natively. (graphify: `analyze.py:252`.)
+Graphify's remaining useful idea is orientation, not more graph precision. gmax now has the
+first experimental version of the embedding-native signal, but the work is explicitly not done.
+The arc below is the complete remaining Graphify backlog and should be worked in order.
 
-8. **File-level dependency-cycle detection in `audit`.** ✅ SHIPPED. `computeAudit`
-   collapses unambiguous in-project symbol references to file edges, skips builtin and
-   ambiguous names, enumerates bounded SCCs, and surfaces them in CLI + MCP audit output.
-   This intentionally reports symbol-derived dependency cycles, not literal parsed import
-   cycles. (graphify: `analyze.py:628`.)
+#### Phase 3A — MCP tool proof + parity 🟡 next
+
+**Goal.** Prove `surprising_connections` is not just registered in code but usable through the
+real MCP protocol, with output matching the CLI's compact agent shape.
+
+**Already shipped in working tree.**
+- Shared analyzer: `src/lib/analysis/surprising-connections.ts`.
+- Eval wrapper: `src/eval-surprising-connections.ts`, `pnpm bench:surprises`.
+- CLI: `gmax surprises --experimental` with `--sample`, `--neighbors`, `--top`, `--dir-depth`,
+  `--min-sim`, `--max-rows`, `--include-tests`, `--include-eval`, `--in`, `--exclude`, `--agent`.
+- MCP: `surprising_connections`, requiring `experimental:true`, with compact TSV formatter.
+- Focused unit coverage for grouping/scoring/scope filters/MCP formatter.
+
+**Remaining work.**
+- ✅ Added a real stdio-MCP smoke test (`tests/mcp-protocol.test.ts`) that starts `gmax mcp`,
+  calls `tools/list`, and verifies `surprising_connections` appears with the expected schema
+  fields (`experimental`, `in`, `exclude`).
+- ✅ Added a protocol-level `tools/call` smoke for `surprising_connections` against an empty
+  temporary-root scope; it verifies the call returns compact summary output and `none` rather than
+  failing protocol validation.
+- ✅ Fixed MCP tool-call logging via `mcpLogQuery()` so `surprising_connections` records
+  `surprising_connections root=... in=... exclude=...` instead of an empty query. Covered in
+  `tests/mcp-helpers.test.ts`.
+
+**Exit criteria.** ✅ Met in working tree: MCP list smoke passes, MCP call smoke passes, formatter
+unit test passes, typecheck passes, and the tool is discoverable/callable by agents without
+shelling out.
+
+#### Phase 3B — Corpus calibration + thresholds ✅ met in working tree
+
+**Goal.** Turn the prototype's "looks useful" read into measured signal quality across more than
+one repo and preserve those numbers in this plan.
+
+**Completed work.**
+- ✅ Ran the first raw calibration sweep on gmax-self with
+  `--sample 600 --neighbors 30 --top 50`: 3,298 indexed rows, 1,318 code rows, 600 sampled anchors,
+  667 graph file edges, 3,704 accepted chunk pairs, 949 accepted file pairs, similarity p50/p90/max
+  0.775/0.824/0.948, score p50/p90/max 0.772/0.88/1.104.
+- ✅ Classified the gmax-self raw top 50: **9 actionable**, **17 legit-boundary**, **24 noise**.
+  Useful examples: `chunker.ts` ↔ `skeletonizer.ts` duplicate tree-sitter locator logic,
+  `llm/diff.ts` ↔ `utils/git.ts` changed-file parsing, and `graph/impact.ts` ↔ `commands/trace.ts`
+  caller traversal. Legit-boundary examples: daemon/worker/MLX health checks, watcher manager vs
+  launcher, CLI wrappers around library surfaces. Dominant false-positive classes: tiny helpers with
+  identical names (`style`, `relPath`, `toStringArray`), constants (`CACHE_DIR`, `LOG_MODELS`), and
+  command-wrapper pairs.
+- ✅ Tuned scoring/filtering after classification:
+  target vector neighbors must now pass the same usable-code checks as anchors (non-empty symbols and
+  enough content), generic exact symbols (`style`, `default`, `fmt`, `new`, `relPath`, etc.) no longer
+  receive the same-symbol boost, tiny-helper penalties are stronger, type/constant penalties are
+  stronger, and command-wrapper penalty increased from 0.06 to 0.12. Covered by
+  `tests/surprising-connections.test.ts`.
+- ✅ Reran the three baseline sweeps after tuning:
+
+| Corpus | Runtime | Rows / code rows | Accepted pairs / file-pairs | Score p50 / p90 / max | Top classification |
+| --- | ---: | ---: | ---: | ---: | --- |
+| gmax-self | 15.15s | 3,302 / 1,321 | 2,392 / 833 | 0.709 / 0.851 / 1.104 | 18 actionable, 27 legit-boundary, 5 noise |
+| qsys | 12.79s | 9,977 / 499 | 127 / 39 | 0.718 / 0.795 / 0.817 | 3 actionable, 12 legit-boundary, 24 noise (only 39 findings) |
+| dirplayer-rs | 15.56s | 8,420 / 3,917 | 1,597 / 509 | 0.793 / 0.913 / 1.122 | 32 actionable, 15 legit-boundary, 3 noise |
+
+- ✅ Reran scoped sweeps:
+  `gmax --in src/lib` produced 2,490 accepted pairs / 671 file pairs in 14.24s with the same top
+  actionable duplicates; `gmax --in src/commands` produced 0 findings in 7.87s; qsys
+  `--exclude qsys-training` cut to 101 accepted pairs / 28 file pairs in 4.19s; dirplayer-rs
+  `--in vm-rust/src` produced 1,362 accepted pairs / 440 file pairs in 14.80s.
+- ✅ Tested `--min-sim 0.72` on qsys. It cut accepted pairs from 127 to 58 but did not improve the
+  top rows as much as explicit scope exclusion; keep `minSimilarity=0` so users can tune it without
+  hiding lower-similarity implementation pairs.
+- ✅ Defaults decision: keep `sample=160`, `neighbors=20`, `top=20`, `dirDepth=3`,
+  `minSimilarity=0`, `includeTests=false`, and `includeEval=false`. The tuned scoring/filtering
+  addresses the observed false-positive classes without changing default work size.
+
+**Exit criteria.** ✅ Met in working tree: this doc records accepted pairs/file-pairs, p50/p90/max
+score, top classification counts, scoped-run behavior, and the default-setting decision. No
+graduation from experimental yet; Phase 3C-3E remain.
+
+#### Phase 3C — Actionable output design ✅ met in working tree
+
+**Goal.** Make the signal useful enough that an agent can act on it without reading unrelated
+files blindly.
+
+**Completed work.**
+- ✅ Added reusable finding detail helpers in `src/lib/analysis/surprising-connections.ts`:
+  directory bucket labels, top example pairs, penalty summaries, and agent-safe skeleton hints.
+- ✅ Grouped findings now retain the top three scored chunk examples per file pair; human output
+  shows the top two examples when more than one pair supports the finding.
+- ✅ CLI human output now includes: no-static-file-edge detail, directory buckets, top similarities,
+  penalties applied, representative symbols/locations, example pairs, and `gmax skeleton` follow-up
+  commands for both files.
+- ✅ CLI `--agent` and MCP output now add compact TSV detail columns:
+  `buckets=...`, `top_sims=...`, `penalties=...`, and `next=gmax skeleton ...`.
+- ✅ Did not add product `--json`; the eval harness already provides JSON and no downstream product
+  consumer requires another JSON mode.
+- ✅ Focused verification passes: `pnpm exec vitest run tests/surprising-connections.test.ts
+  tests/mcp-helpers.test.ts`.
+
+**Exit criteria.** ✅ Met in working tree: top findings are actionable from CLI/MCP output alone;
+the user can see whether a pair is a wrapper/generic-helper case, a multi-pair implementation hit,
+or worth immediately opening via `gmax skeleton`.
+
+#### Phase 3D — Performance and scale hardening ✅ met in working tree
+
+**Goal.** Keep the orientation command safe on large indexes.
+
+**Completed work.**
+- ✅ Measured the largest indexed repo (`platform`, 153k chunks) with the default `maxRows=50000`:
+
+| Run | Rows / code rows | Accepted pairs / file-pairs | Runtime | Notes |
+| --- | ---: | ---: | ---: | --- |
+| `sample=80 neighbors=10 top=1` | 50,000 / 16,899 | 112 / 79 | 4.44s | `/usr/bin/time -l` max RSS ~1.07 GiB, peak footprint ~90 MiB |
+| `sample=160 neighbors=20 top=5` | 50,000 / 16,899 | 423 / 246 | 10.11s | Default-size run |
+| `sample=600 neighbors=30 top=5` | 50,000 / 16,899 | 2,188 / 1,130 | 24.90s | Calibration-heavy upper bound |
+| `--in packages/app/src sample=160 neighbors=20` | 11,307 / 4,120 | 0 / 0 | 5.10s | Default `dirDepth=3` treats the scope as one bucket |
+| `--in packages/app/src --dir-depth 4 sample=160 neighbors=20` | 11,307 / 4,120 | 133 / 62 | 5.44s | Useful app-internal subdirectory run |
+
+- ✅ Repeated per-anchor `vectorSearch` is acceptable at current defaults: ~10s on a 153k-chunk
+  indexed repo with `maxRows=50000`, and ~25s for a calibration-heavy run. No batching or persistent
+  precomputed graph is justified by the measurements.
+- ✅ Tightened the shared `maxRows` cap to `100000` in `normalizeSurpriseOptions()` and in CLI/MCP
+  parsing/help. Default remains `50000`; users should prefer `--in`/`--exclude` over raising the cap.
+- ✅ Confirmed `--in`/`--exclude` are sufficient for monorepos. For narrow scopes where all files
+  share the default bucket, users should increase `--dir-depth` (example: `--in packages/app/src
+  --dir-depth 4`).
+- ✅ Focused verification passes: `pnpm exec vitest run tests/surprising-connections.test.ts
+  tests/mcp-helpers.test.ts tests/mcp-protocol.test.ts`.
+
+**Exit criteria.** ✅ Met in working tree: default run is bounded, scoped runs are cheap, large-repo
+guidance is measured, and command/MCP help now reflects the safer row cap.
+
+#### Phase 3E — Docs, release, and closure ✅ met in working tree
+
+**Goal.** Make the experimental surface discoverable and close this plan only when the remaining
+Graphify work is truly done or explicitly held.
+
+**Completed work.**
+- ✅ README now lists `gmax surprises --experimental --agent`, documents the MCP
+  `surprising_connections` tool, and adds an Experimental Orientation section covering usage,
+  output fields, row caps, and monorepo scope guidance.
+- ✅ `help-agent` now includes `gmax surprises --experimental` in the survey shown to agents.
+- ✅ `docs/known-limitations.md` now reflects calibrated-but-still-experimental limitations:
+  embedding similarity is heuristic, no graph edge is not proof of separation, generated content may
+  need `--exclude`, and narrow `--in` scopes may need a higher `--dir-depth`.
+- ✅ `docs/docs.md` now marks the Graphify plan as done rather than active backlog.
+- ✅ Concrete disposition: keep the CLI/MCP surface experimental. Do not promote yet; quality is
+  strong on gmax/dirplayer/platform-like modular corpora, but qsys showed corpus-dependent generated
+  content noise that should remain behind `--experimental`.
+- ✅ Plan status changed to `completed`; no new plan is needed. Reopen only with new corpus evidence.
+
+**Exit criteria.** ✅ Met in working tree: docs tell users when to use the command, tests cover
+CLI/MCP basics, calibration numbers are recorded, and the plan has a concrete closeout.
+
+#### Already shipped from Phase 3
+
+- **File-level dependency-cycle detection in `audit`.** ✅ SHIPPED. `computeAudit` collapses
+  unambiguous in-project symbol references to file edges, skips builtin and ambiguous names,
+  enumerates bounded SCCs, and surfaces them in CLI + MCP audit output. This intentionally
+  reports symbol-derived dependency cycles, not literal parsed import cycles. (graphify:
+  `analyze.py:628`.)
+
+#### Explicit non-goals for the rest of Graphify
+
+- Do not build the plain member split; measured recall loss was too high.
+- Do not build the general import-evidence resolver; remeasurement found too few useful cases.
+- Do not add literal parsed import-cycle detection unless a corpus shows the symbol-derived SCCs
+  miss important cycles.
+- Do not add graphify's community detection, MinHash dedup, querylog, lesson memory,
+  SCIP ingestion, content-hash reuse, two-hash manifest, or per-entry version stamping.
 
 ## Explicitly NOT adopting
 
@@ -614,8 +769,8 @@ already prints `... N more`).
   substrate, prefer-self/same-family resolution, query-time precision path, and #6 confidence
   presentation are done. The plain member split and general #5 import resolver are not build
   targets without new evidence.
-- **Next:** Phase 3 orientation. Prefer file-level import-cycle detection in `gmax audit` as
-  the first concrete item; it is deterministic, read-only, and slots into an existing command.
+- **Next:** Phase 3A MCP proof for `surprising_connections`, then Phase 3B corpus calibration.
+  Audit cycles are already shipped; do not keep presenting them as the next Graphify item.
 
 ### Honesty guardrails
 
