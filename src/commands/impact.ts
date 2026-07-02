@@ -1,11 +1,18 @@
 import * as path from "node:path";
 import { Command } from "commander";
 import {
+  type DetailedDependentHit,
   findDependents,
+  findDependentsDetailed,
   findTests,
   isTestPath,
   resolveTargetSymbols,
 } from "../lib/graph/impact";
+import {
+  buildImpactRollup,
+  formatImpactRollupAgent,
+  formatImpactRollupHuman,
+} from "../lib/graph/impact-rollup";
 import {
   formatViaAgent,
   formatViaHuman,
@@ -44,6 +51,13 @@ export const impact = new Command("impact")
     "--no-tests",
     "Skip affected-test analysis; show production blast radius only",
   )
+  .option(
+    "--rollup",
+    "Show export/package rollup (default for file targets in human output)",
+    false,
+  )
+  .option("--flat", "Use the legacy flat dependent/test list", false)
+  .option("--top <n>", "Max rows per rollup section", "10")
   .option("--agent", "Compact output for AI agents", false)
   .action(async (target, opts) => {
     const depth = Math.min(
@@ -52,6 +66,10 @@ export const impact = new Command("impact")
     );
     // commander maps --no-tests → opts.tests === false (defaults true).
     const includeTests = opts.tests !== false;
+    const top = Math.min(
+      Math.max(Number.parseInt(opts.top || "10", 10) || 10, 1),
+      100,
+    );
     let vectorDb: VectorDB | null = null;
 
     try {
@@ -98,20 +116,33 @@ export const impact = new Command("impact")
         opts.in && opts.in.length > 0
           ? scope.pathPrefix.replace(/\/$/, "")
           : projectRoot;
+      const useRollup =
+        !opts.flat && ((resolvedAsFile && !opts.agent) || opts.rollup === true);
+      const rollupLimit = Math.min(Math.max(top * 10, 100), 500);
 
       // Run dependents and tests in parallel. --no-tests skips the test
       // traversal entirely so the affected-tests section is omitted (not just
       // empty) below.
       const [dependents, tests] = await Promise.all([
-        findDependents(
-          symbols,
-          vectorDb,
-          queryRoot,
-          excludePaths,
-          undefined,
-          scope.excludePrefixes,
-          symbolFamilies,
-        ),
+        useRollup
+          ? findDependentsDetailed(
+              symbols,
+              vectorDb,
+              queryRoot,
+              excludePaths,
+              rollupLimit,
+              scope.excludePrefixes,
+              symbolFamilies,
+            )
+          : findDependents(
+              symbols,
+              vectorDb,
+              queryRoot,
+              excludePaths,
+              undefined,
+              scope.excludePrefixes,
+              symbolFamilies,
+            ),
         includeTests
           ? findTests(
               symbols,
@@ -123,6 +154,30 @@ export const impact = new Command("impact")
             )
           : Promise.resolve([]),
       ]);
+
+      if (useRollup) {
+        const detailedDependents = dependents as DetailedDependentHit[];
+        const rollup = buildImpactRollup({
+          targetSymbols: symbols,
+          dependents: detailedDependents,
+          tests,
+          projectRoot,
+          top,
+        });
+        const formatted = opts.agent
+          ? formatImpactRollupAgent(rollup, {
+              target,
+              projectRoot,
+              includeTests,
+            })
+          : formatImpactRollupHuman(rollup, {
+              target,
+              projectRoot,
+              includeTests,
+            });
+        console.log(formatted);
+        return;
+      }
 
       // Separate test files from non-test dependents
       const nonTestDeps = dependents.filter((d) => !isTestPath(d.file));

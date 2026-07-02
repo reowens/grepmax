@@ -37,6 +37,10 @@ export interface DependentHit {
   sharedSymbols: number;
 }
 
+export interface DetailedDependentHit extends DependentHit {
+  symbols: string[];
+}
+
 export type SymbolFamilyMap = Map<string, string | null>;
 
 export interface ResolvedTargetSymbols {
@@ -362,6 +366,32 @@ export async function findDependents(
   excludePrefixes?: string[],
   symbolFamilies?: SymbolFamilyMap,
 ): Promise<DependentHit[]> {
+  return (
+    await findDependentsDetailed(
+      symbols,
+      vectorDb,
+      projectRoot,
+      excludePaths,
+      limit,
+      excludePrefixes,
+      symbolFamilies,
+    )
+  ).map(({ file, sharedSymbols }) => ({ file, sharedSymbols }));
+}
+
+/**
+ * Find dependent files and retain which target symbols each file matched.
+ * The legacy `findDependents` projects this down to `{file, sharedSymbols}`.
+ */
+export async function findDependentsDetailed(
+  symbols: string[],
+  vectorDb: VectorDB,
+  projectRoot: string,
+  excludePaths?: Set<string>,
+  limit = 10,
+  excludePrefixes?: string[],
+  symbolFamilies?: SymbolFamilyMap,
+): Promise<DetailedDependentHit[]> {
   const table = await vectorDb.ensureTable();
   let pathScope = pathStartsWith(`${projectRoot}/`);
   for (const ex of excludePrefixes ?? []) {
@@ -404,5 +434,9 @@ export async function findDependents(
   return Array.from(symbolsByFile.entries())
     .sort((a, b) => b[1].size - a[1].size)
     .slice(0, limit)
-    .map(([file, symbols]) => ({ file, sharedSymbols: symbols.size }));
+    .map(([file, symbols]) => ({
+      file,
+      sharedSymbols: symbols.size,
+      symbols: [...symbols].sort(),
+    }));
 }
