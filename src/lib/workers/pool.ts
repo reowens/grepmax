@@ -171,7 +171,10 @@ function resolveProcessWorker(): { filename: string; execArgv: string[] } {
   }
 
   if (fs.existsSync(tsWorker)) {
-    return { filename: tsWorker, execArgv: ["-r", "ts-node/register"] };
+    return {
+      filename: tsWorker,
+      execArgv: ["--import", require.resolve("tsx")],
+    };
   }
 
   throw new Error("Process worker file not found");

@@ -92,3 +92,50 @@ describe("resolveProjectRoot", () => {
     }
   });
 });
+
+// getParentProject is the resolver behind the MCP search-scope fix: a session
+// launched inside an umbrella project (which may have no .git of its own) must
+// resolve UP to the registered umbrella instead of falling back to a global
+// search. These cases mirror the qsys leak table from the triage plan.
+describe("getParentProject", () => {
+  it("resolves a subdirectory to its registered umbrella", async () => {
+    const { getParentProject } = await import(
+      "../src/lib/utils/project-registry"
+    );
+    writeRegistry([{ name: "qsys", root: "/Users/me/projects/qsys" }]);
+    expect(
+      getParentProject("/Users/me/projects/qsys/qsys-training")?.name,
+    ).toBe("qsys");
+    // Deeper nesting still resolves to the umbrella.
+    expect(getParentProject("/Users/me/projects/qsys/docs/guides")?.name).toBe(
+      "qsys",
+    );
+  });
+
+  it("returns undefined for the umbrella root itself (no self-match)", async () => {
+    const { getParentProject } = await import(
+      "../src/lib/utils/project-registry"
+    );
+    writeRegistry([{ name: "qsys", root: "/Users/me/projects/qsys" }]);
+    expect(getParentProject("/Users/me/projects/qsys")).toBeUndefined();
+  });
+
+  it("returns undefined for a path outside any registered project", async () => {
+    const { getParentProject } = await import(
+      "../src/lib/utils/project-registry"
+    );
+    writeRegistry([{ name: "qsys", root: "/Users/me/projects/qsys" }]);
+    expect(getParentProject("/Users/me/projects/platform")).toBeUndefined();
+  });
+
+  it("does not match a sibling that shares a name prefix", async () => {
+    const { getParentProject } = await import(
+      "../src/lib/utils/project-registry"
+    );
+    writeRegistry([{ name: "qsys", root: "/Users/me/projects/qsys" }]);
+    // /qsys-other is NOT inside /qsys — the path-boundary guard must reject it.
+    expect(
+      getParentProject("/Users/me/projects/qsys-other/src"),
+    ).toBeUndefined();
+  });
+});
