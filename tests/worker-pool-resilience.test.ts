@@ -1,3 +1,4 @@
+import * as childProcess from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Fake child processes so the pool never forks a real ONNX worker. Shared
@@ -51,6 +52,19 @@ describe("WorkerPool resilience", () => {
     }
     if (pool?.idleReapInterval) clearInterval(pool.idleReapInterval);
     pool = null;
+  });
+
+  it("loads the source worker through an absolute tsx preload", () => {
+    pool = new WorkerPool();
+
+    const fork = vi.mocked(childProcess.fork);
+    const options = fork.mock.calls[0]?.[1] as
+      | { execArgv?: string[] }
+      | undefined;
+
+    expect(options?.execArgv).toEqual(
+      expect.arrayContaining(["--import", require.resolve("tsx")]),
+    );
   });
 
   it("reapStuckWorkers SIGKILLs a worker wedged in busy=true past the threshold", () => {

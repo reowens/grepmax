@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   findDependents,
+  findDependentsDetailed,
   findTests,
   isTestPath,
   resolveTargetSymbols,
 } from "../src/lib/graph/impact";
+import {
+  buildImpactRollup,
+  formatImpactRollupAgent,
+  formatImpactRollupHuman,
+  impactPackageBucket,
+} from "../src/lib/graph/impact-rollup";
 
 function createMockDb(data: Record<string, any[]>) {
   const mockTable = {
@@ -136,6 +143,34 @@ describe("findDependents", () => {
     expect(result[0].sharedSymbols).toBe(1);
   });
 
+  it("retains matched target symbols for detailed dependents", async () => {
+    const db = createMockDb({
+      "referenced_symbols, 'Foo'": [
+        { path: "/project/packages/app/src/use.ts" },
+        { path: "/project/packages/app/src/use.ts" },
+      ],
+      "referenced_symbols, 'Bar'": [
+        { path: "/project/packages/app/src/use.ts" },
+        { path: "/project/packages/api/src/use.ts" },
+      ],
+    });
+
+    const result = await findDependentsDetailed(["Foo", "Bar"], db, "/project");
+
+    expect(result).toEqual([
+      {
+        file: "/project/packages/app/src/use.ts",
+        sharedSymbols: 2,
+        symbols: ["Bar", "Foo"],
+      },
+      {
+        file: "/project/packages/api/src/use.ts",
+        sharedSymbols: 1,
+        symbols: ["Bar"],
+      },
+    ]);
+  });
+
   it("counts each target symbol once per dependent file", async () => {
     const db = createMockDb({
       "referenced_symbols, 'Foo'": [
@@ -182,6 +217,103 @@ describe("findDependents", () => {
     const result = await findDependents(["render"], db, "/project");
 
     expect(result.map((r) => r.file)).toEqual(["/project/src/cli.py"]);
+  });
+});
+
+describe("impact rollup", () => {
+  it("uses packages/name as the package bucket", () => {
+    expect(
+      impactPackageBucket(
+        "/project",
+        "/project/packages/app/src/components/Button.tsx",
+      ),
+    ).toBe("packages/app");
+    expect(impactPackageBucket("/project", "/project/src/auth.ts")).toBe("src");
+  });
+
+  it("builds per-export and package rollups", () => {
+    const rollup = buildImpactRollup({
+      projectRoot: "/project",
+      targetSymbols: ["Foo", "Bar", "Unused"],
+      top: 1,
+      dependents: [
+        {
+          file: "/project/packages/app/src/use-foo.ts",
+          sharedSymbols: 1,
+          symbols: ["Foo"],
+        },
+        {
+          file: "/project/packages/api/src/use-both.ts",
+          sharedSymbols: 2,
+          symbols: ["Foo", "Bar"],
+        },
+        {
+          file: "/project/packages/app/src/foo.test.ts",
+          sharedSymbols: 1,
+          symbols: ["Foo"],
+        },
+      ],
+      tests: [
+        {
+          file: "/project/packages/app/src/foo.test.ts",
+          symbol: "testFoo",
+          line: 5,
+          hops: 0,
+        },
+      ],
+    });
+
+    expect(rollup.productionDependents).toHaveLength(2);
+    expect(rollup.tests).toHaveLength(1);
+    expect(rollup.exports.map((r) => [r.symbol, r.dependentCount])).toEqual([
+      ["Foo", 2],
+      ["Bar", 1],
+      ["Unused", 0],
+    ]);
+    expect(rollup.packages.map((p) => [p.name, p.dependentCount])).toEqual([
+      ["packages/api", 1],
+      ["packages/app", 1],
+    ]);
+    expect(rollup.topDependents).toHaveLength(1);
+  });
+
+  it("formats human and agent rollup output", () => {
+    const rollup = buildImpactRollup({
+      projectRoot: "/project",
+      targetSymbols: ["Foo"],
+      dependents: [
+        {
+          file: "/project/packages/app/src/use-foo.ts",
+          sharedSymbols: 1,
+          symbols: ["Foo"],
+        },
+      ],
+      tests: [
+        {
+          file: "/project/packages/app/src/foo.test.ts",
+          symbol: "testFoo",
+          line: 5,
+          hops: 0,
+        },
+      ],
+    });
+
+    const human = formatImpactRollupHuman(rollup, {
+      target: "src/foo.ts",
+      projectRoot: "/project",
+      includeTests: true,
+    });
+    const agent = formatImpactRollupAgent(rollup, {
+      target: "src/foo.ts",
+      projectRoot: "/project",
+      includeTests: true,
+    });
+
+    expect(human).toContain("Impact rollup for src/foo.ts");
+    expect(human).toContain("packages/app/src/use-foo.ts");
+    expect(agent).toContain("summary\ttarget=src/foo.ts");
+    expect(agent).toContain("dep\tpackages/app/src/use-foo.ts\tsymbols=Foo");
+    expect(agent).toContain("test\tpackages/app/src/foo.test.ts:6\tdirect");
   });
 });
 

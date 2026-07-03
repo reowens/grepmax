@@ -3,9 +3,13 @@ import {
   err,
   filterMcpSearchResults,
   formatMcpPointerSearchResults,
+  formatMcpSurprisingConnections,
+  isExplicitCrossProjectSearch,
+  mcpLogQuery,
   ok,
   toStringArray,
 } from "../src/commands/mcp";
+import type { SurpriseAnalysisResult } from "../src/lib/analysis/surprising-connections";
 import type { ChunkType } from "../src/lib/store/types";
 
 describe("toStringArray", () => {
@@ -65,6 +69,24 @@ describe("err", () => {
       content: [{ type: "text", text: "failure" }],
       isError: true,
     });
+  });
+});
+
+describe("isExplicitCrossProjectSearch", () => {
+  it("treats scope all and project filters as explicit cross-project search", () => {
+    expect(isExplicitCrossProjectSearch({ scope: "all" })).toBe(true);
+    expect(isExplicitCrossProjectSearch({ projects: "platform" })).toBe(true);
+    expect(isExplicitCrossProjectSearch({ exclude_projects: "qsys" })).toBe(
+      true,
+    );
+    expect(isExplicitCrossProjectSearch({}, true)).toBe(true);
+  });
+
+  it("does not widen project search for empty project filters", () => {
+    expect(isExplicitCrossProjectSearch({})).toBe(false);
+    expect(isExplicitCrossProjectSearch({ projects: "  " })).toBe(false);
+    expect(isExplicitCrossProjectSearch({ exclude_projects: "" })).toBe(false);
+    expect(isExplicitCrossProjectSearch({ scope: "project" })).toBe(false);
   });
 });
 
@@ -142,5 +164,144 @@ describe("formatMcpPointerSearchResults", () => {
 
     expect(output).toContain("[imports src/a.ts] import { x } from './x';");
     expect(output).toContain("src/a.ts:1");
+  });
+});
+
+describe("formatMcpSurprisingConnections", () => {
+  it("renders summary and grouped file-pair rows as TSV", () => {
+    const result: SurpriseAnalysisResult = {
+      summary: {
+        projectRoot: "/tmp/project",
+        rows: 10,
+        codeRows: 4,
+        sampledAnchors: 3,
+        graphFileEdges: 2,
+        options: {
+          sample: 3,
+          neighbors: 2,
+          dirDepth: 3,
+          minSimilarity: 0,
+          maxRows: 50_000,
+          includeTests: false,
+          includeEval: false,
+        },
+        filters: {
+          rawNeighbors: 3,
+          sameChunk: 0,
+          sameFile: 0,
+          nonCode: 0,
+          weakCode: 0,
+          tests: 0,
+          evalHarness: 0,
+          sameDirBucket: 0,
+          graphEdge: 0,
+          belowThreshold: 0,
+        },
+        acceptedPairs: 1,
+        acceptedFilePairs: 1,
+        similarity: { min: 0.8, p50: 0.8, p90: 0.8, max: 0.8, mean: 0.8 },
+        distance: { min: 0.2, p50: 0.2, p90: 0.2, max: 0.2, mean: 0.2 },
+        actionabilityScore: {
+          min: 0.9,
+          p50: 0.9,
+          p90: 0.9,
+          max: 0.9,
+          mean: 0.9,
+        },
+      },
+      pairs: [],
+      findings: [
+        {
+          fileA: "src/a.ts",
+          fileB: "src/b.ts",
+          pairCount: 1,
+          maxSimilarity: 0.8,
+          medianSimilarity: 0.8,
+          score: 0.9,
+          reasons: ["same-symbol"],
+          topSimilarities: [0.8],
+          representative: {
+            similarity: 0.8,
+            distance: 0.2,
+            source: {
+              id: "a",
+              path: "/tmp/project/src/a.ts",
+              relPath: "src/a.ts",
+              startLine: 0,
+              endLine: 5,
+              role: "IMPLEMENTATION",
+              content: "function sharedThing() { return 1; }",
+              vector: [0.1],
+              definedSymbols: ["sharedThing"],
+              referencedSymbols: [],
+              typeReferencedSymbols: [],
+            },
+            target: {
+              id: "b",
+              path: "/tmp/project/src/b.ts",
+              relPath: "src/b.ts",
+              startLine: 10,
+              endLine: 15,
+              role: "IMPLEMENTATION",
+              content: "function sharedThing() { return 2; }",
+              vector: [0.2],
+              definedSymbols: ["sharedThing"],
+              referencedSymbols: [],
+              typeReferencedSymbols: [],
+            },
+            scoreParts: {
+              base: 0.8,
+              sameSymbolBoost: 0.08,
+              symbolShapeBoost: 0,
+              implementationBoost: 0,
+              supportBoost: 0,
+              tinyHelperPenalty: 0,
+              typeConstantPenalty: 0,
+              wrapperPenalty: 0,
+              genericSymbolPenalty: 0,
+              score: 0.9,
+              reasons: ["same-symbol"],
+            },
+          },
+        },
+      ],
+    };
+
+    const output = formatMcpSurprisingConnections(result, 5);
+
+    expect(output).toContain(
+      "summary\tsampled=3\tcode=4\tpairs=1\tfile_pairs=1\tscore_p90=0.9",
+    );
+    expect(output).toContain(
+      "surprise\t0.900\t0.800\t1\tsrc/a.ts\tsrc/b.ts\tsrc/a.ts:1 sharedThing\tsrc/b.ts:11 sharedThing\tsame-symbol",
+    );
+    expect(output).toContain("buckets=src<->src");
+    expect(output).toContain('next=gmax skeleton "src/a.ts"');
+  });
+});
+
+describe("mcpLogQuery", () => {
+  it("uses regular query-like fields when present", () => {
+    expect(mcpLogQuery("semantic_search", { query: "auth flow" })).toBe(
+      "auth flow",
+    );
+    expect(mcpLogQuery("trace_calls", { symbol: "handleAuth" })).toBe(
+      "handleAuth",
+    );
+    expect(mcpLogQuery("find_similar", { target: "VectorDB" })).toBe(
+      "VectorDB",
+    );
+  });
+
+  it("records surprising_connections scope instead of an empty query", () => {
+    expect(
+      mcpLogQuery("surprising_connections", {
+        root: "/repo",
+        in: "src/lib",
+        exclude: "src/lib/generated",
+      }),
+    ).toBe(
+      "surprising_connections root=/repo in=src/lib exclude=src/lib/generated",
+    );
   });
 });

@@ -2,18 +2,45 @@
 type: doc
 status: reference
 created: 2026-04-09
-updated: 2026-06-22T18:00:00Z
+updated: 2026-06-30T00:45:00Z
 summary: Live catalog of open gmax limitations with detection + recovery steps.
 audience: internal
 related_plans:
   - docs/plans/2026-05-25-semantic-search-landscape.md
+  - docs/archived/2026-06-23-index-versioning-and-daemon-refactor.md
+  - docs/archived/2026-06-28-repo-audit-hardening.md
 related_docs:
   - docs/agent-ux-proposals.md
+  - docs/agent-pov-suggestions.md
 ---
 
 # Known Limitations
 
-Last updated 2026-06-22.
+Last updated 2026-06-30.
+
+## `gmax surprises` is experimental orientation, not proof
+
+Added 2026-06-30.
+
+`gmax surprises --experimental` and MCP `surprising_connections` report file pairs that are
+embedding-similar, cross-directory, and not directly connected by gmax's indexed static symbol
+graph. That is an orientation signal for duplicate/parallel logic, not a correctness claim.
+
+**Limitations:**
+- "No graph edge" only means no direct edge was found in `referenced_symbols` /
+  `type_referenced_symbols` for the current index. Dynamic dispatch, reflection, string-built
+  calls, callback-value references, ambiguous definitions, and stale indexes can all hide real
+  relationships.
+- High embedding similarity can be boilerplate, wrappers, constants, formatter helpers, or shared
+  framework shape rather than a refactor opportunity.
+- Scores are heuristic even after calibration. Keep `--experimental`: measured quality varies by
+  corpus, and generated/offline-help content still needs explicit `--exclude` scopes in some repos.
+- On narrow monorepo scopes, the default `--dir-depth 3` may treat the whole scope as one bucket;
+  increase `--dir-depth` when using `--in packages/app/src`-style scopes.
+
+**Recovery / validation:**
+Use the output as a triage queue. Before acting, inspect both sides with `gmax skeleton`,
+`gmax extract`, `gmax related`, and `gmax trace`.
 
 ## Chunker `referenced_symbols` extracts call-expression names, not identifier-as-value references
 

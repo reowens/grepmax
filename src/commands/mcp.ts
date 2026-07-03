@@ -5,8 +5,19 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { Command } from "commander";
 import { z } from "zod";
 import { MODEL_TIERS, PATHS } from "../config";
+import {
+  analyzeSurprisingConnections,
+  DEFAULT_SURPRISE_OPTIONS,
+  findingBucketLabel,
+  formatPenaltySummary,
+  lineLabel,
+  MAX_SURPRISE_ROWS,
+  type SurpriseAnalysisResult,
+  skeletonHint,
+} from "../lib/analysis/surprising-connections";
 import { languageFamilyForPath } from "../lib/core/languages";
 import { type CallerTree, GraphBuilder } from "../lib/graph/graph-builder";
+import type { DetailedDependentHit } from "../lib/graph/impact";
 import { readGlobalConfig, readIndexConfig } from "../lib/index/index-config";
 import { generateSummaries } from "../lib/index/syncer";
 import { formatAgentSearchResults } from "../lib/output/agent-search-formatter";
@@ -26,7 +37,11 @@ import {
 } from "../lib/utils/filter-builder";
 import { formatTimeAgo } from "../lib/utils/format-helpers";
 import { extractImports } from "../lib/utils/import-extractor";
-import { getProject, listProjects } from "../lib/utils/project-registry";
+import {
+  getParentProject,
+  getProject,
+  listProjects,
+} from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import { launchWatcher } from "../lib/utils/watcher-launcher";
 import { getWatcherCoveringPath } from "../lib/utils/watcher-store";
@@ -60,6 +75,19 @@ export function ok(text: string): ToolResult {
 
 export function err(text: string): ToolResult {
   return { content: [{ type: "text", text }], isError: true };
+}
+
+export function isExplicitCrossProjectSearch(
+  args: Record<string, unknown>,
+  isSearchAll = false,
+): boolean {
+  return (
+    isSearchAll ||
+    args.scope === "all" ||
+    (typeof args.projects === "string" && args.projects.trim() !== "") ||
+    (typeof args.exclude_projects === "string" &&
+      args.exclude_projects.trim() !== "")
+  );
 }
 
 type McpSearchFilterOptions = {
@@ -154,6 +182,69 @@ export function formatMcpPointerSearchResults(
       query: options.query,
     },
   );
+}
+
+export function formatMcpSurprisingConnections(
+  result: SurpriseAnalysisResult,
+  top = 10,
+): string {
+  const { summary, findings } = result;
+  const lines = [
+    [
+      "summary",
+      `sampled=${summary.sampledAnchors}`,
+      `code=${summary.codeRows}`,
+      `pairs=${summary.acceptedPairs}`,
+      `file_pairs=${summary.acceptedFilePairs}`,
+      `score_p90=${summary.actionabilityScore.p90}`,
+    ].join("\t"),
+  ];
+
+  for (const finding of findings.slice(0, top)) {
+    const pair = finding.representative;
+    lines.push(
+      [
+        "surprise",
+        finding.score.toFixed(3),
+        finding.maxSimilarity.toFixed(3),
+        String(finding.pairCount),
+        finding.fileA,
+        finding.fileB,
+        lineLabel(pair.source),
+        lineLabel(pair.target),
+        finding.reasons.join(","),
+        `buckets=${findingBucketLabel(finding, summary.options.dirDepth)}`,
+        `top_sims=${finding.topSimilarities.join(",")}`,
+        `penalties=${formatPenaltySummary(pair.scoreParts)}`,
+        `next=${skeletonHint(finding)}`,
+      ].join("\t"),
+    );
+  }
+
+  if (findings.length === 0) lines.push("none");
+  return lines.join("\n");
+}
+
+export function mcpLogQuery(
+  name: string,
+  args: Record<string, unknown>,
+): string {
+  const direct = args.query ?? args.symbol ?? args.target;
+  if (direct !== undefined && direct !== null && String(direct) !== "") {
+    return String(direct);
+  }
+  if (name === "surprising_connections") {
+    const parts = [
+      "surprising_connections",
+      typeof args.root === "string" && args.root ? `root=${args.root}` : "",
+      typeof args.in === "string" && args.in ? `in=${args.in}` : "",
+      typeof args.exclude === "string" && args.exclude
+        ? `exclude=${args.exclude}`
+        : "",
+    ].filter(Boolean);
+    return parts.join(" ");
+  }
+  return "";
 }
 
 // ---------------------------------------------------------------------------
@@ -267,6 +358,24 @@ export const mcp = new Command("mcp")
       }
     }
 
+    // Resolve the registered project this server scopes to. The server pins to
+    // its launch cwd (findProjectRoot, .git-only), but a registered project may
+    // be an umbrella with no .git of its own — so a session launched in a
+    // subdirectory resolves to a path that isn't the registered root. Prefer an
+    // exact registry match; otherwise walk the registry for an ancestor that
+    // covers the cwd, and scope to it instead of silently widening to the whole
+    // index. `root` is the registered project root to scope to.
+    function resolveRegisteredProject(): {
+      proj: ReturnType<typeof getProject>;
+      root: string;
+    } {
+      const exact = getProject(projectRoot);
+      if (exact) return { proj: exact, root: projectRoot };
+      const parent = getParentProject(projectRoot);
+      if (parent) return { proj: parent, root: parent.root };
+      return { proj: undefined, root: projectRoot };
+    }
+
     // --- Tool handlers ---
 
     async function handleSemanticSearch(
@@ -275,41 +384,48 @@ export const mcp = new Command("mcp")
     ): Promise<ToolResult> {
       const query = String(args.query || "");
       if (!query) return err("Missing required parameter: query");
-      let searchAll = isSearchAll || args.scope === "all";
+      const searchAll = isExplicitCrossProjectSearch(args, isSearchAll);
 
       const limit = Math.min(Math.max(Number(args.limit) || 3, 1), 50);
 
       ensureWatcher();
 
       // Project resolution. The server is pinned to whatever cwd it launched in
-      // (resolved once at startup). When that cwd ISN'T an indexed project and
-      // the caller hasn't pinned an explicit --root, fall back to cross-project
-      // search instead of dead-ending — this is what makes the server usable
-      // from a session that isn't sitting inside a registered repo.
-      let scopeNote = "";
-      const proj = getProject(projectRoot);
-      if (!proj && typeof args.root !== "string") {
-        const indexed = listProjects().filter(
-          (p) => p.status !== "pending" && (p.chunkCount ?? 0) > 0,
-        );
-        if (indexed.length === 0) {
+      // (resolved once at startup). Resolve that cwd to its registered project —
+      // exact match, or a registered ancestor when the cwd is a subdirectory of
+      // an umbrella project. Searches scope to `resolvedRoot`.
+      const { proj, root: resolvedRoot } = resolveRegisteredProject();
+
+      // Cross-project search (the whole index) is opt-in: it happens only when
+      // the caller passes scope:"all" or projects:"…". Otherwise we require a
+      // resolved project and error loudly when there isn't one — never silently
+      // widen a scoped query to every indexed project.
+      if (!searchAll) {
+        if (!proj) {
+          if (typeof args.root === "string") {
+            return err(
+              "Project not added to gmax yet. Run `gmax add` to index it first.",
+            );
+          }
+          const indexed = listProjects().filter(
+            (p) => p.status !== "pending" && (p.chunkCount ?? 0) > 0,
+          );
+          if (indexed.length === 0) {
+            return err(
+              "No indexed projects yet. cd into a repo and run `gmax add` to index it first.",
+            );
+          }
           return err(
-            "No indexed projects yet. cd into a repo and run `gmax add` to index it first.",
+            `${path.basename(projectRoot)}/ isn't an indexed gmax project. ` +
+              `Pass scope:"all" to search all ${indexed.length} indexed project(s), ` +
+              `projects:"name" to target specific ones, or cd into an indexed project.`,
           );
         }
-        searchAll = true;
-        scopeNote =
-          `Note: ${path.basename(projectRoot)}/ isn't an indexed gmax project — ` +
-          `searching all ${indexed.length} indexed project(s). ` +
-          `Call list_projects to see them, then pass projects:"name" to narrow.`;
-      } else if (!proj) {
-        return err(
-          "Project not added to gmax yet. Run `gmax add` to index it first.",
-        );
-      } else if (proj.status === "pending" || proj.chunkCount === 0) {
-        return err(
-          "Project not indexed yet. Run `gmax add` to index it first.",
-        );
+        if (proj.status === "pending" || proj.chunkCount === 0) {
+          return err(
+            "Project not indexed yet. Run `gmax add` to index it first.",
+          );
+        }
       }
 
       try {
@@ -323,7 +439,7 @@ export const mcp = new Command("mcp")
           const searchRoot =
             typeof args.root === "string"
               ? path.resolve(args.root)
-              : path.resolve(projectRoot);
+              : path.resolve(resolvedRoot);
 
           if (typeof args.root === "string" && !fs.existsSync(searchRoot)) {
             return err(`Directory not found: ${args.root}`);
@@ -407,10 +523,9 @@ export const mcp = new Command("mcp")
           pathPrefix,
         );
 
-        // Prepend the scope-fallback note (if any) + searcher warnings to
-        // whatever body we return, so the agent learns it searched all projects.
+        // Prepend any searcher warnings to whatever body we return.
         const prefixNotes = (body: string): string => {
-          const notes = [scopeNote, ...(result.warnings ?? [])].filter(Boolean);
+          const notes = (result.warnings ?? []).filter(Boolean);
           return notes.length ? `${notes.join("\n")}\n\n${body}` : body;
         };
 
@@ -773,7 +888,7 @@ export const mcp = new Command("mcp")
       const symbol = String(args.symbol || "");
       if (!symbol) return err("Missing required parameter: symbol");
 
-      const proj = getProject(projectRoot);
+      const { proj } = resolveRegisteredProject();
       if (!proj) {
         return err(
           "Project not added to gmax yet. Run `gmax add` to index it first.",
@@ -1299,6 +1414,69 @@ export const mcp = new Command("mcp")
       }
     }
 
+    async function handleSurprisingConnections(
+      args: Record<string, unknown>,
+    ): Promise<ToolResult> {
+      ensureWatcher();
+      if (args.experimental !== true) {
+        return err(
+          "surprising_connections is experimental; pass experimental:true.",
+        );
+      }
+
+      const root =
+        typeof args.root === "string" && args.root
+          ? path.resolve(args.root)
+          : projectRoot;
+      const top = Math.min(Math.max(Number(args.top) || 10, 1), 100);
+      const sample = Math.min(
+        Math.max(Number(args.sample) || DEFAULT_SURPRISE_OPTIONS.sample, 1),
+        10_000,
+      );
+      const neighbors = Math.min(
+        Math.max(
+          Number(args.neighbors) || DEFAULT_SURPRISE_OPTIONS.neighbors,
+          1,
+        ),
+        200,
+      );
+      const dirDepth = Math.min(
+        Math.max(
+          Number(args.dir_depth) || DEFAULT_SURPRISE_OPTIONS.dirDepth,
+          1,
+        ),
+        20,
+      );
+      const minSimilarity = Math.max(
+        Number(args.min_similarity) || DEFAULT_SURPRISE_OPTIONS.minSimilarity,
+        0,
+      );
+      const maxRows = Math.min(
+        Math.max(Number(args.max_rows) || DEFAULT_SURPRISE_OPTIONS.maxRows, 1),
+        MAX_SURPRISE_ROWS,
+      );
+
+      try {
+        const db = getVectorDb();
+        const table = await db.ensureTable();
+        const result = await analyzeSurprisingConnections(table, root, {
+          sample,
+          neighbors,
+          dirDepth,
+          minSimilarity,
+          maxRows,
+          includeTests: Boolean(args.include_tests),
+          includeEval: Boolean(args.include_eval),
+          in: typeof args.in === "string" ? args.in : undefined,
+          exclude: typeof args.exclude === "string" ? args.exclude : undefined,
+        });
+        return ok(formatMcpSurprisingConnections(result, top));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return err(`Surprising connections failed: ${msg}`);
+      }
+    }
+
     async function handleGetNeighbors(
       args: Record<string, unknown>,
     ): Promise<ToolResult> {
@@ -1429,7 +1607,7 @@ export const mcp = new Command("mcp")
       const limit = Math.min(Math.max(Number(args.limit) || 20, 1), 100);
       const pathPrefix = typeof args.path === "string" ? args.path : undefined;
 
-      const proj = getProject(projectRoot);
+      const { proj } = resolveRegisteredProject();
       if (!proj) {
         return err(
           "Project not added to gmax yet. Run `gmax add` to index it first.",
@@ -2092,10 +2270,20 @@ export const mcp = new Command("mcp")
       const target = String(args.target || "");
       if (!target) return err("Missing required parameter: target");
       const depth = Math.min(Math.max(Number(args.depth) || 1, 1), 3);
+      const rollup = args.rollup === true;
+      const top = Math.min(Math.max(Number(args.top) || 10, 1), 100);
 
       try {
-        const { resolveTargetSymbols, findTests, findDependents, isTestPath } =
-          await import("../lib/graph/impact");
+        const {
+          resolveTargetSymbols,
+          findTests,
+          findDependents,
+          findDependentsDetailed,
+          isTestPath,
+        } = await import("../lib/graph/impact");
+        const { buildImpactRollup, formatImpactRollupAgent } = await import(
+          "../lib/graph/impact-rollup"
+        );
         const db = getVectorDb();
         const { symbols, resolvedAsFile, symbolFamilies } =
           await resolveTargetSymbols(target, db, projectRoot);
@@ -2105,19 +2293,48 @@ export const mcp = new Command("mcp")
           ? path.resolve(projectRoot, target)
           : undefined;
         const excludePaths = targetPath ? new Set([targetPath]) : undefined;
+        const rollupLimit = Math.min(Math.max(top * 10, 100), 500);
 
         const [dependents, tests] = await Promise.all([
-          findDependents(
-            symbols,
-            db,
-            projectRoot,
-            excludePaths,
-            undefined,
-            undefined,
-            symbolFamilies,
-          ),
+          rollup
+            ? findDependentsDetailed(
+                symbols,
+                db,
+                projectRoot,
+                excludePaths,
+                rollupLimit,
+                undefined,
+                symbolFamilies,
+              )
+            : findDependents(
+                symbols,
+                db,
+                projectRoot,
+                excludePaths,
+                undefined,
+                undefined,
+                symbolFamilies,
+              ),
           findTests(symbols, db, projectRoot, depth, undefined, symbolFamilies),
         ]);
+
+        if (rollup) {
+          const detailedDependents = dependents as DetailedDependentHit[];
+          const impactRollup = buildImpactRollup({
+            targetSymbols: symbols,
+            dependents: detailedDependents,
+            tests,
+            projectRoot,
+            top,
+          });
+          return ok(
+            formatImpactRollupAgent(impactRollup, {
+              target,
+              projectRoot,
+              includeTests: true,
+            }),
+          );
+        }
 
         const nonTestDeps = dependents.filter((d) => !isTestPath(d.file));
         const rel = (p: string) =>
@@ -2464,10 +2681,11 @@ export const mcp = new Command("mcp")
           "If you are NOT inside a specific repo, or want a different one: call " +
           '`list_projects` to see what\'s indexed, then pass `projects:"name"` (or ' +
           '`scope:"all"`) to `semantic_search`. When the working directory isn\'t an ' +
-          "indexed project, `semantic_search` automatically searches all of them and " +
-          "says so. Prefer `semantic_search` (detail:'pointer') for discovery, then " +
+          "indexed project, `semantic_search` errors instead of searching everything " +
+          "implicitly. Prefer `semantic_search` (detail:'pointer') for discovery, then " +
           "`extract_symbol`/`peek_symbol`/`code_skeleton` to read, and " +
-          "`trace_calls`/`impact_analysis`/`find_tests` for call-graph questions.",
+          "`trace_calls`/`impact_analysis`/`find_tests` for call-graph questions. " +
+          "Use `audit` and experimental `surprising_connections` for project orientation.",
       },
     );
 
@@ -2487,9 +2705,7 @@ export const mcp = new Command("mcp")
           ts: new Date().toISOString(),
           source: "mcp",
           tool: name,
-          query: String(
-            toolArgs.query ?? toolArgs.symbol ?? toolArgs.target ?? "",
-          ),
+          query: mcpLogQuery(name, toolArgs),
           project: projectRoot,
           results: resultLines,
           ms: Date.now() - startMs,
@@ -2710,6 +2926,67 @@ export const mcp = new Command("mcp")
     );
 
     tool(
+      "surprising_connections",
+      {
+        description:
+          "Experimental orientation signal: embedding-similar cross-directory file pairs that are not directly connected by the static symbol graph. Useful for spotting duplicate or parallel logic. Requires experimental:true.",
+        inputSchema: {
+          experimental: z
+            .boolean()
+            .describe(
+              "Must be true to acknowledge experimental signal quality",
+            ),
+          root: z
+            .string()
+            .describe("Project root (default: current)")
+            .optional(),
+          sample: z
+            .number()
+            .describe("Indexed code chunks to sample (default 160, max 10000)")
+            .optional(),
+          neighbors: z
+            .number()
+            .describe(
+              "Nearest neighbors per sampled chunk (default 20, max 200)",
+            )
+            .optional(),
+          top: z
+            .number()
+            .describe("Grouped findings to return (default 10, max 100)")
+            .optional(),
+          dir_depth: z
+            .number()
+            .describe("Directory bucket depth considered unsurprising")
+            .optional(),
+          min_similarity: z
+            .number()
+            .describe("Minimum similarity 0-1 (default 0)")
+            .optional(),
+          max_rows: z
+            .number()
+            .describe(
+              `Maximum indexed rows to scan (default 50000, max ${MAX_SURPRISE_ROWS})`,
+            )
+            .optional(),
+          in: z
+            .string()
+            .describe("Restrict to a sub-path of the project")
+            .optional(),
+          exclude: z
+            .string()
+            .describe("Exclude a sub-path of the project")
+            .optional(),
+          include_tests: z.boolean().describe("Include test files").optional(),
+          include_eval: z
+            .boolean()
+            .describe("Include eval/experiment/script files")
+            .optional(),
+        },
+      },
+      handleSurprisingConnections,
+    );
+
+    tool(
       "get_neighbors",
       {
         description:
@@ -2923,6 +3200,14 @@ export const mcp = new Command("mcp")
           depth: z
             .number()
             .describe("Caller traversal depth 1-3 (default 1)")
+            .optional(),
+          rollup: z
+            .boolean()
+            .describe("Return export/package rollup TSV rows")
+            .optional(),
+          top: z
+            .number()
+            .describe("Max rows per rollup section (default 10)")
             .optional(),
         },
       },

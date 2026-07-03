@@ -15,6 +15,7 @@ vi.mock("../src/lib/utils/project-root", () => ({
 
 const mockFindTests = vi.fn(async () => []);
 const mockFindDependents = vi.fn(async () => []);
+const mockFindDependentsDetailed = vi.fn(async () => []);
 const mockResolveTargetSymbols = vi.fn(async () => ({
   symbols: ["handleAuth"],
   resolvedAsFile: false,
@@ -23,6 +24,8 @@ const mockResolveTargetSymbols = vi.fn(async () => ({
 vi.mock("../src/lib/graph/impact", () => ({
   findTests: (...args: any[]) => mockFindTests(...args),
   findDependents: (...args: any[]) => mockFindDependents(...args),
+  findDependentsDetailed: (...args: any[]) =>
+    mockFindDependentsDetailed(...args),
   resolveTargetSymbols: (...args: any[]) => mockResolveTargetSymbols(...args),
   isTestPath: (p: string) =>
     /\.(test|spec)\.[cm]?[jt]sx?$/i.test(p) ||
@@ -128,6 +131,110 @@ describe("impact command", () => {
     expect(mockFindTests).not.toHaveBeenCalled();
     expect(output).toContain("dep:");
     expect(output).not.toContain("test:");
+    spy.mockRestore();
+  });
+
+  it("uses rollup by default for file targets in human mode", async () => {
+    mockResolveTargetSymbols.mockResolvedValueOnce({
+      symbols: ["Foo", "Bar"],
+      resolvedAsFile: true,
+    });
+    mockFindDependentsDetailed.mockResolvedValueOnce([
+      {
+        file: "/tmp/project/packages/app/src/use-foo.ts",
+        sharedSymbols: 1,
+        symbols: ["Foo"],
+      },
+      {
+        file: "/tmp/project/packages/api/src/use-both.ts",
+        sharedSymbols: 2,
+        symbols: ["Foo", "Bar"],
+      },
+    ]);
+    mockFindTests.mockResolvedValueOnce([
+      {
+        file: "/tmp/project/packages/app/src/foo.test.ts",
+        symbol: "testFoo",
+        line: 4,
+        hops: 0,
+      },
+    ]);
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await (impact as Command).parseAsync(["src/foo.ts"], { from: "user" });
+    const output = spy.mock.calls.map((c) => c[0]).join("\n");
+
+    expect(mockFindDependentsDetailed).toHaveBeenCalled();
+    expect(output).toContain("Impact rollup for src/foo.ts");
+    expect(output).toContain("Exports: 2");
+    expect(output).toContain("packages/app");
+    expect(output).toContain("packages/api");
+    expect(output).toContain("Affected tests: 1");
+    spy.mockRestore();
+  });
+
+  it("--flat preserves legacy file-target output", async () => {
+    mockResolveTargetSymbols.mockResolvedValueOnce({
+      symbols: ["Foo"],
+      resolvedAsFile: true,
+    });
+    mockFindDependents.mockResolvedValueOnce([
+      { file: "/tmp/project/src/use-foo.ts", sharedSymbols: 1 },
+    ]);
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await (impact as Command).parseAsync(["src/foo.ts", "--flat"], {
+      from: "user",
+    });
+    const output = spy.mock.calls.map((c) => c[0]).join("\n");
+
+    expect(mockFindDependents).toHaveBeenCalled();
+    expect(mockFindDependentsDetailed).not.toHaveBeenCalled();
+    expect(output).toContain("Direct dependents");
+    expect(output).not.toContain("Impact rollup");
+    spy.mockRestore();
+  });
+
+  it("--agent --rollup emits TSV rollup rows", async () => {
+    mockFindDependentsDetailed.mockResolvedValueOnce([
+      {
+        file: "/tmp/project/packages/app/src/use-auth.ts",
+        sharedSymbols: 1,
+        symbols: ["handleAuth"],
+      },
+    ]);
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await (impact as Command).parseAsync(
+      ["handleAuth", "--agent", "--rollup"],
+      {
+        from: "user",
+      },
+    );
+    const output = spy.mock.calls.map((c) => c[0]).join("\n");
+
+    expect(output).toContain("summary\ttarget=handleAuth");
+    expect(output).toContain("export\thandleAuth\tdeps=1");
+    expect(output).toContain("pkg\tpackages/app");
+    expect(output).not.toContain("dep:");
+    spy.mockRestore();
+  });
+
+  it("--no-tests skips tests in rollup mode", async () => {
+    mockResolveTargetSymbols.mockResolvedValueOnce({
+      symbols: ["Foo"],
+      resolvedAsFile: true,
+    });
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await (impact as Command).parseAsync(["src/foo.ts", "--no-tests"], {
+      from: "user",
+    });
+    const output = spy.mock.calls.map((c) => c[0]).join("\n");
+
+    expect(mockFindTests).not.toHaveBeenCalled();
+    expect(output).toContain("Impact rollup");
+    expect(output).not.toContain("Affected tests");
     spy.mockRestore();
   });
 });
