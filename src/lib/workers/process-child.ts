@@ -2,7 +2,11 @@ import process from "node:process";
 
 process.title = "gmax-worker";
 
-import { debug } from "../utils/logger";
+import {
+  debug,
+  installTimestampedOutput,
+  LOG_TIMESTAMPS_ENV,
+} from "../utils/logger";
 import processFile, {
   encodeQuery,
   type ProcessFileInput,
@@ -10,6 +14,10 @@ import processFile, {
   type RerankDoc,
   rerank,
 } from "./worker";
+
+// Workers inherit the daemon's stdio (daemon.log) — stamp lines the same way
+// the daemon does. No-op for workers forked by interactive CLI commands.
+if (process.env[LOG_TIMESTAMPS_ENV] === "1") installTimestampedOutput();
 
 type IncomingMessage =
   | { id: number; method: "processFile"; payload: ProcessFileInput }

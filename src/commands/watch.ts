@@ -128,6 +128,12 @@ export const watch = new Command("watch")
         }
 
         // Daemon foreground
+        // Stamp every daemon.log line so incidents can be correlated with the
+        // timestamped MLX/LLM server logs. Workers inherit via env flag.
+        const { installTimestampedOutput } = await import(
+          "../lib/utils/logger"
+        );
+        installTimestampedOutput();
         const { Daemon } = await import("../lib/daemon/daemon");
         const daemon = new Daemon();
 

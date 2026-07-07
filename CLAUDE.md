@@ -11,7 +11,7 @@ gmax runs as cooperating processes. Only `gmax-mcp` may have multiple instances.
 ```
 gmax-daemon (singleton via lockfile)
   |-- gmax-worker (1-7 child processes, lazy-spawned, reaped after 60s idle, min 1 kept alive)
-  |-- [gmax-embed] (MLX GPU server on port 8100; daemon heartbeat respawns it if zombie)
+  |-- [gmax-embed] (MLX GPU server on port 8100; daemon heartbeat respawns it if zombie or dead)
   +-- Unix socket server (~/.gmax/daemon.sock)
 
 gmax-mcp (N instances, one per Claude Code session)
@@ -23,7 +23,7 @@ gmax-mcp (N instances, one per Claude Code session)
 |---------|-----------|-----------|------|
 | gmax-daemon | `gmax watch --daemon -b` (SessionStart hook or manual) | Singleton. 30min idle timeout. | `src/commands/watch.ts` |
 | gmax-worker | Daemon's WorkerPool, lazy on first task | Reaped after 60s idle, min 1 kept alive | `src/lib/workers/pool.ts` |
-| gmax-embed | Daemon's `ensureMlxServer()` (startup + 5min heartbeat health check) or `gmax serve` | 30min idle timeout | `src/lib/daemon/daemon.ts` |
+| gmax-embed | Daemon's `ensureMlxServer()` (startup + 5min heartbeat health check) or `gmax serve` | 30min idle timeout. Spawned with `HF_HOME=~/.gmax/hf` (pinned local model cache) | `src/lib/daemon/mlx-server-manager.ts` |
 | gmax-mcp | Claude Code (one per session) | Session lifetime | `src/commands/mcp.ts` |
 | llama-server (LLM) | Daemon's LlmServer, on first `llm-start` IPC or `reviewCommit` | 10min idle timeout | `src/lib/llm/server.ts` |
 
@@ -56,8 +56,10 @@ All persistent state lives under `~/.gmax/`:
   cache/
     meta.lmdb          File metadata cache: absolute path -> {hash, mtimeMs, size}
   models/              ONNX model files (downloaded on first use)
+  hf/                  Pinned HF cache for the MLX embed model (never inherits
+                       shell HF_HOME, which may point at an unmounted volume)
   logs/
-    daemon.log         Daemon + worker stdout/stderr (rotated at 5MB)
+    daemon.log         Daemon + worker stdout/stderr (rotated at 5MB, timestamped)
     mlx-embed-server.log
     llm-server.log
   llm-server.pid
@@ -100,7 +102,7 @@ Status values: `"pending"` | `"indexed"` | `"error"`
  8. Register daemon in watcher store
  9. Watch all "indexed" projects (subscribe + catchup)
  9b. Index all "pending" projects (background, async)
-10. Start heartbeat (60s interval; every 5 ticks probes MLX `/health` and respawns the embed server if it's zombie — port held but unresponsive)
+10. Start heartbeat (60s interval; every 5 ticks probes MLX `/health` and respawns the embed server if it's zombie — port held but unresponsive — or dead — nothing on the port, e.g. crashed at model load)
 11. Start idle checker (30min timeout)
 12. Start IPC socket server on daemon.sock
 

@@ -15,6 +15,7 @@ import { MetaCache } from "../lib/store/meta-cache";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
 import { openRotatedLog } from "../lib/utils/log-rotate";
+import { resolveMlxHfHome } from "../lib/utils/mlx-hf-cache";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import {
   getServerForProject,
@@ -61,6 +62,9 @@ function startMlxServer(mlxModel?: string): ChildProcess | null {
   if (mlxModel) {
     env.MLX_EMBED_MODEL = mlxModel;
   }
+  // Pin the model cache to internal disk — never inherit an HF_HOME that
+  // may point at an unmounted external volume (see resolveMlxHfHome).
+  env.HF_HOME = resolveMlxHfHome(mlxModel);
   const child = spawn("uv", ["run", "python", "server.py"], {
     cwd: serverDir,
     detached: true,

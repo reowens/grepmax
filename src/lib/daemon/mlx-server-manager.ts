@@ -4,6 +4,7 @@ import * as http from "node:http";
 import * as path from "node:path";
 import { PATHS } from "../../config";
 import { openRotatedLog } from "../utils/log-rotate";
+import { resolveMlxHfHome } from "../utils/mlx-hf-cache";
 import { killProcess } from "../utils/process";
 
 /**
@@ -18,6 +19,11 @@ import { killProcess } from "../utils/process";
 export class MlxServerManager {
   private mlxChild: ChildProcess | null = null;
   private mlxRecoveryInFlight = false;
+  // Set on the first ensureMlxServer() call — i.e. the daemon decided MLX
+  // should be running (gpu mode on Apple Silicon). Gates heartbeat respawns
+  // so cpu-mode daemons never spawn the server.
+  private mlxEnabled = false;
+  private lastModel: string | undefined;
 
   constructor(private readonly deps: { getShuttingDown: () => boolean }) {}
 
@@ -52,19 +58,29 @@ export class MlxServerManager {
   }
 
   async checkMlxHealth(): Promise<void> {
+    if (!this.mlxEnabled) return;
     if (this.deps.getShuttingDown() || this.mlxRecoveryInFlight) return;
     if (await this.isMlxServerUp()) return;
     const port = parseInt(process.env.MLX_EMBED_PORT || "8100", 10);
     const stalePid = this.getPortPid(port);
-    if (!stalePid) return; // No process — let the next user-facing path spawn it.
     this.mlxRecoveryInFlight = true;
     try {
-      console.log(
-        `[daemon] MLX zombie detected on port ${port} (PID ${stalePid}) — killing and respawning`,
-      );
-      await killProcess(stalePid);
-      await new Promise((r) => setTimeout(r, 500));
-      await this.ensureMlxServer();
+      if (stalePid) {
+        console.log(
+          `[daemon] MLX zombie detected on port ${port} (PID ${stalePid}) — killing and respawning`,
+        );
+        await killProcess(stalePid);
+        await new Promise((r) => setTimeout(r, 500));
+      } else {
+        // Server crashed or never came up (e.g. model load failure) — the
+        // port is free, so retry the spawn. Runs at the heartbeat's 5-min
+        // cadence, so a persistently failing start costs one attempt per tick
+        // rather than a tight crash loop.
+        console.log(
+          `[daemon] MLX embed server not running on port ${port} — respawning`,
+        );
+      }
+      await this.ensureMlxServer(this.lastModel);
     } catch (err) {
       console.error(
         `[daemon] MLX recovery failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -75,6 +91,8 @@ export class MlxServerManager {
   }
 
   async ensureMlxServer(mlxModel?: string): Promise<void> {
+    this.mlxEnabled = true;
+    if (mlxModel) this.lastModel = mlxModel;
     if (await this.isMlxServerUp()) {
       console.log("[daemon] MLX embed server already running");
       return;
@@ -115,6 +133,9 @@ export class MlxServerManager {
       string
     >;
     if (mlxModel) env.MLX_EMBED_MODEL = mlxModel;
+    // Pin the model cache to internal disk — never inherit an HF_HOME that
+    // may point at an unmounted external volume (see resolveMlxHfHome).
+    env.HF_HOME = resolveMlxHfHome(mlxModel);
 
     const closeLogFd = () => {
       try {

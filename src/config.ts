@@ -270,6 +270,9 @@ export const PATHS = {
   globalRoot: GLOBAL_ROOT,
   models: path.join(GLOBAL_ROOT, "models"),
   grammars: path.join(GLOBAL_ROOT, "grammars"),
+  // HF cache for the MLX embed server, pinned to internal disk so the server
+  // survives an unmounted external volume behind the user's HF_HOME.
+  hfDir: path.join(GLOBAL_ROOT, "hf"),
   logsDir: path.join(GLOBAL_ROOT, "logs"),
   daemonSocket: path.join(GLOBAL_ROOT, "daemon.sock"),
   daemonPidFile: path.join(GLOBAL_ROOT, "daemon.pid"),
