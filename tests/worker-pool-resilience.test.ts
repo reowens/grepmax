@@ -111,7 +111,7 @@ describe("WorkerPool resilience", () => {
     const [bloated, lean1, lean2] = pool.workers;
 
     bloated.busy = false;
-    bloated.lastRssBytes = 4096 * 1024 * 1024; // 4 GB, well over the 1200 MB cap
+    bloated.lastRssBytes = 4096 * 1024 * 1024; // 4 GB, well over the default cap
     lean1.lastRssBytes = 200 * 1024 * 1024;
     lean2.lastRssBytes = 200 * 1024 * 1024;
 
@@ -135,21 +135,46 @@ describe("WorkerPool resilience", () => {
     }
   });
 
-  it("recycles a bloated worker the instant it finishes a task (continuous-churn path)", () => {
+  it("recycles a worker bloated across consecutive task completions (continuous-churn path)", () => {
     pool = new WorkerPool();
     pool.spawnWorker();
     const worker = pool.workers[0];
 
-    // Simulate a worker that peaked over the threshold but is never idle long
-    // enough for the timer-based reaper (constant trickle of small tasks).
+    // Simulate a worker pinned over the threshold but never idle long enough
+    // for the timer-based reaper (constant trickle of small tasks).
     worker.busy = false; // just completed a task
     worker.cleanedUp = false;
-    worker.lastRssBytes = 1500 * 1024 * 1024;
+    worker.lastRssBytes = 4096 * 1024 * 1024;
+
+    // First over-threshold reading is tolerated (could be a transient V8
+    // high-water mark); the second confirms the memory is sticky.
+    pool.recycleIfBloated(worker);
+    expect(worker.child.kill).not.toHaveBeenCalled();
 
     pool.recycleIfBloated(worker);
 
     expect(worker.child.kill).toHaveBeenCalledWith("SIGTERM");
     expect(pool.workers).not.toContain(worker);
+  });
+
+  it("resets the bloat streak when a lean reading intervenes", () => {
+    pool = new WorkerPool();
+    pool.spawnWorker();
+    const worker = pool.workers[0];
+    worker.busy = false;
+    worker.cleanedUp = false;
+
+    worker.lastRssBytes = 4096 * 1024 * 1024;
+    pool.recycleIfBloated(worker); // streak 1
+
+    worker.lastRssBytes = 300 * 1024 * 1024;
+    pool.recycleIfBloated(worker); // lean — streak resets
+
+    worker.lastRssBytes = 4096 * 1024 * 1024;
+    pool.recycleIfBloated(worker); // streak 1 again — still tolerated
+
+    expect(worker.child.kill).not.toHaveBeenCalled();
+    expect(pool.workers).toContain(worker);
   });
 
   it("does not recycle a bloated worker that is still busy", () => {

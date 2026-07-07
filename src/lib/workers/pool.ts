@@ -142,6 +142,9 @@ class ProcessWorker {
   busySince: number | null = null;
   // Most recent RSS (bytes) the worker reported, for memory-based recycling.
   lastRssBytes = 0;
+  // Consecutive post-task readings over WORKER_RSS_RECYCLE_MB. Recycling
+  // waits for BLOAT_STREAK_TO_RECYCLE of these; reset by any lean reading.
+  bloatStreak = 0;
   // Set when the pool has cleaned up after this worker (via exit or error
   // event). Guards against handleWorkerExit running twice when both events
   // fire for the same crash.
@@ -188,18 +191,30 @@ const IDLE_WORKER_TIMEOUT_MS = 60_000; // reap idle workers after 60s
 // warm. The pool still scales up to maxWorkers on demand for indexing bursts.
 const MIN_KEEP_WORKERS = 1;
 
-// Recycle an idle worker whose RSS has grown past this. ONNX native memory
-// (model arenas) lives outside V8, so --max-old-space-size can't bound it — a
-// worker that processed one big file can stay pinned at ~2 GB. Replacing it
-// with a fresh worker reclaims that. 0 (or negative) disables the check.
+// Recycle a worker whose RSS has grown past this. ONNX native memory lives
+// outside V8, so --max-old-space-size can't bound it; replacing the worker is
+// the only reclaim. The threshold must sit ABOVE the healthy working set or
+// the pool executes warm workers for normal behavior: measured steady state
+// is ~700-800 MB with MLX serving dense embeds and ~900-1050 MB in ONNX CPU
+// fallback (granite session loaded in-process), flat across task count and
+// file size. The old 800 default was calibrated for the pre-
+// enableCpuMemArena:false era (arenas pinned ~2 GB) and sat inside the
+// healthy range — every busy worker was recycled after nearly every task,
+// paying a full model reload each time. 0 (or negative) disables the check.
 const WORKER_RSS_RECYCLE_MB = (() => {
   const fromEnv = Number.parseInt(
     process.env.GMAX_WORKER_RSS_RECYCLE_MB ?? "",
     10,
   );
   if (Number.isFinite(fromEnv)) return fromEnv;
-  return 800;
+  return 1536;
 })();
+
+// Post-task recycling waits for this many consecutive over-threshold readings.
+// V8 holds freed heap after a big file, so a single post-task reading can show
+// a transient high-water mark that the next task's GC releases; the second
+// reading confirms the memory is actually sticky.
+const BLOAT_STREAK_TO_RECYCLE = 2;
 
 // Methods that must skip the indexing backlog. encodeQuery is the search hot
 // path: a single query is ~17ms but waits behind every queued processFile.
@@ -737,14 +752,17 @@ export class WorkerPool {
   }
 
   /**
-   * Recycle a worker whose RSS exceeds the threshold the instant it goes free
-   * between tasks. The idle reaper alone can't catch this: under continuous
-   * churn (a busy monorepo trickling one small file at a time) a worker is
-   * dispatched again within the 60s idle window, so a worker that peaked at
-   * ~1.4 GB on one large file never looks "idle" and stays pinned. Checking at
-   * task completion — when busy was just cleared and before the next dispatch —
-   * bounds RSS regardless of how steady the churn is. No-op while busy, so an
-   * in-flight task is never interrupted.
+   * Recycle a worker whose RSS stays over the threshold across consecutive
+   * task completions. The idle reaper alone can't catch this: under
+   * continuous churn (a busy monorepo trickling one small file at a time) a
+   * worker is dispatched again within the 60s idle window, so a genuinely
+   * pinned worker never looks "idle". Checking at task completion — when busy
+   * was just cleared and before the next dispatch — bounds RSS regardless of
+   * how steady the churn is. Requires BLOAT_STREAK_TO_RECYCLE consecutive
+   * over-threshold readings so a one-off high-water mark (V8 holding heap it
+   * frees on the next task's GC) doesn't execute a warm worker and force a
+   * model reload. No-op while busy, so an in-flight task is never
+   * interrupted.
    */
   private recycleIfBloated(worker: ProcessWorker) {
     if (
@@ -756,7 +774,12 @@ export class WorkerPool {
       return;
     }
     if (worker.lastRssBytes > WORKER_RSS_RECYCLE_MB * 1024 * 1024) {
-      this.recycleWorker(worker, "post-task");
+      worker.bloatStreak++;
+      if (worker.bloatStreak >= BLOAT_STREAK_TO_RECYCLE) {
+        this.recycleWorker(worker, "post-task");
+      }
+    } else {
+      worker.bloatStreak = 0;
     }
   }
 
