@@ -18,6 +18,20 @@ function hasSnapshot(modelDir: string): boolean {
 }
 
 /**
+ * Whether an MLX model already has a snapshot in the local pinned HF cache
+ * (~/.gmax/hf). Used by `gmax doctor` to report gpu-mode embed model status
+ * from the HF cache rather than the ONNX models dir (where MLX models never
+ * live). Independent of whether the embed server is currently running.
+ */
+export function isMlxModelCached(
+  modelId: string = DEFAULT_MLX_EMBED_MODEL,
+  localHfHome: string = PATHS.hfDir,
+): boolean {
+  const modelDirName = `models--${modelId.replace(/\//g, "--")}`;
+  return hasSnapshot(path.join(localHfHome, "hub", modelDirName));
+}
+
+/**
  * Resolve the HF_HOME to spawn the MLX embed server with, pinned to internal
  * disk (~/.gmax/hf).
  *

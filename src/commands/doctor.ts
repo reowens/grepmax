@@ -16,7 +16,14 @@ import {
   schemaDimAgentRow,
 } from "../config";
 import { readGlobalConfig } from "../lib/index/index-config";
+import {
+  gpuEmbedModelStatus,
+  onnxModelStatus,
+  summarizerServerStatus,
+  summaryCoverageStatus,
+} from "../lib/utils/doctor-status";
 import { gracefulExit } from "../lib/utils/exit";
+import { isMlxModelCached } from "../lib/utils/mlx-hf-cache";
 import { isProcessAlive, parseLock, removeLock } from "../lib/utils/lock";
 import {
   listProjects,
@@ -93,16 +100,42 @@ export const doctor = new Command("doctor")
       console.log(`Embed model: ${embedModel}`);
       console.log(`ColBERT model: ${MODEL_IDS.colbert}`);
 
-      const modelStatuses = [embedModel, MODEL_IDS.colbert].map((id) => {
-        const modelPath = path.join(models, ...id.split("/"));
-        return { id, path: modelPath, exists: fs.existsSync(modelPath) };
-      });
+      // Probe the MLX embed server once, up front: the gpu-mode embed model
+      // status is derived from it (the server, not the ONNX models dir, is the
+      // source of truth in gpu mode). Reused below for the "MLX Embed" line.
+      let embedUp = false;
+      let embedError = "";
+      try {
+        const res = await fetch("http://127.0.0.1:8100/health");
+        embedUp = res.ok;
+      } catch (err: any) {
+        embedError =
+          err.code === "ECONNREFUSED"
+            ? "connection refused"
+            : err.message || String(err);
+      }
 
-      modelStatuses.forEach(({ id, exists }) => {
-        console.log(
-          `${exists ? "ok" : "WARN"}  ${id}: ${exists ? "downloaded" : "will download on first use"}`,
-        );
-      });
+      // Embed model availability. In gpu mode the model is served by MLX from
+      // the pinned HF cache (~/.gmax/hf), never the ONNX models dir — report
+      // from the live server / HF cache. In cpu mode it's an ONNX model in
+      // ~/.gmax/models. ColBERT is always ONNX in-worker regardless of mode.
+      const onnxExists = (id: string) =>
+        fs.existsSync(path.join(models, ...id.split("/")));
+      const embedStatus =
+        globalConfig.embedMode === "gpu"
+          ? gpuEmbedModelStatus(
+              embedModel,
+              { up: embedUp },
+              isMlxModelCached(embedModel),
+            )
+          : onnxModelStatus(embedModel, onnxExists(embedModel));
+      const colbertStatus = onnxModelStatus(
+        MODEL_IDS.colbert,
+        onnxExists(MODEL_IDS.colbert),
+      );
+      for (const s of [embedStatus, colbertStatus]) {
+        console.log(`${s.symbol}  ${s.message}`);
+      }
 
       console.log(`\nLocal Project: ${process.cwd()}`);
       const projectRoot = findProjectRoot(process.cwd());
@@ -115,18 +148,7 @@ export const doctor = new Command("doctor")
         );
       }
 
-      // Check MLX embed server
-      let embedUp = false;
-      let embedError = "";
-      try {
-        const res = await fetch("http://127.0.0.1:8100/health");
-        embedUp = res.ok;
-      } catch (err: any) {
-        embedError =
-          err.code === "ECONNREFUSED"
-            ? "connection refused"
-            : err.message || String(err);
-      }
+      // MLX embed server (probed once above).
       console.log(
         `${embedUp ? "ok" : "WARN"}  MLX Embed: ${embedUp ? "running (port 8100)" : `not running${embedError ? ` (${embedError})` : ""}`}`,
       );
@@ -155,13 +177,13 @@ export const doctor = new Command("doctor")
         }
       }
 
-      // Check summarizer server
+      // Check summarizer server. Down is INFO, not WARN — opt-in, respawns on
+      // demand, idles out after 10min (see summarizerServerStatus).
       const summarizerUp = await fetch("http://127.0.0.1:8101/health")
         .then((r) => r.ok)
         .catch(() => false);
-      console.log(
-        `${summarizerUp ? "ok" : "WARN"}  Summarizer: ${summarizerUp ? "running (port 8101)" : "not running"}`,
-      );
+      const summarizerStatus = summarizerServerStatus(summarizerUp);
+      console.log(`${summarizerStatus.symbol}  ${summarizerStatus.message}`);
     }
 
     // --- Index Health ---
@@ -195,11 +217,8 @@ export const doctor = new Command("doctor")
             .select(["id"])
             .toArray()
         ).length;
-        const pct = Math.round((withSummary / totalChunks) * 100);
-        const symbol = pct >= 90 ? "ok" : pct > 0 ? "WARN" : "FAIL";
-        console.log(
-          `${symbol}  Summary coverage: ${withSummary}/${totalChunks} (${pct}%)`,
-        );
+        const coverage = summaryCoverageStatus(withSummary, totalChunks);
+        console.log(`${coverage.symbol}  ${coverage.message}`);
       } else if (!opts.agent && totalChunks === 0) {
         console.log("INFO  No indexed chunks yet");
       }

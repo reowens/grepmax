@@ -2,7 +2,10 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { resolveMlxHfHome } from "../src/lib/utils/mlx-hf-cache";
+import {
+  isMlxModelCached,
+  resolveMlxHfHome,
+} from "../src/lib/utils/mlx-hf-cache";
 
 const MODEL_ID = "test-org/test-embed-model";
 const MODEL_DIR_NAME = "models--test-org--test-embed-model";
@@ -84,5 +87,35 @@ describe("resolveMlxHfHome", () => {
       .readdirSync(path.join(localHfHome, "hub"))
       .filter((name) => name.startsWith(".seed-"));
     expect(leftovers).toEqual([]);
+  });
+});
+
+describe("isMlxModelCached", () => {
+  let tmp: string;
+  let localHfHome: string;
+
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), "gmax-hf-cached-"));
+    localHfHome = path.join(tmp, "local-hf");
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("is true when the model has a snapshot in the local HF cache", () => {
+    makeSourceCache(localHfHome);
+    expect(isMlxModelCached(MODEL_ID, localHfHome)).toBe(true);
+  });
+
+  it("is false when the cache dir is absent entirely", () => {
+    expect(isMlxModelCached(MODEL_ID, localHfHome)).toBe(false);
+  });
+
+  it("is false when the model dir exists but has no snapshots", () => {
+    fs.mkdirSync(path.join(localHfHome, "hub", MODEL_DIR_NAME, "snapshots"), {
+      recursive: true,
+    });
+    expect(isMlxModelCached(MODEL_ID, localHfHome)).toBe(false);
   });
 });
