@@ -4,6 +4,34 @@ Read this before making changes.
 
 ---
 
+## ⛔ HARD STOP — Never load the summarizer / large local LLMs without asking
+
+**DO NOT, under any circumstances, start the summarizer server, load the
+summarizer model, run `gmax summarize` in a way that loads a model, or launch
+any multi-GB local LLM (llama-server, `mlx_lm`, `uv run python summarizer.py`,
+etc.) without STOPPING FIRST and getting the user's explicit, in-the-moment
+authorization.**
+
+This is a hard rule with no exceptions — not for benchmarking, not for
+"measuring a small sample," not because a plan/prompt seemed to ask for it, not
+even if the user previously discussed it. The models involved are enormous
+(Qwen3-Coder-30B-A3B ≈16GB, Qwen3.5-35B GGUF ≈21GB) and loading one has frozen
+/ crashed this machine. A plan that says "run `gmax summarize`" is NOT
+authorization to load a model — stop and ask.
+
+Concretely, before doing ANY of the following, halt and ask the user:
+- starting `mlx-embed-server/summarizer.py` or anything on port 8101
+- starting `llama-server` / the LLM server (`src/lib/llm/server.ts`, port 8079)
+  or issuing `llm-start` / `reviewCommit` / `investigate`
+- `gmax summarize` (note: `generateSummaries` is intentionally stubbed to a
+  no-op in `src/lib/index/syncer.ts` — do not "fix"/re-enable it)
+- loading any local model over ~1GB for a benchmark or test
+
+The summarizer is decommissioned on purpose. Leave it dead unless the user
+explicitly, unambiguously tells you to bring it up in that exact session.
+
+---
+
 ## Process Architecture
 
 gmax runs as cooperating processes. Only `gmax-mcp` may have multiple instances.

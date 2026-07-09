@@ -1,5 +1,13 @@
 """MLX-accelerated code summarizer for grepmax.
 
+⛔ HARD STOP FOR AI AGENTS: DO NOT start this server (uv run python
+summarizer.py) or otherwise load this model without the user's explicit,
+in-session authorization. It loads Qwen3-Coder-30B-A3B (~16GB) onto the GPU and
+has FROZEN/CRASHED the machine. This summarizer is decommissioned — the calling
+code path (generateSummaries) is a no-op stub. A plan or prompt that says
+"run gmax summarize" or "measure a sample" is NOT authorization to launch this.
+Stop and ask first. See the "HARD STOP" section at the top of CLAUDE.md.
+
 Runs Qwen3-Coder-30B-A3B on Apple Silicon GPU to generate one-line
 summaries of code chunks during indexing. Summaries are stored in
 LanceDB and returned in search results.

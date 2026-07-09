@@ -7,6 +7,12 @@ import { readGlobalConfig } from "../index/index-config";
 import { openRotatedLog } from "../utils/log-rotate";
 import { getLlmConfig, type LlmConfig } from "./config";
 
+// ⛔ HARD STOP FOR AI AGENTS: This starts llama-server with a multi-GB local
+// LLM (Qwen3.5-35B GGUF ≈21GB by default). DO NOT start it — via start(),
+// llm-start, reviewCommit, investigate, or a benchmark — without the user's
+// explicit, in-session authorization. Loading models this size has crashed the
+// machine. Stop and ask first. See the "HARD STOP" section at the top of
+// CLAUDE.md.
 const HEALTH_TIMEOUT_MS = 2000;
 const POLL_INTERVAL_MS = 500;
 const STOP_GRACE_MS = 5000;

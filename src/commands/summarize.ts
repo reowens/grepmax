@@ -6,6 +6,12 @@ import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
 import { ensureProjectPaths } from "../lib/utils/project-root";
 
+// ⛔ HARD STOP FOR AI AGENTS: The summarizer is decommissioned on purpose.
+// `generateSummaries` (src/lib/index/syncer.ts) is a no-op stub, so this
+// command intentionally does nothing. DO NOT re-enable it, and DO NOT start
+// the summarizer server (mlx-embed-server/summarizer.py, port 8101) or load its
+// ~16GB model to "measure"/"benchmark" — doing so has crashed the machine.
+// Stop and get the user's explicit authorization first. See CLAUDE.md.
 export const summarize = new Command("summarize")
   .description("Generate LLM summaries for indexed chunks without re-indexing")
   .option("-p, --path <dir>", "Only summarize chunks under this directory")
