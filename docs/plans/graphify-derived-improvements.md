@@ -1,8 +1,8 @@
 ---
 type: plan
-status: completed
+status: active
 created: 2026-06-28T22:05:47Z
-updated: 2026-06-30T00:45:00Z
+updated: 2026-07-09T10:54:27Z
 surfaces:
   - graph
   - search
@@ -789,3 +789,7 @@ safishamsi/graphify @ v0.9.1. Three general-purpose agents produced subsystem
 reports (extraction/graph, incremental/caching, query/analysis); full reports were
 in the session task outputs. Verification of the call-graph claims was done by hand
 against gmax HEAD before this plan was written.
+
+## Version History
+
+- **2026-07-09T10:54:27Z** Status: completed → active — Fix invalid legacy status 'completed' (dropped from plan vocab). Phase 3 (Orientation Signal Completion Arc) is still active with a documented remaining backlog, so active — not archived — is accurate.
