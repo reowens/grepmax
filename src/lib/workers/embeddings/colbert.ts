@@ -25,12 +25,14 @@ export class ColbertModel {
   private session: ort.InferenceSession | null = null;
   public tokenizer: ColBERTTokenizer | null = null;
 
+  constructor(private readonly modelId = MODEL_IDS.colbert) {}
+
   async load() {
     if (this.session && this.tokenizer) return;
 
     this.tokenizer = new ColBERTTokenizer();
 
-    const basePath = path.join(CACHE_DIR, MODEL_IDS.colbert);
+    const basePath = path.join(CACHE_DIR, this.modelId);
     const onnxDir = path.join(basePath, "onnx");
 
     const modelPath = path.join(onnxDir, "model_int8.onnx");

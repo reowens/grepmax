@@ -50,8 +50,8 @@ function stubStore(db: VectorDB) {
     "ensureDiskOk",
   ).mockImplementation(() => {});
   vi.spyOn(
-    db as unknown as { ensureTable: () => Promise<unknown> },
-    "ensureTable",
+    db as unknown as { ensureTableUnsafe: () => Promise<unknown> },
+    "ensureTableUnsafe",
   ).mockResolvedValue(table);
   return table;
 }
@@ -63,6 +63,11 @@ describe("embeddingEnv", () => {
     expect(env.GMAX_EMBED_ONNX_MODEL).toBe(
       "onnx-community/granite-embedding-english-r2-ONNX",
     );
+    expect(JSON.parse(env.GMAX_EMBEDDING_GENERATION)).toMatchObject({
+      tier: "standard",
+      vectorDim: 768,
+    });
+    expect(env.GMAX_EMBED_MODE).toBe("cpu");
   });
 });
 
@@ -84,15 +89,14 @@ describe("VectorDB dimension handling", () => {
     ).rejects.toThrow(/expected 768d/);
   });
 
-  it("points dimension-mismatch errors at the global rebuild command", async () => {
-    // The shared table is fixed-width, so a per-project `index --reset` can't
-    // fix a width mismatch — the failure must steer users to `gmax repair
-    // --rebuild` instead.
+  it("points to guarded rebuild on dimension mismatch", async () => {
+    // The shared table is fixed-width, so a per-project reset cannot fix this;
+    // the failure must remain non-destructive until guarded rebuild is invoked.
     const db = new VectorDB("/tmp/gmax-dim-test", 768);
     stubStore(db);
     await expect(
       db.insertBatch([makeRecord(new Array(384).fill(0.1))]),
-    ).rejects.toThrow(/gmax repair --rebuild/);
+    ).rejects.toThrow(/repair --rebuild/i);
   });
 
   it("accepts a vector of exactly the configured width", async () => {

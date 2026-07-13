@@ -145,6 +145,19 @@ export async function flushBatchToDb(
   }
 }
 
+export function computePathRetry(
+  previousFailures: number,
+  maxFailures: number,
+  baseDelayMs: number,
+): { retry: boolean; failures: number; backoffMs: number } {
+  const failures = previousFailures + 1;
+  return {
+    retry: failures < maxFailures,
+    failures,
+    backoffMs: Math.min(baseDelayMs * 2 ** failures, 30_000),
+  };
+}
+
 export function computeRetryAction(
   batch: Map<string, "change" | "unlink">,
   retryCount: Map<string, number>,

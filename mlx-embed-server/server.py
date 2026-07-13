@@ -63,7 +63,7 @@ logger = logging.getLogger("mlx-embed")
 
 import mlx.core as mx
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from mlx_embeddings import load
 from pydantic import BaseModel
 from transformers import AutoTokenizer
@@ -71,6 +71,7 @@ from transformers import AutoTokenizer
 MODEL_ID = os.environ.get(
     "MLX_EMBED_MODEL", "ibm-granite/granite-embedding-small-english-r2"
 )
+OWNER_TOKEN = os.environ.get("GMAX_EMBED_OWNER_TOKEN")
 PORT = int(os.environ.get("MLX_EMBED_PORT", "8100"))
 MAX_BATCH = int(os.environ.get("MLX_EMBED_MAX_BATCH", "64"))
 IDLE_TIMEOUT_S = int(os.environ.get("MLX_EMBED_IDLE_TIMEOUT", "1800"))  # 30 min
@@ -159,11 +160,13 @@ app = FastAPI(lifespan=lifespan)
 
 class EmbedRequest(BaseModel):
     texts: list[str]
+    expected_model: str | None = None
 
 
 class EmbedResponse(BaseModel):
     vectors: list[list[float]]
     dim: int
+    model: str
 
 
 @app.post("/embed")
@@ -171,7 +174,18 @@ async def embed(request: EmbedRequest) -> EmbedResponse:
     global last_activity
     last_activity = time.time()
 
-    texts = request.texts[:MAX_BATCH]
+    if len(request.texts) > MAX_BATCH:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Batch contains {len(request.texts)} texts; maximum is {MAX_BATCH}",
+        )
+    if request.expected_model and request.expected_model != MODEL_ID:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Requested model {request.expected_model} is not loaded",
+        )
+
+    texts = request.texts
     start = time.monotonic()
 
     async with _mlx_lock:
@@ -191,6 +205,7 @@ async def embed(request: EmbedRequest) -> EmbedResponse:
     return EmbedResponse(
         vectors=vectors_list,
         dim=len(vectors_list[0]) if vectors_list else 0,
+        model=MODEL_ID,
     )
 
 
@@ -198,7 +213,10 @@ async def embed(request: EmbedRequest) -> EmbedResponse:
 async def health():
     global last_activity
     last_activity = time.time()
-    return {"status": "ok", "model": MODEL_ID}
+    response = {"status": "ok", "model": MODEL_ID}
+    if OWNER_TOKEN:
+        response["owner"] = OWNER_TOKEN
+    return response
 
 
 def main():

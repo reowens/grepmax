@@ -27,15 +27,16 @@ describe("resolveCrossProjectScope", () => {
     const scope = resolveCrossProjectScope({});
     expect(scope.active).toBe(false);
     expect(scope.roots).toEqual([]);
+    expect(scope.projectRoots).toEqual([]);
   });
 
-  it("--all-projects scopes to every non-error project with no project_roots clause", () => {
+  it("--all-projects scopes to every non-error project explicitly", () => {
     const scope = resolveCrossProjectScope({ allProjects: true });
     expect(scope.active).toBe(true);
     // error-status "legacy" is excluded.
     expect(scope.roots.map((r) => r.name)).toEqual(["api", "gateway"]);
-    // Absence of project_roots IS "everything" — don't over-constrain.
-    expect(scope.projectRootsCsv).toBeUndefined();
+    expect(scope.projectRoots).toEqual(["/work/api", "/work/gateway"]);
+    expect(scope.projectRootsCsv).toBe("/work/api,/work/gateway");
     expect(scope.excludeProjectRootsCsv).toBeUndefined();
   });
 
@@ -43,6 +44,7 @@ describe("resolveCrossProjectScope", () => {
     const scope = resolveCrossProjectScope({ projects: "api" });
     expect(scope.active).toBe(true);
     expect(scope.roots.map((r) => r.name)).toEqual(["api"]);
+    expect(scope.projectRoots).toEqual(["/work/api"]);
     expect(scope.projectRootsCsv).toBe("/work/api");
   });
 
@@ -59,8 +61,9 @@ describe("resolveCrossProjectScope", () => {
       excludeProjects: "gateway",
     });
     expect(scope.roots.map((r) => r.name)).toEqual(["api"]);
+    expect(scope.projectRoots).toEqual(["/work/api"]);
     expect(scope.excludeProjectRootsCsv).toBe("/work/gateway");
-    expect(scope.projectRootsCsv).toBeUndefined();
+    expect(scope.projectRootsCsv).toBe("/work/api");
   });
 
   it("--projects minus --exclude-projects collapses to project_roots", () => {

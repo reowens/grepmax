@@ -291,25 +291,38 @@ describe("maybeWarnStaleEmbedding", () => {
     expect(out).toMatch(/foo/);
     expect(out).toMatch(/384/);
     expect(out).toMatch(/768/);
-    // A dim change needs the global rebuild, not a per-project reset.
-    expect(out).toMatch(/gmax repair --rebuild/);
+    expect(out).toMatch(/repair --rebuild/i);
     expect(out).not.toMatch(/index --reset/);
     expect(out).toMatch(/^WARN/);
   });
 
-  it("uses a 'hint' label for an additive same-dim model swap", async () => {
-    // Current config defaults to small/384; project tagged standard but still
-    // 384d → same dim, model changed → additive.
-    writeRegistry([
-      { name: "foo", root: "/proj/foo", modelTier: "standard", vectorDim: 384 },
-    ]);
-    const { maybeWarnStaleEmbedding } = await import(
-      "../src/lib/utils/stale-hint"
-    );
-    maybeWarnStaleEmbedding("/proj/foo");
-    const out = emitted();
-    expect(out).toMatch(/^hint/);
-    expect(out).toMatch(/mix models/);
+  it("treats a same-dim model swap as incompatible", async () => {
+    const { MODEL_TIERS } = await import("../src/config");
+    MODEL_TIERS.alternate = {
+      ...MODEL_TIERS.small,
+      id: "alternate",
+      onnxModel: "test/alternate-onnx",
+      mlxModel: "test/alternate-mlx",
+    };
+    try {
+      writeRegistry([
+        {
+          name: "foo",
+          root: "/proj/foo",
+          modelTier: "alternate",
+          vectorDim: 384,
+        },
+      ]);
+      const { maybeWarnStaleEmbedding } = await import(
+        "../src/lib/utils/stale-hint"
+      );
+      maybeWarnStaleEmbedding("/proj/foo");
+      const out = emitted();
+      expect(out).toMatch(/^WARN/);
+      expect(out).toMatch(/stale embedding generation/);
+    } finally {
+      delete MODEL_TIERS.alternate;
+    }
   });
 
   it("stays silent for a current index", async () => {
@@ -390,7 +403,8 @@ describe("maybeWarnStaleEmbedding", () => {
     maybeWarnStaleEmbedding("/proj/foo", { agent: true });
     const out = emitted();
     expect(out).toMatch(/^stale_embedding\t/);
-    expect(out).toMatch(/dim_changed=true/);
+    expect(out).toMatch(/indexed_fingerprint=/);
+    expect(out).toMatch(/current_fingerprint=/);
     expect(out).toMatch(/severity=breaking/);
     expect(out).toMatch(/indexed_dim=384/);
     expect(out).toMatch(/current_dim=768/);

@@ -16,7 +16,8 @@ export interface WatcherInfo {
   pid: number;
   projectRoot: string;
   startTime: number;
-  status?: "syncing" | "watching" | "summarizing";
+  status?: "syncing" | "watching" | "summarizing" | "degraded";
+  lastError?: string;
   lastReindex?: number;
   lastHeartbeat?: number;
 }
@@ -72,6 +73,7 @@ export function updateWatcherStatus(
   pid: number,
   status: WatcherInfo["status"],
   lastReindex?: number,
+  lastError?: string,
 ): void {
   const db = getDb();
   // Find entry by PID (iterate since key is projectRoot)
@@ -82,6 +84,7 @@ export function updateWatcherStatus(
         status,
         lastHeartbeat: Date.now(),
         ...(lastReindex ? { lastReindex } : {}),
+        ...(lastError ? { lastError } : { lastError: undefined }),
       });
       return;
     }

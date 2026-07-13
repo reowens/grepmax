@@ -22,7 +22,7 @@ const HEARTBEAT_FRESH_THRESHOLD_MS = 150_000;
  */
 export function sendDaemonCommand(
   cmd: Record<string, unknown>,
-  opts?: { timeoutMs?: number },
+  opts?: { timeoutMs?: number; signal?: AbortSignal },
 ): Promise<DaemonResponse> {
   const timeout = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
@@ -31,15 +31,24 @@ export function sendDaemonCommand(
     const finish = (resp: DaemonResponse) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timer);
+      opts?.signal?.removeEventListener("abort", onAbort);
       socket.destroy();
       resolve(resp);
     };
 
     const socket = net.createConnection({ path: PATHS.daemonSocket });
+    const onAbort = () => finish({ ok: false, error: "aborted" });
 
     const timer = setTimeout(() => {
       finish({ ok: false, error: "timeout" });
     }, timeout);
+
+    if (opts?.signal?.aborted) {
+      finish({ ok: false, error: "aborted" });
+      return;
+    }
+    opts?.signal?.addEventListener("abort", onAbort, { once: true });
 
     socket.on("connect", () => {
       socket.write(`${JSON.stringify(cmd)}\n`);
@@ -237,7 +246,7 @@ export async function ensureDaemonRunning(): Promise<boolean> {
 
   if (!(await isDaemonRunning())) {
     const { spawnDaemon } = await import("./daemon-launcher");
-    const pid = spawnDaemon();
+    const pid = await spawnDaemon();
     if (!pid) return false;
   }
 
@@ -272,7 +281,7 @@ const DEFAULT_STREAMING_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 export function sendStreamingCommand(
   cmd: Record<string, unknown>,
   onProgress: (msg: StreamingProgress) => void,
-  opts?: { timeoutMs?: number },
+  opts?: { timeoutMs?: number; signal?: AbortSignal },
 ): Promise<StreamingDone> {
   const timeout = opts?.timeoutMs ?? DEFAULT_STREAMING_TIMEOUT_MS;
 
@@ -284,6 +293,7 @@ export function sendStreamingCommand(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      opts?.signal?.removeEventListener("abort", onAbort);
       socket.destroy();
       if (result instanceof Error) reject(result);
       else resolve(result);
@@ -297,7 +307,18 @@ export function sendStreamingCommand(
     };
 
     const socket = net.createConnection({ path: PATHS.daemonSocket });
+    const onAbort = () => {
+      const error = new Error("Aborted");
+      error.name = "AbortError";
+      finish(error);
+    };
     resetTimer();
+
+    if (opts?.signal?.aborted) {
+      onAbort();
+      return;
+    }
+    opts?.signal?.addEventListener("abort", onAbort, { once: true });
 
     socket.on("connect", () => {
       socket.write(`${JSON.stringify(cmd)}\n`);

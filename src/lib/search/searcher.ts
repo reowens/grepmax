@@ -116,14 +116,30 @@ export function buildWhereClause(
     parts.push(`role = '${escapeSqlString(roleFilter)}'`);
   }
 
-  const projectRoots = filters?.project_roots;
-  if (typeof projectRoots === "string" && projectRoots) {
-    const roots = projectRoots.split(",");
-    const clauses = roots.map((r) => {
-      const prefix = r.endsWith("/") ? r : `${r}/`;
-      return pathStartsWith(prefix);
-    });
-    parts.push(`(${clauses.join(" OR ")})`);
+  const projectRoots = filters?.projectRoots;
+  if (Array.isArray(projectRoots)) {
+    const roots = projectRoots.filter(
+      (root): root is string => typeof root === "string" && root.length > 0,
+    );
+    if (roots.length === 0) {
+      parts.push("1 = 0");
+    } else {
+      const clauses = roots.map((root) => {
+        const prefix = root.endsWith("/") ? root : `${root}/`;
+        return pathStartsWith(prefix);
+      });
+      parts.push(`(${clauses.join(" OR ")})`);
+    }
+  } else {
+    const legacyProjectRoots = filters?.project_roots;
+    if (typeof legacyProjectRoots === "string" && legacyProjectRoots) {
+      const roots = legacyProjectRoots.split(",");
+      const clauses = roots.map((r) => {
+        const prefix = r.endsWith("/") ? r : `${r}/`;
+        return pathStartsWith(prefix);
+      });
+      parts.push(`(${clauses.join(" OR ")})`);
+    }
   }
 
   const excludeRoots = filters?.exclude_project_roots;
@@ -157,7 +173,10 @@ export function buildWhereClause(
 }
 
 export class Searcher {
-  constructor(private db: VectorDB) {}
+  constructor(
+    private db: VectorDB,
+    private readonly workerPool = getWorkerPool(),
+  ) {}
 
   private mapRecordToChunk(
     record: Partial<VectorRecord>,
@@ -463,7 +482,7 @@ export class Searcher {
     // Bare-identifier queries get symbol-definition promotion (see below).
     const symbolQuery = asSymbolQuery(query);
 
-    const pool = getWorkerPool();
+    const pool = this.workerPool;
 
     if (signal?.aborted) {
       const err = new Error("Aborted");
@@ -497,12 +516,7 @@ export class Searcher {
       Number.isFinite(envPreK) && envPreK > 0
         ? envPreK
         : Math.max(finalLimit * 5, 500);
-    let table: Table;
-    try {
-      table = await this.db.ensureTable();
-    } catch {
-      return { data: [] };
-    }
+    const table: Table = await this.db.ensureTable();
 
     // Ensure FTS index exists (lazy init, retry periodically on failure)
     const now = Date.now();

@@ -1,12 +1,19 @@
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  containMcpTarget,
   err,
   filterMcpSearchResults,
   formatMcpPointerSearchResults,
   formatMcpSurprisingConnections,
   isExplicitCrossProjectSearch,
   mcpLogQuery,
+  mcpRootPrefix,
   ok,
+  resolveMcpProject,
+  resolveMcpSourceFile,
   toStringArray,
 } from "../src/commands/mcp";
 import type { SurpriseAnalysisResult } from "../src/lib/analysis/surprising-connections";
@@ -87,6 +94,77 @@ describe("isExplicitCrossProjectSearch", () => {
     expect(isExplicitCrossProjectSearch({ projects: "  " })).toBe(false);
     expect(isExplicitCrossProjectSearch({ exclude_projects: "" })).toBe(false);
     expect(isExplicitCrossProjectSearch({ scope: "project" })).toBe(false);
+  });
+});
+
+describe("MCP project and path containment", () => {
+  const projects = [
+    {
+      root: "/work/api",
+      name: "api",
+      vectorDim: 384,
+      modelTier: "small",
+      embedMode: "cpu",
+      lastIndexed: "2026-01-01T00:00:00Z",
+      status: "indexed" as const,
+    },
+    {
+      root: "/work/application",
+      name: "application",
+      vectorDim: 384,
+      modelTier: "small",
+      embedMode: "cpu",
+      lastIndexed: "2026-01-01T00:00:00Z",
+      status: "indexed" as const,
+    },
+  ];
+
+  it("resolves exact names, roots, and the longest registered parent", () => {
+    expect(resolveMcpProject("api", "/tmp", projects)?.root).toBe("/work/api");
+    expect(resolveMcpProject("/work/api", "/tmp", projects)?.name).toBe("api");
+    expect(resolveMcpProject(undefined, "/work/api/src", projects)?.name).toBe(
+      "api",
+    );
+  });
+
+  it("does not resolve arbitrary or sibling-prefix roots", () => {
+    expect(resolveMcpProject("/work/other", "/tmp", projects)).toBeUndefined();
+    expect(
+      resolveMcpProject(undefined, "/work/api-other/src", projects),
+    ).toBeUndefined();
+  });
+
+  it("rejects path-like targets outside the selected project", () => {
+    expect(containMcpTarget("/work/api", "UserService")).toBe("UserService");
+    expect(containMcpTarget("/work/api", "src/user.ts")).toBe(
+      "/work/api/src/user.ts",
+    );
+    expect(() => containMcpTarget("/work/api", "../secret.ts")).toThrow(
+      /outside project root/i,
+    );
+  });
+
+  it("uses a separator-safe root prefix for context searches", () => {
+    expect(mcpRootPrefix("/work/api")).toBe(`/work/api${path.sep}`);
+  });
+
+  it("does not resolve poisoned or symlink-replaced search result files", () => {
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), "gmax-mcp-source-"));
+    try {
+      const root = path.join(parent, "api");
+      const sibling = path.join(parent, "api-old");
+      fs.mkdirSync(root);
+      fs.mkdirSync(sibling);
+      const poisoned = path.join(sibling, "secret.ts");
+      fs.writeFileSync(poisoned, "secret");
+      expect(resolveMcpSourceFile([root], poisoned)).toBeUndefined();
+
+      const replaced = path.join(root, "source.ts");
+      fs.symlinkSync(poisoned, replaced);
+      expect(resolveMcpSourceFile([root], replaced)).toBeUndefined();
+    } finally {
+      fs.rmSync(parent, { recursive: true, force: true });
+    }
   });
 });
 

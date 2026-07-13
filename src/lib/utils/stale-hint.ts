@@ -16,10 +16,9 @@ import {
   CONFIG,
   DEFAULT_MODEL_TIER,
   describeChunkerGap,
-  describeEmbeddingGap,
   MODEL_TIERS,
-  REBUILD_COMMAND,
 } from "../../config";
+import { projectEmbeddingStatus } from "../index/embedding-status";
 import { readGlobalConfig } from "../index/index-config";
 import { getProject, listProjects } from "./project-registry";
 
@@ -99,11 +98,8 @@ export function maybeWarnStaleEmbedding(
   if (project.status && project.status !== "indexed") return;
 
   const current = readGlobalConfig();
-  const gap = describeEmbeddingGap(
-    { modelTier: project.modelTier, vectorDim: project.vectorDim },
-    { modelTier: current.modelTier, vectorDim: current.vectorDim },
-  );
-  if (!gap) return;
+  const identity = projectEmbeddingStatus(project, current);
+  if (identity.state !== "stale" || !identity.built) return;
 
   embeddingEmitted = true;
 
@@ -113,29 +109,21 @@ export function maybeWarnStaleEmbedding(
     const fields = [
       "stale_embedding",
       `project=${name}`,
-      `indexed_model=${gap.fromModel}`,
-      `current_model=${gap.toModel}`,
-      `indexed_dim=${gap.fromDim}`,
-      `current_dim=${gap.toDim}`,
-      `dim_changed=${gap.dimChanged}`,
-      `severity=${gap.severity}`,
-      // A dim change needs the global rebuild (shared table is fixed-width); a
-      // same-dim model swap can use a per-project reset.
-      `fix=${gap.dimChanged ? REBUILD_COMMAND : "gmax index --reset"}`,
+      `indexed_model=${identity.built.tier}`,
+      `current_model=${identity.configured.tier}`,
+      `indexed_dim=${identity.built.vectorDim}`,
+      `current_dim=${identity.configured.vectorDim}`,
+      `indexed_fingerprint=${identity.built.fingerprint}`,
+      `current_fingerprint=${identity.configured.fingerprint}`,
+      "severity=breaking",
+      "fix=gmax repair --rebuild",
     ].join("\t");
     process.stderr.write(`${fields}\n`);
     return;
   }
 
-  const label = gap.severity === "breaking" ? "WARN" : "hint";
-  const detail = gap.dimChanged
-    ? `vector dim ${gap.fromDim}→${gap.toDim} (incompatible — scores invalid until re-embed)`
-    : `model '${gap.fromModel}'→'${gap.toModel}' (same dim; results mix models until re-embed)`;
-  const fix = gap.dimChanged
-    ? `Run '${REBUILD_COMMAND}'`
-    : "Run 'gmax index --reset'";
   process.stderr.write(
-    `${label}  gmax: '${name}' indexed with embedding ${detail}. ${fix}. (silence: GMAX_NO_STALE_HINT=1)\n`,
+    `WARN  gmax: '${name}' uses a stale embedding generation (${identity.built.tier} ${identity.built.vectorDim}d → ${identity.configured.tier} ${identity.configured.vectorDim}d). Run 'gmax repair --rebuild' to rebuild the whole corpus. (silence: GMAX_NO_STALE_HINT=1)\n`,
   );
 }
 

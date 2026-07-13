@@ -8,7 +8,12 @@ import { VectorDB } from "../lib/store/vector-db";
 import { toArr } from "../lib/utils/arrow";
 import { packByBudget } from "../lib/utils/budget-pack";
 import { gracefulExit } from "../lib/utils/exit";
+import { readContainedTextFileSync } from "../lib/utils/file-utils";
 import { escapeSqlString, pathStartsWith } from "../lib/utils/filter-builder";
+import {
+  isPathWithin,
+  resolveContainedPath,
+} from "../lib/utils/path-containment";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
@@ -94,7 +99,10 @@ function resolveExistingPath(
     path.resolve(projectRoot, target),
   ];
   for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate;
+    if (!fs.existsSync(candidate)) continue;
+    return resolveContainedPath(projectRoot, candidate, {
+      verifyExistingTarget: true,
+    });
   }
   return null;
 }
@@ -136,7 +144,7 @@ async function renderPathContext(
     return state;
   }
 
-  const content = fs.readFileSync(absPath, "utf-8");
+  const content = readContainedTextFileSync(projectRoot, absPath);
   const skeletonizer = new Skeletonizer();
   await skeletonizer.init();
   if (skeletonizer.isSupported(absPath).supported) {
@@ -225,9 +233,12 @@ export const context = new Command("context")
         maxResults,
         { rerank: true },
         {},
-        projectRoot,
+        `${projectRoot}/`,
       );
-      if (response.data.length === 0) {
+      const scopedData = response.data.filter((result) =>
+        isPathWithin(projectRoot, chunkPath(result)),
+      );
+      if (scopedData.length === 0) {
         console.log(`No results found for "${topic}".`);
         return;
       }
@@ -241,11 +252,11 @@ export const context = new Command("context")
       tokensUsed += estimateTokens(header);
 
       // Phase 2: Entry points (ORCHESTRATION role results)
-      const orchestrators = response.data.filter(
+      const orchestrators = scopedData.filter(
         (r) => r.role === "ORCHESTRATION",
       );
       const entryPoints =
-        orchestrators.length > 0 ? orchestrators : response.data.slice(0, 3);
+        orchestrators.length > 0 ? orchestrators : scopedData.slice(0, 3);
 
       const epSection: string[] = ["\n## Entry Points"];
       for (const r of entryPoints.slice(0, 5)) {
@@ -271,13 +282,20 @@ export const context = new Command("context")
       // relevant one can fill the remaining budget instead of aborting the rest.
       const topChunks = entryPoints.slice(0, 3);
       const bodyBlobs = topChunks.map((r) => {
-        const absP = chunkPath(r);
+        let absP: string;
+        try {
+          absP = resolveContainedPath(projectRoot, chunkPath(r), {
+            verifyExistingTarget: true,
+          });
+        } catch {
+          return null;
+        }
         const startLine = chunkStartLine(r);
         const endLine = chunkEndLine(r);
         const sym = toArr((r as any).defined_symbols)?.[0] ?? "";
         const parentSym = String((r as any).parent_symbol || "");
         try {
-          const content = fs.readFileSync(absP, "utf-8");
+          const content = readContainedTextFileSync(projectRoot, absP);
           const allLines = content.split("\n");
           const body = allLines
             .slice(startLine, Math.min(endLine + 1, allLines.length))
@@ -319,7 +337,19 @@ export const context = new Command("context")
 
       // Phase 4: File skeletons for unique files
       const uniqueFiles = [
-        ...new Set(response.data.map((r) => chunkPath(r)).filter(Boolean)),
+        ...new Set(
+          scopedData
+            .map((r) => {
+              try {
+                return resolveContainedPath(projectRoot, chunkPath(r), {
+                  verifyExistingTarget: true,
+                });
+              } catch {
+                return "";
+              }
+            })
+            .filter(Boolean),
+        ),
       ].slice(0, 5);
 
       const skelSection: string[] = ["\n## File Structure"];
@@ -329,7 +359,7 @@ export const context = new Command("context")
       for (const absP of uniqueFiles) {
         if (!skeletonizer.isSupported(absP).supported) continue;
         try {
-          const content = fs.readFileSync(absP, "utf-8");
+          const content = readContainedTextFileSync(projectRoot, absP);
           const result = await skeletonizer.skeletonizeFile(absP, content);
           if (!result.success) continue;
 
@@ -351,7 +381,7 @@ export const context = new Command("context")
       // Phase 5: Related files summary
       const table = await vectorDb.ensureTable();
       const allSymbols = new Set<string>();
-      for (const r of response.data) {
+      for (const r of scopedData) {
         for (const s of toArr(r.defined_symbols)) allSymbols.add(s);
       }
 

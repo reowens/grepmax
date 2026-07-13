@@ -1,6 +1,7 @@
 import * as os from "node:os";
 import { Command } from "commander";
 import { PATHS } from "../config";
+import { projectEmbeddingStatus } from "../lib/index/embedding-status";
 import { readGlobalConfig } from "../lib/index/index-config";
 import { gracefulExit } from "../lib/utils/exit";
 import { pathStartsWith } from "../lib/utils/filter-builder";
@@ -115,8 +116,9 @@ Examples:
         else st = "idle";
         const isCurrent = project.root === currentRoot;
         const count = chunkCounts.get(project.root) ?? project.chunkCount;
+        const identity = projectEmbeddingStatus(project, globalConfig);
         console.log(
-          `${project.name}\t${formatChunks(count)}\t${formatAge(project.lastIndexed)}\t${st}${isCurrent ? "\tcurrent" : ""}`,
+          `${project.name}\t${formatChunks(count)}\t${formatAge(project.lastIndexed)}\t${st}\tembedding=${identity.state}${isCurrent ? "\tcurrent" : ""}`,
         );
       }
       await gracefulExit();
@@ -152,13 +154,14 @@ Examples:
 
       // Age column
       const age = formatAge(project.lastIndexed);
+      const embedding = projectEmbeddingStatus(project, globalConfig).state;
 
       // Current marker
       const marker = isCurrent ? style.cyan(" ←") : "";
 
       const name = project.name.padEnd(nameWidth);
       console.log(
-        `  ${name}  ${chunks.padEnd(12)}  ${age.padEnd(10)}  ${statusStr}${marker}`,
+        `  ${name}  ${chunks.padEnd(12)}  ${age.padEnd(10)}  ${statusStr}  embedding:${embedding}${marker}`,
       );
     }
 

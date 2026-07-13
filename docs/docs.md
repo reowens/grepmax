@@ -7,22 +7,27 @@ items below are the ones still live or explicitly gated.
 
 ## Current Next
 
-1. **Phase 7 `impact` rollup MVP is implemented.** CLI file-target rollups, opt-in agent/MCP rollup
+1. **Repository audit Phases 1-3, 4A, 5A/B, and 6-8 are complete.** The guarded whole-corpus rebuild
+   now uses exclusive daemon/store admission, immutable resource generations, durable registry
+   journaling, strict physical-width verification, and per-project compare-and-set completion.
+2. **Agent UX Phase 7 `impact` rollup MVP is implemented.** CLI file-target rollups, opt-in agent/MCP rollup
    TSV, package/export grouping, top-K caps, and `--flat` compatibility are in the working tree.
-2. **Narrowed Phase 9 SQL-template skeleton MVP is implemented.** TS/JS skeleton summaries surface
+3. **Narrowed Phase 9 SQL-template skeleton MVP is implemented.** TS/JS skeleton summaries surface
    operation/table hints for hidden ``sql`...` `` tagged templates. The full GraphQL/SQL/CSS parser is
    intentionally not built.
-3. **MCP search scope leak is archived.** Fresh MCP smoke from `qsys/qsys-training` and
+4. **MCP search scope leak is archived.** Fresh MCP smoke from `qsys/qsys-training` and
    `qsys/docs` passed: default search stayed qsys-scoped; `scope:"all"` / `projects:"platform"`
    still opt into cross-project search.
-4. **Do not reopen Graphify or semantic-ranking experiments by default.** Graphify is closed with
+5. **Do not reopen Graphify or semantic-ranking experiments by default.** Graphify is closed with
    `surprises` kept experimental; PPR/HyDE/query expansion/cache remain measurement-gated.
 
 ## Remaining Work
 
 **Actionable now:**
 
-1. No active Agent UX feature build target remains after Phase 7 rollup and narrowed Phase 9 SQL
+1. No active repository-audit critical-path phase remains. Phase 4B cache metadata remains an
+   independent evidence-gated deferral, not required for audit closure.
+2. No active Agent UX feature build target remains after Phase 7 rollup and narrowed Phase 9 SQL
    skeleton summaries. Phase 12 remains opportunistic refactor work only.
 
 ## Phase 7 Scope
@@ -120,6 +125,7 @@ aggregation over the data gmax already has.
 
 | Priority | Plan | Next Work |
 |---|---|---|
+| Done | [Repository Audit Fix Plan](plans/2026-07-09-repository-audit-fixes.md) | Phases 1-3, 4A, 5A/B, and 6-8 are complete. Phase 4B remains measured/deferred. |
 | Done | [Mcp Search Scope Leak](archived/mcp-search-scope-leak.md) | Fix A+B shipped and fresh MCP smoke passed from qsys subdirectories. Also fixed source-mode worker bootstrap from non-gmax cwd. |
 | Done | [Graphify Derived Improvements](plans/graphify-derived-improvements.md) | Phase 3A-3E complete in working tree. Disposition: keep `gmax surprises` / MCP `surprising_connections` experimental; revisit only with new corpus evidence. |
 | Done | [gmax — Agent UX Backlog](agent-ux-proposals.md) | Phase 7 `impact` rollup MVP and narrowed Phase 9 SQL-template skeleton MVP implemented. Remaining Agent UX work is opportunistic Phase 12 refactor only. |
@@ -135,9 +141,12 @@ aggregation over the data gmax already has.
 
 | Doc | Status |
 |-----|--------|
+| [Repository Audit - 2026-07-09](2026-07-09-repository-audit.md) | Active |
 | [gmax — Agent UX Backlog](agent-ux-proposals.md) | Active |
 | [Embedding Layout Decision](embedding-layout-decision.md) | Active |
 | [Semantic Search — Open Backlog](plans/2026-05-25-semantic-search-landscape.md) | Active |
+| [Repository Audit Fix Plan](plans/2026-07-09-repository-audit-fixes.md) | Active |
+| [Graphify Derived Improvements](plans/graphify-derived-improvements.md) | Active |
 
 ## Planned
 
@@ -153,7 +162,7 @@ aggregation over the data gmax already has.
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 5 recent or high-signal highlights out of 40 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 5 recent or high-signal highlights out of 41 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|

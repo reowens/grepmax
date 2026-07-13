@@ -21,15 +21,18 @@ export class GraniteModel {
   private tokenizer: PreTrainedTokenizer | null = null;
   private readonly vectorDimensions: number;
 
-  constructor(vectorDim?: number) {
+  constructor(
+    vectorDim?: number,
+    private readonly modelId = process.env.GMAX_EMBED_ONNX_MODEL ||
+      MODEL_IDS.embed,
+  ) {
     this.vectorDimensions = vectorDim ?? CONFIG.VECTOR_DIM;
   }
 
   private resolvePaths(): { modelPath: string; tokenizerPath: string } {
     // Honor the active tier's ONNX model (propagated from the pool); fall back
     // to the small-tier default when unset (standalone/test invocations).
-    const modelId = process.env.GMAX_EMBED_ONNX_MODEL || MODEL_IDS.embed;
-    const basePath = path.join(CACHE_DIR, modelId);
+    const basePath = path.join(CACHE_DIR, this.modelId);
     const onnxDir = path.join(basePath, "onnx");
     const candidates = ["model_q4.onnx", "model.onnx"];
 

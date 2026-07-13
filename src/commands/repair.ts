@@ -1,50 +1,101 @@
-import * as readline from "node:readline";
 import { Command } from "commander";
-import ora from "ora";
 import { PATHS, REBUILD_COMMAND } from "../config";
 import { readGlobalConfig } from "../lib/index/index-config";
 import { VectorDB } from "../lib/store/vector-db";
+import {
+  ensureDaemonRunning,
+  sendDaemonCommand,
+  sendStreamingCommand,
+} from "../lib/utils/daemon-client";
 import { gracefulExit } from "../lib/utils/exit";
 import { listProjects } from "../lib/utils/project-registry";
 
-function confirm(message: string): Promise<boolean> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-  return new Promise((resolve) => {
-    rl.question(`${message} [y/N] `, (answer) => {
-      rl.close();
-      resolve(answer.toLowerCase() === "y");
-    });
-  });
-}
+const REBUILD_PROTOCOL = 1;
 
 export const repair = new Command("repair")
   .description("Repair the centralized index (recover from a schema mismatch)")
   .option(
     "--rebuild",
-    "Drop the shared vector table and re-index every project at the configured embedding dim",
+    "Run the guarded exclusive whole-corpus generation rebuild",
     false,
   )
-  .option("-y, --yes", "Skip the confirmation prompt", false)
   .addHelpText(
     "after",
     `
 The shared LanceDB \`chunks\` table is fixed-width at creation. Switching model
 tiers (e.g. small 384d -> standard 768d) strands the table at the old width, so
 every write then fails. A per-project \`gmax index --reset\` only deletes rows —
-it can't change the table width. \`${REBUILD_COMMAND}\` drops the table and
-re-embeds all projects at the current dim.
+it can't change the table width. The guarded rebuild runs only through a daemon
+that advertises the exclusive-generation protocol; it never falls back to local
+store access.
 
 Examples:
-  gmax repair             Show schema status and what a rebuild would do
-  gmax repair --rebuild   Drop the table and re-index every project
-  gmax repair --rebuild -y  Rebuild without the confirmation prompt
+  gmax repair             Show schema status
+  gmax repair --rebuild   Rebuild every registered project at configured width
 `,
   )
-  .action(async (opts: { rebuild: boolean; yes: boolean }) => {
+  .action(async (opts: { rebuild: boolean }) => {
     try {
+      if (opts.rebuild) {
+        const running = await ensureDaemonRunning();
+        if (!running) throw new Error("failed to start the gmax daemon");
+        const ping = await sendDaemonCommand(
+          { cmd: "ping" },
+          { timeoutMs: 10_000 },
+        );
+        const capabilities =
+          ping.capabilities && typeof ping.capabilities === "object"
+            ? (ping.capabilities as Record<string, unknown>)
+            : null;
+        if (
+          !ping.ok ||
+          capabilities?.exclusiveGenerationRebuild !== REBUILD_PROTOCOL
+        ) {
+          throw new Error(
+            "running daemon does not support guarded rebuild protocol v1; restart the gmax daemon and retry",
+          );
+        }
+
+        const done = await sendStreamingCommand(
+          { cmd: "repair-v2", protocol: REBUILD_PROTOCOL },
+          (progress) => {
+            const phase = String(progress.phase ?? "rebuild");
+            const project =
+              typeof progress.project === "string"
+                ? ` ${progress.project}`
+                : "";
+            const counts =
+              typeof progress.processed === "number" &&
+              typeof progress.total === "number"
+                ? ` ${progress.processed}/${progress.total}`
+                : "";
+            const message =
+              typeof progress.message === "string"
+                ? `: ${progress.message}`
+                : "";
+            console.log(`[${phase}]${project}${counts}${message}`);
+          },
+          { timeoutMs: 24 * 60 * 60 * 1000 },
+        );
+        if (!done.ok) {
+          const blockers = Array.isArray(done.blockers)
+            ? ` Blockers: ${done.blockers
+                .map((owner) => {
+                  const value = owner as Record<string, unknown>;
+                  return `${value.role ?? "unknown"} pid=${value.pid ?? "?"}`;
+                })
+                .join(", ")}.`
+            : "";
+          throw new Error(
+            `${String(done.error ?? "rebuild failed")}.${blockers}`,
+          );
+        }
+        console.log(
+          `Rebuild complete: ${String(done.completed ?? 0)}/${String(done.total ?? 0)} projects indexed.`,
+        );
+        if (typeof done.warning === "string") console.warn(done.warning);
+        return;
+      }
       const globalConfig = readGlobalConfig();
       const configDim = globalConfig.vectorDim;
 
@@ -73,90 +124,12 @@ Examples:
       if (!opts.rebuild) {
         if (physicalDim != null && physicalDim !== configDim) {
           console.log(
-            `\nRun '${REBUILD_COMMAND}' to drop the table and re-index ` +
-              `${projects.length} project(s) at ${configDim}d.`,
+            `\nRun ${REBUILD_COMMAND} to rebuild ${projects.length} project(s) at ${configDim}d.`,
           );
         } else {
-          console.log(
-            `\nNothing to repair. Pass --rebuild to force a full drop + re-index anyway.`,
-          );
+          console.log("\nNo schema mismatch detected.");
         }
         return;
-      }
-
-      if (projects.length === 0) {
-        console.log("\nNo indexed projects to rebuild.");
-        return;
-      }
-
-      const totalChunks = projects.reduce(
-        (sum, p) => sum + (p.chunkCount ?? 0),
-        0,
-      );
-      console.log(
-        `\nThis will DROP the shared vector table and re-embed ${projects.length} project(s)` +
-          (totalChunks > 0
-            ? ` (~${totalChunks.toLocaleString()} chunks).`
-            : "."),
-      );
-      for (const p of projects) {
-        console.log(`  - ${p.name}`);
-      }
-
-      if (!opts.yes) {
-        const ok = await confirm("\nContinue?");
-        if (!ok) {
-          console.log("Cancelled.");
-          return;
-        }
-      }
-
-      // The rebuild must run through the daemon — it is the single writer for
-      // the shared table. Refuse rather than risk a torn drop alongside a
-      // daemon mid-flush.
-      const { ensureDaemonRunning, sendStreamingCommand } = await import(
-        "../lib/utils/daemon-client"
-      );
-      if (!(await ensureDaemonRunning())) {
-        console.error(
-          "Could not start the gmax daemon. Start it with 'gmax watch --daemon -b' and retry.",
-        );
-        process.exitCode = 1;
-        return;
-      }
-
-      const spinner = ora({
-        text: "Dropping vector table...",
-        isSilent: !process.stdout.isTTY,
-      }).start();
-
-      try {
-        const done = await sendStreamingCommand({ cmd: "repair" }, (msg) => {
-          if (msg.phase === "drop") {
-            spinner.text = "Dropping vector table...";
-          } else if (msg.phase === "reindex") {
-            const doneN = (msg.projectsDone as number) ?? 0;
-            const totalN = (msg.projectsTotal as number) ?? projects.length;
-            const processed = (msg.processed as number) ?? 0;
-            const total = (msg.total as number) ?? 0;
-            const counts = total > 0 ? ` ${processed}/${total}` : "";
-            spinner.text = `Re-indexing ${msg.project} (${doneN + 1}/${totalN})${counts}`;
-          }
-        });
-
-        if (!done.ok) {
-          spinner.fail("Rebuild failed");
-          throw new Error((done.error as string) ?? "daemon repair failed");
-        }
-
-        const rebuilt = (done.projects as number) ?? 0;
-        const indexed = (done.indexed as number) ?? 0;
-        spinner.succeed(
-          `Rebuilt ${rebuilt} project(s) at ${configDim}d • ${indexed.toLocaleString()} chunks`,
-        );
-      } catch (e) {
-        if (spinner.isSpinning) spinner.fail("Rebuild failed");
-        throw e;
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";

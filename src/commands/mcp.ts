@@ -4,7 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Command } from "commander";
 import { z } from "zod";
-import { MODEL_TIERS, PATHS } from "../config";
+import { PATHS } from "../config";
 import {
   analyzeSurprisingConnections,
   DEFAULT_SURPRISE_OPTIONS,
@@ -18,7 +18,12 @@ import {
 import { languageFamilyForPath } from "../lib/core/languages";
 import { type CallerTree, GraphBuilder } from "../lib/graph/graph-builder";
 import type { DetailedDependentHit } from "../lib/graph/impact";
-import { readGlobalConfig, readIndexConfig } from "../lib/index/index-config";
+import {
+  assertEmbeddingSearchCompatible,
+  embeddingFingerprintLabel,
+  projectEmbeddingStatus,
+} from "../lib/index/embedding-status";
+import { readGlobalConfig } from "../lib/index/index-config";
 import { generateSummaries } from "../lib/index/syncer";
 import { formatAgentSearchResults } from "../lib/output/agent-search-formatter";
 import { Searcher } from "../lib/search/searcher";
@@ -27,8 +32,9 @@ import { getStoredSkeleton } from "../lib/skeleton/retriever";
 import { Skeletonizer } from "../lib/skeleton/skeletonizer";
 import { extractSymbolsFromSkeleton } from "../lib/skeleton/symbol-extractor";
 import { MetaCache } from "../lib/store/meta-cache";
-import type { ChunkType, FileMetadata } from "../lib/store/types";
+import type { ChunkType, FileMetadata, SearchFilter } from "../lib/store/types";
 import { VectorDB } from "../lib/store/vector-db";
+import { resolveCrossProjectScope } from "../lib/utils/cross-project";
 import { isIndexableFile } from "../lib/utils/file-utils";
 import {
   escapeSqlString,
@@ -38,11 +44,13 @@ import {
 import { formatTimeAgo } from "../lib/utils/format-helpers";
 import { extractImports } from "../lib/utils/import-extractor";
 import {
-  getParentProject,
-  getProject,
-  listProjects,
-} from "../lib/utils/project-registry";
+  isPathWithin,
+  resolveContainedFile,
+  resolveContainedPath,
+} from "../lib/utils/path-containment";
+import { listProjects, type ProjectEntry } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
+import { resolveScope } from "../lib/utils/scope-filter";
 import { launchWatcher } from "../lib/utils/watcher-launcher";
 import { getWatcherCoveringPath } from "../lib/utils/watcher-store";
 import { computeAudit } from "./audit";
@@ -88,6 +96,54 @@ export function isExplicitCrossProjectSearch(
     (typeof args.exclude_projects === "string" &&
       args.exclude_projects.trim() !== "")
   );
+}
+
+export function resolveMcpProject(
+  requested: unknown,
+  currentRoot: string,
+  projects: ProjectEntry[] = listProjects(),
+): ProjectEntry | undefined {
+  if (typeof requested === "string" && requested.trim()) {
+    const value = requested.trim();
+    const byName = projects.filter((project) => project.name === value);
+    if (byName.length === 1) return byName[0];
+    if (byName.length > 1) return undefined;
+    const resolved = path.resolve(value);
+    return projects.find((project) => path.resolve(project.root) === resolved);
+  }
+
+  const resolvedCurrent = path.resolve(currentRoot);
+  const exact = projects.find(
+    (project) => path.resolve(project.root) === resolvedCurrent,
+  );
+  if (exact) return exact;
+  return projects
+    .filter((project) => isPathWithin(project.root, resolvedCurrent))
+    .sort((a, b) => b.root.length - a.root.length)[0];
+}
+
+export function containMcpTarget(root: string, target: string): string {
+  return path.isAbsolute(target) ||
+    target.includes("/") ||
+    target.includes("\\")
+    ? resolveContainedPath(root, target)
+    : target;
+}
+
+export function mcpRootPrefix(root: string): string {
+  return root.endsWith(path.sep) ? root : `${root}${path.sep}`;
+}
+
+export function resolveMcpSourceFile(
+  roots: string[],
+  candidate: string,
+): string | undefined {
+  for (const root of roots) {
+    try {
+      return resolveContainedFile(root, candidate);
+    } catch {}
+  }
+  return undefined;
 }
 
 type McpSearchFilterOptions = {
@@ -345,12 +401,15 @@ export const mcp = new Command("mcp")
 
     // --- Background watcher ---
 
-    async function ensureWatcher(): Promise<void> {
+    async function ensureWatcher(root?: string): Promise<void> {
       try {
-        const result = await launchWatcher(projectRoot);
+        const watchRoot =
+          root ?? resolveMcpProject(undefined, projectRoot)?.root;
+        if (!watchRoot) return;
+        const result = await launchWatcher(watchRoot);
         if (result.ok && !result.reused) {
           console.log(
-            `[MCP] Started background watcher for ${projectRoot} (PID: ${result.pid})`,
+            `[MCP] Started background watcher for ${watchRoot} (PID: ${result.pid})`,
           );
         }
       } catch (err) {
@@ -365,14 +424,12 @@ export const mcp = new Command("mcp")
     // exact registry match; otherwise walk the registry for an ancestor that
     // covers the cwd, and scope to it instead of silently widening to the whole
     // index. `root` is the registered project root to scope to.
-    function resolveRegisteredProject(): {
-      proj: ReturnType<typeof getProject>;
+    function resolveRegisteredProject(requested?: unknown): {
+      proj: ProjectEntry | undefined;
       root: string;
     } {
-      const exact = getProject(projectRoot);
-      if (exact) return { proj: exact, root: projectRoot };
-      const parent = getParentProject(projectRoot);
-      if (parent) return { proj: parent, root: parent.root };
+      const project = resolveMcpProject(requested, projectRoot);
+      if (project) return { proj: project, root: project.root };
       return { proj: undefined, root: projectRoot };
     }
 
@@ -388,13 +445,22 @@ export const mcp = new Command("mcp")
 
       const limit = Math.min(Math.max(Number(args.limit) || 3, 1), 50);
 
-      ensureWatcher();
-
       // Project resolution. The server is pinned to whatever cwd it launched in
       // (resolved once at startup). Resolve that cwd to its registered project —
       // exact match, or a registered ancestor when the cwd is a subdirectory of
       // an umbrella project. Searches scope to `resolvedRoot`.
-      const { proj, root: resolvedRoot } = resolveRegisteredProject();
+      const { proj, root: resolvedRoot } = resolveRegisteredProject(args.root);
+
+      if (
+        searchAll &&
+        (args.root !== undefined ||
+          args.path !== undefined ||
+          args.exclude !== undefined)
+      ) {
+        return err(
+          "root, path, and exclude are single-project filters; omit them for cross-project search.",
+        );
+      }
 
       // Cross-project search (the whole index) is opt-in: it happens only when
       // the caller passes scope:"all" or projects:"…". Otherwise we require a
@@ -426,40 +492,28 @@ export const mcp = new Command("mcp")
             "Project not indexed yet. Run `gmax add` to index it first.",
           );
         }
+        void ensureWatcher(resolvedRoot);
       }
 
       try {
-        const searcher = getSearcher();
-
         // Determine path prefix and display root for relative paths
         let pathPrefix: string | undefined;
-        let displayRoot = projectRoot;
+        const displayRoot = resolvedRoot;
+        let projectScope: ReturnType<typeof resolveScope> | undefined;
 
         if (!searchAll) {
-          const searchRoot =
-            typeof args.root === "string"
-              ? path.resolve(args.root)
-              : path.resolve(resolvedRoot);
-
-          if (typeof args.root === "string" && !fs.existsSync(searchRoot)) {
-            return err(`Directory not found: ${args.root}`);
-          }
-
-          displayRoot = searchRoot;
-          pathPrefix = searchRoot.endsWith("/") ? searchRoot : `${searchRoot}/`;
-
-          if (typeof args.path === "string") {
-            pathPrefix = path.join(searchRoot, args.path);
-            if (!pathPrefix.endsWith("/")) pathPrefix += "/";
-          }
+          projectScope = resolveScope({
+            projectRoot: resolvedRoot,
+            in: typeof args.path === "string" ? args.path : undefined,
+            exclude:
+              typeof args.exclude === "string" ? args.exclude : undefined,
+          });
+          pathPrefix = projectScope.pathPrefix;
         }
 
-        const filters: Record<string, string> = {};
+        const filters: SearchFilter = {};
         if (typeof args.file === "string" && args.file) {
           filters.file = args.file;
-        }
-        if (typeof args.exclude === "string" && args.exclude) {
-          filters.exclude = args.exclude;
         }
         if (typeof args.language === "string" && args.language) {
           filters.language = args.language;
@@ -468,31 +522,38 @@ export const mcp = new Command("mcp")
           filters.role = args.role;
         }
         if (searchAll) {
-          const allProjects = listProjects();
-          if (typeof args.projects === "string" && args.projects) {
-            const names = args.projects.split(",").map((s: string) => s.trim());
-            const roots = names
-              .map((n: string) => allProjects.find((p) => p.name === n)?.root)
-              .filter(Boolean);
-            if (roots.length > 0) {
-              filters.project_roots = roots.join(",");
-            }
+          const crossScope = resolveCrossProjectScope({
+            allProjects:
+              searchAll &&
+              !(typeof args.projects === "string" && args.projects.trim()),
+            projects:
+              typeof args.projects === "string" ? args.projects : undefined,
+            excludeProjects:
+              typeof args.exclude_projects === "string"
+                ? args.exclude_projects
+                : undefined,
+          });
+          if (crossScope.projectRoots.length === 0) {
+            return err("No matching indexed projects.");
           }
-          if (
-            typeof args.exclude_projects === "string" &&
-            args.exclude_projects
-          ) {
-            const names = args.exclude_projects
-              .split(",")
-              .map((s: string) => s.trim());
-            const roots = names
-              .map((n: string) => allProjects.find((p) => p.name === n)?.root)
-              .filter(Boolean);
-            if (roots.length > 0) {
-              filters.exclude_project_roots = roots.join(",");
-            }
+          filters.projectRoots = crossScope.projectRoots;
+        } else if (projectScope) {
+          if (projectScope.inPrefixes.length > 0) {
+            filters.inPrefixes = projectScope.inPrefixes;
+          }
+          if (projectScope.excludePrefixes.length > 0) {
+            filters.excludePrefixes = projectScope.excludePrefixes;
           }
         }
+
+        const selectedRoots = searchAll
+          ? new Set(filters.projectRoots ?? [])
+          : new Set([resolvedRoot]);
+        assertEmbeddingSearchCompatible(
+          listProjects().filter((project) => selectedRoots.has(project.root)),
+          readGlobalConfig(),
+        );
+        const searcher = getSearcher();
 
         // Aider-style seeding: the agent passes its open files / discussed
         // symbols; the searcher biases candidate generation toward them.
@@ -523,6 +584,17 @@ export const mcp = new Command("mcp")
           pathPrefix,
         );
 
+        const allowedRoots = searchAll
+          ? (filters.projectRoots ?? [])
+          : [resolvedRoot];
+        result.data = result.data.filter((chunk) => {
+          const candidate = chunkAbsPath(chunk);
+          return (
+            candidate.length > 0 &&
+            allowedRoots.some((root) => isPathWithin(root, candidate))
+          );
+        });
+
         // Prepend any searcher warnings to whatever body we return.
         const prefixNotes = (body: string): string => {
           const notes = (result.warnings ?? []).filter(Boolean);
@@ -550,8 +622,10 @@ export const mcp = new Command("mcp")
         const mode = typeof args.mode === "string" ? args.mode : "default";
         const getImportsForFile = (absPath: string): string => {
           if (!includeImports || !absPath) return "";
+          const sourcePath = resolveMcpSourceFile(allowedRoots, absPath);
+          if (!sourcePath) return "";
           if (!importCache.has(absPath)) {
-            importCache.set(absPath, extractImports(absPath));
+            importCache.set(absPath, extractImports(sourcePath));
           }
           return importCache.get(absPath) ?? "";
         };
@@ -609,7 +683,10 @@ export const mcp = new Command("mcp")
             if (contextN > 0 && absPath) {
               // Read surrounding context from file
               try {
-                const fileContent = fs.readFileSync(absPath, "utf-8");
+                const sourcePath = resolveMcpSourceFile(allowedRoots, absPath);
+                if (!sourcePath)
+                  throw new Error("indexed path is outside scope");
+                const fileContent = fs.readFileSync(sourcePath, "utf-8");
                 const fileLines = fileContent.split("\n");
                 const ctxStart = Math.max(0, startLine - contextN);
                 const ctxEnd = Math.min(
@@ -696,13 +773,13 @@ export const mcp = new Command("mcp")
         if (mode === "symbol" && !searchAll) {
           try {
             const db = getVectorDb();
-            const builder = new GraphBuilder(db);
+            const builder = new GraphBuilder(db, resolvedRoot);
             const graph = await builder.buildGraph(query);
 
             if (graph.center) {
               const traceLines: string[] = ["", "--- Call graph ---"];
-              const centerRel = graph.center.file.startsWith(projectRoot)
-                ? graph.center.file.slice(projectRoot.length + 1)
+              const centerRel = graph.center.file.startsWith(resolvedRoot)
+                ? graph.center.file.slice(resolvedRoot.length + 1)
                 : graph.center.file;
               traceLines.push(
                 `${graph.center.symbol} [${graph.center.role}] ${centerRel}:${graph.center.line + 1}`,
@@ -711,8 +788,8 @@ export const mcp = new Command("mcp")
               if (graph.callers.length > 0) {
                 traceLines.push("Callers:");
                 for (const caller of graph.callers) {
-                  const rel = caller.file.startsWith(projectRoot)
-                    ? caller.file.slice(projectRoot.length + 1)
+                  const rel = caller.file.startsWith(resolvedRoot)
+                    ? caller.file.slice(resolvedRoot.length + 1)
                     : caller.file;
                   traceLines.push(
                     `  <- ${caller.symbol} ${rel}:${caller.line + 1}`,
@@ -724,8 +801,8 @@ export const mcp = new Command("mcp")
                 traceLines.push("Calls:");
                 for (const callee of graph.callees.slice(0, 15)) {
                   if (callee.file) {
-                    const rel = callee.file.startsWith(projectRoot)
-                      ? callee.file.slice(projectRoot.length + 1)
+                    const rel = callee.file.startsWith(resolvedRoot)
+                      ? callee.file.slice(resolvedRoot.length + 1)
                       : callee.file;
                     traceLines.push(
                       `  -> ${callee.symbol} ${rel}:${callee.line + 1}`,
@@ -753,9 +830,15 @@ export const mcp = new Command("mcp")
     async function handleCodeSkeleton(
       args: Record<string, unknown>,
     ): Promise<ToolResult> {
-      ensureWatcher();
       const target = String(args.target || "");
       if (!target) return err("Missing required parameter: target");
+      const { proj, root } = resolveRegisteredProject();
+      if (!proj) {
+        return err(
+          "Project not added to gmax yet. Run `gmax add` to index it first.",
+        );
+      }
+      void ensureWatcher(root);
 
       const fileLimit = Math.min(Math.max(Number(args.limit) || 10, 1), 20);
 
@@ -768,14 +851,16 @@ export const mcp = new Command("mcp")
           .map((t) => t.trim())
           .filter(Boolean);
       } else {
-        const absPath = path.resolve(projectRoot, target);
+        const absPath = resolveContainedPath(root, target, {
+          verifyExistingTarget: true,
+        });
         if (fs.existsSync(absPath) && fs.statSync(absPath).isDirectory()) {
           const entries = fs.readdirSync(absPath, { withFileTypes: true });
           targets = entries
             .filter(
               (e) => e.isFile() && isIndexableFile(path.join(absPath, e.name)),
             )
-            .map((e) => path.relative(projectRoot, path.join(absPath, e.name)))
+            .map((e) => path.relative(root, path.join(absPath, e.name)))
             .slice(0, fileLimit);
           if (targets.length === 0) {
             return err(`No indexable files found in ${target}`);
@@ -804,9 +889,10 @@ export const mcp = new Command("mcp")
       const skel = await getSkeletonizer();
 
       for (const t of targets) {
-        const absPath = path.resolve(projectRoot, t);
-
-        if (!fs.existsSync(absPath)) {
+        let absPath: string;
+        try {
+          absPath = resolveContainedFile(root, t);
+        } catch {
           if (fmt !== "json") parts.push(`// ${t} — file not found`);
           continue;
         }
@@ -884,20 +970,20 @@ export const mcp = new Command("mcp")
     async function handleTraceCalls(
       args: Record<string, unknown>,
     ): Promise<ToolResult> {
-      ensureWatcher();
       const symbol = String(args.symbol || "");
       if (!symbol) return err("Missing required parameter: symbol");
 
-      const { proj } = resolveRegisteredProject();
+      const { proj, root } = resolveRegisteredProject();
       if (!proj) {
         return err(
           "Project not added to gmax yet. Run `gmax add` to index it first.",
         );
       }
+      void ensureWatcher(root);
 
       try {
         const db = getVectorDb();
-        const builder = new GraphBuilder(db);
+        const builder = new GraphBuilder(db, root);
         const depth = Math.min(Math.max(Number(args.depth) || 1, 1), 3);
         const graph = await builder.buildGraphMultiHop(symbol, depth);
 
@@ -924,8 +1010,8 @@ export const mcp = new Command("mcp")
           if (filteredImporters.length > 0) {
             lines.push("Imported by:");
             for (const imp of filteredImporters.slice(0, 10)) {
-              const rel = imp.startsWith(projectRoot)
-                ? imp.slice(projectRoot.length + 1)
+              const rel = imp.startsWith(root)
+                ? imp.slice(root.length + 1)
                 : imp;
               lines.push(`  ${rel}`);
             }
@@ -935,8 +1021,8 @@ export const mcp = new Command("mcp")
         // Callers (recursive tree)
         function formatCallerTree(trees: CallerTree[], indent: number): void {
           for (const t of trees) {
-            const rel = t.node.file.startsWith(projectRoot)
-              ? t.node.file.slice(projectRoot.length + 1)
+            const rel = t.node.file.startsWith(root)
+              ? t.node.file.slice(root.length + 1)
               : t.node.file;
             const pad = "  ".repeat(indent);
             lines.push(`${pad}<- ${t.node.symbol} ${rel}:${t.node.line + 1}`);
@@ -956,8 +1042,8 @@ export const mcp = new Command("mcp")
           lines.push("Calls:");
           for (const callee of graph.callees.slice(0, 15)) {
             if (callee.file) {
-              const rel = callee.file.startsWith(projectRoot)
-                ? callee.file.slice(projectRoot.length + 1)
+              const rel = callee.file.startsWith(root)
+                ? callee.file.slice(root.length + 1)
                 : callee.file;
               lines.push(`  -> ${callee.symbol} ${rel}:${callee.line + 1}`);
             } else {
@@ -986,8 +1072,8 @@ export const mcp = new Command("mcp")
       if (!symbol) return err("Missing required parameter: symbol");
 
       try {
-        const root =
-          typeof args.root === "string" && args.root ? args.root : projectRoot;
+        const { proj, root } = resolveRegisteredProject(args.root);
+        if (!proj) return err("Project not added to gmax yet.");
         const db = getVectorDb();
         const table = await db.ensureTable();
         const prefix = root.endsWith("/") ? root : `${root}/`;
@@ -1036,7 +1122,7 @@ export const mcp = new Command("mcp")
         });
 
         const best = sorted[0] as any;
-        const filePath = String(best.path);
+        const filePath = resolveContainedFile(root, String(best.path));
         const startLine = Number(best.start_line || 0);
         const endLine = Number(best.end_line || 0);
         const role = String(best.role || "IMPLEMENTATION");
@@ -1095,8 +1181,8 @@ export const mcp = new Command("mcp")
       if (!symbol) return err("Missing required parameter: symbol");
 
       try {
-        const root =
-          typeof args.root === "string" && args.root ? args.root : projectRoot;
+        const { proj, root } = resolveRegisteredProject(args.root);
+        if (!proj) return err("Project not added to gmax yet.");
         const depth = Math.min(Math.max(Number(args.depth || 1), 1), 3);
 
         const db = getVectorDb();
@@ -1141,7 +1227,8 @@ export const mcp = new Command("mcp")
         let sigText = "(source not available)";
         let bodyLines = 0;
         try {
-          const content = fs.readFileSync(center.file, "utf-8");
+          const centerPath = resolveContainedFile(root, center.file);
+          const content = fs.readFileSync(centerPath, "utf-8");
           const lines = content.split("\n");
           const chunk = lines.slice(startLine, endLine + 1);
           bodyLines = chunk.length;
@@ -1253,8 +1340,8 @@ export const mcp = new Command("mcp")
       if (!symbol) return err("Missing required parameter: symbol");
 
       try {
-        const root =
-          typeof args.root === "string" && args.root ? args.root : projectRoot;
+        const { proj, root } = resolveRegisteredProject(args.root);
+        if (!proj) return err("Project not added to gmax yet.");
         const db = getVectorDb();
         const table = await db.ensureTable();
         const prefix = root.endsWith("/") ? root : `${root}/`;
@@ -1315,10 +1402,8 @@ export const mcp = new Command("mcp")
       args: Record<string, unknown>,
     ): Promise<ToolResult> {
       ensureWatcher();
-      const root =
-        typeof args.root === "string" && args.root
-          ? path.resolve(args.root)
-          : projectRoot;
+      const { proj, root } = resolveRegisteredProject(args.root);
+      if (!proj) return err("Project not added to gmax yet.");
       const prefix = root.endsWith("/") ? root : `${root}/`;
       const top = Math.min(Math.max(Number(args.top) || 10, 1), 50);
 
@@ -1424,10 +1509,8 @@ export const mcp = new Command("mcp")
         );
       }
 
-      const root =
-        typeof args.root === "string" && args.root
-          ? path.resolve(args.root)
-          : projectRoot;
+      const { proj, root } = resolveRegisteredProject(args.root);
+      if (!proj) return err("Project not added to gmax yet.");
       const top = Math.min(Math.max(Number(args.top) || 10, 1), 100);
       const sample = Math.min(
         Math.max(Number(args.sample) || DEFAULT_SURPRISE_OPTIONS.sample, 1),
@@ -1486,8 +1569,8 @@ export const mcp = new Command("mcp")
       const direction = args.direction === "callers" ? "callers" : "callees";
       const maxHops = Math.min(Math.max(Number(args.max_hops) || 2, 1), 5);
       try {
-        const root =
-          typeof args.root === "string" && args.root ? args.root : projectRoot;
+        const { proj, root } = resolveRegisteredProject(args.root);
+        if (!proj) return err("Project not added to gmax yet.");
         const builder = new GraphBuilder(getVectorDb(), root);
         const hits = await builder.getNeighbors(symbol, direction, maxHops);
         if (hits.length === 0) {
@@ -1524,8 +1607,8 @@ export const mcp = new Command("mcp")
       const direction = args.direction === "callers" ? "callers" : "callees";
       const maxHops = Math.min(Math.max(Number(args.max_hops) || 6, 1), 10);
       try {
-        const root =
-          typeof args.root === "string" && args.root ? args.root : projectRoot;
+        const { proj, root } = resolveRegisteredProject(args.root);
+        if (!proj) return err("Project not added to gmax yet.");
         const builder = new GraphBuilder(getVectorDb(), root);
         const pathSyms = await builder.findPaths(from, to, direction, maxHops);
         if (!pathSyms) {
@@ -1555,10 +1638,10 @@ export const mcp = new Command("mcp")
         return err("Missing required parameter: files (non-empty array)");
       }
       try {
-        const root =
-          typeof args.root === "string" && args.root ? args.root : projectRoot;
+        const { proj, root } = resolveRegisteredProject(args.root);
+        if (!proj) return err("Project not added to gmax yet.");
         const abs = filesIn.map((f) =>
-          path.isAbsolute(f) ? f : path.resolve(root, f),
+          resolveContainedPath(root, f, { verifyExistingTarget: true }),
         );
         const builder = new GraphBuilder(getVectorDb(), root);
         const sg = await builder.subgraphForFiles(abs);
@@ -1607,7 +1690,7 @@ export const mcp = new Command("mcp")
       const limit = Math.min(Math.max(Number(args.limit) || 20, 1), 100);
       const pathPrefix = typeof args.path === "string" ? args.path : undefined;
 
-      const { proj } = resolveRegisteredProject();
+      const { proj, root } = resolveRegisteredProject();
       if (!proj) {
         return err(
           "Project not added to gmax yet. Run `gmax add` to index it first.",
@@ -1618,7 +1701,14 @@ export const mcp = new Command("mcp")
         const db = getVectorDb();
         const table = await db.ensureTable();
 
-        let query = table
+        const rootPrefix = root.endsWith("/") ? root : `${root}/`;
+        let where = `array_length(defined_symbols) > 0 AND ${pathStartsWith(rootPrefix)}`;
+        if (pathPrefix) {
+          const absPrefix = resolveContainedPath(root, pathPrefix);
+          where += ` AND ${pathStartsWith(normalizePath(absPrefix))}`;
+        }
+
+        const query = table
           .query()
           .select([
             "defined_symbols",
@@ -1627,16 +1717,8 @@ export const mcp = new Command("mcp")
             "role",
             "is_exported",
           ])
-          .where("array_length(defined_symbols) > 0")
+          .where(where)
           .limit(pattern ? 10000 : Math.max(limit * 50, 2000));
-
-        if (pathPrefix) {
-          // Support both absolute and relative path prefixes
-          const absPrefix = path.isAbsolute(pathPrefix)
-            ? pathPrefix
-            : path.resolve(projectRoot, pathPrefix);
-          query = query.where(pathStartsWith(normalizePath(absPrefix)));
-        }
 
         const rows = await query.toArray();
 
@@ -1691,8 +1773,8 @@ export const mcp = new Command("mcp")
         }
 
         const lines = entries.map((e) => {
-          const rel = e.path.startsWith(projectRoot)
-            ? e.path.slice(projectRoot.length + 1)
+          const rel = e.path.startsWith(root)
+            ? e.path.slice(root.length + 1)
             : e.path;
           const roleTag = e.role ? ` [${e.role.slice(0, 4)}]` : "";
           const expTag = e.exported ? " exported" : "";
@@ -1713,14 +1795,16 @@ export const mcp = new Command("mcp")
             "No projects indexed yet. cd into a repo and run `gmax add` to index it.",
           );
         }
-        const currentName = getProject(projectRoot)?.name;
+        const currentName = resolveMcpProject(undefined, projectRoot)?.name;
+        const globalConfig = readGlobalConfig();
         const lines = projects.map((p) => {
           const here = p.name === currentName ? " (current)" : "";
           const chunks =
             typeof p.chunkCount === "number"
               ? `\t(${p.chunkCount} chunks)`
               : "";
-          return `${p.name}${here}\t${p.root}\t${p.status}${chunks}`;
+          const identity = projectEmbeddingStatus(p, globalConfig);
+          return `${p.name}${here}\t${p.root}\t${p.status}\tembedding=${identity.state}${chunks}`;
         });
         return ok(
           `${projects.length} indexed project(s). ` +
@@ -1735,9 +1819,10 @@ export const mcp = new Command("mcp")
 
     async function handleIndexStatus(): Promise<ToolResult> {
       try {
-        const config = readIndexConfig(PATHS.configPath);
         const globalConfig = readGlobalConfig();
         const projects = listProjects();
+        const currentProject = resolveMcpProject(undefined, projectRoot);
+        const identity = projectEmbeddingStatus(currentProject, globalConfig);
 
         const db = getVectorDb();
         const stats = await db.getStats();
@@ -1763,8 +1848,13 @@ export const mcp = new Command("mcp")
         // focused on index health and avoid the N-project LanceDB scans.
         const lines = [
           `Index: ~/.gmax/lancedb (${stats.chunks} chunks, ${fileCount} files)`,
-          `Model: ${globalConfig.embedMode === "gpu" ? (MODEL_TIERS[globalConfig.modelTier]?.mlxModel ?? config?.embedModel ?? "unknown") : (config?.embedModel ?? "unknown")} (${config?.vectorDim ?? "?"}d, ${globalConfig.embedMode})`,
-          config?.indexedAt ? `Last indexed: ${config.indexedAt}` : "",
+          `Configured embedding: ${identity.configured.tier} ${identity.configured.vectorDim}d [${embeddingFingerprintLabel(identity.configured.fingerprint)}] (${globalConfig.embedMode})`,
+          identity.built
+            ? `Built embedding: ${identity.built.tier} ${identity.built.vectorDim}d [${embeddingFingerprintLabel(identity.built.fingerprint)}] (${identity.state})`
+            : "Built embedding: unbuilt",
+          currentProject?.lastIndexed
+            ? `Last indexed: ${currentProject.lastIndexed}`
+            : "",
           watcherLine,
           `Projects: ${projects.length} indexed (call list_projects for names + per-project chunk counts)`,
         ].filter(Boolean);
@@ -1778,8 +1868,12 @@ export const mcp = new Command("mcp")
     async function handleSummarizeDirectory(
       args: Record<string, unknown>,
     ): Promise<ToolResult> {
+      const { proj, root } = resolveRegisteredProject();
+      if (!proj) return err("Project not added to gmax yet.");
       const dir =
-        typeof args.path === "string" ? path.resolve(args.path) : projectRoot;
+        typeof args.path === "string"
+          ? resolveContainedPath(root, args.path)
+          : root;
       const prefix = dir.endsWith("/") ? dir : `${dir}/`;
       const limit = Math.min(Math.max(Number(args.limit) || 200, 1), 5000);
 
@@ -1815,8 +1909,8 @@ export const mcp = new Command("mcp")
     async function handleSummarizeProject(
       args: Record<string, unknown>,
     ): Promise<ToolResult> {
-      const root =
-        typeof args.root === "string" ? path.resolve(args.root) : projectRoot;
+      const { proj, root } = resolveRegisteredProject(args.root);
+      if (!proj) return err("Project not added to gmax yet.");
       const prefix = root.endsWith("/") ? root : `${root}/`;
       const projectName = path.basename(root);
 
@@ -1976,7 +2070,12 @@ export const mcp = new Command("mcp")
       if (!file) return err("Missing required parameter: file");
 
       const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 25);
-      const absPath = path.resolve(projectRoot, file);
+      const { proj, root } = resolveRegisteredProject();
+      if (!proj) return err("Project not added to gmax yet.");
+      const absPath = resolveContainedPath(root, file, {
+        verifyExistingTarget: true,
+      });
+      const rootPrefix = root.endsWith("/") ? root : `${root}/`;
 
       try {
         const db = getVectorDb();
@@ -2010,7 +2109,9 @@ export const mcp = new Command("mcp")
           const rows = await table
             .query()
             .select(["path"])
-            .where(`array_contains(defined_symbols, '${escapeSqlString(sym)}')`)
+            .where(
+              `array_contains(defined_symbols, '${escapeSqlString(sym)}') AND ${pathStartsWith(rootPrefix)}`,
+            )
             .limit(3)
             .toArray();
           for (const row of rows) {
@@ -2027,7 +2128,7 @@ export const mcp = new Command("mcp")
             .query()
             .select(["path"])
             .where(
-              `array_contains(referenced_symbols, '${escapeSqlString(sym)}')`,
+              `array_contains(referenced_symbols, '${escapeSqlString(sym)}') AND ${pathStartsWith(rootPrefix)}`,
             )
             .limit(20)
             .toArray();
@@ -2047,8 +2148,8 @@ export const mcp = new Command("mcp")
         if (topDeps.length > 0) {
           lines.push("Dependencies (files this imports/calls):");
           for (const [p, count] of topDeps) {
-            const rel = p.startsWith(`${projectRoot}/`)
-              ? p.slice(projectRoot.length + 1)
+            const rel = p.startsWith(rootPrefix)
+              ? p.slice(rootPrefix.length)
               : p;
             lines.push(
               `  ${rel.padEnd(40)} (${count} shared symbol${count > 1 ? "s" : ""})`,
@@ -2066,8 +2167,8 @@ export const mcp = new Command("mcp")
         if (topRevs.length > 0) {
           lines.push("Dependents (files that call this):");
           for (const [p, count] of topRevs) {
-            const rel = p.startsWith(`${projectRoot}/`)
-              ? p.slice(projectRoot.length + 1)
+            const rel = p.startsWith(rootPrefix)
+              ? p.slice(rootPrefix.length)
               : p;
             lines.push(
               `  ${rel.padEnd(40)} (${count} shared symbol${count > 1 ? "s" : ""})`,
@@ -2089,8 +2190,8 @@ export const mcp = new Command("mcp")
     ): Promise<ToolResult> {
       ensureWatcher();
       const limit = Math.min(Math.max(Number(args.limit) || 20, 1), 50);
-      const root =
-        typeof args.root === "string" ? path.resolve(args.root) : projectRoot;
+      const { proj, root } = resolveRegisteredProject(args.root);
+      if (!proj) return err("Project not added to gmax yet.");
       const prefix = root.endsWith("/") ? root : `${root}/`;
 
       try {
@@ -2146,7 +2247,10 @@ export const mcp = new Command("mcp")
         typeof args.role === "string" ? args.role.toUpperCase() : undefined;
 
       try {
-        const changedFiles = getChangedFiles(ref, projectRoot);
+        const { proj, root } = resolveRegisteredProject();
+        if (!proj) return err("Project not added to gmax yet.");
+        assertEmbeddingSearchCompatible([proj], readGlobalConfig());
+        const changedFiles = getChangedFiles(ref, root);
         if (changedFiles.length === 0) {
           return ok(
             ref
@@ -2156,7 +2260,7 @@ export const mcp = new Command("mcp")
         }
 
         const rel = (p: string) =>
-          p.startsWith(`${projectRoot}/`) ? p.slice(projectRoot.length + 1) : p;
+          p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p;
 
         if (query) {
           const searcher = getSearcher();
@@ -2165,7 +2269,7 @@ export const mcp = new Command("mcp")
             limit,
             { rerank: process.env.GMAX_RERANK === "1" },
             {},
-            projectRoot,
+            root,
           );
           const changedSet = new Set(changedFiles);
           // searcher.search() returns mapped chunks (path under metadata.path);
@@ -2228,21 +2332,24 @@ export const mcp = new Command("mcp")
       const depth = Math.min(Math.max(Number(args.depth) || 1, 1), 3);
 
       try {
+        const { proj, root } = resolveRegisteredProject();
+        if (!proj) return err("Project not added to gmax yet.");
+        const scopedTarget = containMcpTarget(root, target);
         const { resolveTargetSymbols, findTests } = await import(
           "../lib/graph/impact"
         );
         const db = getVectorDb();
         const { symbols, symbolFamilies } = await resolveTargetSymbols(
-          target,
+          scopedTarget,
           db,
-          projectRoot,
+          mcpRootPrefix(root),
         );
         if (symbols.length === 0) return ok(`No symbols found for: ${target}`);
 
         const tests = await findTests(
           symbols,
           db,
-          projectRoot,
+          root,
           depth,
           undefined,
           symbolFamilies,
@@ -2250,7 +2357,7 @@ export const mcp = new Command("mcp")
         if (tests.length === 0) return ok(`No tests found for ${target}.`);
 
         const rel = (p: string) =>
-          p.startsWith(`${projectRoot}/`) ? p.slice(projectRoot.length + 1) : p;
+          p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p;
         const lines = tests.map((t) => {
           const hop = t.hops === 0 ? "direct" : `${t.hops}-hop`;
           return `${rel(t.file)}:${t.line + 1} ${t.symbol} (${hop})`;
@@ -2274,6 +2381,9 @@ export const mcp = new Command("mcp")
       const top = Math.min(Math.max(Number(args.top) || 10, 1), 100);
 
       try {
+        const { proj, root } = resolveRegisteredProject();
+        if (!proj) return err("Project not added to gmax yet.");
+        const scopedTarget = containMcpTarget(root, target);
         const {
           resolveTargetSymbols,
           findTests,
@@ -2286,11 +2396,11 @@ export const mcp = new Command("mcp")
         );
         const db = getVectorDb();
         const { symbols, resolvedAsFile, symbolFamilies } =
-          await resolveTargetSymbols(target, db, projectRoot);
+          await resolveTargetSymbols(scopedTarget, db, root);
         if (symbols.length === 0) return ok(`No symbols found for: ${target}`);
 
         const targetPath = resolvedAsFile
-          ? path.resolve(projectRoot, target)
+          ? resolveContainedPath(root, scopedTarget)
           : undefined;
         const excludePaths = targetPath ? new Set([targetPath]) : undefined;
         const rollupLimit = Math.min(Math.max(top * 10, 100), 500);
@@ -2300,7 +2410,7 @@ export const mcp = new Command("mcp")
             ? findDependentsDetailed(
                 symbols,
                 db,
-                projectRoot,
+                root,
                 excludePaths,
                 rollupLimit,
                 undefined,
@@ -2309,13 +2419,13 @@ export const mcp = new Command("mcp")
             : findDependents(
                 symbols,
                 db,
-                projectRoot,
+                root,
                 excludePaths,
                 undefined,
                 undefined,
                 symbolFamilies,
               ),
-          findTests(symbols, db, projectRoot, depth, undefined, symbolFamilies),
+          findTests(symbols, db, root, depth, undefined, symbolFamilies),
         ]);
 
         if (rollup) {
@@ -2324,13 +2434,13 @@ export const mcp = new Command("mcp")
             targetSymbols: symbols,
             dependents: detailedDependents,
             tests,
-            projectRoot,
+            projectRoot: root,
             top,
           });
           return ok(
             formatImpactRollupAgent(impactRollup, {
               target,
-              projectRoot,
+              projectRoot: root,
               includeTests: true,
             }),
           );
@@ -2338,7 +2448,7 @@ export const mcp = new Command("mcp")
 
         const nonTestDeps = dependents.filter((d) => !isTestPath(d.file));
         const rel = (p: string) =>
-          p.startsWith(`${projectRoot}/`) ? p.slice(projectRoot.length + 1) : p;
+          p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p;
 
         const sections: string[] = [`Impact analysis for ${target}:\n`];
         if (nonTestDeps.length > 0) {
@@ -2378,6 +2488,9 @@ export const mcp = new Command("mcp")
       const threshold = Number(args.threshold) || 0;
 
       try {
+        const { proj, root } = resolveRegisteredProject();
+        if (!proj) return err("Project not added to gmax yet.");
+        assertEmbeddingSearchCompatible([proj], readGlobalConfig());
         const db = getVectorDb();
         const table = await db.ensureTable();
         const isFile =
@@ -2386,7 +2499,7 @@ export const mcp = new Command("mcp")
 
         let sourceRows: any[];
         if (isFile) {
-          const absPath = path.resolve(projectRoot, target);
+          const absPath = resolveContainedPath(root, target);
           sourceRows = await table
             .query()
             .select(["vector", "path", "start_line"])
@@ -2398,7 +2511,7 @@ export const mcp = new Command("mcp")
             .query()
             .select(["vector", "path", "start_line"])
             .where(
-              `array_contains(defined_symbols, '${escapeSqlString(target)}')`,
+              `array_contains(defined_symbols, '${escapeSqlString(target)}') AND ${pathStartsWith(`${root}/`)}`,
             )
             .limit(1)
             .toArray();
@@ -2424,7 +2537,7 @@ export const mcp = new Command("mcp")
             "role",
             "_distance",
           ])
-          .where(pathStartsWith(`${projectRoot}/`))
+          .where(pathStartsWith(`${root}/`))
           .limit(limit + 5)
           .toArray();
 
@@ -2441,7 +2554,7 @@ export const mcp = new Command("mcp")
           return ok(`No similar code found for ${target}.`);
 
         const rel = (p: string) =>
-          p.startsWith(`${projectRoot}/`) ? p.slice(projectRoot.length + 1) : p;
+          p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p;
         const lines = filtered.slice(0, limit).map((r: any) => {
           const sym = toStringArray(r.defined_symbols)?.[0] ?? "";
           return `${rel(r.path)}:${Number(r.start_line ?? 0) + 1} ${sym} [${r.role || "IMPL"}] d=${(r._distance ?? 0).toFixed(3)}`;
@@ -2464,19 +2577,22 @@ export const mcp = new Command("mcp")
       const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 25);
 
       try {
+        const { proj, root } = resolveRegisteredProject();
+        if (!proj) return err("Project not added to gmax yet.");
+        assertEmbeddingSearchCompatible([proj], readGlobalConfig());
         const searcher = getSearcher();
         const response = await searcher.search(
           topic,
           limit,
           { rerank: process.env.GMAX_RERANK === "1" },
           {},
-          projectRoot,
+          root,
         );
         if (response.data.length === 0)
           return ok(`No results found for "${topic}".`);
 
         const rel = (p: string) =>
-          p.startsWith(`${projectRoot}/`) ? p.slice(projectRoot.length + 1) : p;
+          p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p;
         const estTokens = (s: string) => Math.ceil(s.length / 4);
         let tokensUsed = 0;
         const sections: string[] = [];
@@ -2498,7 +2614,8 @@ export const mcp = new Command("mcp")
           const endLine = searchResultEndLine(r, startLine);
           const sym = toStringArray((r as any).defined_symbols)?.[0] ?? "";
           try {
-            const content = fs.readFileSync(absP, "utf-8");
+            const sourcePath = resolveContainedFile(root, absP);
+            const content = fs.readFileSync(sourcePath, "utf-8");
             const body = content
               .split("\n")
               .slice(startLine, endLine + 1)
@@ -2727,8 +2844,19 @@ export const mcp = new Command("mcp")
       handler: (args: Record<string, unknown>) => Promise<ToolResult>,
     ): void {
       server.registerTool(name, config, async (rawArgs) => {
-        const args = (rawArgs ?? {}) as Record<string, unknown>;
+        let args = (rawArgs ?? {}) as Record<string, unknown>;
         const startMs = Date.now();
+        if (typeof args.root === "string" && args.root.trim()) {
+          const selected = resolveMcpProject(args.root, projectRoot);
+          if (!selected) {
+            const result = err(
+              `Unknown registered project: ${args.root}. Use list_projects to select a project name or exact root.`,
+            );
+            await logToolCall(name, args, startMs, result);
+            return result;
+          }
+          args = { ...args, root: selected.root };
+        }
         const result = await handler(args);
         await logToolCall(name, args, startMs, result);
         return result;
@@ -2750,7 +2878,7 @@ export const mcp = new Command("mcp")
             .optional(),
           root: z
             .string()
-            .describe("Search a different directory (absolute path)")
+            .describe("Registered project name or exact root")
             .optional(),
           path: z
             .string()

@@ -121,11 +121,11 @@ export const setup = new Command("setup")
       const modeChanged = existingConfig.embedMode !== embedMode;
       if (tierChanged) {
         p.log.warn(
-          `Model tier changed (${existingConfig.vectorDim ?? 384}d → ${selectedTier.vectorDim}d). Existing indexes will be rebuilt on next use.`,
+          `Model tier changed (${existingConfig.vectorDim ?? 384}d → ${selectedTier.vectorDim}d). Existing indexes are preserved and search is blocked until you run 'gmax repair --rebuild'.`,
         );
       } else if (modeChanged) {
         p.log.warn(
-          "Embedding mode changed. Run `gmax serve` to apply the new settings.",
+          "Embedding mode changed. Restart the gmax daemon to apply the new settings.",
         );
       }
     }

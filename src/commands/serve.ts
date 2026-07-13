@@ -4,19 +4,25 @@ import * as http from "node:http";
 import * as path from "node:path";
 import { Command } from "commander";
 import { PATHS } from "../config";
-import { ensureGrammars } from "../lib/index/grammar-loader";
-import { readIndexConfig } from "../lib/index/index-config";
-import { createIndexingSpinner } from "../lib/index/sync-helpers";
-import { initialSync } from "../lib/index/syncer";
-import { startWatcher, type WatcherHandle } from "../lib/index/watcher";
-import { Searcher } from "../lib/search/searcher";
-import { ensureSetup } from "../lib/setup/setup-helpers";
-import { MetaCache } from "../lib/store/meta-cache";
-import { VectorDB } from "../lib/store/vector-db";
+import type { SearchFilter } from "../lib/store/types";
+import {
+  BLOCKED_ROOTS_DESCRIPTION,
+  isBlockedProjectRoot,
+} from "../lib/utils/blocked-roots";
+import type { DaemonResponse } from "../lib/utils/daemon-client";
+import {
+  ensureDaemonRunning,
+  sendDaemonCommand,
+  sendStreamingCommand,
+} from "../lib/utils/daemon-client";
 import { gracefulExit } from "../lib/utils/exit";
 import { openRotatedLog } from "../lib/utils/log-rotate";
-import { resolveMlxHfHome } from "../lib/utils/mlx-hf-cache";
-import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
+import {
+  PathContainmentError,
+  resolveContainedPath,
+} from "../lib/utils/path-containment";
+import { findProjectRoot } from "../lib/utils/project-root";
+import { resolveScope } from "../lib/utils/scope-filter";
 import {
   getServerForProject,
   isProcessRunning,
@@ -25,65 +31,341 @@ import {
   unregisterServer,
 } from "../lib/utils/server-registry";
 
-function isMlxServerUp(): Promise<boolean> {
-  const port = parseInt(process.env.MLX_EMBED_PORT || "8100", 10);
-  return new Promise((resolve) => {
-    const req = http.get(
-      { hostname: "127.0.0.1", port, path: "/health", timeout: 2000 },
-      (res) => {
-        res.resume();
-        resolve(res.statusCode === 200);
-      },
-    );
-    req.on("error", () => resolve(false));
-    req.on("timeout", () => {
-      req.destroy();
-      resolve(false);
+const LOOPBACK_HOST = "127.0.0.1";
+const MAX_BODY_BYTES = 1_000_000;
+export const MAX_HTTP_SEARCH_LIMIT = 50;
+
+class HttpRequestError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+  ) {
+    super(code);
+  }
+}
+
+export interface ServeHttpDeps {
+  search: (
+    input: {
+      query: string;
+      limit: number;
+      pathPrefix?: string;
+      filters?: SearchFilter;
+    },
+    signal: AbortSignal,
+  ) => Promise<DaemonResponse>;
+  stats: (signal: AbortSignal) => Promise<DaemonResponse>;
+  onActivity?: () => void;
+}
+
+export interface ServeHttpRuntime {
+  server: http.Server;
+  abortActive: () => void;
+}
+
+export function waitForChildSpawn(child: ChildProcess): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const onSpawn = () => {
+      child.off("error", onError);
+      child.on("error", (error) => {
+        console.error(`Background server process error: ${error.message}`);
+      });
+      if (child.pid === undefined) {
+        reject(new Error("Background process started without a PID"));
+        return;
+      }
+      resolve(child.pid);
+    };
+    const onError = (error: Error) => {
+      child.off("spawn", onSpawn);
+      reject(error);
+    };
+    child.once("spawn", onSpawn);
+    child.once("error", onError);
+  });
+}
+
+function writeJson(
+  res: http.ServerResponse,
+  status: number,
+  body: Record<string, unknown>,
+): void {
+  if (res.writableEnded) return;
+  res.statusCode = status;
+  res.setHeader("Content-Type", "application/json");
+  res.end(JSON.stringify(body));
+}
+
+function readJsonBody(
+  req: http.IncomingMessage,
+): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let settled = false;
+
+    const fail = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    };
+
+    req.on("data", (chunk: Buffer) => {
+      if (settled) return;
+      size += chunk.length;
+      if (size > MAX_BODY_BYTES) {
+        fail(new HttpRequestError(413, "payload_too_large"));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("error", fail);
+    req.on("aborted", () => fail(new HttpRequestError(499, "aborted")));
+    req.on("end", () => {
+      if (settled) return;
+      settled = true;
+      try {
+        const value = chunks.length
+          ? JSON.parse(Buffer.concat(chunks).toString("utf8"))
+          : {};
+        if (!value || typeof value !== "object" || Array.isArray(value)) {
+          reject(new HttpRequestError(400, "invalid_json_object"));
+          return;
+        }
+        resolve(value as Record<string, unknown>);
+      } catch {
+        reject(new HttpRequestError(400, "invalid_json"));
+      }
     });
   });
 }
 
-function startMlxServer(mlxModel?: string): ChildProcess | null {
-  // Look for mlx-embed-server relative to the grepmax package
-  const candidates = [
-    path.resolve(__dirname, "../../mlx-embed-server"),
-    path.resolve(__dirname, "../mlx-embed-server"),
-  ];
-  const serverDir = candidates.find((d) =>
-    fs.existsSync(path.join(d, "server.py")),
-  );
-  if (!serverDir) return null;
-
-  const out = openRotatedLog(path.join(PATHS.logsDir, "mlx-embed-server.log"));
-  const env: Record<string, string> = { ...process.env } as Record<
-    string,
-    string
-  >;
-  if (mlxModel) {
-    env.MLX_EMBED_MODEL = mlxModel;
+function daemonErrorStatus(error: unknown): number {
+  if (error === "busy" || error === "rebuilding") return 503;
+  if (error === "project not registered" || error === "project not watched") {
+    return 404;
   }
-  // Pin the model cache to internal disk — never inherit an HF_HOME that
-  // may point at an unmounted external volume (see resolveMlxHfHome).
-  env.HF_HOME = resolveMlxHfHome(mlxModel);
-  const child = spawn("uv", ["run", "python", "server.py"], {
-    cwd: serverDir,
-    detached: true,
-    stdio: ["ignore", out, out],
-    env,
+  if (error === "invalid limit" || error === "invalid path") return 400;
+  return 500;
+}
+
+export function serveRootError(root: string): string | undefined {
+  if (!isBlockedProjectRoot(root)) return undefined;
+  return (
+    `Refusing to serve ${root}: this path is blocked from indexing.\n` +
+    `(Blocked: ${BLOCKED_ROOTS_DESCRIPTION}.)\n` +
+    "Pick a specific project subdirectory instead."
+  );
+}
+
+function optionalString(
+  body: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  const value = body[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "string")
+    throw new HttpRequestError(400, `invalid_${key}`);
+  return value;
+}
+
+function optionalStringArray(
+  body: Record<string, unknown>,
+  key: string,
+): string[] | undefined {
+  const value = body[key];
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new HttpRequestError(400, `invalid_${key}`);
+  }
+  return value as string[];
+}
+
+export function createServeHttpServer(
+  projectRoot: string,
+  deps: ServeHttpDeps,
+): ServeHttpRuntime {
+  const active = new Set<AbortController>();
+  const server = http.createServer(async (req, res) => {
+    deps.onActivity?.();
+
+    if (req.method === "GET" && req.url === "/health") {
+      writeJson(res, 200, { status: "ok" });
+      return;
+    }
+
+    const ac = new AbortController();
+    active.add(ac);
+    const abort = () => ac.abort();
+    req.once("aborted", abort);
+    res.once("close", () => {
+      if (!res.writableFinished) abort();
+    });
+
+    try {
+      if (req.method === "GET" && req.url === "/stats") {
+        const response = await deps.stats(ac.signal);
+        if (!response.ok) {
+          writeJson(res, daemonErrorStatus(response.error), {
+            error: response.error ?? "stats_failed",
+          });
+          return;
+        }
+        const { ok: _ok, ...stats } = response;
+        writeJson(res, 200, stats);
+        return;
+      }
+
+      if (req.method === "POST" && req.url === "/search") {
+        const body = await readJsonBody(req);
+        const query = typeof body.query === "string" ? body.query.trim() : "";
+        if (!query) throw new HttpRequestError(400, "invalid_query");
+
+        const limit = body.limit === undefined ? 10 : body.limit;
+        if (
+          typeof limit !== "number" ||
+          !Number.isInteger(limit) ||
+          limit < 1 ||
+          limit > MAX_HTTP_SEARCH_LIMIT
+        ) {
+          throw new HttpRequestError(400, "invalid_limit");
+        }
+
+        const requestedPath = optionalString(body, "path");
+        const inValues = optionalStringArray(body, "in");
+        const excludeValues = optionalStringArray(body, "exclude");
+        const scope = resolveScope({
+          projectRoot,
+          in: inValues?.length
+            ? inValues
+            : requestedPath
+              ? [requestedPath]
+              : undefined,
+          exclude: excludeValues,
+        });
+        if (requestedPath) {
+          resolveContainedPath(projectRoot, requestedPath, {
+            verifyExistingTarget: true,
+          });
+        }
+
+        const filters: SearchFilter = {};
+        const file = optionalString(body, "file");
+        const language = optionalString(body, "lang");
+        const role = optionalString(body, "role");
+        if (file) filters.file = file;
+        if (language) filters.language = language;
+        if (role) filters.role = role;
+        if (scope.inPrefixes.length > 0) filters.inPrefixes = scope.inPrefixes;
+        if (scope.excludePrefixes.length > 0) {
+          filters.excludePrefixes = scope.excludePrefixes;
+        }
+
+        const response = await deps.search(
+          {
+            query,
+            limit,
+            pathPrefix: scope.pathPrefix,
+            filters: Object.keys(filters).length ? filters : undefined,
+          },
+          ac.signal,
+        );
+        if (!response.ok) {
+          writeJson(res, daemonErrorStatus(response.error), {
+            error: response.error ?? "search_failed",
+          });
+          return;
+        }
+        writeJson(res, 200, { results: response.data ?? [] });
+        return;
+      }
+
+      writeJson(res, 404, { error: "not_found" });
+    } catch (err) {
+      if (ac.signal.aborted) return;
+      if (err instanceof PathContainmentError) {
+        writeJson(res, 400, { error: "path_outside_project" });
+      } else if (err instanceof HttpRequestError) {
+        writeJson(res, err.status, { error: err.code });
+      } else {
+        writeJson(res, 500, {
+          error: err instanceof Error ? err.message : "internal_error",
+        });
+      }
+    } finally {
+      active.delete(ac);
+    }
   });
-  child.unref();
-  return child;
+
+  server.setTimeout(60_000);
+  return {
+    server,
+    abortActive: () => {
+      for (const ac of active) ac.abort();
+      active.clear();
+    },
+  };
+}
+
+export async function listenOnLoopback(
+  server: http.Server,
+  startPort: number,
+  attempts = 10,
+): Promise<number> {
+  let port = startPort;
+  for (let attempt = 0; attempt < attempts; attempt++, port++) {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const onError = (err: Error) => {
+          server.off("listening", onListening);
+          reject(err);
+        };
+        const onListening = () => {
+          server.off("error", onError);
+          resolve();
+        };
+        server.once("error", onError);
+        server.once("listening", onListening);
+        server.listen(port, LOOPBACK_HOST);
+      });
+      const address = server.address();
+      return typeof address === "object" && address ? address.port : port;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EADDRINUSE") throw err;
+    }
+  }
+  throw new Error(
+    `Could not find an open port between ${startPort} and ${startPort + attempts - 1}`,
+  );
+}
+
+async function closeServer(server: http.Server): Promise<void> {
+  if (!server.listening) return;
+  await new Promise<void>((resolve) => {
+    const timeout = setTimeout(() => {
+      server.closeAllConnections?.();
+      resolve();
+    }, 5_000);
+    server.close(() => {
+      clearTimeout(timeout);
+      resolve();
+    });
+  });
 }
 
 export const serve = new Command("serve")
-  .description("HTTP search server with live file watching")
+  .description("Loopback HTTP search adapter backed by the gmax daemon")
   .option(
     "-p, --port <port>",
     "Port to listen on",
     process.env.GMAX_PORT || "4444",
   )
   .option("-b, --background", "Run in background", false)
-  .option("--cpu", "Use CPU-only embeddings (skip MLX GPU server)", false)
+  .option(
+    "--cpu",
+    "Deprecated: configure daemon CPU mode with gmax config",
+    false,
+  )
   .option("--no-idle-timeout", "Disable the 30-minute idle shutdown", false)
   .action(async (_args, cmd) => {
     const options: {
@@ -92,11 +374,28 @@ export const serve = new Command("serve")
       cpu: boolean;
       idleTimeout: boolean;
     } = cmd.optsWithGlobals();
-    let port = parseInt(options.port, 10);
-    const startPort = port;
+    const port = Number.parseInt(options.port, 10);
     const projectRoot = findProjectRoot(process.cwd()) ?? process.cwd();
 
-    // Check if already running
+    if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+      console.error(`Invalid port: ${options.port}`);
+      process.exitCode = 1;
+      return;
+    }
+    const blockedRootError = serveRootError(projectRoot);
+    if (blockedRootError) {
+      console.error(blockedRootError);
+      process.exitCode = 1;
+      return;
+    }
+    if (options.cpu) {
+      console.error(
+        "--cpu is now configured on the daemon. Run `gmax config --embed-mode cpu`, then start serve again.",
+      );
+      process.exitCode = 1;
+      return;
+    }
+
     const existing = getServerForProject(projectRoot);
     if (existing && isProcessRunning(existing.pid)) {
       console.log(
@@ -115,369 +414,123 @@ export const serve = new Command("serve")
       const logFile = path.join(PATHS.logsDir, `server-${safeName}.log`);
       const out = openRotatedLog(logFile);
       const err = openRotatedLog(logFile);
-
-      const child = spawn(process.argv[0], [process.argv[1], ...args], {
-        detached: true,
-        stdio: ["ignore", out, err],
-        cwd: process.cwd(),
-        env: { ...process.env, GMAX_BACKGROUND: "true" },
-      });
-      child.unref();
-      console.log(`Started background server (PID: ${child.pid})`);
+      try {
+        const child = spawn(process.argv[0], [process.argv[1], ...args], {
+          detached: true,
+          stdio: ["ignore", out, err],
+          cwd: process.cwd(),
+          env: { ...process.env, GMAX_BACKGROUND: "true" },
+        });
+        const childPid = await waitForChildSpawn(child);
+        child.unref();
+        console.log(`Started background server (PID: ${childPid})`);
+      } catch (err) {
+        console.error(
+          `Failed to start background server: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        process.exitCode = 1;
+      } finally {
+        fs.closeSync(out);
+        fs.closeSync(err);
+      }
       return;
     }
 
-    const paths = ensureProjectPaths(projectRoot);
-    const projectName = path.basename(projectRoot);
+    const startupAc = new AbortController();
+    let runtime: ServeHttpRuntime | null = null;
+    let idleTimer: ReturnType<typeof setInterval> | null = null;
+    let registered = false;
+    let shutdownPromise: Promise<void> | null = null;
 
-    // Propagate project root to worker processes
-    process.env.GMAX_PROJECT_ROOT = projectRoot;
+    const shutdown = (code = 0): Promise<void> => {
+      if (shutdownPromise) return shutdownPromise;
+      shutdownPromise = (async () => {
+        startupAc.abort();
+        if (idleTimer) clearInterval(idleTimer);
+        runtime?.abortActive();
+        if (runtime) await closeServer(runtime.server);
+        if (registered) unregisterServer(process.pid);
+        await gracefulExit(code);
+      })();
+      return shutdownPromise;
+    };
 
-    // Determine embed mode: --cpu flag overrides, then config, then default
-    // Default to GPU on Apple Silicon, CPU everywhere else
-    const isAppleSilicon =
-      process.arch === "arm64" && process.platform === "darwin";
-    const indexConfig = readIndexConfig(paths.configPath);
-    const useGpu = options.cpu
-      ? false
-      : (indexConfig?.embedMode ?? (isAppleSilicon ? "gpu" : "cpu")) === "gpu";
-    const mlxModel = indexConfig?.mlxModel;
-
-    // MLX GPU embed server — started when GPU mode is active.
-    let mlxChild: ChildProcess | null = null;
-    if (!useGpu) {
-      console.log(`[serve:${projectName}] CPU-only mode`);
-    } else {
-      const mlxUp = await isMlxServerUp();
-      if (mlxUp) {
-        console.log(`[serve:${projectName}] MLX GPU server already running`);
-      } else {
-        mlxChild = startMlxServer(mlxModel);
-        if (mlxChild) {
-          console.log(
-            `[serve] Starting MLX GPU embed server (PID: ${mlxChild.pid})${mlxModel ? ` [${mlxModel}]` : ""}`,
-          );
-          let ready = false;
-          for (let i = 0; i < 30; i++) {
-            await new Promise((r) => setTimeout(r, 1000));
-            if (await isMlxServerUp()) {
-              console.log(`[serve:${projectName}] MLX GPU server ready`);
-              ready = true;
-              break;
-            }
-          }
-          if (!ready) {
-            console.error(
-              `[serve:${projectName}] MLX GPU server failed to start. Run with --cpu to use CPU embeddings.`,
-            );
-            process.exitCode = 1;
-            return;
-          }
-        } else {
-          console.error(
-            `[serve:${projectName}] MLX server not found. Run with --cpu to use CPU embeddings.`,
-          );
-          process.exitCode = 1;
-          return;
-        }
-      }
-    }
+    process.once("SIGINT", () => void shutdown());
+    process.once("SIGTERM", () => void shutdown());
 
     try {
-      await ensureSetup();
-      await ensureGrammars(console.log, { silent: true });
-
-      // Initial sync is self-contained (creates+closes its own VectorDB+MetaCache).
-      if (!process.env.GMAX_BACKGROUND) {
-        const { spinner, onProgress } = createIndexingSpinner(
-          projectRoot,
-          "Indexing before starting server...",
-        );
-        try {
-          await initialSync({ projectRoot, onProgress });
-          spinner.succeed("Initial index ready. Starting server...");
-        } catch (e) {
-          spinner.fail("Indexing failed");
-          throw e;
-        }
-      } else {
-        await initialSync({ projectRoot });
+      if (!(await ensureDaemonRunning())) {
+        throw new Error("Could not start the gmax daemon");
+      }
+      const ensured = await sendStreamingCommand(
+        { cmd: "ensure-project", root: projectRoot },
+        () => {},
+        { signal: startupAc.signal },
+      );
+      if (!ensured.ok) {
+        throw new Error(String(ensured.error ?? "project setup failed"));
       }
 
-      // Open long-lived resources for serving + watching.
-      const vectorDb = new VectorDB(paths.lancedbDir);
-      const metaCache = new MetaCache(paths.lmdbPath);
-      const searcher = new Searcher(vectorDb);
-
-      // Start live file watcher
-      let fileWatcher: WatcherHandle | null = await startWatcher({
-        projectRoot,
-        vectorDb,
-        metaCache,
-        dataDir: paths.dataDir,
-        onReindex: (files, durationMs) => {
-          console.log(
-            `[watch:${projectName}] Reindexed ${files} file${files !== 1 ? "s" : ""} (${(durationMs / 1000).toFixed(1)}s)`,
-          );
-        },
-      });
-      console.log(`[serve:${projectName}] File watcher active`);
-
-      // Idle timeout: shut down if no searches for 30 minutes
-      // Disabled when started by MCP server (--no-idle-timeout)
       let lastActivity = Date.now();
+      runtime = createServeHttpServer(projectRoot, {
+        onActivity: () => {
+          lastActivity = Date.now();
+        },
+        search: (input, signal) =>
+          sendDaemonCommand(
+            {
+              cmd: "search",
+              projectRoot,
+              query: input.query,
+              limit: input.limit,
+              pathPrefix: input.pathPrefix,
+              filters: input.filters,
+              rerank: true,
+            },
+            { timeoutMs: 65_000, signal },
+          ),
+        stats: (signal) =>
+          sendDaemonCommand(
+            { cmd: "project-stats", root: projectRoot },
+            { timeoutMs: 10_000, signal },
+          ),
+      });
+
+      const actualPort = await listenOnLoopback(runtime.server, port);
+      registerServer({
+        pid: process.pid,
+        port: actualPort,
+        projectRoot,
+        startTime: Date.now(),
+      });
+      registered = true;
+
       if (options.idleTimeout) {
-        const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
-        const idleCheck = setInterval(() => {
-          if (Date.now() - lastActivity > IDLE_TIMEOUT_MS) {
-            console.log(
-              `[serve:${projectName}] Idle timeout reached, shutting down.`,
-            );
-            clearInterval(idleCheck);
-            process.kill(process.pid, "SIGTERM");
+        idleTimer = setInterval(() => {
+          if (Date.now() - lastActivity > 30 * 60 * 1000) {
+            void shutdown();
           }
         }, 60_000);
-        idleCheck.unref();
+        idleTimer.unref();
       }
 
-      const server = http.createServer(async (req, res) => {
-        try {
-          if (req.method === "GET" && req.url === "/health") {
-            lastActivity = Date.now();
-            res.statusCode = 200;
-            res.setHeader("Content-Type", "application/json");
-            res.end(JSON.stringify({ status: "ok" }));
-            return;
-          }
-
-          if (req.method === "GET" && req.url === "/stats") {
-            try {
-              const dbStats = await vectorDb.getStats();
-              const cfg = readIndexConfig(paths.configPath);
-              const stats = {
-                files:
-                  dbStats.chunks > 0
-                    ? await vectorDb.getDistinctFileCount()
-                    : 0,
-                chunks: dbStats.chunks,
-                totalBytes: dbStats.totalBytes,
-                vectorDim: cfg?.vectorDim ?? null,
-                embedMode: cfg?.embedMode ?? (isAppleSilicon ? "gpu" : "cpu"),
-                model: cfg?.embedModel ?? null,
-                mlxModel: cfg?.mlxModel ?? null,
-                indexedAt: cfg?.indexedAt ?? null,
-                watching: fileWatcher !== null,
-              };
-              res.statusCode = 200;
-              res.setHeader("Content-Type", "application/json");
-              res.end(JSON.stringify(stats));
-            } catch (err) {
-              res.statusCode = 500;
-              res.setHeader("Content-Type", "application/json");
-              res.end(
-                JSON.stringify({
-                  error: (err as Error)?.message || "stats_failed",
-                }),
-              );
-            }
-            return;
-          }
-
-          if (req.method === "POST" && req.url === "/search") {
-            lastActivity = Date.now();
-            const chunks: Buffer[] = [];
-            let totalSize = 0;
-            let aborted = false;
-
-            req.on("data", (chunk) => {
-              if (aborted) return;
-              totalSize += chunk.length;
-              if (totalSize > 1_000_000) {
-                aborted = true;
-                res.statusCode = 413;
-                res.setHeader("Content-Type", "application/json");
-                res.end(JSON.stringify({ error: "payload_too_large" }));
-                req.destroy();
-                return;
-              }
-              chunks.push(chunk);
-            });
-
-            req.on("end", async () => {
-              if (aborted) return;
-              try {
-                const body = chunks.length
-                  ? JSON.parse(Buffer.concat(chunks).toString("utf-8"))
-                  : {};
-                const query = typeof body.query === "string" ? body.query : "";
-                const limit = typeof body.limit === "number" ? body.limit : 10;
-
-                // Use absolute path prefix for search filtering
-                let searchPath = `${projectRoot}/`;
-                if (typeof body.path === "string") {
-                  const resolvedPath = path.resolve(projectRoot, body.path);
-                  searchPath = resolvedPath.endsWith("/")
-                    ? resolvedPath
-                    : `${resolvedPath}/`;
-                }
-
-                // Add AbortController for cancellation
-                const ac = new AbortController();
-                req.on("close", () => {
-                  if (req.complete) return;
-                  ac.abort();
-                });
-                res.on("close", () => {
-                  if (res.writableFinished) return;
-                  ac.abort();
-                });
-
-                const result = await searcher.search(
-                  query,
-                  limit,
-                  { rerank: true },
-                  undefined,
-                  searchPath,
-                  undefined, // intent
-                  ac.signal,
-                );
-
-                if (ac.signal.aborted) {
-                  // Request was cancelled, don't write response if possible
-                  // (Though usually 'close' means the socket is gone anyway)
-                  return;
-                }
-
-                res.statusCode = 200;
-                res.setHeader("Content-Type", "application/json");
-                res.end(JSON.stringify({ results: result.data }));
-              } catch (err) {
-                if (err instanceof Error && err.name === "AbortError") {
-                  // Request cancelled
-                  return;
-                }
-                res.statusCode = 500;
-                res.setHeader("Content-Type", "application/json");
-                res.end(
-                  JSON.stringify({
-                    error: (err as Error)?.message || "search_failed",
-                  }),
-                );
-              }
-            });
-
-            req.on("error", (err) => {
-              console.error(`[serve:${projectName}] request error:`, err);
-              aborted = true;
-            });
-
-            return;
-          }
-
-          res.statusCode = 404;
-          res.end();
-        } catch (err) {
-          console.error(`[serve:${projectName}] request handler error:`, err);
-          if (!res.headersSent) {
-            res.statusCode = 500;
-            res.setHeader("Content-Type", "application/json");
-            res.end(JSON.stringify({ error: "internal_error" }));
-          }
-        }
+      runtime.server.on("error", (err) => {
+        console.error(
+          `[serve:${path.basename(projectRoot)}] server error:`,
+          err,
+        );
+        void shutdown(1);
       });
-
-      server.on("error", (e: NodeJS.ErrnoException) => {
-        if (e.code === "EADDRINUSE") {
-          const nextPort = port + 1;
-          if (nextPort < startPort + 10) {
-            console.log(`Port ${port} in use, retrying with ${nextPort}...`);
-            port = nextPort;
-            server.close(() => {
-              server.listen(port);
-            });
-            return;
-          }
-          console.error(
-            `Could not find an open port between ${startPort} and ${startPort + 9}`,
-          );
-        }
-        console.error(`[serve:${projectName}] server error:`, e);
-        // Ensure we exit if server fails to start
-        process.exit(1);
-      });
-
-      server.setTimeout(60_000); // 60s request timeout
-      server.listen(port, () => {
-        const address = server.address();
-        const actualPort =
-          typeof address === "object" && address ? address.port : port;
-
-        if (!process.env.GMAX_BACKGROUND) {
-          console.log(
-            `gmax server listening on http://localhost:${actualPort} (${projectRoot})`,
-          );
-        }
-        registerServer({
-          pid: process.pid,
-          port: actualPort,
-          projectRoot,
-          startTime: Date.now(),
-        });
-      });
-
-      const shutdown = async () => {
-        unregisterServer(process.pid);
-
-        // Stop file watcher first
-        if (fileWatcher) {
-          try {
-            await fileWatcher.close();
-          } catch {}
-          fileWatcher = null;
-        }
-
-        // Stop MLX server if we started it
-        if (mlxChild?.pid) {
-          try {
-            process.kill(mlxChild.pid, "SIGTERM");
-          } catch {}
-        }
-
-        // Properly await server close
-        await new Promise<void>((resolve, reject) => {
-          server.close((err) => {
-            if (err) {
-              console.error("Error closing server:", err);
-              reject(err);
-            } else {
-              resolve();
-            }
-          });
-          // Timeout fallback in case close hangs
-          setTimeout(resolve, 5000);
-        });
-
-        // Clean close of owned resources
-        try {
-          await metaCache.close();
-        } catch (e) {
-          console.error("Error closing meta cache:", e);
-        }
-        try {
-          await vectorDb.close();
-        } catch (e) {
-          console.error("Error closing vector DB:", e);
-        }
-        await gracefulExit();
-      };
-
-      process.on("SIGINT", shutdown);
-      process.on("SIGTERM", shutdown);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      console.error("Serve failed:", message);
-      process.exitCode = 1;
-      await gracefulExit(1);
+      if (!process.env.GMAX_BACKGROUND) {
+        console.log(
+          `gmax server listening on http://${LOOPBACK_HOST}:${actualPort} (${projectRoot})`,
+        );
+      }
+    } catch (err) {
+      console.error(
+        `Serve failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      await shutdown(1);
     }
   });
 
@@ -491,9 +544,11 @@ serve
       return;
     }
     console.log("Running servers:");
-    servers.forEach((s) => {
-      console.log(`- PID: ${s.pid} | Port: ${s.port} | Root: ${s.projectRoot}`);
-    });
+    for (const server of servers) {
+      console.log(
+        `- PID: ${server.pid} | Port: ${server.port} | Root: ${server.projectRoot}`,
+      );
+    }
   });
 
 serve
@@ -504,27 +559,28 @@ serve
     if (options.all) {
       const servers = listServers();
       let count = 0;
-      servers.forEach((s) => {
-        try {
-          process.kill(s.pid, "SIGTERM");
-          count++;
-        } catch (e) {
-          console.error(`Failed to stop PID ${s.pid}:`, e);
-        }
-      });
-      console.log(`Stopped ${count} servers.`);
-    } else {
-      const projectRoot = findProjectRoot(process.cwd()) ?? process.cwd();
-      const server = getServerForProject(projectRoot);
-      if (server) {
+      for (const server of servers) {
         try {
           process.kill(server.pid, "SIGTERM");
-          console.log(`Stopped server for ${projectRoot} (PID: ${server.pid})`);
-        } catch (e) {
-          console.error(`Failed to stop PID ${server.pid}:`, e);
+          count++;
+        } catch (err) {
+          console.error(`Failed to stop PID ${server.pid}:`, err);
         }
-      } else {
-        console.log(`No server found for ${projectRoot}`);
       }
+      console.log(`Stopped ${count} servers.`);
+      return;
+    }
+
+    const projectRoot = findProjectRoot(process.cwd()) ?? process.cwd();
+    const server = getServerForProject(projectRoot);
+    if (!server) {
+      console.log(`No server found for ${projectRoot}`);
+      return;
+    }
+    try {
+      process.kill(server.pid, "SIGTERM");
+      console.log(`Stopped server for ${projectRoot} (PID: ${server.pid})`);
+    } catch (err) {
+      console.error(`Failed to stop PID ${server.pid}:`, err);
     }
   });

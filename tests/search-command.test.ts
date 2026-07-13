@@ -34,7 +34,20 @@ vi.mock("../src/lib/utils/project-registry", () => ({
     chunkCount: 100,
     status: "indexed",
   })),
+  listProjects: vi.fn(() => [
+    {
+      root: "/tmp/project",
+      name: "project",
+      vectorDim: 384,
+      modelTier: "small",
+      embedMode: "cpu",
+      lastIndexed: "2026-01-01T00:00:00.000Z",
+      chunkCount: 100,
+      status: "indexed",
+    },
+  ]),
   registerProject: vi.fn(),
+  stampProjectFullSync: vi.fn(),
   resolveRootOrExit: vi.fn((arg?: string) => arg ?? "/tmp/project"),
 }));
 
@@ -64,6 +77,22 @@ vi.mock("../src/lib/index/syncer", () => ({
     indexed: 1,
     total: 1,
     failedFiles: 0,
+    degraded: false,
+    scanErrors: 0,
+    generation: {
+      tier: "small",
+      vectorDim: 384,
+      onnxModel: "ibm-granite/granite-embedding-small-english-r2-ONNX",
+      mlxModel: "ibm-granite/granite-embedding-small-english-r2",
+      colbertModel: "lightonai/Reason-ModernColBERT",
+      fingerprint:
+        "cc340c3dd6f2967512f793457deadd6dd8f2574ec09f0a63bda0f41035d15f68",
+    },
+    embedMode: "cpu",
+    registryExpectation: {
+      embeddingFingerprint: null,
+      rebuildId: null,
+    },
   })),
 }));
 
@@ -85,6 +114,7 @@ const mockVectorDb = {
   listPaths: vi.fn(async () => new Map()),
   hasAnyRows: vi.fn(async () => false),
   hasRowsForPath: vi.fn(async () => false),
+  countRowsForPath: vi.fn(async () => 1),
   createFTSIndex: vi.fn(async () => {}),
   close: vi.fn(async () => {}),
 };
@@ -105,7 +135,7 @@ vi.mock("../src/lib/search/searcher", () => ({
 // exercised deterministically regardless of whether a daemon happens to be up.
 vi.mock("../src/lib/utils/daemon-client", () => ({
   isDaemonRunning: vi.fn(async () => false),
-  sendDaemonCommand: vi.fn(async () => ({ ok: false })),
+  sendDaemonCommand: vi.fn(async () => ({ ok: false, error: "ENOENT" })),
   ensureDaemonRunning: vi.fn(async () => false),
   sendStreamingCommand: vi.fn(async () => ({ ok: true, type: "done" })),
 }));
@@ -113,7 +143,7 @@ vi.mock("../src/lib/utils/daemon-client", () => ({
 import { search } from "../src/commands/search";
 import { CONFIG } from "../src/config";
 import { initialSync } from "../src/lib/index/syncer";
-import { registerProject } from "../src/lib/utils/project-registry";
+import { stampProjectFullSync } from "../src/lib/utils/project-registry";
 import { findProjectRoot } from "../src/lib/utils/project-root";
 import { launchWatcher } from "../src/lib/utils/watcher-launcher";
 
@@ -605,7 +635,7 @@ describe("first-run auto-index scoping", () => {
   });
 
   it("uses --root for sync, registry, watcher, and row checks", async () => {
-    vi.mocked(findProjectRoot).mockImplementation((p: string) =>
+    vi.mocked(findProjectRoot).mockImplementation((p = "") =>
       p.includes("/tmp/other") ? "/tmp/other" : "/tmp/project",
     );
     mockVectorDb.hasRowsForPath.mockResolvedValue(true);
@@ -636,12 +666,52 @@ describe("first-run auto-index scoping", () => {
     expect(initialSync).toHaveBeenCalledWith(
       expect.objectContaining({ projectRoot: "/tmp/other" }),
     );
-    expect(registerProject).toHaveBeenCalledWith(
+    expect(stampProjectFullSync).toHaveBeenCalledWith(
       expect.objectContaining({
         root: "/tmp/other",
         chunkerVersion: CONFIG.CHUNKER_VERSION,
       }),
     );
     expect(launchWatcher).toHaveBeenCalledWith("/tmp/other");
+  });
+
+  it("uses the containing project when --root points to a subdirectory", async () => {
+    vi.mocked(findProjectRoot).mockImplementation((p = "") =>
+      p.includes("/tmp/other") ? "/tmp/other" : "/tmp/project",
+    );
+    mockVectorDb.hasRowsForPath.mockResolvedValue(true);
+
+    await (search as Command).parseAsync(
+      ["query", "--root", "/tmp/other/src"],
+      { from: "user" },
+    );
+
+    expect(mockVectorDb.hasRowsForPath).toHaveBeenCalledWith("/tmp/other");
+    expect(mockSearcher.search).toHaveBeenCalledWith(
+      "query",
+      expect.any(Number),
+      expect.any(Object),
+      undefined,
+      "/tmp/other/",
+    );
+  });
+
+  it("rejects positional paths outside the selected project", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    process.exitCode = 0;
+    try {
+      await (search as Command).parseAsync(["query", "../outside"], {
+        from: "user",
+      });
+
+      expect(mockSearcher.search).not.toHaveBeenCalled();
+      expect(error).toHaveBeenCalledWith(
+        expect.stringContaining("outside project root"),
+      );
+      expect(process.exitCode).toBe(1);
+    } finally {
+      error.mockRestore();
+      process.exitCode = 0;
+    }
   });
 });

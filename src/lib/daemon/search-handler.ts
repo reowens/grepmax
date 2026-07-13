@@ -1,9 +1,12 @@
+import type { EmbeddingGenerationConfig } from "../index/embedding-generation";
+import { compareEmbeddingGeneration } from "../index/embedding-generation";
 import type { IndexState } from "../output/index-state-footer";
 import { Searcher } from "../search/searcher";
 import { getStoredSkeleton } from "../skeleton/retriever";
 import type { ChunkType, SearchFilter } from "../store/types";
 import type { VectorDB } from "../store/vector-db";
 import { getProject } from "../utils/project-registry";
+import type { WorkerPool } from "../workers/pool";
 
 export interface DaemonSearchPayload {
   projectRoot: string;
@@ -40,11 +43,13 @@ export type DaemonSearchResult = {
  */
 export interface DaemonSearchDeps {
   vectorDb: VectorDB | null;
+  workerPool: WorkerPool | null;
   processors: ReadonlyMap<string, unknown>;
   indexProgress: ReadonlyMap<string, unknown>;
   searchers: Map<string, Searcher>;
   getIndexState: (root: string) => IndexState;
   touchActivity: () => void;
+  generation: Readonly<EmbeddingGenerationConfig> | null;
 }
 
 /**
@@ -57,11 +62,26 @@ export async function handleDaemonSearch(
   payload: DaemonSearchPayload,
   signal: AbortSignal,
 ): Promise<DaemonSearchResult> {
-  const { vectorDb } = deps;
-  if (!vectorDb) {
+  const { vectorDb, workerPool } = deps;
+  if (!vectorDb || !workerPool) {
     return { ok: false, error: "daemon not ready" };
   }
   const root = payload.projectRoot;
+  const roots = payload.filters?.projectRoots ?? [root];
+  for (const candidateRoot of roots) {
+    const project = getProject(candidateRoot);
+    if (
+      project?.status === "indexed" &&
+      deps.generation &&
+      compareEmbeddingGeneration(project, deps.generation).state === "stale"
+    ) {
+      return {
+        ok: false,
+        error: "stale_embedding",
+        hint: "embedding generation mismatch; run gmax repair --rebuild to rebuild the whole corpus",
+      };
+    }
+  }
   if (!deps.processors.has(root)) {
     // A full index (--reset) or the initial index removes/defers the
     // processor while (re)building. The partial index is still queryable, so
@@ -80,7 +100,7 @@ export async function handleDaemonSearch(
 
   let searcher = deps.searchers.get(root);
   if (!searcher) {
-    searcher = new Searcher(vectorDb);
+    searcher = new Searcher(vectorDb, workerPool);
     deps.searchers.set(root, searcher);
   }
 

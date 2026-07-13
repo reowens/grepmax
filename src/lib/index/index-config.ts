@@ -19,6 +19,8 @@ export interface IndexConfig {
   embedMode?: "cpu" | "gpu";
   mlxModel?: string;
   modelTier?: string; // "small" | "standard"
+  queryLog?: boolean;
+  llmEnabled?: boolean;
 
   // Model identity (set after indexing completes)
   embedModel: string;
@@ -58,8 +60,12 @@ export function readGlobalConfig(): GlobalConfig {
 }
 
 export function writeGlobalConfig(config: GlobalConfig): void {
+  const existing = readGlobalConfig();
+  const merged: GlobalConfig = { ...existing, ...config };
+  if (config.queryLog === undefined) merged.queryLog = existing.queryLog;
+  if (config.llmEnabled === undefined) merged.llmEnabled = existing.llmEnabled;
   fs.mkdirSync(path.dirname(GLOBAL_CONFIG_PATH), { recursive: true });
-  fs.writeFileSync(GLOBAL_CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`);
+  fs.writeFileSync(GLOBAL_CONFIG_PATH, `${JSON.stringify(merged, null, 2)}\n`);
 }
 
 /**
@@ -96,9 +102,11 @@ export function writeIndexConfig(
   const tierIds = getModelIdsForTier(tierName);
   const config: IndexConfig = {
     // Preserve user preferences from setup
-    embedMode: existing?.embedMode,
-    mlxModel: existing?.mlxModel,
+    embedMode: existing?.embedMode ?? readGlobalConfig().embedMode,
+    mlxModel: existing?.mlxModel ?? readGlobalConfig().mlxModel,
     modelTier: tierName,
+    queryLog: existing?.queryLog ?? readGlobalConfig().queryLog,
+    llmEnabled: existing?.llmEnabled ?? readGlobalConfig().llmEnabled,
     // Model identity from current run
     embedModel: tierIds.embed,
     colbertModel: tierIds.colbert,
@@ -123,12 +131,15 @@ export function writeSetupConfig(
   },
 ): void {
   const existing = readIndexConfig(configPath);
-  const config = {
+  const config: Partial<IndexConfig> = {
     ...existing,
     embedMode: prefs.embedMode,
-    mlxModel: prefs.mlxModel,
-    modelTier: prefs.modelTier,
   };
+  if ("mlxModel" in prefs) {
+    if (prefs.mlxModel === undefined) delete config.mlxModel;
+    else config.mlxModel = prefs.mlxModel;
+  }
+  if (prefs.modelTier !== undefined) config.modelTier = prefs.modelTier;
   fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 

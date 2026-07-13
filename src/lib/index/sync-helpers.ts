@@ -1,5 +1,6 @@
 import { relative } from "node:path";
 import ora, { type Ora } from "ora";
+import type { EmbeddingGenerationConfig } from "./embedding-generation";
 
 interface IndexingSpinner {
   spinner: Ora;
@@ -30,6 +31,14 @@ export interface InitialSyncResult {
   indexed: number;
   total: number;
   failedFiles: number;
+  degraded: boolean;
+  scanErrors: number;
+  generation: Readonly<EmbeddingGenerationConfig>;
+  embedMode: "cpu" | "gpu";
+  registryExpectation: {
+    embeddingFingerprint: string | null;
+    rebuildId: string | null;
+  };
 }
 
 /**

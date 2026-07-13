@@ -1,8 +1,8 @@
 import * as fs from "node:fs";
-import * as path from "node:path";
 import { Skeletonizer } from "../lib/skeleton";
 import { getStoredSkeleton } from "../lib/skeleton/retriever";
 import type { VectorDB } from "../lib/store/vector-db";
+import { resolveContainedFile } from "../lib/utils/path-containment";
 
 // Reuse Skeletonizer instance
 let globalSkeletonizer: Skeletonizer | null = null;
@@ -50,10 +50,18 @@ export async function outputSkeletons(
   }> = [];
 
   for (const filePath of filesToProcess) {
-    // Paths from search results are now absolute (centralized index)
-    const absPath = path.isAbsolute(filePath)
-      ? filePath
-      : path.resolve(projectRoot, filePath);
+    let absPath: string;
+    try {
+      absPath = resolveContainedFile(projectRoot, filePath);
+    } catch {
+      skeletonResults.push({
+        file: filePath,
+        skeleton: `// File not readable: ${filePath}`,
+        tokens: 0,
+        error: "File not readable",
+      });
+      continue;
+    }
 
     // 0. Daemon-supplied (preferred — already-warm DB lookup, no cold open)
     const fromDaemon = precomputed?.[absPath] ?? precomputed?.[filePath];
@@ -80,29 +88,28 @@ export async function outputSkeletons(
     }
 
     // 2. Fallback to fresh generation
-    await globalSkeletonizer.init();
-    if (!fs.existsSync(absPath)) {
+    try {
+      await globalSkeletonizer.init();
+      const content = fs.readFileSync(absPath, "utf-8");
+      const res = await globalSkeletonizer.skeletonizeFile(
+        absPath,
+        content,
+        skeletonOpts,
+      );
       skeletonResults.push({
         file: filePath,
-        skeleton: `// File not found: ${filePath}`,
-        tokens: 0,
-        error: "File not found",
+        skeleton: res.skeleton,
+        tokens: res.tokenEstimate,
+        error: res.error,
       });
-      continue;
+    } catch {
+      skeletonResults.push({
+        file: filePath,
+        skeleton: `// File not readable: ${filePath}`,
+        tokens: 0,
+        error: "File not readable",
+      });
     }
-
-    const content = fs.readFileSync(absPath, "utf-8");
-    const res = await globalSkeletonizer.skeletonizeFile(
-      absPath,
-      content,
-      skeletonOpts,
-    );
-    skeletonResults.push({
-      file: filePath,
-      skeleton: res.skeleton,
-      tokens: res.tokenEstimate,
-      error: res.error,
-    });
   }
 
   // Since search doesn't support --json explicitly yet, we just print text.

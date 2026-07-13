@@ -1,6 +1,8 @@
 import * as path from "node:path";
 import { CONFIG } from "../config";
+import { assertEmbeddingSearchCompatible } from "../lib/index/embedding-status";
 import { ensureGrammars } from "../lib/index/grammar-loader";
+import { readGlobalConfig } from "../lib/index/index-config";
 import {
   createIndexingSpinner,
   formatDryRunSummary,
@@ -11,6 +13,16 @@ import { Searcher } from "../lib/search/searcher";
 import type { SearchFilter, SearchResponse } from "../lib/store/types";
 import { VectorDB } from "../lib/store/vector-db";
 import { isLocked } from "../lib/utils/lock";
+import {
+  listProjects,
+  stampProjectFullSync,
+} from "../lib/utils/project-registry";
+
+const DAEMON_FALLBACK_ERRORS = new Set(["ENOENT", "ECONNREFUSED"]);
+
+export function shouldFallbackFromDaemonError(error: unknown): boolean {
+  return typeof error === "string" && DAEMON_FALLBACK_ERRORS.has(error);
+}
 
 export interface SearchOptions {
   m: string;
@@ -95,56 +107,78 @@ export async function runSearch(
   // caller for closing after render, or (b) closed here if indexing throws.
   let openedDb: VectorDB | null = null;
   try {
+    const selectedRoots = Array.isArray(searchFilters.projectRoots)
+      ? new Set(searchFilters.projectRoots)
+      : new Set([projectRoot]);
+    assertEmbeddingSearchCompatible(
+      listProjects().filter((project) => selectedRoots.has(project.root)),
+      readGlobalConfig(),
+    );
     // Daemon-mediated search: ships query+args over IPC, daemon runs the
     // hybrid+rerank against its already-warm VectorDB and worker pool.
     // Drops cold-start cost (~17s wall, 6GB RAM in the CLI) to <1s. Falls
-    // back to in-process on any failure.
+    // back to in-process only when no daemon socket is available. A live daemon
+    // error (busy, rebuilding, timeout, protocol, scope, store failure) must not
+    // open the shared store concurrently.
     let searchResult: SearchResponse | null = null;
     let precomputedSkeletons: Record<string, string> | undefined;
     let precomputedGraph: any | undefined;
     let indexState: IndexState | undefined;
     if (!options.sync && !options.dryRun) {
       try {
-        const { isDaemonRunning, sendDaemonCommand } = await import(
+        const { sendDaemonCommand } = await import(
           "../lib/utils/daemon-client"
         );
-        if (await isDaemonRunning()) {
-          const resp = await sendDaemonCommand(
-            {
-              cmd: "search",
-              projectRoot: effectiveRoot,
-              query: pattern,
-              limit: parseInt(options.m, 10),
-              filters:
-                Object.keys(searchFilters).length > 0
-                  ? searchFilters
-                  : undefined,
-              pathPrefix: pathFilter,
-              rerank: process.env.GMAX_RERANK === "1",
-              explain: options.explain,
-              seeds,
-              includeSkeletons: options.skeleton,
-              includeGraph: options.symbol,
-            },
-            { timeoutMs: 60_000 },
+        const crossProject = Array.isArray(searchFilters.projectRoots);
+        const resp = await sendDaemonCommand(
+          {
+            cmd: crossProject ? "search-v2" : "search",
+            projectRoot: effectiveRoot,
+            query: pattern,
+            limit: parseInt(options.m, 10),
+            filters:
+              Object.keys(searchFilters).length > 0 ? searchFilters : undefined,
+            pathPrefix: pathFilter,
+            rerank: process.env.GMAX_RERANK === "1",
+            explain: options.explain,
+            seeds,
+            includeSkeletons: options.skeleton,
+            includeGraph: options.symbol,
+          },
+          { timeoutMs: 60_000 },
+        );
+        if (resp.ok) {
+          searchResult = {
+            data: resp.data as SearchResponse["data"],
+            warnings: resp.warnings as string[] | undefined,
+          };
+          precomputedSkeletons = resp.skeletons as
+            | Record<string, string>
+            | undefined;
+          precomputedGraph = resp.graph;
+          indexState = resp.indexState as IndexState | undefined;
+        } else if (!shouldFallbackFromDaemonError(resp.error)) {
+          const detail =
+            typeof resp.hint === "string"
+              ? `: ${resp.hint}`
+              : typeof resp.error === "string"
+                ? `: ${resp.error}`
+                : "";
+          throw new Error(`Daemon search failed${detail}`);
+        } else if (process.env.GMAX_DEBUG === "1") {
+          console.error(
+            `[search] daemon path unavailable: ${resp.error ?? "unknown"}`,
           );
-          if (resp.ok) {
-            searchResult = {
-              data: resp.data as SearchResponse["data"],
-              warnings: resp.warnings as string[] | undefined,
-            };
-            precomputedSkeletons = resp.skeletons as
-              | Record<string, string>
-              | undefined;
-            precomputedGraph = resp.graph;
-            indexState = resp.indexState as IndexState | undefined;
-          } else if (process.env.GMAX_DEBUG === "1") {
-            console.error(
-              `[search] daemon path unavailable: ${resp.error ?? "unknown"}`,
-            );
-          }
         }
       } catch (err) {
+        const code = (err as NodeJS.ErrnoException)?.code;
+        if (
+          (err instanceof Error &&
+            err.message.startsWith("Daemon search failed")) ||
+          !shouldFallbackFromDaemonError(code)
+        ) {
+          throw err;
+        }
         if (process.env.GMAX_DEBUG === "1") {
           console.error("[search] daemon attempt threw:", err);
         }
@@ -234,31 +268,31 @@ export async function runSearch(
 
           await vectorDb.createFTSIndex();
 
-          // Update registry after sync
-          const { readGlobalConfig } = await import(
-            "../lib/index/index-config"
-          );
-          const { registerProject } = await import(
-            "../lib/utils/project-registry"
-          );
-          const gc = readGlobalConfig();
-          registerProject({
-            root: projectRoot,
-            name: path.basename(projectRoot),
-            vectorDim: gc.vectorDim,
-            modelTier: gc.modelTier,
-            embedMode: gc.embedMode,
-            lastIndexed: new Date().toISOString(),
-            chunkCount: result.indexed,
-            status: "indexed",
-            chunkerVersion: CONFIG.CHUNKER_VERSION,
-          });
+          if (result.degraded) {
+            spinner.warn(
+              `Indexing incomplete (${result.processed}/${result.total}) • ${result.scanErrors} scan errors • ${result.failedFiles} failed. Results may be partial.`,
+            );
+          } else {
+            const prefix = projectRoot.endsWith("/")
+              ? projectRoot
+              : `${projectRoot}/`;
+            const chunkCount = await vectorDb.countRowsForPath(prefix);
+            stampProjectFullSync({
+              root: projectRoot,
+              name: path.basename(projectRoot),
+              generation: result.generation,
+              embedMode: result.embedMode,
+              chunkCount,
+              chunkerVersion: CONFIG.CHUNKER_VERSION,
+              expectedFingerprint:
+                result.registryExpectation.embeddingFingerprint,
+              expectedRebuildId: result.registryExpectation.rebuildId,
+            });
 
-          const failedSuffix =
-            result.failedFiles > 0 ? ` • ${result.failedFiles} failed` : "";
-          spinner.succeed(
-            `${options.sync ? "Indexing" : "Initial indexing"} complete (${result.processed}/${result.total}) • indexed ${result.indexed}${failedSuffix}`,
-          );
+            spinner.succeed(
+              `${options.sync ? "Indexing" : "Initial indexing"} complete (${result.processed}/${result.total}) • indexed ${result.indexed}`,
+            );
+          }
         } catch (e) {
           spinner.fail("Indexing failed");
           throw e;

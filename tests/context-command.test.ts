@@ -58,11 +58,19 @@ vi.mock("../src/lib/utils/exit", () => ({
   gracefulExit: vi.fn(async () => {}),
 }));
 
+vi.mock("../src/lib/utils/file-utils", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/lib/utils/file-utils")>()),
+  readContainedTextFileSync: vi.fn(
+    () => "function handleAuth() {\n  return true;\n}",
+  ),
+}));
+
 vi.mock("node:fs", async () => {
   const actual = await vi.importActual("node:fs");
   return {
     ...(actual as any),
     existsSync: vi.fn((p: string) => existingPaths.has(String(p))),
+    realpathSync: vi.fn((p: string) => String(p)),
     statSync: vi.fn((p: string) => ({
       isDirectory: () => directoryPaths.has(String(p)),
     })),
@@ -143,5 +151,22 @@ describe("context command", () => {
     expect(output).toContain("File Structure");
     expect(output).toContain("File Excerpt");
     expect(output).toContain("function handleAuth()");
+  });
+
+  it("rejects an existing path outside the selected project", async () => {
+    existingPaths.add("/tmp/outside.ts");
+    const readSpy = vi.mocked((await import("node:fs")).readFileSync);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await (context as Command).parseAsync(["/tmp/outside.ts"], {
+      from: "user",
+    });
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Context generation failed:",
+      expect.stringContaining("outside project root"),
+    );
+    expect(readSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 });

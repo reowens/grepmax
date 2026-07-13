@@ -1,4 +1,3 @@
-import * as path from "node:path";
 import { Command } from "commander";
 import { VectorDB } from "../lib/store/vector-db";
 import {
@@ -7,7 +6,8 @@ import {
 } from "../lib/utils/agent-errors";
 import { toArr } from "../lib/utils/arrow";
 import { gracefulExit } from "../lib/utils/exit";
-import { escapeSqlString } from "../lib/utils/filter-builder";
+import { escapeSqlString, pathStartsWith } from "../lib/utils/filter-builder";
+import { resolveContainedPath } from "../lib/utils/path-containment";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import {
@@ -58,9 +58,9 @@ export const similar = new Command("similar")
       // Look up the source chunk's vector
       let sourceRows: any[];
       if (isFile) {
-        const absPath = target.startsWith("/")
-          ? target
-          : path.resolve(projectRoot, target);
+        const absPath = resolveContainedPath(projectRoot, target, {
+          verifyExistingTarget: true,
+        });
         sourceRows = await table
           .query()
           .select(["vector", "path", "defined_symbols", "start_line"])
@@ -72,7 +72,7 @@ export const similar = new Command("similar")
           .query()
           .select(["vector", "path", "defined_symbols", "start_line"])
           .where(
-            `array_contains(defined_symbols, '${escapeSqlString(target)}')`,
+            `array_contains(defined_symbols, '${escapeSqlString(target)}') AND ${pathStartsWith(`${projectRoot}/`)}`,
           )
           .limit(1)
           .toArray();

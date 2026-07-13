@@ -5,7 +5,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // state lives in a hoisted block because vi.mock factories are hoisted above
 // imports.
 const h = vi.hoisted(() => {
-  return { children: [] as any[], nextPid: { v: 1000 } };
+  return {
+    children: [] as any[],
+    nextPid: { v: 1000 },
+    modelTier: { v: "small" },
+  };
+});
+
+vi.mock("../src/lib/index/index-config", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../src/lib/index/index-config")>();
+  return {
+    ...actual,
+    readGlobalConfig: () => ({
+      modelTier: h.modelTier.v,
+      vectorDim: h.modelTier.v === "standard" ? 768 : 384,
+      embedMode: "cpu" as const,
+    }),
+  };
 });
 
 vi.mock("node:child_process", async (importOriginal) => {
@@ -42,6 +59,8 @@ describe("WorkerPool resilience", () => {
   beforeEach(() => {
     h.children.length = 0;
     h.nextPid.v = 1000;
+    h.modelTier.v = "small";
+    vi.mocked(childProcess.fork).mockClear();
   });
 
   afterEach(async () => {
@@ -230,6 +249,31 @@ describe("WorkerPool resilience", () => {
     expect(worker.child.kill).not.toHaveBeenCalled();
   });
 
+  it("strict destroy rejects by its deadline and keeps an unconfirmed child tracked", async () => {
+    vi.useFakeTimers();
+    pool = new WorkerPool();
+    const worker = pool.workers[0];
+    worker.child.kill.mockReturnValue(true);
+
+    const shutdown = pool.destroy({ requireExit: true });
+    const check = expect(shutdown).rejects.toThrow(/did not exit within/i);
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    await check;
+    expect(pool.workers).toContain(worker);
+  });
+
+  it("strict destroy reports a failed signal and keeps the child tracked", async () => {
+    pool = new WorkerPool();
+    const worker = pool.workers[0];
+    worker.child.kill.mockReturnValue(false);
+
+    await expect(pool.destroy({ requireExit: true })).rejects.toThrow(
+      /failed to sigterm/i,
+    );
+    expect(pool.workers).toContain(worker);
+  });
+
   it("stops respawning and rejects queued tasks after the timeout respawn cap", async () => {
     vi.useFakeTimers();
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -251,5 +295,93 @@ describe("WorkerPool resilience", () => {
     expect(h.children).toHaveLength(1);
     expect(pool.workers).toHaveLength(0);
     errorSpy.mockRestore();
+  });
+
+  it("keeps a caller-aborted worker busy until its terminal result", async () => {
+    pool = new WorkerPool();
+    pool.maxWorkers = 1;
+    const worker = pool.workers[0];
+    const ac = new AbortController();
+
+    const first = pool.processFile({ path: "/first.ts" } as any, ac.signal);
+    const firstId = worker.child.send.mock.calls[0][0].id;
+    ac.abort();
+    await expect(first).rejects.toMatchObject({ name: "AbortError" });
+
+    const second = pool.processFile({ path: "/second.ts" } as any);
+    expect(worker.child.send).toHaveBeenCalledTimes(1);
+
+    worker.child.emit("message", { id: firstId, heartbeat: true });
+    expect(worker.child.send).toHaveBeenCalledTimes(1);
+    expect(worker.busy).toBe(true);
+
+    worker.child.emit("message", {
+      id: firstId,
+      result: { vectors: [] },
+    });
+    expect(worker.child.send).toHaveBeenCalledTimes(2);
+    expect(worker.child.send.mock.calls[1][0]).toMatchObject({
+      method: "processFile",
+      payload: { path: "/second.ts" },
+    });
+
+    const secondId = worker.child.send.mock.calls[1][0].id;
+    worker.child.emit("message", {
+      id: secondId,
+      result: { vectors: [] },
+    });
+    await expect(second).resolves.toMatchObject({ vectors: [] });
+  });
+
+  it("terminates a worker whose running task caller already aborted", async () => {
+    pool = new WorkerPool();
+    const worker = pool.workers[0];
+    const ac = new AbortController();
+    const task = pool.processFile({ path: "/first.ts" } as any, ac.signal);
+
+    ac.abort();
+    await expect(task).rejects.toMatchObject({ name: "AbortError" });
+    await pool.destroy();
+
+    expect(worker.child.kill).toHaveBeenCalledWith("SIGTERM");
+    expect(pool.workers).toEqual([]);
+  });
+
+  it("keeps the worker embedding environment stable across replacements", () => {
+    const previousDim = process.env.GMAX_VECTOR_DIM;
+    const previousModel = process.env.GMAX_EMBED_ONNX_MODEL;
+    const previousRoot = process.env.GMAX_PROJECT_ROOT;
+    delete process.env.GMAX_VECTOR_DIM;
+    delete process.env.GMAX_EMBED_ONNX_MODEL;
+    try {
+      pool = new WorkerPool();
+      const firstEnv = (
+        vi.mocked(childProcess.fork).mock.calls[0][1] as
+          | childProcess.ForkOptions
+          | undefined
+      )?.env;
+      h.modelTier.v = "standard";
+      process.env.GMAX_PROJECT_ROOT = "/work/replacement";
+      pool.spawnWorker();
+      const secondEnv = (
+        vi.mocked(childProcess.fork).mock.calls[1][1] as
+          | childProcess.ForkOptions
+          | undefined
+      )?.env;
+
+      expect(firstEnv?.GMAX_VECTOR_DIM).toBe("384");
+      expect(secondEnv?.GMAX_VECTOR_DIM).toBe("384");
+      expect(secondEnv?.GMAX_EMBED_ONNX_MODEL).toBe(
+        firstEnv?.GMAX_EMBED_ONNX_MODEL,
+      );
+      expect(secondEnv?.GMAX_PROJECT_ROOT).toBe("/work/replacement");
+    } finally {
+      if (previousDim === undefined) delete process.env.GMAX_VECTOR_DIM;
+      else process.env.GMAX_VECTOR_DIM = previousDim;
+      if (previousModel === undefined) delete process.env.GMAX_EMBED_ONNX_MODEL;
+      else process.env.GMAX_EMBED_ONNX_MODEL = previousModel;
+      if (previousRoot === undefined) delete process.env.GMAX_PROJECT_ROOT;
+      else process.env.GMAX_PROJECT_ROOT = previousRoot;
+    }
   });
 });

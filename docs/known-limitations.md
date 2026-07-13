@@ -2,10 +2,11 @@
 type: doc
 status: reference
 created: 2026-04-09
-updated: 2026-06-30T00:45:00Z
+updated: 2026-07-11
 summary: Live catalog of open gmax limitations with detection + recovery steps.
 audience: internal
 related_plans:
+  - docs/plans/2026-07-09-repository-audit-fixes.md
   - docs/plans/2026-05-25-semantic-search-landscape.md
   - docs/archived/2026-06-23-index-versioning-and-daemon-refactor.md
   - docs/archived/2026-06-28-repo-audit-hardening.md
@@ -16,7 +17,31 @@ related_docs:
 
 # Known Limitations
 
-Last updated 2026-06-30.
+Last updated 2026-07-11.
+
+## Whole-corpus embedding rebuild is disruptive
+
+Added 2026-07-10 during repository-audit remediation.
+
+`gmax repair --rebuild` is available as an explicit guarded operation. It rebuilds every registered
+project and replaces the shared physical table, so it is intentionally daemon-only, capability
+negotiated, and never used as an automatic fallback. It is not a zero-downtime migration.
+
+Projects now persist the exact ONNX, MLX, ColBERT, vector-width, and generation-fingerprint identity
+used by successful full syncs. `gmax config`, `gmax list`, `gmax status`, `gmax doctor`, serve stats,
+and MCP status distinguish configured identity from built identity and report `current`, `legacy`,
+`stale`, or `unbuilt`. A stale model generation, including a same-width model change, is rejected
+before search or sync mutation; existing rows are preserved.
+
+**Operational guidance:**
+
+- Expect searches and indexing to return busy while the rebuild owns exclusive admission.
+- If configuration was changed, inspect configured versus built identity with `gmax config`,
+  `gmax status`, or `gmax doctor`, then run `gmax repair --rebuild` when whole-corpus replacement is
+  intended. Restoring the prior configuration remains the non-destructive alternative.
+- Preserve a corrupt store and logs for diagnosis before invoking destructive repair.
+- A disconnected client cancels before drop; after drop the daemon continues from its durable rebuild
+  journal. Re-running the command resumes an unfinished rebuild.
 
 ## `gmax surprises` is experimental orientation, not proof
 
@@ -202,20 +227,17 @@ After an interrupted compaction, the LanceDB manifest can reference a fragment f
 
 ```
 [watch:<project>] DATA CORRUPTION: LanceDB manifest references a missing fragment.
-Backing off this project's batch processor for 30 min. To repair, run: gmax index --reset
+Backing off this project's batch processor for 30 min. Preserve the store for diagnosis before
+running guarded whole-corpus repair.
 ```
 
 The daemon's batch processor (since v0.16.0, commit `fd05089`) detects this via `isLanceCorruptionError()` and backs off for 30 minutes per affected project, logging once per hour. Read-path queries (search/peek/extract/etc.) continue to work — only the write path (incremental reindex) is paused.
 
 **Impact:** New file changes in the affected project stop being indexed until repair. Search results gradually go stale.
 
-**Recovery:**
-```bash
-cd <affected-project-root>
-gmax index --reset
-```
-
-This rebuilds the project's vectors from scratch. For a 100k-chunk project on Apple Silicon, expect ~5–15 minutes.
+**Recovery:** Preserve the store and logs for diagnosis. Do not use a per-project reset as a
+whole-store repair: the physical table and manifest are shared. Restore from a known-good backup or
+run `gmax repair --rebuild` when destructive whole-corpus replacement is acceptable.
 
 **Detection (manual):**
 ```bash

@@ -8,7 +8,9 @@ describe("watcher ignore globs", () => {
     expect(WATCHER_IGNORE_GLOBS).toContain(".git");
     expect(WATCHER_IGNORE_GLOBS).toContain(".gmax");
     expect(WATCHER_IGNORE_GLOBS).toContain("dist");
-    expect(WATCHER_IGNORE_GLOBS).toContain(".*");
+    expect(WATCHER_IGNORE_GLOBS).not.toContain(".*");
+    expect(WATCHER_IGNORE_GLOBS).not.toContain(".gitignore");
+    expect(WATCHER_IGNORE_GLOBS).not.toContain(".gmaxignore");
   });
 
   it("all entries are strings (no regex)", () => {

@@ -7,7 +7,6 @@ import {
 } from "../utils/daemon-client";
 import { log as dlog } from "../utils/logger";
 import { killProcess } from "../utils/process";
-import { getWorkerPool, isWorkerPoolInitialized } from "../workers/pool";
 
 /**
  * OS-level process hygiene for the daemon: discovering processes by title,
@@ -23,7 +22,12 @@ export class ProcessManager {
   // between our process snapshot and its array update is never killed by a race.
   private suspectedOrphanWorkers = new Set<number>();
 
-  constructor(private readonly deps: { getShuttingDown: () => boolean }) {}
+  constructor(
+    private readonly deps: {
+      getShuttingDown: () => boolean;
+      getWorkerPids?: () => number[] | undefined;
+    },
+  ) {}
 
   /**
    * Kill gmax-worker processes that are children of THIS daemon but the worker
@@ -33,8 +37,10 @@ export class ProcessManager {
    * just-forked worker can't be killed by a snapshot race.
    */
   sweepOrphanWorkers(): void {
-    if (this.deps.getShuttingDown() || !isWorkerPoolInitialized()) return;
-    const tracked = new Set(getWorkerPool().getWorkerPids());
+    if (this.deps.getShuttingDown()) return;
+    const trackedPids = this.deps.getWorkerPids?.();
+    if (!trackedPids) return;
+    const tracked = new Set(trackedPids);
     const workerPids = new Set(this.findProcessesByTitle("gmax-worker"));
     const ourChildren = this.findChildPids();
     const orphans = ourChildren.filter(

@@ -13,10 +13,10 @@ vi.mock("../src/lib/utils/project-root", () => ({
   findProjectRoot: vi.fn(() => "/tmp/project"),
 }));
 
-const mockFindTests = vi.fn(async () => []);
-const mockFindDependents = vi.fn(async () => []);
-const mockFindDependentsDetailed = vi.fn(async () => []);
-const mockResolveTargetSymbols = vi.fn(async () => ({
+const mockFindTests: any = vi.fn(async () => []);
+const mockFindDependents: any = vi.fn(async () => []);
+const mockFindDependentsDetailed: any = vi.fn(async () => []);
+const mockResolveTargetSymbols: any = vi.fn(async () => ({
   symbols: ["handleAuth"],
   resolvedAsFile: false,
 }));

@@ -30,6 +30,18 @@ vi.mock("../src/lib/utils/exit", () => ({
   gracefulExit: vi.fn(async () => {}),
 }));
 
+vi.mock("../src/lib/utils/project-registry", () => ({
+  getProject: vi.fn(() => ({
+    root: "/tmp/project",
+    name: "project",
+    modelTier: "small",
+    vectorDim: 384,
+    embedMode: "gpu",
+    lastIndexed: "2026-03-23T00:00:00.000Z",
+    status: "indexed",
+  })),
+}));
+
 import { config } from "../src/commands/config";
 import {
   writeGlobalConfig,
@@ -114,10 +126,7 @@ describe("config command", () => {
       spy.mockRestore();
     });
 
-    it("warns when model tier changes and points a dim change at the rebuild", async () => {
-      // small(384) -> standard(768) is a dim change: the shared fixed-width table
-      // can't be reshaped by a per-project reset, so the hint must steer to the
-      // global rebuild, not `gmax index --reset`.
+    it("points model tier changes to guarded whole-corpus rebuild", async () => {
       const spy = vi.spyOn(console, "log").mockImplementation(() => {});
       await (config as Command).parseAsync(["--model-tier", "standard"], {
         from: "user",

@@ -116,6 +116,32 @@ describe("buildWhereClause", () => {
     );
   });
 
+  it("builds explicit projectRoots OR clause", () => {
+    const result = buildWhereClause(
+      undefined,
+      { projectRoots: ["/a", "/b"] },
+      defaultIntent,
+    );
+    expect(result).toBe(
+      "(starts_with(path, '/a/') OR starts_with(path, '/b/'))",
+    );
+  });
+
+  it("fails closed for an explicit empty projectRoots array", () => {
+    expect(
+      buildWhereClause(undefined, { projectRoots: [] }, defaultIntent),
+    ).toBe("1 = 0");
+  });
+
+  it("prefers projectRoots over the legacy CSV shape", () => {
+    const result = buildWhereClause(
+      undefined,
+      { projectRoots: ["/safe"], project_roots: "/unsafe" },
+      defaultIntent,
+    );
+    expect(result).toBe("(starts_with(path, '/safe/'))");
+  });
+
   it("builds exclude_project_roots exclusion clauses", () => {
     const result = buildWhereClause(
       undefined,

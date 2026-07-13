@@ -7,6 +7,7 @@ import {
   installTimestampedOutput,
   LOG_TIMESTAMPS_ENV,
 } from "../utils/logger";
+import { createSerializedHandler } from "./serialized-handler";
 import processFile, {
   encodeQuery,
   type ProcessFileInput,
@@ -45,7 +46,7 @@ const send = (msg: OutgoingMessage) => {
   }
 };
 
-process.on("message", async (msg: IncomingMessage) => {
+const handleMessage = async (msg: IncomingMessage) => {
   const { id, method, payload } = msg;
   const start = performance.now();
   debug(
@@ -92,6 +93,11 @@ process.on("message", async (msg: IncomingMessage) => {
     );
     send({ id, error: message });
   }
+};
+
+const handleMessageSerially = createSerializedHandler(handleMessage);
+process.on("message", (msg: IncomingMessage) => {
+  void handleMessageSerially(msg);
 });
 
 process.on("uncaughtException", (err) => {

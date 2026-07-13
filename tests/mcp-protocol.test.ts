@@ -145,7 +145,6 @@ describe("MCP protocol", () => {
     );
     expect(called.error, stderr).toBeUndefined();
     const text = called.result?.content?.[0]?.text ?? "";
-    expect(text).toContain("summary\t");
-    expect(text).toContain("none");
+    expect(text).toContain("Unknown registered project");
   }, 15_000);
 });

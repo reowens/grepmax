@@ -52,7 +52,7 @@ export async function launchWatcher(
   // 4. Daemon not running — try to start it, poll until ready
   const error = resp.error as string | undefined;
   if (error === "ENOENT" || error === "ECONNREFUSED") {
-    const daemonPid = spawnDaemon();
+    const daemonPid = await spawnDaemon();
     if (daemonPid) {
       for (let i = 0; i < 25; i++) {
         await new Promise((r) => setTimeout(r, 200));
@@ -76,6 +76,10 @@ export async function launchWatcher(
       [process.argv[1], "watch", "--path", projectRoot, "-b"],
       { detached: true, stdio: "ignore" },
     );
+    await new Promise<void>((resolve, reject) => {
+      child.once("spawn", resolve);
+      child.once("error", reject);
+    });
     child.unref();
 
     if (child.pid) {

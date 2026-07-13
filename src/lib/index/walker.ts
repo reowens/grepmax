@@ -1,118 +1,109 @@
 import type { Dirent } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import ignore, { type Ignore } from "ignore";
-import { DEFAULT_IGNORE_PATTERNS } from "./ignore-patterns";
+import { isPathWithin } from "../utils/path-containment";
+import { ProjectFilePolicy } from "./file-policy";
+
+export interface WalkState {
+  rootComplete: boolean;
+  protectedPaths: Set<string>;
+  errors: Array<{ path: string; error: unknown }>;
+}
+
+export function createWalkState(): WalkState {
+  return { rootComplete: true, protectedPaths: new Set(), errors: [] };
+}
+
+export function isPathProtectedByWalkState(
+  candidate: string,
+  state: WalkState,
+): boolean {
+  if (!state.rootComplete) return true;
+  return Array.from(state.protectedPaths).some((protectedPath) =>
+    isPathWithin(protectedPath, candidate),
+  );
+}
 
 interface WalkOptions {
   ignoreFiles?: string[];
   additionalPatterns?: string[];
-}
-
-interface IgnoreScope {
-  filter: Ignore;
-  dir: string; // Absolute path of this scope's root
-}
-
-async function getIgnoreFilter(
-  dir: string,
-  ignoreFiles: string[],
-): Promise<Ignore | null> {
-  let filter: Ignore | null = null;
-
-  for (const fileName of ignoreFiles) {
-    const ignorePath = path.join(dir, fileName);
-    try {
-      const content = await fs.readFile(ignorePath, "utf-8");
-      if (!filter) filter = ignore();
-      filter.add(content);
-    } catch (_err) {
-      // Ignore missing files
-    }
-  }
-
-  return filter;
+  policy?: ProjectFilePolicy;
+  state?: WalkState;
 }
 
 export async function* walk(
   rootDir: string,
   options: WalkOptions = {},
 ): AsyncGenerator<string> {
-  const ignoreFiles = options.ignoreFiles || [".gitignore", ".gmaxignore"];
-  const rootParams = ignore().add(DEFAULT_IGNORE_PATTERNS);
-  if (options.additionalPatterns) {
-    rootParams.add(options.additionalPatterns);
-  }
-
-  // Initial scope for root
-  const rootScope: IgnoreScope = {
-    filter: rootParams,
-    dir: rootDir,
-  };
-
-  // Stack of scopes.
-  // We check against ALL scopes in the stack.
-  // This implements the "additive" ignore behavior (files ignored by parent are ignored by child).
-  // Note: This does not strictly support "un-ignoring" a parent rule via a child .gitignore
-  // (because we check parent independently), but it is the safest robust implementation for "hiding" nested files.
-  const stack: IgnoreScope[] = [rootScope];
-
-  // We also try to load root .gitignore immediately to add to the stack
-  const rootGitIgnore = await getIgnoreFilter(rootDir, ignoreFiles);
-  if (rootGitIgnore) {
-    stack.push({ filter: rootGitIgnore, dir: rootDir });
-  }
-
-  yield* _walk(rootDir, rootDir, stack, ignoreFiles);
+  const root = path.resolve(rootDir);
+  const policy =
+    options.policy ??
+    new ProjectFilePolicy(root, {
+      ignoreFiles: options.ignoreFiles,
+      additionalPatterns: options.additionalPatterns,
+    });
+  const state = options.state ?? createWalkState();
+  yield* walkDirectory(root, root, policy, state, true);
 }
 
-async function* _walk(
+async function* walkDirectory(
   currentDir: string,
   rootDir: string,
-  stack: IgnoreScope[],
-  ignoreFiles: string[],
+  policy: ProjectFilePolicy,
+  state: WalkState,
+  isRoot: boolean,
 ): AsyncGenerator<string> {
+  const directory = await policy.classifyDirectory(currentDir);
+  if (directory.status === "error") {
+    state.protectedPaths.add(directory.protectedPath);
+    state.errors.push({
+      path: directory.protectedPath,
+      error: directory.error,
+    });
+    if (isRoot) state.rootComplete = false;
+    return;
+  }
+  if (directory.status !== "traverse") {
+    if (isRoot) state.rootComplete = false;
+    return;
+  }
+
   let entries: Dirent[];
   try {
     entries = await fs.readdir(currentDir, { withFileTypes: true });
-  } catch (_err) {
+  } catch (error) {
+    state.protectedPaths.add(currentDir);
+    state.errors.push({ path: currentDir, error });
+    if (isRoot) state.rootComplete = false;
     return;
   }
 
   for (const entry of entries) {
     const absPath = path.join(currentDir, entry.name);
-    const relPathToRoot = path.relative(rootDir, absPath);
-
-    // 1. Check if ignored by any scope in the stack
-    const isDir = entry.isDirectory();
-    let isIgnored = false;
-    for (const scope of stack) {
-      const relToScope = path.relative(scope.dir, absPath);
-      if (!relToScope) continue;
-      // Append trailing slash for directories so patterns like "dist/" match
-      const testPath = isDir ? `${relToScope}/` : relToScope;
-      if (scope.filter.ignores(testPath)) {
-        isIgnored = true;
-        break;
+    if (entry.isDirectory()) {
+      yield* walkDirectory(absPath, rootDir, policy, state, false);
+      continue;
+    }
+    if (!entry.isFile()) {
+      try {
+        const stat = await fs.lstat(absPath);
+        if (stat.isDirectory()) {
+          yield* walkDirectory(absPath, rootDir, policy, state, false);
+          continue;
+        }
+        if (!stat.isFile()) continue;
+      } catch (error) {
+        state.protectedPaths.add(absPath);
+        state.errors.push({ path: absPath, error });
+        continue;
       }
     }
-
-    if (isIgnored) continue;
-
-    if (entry.isDirectory()) {
-      // 2. Prepare scope for the new directory
-      const childIgnore = await getIgnoreFilter(absPath, ignoreFiles);
-      if (childIgnore) {
-        // Push new scope
-        stack.push({ filter: childIgnore, dir: absPath });
-        yield* _walk(absPath, rootDir, stack, ignoreFiles);
-        stack.pop();
-      } else {
-        // Just recurse with same stack
-        yield* _walk(absPath, rootDir, stack, ignoreFiles);
-      }
-    } else {
-      yield relPathToRoot;
+    const file = await policy.classifyFile(absPath);
+    if (file.status === "indexable") {
+      yield path.relative(rootDir, absPath);
+    } else if (file.status === "error") {
+      state.protectedPaths.add(file.protectedPath);
+      state.errors.push({ path: file.protectedPath, error: file.error });
     }
   }
 }

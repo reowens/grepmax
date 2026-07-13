@@ -5,25 +5,45 @@ import type { AsyncSubscription } from "@parcel/watcher";
 import lockfile from "proper-lockfile";
 import { CONFIG, PATHS } from "../../config";
 import type { ProjectBatchProcessor } from "../index/batch-processor";
-import { readGlobalConfig } from "../index/index-config";
+import {
+  compareEmbeddingGeneration,
+  type EmbeddingGenerationConfig,
+  resolveEmbeddingGeneration,
+} from "../index/embedding-generation";
+import { projectEmbeddingStatus } from "../index/embedding-status";
+import { type GlobalConfig, readGlobalConfig } from "../index/index-config";
+import type { InitialSyncResult } from "../index/sync-helpers";
 import { generateSummaries, initialSync } from "../index/syncer";
 import { LlmServer } from "../llm/server";
 import type { IndexState } from "../output/index-state-footer";
 import type { Searcher } from "../search/searcher";
 import { MetaCache } from "../store/meta-cache";
+import { type StoreLease, StoreLeaseTimeoutError } from "../store/store-lease";
 import { VectorDB } from "../store/vector-db";
 import {
   clearDrainingMarker,
   writeDrainingMarker,
 } from "../utils/daemon-client";
 import { spawnDaemon } from "../utils/daemon-launcher";
+import { KeyedMutex } from "../utils/keyed-mutex";
 import { rotateLogFds } from "../utils/log-rotate";
 import { debug as dbg, log as dlog } from "../utils/logger";
+import {
+  OperationClosedError,
+  OperationCoordinator,
+} from "../utils/operation-coordinator";
 import { killProcess } from "../utils/process";
 import {
+  completeProjectRebuild,
   getProject,
+  hasUnfinishedProjectRebuild,
   listProjects,
+  markProjectRebuildDropping,
+  ProjectRegistryConflictError,
   registerProject,
+  reserveProjectsForRebuild,
+  restoreProjectsAfterRebuild,
+  stampProjectFullSync,
 } from "../utils/project-registry";
 import {
   heartbeat,
@@ -33,7 +53,11 @@ import {
   unregisterWatcher,
   unregisterWatcherByRoot,
 } from "../utils/watcher-store";
-import { destroyWorkerPool, isWorkerPoolInitialized } from "../workers/pool";
+import {
+  destroyWorkerPool,
+  isWorkerPoolInitialized,
+  WorkerPool,
+} from "../workers/pool";
 import {
   handleCommand,
   startHeartbeat,
@@ -83,13 +107,28 @@ const MAX_LIFETIME_MS = envNum(
 );
 const RSS_WATERMARK_MB = envNum("GMAX_DAEMON_RSS_WATERMARK_MB", 2560);
 
+interface DaemonResourceGeneration {
+  readonly id: number;
+  readonly config: GlobalConfig;
+  readonly embedding: Readonly<EmbeddingGenerationConfig>;
+  readonly vectorDb: VectorDB;
+  readonly workerPool: WorkerPool;
+  readonly mlx: "owned" | "adopted" | "cpu";
+}
+
 export class Daemon {
   private readonly processors = new Map<string, ProjectBatchProcessor>();
   private readonly searchers = new Map<string, Searcher>();
   private readonly subscriptions = new Map<string, AsyncSubscription>();
   private vectorDb: VectorDB | null = null;
+  private activeConfig: GlobalConfig | null = null;
+  private activeGeneration: Readonly<EmbeddingGenerationConfig> | null = null;
+  private workerPool: WorkerPool | null = null;
+  private resources: Readonly<DaemonResourceGeneration> | null = null;
+  private nextResourceGenerationId = 1;
   private metaCache: MetaCache | null = null;
   private server: net.Server | null = null;
+  private readonly connections = new Set<net.Socket>();
   private releaseLock: (() => Promise<void>) | null = null;
   private lastActivity = Date.now();
   private readonly startTime = Date.now();
@@ -104,6 +143,7 @@ export class Daemon {
   private ready = false;
   private readonly processManager = new ProcessManager({
     getShuttingDown: () => this.shuttingDown,
+    getWorkerPids: () => this.workerPool?.getWorkerPids(),
   });
   private readonly mlxServerManager = new MlxServerManager({
     getShuttingDown: () => this.shuttingDown,
@@ -113,6 +153,7 @@ export class Daemon {
     subscriptions: this.subscriptions,
     getVectorDb: () => this.vectorDb,
     getMetaCache: () => this.metaCache,
+    getWorkerPool: () => this.workerPool,
     getShuttingDown: () => this.shuttingDown,
     touchActivity: () => {
       this.lastActivity = Date.now();
@@ -120,8 +161,14 @@ export class Daemon {
     evictSearcher: (root) => {
       this.searchers.delete(root);
     },
+    runProjectOperation: (root, name, signal, fn) =>
+      this.withProjectLock(root, signal, () =>
+        this.runSharedOperation(name, signal, fn),
+      ),
   });
-  private readonly projectLocks = new Map<string, Promise<void>>();
+  private readonly projectMutex = new KeyedMutex();
+  private readonly operations = new OperationCoordinator();
+  private shutdownPromise: Promise<void> | null = null;
   // Full-index progress per root while initialSync runs (--reset / initial
   // index). Presence = a full index is in flight; value drives the partial-
   // result pending count (Phase 6). Cleared in the indexProject finally.
@@ -130,13 +177,67 @@ export class Daemon {
     { processed: number; total: number }
   >();
   private readonly shutdownAbortControllers = new Set<AbortController>();
+  private readonly pendingIndexRetryTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
+  private readonly pendingIndexRetryCounts = new Map<string, number>();
   private llmServer: LlmServer | null = null;
+
+  private assertStartupActive(): void {
+    if (this.shuttingDown) throw new OperationClosedError();
+  }
+
+  private createWorkerPool(
+    generation: Readonly<EmbeddingGenerationConfig>,
+    embedMode: "cpu" | "gpu",
+  ): WorkerPool {
+    return new WorkerPool(generation, embedMode);
+  }
+
+  private createVectorDb(vectorDim: number, lease?: StoreLease): VectorDB {
+    return new VectorDB(PATHS.lancedbDir, vectorDim, lease);
+  }
+
+  private mlxMode(config: GlobalConfig): "owned" | "adopted" | "cpu" {
+    if (config.embedMode !== "gpu") return "cpu";
+    const state = this.mlxServerManager.getStatus().state;
+    return state === "owned-ready"
+      ? "owned"
+      : state === "adopted-ready"
+        ? "adopted"
+        : "cpu";
+  }
+
+  private publishResourceGeneration(
+    config: GlobalConfig,
+    embedding: Readonly<EmbeddingGenerationConfig>,
+    vectorDb: VectorDB,
+    workerPool: WorkerPool,
+    mlx: "owned" | "adopted" | "cpu",
+  ): Readonly<DaemonResourceGeneration> {
+    const resources = Object.freeze({
+      id: this.nextResourceGenerationId++,
+      config: Object.freeze({ ...config }),
+      embedding,
+      vectorDb,
+      workerPool,
+      mlx,
+    });
+    this.activeConfig = resources.config;
+    this.activeGeneration = resources.embedding;
+    this.vectorDb = resources.vectorDb;
+    this.workerPool = resources.workerPool;
+    this.resources = resources;
+    return resources;
+  }
 
   async start(): Promise<void> {
     process.title = "gmax-daemon";
 
     // 0. Singleton enforcement: find and kill ALL stale daemon/worker processes
     await this.processManager.killStaleProcesses();
+    this.assertStartupActive();
 
     // 1. Acquire exclusive lock — kernel-enforced, atomic, auto-released on death
     fs.mkdirSync(path.dirname(PATHS.daemonLockFile), { recursive: true });
@@ -156,6 +257,7 @@ export class Daemon {
           this.shutdown().finally(() => process.exit(0));
         },
       });
+      this.assertStartupActive();
       dbg("daemon", "lock acquired");
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ELOCKED") {
@@ -177,6 +279,8 @@ export class Daemon {
 
     this.server = net.createServer((conn) => {
       dbg("daemon", "client connected");
+      this.connections.add(conn);
+      conn.once("close", () => this.connections.delete(conn));
       let buf = "";
       conn.on("data", (chunk) => {
         buf += chunk.toString();
@@ -225,6 +329,7 @@ export class Daemon {
       });
       this.server!.listen(PATHS.daemonSocket, () => resolve());
     });
+    this.assertStartupActive();
 
     // 3. Write PID file AFTER socket is listening — ensures any process that
     // reads the PID can immediately ping this daemon and get a response.
@@ -237,6 +342,7 @@ export class Daemon {
         `[daemon] Taking over from per-project watcher (PID: ${w.pid}, ${path.basename(w.projectRoot)})`,
       );
       await killProcess(w.pid);
+      this.assertStartupActive();
       unregisterWatcher(w.pid);
     }
 
@@ -245,10 +351,22 @@ export class Daemon {
       fs.mkdirSync(PATHS.cacheDir, { recursive: true });
       fs.mkdirSync(PATHS.lancedbDir, { recursive: true });
       console.log("[daemon] Opening LanceDB:", PATHS.lancedbDir);
-      this.vectorDb = new VectorDB(PATHS.lancedbDir);
-      this.vectorDb.startMaintenanceLoop();
+      this.activeConfig = readGlobalConfig();
+      this.activeGeneration = resolveEmbeddingGeneration(this.activeConfig);
+      this.vectorDb = new VectorDB(
+        PATHS.lancedbDir,
+        this.activeGeneration.vectorDim,
+      );
+      this.workerPool = this.createWorkerPool(
+        this.activeGeneration,
+        this.activeConfig.embedMode,
+      );
+      this.vectorDb.startMaintenanceLoop((fn) =>
+        this.runSharedOperation("store-maintenance", undefined, () => fn()),
+      );
       console.log("[daemon] Opening MetaCache:", PATHS.lmdbPath);
       this.metaCache = new MetaCache(PATHS.lmdbPath);
+      this.assertStartupActive();
       // Resources are open — only now may resource-dependent IPC commands run.
       this.ready = true;
     } catch (err) {
@@ -260,12 +378,20 @@ export class Daemon {
     this.llmServer = new LlmServer();
 
     // 6b. MLX embed server — start if GPU mode is active
-    const globalConfig = readGlobalConfig();
+    const globalConfig = this.activeConfig ?? readGlobalConfig();
     const isAppleSilicon =
       process.arch === "arm64" && process.platform === "darwin";
     if (isAppleSilicon && globalConfig.embedMode === "gpu") {
       await this.mlxServerManager.ensureMlxServer(globalConfig.mlxModel);
+      this.assertStartupActive();
     }
+    this.publishResourceGeneration(
+      globalConfig,
+      this.activeGeneration!,
+      this.vectorDb!,
+      this.workerPool!,
+      this.mlxMode(globalConfig),
+    );
 
     // 7. Register daemon (only after resources are open)
     registerDaemon(process.pid);
@@ -282,6 +408,7 @@ export class Daemon {
       }
       try {
         await this.watchProject(p.root);
+        this.assertStartupActive();
       } catch (err) {
         console.error(
           `[daemon] Failed to watch ${path.basename(p.root)}:`,
@@ -299,6 +426,7 @@ export class Daemon {
     const pending = allProjects.filter(
       (p) =>
         (p.status === "pending" || p.status === "error") &&
+        !p.rebuildId &&
         fs.existsSync(p.root),
     );
     void (async () => {
@@ -371,15 +499,15 @@ export class Daemon {
     // catchup scans dispatched on startup.
     setTimeout(() => {
       if (this.shuttingDown) return;
-      void (async () => {
+      void this.runSharedOperation("search-warmup", undefined, async () => {
         const t0 = Date.now();
         try {
           if (this.vectorDb) {
             await this.vectorDb.ensureTable();
             await this.vectorDb.createFTSIndex();
           }
-          const { getWorkerPool } = await import("../workers/pool");
-          const pool = getWorkerPool();
+          const pool = this.workerPool;
+          if (!pool) throw new Error("worker pool not ready");
           // Two parallel encodes force the pool to spawn two workers and
           // warm both (each worker loads Granite + ColBERT lazily on first
           // encode — once warmed, subsequent encodes are ~13ms).
@@ -393,68 +521,169 @@ export class Daemon {
         } catch (err) {
           console.log(`[daemon] Search warmup failed (non-fatal): ${err}`);
         }
-      })();
+      }).catch((err) => {
+        if (err instanceof OperationClosedError) return;
+        console.log(`[daemon] Search warmup skipped: ${err}`);
+      });
     }, 5000).unref();
   }
 
-  async watchProject(root: string): Promise<void> {
+  watchProject(root: string, signal?: AbortSignal): Promise<void> {
+    return this.withProjectLock(root, signal, () =>
+      this.runSharedOperation("watch", signal, () =>
+        this.watchProjectWithinOperation(root),
+      ),
+    );
+  }
+
+  private watchProjectWithinOperation(root: string): Promise<void> {
     return this.watcherManager.watchProject(root);
   }
 
-  private async indexPendingProject(root: string): Promise<void> {
-    await this.withProjectLock(root, async () => {
-      // Bail if shutdown raced ahead of us between IIFE iteration and lock
-      // acquisition — otherwise we'd start writing to a DB that shutdown is
-      // about to close, leaving the project status as "error".
-      if (this.shuttingDown) return;
-      if (!this.vectorDb || !this.metaCache) return;
-
-      const name = path.basename(root);
-      const start = Date.now();
-      dlog("daemon", `indexPendingProject start: ${name} (${root})`);
-      this.vectorDb.pauseMaintenanceLoop();
-      try {
-        const result = await initialSync({
-          projectRoot: root,
-          vectorDb: this.vectorDb,
-          metaCache: this.metaCache,
-          onProgress: () => {
-            this.resetActivity();
-          },
-        });
-
-        const proj = getProject(root);
-        if (proj) {
-          registerProject({
-            ...proj,
-            lastIndexed: new Date().toISOString(),
-            chunkCount: result.indexed,
-            status: "indexed",
-            chunkerVersion: CONFIG.CHUNKER_VERSION,
-          });
-        }
-
-        await this.watchProject(root);
-        dlog(
-          "daemon",
-          `indexPendingProject done: ${name} — ${result.total} files, ${result.indexed} chunks, ${Date.now() - start}ms`,
-        );
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(
-          `[daemon] indexPendingProject failed for ${name} after ${Date.now() - start}ms: ${msg}`,
-        );
-        const proj = getProject(root);
-        if (proj) {
-          registerProject({ ...proj, status: "error" });
-        }
-      } finally {
-        this.vectorDb?.resumeMaintenanceLoop();
-      }
-    });
+  runSharedOperation<T>(
+    name: string,
+    signal: AbortSignal | undefined,
+    fn: (signal: AbortSignal) => Promise<T>,
+  ): Promise<T> {
+    return this.operations.runShared(name, signal, fn);
   }
 
-  async unwatchProject(root: string): Promise<void> {
+  operationStatus(): string {
+    return this.operations.status;
+  }
+
+  resourceGenerationId(): number | null {
+    return this.resources?.id ?? null;
+  }
+
+  hasUnfinishedRebuild(): boolean {
+    try {
+      return hasUnfinishedProjectRebuild();
+    } catch {
+      return true;
+    }
+  }
+
+  private schedulePendingIndexRetry(root: string): void {
+    if (this.shuttingDown || this.pendingIndexRetryTimers.has(root)) return;
+    const attempts = this.pendingIndexRetryCounts.get(root) ?? 0;
+    if (attempts >= 5) return;
+    this.pendingIndexRetryCounts.set(root, attempts + 1);
+    const timer = setTimeout(() => {
+      this.pendingIndexRetryTimers.delete(root);
+      if (!this.shuttingDown) void this.indexPendingProject(root);
+    }, 30_000);
+    timer.unref();
+    this.pendingIndexRetryTimers.set(root, timer);
+  }
+
+  private clearPendingIndexRetry(root: string): void {
+    const timer = this.pendingIndexRetryTimers.get(root);
+    if (timer) clearTimeout(timer);
+    this.pendingIndexRetryTimers.delete(root);
+    this.pendingIndexRetryCounts.delete(root);
+  }
+
+  private async indexPendingProject(root: string): Promise<void> {
+    const ac = new AbortController();
+    this.shutdownAbortControllers.add(ac);
+    try {
+      await this.withProjectLock(root, ac.signal, async () =>
+        this.runSharedOperation(
+          "index-pending",
+          ac.signal,
+          async (operationSignal) => {
+            // Bail if shutdown raced ahead of us between iteration and lock
+            // acquisition. Starting now would race the store close below.
+            if (this.shuttingDown) return;
+            if (!this.vectorDb || !this.metaCache) return;
+            const current = getProject(root);
+            if (current?.status !== "pending" && current?.status !== "error")
+              return;
+
+            const name = path.basename(root);
+            const start = Date.now();
+            dlog("daemon", `indexPendingProject start: ${name} (${root})`);
+            this.vectorDb.pauseMaintenanceLoop();
+            try {
+              if (this.processors.has(root))
+                await this.unwatchProjectWithinOperation(root);
+              const result = await initialSync({
+                projectRoot: root,
+                vectorDb: this.vectorDb,
+                metaCache: this.metaCache,
+                signal: operationSignal,
+                generation: this.activeGeneration ?? undefined,
+                embedMode: this.activeConfig?.embedMode,
+                workerPool: this.workerPool ?? undefined,
+                onProgress: () => {
+                  this.resetActivity();
+                },
+              });
+
+              const prefix = root.endsWith("/") ? root : `${root}/`;
+              const chunkCount = await this.vectorDb.countRowsForPath(prefix);
+              const proj = getProject(root);
+              if (proj) {
+                if (result.degraded) {
+                  registerProject({ ...proj, status: "pending" });
+                  this.schedulePendingIndexRetry(root);
+                } else {
+                  this.clearPendingIndexRetry(root);
+                  stampProjectFullSync({
+                    root,
+                    name: proj.name,
+                    generation: result.generation,
+                    embedMode: result.embedMode,
+                    chunkCount,
+                    chunkerVersion: CONFIG.CHUNKER_VERSION,
+                    expectedFingerprint:
+                      result.registryExpectation.embeddingFingerprint,
+                    expectedRebuildId: result.registryExpectation.rebuildId,
+                  });
+                }
+              }
+              dlog(
+                "daemon",
+                `indexPendingProject done: ${name} — ${result.total} files, ${result.indexed} chunks, ${Date.now() - start}ms`,
+              );
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              console.error(
+                `[daemon] indexPendingProject failed for ${name} after ${Date.now() - start}ms: ${msg}`,
+              );
+              const proj = getProject(root);
+              if (proj && !(err instanceof ProjectRegistryConflictError)) {
+                registerProject({ ...proj, status: "error" });
+                this.schedulePendingIndexRetry(root);
+              }
+            } finally {
+              this.vectorDb?.resumeMaintenanceLoop();
+              if (!this.shuttingDown) {
+                try {
+                  await this.watchProjectWithinOperation(root);
+                } catch (err) {
+                  console.error(`[daemon] Failed to re-watch ${name}:`, err);
+                }
+              }
+            }
+          },
+        ),
+      );
+    } finally {
+      this.shutdownAbortControllers.delete(ac);
+    }
+  }
+
+  unwatchProject(root: string, signal?: AbortSignal): Promise<void> {
+    return this.withProjectLock(root, signal, () =>
+      this.runSharedOperation("unwatch", signal, () =>
+        this.unwatchProjectWithinOperation(root),
+      ),
+    );
+  }
+
+  private unwatchProjectWithinOperation(root: string): Promise<void> {
     return this.watcherManager.unwatchProject(root);
   }
 
@@ -501,19 +730,23 @@ export class Daemon {
     // Search handling lives in search-handler.ts (Phase 12 split). The daemon
     // supplies its warm VectorDB + watcher/index bookkeeping; the handler runs
     // the query and assembles the response.
-    return handleDaemonSearch(
-      {
-        vectorDb: this.vectorDb,
-        processors: this.processors,
-        indexProgress: this.indexProgress,
-        searchers: this.searchers,
-        getIndexState: (root) => this.indexState(root),
-        touchActivity: () => {
-          this.lastActivity = Date.now();
+    return this.runSharedOperation("search", signal, async (operationSignal) =>
+      handleDaemonSearch(
+        {
+          vectorDb: this.vectorDb,
+          processors: this.processors,
+          indexProgress: this.indexProgress,
+          searchers: this.searchers,
+          getIndexState: (root) => this.indexState(root),
+          touchActivity: () => {
+            this.lastActivity = Date.now();
+          },
+          generation: this.activeGeneration,
+          workerPool: this.workerPool,
         },
-      },
-      payload,
-      signal,
+        payload,
+        operationSignal,
+      ),
     );
   }
 
@@ -537,6 +770,10 @@ export class Daemon {
     return this.vectorDb?.diskPressure ?? "unknown";
   }
 
+  getMlxStatus() {
+    return this.mlxServerManager.getStatus();
+  }
+
   /** Reset idle timer — call during long-running operations. */
   resetActivity(): void {
     this.lastActivity = Date.now();
@@ -546,87 +783,269 @@ export class Daemon {
 
   private async withProjectLock<T>(
     root: string,
+    signal: AbortSignal | undefined,
     fn: () => Promise<T>,
   ): Promise<T> {
-    const prev = this.projectLocks.get(root) ?? Promise.resolve();
-    let release!: () => void;
-    const next = new Promise<void>((r) => {
-      release = r;
-    });
-    this.projectLocks.set(root, next);
-
-    await prev;
-    try {
-      return await fn();
-    } finally {
-      release();
-      if (this.projectLocks.get(root) === next) {
-        this.projectLocks.delete(root);
-      }
-    }
+    return this.projectMutex.run(root, signal, fn);
   }
 
   // --- Streaming write operations (IPC) ---
 
+  private activeConfigurationError(): string | null {
+    const activeConfig = this.activeConfig;
+    const activeGeneration = this.activeGeneration;
+    if (!activeConfig || !activeGeneration) return "daemon resources not ready";
+    const currentConfig = readGlobalConfig();
+    let currentGeneration: Readonly<EmbeddingGenerationConfig>;
+    try {
+      currentGeneration = resolveEmbeddingGeneration(currentConfig);
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+    return currentGeneration.fingerprint !== activeGeneration.fingerprint ||
+      currentConfig.embedMode !== activeConfig.embedMode ||
+      currentConfig.mlxModel !== activeConfig.mlxModel
+      ? "daemon configuration is stale; restart the gmax daemon"
+      : null;
+  }
+
+  async ensureProject(root: string, conn: net.Socket): Promise<void> {
+    const ac = new AbortController();
+    const onClose = () => ac.abort();
+    conn.once("close", onClose);
+    this.shutdownAbortControllers.add(ac);
+    try {
+      await this.withProjectLock(root, ac.signal, () =>
+        this.runSharedOperation(
+          "ensure-project",
+          ac.signal,
+          async (operationSignal) => {
+            if (operationSignal.aborted || this.shuttingDown) return;
+            const activeConfig = this.activeConfig;
+            const configurationError = this.activeConfigurationError();
+            if (!activeConfig || configurationError) {
+              writeDone(conn, {
+                ok: false,
+                error: configurationError ?? "daemon resources not ready",
+              });
+              return;
+            }
+
+            const project = getProject(root);
+            if (project?.status === "indexed") {
+              if (
+                !this.activeGeneration ||
+                compareEmbeddingGeneration(project, this.activeGeneration)
+                  .state === "stale"
+              ) {
+                writeDone(conn, {
+                  ok: false,
+                  error:
+                    "project embedding generation is stale; rebuild the project",
+                });
+                return;
+              }
+              await this.watchProjectWithinOperation(root);
+              writeDone(conn, { ok: true, status: "indexed", watched: true });
+              return;
+            }
+
+            registerProject({
+              root,
+              name: project?.name ?? path.basename(root),
+              vectorDim: activeConfig.vectorDim,
+              modelTier: activeConfig.modelTier,
+              embedMode: activeConfig.embedMode,
+              lastIndexed: project?.lastIndexed ?? "",
+              chunkCount: project?.chunkCount,
+              status: "pending",
+              chunkerVersion: project?.chunkerVersion,
+            });
+            await this.addProjectLocked(root, conn, operationSignal, project);
+          },
+        ),
+      );
+    } finally {
+      conn.off("close", onClose);
+      this.shutdownAbortControllers.delete(ac);
+    }
+  }
+
   async addProject(root: string, conn: net.Socket): Promise<void> {
-    await this.withProjectLock(root, async () => {
-      if (!this.vectorDb || !this.metaCache) {
-        writeDone(conn, { ok: false, error: "daemon resources not ready" });
-        return;
+    const ac = new AbortController();
+    const onClose = () => ac.abort();
+    conn.once("close", onClose);
+    this.shutdownAbortControllers.add(ac);
+    try {
+      await this.withProjectLock(root, ac.signal, () =>
+        this.runSharedOperation(
+          "add-project",
+          ac.signal,
+          async (operationSignal) => {
+            if (operationSignal.aborted || this.shuttingDown) return;
+            const configurationError = this.activeConfigurationError();
+            if (configurationError) {
+              writeDone(conn, { ok: false, error: configurationError });
+              return;
+            }
+            await this.addProjectLocked(
+              root,
+              conn,
+              operationSignal,
+              getProject(root),
+            );
+          },
+        ),
+      );
+    } finally {
+      conn.off("close", onClose);
+      this.shutdownAbortControllers.delete(ac);
+    }
+  }
+
+  private async addProjectLocked(
+    root: string,
+    conn: net.Socket,
+    signal: AbortSignal,
+    previousProject: ReturnType<typeof getProject>,
+  ): Promise<void> {
+    if (!this.vectorDb || !this.metaCache || !this.activeConfig) {
+      writeDone(conn, { ok: false, error: "daemon resources not ready" });
+      return;
+    }
+
+    if (!getProject(root)) {
+      registerProject({
+        root,
+        name: path.basename(root),
+        vectorDim: this.activeConfig.vectorDim,
+        modelTier: this.activeConfig.modelTier,
+        embedMode: this.activeConfig.embedMode,
+        lastIndexed: "",
+        status: "pending",
+      });
+    }
+
+    this.vectorDb.pauseMaintenanceLoop();
+    const stopHeartbeat = startHeartbeat(conn);
+    let lastProgressTime = 0;
+    try {
+      const result = await initialSync({
+        projectRoot: root,
+        vectorDb: this.vectorDb,
+        metaCache: this.metaCache,
+        signal,
+        generation: this.activeGeneration ?? undefined,
+        embedMode: this.activeConfig.embedMode,
+        workerPool: this.workerPool ?? undefined,
+        onProgress: (info) => {
+          this.resetActivity();
+          const now = Date.now();
+          if (now - lastProgressTime < 100) return;
+          lastProgressTime = now;
+          writeProgress(conn, {
+            processed: info.processed,
+            indexed: info.indexed,
+            total: info.total,
+            filePath: info.filePath,
+          });
+        },
+      });
+
+      if (signal.aborted || this.shuttingDown) {
+        const abortError = new Error("Aborted");
+        abortError.name = "AbortError";
+        throw abortError;
       }
 
-      const ac = new AbortController();
-      conn.on("close", () => ac.abort());
-      this.shutdownAbortControllers.add(ac);
-
-      this.vectorDb.pauseMaintenanceLoop();
-      const stopHeartbeat = startHeartbeat(conn);
-      let lastProgressTime = 0;
-      try {
-        const result = await initialSync({
-          projectRoot: root,
-          vectorDb: this.vectorDb,
-          metaCache: this.metaCache,
-          signal: ac.signal,
-          onProgress: (info) => {
-            this.resetActivity();
-            const now = Date.now();
-            if (now - lastProgressTime < 100) return;
-            lastProgressTime = now;
-            writeProgress(conn, {
-              processed: info.processed,
-              indexed: info.indexed,
-              total: info.total,
-              filePath: info.filePath,
-            });
-          },
+      const prefix = root.endsWith("/") ? root : `${root}/`;
+      const chunkCount = await this.vectorDb.countRowsForPath(prefix);
+      const project = getProject(root);
+      if (result.degraded) {
+        if (previousProject) registerProject(previousProject);
+        this.schedulePendingIndexRetry(root);
+      } else {
+        this.clearPendingIndexRetry(root);
+        stampProjectFullSync({
+          root,
+          name: project?.name ?? path.basename(root),
+          generation: result.generation,
+          embedMode: result.embedMode,
+          chunkCount,
+          chunkerVersion: CONFIG.CHUNKER_VERSION,
+          expectedFingerprint: result.registryExpectation.embeddingFingerprint,
+          expectedRebuildId: result.registryExpectation.rebuildId,
         });
+      }
+      await this.watchProjectWithinOperation(root);
 
-        if (!this.shuttingDown) {
-          await this.watchProject(root);
-        }
-
-        stopHeartbeat();
-        writeDone(conn, {
-          ok: true,
-          processed: result.processed,
-          indexed: result.indexed,
-          total: result.total,
-          failedFiles: result.failedFiles,
-        });
-      } catch (err) {
+      writeDone(conn, {
+        ok: true,
+        processed: result.processed,
+        indexed: result.indexed,
+        total: result.total,
+        failedFiles: result.failedFiles,
+        degraded: result.degraded,
+        scanErrors: result.scanErrors,
+      });
+    } catch (err) {
+      const aborted = signal.aborted || (err as Error)?.name === "AbortError";
+      if (aborted) {
+        if (previousProject) registerProject(previousProject);
+        writeDone(conn, { ok: false, error: "aborted" });
+      } else {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(
           `[daemon] addProject failed for ${path.basename(root)}:`,
           msg,
         );
-        stopHeartbeat();
+        const project = getProject(root);
+        if (project && !(err instanceof ProjectRegistryConflictError)) {
+          registerProject({ ...project, status: "error" });
+        }
         writeDone(conn, { ok: false, error: msg });
-      } finally {
-        stopHeartbeat();
-        this.shutdownAbortControllers.delete(ac);
-        this.vectorDb?.resumeMaintenanceLoop();
       }
+    } finally {
+      stopHeartbeat();
+      this.vectorDb?.resumeMaintenanceLoop();
+    }
+  }
+
+  async projectStats(root: string): Promise<{
+    files: number;
+    chunks: number;
+    vectorDim: number;
+    modelTier: string;
+    embedMode: string;
+    indexedAt: string;
+    watching: boolean;
+    configuredEmbedding: Readonly<EmbeddingGenerationConfig>;
+    builtEmbedding: Readonly<EmbeddingGenerationConfig> | null;
+    embeddingState: "current" | "legacy" | "stale" | "unbuilt";
+  }> {
+    return this.runSharedOperation("project-stats", undefined, async () => {
+      if (!this.vectorDb) throw new Error("daemon resources not ready");
+      const project = getProject(root);
+      if (!project) throw new Error("project not registered");
+      if (!this.activeConfig) throw new Error("daemon resources not ready");
+      const identity = projectEmbeddingStatus(project, this.activeConfig);
+      const prefix = root.endsWith("/") ? root : `${root}/`;
+      const [chunks, files] = await Promise.all([
+        this.vectorDb.countRowsForPath(prefix),
+        this.vectorDb.countDistinctFilesForPath(prefix),
+      ]);
+      return {
+        files,
+        chunks,
+        vectorDim: project.vectorDim,
+        modelTier: project.modelTier,
+        embedMode: project.embedMode,
+        indexedAt: project.lastIndexed,
+        watching: this.processors.has(root),
+        configuredEmbedding: identity.configured,
+        builtEmbedding: identity.built,
+        embeddingState: identity.state,
+      };
     });
   }
 
@@ -641,7 +1060,7 @@ export class Daemon {
    */
   private async reindexOneProject(
     root: string,
-    opts: { reset?: boolean; dryRun?: boolean },
+    opts: { reset?: boolean; dryRun?: boolean; rewatch?: boolean },
     signal: AbortSignal,
     onProgress: (info: {
       processed: number;
@@ -649,27 +1068,14 @@ export class Daemon {
       total: number;
       filePath?: string;
     }) => void,
-  ): Promise<{
-    processed: number;
-    indexed: number;
-    total: number;
-    failedFiles: number;
-  }> {
+  ): Promise<InitialSyncResult> {
     if (!this.vectorDb || !this.metaCache) {
       throw new Error("daemon resources not ready");
     }
 
-    // Pause the project's batch processor during full index
-    const processor = this.processors.get(root);
-    if (processor) {
-      await processor.close();
-      this.processors.delete(root);
-    }
-    const sub = this.subscriptions.get(root);
-    if (sub) {
-      await sub.unsubscribe();
-      this.subscriptions.delete(root);
-    }
+    // Quiesce the subscription, processor, and any catchup generation before
+    // full sync takes deletion authority for this project.
+    await this.unwatchProjectWithinOperation(root);
 
     // Mark this root as full-indexing so concurrent searches get a
     // partial-result footer (Phase 6); seeded at 0/0 until the first tick.
@@ -682,6 +1088,9 @@ export class Daemon {
         vectorDb: this.vectorDb,
         metaCache: this.metaCache,
         signal,
+        generation: this.activeGeneration ?? undefined,
+        embedMode: this.activeConfig?.embedMode,
+        workerPool: this.workerPool ?? undefined,
         onProgress: (info) => {
           this.resetActivity();
           this.indexProgress.set(root, {
@@ -694,9 +1103,9 @@ export class Daemon {
     } finally {
       this.indexProgress.delete(root);
       // Re-enable watcher (skip if shutting down)
-      if (!this.shuttingDown) {
+      if (!this.shuttingDown && opts.rewatch !== false) {
         try {
-          await this.watchProject(root);
+          await this.watchProjectWithinOperation(root);
         } catch (err) {
           console.error(
             `[daemon] Failed to re-watch ${path.basename(root)}:`,
@@ -712,59 +1121,91 @@ export class Daemon {
     conn: net.Socket,
     opts: { reset?: boolean; dryRun?: boolean },
   ): Promise<void> {
-    await this.withProjectLock(root, async () => {
-      if (!this.vectorDb || !this.metaCache) {
-        writeDone(conn, { ok: false, error: "daemon resources not ready" });
-        return;
-      }
-
-      const ac = new AbortController();
-      conn.on("close", () => ac.abort());
-      this.shutdownAbortControllers.add(ac);
-
-      this.vectorDb.pauseMaintenanceLoop();
-      const stopHeartbeat = startHeartbeat(conn);
-      let lastProgressTime = 0;
-      try {
-        const result = await this.reindexOneProject(
-          root,
-          opts,
+    const ac = new AbortController();
+    const onClose = () => ac.abort();
+    conn.once("close", onClose);
+    this.shutdownAbortControllers.add(ac);
+    try {
+      await this.withProjectLock(root, ac.signal, () =>
+        this.runSharedOperation(
+          "index-project",
           ac.signal,
-          (info) => {
-            const now = Date.now();
-            if (now - lastProgressTime < 100) return;
-            lastProgressTime = now;
-            writeProgress(conn, {
-              processed: info.processed,
-              indexed: info.indexed,
-              total: info.total,
-              filePath: info.filePath,
-            });
-          },
-        );
+          async (operationSignal) => {
+            if (!this.vectorDb || !this.metaCache) {
+              writeDone(conn, {
+                ok: false,
+                error: "daemon resources not ready",
+              });
+              return;
+            }
 
-        stopHeartbeat();
-        writeDone(conn, {
-          ok: true,
-          processed: result.processed,
-          indexed: result.indexed,
-          total: result.total,
-          failedFiles: result.failedFiles,
-        });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(
-          `[daemon] indexProject failed for ${path.basename(root)}:`,
-          msg,
-        );
-        stopHeartbeat();
-        writeDone(conn, { ok: false, error: msg });
-      } finally {
-        stopHeartbeat();
-        this.shutdownAbortControllers.delete(ac);
-        this.vectorDb?.resumeMaintenanceLoop();
-      }
-    });
+            this.vectorDb.pauseMaintenanceLoop();
+            const stopHeartbeat = startHeartbeat(conn);
+            let lastProgressTime = 0;
+            try {
+              const result = await this.reindexOneProject(
+                root,
+                opts,
+                operationSignal,
+                (info) => {
+                  const now = Date.now();
+                  if (now - lastProgressTime < 100) return;
+                  lastProgressTime = now;
+                  writeProgress(conn, {
+                    processed: info.processed,
+                    indexed: info.indexed,
+                    total: info.total,
+                    filePath: info.filePath,
+                  });
+                },
+              );
+
+              if (!opts.dryRun && !result.degraded) {
+                const prefix = root.endsWith("/") ? root : `${root}/`;
+                const chunkCount = await this.vectorDb.countRowsForPath(prefix);
+                const project = getProject(root);
+                stampProjectFullSync({
+                  root,
+                  generation: result.generation,
+                  embedMode: result.embedMode,
+                  chunkCount,
+                  chunkerVersion: opts.reset
+                    ? CONFIG.CHUNKER_VERSION
+                    : (project?.chunkerVersion ?? 1),
+                  expectedFingerprint:
+                    result.registryExpectation.embeddingFingerprint,
+                  expectedRebuildId: result.registryExpectation.rebuildId,
+                });
+              }
+
+              writeDone(conn, {
+                ok: true,
+                processed: result.processed,
+                indexed: result.indexed,
+                total: result.total,
+                failedFiles: result.failedFiles,
+                degraded: result.degraded,
+                scanErrors: result.scanErrors,
+                embeddingFingerprint: result.generation.fingerprint,
+              });
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              console.error(
+                `[daemon] indexProject failed for ${path.basename(root)}:`,
+                msg,
+              );
+              writeDone(conn, { ok: false, error: msg });
+            } finally {
+              stopHeartbeat();
+              this.vectorDb?.resumeMaintenanceLoop();
+            }
+          },
+        ),
+      );
+    } finally {
+      conn.off("close", onClose);
+      this.shutdownAbortControllers.delete(ac);
+    }
   }
 
   /**
@@ -778,131 +1219,510 @@ export class Daemon {
    * recreated (lazily, at config width) table.
    */
   async repairRebuild(conn: net.Socket): Promise<void> {
-    if (!this.vectorDb || !this.metaCache) {
+    const oldResources = this.resources;
+    const metaCache = this.metaCache;
+    if (!oldResources || !metaCache) {
       writeDone(conn, { ok: false, error: "daemon resources not ready" });
       return;
     }
 
-    const ac = new AbortController();
-    conn.on("close", () => ac.abort());
-    this.shutdownAbortControllers.add(ac);
-
-    this.vectorDb.pauseMaintenanceLoop();
+    const targetConfig = readGlobalConfig();
+    const targetGeneration = resolveEmbeddingGeneration(targetConfig);
+    const clientAbort = new AbortController();
+    let dropCommitted = false;
+    let desiredWatchRoots: string[] = [];
+    let watchersRestored = false;
+    let oldPoolDestroyed = false;
+    let oldDbClosed = false;
+    const failClosedOldResources = async (lease: StoreLease): Promise<void> => {
+      this.ready = false;
+      this.resources = null;
+      this.vectorDb = null;
+      this.workerPool = null;
+      if (!oldPoolDestroyed) {
+        await oldResources.workerPool
+          .destroy({ requireExit: true })
+          .catch(() => {});
+        oldPoolDestroyed = true;
+      }
+      if (!oldDbClosed) {
+        await oldResources.vectorDb.close().catch(() => {});
+        oldDbClosed = true;
+      }
+      await lease.release().catch(() => {});
+    };
+    const onClose = () => {
+      if (!dropCommitted) clientAbort.abort(new Error("client disconnected"));
+    };
+    conn.once("close", onClose);
     const stopHeartbeat = startHeartbeat(conn);
 
-    // Reindex every project the daemon would normally index on startup.
-    const projects = listProjects().filter(
-      (p) => p.status === "indexed" || p.status === "pending",
-    );
-    const globalConfig = readGlobalConfig();
-    let rebuilt = 0;
-    let totalIndexed = 0;
-    let lastProgressTime = 0;
-    try {
-      // Drop the shared table — recreated lazily at the configured width on the
-      // first insert of the reindex below.
-      writeProgress(conn, { phase: "drop", projectsTotal: projects.length });
-      await this.vectorDb.drop();
+    const throwIfPreDropCancelled = (operationSignal: AbortSignal) => {
+      if (operationSignal.aborted) throw operationSignal.reason;
+      if (!dropCommitted && clientAbort.signal.aborted) {
+        throw clientAbort.signal.reason;
+      }
+    };
 
-      for (const p of projects) {
-        if (ac.signal.aborted) break;
-        const name = p.name || path.basename(p.root);
-        await this.withProjectLock(p.root, async () => {
-          const result = await this.reindexOneProject(
-            p.root,
-            { reset: true },
-            ac.signal,
-            (info) => {
-              const now = Date.now();
-              if (now - lastProgressTime < 100) return;
-              lastProgressTime = now;
-              writeProgress(conn, {
-                phase: "reindex",
-                project: name,
-                projectsDone: rebuilt,
-                projectsTotal: projects.length,
-                processed: info.processed,
-                indexed: info.indexed,
-                total: info.total,
-                filePath: info.filePath,
-              });
-            },
-          );
-          totalIndexed += result.indexed;
-          const proj = getProject(p.root);
-          if (proj) {
-            registerProject({
-              ...proj,
-              vectorDim: globalConfig.vectorDim,
-              modelTier: globalConfig.modelTier,
-              embedMode: globalConfig.embedMode,
-              lastIndexed: new Date().toISOString(),
-              chunkCount: result.indexed,
-              status: "indexed",
-              chunkerVersion: CONFIG.CHUNKER_VERSION,
-            });
+    try {
+      const result = await this.operations.runExclusive(
+        "repair",
+        async () => {
+          desiredWatchRoots = await this.watcherManager.quiesceAll();
+        },
+        async (operationSignal) => {
+          throwIfPreDropCancelled(operationSignal);
+          oldResources.vectorDb.pauseMaintenanceLoop();
+          this.searchers.clear();
+
+          writeProgress(conn, {
+            phase: "lease",
+            message: "waiting for exclusive store ownership",
+          });
+          let exclusiveLease: StoreLease | null = null;
+          try {
+            exclusiveLease = await oldResources.vectorDb.upgradeStoreLease(
+              AbortSignal.any([operationSignal, clientAbort.signal]),
+            );
+            throwIfPreDropCancelled(operationSignal);
+          } catch (error) {
+            if (exclusiveLease) {
+              try {
+                await oldResources.vectorDb.downgradeStoreLease();
+              } catch (downgradeError) {
+                await failClosedOldResources(exclusiveLease);
+                throw new Error(
+                  `Failed to restore shared store ownership: ${String(downgradeError)}`,
+                );
+              }
+            }
+            oldResources.vectorDb.resumeMaintenanceLoop();
+            throw error;
           }
+          if (!exclusiveLease) {
+            throw new Error(
+              "Exclusive store lease acquisition returned no lease",
+            );
+          }
+
+          let reservation: ReturnType<typeof reserveProjectsForRebuild>;
+          try {
+            reservation = reserveProjectsForRebuild(targetGeneration);
+          } catch (error) {
+            try {
+              await oldResources.vectorDb.downgradeStoreLease();
+            } catch (downgradeError) {
+              await failClosedOldResources(exclusiveLease);
+              throw new Error(
+                `Failed to restore shared store ownership: ${String(downgradeError)}`,
+              );
+            }
+            oldResources.vectorDb.resumeMaintenanceLoop();
+            throw error;
+          }
+          let targetDb: VectorDB | null = null;
+          let targetPool: WorkerPool | null = null;
+          let published = false;
+          try {
+            writeProgress(conn, {
+              phase: "prepare",
+              rebuildId: reservation.rebuildId,
+              projects: reservation.reserved.length,
+            });
+            await oldResources.workerPool.destroy({ requireExit: true });
+            oldPoolDestroyed = true;
+            if (oldResources.mlx === "owned") {
+              await this.mlxServerManager.stopMlxServer();
+            }
+            throwIfPreDropCancelled(operationSignal);
+
+            await oldResources.vectorDb.close({
+              releaseLease: false,
+              requireClosed: true,
+            });
+            oldDbClosed = true;
+            throwIfPreDropCancelled(operationSignal);
+            targetDb = this.createVectorDb(
+              targetGeneration.vectorDim,
+              exclusiveLease,
+            );
+            markProjectRebuildDropping(reservation);
+
+            try {
+              await targetDb.drop();
+              dropCommitted = true;
+              conn.off("close", onClose);
+            } catch (error) {
+              // LanceDB does not expose a commit token. Inspect physical state:
+              // an absent table means the destructive commit happened; an
+              // unreadable state is treated as uncertain and therefore post-drop.
+              try {
+                dropCommitted = (await targetDb.getSchemaVectorDim()) === null;
+              } catch {
+                dropCommitted = true;
+              }
+              if (dropCommitted) conn.off("close", onClose);
+              throw error;
+            }
+
+            writeProgress(conn, {
+              phase: "schema",
+              message: "creating target table",
+            });
+            await targetDb.ensureTable();
+            const physicalDim = await targetDb.getSchemaVectorDim();
+            if (physicalDim !== targetGeneration.vectorDim) {
+              throw new Error(
+                `rebuilt table dimension ${physicalDim ?? "missing"} does not match target ${targetGeneration.vectorDim}`,
+              );
+            }
+
+            if (targetConfig.embedMode === "gpu") {
+              await this.mlxServerManager.ensureMlxServer(
+                targetGeneration.mlxModel,
+              );
+            }
+            const targetMlx = this.mlxMode(targetConfig);
+            targetPool = this.createWorkerPool(
+              targetGeneration,
+              targetConfig.embedMode,
+            );
+            this.publishResourceGeneration(
+              targetConfig,
+              targetGeneration,
+              targetDb,
+              targetPool,
+              targetMlx,
+            );
+            published = true;
+
+            let completed = 0;
+            const failures: Array<{ root: string; error: string }> = [];
+            for (const project of reservation.reserved) {
+              if (operationSignal.aborted) throw operationSignal.reason;
+              writeProgress(conn, {
+                phase: "index",
+                root: project.root,
+                project: project.name,
+                completed,
+                totalProjects: reservation.reserved.length,
+              });
+              try {
+                const sync = await this.reindexOneProject(
+                  project.root,
+                  { reset: true, rewatch: false },
+                  operationSignal,
+                  (info) =>
+                    writeProgress(conn, {
+                      phase: "index",
+                      root: project.root,
+                      project: project.name,
+                      processed: info.processed,
+                      indexed: info.indexed,
+                      total: info.total,
+                      filePath: info.filePath,
+                    }),
+                );
+                if (sync.degraded) {
+                  throw new Error(
+                    `degraded scan (${sync.failedFiles} failed files)`,
+                  );
+                }
+                const prefix = project.root.endsWith("/")
+                  ? project.root
+                  : `${project.root}/`;
+                const chunkCount = await targetDb.countRowsForPath(prefix);
+                stampProjectFullSync({
+                  root: project.root,
+                  name: project.name,
+                  generation: sync.generation,
+                  embedMode: sync.embedMode,
+                  chunkCount,
+                  chunkerVersion: CONFIG.CHUNKER_VERSION,
+                  expectedFingerprint: targetGeneration.fingerprint,
+                  expectedRebuildId: reservation.rebuildId,
+                });
+                completed++;
+              } catch (error) {
+                failures.push({
+                  root: project.root,
+                  error: error instanceof Error ? error.message : String(error),
+                });
+              }
+            }
+
+            await targetDb.downgradeStoreLease();
+            targetDb.startMaintenanceLoop((fn) =>
+              this.runSharedOperation("store-maintenance", undefined, () =>
+                fn(),
+              ),
+            );
+
+            const currentGeneration = resolveEmbeddingGeneration(
+              readGlobalConfig(),
+            );
+            const configChanged =
+              currentGeneration.fingerprint !== targetGeneration.fingerprint;
+            if (failures.length === 0) {
+              completeProjectRebuild(reservation.rebuildId);
+            }
+            return {
+              completed,
+              total: reservation.reserved.length,
+              failures,
+              configChanged,
+              generation: targetGeneration.fingerprint,
+            };
+          } catch (error) {
+            if (!dropCommitted) {
+              this.ready = false;
+              this.resources = null;
+              let recoveryError: unknown;
+              await targetPool
+                ?.destroy({ requireExit: true })
+                .catch((cause) => {
+                  recoveryError ??= cause;
+                });
+              if (targetDb) {
+                await targetDb
+                  .close({ releaseLease: false, requireClosed: true })
+                  .catch((cause) => {
+                    recoveryError ??= cause;
+                  });
+              }
+              try {
+                restoreProjectsAfterRebuild(reservation);
+              } catch (cause) {
+                recoveryError ??= cause;
+              }
+
+              if (!recoveryError && !oldPoolDestroyed) {
+                try {
+                  await oldResources.vectorDb.downgradeStoreLease();
+                  oldResources.vectorDb.resumeMaintenanceLoop();
+                  this.resources = oldResources;
+                  this.activeConfig = oldResources.config;
+                  this.activeGeneration = oldResources.embedding;
+                  this.vectorDb = oldResources.vectorDb;
+                  this.workerPool = oldResources.workerPool;
+                  this.ready = true;
+                } catch (cause) {
+                  recoveryError = cause;
+                }
+              } else if (!recoveryError) {
+                let restoredDb: VectorDB | null = null;
+                let restoredPool: WorkerPool | null = null;
+                try {
+                  restoredDb = oldDbClosed
+                    ? this.createVectorDb(
+                        oldResources.embedding.vectorDim,
+                        exclusiveLease,
+                      )
+                    : oldResources.vectorDb;
+                  if (
+                    oldResources.config.embedMode === "gpu" &&
+                    oldResources.mlx === "owned"
+                  ) {
+                    await this.mlxServerManager.ensureMlxServer(
+                      oldResources.embedding.mlxModel,
+                    );
+                  }
+                  restoredPool = this.createWorkerPool(
+                    oldResources.embedding,
+                    oldResources.config.embedMode,
+                  );
+                  await restoredDb.downgradeStoreLease();
+                  restoredDb.startMaintenanceLoop((fn) =>
+                    this.runSharedOperation(
+                      "store-maintenance",
+                      undefined,
+                      () => fn(),
+                    ),
+                  );
+                  this.publishResourceGeneration(
+                    oldResources.config,
+                    oldResources.embedding,
+                    restoredDb,
+                    restoredPool,
+                    this.mlxMode(oldResources.config),
+                  );
+                  this.ready = true;
+                } catch (cause) {
+                  recoveryError = cause;
+                  await restoredPool
+                    ?.destroy({ requireExit: true })
+                    .catch(() => {});
+                  if (restoredDb) {
+                    await restoredDb.close().catch(() => {});
+                  } else {
+                    await exclusiveLease.release().catch(() => {});
+                  }
+                }
+              }
+
+              if (recoveryError) {
+                if (!oldPoolDestroyed) {
+                  await oldResources.workerPool
+                    .destroy({ requireExit: true })
+                    .catch((cause) => {
+                      recoveryError = new Error(
+                        `Pre-drop rebuild pool cleanup failed: ${String(recoveryError)}; ${String(cause)}`,
+                      );
+                    });
+                  oldPoolDestroyed = true;
+                }
+                if (!oldDbClosed) {
+                  await oldResources.vectorDb.close().catch((cause) => {
+                    recoveryError = new Error(
+                      `Pre-drop rebuild DB cleanup failed: ${String(recoveryError)}; ${String(cause)}`,
+                    );
+                  });
+                  oldDbClosed = true;
+                }
+                await exclusiveLease.release().catch((cause) => {
+                  recoveryError = new Error(
+                    `Pre-drop rebuild cleanup failed: ${String(recoveryError)}; ${String(cause)}`,
+                  );
+                });
+                this.resources = null;
+                this.vectorDb = null;
+                this.workerPool = null;
+                this.ready = false;
+                throw new Error(
+                  `Pre-drop rebuild recovery failed: ${String(error)}; ${String(recoveryError)}`,
+                );
+              }
+            } else {
+              this.ready = false;
+              this.resources = null;
+              this.activeConfig = targetConfig;
+              this.activeGeneration = targetGeneration;
+              this.vectorDb = targetDb;
+              this.workerPool = published ? targetPool : null;
+              if (targetDb) {
+                await targetDb.downgradeStoreLease().catch(() => {});
+              } else {
+                await exclusiveLease.release().catch(() => {});
+              }
+            }
+            throw error;
+          }
+        },
+      );
+
+      for (const root of desiredWatchRoots) {
+        if (getProject(root)?.status !== "indexed") continue;
+        try {
+          await this.watcherManager.watchProject(root, { catchup: false });
+        } catch (error) {
+          result.failures.push({
+            root,
+            error: `watch restore failed: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        }
+      }
+      watchersRestored = true;
+      try {
+        await this.watcherManager.catchupAll(desiredWatchRoots);
+      } catch (error) {
+        result.failures.push({
+          root: "*",
+          error: `watch catchup failed: ${error instanceof Error ? error.message : String(error)}`,
         });
-        rebuilt++;
       }
 
-      stopHeartbeat();
       writeDone(conn, {
-        ok: true,
-        projects: rebuilt,
-        projectsTotal: projects.length,
-        indexed: totalIndexed,
+        ok: result.failures.length === 0,
+        ...result,
+        ...(result.configChanged
+          ? {
+              warning:
+                "configured embedding changed during rebuild; another rebuild is required",
+            }
+          : {}),
       });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error("[daemon] repairRebuild failed:", msg);
-      stopHeartbeat();
+    } catch (error) {
+      let reportedError: unknown = error;
+      if (!dropCommitted && !watchersRestored && this.ready && this.resources) {
+        try {
+          await this.watcherManager.resumeAll(desiredWatchRoots, {
+            catchup: false,
+          });
+          watchersRestored = true;
+          await this.watcherManager.catchupAll(desiredWatchRoots);
+        } catch (watchError) {
+          this.ready = false;
+          this.resources = null;
+          reportedError = new Error(
+            `Pre-drop rebuild watcher restoration failed: ${String(error)}; ${String(watchError)}`,
+          );
+        }
+      }
+      const details =
+        reportedError instanceof StoreLeaseTimeoutError
+          ? { blockers: reportedError.blockers }
+          : {};
       writeDone(conn, {
         ok: false,
-        error: msg,
-        projects: rebuilt,
-        indexed: totalIndexed,
+        error:
+          reportedError instanceof Error
+            ? reportedError.message
+            : String(reportedError),
+        degraded: dropCommitted,
+        ...details,
       });
     } finally {
+      conn.off("close", onClose);
       stopHeartbeat();
-      this.shutdownAbortControllers.delete(ac);
-      this.vectorDb?.resumeMaintenanceLoop();
+      if (!this.ready) {
+        setImmediate(() => void this.shutdown());
+      }
     }
   }
 
   async removeProject(root: string, conn: net.Socket): Promise<void> {
-    await this.withProjectLock(root, async () => {
-      if (!this.vectorDb || !this.metaCache) {
-        writeDone(conn, { ok: false, error: "daemon resources not ready" });
-        return;
-      }
+    const ac = new AbortController();
+    const onClose = () => ac.abort();
+    conn.once("close", onClose);
+    this.shutdownAbortControllers.add(ac);
+    try {
+      await this.withProjectLock(root, ac.signal, () =>
+        this.runSharedOperation("remove-project", ac.signal, async () => {
+          if (!this.vectorDb || !this.metaCache) {
+            writeDone(conn, {
+              ok: false,
+              error: "daemon resources not ready",
+            });
+            return;
+          }
 
-      const stopHeartbeat = startHeartbeat(conn);
-      try {
-        await this.unwatchProject(root);
+          const stopHeartbeat = startHeartbeat(conn);
+          try {
+            await this.unwatchProjectWithinOperation(root);
 
-        const rootPrefix = root.endsWith("/") ? root : `${root}/`;
-        await this.vectorDb.deletePathsWithPrefix(rootPrefix);
+            const rootPrefix = root.endsWith("/") ? root : `${root}/`;
+            await this.vectorDb.deletePathsWithPrefix(rootPrefix);
 
-        const keys = await this.metaCache.getKeysWithPrefix(rootPrefix);
-        for (const key of keys) {
-          this.metaCache.delete(key);
-        }
+            const keys = await this.metaCache.getKeysWithPrefix(rootPrefix);
+            for (const key of keys) this.metaCache.delete(key);
 
-        stopHeartbeat();
-        writeDone(conn, { ok: true });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(
-          `[daemon] removeProject failed for ${path.basename(root)}:`,
-          msg,
-        );
-        stopHeartbeat();
-        writeDone(conn, { ok: false, error: msg });
-      } finally {
-        stopHeartbeat();
-      }
-    });
+            writeDone(conn, { ok: true });
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.error(
+              `[daemon] removeProject failed for ${path.basename(root)}:`,
+              msg,
+            );
+            writeDone(conn, { ok: false, error: msg });
+          } finally {
+            stopHeartbeat();
+          }
+        }),
+      );
+    } finally {
+      conn.off("close", onClose);
+      this.shutdownAbortControllers.delete(ac);
+    }
   }
 
   async summarizeProject(
@@ -910,74 +1730,92 @@ export class Daemon {
     conn: net.Socket,
     opts: { limit?: number; pathPrefix?: string },
   ): Promise<void> {
-    await this.withProjectLock(root, async () => {
-      if (!this.vectorDb) {
-        writeDone(conn, { ok: false, error: "daemon resources not ready" });
-        return;
-      }
+    const ac = new AbortController();
+    const onClose = () => ac.abort();
+    conn.once("close", onClose);
+    this.shutdownAbortControllers.add(ac);
+    try {
+      await this.withProjectLock(root, ac.signal, () =>
+        this.runSharedOperation("summarize-project", ac.signal, async () => {
+          if (!this.vectorDb) {
+            writeDone(conn, {
+              ok: false,
+              error: "daemon resources not ready",
+            });
+            return;
+          }
 
-      const rootPrefix =
-        opts.pathPrefix ?? (root.endsWith("/") ? root : `${root}/`);
+          const rootPrefix =
+            opts.pathPrefix ?? (root.endsWith("/") ? root : `${root}/`);
 
-      const stopHeartbeat = startHeartbeat(conn);
-      let lastProgressTime = 0;
-      try {
-        const result = await generateSummaries(
-          this.vectorDb,
-          rootPrefix,
-          (done, total) => {
-            this.resetActivity();
-            const now = Date.now();
-            if (now - lastProgressTime < 100) return;
-            lastProgressTime = now;
-            writeProgress(conn, { summarized: done, total });
-          },
-          opts.limit,
-        );
+          const stopHeartbeat = startHeartbeat(conn);
+          let lastProgressTime = 0;
+          try {
+            const result = await generateSummaries(
+              this.vectorDb,
+              rootPrefix,
+              (done, total) => {
+                this.resetActivity();
+                const now = Date.now();
+                if (now - lastProgressTime < 100) return;
+                lastProgressTime = now;
+                writeProgress(conn, { summarized: done, total });
+              },
+              opts.limit,
+            );
 
-        stopHeartbeat();
-        writeDone(conn, {
-          ok: true,
-          summarized: result.summarized,
-          remaining: result.remaining,
-        });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(
-          `[daemon] summarizeProject failed for ${path.basename(root)}:`,
-          msg,
-        );
-        stopHeartbeat();
-        writeDone(conn, { ok: false, error: msg });
-      } finally {
-        stopHeartbeat();
-      }
-    });
+            writeDone(conn, {
+              ok: true,
+              summarized: result.summarized,
+              remaining: result.remaining,
+            });
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.error(
+              `[daemon] summarizeProject failed for ${path.basename(root)}:`,
+              msg,
+            );
+            writeDone(conn, { ok: false, error: msg });
+          } finally {
+            stopHeartbeat();
+          }
+        }),
+      );
+    } finally {
+      conn.off("close", onClose);
+      this.shutdownAbortControllers.delete(ac);
+    }
   }
 
   // --- LLM server management ---
 
   async llmStart(): Promise<{ ok: boolean; [key: string]: unknown }> {
-    if (!this.llmServer) return { ok: false, error: "daemon not initialized" };
-    try {
-      await this.llmServer.start();
-      this.resetActivity();
-      return { ok: true, ...this.llmServer.getStatus() };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { ok: false, error: msg };
-    }
+    return this.runSharedOperation("llm-start", undefined, async () => {
+      if (!this.llmServer)
+        return { ok: false, error: "daemon not initialized" };
+      try {
+        await this.llmServer.start();
+        this.resetActivity();
+        return { ok: true, ...this.llmServer.getStatus() };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+    });
   }
 
   async llmStop(): Promise<{ ok: boolean; [key: string]: unknown }> {
-    if (!this.llmServer) return { ok: false, error: "daemon not initialized" };
-    try {
-      await this.llmServer.stop();
-      return { ok: true };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { ok: false, error: msg };
-    }
+    return this.runSharedOperation("llm-stop", undefined, async () => {
+      if (!this.llmServer)
+        return { ok: false, error: "daemon not initialized" };
+      try {
+        await this.llmServer.stop();
+        return { ok: true };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+    });
   }
 
   llmStatus(): { ok: boolean; [key: string]: unknown } {
@@ -990,23 +1828,25 @@ export class Daemon {
   }
 
   async reviewCommit(root: string, commitRef: string): Promise<void> {
-    this.resetActivity();
-    try {
-      if (!this.llmServer) {
-        console.log("[review] daemon not initialized, skipping");
-        return;
+    return this.runSharedOperation("review", undefined, async () => {
+      this.resetActivity();
+      try {
+        if (!this.llmServer) {
+          console.log("[review] daemon not initialized, skipping");
+          return;
+        }
+        await this.llmServer.ensure();
+        const { reviewCommit } = await import("../llm/review");
+        const result = await reviewCommit({ commitRef, projectRoot: root });
+        console.log(
+          `[review] ${result.commit} — ${result.findingCount} finding(s) in ${result.duration}s`,
+        );
+      } catch (err) {
+        console.error(
+          `[review] failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
-      await this.llmServer.ensure();
-      const { reviewCommit } = await import("../llm/review");
-      const result = await reviewCommit({ commitRef, projectRoot: root });
-      console.log(
-        `[review] ${result.commit} — ${result.findingCount} finding(s) in ${result.duration}s`,
-      );
-    } catch (err) {
-      console.error(
-        `[review] failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    });
   }
 
   /**
@@ -1025,7 +1865,8 @@ export class Daemon {
 
     // Defer while busy; we'll re-check next tick.
     if (this.vectorDb?.isMaintenanceActive()) return;
-    if (this.projectLocks.size > 0) return;
+    if (this.projectMutex.pending > 0 || this.operations.activeCount > 0)
+      return;
 
     const reason = ageExceeded
       ? `age ${(ageMs / 3_600_000).toFixed(1)}h > ${(MAX_LIFETIME_MS / 3_600_000).toFixed(1)}h`
@@ -1037,9 +1878,17 @@ export class Daemon {
     void this.shutdown({ relaunch: true }).finally(() => process.exit(0));
   }
 
-  async shutdown(opts: { relaunch?: boolean } = {}): Promise<void> {
-    if (this.shuttingDown) return;
+  shutdown(opts: { relaunch?: boolean } = {}): Promise<void> {
+    if (!this.shutdownPromise) {
+      this.shutdownPromise = this.performShutdown(opts);
+    }
+    return this.shutdownPromise;
+  }
+
+  private async performShutdown(opts: { relaunch?: boolean }): Promise<void> {
     this.shuttingDown = true;
+    this.ready = false;
+    const strictResourceShutdown = this.hasUnfinishedRebuild();
 
     console.log("[daemon] Shutting down...");
 
@@ -1048,11 +1897,25 @@ export class Daemon {
     // and defers instead of SIGKILLing us mid-cleanup.
     writeDrainingMarker(process.pid);
 
-    // Drop external liveness markers FIRST so the next daemon start isn't
-    // fooled by leftover state if the long cleanup below is interrupted
-    // (uncaught exception, second SIGTERM, OOM kill mid-shutdown). The
-    // fresh-lock check in isDaemonHeartbeatFresh keyed on these — orphans
-    // here used to cause silent no-op spawns for up to 150s.
+    // Stop accepting new IPC before draining admitted operations. Existing
+    // sockets are destroyed below so their close handlers cancel queued work.
+    const server = this.server;
+    this.server = null;
+    const serverClosed = new Promise<void>((resolve) => {
+      if (!server?.listening) {
+        resolve();
+        return;
+      }
+      server.close(() => resolve());
+    });
+    for (const connection of this.connections) connection.end();
+    const forceCloseConnections = setTimeout(() => {
+      for (const connection of this.connections) connection.destroy();
+    }, 1000);
+    forceCloseConnections.unref();
+
+    // Drop external liveness markers now so interrupted cleanup cannot leave a
+    // fresh-looking daemon that silently blocks its successor.
     try {
       fs.unlinkSync(PATHS.daemonSocket);
     } catch {}
@@ -1062,51 +1925,59 @@ export class Daemon {
     if (this.releaseLock) {
       const release = this.releaseLock;
       this.releaseLock = null;
-      release().catch(() => {});
+      try {
+        await release();
+      } catch {}
     }
 
     if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
     if (this.idleInterval) clearInterval(this.idleInterval);
+    for (const timer of this.pendingIndexRetryTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.pendingIndexRetryTimers.clear();
+    this.pendingIndexRetryCounts.clear();
 
-    // Abort in-flight index/add operations so they exit promptly
+    // Abort explicit operation controllers, close coordinator admission, and
+    // reject queued project waiters. Start these drains before watcher teardown
+    // so no timer or socket can admit replacement work.
     for (const ac of this.shutdownAbortControllers) {
-      ac.abort();
+      ac.abort(new OperationClosedError());
     }
+    const operationDrain = this.operations.close();
+    const projectDrain = this.projectMutex.close();
 
-    // Wait for in-flight project operations to finish (they check shuttingDown/signal)
-    const pendingLocks = [...this.projectLocks.values()];
-    if (pendingLocks.length > 0) {
-      console.log(
-        `[daemon] Waiting for ${pendingLocks.length} in-flight operation(s)...`,
-      );
-      await Promise.allSettled(pendingLocks);
-    }
-
-    // Close all processors
-    for (const processor of this.processors.values()) {
-      await processor.close();
-    }
+    // Abort catchup/recovery and remove each processor before worker teardown.
+    await this.watcherManager.quiesceAll();
+    await Promise.all([operationDrain, projectDrain]);
 
     // Stop LLM server if running
     try {
       await this.llmServer?.stop();
     } catch {}
 
-    // Stop MLX embed server if we started it
-    this.mlxServerManager.stopMlxServer();
-
     // Destroy worker pool to prevent orphaned child processes
+    if (this.workerPool) {
+      if (strictResourceShutdown) {
+        await this.workerPool.destroy({
+          requireExit: true,
+        });
+      } else {
+        try {
+          await this.workerPool.destroy();
+        } catch {}
+      }
+      this.workerPool = null;
+      this.resources = null;
+    }
     if (isWorkerPoolInitialized()) {
       try {
         await destroyWorkerPool();
       } catch {}
     }
 
-    // Stop watcher poll intervals + FSEvents recovery probes, unsubscribe all
-    await this.watcherManager.teardown();
-
-    // Close server (socket/pid/lock already dropped at the top of shutdown)
-    this.server?.close();
+    // Stop MLX embed server only after worker requests have drained.
+    await this.mlxServerManager.stopMlxServer();
 
     // Unregister all
     for (const root of this.processors.keys()) {
@@ -1119,16 +1990,23 @@ export class Daemon {
     try {
       await this.metaCache?.close();
     } catch {}
-    try {
-      await this.vectorDb?.close();
-    } catch {}
+    if (strictResourceShutdown) {
+      await this.vectorDb?.close({ requireClosed: true });
+    } else {
+      try {
+        await this.vectorDb?.close();
+      } catch {}
+    }
+    await serverClosed;
+    clearTimeout(forceCloseConnections);
+    this.connections.clear();
 
     // Hand off to a successor only after every resource is released and the
     // liveness markers (socket/pid/lock) are already gone — so the fresh
     // daemon's singleton check sees a clean slate and opens LanceDB/LMDB
     // without contending with this exiting process.
     if (opts.relaunch) {
-      const pid = spawnDaemon();
+      const pid = await spawnDaemon();
       console.log(
         `[daemon] Spawned successor daemon${pid ? ` (PID: ${pid})` : " (spawn failed)"}`,
       );

@@ -96,5 +96,16 @@ export interface SearchResponse {
 }
 
 export interface SearchFilter {
+  file?: string;
+  exclude?: string;
+  excludePrefixes?: string[];
+  inPrefixes?: string[];
+  language?: string;
+  role?: string;
+  projectRoots?: string[];
+  project_roots?: string;
+  exclude_project_roots?: string;
+  def?: string;
+  ref?: string;
   [key: string]: MetadataValue;
 }

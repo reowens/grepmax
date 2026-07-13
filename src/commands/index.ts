@@ -2,7 +2,6 @@ import * as path from "node:path";
 import { Command } from "commander";
 import { CONFIG } from "../config";
 import { ensureGrammars } from "../lib/index/grammar-loader";
-import { readGlobalConfig } from "../lib/index/index-config";
 import {
   createIndexingSpinner,
   formatDryRunSummary,
@@ -11,7 +10,10 @@ import { initialSync } from "../lib/index/syncer";
 import { ensureSetup } from "../lib/setup/setup-helpers";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
-import { getProject, registerProject } from "../lib/utils/project-registry";
+import {
+  getProject,
+  stampProjectFullSync,
+} from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import { launchWatcher } from "../lib/utils/watcher-launcher";
 import {
@@ -139,18 +141,13 @@ Examples:
             return;
           }
 
-          const globalConfig = readGlobalConfig();
-          registerProject({
-            root: projectRoot,
-            name: path.basename(projectRoot),
-            vectorDim: globalConfig.vectorDim,
-            modelTier: globalConfig.modelTier,
-            embedMode: globalConfig.embedMode,
-            lastIndexed: new Date().toISOString(),
-            chunkCount: (done.indexed as number) ?? 0,
-            status: "indexed",
-            chunkerVersion: stampedChunkerVersion,
-          });
+          if (done.degraded === true) {
+            spinner.warn(
+              `Indexing incomplete • ${(done.scanErrors as number) ?? 0} scan errors • ${(done.failedFiles as number) ?? 0} failed`,
+            );
+            process.exitCode = 1;
+            return;
+          }
 
           const failedFiles = (done.failedFiles as number) ?? 0;
           const failedSuffix =
@@ -218,17 +215,28 @@ Examples:
             return;
           }
 
-          const globalConfig = readGlobalConfig();
-          registerProject({
+          if (result.degraded) {
+            spinner.warn(
+              `Indexing incomplete • ${result.scanErrors} scan errors • ${result.failedFiles} failed`,
+            );
+            process.exitCode = 1;
+            return;
+          }
+
+          const prefix = projectRoot.endsWith("/")
+            ? projectRoot
+            : `${projectRoot}/`;
+          const chunkCount = await vectorDb.countRowsForPath(prefix);
+          stampProjectFullSync({
             root: projectRoot,
             name: path.basename(projectRoot),
-            vectorDim: globalConfig.vectorDim,
-            modelTier: globalConfig.modelTier,
-            embedMode: globalConfig.embedMode,
-            lastIndexed: new Date().toISOString(),
-            chunkCount: result.indexed,
-            status: "indexed",
+            generation: result.generation,
+            embedMode: result.embedMode,
+            chunkCount,
             chunkerVersion: stampedChunkerVersion,
+            expectedFingerprint:
+              result.registryExpectation.embeddingFingerprint,
+            expectedRebuildId: result.registryExpectation.rebuildId,
           });
 
           const failedSuffix =

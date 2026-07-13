@@ -3,13 +3,17 @@ import * as path from "node:path";
 import { env } from "@huggingface/transformers";
 import * as ort from "onnxruntime-node";
 import { v4 as uuidv4 } from "uuid";
-import { CONFIG, PATHS } from "../../config";
+import { PATHS } from "../../config";
 import {
   buildAnchorChunk,
   type ChunkWithContext,
   formatChunkText,
   TreeSitterChunker,
 } from "../index/chunker";
+import {
+  type EmbeddingGenerationConfig,
+  isOnnxFallbackCompatible,
+} from "../index/embedding-generation";
 import { Skeletonizer } from "../skeleton";
 import type { PreparedChunk, VectorRecord } from "../store/types";
 import {
@@ -20,6 +24,7 @@ import {
   readFileSnapshot,
 } from "../utils/file-utils";
 import { debug as dbg, debugTimer } from "../utils/logger";
+import { resolveContainedPath } from "../utils/path-containment";
 import { maxSim } from "./colbert-math";
 import { ColbertModel, type HybridResult } from "./embeddings/colbert";
 import { GraniteModel } from "./embeddings/granite";
@@ -30,6 +35,7 @@ let mlxFallbackWarned = false;
 export type ProcessFileInput = {
   path: string;
   absolutePath?: string;
+  projectRoot: string;
 };
 
 export type ProcessFileResult = {
@@ -105,15 +111,21 @@ if (fs.existsSync(LOCAL_MODELS)) {
 
 export class WorkerOrchestrator {
   private granite: GraniteModel;
-  private colbert = new ColbertModel();
+  private colbert: ColbertModel;
   private chunker = new TreeSitterChunker();
   private skeletonizer = new Skeletonizer();
   private initPromise: Promise<void> | null = null;
   private readonly vectorDimensions: number;
+  private readonly allowOnnxFallback: boolean;
 
-  constructor(vectorDim?: number) {
-    this.vectorDimensions = vectorDim ?? CONFIG.VECTOR_DIM;
-    this.granite = new GraniteModel(this.vectorDimensions);
+  constructor(
+    private readonly generation: Readonly<EmbeddingGenerationConfig>,
+    private readonly embedMode: "cpu" | "gpu",
+  ) {
+    this.vectorDimensions = generation.vectorDim;
+    this.allowOnnxFallback = isOnnxFallbackCompatible(generation);
+    this.granite = new GraniteModel(generation.vectorDim, generation.onnxModel);
+    this.colbert = new ColbertModel(generation.colbertModel);
   }
 
   private async ensureReady() {
@@ -157,16 +169,35 @@ export class WorkerOrchestrator {
       Number.isFinite(envBatch) && envBatch > 0
         ? Math.max(4, Math.min(16, envBatch))
         : 16;
+    let denseBackend: "mlx" | "onnx" | null = null;
     for (let i = 0; i < texts.length; i += BATCH_SIZE) {
       if (i > 0) onProgress?.();
       const batchTexts = texts.slice(i, i + BATCH_SIZE);
       const batchStart = performance.now();
       // Try MLX GPU server first, fall back to ONNX CPU
-      const mlxResult = await mlxEmbed(batchTexts);
+      const mlxResult: Float32Array[] | null =
+        denseBackend === "onnx"
+          ? null
+          : await mlxEmbed(batchTexts, {
+              mode: this.embedMode,
+              expectedModel: this.generation.mlxModel,
+              expectedDim: this.generation.vectorDim,
+            });
+      if (!mlxResult && !this.allowOnnxFallback) {
+        throw new Error(
+          `MLX embedding model ${this.generation.mlxModel} is unavailable; ONNX fallback is disabled for this custom embedding generation`,
+        );
+      }
+      if (!mlxResult && denseBackend === "mlx") {
+        throw new Error(
+          `MLX embedding model ${this.generation.mlxModel} became unavailable during this embedding operation`,
+        );
+      }
       if (!mlxResult && !mlxFallbackWarned) {
         console.warn("[embed] MLX unavailable, falling back to CPU (ONNX)");
         mlxFallbackWarned = true;
       }
+      denseBackend = mlxResult ? "mlx" : "onnx";
       const denseBatch = mlxResult ?? (await this.granite.runBatch(batchTexts));
       const colbertBatch = await this.colbert.runBatch(
         batchTexts,
@@ -273,10 +304,15 @@ export class WorkerOrchestrator {
       : input.absolutePath
         ? input.absolutePath
         : path.join(PROJECT_ROOT, input.path);
+    resolveContainedPath(input.projectRoot, absolutePath, {
+      verifyExistingTarget: true,
+    });
 
     dbg("orch", `processFile start: ${input.path}`);
 
-    const { buffer, mtimeMs, size } = await readFileSnapshot(absolutePath);
+    const { buffer, mtimeMs, size } = await readFileSnapshot(absolutePath, {
+      projectRoot: input.projectRoot,
+    });
     const hash = computeContentHash(buffer, absolutePath);
 
     if (!isIndexableFile(absolutePath, size)) {
@@ -383,7 +419,16 @@ export class WorkerOrchestrator {
     await this.ensureReady();
 
     // Try MLX GPU server first, fall back to ONNX CPU
-    const mlxResult = await mlxEmbed([text]);
+    const mlxResult = await mlxEmbed([text], {
+      mode: this.embedMode,
+      expectedModel: this.generation.mlxModel,
+      expectedDim: this.generation.vectorDim,
+    });
+    if (!mlxResult && !this.allowOnnxFallback) {
+      throw new Error(
+        `MLX embedding model ${this.generation.mlxModel} is unavailable; ONNX fallback is disabled for this custom embedding generation`,
+      );
+    }
     const denseVector =
       mlxResult?.[0] ?? (await this.granite.runBatch([text]))[0];
 
@@ -489,7 +534,12 @@ export class WorkerOrchestrator {
         Array.isArray(doc.token_ids) && doc.token_ids.length === seqLen
           ? doc.token_ids
           : undefined;
-      return maxSim(queryMatrix, docMatrix, tokenIds);
+      return maxSim(
+        queryMatrix,
+        docMatrix,
+        tokenIds,
+        this.generation.colbertModel,
+      );
     });
   }
 }

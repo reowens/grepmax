@@ -22,6 +22,7 @@ import {
 } from "../lib/utils/cross-project";
 import { formatTextResults } from "../lib/utils/formatter";
 import { extractImports } from "../lib/utils/import-extractor";
+import { resolveContainedFile } from "../lib/utils/path-containment";
 import type { SearchOptions } from "./search-run";
 import { outputSkeletons } from "./search-skeletons";
 
@@ -57,7 +58,7 @@ export async function executeServerSearch(params: {
   } = params;
 
   try {
-    const response = await fetch(`http://localhost:${server.port}/search`, {
+    const response = await fetch(`http://127.0.0.1:${server.port}/search`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -66,6 +67,11 @@ export async function executeServerSearch(params: {
         path: exec_path
           ? path.relative(projectRootForServer, path.resolve(exec_path))
           : undefined,
+        in: options.in,
+        exclude: options.exclude,
+        file: options.file,
+        lang: options.lang,
+        role: options.role,
       }),
     });
 
@@ -124,7 +130,13 @@ export async function executeServerSearch(params: {
 
       if (options.agent) {
         const importCache = new Map<string, string>();
-        const getImportsForFile = (absPath: string): string => {
+        const getImportsForFile = (indexedPath: string): string => {
+          let absPath: string;
+          try {
+            absPath = resolveContainedFile(projectRootForServer, indexedPath);
+          } catch {
+            return "";
+          }
           if (!options.imports || !absPath) return "";
           if (!importCache.has(absPath)) {
             importCache.set(absPath, extractImports(absPath));
@@ -258,13 +270,22 @@ export async function renderSearchOutput(
 
   // Build import cache when --imports is requested
   const importCache = new Map<string, string>();
-  const getImportsForFile = (absPath: string): string => {
-    if (!options.imports || !absPath) return "";
-    if (!importCache.has(absPath)) {
-      importCache.set(absPath, extractImports(absPath));
-    }
-    return importCache.get(absPath) ?? "";
-  };
+  const getImportsForRoot =
+    (root: string) =>
+    (indexedPath: string): string => {
+      if (!options.imports || !indexedPath) return "";
+      let absPath: string;
+      try {
+        absPath = resolveContainedFile(root, indexedPath);
+      } catch {
+        return "";
+      }
+      if (!importCache.has(absPath)) {
+        importCache.set(absPath, extractImports(absPath));
+      }
+      return importCache.get(absPath) ?? "";
+    };
+  const getImportsForFile = getImportsForRoot(effectiveRoot);
 
   // Agent mode: ultra-compact one-line-per-result output
   const resultCount = filteredData.length;
@@ -312,7 +333,7 @@ export async function renderSearchOutput(
         body = formatAgentSearchResults(g.items, g.root, {
           includeImports: options.imports,
           query: pattern,
-          getImportsForFile,
+          getImportsForFile: getImportsForRoot(g.root),
           explain: options.explain,
         });
       } else if (options.compact) {
@@ -445,7 +466,7 @@ export async function renderSearchOutput(
     // chunk and keeps filling with smaller, still-relevant ones rather than
     // aborting the loop — recovering budget the old greedy `break` wasted.
     const candidates = filteredData.map((r, idx) => {
-      const absP = (r as any).path ?? (r as any).metadata?.path ?? "";
+      const indexedPath = (r as any).path ?? (r as any).metadata?.path ?? "";
       const startLine =
         (r as any).startLine ??
         (r as any).start_line ??
@@ -456,9 +477,7 @@ export async function renderSearchOutput(
         (r as any).end_line ??
         (r as any).generated_metadata?.end_line ??
         startLine;
-      const relPath = absP.startsWith(projectRoot)
-        ? absP.slice(projectRoot.length + 1)
-        : absP;
+      let relPath = "(invalid indexed path)";
       const role = (r as any).role || "IMPLEMENTATION";
       const symbol =
         Array.isArray((r as any).defined_symbols) &&
@@ -468,6 +487,8 @@ export async function renderSearchOutput(
 
       let blobText: string;
       try {
+        const absP = resolveContainedFile(projectRoot, indexedPath);
+        relPath = path.relative(fs.realpathSync(projectRoot), absP);
         const content = fs.readFileSync(absP, "utf-8");
         const allLines = content.split("\n");
         const body = allLines

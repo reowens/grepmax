@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import { pathNotStartsWith, pathStartsWith } from "./filter-builder";
+import { resolveContainedPath } from "./path-containment";
 
 export interface ScopeOptions {
   projectRoot: string;
@@ -31,13 +32,8 @@ function toArray(value: string | string[] | undefined): string[] {
 }
 
 function joinSubpath(projectRoot: string, sub: string): string {
-  const rootWithSlash = projectRoot.endsWith("/")
-    ? projectRoot
-    : `${projectRoot}/`;
-  if (path.isAbsolute(sub)) return sub.endsWith("/") ? sub : `${sub}/`;
-  if (sub.startsWith(rootWithSlash)) return sub.endsWith("/") ? sub : `${sub}/`;
-  const joined = path.join(rootWithSlash, sub);
-  return joined.endsWith("/") ? joined : `${joined}/`;
+  const resolved = resolveContainedPath(projectRoot, sub);
+  return resolved.endsWith(path.sep) ? resolved : `${resolved}${path.sep}`;
 }
 
 export function resolveScope(opts: ScopeOptions): ResolvedScope {

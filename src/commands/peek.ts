@@ -7,6 +7,7 @@ import { symbolNotFoundLines } from "../lib/utils/agent-errors";
 import { gracefulExit } from "../lib/utils/exit";
 import { escapeSqlString } from "../lib/utils/filter-builder";
 import { groupByLanguage } from "../lib/utils/language";
+import { resolveContainedFile } from "../lib/utils/path-containment";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import {
@@ -27,12 +28,16 @@ const MAX_CALLERS = 5;
 const MAX_CALLEES = 8;
 
 function extractSignature(
+  projectRoot: string,
   filePath: string,
   startLine: number,
   endLine: number,
 ): { signature: string; signatureOnly: string; bodyLines: number } {
   try {
-    const content = fs.readFileSync(filePath, "utf-8");
+    const content = fs.readFileSync(
+      resolveContainedFile(projectRoot, filePath),
+      "utf-8",
+    );
     const lines = content.split("\n");
     const chunk = lines.slice(startLine, endLine + 1);
     const bodyLines = chunk.length;
@@ -263,12 +268,26 @@ export const peek = new Command("peek")
       // Re-anchor chunk-level caller rows to actual call sites and dedupe —
       // getCallers() returns one row per chunk, which multiplies callers for
       // classes split across many chunks (verified: 3 real call sites → 66).
-      const resolvedCallers = resolveCallSites(callerList, symbol).map((c) => ({
-        symbol: c.symbol,
-        file: c.file,
-        line: c.snippetLine ?? c.line,
-        edgeKind: edgeKindBySym.get(c.symbol),
-      }));
+      const readableCallers = callerList.flatMap((caller) => {
+        try {
+          return [
+            {
+              ...caller,
+              file: resolveContainedFile(projectRoot, caller.file),
+            },
+          ];
+        } catch {
+          return [];
+        }
+      });
+      const resolvedCallers = resolveCallSites(readableCallers, symbol).map(
+        (c) => ({
+          symbol: c.symbol,
+          file: c.file,
+          line: c.snippetLine ?? c.line,
+          edgeKind: edgeKindBySym.get(c.symbol),
+        }),
+      );
 
       // Builtins listed as "(not indexed)" callees (trunc, now, filter, …)
       // are noise; project symbols always resolve so they're unaffected.
@@ -313,6 +332,7 @@ export const peek = new Command("peek")
         // Signature — all lines up to the opening brace, collapsed to one
         // line so parameters survive (first-line-only loses them).
         const { signatureOnly } = extractSignature(
+          projectRoot,
           center.file,
           startLine,
           endLine,
@@ -379,7 +399,12 @@ export const peek = new Command("peek")
         console.log();
 
         // Signature with collapsed body
-        const { signature } = extractSignature(center.file, startLine, endLine);
+        const { signature } = extractSignature(
+          projectRoot,
+          center.file,
+          startLine,
+          endLine,
+        );
         for (const line of signature.split("\n")) {
           console.log(`  ${line}`);
         }

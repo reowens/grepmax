@@ -17,6 +17,8 @@ export interface CrossProjectScope {
   active: boolean;
   /** Projects in scope (for grouping + labeling results). */
   roots: { root: string; name: string }[];
+  /** Exact registered roots allowed in the shared-table query. */
+  projectRoots: string[];
   /** CSV of roots → filters.project_roots (set only when narrowing to a subset). */
   projectRootsCsv?: string;
   /** CSV of roots → filters.exclude_project_roots. */
@@ -32,7 +34,7 @@ export function resolveCrossProjectScope(opts: {
 }): CrossProjectScope {
   const active = !!(opts.allProjects || opts.projects);
   if (!active) {
-    return { active: false, roots: [], warnings: [] };
+    return { active: false, roots: [], projectRoots: [], warnings: [] };
   }
 
   // Ignore "error"-status projects: the daemon won't search them anyway.
@@ -82,9 +84,12 @@ export function resolveCrossProjectScope(opts: {
       ? included.map((p) => p.root).join(",")
       : undefined;
   } else {
-    // --all-projects: search the whole shared table. No project_roots clause
-    // (its absence IS "everything"); only carve out --exclude-projects.
+    // --all-projects still emits an explicit allow-list. The physical table can
+    // contain orphan or failed-project rows that are not eligible here.
     included = all.filter((p) => !excludedRoots.has(p.root));
+    projectRootsCsv = included.length
+      ? included.map((p) => p.root).join(",")
+      : undefined;
     if (excludedRoots.size) {
       excludeProjectRootsCsv = [...excludedRoots].join(",");
     }
@@ -93,6 +98,7 @@ export function resolveCrossProjectScope(opts: {
   return {
     active: true,
     roots: included.map((p) => ({ root: p.root, name: p.name })),
+    projectRoots: included.map((p) => p.root),
     projectRootsCsv,
     excludeProjectRootsCsv,
     warnings,

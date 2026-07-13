@@ -6,7 +6,11 @@ import * as childProcess from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { CONFIG, MAX_WORKER_MEMORY_MB, WORKER_TIMEOUT_MS } from "../../config";
-import { getModelIdsForTier, readGlobalConfig } from "../index/index-config";
+import {
+  type EmbeddingGenerationConfig,
+  resolveEmbeddingGeneration,
+} from "../index/embedding-generation";
+import { readGlobalConfig } from "../index/index-config";
 import { debug, log } from "../utils/logger";
 import type { ProcessFileInput, ProcessFileResult, RerankDoc } from "./worker";
 
@@ -72,6 +76,9 @@ type PendingTask<M extends TaskMethod = TaskMethod> = {
   // Absolute deadline timer, armed at dispatch and never reset by heartbeats.
   hardTimeout?: NodeJS.Timeout;
   startTime?: number;
+  signal?: AbortSignal;
+  abortListener?: () => void;
+  callerAborted?: boolean;
 };
 
 const TASK_TIMEOUT_MS = (() => {
@@ -123,12 +130,18 @@ const REAP_FORCE_KILL_GRACE_MS = 5_000;
  * every worker user (index, add, search, daemon, mcp). Merged so process.env can
  * override — see the spread order at fork().
  */
-export function embeddingEnv(): Record<string, string> {
-  const { modelTier } = readGlobalConfig();
-  const ids = getModelIdsForTier(modelTier);
+export function embeddingEnv(
+  generation?: Readonly<EmbeddingGenerationConfig>,
+  embedMode?: "cpu" | "gpu",
+): Record<string, string> {
+  const config = generation && embedMode ? null : readGlobalConfig();
+  const resolved = generation ?? resolveEmbeddingGeneration(config!);
+  const mode = embedMode ?? config!.embedMode;
   return {
-    GMAX_VECTOR_DIM: String(ids.vectorDim),
-    GMAX_EMBED_ONNX_MODEL: ids.embed,
+    GMAX_VECTOR_DIM: String(resolved.vectorDim),
+    GMAX_EMBED_ONNX_MODEL: resolved.onnxModel,
+    GMAX_EMBED_MODE: mode,
+    GMAX_EMBEDDING_GENERATION: JSON.stringify(resolved),
   };
 }
 
@@ -153,14 +166,13 @@ class ProcessWorker {
   constructor(
     public modulePath: string,
     public execArgv: string[],
+    embeddingEnvironment: Record<string, string>,
     maxMemoryMb?: number,
   ) {
     const memArgs = maxMemoryMb ? [`--max-old-space-size=${maxMemoryMb}`] : [];
-    // embeddingEnv() first so a manually-exported GMAX_VECTOR_DIM /
-    // GMAX_EMBED_ONNX_MODEL in process.env still wins (spread last).
     this.child = childProcess.fork(modulePath, {
       execArgv: [...memArgs, ...execArgv],
-      env: { ...embeddingEnv(), ...process.env },
+      env: { ...process.env, ...embeddingEnvironment },
     });
   }
 }
@@ -232,23 +244,36 @@ export class WorkerPool {
   private priorityQueue: number[] = [];
   private taskQueue: number[] = [];
   private tasks = new Map<number, PendingTask<TaskMethod>>();
-  private abortedTasks = new Set<number>();
   private nextId = 1;
   private destroyed = false;
   private destroyPromise: Promise<void> | null = null;
   private readonly modulePath: string;
   private readonly execArgv: string[];
   private readonly maxWorkers: number;
+  private readonly embeddingEnvironment: Record<string, string>;
   private consecutiveRespawns = 0;
   private respawnLimitReached = false;
   private static readonly MAX_RESPAWNS = 10;
   private idleReapInterval: ReturnType<typeof setInterval> | null = null;
+  readonly generation: Readonly<EmbeddingGenerationConfig>;
+  readonly embedMode: "cpu" | "gpu";
 
-  constructor() {
+  constructor(
+    generation?: Readonly<EmbeddingGenerationConfig>,
+    embedMode?: "cpu" | "gpu",
+  ) {
     const resolved = resolveProcessWorker();
     this.modulePath = resolved.filename;
     this.execArgv = resolved.execArgv;
     this.maxWorkers = Math.max(1, CONFIG.WORKER_THREADS);
+    const config = generation && embedMode ? null : readGlobalConfig();
+    this.generation = generation ?? resolveEmbeddingGeneration(config!);
+    this.embedMode = embedMode ?? config!.embedMode;
+    const generatedEmbeddingEnv = embeddingEnv(this.generation, this.embedMode);
+    // Replacement workers must use the same embedding generation as the pool
+    // that created them, even if config changes while tasks are running. Other
+    // process environment remains live and is copied at each fork.
+    this.embeddingEnvironment = Object.freeze(generatedEmbeddingEnv);
 
     // Lazy spawn: start with 1 worker, scale up on demand
     this.spawnWorker();
@@ -332,6 +357,10 @@ export class WorkerPool {
     worker: ProcessWorker | null,
   ) {
     this.clearTaskTimeout(task);
+    if (task.signal && task.abortListener) {
+      task.signal.removeEventListener("abort", task.abortListener);
+      task.abortListener = undefined;
+    }
     this.tasks.delete(task.id);
     this.removeFromQueue(task.id);
 
@@ -399,6 +428,7 @@ export class WorkerPool {
     const worker = new ProcessWorker(
       this.modulePath,
       this.execArgv,
+      this.embeddingEnvironment,
       MAX_WORKER_MEMORY_MB,
     );
     log(
@@ -408,18 +438,6 @@ export class WorkerPool {
 
     const onMessage = (msg: WorkerMessage) => {
       if (typeof msg.rss === "number") worker.lastRssBytes = msg.rss;
-      // Fast cleanup for tasks that were aborted while running
-      if (this.abortedTasks.has(msg.id)) {
-        this.abortedTasks.delete(msg.id);
-        const task = this.tasks.get(msg.id);
-        if (task) {
-          this.completeTask(task, worker);
-          this.recycleIfBloated(worker);
-          this.dispatch();
-        }
-        return;
-      }
-
       const task = this.tasks.get(msg.id);
       if (!task) return;
 
@@ -529,37 +547,28 @@ export class WorkerPool {
         payload,
         resolve: safeResolve,
         reject: safeReject,
+        signal,
       };
 
       if (signal) {
-        signal.addEventListener(
-          "abort",
-          () => {
-            // If task is still queued (in either queue), remove it
-            const pi = this.priorityQueue.indexOf(id);
-            if (pi !== -1) this.priorityQueue.splice(pi, 1);
-            const idx = this.taskQueue.indexOf(id);
-            if (pi !== -1 || idx !== -1) {
-              if (idx !== -1) this.taskQueue.splice(idx, 1);
-              this.tasks.delete(id);
-              const err = new Error("Aborted");
-              err.name = "AbortError";
-              safeReject(err);
-            }
-            // If task is already running (assigned to worker), we can't easily kill it without
-            // killing the worker. For now, we just let it finish but reject the promise early so
-            // the caller doesn't wait. The worker will eventually finish and we'll ignore the result.
-            else if (this.tasks.has(id)) {
-              // Task is running. Reject caller immediately.
-              const err = new Error("Aborted");
-              err.name = "AbortError";
-              safeReject(err);
-              // Track for fast cleanup when the worker eventually finishes.
-              this.abortedTasks.add(id);
-            }
-          },
-          { once: true },
-        );
+        task.abortListener = () => {
+          if (!this.tasks.has(id)) return;
+          const err = new Error("Aborted");
+          err.name = "AbortError";
+          safeReject(err);
+
+          if (!task.worker) {
+            this.completeTask(task, null);
+            this.dispatch();
+            return;
+          }
+
+          // Caller settlement and worker lifecycle settlement are separate.
+          // Keep the assignment and timers until the child sends a terminal
+          // result/error or exits.
+          task.callerAborted = true;
+        };
+        signal.addEventListener("abort", task.abortListener, { once: true });
       }
 
       this.tasks.set(id, task as unknown as PendingTask<TaskMethod>);
@@ -879,7 +888,7 @@ export class WorkerPool {
       });
   }
 
-  async destroy(): Promise<void> {
+  async destroy(options: { requireExit?: boolean } = {}): Promise<void> {
     if (this.destroyPromise) return this.destroyPromise;
     if (this.destroyed) return;
 
@@ -890,46 +899,99 @@ export class WorkerPool {
     }
 
     for (const task of this.tasks.values()) {
-      this.clearTaskTimeout(task);
       task.reject(new Error("Worker pool destroyed"));
+      this.completeTask(task, null);
     }
-    this.tasks.clear();
     this.taskQueue = [];
     this.priorityQueue = [];
 
+    const exitedWorkers = new Set<ProcessWorker>();
     const killPromises = this.workers.map(
       (w) =>
-        new Promise<void>((resolve) => {
+        new Promise<void>((resolve, reject) => {
           let settled = false;
           let force: ReturnType<typeof setTimeout> | undefined;
-          let fallback: ReturnType<typeof setTimeout> | undefined;
-          const cleanup = () => {
+          let deadline: ReturnType<typeof setTimeout> | undefined;
+          const settle = (error?: Error) => {
             if (settled) return;
             settled = true;
             if (force) clearTimeout(force);
-            if (fallback) clearTimeout(fallback);
-            resolve();
+            if (deadline) clearTimeout(deadline);
+            if (error) reject(error);
+            else resolve();
+          };
+          const exited = () => {
+            exitedWorkers.add(w);
+            settle();
           };
           w.cleanedUp = true;
           w.child.removeAllListeners("message");
           w.child.removeAllListeners("exit");
           w.child.removeAllListeners("error");
-          w.child.once("exit", cleanup);
+          w.child.once("exit", exited);
           force = setTimeout(() => {
             try {
-              w.child.kill("SIGKILL");
-            } catch {}
+              if (!w.child.kill("SIGKILL") && options.requireExit) {
+                settle(
+                  new Error(`Failed to SIGKILL worker PID:${w.child.pid}`),
+                );
+              }
+            } catch (error) {
+              if (options.requireExit) {
+                settle(
+                  new Error(
+                    `Failed to SIGKILL worker PID:${w.child.pid}: ${error instanceof Error ? error.message : String(error)}`,
+                  ),
+                );
+              }
+            }
           }, FORCE_KILL_GRACE_MS);
           force.unref?.();
-          fallback = setTimeout(cleanup, WORKER_TIMEOUT_MS);
-          fallback.unref?.();
-          w.child.kill("SIGTERM");
+          deadline = setTimeout(() => {
+            if (options.requireExit) {
+              settle(
+                new Error(
+                  `Worker PID:${w.child.pid} did not exit within ${WORKER_TIMEOUT_MS}ms`,
+                ),
+              );
+            } else {
+              settle();
+            }
+          }, WORKER_TIMEOUT_MS);
+          deadline.unref?.();
+          try {
+            if (!w.child.kill("SIGTERM") && options.requireExit) {
+              settle(new Error(`Failed to SIGTERM worker PID:${w.child.pid}`));
+            }
+          } catch (error) {
+            if (options.requireExit) {
+              settle(
+                new Error(
+                  `Failed to SIGTERM worker PID:${w.child.pid}: ${error instanceof Error ? error.message : String(error)}`,
+                ),
+              );
+            } else {
+              settle();
+            }
+          }
         }),
     );
 
-    this.destroyPromise = Promise.allSettled(killPromises).then(() => {
-      this.workers = [];
-      this.destroyPromise = null;
+    this.destroyPromise = Promise.allSettled(killPromises).then((results) => {
+      this.workers = options.requireExit
+        ? this.workers.filter((worker) => !exitedWorkers.has(worker))
+        : [];
+      const failures = results.flatMap((result) =>
+        result.status === "rejected" ? [result.reason] : [],
+      );
+      if (failures.length > 0) {
+        const details = failures
+          .map((failure) =>
+            failure instanceof Error ? failure.message : String(failure),
+          )
+          .join("; ");
+        throw new Error(`Strict worker pool shutdown failed: ${details}`);
+      }
     });
 
     await this.destroyPromise;
@@ -938,9 +1000,23 @@ export class WorkerPool {
 
 let singleton: WorkerPool | null = null;
 
-export function getWorkerPool(): WorkerPool {
+export function getWorkerPool(
+  generation?: Readonly<EmbeddingGenerationConfig>,
+  embedMode?: "cpu" | "gpu",
+): WorkerPool {
   if (!singleton) {
-    singleton = new WorkerPool();
+    singleton = new WorkerPool(generation, embedMode);
+  } else if (
+    generation &&
+    singleton.generation.fingerprint !== generation.fingerprint
+  ) {
+    throw new Error(
+      `Worker pool embedding generation mismatch: active ${singleton.generation.fingerprint}, requested ${generation.fingerprint}`,
+    );
+  } else if (embedMode && singleton.embedMode !== embedMode) {
+    throw new Error(
+      `Worker pool embed mode mismatch: active ${singleton.embedMode}, requested ${embedMode}`,
+    );
   }
   return singleton;
 }

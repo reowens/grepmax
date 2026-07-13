@@ -3,24 +3,22 @@ import * as path from "node:path";
 import { inner } from "simsimd";
 import { MODEL_IDS, PATHS } from "../../config";
 
-let SKIP_IDS: Set<number> | null = null;
+const SKIP_IDS = new Map<string, Set<number>>();
 
-function loadSkipIds(): Set<number> {
-  if (SKIP_IDS) return SKIP_IDS;
+function loadSkipIds(modelId: string): Set<number> {
+  const cached = SKIP_IDS.get(modelId);
+  if (cached) return cached;
 
   // Check local models first (same logic as orchestrator)
   const PROJECT_ROOT = process.env.GMAX_PROJECT_ROOT
     ? path.resolve(process.env.GMAX_PROJECT_ROOT)
     : process.cwd();
   const localModels = path.join(PROJECT_ROOT, "models");
-  const localColbert = path.join(localModels, ...MODEL_IDS.colbert.split("/"));
+  const localColbert = path.join(localModels, ...modelId.split("/"));
   const localSkipPath = path.join(localColbert, "skiplist.json");
 
   // Try local first, then global
-  const globalBasePath = path.join(
-    PATHS.models,
-    ...MODEL_IDS.colbert.split("/"),
-  );
+  const globalBasePath = path.join(PATHS.models, ...modelId.split("/"));
   const globalSkipPath = path.join(globalBasePath, "skiplist.json");
 
   const skipPath = fs.existsSync(localSkipPath)
@@ -30,20 +28,23 @@ function loadSkipIds(): Set<number> {
   if (fs.existsSync(skipPath)) {
     try {
       const parsed = JSON.parse(fs.readFileSync(skipPath, "utf8")) as number[];
-      SKIP_IDS = new Set<number>(parsed.map((n) => Number(n)));
-      return SKIP_IDS;
+      const ids = new Set<number>(parsed.map((n) => Number(n)));
+      SKIP_IDS.set(modelId, ids);
+      return ids;
     } catch (_e) {
       // fall through to empty set
     }
   }
-  SKIP_IDS = new Set<number>();
-  return SKIP_IDS;
+  const ids = new Set<number>();
+  SKIP_IDS.set(modelId, ids);
+  return ids;
 }
 
 export function maxSim(
   queryEmbeddings: number[][] | Float32Array[],
   docEmbeddings: number[][] | Float32Array[],
   docTokenIds?: number[],
+  modelId = MODEL_IDS.colbert,
 ): number {
   if (queryEmbeddings.length === 0 || docEmbeddings.length === 0) {
     return 0;
@@ -57,7 +58,7 @@ export function maxSim(
   );
   const dTokenIds =
     docTokenIds && docTokenIds.length === dVecs.length ? docTokenIds : null;
-  const skipIds = loadSkipIds();
+  const skipIds = loadSkipIds(modelId);
 
   let totalScore = 0;
   for (const qVec of qVecs) {

@@ -1,13 +1,17 @@
 import { Command } from "commander";
-import { MODEL_TIERS, REBUILD_COMMAND } from "../config";
+import { MODEL_TIERS } from "../config";
+import {
+  embeddingFingerprintLabel,
+  projectEmbeddingStatus,
+} from "../lib/index/embedding-status";
 import {
   readGlobalConfig,
-  readIndexConfig,
   writeGlobalConfig,
   writeSetupConfig,
 } from "../lib/index/index-config";
 import { gracefulExit } from "../lib/utils/exit";
-import { ensureProjectPaths } from "../lib/utils/project-root";
+import { getProject } from "../lib/utils/project-registry";
+import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
 export const config = new Command("config")
   .description("View or update gmax configuration")
@@ -39,7 +43,7 @@ Examples:
 
     const globalConfig = readGlobalConfig();
     const paths = ensureProjectPaths(process.cwd());
-    const indexConfig = readIndexConfig(paths.configPath);
+    const project = getProject(findProjectRoot(process.cwd()) ?? process.cwd());
 
     const hasUpdates =
       options.embedMode !== undefined ||
@@ -57,9 +61,18 @@ Examples:
       console.log(
         `  Embed model: ${globalConfig.embedMode === "gpu" ? tier.mlxModel : tier.onnxModel}`,
       );
+      const identity = projectEmbeddingStatus(project, globalConfig);
+      console.log(
+        `  Configured:  ${identity.configured.tier} ${identity.configured.vectorDim}d [${embeddingFingerprintLabel(identity.configured.fingerprint)}]`,
+      );
+      if (identity.built) {
+        console.log(
+          `  Built:       ${identity.built.tier} ${identity.built.vectorDim}d [${embeddingFingerprintLabel(identity.built.fingerprint)}] (${identity.state})`,
+        );
+      }
       console.log(`  Query log:   ${globalConfig.queryLog ? "on" : "off"}`);
-      if (indexConfig?.indexedAt) {
-        console.log(`  Last indexed: ${indexConfig.indexedAt}`);
+      if (project?.lastIndexed) {
+        console.log(`  Last indexed: ${project.lastIndexed}`);
       }
       console.log(
         `\nTo change: gmax config --embed-mode <cpu|gpu> --model-tier <small|standard> --query-log <on|off>`,
@@ -113,7 +126,6 @@ Examples:
     const tier = MODEL_TIERS[newTier] ?? MODEL_TIERS.small;
 
     const tierChanged = newTier !== globalConfig.modelTier;
-    const dimChanged = tier.vectorDim !== globalConfig.vectorDim;
 
     writeGlobalConfig({
       modelTier: newTier,
@@ -134,13 +146,8 @@ Examples:
     );
 
     if (tierChanged) {
-      // A dimension change can't be fixed by a per-project `gmax index --reset`:
-      // the shared `chunks` table is fixed-width, so it must be dropped and
-      // rebuilt. A same-dim model swap (future tiers) can use a per-project reset.
       console.log(
-        dimChanged
-          ? `⚠️  Model tier changed (${globalConfig.vectorDim}d → ${tier.vectorDim}d). The shared vector table is fixed-width — run \`${REBUILD_COMMAND}\` to drop it and re-embed every project at the new dim.`
-          : "⚠️  Model tier changed — run `gmax index --reset` per project to re-embed with the new model.",
+        `Model tier changed (${globalConfig.vectorDim}d → ${tier.vectorDim}d). Existing indexes are preserved and search is blocked until you run 'gmax repair --rebuild'.`,
       );
     }
 

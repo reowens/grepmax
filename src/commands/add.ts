@@ -9,39 +9,23 @@ import { createIndexingSpinner } from "../lib/index/sync-helpers";
 import { initialSync } from "../lib/index/syncer";
 import { ensureSetup } from "../lib/setup/setup-helpers";
 import { VectorDB } from "../lib/store/vector-db";
+import {
+  BLOCKED_ROOTS_DESCRIPTION,
+  isBlockedProjectRoot,
+} from "../lib/utils/blocked-roots";
 import { gracefulExit } from "../lib/utils/exit";
 import { createMarker } from "../lib/utils/project-marker";
 import {
   getChildProjects,
   getParentProject,
   getProject,
+  ProjectRegistryConflictError,
   registerProject,
   removeProject,
+  stampProjectFullSync,
 } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import { launchWatcher } from "../lib/utils/watcher-launcher";
-
-function getBlockedRoots(): Set<string> {
-  const home = os.homedir();
-  return new Set(
-    [
-      home,
-      path.dirname(home),
-      "/",
-      "/tmp",
-      "/private",
-      "/private/tmp",
-      "/private/var",
-      "/var",
-      "/usr",
-      "/opt",
-      "/etc",
-      "/System",
-      "/Library",
-      "/Applications",
-    ].map((p) => path.resolve(p)),
-  );
-}
 
 function logBlockedAttempt(
   reason: string,
@@ -92,12 +76,11 @@ Examples:
       const projectRoot = findProjectRoot(targetDir) ?? targetDir;
       const projectName = path.basename(projectRoot);
 
-      const blocked = getBlockedRoots();
-      if (blocked.has(path.resolve(projectRoot))) {
+      if (isBlockedProjectRoot(projectRoot)) {
         logBlockedAttempt("blocked_root", projectRoot);
         console.error(
           `Refusing to add ${projectRoot}: this path is blocked from indexing.\n` +
-            `(Blocked: home, /, /Users, /tmp, /private, /var, /usr, /opt, /etc, /System, /Library, /Applications.)\n` +
+            `(Blocked: ${BLOCKED_ROOTS_DESCRIPTION}.)\n` +
             `Pick a specific project subdirectory instead.\n` +
             `Diagnostic logged to ~/.gmax/logs/blocked-add.log (cwd=${process.cwd()} ppid=${process.ppid}).`,
         );
@@ -241,13 +224,14 @@ Examples:
             throw new Error((done.error as string) ?? "daemon add failed");
           }
 
-          registerProject({
-            ...pendingEntry,
-            lastIndexed: new Date().toISOString(),
-            chunkCount: (done.indexed as number) ?? 0,
-            status: "indexed",
-            chunkerVersion: CONFIG.CHUNKER_VERSION,
-          });
+          if (done.degraded === true) {
+            registerProject({ ...pendingEntry, status: "pending" });
+            spinner.warn(
+              `Added ${projectName}, but indexing is incomplete (${(done.scanErrors as number) ?? 0} scan errors, ${(done.failedFiles as number) ?? 0} failed)`,
+            );
+            process.exitCode = 1;
+            return;
+          }
 
           const failedFiles = (done.failedFiles as number) ?? 0;
           const failedSuffix =
@@ -257,7 +241,6 @@ Examples:
           );
           // Watcher already started by daemon's addProject
         } catch (e) {
-          registerProject(pendingEntry);
           spinner.fail(`Failed to index ${projectName}`);
           throw e;
         }
@@ -272,21 +255,39 @@ Examples:
             onProgress,
           });
 
-          registerProject({
-            ...pendingEntry,
-            lastIndexed: new Date().toISOString(),
-            chunkCount: result.indexed,
-            status: "indexed",
-            chunkerVersion: CONFIG.CHUNKER_VERSION,
-          });
+          if (result.degraded) {
+            registerProject({ ...pendingEntry, status: "pending" });
+            spinner.warn(
+              `Added ${projectName}, but indexing is incomplete (${result.scanErrors} scan errors, ${result.failedFiles} failed)`,
+            );
+            process.exitCode = 1;
+          } else {
+            const prefix = projectRoot.endsWith("/")
+              ? projectRoot
+              : `${projectRoot}/`;
+            const chunkCount = await vectorDb.countRowsForPath(prefix);
+            stampProjectFullSync({
+              root: projectRoot,
+              name: projectName,
+              generation: result.generation,
+              embedMode: result.embedMode,
+              chunkCount,
+              chunkerVersion: CONFIG.CHUNKER_VERSION,
+              expectedFingerprint:
+                result.registryExpectation.embeddingFingerprint,
+              expectedRebuildId: result.registryExpectation.rebuildId,
+            });
 
-          const failedSuffix =
-            result.failedFiles > 0 ? ` · ${result.failedFiles} failed` : "";
-          spinner.succeed(
-            `Added ${projectName} (${result.total} files, ${result.indexed} chunks${failedSuffix})`,
-          );
+            const failedSuffix =
+              result.failedFiles > 0 ? ` · ${result.failedFiles} failed` : "";
+            spinner.succeed(
+              `Added ${projectName} (${result.total} files, ${result.indexed} chunks${failedSuffix})`,
+            );
+          }
         } catch (e) {
-          registerProject(pendingEntry);
+          if (!(e instanceof ProjectRegistryConflictError)) {
+            registerProject(pendingEntry);
+          }
           spinner.fail(`Failed to index ${projectName}`);
           throw e;
         }

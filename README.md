@@ -332,16 +332,21 @@ worker RAM, and dense-vector storage while *lowering* recall on code search.
 Unless you have a measured reason to switch (e.g. a recall complaint on a very
 large repo — benchmark it first), stay on 384d.
 
-To change tiers:
+The model tier is part of the persisted embedding generation. You can change the desired
+configuration, but existing indexes remain on their built generation until you explicitly run the
+guarded whole-corpus rebuild:
 
 ```bash
-gmax config --model-tier standard   # a dim change needs a full re-embed
-gmax repair --rebuild               # drops the shared table, re-embeds every project at the new dim
+gmax config --model-tier standard   # changes desired configuration only
+gmax config                         # shows configured vs built identity
+gmax status                         # reports current / legacy / stale / unbuilt per project
+gmax repair --rebuild               # guarded whole-corpus rebuild through the daemon
 ```
 
-A vector-dimension change can't be applied by a per-project `gmax index --reset`
-— the shared `chunks` table is fixed-width, so `gmax repair --rebuild` is the
-sanctioned path.
+A model change cannot be applied by a per-project `gmax index --reset`, even when vector widths
+match: one query embedding cannot safely search rows from another embedding space. Stale-generation
+search and sync fail before mutation, preserving the existing index. Run `gmax repair --rebuild` to
+replace the whole corpus, or restore the prior model tier as the non-destructive alternative.
 
 ### Ignoring Files
 

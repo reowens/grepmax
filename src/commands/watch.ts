@@ -2,8 +2,7 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Command } from "commander";
-import { PATHS } from "../config";
-import { readGlobalConfig } from "../lib/index/index-config";
+import { CONFIG, PATHS } from "../config";
 import { initialSync } from "../lib/index/syncer";
 import { startWatcher } from "../lib/index/watcher";
 import { MetaCache } from "../lib/store/meta-cache";
@@ -12,7 +11,10 @@ import { gracefulExit } from "../lib/utils/exit";
 import { pathStartsWith } from "../lib/utils/filter-builder";
 import { openRotatedLog } from "../lib/utils/log-rotate";
 import { killProcess } from "../lib/utils/process";
-import { getProject, registerProject } from "../lib/utils/project-registry";
+import {
+  getProject,
+  stampProjectFullSync,
+} from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import {
   getWatcherCoveringPath,
@@ -111,16 +113,33 @@ export const watch = new Command("watch")
           const logFile = path.join(PATHS.logsDir, "daemon.log");
           const out = openRotatedLog(logFile);
 
-          const child = spawn(
-            process.argv[0],
-            [process.argv[1], "watch", "--daemon"],
-            {
-              detached: true,
-              stdio: ["ignore", out, out],
-              cwd: process.cwd(),
-              env: { ...process.env, GMAX_BACKGROUND: "true" },
-            },
-          );
+          let child: ReturnType<typeof spawn>;
+          try {
+            child = spawn(
+              process.argv[0],
+              [process.argv[1], "watch", "--daemon"],
+              {
+                detached: true,
+                stdio: ["ignore", out, out],
+                cwd: process.cwd(),
+                env: { ...process.env, GMAX_BACKGROUND: "true" },
+              },
+            );
+            await new Promise<void>((resolve, reject) => {
+              child.once("spawn", resolve);
+              child.once("error", reject);
+            });
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            console.error(`Failed to start daemon: ${message}`);
+            process.exitCode = 1;
+            return;
+          } finally {
+            try {
+              fs.closeSync(out);
+            } catch {}
+          }
           child.unref();
 
           console.log(`Daemon started (PID: ${child.pid}, log: ${logFile})`);
@@ -136,6 +155,19 @@ export const watch = new Command("watch")
         installTimestampedOutput();
         const { Daemon } = await import("../lib/daemon/daemon");
         const daemon = new Daemon();
+        process.on("SIGINT", () =>
+          daemon.shutdown().then(() => gracefulExit()),
+        );
+        process.on("SIGTERM", () =>
+          daemon.shutdown().then(() => gracefulExit()),
+        );
+        process.on("uncaughtException", (err) => {
+          console.error("[daemon] uncaughtException:", err);
+          daemon.shutdown().then(() => gracefulExit(1));
+        });
+        process.on("unhandledRejection", (reason) => {
+          console.error("[daemon] unhandledRejection:", reason);
+        });
 
         try {
           await daemon.start();
@@ -156,19 +188,6 @@ export const watch = new Command("watch")
           return;
         }
 
-        process.on("SIGINT", () =>
-          daemon.shutdown().then(() => gracefulExit()),
-        );
-        process.on("SIGTERM", () =>
-          daemon.shutdown().then(() => gracefulExit()),
-        );
-        process.on("uncaughtException", (err) => {
-          console.error("[daemon] uncaughtException:", err);
-          daemon.shutdown().then(() => gracefulExit(1));
-        });
-        process.on("unhandledRejection", (reason) => {
-          console.error("[daemon] unhandledRejection:", reason);
-        });
         return;
       }
 
@@ -199,12 +218,31 @@ export const watch = new Command("watch")
         const logFile = path.join(PATHS.logsDir, `watch-${safeName}.log`);
         const out = openRotatedLog(logFile);
 
-        const child = spawn(process.argv[0], [process.argv[1], ...args], {
-          detached: true,
-          stdio: ["ignore", out, out],
-          cwd: process.cwd(),
-          env: { ...process.env, GMAX_BACKGROUND: "true" },
-        });
+        let child: ReturnType<typeof spawn>;
+        try {
+          child = spawn(process.argv[0], [process.argv[1], ...args], {
+            detached: true,
+            stdio: ["ignore", out, out],
+            cwd: process.cwd(),
+            env: { ...process.env, GMAX_BACKGROUND: "true" },
+          });
+          await new Promise<void>((resolve, reject) => {
+            child.once("spawn", resolve);
+            child.once("error", reject);
+          });
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          console.error(
+            `Failed to start watcher for ${projectName}: ${message}`,
+          );
+          process.exitCode = 1;
+          return;
+        } finally {
+          try {
+            fs.closeSync(out);
+          } catch {}
+        }
         child.unref();
 
         console.log(
@@ -252,29 +290,48 @@ export const watch = new Command("watch")
         .limit(1)
         .toArray();
 
+      let degraded = false;
+      let degradedErrors = 0;
+      let initialScanErrors = 0;
+      let initialFailedFiles = 0;
       if (indexed.length === 0) {
         console.log(
           `[watch:${projectName}] No index found for ${projectRoot}, running initial sync...`,
         );
         const syncResult = await initialSync({ projectRoot });
 
-        // Update registry after sync
-        const globalConfig = readGlobalConfig();
-        registerProject({
-          root: projectRoot,
-          name: projectName,
-          vectorDim: globalConfig.vectorDim,
-          modelTier: globalConfig.modelTier,
-          embedMode: globalConfig.embedMode,
-          lastIndexed: new Date().toISOString(),
-          chunkCount: syncResult.indexed,
-          status: "indexed",
-        });
+        if (syncResult.degraded) {
+          degraded = true;
+          degradedErrors = syncResult.scanErrors + syncResult.failedFiles;
+          initialScanErrors = syncResult.scanErrors;
+          initialFailedFiles = syncResult.failedFiles;
+          console.warn(
+            `[watch:${projectName}] Initial sync incomplete: ${syncResult.scanErrors} scan error(s), ${syncResult.failedFiles} file failure(s). Preserving pending registry state.`,
+          );
+        } else {
+          const chunkCount = await vectorDb.countRowsForPath(prefix);
+          stampProjectFullSync({
+            root: projectRoot,
+            name: projectName,
+            generation: syncResult.generation,
+            embedMode: syncResult.embedMode,
+            chunkCount,
+            chunkerVersion: CONFIG.CHUNKER_VERSION,
+            expectedFingerprint:
+              syncResult.registryExpectation.embeddingFingerprint,
+            expectedRebuildId: syncResult.registryExpectation.rebuildId,
+          });
 
-        console.log(`[watch:${projectName}] Initial sync complete.`);
+          console.log(`[watch:${projectName}] Initial sync complete.`);
+        }
       }
 
-      updateWatcherStatus(process.pid, "watching");
+      updateWatcherStatus(
+        process.pid,
+        degraded ? "degraded" : "watching",
+        undefined,
+        degraded ? `${degradedErrors} incomplete scan path(s)` : undefined,
+      );
 
       // Open resources for watcher
       const metaCache = new MetaCache(paths.lmdbPath);
@@ -285,12 +342,29 @@ export const watch = new Command("watch")
         vectorDb,
         metaCache,
         dataDir: paths.dataDir,
+        initialScanErrors,
+        initialFailedFiles,
         onReindex: (files, ms) => {
           console.log(
             `[watch:${projectName}] Reindexed ${files} file${files !== 1 ? "s" : ""} (${(ms / 1000).toFixed(1)}s)`,
           );
           lastActivity = Date.now();
-          updateWatcherStatus(process.pid, "watching", Date.now());
+          updateWatcherStatus(
+            process.pid,
+            degraded ? "degraded" : "watching",
+            Date.now(),
+            degraded ? `${degradedErrors} incomplete scan path(s)` : undefined,
+          );
+        },
+        onHealthChange: (complete, errors) => {
+          degraded = !complete;
+          degradedErrors = errors;
+          updateWatcherStatus(
+            process.pid,
+            complete ? "watching" : "degraded",
+            undefined,
+            complete ? undefined : `${errors} incomplete scan path(s)`,
+          );
         },
       });
 
@@ -344,6 +418,14 @@ watch
       const projects = resp.projects as Array<{ root: string; status: string }>;
       const uptime = Math.floor((resp.uptime as number) / 60);
       console.log(`Daemon (PID: ${resp.pid}, uptime: ${uptime}m):`);
+      const mlx = resp.mlx as
+        | { state: string; model: string; pid: number | null; error?: string }
+        | undefined;
+      if (mlx) {
+        console.log(
+          `  MLX: ${mlx.state} (${mlx.model}${mlx.pid ? `, PID ${mlx.pid}` : ""})${mlx.error ? ` — ${mlx.error}` : ""}`,
+        );
+      }
       for (const p of projects) {
         console.log(`  - ${p.root} [${p.status}]`);
       }

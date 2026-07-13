@@ -1,4 +1,3 @@
-import * as path from "node:path";
 import type { Command } from "commander";
 import { Command as CommanderCommand } from "commander";
 import { ensureSetup } from "../lib/setup/setup-helpers";
@@ -10,6 +9,7 @@ import {
 import { gracefulExit } from "../lib/utils/exit";
 import { getProject, resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
+import { resolveScope } from "../lib/utils/scope-filter";
 import { getServerForProject } from "../lib/utils/server-registry";
 import {
   maybeWarnCrossProjectDim,
@@ -180,6 +180,18 @@ Examples:
         process.exitCode = 1;
         return;
       }
+      if (
+        options.root ||
+        exec_path ||
+        options.in?.length ||
+        options.exclude?.length
+      ) {
+        console.error(
+          "--root, [path], --in, and --exclude are single-project; drop --all-projects/--projects or remove the project/path scope.",
+        );
+        process.exitCode = 1;
+        return;
+      }
       for (const w of crossProject.warnings) console.warn(`Warning: ${w}`);
       if (!crossProject.roots.length) {
         console.error(
@@ -195,16 +207,39 @@ Examples:
     // daemon-mediated / in-process path (both query the shared table).
     let resolvedOptionRoot: string | null | undefined;
     if (options.root && !crossProject.active) {
-      resolvedOptionRoot = resolveRootOrExit(options.root);
-      if (resolvedOptionRoot === null) return;
+      const resolved = resolveRootOrExit(options.root);
+      if (resolved === null) return;
+      resolvedOptionRoot = findProjectRoot(resolved) ?? resolved;
     }
-    const execPathForServer = resolvedOptionRoot
-      ? resolvedOptionRoot
-      : exec_path
-        ? path.resolve(exec_path)
-        : root;
-    const projectRootForServer =
-      findProjectRoot(execPathForServer) ?? execPathForServer;
+    const cwdProjectRoot = findProjectRoot(root) ?? root;
+    const projectRootForServer = resolvedOptionRoot ?? cwdProjectRoot;
+    if (exec_path && options.in && options.in.length > 0) {
+      console.warn("Warning: --in overrides positional [path]; using --in.");
+    }
+    let scope: ReturnType<typeof resolveScope>;
+    try {
+      scope = resolveScope({
+        projectRoot: projectRootForServer,
+        in:
+          options.in && options.in.length > 0
+            ? options.in
+            : exec_path
+              ? [exec_path]
+              : undefined,
+        exclude: options.exclude,
+      });
+    } catch (err) {
+      console.error(
+        `Search failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      process.exitCode = 1;
+      await gracefulExit(1);
+      return;
+    }
+    const containedExecPath =
+      exec_path && !(options.in && options.in.length > 0)
+        ? scope.pathPrefix.replace(/\/$/, "")
+        : undefined;
     const server = crossProject.active
       ? null
       : getServerForProject(projectRootForServer);
@@ -216,7 +251,7 @@ Examples:
       const handled = await executeServerSearch({
         server,
         pattern,
-        exec_path,
+        exec_path: containedExecPath,
         projectRootForServer,
         options,
         minScore,
@@ -226,9 +261,6 @@ Examples:
 
     try {
       await ensureSetup();
-      const searchRoot = exec_path ? path.resolve(exec_path) : root;
-      const cwdProjectRoot = findProjectRoot(searchRoot) ?? searchRoot;
-
       let checkRoot = cwdProjectRoot;
       if (options.root) {
         const resolved =
@@ -270,46 +302,13 @@ Examples:
       // so --root <name> only resolves once per invocation.
       const effectiveRoot = checkRoot;
 
-      // --in / --exclude / [path positional] composition. --in wins over the
-      // positional [path] when both are given (positional was the older
-      // shape; --in is canonical going forward).
-      if (exec_path && options.in && options.in.length > 0) {
-        console.warn("Warning: --in overrides positional [path]; using --in.");
-      }
-      const { resolveScope } = await import("../lib/utils/scope-filter");
-      const scope = resolveScope({
-        projectRoot: effectiveRoot,
-        in: options.in,
-        exclude: options.exclude,
-      });
-      // Cross-project mode drops the single-project path prefix (and any
-      // --in/[path] sub-scoping, which is meaningless across roots) in favor of
-      // the project_roots filter clauses computed below.
-      if (crossProject.active && (exec_path || options.in?.length)) {
-        console.warn(
-          "Warning: --in / [path] are single-project; ignored under --all-projects/--projects.",
-        );
-      }
-      const pathFilter = crossProject.active
-        ? undefined
-        : options.in && options.in.length > 0
-          ? scope.pathPrefix
-          : exec_path
-            ? (() => {
-                const p = path.resolve(exec_path);
-                return p.endsWith("/") ? p : `${p}/`;
-              })()
-            : scope.pathPrefix;
+      const pathFilter = crossProject.active ? undefined : scope.pathPrefix;
       const searchFilters: Record<string, unknown> = {};
       if (options.file) searchFilters.file = options.file;
       if (options.lang) searchFilters.language = options.lang;
       if (options.role) searchFilters.role = options.role;
       if (crossProject.active) {
-        if (crossProject.projectRootsCsv)
-          searchFilters.project_roots = crossProject.projectRootsCsv;
-        if (crossProject.excludeProjectRootsCsv)
-          searchFilters.exclude_project_roots =
-            crossProject.excludeProjectRootsCsv;
+        searchFilters.projectRoots = crossProject.projectRoots;
       } else {
         if (scope.inPrefixes.length > 0)
           searchFilters.inPrefixes = scope.inPrefixes;

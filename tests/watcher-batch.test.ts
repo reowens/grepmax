@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import {
+  computePathRetry,
   computeRetryAction,
   flushBatchToDb,
   processBatchCore,
@@ -330,5 +331,24 @@ describe("computeRetryAction", () => {
 
     const result = computeRetryAction(batch, retryCount, 5, true, 10, 2000);
     expect(result.backoffMs).toBe(30000);
+  });
+});
+
+describe("computePathRetry", () => {
+  it("uses per-path exponential backoff capped at 30 seconds", () => {
+    expect(computePathRetry(0, 10, 2_000)).toEqual({
+      retry: true,
+      failures: 1,
+      backoffMs: 4_000,
+    });
+    expect(computePathRetry(4, 10, 2_000).backoffMs).toBe(30_000);
+  });
+
+  it("stops retrying at the configured failure cap", () => {
+    expect(computePathRetry(4, 5, 2_000)).toEqual({
+      retry: false,
+      failures: 5,
+      backoffMs: 30_000,
+    });
   });
 });

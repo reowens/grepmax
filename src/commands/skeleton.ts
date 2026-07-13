@@ -8,8 +8,8 @@
  */
 
 import * as fs from "node:fs";
-import * as path from "node:path";
 import { Command } from "commander";
+import { CONFIG } from "../config";
 import { createIndexingSpinner } from "../lib/index/sync-helpers";
 import { initialSync } from "../lib/index/syncer";
 import { Searcher } from "../lib/search/searcher";
@@ -18,7 +18,10 @@ import { getStoredSkeleton } from "../lib/skeleton/retriever";
 import { Skeletonizer } from "../lib/skeleton/skeletonizer";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
-import { listProjects } from "../lib/utils/project-registry";
+import { readContainedTextFileSync } from "../lib/utils/file-utils";
+import { pathStartsWith } from "../lib/utils/filter-builder";
+import { resolveContainedPath } from "../lib/utils/path-containment";
+import { stampProjectFullSync } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
 interface SkeletonOptions {
@@ -27,18 +30,6 @@ interface SkeletonOptions {
   noSummary: boolean;
   sync: boolean;
   agent: boolean;
-}
-
-/**
- * Resolve a relative path across all indexed projects.
- * Returns the first match found, or null.
- */
-function resolveAcrossProjects(relativePath: string): string | null {
-  for (const project of listProjects()) {
-    const candidate = path.join(project.root, relativePath);
-    if (fs.existsSync(candidate)) return candidate;
-  }
-  return null;
 }
 
 /**
@@ -66,12 +57,17 @@ function isSymbolLike(target: string): boolean {
 async function findFileBySymbol(
   symbol: string,
   db: VectorDB,
+  projectRoot: string,
 ): Promise<string | null> {
   try {
     const table = await db.ensureTable();
 
     // Search for files that define this symbol
-    const results = await table.search(symbol).limit(10).toArray();
+    const results = await table
+      .search(symbol)
+      .where(pathStartsWith(`${projectRoot}/`))
+      .limit(10)
+      .toArray();
 
     // Find a result where this symbol is defined
     for (const result of results) {
@@ -126,8 +122,28 @@ Examples:
           "Syncing...",
           { verbose: false },
         );
-        await initialSync({ projectRoot, onProgress });
-        spinner.succeed("Sync complete");
+        const result = await initialSync({ projectRoot, onProgress });
+        if (result.degraded) {
+          spinner.warn(
+            `Sync incomplete: ${result.scanErrors} scan error(s), ${result.failedFiles} file failure(s)`,
+          );
+        } else {
+          const prefix = projectRoot.endsWith("/")
+            ? projectRoot
+            : `${projectRoot}/`;
+          const chunkCount = await vectorDb.countRowsForPath(prefix);
+          stampProjectFullSync({
+            root: projectRoot,
+            generation: result.generation,
+            embedMode: result.embedMode,
+            chunkCount,
+            chunkerVersion: CONFIG.CHUNKER_VERSION,
+            expectedFingerprint:
+              result.registryExpectation.embeddingFingerprint,
+            expectedRebuildId: result.registryExpectation.rebuildId,
+          });
+          spinner.succeed("Sync complete");
+        }
       }
 
       // Initialize skeletonizer
@@ -139,7 +155,9 @@ Examples:
       };
 
       // Determine mode based on target
-      const resolvedTarget = path.resolve(target);
+      const resolvedTarget = resolveContainedPath(projectRoot, target, {
+        verifyExistingTarget: true,
+      });
 
       // Directory mode is unsupported. Auto-picking files from a directory
       // was confusingly magical (and on '.' it fell through to the resolver
@@ -167,12 +185,14 @@ Examples:
           .map((t) => t.trim())
           .filter(Boolean);
         for (const t of targets) {
-          const filePath = path.resolve(t);
+          const filePath = resolveContainedPath(projectRoot, t, {
+            verifyExistingTarget: true,
+          });
           if (!fs.existsSync(filePath)) {
             console.error(`Not found: ${t}`);
             continue;
           }
-          const content = fs.readFileSync(filePath, "utf-8");
+          const content = readContainedTextFileSync(projectRoot, filePath);
           const result = await skeletonizer.skeletonizeFile(
             filePath,
             content,
@@ -185,17 +205,14 @@ Examples:
 
       if (isFilePath(target)) {
         // === FILE MODE ===
-        let filePath = path.resolve(target);
+        const filePath = resolveContainedPath(projectRoot, target, {
+          verifyExistingTarget: true,
+        });
 
         if (!fs.existsSync(filePath)) {
-          // Try resolving across indexed projects
-          const found = resolveAcrossProjects(target);
-          if (!found) {
-            console.error(`File not found: ${filePath}`);
-            process.exitCode = 1;
-            return;
-          }
-          filePath = found;
+          console.error(`File not found: ${filePath}`);
+          process.exitCode = 1;
+          return;
         }
 
         if (vectorDb) {
@@ -214,7 +231,7 @@ Examples:
           }
         }
 
-        const content = fs.readFileSync(filePath, "utf-8");
+        const content = readContainedTextFileSync(projectRoot, filePath);
         const result = await skeletonizer.skeletonizeFile(
           filePath,
           content,
@@ -224,7 +241,7 @@ Examples:
         outputResult(result, options);
       } else if (isSymbolLike(target) && !target.includes(" ")) {
         // === SYMBOL MODE ===
-        const filePath = await findFileBySymbol(target, vectorDb);
+        const filePath = await findFileBySymbol(target, vectorDb, projectRoot);
 
         if (!filePath) {
           console.error(`Symbol not found in index: ${target}`);
@@ -236,9 +253,9 @@ Examples:
         }
 
         // filePath from DB is absolute (centralized index)
-        const absolutePath = path.isAbsolute(filePath)
-          ? filePath
-          : path.resolve(projectRoot, filePath);
+        const absolutePath = resolveContainedPath(projectRoot, filePath, {
+          verifyExistingTarget: true,
+        });
         if (!fs.existsSync(absolutePath)) {
           console.error(`File not found: ${absolutePath}`);
           process.exitCode = 1;
@@ -258,7 +275,7 @@ Examples:
           return;
         }
 
-        const content = fs.readFileSync(absolutePath, "utf-8");
+        const content = readContainedTextFileSync(projectRoot, absolutePath);
         const result = await skeletonizer.skeletonizeFile(
           absolutePath,
           content,
@@ -271,7 +288,13 @@ Examples:
         const searcher = new Searcher(vectorDb);
         const limit = Math.min(Number.parseInt(options.limit, 10) || 3, 10);
 
-        const searchResults = await searcher.search(target, limit);
+        const searchResults = await searcher.search(
+          target,
+          limit,
+          {},
+          {},
+          `${projectRoot}/`,
+        );
 
         if (!searchResults.data || searchResults.data.length === 0) {
           console.error(`No results found for: ${target}`);
@@ -302,9 +325,20 @@ Examples:
 
         for (const filePath of filePaths) {
           // Paths from search results are absolute (centralized index)
-          const absolutePath = path.isAbsolute(filePath)
-            ? filePath
-            : path.resolve(projectRoot, filePath);
+          let absolutePath: string;
+          try {
+            absolutePath = resolveContainedPath(projectRoot, filePath, {
+              verifyExistingTarget: true,
+            });
+          } catch {
+            results.push({
+              file: filePath,
+              skeleton: `// File outside selected project: ${filePath}`,
+              tokens: 0,
+              error: "File outside selected project",
+            });
+            continue;
+          }
 
           if (!fs.existsSync(absolutePath)) {
             results.push({
@@ -327,7 +361,7 @@ Examples:
             continue;
           }
 
-          const content = fs.readFileSync(absolutePath, "utf-8");
+          const content = readContainedTextFileSync(projectRoot, absolutePath);
           const result = await skeletonizer.skeletonizeFile(
             absolutePath,
             content,

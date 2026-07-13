@@ -14,7 +14,7 @@ vi.mock("../src/lib/utils/project-root", () => ({
 }));
 
 const mockVectorSearch = vi.fn();
-const mockQueryChain = {
+const mockQueryChain: any = {
   select: vi.fn().mockReturnThis(),
   where: vi.fn().mockReturnThis(),
   limit: vi.fn().mockReturnThis(),
@@ -166,5 +166,20 @@ describe("similar command", () => {
     expect(output).toContain("d=0.100");
     expect(output).not.toContain("similar to");
     spy.mockRestore();
+  });
+
+  it("rejects a file target outside the selected project", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await (similar as Command).parseAsync(["/tmp/outside.ts"], {
+      from: "user",
+    });
+
+    expect(mockQueryChain.toArray).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Similar search failed:",
+      expect.stringContaining("outside project root"),
+    );
+    errorSpy.mockRestore();
   });
 });

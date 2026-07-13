@@ -1,237 +1,428 @@
 import { type ChildProcess, execSync, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as http from "node:http";
 import * as path from "node:path";
 import { PATHS } from "../../config";
 import { openRotatedLog } from "../utils/log-rotate";
-import { resolveMlxHfHome } from "../utils/mlx-hf-cache";
-import { killProcess } from "../utils/process";
+import {
+  DEFAULT_MLX_EMBED_MODEL,
+  resolveMlxHfHome,
+} from "../utils/mlx-hf-cache";
+import { terminateProcessGroup } from "../utils/process";
 
-/**
- * Owns the MLX embed server (port 8100) process lifecycle: spawn, health probe,
- * zombie recovery, and teardown. Fully isolated — touches only the port and the
- * child process, no shared daemon state beyond a shutting-down getter.
- *
- * Extracted from daemon.ts (Phase 2). `__dirname` resolves the bundled
- * mlx-embed-server/server.py relative to this file; it sits in the same
- * dist/lib/daemon directory as daemon.ts did, so resolution is unchanged.
- */
+const STARTUP_ATTEMPTS = 30;
+const STARTUP_POLL_MS = 1_000;
+const MAX_HEALTH_BODY_BYTES = 16 * 1024;
+
+export type MlxLifecycleState =
+  | "stopped"
+  | "probing"
+  | "starting"
+  | "owned-ready"
+  | "adopted-ready"
+  | "stopping"
+  | "failed";
+
+export interface MlxManagerStatus {
+  enabled: boolean;
+  state: MlxLifecycleState;
+  port: number;
+  model: string;
+  pid: number | null;
+  lastHealthyAt?: number;
+  error?: string;
+}
+
+export type MlxHealthResult =
+  | { kind: "healthy"; model: string; owner?: string }
+  | { kind: "unavailable"; reason: string };
+
+interface OwnedServer {
+  kind: "owned";
+  child: ChildProcess;
+  pid: number;
+  model: string;
+  owner: string;
+  lastHealthyAt: number;
+}
+
+interface AdoptedServer {
+  kind: "adopted";
+  model: string;
+  lastHealthyAt: number;
+}
+
+type StableServer = OwnedServer | AdoptedServer | { kind: "stopped" };
+
+interface MlxServerManagerDeps {
+  getShuttingDown: () => boolean;
+  probeHealth?: (port: number) => Promise<MlxHealthResult>;
+  getPortPid?: (port: number) => number | null;
+  spawn?: typeof spawn;
+  openLog?: typeof openRotatedLog;
+  closeFd?: typeof fs.closeSync;
+  terminateGroup?: typeof terminateProcessGroup;
+  sleep?: (ms: number) => Promise<void>;
+  createOwnerToken?: () => string;
+}
+
 export class MlxServerManager {
-  private mlxChild: ChildProcess | null = null;
-  private mlxRecoveryInFlight = false;
-  // Set on the first ensureMlxServer() call — i.e. the daemon decided MLX
-  // should be running (gpu mode on Apple Silicon). Gates heartbeat respawns
-  // so cpu-mode daemons never spawn the server.
-  private mlxEnabled = false;
-  private lastModel: string | undefined;
+  private stable: StableServer = { kind: "stopped" };
+  private phase: Exclude<
+    MlxLifecycleState,
+    "stopped" | "owned-ready" | "adopted-ready"
+  > | null = null;
+  private enabled = false;
+  private desiredModel = DEFAULT_MLX_EMBED_MODEL;
+  private ensureFlight: Promise<void> | null = null;
+  private stopFlight: Promise<void> | null = null;
+  private lastError: string | undefined;
 
-  constructor(private readonly deps: { getShuttingDown: () => boolean }) {}
+  constructor(private readonly deps: MlxServerManagerDeps) {}
 
-  private async isMlxServerUp(): Promise<boolean> {
-    const port = parseInt(process.env.MLX_EMBED_PORT || "8100", 10);
-    return new Promise<boolean>((resolve) => {
+  private get port(): number {
+    return Number.parseInt(process.env.MLX_EMBED_PORT || "8100", 10);
+  }
+
+  private shouldStop(): boolean {
+    return !this.enabled || this.deps.getShuttingDown();
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return (
+      this.deps.sleep?.(ms) ?? new Promise((resolve) => setTimeout(resolve, ms))
+    );
+  }
+
+  private async probeHealth(port: number): Promise<MlxHealthResult> {
+    if (this.deps.probeHealth) return this.deps.probeHealth(port);
+    return new Promise<MlxHealthResult>((resolve) => {
+      let settled = false;
+      const settle = (result: MlxHealthResult) => {
+        if (settled) return;
+        settled = true;
+        resolve(result);
+      };
       const req = http.get(
-        { hostname: "127.0.0.1", port, path: "/health", timeout: 2000 },
+        { hostname: "127.0.0.1", port, path: "/health", timeout: 2_000 },
         (res) => {
-          res.resume();
-          resolve(res.statusCode === 200);
+          const chunks: Buffer[] = [];
+          let bytes = 0;
+          res.on("data", (chunk: Buffer) => {
+            bytes += chunk.length;
+            if (bytes > MAX_HEALTH_BODY_BYTES) {
+              req.destroy();
+              settle({ kind: "unavailable", reason: "health body too large" });
+              return;
+            }
+            chunks.push(chunk);
+          });
+          res.on("end", () => {
+            if (res.statusCode !== 200) {
+              settle({
+                kind: "unavailable",
+                reason: `health status ${res.statusCode ?? "unknown"}`,
+              });
+              return;
+            }
+            try {
+              const data = JSON.parse(
+                Buffer.concat(chunks).toString("utf8"),
+              ) as Record<string, unknown>;
+              if (data.status !== "ok" || typeof data.model !== "string") {
+                settle({ kind: "unavailable", reason: "invalid health body" });
+                return;
+              }
+              settle({
+                kind: "healthy",
+                model: data.model,
+                ...(typeof data.owner === "string"
+                  ? { owner: data.owner }
+                  : {}),
+              });
+            } catch {
+              settle({ kind: "unavailable", reason: "invalid health JSON" });
+            }
+          });
         },
       );
-      req.on("error", () => resolve(false));
+      req.on("error", (error) =>
+        settle({ kind: "unavailable", reason: error.message }),
+      );
       req.on("timeout", () => {
         req.destroy();
-        resolve(false);
+        settle({ kind: "unavailable", reason: "health timeout" });
       });
     });
   }
 
   private getPortPid(port: number): number | null {
+    if (this.deps.getPortPid) return this.deps.getPortPid(port);
     try {
-      const out = execSync(`lsof -ti :${port}`, { timeout: 5000 })
+      const out = execSync(`lsof -nP -tiTCP:${port} -sTCP:LISTEN`, {
+        timeout: 5_000,
+      })
         .toString()
         .trim();
-      const pid = parseInt(out.split("\n")[0], 10);
+      const pid = Number.parseInt(out.split("\n")[0], 10);
       return Number.isFinite(pid) ? pid : null;
     } catch {
       return null;
     }
   }
 
-  async checkMlxHealth(): Promise<void> {
-    if (!this.mlxEnabled) return;
-    if (this.deps.getShuttingDown() || this.mlxRecoveryInFlight) return;
-    if (await this.isMlxServerUp()) return;
-    const port = parseInt(process.env.MLX_EMBED_PORT || "8100", 10);
-    const stalePid = this.getPortPid(port);
-    this.mlxRecoveryInFlight = true;
-    try {
-      if (stalePid) {
-        console.log(
-          `[daemon] MLX zombie detected on port ${port} (PID ${stalePid}) — killing and respawning`,
-        );
-        await killProcess(stalePid);
-        await new Promise((r) => setTimeout(r, 500));
-      } else {
-        // Server crashed or never came up (e.g. model load failure) — the
-        // port is free, so retry the spawn. Runs at the heartbeat's 5-min
-        // cadence, so a persistently failing start costs one attempt per tick
-        // rather than a tight crash loop.
-        console.log(
-          `[daemon] MLX embed server not running on port ${port} — respawning`,
-        );
-      }
-      await this.ensureMlxServer(this.lastModel);
-    } catch (err) {
+  private async terminateOwned(server: OwnedServer): Promise<void> {
+    const terminate = this.deps.terminateGroup ?? terminateProcessGroup;
+    const stopped = await terminate(server.pid);
+    if (!stopped) {
       console.error(
-        `[daemon] MLX recovery failed: ${err instanceof Error ? err.message : String(err)}`,
+        `[daemon] Failed to fully stop owned MLX process group ${server.pid}`,
       );
-    } finally {
-      this.mlxRecoveryInFlight = false;
     }
+    server.child.removeAllListeners("error");
+    server.child.removeAllListeners("exit");
+    if (this.stable === server) this.stable = { kind: "stopped" };
+  }
+
+  private trackOwnedExit(server: OwnedServer): void {
+    server.child.on("error", (error) => {
+      console.error(
+        `[daemon] MLX embed server process error: ${error.message}`,
+      );
+      if (this.stable === server) {
+        this.stable = { kind: "stopped" };
+        this.lastError = error.message;
+      }
+    });
+    server.child.on("exit", () => {
+      if (this.stable === server) this.stable = { kind: "stopped" };
+    });
+  }
+
+  async checkMlxHealth(): Promise<void> {
+    if (!this.enabled || this.deps.getShuttingDown()) return;
+    await this.ensureMlxServer(this.desiredModel);
   }
 
   async ensureMlxServer(mlxModel?: string): Promise<void> {
-    this.mlxEnabled = true;
-    if (mlxModel) this.lastModel = mlxModel;
-    if (await this.isMlxServerUp()) {
-      console.log("[daemon] MLX embed server already running");
+    this.enabled = true;
+    this.desiredModel = mlxModel ?? this.desiredModel;
+    if (this.stopFlight || this.deps.getShuttingDown()) return;
+    if (this.ensureFlight) return this.ensureFlight;
+
+    const flight = this.ensureInternal(this.desiredModel).finally(() => {
+      if (this.ensureFlight === flight) this.ensureFlight = null;
+      if (this.phase === "probing" || this.phase === "starting") {
+        this.phase = null;
+      }
+    });
+    this.ensureFlight = flight;
+    return flight;
+  }
+
+  private async ensureInternal(model: string): Promise<void> {
+    this.phase = "probing";
+    const health = await this.probeHealth(this.port);
+    if (this.shouldStop()) return;
+
+    if (health.kind === "healthy") {
+      if (health.model !== model) {
+        if (this.stable.kind === "owned") {
+          await this.terminateOwned(this.stable);
+        }
+        this.lastError = `port ${this.port} serves model ${health.model}, expected ${model}`;
+        this.phase = "failed";
+        console.error(`[daemon] MLX ${this.lastError}; leaving it untouched`);
+        return;
+      }
+      if (this.stable.kind === "owned" && health.owner === this.stable.owner) {
+        this.stable.lastHealthyAt = Date.now();
+        return;
+      }
+      if (this.stable.kind === "owned") await this.terminateOwned(this.stable);
+      this.stable = { kind: "adopted", model, lastHealthyAt: Date.now() };
+      this.lastError = undefined;
+      console.log("[daemon] Adopted matching MLX embed server");
       return;
     }
 
-    // Kill stale process holding the port (orphaned from a previous daemon)
-    const port = parseInt(process.env.MLX_EMBED_PORT || "8100", 10);
-    const stalePid = this.getPortPid(port);
-    if (stalePid) {
-      console.log(
-        `[daemon] Killing stale MLX process on port ${port} (PID: ${stalePid})`,
-      );
-      await killProcess(stalePid);
-      // Brief pause for OS to release the port
-      await new Promise((r) => setTimeout(r, 500));
+    if (this.stable.kind === "owned") {
+      await this.terminateOwned(this.stable);
+    } else {
+      this.stable = { kind: "stopped" };
+    }
+    if (this.shouldStop()) return;
+
+    const portOwner = this.getPortPid(this.port);
+    if (portOwner) {
+      this.lastError = `port ${this.port} is occupied by unrecognized PID ${portOwner}`;
+      this.phase = "failed";
+      console.error(`[daemon] MLX ${this.lastError}; leaving it untouched`);
+      return;
     }
 
-    // Find mlx-embed-server/server.py relative to the grepmax package
     const candidates = [
       path.resolve(__dirname, "../../../mlx-embed-server"),
       path.resolve(__dirname, "../../mlx-embed-server"),
     ];
-    const serverDir = candidates.find((d) =>
-      fs.existsSync(path.join(d, "server.py")),
+    const serverDir = candidates.find((candidate) =>
+      fs.existsSync(path.join(candidate, "server.py")),
     );
     if (!serverDir) {
+      this.lastError = "MLX embed server not found";
+      this.phase = "failed";
       console.warn(
         "[daemon] MLX embed server not found — falling back to CPU embeddings",
       );
       return;
     }
 
-    const logFd = openRotatedLog(
-      path.join(PATHS.logsDir, "mlx-embed-server.log"),
-    );
-    const env: Record<string, string> = { ...process.env } as Record<
-      string,
-      string
-    >;
-    if (mlxModel) env.MLX_EMBED_MODEL = mlxModel;
-    // Pin the model cache to internal disk — never inherit an HF_HOME that
-    // may point at an unmounted external volume (see resolveMlxHfHome).
-    env.HF_HOME = resolveMlxHfHome(mlxModel);
-
-    const closeLogFd = () => {
-      try {
-        fs.closeSync(logFd);
-      } catch {}
+    const owner = this.deps.createOwnerToken?.() ?? randomUUID();
+    const openLog = this.deps.openLog ?? openRotatedLog;
+    const closeFd = this.deps.closeFd ?? fs.closeSync;
+    const logFd = openLog(path.join(PATHS.logsDir, "mlx-embed-server.log"));
+    const env: Record<string, string> = {
+      ...(process.env as Record<string, string>),
+      MLX_EMBED_MODEL: model,
+      GMAX_EMBED_OWNER_TOKEN: owner,
+      HF_HOME: resolveMlxHfHome(model),
     };
 
+    this.phase = "starting";
+    let child: ChildProcess;
     try {
-      this.mlxChild = spawn("uv", ["run", "python", "server.py"], {
+      child = (this.deps.spawn ?? spawn)("uv", ["run", "python", "server.py"], {
         cwd: serverDir,
         detached: true,
         stdio: ["ignore", logFd, logFd],
         env,
       });
-    } catch (err) {
-      closeLogFd();
+    } catch (error) {
+      this.lastError = error instanceof Error ? error.message : String(error);
+      this.phase = "failed";
       console.error(
-        `[daemon] MLX embed server failed to spawn: ${err instanceof Error ? err.message : String(err)} — falling back to CPU embeddings`,
+        `[daemon] MLX embed server failed to spawn: ${this.lastError} — falling back to CPU embeddings`,
       );
-      this.mlxChild = null;
+      return;
+    } finally {
+      try {
+        closeFd(logFd);
+      } catch {}
+    }
+
+    if (!child.pid) {
+      this.lastError = "spawned MLX process has no PID";
+      this.phase = "failed";
+      return;
+    }
+    child.unref();
+    const candidate: OwnedServer = {
+      kind: "owned",
+      child,
+      pid: child.pid,
+      model,
+      owner,
+      lastHealthyAt: 0,
+    };
+    const startup = { error: null as Error | null, exited: false };
+    const onError = (error: Error) => {
+      startup.error = error;
+    };
+    const onExit = () => {
+      startup.exited = true;
+    };
+    child.on("error", onError);
+    child.on("exit", onExit);
+    console.log(`[daemon] Starting MLX embed server (PID: ${child.pid})`);
+
+    for (let attempt = 0; attempt < STARTUP_ATTEMPTS; attempt++) {
+      await this.sleep(STARTUP_POLL_MS);
+      if (this.shouldStop() || startup.error || startup.exited) break;
+      const readiness = await this.probeHealth(this.port);
+      if (readiness.kind !== "healthy") continue;
+      if (readiness.model !== model) {
+        this.lastError = `port ${this.port} serves model ${readiness.model}, expected ${model}`;
+        break;
+      }
+      child.off("error", onError);
+      child.off("exit", onExit);
+      if (readiness.owner !== owner) {
+        await this.terminateOwned(candidate);
+        this.stable = {
+          kind: "adopted",
+          model,
+          lastHealthyAt: Date.now(),
+        };
+        console.log(
+          "[daemon] Adopted matching MLX server that won startup race",
+        );
+        return;
+      }
+      candidate.lastHealthyAt = Date.now();
+      this.stable = candidate;
+      this.lastError = undefined;
+      this.trackOwnedExit(candidate);
+      console.log("[daemon] MLX embed server ready");
       return;
     }
 
-    const child = this.mlxChild;
-    let startupSettled = false;
-    let resolveStartupError!: (err: Error) => void;
-    const startupError = new Promise<Error>((resolve) => {
-      resolveStartupError = resolve;
-    });
-    const onChildError = (err: Error) => {
-      if (!startupSettled) {
-        resolveStartupError(err);
-        return;
-      }
-      console.error(`[daemon] MLX embed server process error: ${err.message}`);
-      if (this.mlxChild === child) this.mlxChild = null;
-    };
-    child.on("error", onChildError);
-    child.unref();
-    console.log(`[daemon] Starting MLX embed server (PID: ${child.pid})`);
-
-    // Poll for readiness (up to 30s)
-    for (let i = 0; i < 30; i++) {
-      const spawnError = await Promise.race([
-        startupError,
-        new Promise<null>((r) => setTimeout(() => r(null), 1000)),
-      ]);
-      if (spawnError) {
-        startupSettled = true;
-        child.off("error", onChildError);
-        closeLogFd();
-        console.error(
-          `[daemon] MLX embed server failed to spawn: ${spawnError.message} — falling back to CPU embeddings`,
-        );
-        if (this.mlxChild === child) this.mlxChild = null;
-        return;
-      }
-      if (await this.isMlxServerUp()) {
-        startupSettled = true;
-        console.log("[daemon] MLX embed server ready");
-        return;
-      }
+    child.off("error", onError);
+    child.off("exit", onExit);
+    await this.terminateOwned(candidate);
+    this.lastError =
+      startup.error?.message ??
+      (this.shouldStop() ? "MLX startup cancelled" : "MLX startup timed out");
+    if (!this.shouldStop()) {
+      this.phase = "failed";
+      console.error(
+        `[daemon] ${this.lastError} — falling back to CPU embeddings`,
+      );
     }
-    startupSettled = true;
-    console.error(
-      "[daemon] MLX embed server failed to start within 30s — falling back to CPU embeddings",
-    );
-    this.mlxChild = null;
   }
 
-  stopMlxServer(): void {
-    // The spawned process is `uv`, which forks `python` then exits. Killing the
-    // recorded PID alone leaves python orphaned (the orphan source for port 8100
-    // collisions across daemon restarts). Always also kill whoever owns the port.
-    if (this.mlxChild?.pid) {
-      try {
-        process.kill(-this.mlxChild.pid, "SIGTERM");
-      } catch {
-        try {
-          process.kill(this.mlxChild.pid, "SIGTERM");
-        } catch {}
-      }
-      console.log(
-        `[daemon] Stopped MLX embed server (PID: ${this.mlxChild.pid})`,
-      );
-      this.mlxChild = null;
-    }
-    const port = parseInt(process.env.MLX_EMBED_PORT || "8100", 10);
-    const portOwner = this.getPortPid(port);
-    if (portOwner) {
-      try {
-        process.kill(portOwner, "SIGTERM");
+  stopMlxServer(): Promise<void> {
+    this.enabled = false;
+    this.phase = "stopping";
+    if (this.stopFlight) return this.stopFlight;
+    const flight = (async () => {
+      await this.ensureFlight?.catch(() => {});
+      if (this.stable.kind === "owned") {
+        const owned = this.stable;
+        await this.terminateOwned(owned);
         console.log(
-          `[daemon] Killed orphan MLX on port ${port} (PID: ${portOwner})`,
+          `[daemon] Stopped owned MLX embed server (PID: ${owned.pid})`,
         );
-      } catch {}
-    }
+      } else {
+        this.stable = { kind: "stopped" };
+      }
+      this.lastError = undefined;
+    })().finally(() => {
+      if (this.stopFlight === flight) this.stopFlight = null;
+      this.phase = null;
+    });
+    this.stopFlight = flight;
+    return flight;
+  }
+
+  getStatus(): MlxManagerStatus {
+    const state =
+      this.phase ??
+      (this.stable.kind === "owned"
+        ? "owned-ready"
+        : this.stable.kind === "adopted"
+          ? "adopted-ready"
+          : "stopped");
+    return {
+      enabled: this.enabled,
+      state,
+      port: this.port,
+      model: this.desiredModel,
+      pid: this.stable.kind === "owned" ? this.stable.pid : null,
+      ...(this.stable.kind === "stopped"
+        ? {}
+        : { lastHealthyAt: this.stable.lastHealthyAt }),
+      ...(this.lastError ? { error: this.lastError } : {}),
+    };
   }
 }

@@ -104,6 +104,24 @@ describe("daemon-client", () => {
         server.close();
       }
     });
+
+    it("cancels an in-flight command with an AbortSignal", async () => {
+      const server = startMockServer(() => {});
+      const ac = new AbortController();
+      try {
+        const pending = sendDaemonCommand(
+          { cmd: "search" },
+          { timeoutMs: 1000, signal: ac.signal },
+        );
+        ac.abort();
+        await expect(pending).resolves.toMatchObject({
+          ok: false,
+          error: "aborted",
+        });
+      } finally {
+        server.close();
+      }
+    });
   });
 
   describe("sendStreamingCommand", () => {
@@ -159,6 +177,21 @@ describe("daemon-client", () => {
         await expect(
           sendStreamingCommand({ cmd: "index" }, () => {}, { timeoutMs: 100 }),
         ).rejects.toThrow("daemon initializing");
+      } finally {
+        server.close();
+      }
+    });
+
+    it("cancels an in-flight streaming command", async () => {
+      const server = startMockServer(() => {});
+      const ac = new AbortController();
+      try {
+        const pending = sendStreamingCommand({ cmd: "index" }, () => {}, {
+          timeoutMs: 1000,
+          signal: ac.signal,
+        });
+        ac.abort();
+        await expect(pending).rejects.toMatchObject({ name: "AbortError" });
       } finally {
         server.close();
       }

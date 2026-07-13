@@ -6,6 +6,7 @@ import { gracefulExit } from "../lib/utils/exit";
 import { escapeSqlString } from "../lib/utils/filter-builder";
 import { extractImportsFromContent } from "../lib/utils/import-extractor";
 import { groupByLanguage } from "../lib/utils/language";
+import { resolveContainedFile } from "../lib/utils/path-containment";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
@@ -114,7 +115,16 @@ export const extract = new Command("extract")
         scope,
         `array_contains(defined_symbols, '${escapeSqlString(symbol)}')`,
       );
-      const chunks = await findSymbolChunks(vectorDb, where);
+      const indexedChunks = await findSymbolChunks(vectorDb, where);
+      const chunks = indexedChunks.flatMap((chunk) => {
+        try {
+          return [
+            { ...chunk, path: resolveContainedFile(projectRoot, chunk.path) },
+          ];
+        } catch {
+          return [];
+        }
+      });
 
       if (chunks.length === 0) {
         console.log(

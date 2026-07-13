@@ -14,7 +14,7 @@ vi.mock("../src/lib/utils/project-root", () => ({
   findProjectRoot: vi.fn(() => "/tmp/project"),
 }));
 
-const mockTable = {
+const mockTable: any = {
   query: vi.fn(() => ({
     select: vi.fn().mockReturnThis(),
     where: vi.fn().mockReturnThis(),

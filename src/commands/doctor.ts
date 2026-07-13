@@ -7,14 +7,13 @@ import {
   DISK_CRITICAL_BYTES,
   DISK_LOW_BYTES,
   describeChunkerGap,
-  describeEmbeddingGap,
   describeSchemaDimGap,
   MODEL_IDS,
   MODEL_TIERS,
   PATHS,
-  REBUILD_COMMAND,
   schemaDimAgentRow,
 } from "../config";
+import { projectEmbeddingStatus } from "../lib/index/embedding-status";
 import { readGlobalConfig } from "../lib/index/index-config";
 import {
   gpuEmbedModelStatus,
@@ -23,13 +22,9 @@ import {
   summaryCoverageStatus,
 } from "../lib/utils/doctor-status";
 import { gracefulExit } from "../lib/utils/exit";
-import { isMlxModelCached } from "../lib/utils/mlx-hf-cache";
 import { isProcessAlive, parseLock, removeLock } from "../lib/utils/lock";
-import {
-  listProjects,
-  registerProject,
-  removeProject,
-} from "../lib/utils/project-registry";
+import { isMlxModelCached } from "../lib/utils/mlx-hf-cache";
+import { listProjects, removeProject } from "../lib/utils/project-registry";
 import { findProjectRoot } from "../lib/utils/project-root";
 
 function formatSize(bytes: number): string {
@@ -91,7 +86,9 @@ export const doctor = new Command("doctor")
       );
     }
     const embedModel =
-      globalConfig.embedMode === "gpu" ? tier.mlxModel : tier.onnxModel;
+      globalConfig.embedMode === "gpu"
+        ? (globalConfig.mlxModel ?? tier.mlxModel)
+        : tier.onnxModel;
 
     if (!opts.agent) {
       console.log(
@@ -107,7 +104,17 @@ export const doctor = new Command("doctor")
       let embedError = "";
       try {
         const res = await fetch("http://127.0.0.1:8100/health");
-        embedUp = res.ok;
+        const health = (await res.json()) as {
+          status?: unknown;
+          model?: unknown;
+        };
+        embedUp =
+          res.ok && health.status === "ok" && health.model === embedModel;
+        if (res.ok && health.model !== embedModel) {
+          embedError = `wrong model ${String(health.model)}; expected ${embedModel}`;
+        } else if (res.ok && health.status !== "ok") {
+          embedError = "invalid health response";
+        }
       } catch (err: any) {
         embedError =
           err.code === "ECONNREFUSED"
@@ -282,20 +289,10 @@ export const doctor = new Command("doctor")
           (p.chunkerVersion ?? 1) < CONFIG.CHUNKER_VERSION,
       );
 
-      // Projects whose stored embedding model/dim no longer matches the global
-      // config. Visibility only — recovery is a manual `gmax index --reset`
-      // (a dim change can't be auto-fixed in the shared fixed-dim table; that's
-      // the deferred Phase 1B re-embed work).
       const staleEmbeddingProjects = projects.filter(
         (p) =>
           p.status === "indexed" &&
-          describeEmbeddingGap(
-            { modelTier: p.modelTier, vectorDim: p.vectorDim },
-            {
-              modelTier: globalConfig.modelTier,
-              vectorDim: globalConfig.vectorDim,
-            },
-          ) !== null,
+          projectEmbeddingStatus(p, globalConfig).state === "stale",
       );
 
       if (opts.agent) {
@@ -337,42 +334,34 @@ export const doctor = new Command("doctor")
           );
         }
         for (const p of staleEmbeddingProjects) {
-          const gap = describeEmbeddingGap(
-            { modelTier: p.modelTier, vectorDim: p.vectorDim },
-            {
-              modelTier: globalConfig.modelTier,
-              vectorDim: globalConfig.vectorDim,
-            },
-          );
-          if (!gap) continue;
+          const identity = projectEmbeddingStatus(p, globalConfig);
+          if (!identity.built) continue;
           console.log(
             [
               "stale_embedding_project",
               `name=${p.name || path.basename(p.root)}`,
-              `indexed_model=${gap.fromModel}`,
-              `current_model=${gap.toModel}`,
-              `indexed_dim=${gap.fromDim}`,
-              `current_dim=${gap.toDim}`,
-              `dim_changed=${gap.dimChanged}`,
-              `severity=${gap.severity}`,
-              // A dim change can't be fixed by a per-project reset (the shared
-              // table is fixed-width) — point at the global rebuild instead.
-              `fix=${gap.dimChanged ? REBUILD_COMMAND : `gmax index --reset (in ${p.root})`}`,
+              `indexed_model=${identity.built.tier}`,
+              `current_model=${identity.configured.tier}`,
+              `indexed_dim=${identity.built.vectorDim}`,
+              `current_dim=${identity.configured.vectorDim}`,
+              `indexed_fingerprint=${identity.built.fingerprint}`,
+              `current_fingerprint=${identity.configured.fingerprint}`,
+              "severity=breaking",
+              "fix=gmax repair --rebuild",
             ].join("\t"),
           );
         }
       } else {
         console.log("\nIndex Health\n");
 
-        // Physical schema width — a mismatch means every write throws until a
-        // global rebuild (the shared fixed-width table can't be reshaped by a
-        // per-project reset). Surfaced first because it's the most severe.
+        // Physical schema width mismatch remains fail-closed until the user
+        // explicitly runs the guarded whole-corpus rebuild.
         if (schemaGap) {
           console.log(
             `FAIL  Schema: vector table is ${schemaGap.tableDim}d, config expects ${schemaGap.configDim}d`,
           );
           console.log(
-            `       run '${REBUILD_COMMAND}' (drops + reindexes all projects at the new width)`,
+            "       run 'gmax repair --rebuild' to rebuild the whole corpus",
           );
         } else if (physicalDim) {
           console.log(`ok  Schema: vector table is ${physicalDim}d`);
@@ -454,43 +443,15 @@ export const doctor = new Command("doctor")
           }
         }
 
-        // Index built with a different embedding model/dim than the current
-        // config. A dim change is breaking (search scores are invalid until a
-        // re-embed); a same-dim model swap is additive. Recovery differs by kind:
-        // a same-dim model swap is fixed by a per-project `gmax index --reset`,
-        // but a dim change can't be — the shared table is fixed-width, so it
-        // needs the global rebuild (see the Schema check above).
         if (staleEmbeddingProjects.length > 0) {
-          const gaps = staleEmbeddingProjects.map((p) =>
-            describeEmbeddingGap(
-              { modelTier: p.modelTier, vectorDim: p.vectorDim },
-              {
-                modelTier: globalConfig.modelTier,
-                vectorDim: globalConfig.vectorDim,
-              },
-            ),
-          );
-          const anyBreaking = gaps.some((g) => g?.severity === "breaking");
-          const anyDimChange = gaps.some((g) => g?.dimChanged);
-          const headerFix = anyDimChange
-            ? `run '${REBUILD_COMMAND}' (dim change needs a full rebuild)`
-            : "run 'gmax index --reset' per project";
           console.log(
-            `${anyBreaking ? "WARN" : "INFO"}  Stale embedding: ${staleEmbeddingProjects.length} project(s) indexed with a different embedding model/dim — ${headerFix}`,
+            `WARN  Stale embedding: ${staleEmbeddingProjects.length} project(s) use a different embedding generation — run 'gmax repair --rebuild'`,
           );
-          staleEmbeddingProjects.forEach((p, i) => {
-            const gap = gaps[i];
-            if (!gap) return;
-            const change = gap.dimChanged
-              ? `${gap.fromDim}d→${gap.toDim}d`
-              : `model ${gap.fromModel}→${gap.toModel}`;
+          staleEmbeddingProjects.forEach((p) => {
+            const identity = projectEmbeddingStatus(p, globalConfig);
+            if (!identity.built) return;
             console.log(
-              `       - ${p.name || path.basename(p.root)} (${change}, ${gap.severity})`,
-            );
-            console.log(
-              gap.dimChanged
-                ? `         run '${REBUILD_COMMAND}'`
-                : `         run 'gmax index --reset' in ${p.root}`,
+              `       - ${p.name || path.basename(p.root)} (${identity.built.tier} ${identity.built.vectorDim}d → ${identity.configured.tier} ${identity.configured.vectorDim}d, breaking)`,
             );
           });
         }
@@ -590,14 +551,10 @@ export const doctor = new Command("doctor")
                 { cmd: "index", root: p.root, reset: true },
                 () => {},
               ).catch((e) => ({ ok: false, error: String(e) }) as const);
-              if (done.ok) {
-                registerProject({
-                  ...p,
-                  status: "indexed",
-                  chunkerVersion: CONFIG.CHUNKER_VERSION,
-                  lastIndexed: new Date().toISOString(),
-                  chunkCount: (done.indexed as number) ?? p.chunkCount,
-                });
+              if (
+                done.ok &&
+                (!("degraded" in done) || done.degraded !== true)
+              ) {
                 const chunks = (done.indexed as number) ?? 0;
                 if (opts.agent) {
                   console.log(
@@ -608,7 +565,11 @@ export const doctor = new Command("doctor")
                 }
                 fixed++;
               } else if (!opts.agent) {
-                console.log(`FAIL  ${name}: reindex failed (${done.error})`);
+                const degraded = "degraded" in done && done.degraded === true;
+                const reason = degraded
+                  ? `${("scanErrors" in done ? (done.scanErrors as number) : 0) ?? 0} scan errors, ${("failedFiles" in done ? (done.failedFiles as number) : 0) ?? 0} file failures`
+                  : done.error;
+                console.log(`FAIL  ${name}: reindex failed (${reason})`);
               }
             }
           }

@@ -2,9 +2,10 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Command } from "commander";
-import { readGlobalConfig, readIndexConfig } from "../lib/index/index-config";
+import { projectEmbeddingStatus } from "../lib/index/embedding-status";
+import { readGlobalConfig } from "../lib/index/index-config";
 import { gracefulExit } from "../lib/utils/exit";
-import { listProjects } from "../lib/utils/project-registry";
+import { getProject, listProjects } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
 const style = {
@@ -90,17 +91,23 @@ async function showCurrentProject(): Promise<void> {
   console.log(`\n${style.bold("Project")}: ${style.green(projectRoot)}`);
   console.log(`${style.dim("Data directory")}: ${paths.dataDir}\n`);
 
-  const config = readIndexConfig(paths.configPath);
-  if (config) {
+  const globalConfig = readGlobalConfig();
+  const project = getProject(projectRoot);
+  if (project) {
+    const identity = projectEmbeddingStatus(project, globalConfig);
     console.log(
-      `${style.dim("Model")}: ${config.modelTier ?? "small"} (${config.vectorDim ?? 384}d)`,
+      `${style.dim("Configured embedding")}: ${identity.configured.tier} (${identity.configured.vectorDim}d)`,
     );
-    console.log(`${style.dim("Mode")}: ${config.embedMode ?? "cpu"}`);
-    if (config.indexedAt) {
+    if (identity.built) {
       console.log(
-        `${style.dim("Indexed")}: ${formatDate(new Date(config.indexedAt))}`,
+        `${style.dim("Built embedding")}: ${identity.built.tier} (${identity.built.vectorDim}d, ${identity.state})`,
       );
     }
+    console.log(`${style.dim("Mode")}: ${globalConfig.embedMode}`);
+    if (project.lastIndexed)
+      console.log(
+        `${style.dim("Indexed")}: ${formatDate(new Date(project.lastIndexed))}`,
+      );
     console.log();
   }
 
@@ -145,11 +152,16 @@ async function showAllProjects(): Promise<void> {
   );
 
   for (const project of projects) {
-    const dimMatch = project.vectorDim === globalConfig.vectorDim;
+    const identity = projectEmbeddingStatus(project, globalConfig);
     const dimsStr = `${project.vectorDim}d`;
-    const status = dimMatch
-      ? style.green("ok")
-      : style.yellow("reindex needed");
+    const status =
+      identity.state === "current"
+        ? style.green("current")
+        : identity.state === "legacy"
+          ? style.yellow("legacy")
+          : identity.state === "stale"
+            ? style.red("stale")
+            : style.dim("unbuilt");
 
     console.log(
       `${pad(project.name, nameWidth)}  ${style.dim(pad(shortenPath(project.root), pathWidth))}  ${pad(dimsStr, 4)}  ${status}`,
@@ -160,13 +172,14 @@ async function showAllProjects(): Promise<void> {
     `\n${style.dim("Global config")}: ${globalConfig.modelTier} (${globalConfig.vectorDim}d), ${globalConfig.embedMode}`,
   );
 
-  const needsReindex = projects.filter(
-    (p) => p.vectorDim !== globalConfig.vectorDim,
+  const stale = projects.filter(
+    (project) =>
+      projectEmbeddingStatus(project, globalConfig).state === "stale",
   );
-  if (needsReindex.length > 0) {
+  if (stale.length > 0) {
     console.log(
       style.yellow(
-        `\n${needsReindex.length} project(s) need reindexing. Search will auto-reindex on first use.`,
+        `\n${stale.length} project(s) use a stale embedding generation. Existing indexes are preserved; run 'gmax repair --rebuild' to rebuild the whole corpus.`,
       ),
     );
   }

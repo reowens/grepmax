@@ -305,7 +305,8 @@ CLI/MCP basics, calibration numbers are recorded, and the plan has a concrete cl
   (marginal vs path-keyed cache), SCIP ingestion (heavy graft, poor fit for
   zero-config default), `suggest_questions` + lessons-memory (different product
   surface), cargo/pg introspection, two-hash manifest, per-entry version stamping
-  (optimization of an already-safe project-granularity `repair --rebuild`).
+  (historically proposed as a rebuild optimization; guarded destructive rebuild is now available via
+  repository-audit lifecycle prerequisites).
 
 ## Token benchmark — implementation spec (preplanned 2026-06-28)
 
@@ -417,9 +418,8 @@ ships a half-migrated index.
 **Migration story: a full rebuild is NOT required.** The column is nullable; for live
 daemons `evolveSchema.addColumns` back-fills it in-place, existing rows read `[]` until
 their file is reindexed (which is when real values populate anyway). Fresh tables get
-it from `buildSchema`. Bulk back-fill happens via `gmax repair --rebuild`
-(`daemon.ts:780` `repairRebuild` → `vectorDb.drop()` :805 → lazy recreate) /
-`index --reset` / `doctor --fix`. v3 (the `type_referenced_symbols` add) is the precise
+it from `buildSchema`. Bulk back-fill uses `index --reset` / `doctor --fix`; destructive
+`repair --rebuild` is now a guarded whole-corpus operation. v3 (the `type_referenced_symbols` add) is the precise
 precedent.
 
 ### #4 — Member-call edges (biggest phantom-edge source)

@@ -11,12 +11,57 @@ const MLX_PORT = parseInt(process.env.MLX_EMBED_PORT || "8100", 10);
 const MLX_HOST = "127.0.0.1";
 const MLX_TIMEOUT_MS = 10_000;
 const EMBED_MODE = process.env.GMAX_EMBED_MODE || "auto";
+const FLOAT32_MAX = 3.4028234663852886e38;
 
 let mlxAvailable: boolean | null = null;
 let lastCheck = 0;
 const CHECK_INTERVAL_MS = 30_000;
 let lastMlxWarning = 0;
 const MLX_WARNING_INTERVAL_MS = 60_000;
+let checkedModel: string | undefined;
+
+export interface MlxEmbeddingOptions {
+  mode: "cpu" | "gpu";
+  expectedModel: string;
+  expectedDim: number;
+}
+
+interface MlxEmbeddingResponse {
+  vectors: number[][];
+  dim: number;
+  model: string;
+}
+
+export function validateMlxEmbeddingResponse(
+  data: unknown,
+  textCount: number,
+  expectedModel?: string,
+  expectedDim?: number,
+): data is MlxEmbeddingResponse {
+  if (!data || typeof data !== "object") return false;
+  const response = data as Partial<MlxEmbeddingResponse>;
+  return (
+    typeof response.model === "string" &&
+    (!expectedModel || response.model === expectedModel) &&
+    typeof response.dim === "number" &&
+    Number.isInteger(response.dim) &&
+    (expectedDim === undefined || response.dim === expectedDim) &&
+    Array.isArray(response.vectors) &&
+    response.vectors.length === textCount &&
+    response.vectors.every(
+      (vector) =>
+        Array.isArray(vector) &&
+        vector.length === response.dim &&
+        (expectedDim === undefined || vector.length === expectedDim) &&
+        vector.every(
+          (element) =>
+            typeof element === "number" &&
+            Number.isFinite(element) &&
+            Math.abs(element) <= FLOAT32_MAX,
+        ),
+    )
+  );
+}
 
 function postJSON(
   reqPath: string,
@@ -79,19 +124,28 @@ function postJSON(
 /**
  * Check if MLX server is reachable. Caches result for CHECK_INTERVAL_MS.
  */
-async function checkHealth(): Promise<boolean> {
+async function checkHealth(expectedModel?: string): Promise<boolean> {
   const start = performance.now();
   return new Promise<boolean>((resolve) => {
     const req = http.get(
       { hostname: MLX_HOST, port: MLX_PORT, path: "/health", timeout: 2000 },
       (res) => {
-        res.resume();
-        const ok = res.statusCode === 200;
-        debug(
-          "mlx",
-          `health → ${ok ? "ok" : `status=${res.statusCode}`} ${(performance.now() - start).toFixed(0)}ms`,
-        );
-        resolve(ok);
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk) => chunks.push(chunk));
+        res.on("end", () => {
+          let model: unknown;
+          try {
+            model = JSON.parse(Buffer.concat(chunks).toString("utf8")).model;
+          } catch {}
+          const ok =
+            res.statusCode === 200 &&
+            (!expectedModel || model === expectedModel);
+          debug(
+            "mlx",
+            `health → ${ok ? "ok" : `status=${res.statusCode} model=${String(model)}`} ${(performance.now() - start).toFixed(0)}ms`,
+          );
+          resolve(ok);
+        });
       },
     );
     req.on("error", (err) => {
@@ -112,20 +166,24 @@ async function checkHealth(): Promise<boolean> {
   });
 }
 
-export async function isMlxUp(): Promise<boolean> {
+export async function isMlxUp(expectedModel?: string): Promise<boolean> {
   const now = Date.now();
-  if (mlxAvailable !== null && now - lastCheck < CHECK_INTERVAL_MS) {
+  if (
+    checkedModel === expectedModel &&
+    mlxAvailable !== null &&
+    now - lastCheck < CHECK_INTERVAL_MS
+  ) {
     debug("mlx", `isMlxUp cached=${mlxAvailable} age=${now - lastCheck}ms`);
     return mlxAvailable;
   }
 
-  let result = await checkHealth();
+  let result = await checkHealth(expectedModel);
 
   // On first check (cold start), retry once after 3s — server may still be loading
   if (!result && mlxAvailable === null) {
     console.log("[mlx] Embed server not ready, retrying in 3s...");
     await new Promise((r) => setTimeout(r, 3000));
-    result = await checkHealth();
+    result = await checkHealth(expectedModel);
     if (result) {
       console.log("[mlx] Embed server ready");
     } else {
@@ -134,6 +192,7 @@ export async function isMlxUp(): Promise<boolean> {
   }
 
   mlxAvailable = result;
+  checkedModel = expectedModel;
   lastCheck = now;
   return result;
 }
@@ -144,14 +203,19 @@ export async function isMlxUp(): Promise<boolean> {
  */
 export async function mlxEmbed(
   texts: string[],
+  options?: MlxEmbeddingOptions,
 ): Promise<Float32Array[] | null> {
-  if (EMBED_MODE === "cpu") return null;
-  if (!(await isMlxUp())) return null;
+  const mode = options?.mode ?? EMBED_MODE;
+  if (mode === "cpu") return null;
+  if (!(await isMlxUp(options?.expectedModel))) return null;
   debug("mlx", `embed ${texts.length} texts`);
 
   let postResult: { ok: boolean; data?: any };
   try {
-    postResult = await postJSON("/embed", { texts });
+    postResult = await postJSON("/embed", {
+      texts,
+      expected_model: options?.expectedModel,
+    });
   } catch (error: any) {
     mlxAvailable = false;
     const now = Date.now();
@@ -162,7 +226,13 @@ export async function mlxEmbed(
     return null;
   }
   const { ok, data } = postResult;
-  if (!ok || !data?.vectors) {
+  const responseMatches = validateMlxEmbeddingResponse(
+    data,
+    texts.length,
+    options?.expectedModel,
+    options?.expectedDim,
+  );
+  if (!ok || !responseMatches) {
     const wasPreviouslyAvailable = mlxAvailable !== false;
     mlxAvailable = false;
     const now = Date.now();
@@ -173,8 +243,12 @@ export async function mlxEmbed(
       console.error(
         "[mlx] Embed server failed: bad response (ok=" +
           ok +
-          ", hasVectors=" +
-          !!data?.vectors +
+          ", validResponse=" +
+          responseMatches +
+          ", dim=" +
+          String(data?.dim) +
+          ", model=" +
+          String(data?.model) +
           ")",
       );
       lastMlxWarning = now;
@@ -182,5 +256,5 @@ export async function mlxEmbed(
     return null;
   }
 
-  return data.vectors.map((v: number[]) => new Float32Array(v));
+  return data.vectors.map((v) => new Float32Array(v));
 }

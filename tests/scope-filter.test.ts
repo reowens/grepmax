@@ -61,4 +61,25 @@ describe("resolveScope", () => {
     });
     expect(r.excludePrefixes).toEqual(["/p/app/tests/"]);
   });
+
+  it("rejects relative scopes that escape the project", () => {
+    expect(() =>
+      resolveScope({ projectRoot: "/p/app", in: "../other" }),
+    ).toThrow(/outside project root/i);
+    expect(() =>
+      resolveScope({ projectRoot: "/p/app", exclude: "../../private" }),
+    ).toThrow(/outside project root/i);
+  });
+
+  it("rejects absolute scopes outside the project", () => {
+    expect(() =>
+      resolveScope({ projectRoot: "/p/app", in: "/p/other" }),
+    ).toThrow(/outside project root/i);
+  });
+
+  it("rejects sibling-prefix collisions", () => {
+    expect(() =>
+      resolveScope({ projectRoot: "/p/app", in: "/p/application/src" }),
+    ).toThrow(/outside project root/i);
+  });
 });

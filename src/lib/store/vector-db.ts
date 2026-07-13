@@ -17,12 +17,12 @@ import {
   DISK_CRITICAL_BYTES,
   DISK_LOW_BYTES,
   FRAGMENT_COMPACT_THRESHOLD,
-  REBUILD_COMMAND,
 } from "../../config";
 import { readGlobalConfig } from "../index/index-config";
 import { registerCleanup } from "../utils/cleanup";
 import { escapeSqlString, pathStartsWith } from "../utils/filter-builder";
 import { debug, log, timer } from "../utils/logger";
+import { StoreLease } from "./store-lease";
 import type { VectorRecord } from "./types";
 
 export type DiskPressureLevel = "ok" | "low" | "critical";
@@ -44,7 +44,9 @@ export function isLanceCorruptionError(err: unknown): boolean {
   return /Not found:.*\.lance(?:[^a-z]|$)/i.test(msg);
 }
 
-function isMissingTableError(err: unknown): boolean {
+export function isMissingTableError(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException | null)?.code;
+  if (code === "EACCES" || code === "EIO") return false;
   const msg = err instanceof Error ? err.message : String(err);
   const tableMissing =
     /table.*chunks.*(?:not found|does not exist)/i.test(msg) ||
@@ -67,21 +69,35 @@ export class VectorDB {
   private maintenanceRunning = false;
   private maintenancePromise: Promise<void> | null = null;
   private maintenanceTimer: ReturnType<typeof setInterval> | null = null;
+  private maintenanceRunner: (fn: () => Promise<void>) => Promise<void> = (
+    fn,
+  ) => fn();
   private lastCorruptionLogMs = 0;
   diskPressure: DiskPressureLevel = "ok";
   private lastDiskCheckMs = 0;
   private lastLoggedPressure: DiskPressureLevel = "ok";
   private static readonly DISK_CHECK_INTERVAL_MS = 30_000;
+  private leasePromise: Promise<StoreLease> | null = null;
+  private readonly leaseAbort = new AbortController();
+  private closePromise: Promise<void> | null = null;
+  private releaseLeaseOnClose = true;
+  private requireClosedOnClose = false;
+  private leaseTransitionTail: Promise<void> = Promise.resolve();
+  private readonly leaseHolder = {};
 
   // Write gate: async read-write lock where writes are "readers" (shared)
   // and compaction is the "writer" (exclusive).
   private activeWrites = 0;
-  private writeDrainResolve: (() => void) | null = null;
+  private readonly writeDrainResolvers = new Set<() => void>();
   private compactingPromise: Promise<void> | null = null;
+  private exclusiveMutationPromise: Promise<void> | null = null;
+  private activeCompactions = 0;
+  private readonly compactionDrainResolvers = new Set<() => void>();
 
   constructor(
     private lancedbDir: string,
     vectorDim?: number,
+    private readonly suppliedLease?: StoreLease,
   ) {
     // Default to the configured tier's dim (not the hard-wired small-tier 384)
     // so a `standard`-tier index actually stores 768d vectors. An explicit
@@ -94,14 +110,17 @@ export class VectorDB {
    * Start a periodic maintenance timer (FTS rebuild + optimize).
    * Call once from the daemon — replaces per-processor maintenance intervals.
    */
-  startMaintenanceLoop(): void {
+  startMaintenanceLoop(
+    runOperation?: (fn: () => Promise<void>) => Promise<void>,
+  ): void {
+    if (runOperation) this.maintenanceRunner = runOperation;
     if (this.maintenanceTimer) return;
     this.maintenanceTimer = setInterval(() => {
       if (this.closed) return;
       // Skip if a previous tick is still running so close() has a single
       // promise to await instead of a chain.
       if (this.maintenancePromise) return;
-      const run = (async () => {
+      const run = this.maintenanceRunner(async () => {
         try {
           await this.runMaintenance();
         } catch (err) {
@@ -128,7 +147,7 @@ export class VectorDB {
           }
           log("vectordb", `Periodic maintenance failed: ${err}`);
         }
-      })();
+      });
       this.maintenancePromise = run.finally(() => {
         if (this.maintenancePromise === run) this.maintenancePromise = null;
       });
@@ -159,11 +178,86 @@ export class VectorDB {
     if (this.closed) {
       throw new Error("VectorDB connection is closed");
     }
+    await this.getLease();
+    if (this.closed) {
+      throw new Error("VectorDB connection is closed");
+    }
     if (!this.db) {
       fs.mkdirSync(this.lancedbDir, { recursive: true });
       this.db = await lancedb.connect(this.lancedbDir);
     }
     return this.db;
+  }
+
+  private getLease(): Promise<StoreLease> {
+    if (!this.leasePromise) {
+      const lease = this.suppliedLease
+        ? Promise.resolve(this.suppliedLease)
+        : StoreLease.acquireShared({
+            storeDir: this.lancedbDir,
+            role: process.title || "gmax",
+            signal: this.leaseAbort.signal,
+          });
+      this.leasePromise = lease.then((resolved) => {
+        resolved.claim(this.leaseHolder, this.lancedbDir);
+        return resolved;
+      });
+    }
+    return this.leasePromise;
+  }
+
+  private async withLeaseTransition<T>(fn: () => Promise<T>): Promise<T> {
+    const previous = this.leaseTransitionTail;
+    let release!: () => void;
+    this.leaseTransitionTail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  }
+
+  /** Upgrade and retain this instance's current lease for transfer to a new DB. */
+  async upgradeStoreLease(signal?: AbortSignal): Promise<StoreLease> {
+    if (this.closed) throw new Error("VectorDB connection is closed");
+    if (this.exclusiveMutationPromise) await this.exclusiveMutationPromise;
+    return this.withLeaseTransition(async () => {
+      const current = await this.getLease();
+      if (current.mode === "exclusive") return current;
+      const upgrade = current.upgrade({ signal });
+      this.leasePromise = upgrade;
+      try {
+        const upgraded = await upgrade;
+        upgraded.claim(this.leaseHolder, this.lancedbDir);
+        return upgraded;
+      } catch (error) {
+        this.leasePromise = Promise.resolve(current);
+        throw error;
+      }
+    });
+  }
+
+  /** Downgrade a transferred exclusive lease and retain the replacement token. */
+  async downgradeStoreLease(): Promise<StoreLease> {
+    if (this.closed) throw new Error("VectorDB connection is closed");
+    if (this.exclusiveMutationPromise) await this.exclusiveMutationPromise;
+    return this.withLeaseTransition(async () => {
+      const current = await this.getLease();
+      if (current.mode === "shared") return current;
+      const downgrade = current.downgrade();
+      this.leasePromise = downgrade;
+      try {
+        const downgraded = await downgrade;
+        downgraded.claim(this.leaseHolder, this.lancedbDir);
+        return downgraded;
+      } catch (error) {
+        this.leasePromise = Promise.resolve(current);
+        throw error;
+      }
+    });
   }
 
   getAvailableBytes(): number {
@@ -229,18 +323,75 @@ export class VectorDB {
    * but all writes pause when compaction wants exclusive access.
    */
   private async withWriteGate<T>(fn: () => Promise<T>): Promise<T> {
-    if (this.compactingPromise) {
-      await this.compactingPromise;
+    while (this.exclusiveMutationPromise || this.compactingPromise) {
+      if (this.closed) throw new Error("VectorDB connection is closed");
+      await Promise.all(
+        [this.exclusiveMutationPromise, this.compactingPromise].filter(
+          (promise): promise is Promise<void> => promise !== null,
+        ),
+      );
     }
+    if (this.closed) throw new Error("VectorDB connection is closed");
     this.activeWrites++;
     try {
       return await fn();
     } finally {
       this.activeWrites--;
-      if (this.activeWrites === 0 && this.writeDrainResolve) {
-        this.writeDrainResolve();
-        this.writeDrainResolve = null;
+      if (this.activeWrites === 0) {
+        for (const resolve of this.writeDrainResolvers) resolve();
+        this.writeDrainResolvers.clear();
       }
+    }
+  }
+
+  private drainCompactions(): Promise<void> {
+    if (this.activeCompactions === 0) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      this.compactionDrainResolvers.add(resolve);
+    });
+  }
+
+  /**
+   * Run a destructive table mutation while holding the process-wide exclusive
+   * store intent. New local writes stop before existing activity is drained.
+   */
+  async withExclusiveTableMutation<T>(
+    mutation: (db: lancedb.Connection) => Promise<T>,
+  ): Promise<T> {
+    if (this.closed) throw new Error("VectorDB connection is closed");
+    if (this.exclusiveMutationPromise) {
+      throw new Error("An exclusive table mutation is already in progress");
+    }
+
+    let resolveMutation!: () => void;
+    this.exclusiveMutationPromise = new Promise<void>((resolve) => {
+      resolveMutation = resolve;
+    });
+    try {
+      return await this.withLeaseTransition(async () => {
+        let temporaryExclusiveLease: StoreLease | null = null;
+        try {
+          const currentLease = await this.getLease();
+          if (currentLease.mode === "shared") {
+            temporaryExclusiveLease = await StoreLease.acquireExclusive({
+              storeDir: this.lancedbDir,
+              pid: currentLease.owner.pid,
+              processStart: currentLease.owner.processStart,
+              role: `${currentLease.owner.role}:exclusive-mutation`,
+              ignoreNonces: new Set([currentLease.owner.nonce]),
+              signal: this.leaseAbort.signal,
+            });
+          }
+          await Promise.all([this.drainWrites(), this.drainCompactions()]);
+          const db = await this.getDb();
+          return await mutation(db);
+        } finally {
+          await temporaryExclusiveLease?.release();
+        }
+      });
+    } finally {
+      this.exclusiveMutationPromise = null;
+      resolveMutation();
     }
   }
 
@@ -252,7 +403,7 @@ export class VectorDB {
       `Draining ${this.activeWrites} in-flight write(s) before compaction`,
     );
     return new Promise<void>((resolve) => {
-      this.writeDrainResolve = resolve;
+      this.writeDrainResolvers.add(resolve);
     });
   }
 
@@ -302,8 +453,9 @@ export class VectorDB {
     let table: lancedb.Table;
     try {
       table = await db.openTable(TABLE_NAME);
-    } catch {
-      return null; // no table on disk yet
+    } catch (err) {
+      if (isMissingTableError(err)) return null;
+      throw err;
     }
     const schema = await table.schema();
     const field = schema.fields.find((f) => f.name === "vector");
@@ -434,6 +586,10 @@ export class VectorDB {
   }
 
   async ensureTable(): Promise<lancedb.Table> {
+    return this.withWriteGate(() => this.ensureTableUnsafe());
+  }
+
+  private async ensureTableUnsafe(): Promise<lancedb.Table> {
     const db = await this.getDb();
     let table: lancedb.Table;
     try {
@@ -457,8 +613,6 @@ export class VectorDB {
   async insertBatch(records: VectorRecord[]): Promise<void> {
     if (!records.length) return;
     this.ensureDiskOk();
-    const table = await this.ensureTable();
-
     const toBuffer = (val: unknown): Buffer => {
       if (Buffer.isBuffer(val)) return val;
       if (ArrayBuffer.isView(val) && (val as ArrayBufferView).buffer) {
@@ -514,8 +668,7 @@ export class VectorDB {
         throw new Error(
           `Vector dimension mismatch: got ${vec.length}d, expected ${this.vectorDim}d. ` +
             "The embedding model tier likely changed without a rebuild — the shared " +
-            `table is fixed-width, so run \`${REBUILD_COMMAND}\` (a per-project ` +
-            "`gmax index --reset` cannot change the table width).",
+            "table is fixed-width. Run `gmax repair --rebuild` to rebuild the whole corpus.",
         );
       }
       (rec as any).vector = vec;
@@ -551,10 +704,14 @@ export class VectorDB {
     }
 
     try {
-      await this.withWriteGate(() => table.add(records));
+      await this.withWriteGate(async () => {
+        const table = await this.ensureTableUnsafe();
+        await table.add(records);
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.toLowerCase().includes("found field not in schema")) {
+        const table = await this.ensureTable();
         const schema = await table.schema();
         const schemaFields = schema.fields.map((f) => f.name);
         throw new Error(
@@ -568,7 +725,16 @@ export class VectorDB {
   }
 
   async createFTSIndex(rebuild = false, retries = 5): Promise<void> {
-    const table = await this.ensureTable();
+    return this.withWriteGate(() =>
+      this.createFTSIndexUnsafe(rebuild, retries),
+    );
+  }
+
+  private async createFTSIndexUnsafe(
+    rebuild = false,
+    retries = 5,
+  ): Promise<void> {
+    const table = await this.ensureTableUnsafe();
     if (rebuild) {
       try {
         await table.dropIndex("content_idx");
@@ -616,21 +782,30 @@ export class VectorDB {
     }
   }
 
-  async optimize(retries = 5, retentionMs = 0): Promise<void> {
+  async optimize(
+    retries = 5,
+    retentionMs = 0,
+    bypassExclusiveMutation = false,
+  ): Promise<void> {
+    if (!bypassExclusiveMutation) {
+      while (this.exclusiveMutationPromise) await this.exclusiveMutationPromise;
+      if (this.closed) throw new Error("VectorDB connection is closed");
+    }
     if (this.compactingPromise) {
       debug("vectordb", "Optimize already in progress, skipping");
+      await this.compactingPromise;
       return;
     }
 
-    const table = await this.ensureTable();
-    const cutoff = new Date(Date.now() - retentionMs);
-
     let resolveCompacting!: () => void;
-    this.compactingPromise = new Promise<void>((r) => {
-      resolveCompacting = r;
+    this.compactingPromise = new Promise<void>((resolve) => {
+      resolveCompacting = resolve;
     });
-
+    this.activeCompactions++;
     try {
+      const table = await this.ensureTableUnsafe();
+      const cutoff = new Date(Date.now() - retentionMs);
+
       for (let attempt = 1; attempt <= retries; attempt++) {
         await this.drainWrites();
 
@@ -694,6 +869,11 @@ export class VectorDB {
     } finally {
       this.compactingPromise = null;
       resolveCompacting();
+      this.activeCompactions--;
+      if (this.activeCompactions === 0) {
+        for (const resolve of this.compactionDrainResolvers) resolve();
+        this.compactionDrainResolvers.clear();
+      }
     }
   }
 
@@ -726,12 +906,12 @@ export class VectorDB {
 
       if (pressure === "low") {
         log("vectordb", `Low disk — single-pass optimize (no bloat retry)`);
-        await this.optimize(1);
+        await this.optimize(1, 0, true);
         return;
       }
 
       // Normal maintenance: full optimize + bloat check
-      await this.optimize();
+      await this.optimize(5, 0, true);
 
       const table = await this.ensureTable();
       const stats = await table.stats();
@@ -746,7 +926,7 @@ export class VectorDB {
           `Bloat detected after optimize: ${(diskSize / 1024 / 1024).toFixed(0)}MB disk vs ${(logicalSize / 1024 / 1024).toFixed(0)}MB logical (${bloatRatio.toFixed(1)}x) — retrying`,
         );
         await new Promise((r) => setTimeout(r, 2000));
-        await this.optimize();
+        await this.optimize(5, 0, true);
       }
     } finally {
       this.maintenanceRunning = false;
@@ -757,9 +937,9 @@ export class VectorDB {
     threshold = FRAGMENT_COMPACT_THRESHOLD,
   ): Promise<boolean> {
     if (this.maintenanceRunning) return false;
-    if (this.checkDiskPressure() !== "ok") return false;
-
+    this.maintenanceRunning = true;
     try {
+      if (this.checkDiskPressure() !== "ok") return false;
       const table = await this.ensureTable();
       const stats = await table.stats();
       if (stats.fragmentStats.numSmallFragments > threshold) {
@@ -767,16 +947,13 @@ export class VectorDB {
           "vectordb",
           `Fragment threshold exceeded (${stats.fragmentStats.numSmallFragments} > ${threshold}) — compacting`,
         );
-        this.maintenanceRunning = true;
-        try {
-          await this.optimize(2);
-        } finally {
-          this.maintenanceRunning = false;
-        }
+        await this.optimize(2, 0, true);
         return true;
       }
     } catch (err) {
       debug("vectordb", `compactIfNeeded check failed: ${err}`);
+    } finally {
+      this.maintenanceRunning = false;
     }
     return false;
   }
@@ -859,10 +1036,10 @@ export class VectorDB {
   async deletePaths(paths: string[]): Promise<void> {
     if (!paths.length) return;
     this.ensureDiskOk();
-    const table = await this.ensureTable();
     const unique = Array.from(new Set(paths));
     const batchSize = 500;
     await this.withWriteGate(async () => {
+      const table = await this.ensureTableUnsafe();
       for (let i = 0; i < unique.length; i += batchSize) {
         const slice = unique.slice(i, i + batchSize);
         const values = slice.map((p) => `'${escapeSqlString(p)}'`).join(",");
@@ -887,8 +1064,8 @@ export class VectorDB {
     values: (string | null)[],
   ): Promise<void> {
     if (!ids.length) return;
-    const table = await this.ensureTable();
     await this.withWriteGate(async () => {
+      const table = await this.ensureTableUnsafe();
       for (let i = 0; i < ids.length; i++) {
         const escaped = escapeSqlString(ids[i]);
         await table.update({
@@ -905,7 +1082,6 @@ export class VectorDB {
   ): Promise<void> {
     if (!paths.length) return;
     this.ensureDiskOk();
-    const table = await this.ensureTable();
     const unique = Array.from(new Set(paths));
     const batchSize = 500;
     const idExclusion =
@@ -913,6 +1089,7 @@ export class VectorDB {
         ? ` AND id NOT IN (${excludeIds.map((id) => `'${escapeSqlString(id)}'`).join(",")})`
         : "";
     await this.withWriteGate(async () => {
+      const table = await this.ensureTableUnsafe();
       for (let i = 0; i < unique.length; i += batchSize) {
         const slice = unique.slice(i, i + batchSize);
         const values = slice.map((p) => `'${escapeSqlString(p)}'`).join(",");
@@ -932,31 +1109,57 @@ export class VectorDB {
 
   async deletePathsWithPrefix(prefix: string): Promise<void> {
     this.ensureDiskOk();
-    const table = await this.ensureTable();
     // Slash-terminate so a project root can't bleed into a sibling
     // (`/repo/app` must not delete `/repo/app2`), and use starts_with so `_`/`%`
     // in the path are literal, not LIKE wildcards. Destructive path — keep this
     // self-protective even if a caller forgets to normalize.
     const dirPrefix = prefix.endsWith("/") ? prefix : `${prefix}/`;
-    await this.withWriteGate(() => table.delete(pathStartsWith(dirPrefix)));
+    await this.withWriteGate(async () => {
+      const table = await this.ensureTableUnsafe();
+      await table.delete(pathStartsWith(dirPrefix));
+    });
   }
 
   async drop(): Promise<void> {
-    const db = await this.getDb();
-    try {
-      await db.dropTable(TABLE_NAME);
-    } catch (_err) {
-      // ignore if missing
-    }
+    await this.withExclusiveTableMutation(async (db) => {
+      try {
+        await db.dropTable(TABLE_NAME);
+      } catch (err) {
+        if (!isMissingTableError(err)) throw err;
+      }
+    });
   }
 
-  async close(): Promise<void> {
-    if (this.closed) return;
+  async close(
+    options: { releaseLease?: boolean; requireClosed?: boolean } = {},
+  ): Promise<void> {
+    if (this.closePromise) {
+      if (
+        (options.requireClosed === true && !this.requireClosedOnClose) ||
+        (options.releaseLease === false && this.releaseLeaseOnClose)
+      ) {
+        throw new Error(
+          "VectorDB close already started with weaker ownership semantics",
+        );
+      }
+      return this.closePromise;
+    }
+    this.releaseLeaseOnClose = options.releaseLease ?? true;
+    this.requireClosedOnClose = options.requireClosed ?? false;
     this.closed = true;
+    this.closePromise = this.finishClose();
+    return this.closePromise;
+  }
+
+  private async finishClose(): Promise<void> {
     if (this.maintenanceTimer) {
       clearInterval(this.maintenanceTimer);
       this.maintenanceTimer = null;
     }
+    if (this.exclusiveMutationPromise) await this.exclusiveMutationPromise;
+    await this.leaseTransitionTail;
+    await Promise.all([this.drainWrites(), this.drainCompactions()]);
+    this.leaseAbort.abort();
     // Drain in-flight maintenance before tearing down the connection — otherwise
     // optimize/createIndex will hit a null db and log "VectorDB connection is closed".
     if (this.maintenancePromise) {
@@ -968,14 +1171,43 @@ export class VectorDB {
     }
     this.unregisterCleanup?.();
     this.unregisterCleanup = undefined;
-    if (this.db) {
-      if (this.db.close) {
-        await Promise.race([
-          this.db.close(),
-          new Promise<void>((resolve) => setTimeout(resolve, 5_000)),
-        ]);
+    let closeError: unknown;
+    if (this.db?.close) {
+      try {
+        const closing = this.db.close();
+        if (this.requireClosedOnClose) await closing;
+        else {
+          await Promise.race([
+            closing,
+            new Promise<void>((resolve) => setTimeout(resolve, 5_000)),
+          ]);
+        }
+      } catch (error) {
+        closeError = error;
       }
     }
     this.db = null;
+    if (this.leasePromise) {
+      let lease: StoreLease | null = null;
+      try {
+        lease = await this.leasePromise;
+      } catch {
+        this.leasePromise = null;
+      }
+      if (lease) {
+        try {
+          if (this.releaseLeaseOnClose) await lease.release();
+          else lease.relinquish(this.leaseHolder);
+          this.leasePromise = null;
+        } catch (error) {
+          closeError = closeError
+            ? new Error(
+                `VectorDB close and store lease release failed: ${String(closeError)}; ${String(error)}`,
+              )
+            : error;
+        }
+      }
+    }
+    if (closeError) throw closeError;
   }
 }
