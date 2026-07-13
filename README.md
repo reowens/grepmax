@@ -343,6 +343,10 @@ gmax status                         # reports current / legacy / stale / unbuilt
 gmax repair --rebuild               # guarded whole-corpus rebuild through the daemon
 ```
 
+`legacy` means the existing index is compatible but its exact model fingerprint was inferred from
+the previous registry shape. Run `gmax index` in that project to persist exact identity; no reset or
+re-embedding is required when the cached files are unchanged.
+
 A model change cannot be applied by a per-project `gmax index --reset`, even when vector widths
 match: one query embedding cannot safely search rows from another embedding space. Stale-generation
 search and sync fail before mutation, preserving the existing index. Run `gmax repair --rebuild` to

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { resolveEmbeddingGeneration } from "../src/lib/index/embedding-generation";
 import {
   assertEmbeddingSearchCompatible,
+  formatLegacyEmbeddingNotice,
   projectEmbeddingStatus,
 } from "../src/lib/index/embedding-status";
 import type { ProjectEntry } from "../src/lib/utils/project-registry";
@@ -55,6 +56,25 @@ describe("projectEmbeddingStatus", () => {
     ).toThrow(/repair --rebuild/i);
     expect(() => assertEmbeddingSearchCompatible([staleWidth], config)).toThrow(
       /repair --rebuild/i,
+    );
+  });
+});
+
+describe("formatLegacyEmbeddingNotice", () => {
+  it("returns no notice when every project has exact identity", () => {
+    expect(formatLegacyEmbeddingNotice(0)).toBeNull();
+  });
+
+  it("explains that legacy identity is compatible but inferred", () => {
+    const notice = formatLegacyEmbeddingNotice(2);
+    expect(notice).toContain("2 projects");
+    expect(notice).toContain("compatible but inferred");
+    expect(notice).toContain("gmax index");
+  });
+
+  it("renders a parseable agent record", () => {
+    expect(formatLegacyEmbeddingNotice(1, { agent: true })).toBe(
+      "legacy_embedding\tcount=1\tstate=compatible_inferred\tfix=gmax index",
     );
   });
 });

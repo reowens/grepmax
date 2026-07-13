@@ -13,7 +13,11 @@ import {
   PATHS,
   schemaDimAgentRow,
 } from "../config";
-import { projectEmbeddingStatus } from "../lib/index/embedding-status";
+import {
+  countLegacyEmbeddingProjects,
+  formatLegacyEmbeddingNotice,
+  projectEmbeddingStatus,
+} from "../lib/index/embedding-status";
 import { readGlobalConfig } from "../lib/index/index-config";
 import {
   gpuEmbedModelStatus,
@@ -294,6 +298,10 @@ export const doctor = new Command("doctor")
           p.status === "indexed" &&
           projectEmbeddingStatus(p, globalConfig).state === "stale",
       );
+      const legacyEmbeddingCount = countLegacyEmbeddingProjects(
+        projects,
+        globalConfig,
+      );
 
       if (opts.agent) {
         const fields = [
@@ -311,6 +319,7 @@ export const doctor = new Command("doctor")
           `orphaned=${orphanedProjects.length}`,
           `stale_chunker=${staleChunkerProjects.length}`,
           `stale_embedding=${staleEmbeddingProjects.length}`,
+          `legacy_embedding=${legacyEmbeddingCount}`,
           `schema_dim=${physicalDim ?? "none"}`,
           `schema_dim_ok=${schemaGap ? "false" : "true"}`,
         ];
@@ -351,6 +360,10 @@ export const doctor = new Command("doctor")
             ].join("\t"),
           );
         }
+        const legacyNotice = formatLegacyEmbeddingNotice(legacyEmbeddingCount, {
+          agent: true,
+        });
+        if (legacyNotice) console.log(legacyNotice);
       } else {
         console.log("\nIndex Health\n");
 
@@ -455,6 +468,9 @@ export const doctor = new Command("doctor")
             );
           });
         }
+
+        const legacyNotice = formatLegacyEmbeddingNotice(legacyEmbeddingCount);
+        if (legacyNotice) console.log(legacyNotice);
 
         // Projects
         if (orphanedProjects.length > 0) {

@@ -1,7 +1,11 @@
 import * as os from "node:os";
 import { Command } from "commander";
 import { PATHS } from "../config";
-import { projectEmbeddingStatus } from "../lib/index/embedding-status";
+import {
+  countLegacyEmbeddingProjects,
+  formatLegacyEmbeddingNotice,
+  projectEmbeddingStatus,
+} from "../lib/index/embedding-status";
 import { readGlobalConfig } from "../lib/index/index-config";
 import { gracefulExit } from "../lib/utils/exit";
 import { pathStartsWith } from "../lib/utils/filter-builder";
@@ -121,6 +125,11 @@ Examples:
           `${project.name}\t${formatChunks(count)}\t${formatAge(project.lastIndexed)}\t${st}\tembedding=${identity.state}${isCurrent ? "\tcurrent" : ""}`,
         );
       }
+      const legacyNotice = formatLegacyEmbeddingNotice(
+        countLegacyEmbeddingProjects(projects, globalConfig),
+        { agent: true },
+      );
+      if (legacyNotice) console.log(legacyNotice);
       await gracefulExit();
       return;
     }
@@ -164,6 +173,11 @@ Examples:
         `  ${name}  ${chunks.padEnd(12)}  ${age.padEnd(10)}  ${statusStr}  embedding:${embedding}${marker}`,
       );
     }
+
+    const legacyNotice = formatLegacyEmbeddingNotice(
+      countLegacyEmbeddingProjects(projects, globalConfig),
+    );
+    if (legacyNotice) console.log(`\n${style.yellow(legacyNotice)}`);
 
     if (currentRoot) {
       console.log(`\n${style.dim("Current")}: ${shortenPath(currentRoot)}`);

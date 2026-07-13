@@ -29,6 +29,27 @@ export function embeddingFingerprintLabel(fingerprint: string): string {
   return fingerprint.slice(0, 12);
 }
 
+export function countLegacyEmbeddingProjects(
+  projects: readonly ProjectEntry[],
+  config: GlobalConfig,
+): number {
+  return projects.filter(
+    (project) => projectEmbeddingStatus(project, config).state === "legacy",
+  ).length;
+}
+
+export function formatLegacyEmbeddingNotice(
+  count: number,
+  options?: { agent?: boolean },
+): string | null {
+  if (count === 0) return null;
+  if (options?.agent) {
+    return `legacy_embedding\tcount=${count}\tstate=compatible_inferred\tfix=gmax index`;
+  }
+  const projects = count === 1 ? "project" : "projects";
+  return `INFO  Legacy embedding: ${count} ${projects} compatible but inferred; run 'gmax index' in each project to persist exact identity.`;
+}
+
 export function assertEmbeddingSearchCompatible(
   projects: readonly ProjectEntry[],
   config: GlobalConfig,

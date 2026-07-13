@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { MODEL_TIERS } from "../config";
 import {
   embeddingFingerprintLabel,
+  formatLegacyEmbeddingNotice,
   projectEmbeddingStatus,
 } from "../lib/index/embedding-status";
 import {
@@ -66,9 +67,15 @@ Examples:
         `  Configured:  ${identity.configured.tier} ${identity.configured.vectorDim}d [${embeddingFingerprintLabel(identity.configured.fingerprint)}]`,
       );
       if (identity.built) {
+        const builtLabel =
+          identity.state === "legacy" ? "Built (inferred):" : "Built:";
         console.log(
-          `  Built:       ${identity.built.tier} ${identity.built.vectorDim}d [${embeddingFingerprintLabel(identity.built.fingerprint)}] (${identity.state})`,
+          `  ${builtLabel.padEnd(18)} ${identity.built.tier} ${identity.built.vectorDim}d [${embeddingFingerprintLabel(identity.built.fingerprint)}] (${identity.state})`,
         );
+        if (identity.state === "legacy") {
+          const notice = formatLegacyEmbeddingNotice(1);
+          if (notice) console.log(`  ${notice}`);
+        }
       }
       console.log(`  Query log:   ${globalConfig.queryLog ? "on" : "off"}`);
       if (project?.lastIndexed) {

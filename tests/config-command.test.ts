@@ -73,6 +73,15 @@ describe("config command", () => {
       expect(output).toContain("2026-03-23");
       spy.mockRestore();
     });
+
+    it("labels a compatible unstamped identity as inferred", async () => {
+      const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+      await (config as Command).parseAsync([], { from: "user" });
+      const output = spy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Built (inferred)");
+      expect(output).toContain("gmax index");
+      spy.mockRestore();
+    });
   });
 
   describe("validation", () => {

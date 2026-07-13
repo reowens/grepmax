@@ -537,6 +537,17 @@ export class Daemon {
   }
 
   private watchProjectWithinOperation(root: string): Promise<void> {
+    const project = getProject(root);
+    if (
+      project?.status === "indexed" &&
+      this.activeGeneration &&
+      compareEmbeddingGeneration(project, this.activeGeneration).state ===
+        "stale"
+    ) {
+      throw new Error(
+        "project embedding generation is stale; run gmax repair --rebuild to rebuild the whole corpus",
+      );
+    }
     return this.watcherManager.watchProject(root);
   }
 
@@ -841,7 +852,7 @@ export class Daemon {
                 writeDone(conn, {
                   ok: false,
                   error:
-                    "project embedding generation is stale; rebuild the project",
+                    "project embedding generation is stale; run gmax repair --rebuild to rebuild the whole corpus",
                 });
                 return;
               }

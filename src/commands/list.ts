@@ -2,7 +2,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Command } from "commander";
-import { projectEmbeddingStatus } from "../lib/index/embedding-status";
+import {
+  countLegacyEmbeddingProjects,
+  formatLegacyEmbeddingNotice,
+  projectEmbeddingStatus,
+} from "../lib/index/embedding-status";
 import { readGlobalConfig } from "../lib/index/index-config";
 import { gracefulExit } from "../lib/utils/exit";
 import { getProject, listProjects } from "../lib/utils/project-registry";
@@ -103,6 +107,10 @@ async function showCurrentProject(): Promise<void> {
         `${style.dim("Built embedding")}: ${identity.built.tier} (${identity.built.vectorDim}d, ${identity.state})`,
       );
     }
+    if (identity.state === "legacy") {
+      const notice = formatLegacyEmbeddingNotice(1);
+      if (notice) console.log(style.yellow(notice));
+    }
     console.log(`${style.dim("Mode")}: ${globalConfig.embedMode}`);
     if (project.lastIndexed)
       console.log(
@@ -171,6 +179,11 @@ async function showAllProjects(): Promise<void> {
   console.log(
     `\n${style.dim("Global config")}: ${globalConfig.modelTier} (${globalConfig.vectorDim}d), ${globalConfig.embedMode}`,
   );
+
+  const legacyNotice = formatLegacyEmbeddingNotice(
+    countLegacyEmbeddingProjects(projects, globalConfig),
+  );
+  if (legacyNotice) console.log(style.yellow(`\n${legacyNotice}`));
 
   const stale = projects.filter(
     (project) =>
