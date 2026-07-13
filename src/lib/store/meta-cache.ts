@@ -7,6 +7,8 @@ export type MetaEntry = {
   hash: string;
   mtimeMs: number;
   size: number;
+  hashVersion?: number;
+  hasVectors?: boolean;
 };
 
 export class MetaCache {

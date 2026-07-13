@@ -3,13 +3,17 @@ import { CONFIG } from "../../config";
 import { MetaCache, type MetaEntry } from "../store/meta-cache";
 import type { VectorRecord } from "../store/types";
 import { VectorDB } from "../store/vector-db";
-// isIndexableFile no longer used — extension check inlined for performance
+import { isFileCached } from "../utils/cache-check";
 import { acquireWriterLockWithRetry, type LockHandle } from "../utils/lock";
 import { debug, debugEvery, log, timer } from "../utils/logger";
 import { getProject } from "../utils/project-registry";
 import { ensureProjectPaths } from "../utils/project-root";
 import { getWorkerPool, type WorkerPool } from "../workers/pool";
 import type { ProcessFileResult } from "../workers/worker";
+import {
+  CURRENT_META_HASH_VERSION,
+  reconcileMetaEntry,
+} from "./cache-coherence";
 import {
   compareEmbeddingGeneration,
   type EmbeddingGenerationConfig,
@@ -183,46 +187,41 @@ export async function initialSync(
 
     // At this point metaCache is always initialized (injected, created, or noop)
     const mc = metaCache!;
+    let vectorPaths = new Set<string>();
+    const reprocessPaths = new Set<string>();
+    const mustRewritePaths = new Set<string>();
 
     if (!dryRun) {
       // Scope checks to this project's paths only
       const projectKeys = await mc.getKeysWithPrefix(rootPrefix);
       log("index", `Cached files: ${projectKeys.size}`);
 
-      // Coherence check: if LMDB has substantially more entries than LanceDB
-      // has distinct files, the vector store is out of sync (e.g. batch
-      // timeouts wrote MetaCache but not vectors, compaction failure, etc.).
-      // Clear the stale cache entries so those files get re-embedded.
-      const vectorFileCount =
-        await vectorDb.countDistinctFilesForPath(rootPrefix);
-      if (projectKeys.size > 0) {
-        const pct = Math.round((vectorFileCount / projectKeys.size) * 100);
-        log(
-          "index",
-          `Coherence: ${vectorFileCount} vectors / ${projectKeys.size} cached (${pct}%)`,
+      vectorPaths = await vectorDb.getDistinctPathsForPrefix(rootPrefix);
+      let stamped = 0;
+      for (const key of projectKeys) {
+        const reconciliation = reconcileMetaEntry(
+          key,
+          mc.get(key),
+          vectorPaths.has(key),
         );
+        if (reconciliation.action === "stamp") {
+          mc.put(key, reconciliation.entry);
+          stamped++;
+        } else if (reconciliation.action === "reprocess") {
+          reprocessPaths.add(key);
+          if (reconciliation.mustRewriteVectors) mustRewritePaths.add(key);
+        }
       }
-      if (projectKeys.size > 0 && vectorFileCount === 0) {
+      for (const vectorPath of vectorPaths) {
+        if (projectKeys.has(vectorPath)) continue;
+        reprocessPaths.add(vectorPath);
+        mustRewritePaths.add(vectorPath);
+      }
+      if (projectKeys.size > 0 || vectorPaths.size > 0) {
         log(
           "index",
-          `Stale cache detected: ${projectKeys.size} cached files but no vectors — clearing cache`,
+          `Coherence: ${vectorPaths.size} vector files / ${projectKeys.size} cached; ${stamped} metadata stamps, ${reprocessPaths.size} paths to reconcile`,
         );
-        for (const key of projectKeys) {
-          mc.delete(key);
-        }
-        projectKeys.clear();
-      } else if (
-        projectKeys.size > 0 &&
-        vectorFileCount < projectKeys.size * 0.8
-      ) {
-        log(
-          "index",
-          `Partial cache detected: ${vectorFileCount} files in vectors vs ${projectKeys.size} in cache — clearing cache to re-embed missing files`,
-        );
-        for (const key of projectKeys) {
-          mc.delete(key);
-        }
-        projectKeys.clear();
       }
 
       if (reset) {
@@ -483,13 +482,10 @@ export async function initialSync(
           const stats = classified.stat;
 
           // Use absolute path as the key for MetaCache
-          const cached = forceReprocess ? undefined : mc.get(absPath);
+          const cached = mc.get(absPath);
+          const forcePath = forceReprocess || reprocessPaths.has(absPath);
 
-          if (
-            cached &&
-            cached.mtimeMs === stats.mtimeMs &&
-            cached.size === stats.size
-          ) {
+          if (!forcePath && isFileCached(cached, stats)) {
             cacheHits++;
             debug("index", `file ${relPath}: cached`);
             processed += 1;
@@ -535,6 +531,8 @@ export async function initialSync(
             hash: result.hash,
             mtimeMs: result.mtimeMs,
             size: result.size,
+            hashVersion: CURRENT_META_HASH_VERSION,
+            hasVectors: result.vectors.length > 0,
           };
 
           if (result.shouldDelete) {
@@ -551,7 +549,12 @@ export async function initialSync(
             return;
           }
 
-          if (cached && cached.hash === result.hash) {
+          if (
+            !forceReprocess &&
+            !mustRewritePaths.has(absPath) &&
+            cached?.hash === result.hash &&
+            vectorPaths.has(absPath) === result.vectors.length > 0
+          ) {
             debug("index", `file ${relPath}: hash unchanged`);
             if (!dryRun) {
               mc.put(absPath, metaEntry);
@@ -635,17 +638,9 @@ export async function initialSync(
     }
     throwIfSyncAborted();
 
-    // Stale cleanup: only remove paths scoped to this project's root.
-    // If MetaCache was cleared (coherence check), fall back to LanceDB paths
-    // so we can still detect orphaned vectors from absorbed/removed sub-projects.
-    let staleSource = cachedPaths;
-    if (staleSource.size === 0 && !dryRun && !shouldSkipCleanup) {
-      log(
-        "index",
-        "MetaCache empty — querying LanceDB for stale path detection",
-      );
-      staleSource = await vectorDb.getDistinctPathsForPrefix(rootPrefix);
-    }
+    // Stale cleanup uses both stores so vector-only orphans cannot survive
+    // merely because another path still has metadata.
+    const staleSource = new Set([...cachedPaths, ...vectorPaths]);
     throwIfSyncAborted();
     const staleCandidates = computeStaleFiles(staleSource, seenPaths).filter(
       (candidate) => !isPathProtectedByWalkState(candidate, walkState),

@@ -490,27 +490,45 @@ export const doctor = new Command("doctor")
         if (projects.length > 0) {
           console.log("\nCache Coherence\n");
           try {
+            const { reconcileMetaEntry } = await import(
+              "../lib/index/cache-coherence"
+            );
             const { MetaCache } = await import("../lib/store/meta-cache");
             const mc = new MetaCache(PATHS.lmdbPath);
 
-            for (const project of projects.filter(
-              (p) => p.status === "indexed",
-            )) {
-              const prefix = project.root.endsWith("/")
-                ? project.root
-                : `${project.root}/`;
-              const cachedCount = (await mc.getKeysWithPrefix(prefix)).size;
-              const vectorCount = await db.countDistinctFilesForPath(prefix);
-              if (cachedCount > 0) {
-                const pct = Math.round((vectorCount / cachedCount) * 100);
-                const status = pct >= 80 ? "ok" : "WARN";
-                console.log(
-                  `${status}  ${project.name || path.basename(project.root)}: ${vectorCount} indexed / ${cachedCount} cached (${pct}%)`,
-                );
+            try {
+              for (const project of projects.filter(
+                (p) => p.status === "indexed",
+              )) {
+                const prefix = project.root.endsWith("/")
+                  ? project.root
+                  : `${project.root}/`;
+                const cachedPaths = await mc.getKeysWithPrefix(prefix);
+                const vectorPaths = await db.getDistinctPathsForPrefix(prefix);
+                let pending = 0;
+                let legacy = 0;
+                for (const cachedPath of cachedPaths) {
+                  const reconciliation = reconcileMetaEntry(
+                    cachedPath,
+                    mc.get(cachedPath),
+                    vectorPaths.has(cachedPath),
+                  );
+                  if (reconciliation.action === "reprocess") pending++;
+                  else if (reconciliation.action === "stamp") legacy++;
+                }
+                for (const vectorPath of vectorPaths) {
+                  if (!cachedPaths.has(vectorPath)) pending++;
+                }
+                if (cachedPaths.size > 0 || vectorPaths.size > 0) {
+                  const status = pending === 0 ? "ok" : "WARN";
+                  console.log(
+                    `${status}  ${project.name || path.basename(project.root)}: ${vectorPaths.size} vector-backed / ${cachedPaths.size} cached; ${pending} pending reconciliation, ${legacy} legacy metadata`,
+                  );
+                }
               }
+            } finally {
+              await mc.close();
             }
-
-            await mc.close();
           } catch {}
         }
       }

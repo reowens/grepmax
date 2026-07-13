@@ -8,6 +8,7 @@ vi.mock("@parcel/watcher", () => ({
 }));
 
 import { startWatcher } from "../src/lib/index/watcher";
+import { getWorkerPool } from "../src/lib/workers/pool";
 
 describe("standalone watcher health", () => {
   let root: string;
@@ -28,6 +29,12 @@ describe("standalone watcher health", () => {
     const file = path.join(root, "source.ts");
     fs.writeFileSync(file, "export const value = 1;\n");
     const stat = fs.statSync(file);
+    vi.mocked(getWorkerPool().processFile).mockResolvedValue({
+      hash: "updated",
+      mtimeMs: stat.mtimeMs,
+      size: stat.size,
+      vectors: [],
+    });
     const getKeysWithPrefix = vi.fn(async () => new Set([file]));
     const onHealthChange = vi.fn();
     const handle = await startWatcher({
@@ -47,6 +54,7 @@ describe("standalone watcher health", () => {
       } as any,
       vectorDb: {
         diskPressure: "ok",
+        getDistinctPathsForPrefix: vi.fn(async () => new Set([file])),
         insertBatch: vi.fn(async () => {}),
         deletePaths: vi.fn(async () => {}),
         deletePathsExcludingIds: vi.fn(async () => {}),
@@ -80,6 +88,7 @@ describe("standalone watcher health", () => {
       } as any,
       vectorDb: {
         diskPressure: "ok",
+        getDistinctPathsForPrefix: vi.fn(async () => new Set<string>()),
         insertBatch: vi.fn(async () => {}),
         deletePaths: vi.fn(async () => {}),
         deletePathsExcludingIds: vi.fn(async () => {}),

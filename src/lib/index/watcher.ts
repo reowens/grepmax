@@ -3,6 +3,7 @@ import * as watcher from "@parcel/watcher";
 import type { MetaCache } from "../store/meta-cache";
 import type { VectorDB } from "../store/vector-db";
 import { ProjectBatchProcessor } from "./batch-processor";
+import { reconcileMetaEntry } from "./cache-coherence";
 import { ProjectFilePolicy } from "./file-policy";
 import { createWalkState, isPathProtectedByWalkState, walk } from "./walker";
 
@@ -94,6 +95,9 @@ export async function startWatcher(
           ? projectRoot
           : `${projectRoot}/`;
         const cached = await opts.metaCache.getKeysWithPrefix(rootPrefix);
+        const vectorPaths =
+          await opts.vectorDb.getDistinctPathsForPrefix(rootPrefix);
+        const knownPaths = new Set([...cached, ...vectorPaths]);
         const seen = new Set<string>();
         const state = createWalkState();
         for await (const relative of walk(projectRoot, {
@@ -103,15 +107,27 @@ export async function startWatcher(
           if (closing) return;
           const absolute = path.join(projectRoot, relative);
           seen.add(absolute);
-          processor.handleFileEvent("change", absolute);
+          const reconciliation = reconcileMetaEntry(
+            absolute,
+            opts.metaCache.get(absolute),
+            vectorPaths.has(absolute),
+          );
+          if (reconciliation.action === "stamp") {
+            opts.metaCache.put(absolute, reconciliation.entry);
+          }
+          processor.handleFileEvent("change", absolute, {
+            forceReprocess: reconciliation.action === "reprocess",
+          });
         }
-        for (const cachedPath of cached) {
+        for (const cachedPath of knownPaths) {
           if (closing) return;
           if (
             !seen.has(cachedPath) &&
             !isPathProtectedByWalkState(cachedPath, state)
           ) {
-            processor.handleFileEvent("unlink", cachedPath);
+            processor.handleFileEvent("unlink", cachedPath, {
+              forceDelete: true,
+            });
           }
         }
         if (!state.rootComplete || state.errors.length > 0) {

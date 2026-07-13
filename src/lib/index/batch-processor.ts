@@ -11,6 +11,10 @@ import {
 } from "../utils/file-utils";
 import { log } from "../utils/logger";
 import { getWorkerPool, type WorkerPool } from "../workers/pool";
+import {
+  CURRENT_META_HASH_VERSION,
+  isMetaEntryCacheCurrent,
+} from "./cache-coherence";
 import { ProjectFilePolicy } from "./file-policy";
 import { computePathRetry } from "./watcher-batch";
 
@@ -51,6 +55,8 @@ export class ProjectBatchProcessor {
   private readonly retryCount = new Map<string, number>();
   private readonly retryAt = new Map<string, number>();
   private readonly terminalFailures = new Set<string>();
+  private readonly forcedReprocess = new Map<string, number>();
+  private forceGeneration = 0;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private debounceDueMs = 0;
   private activeBatch: Promise<void> | null = null;
@@ -85,7 +91,11 @@ export class ProjectBatchProcessor {
     this.batchTimeoutMs = Math.max(Math.ceil(taskTimeoutMs * 1.5), 120_000);
   }
 
-  handleFileEvent(event: "change" | "unlink", absPath: string): void {
+  handleFileEvent(
+    event: "change" | "unlink",
+    absPath: string,
+    options?: { forceReprocess?: boolean; forceDelete?: boolean },
+  ): void {
     if (this.closed) return;
     const normalize = (
       this.filePolicy as ProjectFilePolicy & {
@@ -104,8 +114,15 @@ export class ProjectBatchProcessor {
       this.onPolicyChange?.();
       return;
     }
-    if (!isIndexableFile(normalized, 1) && !this.metaCache.get(normalized))
+    if (
+      !isIndexableFile(normalized, 1) &&
+      !this.metaCache.get(normalized) &&
+      !(event === "unlink" && options?.forceDelete)
+    )
       return;
+    if (options?.forceReprocess) {
+      this.forcedReprocess.set(normalized, ++this.forceGeneration);
+    }
     this.retryAt.delete(normalized);
     this.pending.set(normalized, event);
     this.onActivity?.();
@@ -202,11 +219,16 @@ export class ProjectBatchProcessor {
     }
 
     const batch = new Map<string, "change" | "unlink">();
+    const batchForceGenerations = new Map<string, number>();
     const now = Date.now();
     let taken = 0;
     for (const [absPath, event] of this.pending) {
       if ((this.retryAt.get(absPath) ?? 0) > now) continue;
       batch.set(absPath, event);
+      const forceGeneration = this.forcedReprocess.get(absPath);
+      if (forceGeneration !== undefined) {
+        batchForceGenerations.set(absPath, forceGeneration);
+      }
       taken++;
       if (taken >= MAX_BATCH_SIZE) break;
     }
@@ -323,14 +345,19 @@ export class ProjectBatchProcessor {
           const stats = classification.stat;
 
           const cached = this.metaCache.get(absPath);
-          if (isFileCached(cached, stats)) {
+          const forceReprocess = batchForceGenerations.has(absPath);
+          if (
+            !forceReprocess &&
+            isMetaEntryCacheCurrent(cached, absPath) &&
+            isFileCached(cached, stats)
+          ) {
             completed.add(absPath);
             continue;
           }
 
           // Fast path: if only mtime changed but size matches and we have a hash,
           // verify in-process instead of dispatching to a worker (~220ms saved).
-          if (cached?.hash && cached.size === stats.size) {
+          if (!forceReprocess && cached?.hash && cached.size === stats.size) {
             const snapshot = await readFileSnapshot(absPath, {
               projectRoot: this.projectRoot,
             });
@@ -386,9 +413,16 @@ export class ProjectBatchProcessor {
             hash: result.hash,
             mtimeMs: result.mtimeMs,
             size: result.size,
+            hashVersion: CURRENT_META_HASH_VERSION,
+            hasVectors: result.vectors.length > 0,
           };
 
-          if (cached && cached.hash === result.hash) {
+          if (
+            !forceReprocess &&
+            isMetaEntryCacheCurrent(cached, absPath) &&
+            cached.hash === result.hash &&
+            cached.hasVectors === result.vectors.length > 0
+          ) {
             metaUpdates.set(absPath, metaEntry);
             completed.add(absPath);
             continue;
@@ -497,6 +531,13 @@ export class ProjectBatchProcessor {
         `Batch complete: ${batch.size} files, ${reindexed} reindexed (${(duration / 1000).toFixed(1)}s)${remaining > 0 ? ` — ${remaining} remaining` : ""}`,
       );
       for (const absPath of completed) {
+        const processedForce = batchForceGenerations.get(absPath);
+        if (
+          processedForce !== undefined &&
+          this.forcedReprocess.get(absPath) === processedForce
+        ) {
+          this.forcedReprocess.delete(absPath);
+        }
         this.retryCount.delete(absPath);
         this.retryAt.delete(absPath);
         this.terminalFailures.delete(absPath);

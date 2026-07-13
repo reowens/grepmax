@@ -3,6 +3,10 @@ import type { MetaEntry } from "../store/meta-cache";
 import type { VectorRecord } from "../store/types";
 import { isFileCached } from "../utils/cache-check";
 import { isIndexableFile } from "../utils/file-utils";
+import {
+  CURRENT_META_HASH_VERSION,
+  isMetaEntryCacheCurrent,
+} from "./cache-coherence";
 
 export interface MetaCacheLike {
   get(filePath: string): MetaEntry | undefined;
@@ -76,7 +80,10 @@ export async function processBatchCore(
       }
 
       const cached = metaCache.get(absPath);
-      if (isFileCached(cached, stats)) {
+      if (
+        isMetaEntryCacheCurrent(cached, absPath) &&
+        isFileCached(cached, stats)
+      ) {
         continue;
       }
 
@@ -92,9 +99,15 @@ export async function processBatchCore(
         hash: result.hash,
         mtimeMs: result.mtimeMs,
         size: result.size,
+        hashVersion: CURRENT_META_HASH_VERSION,
+        hasVectors: result.vectors.length > 0,
       };
 
-      if (cached && cached.hash === result.hash) {
+      if (
+        isMetaEntryCacheCurrent(cached, absPath) &&
+        cached.hash === result.hash &&
+        cached.hasVectors === result.vectors.length > 0
+      ) {
         metaUpdates.set(absPath, metaEntry);
         continue;
       }

@@ -10,8 +10,10 @@ vi.mock("../src/lib/utils/watcher-store", () => ({
 
 import { WatcherManager } from "../src/lib/daemon/watcher-manager";
 import { ProjectBatchProcessor } from "../src/lib/index/batch-processor";
+import { CURRENT_META_HASH_VERSION } from "../src/lib/index/cache-coherence";
 import { ProjectFilePolicy } from "../src/lib/index/file-policy";
 import { walk } from "../src/lib/index/walker";
+import { computeContentHash } from "../src/lib/utils/file-utils";
 import { getWorkerPool } from "../src/lib/workers/pool";
 
 describe("ingestion file-policy parity", () => {
@@ -81,7 +83,9 @@ describe("ingestion file-policy parity", () => {
     const manager = new WatcherManager({
       processors: new Map(),
       subscriptions: new Map(),
-      getVectorDb: () => null,
+      getVectorDb: () => ({
+        getDistinctPathsForPrefix: vi.fn(async () => new Set<string>()),
+      }),
       getMetaCache: () => metaCache,
       getShuttingDown: () => false,
       touchActivity: vi.fn(),
@@ -131,5 +135,48 @@ describe("ingestion file-policy parity", () => {
       expect.objectContaining({ absolutePath: expected }),
       expect.any(AbortSignal),
     );
+  });
+
+  it("forces catchup processing when expected vectors are missing", async () => {
+    const policy = new ProjectFilePolicy(root);
+    const expected = path.join(root, "src", "main.ts");
+    const stat = fs.statSync(expected);
+    const handleFileEvent = vi.fn();
+    const metaCache = {
+      get: vi.fn(() => ({
+        hash: computeContentHash(fs.readFileSync(expected), expected),
+        mtimeMs: stat.mtimeMs,
+        size: stat.size,
+        hashVersion: CURRENT_META_HASH_VERSION,
+        hasVectors: true,
+      })),
+      getKeysWithPrefix: vi.fn(async () => new Set([expected])),
+      put: vi.fn(),
+    };
+    const manager = new WatcherManager({
+      processors: new Map(),
+      subscriptions: new Map(),
+      getVectorDb: () => ({
+        getDistinctPathsForPrefix: vi.fn(async () => new Set<string>()),
+      }),
+      getMetaCache: () => metaCache,
+      getShuttingDown: () => false,
+      touchActivity: vi.fn(),
+      evictSearcher: vi.fn(),
+    } as any);
+
+    await (manager as any).catchupScan(
+      root,
+      {
+        filePolicy: policy,
+        progress: { processing: false, pendingFiles: 0 },
+        handleFileEvent,
+      },
+      new AbortController().signal,
+    );
+
+    expect(handleFileEvent).toHaveBeenCalledWith("change", expected, {
+      forceReprocess: true,
+    });
   });
 });

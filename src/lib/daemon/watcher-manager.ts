@@ -2,6 +2,7 @@ import * as path from "node:path";
 import type { AsyncSubscription } from "@parcel/watcher";
 import * as watcher from "@parcel/watcher";
 import { ProjectBatchProcessor } from "../index/batch-processor";
+import { reconcileMetaEntry } from "../index/cache-coherence";
 import { ProjectFilePolicy } from "../index/file-policy";
 import {
   createWalkState,
@@ -510,9 +511,12 @@ export class WatcherManager {
     const { isFileCached } = await import("../utils/cache-check");
 
     const metaCache = this.deps.getMetaCache()!;
+    const vectorDb = this.deps.getVectorDb()!;
     processor.filePolicy.invalidateIgnoreCache();
     const rootPrefix = root.endsWith("/") ? root : `${root}/`;
     const cachedPaths = await metaCache.getKeysWithPrefix(rootPrefix);
+    const vectorPaths = await vectorDb.getDistinctPathsForPrefix(rootPrefix);
+    const knownPaths = new Set([...cachedPaths, ...vectorPaths]);
     if (signal.aborted) return false;
     const seenPaths = new Set<string>();
     const walkState = createWalkState();
@@ -540,7 +544,29 @@ export class WatcherManager {
         if (classification.status !== "indexable") continue;
         const stats = classification.stat;
         seenPaths.add(absPath);
-        const cached = metaCache.get(absPath);
+        let cached = metaCache.get(absPath);
+        const reconciliation = reconcileMetaEntry(
+          absPath,
+          cached,
+          vectorPaths.has(absPath),
+        );
+        if (reconciliation.action === "stamp") {
+          cached = reconciliation.entry;
+          metaCache.put(absPath, cached);
+        } else if (reconciliation.action === "reprocess") {
+          processor.handleFileEvent("change", absPath, {
+            forceReprocess: true,
+          });
+          queued++;
+          if (queued % 500 === 0) {
+            dbg(
+              "catchup",
+              `${path.basename(root)}: throttle pause at ${queued} queued`,
+            );
+            await abortableDelay(5_000, signal);
+          }
+          continue;
+        }
         if (!isFileCached(cached, stats)) {
           // Fast path: if only mtime changed but size is identical and we have a hash,
           // just verify the hash in-process instead of sending to a worker.
@@ -600,13 +626,13 @@ export class WatcherManager {
 
     // Purge files deleted while daemon was offline
     let purged = 0;
-    for (const cachedPath of cachedPaths) {
+    for (const cachedPath of knownPaths) {
       if (signal.aborted) return false;
       if (
         !seenPaths.has(cachedPath) &&
         !isPathProtectedByWalkState(cachedPath, walkState)
       ) {
-        processor.handleFileEvent("unlink", cachedPath);
+        processor.handleFileEvent("unlink", cachedPath, { forceDelete: true });
         purged++;
       }
     }

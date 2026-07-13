@@ -11,7 +11,6 @@ import {
   isIndexableFile,
   readContainedTextFileSync,
   readFileSnapshot,
-  stripMarkdownFrontmatter,
 } from "../src/lib/utils/file-utils";
 
 afterEach(() => vi.restoreAllMocks());
@@ -157,47 +156,12 @@ describe("computeBufferHash", () => {
   });
 });
 
-describe("stripMarkdownFrontmatter", () => {
-  const body = "# Title\n\nBody text.\n";
-
-  it("strips a leading YAML frontmatter block", () => {
-    const withFm = `---\nstatus: active\ntags: [a, b]\n---\n${body}`;
-    expect(stripMarkdownFrontmatter(Buffer.from(withFm)).toString()).toBe(body);
-  });
-
-  it("handles a closing `...` fence", () => {
-    const withFm = `---\nstatus: active\n...\n${body}`;
-    expect(stripMarkdownFrontmatter(Buffer.from(withFm)).toString()).toBe(body);
-  });
-
-  it("tolerates CRLF line endings and a leading BOM", () => {
-    const withFm = `\uFEFF---\r\nstatus: active\r\n---\r\n${body}`;
-    expect(stripMarkdownFrontmatter(Buffer.from(withFm)).toString()).toBe(body);
-  });
-
-  it("leaves a doc without frontmatter untouched", () => {
-    expect(stripMarkdownFrontmatter(Buffer.from(body)).toString()).toBe(body);
-  });
-
-  it("does NOT strip a leading thematic break with no closing fence", () => {
-    // A bare `startsWith('---')` heuristic would wrongly eat this; the whole-line
-    // + closing-fence requirement leaves it intact.
-    const doc = "---\nNot frontmatter, just a rule.\n";
-    expect(stripMarkdownFrontmatter(Buffer.from(doc)).toString()).toBe(doc);
-  });
-
-  it("does not treat `--- text` (not a whole line) as a fence", () => {
-    const doc = "--- not a fence\nstuff\n--- nope\n";
-    expect(stripMarkdownFrontmatter(Buffer.from(doc)).toString()).toBe(doc);
-  });
-});
-
 describe("computeContentHash", () => {
   const a = `---\nstatus: draft\n---\n# Doc\n\nContent.\n`;
   const b = `---\nstatus: published\ntags: [x]\n---\n# Doc\n\nContent.\n`;
 
-  it("is invariant to markdown frontmatter-only edits", () => {
-    expect(computeContentHash(Buffer.from(a), "notes.md")).toBe(
+  it("changes for markdown frontmatter-only edits", () => {
+    expect(computeContentHash(Buffer.from(a), "notes.md")).not.toBe(
       computeContentHash(Buffer.from(b), "notes.md"),
     );
   });
@@ -210,8 +174,14 @@ describe("computeContentHash", () => {
   });
 
   it("applies to .mdx as well", () => {
-    expect(computeContentHash(Buffer.from(a), "notes.mdx")).toBe(
+    expect(computeContentHash(Buffer.from(a), "notes.mdx")).not.toBe(
       computeContentHash(Buffer.from(b), "notes.mdx"),
+    );
+  });
+
+  it("hashes exact markdown bytes", () => {
+    expect(computeContentHash(Buffer.from(a), "notes.md")).toBe(
+      computeBufferHash(Buffer.from(a)),
     );
   });
 

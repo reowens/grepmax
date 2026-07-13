@@ -46,7 +46,13 @@ describe("processBatchCore", () => {
   it("skips files with matching mtime/size (cache hit)", async () => {
     const pool = mockPool();
     const cache = mockMetaCache({
-      "/src/a.ts": { hash: "abc", mtimeMs: 2000, size: 100 },
+      "/src/a.ts": {
+        hash: "abc",
+        mtimeMs: 2000,
+        size: 100,
+        hashVersion: 1,
+        hasVectors: true,
+      },
     });
 
     const batch = new Map<string, "change" | "unlink">([
@@ -77,7 +83,13 @@ describe("processBatchCore", () => {
   it("skips re-embedding when hash matches despite mtime change", async () => {
     const pool = mockPool({ hash: "samehash" });
     const cache = mockMetaCache({
-      "/src/a.ts": { hash: "samehash", mtimeMs: 1000, size: 50 },
+      "/src/a.ts": {
+        hash: "samehash",
+        mtimeMs: 1000,
+        size: 50,
+        hashVersion: 1,
+        hasVectors: true,
+      },
     });
 
     const batch = new Map<string, "change" | "unlink">([

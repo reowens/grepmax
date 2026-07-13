@@ -347,6 +347,11 @@ gmax repair --rebuild               # guarded whole-corpus rebuild through the d
 the previous registry shape. Run `gmax index` in that project to persist exact identity; no reset or
 re-embedding is required when the cached files are unchanged.
 
+Cache metadata migrations are lazy and do not require a reset. Catchup stamps compatible legacy
+entries in place, hashes Markdown and MDX by exact bytes, and reprocesses only legacy Markdown or
+paths whose declared vector state disagrees with LanceDB. Files that intentionally produce no
+vectors remain valid cached entries.
+
 A model change cannot be applied by a per-project `gmax index --reset`, even when vector widths
 match: one query embedding cannot safely search rows from another embedding space. Stale-generation
 search and sync fail before mutation, preserving the existing index. Run `gmax repair --rebuild` to

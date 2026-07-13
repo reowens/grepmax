@@ -137,6 +137,82 @@ describe("ProjectBatchProcessor", () => {
     expect(metaCache.delete).toHaveBeenCalledWith(sensitive);
   });
 
+  it("bypasses the hash fast path for a forced vector repair", async () => {
+    const stats = fs.statSync(filePath);
+    meta.set(filePath, {
+      hash: "hash",
+      mtimeMs: stats.mtimeMs,
+      size: stats.size,
+      hashVersion: 1,
+      hasVectors: true,
+    });
+    pool.processFile.mockResolvedValue({
+      ...makeWorkerResult(filePath),
+      vectors: [{ id: "replacement", path: filePath }],
+    });
+    const processor = makeProcessor();
+
+    processor.handleFileEvent("change", filePath, { forceReprocess: true });
+    (processor as any).startBatch();
+    await (processor as any).activeBatch;
+
+    expect(pool.processFile).toHaveBeenCalledOnce();
+    expect(vectorDb.insertBatch).toHaveBeenCalledOnce();
+    expect(vectorDb.deletePathsExcludingIds).toHaveBeenCalledWith(
+      [filePath],
+      ["replacement"],
+    );
+  });
+
+  it("preserves a newer forced repair event while an older one is in flight", async () => {
+    const stats = fs.statSync(filePath);
+    meta.set(filePath, {
+      hash: "hash",
+      mtimeMs: stats.mtimeMs,
+      size: stats.size,
+      hashVersion: 1,
+      hasVectors: true,
+    });
+    const result = {
+      ...makeWorkerResult(filePath),
+      vectors: [{ id: "replacement", path: filePath }],
+    };
+    let resolveFirst!: (value: typeof result) => void;
+    pool.processFile.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+    );
+    pool.processFile.mockResolvedValue(result);
+    const processor = makeProcessor();
+
+    processor.handleFileEvent("change", filePath, { forceReprocess: true });
+    (processor as any).startBatch();
+    await vi.waitFor(() => expect(pool.processFile).toHaveBeenCalledOnce());
+
+    processor.handleFileEvent("change", filePath, { forceReprocess: true });
+    resolveFirst(result);
+    await (processor as any).activeBatch;
+    expect(processor.progress.pendingFiles).toBe(1);
+
+    (processor as any).startBatch();
+    await (processor as any).activeBatch;
+    expect(pool.processFile).toHaveBeenCalledTimes(2);
+  });
+
+  it("deletes a vector-only orphan with a retired extension", async () => {
+    const orphan = path.join(tmpDir, "removed.retired-extension");
+    const processor = makeProcessor();
+
+    processor.handleFileEvent("unlink", orphan, { forceDelete: true });
+    (processor as any).startBatch();
+    await (processor as any).activeBatch;
+
+    expect(vectorDb.deletePaths).toHaveBeenCalledWith([orphan]);
+    expect(metaCache.delete).toHaveBeenCalledWith(orphan);
+  });
+
   it("rejects outside-root events before queueing", () => {
     const processor = makeProcessor();
     processor.handleFileEvent(
