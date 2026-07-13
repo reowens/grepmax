@@ -108,7 +108,7 @@ export class ProjectBatchProcessor {
         ? path.resolve(absPath)
         : null;
     if (!normalized) return;
-    if (this.filePolicy.isPolicyFile(normalized)) {
+    if (this.filePolicy.isPolicyFile(normalized) && !options?.forceDelete) {
       this.filePolicy.invalidateIgnoreCache();
       if (this.processing) this.policyChangedDuringBatch = true;
       this.onPolicyChange?.();

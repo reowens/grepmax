@@ -213,6 +213,20 @@ describe("ProjectBatchProcessor", () => {
     expect(metaCache.delete).toHaveBeenCalledWith(orphan);
   });
 
+  it("deletes a stale policy-file row without starting another reconciliation", async () => {
+    const policyFile = path.join(tmpDir, ".gitignore");
+    const onPolicyChange = vi.fn();
+    const processor = makeProcessor({ onPolicyChange });
+
+    processor.handleFileEvent("unlink", policyFile, { forceDelete: true });
+    (processor as any).startBatch();
+    await (processor as any).activeBatch;
+
+    expect(onPolicyChange).not.toHaveBeenCalled();
+    expect(vectorDb.deletePaths).toHaveBeenCalledWith([policyFile]);
+    expect(metaCache.delete).toHaveBeenCalledWith(policyFile);
+  });
+
   it("rejects outside-root events before queueing", () => {
     const processor = makeProcessor();
     processor.handleFileEvent(
