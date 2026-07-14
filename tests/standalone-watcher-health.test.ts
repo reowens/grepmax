@@ -54,6 +54,7 @@ describe("standalone watcher health", () => {
       } as any,
       vectorDb: {
         diskPressure: "ok",
+        checkDiskPressure: vi.fn(() => "ok"),
         getDistinctPathsForPrefix: vi.fn(async () => new Set([file])),
         insertBatch: vi.fn(async () => {}),
         deletePaths: vi.fn(async () => {}),
@@ -88,6 +89,7 @@ describe("standalone watcher health", () => {
       } as any,
       vectorDb: {
         diskPressure: "ok",
+        checkDiskPressure: vi.fn(() => "ok"),
         getDistinctPathsForPrefix: vi.fn(async () => new Set<string>()),
         insertBatch: vi.fn(async () => {}),
         deletePaths: vi.fn(async () => {}),

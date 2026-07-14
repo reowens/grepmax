@@ -113,6 +113,7 @@ describe("ingestion file-policy parity", () => {
     });
     const vectorDb = {
       diskPressure: "ok",
+      checkDiskPressure: vi.fn(() => "ok"),
       insertBatch: vi.fn(async () => {}),
       deletePaths: vi.fn(async () => {}),
       deletePathsExcludingIds: vi.fn(async () => {}),

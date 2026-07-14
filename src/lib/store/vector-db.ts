@@ -610,6 +610,16 @@ export class VectorDB {
     return table;
   }
 
+  private async openExistingTableUnsafe(): Promise<lancedb.Table | null> {
+    const db = await this.getDb();
+    try {
+      return await db.openTable(TABLE_NAME);
+    } catch (err) {
+      if (isMissingTableError(err)) return null;
+      throw err;
+    }
+  }
+
   async insertBatch(records: VectorRecord[]): Promise<void> {
     if (!records.length) return;
     this.ensureDiskOk();
@@ -1035,11 +1045,11 @@ export class VectorDB {
 
   async deletePaths(paths: string[]): Promise<void> {
     if (!paths.length) return;
-    this.ensureDiskOk();
     const unique = Array.from(new Set(paths));
     const batchSize = 500;
     await this.withWriteGate(async () => {
-      const table = await this.ensureTableUnsafe();
+      const table = await this.openExistingTableUnsafe();
+      if (!table) return;
       for (let i = 0; i < unique.length; i += batchSize) {
         const slice = unique.slice(i, i + batchSize);
         const values = slice.map((p) => `'${escapeSqlString(p)}'`).join(",");
@@ -1081,7 +1091,6 @@ export class VectorDB {
     excludeIds: string[],
   ): Promise<void> {
     if (!paths.length) return;
-    this.ensureDiskOk();
     const unique = Array.from(new Set(paths));
     const batchSize = 500;
     const idExclusion =
@@ -1089,7 +1098,8 @@ export class VectorDB {
         ? ` AND id NOT IN (${excludeIds.map((id) => `'${escapeSqlString(id)}'`).join(",")})`
         : "";
     await this.withWriteGate(async () => {
-      const table = await this.ensureTableUnsafe();
+      const table = await this.openExistingTableUnsafe();
+      if (!table) return;
       for (let i = 0; i < unique.length; i += batchSize) {
         const slice = unique.slice(i, i + batchSize);
         const values = slice.map((p) => `'${escapeSqlString(p)}'`).join(",");
@@ -1108,14 +1118,14 @@ export class VectorDB {
   }
 
   async deletePathsWithPrefix(prefix: string): Promise<void> {
-    this.ensureDiskOk();
     // Slash-terminate so a project root can't bleed into a sibling
     // (`/repo/app` must not delete `/repo/app2`), and use starts_with so `_`/`%`
     // in the path are literal, not LIKE wildcards. Destructive path — keep this
     // self-protective even if a caller forgets to normalize.
     const dirPrefix = prefix.endsWith("/") ? prefix : `${prefix}/`;
     await this.withWriteGate(async () => {
-      const table = await this.ensureTableUnsafe();
+      const table = await this.openExistingTableUnsafe();
+      if (!table) return;
       await table.delete(pathStartsWith(dirPrefix));
     });
   }

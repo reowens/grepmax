@@ -379,10 +379,12 @@ describe("VectorDB exclusive table mutation", () => {
     };
     const db = new VectorDB(storeDir, 384);
     (db as any).db = conn;
-    vi.spyOn(db as any, "ensureTableUnsafe").mockImplementation(async () => {
-      await conn.openTable();
-      return table as any;
-    });
+    vi.spyOn(db as any, "openExistingTableUnsafe").mockImplementation(
+      async () => {
+        await conn.openTable();
+        return table as any;
+      },
+    );
     const drop = db.drop();
     await vi.waitFor(() => expect(conn.dropTable).toHaveBeenCalledOnce());
 
@@ -395,6 +397,43 @@ describe("VectorDB exclusive table mutation", () => {
     await deletion;
     expect(conn.openTable).toHaveBeenCalledOnce();
     expect(table.delete).toHaveBeenCalledOnce();
+    await db.close();
+  });
+
+  it("deletes from an existing table under critical disk pressure", async () => {
+    const table = { delete: vi.fn(async () => {}) };
+    const conn = {
+      openTable: vi.fn(async () => table),
+      createTable: vi.fn(),
+      close: vi.fn(async () => {}),
+    };
+    const db = new VectorDB(storeDir, 384);
+    (db as any).db = conn;
+    db.diskPressure = "critical";
+
+    await expect(db.deletePathsWithPrefix("/project")).resolves.toBeUndefined();
+
+    expect(conn.openTable).toHaveBeenCalledWith("chunks");
+    expect(conn.createTable).not.toHaveBeenCalled();
+    expect(table.delete).toHaveBeenCalledOnce();
+    await db.close();
+  });
+
+  it("does not create a missing table while applying a logical delete", async () => {
+    const conn = {
+      openTable: vi.fn(async () => {
+        throw new Error("Table 'chunks' does not exist");
+      }),
+      createTable: vi.fn(),
+      close: vi.fn(async () => {}),
+    };
+    const db = new VectorDB(storeDir, 384);
+    (db as any).db = conn;
+    db.diskPressure = "critical";
+
+    await expect(db.deletePathsWithPrefix("/project")).resolves.toBeUndefined();
+
+    expect(conn.createTable).not.toHaveBeenCalled();
     await db.close();
   });
 

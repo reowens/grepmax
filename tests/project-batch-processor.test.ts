@@ -38,6 +38,7 @@ describe("ProjectBatchProcessor", () => {
     };
     vectorDb = {
       diskPressure: "ok",
+      checkDiskPressure: vi.fn(() => vectorDb.diskPressure),
       insertBatch: vi.fn(async () => {}),
       deletePaths: vi.fn(async () => {}),
       deletePathsExcludingIds: vi.fn(async () => {}),
@@ -419,6 +420,99 @@ describe("ProjectBatchProcessor", () => {
     expect(processor.progress.pendingFiles).toBe(1);
     expect((processor as any).retryCount.has(sensitive)).toBe(false);
     expect(metaCache.delete).not.toHaveBeenCalled();
+  });
+
+  it("deletes an unlinked file under critical disk pressure", async () => {
+    const stats = fs.statSync(filePath);
+    meta.set(filePath, {
+      hash: "old",
+      mtimeMs: stats.mtimeMs,
+      size: stats.size,
+    });
+    fs.unlinkSync(filePath);
+    vectorDb.diskPressure = "critical";
+    const processor = makeProcessor();
+
+    processor.handleFileEvent("unlink", filePath);
+    (processor as any).startBatch();
+    await (processor as any).activeBatch;
+
+    expect(pool.processFile).not.toHaveBeenCalled();
+    expect(vectorDb.deletePaths).toHaveBeenCalledWith([filePath]);
+    expect(metaCache.delete).toHaveBeenCalledWith(filePath);
+    expect(processor.progress.pendingFiles).toBe(0);
+  });
+
+  it("preserves metadata when a critical-pressure delete fails with ENOSPC", async () => {
+    const cached = { hash: "old", mtimeMs: 1, size: 1 };
+    meta.set(filePath, cached);
+    fs.unlinkSync(filePath);
+    vectorDb.diskPressure = "critical";
+    vectorDb.deletePaths.mockRejectedValueOnce(
+      Object.assign(new Error("No space left on device"), { code: "ENOSPC" }),
+    );
+    const processor = makeProcessor();
+
+    processor.handleFileEvent("unlink", filePath);
+    (processor as any).startBatch();
+    await (processor as any).activeBatch;
+
+    expect(meta.get(filePath)).toBe(cached);
+    expect(metaCache.delete).not.toHaveBeenCalled();
+    expect(processor.progress.pendingFiles).toBe(1);
+    expect((processor as any).retryCount.has(filePath)).toBe(false);
+  });
+
+  it("deletes removals and defers indexable changes under critical pressure", async () => {
+    const removed = path.join(tmpDir, "removed.ts");
+    meta.set(removed, { hash: "old", mtimeMs: 1, size: 1 });
+    vectorDb.diskPressure = "critical";
+    const processor = makeProcessor();
+
+    processor.handleFileEvent("unlink", removed);
+    processor.handleFileEvent("change", filePath);
+    (processor as any).startBatch();
+    await (processor as any).activeBatch;
+
+    expect(pool.processFile).not.toHaveBeenCalled();
+    expect(vectorDb.deletePaths).toHaveBeenCalledWith([removed]);
+    expect(metaCache.delete).toHaveBeenCalledWith(removed);
+    expect(processor.progress.pendingFiles).toBe(1);
+    expect((processor as any).retryCount.has(filePath)).toBe(false);
+  });
+
+  it("deletes a newly excluded file under critical disk pressure", async () => {
+    const sensitive = path.join(tmpDir, "secrets.ts");
+    fs.writeFileSync(sensitive, "export const token = 'secret';\n");
+    meta.set(sensitive, { hash: "old", mtimeMs: 1, size: 1 });
+    vectorDb.diskPressure = "critical";
+    const processor = makeProcessor();
+
+    processor.handleFileEvent("change", sensitive);
+    (processor as any).startBatch();
+    await (processor as any).activeBatch;
+
+    expect(pool.processFile).not.toHaveBeenCalled();
+    expect(vectorDb.deletePaths).toHaveBeenCalledWith([sensitive]);
+    expect(metaCache.delete).toHaveBeenCalledWith(sensitive);
+    expect(processor.progress.pendingFiles).toBe(0);
+  });
+
+  it("refreshes disk pressure before deciding whether to defer work", async () => {
+    vectorDb.diskPressure = "critical";
+    vectorDb.checkDiskPressure.mockImplementationOnce(() => {
+      vectorDb.diskPressure = "ok";
+      return "ok";
+    });
+    const processor = makeProcessor();
+
+    processor.handleFileEvent("change", filePath);
+    (processor as any).startBatch();
+    await (processor as any).activeBatch;
+
+    expect(vectorDb.checkDiskPressure).toHaveBeenCalledOnce();
+    expect(pool.processFile).toHaveBeenCalledOnce();
+    expect(processor.progress.pendingFiles).toBe(0);
   });
 
   it("does not spend retry budget while disk pressure defers work", async () => {

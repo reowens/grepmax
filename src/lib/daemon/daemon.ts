@@ -1708,8 +1708,11 @@ export class Daemon {
           }
 
           const stopHeartbeat = startHeartbeat(conn);
+          const wasWatching = this.processors.has(root);
+          let unwatched = false;
           try {
             await this.unwatchProjectWithinOperation(root);
+            unwatched = true;
 
             const rootPrefix = root.endsWith("/") ? root : `${root}/`;
             await this.vectorDb.deletePathsWithPrefix(rootPrefix);
@@ -1719,7 +1722,20 @@ export class Daemon {
 
             writeDone(conn, { ok: true });
           } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
+            let reportedError = err;
+            if (unwatched && wasWatching && !this.shuttingDown) {
+              try {
+                await this.watchProjectWithinOperation(root);
+              } catch (watchError) {
+                reportedError = new Error(
+                  `Project removal failed: ${String(err)}; watcher restoration failed: ${String(watchError)}`,
+                );
+              }
+            }
+            const msg =
+              reportedError instanceof Error
+                ? reportedError.message
+                : String(reportedError);
             console.error(
               `[daemon] removeProject failed for ${path.basename(root)}:`,
               msg,

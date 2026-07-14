@@ -205,17 +205,12 @@ export class ProjectBatchProcessor {
   private async processBatch(operationSignal: AbortSignal): Promise<void> {
     if (this.closed || this.processing || this.pending.size === 0) return;
 
-    // Circuit breaker: don't attempt writes when disk is critically low
-    if (this.vectorDb.diskPressure === "critical") {
-      log(this.wtag, "Disk critically low — deferring batch processing");
-      if (this.debounceTimer) clearTimeout(this.debounceTimer);
-      this.debounceDueMs = Date.now() + 60_000;
-      this.debounceTimer = setTimeout(() => {
-        this.debounceTimer = null;
-        this.debounceDueMs = 0;
-        this.startBatch();
-      }, 60_000);
-      return;
+    const diskPressure = this.vectorDb.checkDiskPressure();
+    if (diskPressure === "critical") {
+      log(
+        this.wtag,
+        "Disk critically low — applying deletions and deferring indexing",
+      );
     }
 
     const batch = new Map<string, "change" | "unlink">();
@@ -343,6 +338,10 @@ export class ProjectBatchProcessor {
             continue;
           }
           const stats = classification.stat;
+
+          if (diskPressure === "critical") {
+            continue;
+          }
 
           const cached = this.metaCache.get(absPath);
           const forceReprocess = batchForceGenerations.has(absPath);
@@ -484,6 +483,9 @@ export class ProjectBatchProcessor {
           requeuePath(absPath, event, retryFailures.has(absPath));
         }
       }
+      if (diskPressure === "critical" && this.pending.size > 0) {
+        backoffOverrideMs = 60_000;
+      }
 
       // Flush to VectorDB: insert first, then delete old (preserving new)
       const newIds = vectors.map((v) => v.id);
@@ -545,7 +547,7 @@ export class ProjectBatchProcessor {
       }
 
       // Trigger compaction if fragments are accumulating
-      if (reindexed > 0) {
+      if (reindexed > 0 && diskPressure !== "critical") {
         try {
           await this.vectorDb.compactIfNeeded();
         } catch (e) {
@@ -554,7 +556,11 @@ export class ProjectBatchProcessor {
       }
     } catch (err) {
       // Disk pressure: requeue without counting as retries (not the file's fault)
-      if (err instanceof DiskPressureError) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (
+        err instanceof DiskPressureError ||
+        (diskPressure === "critical" && code === "ENOSPC")
+      ) {
         for (const [absPath, event] of batch) {
           if (this.terminalFailures.has(absPath)) continue;
           if (!this.pending.has(absPath)) {

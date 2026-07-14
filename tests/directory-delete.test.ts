@@ -79,6 +79,7 @@ describe("recursive directory deletion", () => {
     const metaDeleted: string[] = [];
     const vectorDb = {
       diskPressure: "ok",
+      checkDiskPressure: vi.fn(() => "ok"),
       insertBatch: vi.fn(async () => {}),
       deletePaths: vi.fn(async (paths: string[]) => {
         deletedPaths.push(paths);
