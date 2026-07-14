@@ -11,6 +11,7 @@ vi.mock("../src/lib/utils/project-registry", () => ({
 }));
 
 import { WatcherManager } from "../src/lib/daemon/watcher-manager";
+import { registerWatcher } from "../src/lib/utils/watcher-store";
 
 describe("WatcherManager.unwatchProject", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -124,6 +125,51 @@ describe("WatcherManager.unwatchProject", () => {
 
     processor.onPathSuccess("/p/app/source.ts");
     expect((wm as any).isRootDegraded(root)).toBe(false);
+    await wm.unwatchProject(root);
+  });
+
+  it("returns to watching after a settled zero-reindex batch", async () => {
+    const root = "/p/app";
+    const dependencies = {
+      ...deps(),
+      getVectorDb: () => ({
+        diskPressure: "ok",
+        checkDiskPressure: () => "ok",
+        deletePaths: vi.fn(async () => {}),
+        compactIfNeeded: vi.fn(async () => {}),
+      }),
+      getMetaCache: () => ({ get: vi.fn() }),
+      getShuttingDown: () => false,
+      touchActivity: vi.fn(),
+    } as any;
+    const wm = new WatcherManager(dependencies);
+    vi.spyOn(wm as any, "subscribeWatcher").mockResolvedValue(undefined);
+    vi.spyOn(wm as any, "runCatchup").mockResolvedValue(true);
+    await wm.watchProject(root, { catchup: false });
+    const processor = dependencies.processors.get(root) as any;
+    const register = vi.mocked(registerWatcher);
+    register.mockClear();
+
+    processor.handleFileEvent("change", "/p/app/missing.ts");
+    expect(register).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: "syncing" }),
+    );
+
+    processor.startBatch();
+    await processor.activeBatch;
+
+    expect(register).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: "watching" }),
+    );
+
+    processor.onReindex(1, 5);
+    processor.onBatchSettled();
+    expect(register).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: "watching",
+        lastReindex: expect.any(Number),
+      }),
+    );
     await wm.unwatchProject(root);
   });
 

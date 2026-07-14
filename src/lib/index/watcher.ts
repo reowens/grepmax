@@ -164,6 +164,8 @@ export async function startWatcher(
     onPolicyChange: reconcile,
     onReindex: (files, durationMs) => {
       opts.onReindex?.(files, durationMs);
+    },
+    onBatchSettled: () => {
       reportHealthyIfSettled();
     },
     onTerminalFailure: (absPath) => {

@@ -25,6 +25,7 @@ export interface BatchProcessorOptions {
   workerPool?: WorkerPool;
   onReindex?: (files: number, durationMs: number) => void;
   onActivity?: () => void;
+  onBatchSettled?: () => void;
   filePolicy?: ProjectFilePolicy;
   onPolicyChange?: () => void;
   onTerminalFailure?: (absPath: string) => void;
@@ -43,6 +44,7 @@ export class ProjectBatchProcessor {
   private readonly workerPool: WorkerPool;
   private readonly onReindex?: (files: number, durationMs: number) => void;
   private readonly onActivity?: () => void;
+  private readonly onBatchSettled?: () => void;
   private readonly onPolicyChange?: () => void;
   private readonly onTerminalFailure?: (absPath: string) => void;
   private readonly onPathSuccess?: (absPath: string) => void;
@@ -73,6 +75,7 @@ export class ProjectBatchProcessor {
     this.workerPool = opts.workerPool ?? getWorkerPool();
     this.onReindex = opts.onReindex;
     this.onActivity = opts.onActivity;
+    this.onBatchSettled = opts.onBatchSettled;
     this.onPolicyChange = opts.onPolicyChange;
     this.onTerminalFailure = opts.onTerminalFailure;
     this.onPathSuccess = opts.onPathSuccess;
@@ -650,6 +653,7 @@ export class ProjectBatchProcessor {
           this.schedulePendingBatch();
         }
       }
+      if (!this.closed) this.onBatchSettled?.();
     }
   }
 }

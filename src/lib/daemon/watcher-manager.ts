@@ -120,6 +120,7 @@ export class WatcherManager {
     try {
       const filePolicy = new ProjectFilePolicy(root);
       let processor!: ProjectBatchProcessor;
+      let lastReindexAt: number | undefined;
       processor = new ProjectBatchProcessor({
         projectRoot: root,
         vectorDb,
@@ -135,6 +136,7 @@ export class WatcherManager {
           });
         },
         onReindex: async (files, ms) => {
+          lastReindexAt = Date.now();
           console.log(
             `[daemon:${path.basename(root)}] Reindexed ${files} file${files !== 1 ? "s" : ""} (${(ms / 1000).toFixed(1)}s)`,
           );
@@ -155,14 +157,19 @@ export class WatcherManager {
               chunkCount,
             });
           }
-          // Back to watching after batch completes
+        },
+        onBatchSettled: () => {
           registerWatcher({
             pid: process.pid,
             projectRoot: root,
             startTime: Date.now(),
-            status: this.isRootDegraded(root) ? "degraded" : "watching",
+            status: this.isRootDegraded(root)
+              ? "degraded"
+              : processor.progress.pendingFiles > 0
+                ? "syncing"
+                : "watching",
             lastHeartbeat: Date.now(),
-            lastReindex: Date.now(),
+            ...(lastReindexAt ? { lastReindex: lastReindexAt } : {}),
           });
         },
         onActivity: () => {
