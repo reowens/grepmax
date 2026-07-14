@@ -9,10 +9,10 @@ items below are the ones still live or explicitly gated.
 
 1. **Repository audit Phases 1-8, including Phase 4B, are complete and released.** `v0.26.0` shipped
    exact cache/vector coherence and `v0.26.2` shipped deletion-only critical-pressure behavior.
-2. **The `v0.26.2` stability cycle is the current priority.** Run the seven-day observation,
+2. **The `v0.26.3` stability cycle is the current priority.** Run the seven-day observation,
    representative-workload, disk-pressure regression, and store-growth gates before selecting
-   another feature project. The SC-001 zero-reindex watcher-status fix is implemented and verified;
-   patch deployment and live verification remain before the watcher-health lane starts.
+   another feature project. `v0.26.3` shipped the SC-001 zero-reindex watcher-status fix, and three
+   live ignored-document events returned the project to watching after settling with zero reindexed.
 3. **Agent UX Phase 7 `impact` rollup MVP is implemented.** CLI file-target rollups, opt-in agent/MCP rollup
    TSV, package/export grouping, top-K caps, and `--flat` compatibility are in the working tree.
 4. **Narrowed Phase 9 SQL-template skeleton MVP is implemented.** TS/JS skeleton summaries surface
@@ -28,8 +28,8 @@ items below are the ones still live or explicitly gated.
 
 **Actionable now:**
 
-1. Deploy and live-verify the focused SC-001 watcher-status fix, then complete the
-   [v0.26.2 stability cycle](stability-cycle-v0.26.2.md) and record its exit evidence.
+1. Complete the [v0.26.2 stability cycle](stability-cycle-v0.26.2.md) on `v0.26.3` and record its
+   representative-workload, integrity-observation, disk-pressure, and store-growth exit evidence.
 2. No active Agent UX feature build target remains after Phase 7 rollup and narrowed Phase 9 SQL
    skeleton summaries. Phase 12 remains opportunistic refactor work only.
 
@@ -128,7 +128,7 @@ aggregation over the data gmax already has.
 
 | Priority | Plan | Next Work |
 |---|---|---|
-| Active | [v0.26.2 Stability Cycle](stability-cycle-v0.26.2.md) | Deploy and verify SC-001, then run seven days of representative normal workload, integrity observation, disk-pressure regressions, and store-growth review. |
+| Active | [v0.26.2 Stability Cycle](stability-cycle-v0.26.2.md) | SC-001 is live-verified on v0.26.3. Run seven days of representative normal workload, integrity observation, disk-pressure regressions, and store-growth review. |
 | Done | [Repository Audit Fix Plan](plans/2026-07-09-repository-audit-fixes.md) | Phases 1-8 are complete. Phase 4B shipped exact-byte hashing, explicit vector/tombstone metadata, per-path coherence, and deletion-only critical-pressure behavior. |
 | Done | [Mcp Search Scope Leak](archived/mcp-search-scope-leak.md) | Fix A+B shipped and fresh MCP smoke passed from qsys subdirectories. Also fixed source-mode worker bootstrap from non-gmax cwd. |
 | Done | [Graphify Derived Improvements](plans/graphify-derived-improvements.md) | Phase 3A-3E complete in working tree. Disposition: keep `gmax surprises` / MCP `surprising_connections` experimental; revisit only with new corpus evidence. |
