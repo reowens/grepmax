@@ -72,6 +72,10 @@ export class VectorDB {
   private maintenanceRunner: (fn: () => Promise<void>) => Promise<void> = (
     fn,
   ) => fn();
+  /** Latched when a from-scratch FTS rebuild failed to stop an optimize
+   *  panic. Stops the (expensive) rebuild from re-running every maintenance
+   *  tick for a panic it cannot fix; cleared when an optimize succeeds. */
+  private ftsPanicRecoveryExhausted = false;
   private lastCorruptionLogMs = 0;
   diskPressure: DiskPressureLevel = "ok";
   private lastDiskCheckMs = 0;
@@ -815,6 +819,7 @@ export class VectorDB {
     try {
       const table = await this.ensureTableUnsafe();
       const cutoff = new Date(Date.now() - retentionMs);
+      let rebuiltFts = false;
 
       for (let attempt = 1; attempt <= retries; attempt++) {
         await this.drainWrites();
@@ -826,6 +831,7 @@ export class VectorDB {
             deleteUnverified: true,
           });
           done();
+          this.ftsPanicRecoveryExhausted = false;
 
           const { compaction, prune } = stats;
           if (
@@ -871,6 +877,41 @@ export class VectorDB {
             );
             await new Promise((r) => setTimeout(r, delay));
             continue;
+          }
+          // A Rust panic here is the lance-index inverted (FTS) merge bug
+          // (out-of-bounds in scalar/inverted/builder.rs): the incremental
+          // merge trips on inconsistent index state, and because optimize()
+          // is all-or-nothing it blocks compaction and pruning entirely.
+          // Rebuild the FTS index from scratch once and retry. Must use the
+          // Unsafe variant: the public createFTSIndex waits on
+          // compactingPromise, which we hold.
+          if (msg.includes("Panic")) {
+            if (
+              attempt < retries &&
+              !rebuiltFts &&
+              !this.ftsPanicRecoveryExhausted
+            ) {
+              rebuiltFts = true;
+              log(
+                "vectordb",
+                "Optimize panicked (likely corrupt FTS merge) — rebuilding FTS index from scratch and retrying",
+              );
+              try {
+                await this.createFTSIndexUnsafe(true);
+                continue;
+              } catch (rebuildErr) {
+                this.ftsPanicRecoveryExhausted = true;
+                log("vectordb", `FTS rebuild failed: ${rebuildErr}`);
+                return;
+              }
+            }
+            if (rebuiltFts) {
+              this.ftsPanicRecoveryExhausted = true;
+              log(
+                "vectordb",
+                "Optimize still panicking after FTS rebuild — disabling auto-rebuild until an optimize succeeds",
+              );
+            }
           }
           log("vectordb", `Optimize failed: ${msg}`);
           return;
