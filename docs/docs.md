@@ -167,7 +167,7 @@ aggregation over the data gmax already has.
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 6 recent or high-signal highlights out of 43 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 6 recent or high-signal highlights out of 44 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
