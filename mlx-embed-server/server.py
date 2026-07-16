@@ -13,6 +13,7 @@ GPU operations.
 import asyncio
 import logging
 import os
+import re
 import signal
 import socket
 import time
@@ -90,12 +91,22 @@ def is_port_in_use(port: int) -> bool:
         return s.connect_ex(("127.0.0.1", port)) == 0
 
 
+# JSON can carry lone UTF-16 surrogates (a client slicing mid-codepoint);
+# the HF fast tokenizer rejects them with a TypeError that fails the whole
+# batch. Replace with U+FFFD so one bad text can't take down a batch.
+_LONE_SURROGATE = re.compile("[\ud800-\udfff]")
+
+
 def embed_texts(texts: list[str]) -> mx.array:
     """Tokenize, forward pass, L2 normalize.
 
     mlx_embeddings model already does mean pooling internally —
     last_hidden_state is (batch, dim), not (batch, seq, dim).
     """
+    texts = [
+        _LONE_SURROGATE.sub("�", t) if _LONE_SURROGATE.search(t) else t
+        for t in texts
+    ]
     encoded = tokenizer(
         texts, padding=True, truncation=True, max_length=256, return_tensors="np"
     )

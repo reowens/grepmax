@@ -184,3 +184,37 @@ export function handle(x: unknown) {
     expect(refs).toContain("clear"); // this.cache.clear()
   });
 });
+
+describe("lone surrogate repair", () => {
+  it("emits well-formed chunk content when a char split lands mid-surrogate-pair", async () => {
+    const chunker = new TreeSitterChunker() as any;
+    chunker.initialized = true;
+    chunker.parser = null;
+
+    // 'a' offsets every astral char (2 UTF-16 units) to odd positions, so the
+    // even char-stride boundary in splitByChars must land inside a pair.
+    const content = `a${"𝑃".repeat(2000)}`;
+    const { chunks } = await chunker.chunk("paper.txt", content);
+
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const c of chunks) {
+      expect(
+        /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(
+          c.content,
+        ),
+      ).toBe(false);
+    }
+    // The repair actually fired (boundary chars became U+FFFD)
+    expect(
+      chunks.some((c: { content: string }) => c.content.includes("�")),
+    ).toBe(true);
+  });
+
+  it("repairLoneSurrogates leaves well-formed strings untouched", async () => {
+    const { repairLoneSurrogates } = await import("../src/lib/index/chunker");
+    const ok = "plain 𝑃 text 😀";
+    expect(repairLoneSurrogates(ok)).toBe(ok);
+    expect(repairLoneSurrogates("bad \uD835 tail")).toBe("bad � tail");
+    expect(repairLoneSurrogates("head \uDC00 bad")).toBe("head � bad");
+  });
+});

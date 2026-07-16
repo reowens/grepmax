@@ -86,6 +86,21 @@ export interface ChunkingResult {
   metadata: FileMetadata;
 }
 
+// Char-stride chunk splitting can slice through a UTF-16 surrogate pair
+// (e.g. PDF-extracted math italics like 𝑃), leaving a lone surrogate. That
+// poisons the whole embed batch — the HF fast tokenizer rejects non-well-
+// formed input — and puts invalid UTF-8 into the vector table's content
+// column. Repair to U+FFFD at the chunk emit boundary. (Regex stand-in for
+// String.prototype.toWellFormed, which the ES6 lib target doesn't declare.)
+const LONE_SURROGATE_TEST =
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+const LONE_SURROGATE_ALL = new RegExp(LONE_SURROGATE_TEST.source, "g");
+
+export function repairLoneSurrogates(s: string): string {
+  if (!LONE_SURROGATE_TEST.test(s)) return s;
+  return s.replace(LONE_SURROGATE_ALL, "�");
+}
+
 function isDocLikeFile(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
   return [".md", ".mdx", ".txt", ".rst", ".adoc"].includes(ext);
@@ -320,6 +335,10 @@ export class TreeSitterChunker {
 
     // Split chunks if too big
     result.chunks = result.chunks.flatMap((c) => this.splitIfTooBig(c));
+
+    for (const c of result.chunks) {
+      c.content = repairLoneSurrogates(c.content);
+    }
 
     // Post-process: extract property function names from chunks.
     // Catches resolver patterns like `posTableTurnReport: withAuth(scope, async (args) => {`
