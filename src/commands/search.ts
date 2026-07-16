@@ -1,3 +1,4 @@
+import * as path from "node:path";
 import type { Command } from "commander";
 import { Command as CommanderCommand } from "commander";
 import { ensureSetup } from "../lib/setup/setup-helpers";
@@ -7,8 +8,13 @@ import {
   resolveCrossProjectScope,
 } from "../lib/utils/cross-project";
 import { gracefulExit } from "../lib/utils/exit";
+import { isPathWithin } from "../lib/utils/path-containment";
 import { getProject, resolveRootOrExit } from "../lib/utils/project-registry";
-import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
+import {
+  ensureProjectPaths,
+  findGitRoot,
+  findProjectRoot,
+} from "../lib/utils/project-root";
 import { resolveScope } from "../lib/utils/scope-filter";
 import { getServerForProject } from "../lib/utils/server-registry";
 import {
@@ -213,6 +219,18 @@ Examples:
     }
     const cwdProjectRoot = findProjectRoot(root) ?? root;
     const projectRootForServer = resolvedOptionRoot ?? cwdProjectRoot;
+    // A cwd inside a nested git repo covered by a registered umbrella project
+    // resolves to the umbrella (findProjectRoot). Scope the search to the
+    // subrepo and resolve relative subpaths against it — that's what a caller
+    // inside the subrepo means by "this project". --root overrides this.
+    const cwdGitRoot = crossProject.active ? null : findGitRoot(root);
+    const nestedScopeRoot =
+      !options.root &&
+      cwdGitRoot &&
+      cwdGitRoot !== cwdProjectRoot &&
+      isPathWithin(cwdProjectRoot, cwdGitRoot)
+        ? cwdGitRoot
+        : undefined;
     if (exec_path && options.in && options.in.length > 0) {
       console.warn("Warning: --in overrides positional [path]; using --in.");
     }
@@ -220,12 +238,15 @@ Examples:
     try {
       scope = resolveScope({
         projectRoot: projectRootForServer,
+        base: nestedScopeRoot,
         in:
           options.in && options.in.length > 0
             ? options.in
             : exec_path
               ? [exec_path]
-              : undefined,
+              : nestedScopeRoot
+                ? [nestedScopeRoot]
+                : undefined,
         exclude: options.exclude,
       });
     } catch (err) {
@@ -235,6 +256,15 @@ Examples:
       process.exitCode = 1;
       await gracefulExit(1);
       return;
+    }
+    // Only announce the scope when it was implied by the cwd; an explicit
+    // --in/[path] already states what the caller scoped to.
+    if (nestedScopeRoot && !options.in?.length && !exec_path) {
+      const subName = path.relative(cwdProjectRoot, nestedScopeRoot);
+      const projName = path.basename(cwdProjectRoot);
+      console.error(
+        `Scoped to ${subName}/ within ${projName}; pass --root ${projName} to search the whole project.`,
+      );
     }
     const containedExecPath =
       exec_path && !(options.in && options.in.length > 0)

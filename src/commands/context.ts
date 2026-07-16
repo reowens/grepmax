@@ -1,5 +1,4 @@
 import * as fs from "node:fs";
-import * as path from "node:path";
 import { Command } from "commander";
 import { Searcher } from "../lib/search/searcher";
 import { Skeletonizer } from "../lib/skeleton";
@@ -12,6 +11,7 @@ import { readContainedTextFileSync } from "../lib/utils/file-utils";
 import { escapeSqlString, pathStartsWith } from "../lib/utils/filter-builder";
 import {
   isPathWithin,
+  resolveContainedExistingPath,
   resolveContainedPath,
 } from "../lib/utils/path-containment";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
@@ -85,24 +85,6 @@ export function findEnclosingSignature(
     if (defRe.test(lines[i])) {
       return { text: lines[i].trim(), line: i };
     }
-  }
-  return null;
-}
-
-function resolveExistingPath(
-  target: string,
-  root: string,
-  projectRoot: string,
-): string | null {
-  const candidates = [
-    path.isAbsolute(target) ? target : path.resolve(root, target),
-    path.resolve(projectRoot, target),
-  ];
-  for (const candidate of candidates) {
-    if (!fs.existsSync(candidate)) continue;
-    return resolveContainedPath(projectRoot, candidate, {
-      verifyExistingTarget: true,
-    });
   }
   return null;
 }
@@ -210,7 +192,10 @@ export const context = new Command("context")
       const paths = ensureProjectPaths(projectRoot);
       vectorDb = new VectorDB(paths.lancedbDir);
 
-      const pathTarget = resolveExistingPath(topic, root, projectRoot);
+      const pathTarget = resolveContainedExistingPath(projectRoot, topic, {
+        cwd: root,
+        onOutside: "throw",
+      });
       if (pathTarget) {
         const rendered = await renderPathContext(
           topic,

@@ -1,9 +1,18 @@
+import * as fs from "node:fs";
 import * as path from "node:path";
 import { pathNotStartsWith, pathStartsWith } from "./filter-builder";
 import { resolveContainedPath } from "./path-containment";
 
 export interface ScopeOptions {
   projectRoot: string;
+  /** Directory that relative --in/--exclude subpaths resolve against.
+   *  Defaults to projectRoot. Set to a nested git root when the cwd sits in
+   *  a subrepo of a registered umbrella project, so `--in src` means the
+   *  subrepo's src/. A base-relative path that doesn't exist falls back to
+   *  projectRoot-relative when that one does (e.g. `--in other-subrepo`
+   *  from inside a sibling). Containment is always enforced against
+   *  projectRoot. */
+  base?: string;
   in?: string | string[];
   exclude?: string | string[];
 }
@@ -31,13 +40,23 @@ function toArray(value: string | string[] | undefined): string[] {
     .filter(Boolean);
 }
 
-function joinSubpath(projectRoot: string, sub: string): string {
-  const resolved = resolveContainedPath(projectRoot, sub);
+function joinSubpath(projectRoot: string, base: string, sub: string): string {
+  let candidate = path.isAbsolute(sub) ? sub : path.resolve(base, sub);
+  if (
+    !path.isAbsolute(sub) &&
+    path.resolve(base) !== path.resolve(projectRoot) &&
+    !fs.existsSync(candidate) &&
+    fs.existsSync(path.resolve(projectRoot, sub))
+  ) {
+    candidate = path.resolve(projectRoot, sub);
+  }
+  const resolved = resolveContainedPath(projectRoot, candidate);
   return resolved.endsWith(path.sep) ? resolved : `${resolved}${path.sep}`;
 }
 
 export function resolveScope(opts: ScopeOptions): ResolvedScope {
   const { projectRoot } = opts;
+  const base = opts.base ?? projectRoot;
   const ins = toArray(opts.in);
   const excludes = toArray(opts.exclude);
 
@@ -45,8 +64,10 @@ export function resolveScope(opts: ScopeOptions): ResolvedScope {
     ? projectRoot
     : `${projectRoot}/`;
 
-  const inPrefixesAll = ins.map((v) => joinSubpath(projectRoot, v));
-  const excludePrefixes = excludes.map((v) => joinSubpath(projectRoot, v));
+  const inPrefixesAll = ins.map((v) => joinSubpath(projectRoot, base, v));
+  const excludePrefixes = excludes.map((v) =>
+    joinSubpath(projectRoot, base, v),
+  );
 
   // Collapse a single --in into pathPrefix to keep WHERE clauses simple.
   if (inPrefixesAll.length === 1) {

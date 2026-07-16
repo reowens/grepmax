@@ -21,6 +21,7 @@ vi.mock("../src/lib/utils/project-root", () => ({
     configPath: `${root}/.gmax/config.json`,
   })),
   findProjectRoot: vi.fn(() => "/tmp/project"),
+  findGitRoot: vi.fn(() => null),
 }));
 
 vi.mock("../src/lib/utils/project-registry", () => ({

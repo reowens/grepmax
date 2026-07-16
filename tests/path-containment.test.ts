@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   isPathWithin,
   PathContainmentError,
+  resolveContainedExistingPath,
   resolveContainedFile,
   resolveContainedPath,
 } from "../src/lib/utils/path-containment";
@@ -111,5 +112,67 @@ describe("path containment", () => {
     expect(() => resolveContainedFile(root, indexedPath)).toThrow(
       PathContainmentError,
     );
+  });
+});
+
+describe("resolveContainedExistingPath", () => {
+  function projectWithSubdir(): { root: string; sub: string } {
+    const root = tempDir();
+    const sub = path.join(root, "subrepo");
+    fs.mkdirSync(path.join(sub, "src"), { recursive: true });
+    fs.writeFileSync(path.join(sub, "src", "a.ts"), "a");
+    fs.writeFileSync(path.join(root, "top.ts"), "top");
+    return { root, sub };
+  }
+
+  it("prefers an existing cwd-relative match", () => {
+    const { root, sub } = projectWithSubdir();
+    expect(resolveContainedExistingPath(root, "src/a.ts", { cwd: sub })).toBe(
+      path.join(sub, "src", "a.ts"),
+    );
+  });
+
+  it("falls back to a root-relative match", () => {
+    const { root, sub } = projectWithSubdir();
+    expect(resolveContainedExistingPath(root, "top.ts", { cwd: sub })).toBe(
+      path.join(root, "top.ts"),
+    );
+  });
+
+  it("returns null when the target exists under neither base", () => {
+    const { root, sub } = projectWithSubdir();
+    expect(
+      resolveContainedExistingPath(root, "missing.ts", { cwd: sub }),
+    ).toBeNull();
+  });
+
+  it("skips a cwd-relative match outside the root", () => {
+    const { root } = projectWithSubdir();
+    const outsideCwd = tempDir();
+    fs.writeFileSync(path.join(outsideCwd, "top.ts"), "outside");
+    expect(
+      resolveContainedExistingPath(root, "top.ts", { cwd: outsideCwd }),
+    ).toBe(path.join(root, "top.ts"));
+  });
+
+  it("returns null for an outside-only match by default", () => {
+    const { root } = projectWithSubdir();
+    const outsideCwd = tempDir();
+    fs.writeFileSync(path.join(outsideCwd, "only-here.ts"), "outside");
+    expect(
+      resolveContainedExistingPath(root, "only-here.ts", { cwd: outsideCwd }),
+    ).toBeNull();
+  });
+
+  it("throws for an outside-only match with onOutside: 'throw'", () => {
+    const { root } = projectWithSubdir();
+    const outsideCwd = tempDir();
+    fs.writeFileSync(path.join(outsideCwd, "only-here.ts"), "outside");
+    expect(() =>
+      resolveContainedExistingPath(root, "only-here.ts", {
+        cwd: outsideCwd,
+        onOutside: "throw",
+      }),
+    ).toThrow(PathContainmentError);
   });
 });

@@ -5,6 +5,7 @@ import { fileNotFoundLines } from "../lib/utils/agent-errors";
 import { toArr } from "../lib/utils/arrow";
 import { gracefulExit } from "../lib/utils/exit";
 import { escapeSqlString } from "../lib/utils/filter-builder";
+import { resolveContainedExistingPath } from "../lib/utils/path-containment";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import { withQueryTimeout } from "../lib/utils/query-timeout";
@@ -47,7 +48,9 @@ export const related = new Command("related")
       const paths = ensureProjectPaths(projectRoot);
       vectorDb = new VectorDB(paths.lancedbDir);
 
-      const absPath = path.resolve(projectRoot, file);
+      const absPath =
+        resolveContainedExistingPath(projectRoot, file) ??
+        path.resolve(projectRoot, file);
       const table = await vectorDb.ensureTable();
       const { resolveScope, buildScopeWhere } = await import(
         "../lib/utils/scope-filter"

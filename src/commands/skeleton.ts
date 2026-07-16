@@ -20,7 +20,10 @@ import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
 import { readContainedTextFileSync } from "../lib/utils/file-utils";
 import { pathStartsWith } from "../lib/utils/filter-builder";
-import { resolveContainedPath } from "../lib/utils/path-containment";
+import {
+  resolveContainedExistingPath,
+  resolveContainedPath,
+} from "../lib/utils/path-containment";
 import { stampProjectFullSync } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 
@@ -154,10 +157,14 @@ Examples:
         includeSummary: !options.noSummary,
       };
 
-      // Determine mode based on target
-      const resolvedTarget = resolveContainedPath(projectRoot, target, {
-        verifyExistingTarget: true,
-      });
+      // Determine mode based on target. Prefer an existing cwd-relative
+      // match so callers inside a subdirectory (or nested subrepo) can pass
+      // paths relative to where they are.
+      const resolvedTarget =
+        resolveContainedExistingPath(projectRoot, target) ??
+        resolveContainedPath(projectRoot, target, {
+          verifyExistingTarget: true,
+        });
 
       // Directory mode is unsupported. Auto-picking files from a directory
       // was confusingly magical (and on '.' it fell through to the resolver
@@ -185,9 +192,11 @@ Examples:
           .map((t) => t.trim())
           .filter(Boolean);
         for (const t of targets) {
-          const filePath = resolveContainedPath(projectRoot, t, {
-            verifyExistingTarget: true,
-          });
+          const filePath =
+            resolveContainedExistingPath(projectRoot, t) ??
+            resolveContainedPath(projectRoot, t, {
+              verifyExistingTarget: true,
+            });
           if (!fs.existsSync(filePath)) {
             console.error(`Not found: ${t}`);
             continue;
@@ -205,9 +214,11 @@ Examples:
 
       if (isFilePath(target)) {
         // === FILE MODE ===
-        const filePath = resolveContainedPath(projectRoot, target, {
-          verifyExistingTarget: true,
-        });
+        const filePath =
+          resolveContainedExistingPath(projectRoot, target) ??
+          resolveContainedPath(projectRoot, target, {
+            verifyExistingTarget: true,
+          });
 
         if (!fs.existsSync(filePath)) {
           console.error(`File not found: ${filePath}`);

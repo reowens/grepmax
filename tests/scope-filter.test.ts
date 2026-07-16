@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
 import { resolveScope } from "../src/lib/utils/scope-filter";
 
 describe("resolveScope", () => {
@@ -81,5 +84,71 @@ describe("resolveScope", () => {
     expect(() =>
       resolveScope({ projectRoot: "/p/app", in: "/p/application/src" }),
     ).toThrow(/outside project root/i);
+  });
+});
+
+describe("resolveScope with a nested base", () => {
+  it("resolves relative --in against the base, not the project root", () => {
+    const r = resolveScope({
+      projectRoot: "/p/app",
+      base: "/p/app/subrepo",
+      in: "src",
+    });
+    expect(r.pathPrefix).toBe("/p/app/subrepo/src/");
+  });
+
+  it("resolves relative --exclude against the base", () => {
+    const r = resolveScope({
+      projectRoot: "/p/app",
+      base: "/p/app/subrepo",
+      exclude: "tests",
+    });
+    expect(r.excludePrefixes).toEqual(["/p/app/subrepo/tests/"]);
+  });
+
+  it("keeps absolute subpaths untouched by the base", () => {
+    const r = resolveScope({
+      projectRoot: "/p/app",
+      base: "/p/app/subrepo",
+      in: "/p/app/other/src",
+    });
+    expect(r.pathPrefix).toBe("/p/app/other/src/");
+  });
+
+  it("still enforces containment against the project root", () => {
+    expect(() =>
+      resolveScope({
+        projectRoot: "/p/app",
+        base: "/p/app/subrepo",
+        in: "../../outside",
+      }),
+    ).toThrow(/outside project root/i);
+  });
+
+  describe("existence fallback", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "gmax-scope-"));
+    const root = path.join(tmp, "root");
+    const base = path.join(root, "subrepo");
+    fs.mkdirSync(path.join(base, "src"), { recursive: true });
+    fs.mkdirSync(path.join(root, "sibling"), { recursive: true });
+
+    afterAll(() => {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    });
+
+    it("prefers the base-relative path when it exists", () => {
+      const r = resolveScope({ projectRoot: root, base, in: "src" });
+      expect(r.pathPrefix).toBe(`${path.join(base, "src")}/`);
+    });
+
+    it("falls back to root-relative when only that exists", () => {
+      const r = resolveScope({ projectRoot: root, base, in: "sibling" });
+      expect(r.pathPrefix).toBe(`${path.join(root, "sibling")}/`);
+    });
+
+    it("keeps the base-relative path when neither exists", () => {
+      const r = resolveScope({ projectRoot: root, base, in: "nope" });
+      expect(r.pathPrefix).toBe(`${path.join(base, "nope")}/`);
+    });
   });
 });
