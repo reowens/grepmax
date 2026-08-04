@@ -1,8 +1,8 @@
 ---
 type: plan
-status: active
+status: archived
 created: 2026-06-28T22:05:47Z
-updated: 2026-07-13
+updated: 2026-08-04T11:08:09Z
 surfaces:
   - graph
   - search
@@ -19,11 +19,11 @@ audience: internal
 summary: Graphify-derived roadmap for call-graph precision, audit cycle detection, and remaining orientation signals.
 parent_plan:
 related_plans:
-  - ../agent-ux-proposals.md
-  - ../archived/2026-06-28-repo-audit-hardening.md
+  - agent-ux-proposals.md
+  - 2026-06-28-repo-audit-hardening.md
 related_docs:
 current_state: >
-  Completed in working tree. Phase 1 and Phase 2 are shipped or rejected by measurement. Audit file
+  Completed and shipped. Phase 1 and Phase 2 are shipped or rejected by measurement. Audit file
   dependency cycles are shipped. Phase 3A-3E are complete for the embedding-native orientation
   surface: `gmax surprises --experimental` and MCP `surprising_connections` have protocol coverage,
   corpus calibration, tuned scoring/filtering, actionable output, scale measurements, docs, and
@@ -121,13 +121,13 @@ overlapping.
    peek/trace/MCP surface low-confidence member/type edges instead of presenting every edge as
    equally factual.
 
-### Phase 3 — Orientation Signal Completion Arc 🟡 active
+### Phase 3 — Orientation Signal Completion Arc ✅ shipped
 
 Graphify's remaining useful idea is orientation, not more graph precision. gmax now has the
-first experimental version of the embedding-native signal, but the work is explicitly not done.
-The arc below is the complete remaining Graphify backlog and should be worked in order.
+experimental embedding-native signal and completed its protocol, calibration, output, scale,
+and documentation gates. The sections below preserve that execution record.
 
-#### Phase 3A — MCP tool proof + parity 🟡 next
+#### Phase 3A — MCP tool proof + parity ✅ shipped
 
 **Goal.** Prove `surprising_connections` is not just registered in code but usable through the
 real MCP protocol, with output matching the CLI's compact agent shape.
@@ -769,8 +769,7 @@ already prints `... N more`).
   substrate, prefer-self/same-family resolution, query-time precision path, and #6 confidence
   presentation are done. The plain member split and general #5 import resolver are not build
   targets without new evidence.
-- **Next:** Phase 3A MCP proof for `surprising_connections`, then Phase 3B corpus calibration.
-  Audit cycles are already shipped; do not keep presenting them as the next Graphify item.
+- **Phase 3:** shipped through 3A-3E. Audit cycles are also shipped.
 
 ### Honesty guardrails
 
@@ -792,4 +791,14 @@ against gmax HEAD before this plan was written.
 
 ## Version History
 
+- **2026-08-04T11:08:09Z** Archived — Graph precision and orientation phases shipped or were rejected by measurement.
 - **2026-07-09T10:54:27Z** Status: completed → active — Fix invalid legacy status 'completed' (dropped from plan vocab). Phase 3 (Orientation Signal Completion Arc) is still active with a documented remaining backlog, so active — not archived — is accurate.
+- **2026-08-04** Final review confirmed Phase 3A-3E shipped; the experimental orientation
+  surface remains intentionally unpromoted pending new corpus evidence.
+
+## Closeout
+
+Graph precision work shipped or was rejected by measurement. `gmax surprises` and MCP
+`surprising_connections` shipped in `f9d6263` and were calibrated/documented in `d8f56fa`.
+Keep the surface experimental. Reopen only for new multi-corpus promotion evidence, a
+material increase in free-call ambiguity, or important cycles missed by symbol-derived SCCs.

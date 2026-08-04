@@ -24,6 +24,7 @@ domain: performance remediation (memory, indexing throughput, search latency)
 audience: internal
 parent_plan:
 related_plans:
+  - ../plans/lancedb-fts-panic-remediation.md
 related_docs:
   - ../2026-08-04-performance-review.md
 current_state: >

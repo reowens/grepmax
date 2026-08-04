@@ -27,11 +27,13 @@ domain: repository audit follow-ups (correctness, lifecycle, release hardening)
 audience: internal
 parent_plan:
 related_plans:
-  - ../plans/graphify-derived-improvements.md
-  - ../plans/mcp-server-migration.md
+  - graphify-derived-improvements.md
+  - mcp-server-migration.md
+  - 2026-07-09-repository-audit-fixes.md
 related_docs:
   - ../known-limitations.md
-  - ../agent-ux-proposals.md
+  - agent-ux-proposals.md
+  - ../2026-07-09-repository-audit.md
 current_state: >
   Phases 1-5 are implemented. Lifecycle fixes now block/degrade safely around
   draining daemons, expose readiness separately from liveness, and quiesce/requeue active

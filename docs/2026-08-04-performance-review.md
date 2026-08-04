@@ -34,6 +34,7 @@ domain: performance review (memory, indexing throughput, search latency)
 audience: internal
 related_plans:
   - archived/performance-backlog-fixes.md
+  - plans/lancedb-fts-panic-remediation.md
 related_docs:
   - docs/2026-07-09-repository-audit.md
   - docs/known-limitations.md

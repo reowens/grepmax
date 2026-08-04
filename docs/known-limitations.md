@@ -6,14 +6,15 @@ updated: 2026-07-11
 summary: Live catalog of open gmax limitations with detection + recovery steps.
 audience: internal
 related_plans:
-  - docs/plans/2026-07-09-repository-audit-fixes.md
+  - archived/2026-07-09-repository-audit-fixes.md
   - docs/plans/2026-05-25-semantic-search-landscape.md
   - docs/archived/2026-06-23-index-versioning-and-daemon-refactor.md
   - docs/archived/2026-06-28-repo-audit-hardening.md
 related_docs:
-  - docs/agent-ux-proposals.md
+  - archived/agent-ux-proposals.md
   - docs/agent-pov-suggestions.md
   - docs/2026-08-04-performance-review.md
+  - docs/2026-07-09-repository-audit.md
 ---
 
 # Known Limitations
@@ -68,9 +69,14 @@ graph. That is an orientation signal for duplicate/parallel logic, not a correct
 Use the output as a triage queue. Before acting, inspect both sides with `gmax skeleton`,
 `gmax extract`, `gmax related`, and `gmax trace`.
 
-## Chunker `referenced_symbols` extracts call-expression names, not identifier-as-value references
+## Static graph misses callback-value and dynamic references
 
 Added 2026-05-26. Confirmed during Bundle B G1' Phase 0 sanity check.
+
+**Current status (2026-08-04).** Identifier-as-value and type-position coverage now spans
+supported grammars. The remaining blind spots are bare callback values, dynamic dispatch,
+reflection, decorator/framework routing, and string-built calls. The older evidence below is
+retained to explain the shipped extraction work, not as a description of current class/type coverage.
 
 **Mostly fixed 2026-06-02 (all 14 grammars).** The chunker now emits identifier-as-value edges for `new ClassName(…)` / `ClassName{…}`, `instanceof ClassName` / `x is T`, and `Enum.MEMBER` / `Enum::MEMBER` (member/scope access gated to a Capitalized leaf head) across **every grammar** — TS/JS plus Python, Go, Rust, Java, C#, Ruby, Kotlin, Swift, Scala, PHP — via grammar-keyed node-type dispatch in `chunker.ts::extractRefs`. Verified on real platform source: `BeyondError`/`ErrorCodes` produce `referenced_symbols` edges in their caller chunks and `GraphBuilder.buildGraph` surfaces those callers (`tests/graph-edges.identifier-as-value.test.ts`); the other 10 languages each get a class+enum edge in `tests/graph-edges.identifier-as-value.multigrammar.test.ts`. Real-Rust spot-check (`dirplayer-rs/.../sprite.rs`): 12/16 def-chunks gained clean `ColorRef`/`Sprite`/`CastMemberRef` edges, all previously absent. TS/JS read-only A/B over the platform corpus: +1.1% `referenced_symbols` bytes, 0% embedded-content growth.
 
@@ -117,13 +123,16 @@ npx tsx src/eval-graph-spotcheck.ts  # raw referenced_symbols for known callers
 
 Added 2026-06-22; **fix built same day** (a+b+c, plus `doctor --fix` reindex — see end).
 
-When the chunker's metadata semantics change (new edge kinds, new columns), existing indexes keep their old data until a `gmax index --reset`. The signal that tells a user "you should reindex" is `CONFIG.CHUNKER_VERSION` (now **3**), stamped per project at its last full index. Until 2026-06-22 only `gmax doctor` read it, the warning text was hardcoded to the v2 over-count case, and the version had been left at 2 across three additive chunk changes.
+When the chunker's metadata semantics change (new edge kinds, new columns), existing indexes keep
+their old data until a `gmax index --reset`. The signal is `CONFIG.CHUNKER_VERSION` (now **4**),
+stamped per project at its last full index. Current registered projects report no stale chunker.
 
 **What shipped:**
 
 - **(a) Query-time hint.** `search`, `trace`, `dead`, `peek`, `impact`, `similar`, `related`, `test` now emit a one-line staleness nudge to **STDERR** when the resolved project's index predates `CONFIG.CHUNKER_VERSION`. Wired through one helper — `maybeWarnStaleChunker()` in `src/lib/utils/stale-hint.ts` — called once per command after the project root resolves. Never touches stdout, so `--json` / `--agent` machine output stays byte-identical; `--agent` renders a parseable `stale_chunker\t…` TSV record on stderr instead of prose. Suppress with `GMAX_NO_STALE_HINT=1`; fires at most once per process.
 - **(b) Version with intent.** `CHUNKER_VERSION_HISTORY` + `describeChunkerGap()` (`src/config.ts`) replace the bare int's single hardcoded message. Each entry is `{v, severity: 'additive'|'breaking', note}`; the gap helper unions the notes for every version an index is missing and reports `breaking` if any missed version was breaking. `severity` sets tone — additive → `hint`/`INFO`, breaking → `WARN`. `gmax doctor` (human + `--agent`) and the hint both render from this one source. History: v2 = breaking (sub-chunk symbol scoping; graph overcounted callers before this), v3 = additive (type-position edges; `dead`/`trace` miss type-only callers until reindex).
 - **(c) Bumped to 3** for the type-position edges (additive).
+- **(d) Bumped to 4** for separately recorded member-call edges (additive).
 
 Verified live: stale repos (lean/proctor/cram/quorm/dotmd/furni/cokemusic-extractor) nudge; the 5 repos reindexed on 2026-06-22 with the new chunker were re-stamped v2→3 in `~/.gmax/projects.json` (no reindex needed — they already carry the edges) and stay silent. `bench:oss` byte-identical (express 0.889 / lodash 0.900). Regression net: `tests/stale-hint.test.ts`.
 
