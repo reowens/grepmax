@@ -27,9 +27,14 @@ export interface WatcherOptions {
   initialFailedFiles?: number;
 }
 
-// Ignore patterns for @parcel/watcher (micromatch globs + directory names).
-// Directory names are matched at any depth automatically.
-export const WATCHER_IGNORE_GLOBS: string[] = [
+// Directory names ignored at ANY depth. @parcel/watcher treats a non-glob
+// ignore entry as a literal path resolved against the watch root, so a bare
+// "dist" only covered <root>/dist — nested build dirs (packages/*/dist,
+// nested node_modules, .turbo) still flooded the daemon with events on every
+// build. Glob entries are matched against the path relative to the watch
+// root, and a leading "**/" matches zero or more segments, so the expansion
+// below covers both the top-level and nested cases.
+const IGNORED_DIR_NAMES = [
   "node_modules",
   ".git",
   ".gmax",
@@ -47,10 +52,17 @@ export const WATCHER_IGNORE_GLOBS: string[] = [
   ".pytest_cache",
   ".next",
   ".nuxt",
+  ".turbo",
   ".gradle",
   ".m2",
   "vendor",
   "lancedb",
+];
+
+// Ignore patterns for @parcel/watcher (picomatch globs).
+export const WATCHER_IGNORE_GLOBS: string[] = [
+  // "**/<name>" ignores the directory entry itself, "**/<name>/**" its contents.
+  ...IGNORED_DIR_NAMES.flatMap((name) => [`**/${name}`, `**/${name}/**`]),
   "**/*.tmp.*", // editor atomic save artifacts
   "**/*.sb-*", // Xcode swap files
 ];
