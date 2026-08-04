@@ -137,7 +137,6 @@ aggregation over the data gmax already has.
 |-----|--------|
 | [Performance Review — 2026-08-04](2026-08-04-performance-review.md) | Active |
 | [Embedding Layout Decision](embedding-layout-decision.md) | Active |
-| [LanceDB FTS Panic Remediation](plans/lancedb-fts-panic-remediation.md) | Active |
 
 ## Planned
 

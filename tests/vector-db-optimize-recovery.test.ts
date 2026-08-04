@@ -98,17 +98,40 @@ describe("VectorDB optimize panic recovery", () => {
   it("latches when the rebuild itself fails", async () => {
     const optimize = vi.fn().mockRejectedValue(panic());
     const table = fakeTable(optimize);
-    // createFTSIndexUnsafe swallows createIndex failures (warns and
-    // returns), so the flow is rebuild-attempt -> retry -> panic -> latch.
     table.createIndex.mockRejectedValue(new Error("rebuild broke"));
     inject(table);
 
     await db.optimize(5, 0, true);
     expect(table.createIndex).toHaveBeenCalledTimes(1);
-    expect(optimize).toHaveBeenCalledTimes(2);
+    expect(optimize).toHaveBeenCalledTimes(1);
 
     await db.optimize(5, 0, true);
     expect(table.createIndex).toHaveBeenCalledTimes(1);
-    expect(optimize).toHaveBeenCalledTimes(3);
+    expect(optimize).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces terminal FTS creation failures", async () => {
+    const table = fakeTable(vi.fn());
+    table.createIndex.mockRejectedValue(new Error("FTS create broke"));
+    inject(table);
+
+    await expect(db.createFTSIndex(false, 1)).rejects.toThrow(
+      "FTS create broke",
+    );
+    expect((db as any).ftsIndexEnsured).toBe(false);
+  });
+
+  it("surfaces positional FTS rebuild failures", async () => {
+    const table = fakeTable(vi.fn());
+    table.createIndex
+      .mockRejectedValueOnce(new Error("position data missing"))
+      .mockRejectedValueOnce(new Error("positional rebuild broke"));
+    inject(table);
+
+    await expect(db.createFTSIndex(false, 1)).rejects.toThrow(
+      "positional rebuild broke",
+    );
+    expect(table.dropIndex).toHaveBeenCalledWith("content_idx");
+    expect((db as any).ftsIndexEnsured).toBe(false);
   });
 });

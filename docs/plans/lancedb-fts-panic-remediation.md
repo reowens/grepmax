@@ -1,8 +1,8 @@
 ---
 type: plan
-status: active
+status: in-session
 created: 2026-08-04
-updated: 2026-08-04
+updated: 2026-08-04T11:39:21Z
 surfaces:
   - store
   - index
@@ -19,14 +19,14 @@ related_plans:
 related_docs:
   - docs/2026-08-04-performance-review.md
 current_state: >
-  The v0.26.4 rebuild-and-retry guard restores compaction after intermittent Lance FTS
-  merge panics, but live logs show repeated panic/recovery cycles through 2026-08-03.
-  Current doctor reports 306,349 rows, 51 fragments (50 small), 232 versions, 8.1 GB
-  logical / 16.6 GB disk, and healthy free space. The trigger for escalation has fired.
+  The isolated LanceDB 0.31 candidate passes focused real-store behavior and bidirectional
+  0.30/0.31 disposable-store compatibility. Production/test typechecks, Biome, and build pass;
+  124 test files and 1037 tests pass. The remaining full-suite failure is the pre-LanceDB
+  macOS watcher canary failing to start an FSEvents stream, including when run alone.
 next_step: >
-  Pin LanceDB exactly to 0.31.0 in an isolated branch while keeping Apache Arrow at 18.1.0.
-  First make terminal FTS creation failure observable, then run real-store compatibility,
-  downgrade, and production-shaped soak gates before any whole-store deployment.
+  Re-run the native FSEvents canary in a healthy host session. If it and the full suite pass,
+  run the production-shaped 0.30/0.31 isolated soak; do not deploy the candidate to the live
+  shared store before the soak converges and explicit operator approval is obtained.
 summary: Successor to the expired v0.26.2 stability cycle for recurring Lance FTS merge panics.
 ---
 
@@ -148,6 +148,39 @@ Each phase records commit and package integrities, snapshot checksums, commands/
 workload seed and operation counts, before/after store metrics, panic/conflict/rebuild counts,
 golden-result hashes, gate decision, operator, timestamp, and rollback outcome.
 
+### 2026-08-04 Candidate Gate
+
+- Baseline commit: `55c2fca75952bcc3888578ab79bb59eab7e40351`; Node `v26.5.1`,
+  pnpm `10.33.0`, Darwin `25.5.0` arm64.
+- Baseline store: 306,555 rows, 45 fragments/44 small, 193 versions, 8.1 GB logical,
+  16.6 GB disk, 198 GB free, and 12 retained optimize-panic/rebuild-exhaustion episodes.
+- Candidate packages: `@lancedb/lancedb@0.31.0` integrity
+  `sha512-EUEVpheKhaCNE6ybcW760OUyfeei2dKR2ZwgLWeC/ntHL4BBiBLIErh9fuEuUP3/mAx4B5UFraB2m5nDUx5XEA==`;
+  Darwin arm64 native package integrity
+  `sha512-6n3VxAenwcNWQpk9Ta4NL/KhpSywskafarBakzFPGe/OXzdKXbmbXdrhGdl8oMacbfgql6wmW3DcAJAbsiThvw==`;
+  `apache-arrow@18.1.0` retained at
+  `sha512-v/ShMp57iBnBp4lDgV8Jx3d3Q5/Hac25FWmQ98eMahUiHPXcvwIMKJD0hBIgclm/FCG+LwPkAKtkRO1O/W0YGg==`
+  within LanceDB's `>=15.0.0 <=18.1.0` peer range.
+- Dependency diff is limited to LanceDB and its native packages. LanceDB's optional OpenAI 4
+  and Transformers 3 integrations are excluded; direct OpenAI 6 and Transformers 4 remain.
+- Terminal FTS create/rebuild failures are observable. Focused recovery and real-store gate:
+  2 files / 8 tests pass. The real store covers positional FTS, exact vector search with ANN
+  bypass, sibling-prefix exclusion, repeated filters, path btree, IVF_FLAT API creation,
+  index stats, schema evolution, update/delete, versions/stats, repeated optimize, and reopen.
+- Bidirectional disposable-store probe passed: 0.31 created/searched/wrote/optimized; 0.30
+  reopened/searched/wrote/optimized that store; 0.31 reopened and verified the 0.30 writes.
+- Deterministic checks pass: production typecheck, test-source typecheck, Biome over 309 files,
+  and build. Full test result is 124 files / 1037 tests passed with one independent failure:
+  `tests/directory-delete.test.ts` cannot start an FSEvents stream. The failure reproduces
+  alone and with one worker before LanceDB behavior is exercised; file-descriptor limit is
+  1,048,576. Phase 2 remains blocked until this platform canary and the full suite pass.
+- `pnpm audit --prod` reports 5 moderate and 8 high findings only through unchanged existing
+  dependency paths, not LanceDB. The existing top-level `overrides.mathjs` is not applied by
+  pnpm and is a separate dependency-policy follow-up.
+- Gate decision: Phase 0 go; Phase 1 go; Phase 2 blocked on host FSEvents health; Phase 3
+  compatibility evidence passes but does not override the Phase 2 block; Phase 4 not started.
+  No live store, daemon binary, summarizer, or local LLM was changed or started.
+
 ## Non-Goals
 
 - Re-enabling IVF_FLAT ANN.
@@ -157,6 +190,8 @@ golden-result hashes, gate decision, operator, timestamp, and rollback outcome.
 
 ## Version History
 
+- **2026-08-04T11:39:21Z** Recorded Phases 0-3 candidate evidence; Phase 2 blocked by host FSEvents canary.
+- **2026-08-04T11:28:13Z** Started (active → in-session).
 - **2026-08-04** Created after the all-plan refresh confirmed post-v0.26.4 panic recurrence.
 
 ## Closeout

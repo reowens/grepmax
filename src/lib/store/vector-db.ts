@@ -927,10 +927,16 @@ export class VectorDB {
             this.ftsIndexEnsured = true;
             log("vectordb", "Rebuilt FTS index with position support");
             return;
-          } catch {}
+          } catch (rebuildError) {
+            console.warn(
+              "Failed to rebuild positional FTS index:",
+              rebuildError,
+            );
+            throw rebuildError;
+          }
         }
         console.warn("Failed to create FTS index:", e);
-        return;
+        throw e;
       }
     }
   }

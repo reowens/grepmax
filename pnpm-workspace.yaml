@@ -5,4 +5,8 @@ ignoredBuiltDependencies:
   - sharp
   - usearch
 
+ignoredOptionalDependencies:
+  - "@huggingface/transformers"
+  - openai
+
 onlyBuiltDependencies: '["@parcel/watcher"]'
