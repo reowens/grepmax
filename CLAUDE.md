@@ -32,6 +32,13 @@ explicitly, unambiguously tells you to bring it up in that exact session.
 
 ---
 
+## Subagents
+
+When spawning subagents (Agent tool), use `model: "opus"` unless the user asks
+for a different model.
+
+---
+
 ## Process Architecture
 
 gmax runs as cooperating processes. Only `gmax-mcp` may have multiple instances.
