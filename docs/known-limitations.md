@@ -13,6 +13,7 @@ related_plans:
 related_docs:
   - docs/agent-ux-proposals.md
   - docs/agent-pov-suggestions.md
+  - docs/2026-08-04-performance-review.md
 ---
 
 # Known Limitations

@@ -146,6 +146,7 @@ aggregation over the data gmax already has.
 | Doc | Status |
 |-----|--------|
 | [Repository Audit - 2026-07-09](2026-07-09-repository-audit.md) | Active |
+| [Performance Review — 2026-08-04](2026-08-04-performance-review.md) | Active |
 | [gmax — Agent UX Backlog](agent-ux-proposals.md) | Active |
 | [Embedding Layout Decision](embedding-layout-decision.md) | Active |
 | [Semantic Search — Open Backlog](plans/2026-05-25-semantic-search-landscape.md) | Active |
@@ -167,7 +168,7 @@ aggregation over the data gmax already has.
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 6 recent or high-signal highlights out of 44 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 6 recent or high-signal highlights out of 45 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
