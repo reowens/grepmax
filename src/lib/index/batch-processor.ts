@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { CONFIG } from "../../config";
 import type { MetaCache, MetaEntry } from "../store/meta-cache";
 import type { VectorRecord } from "../store/types";
 import type { VectorDB } from "../store/vector-db";
@@ -31,11 +32,15 @@ export interface BatchProcessorOptions {
   onTerminalFailure?: (absPath: string) => void;
   onPathSuccess?: (absPath: string) => void;
   runOperation?: (fn: (signal: AbortSignal) => Promise<void>) => Promise<void>;
+  concurrency?: number;
 }
 
 const DEBOUNCE_MS = 2000;
 const MAX_RETRIES = 5;
 const MAX_BATCH_SIZE = 50;
+// Pool priority cannot preempt an active processFile, so keep one worker free
+// for latency-sensitive encodeQuery/rerank work during indexing bursts.
+const DEFAULT_BATCH_CONCURRENCY = Math.max(1, CONFIG.WORKER_THREADS - 1);
 
 export class ProjectBatchProcessor {
   readonly projectRoot: string;
@@ -52,6 +57,7 @@ export class ProjectBatchProcessor {
   readonly filePolicy: ProjectFilePolicy;
   private readonly wtag: string;
   private readonly batchTimeoutMs: number;
+  private readonly concurrency: number;
 
   private readonly pending = new Map<string, "change" | "unlink">();
   private readonly retryCount = new Map<string, number>();
@@ -83,6 +89,10 @@ export class ProjectBatchProcessor {
     this.filePolicy =
       opts.filePolicy ?? new ProjectFilePolicy(opts.projectRoot);
     this.wtag = `watch:${path.basename(opts.projectRoot)}`;
+    this.concurrency = Math.max(
+      1,
+      Math.floor(opts.concurrency ?? DEFAULT_BATCH_CONCURRENCY),
+    );
 
     const taskTimeoutMs = (() => {
       const fromEnv = Number.parseInt(
@@ -262,7 +272,7 @@ export class ProjectBatchProcessor {
 
     const start = Date.now();
     let reindexed = 0;
-    let processed = 0;
+    let settled = 0;
     let backoffOverrideMs = 0;
 
     try {
@@ -303,19 +313,11 @@ export class ProjectBatchProcessor {
         this.pending.set(absPath, event);
       };
 
-      for (const [absPath, event] of batch) {
-        if (batchAc.signal.aborted) break;
-        processed++;
-        if (
-          batch.size > 10 &&
-          (processed % 10 === 0 || processed === batch.size)
-        ) {
-          log(
-            this.wtag,
-            `Progress: ${processed}/${batch.size} (${reindexed} reindexed)`,
-          );
-        }
-
+      let stopDispatch = false;
+      const processOne = async (
+        absPath: string,
+        event: "change" | "unlink",
+      ): Promise<void> => {
         // Reclassify every event at apply time. A catchup-derived unlink may be
         // stale if the file was recreated after its directory was scanned.
         try {
@@ -326,7 +328,7 @@ export class ProjectBatchProcessor {
               classification.error,
             );
             retryFailures.add(absPath);
-            continue;
+            return;
           }
           if (
             classification.status === "excluded" ||
@@ -338,12 +340,12 @@ export class ProjectBatchProcessor {
               reindexed++;
             }
             completed.add(absPath);
-            continue;
+            return;
           }
           const stats = classification.stat;
 
           if (diskPressure === "critical") {
-            continue;
+            return;
           }
 
           const cached = this.metaCache.get(absPath);
@@ -354,7 +356,7 @@ export class ProjectBatchProcessor {
             isFileCached(cached, stats)
           ) {
             completed.add(absPath);
-            continue;
+            return;
           }
 
           // Fast path: if only mtime changed but size matches and we have a hash,
@@ -376,7 +378,7 @@ export class ProjectBatchProcessor {
                 mtimeMs: snapshot.mtimeMs,
               });
               completed.add(absPath);
-              continue;
+              return;
             }
           }
 
@@ -394,21 +396,21 @@ export class ProjectBatchProcessor {
           const current = await this.filePolicy.classifyFile(absPath);
           if (current.status === "error") {
             retryFailures.add(absPath);
-            continue;
+            return;
           }
           if (current.status === "excluded" || current.status === "missing") {
             deletes.push(absPath);
             metaDeletes.push(absPath);
             reindexed++;
             completed.add(absPath);
-            continue;
+            return;
           }
           if (
             current.stat.mtimeMs !== result.mtimeMs ||
             current.stat.size !== result.size
           ) {
             retryFailures.add(absPath);
-            continue;
+            return;
           }
 
           const metaEntry: MetaEntry = {
@@ -427,7 +429,7 @@ export class ProjectBatchProcessor {
           ) {
             metaUpdates.set(absPath, metaEntry);
             completed.add(absPath);
-            continue;
+            return;
           }
 
           if (result.shouldDelete) {
@@ -435,7 +437,7 @@ export class ProjectBatchProcessor {
             metaUpdates.set(absPath, metaEntry);
             reindexed++;
             completed.add(absPath);
-            continue;
+            return;
           }
 
           deletes.push(absPath);
@@ -446,7 +448,7 @@ export class ProjectBatchProcessor {
           reindexed++;
           completed.add(absPath);
         } catch (err) {
-          if (batchAc.signal.aborted) break;
+          if (batchAc.signal.aborted) return;
           const code = (err as NodeJS.ErrnoException)?.code;
           if (code === "ENOENT") {
             deletes.push(absPath);
@@ -459,12 +461,44 @@ export class ProjectBatchProcessor {
               console.error(
                 `[${this.wtag}] Worker pool unhealthy, aborting batch`,
               );
-              break;
+              stopDispatch = true;
+              return;
             }
             retryFailures.add(absPath);
           }
+        } finally {
+          settled++;
+          if (
+            batch.size > 10 &&
+            (settled % 10 === 0 || settled === batch.size)
+          ) {
+            log(
+              this.wtag,
+              `Progress: ${settled}/${batch.size} (${reindexed} reindexed)`,
+            );
+          }
         }
+      };
+
+      const activeTasks: Promise<void>[] = [];
+      const schedule = async (task: () => Promise<void>): Promise<void> => {
+        const taskPromise = task();
+        activeTasks.push(taskPromise);
+        const removeActiveTask = () => {
+          const index = activeTasks.indexOf(taskPromise);
+          if (index !== -1) activeTasks.splice(index, 1);
+        };
+        void taskPromise.then(removeActiveTask, removeActiveTask);
+        if (activeTasks.length >= this.concurrency) {
+          await Promise.race(activeTasks);
+        }
+      };
+
+      for (const [absPath, event] of batch) {
+        if (batchAc.signal.aborted || stopDispatch) break;
+        await schedule(() => processOne(absPath, event));
       }
+      await Promise.allSettled(activeTasks);
 
       const pureDeleteCandidates = new Set(metaDeletes);
       const authoritativeMetaDeletes = new Set<string>();

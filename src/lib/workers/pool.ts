@@ -39,32 +39,6 @@ type WorkerMessage = (
   | { id: number; heartbeat: true }
 ) & { rss?: number };
 
-function reviveBufferLike(input: unknown): Buffer | Int8Array | unknown {
-  if (
-    input &&
-    typeof input === "object" &&
-    "type" in (input as Record<string, unknown>) &&
-    (input as Record<string, unknown>).type === "Buffer" &&
-    Array.isArray((input as Record<string, unknown>).data)
-  ) {
-    return Buffer.from((input as Record<string, unknown>).data as number[]);
-  }
-  return input;
-}
-
-function reviveProcessFileResult(
-  result: TaskResults["processFile"],
-): TaskResults["processFile"] {
-  if (!result || !Array.isArray(result.vectors)) return result;
-  const vectors = result.vectors.map((v) => {
-    const revived = reviveBufferLike(v.colbert);
-    return revived && (Buffer.isBuffer(revived) || revived instanceof Int8Array)
-      ? { ...v, colbert: revived }
-      : v;
-  });
-  return { ...result, vectors };
-}
-
 type PendingTask<M extends TaskMethod = TaskMethod> = {
   id: number;
   method: M;
@@ -173,6 +147,7 @@ class ProcessWorker {
     this.child = childProcess.fork(modulePath, {
       execArgv: [...memArgs, ...execArgv],
       env: { ...process.env, ...embeddingEnvironment },
+      serialization: "advanced",
     });
   }
 }
@@ -206,13 +181,13 @@ const MIN_KEEP_WORKERS = 1;
 // Recycle a worker whose RSS has grown past this. ONNX native memory lives
 // outside V8, so --max-old-space-size can't bound it; replacing the worker is
 // the only reclaim. The threshold must sit ABOVE the healthy working set or
-// the pool executes warm workers for normal behavior: measured steady state
-// is ~700-800 MB with MLX serving dense embeds and ~900-1050 MB in ONNX CPU
-// fallback (granite session loaded in-process), flat across task count and
-// file size. The old 800 default was calibrated for the pre-
-// enableCpuMemArena:false era (arenas pinned ~2 GB) and sat inside the
-// healthy range — every busy worker was recycled after nearly every task,
-// paying a full model reload each time. 0 (or negative) disables the check.
+// the pool executes warm workers for normal behavior. A post-tree-cleanup
+// soak on 2026-08-04 measured MLX p50/p95/max at 1056/1110/1122 MB (900 tasks)
+// and ONNX at 1030/1182/1195 MB (600 tasks). Applying the 1.25x ONNX-p95 rule
+// and rounding to a 128 MB boundary retains 1536 MB. The old 800 default sat
+// inside the healthy range and recycled warm workers after normal tasks; the
+// previously proposed 1024 MLX-only override is also below measured p50. 0
+// (or negative) disables the check.
 const WORKER_RSS_RECYCLE_MB = (() => {
   const fromEnv = Number.parseInt(
     process.env.GMAX_WORKER_RSS_RECYCLE_MB ?? "",
@@ -297,6 +272,15 @@ export class WorkerPool {
     return this.workers
       .map((w) => w.child.pid)
       .filter((pid): pid is number => pid !== undefined);
+  }
+
+  /** Latest worker-reported RSS, sampled after each IPC message. */
+  getWorkerMemoryStats(): Array<{ pid: number; rssBytes: number }> {
+    return this.workers.flatMap((worker) =>
+      worker.child.pid === undefined
+        ? []
+        : [{ pid: worker.child.pid, rssBytes: worker.lastRssBytes }],
+    );
   }
 
   private clearTaskTimeout<M extends TaskMethod>(task: PendingTask<M>) {
@@ -469,12 +453,6 @@ export class WorkerPool {
         );
         task.reject(new Error(msg.error));
       } else {
-        let result = msg.result as TaskResults[TaskMethod];
-        if (task.method === "processFile") {
-          result = reviveProcessFileResult(
-            result as TaskResults["processFile"],
-          ) as TaskResults[TaskMethod];
-        }
         const elapsed = task.startTime
           ? `${Date.now() - task.startTime}ms`
           : "?ms";
@@ -486,7 +464,7 @@ export class WorkerPool {
           "pool",
           `complete task=${task.id} method=${task.method} ${elapsed}${filePath ? ` file=${filePath}` : ""}`,
         );
-        task.resolve(result);
+        task.resolve(msg.result);
       }
 
       this.completeTask(task, worker);

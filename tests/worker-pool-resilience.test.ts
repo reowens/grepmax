@@ -78,12 +78,13 @@ describe("WorkerPool resilience", () => {
 
     const fork = vi.mocked(childProcess.fork);
     const options = fork.mock.calls[0]?.[1] as
-      | { execArgv?: string[] }
+      | { execArgv?: string[]; serialization?: string }
       | undefined;
 
     expect(options?.execArgv).toEqual(
       expect.arrayContaining(["--import", require.resolve("tsx")]),
     );
+    expect(options?.serialization).toBe("advanced");
   });
 
   it("reapStuckWorkers SIGKILLs a worker wedged in busy=true past the threshold", () => {

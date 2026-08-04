@@ -240,6 +240,14 @@ export const doctor = new Command("doctor")
       const logicalSize = tableStats.totalBytes;
       const { numFragments, numSmallFragments } = tableStats.fragmentStats;
       const versions = await table.listVersions();
+      const indices = await table.listIndices();
+      const vectorIndex = indices.find(
+        (index) =>
+          index.name === "vector_idx" || index.columns.includes("vector"),
+      );
+      const vectorIndexStats = vectorIndex
+        ? await table.indexStats(vectorIndex.name).catch(() => undefined)
+        : undefined;
 
       // Lock status
       const lockPath = path.join(PATHS.globalRoot, "LOCK");
@@ -322,6 +330,10 @@ export const doctor = new Command("doctor")
           `legacy_embedding=${legacyEmbeddingCount}`,
           `schema_dim=${physicalDim ?? "none"}`,
           `schema_dim_ok=${schemaGap ? "false" : "true"}`,
+          `ann_index=${vectorIndex ? "present" : "absent"}`,
+          `ann_indexed=${vectorIndexStats?.numIndexedRows ?? 0}`,
+          `ann_unindexed=${vectorIndexStats?.numUnindexedRows ?? 0}`,
+          `ann_metric=${vectorIndexStats?.distanceType ?? "none"}`,
         ];
         console.log(fields.join("\t"));
         if (schemaGap) {
@@ -378,6 +390,14 @@ export const doctor = new Command("doctor")
           );
         } else if (physicalDim) {
           console.log(`ok  Schema: vector table is ${physicalDim}d`);
+        }
+
+        if (vectorIndexStats) {
+          console.log(
+            `ok  ANN: ${vectorIndexStats.numIndexedRows.toLocaleString()} indexed, ${vectorIndexStats.numUnindexedRows.toLocaleString()} unindexed, metric=${vectorIndexStats.distanceType ?? "unknown"}`,
+          );
+        } else {
+          console.log("INFO  ANN: vector index not built (set GMAX_ANN=1)");
         }
 
         // Disk space

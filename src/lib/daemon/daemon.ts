@@ -505,6 +505,7 @@ export class Daemon {
           if (this.vectorDb) {
             await this.vectorDb.ensureTable();
             await this.vectorDb.createFTSIndex();
+            await this.vectorDb.createVectorIndex(false, 5, true);
           }
           const pool = this.workerPool;
           if (!pool) throw new Error("worker pool not ready");

@@ -109,7 +109,7 @@ Maps absolute file paths to `{hash: string, mtimeMs: number, size: number}`. Use
 
 ### VectorDB (LanceDB)
 
-One table (`chunks`), all projects share it, scoped by path prefix (`/absolute/path/to/project/`). Maintenance loop runs compaction periodically. Can spike memory during compaction after large writes.
+One table (`chunks`), all projects share it, scoped by path prefix (`/absolute/path/to/project/`). A path btree accelerates scoped exact search. IVF_FLAT is flag-gated by `GMAX_ANN=1` and disabled by default because the production recall soak failed its acceptance threshold. The five-minute maintenance loop runs only after writes or missing-index work; clean stores get an hourly table-version probe for external writes before compaction.
 
 ### Project Registry (projects.json)
 
@@ -166,14 +166,14 @@ watchProject(root)
 
 ```
 File event (from watcher or catchup) -> pending map -> debounce 2s -> processBatch()
-  For each file (batches of 50):
+  For each file (batches of 50, bounded parallelism reserving one worker for search):
     stat -> isFileCached? -> skip if mtime+size match
     Send to WorkerPool.processFile()
       Worker: read -> hash -> chunk (tree-sitter) -> embed (MLX or ONNX) -> return vectors
     If hash unchanged -> update meta only, no vector write ("0 reindexed")
     If hash changed -> delete old vectors, insert new, update meta
     If shouldDelete -> delete vectors, update meta
-  Flush: insert vectors -> delete old paths -> update MetaCache
+  Flush once after all file tasks settle: insert vectors -> delete old paths -> update MetaCache
   Report reindex count
   If pending files remain, reschedule
 ```
@@ -182,7 +182,9 @@ File event (from watcher or catchup) -> pending map -> debounce 2s -> processBat
 
 - Starts with 1 worker, scales up to `floor(cores * 0.5)` on demand in `dispatch()`
 - Workers are child processes (not threads) — isolates ONNX Runtime segfaults
+- IPC uses Node's advanced serialization so Buffer and typed-array payloads retain their binary types and view offsets
 - Idle workers reaped after 60s back down to `MIN_KEEP_WORKERS = 1` (favors low resident memory over search warmth — an idle worker holds ~300MB–1GB; the rare search pays a one-off cold start). Reap sends SIGTERM, then escalates to SIGKILL after 5s if the worker is still alive (defends against a worker stuck inside a native ONNX matmul tight loop that won't service signals)
+- Workers over 1536MB RSS for consecutive post-task samples are recycled; the threshold is calibrated above measured MLX and ONNX p95 steady state
 - Task timeout: 120s (env: `GMAX_WORKER_TASK_TIMEOUT_MS`) -> SIGKILL worker -> respawn if tasks pending
 - Max consecutive respawns: 10, then pool stops spawning
 - Respawn counter resets on each successful task completion
@@ -233,7 +235,9 @@ MLX client (`mlx-client.ts`) caches availability for 30s. The cache is module-le
 Client connects to `~/.gmax/daemon.sock`, sends one JSON line, receives response(s).
 
 **Simple commands** (request -> response -> close):
-`ping`, `watch`, `unwatch`, `status`, `llm-start`, `llm-stop`, `llm-status`
+`ping`, `watch`, `unwatch`, `status`, `search`, `search-v2`, `llm-start`, `llm-stop`, `llm-status`
+
+MCP search-backed tools prefer `search`/`search-v2` so concurrent MCP sessions share the daemon's worker pool. They fall back to an in-process searcher only for daemon availability, readiness, size, or protocol-compatibility failures; search correctness and scope errors remain visible.
 
 **Streaming commands** (request -> progress lines -> done -> close):
 `index`, `add`, `remove`, `summarize`, `review`

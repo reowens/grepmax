@@ -31,6 +31,7 @@ import * as path from "node:path";
 import { PATHS } from "./config";
 import { resolveCallSites } from "./lib/graph/callsites";
 import { GraphBuilder } from "./lib/graph/graph-builder";
+import { configureAnnVectorQuery } from "./lib/store/ann-config";
 import { VectorDB } from "./lib/store/vector-db";
 import { gracefulExit } from "./lib/utils/exit";
 import { escapeSqlString } from "./lib/utils/filter-builder";
@@ -92,8 +93,7 @@ async function probe(target: string) {
     "referenced_symbols",
   ];
 
-  const vectorRows = (await table
-    .vectorSearch(dense)
+  const vectorRows = (await configureAnnVectorQuery(table.vectorSearch(dense))
     .select([...columns, "_distance"])
     .where(where)
     .limit(PRE_K)

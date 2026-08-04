@@ -124,7 +124,7 @@ Plugins auto-update when you run `npm install -g grepmax@latest` — no need to 
 
 ### MCP Server
 
-`gmax mcp` starts a stdio-based MCP server for clients that support MCP but can't run shell commands (Cursor, Windsurf, custom agents).
+`gmax mcp` starts a stdio-based MCP server for clients that support MCP but can't run shell commands (Cursor, Windsurf, custom agents). Search-backed tools use the singleton daemon when available, avoiding a separate embedding worker per MCP session, and fall back to an in-process worker only when the daemon is unavailable or does not support the request.
 
 | Tool | Description |
 | --- | --- |
@@ -215,7 +215,7 @@ gmax watch stop               # Stop daemon
 gmax status                   # See all projects + watcher status
 ```
 
-The daemon auto-starts when you run `gmax add`, `gmax index`, `gmax remove`, or `gmax summarize`. It shuts down after 30 minutes of inactivity.
+The daemon auto-starts when you run `gmax add`, `gmax index`, `gmax remove`, `gmax summarize`, or `gmax mcp`. It shuts down after 30 minutes of inactivity. File-change batches are processed concurrently while reserving worker capacity for searches; LanceDB compaction runs after writes rather than on every maintenance tick.
 
 ## Local LLM (optional)
 
@@ -374,9 +374,11 @@ fixtures/
 | --- | --- | --- |
 | `GMAX_EMBED_MODE` | Force `cpu` or `gpu` | Auto-detect |
 | `GMAX_WORKER_THREADS` | Worker threads for embedding | 50% of cores |
+| `GMAX_WORKER_RSS_RECYCLE_MB` | Recycle workers that remain above this RSS; `0` disables the check | `1536` |
 | `GMAX_DEBUG` | Debug logging | Off |
 | `GMAX_SUMMARIZER` | Enable summarizer auto-start (`1`) | Off |
 | `GMAX_RERANK` | Enable ColBERT rerank (`1`) — off by default since v0.17.1 ([why](docs/known-limitations.md)) | Off |
+| `GMAX_ANN` | Experimental IVF_FLAT vector index (`1`); leave off unless validating recall on your corpus | Off |
 
 ## Troubleshooting
 
@@ -388,6 +390,8 @@ gmax index                    # Reindex (auto-detects and repairs cache/vector m
 gmax index --reset            # Full reindex from scratch
 gmax watch stop && gmax watch --daemon -b  # Restart daemon
 ```
+
+`gmax doctor` reports ANN index state. `ANN: vector index not built` is normal with the default exact-search configuration.
 
 ## Contributing
 

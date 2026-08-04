@@ -267,6 +267,7 @@ export async function runSearch(
           }
 
           await vectorDb.createFTSIndex();
+          await vectorDb.createVectorIndex?.();
 
           if (result.degraded) {
             spinner.warn(

@@ -47,44 +47,22 @@ export type ProcessFileResult = {
 };
 
 export type RerankDoc = {
-  colbert: Buffer | Int8Array | number[];
+  colbert: Buffer | Int8Array | Uint8Array | number[];
   scale: number;
   token_ids?: number[];
 };
 
 /**
- * Normalize a colbert payload received over IPC into an Int8Array.
- *
- * Node `child_process.send` serializes payloads as JSON, which doesn't
- * preserve TypedArrays. An Int8Array sent over IPC arrives as a plain
- * object with numeric keys (`{0: byte, 1: byte, ...}`). Without explicitly
- * handling that shape, the rerank pipeline silently no-ops (empty matrix
- * → maxSim returns 0 → final ranking falls back to fusion-only). Caught
- * 2026-05-25 when the eval harness showed rerank-on producing identical
- * scores to rerank-off across 97 cases.
+ * Reinterpret a ColBERT byte payload as signed bytes without copying views.
+ * Arrow returns Uint8Array subarray views, so byteOffset and byteLength must
+ * be preserved or reranking can read unrelated bytes from the backing buffer.
  */
 export function coerceColbertBytes(col: unknown): Int8Array {
   if (col instanceof Int8Array) return col;
-  if (Buffer.isBuffer(col)) {
+  if (ArrayBuffer.isView(col)) {
     return new Int8Array(col.buffer, col.byteOffset, col.byteLength);
   }
   if (Array.isArray(col)) return new Int8Array(col as number[]);
-  if (col && typeof col === "object") {
-    // {type:"Buffer", data:[...]} — Node Buffer.toJSON output
-    const asUnknown = col as { type?: unknown; data?: unknown };
-    if (asUnknown.type === "Buffer" && Array.isArray(asUnknown.data)) {
-      return new Int8Array(asUnknown.data as number[]);
-    }
-    // {0: byte, 1: byte, ...} — Int8Array after IPC JSON serialization
-    const keys = Object.keys(col as object);
-    if (keys.length > 0 && keys.every((k) => /^\d+$/.test(k))) {
-      const arr = new Int8Array(keys.length);
-      for (const k of keys) {
-        arr[Number(k)] = (col as Record<string, number>)[k];
-      }
-      return arr;
-    }
-  }
   return new Int8Array(0);
 }
 
@@ -390,14 +368,7 @@ export class WorkerOrchestrator {
         vector: hybrid.dense,
         colbert: Buffer.from(hybrid.colbert),
         colbert_scale: hybrid.scale,
-        // Convert the pooled Float32Array to a plain number[] so it survives
-        // the JSON IPC hop to the parent (process-child.ts → pool.ts). A typed
-        // array JSON-serializes to a length-less {"0":..} object, which then
-        // Array.from()s to [] on insert and pads to 48 zeros — silently making
-        // the stage-1 cosine prefilter a no-op (searcher.ts:732).
-        pooled_colbert_48d: hybrid.pooled_colbert_48d
-          ? Array.from(hybrid.pooled_colbert_48d)
-          : undefined,
+        pooled_colbert_48d: hybrid.pooled_colbert_48d,
         doc_token_ids: hybrid.token_ids,
       };
     });

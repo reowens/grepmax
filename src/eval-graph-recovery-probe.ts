@@ -14,6 +14,7 @@ process.env.GMAX_WORKER_COUNT ??= "1";
 
 import * as path from "node:path";
 import { PATHS } from "./config";
+import { configureAnnVectorQuery } from "./lib/store/ann-config";
 import { VectorDB } from "./lib/store/vector-db";
 import { gracefulExit } from "./lib/utils/exit";
 import { escapeSqlString } from "./lib/utils/filter-builder";
@@ -75,8 +76,7 @@ async function probe(table: any, sym: string, expectedFile: string) {
     "referenced_symbols",
   ];
 
-  const vectorRows = (await table
-    .vectorSearch(dense)
+  const vectorRows = (await configureAnnVectorQuery(table.vectorSearch(dense))
     .select([...columns, "_distance"])
     .where(where)
     .limit(PRE_K)

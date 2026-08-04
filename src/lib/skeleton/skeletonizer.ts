@@ -41,9 +41,14 @@ interface TreeSitterNode {
   previousSibling?: TreeSitterNode | null;
 }
 
+interface TreeSitterTree {
+  rootNode: TreeSitterNode;
+  delete(): void;
+}
+
 interface TreeSitterParser {
   setLanguage(language: TreeSitterLanguage): void;
-  parse(content: string): { rootNode: TreeSitterNode };
+  parse(content: string): TreeSitterTree | null;
 }
 
 type TreeSitterLanguage = Record<string, never>;
@@ -212,10 +217,18 @@ export class Skeletonizer {
       );
     }
 
+    let tree: TreeSitterTree | null = null;
     try {
       // Parse the file
       this.parser.setLanguage(language);
-      const tree = this.parser.parse(content);
+      tree = this.parser.parse(content);
+      if (!tree) {
+        return this.createFallbackResult(
+          filePath,
+          content,
+          "Parse returned no tree",
+        );
+      }
       const root = tree.rootNode;
 
       // Find all regions to elide (function/method bodies)
@@ -251,6 +264,9 @@ export class Skeletonizer {
         content,
         `Parse error: ${err instanceof Error ? err.message : String(err)}`,
       );
+    } finally {
+      // Nothing in the guarded block may retain a Node.
+      tree?.delete();
     }
   }
 

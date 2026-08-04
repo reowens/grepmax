@@ -31,8 +31,14 @@ import { annotateSkeletonLines } from "../lib/skeleton/annotator";
 import { getStoredSkeleton } from "../lib/skeleton/retriever";
 import { Skeletonizer } from "../lib/skeleton/skeletonizer";
 import { extractSymbolsFromSkeleton } from "../lib/skeleton/symbol-extractor";
+import { configureAnnVectorQuery } from "../lib/store/ann-config";
 import { MetaCache } from "../lib/store/meta-cache";
-import type { ChunkType, FileMetadata, SearchFilter } from "../lib/store/types";
+import type {
+  ChunkType,
+  FileMetadata,
+  SearchFilter,
+  SearchResponse,
+} from "../lib/store/types";
 import { VectorDB } from "../lib/store/vector-db";
 import { resolveCrossProjectScope } from "../lib/utils/cross-project";
 import { isIndexableFile } from "../lib/utils/file-utils";
@@ -83,6 +89,18 @@ export function ok(text: string): ToolResult {
 
 export function err(text: string): ToolResult {
   return { content: [{ type: "text", text }], isError: true };
+}
+
+export function shouldFallbackMcpDaemonSearch(error: unknown): boolean {
+  const message = String(error ?? "").toLowerCase();
+  return (
+    message === "enoent" ||
+    message === "econnrefused" ||
+    message.includes("project not watched") ||
+    message.includes("daemon not ready") ||
+    message.includes("oversize") ||
+    message.includes("unknown command")
+  );
 }
 
 export function isExplicitCrossProjectSearch(
@@ -378,6 +396,42 @@ export const mcp = new Command("mcp")
       return _searcher;
     }
 
+    async function daemonSearch(args: {
+      projectRoot: string;
+      query: string;
+      limit: number;
+      filters?: SearchFilter;
+      pathPrefix?: string;
+      rerank?: boolean;
+      seeds?: { files?: string[]; symbols?: string[] };
+    }): Promise<SearchResponse | null> {
+      const { sendDaemonCommand } = await import("../lib/utils/daemon-client");
+      const response = await sendDaemonCommand(
+        {
+          cmd: args.filters?.projectRoots ? "search-v2" : "search",
+          ...args,
+        },
+        { timeoutMs: 60_000 },
+      );
+      if (!response.ok) {
+        if (shouldFallbackMcpDaemonSearch(response.error)) return null;
+        const detail = [response.error, response.hint]
+          .filter((value) => typeof value === "string" && value)
+          .join(": ");
+        throw new Error(detail || "daemon search failed");
+      }
+      return {
+        data: Array.isArray(response.data)
+          ? (response.data as ChunkType[])
+          : [],
+        warnings: Array.isArray(response.warnings)
+          ? response.warnings.filter(
+              (warning): warning is string => typeof warning === "string",
+            )
+          : undefined,
+      };
+    }
+
     async function getSkeletonizer(): Promise<Skeletonizer> {
       if (!_skeletonizer) {
         _skeletonizer = new Skeletonizer();
@@ -553,8 +607,6 @@ export const mcp = new Command("mcp")
           listProjects().filter((project) => selectedRoots.has(project.root)),
           readGlobalConfig(),
         );
-        const searcher = getSearcher();
-
         // Aider-style seeding: the agent passes its open files / discussed
         // symbols; the searcher biases candidate generation toward them.
         const parseSeedList = (v: unknown): string[] | undefined => {
@@ -576,13 +628,28 @@ export const mcp = new Command("mcp")
             ? { files: seedFiles, symbols: seedSymbols }
             : undefined;
 
-        const result = await searcher.search(
-          query,
-          limit,
-          { rerank: process.env.GMAX_RERANK === "1", seeds },
-          Object.keys(filters).length > 0 ? filters : undefined,
-          pathPrefix,
-        );
+        const effectiveFilters =
+          Object.keys(filters).length > 0 ? filters : undefined;
+        const searchOptions = {
+          rerank: process.env.GMAX_RERANK === "1",
+          seeds,
+        };
+        const result =
+          (await daemonSearch({
+            projectRoot: resolvedRoot,
+            query,
+            limit,
+            filters: effectiveFilters,
+            pathPrefix,
+            ...searchOptions,
+          })) ??
+          (await getSearcher().search(
+            query,
+            limit,
+            searchOptions,
+            effectiveFilters,
+            pathPrefix,
+          ));
 
         const allowedRoots = searchAll
           ? (filters.projectRoots ?? [])
@@ -2263,14 +2330,19 @@ export const mcp = new Command("mcp")
           p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p;
 
         if (query) {
-          const searcher = getSearcher();
-          const response = await searcher.search(
-            query,
-            limit,
-            { rerank: process.env.GMAX_RERANK === "1" },
-            {},
-            root,
-          );
+          const searchOptions = {
+            rerank: process.env.GMAX_RERANK === "1",
+          };
+          const response =
+            (await daemonSearch({
+              projectRoot: root,
+              query,
+              limit,
+              filters: {},
+              pathPrefix: root,
+              ...searchOptions,
+            })) ??
+            (await getSearcher().search(query, limit, searchOptions, {}, root));
           const changedSet = new Set(changedFiles);
           // searcher.search() returns mapped chunks (path under metadata.path);
           // changedFiles are absolute, so match on the resolved absolute path.
@@ -2528,8 +2600,9 @@ export const mcp = new Command("mcp")
         if (!source.vector || source.vector.length === 0)
           return ok("Source chunk has no embedding.");
 
-        const results = await table
-          .vectorSearch(source.vector)
+        const results = await configureAnnVectorQuery(
+          table.vectorSearch(source.vector),
+        )
           .select([
             "path",
             "start_line",
@@ -2580,14 +2653,17 @@ export const mcp = new Command("mcp")
         const { proj, root } = resolveRegisteredProject();
         if (!proj) return err("Project not added to gmax yet.");
         assertEmbeddingSearchCompatible([proj], readGlobalConfig());
-        const searcher = getSearcher();
-        const response = await searcher.search(
-          topic,
-          limit,
-          { rerank: process.env.GMAX_RERANK === "1" },
-          {},
-          root,
-        );
+        const searchOptions = { rerank: process.env.GMAX_RERANK === "1" };
+        const response =
+          (await daemonSearch({
+            projectRoot: root,
+            query: topic,
+            limit,
+            filters: {},
+            pathPrefix: root,
+            ...searchOptions,
+          })) ??
+          (await getSearcher().search(topic, limit, searchOptions, {}, root));
         if (response.data.length === 0)
           return ok(`No results found for "${topic}".`);
 
@@ -3441,6 +3517,11 @@ export const mcp = new Command("mcp")
     );
 
     await server.connect(transport);
+
+    // Start the singleton daemon in the background without delaying MCP startup.
+    void import("../lib/utils/daemon-client")
+      .then(({ ensureDaemonRunning }) => ensureDaemonRunning())
+      .catch((e) => console.error("[MCP] Daemon startup failed:", e));
 
     // Kick off index readiness check and watcher in background
     ensureIndexReady().catch((e) =>

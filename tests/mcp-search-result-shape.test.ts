@@ -3,6 +3,7 @@ import {
   searchResultEndLine,
   searchResultPath,
   searchResultStartLine,
+  shouldFallbackMcpDaemonSearch,
 } from "../src/commands/mcp";
 
 // Regression: searcher.search() returns *mapped* ChunkType objects — the
@@ -55,5 +56,35 @@ describe("search-result shape extraction (mapped ChunkType)", () => {
       searchResultEndLine({ generated_metadata: { start_line: 12 } }, 12),
     ).toBe(12);
     expect(searchResultEndLine({}, 5)).toBe(5);
+  });
+});
+
+describe("MCP daemon search fallback", () => {
+  it("falls back for transport absence, startup races, oversize, and old daemons", () => {
+    for (const error of [
+      "ENOENT",
+      "ECONNREFUSED",
+      "project not watched",
+      "daemon not ready",
+      "oversize",
+      "unknown command: search-v2",
+    ]) {
+      expect(shouldFallbackMcpDaemonSearch(error)).toBe(true);
+    }
+  });
+
+  it("surfaces semantic, scope, and ambiguous daemon failures", () => {
+    for (const error of [
+      "stale_embedding",
+      "invalid projectRoots",
+      "missing projectRoots",
+      "project path filters are not valid for cross-project search",
+      "timeout",
+      "connection closed",
+      "search_failed",
+      undefined,
+    ]) {
+      expect(shouldFallbackMcpDaemonSearch(error)).toBe(false);
+    }
   });
 });

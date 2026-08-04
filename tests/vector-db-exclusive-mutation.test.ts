@@ -286,8 +286,12 @@ describe("VectorDB exclusive table mutation", () => {
     vi.spyOn(db, "createFTSIndex").mockImplementation(() =>
       (db as any).withWriteGate(() => ftsBody),
     );
+    vi.spyOn(db, "createVectorIndex").mockResolvedValue(false);
     vi.spyOn(db, "optimize").mockResolvedValue(undefined);
     vi.spyOn(db as any, "ensureTableUnsafe").mockResolvedValue(table as any);
+    vi.spyOn(db as any, "openExistingTableUnsafe").mockResolvedValue(
+      table as any,
+    );
 
     const maintenance = db.runMaintenance();
     await vi.waitFor(() => expect((db as any).activeWrites).toBe(1));

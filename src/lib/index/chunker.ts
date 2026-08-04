@@ -120,11 +120,16 @@ interface TreeSitterNode {
   previousSibling?: TreeSitterNode | null;
 }
 
+interface TreeSitterTree {
+  rootNode: TreeSitterNode;
+  delete(): void;
+}
+
 // TreeSitter Parser and Language types
 interface TreeSitterParser {
   init(options: { locator: string }): Promise<void>;
   setLanguage(language: TreeSitterLanguage): void;
-  parse(content: string): { rootNode: TreeSitterNode };
+  parse(content: string): TreeSitterTree | null;
 }
 
 type TreeSitterLanguage = Record<string, never>;
@@ -419,8 +424,34 @@ export class TreeSitterChunker {
 
     this.parser.setLanguage(language);
     const tree = this.parser.parse(content);
-    const root = tree.rootNode;
+    if (!tree) {
+      return {
+        chunks: [],
+        metadata: { imports: [], exports: [], comments: [] },
+      };
+    }
 
+    try {
+      return this.buildChunksFromTree(
+        filePath,
+        content,
+        langDef?.definitionTypes || [],
+        lang,
+        tree.rootNode,
+      );
+    } finally {
+      // Nothing in the guarded block may retain a Node.
+      tree.delete();
+    }
+  }
+
+  private buildChunksFromTree(
+    filePath: string,
+    content: string,
+    definitionTypes: string[],
+    lang: string,
+    root: TreeSitterNode,
+  ): ChunkingResult {
     const fileContext = `File: ${filePath}`;
     const chunks: Chunk[] = [];
     const blockChunks: Chunk[] = [];
@@ -429,7 +460,6 @@ export class TreeSitterChunker {
     let sawDefinition = false;
 
     const metadata: FileMetadata = { imports: [], exports: [], comments: [] };
-    const definitionTypes = langDef?.definitionTypes || [];
 
     const isDefType = (t: string) => definitionTypes.includes(t);
 

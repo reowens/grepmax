@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { configureAnnVectorQuery } from "../lib/store/ann-config";
 import { VectorDB } from "../lib/store/vector-db";
 import {
   fileNotFoundLines,
@@ -109,8 +110,9 @@ export const similar = new Command("similar")
         exclude: opts.exclude,
       });
       const pathScope = buildScopeWhere(scope);
-      const results = await table
-        .vectorSearch(sourceVector)
+      const results = await configureAnnVectorQuery(
+        table.vectorSearch(sourceVector),
+      )
         .select([
           "path",
           "start_line",

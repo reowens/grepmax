@@ -1,5 +1,6 @@
 import type { Table } from "@lancedb/lancedb";
 import { CONFIG } from "../../config";
+import { configureAnnVectorQuery } from "../store/ann-config";
 import type {
   ChunkType,
   SearchFilter,
@@ -570,8 +571,7 @@ export class Searcher {
     const VECTOR_COLUMNS = [...LIGHTWEIGHT_COLUMNS, "_distance"];
     const FTS_COLUMNS = [...LIGHTWEIGHT_COLUMNS, "_score"];
 
-    let vectorQuery = table
-      .vectorSearch(queryVector)
+    let vectorQuery = configureAnnVectorQuery(table.vectorSearch(queryVector))
       .select(VECTOR_COLUMNS)
       .limit(PRE_RERANK_K);
     if (whereClause) {
@@ -896,7 +896,8 @@ export class Searcher {
         {
           query: queryMatrixRaw,
           docs: rerankCandidates.map((doc) => ({
-            colbert: (doc.colbert as Buffer | Int8Array | number[]) ?? [],
+            colbert:
+              (doc.colbert as Buffer | Int8Array | Uint8Array | number[]) ?? [],
             scale:
               typeof doc.colbert_scale === "number" ? doc.colbert_scale : 1,
             token_ids: Array.isArray((doc as any).doc_token_ids)

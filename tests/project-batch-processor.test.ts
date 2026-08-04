@@ -73,6 +73,16 @@ describe("ProjectBatchProcessor", () => {
     return processor;
   }
 
+  function makeFiles(count: number): string[] {
+    const files = [filePath];
+    for (let i = 1; i < count; i++) {
+      const candidate = path.join(tmpDir, `sample-${i}.ts`);
+      fs.writeFileSync(candidate, `export const sample${i} = ${i};\n`);
+      files.push(candidate);
+    }
+    return files;
+  }
+
   it("close waits for the active batch to settle", async () => {
     let resolveWorker!: (result: ReturnType<typeof makeWorkerResult>) => void;
     pool.processFile.mockImplementationOnce(
@@ -121,6 +131,156 @@ describe("ProjectBatchProcessor", () => {
     await activeBatch;
 
     expect(processor.progress.pendingFiles).toBe(1);
+  });
+
+  it("runs up to the configured concurrency and dispatches the next file on settlement", async () => {
+    const files = makeFiles(4);
+    let active = 0;
+    let maxActive = 0;
+    const pending: Array<{
+      path: string;
+      resolve: (result: ReturnType<typeof makeWorkerResult>) => void;
+    }> = [];
+    pool.processFile.mockImplementation(
+      (input: { path: string }) =>
+        new Promise((resolve) => {
+          active++;
+          maxActive = Math.max(maxActive, active);
+          pending.push({
+            path: input.path,
+            resolve: (result) => {
+              active--;
+              resolve(result);
+            },
+          });
+        }),
+    );
+    const processor = makeProcessor({ concurrency: 3 });
+    for (const file of files) processor.handleFileEvent("change", file);
+
+    (processor as any).startBatch();
+    await vi.waitFor(() => expect(pool.processFile).toHaveBeenCalledTimes(3));
+    expect(maxActive).toBe(3);
+
+    pending[0].resolve(makeWorkerResult(pending[0].path));
+    await vi.waitFor(() => expect(pool.processFile).toHaveBeenCalledTimes(4));
+    for (const task of pending.slice(1)) {
+      task.resolve(makeWorkerResult(task.path));
+    }
+    await (processor as any).activeBatch;
+
+    expect(maxActive).toBe(3);
+    expect(processor.progress.pendingFiles).toBe(0);
+  });
+
+  it("is strictly sequential when concurrency is one", async () => {
+    const files = makeFiles(3);
+    const pending: Array<{
+      path: string;
+      resolve: (result: ReturnType<typeof makeWorkerResult>) => void;
+    }> = [];
+    pool.processFile.mockImplementation(
+      (input: { path: string }) =>
+        new Promise((resolve) => pending.push({ path: input.path, resolve })),
+    );
+    const processor = makeProcessor({ concurrency: 1 });
+    for (const file of files) processor.handleFileEvent("change", file);
+
+    (processor as any).startBatch();
+    await vi.waitFor(() => expect(pool.processFile).toHaveBeenCalledTimes(1));
+    pending[0].resolve(makeWorkerResult(pending[0].path));
+    await vi.waitFor(() => expect(pool.processFile).toHaveBeenCalledTimes(2));
+    pending[1].resolve(makeWorkerResult(pending[1].path));
+    await vi.waitFor(() => expect(pool.processFile).toHaveBeenCalledTimes(3));
+    pending[2].resolve(makeWorkerResult(pending[2].path));
+    await (processor as any).activeBatch;
+
+    expect(processor.progress.pendingFiles).toBe(0);
+  });
+
+  it("waits for out-of-order workers before one insert-then-delete commit", async () => {
+    const files = makeFiles(3);
+    const pending = new Map<string, (result: any) => void>();
+    pool.processFile.mockImplementation(
+      (input: { path: string }) =>
+        new Promise((resolve) => pending.set(input.path, resolve)),
+    );
+    const processor = makeProcessor({ concurrency: 3 });
+    for (const file of files) processor.handleFileEvent("change", file);
+
+    (processor as any).startBatch();
+    await vi.waitFor(() => expect(pool.processFile).toHaveBeenCalledTimes(3));
+    for (const file of [files[2], files[0], files[1]]) {
+      pending.get(file)?.({
+        ...makeWorkerResult(file),
+        vectors: [{ id: path.basename(file), path: file }],
+      });
+    }
+    await (processor as any).activeBatch;
+
+    expect(vectorDb.insertBatch).toHaveBeenCalledOnce();
+    expect(vectorDb.insertBatch.mock.calls[0][0]).toHaveLength(3);
+    expect(vectorDb.deletePathsExcludingIds).toHaveBeenCalledOnce();
+    expect(vectorDb.insertBatch.mock.invocationCallOrder[0]).toBeLessThan(
+      vectorDb.deletePathsExcludingIds.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("requeues the whole batch without retry cost when concurrent work is aborted", async () => {
+    const files = makeFiles(5);
+    pool.processFile.mockImplementation(
+      (_input: unknown, signal: AbortSignal) =>
+        new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(new Error("aborted")));
+        }),
+    );
+    const processor = makeProcessor({ concurrency: 3 });
+    for (const file of files) processor.handleFileEvent("change", file);
+
+    (processor as any).startBatch();
+    await vi.waitFor(() => expect(pool.processFile).toHaveBeenCalledTimes(3));
+    (processor as any).currentBatchAc.abort();
+    await (processor as any).activeBatch;
+
+    expect(processor.progress.pendingFiles).toBe(5);
+    expect((processor as any).retryCount.size).toBe(0);
+    expect(vectorDb.insertBatch).not.toHaveBeenCalled();
+  });
+
+  it("stops dispatching new work when the worker pool becomes unhealthy", async () => {
+    const files = makeFiles(5);
+    pool.processFile.mockRejectedValue(new Error("worker exited"));
+    pool.isHealthy.mockReturnValue(false);
+    const processor = makeProcessor({ concurrency: 2 });
+    for (const file of files) processor.handleFileEvent("change", file);
+
+    (processor as any).startBatch();
+    await (processor as any).activeBatch;
+
+    expect(pool.processFile.mock.calls.length).toBeLessThanOrEqual(3);
+    expect(processor.progress.pendingFiles).toBe(5);
+    expect((processor as any).retryCount.size).toBe(0);
+  });
+
+  it("reports settled progress monotonically under concurrent completion", async () => {
+    const files = makeFiles(12);
+    pool.processFile.mockImplementation(async (input: { path: string }) =>
+      makeWorkerResult(input.path),
+    );
+    const writeSpy = vi.spyOn(process.stderr, "write");
+    const processor = makeProcessor({ concurrency: 3 });
+    for (const file of files) processor.handleFileEvent("change", file);
+
+    (processor as any).startBatch();
+    await (processor as any).activeBatch;
+
+    const progress = writeSpy.mock.calls
+      .map(([message]) => String(message).match(/Progress: (\d+)\/12/))
+      .filter((match): match is RegExpMatchArray => match !== null)
+      .map((match) => Number(match[1]));
+    writeSpy.mockRestore();
+
+    expect(progress).toEqual([10, 12]);
   });
 
   it("removes a cached file after deterministic policy exclusion", async () => {

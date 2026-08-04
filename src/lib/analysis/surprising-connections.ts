@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import { isBuiltinCallee } from "../graph/callsites";
+import { configureAnnVectorQuery } from "../store/ann-config";
 import { toArr } from "../utils/arrow";
 import { buildScopeWhere, resolveScope } from "../utils/scope-filter";
 
@@ -667,8 +668,9 @@ export async function analyzeSurprisingConnections(
   const pairs = new Map<string, SurprisePair>();
 
   for (const source of anchors) {
-    const neighbors = (await table
-      .vectorSearch(source.vector as number[])
+    const neighbors = (await configureAnnVectorQuery(
+      table.vectorSearch(source.vector as number[]),
+    )
       .select([...SURPRISE_COLUMNS, "_distance"])
       .where(where)
       .limit(opts.neighbors + 8)

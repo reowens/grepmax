@@ -22,6 +22,7 @@ import { readGlobalConfig } from "../index/index-config";
 import { registerCleanup } from "../utils/cleanup";
 import { escapeSqlString, pathStartsWith } from "../utils/filter-builder";
 import { debug, log, timer } from "../utils/logger";
+import { annMinRows, isAnnEnabled } from "./ann-config";
 import { StoreLease } from "./store-lease";
 import type { VectorRecord } from "./types";
 
@@ -60,6 +61,7 @@ export function isMissingTableError(err: unknown): boolean {
 const TABLE_NAME = "chunks";
 
 const MAINTENANCE_INTERVAL_MS = 5 * 60 * 1000;
+const CLEAN_MAINTENANCE_INTERVAL_MS = 60 * 60 * 1000;
 
 export class VectorDB {
   private db: lancedb.Connection | null = null;
@@ -69,6 +71,12 @@ export class VectorDB {
   private maintenanceRunning = false;
   private maintenancePromise: Promise<void> | null = null;
   private maintenanceTimer: ReturnType<typeof setInterval> | null = null;
+  private writeEpoch = 0;
+  private maintainedEpoch = -1;
+  private maintainedTableVersion: number | null = null;
+  private lastMaintenanceMs = 0;
+  private ftsIndexEnsured = false;
+  private lastOptimizeDidWork = false;
   private maintenanceRunner: (fn: () => Promise<void>) => Promise<void> = (
     fn,
   ) => fn();
@@ -76,6 +84,7 @@ export class VectorDB {
    *  panic. Stops the (expensive) rebuild from re-running every maintenance
    *  tick for a panic it cannot fix; cleared when an optimize succeeds. */
   private ftsPanicRecoveryExhausted = false;
+  private annPanicRecoveryExhausted = false;
   private lastCorruptionLogMs = 0;
   diskPressure: DiskPressureLevel = "ok";
   private lastDiskCheckMs = 0;
@@ -124,6 +133,7 @@ export class VectorDB {
       // Skip if a previous tick is still running so close() has a single
       // promise to await instead of a chain.
       if (this.maintenancePromise) return;
+      if (!this.maintenanceDue()) return;
       const run = this.maintenanceRunner(async () => {
         try {
           await this.runMaintenance();
@@ -163,6 +173,18 @@ export class VectorDB {
    *  defer idle shutdown so we don't tear down LanceDB mid-optimize. */
   isMaintenanceActive(): boolean {
     return this.maintenancePromise !== null;
+  }
+
+  private maintenanceDue(): boolean {
+    return (
+      this.writeEpoch !== this.maintainedEpoch ||
+      !this.ftsIndexEnsured ||
+      Date.now() - this.lastMaintenanceMs >= CLEAN_MAINTENANCE_INTERVAL_MS
+    );
+  }
+
+  private markWriteCommitted(): void {
+    this.writeEpoch++;
   }
 
   /** Pause the maintenance timer (e.g. during a full index that calls runMaintenance itself). */
@@ -388,7 +410,9 @@ export class VectorDB {
           }
           await Promise.all([this.drainWrites(), this.drainCompactions()]);
           const db = await this.getDb();
-          return await mutation(db);
+          const result = await mutation(db);
+          this.markWriteCommitted();
+          return result;
         } finally {
           await temporaryExclusiveLease?.release();
         }
@@ -577,6 +601,7 @@ export class VectorDB {
         await table.addColumns(
           new Field(col, new List(new Field("item", new Utf8(), true)), true),
         );
+        this.markWriteCommitted();
         log("db", `Added ${col} column to existing table`);
       } catch (err) {
         // Lost a race with another writer that already added it, or a transient
@@ -606,6 +631,7 @@ export class VectorDB {
         schema,
       });
       await table.delete('id = "seed"');
+      this.markWriteCommitted();
       return table;
     }
 
@@ -624,6 +650,17 @@ export class VectorDB {
     }
   }
 
+  private async readTableVersion(
+    table: lancedb.Table | null,
+  ): Promise<number | null> {
+    if (!table || typeof table.version !== "function") return null;
+    try {
+      return await table.version();
+    } catch {
+      return null;
+    }
+  }
+
   async insertBatch(records: VectorRecord[]): Promise<void> {
     if (!records.length) return;
     this.ensureDiskOk();
@@ -637,15 +674,6 @@ export class VectorDB {
           view.byteLength ?? undefined,
         );
       }
-      if (
-        val &&
-        typeof val === "object" &&
-        "type" in (val as any) &&
-        (val as any).type === "Buffer" &&
-        Array.isArray((val as any).data)
-      ) {
-        return Buffer.from((val as any).data);
-      }
       if (Array.isArray(val)) return Buffer.from(val);
       return Buffer.alloc(0);
     };
@@ -654,18 +682,6 @@ export class VectorDB {
       if (Array.isArray(val)) return val.map((x) => Number(x) || 0);
       if (ArrayBuffer.isView(val) && (val as ArrayBufferView).buffer) {
         return Array.from(val as unknown as ArrayLike<number>);
-      }
-      if (
-        val &&
-        typeof val === "object" &&
-        !("length" in (val as any)) &&
-        Object.keys(val as any).length > 0
-      ) {
-        // Plain object with numeric keys (e.g., from IPC serialization)
-        return Object.entries(val as Record<string, unknown>)
-          .filter(([k]) => !Number.isNaN(Number(k)))
-          .sort((a, b) => Number(a[0]) - Number(b[0]))
-          .map(([, v]) => Number(v) || 0);
       }
       return [];
     };
@@ -721,6 +737,7 @@ export class VectorDB {
       await this.withWriteGate(async () => {
         const table = await this.ensureTableUnsafe();
         await table.add(records);
+        this.markWriteCommitted();
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -744,12 +761,130 @@ export class VectorDB {
     );
   }
 
+  async createVectorIndex(
+    rebuild = false,
+    retries = 5,
+    checkOnly = false,
+  ): Promise<boolean> {
+    if (this.checkDiskPressure() !== "ok") {
+      debug("vectordb", "ANN index skipped under disk pressure");
+      return false;
+    }
+    return this.withWriteGate(() =>
+      this.createVectorIndexUnsafe(rebuild, retries, checkOnly),
+    );
+  }
+
+  private async createVectorIndexUnsafe(
+    rebuild: boolean,
+    retries: number,
+    checkOnly: boolean,
+  ): Promise<boolean> {
+    const table = await this.ensureTableUnsafe();
+    const rowCount = await table.countRows();
+    if (rowCount < annMinRows()) return false;
+
+    const indices = await table.listIndices();
+    const vectorIndex = indices.find(
+      (index) =>
+        index.name === "vector_idx" || index.columns.includes("vector"),
+    );
+    const pathIndex = indices.find(
+      (index) => index.name === "path_idx" || index.columns.includes("path"),
+    );
+    const vectorStats = vectorIndex
+      ? await table.indexStats(vectorIndex.name)
+      : undefined;
+    const staleRatio = vectorStats
+      ? vectorStats.numUnindexedRows / Math.max(1, vectorStats.numIndexedRows)
+      : 0;
+    let needsVector =
+      isAnnEnabled() &&
+      (rebuild ||
+        !vectorIndex ||
+        vectorStats?.distanceType?.toLowerCase() !== "l2" ||
+        staleRatio > 0.2);
+    let needsPath = rebuild || !pathIndex;
+    if (!needsVector && !needsPath) return false;
+    if (checkOnly) {
+      debug(
+        "vectordb",
+        `ANN maintenance due (vector=${needsVector}, path=${needsPath}, unindexed=${vectorStats?.numUnindexedRows ?? 0})`,
+      );
+      return true;
+    }
+
+    let rebuiltAfterPanic = false;
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        if (needsVector) {
+          const numPartitions = Math.max(
+            64,
+            Math.min(2048, Math.round(Math.sqrt(rowCount))),
+          );
+          await table.createIndex("vector", {
+            config: lancedb.Index.ivfFlat({
+              distanceType: "l2",
+              numPartitions,
+            }),
+            name: "vector_idx",
+            replace: true,
+          });
+        }
+        if (needsPath) {
+          await table.createIndex("path", {
+            config: lancedb.Index.btree(),
+            name: "path_idx",
+            replace: true,
+          });
+        }
+        this.annPanicRecoveryExhausted = false;
+        return true;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (
+          attempt < retries &&
+          (message.includes("conflict") || message.includes("Retryable"))
+        ) {
+          const delay = 1000 * 2 ** (attempt - 1);
+          log(
+            "vectordb",
+            `createVectorIndex conflict (attempt ${attempt}/${retries}), retrying in ${delay}ms`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
+        }
+        if (
+          message.includes("Panic") &&
+          attempt < retries &&
+          !rebuiltAfterPanic &&
+          !this.annPanicRecoveryExhausted
+        ) {
+          rebuiltAfterPanic = true;
+          for (const name of ["vector_idx", "path_idx"]) {
+            try {
+              await table.dropIndex(name);
+            } catch {}
+          }
+          needsVector = isAnnEnabled();
+          needsPath = true;
+          continue;
+        }
+        if (rebuiltAfterPanic) this.annPanicRecoveryExhausted = true;
+        console.warn("Failed to create ANN indexes:", err);
+        return false;
+      }
+    }
+    return false;
+  }
+
   private async createFTSIndexUnsafe(
     rebuild = false,
     retries = 5,
   ): Promise<void> {
     const table = await this.ensureTableUnsafe();
     if (rebuild) {
+      this.ftsIndexEnsured = false;
       try {
         await table.dropIndex("content_idx");
       } catch {}
@@ -759,10 +894,12 @@ export class VectorDB {
         await table.createIndex("content", {
           config: lancedb.Index.fts({ withPosition: true }),
         });
+        this.ftsIndexEnsured = true;
         return;
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         if (msg.includes("already exists")) {
+          this.ftsIndexEnsured = true;
           return;
         }
         // Retry on the same Lance commit-conflict pattern that optimize() handles —
@@ -781,11 +918,13 @@ export class VectorDB {
         }
         // If position error, try dropping and recreating once
         if (msg.includes("position")) {
+          this.ftsIndexEnsured = false;
           try {
             await table.dropIndex("content_idx");
             await table.createIndex("content", {
               config: lancedb.Index.fts({ withPosition: true }),
             });
+            this.ftsIndexEnsured = true;
             log("vectordb", "Rebuilt FTS index with position support");
             return;
           } catch {}
@@ -810,6 +949,7 @@ export class VectorDB {
       await this.compactingPromise;
       return;
     }
+    this.lastOptimizeDidWork = false;
 
     let resolveCompacting!: () => void;
     this.compactingPromise = new Promise<void>((resolve) => {
@@ -839,6 +979,7 @@ export class VectorDB {
             prune.oldVersionsRemoved > 0 ||
             prune.bytesRemoved > 0
           ) {
+            this.lastOptimizeDidWork = true;
             log(
               "vectordb",
               `Compacted: ${compaction.fragmentsRemoved} frags → ${compaction.fragmentsAdded}, ` +
@@ -897,6 +1038,7 @@ export class VectorDB {
                 "Optimize panicked (likely corrupt FTS merge) — rebuilding FTS index from scratch and retrying",
               );
               try {
+                this.ftsIndexEnsured = false;
                 await this.createFTSIndexUnsafe(true);
                 continue;
               } catch (rebuildErr) {
@@ -933,12 +1075,13 @@ export class VectorDB {
    * Safe to call from multiple project processors — only one runs at a time.
    * Checks disk bloat ratio and retries optimize when bloat persists.
    */
-  async runMaintenance(): Promise<void> {
+  async runMaintenance(options: { force?: boolean } = {}): Promise<void> {
     if (this.maintenanceRunning) {
       debug("vectordb", "Maintenance already running, skipping");
       return;
     }
     this.maintenanceRunning = true;
+    const epochSnapshot = this.writeEpoch;
     try {
       const pressure = this.checkDiskPressure();
 
@@ -953,32 +1096,59 @@ export class VectorDB {
         return;
       }
 
+      if (
+        !options.force &&
+        epochSnapshot === this.maintainedEpoch &&
+        this.ftsIndexEnsured
+      ) {
+        const table = await this.openExistingTableUnsafe();
+        const version = await this.readTableVersion(table);
+        if (version === this.maintainedTableVersion) {
+          this.lastMaintenanceMs = Date.now();
+          return;
+        }
+        log(
+          "vectordb",
+          `External store writes detected (v${this.maintainedTableVersion} → v${version})`,
+        );
+      }
+
       await this.createFTSIndex();
+      await this.createVectorIndex();
 
       if (pressure === "low") {
         log("vectordb", `Low disk — single-pass optimize (no bloat retry)`);
         await this.optimize(1, 0, true);
-        return;
-      }
-
-      // Normal maintenance: full optimize + bloat check
-      await this.optimize(5, 0, true);
-
-      const table = await this.ensureTable();
-      const stats = await table.stats();
-      const diskSize = this.getDirectorySize(this.lancedbDir);
-      const logicalSize = stats.totalBytes;
-      const bloatRatio = logicalSize > 0 ? diskSize / logicalSize : 0;
-
-      // Only retry if disk is still ok after optimize (don't spiral)
-      if (bloatRatio > 2.0 && this.checkDiskPressure() === "ok") {
-        log(
-          "vectordb",
-          `Bloat detected after optimize: ${(diskSize / 1024 / 1024).toFixed(0)}MB disk vs ${(logicalSize / 1024 / 1024).toFixed(0)}MB logical (${bloatRatio.toFixed(1)}x) — retrying`,
-        );
-        await new Promise((r) => setTimeout(r, 2000));
+      } else {
+        // Normal maintenance: full optimize + bloat check
         await this.optimize(5, 0, true);
+
+        if (this.lastOptimizeDidWork) {
+          const table = await this.openExistingTableUnsafe();
+          if (table) {
+            const stats = await table.stats();
+            const diskSize = this.getDirectorySize(this.lancedbDir);
+            const logicalSize = stats.totalBytes;
+            const bloatRatio = logicalSize > 0 ? diskSize / logicalSize : 0;
+
+            // Only retry if disk is still ok after optimize (don't spiral)
+            if (bloatRatio > 2.0 && this.checkDiskPressure() === "ok") {
+              log(
+                "vectordb",
+                `Bloat detected after optimize: ${(diskSize / 1024 / 1024).toFixed(0)}MB disk vs ${(logicalSize / 1024 / 1024).toFixed(0)}MB logical (${bloatRatio.toFixed(1)}x) — retrying`,
+              );
+              await new Promise((r) => setTimeout(r, 2000));
+              await this.optimize(5, 0, true);
+            }
+          }
+        }
       }
+
+      const maintainedTable = await this.openExistingTableUnsafe();
+      this.maintainedTableVersion =
+        await this.readTableVersion(maintainedTable);
+      this.maintainedEpoch = epochSnapshot;
+      this.lastMaintenanceMs = Date.now();
     } finally {
       this.maintenanceRunning = false;
     }
@@ -1104,6 +1274,7 @@ export class VectorDB {
           .toArray();
         if (existing.length > 0) {
           await table.delete(where);
+          this.markWriteCommitted();
         }
       }
     });
@@ -1124,6 +1295,7 @@ export class VectorDB {
           values: { [field]: values[i] ?? "" },
         });
       }
+      this.markWriteCommitted();
     });
   }
 
@@ -1153,6 +1325,7 @@ export class VectorDB {
           .toArray();
         if (existing.length > 0) {
           await table.delete(where);
+          this.markWriteCommitted();
         }
       }
     });
@@ -1168,6 +1341,7 @@ export class VectorDB {
       const table = await this.openExistingTableUnsafe();
       if (!table) return;
       await table.delete(pathStartsWith(dirPrefix));
+      this.markWriteCommitted();
     });
   }
 
