@@ -99,11 +99,6 @@
     "web-tree-sitter": "^0.26.9",
     "zod": "^4.4.3"
   },
-  "pnpm": {
-    "overrides": {
-      "mathjs": "15.2.0"
-    }
-  },
   "devDependencies": {
     "@biomejs/biome": "2.4.10",
     "@types/node": "^26.0.1",
@@ -114,5 +109,8 @@
     "typescript": "^6.0.3",
     "vite": "^8.1.0",
     "vitest": "^4.1.9"
+  },
+  "overrides": {
+    "mathjs": "15.2.0"
   }
 }
