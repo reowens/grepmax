@@ -229,6 +229,43 @@ A query that is a single bare identifier (`BeyondError`, `requireAuth`, `map`) i
 
 **Measurement note.** The same investigation fixed the OSS bench instrument (`eval-oss.ts` `chunkMatches`, v0.17.8): it now credits a file + `defined_symbols`-includes-query match, not just a line-range hit. Stale hand-curated `expectedLine` values had been scoring surfaced definitions as misses (platform recall read 0.333 vs a true ~0.800). Keep this in mind when comparing pre-v0.17.8 bench numbers in older entries above — they understate recall on symbol-lookup cases.
 
+## FTS index optimize panics (upstream, recovers automatically)
+
+**What:** The daemon log shows a Rust panic during maintenance:
+
+```
+thread 'tokio-rt-worker' panicked at
+  lance-index-7.0.0/src/scalar/inverted/builder.rs:856:57:
+index out of bounds: the len is 762714 but the index is 762844
+[vectordb] Optimize panicked (likely corrupt FTS merge) — rebuilding FTS index from scratch
+```
+
+**Cause:** An out-of-bounds slice index in Lance's incremental full-text-index merge, upstream of
+gmax. Filed as [lance-format/lance#8310](https://github.com/lance-format/lance/issues/8310). It
+fires when a table accumulates many small fragments and then optimizes; the index is computed
+against a newer generation of the token dictionary than the buffer was sized for.
+
+**Not fixable by upgrading LanceDB.** 0.30 and 0.31 bundle the identical `lance-index` crate, so
+the panicking code is the same in both. This was tested directly: 0.31 panicked six times in 32
+hours of production use.
+
+**Impact: none in practice.** gmax drops and rebuilds the FTS index from scratch, then retries.
+Full rebuild is unaffected — only incremental merge panics. Across one 32-hour window the guard
+absorbed 6 panics against 8 successful optimizes, reclaimed 39 GB, and produced no incorrect
+results or data loss.
+
+You may also see `disabling auto-rebuild until an optimize succeeds`. That state is **transient**,
+not a wedge — the next successful optimize re-enables it. Search stays available throughout; a
+failed FTS rebuild only degrades to vector-only retrieval until it recovers.
+
+**Detection:**
+```bash
+grep -c "Optimize panicked" ~/.gmax/logs/daemon.log
+```
+
+**Fix:** None needed. Do not disable the rebuild guard — it is the mitigation. Tracked in
+`docs/plans/lance-fts-merge-upstream.md`.
+
 ## LanceDB manifest references a missing fragment file
 
 Verified 2026-05-07.

@@ -221,6 +221,15 @@ The daemon auto-starts when you run `gmax add`, `gmax index`, `gmax remove`, `gm
 
 gmax can use a local LLM (via llama-server) for agentic codebase investigation. This is entirely opt-in and disabled by default — gmax works fine without it.
 
+> **Memory footprint.** `gmax llm start`, `investigate`, `review`, and `summarize` load a multi-GB
+> GGUF model (typical coding models run 16–21 GB). On a memory-constrained machine that can stall
+> or hang the host. Start it deliberately, not as a reflex — and if you run coding agents against
+> this repo, they should be told not to invoke these on their own initiative. The bundled skill
+> already carries that instruction.
+>
+> Everything else in gmax — search, `trace`, `impact`, `context`, `--context-for-llm` — runs off
+> the local index with no model load.
+
 ```bash
 gmax llm on                   # Enable LLM features (persists to config)
 gmax llm start                # Start llama-server (auto-starts daemon too)
@@ -392,6 +401,19 @@ gmax watch stop && gmax watch --daemon -b  # Restart daemon
 ```
 
 `gmax doctor` reports ANN index state. `ANN: vector index not built` is normal with the default exact-search configuration.
+
+### Known issues
+
+Some log output looks alarming but is expected and self-healing. Before filing a bug, check
+[`docs/known-limitations.md`](docs/known-limitations.md) — it covers what each case means and
+whether you need to act.
+
+| You see | What it means |
+|---|---|
+| `Optimize panicked ... inverted/builder.rs` | Upstream Lance bug in incremental FTS merge ([lance#8310](https://github.com/lance-format/lance/issues/8310)). gmax rebuilds the index and retries automatically; no data loss, no action needed. |
+| `disabling auto-rebuild until an optimize succeeds` | Transient, not a wedge. The next successful optimize clears it. Search stays available. |
+| `ANN: vector index not built` | Normal — exact search is the default. |
+| `npm audit` reports advisories on install | Two transitive advisories (`sharp`, `adm-zip`) have no upstream fix yet; neither is on a code path gmax executes. |
 
 ## Contributing
 
