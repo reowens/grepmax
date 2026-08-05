@@ -90,11 +90,11 @@
     "fast-glob": "^3.3.3",
     "ignore": "^7.0.5",
     "lmdb": "^3.5.6",
+    "numkong": "^7.7.1",
     "onnxruntime-node": "1.24.3",
     "openai": "^6.45.0",
     "ora": "^9.4.1",
     "proper-lockfile": "^4.1.2",
-    "simsimd": "^6.5.5",
     "uuid": "^14.0.1",
     "web-tree-sitter": "^0.26.9",
     "zod": "^4.4.3"

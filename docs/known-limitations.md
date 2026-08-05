@@ -255,3 +255,40 @@ grep "DATA CORRUPTION" ~/.gmax/logs/daemon.log | tail
 ```
 
 **Fix:** None planned. Compaction interrupts (laptop sleep mid-write, kill -9, disk pressure) are rare enough that the detect-and-back-off behavior is sufficient.
+
+## Two transitive advisories have no upstream fix
+
+**What:** A fresh `npm install grepmax` reports 6 high-severity advisories. Two are real roots;
+the rest are cascade entries naming the packages that depend on them.
+
+| Advisory | Reaches gmax via | Parent declares | Patch requires |
+|---|---|---|---|
+| `sharp <0.35.0` | `@huggingface/transformers` | `^0.34.5` | `>=0.35.0` |
+| `adm-zip <0.6.0` | `onnxruntime-node` | `^0.5.16` | `>=0.6.0` |
+
+**Why it is not fixable here.** Both parents are already at their latest published version and
+still declare a range that excludes the patched release, so `npm audit fix` reports
+`fixAvailable: false`. Overrides do not help either: npm ignores a dependency's own `overrides`
+field, so a pin in this package's manifest has no effect on anyone installing it. The
+`pnpm-workspace.yaml` overrides protect this repo's own installs only.
+
+**Do not work around it with `--omit=optional`.** That flag would also skip
+`@lancedb/lancedb-darwin-arm64`, `@lmdb/lmdb-darwin-arm64`, and the other platform native
+binaries, which breaks the install outright.
+
+**Actual exposure.** gmax never imports `sharp` — it arrives through the transformers image
+pipeline, and gmax embeds text only. `adm-zip` runs inside `onnxruntime-node`'s install script,
+which `ignoredBuiltDependencies` suppresses locally, though a consumer's npm install may still
+execute it.
+
+**Fix:** Blocked on upstream. Clears when `@huggingface/transformers` widens its `sharp` range and
+`onnxruntime-node` widens its `adm-zip` range. Re-check with:
+
+```bash
+npm view @huggingface/transformers dependencies | grep sharp
+npm view onnxruntime-node dependencies | grep adm-zip
+```
+
+A third advisory (`mathjs`, via `simsimd`) was removed in v0.26.7 by migrating to `numkong`,
+simsimd's maintained successor, which does not carry benchmarking packages as optional
+dependencies.

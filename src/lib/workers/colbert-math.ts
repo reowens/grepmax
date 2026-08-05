@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { inner } from "simsimd";
+import { inner } from "numkong";
 import { MODEL_IDS, PATHS } from "../../config";
 
 const SKIP_IDS = new Map<string, Set<number>>();

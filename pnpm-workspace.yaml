@@ -21,10 +21,10 @@ overrides:
 
 ignoredBuiltDependencies:
   - msgpackr-extract
+  - numkong # ships prebuilt platform binaries; no local build needed
   - onnxruntime-node
   - protobufjs
   - sharp
-  - usearch
 
 ignoredOptionalDependencies:
   - "@huggingface/transformers"
