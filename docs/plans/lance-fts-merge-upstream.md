@@ -52,9 +52,11 @@ and the index computation.
 
 ### 1. Upstream report
 
-File against `lancedb/lance` with the backtrace set, overshoot table, workload shape, store
-dimensions (306k rows, ~780k tokens, 45 fragments), and versions. Link the LanceDB issue if the
-maintainers prefer it there.
+Filed 2026-08-05 as [lance-format/lance#8310](https://github.com/lance-format/lance/issues/8310)
+with the backtrace, the full 26-row overshoot table, workload shape, store dimensions, and
+versions. Note that `lancedb/lance` redirects to `lance-format/lance`. Awaiting triage; a
+duplicate check by hand is still worth one glance, since `gh issue list --search` returned no
+results for any query against that repo and may not be indexing it.
 
 ### 2. Local mitigation evaluation
 
@@ -82,4 +84,5 @@ catchup should serialize FTS index creation.
 
 ## Version History
 
+- **2026-08-05T22:20:00Z** Filed upstream issue lance-format/lance#8310.
 - **2026-08-05T22:15:00Z** Created as successor to the closed LanceDB 0.31 remediation plan.
