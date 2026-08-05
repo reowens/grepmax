@@ -1,3 +1,24 @@
+# pnpm reads overrides from here, not from package.json's top-level `overrides`
+# (that field is npm-only, and it is ignored entirely when a package is consumed
+# as a dependency). Putting the mathjs pin there silently un-pinned it.
+overrides:
+  mathjs: "15.2.0"
+  # Advisory patches for transitive deps. The first five stay inside their
+  # parent's declared range and only lift a stale lockfile pin.
+  fast-uri: "^3.1.5" # .>@modelcontextprotocol/sdk>ajv
+  ip-address: "^10.3.1" # .>@modelcontextprotocol/sdk>express-rate-limit
+  hono: "^4.12.34" # .>@modelcontextprotocol/sdk
+  "@hono/node-server": "^2.0.5" # .>@modelcontextprotocol/sdk
+  protobufjs: "^7.6.5" # .>@huggingface/transformers>onnxruntime-web
+  # These two force past the parent's range, so they need justifying:
+  # sharp — @huggingface/transformers declares ^0.34.5, patch needs >=0.35.0.
+  # Safe here because transformers is in ignoredOptionalDependencies and gmax
+  # embeds via onnxruntime-node; sharp's image path is never entered.
+  sharp: "^0.35.0"
+  # adm-zip — onnxruntime-node declares ^0.5.16, patch needs >=0.6.0. Used only
+  # by that package's install script, which ignoredBuiltDependencies suppresses.
+  adm-zip: "^0.6.0"
+
 ignoredBuiltDependencies:
   - msgpackr-extract
   - onnxruntime-node
