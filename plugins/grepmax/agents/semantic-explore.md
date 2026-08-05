@@ -49,9 +49,24 @@ gmax skeleton src/lib/auth.ts
 gmax project
 ```
 
+**Dependency shape** — god nodes, hub files, cycles, dead candidates in one pass:
+```
+gmax audit --agent --top 10
+```
+Start here for "explain this codebase" and "what's central here" questions. Rows are
+`god <symbol> <path:line> <refs> <chunks>`, `hub <file> <refs> <deps>`, `cycle <files> <n>`,
+`dead <symbol> <path:line>`. Dead candidates are hypotheses — dynamic dispatch and reflection
+are invisible to the static graph.
+
 **Related files** — dependencies and dependents:
 ```
 gmax related src/lib/auth.ts
+```
+
+**Blast radius / test coverage** — before reporting on the risk of a change:
+```
+gmax impact handleAuth --agent          # dependents + affected tests
+gmax test handleAuth --agent            # tests exercising the symbol
 ```
 
 ### Secondary: Standard tools
@@ -62,13 +77,18 @@ gmax related src/lib/auth.ts
 
 ## Strategy
 
+0. **Never start a local model.** `gmax investigate`, `review`, `summarize`, and `llm start` load a
+   multi-GB LLM and can stall the machine. They are not part of your toolkit — the index answers
+   these questions without them.
 1. **Start semantic** — use `gmax "query" --agent` first. Be specific (5+ words).
 2. **Peek before reading** — `gmax peek <symbol>` gives you signature + context in one call. Only `Read` the file if you need more.
 3. **Skeleton before reading** — `gmax skeleton <path>` before reading large files.
 4. **Trace for flow** — `gmax trace <symbol>` to understand call chains.
 5. **Use `--role ORCHESTRATION`** to skip type definitions and find actual logic.
 6. **Use `--agent` on everything** — compact output saves tokens.
-7. **Parallelize** — fire multiple gmax/grep/read calls in parallel when independent.
+7. **Scope big repos** — `--in <subpath>` / `--exclude <subpath>` (repeatable) on audit, dead, log,
+   surprises, and search.
+8. **Parallelize** — fire multiple gmax/grep/read calls in parallel when independent.
 
 ## If gmax search returns nothing
 

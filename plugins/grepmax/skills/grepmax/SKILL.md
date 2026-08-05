@@ -9,6 +9,7 @@ allowed-tools: "Bash(gmax:*), Read"
 - **Know the exact string/symbol?** → `Grep` tool (fastest, zero overhead)
 - **Know the file already?** → `Read` tool directly
 - **Searching by concept/behavior?** → `Bash(gmax "query" --agent)` (semantic search)
+- **New to the codebase?** → `Bash(gmax audit --agent)` (god nodes, hubs, cycles in one pass)
 - **Need full function body?** → `Bash(gmax extract <symbol>)` (complete source with line numbers)
 - **Quick symbol overview?** → `Bash(gmax peek <symbol>)` (signature + callers + callees)
 - **Need file structure?** → `Bash(gmax skeleton <path>)`
@@ -186,6 +187,25 @@ gmax dead handleAuth --in src/         # restrict to a sub-path
 ```
 Status is `DEAD` (no callers, not exported), `PUBLIC EXPORT` (no internal callers but the defining chunk is exported — check external usage), or `LIVE` (with caller count + top-3 file:line). The call graph reflects what tree-sitter chunked: dynamic dispatch, reflection, eval, and string-built call sites won't show up — `DEAD` is a hypothesis, not a proof.
 
+### Audit — `gmax audit`
+```
+gmax audit                             # god nodes, hub files, cycles, dead candidates
+gmax audit --agent --top 5             # compact TSV, 5 per category
+gmax audit --in src/ --exclude tests/  # scope to a sub-path
+```
+One pass over the static reference graph — the fastest way to get the shape of an unfamiliar
+codebase. Agent rows are `god <symbol> <path:line> <refs> <chunks>`, `hub <file> <refs> <deps>`,
+`cycle <comma-separated files> <n>`, `dead <symbol> <path:line>`, plus `scanned`/`dead_total`.
+Dynamic dispatch, reflection, and eval are invisible to it, so dead candidates are hypotheses.
+
+### Surprises — `gmax surprises` (experimental)
+```
+gmax surprises --agent                 # embedding-similar file pairs the static graph misses
+gmax surprises --top 10 --min-sim 0.7  # tighten the similarity floor
+```
+Orientation only — surfaces cross-directory pairs that look related by embedding but share no
+static edge. Useful for spotting duplication or missing abstractions, not for proving anything.
+
 ### Context — `gmax context <topic-or-path> --budget <tokens>`
 ```
 gmax context "authentication system" --budget 4000
@@ -195,7 +215,16 @@ gmax context src/lib/auth/ --budget 3000
 ```
 Use the path form when you already know the file or directory; it skips semantic search and gives deterministic structure/excerpt context.
 
-### Investigate — `gmax investigate "question"` (requires LLM)
+### Investigate — `gmax investigate "question"` (loads a multi-GB local LLM)
+
+> **Ask the user first.** `investigate`, `review`, and `summarize` start `llama-server` with a
+> multi-GB local model. On memory-constrained machines that can stall or hang the host. Never run
+> them — or `gmax llm start` — on your own initiative, including "just to check" or as a fallback
+> when search seems insufficient. Run them only when the user asks for that command in the moment.
+>
+> You almost never need them: `gmax context`, `--context-for-llm`, and `trace`/`impact` answer the
+> same questions using the index you already have, with no model load.
+
 ```
 gmax investigate "how does authentication work?"
 gmax investigate "what would break if I changed VectorDB?" -v
@@ -210,16 +239,19 @@ gmax status --agent                        # compact: name\tchunks\tage\tstatus
 gmax related src/file.ts --agent           # compact: dep:/rev: path\tcount
 gmax project --agent                       # compact: key\tvalue pairs
 gmax index                                 # reindex current directory
+gmax help-agent                            # reprint this cheatsheet in the terminal
 gmax config                                # view/change settings
 gmax doctor                                # health check
 gmax doctor --fix                          # auto-repair (compact, prune, clear stale locks)
-gmax llm on/off/start/stop/status          # manage local LLM server
+gmax repair --rebuild                      # last resort: destructive whole-store rebuild
+gmax llm on/off/start/stop/status          # local LLM server — see the warning above; ask first
 ```
 
 ## Workflow
 
 1. **Add** — `Bash(gmax add)` to register and index a new project
-2. **Explore** — `Bash(gmax project)` for overview of a new codebase
+2. **Explore** — `Bash(gmax project)` for overview of a new codebase, then
+   `Bash(gmax audit --agent)` for the dependency shape (god nodes, hubs, cycles)
 3. **Search** — `Bash(gmax "query" --agent)` to find code. Add `--symbol` for function/class names.
 4. **Peek** — `Bash(gmax peek <symbol>)` for a quick overview (signature + callers + callees)
 5. **Extract** — `Bash(gmax extract <symbol>)` for the full function body with line numbers
@@ -244,6 +276,8 @@ gmax llm on/off/start/stop/status          # manage local LLM server
 - **Use `--skeleton`** when `--agent` results aren't enough — shows file structure for top matches.
 - **Use `--imports`** when you need to understand a file's dependencies.
 - **Use `--root <dir>`** to search/trace/query a different project from your current directory.
+- **Scope with `--in <subpath>` / `--exclude <subpath>`** (both repeatable) on `audit`, `surprises`,
+  `dead`, `log`, and search — narrows a big repo to the area you care about.
 - **Don't search for exact strings** — use grep/Grep for that. gmax finds concepts.
 
 ## If search fails or returns nothing
