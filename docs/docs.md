@@ -109,9 +109,10 @@ aggregation over the data gmax already has.
 
 **Current Work:**
 
-1. **LanceDB FTS panic remediation.** Repeated FTS merge panics recurred after the v0.26.4
-   recovery shipped. Evaluate LanceDB 0.31, verify API/peer-dependency compatibility, and require
-   maintenance convergence under watcher churn.
+1. **Lance FTS merge panic — upstream.** The panic is an out-of-bounds in `lance-index 7.0.0`
+   that no LanceDB version bump can fix; 0.30 and 0.31 bundle the same crate. v0.26.6 ships 0.31
+   with the drop-and-rebuild guard as the actual mitigation. File upstream, then decide between
+   incremental FTS merge and periodic full rebuild.
 2. **Embedding re-embed cutover.** Do not start until a better embedding model is selected; then
    decide migration granularity/table layout before implementing background re-embed.
 3. **Embedding layout decision.** Product decision still needed: per-project upgrades imply a second
@@ -123,7 +124,7 @@ aggregation over the data gmax already has.
 
 | Priority | Plan | Next Work |
 |---|---|---|
-| Active | [LanceDB FTS Panic Remediation](plans/lancedb-fts-panic-remediation.md) | Evaluate LanceDB 0.31 and prove FTS maintenance convergence after repeated live panic/recovery cycles. |
+| Active | [Lance FTS Merge Panic — Upstream](plans/lance-fts-merge-upstream.md) | File the upstream lance-index out-of-bounds report, then weigh incremental FTS merge against periodic full rebuild. |
 | Gated | [Embedding Reembed Atomic Cutover](plans/embedding-reembed-atomic-cutover.md) | Do not start until a better embedding model is chosen; then decide per-project vs whole-corpus layout and build reembed/cutover. |
 | Gated | [Embedding Layout Decision](embedding-layout-decision.md) | Product decision still needed: per-project upgrades imply second nullable vector column; whole-corpus upgrades imply second table swap. |
 | Measure-first | [Semantic Search — Open Backlog](plans/2026-05-25-semantic-search-landscape.md) | No active build target; PPR/HyDE/query expansion/cache only reopen with new measured miss or latency fixtures. |
@@ -138,6 +139,7 @@ aggregation over the data gmax already has.
 | [macOS Kernel-Zone Panic Incident - 2026-08-04](2026-08-04-macos-kernel-zone-panic-incident.md) | Active |
 | [Performance Review — 2026-08-04](2026-08-04-performance-review.md) | Active |
 | [Embedding Layout Decision](embedding-layout-decision.md) | Active |
+| [Lance FTS Incremental-Merge Panic — Upstream Pursuit](plans/lance-fts-merge-upstream.md) | Active |
 
 ## Planned
 
@@ -154,10 +156,11 @@ aggregation over the data gmax already has.
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 51 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 52 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
+| [LanceDB FTS Panic Remediation](archived/lancedb-fts-panic-remediation.md) | Archived: H1 is falsified. The live daemon has run LanceDB 0.31 against the shared store since 2026-08-04T06:06:47 because the global install is a symlink to the working tree, and it recorded six FTS optimize panics in that window. Both 0.30 and 0.31 ship the identical lance-index 7.0.0 crate, so the upgrade never had a mechanism to fix the panic. The shipped guard nevertheless recovers every occurrence and the store converges, so the operator has approved shipping 0.31 as a no-worse runtime rather than pinning back. |
 | [Mcp Server Migration](archived/mcp-server-migration.md) | Archived: The Server-to-McpServer migration shipped in `e80daca`; the result-shape follow-up shipped in `04a87a4`. The current server registers 27 tools with Zod schemas, explicit registered-project scoping, protocol coverage, and subsequent lifecycle/performance hardening. |
 | [Graphify Derived Improvements](archived/graphify-derived-improvements.md) | Archived: Completed and shipped. Phase 1 and Phase 2 are shipped or rejected by measurement. Audit file dependency cycles are shipped. Phase 3A-3E are complete for the embedding-native orientation surface: `gmax surprises --experimental` and MCP `surprising_connections` have protocol coverage, corpus calibration, tuned scoring/filtering, actionable output, scale measurements, docs, and known-limitations coverage. |
 | [gmax — Agent UX Backlog](archived/agent-ux-proposals.md) | Archived: All scoped Agent UX work is shipped. Phase 7 impact rollups shipped in `a71c616`, Phase 9 SQL-template skeleton summaries shipped in `504c055`, and Phase 12's daemon managers and search-output extraction shipped in `79f12d7` and `fbb8396`. Remaining ideas are measure-first reopen triggers, not an active backlog. |
@@ -165,7 +168,6 @@ Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signa
 | [v0.26.2 Stability Cycle](archived/stability-cycle-v0.26.2.md) | Archived: Historical v0.26.2-v0.26.5 stability cycle. SC-001 and SC-003 were fixed and live-verified; SC-002 recovery shipped and restored compaction, but FTS merge panics recurred repeatedly through 2026-08-03. The dated observation window and formal exit snapshot were never completed, and the 2026-08-04 watcher/index/store changes supersede this baseline. |
 | [Performance Backlog Fixes](archived/performance-backlog-fixes.md) | Archived: Phases 1A through 5A are implemented and verified. Phase 1B measurement retained the 1536 MB worker recycle default. Phase 5B's flag-gated IVF_FLAT implementation failed its recall gate and remains disabled; its path scalar index was retained for scoped exact-search latency. The full 124-file / 1035-test regression gate passes. |
 | [Health Backlog — chunker v4 reindex, doctor cleanups, summarizer proposal](archived/2026-07-08-health-backlog.md) | Archived: Backlog left over from the 2026-07-06 health-check session (aeb966f MLX hardening, fd59de5 recycle-threshold fix). Four items, all verified against code/state on 2026-07-08: 11 projects stale at chunker v3 (doctor confirms), summarizer 0% coverage rendered as FAIL, gpu-mode doctor false-WARNs on the granite model path, ~/.zshrc:70 exports an unguarded external-volume HF_HOME. MLX healthy on 8100 as of plan creation. Sized for a single overnight session. |
-| [Mcp Search Scope Leak](archived/mcp-search-scope-leak.md) | Archived: ARCHIVED. Fix A+B is implemented and fresh MCP-session smoke passed from `qsys/qsys-training` and `qsys/docs`: default `semantic_search` stayed qsys-scoped with zero platform leakage, while `scope:"all"` and `projects:"platform"` returned platform results. Follow-up source-mode robustness fix shipped in `WorkerPool`: TS workers now preload an absolute `tsx` loader instead of bare `ts-node/register`, so fresh source MCP processes launched outside the gmax repo can boot query workers. Fix C (findProjectRoot registry/marker-aware) intentionally NOT taken — higher risk, left as documented option. |
 
 - Use `dotmd list` or `dotmd json` for the full inventory.
 <!-- GENERATED:dotmd:end -->

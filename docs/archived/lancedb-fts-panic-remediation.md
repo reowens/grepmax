@@ -1,8 +1,8 @@
 ---
 type: plan
-status: in-session
+status: archived
 created: 2026-08-04
-updated: 2026-08-05T21:51:56Z
+updated: 2026-08-05T22:15:00Z
 surfaces:
   - store
   - index
@@ -271,4 +271,35 @@ golden-result hashes, gate decision, operator, timestamp, and rollback outcome.
 
 ## Closeout
 
-<!-- Fill when the vendor upgrade/remediation and live soak are complete. -->
+Closed 2026-08-05. The vendor-upgrade hypothesis is resolved; the panic is not.
+
+**Outcome.** H1 is falsified. H2, H3, and H4 hold. H5 holds in practice — the store converges to
+4 fragments / 8 versions after writes stop. LanceDB 0.31 shipped in v0.26.6 as a no-worse runtime,
+not as a fix.
+
+**Why the upgrade could not have worked.** LanceDB 0.30 and 0.31 bundle the identical
+`lance-index 7.0.0` crate, so the panicking code is byte-for-byte the same in both. The isolated
+soak's 0-vs-1 result was noise against a control arm of one.
+
+**Root-cause evidence gathered after the gate.** All 26 retained backtraces are the same assert at
+`lance-index-7.0.0/src/scalar/inverted/builder.rs:856:57`, and every one is an out-of-bounds
+slice index where the index exceeds the length:
+
+```
+index out of bounds: the len is 762714 but the index is 762844
+index out of bounds: the len is 780366 but the index is 782372
+```
+
+Thirteen distinct `len` values each panicked exactly twice — once on `optimize()` and once on the
+guard's rebuild retry. Overshoot ranges from +89 to +2006 and `len` grows monotonically across
+occurrences. That signature is a stale-length read during incremental FTS merge: the index is
+derived from a newer generation of the token dictionary than the buffer was sized against. It is
+an upstream defect, not a configuration or workload error.
+
+**What actually mitigates it.** The drop-and-rebuild guard in `createFTSIndexUnsafe()` plus
+`optimize()` recovery. Over 32 hours of live 0.31 exposure that guard absorbed 6 panics against
+8 successful optimizes, reclaimed 39 GB, and produced no correctness drift or data loss.
+
+**Superseded by** `docs/plans/lance-fts-merge-upstream.md`, which pursues the upstream fix.
+The host kernel-zone investigation continues separately in
+`docs/2026-08-04-macos-kernel-zone-panic-incident.md`.

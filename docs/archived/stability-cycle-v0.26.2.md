@@ -20,7 +20,7 @@ domain: v0.26.2 post-release stability and index-integrity validation
 audience: internal
 related_plans:
   - 2026-07-09-repository-audit-fixes.md
-  - ../plans/lancedb-fts-panic-remediation.md
+  - lancedb-fts-panic-remediation.md
 related_docs:
   - ../2026-07-09-repository-audit.md
 current_state: >
@@ -30,7 +30,7 @@ current_state: >
   completed, and the 2026-08-04 watcher/index/store changes supersede this baseline.
 next_step: >
   None in this versioned cycle. Continue the recurring FTS panic and maintenance-convergence
-  work in docs/plans/lancedb-fts-panic-remediation.md.
+  work in lancedb-fts-panic-remediation.md.
 summary: Time-boxed v0.26.2 stability cycle for daemon, watcher, cache/vector coherence, disk pressure, and store growth.
 ---
 

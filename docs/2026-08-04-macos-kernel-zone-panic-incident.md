@@ -11,7 +11,7 @@ domain: macOS APFS and EndpointSecurity kernel-zone exhaustion incident
 audience: internal
 summary: Investigation and remediation record for recurring data.kalloc.1024 kernel panics on macOS 26.5.2.
 related_plans:
-  - plans/lancedb-fts-panic-remediation.md
+  - archived/lancedb-fts-panic-remediation.md
 related_docs:
   - docs/2026-08-04-performance-review.md
 current_state: >
