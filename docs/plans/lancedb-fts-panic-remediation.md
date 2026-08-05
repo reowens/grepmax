@@ -2,7 +2,7 @@
 type: plan
 status: in-session
 created: 2026-08-04
-updated: 2026-08-04T20:44:56Z
+updated: 2026-08-05T21:51:56Z
 surfaces:
   - store
   - index
@@ -20,15 +20,16 @@ related_docs:
   - docs/2026-08-04-performance-review.md
   - docs/2026-08-04-macos-kernel-zone-panic-incident.md
 current_state: >
-  Phases 0-3 are green. In the isolated Phase 4 soak, LanceDB 0.30 produced one recoverable
-  FTS optimize panic while 0.31 produced none across 100 iterations and 12 qualifying cycles;
-  both had zero correctness mismatches. The host kernel panicked 16 seconds after the 0.31
-  summary with a recurring APFS/EndpointSecurity data.kalloc.1024 exhaustion, so Phase 4 is
-  no-go and no live rollout is permitted.
+  H1 is falsified. The live daemon has run LanceDB 0.31 against the shared store since
+  2026-08-04T06:06:47 because the global install is a symlink to the working tree, and it
+  recorded six FTS optimize panics in that window. Both 0.30 and 0.31 ship the identical
+  lance-index 7.0.0 crate, so the upgrade never had a mechanism to fix the panic. The shipped
+  guard nevertheless recovers every occurrence and the store converges, so the operator has
+  approved shipping 0.31 as a no-worse runtime rather than pinning back.
 next_step: >
-  Preserve the panic reports and harness, correlate the recurring kernel-zone leak with Apple
-  and EndpointSecurity diagnostics, and define a low-I/O reproduction or OS/vendor escalation
-  path. Do not rerun the soak, deploy LanceDB 0.31, or perform additional bulk APFS churn.
+  Ship 0.31 with the guard as the actual mitigation and track panic rate per release. Pursue the
+  fix upstream in lance-index inverted-builder rather than through LanceDB version bumps, and
+  keep correlating the host kernel-zone leak separately. Do not rerun the heavy soak.
 summary: Successor to the expired v0.26.2 stability cycle for recurring Lance FTS merge panics.
 ---
 
@@ -221,6 +222,37 @@ golden-result hashes, gate decision, operator, timestamp, and rollback outcome.
 - Gate decision: Phase 4 no-go. Do not begin Phase 5, rerun the heavy soak, or deploy 0.31 until
   the kernel-zone leak is understood or validation can run on an unaffected host/OS build.
 
+### 2026-08-05 Unplanned Live Exposure, H1 Falsified, Ship Decision
+
+- The Phase 4 record above understated exposure. Global `grepmax` is a symlink to the working
+  tree, so `dist/index.js` resolves LanceDB from the repo's `node_modules`. Installing 0.31 at
+  `04:35` and rebuilding `dist` at `04:40` on 2026-08-04 meant the next daemon start adopted the
+  candidate. The post-panic reboot started daemon PID 3200 at `2026-08-04T06:06:47`. The claim
+  that the live daemon stayed on the existing runtime is withdrawn.
+- Phase 5 was therefore entered without approval, rollback checkpoint, or instrumentation. The
+  observation window below is opportunistic, not a designed soak.
+- **H1 is falsified.** Six FTS optimize panics occurred on 0.31 against the live shared store:
+  `2026-08-04T14:36:55`, `15:54:12`, `20:26:37`, `22:30:48`, `2026-08-05T04:44:49`, `06:19:58`.
+  Each escalated through rebuild to `Optimize failed: Panic in async function`.
+- Mechanistic confirmation: all 26 retained panic backtraces across both runtimes cite
+  `lance-index-7.0.0/src/scalar/inverted/builder.rs:856:57`. LanceDB 0.30 and 0.31 bundle the
+  same lance-index crate, so the panicking code is unchanged. The isolated soak's 0-vs-1 result
+  was underpowered noise against a control arm of one, not evidence of a fix.
+- Countervailing live evidence over the same window: 8 successful optimizes against 6 panics,
+  39.0 GB reclaimed across 8 compactions, and every panic self-healed on a later pass
+  (`04:44:49` recovered at `05:26:05`; `06:19:58` recovered at `14:49:55`, each compacting
+  51 fragments to 2). Store state is 10 fragments and 17 versions, inside the acceptance
+  thresholds. No correctness drift, scoped-search leak, or data loss was observed.
+- Perceived runtime improvement is confounded and should not be credited to 0.31. Commit
+  `7b6349c` (indexing and search overhead) landed at `2026-08-04T03:38`, before the same daemon
+  start, and is the change that touches the hot paths.
+- Gate decision: Phase 4/5 acceptance is **not** met — the no-panic criterion fails on both
+  runtimes. The operator has nonetheless approved shipping 0.31 on the basis that it is
+  no-worse than 0.30, has 32 hours of live exposure without correctness or durability harm, and
+  passed bidirectional downgrade probes. The guard, not the version bump, is the mitigation.
+- Residual risk accepted at ship time: downgrade compatibility is proven only on a two-row
+  temporary store, not at the 306k-row production shape, and users hold no rollback snapshot.
+
 ## Non-Goals
 
 - Re-enabling IVF_FLAT ANN.
@@ -230,6 +262,7 @@ golden-result hashes, gate decision, operator, timestamp, and rollback outcome.
 
 ## Version History
 
+- **2026-08-05T21:51:56Z** Falsified H1 from live 0.31 exposure; recorded the ship decision.
 - **2026-08-04T20:44:56Z** Recorded the isolated soak result and recurring kernel-panic no-go.
 - **2026-08-04T12:01:09Z** Cleared the FSEvents blocker; full suite passes and Phase 4 is ready.
 - **2026-08-04T11:39:21Z** Recorded Phases 0-3 candidate evidence; Phase 2 blocked by host FSEvents canary.
