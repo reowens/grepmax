@@ -111,6 +111,29 @@ Maps absolute file paths to `{hash: string, mtimeMs: number, size: number}`. Use
 
 One table (`chunks`), all projects share it, scoped by path prefix (`/absolute/path/to/project/`). A path btree accelerates scoped exact search. IVF_FLAT is flag-gated by `GMAX_ANN=1` and disabled by default because the production recall soak failed its acceptance threshold. The five-minute maintenance loop runs only after writes or missing-index work; clean stores get an hourly table-version probe for external writes before compaction.
 
+#### The FTS optimize panic is expected — do not "fix" the guard
+
+`table.optimize()` intermittently panics inside Lance's incremental FTS merge with an
+out-of-bounds index at `lance-index-7.0.0/src/scalar/inverted/builder.rs:856`. This is an
+**upstream defect**, filed as [lance-format/lance#8310](https://github.com/lance-format/lance/issues/8310).
+
+Do not attempt to fix it by bumping LanceDB. LanceDB 0.30 and 0.31 bundle the identical
+`lance-index` crate, so the panicking code is the same in both — this was tried, and 0.31 shipped
+in v0.26.6 only because it is no worse. Full FTS rebuild is unaffected; only incremental merge
+panics.
+
+The mitigation lives in `vector-db.ts`: on panic, drop and rebuild the FTS index from scratch, then
+retry optimize. It works — over one 32-hour window it absorbed 6 panics against 8 successful
+optimizes, reclaimed 39 GB, and produced no correctness drift. Two behaviors to preserve:
+
+- `createFTSIndexUnsafe()` **throws** on terminal failure rather than returning silently. That
+  signal is load-bearing: `ftsAvailable` and maintenance success are only meaningful if failure is
+  visible. All five call sites already catch it.
+- After a failed rebuild the daemon logs `disabling auto-rebuild until an optimize succeeds`. This
+  is transient, not a wedge — a later optimize re-enables it.
+
+Tracked in `docs/plans/lance-fts-merge-upstream.md`.
+
 ### Project Registry (projects.json)
 
 Status values: `"pending"` | `"indexed"` | `"error"`
@@ -314,6 +337,9 @@ curl -s http://127.0.0.1:8100/health               # MLX embed server up?
 - `src/lib/workers/embeddings/mlx-client.ts` — HTTP client for MLX embed server (port 8100)
 - `src/lib/workers/embeddings/granite.ts` — ONNX CPU embedding (fallback)
 - `src/lib/workers/embeddings/colbert.ts` — ColBERT late interaction model
+- `src/lib/workers/colbert-math.ts` — MaxSim + cosine over ColBERT vectors. Uses `inner` from
+  `numkong` (simsimd's maintained successor; simsimd was dropped in v0.26.7 because it pulled
+  `mathjs` as an optional dependency and was silently falling back to its JS path)
 
 ### Embed Server
 - `mlx-embed-server/server.py` — FastAPI, MLX GPU embeddings, idle timeout, Metal cache management
@@ -327,6 +353,22 @@ curl -s http://127.0.0.1:8100/health               # MLX embed server up?
 - `src/config.ts` — Constants: PATHS, CONFIG, INDEXABLE_EXTENSIONS, worker/memory limits
 - `src/lib/index/index-config.ts` — Per-project + global config read/write
 - `src/lib/utils/project-registry.ts` — projects.json CRUD
+- `pnpm-workspace.yaml` — **dependency overrides live here**, next to the other pnpm 10 settings.
+  Do not move them to `package.json`'s top-level `overrides`: pnpm does not read that field, and
+  npm ignores a *dependency's* overrides entirely, so it is inert both locally and for consumers.
+  A migration to that field silently un-pinned `mathjs` and reintroduced two high advisories that
+  the release CI audit gate then blocked on.
+
+### Release
+`npm version patch` runs the whole chain: `preversion` gates (tests, both typechecks, Biome) ->
+`sync-versions.sh` (plugin.json + marketplace.json) -> `postrelease.sh` (push, tag, GitHub
+release, wait for `release.yml`, npm publish, global install). CI re-runs every gate plus
+`pnpm audit --prod`, a tag/version match check, and a tarball source-leak audit.
+
+Note that `postrelease.sh` ends with a real `npm install -g`, which **replaces an `npm link`
+symlink**. If the global `gmax` is linked to this working tree, re-run `npm link` afterward — and
+be aware that while it is linked, any dependency change plus a daemon restart reaches the live
+shared store.
 
 ### Logging
 - `src/lib/utils/logger.ts` — `log()`, `debug()`, `timer()`, `debugTimer()`, `debugEvery()`; gated on `GMAX_DEBUG=1`

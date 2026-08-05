@@ -2,7 +2,7 @@
 type: doc
 status: active
 created: 2026-08-04T20:50:29Z
-updated: 2026-08-04T21:01:30Z
+updated: 2026-08-05T22:40:00Z
 surfaces:
   - host
   - store
@@ -51,8 +51,10 @@ is not required for the failure.
 - Two forced host restarts and loss of in-memory session state.
 - Automatic removal of the approved `/var/folders/.../T/opencode` soak snapshot and evidence
   files during reboot.
-- LanceDB 0.31 Phase 4 validation is a no-go despite its improved user-space FTS result.
-- Live LanceDB 0.31 deployment and additional high-churn APFS soaks are blocked.
+- Additional high-churn APFS soaks are blocked.
+- ~~Live LanceDB 0.31 deployment is blocked.~~ Superseded 2026-08-05: 0.31 shipped in v0.26.6
+  after the panic was shown to be a version-invariant upstream defect. See the LanceDB section
+  below.
 - The host remains at risk until the OS is updated and kernel-zone growth is shown to remain
   bounded under normal work.
 
@@ -195,11 +197,20 @@ Each runtime executed 100 maintenance iterations with 12 qualifying cycles above
 | LanceDB 0.30 | 1 | 0 after FTS rebuild recovery | 0 |
 | LanceDB 0.31 | 0 | 0 | 0 |
 
-The 0.31 process completed before the host panic. This supports two separate conclusions:
+The 0.31 process completed before the host panic. Two conclusions were drawn at the time, and only
+the second survived:
 
-1. LanceDB 0.31 behaved better than 0.30 for the observed user-space FTS merge failure.
+1. ~~LanceDB 0.31 behaved better than 0.30 for the observed user-space FTS merge failure.~~
+   **Retracted 2026-08-05.** The control arm recorded exactly one panic, so 0-versus-1 could never
+   separate a fix from chance. Live exposure then produced six panics on 0.31, and both releases
+   were found to bundle the identical `lance-index 7.0.0` crate. The defect is version-invariant.
+   See `docs/archived/lancedb-fts-panic-remediation.md` and
+   [lance-format/lance#8310](https://github.com/lance-format/lance/issues/8310).
 2. The host is not safe for deployment validation because the kernel crashed immediately after the
-   qualifying workload.
+   qualifying workload. **This still holds.**
+
+The retraction does not weaken the kernel findings below — it only removes LanceDB version choice
+as a variable. The workload that preceded the panic was the same either way.
 
 The kernel leak cannot be attributed solely to LanceDB because it was visible days earlier and a
 matching panic occurred before the 0.31 soak. The soak remains a likely accelerator because it
@@ -344,3 +355,9 @@ runtimes, and NDJSON files were automatically cleared by reboot.
 Install macOS 26.6 before any further storage soak or LanceDB rollout. A stable user-space soak result
 does not override a host kernel crash. Resume Phase 4 only after the updated host demonstrates bounded
 `data.kalloc.1024` usage under normal work and a separate low-risk validation strategy is approved.
+
+## Version History
+
+- **2026-08-05T22:40:00Z** Retracted the "0.31 behaved better" conclusion after live exposure
+  falsified it; unblocked the 0.31 deployment note. Kernel findings unchanged.
+- **2026-08-04T21:01:30Z** Incident report created from the two panic reports and jetsam history.
