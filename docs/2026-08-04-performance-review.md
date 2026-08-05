@@ -38,6 +38,7 @@ related_plans:
 related_docs:
   - docs/2026-07-09-repository-audit.md
   - docs/known-limitations.md
+  - docs/2026-08-04-macos-kernel-zone-panic-incident.md
 current_state: >
   Full performance review completed 2026-08-04 across the indexing pipeline, worker/embedding
   path, storage, daemon, search, and graph tools. Findings ranked and verified; the watcher

@@ -135,6 +135,7 @@ aggregation over the data gmax already has.
 
 | Doc | Status |
 |-----|--------|
+| [macOS Kernel-Zone Panic Incident - 2026-08-04](2026-08-04-macos-kernel-zone-panic-incident.md) | Active |
 | [Performance Review — 2026-08-04](2026-08-04-performance-review.md) | Active |
 | [Embedding Layout Decision](embedding-layout-decision.md) | Active |
 

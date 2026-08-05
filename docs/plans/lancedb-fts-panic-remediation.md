@@ -2,7 +2,7 @@
 type: plan
 status: in-session
 created: 2026-08-04
-updated: 2026-08-04T11:39:21Z
+updated: 2026-08-04T20:44:56Z
 surfaces:
   - store
   - index
@@ -18,15 +18,17 @@ related_plans:
   - docs/archived/performance-backlog-fixes.md
 related_docs:
   - docs/2026-08-04-performance-review.md
+  - docs/2026-08-04-macos-kernel-zone-panic-incident.md
 current_state: >
-  The isolated LanceDB 0.31 candidate passes focused real-store behavior and bidirectional
-  0.30/0.31 disposable-store compatibility. Production/test typechecks, Biome, and build pass;
-  124 test files and 1037 tests pass. The remaining full-suite failure is the pre-LanceDB
-  macOS watcher canary failing to start an FSEvents stream, including when run alone.
+  Phases 0-3 are green. In the isolated Phase 4 soak, LanceDB 0.30 produced one recoverable
+  FTS optimize panic while 0.31 produced none across 100 iterations and 12 qualifying cycles;
+  both had zero correctness mismatches. The host kernel panicked 16 seconds after the 0.31
+  summary with a recurring APFS/EndpointSecurity data.kalloc.1024 exhaustion, so Phase 4 is
+  no-go and no live rollout is permitted.
 next_step: >
-  Re-run the native FSEvents canary in a healthy host session. If it and the full suite pass,
-  run the production-shaped 0.30/0.31 isolated soak; do not deploy the candidate to the live
-  shared store before the soak converges and explicit operator approval is obtained.
+  Preserve the panic reports and harness, correlate the recurring kernel-zone leak with Apple
+  and EndpointSecurity diagnostics, and define a low-I/O reproduction or OS/vendor escalation
+  path. Do not rerun the soak, deploy LanceDB 0.31, or perform additional bulk APFS churn.
 summary: Successor to the expired v0.26.2 stability cycle for recurring Lance FTS merge panics.
 ---
 
@@ -180,6 +182,44 @@ golden-result hashes, gate decision, operator, timestamp, and rollback outcome.
 - Gate decision: Phase 0 go; Phase 1 go; Phase 2 blocked on host FSEvents health; Phase 3
   compatibility evidence passes but does not override the Phase 2 block; Phase 4 not started.
   No live store, daemon binary, summarizer, or local LLM was changed or started.
+- Follow-up at `2026-08-04T12:01:09Z`: the FSEvents canary passed alone (1 file / 2 tests),
+  then the full suite passed (125 files / 1038 tests). Phase 2 is now go; Phases 0-3 are green;
+  Phase 4 is ready but has not started. The earlier failure is classified as transient host
+  contention, not candidate behavior.
+
+### 2026-08-04 Isolated Soak And Kernel No-Go
+
+- Commit `874dfe1` contains the LanceDB 0.31 candidate, compatibility and downgrade probes,
+  FTS terminal-failure signaling, and deterministic gate evidence. The live daemon and shared
+  store remained on the existing runtime.
+- A coherent 17 GB source snapshot was taken while the daemon was paused, with LanceDB,
+  MetaCache, project registry, and config copied together. The daemon was then restarted
+  unchanged. Separate APFS copy-on-write stores were used for the two runtimes.
+- The identical 100-iteration workloads each included 12 qualifying cycles above 50 fragments.
+  LanceDB 0.30 recorded one FTS optimize panic, recovered by rebuilding FTS, and recorded zero
+  correctness mismatches. LanceDB 0.31 recorded zero FTS optimize panics, zero rebuild failures,
+  and zero correctness mismatches.
+- The 0.31 process emitted its successful summary at `2026-08-04T13:05:15Z`. The kernel panicked
+  at `2026-08-04T13:05:32Z`, 16 seconds later. This is a Phase 4 crash and therefore a no-go even
+  though the candidate's user-space FTS result was better than the baseline.
+- The panic exhausted `data.kalloc.1024` at approximately 20 GB / 21.2 million allocations.
+  Its backtrace includes APFS `2811.121.1` and EndpointSecurity `1.0`; the panicked task was
+  `opencode.exe` PID 44169. This identifies the allocation path active at exhaustion, not the
+  process or component that accumulated the leaked allocations.
+- The prior report from August 3 has the same macOS `25F84` / Darwin `25.5.0` build, panic text,
+  APFS/EndpointSecurity backtrace, and `opencode.exe` panicked task (PID 31547), exhausting the
+  same zone at approximately 19 GB / 20.9 million allocations.
+- Jetsam diagnostics show the same zone was already the largest at 5.3 GB on July 28, 10.2 GB
+  on July 29, 11.5 GB on August 1, and 19.7 GB before the August 3 panic. The leak therefore
+  predates this LanceDB 0.31 soak; filesystem churn may accelerate it, but ownership is unproven.
+- Retained diagnostics:
+  `/Library/Logs/DiagnosticReports/panic-full-2026-08-03-152634.0002.panic` and
+  `/Library/Logs/DiagnosticReports/panic-full-2026-08-04-060621.0002.panic`.
+- The reboot cleared the temporary root containing the coherent snapshot, isolated stores,
+  runtimes, and NDJSON files. No bulk cleanup remains. The soak harness remains at
+  `scripts/lancedb-fts-soak.mts`; the summary values above were captured before the crash.
+- Gate decision: Phase 4 no-go. Do not begin Phase 5, rerun the heavy soak, or deploy 0.31 until
+  the kernel-zone leak is understood or validation can run on an unaffected host/OS build.
 
 ## Non-Goals
 
@@ -190,6 +230,8 @@ golden-result hashes, gate decision, operator, timestamp, and rollback outcome.
 
 ## Version History
 
+- **2026-08-04T20:44:56Z** Recorded the isolated soak result and recurring kernel-panic no-go.
+- **2026-08-04T12:01:09Z** Cleared the FSEvents blocker; full suite passes and Phase 4 is ready.
 - **2026-08-04T11:39:21Z** Recorded Phases 0-3 candidate evidence; Phase 2 blocked by host FSEvents canary.
 - **2026-08-04T11:28:13Z** Started (active → in-session).
 - **2026-08-04** Created after the all-plan refresh confirmed post-v0.26.4 panic recurrence.
