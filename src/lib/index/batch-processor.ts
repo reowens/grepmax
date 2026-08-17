@@ -73,6 +73,9 @@ export class ProjectBatchProcessor {
   private currentBatchAc: AbortController | null = null;
   private lastCorruptionLogMs = 0;
   private policyChangedDuringBatch = false;
+  /** Rolling window of recent batch outcomes — see `progress`. */
+  private readonly recentBatches: { files: number; reindexed: number }[] = [];
+  private static readonly RECENT_BATCH_WINDOW = 5;
 
   constructor(opts: BatchProcessorOptions) {
     this.projectRoot = opts.projectRoot;
@@ -142,16 +145,33 @@ export class ProjectBatchProcessor {
     this.scheduleBatch();
   }
 
-  /** Live (re)index progress: files queued + whether a batch is running. */
+  /** Live (re)index progress: files queued + whether a batch is running.
+   *
+   *  recentFiles/recentReindexed summarize the last few batches so callers can
+   *  tell a real backlog from a queue draining as cache hits. A catchup after an
+   *  FSEvents drop queues the whole project — on a large repo that is 10k+ files
+   *  clearing at ~0.0s per 50-file batch with 0 reindexed, which is verification,
+   *  not pending work. Without this, a large pendingFiles alone reads as "the
+   *  index is far behind" and search callers caveat correct results. */
   get progress(): {
     pendingFiles: number;
     processing: boolean;
     failedFiles: number;
+    recentFiles: number;
+    recentReindexed: number;
   } {
+    let recentFiles = 0;
+    let recentReindexed = 0;
+    for (const b of this.recentBatches) {
+      recentFiles += b.files;
+      recentReindexed += b.reindexed;
+    }
     return {
       pendingFiles: this.pending.size,
       processing: this.processing,
       failedFiles: this.terminalFailures.size,
+      recentFiles,
+      recentReindexed,
     };
   }
 
@@ -563,6 +583,12 @@ export class ProjectBatchProcessor {
       const duration = Date.now() - start;
       if (reindexed > 0) {
         this.onReindex?.(reindexed, duration);
+      }
+      this.recentBatches.push({ files: batch.size, reindexed });
+      if (
+        this.recentBatches.length > ProjectBatchProcessor.RECENT_BATCH_WINDOW
+      ) {
+        this.recentBatches.shift();
       }
       const remaining = this.pending.size;
       log(

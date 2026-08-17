@@ -41,6 +41,61 @@ describe("formatIndexStateFooter", () => {
     expect(footer).not.toContain("0 files");
   });
 
+  // A catchup after an FSEvents drop queues the whole project — 10k+ files
+  // clearing at ~0.0s per batch with 0 reindexed. Reporting that as "results may
+  // be incomplete" trains agents to distrust and retry correct answers.
+  it("reports re-verification as current, not incomplete, in agent mode", () => {
+    const footer = formatIndexStateFooter(
+      { indexing: true, pendingFiles: 10943, verifying: true },
+      { agent: true },
+    );
+    expect(footer).toBe(
+      "[index: verifying ~10943 unchanged files · results current]",
+    );
+    expect(footer).not.toContain("incomplete");
+    expect(footer).not.toContain("retry");
+  });
+
+  it("reports re-verification as current in non-agent mode", () => {
+    expect(
+      formatIndexStateFooter(
+        { indexing: true, pendingFiles: 10943, verifying: true },
+        { agent: false },
+      ),
+    ).toBe("Index verifying 10943 unchanged files — results are current.");
+    expect(
+      formatIndexStateFooter(
+        { indexing: true, pendingFiles: 1, verifying: true },
+        { agent: false },
+      ),
+    ).toBe("Index verifying 1 unchanged file — results are current.");
+  });
+
+  it("still warns when there is real outstanding work", () => {
+    const footer = formatIndexStateFooter(
+      { indexing: true, pendingFiles: 10943, verifying: false },
+      { agent: true },
+    );
+    expect(footer).toContain("results may be incomplete");
+  });
+
+  it("treats an absent verifying flag as the incomplete case", () => {
+    const footer = formatIndexStateFooter(
+      { indexing: true, pendingFiles: 42 },
+      { agent: true },
+    );
+    expect(footer).toContain("results may be incomplete");
+  });
+
+  it("stays silent at steady state even if verifying is set", () => {
+    expect(
+      formatIndexStateFooter(
+        { indexing: false, pendingFiles: 0, verifying: true },
+        { agent: true },
+      ),
+    ).toBeNull();
+  });
+
   it("uses a human-readable warning shape in non-agent mode", () => {
     expect(
       formatIndexStateFooter(

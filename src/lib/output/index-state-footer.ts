@@ -10,6 +10,12 @@ export interface IndexState {
   indexing: boolean;
   /** Files queued for (re)index. 0 when unknown (e.g. initial sync) or settled. */
   pendingFiles: number;
+  /**
+   * The queue is draining as cache hits — recent batches reindexed nothing, so
+   * the pending count is re-verification rather than outstanding work. Set only
+   * with a real sample and no initial/full index in flight.
+   */
+  verifying?: boolean;
 }
 
 /**
@@ -23,6 +29,17 @@ export function formatIndexStateFooter(
   opts: { agent: boolean },
 ): string | null {
   if (!state?.indexing) return null;
+
+  // Re-verification is not incompleteness. Saying "results may be incomplete"
+  // while a catchup re-checks thousands of unchanged files trains agents to
+  // distrust and retry correct answers, which is worse than saying nothing.
+  if (state.verifying) {
+    const n = state.pendingFiles;
+    if (opts.agent) {
+      return `[index: verifying ~${n} unchanged files · results current]`;
+    }
+    return `Index verifying ${n} unchanged file${n === 1 ? "" : "s"} — results are current.`;
+  }
 
   const count =
     state.pendingFiles > 0 ? `~${state.pendingFiles} files pending` : null;

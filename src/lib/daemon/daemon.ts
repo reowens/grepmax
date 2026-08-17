@@ -734,9 +734,25 @@ export class Daemon {
     if (fullIdx && fullIdx.total > 0) {
       pendingFiles = Math.max(pendingFiles, fullIdx.total - fullIdx.processed);
     }
+    // Distinguish a real backlog from a queue draining as cache hits. A full
+    // index genuinely has work outstanding; a post-FSEvents-drop catchup mostly
+    // re-verifies unchanged files. Only claim "verifying" with a real sample and
+    // no initial-index work pending.
+    const { recentFiles, recentReindexed } = processor?.progress ?? {
+      recentFiles: 0,
+      recentReindexed: 0,
+    };
+    const verifying =
+      !fullIdx &&
+      !initialPending &&
+      recentFiles >= 50 &&
+      recentReindexed === 0 &&
+      pendingFiles > 0;
+
     return {
       indexing: !!fullIdx || processing || batchPending > 0 || initialPending,
       pendingFiles,
+      verifying,
     };
   }
 
