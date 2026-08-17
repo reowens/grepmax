@@ -8,10 +8,12 @@ import {
   DISK_LOW_BYTES,
   describeChunkerGap,
   describeSchemaDimGap,
+  FRAGMENT_COMPACT_THRESHOLD,
   MODEL_IDS,
   MODEL_TIERS,
   PATHS,
   schemaDimAgentRow,
+  VERSION_PRUNE_THRESHOLD,
 } from "../config";
 import {
   countLegacyEmbeddingProjects,
@@ -278,8 +280,11 @@ export const doctor = new Command("doctor")
       // Compute warning flags
       const bloatRatio = logicalSize > 0 ? diskSize / logicalSize : 0;
       if (bloatRatio > 2.0) needsOptimize = true;
-      if (numSmallFragments > 10) needsOptimize = true;
-      if (versions.length > 50) needsOptimize = true;
+      // Track the compactor's own threshold. Warning (and worse, --fix forcing a
+      // full optimize) at a lower count than the compactor uses would re-trigger
+      // the whole-table rewrite that raising the threshold exists to avoid.
+      if (numSmallFragments > FRAGMENT_COMPACT_THRESHOLD) needsOptimize = true;
+      if (versions.length > VERSION_PRUNE_THRESHOLD) needsOptimize = true;
 
       // Disk space check
       let availBytes = 0;
@@ -421,7 +426,7 @@ export const doctor = new Command("doctor")
         }
 
         // Fragments
-        if (numSmallFragments > 10) {
+        if (numSmallFragments > FRAGMENT_COMPACT_THRESHOLD) {
           console.log(
             `WARN  Fragments: ${numFragments} total, ${numSmallFragments} small — needs compaction`,
           );
@@ -432,7 +437,7 @@ export const doctor = new Command("doctor")
         }
 
         // Versions
-        if (versions.length > 50) {
+        if (versions.length > VERSION_PRUNE_THRESHOLD) {
           console.log(
             `WARN  Versions: ${versions.length} — pruning recommended`,
           );

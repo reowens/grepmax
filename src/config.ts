@@ -329,6 +329,15 @@ export const DISK_LOW_BYTES = (() => {
 // since an ANN index partitions independently of fragments.
 export const FRAGMENT_COMPACT_THRESHOLD = 400;
 
+// Version count that counts as anomalous rather than normal accumulation.
+// Versions pile up with writes and are pruned by compaction, so this has to
+// track FRAGMENT_COMPACT_THRESHOLD: historically ~160 versions accumulated per
+// 52 fragments (~3 per fragment), so 400 fragments implies ~1200 versions
+// between compactions as ordinary steady state. A threshold below that would
+// fire on every healthy store — and make `doctor --fix` force the whole-table
+// rewrite that the fragment threshold exists to avoid.
+export const VERSION_PRUNE_THRESHOLD = 2000;
+
 // Extensions we consider for indexing to avoid binary noise and improve relevance.
 export const INDEXABLE_EXTENSIONS: Set<string> = new Set([
   ".ts",
