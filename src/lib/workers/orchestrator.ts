@@ -303,7 +303,7 @@ export class WorkerOrchestrator {
       return { vectors: [], hash, mtimeMs, size, shouldDelete: true };
     }
 
-    if (isGeneratedContent(buffer)) {
+    if (isGeneratedContent(buffer, absolutePath)) {
       dbg("orch", `skip ${input.path} (machine-generated header)`);
       return { vectors: [], hash, mtimeMs, size, shouldDelete: true };
     }

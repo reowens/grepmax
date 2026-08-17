@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { CONFIG } from "../../config";
+import { CONFIG, FRAGMENT_COMPACT_THRESHOLD } from "../../config";
 import { MetaCache, type MetaEntry } from "../store/meta-cache";
 import type { VectorRecord } from "../store/types";
 import { VectorDB } from "../store/vector-db";
@@ -359,9 +359,13 @@ export async function initialSync(
           await currentFlush;
           debug("index", `flush done: ${Date.now() - flushStart}ms`);
           flushCount++;
-          // Periodically compact during sync to prevent fragment accumulation
+          // Periodically compact during sync to prevent fragment accumulation.
+          // Uses the shared threshold deliberately: a hardcoded 30 here meant
+          // the full-index path kept compacting at the old rate long after the
+          // threshold was raised to 400, re-triggering the whole-table rewrite
+          // that raising it exists to avoid.
           if (flushCount % 10 === 0) {
-            await vectorDb.compactIfNeeded(30);
+            await vectorDb.compactIfNeeded(FRAGMENT_COMPACT_THRESHOLD);
           }
         } catch (err) {
           debug("index", `flush error: ${err}`);
