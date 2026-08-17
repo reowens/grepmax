@@ -14,6 +14,7 @@ import {
   pathNotStartsWith,
   pathStartsWith,
 } from "../utils/filter-builder";
+import { debug } from "../utils/logger";
 import { getWorkerPool } from "../workers/pool";
 import { detectIntent, type SearchIntent } from "./intent";
 import { loadOrComputePageRank, pageRankBoostForSymbols } from "./pagerank";
@@ -529,11 +530,14 @@ export class Searcher {
       this.ftsIndexChecked = true;
       this.ftsLastCheckedAt = now;
       try {
-        await this.db.createFTSIndex();
+        // Adopt-only: search runs in every process, so building here raced
+        // CreateIndex across processes and duplicated a full-size index per
+        // winner. Owners build it (daemon pre-warm, `gmax index`, maintenance).
+        await this.db.adoptFTSIndex();
         this.ftsAvailable = true;
       } catch (e) {
         this.ftsAvailable = false;
-        console.warn("[Searcher] Failed to ensure FTS index:", e);
+        debug("searcher", `FTS index unavailable, vector-only search: ${e}`);
       }
     }
 
@@ -600,14 +604,26 @@ export class Searcher {
         this.ftsAvailable = false;
         const msg = e instanceof Error ? e.message : String(e);
         if (msg.includes("position")) {
-          // FTS index lacks positional data — rebuild it
-          try {
-            await this.db.createFTSIndex(true);
-            this.ftsAvailable = true;
-            console.warn(
-              "[Searcher] Rebuilt FTS index with position support — retry search",
+          // FTS index lacks positional data — rebuild it, but only from the
+          // index owner. This drops the index before recreating it, so a
+          // non-owner (CLI fallback, MCP session) would yank the shared index
+          // out from under every other process and, with several running at
+          // once, race CreateIndex on the way back up. Non-owners degrade to
+          // vector-only and let the daemon repair it.
+          if (this.db.canBuildIndexes()) {
+            try {
+              await this.db.createFTSIndex(true);
+              this.ftsAvailable = true;
+              console.warn(
+                "[Searcher] Rebuilt FTS index with position support — retry search",
+              );
+            } catch {}
+          } else {
+            debug(
+              "searcher",
+              "FTS index lacks positions; deferring rebuild to the index owner",
             );
-          } catch {}
+          }
         } else {
           console.warn(
             `[Searcher] FTS search failed (will retry later): ${msg}`,

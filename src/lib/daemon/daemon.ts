@@ -196,7 +196,11 @@ export class Daemon {
   }
 
   private createVectorDb(vectorDim: number, lease?: StoreLease): VectorDB {
-    return new VectorDB(PATHS.lancedbDir, vectorDim, lease);
+    const db = new VectorDB(PATHS.lancedbDir, vectorDim, lease);
+    // The daemon owns the store, so it is the one process allowed to create or
+    // rebuild the shared FTS index. Readers adopt it; see VectorDB.adoptFTSIndex.
+    db.markIndexOwner();
+    return db;
   }
 
   private mlxMode(config: GlobalConfig): "owned" | "adopted" | "cpu" {
@@ -357,6 +361,7 @@ export class Daemon {
         PATHS.lancedbDir,
         this.activeGeneration.vectorDim,
       );
+      this.vectorDb.markIndexOwner();
       this.workerPool = this.createWorkerPool(
         this.activeGeneration,
         this.activeConfig.embedMode,

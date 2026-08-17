@@ -76,6 +76,8 @@ export class VectorDB {
   private maintainedTableVersion: number | null = null;
   private lastMaintenanceMs = 0;
   private ftsIndexEnsured = false;
+  /** Only an index owner may create/rebuild shared indexes — see markIndexOwner. */
+  private indexOwner = false;
   private lastOptimizeDidWork = false;
   private maintenanceRunner: (fn: () => Promise<void>) => Promise<void> = (
     fn,
@@ -759,6 +761,53 @@ export class VectorDB {
     return this.withWriteGate(() =>
       this.createFTSIndexUnsafe(rebuild, retries),
     );
+  }
+
+  /**
+   * Mark this instance as the store's index owner — the daemon, or a
+   * deliberately exclusive CLI operation. Only an owner may create or rebuild
+   * the shared FTS index; see `adoptFTSIndex`.
+   */
+  markIndexOwner(): void {
+    this.indexOwner = true;
+  }
+
+  /** Whether this instance may create or rebuild shared indexes. */
+  canBuildIndexes(): boolean {
+    return this.indexOwner;
+  }
+
+  /**
+   * Adopt the FTS index if one already exists, without ever building it.
+   *
+   * Search runs in *every* process — the daemon, each CLI invocation that falls
+   * back in-process, each MCP session. `createFTSIndex` on a miss meant N
+   * processes could issue `CreateIndex` against the same table version
+   * concurrently: Lance rejects the losers with a retryable commit conflict
+   * (observed 2026-08-17T00:03, all 5 retries lost) and every winner writes a
+   * full-size inverted index — ~1.4GB each on this store, which is how
+   * `_indices` reached 47GB across 35 near-identical copies.
+   *
+   * Building is therefore reserved for the explicit paths that already run
+   * under an owner: daemon pre-warm, `gmax index`, and post-optimize
+   * maintenance. Throws when no index exists so callers set `ftsAvailable =
+   * false` and degrade to vector-only search — never silently reports FTS as
+   * ready.
+   */
+  async adoptFTSIndex(): Promise<void> {
+    if (this.ftsIndexEnsured) return;
+    const table = await this.ensureTable();
+    const indices = await table.listIndices();
+    const existing = indices.find(
+      (index) =>
+        index.name === "content_idx" || index.columns.includes("content"),
+    );
+    if (!existing) {
+      throw new Error(
+        "[vector-db] FTS index not built yet; this process is not the index owner",
+      );
+    }
+    this.ftsIndexEnsured = true;
   }
 
   async createVectorIndex(
