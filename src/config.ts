@@ -306,8 +306,28 @@ export const DISK_LOW_BYTES = (() => {
   return (Number.isFinite(gb) && gb > 0 ? gb : 20) * 1024 * 1024 * 1024;
 })();
 
-// Trigger compaction when small (uncompacted) fragment count exceeds this
-export const FRAGMENT_COMPACT_THRESHOLD = 50;
+// Trigger compaction when small (uncompacted) fragment count exceeds this.
+//
+// Deliberately high. Lance's optimize() merges the *whole* table into ~2
+// fragments regardless of how many small ones it absorbs, so a compaction costs
+// the same full-table rewrite at 51 fragments as at 400 — the threshold only
+// decides how far that fixed cost is amortized. At 50 it was amortized as little
+// as possible: on a continuously-watched project this fired every ~15-25min and
+// rewrote ~10-14GB each time, measured at 40 compactions / 586GB over 26h.
+//
+// Fragmentation also does not cost what you would expect. With ANN off (the
+// default), vector search is a brute-force scan that Lance parallelizes across
+// fragments, so compacting to 2 fragments collapses it to 2-way parallelism.
+// Interleaved benchmark, 395k rows / 384d, 96 samples per config:
+//
+//   fragments |   2   |  50  | 200  | 800
+//   vector p50| 165.6 | 73.4 | 61.6 | 66.8   (ms)
+//
+// Flat from 50-800; 2 is 2.5x slower. So raising this wins on writes *and*
+// latency. 400 sits inside the measured range with margin at both ends.
+// Caveat: measured on the no-ANN path — revisit if GMAX_ANN=1 becomes default,
+// since an ANN index partitions independently of fragments.
+export const FRAGMENT_COMPACT_THRESHOLD = 400;
 
 // Extensions we consider for indexing to avoid binary noise and improve relevance.
 export const INDEXABLE_EXTENSIONS: Set<string> = new Set([
