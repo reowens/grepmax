@@ -573,8 +573,44 @@ export const doctor = new Command("doctor")
         if (needsOptimize) {
           if (!opts.agent)
             console.log("...  Running optimize (compact + prune)...");
-          await db.optimize(3, 0);
-          if (!opts.agent) console.log("ok  Optimize complete");
+          // Prefer the daemon. Lance's optimize deletes unverified files, which
+          // is only safe with a single writer on the store — optimizing here
+          // while the daemon compacts made this command a second writer. With a
+          // daemon up it owns compaction; without one we are the sole process
+          // and can do it in-process safely.
+          const { sendDaemonCommand } = await import(
+            "../lib/utils/daemon-client"
+          );
+          const resp = await sendDaemonCommand(
+            { cmd: "optimize" },
+            { timeoutMs: 10 * 60 * 1000 },
+          );
+          let via = "daemon";
+          if (!resp.ok) {
+            // Only fall back when the daemon could not take it. A daemon that
+            // answered with a real failure should surface, not be retried here
+            // as a competing writer.
+            const reason = String(resp.error ?? "");
+            // Fall back ONLY when nothing is listening. A daemon that is merely
+            // too old ("unknown command") or busy ("timeout") is still a live
+            // writer on the store, so optimizing here would recreate the
+            // two-writer case this routing exists to prevent.
+            const daemonAbsent =
+              reason.includes("ECONNREFUSED") || reason.includes("ENOENT");
+            if (daemonAbsent) {
+              await db.optimize(3, 0);
+              via = "in-process (no daemon)";
+            } else if (reason.includes("unknown command")) {
+              via = "";
+              console.log(
+                "WARN  Optimize skipped: the running daemon predates the optimize command. Restart it (gmax watch --daemon -b) and re-run.",
+              );
+            } else {
+              via = "";
+              console.log(`WARN  Optimize failed via daemon: ${reason}`);
+            }
+          }
+          if (via && !opts.agent) console.log(`ok  Optimize complete (${via})`);
           fixed++;
         }
 

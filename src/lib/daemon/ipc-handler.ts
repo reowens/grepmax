@@ -159,6 +159,10 @@ export async function handleCommand(
           mlx: daemon.getMlxStatus(),
         };
 
+      case "optimize":
+        // Keeps compaction single-writer: see Daemon.runOptimize.
+        return await daemon.runOptimize();
+
       case "project-stats": {
         const root = String(cmd.root || "");
         if (!root) return { ok: false, error: "missing root" };

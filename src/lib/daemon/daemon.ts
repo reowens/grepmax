@@ -565,6 +565,28 @@ export class Daemon {
     return this.operations.runShared(name, signal, fn);
   }
 
+  /**
+   * Compact + prune on behalf of a CLI caller.
+   *
+   * Lance's optimize runs with `deleteUnverified: true`, which its own docs say
+   * is only safe when no other process is working on the dataset. That held by
+   * accident, not by design: the daemon serializes its own maintenance, but
+   * `gmax doctor --fix` optimized in-process, so a user running it during a
+   * compaction was a second writer on a store that assumes one. Routing the
+   * request here makes it structural — with a daemon up, the daemon is the only
+   * optimizer, sharing the same serialization as the maintenance loop. Callers
+   * fall back to in-process only when no daemon answers, and are then the sole
+   * writer themselves.
+   */
+  async runOptimize(): Promise<{ ok: true }> {
+    const db = this.vectorDb;
+    if (!db) throw new Error("daemon resources not ready");
+    await this.runSharedOperation("store-maintenance", undefined, () =>
+      db.runMaintenance({ force: true }),
+    );
+    return { ok: true };
+  }
+
   operationStatus(): string {
     return this.operations.status;
   }

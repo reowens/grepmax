@@ -1021,6 +1021,15 @@ export class VectorDB {
 
         try {
           const done = timer("vectordb", "optimize");
+          // deleteUnverified deletes files Lance cannot prove are unreferenced.
+          // LanceDB's own docs: only safe "if you can guarantee that no other
+          // process is currently working on this dataset. Otherwise the dataset
+          // could be put into a corrupted state." gmax is multi-process, so that
+          // guarantee comes from routing compaction to a single writer — the
+          // daemon serializes it (Daemon.runOptimize + the maintenance loop),
+          // and CLI callers go through it rather than optimizing alongside it.
+          // Anything new that calls optimize() must preserve that: either be the
+          // daemon, or be the only process on the store.
           const stats = await table.optimize({
             cleanupOlderThan: cutoff,
             deleteUnverified: true,
