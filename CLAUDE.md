@@ -162,6 +162,25 @@ Status values: `"pending"` | `"indexed"` | `"error"`
 - `pending` — daemon indexes in background on startup via `indexPendingProject()`
 - `error` — **daemon ignores it**. Must be manually re-added or status edited.
 
+#### A missing root is not necessarily a dead project
+
+`fs.existsSync(root)` collapses two different situations: an external drive that is unplugged (or a
+network share that is down), and a directory that was genuinely deleted. `classifyRoot()` in
+`src/lib/utils/root-availability.ts` separates them by checking whether the *mount point* under a
+container (`/Volumes`, `/run/media`, `/media`, `/mnt`, `/net`) exists — if the volume itself is
+absent, the project is `unavailable`, not `missing`.
+
+This matters because `removeProject()` only drops the registry entry. Deregistering a project whose
+drive is merely unplugged strands its vectors in the shared table with no owning project — invisible
+to every cache-coherence check, since those all iterate the registry — and reconnecting the drive
+does not undo it. `doctor --fix` therefore only removes roots classified `missing`; `unavailable`
+ones are reported as `INFO  Offline projects` and kept. The daemon already did the safe thing
+(skip and keep), and now names the reason in its log line.
+
+`mountDepth` in `MOUNT_CONTAINERS` deliberately errs high on ambiguous platforms, because a wrong
+`unavailable` only declines to auto-remove a dead project, while a wrong `missing` silently
+deregisters a live one.
+
 ---
 
 ## Daemon Lifecycle
@@ -373,6 +392,7 @@ curl -s http://127.0.0.1:8100/health               # MLX embed server up?
 - `src/config.ts` — Constants: PATHS, CONFIG, INDEXABLE_EXTENSIONS, worker/memory limits
 - `src/lib/index/index-config.ts` — Per-project + global config read/write
 - `src/lib/utils/project-registry.ts` — projects.json CRUD
+- `src/lib/utils/root-availability.ts` — `classifyRoot()`: unplugged volume vs deleted directory
 - `pnpm-workspace.yaml` — **dependency overrides live here**, next to the other pnpm 10 settings.
   Do not move them to `package.json`'s top-level `overrides`: pnpm does not read that field, and
   npm ignores a *dependency's* overrides entirely, so it is inert both locally and for consumers.

@@ -45,6 +45,7 @@ import {
   restoreProjectsAfterRebuild,
   stampProjectFullSync,
 } from "../utils/project-registry";
+import { describeRoot } from "../utils/root-availability";
 import {
   heartbeat,
   listWatchers,
@@ -406,8 +407,11 @@ export class Daemon {
     const indexed = allProjects.filter((p) => p.status === "indexed");
     for (const p of indexed) {
       if (!fs.existsSync(p.root)) {
+        // Skipping is already the safe behavior — the project keeps its registry
+        // entry and its vectors either way. Naming the reason keeps an unplugged
+        // drive from reading like data loss in the log.
         console.log(
-          `[daemon] Skipping ${path.basename(p.root)} — directory not found`,
+          `[daemon] Skipping ${path.basename(p.root)} — ${describeRoot(p.root)}`,
         );
         continue;
       }

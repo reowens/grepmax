@@ -32,6 +32,7 @@ import { isProcessAlive, parseLock, removeLock } from "../lib/utils/lock";
 import { isMlxModelCached } from "../lib/utils/mlx-hf-cache";
 import { listProjects, removeProject } from "../lib/utils/project-registry";
 import { findProjectRoot } from "../lib/utils/project-root";
+import { classifyRoot } from "../lib/utils/root-availability";
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -203,6 +204,7 @@ export const doctor = new Command("doctor")
     let needsOptimize = false;
     let staleLock = false;
     const orphanedProjects: string[] = [];
+    const unavailableProjects: string[] = [];
 
     try {
       const { VectorDB, findStaleLanceTempFiles, sweepStaleLanceTempFiles } =
@@ -270,12 +272,20 @@ export const doctor = new Command("doctor")
       const { isDaemonRunning } = await import("../lib/utils/daemon-client");
       const daemonUp = await isDaemonRunning();
 
-      // Project registry health
+      // Project registry health.
+      //
+      // A root can be unreadable for two very different reasons, and only one of
+      // them is the project's fault. An unplugged external drive or a downed
+      // network share leaves the project perfectly intact — deregistering it
+      // would strand its vectors in the shared table with no owning project and
+      // would not come back when the volume returns. Only a root whose volume is
+      // mounted, and whose directory is still gone, is actually orphaned.
       const projects = listProjects();
       for (const p of projects) {
-        if (!fs.existsSync(p.root)) {
-          orphanedProjects.push(p.root);
-        }
+        const availability = classifyRoot(p.root);
+        if (availability === "missing") orphanedProjects.push(p.root);
+        else if (availability === "unavailable")
+          unavailableProjects.push(p.root);
       }
 
       // Compute warning flags
@@ -341,6 +351,7 @@ export const doctor = new Command("doctor")
           `lock=${lockStatus.split(" ")[0]}`,
           `daemon=${daemonUp ? "running" : "stopped"}`,
           `orphaned=${orphanedProjects.length}`,
+          `offline=${unavailableProjects.length}`,
           `stale_temp=${staleTempFiles.length}`,
           `stale_temp_bytes=${staleTempBytes}`,
           `stale_chunker=${staleChunkerProjects.length}`,
@@ -515,6 +526,14 @@ export const doctor = new Command("doctor")
         if (legacyNotice) console.log(legacyNotice);
 
         // Projects
+        if (unavailableProjects.length > 0) {
+          console.log(
+            `INFO  Offline projects: ${unavailableProjects.length} (volume not mounted — kept, reconnect to resume)`,
+          );
+          for (const up of unavailableProjects) {
+            console.log(`       - ${up}`);
+          }
+        }
         if (orphanedProjects.length > 0) {
           console.log(
             `WARN  Orphaned projects: ${orphanedProjects.length} (directories no longer exist)`,
@@ -522,7 +541,7 @@ export const doctor = new Command("doctor")
           for (const op of orphanedProjects) {
             console.log(`       - ${op}`);
           }
-        } else if (projects.length > 0) {
+        } else if (projects.length > 0 && unavailableProjects.length === 0) {
           console.log(
             `ok  Projects: ${projects.length} registered, all directories exist`,
           );
@@ -644,6 +663,9 @@ export const doctor = new Command("doctor")
           fixed++;
         }
 
+        // Only roots whose volume is mounted and whose directory is still gone
+        // reach this list — projects on an unplugged drive are classified
+        // `unavailable` and never enter it, so --fix cannot deregister them.
         if (orphanedProjects.length > 0) {
           for (const op of orphanedProjects) {
             removeProject(op);
