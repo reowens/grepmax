@@ -17,6 +17,7 @@ import {
   DISK_CRITICAL_BYTES,
   DISK_LOW_BYTES,
   FRAGMENT_COMPACT_THRESHOLD,
+  STALE_TEMP_FILE_AGE_MS,
 } from "../../config";
 import { readGlobalConfig } from "../index/index-config";
 import { registerCleanup } from "../utils/cleanup";
@@ -27,6 +28,80 @@ import { StoreLease } from "./store-lease";
 import type { VectorRecord } from "./types";
 
 export type DiskPressureLevel = "ok" | "low" | "critical";
+
+export interface StaleTempFile {
+  path: string;
+  size: number;
+  mtimeMs: number;
+}
+
+/**
+ * Find abandoned Lance scratch files under `<lancedbDir>/ *.lance/data`.
+ *
+ * Lance stages a new fragment in a dot-prefixed `.tmp*` file and renames it into
+ * place on success. A killed or panicking optimize leaves the temp behind, and
+ * nothing ever collects it: it appears in no manifest, so `deleteUnverified`
+ * cannot prove it is garbage, and the leading dot hides it from `ls`. The result
+ * is permanent disk bloat that no amount of optimizing reclaims.
+ *
+ * Only files older than `minAgeMs` are reported. An in-flight write keeps
+ * bumping its temp file's mtime, so the age gate — not a writer count — is what
+ * makes deleting the result safe from any process.
+ */
+export function findStaleLanceTempFiles(
+  lancedbDir: string,
+  minAgeMs: number = STALE_TEMP_FILE_AGE_MS,
+): StaleTempFile[] {
+  const found: StaleTempFile[] = [];
+  const cutoff = Date.now() - minAgeMs;
+  let tables: string[];
+  try {
+    tables = fs.readdirSync(lancedbDir);
+  } catch {
+    return found;
+  }
+  for (const tableDir of tables) {
+    if (!tableDir.endsWith(".lance")) continue;
+    const dataDir = `${lancedbDir}/${tableDir}/data`;
+    let entries: string[];
+    try {
+      entries = fs.readdirSync(dataDir);
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.startsWith(".tmp")) continue;
+      const full = `${dataDir}/${entry}`;
+      try {
+        const s = fs.statSync(full);
+        if (!s.isFile() || s.mtimeMs > cutoff) continue;
+        found.push({ path: full, size: s.size, mtimeMs: s.mtimeMs });
+      } catch {}
+    }
+  }
+  return found;
+}
+
+/**
+ * Delete abandoned Lance scratch files. Returns bytes actually reclaimed —
+ * a file that vanishes between the scan and the unlink is not counted, so the
+ * number reported is never larger than what was freed.
+ */
+export function sweepStaleLanceTempFiles(
+  lancedbDir: string,
+  minAgeMs: number = STALE_TEMP_FILE_AGE_MS,
+): { filesRemoved: number; bytesFreed: number } {
+  let filesRemoved = 0;
+  let bytesFreed = 0;
+  for (const f of findStaleLanceTempFiles(lancedbDir, minAgeMs)) {
+    try {
+      fs.unlinkSync(f.path);
+      filesRemoved++;
+      bytesFreed += f.size;
+    } catch {}
+  }
+  return { filesRemoved, bytesFreed };
+}
 
 export class DiskPressureError extends Error {
   constructor(message = "Disk critically low — writes suspended") {
@@ -1190,6 +1265,19 @@ export class VectorDB {
         if (this.lastOptimizeDidWork) {
           const table = await this.openExistingTableUnsafe();
           if (table) {
+            // Collect abandoned scratch files before measuring. They are pure
+            // disk with no manifest entry, so they inflate the ratio while being
+            // invisible to optimize — measuring first would blame the compactor
+            // for bytes it has no way to reach and send us into a second
+            // full-table pass that reclaims nothing.
+            const swept = sweepStaleLanceTempFiles(this.lancedbDir);
+            if (swept.filesRemoved > 0) {
+              log(
+                "vectordb",
+                `Swept ${swept.filesRemoved} abandoned temp file(s), freed ${(swept.bytesFreed / 1024 / 1024).toFixed(1)}MB`,
+              );
+            }
+
             const stats = await table.stats();
             const diskSize = this.getDirectorySize(this.lancedbDir);
             const logicalSize = stats.totalBytes;

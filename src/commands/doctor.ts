@@ -205,7 +205,8 @@ export const doctor = new Command("doctor")
     const orphanedProjects: string[] = [];
 
     try {
-      const { VectorDB } = await import("../lib/store/vector-db");
+      const { VectorDB, findStaleLanceTempFiles, sweepStaleLanceTempFiles } =
+        await import("../lib/store/vector-db");
       const db = new VectorDB(PATHS.lancedbDir);
       const table = await db.ensureTable();
       const totalChunks = await table.countRows();
@@ -278,7 +279,17 @@ export const doctor = new Command("doctor")
       }
 
       // Compute warning flags
-      const bloatRatio = logicalSize > 0 ? diskSize / logicalSize : 0;
+      //
+      // Abandoned `.tmp*` scratch files are disk that optimize provably cannot
+      // reclaim (no manifest entry, so `deleteUnverified` will not touch them).
+      // They get their own remediation — a sweep — and are excluded from the
+      // ratio that decides whether to run a whole-table optimize, because
+      // counting them there prescribes a slow rewrite for bytes it cannot free.
+      const staleTempFiles = findStaleLanceTempFiles(PATHS.lancedbDir);
+      const staleTempBytes = staleTempFiles.reduce((n, f) => n + f.size, 0);
+      const reclaimableDiskSize = Math.max(0, diskSize - staleTempBytes);
+      const bloatRatio =
+        logicalSize > 0 ? reclaimableDiskSize / logicalSize : 0;
       if (bloatRatio > 2.0) needsOptimize = true;
       // Track the compactor's own threshold. Warning (and worse, --fix forcing a
       // full optimize) at a lower count than the compactor uses would re-trigger
@@ -330,6 +341,8 @@ export const doctor = new Command("doctor")
           `lock=${lockStatus.split(" ")[0]}`,
           `daemon=${daemonUp ? "running" : "stopped"}`,
           `orphaned=${orphanedProjects.length}`,
+          `stale_temp=${staleTempFiles.length}`,
+          `stale_temp_bytes=${staleTempBytes}`,
           `stale_chunker=${staleChunkerProjects.length}`,
           `stale_embedding=${staleEmbeddingProjects.length}`,
           `legacy_embedding=${legacyEmbeddingCount}`,
@@ -415,13 +428,17 @@ export const doctor = new Command("doctor")
         }
 
         // Storage
+        const storageLine = `${totalChunks.toLocaleString()} rows, ${formatSize(logicalSize)} logical, ${formatSize(diskSize)} disk`;
         if (bloatRatio > 2.0) {
           console.log(
-            `WARN  Storage: ${totalChunks.toLocaleString()} rows, ${formatSize(logicalSize)} logical, ${formatSize(diskSize)} disk (${bloatRatio.toFixed(1)}x — orphaned files)`,
+            `WARN  Storage: ${storageLine} (${bloatRatio.toFixed(1)}x — orphaned files)`,
           );
         } else {
+          console.log(`ok  Storage: ${storageLine}`);
+        }
+        if (staleTempFiles.length > 0) {
           console.log(
-            `ok  Storage: ${totalChunks.toLocaleString()} rows, ${formatSize(logicalSize)} logical, ${formatSize(diskSize)} disk`,
+            `WARN  Abandoned temp files: ${staleTempFiles.length} (${formatSize(staleTempBytes)}) — leftover from interrupted compaction, run with --fix`,
           );
         }
 
@@ -567,6 +584,19 @@ export const doctor = new Command("doctor")
         if (staleLock) {
           await removeLock(lockPath);
           if (!opts.agent) console.log("ok  Removed stale lock");
+          fixed++;
+        }
+
+        // Sweep before optimize: these bytes are unreachable by optimize, and
+        // clearing them first means any bloat still visible afterwards is real.
+        // Unlike optimize this needs no single-writer routing — the age gate in
+        // findStaleLanceTempFiles already excludes anything a writer could hold.
+        if (staleTempFiles.length > 0) {
+          const swept = sweepStaleLanceTempFiles(PATHS.lancedbDir);
+          if (!opts.agent)
+            console.log(
+              `ok  Removed ${swept.filesRemoved} abandoned temp file(s), freed ${formatSize(swept.bytesFreed)}`,
+            );
           fixed++;
         }
 

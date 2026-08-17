@@ -134,6 +134,26 @@ optimizes, reclaimed 39 GB, and produced no correctness drift. Two behaviors to 
 
 Tracked in `docs/plans/lance-fts-merge-upstream.md`.
 
+#### Abandoned `.tmp*` files are the other half of that panic's cost
+
+Every killed optimize — FTS panic, daemon restart mid-compaction, OOM — strands the scratch file
+Lance was staging the new fragment into. These never get collected: they hold no manifest entry, so
+`optimize({deleteUnverified: true})` cannot prove they are garbage, and the leading dot hides them
+from a plain `ls`. Three of them (7.3 GB, up to 2.5 months old) held this store at a 2.1x
+disk/logical ratio that the bloat-retry in `runMaintenance` re-measured and re-optimized against
+every cycle without ever reclaiming a byte.
+
+`findStaleLanceTempFiles` / `sweepStaleLanceTempFiles` in `vector-db.ts` collect them, and both the
+maintenance loop and `doctor --fix` sweep **before** measuring bloat, so any ratio left afterwards
+is real. Two things to preserve:
+
+- The **age gate** (`STALE_TEMP_FILE_AGE_MS`, 1 h) is the entire safety argument. An in-flight write
+  keeps bumping its temp file's mtime, so anything staler has no writer — which is why the sweep
+  needs none of the single-writer routing that `optimize` does, and is safe from the CLI while the
+  daemon runs.
+- `doctor` excludes stale temp bytes from the ratio that sets `needsOptimize`. Counting them there
+  prescribes a whole-table rewrite for bytes a rewrite cannot free.
+
 ### Project Registry (projects.json)
 
 Status values: `"pending"` | `"indexed"` | `"error"`

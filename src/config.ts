@@ -338,6 +338,20 @@ export const FRAGMENT_COMPACT_THRESHOLD = 400;
 // rewrite that the fragment threshold exists to avoid.
 export const VERSION_PRUNE_THRESHOLD = 2000;
 
+// Age past which a Lance `.tmp*` scratch file in a `*.lance/data` directory is
+// considered abandoned rather than in flight. Lance writes a new fragment to a
+// dot-prefixed temp file and renames it on success, so a killed optimize leaves
+// the temp behind forever: it is in no manifest, so `optimize({deleteUnverified})`
+// never collects it, and the dot prefix hides it from a plain `ls`. Three such
+// files (7.3 GB, up to 2.5 months old) were what kept this store pinned at a 2.1x
+// disk/logical ratio that repeated optimize passes could not move.
+//
+// The age gate is the whole safety argument: an in-flight write keeps bumping its
+// temp file's mtime, so anything this stale has no writer, and deleting it is safe
+// without knowing how many processes are on the store. Observed optimize runs on a
+// 325k-row store peak at ~1.4 min, so an hour is ~40x the worst case seen.
+export const STALE_TEMP_FILE_AGE_MS = 60 * 60 * 1000;
+
 // Extensions we consider for indexing to avoid binary noise and improve relevance.
 export const INDEXABLE_EXTENSIONS: Set<string> = new Set([
   ".ts",
