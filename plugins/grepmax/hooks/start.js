@@ -78,7 +78,23 @@ function isProjectRegistered() {
   }
 }
 
+// A kill switch for the auto-start. Create ~/.gmax/autostart-disabled (or export
+// GMAX_NO_AUTOSTART=1) to keep sessions from reviving the daemon — needed when the
+// host is quarantined after a kernel-zone incident and the daemon's write volume is
+// the thing under investigation. Delete the file to restore normal behavior.
+function isAutostartDisabled() {
+  if (process.env.GMAX_NO_AUTOSTART === "1") return true;
+  try {
+    return require("node:fs").existsSync(
+      _path.join(require("node:os").homedir(), ".gmax", "autostart-disabled"),
+    );
+  } catch {
+    return false;
+  }
+}
+
 function startWatcher() {
+  if (isAutostartDisabled()) return;
   if (!isProjectRegistered()) return;
   try {
     execFileSync("gmax", ["watch", "--daemon", "-b"], {

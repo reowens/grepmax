@@ -138,6 +138,38 @@ const TABLE_NAME = "chunks";
 const MAINTENANCE_INTERVAL_MS = 5 * 60 * 1000;
 const CLEAN_MAINTENANCE_INTERVAL_MS = 60 * 60 * 1000;
 
+/**
+ * Floor between opportunistic full-table compactions.
+ *
+ * A compaction rewrites the whole table, so its cost scales with store size, not
+ * with how much changed. Neither opportunistic caller was rate-limited: the
+ * 5-minute maintenance tick re-optimizes whenever the write epoch moved, and
+ * `compactIfNeeded` fires whenever small fragments cross a threshold. On a store
+ * under continuous reindex pressure both are true essentially always, so the
+ * table gets rewritten every few minutes forever.
+ *
+ * That is not hypothetical. On 2026-08-16..17 this store (16 GB) took 43 full
+ * compactions in two days — an accelerating 6 → 30 → 63 → 54 per day — which a
+ * microstackshot measured as 549.76 GB of file-backed writes in 12.3 hours. On
+ * macOS 26.5.2 that write volume exhausted the `data.kalloc.1024` kernel zone and
+ * panicked the host. See docs/2026-08-04-macos-kernel-zone-panic-incident.md.
+ *
+ * The floor caps compaction at twice an hour regardless of how much churn arrives.
+ * Fragments accumulating between passes cost read performance, which is recoverable;
+ * unbounded rewrite volume was not.
+ */
+const COMPACTION_MIN_INTERVAL_MS = 30 * 60 * 1000;
+
+/**
+ * Ceiling for the unproductive-compaction backoff.
+ *
+ * A compaction that removes no fragments and frees no bytes rewrote the table for
+ * nothing, and the next one a few minutes later will almost certainly do the same.
+ * The interval doubles on each such pass and resets the moment one does real work,
+ * so a store that cannot be improved stops paying for the attempt.
+ */
+const COMPACTION_MAX_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
 export class VectorDB {
   private db: lancedb.Connection | null = null;
   private unregisterCleanup?: () => void;
@@ -154,6 +186,9 @@ export class VectorDB {
   /** Only an index owner may create/rebuild shared indexes — see markIndexOwner. */
   private indexOwner = false;
   private lastOptimizeDidWork = false;
+  /** Compaction rate limiter — see COMPACTION_MIN_INTERVAL_MS. */
+  private lastCompactionMs = 0;
+  private compactionIntervalMs = COMPACTION_MIN_INTERVAL_MS;
   private maintenanceRunner: (fn: () => Promise<void>) => Promise<void> = (
     fn,
   ) => fn();
@@ -1255,12 +1290,31 @@ export class VectorDB {
       await this.createFTSIndex();
       await this.createVectorIndex();
 
-      if (pressure === "low") {
+      // Index creation above is idempotent and self-guarding, so it stays on the
+      // 5-minute cadence. Compaction is the expensive half — it rewrites the whole
+      // table — and gets rate-limited. Without this the tick compacts every 5
+      // minutes for as long as writes keep arriving, which is how this store
+      // reached 43 full rewrites in two days and panicked the host.
+      const throttleMs = options.force
+        ? 0
+        : this.compactionThrottleRemainingMs();
+      if (throttleMs > 0) {
+        debug(
+          "vectordb",
+          `Compaction throttled — ${Math.ceil(throttleMs / 60000)}min until next full pass ` +
+            `(interval ${Math.round(this.compactionIntervalMs / 60000)}min)`,
+        );
+      } else if (pressure === "low") {
         log("vectordb", `Low disk — single-pass optimize (no bloat retry)`);
         await this.optimize(1, 0, true);
+        this.noteCompaction(this.lastOptimizeDidWork);
       } else {
         // Normal maintenance: full optimize + bloat check
         await this.optimize(5, 0, true);
+        // Track across both passes: `lastOptimizeDidWork` is reset per optimize()
+        // call, so a productive first pass followed by a barren bloat retry would
+        // otherwise read as unproductive and trigger a spurious backoff.
+        let didWork = this.lastOptimizeDidWork;
 
         if (this.lastOptimizeDidWork) {
           const table = await this.openExistingTableUnsafe();
@@ -1291,9 +1345,11 @@ export class VectorDB {
               );
               await new Promise((r) => setTimeout(r, 2000));
               await this.optimize(5, 0, true);
+              didWork = didWork || this.lastOptimizeDidWork;
             }
           }
         }
+        this.noteCompaction(didWork);
       }
 
       const maintainedTable = await this.openExistingTableUnsafe();
@@ -1306,6 +1362,54 @@ export class VectorDB {
     }
   }
 
+  /**
+   * Milliseconds until an opportunistic full-table compaction is allowed again,
+   * or 0 if one may run now. Forced callers (`gmax index`, `doctor --fix`) are
+   * expected to bypass this rather than consult it.
+   */
+  private compactionThrottleRemainingMs(now = Date.now()): number {
+    if (this.lastCompactionMs === 0) return 0;
+    const elapsed = now - this.lastCompactionMs;
+    // A clock that jumped backwards would otherwise wedge compaction shut.
+    if (elapsed < 0) return 0;
+    return Math.max(0, this.compactionIntervalMs - elapsed);
+  }
+
+  /**
+   * Record a completed compaction and adjust the interval. Productive passes reset
+   * to the floor; unproductive ones double up to the ceiling so a store that cannot
+   * be improved stops being rewritten every few minutes.
+   */
+  private noteCompaction(didWork: boolean): void {
+    this.lastCompactionMs = Date.now();
+    if (didWork) {
+      if (this.compactionIntervalMs !== COMPACTION_MIN_INTERVAL_MS) {
+        debug("vectordb", "Productive compaction — interval reset to floor");
+      }
+      this.compactionIntervalMs = COMPACTION_MIN_INTERVAL_MS;
+      return;
+    }
+    const next = Math.min(
+      this.compactionIntervalMs * 2,
+      COMPACTION_MAX_INTERVAL_MS,
+    );
+    if (next !== this.compactionIntervalMs) {
+      log(
+        "vectordb",
+        `Compaction reclaimed nothing — backing off to ${Math.round(next / 60000)}min`,
+      );
+    }
+    this.compactionIntervalMs = next;
+  }
+
+  /** Test/diagnostic view of the rate limiter. */
+  getCompactionThrottleState(): { intervalMs: number; remainingMs: number } {
+    return {
+      intervalMs: this.compactionIntervalMs,
+      remainingMs: this.compactionThrottleRemainingMs(),
+    };
+  }
+
   async compactIfNeeded(
     threshold = FRAGMENT_COMPACT_THRESHOLD,
   ): Promise<boolean> {
@@ -1316,11 +1420,20 @@ export class VectorDB {
       const table = await this.ensureTable();
       const stats = await table.stats();
       if (stats.fragmentStats.numSmallFragments > threshold) {
+        const throttleMs = this.compactionThrottleRemainingMs();
+        if (throttleMs > 0) {
+          debug(
+            "vectordb",
+            `Fragment threshold exceeded (${stats.fragmentStats.numSmallFragments} > ${threshold}) — throttled, ${Math.ceil(throttleMs / 60000)}min remaining`,
+          );
+          return false;
+        }
         log(
           "vectordb",
           `Fragment threshold exceeded (${stats.fragmentStats.numSmallFragments} > ${threshold}) — compacting`,
         );
         await this.optimize(2, 0, true);
+        this.noteCompaction(this.lastOptimizeDidWork);
         return true;
       }
     } catch (err) {

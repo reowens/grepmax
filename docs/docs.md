@@ -138,6 +138,7 @@ aggregation over the data gmax already has.
 |-----|--------|
 | [macOS Kernel-Zone Panic Incident - 2026-08-04](2026-08-04-macos-kernel-zone-panic-incident.md) | Active |
 | [Performance Review — 2026-08-04](2026-08-04-performance-review.md) | Active |
+| [2026 08 17 Gmax Agent Facing Health Audit](2026-08-17-gmax-agent-facing-health-audit.md) | Active |
 | [Embedding Layout Decision](embedding-layout-decision.md) | Active |
 | [Lance FTS Incremental-Merge Panic — Upstream Pursuit](plans/lance-fts-merge-upstream.md) | Active |
 
@@ -156,7 +157,7 @@ aggregation over the data gmax already has.
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 52 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 53 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|

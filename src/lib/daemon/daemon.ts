@@ -25,6 +25,11 @@ import {
   writeDrainingMarker,
 } from "../utils/daemon-client";
 import { spawnDaemon } from "../utils/daemon-launcher";
+import {
+  formatZoneUsage,
+  readKernelZoneUsage,
+  ZONE_THRESHOLDS,
+} from "../utils/kernel-zone";
 import { KeyedMutex } from "../utils/keyed-mutex";
 import { rotateLogFds } from "../utils/log-rotate";
 import { debug as dbg, log as dlog } from "../utils/logger";
@@ -136,6 +141,8 @@ export class Daemon {
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private idleInterval: ReturnType<typeof setInterval> | null = null;
   private heartbeatTick = 0;
+  /** Rate-limits the kernel-zone warn log — see checkKernelZonePressure. */
+  private lastZoneWarnMs = 0;
   private shuttingDown = false;
   private recycling = false;
   // False until LanceDB + MetaCache are open. The socket starts listening early
@@ -469,6 +476,7 @@ export class Daemon {
         void this.mlxServerManager.checkMlxHealth();
         this.processManager.sweepOrphanWorkers();
         this.maybeRecycle();
+        this.checkKernelZonePressure();
       }
     }, HEARTBEAT_INTERVAL_MS);
 
@@ -1951,6 +1959,54 @@ export class Daemon {
     );
     this.recycling = true;
     void this.shutdown({ relaunch: true }).finally(() => process.exit(0));
+  }
+
+  /**
+   * Stand down before our own write volume exhausts a leaking kernel zone.
+   *
+   * On macOS 26.5.2 sustained filesystem writes leak `data.kalloc.1024`
+   * irreversibly, and exhausting it panics the host with no warning of any kind —
+   * the daemon does not get to observe the failure, it just dies with the machine.
+   * This host lost three sessions that way before the compactor was identified as
+   * the largest write source on it.
+   *
+   * So the daemon watches the zone it is pressurizing. A warn-level reading is
+   * logged and left alone; a critical reading exits without relaunch, because
+   * relaunching would resume the writes that caused it. Nothing here can reclaim
+   * the leaked memory — only a reboot does that — so the only useful move is to
+   * stop adding to it while the user still has a working machine.
+   *
+   * Deliberately does nothing when the sample is unavailable or unparseable
+   * (non-macOS, no `zprint`, changed output format): an unknown reading must never
+   * shut the daemon down.
+   */
+  private checkKernelZonePressure(): void {
+    if (this.shuttingDown || this.recycling) return;
+    const usage = readKernelZoneUsage();
+    if (!usage || usage.pressure === "ok") return;
+
+    if (usage.pressure === "warn") {
+      // Rate-limited to once an hour: at the 5-minute heartbeat this would
+      // otherwise print 12 identical lines an hour for as long as the condition
+      // holds, which on a leaking host is until reboot.
+      const now = Date.now();
+      if (now - this.lastZoneWarnMs < 60 * 60 * 1000) return;
+      this.lastZoneWarnMs = now;
+      console.log(
+        `[daemon] WARNING: ${formatZoneUsage(usage)} — macOS kernel zone is leaking ` +
+          `under write pressure. The daemon will stop itself at ` +
+          `${(ZONE_THRESHOLDS.criticalBytes / 1024 ** 3).toFixed(0)}GiB. ` +
+          `Only a reboot reclaims this memory.`,
+      );
+      return;
+    }
+
+    console.log(
+      `[daemon] CRITICAL: ${formatZoneUsage(usage)} — stopping to avoid a kernel panic. ` +
+        `Reboot to reclaim the zone; the index will catch up on next start.`,
+    );
+    this.recycling = true;
+    void this.shutdown().finally(() => process.exit(0));
   }
 
   shutdown(opts: { relaunch?: boolean } = {}): Promise<void> {
