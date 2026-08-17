@@ -402,8 +402,21 @@ curl -s http://127.0.0.1:8100/health               # MLX embed server up?
 ### Release
 `npm version patch` runs the whole chain: `preversion` gates (tests, both typechecks, Biome) ->
 `sync-versions.sh` (plugin.json + marketplace.json) -> `postrelease.sh` (push, tag, GitHub
-release, wait for `release.yml`, npm publish, global install). CI re-runs every gate plus
-`pnpm audit --prod`, a tag/version match check, and a tarball source-leak audit.
+release, wait for `release.yml`, npm publish, global install, daemon restart). CI re-runs every
+gate plus `pnpm audit --prod`, a tag/version match check, and a tarball source-leak audit.
+
+The daemon restart is the step that makes a release actually live. The global install only updates
+the binary on PATH; a daemon spawned from the old one keeps serving the socket, so every command
+still talks to the previous build until something forces a handoff. `postrelease.sh` runs
+`gmax watch --daemon -b` (the graceful path — the new binary asks the old daemon to exit over IPC,
+logged as `reason=version-mismatch`), then confirms the result with a `ping` IPC call. It checks the
+**daemon's** reported version, not `gmax --version`, which reads the freshly-installed binary and
+would report success even against a stale daemon. It only restarts a daemon that is already
+running, and never fails the release — the publish is irreversible by then, so a restart problem is
+a warning, not an exit code.
+
+`postrelease.sh` is not in the package's `files` list, so changes to it take effect on the next
+`npm version patch` without needing a release of their own.
 
 Note that `postrelease.sh` ends with a real `npm install -g`, which **replaces an `npm link`
 symlink**. If the global `gmax` is linked to this working tree, re-run `npm link` afterward — and

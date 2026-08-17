@@ -81,4 +81,71 @@ if [ -z "${INSTALLED}" ]; then
   exit 1
 fi
 
+# Ask the running daemon what version it is serving, via the same `ping` IPC the
+# CLI uses. Prints nothing and returns non-zero if no daemon answers.
+daemon_version() {
+  node -e '
+    const net = require("node:net");
+    const os = require("node:os");
+    const path = require("node:path");
+    const sock = path.join(os.homedir(), ".gmax", "daemon.sock");
+    const conn = net.createConnection(sock);
+    const bail = () => { conn.destroy(); process.exit(1); };
+    const timer = setTimeout(bail, 3000);
+    let buf = "";
+    conn.on("connect", () => conn.write(JSON.stringify({ cmd: "ping" }) + "\n"));
+    conn.on("data", (d) => {
+      buf += d;
+      const nl = buf.indexOf("\n");
+      if (nl < 0) return;
+      clearTimeout(timer);
+      try {
+        process.stdout.write(String(JSON.parse(buf.slice(0, nl)).version ?? ""));
+      } catch {}
+      conn.end();
+      process.exit(0);
+    });
+    conn.on("error", bail);
+  ' 2>/dev/null
+}
+
+# The global install puts the new binary on PATH, but a daemon started from the
+# old one keeps running it — every command still talks to a stale daemon over
+# the socket until something forces a handoff. Restarting here is what actually
+# makes the release live.
+#
+# `gmax watch --daemon -b` is the graceful path: the new binary notices the
+# version gap and asks the running daemon to shut down over IPC (logged as
+# reason=version-mismatch), rather than signalling it mid-write. Only restart a
+# daemon that is already up — starting one that the user had deliberately
+# stopped would be a side effect of releasing, not part of it.
+if pgrep -x gmax-daemon >/dev/null 2>&1; then
+  echo "==> Restarting daemon onto ${VERSION}"
+  # Never fail the release here: the publish is already live and irreversible,
+  # so a restart problem is a warning to act on, not a reason to exit non-zero.
+  if gmax watch --daemon -b; then
+    # Confirm against the daemon itself, not the binary: `gmax --version` prints
+    # what is on PATH, which the install already updated, so it would report
+    # success even if the old daemon were still serving the socket. The `ping`
+    # IPC reply carries the running daemon's own version.
+    for i in $(seq 1 10); do
+      RUNNING="$(daemon_version || true)"
+      if [ "${RUNNING}" = "${VERSION}" ]; then
+        echo "    daemon serving ${VERSION} (confirmed over IPC)"
+        break
+      fi
+      if [ "${i}" -eq 10 ]; then
+        echo "WARN: daemon reports '${RUNNING:-no response}', expected ${VERSION}." >&2
+        echo "      Restart manually: gmax watch --daemon -b" >&2
+      fi
+      sleep 1
+    done
+  else
+    echo "WARN: daemon restart failed — it is still running the previous build." >&2
+    echo "      Restart manually: gmax watch --daemon -b" >&2
+  fi
+else
+  echo "==> No daemon running — skipping restart"
+fi
+
 echo "==> Release ${TAG} complete"
