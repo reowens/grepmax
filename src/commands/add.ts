@@ -12,6 +12,8 @@ import { VectorDB } from "../lib/store/vector-db";
 import {
   BLOCKED_ROOTS_DESCRIPTION,
   isBlockedProjectRoot,
+  isGitWorktreeRoot,
+  WORKTREE_REFUSAL,
 } from "../lib/utils/blocked-roots";
 import { gracefulExit } from "../lib/utils/exit";
 import { createMarker } from "../lib/utils/project-marker";
@@ -84,6 +86,13 @@ Examples:
             `Pick a specific project subdirectory instead.\n` +
             `Diagnostic logged to ~/.gmax/logs/blocked-add.log (cwd=${process.cwd()} ppid=${process.ppid}).`,
         );
+        process.exitCode = 1;
+        return;
+      }
+
+      if (isGitWorktreeRoot(projectRoot)) {
+        logBlockedAttempt("git_worktree", projectRoot);
+        console.error(`Refusing to add ${projectRoot}: ${WORKTREE_REFUSAL}`);
         process.exitCode = 1;
         return;
       }

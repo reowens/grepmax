@@ -20,6 +20,7 @@ import type { Searcher } from "../search/searcher";
 import { MetaCache } from "../store/meta-cache";
 import { type StoreLease, StoreLeaseTimeoutError } from "../store/store-lease";
 import { VectorDB } from "../store/vector-db";
+import { isGitWorktreeRoot, WORKTREE_REFUSAL } from "../utils/blocked-roots";
 import {
   clearDrainingMarker,
   writeDrainingMarker,
@@ -899,6 +900,10 @@ export class Daemon {
             }
 
             const project = getProject(root);
+            if (!project && isGitWorktreeRoot(root)) {
+              writeDone(conn, { ok: false, error: WORKTREE_REFUSAL });
+              return;
+            }
             if (project?.status === "indexed") {
               if (
                 !this.activeGeneration ||
@@ -978,6 +983,11 @@ export class Daemon {
   ): Promise<void> {
     if (!this.vectorDb || !this.metaCache || !this.activeConfig) {
       writeDone(conn, { ok: false, error: "daemon resources not ready" });
+      return;
+    }
+
+    if (!getProject(root) && isGitWorktreeRoot(root)) {
+      writeDone(conn, { ok: false, error: WORKTREE_REFUSAL });
       return;
     }
 

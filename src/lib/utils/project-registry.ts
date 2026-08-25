@@ -15,6 +15,7 @@ import {
   type EmbeddingGenerationConfig,
   resolveEmbeddingGeneration,
 } from "../index/embedding-generation";
+import { isGitWorktreeRoot, WORKTREE_REFUSAL } from "./blocked-roots";
 
 export interface ProjectEntry {
   root: string;
@@ -207,6 +208,12 @@ export function registerProject(entry: ProjectEntry): void {
   }
   withRegistryLock(() => {
     const entries = loadRegistry();
+    if (
+      !entries.some((e) => e.root === entry.root) &&
+      isGitWorktreeRoot(entry.root)
+    ) {
+      throw new Error(`${WORKTREE_REFUSAL} (${entry.root})`);
+    }
     let canonicalRoot: string | undefined;
     try {
       canonicalRoot = fs.realpathSync(entry.root);
