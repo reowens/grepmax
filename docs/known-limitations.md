@@ -2,7 +2,7 @@
 type: doc
 status: reference
 created: 2026-04-09
-updated: 2026-07-11
+updated: 2026-08-25
 summary: Live catalog of open gmax limitations with detection + recovery steps.
 audience: internal
 related_plans:
@@ -19,7 +19,7 @@ related_docs:
 
 # Known Limitations
 
-Last updated 2026-07-11.
+Last updated 2026-08-25.
 
 ## Whole-corpus embedding rebuild is disruptive
 
@@ -329,3 +329,85 @@ npm view onnxruntime-node dependencies | grep adm-zip
 A third advisory (`mathjs`, via `simsimd`) was removed in v0.26.7 by migrating to `numkong`,
 simsimd's maintained successor, which does not carry benchmarking packages as optional
 dependencies.
+
+## A recycled PID makes a reader lease immortal and hangs every exclusive operation
+
+Found 2026-08-25 while removing four git worktrees that had been indexed as separate projects.
+`gmax remove` hung indefinitely — four attempts, up to 4 minutes each, both with the daemon up
+(IPC path) and with it down (direct path). Exit 124 every time, no output.
+
+**What:** `~/.gmax/lancedb.lease/readers/` holds one JSON marker per process holding a shared read
+lease. Any operation needing the exclusive lease — `gmax remove`, `gmax repair --rebuild` — waits
+for those markers to drain. The sweep in `StoreLease.liveReaders` (`src/lib/store/store-lease.ts`)
+probes each marker's owner and deletes it when the owner is gone, so a crashed reader is supposed
+to be reclaimed on the next exclusive attempt.
+
+**Cause:** `defaultProbeOwner` (`store-lease.ts:84-104`) returns early on any
+`process.kill(pid, 0)` failure that is not `ESRCH`:
+
+```ts
+try {
+  process.kill(owner.pid, 0);
+} catch (error) {
+  return (error as NodeJS.ErrnoException).code === "ESRCH" ? "dead" : "unknown";
+}
+```
+
+A PID owned by **another user** throws `EPERM`, not `ESRCH`, so the probe returns `unknown` without
+ever reaching the `processStart` comparison below it — the very check that exists to catch PID
+reuse. `liveReaders` treats `unknown` as a live blocker and keeps the marker
+(`store-lease.ts:524-529`). The marker is then permanent: nothing else ever removes it.
+
+PIDs are recycled constantly, and macOS hands low PIDs to system daemons running as their own
+service users. Once a stale marker's PID lands on one, the exclusive lease can never be acquired
+again for the life of the store.
+
+**Confirmed, not inferred.** The blocking marker on this machine claimed pid 924 started
+`Fri Aug 21 15:12:12 2026`. PID 924 was by then `/usr/libexec/rosetta/oahd`, user `_oahd`, started
+`Sun Aug 23 19:57:43 2026` — a provable recycle. Replaying `defaultProbeOwner` against it: `EPERM`
+→ `unknown` → retained as a blocker. Had the `processStart` comparison been reached it would have
+returned `reused`, which `liveReaders` already deletes correctly.
+
+**Why it went unnoticed:** the readers directory had accumulated 15 markers, 14 of them from PIDs
+that were genuinely dead — roles `gmax` and `gmax-daemon`, dating back to 11 July. Those 14 probe
+as `ESRCH` → `dead` and would each have been swept on the next exclusive attempt. Only the single
+`EPERM` marker was load-bearing. The pile-up is cosmetic; the one recycled PID is the outage.
+
+**Detection:**
+
+```bash
+ls ~/.gmax/lancedb.lease/readers/ | wc -l    # any non-zero count with no gmax process running
+for f in ~/.gmax/lancedb.lease/readers/*.json; do
+  pid=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['pid'])" "$f")
+  echo "$pid $(ps -o user=,lstart= -p $pid 2>/dev/null || echo DEAD)"
+done
+```
+
+A marker whose PID resolves to a process owned by a user other than your own, or whose `lstart`
+disagrees with the marker's `processStart`, is the blocker.
+
+**Recovery:** stop the daemon, confirm no gmax process is running, then delete the stale markers.
+They are reader markers only — no index data lives in them, and a live reader recreates its own.
+
+```bash
+pkill -f 'gmax-daemon|gmax-worker|gmax-embed'
+rm -f ~/.gmax/lancedb.lease/readers/*.json
+```
+
+**Fix direction (not yet implemented):** `EPERM` means the PID exists but is not signalable — it
+does not mean the owner is alive. The `processStart` comparison already below the early return is
+valid in that case and `ps -p <pid> -o lstart=` works across user boundaries. Move the reuse check
+ahead of the signalability check, or fall through to it on `EPERM` instead of returning `unknown`.
+Reserve `unknown` for the case where `ps` itself fails. A regression test wants a `probeOwner`
+injection (the seam already exists — `StoreLeaseOptions.probeOwner`, `store-lease.ts:27`) asserting
+that an `EPERM` owner with a mismatched `processStart` resolves to `reused`.
+
+**Related, same session, mechanism not confirmed:** the daemon twice failed to exit on `SIGTERM`,
+sitting idle in `uv_run` at 0% CPU for minutes after logging `Unwatched` for every project. Both
+occurrences followed killing a `gmax` CLI mid-`add`. Shutdown step 5 awaits pending project-lock
+operations (`CLAUDE.md` — Daemon Lifecycle/Shutdown), and an interrupted add whose daemon-side
+operation never released its lock would stall exactly there; the socket drain is a less likely
+culprit, since `shutdown()` already ends and then force-destroys client connections after 1s
+(`daemon.ts:2050-2056`). Eight `gmax-mcp` clients from live sessions were connected at the time.
+`SIGKILL` is safe here — the exclusive lease reclaims from a dead owner PID — but that is the path
+that strands the reader marker above.
