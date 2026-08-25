@@ -40,17 +40,31 @@ describe("recursive directory deletion", () => {
     fs.writeFileSync(fileA, "export const a = 1;\n");
     fs.writeFileSync(fileB, "export const b = 2;\n");
 
+    const seen = new Set<string>();
     const deleted = new Set<string>();
     const sub$ = await watcher.subscribe(root, (err, events) => {
       if (err) return;
       for (const e of events) {
+        seen.add(e.path);
         if (e.type === "delete") deleted.add(e.path);
       }
     });
 
     try {
-      // Let the watcher's initial snapshot settle before mutating.
-      await new Promise((r) => setTimeout(r, 600));
+      // Prove the recursive watch is actually armed before mutating, rather
+      // than sleeping and hoping. `subscribe()` resolving does not mean the
+      // per-directory inotify watches exist yet: on a loaded Linux CI runner a
+      // blind 600ms wait lost that race, the rm landed before sub/ and deep/
+      // were watched, and no per-file delete was ever emitted — a failure no
+      // amount of waitFor timeout could recover. Round-tripping a sentinel
+      // through the deepest directory proves the whole chain is live.
+      const sentinel = path.join(nested, "ready.ts");
+      fs.writeFileSync(sentinel, "export const ready = 1;\n");
+      await vi.waitFor(() => expect(seen.has(sentinel)).toBe(true), {
+        timeout: 10000,
+        interval: 50,
+      });
+
       fs.rmSync(sub, { recursive: true, force: true });
 
       await vi.waitFor(
