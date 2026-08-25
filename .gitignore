@@ -44,4 +44,5 @@ __pycache__/
 CLAUDE.md
 NEXT.md
 .dotmd/
+.runlist/
 .claude/
