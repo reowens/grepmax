@@ -58,7 +58,15 @@ llm
         "../lib/utils/daemon-client"
       );
       if (!(await ensureDaemonRunning())) {
-        console.error("Failed to start daemon");
+        const { autostartDisabledUndo } = await import(
+          "../lib/utils/autostart"
+        );
+        const undo = autostartDisabledUndo();
+        console.error(
+          undo
+            ? `Daemon autostart is disabled and the LLM server needs the daemon. Re-enable with: ${undo}`
+            : "Failed to start daemon",
+        );
         process.exitCode = 1;
         return;
       }

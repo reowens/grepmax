@@ -33,12 +33,17 @@ export function isAutostartDisabled(): boolean {
  * kill switch is on, or null when it isn't. Names the specific undo step so
  * the message is actionable whichever way autostart was disabled.
  */
-export function autostartDisabledNotice(): string | null {
+/** The shell command that re-enables autostart, or null when it is not disabled. */
+export function autostartDisabledUndo(): string | null {
   const reason = autostartDisabledReason();
   if (!reason) return null;
-  const undo =
-    reason === "env"
-      ? "unset GMAX_NO_AUTOSTART"
-      : `rm ${PATHS.autostartDisabledFile}`;
+  return reason === "env"
+    ? "unset GMAX_NO_AUTOSTART"
+    : `rm ${PATHS.autostartDisabledFile}`;
+}
+
+export function autostartDisabledNotice(): string | null {
+  const undo = autostartDisabledUndo();
+  if (!undo) return null;
   return `Daemon autostart is disabled — running in-process. Re-enable with: ${undo}`;
 }

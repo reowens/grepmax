@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { PATHS, REBUILD_COMMAND } from "../config";
 import { readGlobalConfig } from "../lib/index/index-config";
 import { VectorDB } from "../lib/store/vector-db";
+import { autostartDisabledUndo } from "../lib/utils/autostart";
 import {
   ensureDaemonRunning,
   sendDaemonCommand,
@@ -38,7 +39,14 @@ Examples:
     try {
       if (opts.rebuild) {
         const running = await ensureDaemonRunning();
-        if (!running) throw new Error("failed to start the gmax daemon");
+        if (!running) {
+          const undo = autostartDisabledUndo();
+          throw new Error(
+            undo
+              ? `daemon autostart is disabled and --rebuild needs the daemon; re-enable with: ${undo}`
+              : "failed to start the gmax daemon",
+          );
+        }
         const ping = await sendDaemonCommand(
           { cmd: "ping" },
           { timeoutMs: 10_000 },
