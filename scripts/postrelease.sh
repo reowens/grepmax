@@ -64,7 +64,7 @@ echo "==> Installing grepmax@${VERSION} globally"
 npm cache clean --force
 INSTALLED=""
 for i in $(seq 1 5); do
-  if npm install -g "grepmax@${VERSION}"; then
+  if npm install -g --allow-scripts=grepmax "grepmax@${VERSION}"; then
     INSTALLED=1
     break
   fi
