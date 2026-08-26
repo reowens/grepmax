@@ -82,6 +82,9 @@ function isProjectRegistered() {
 // GMAX_NO_AUTOSTART=1) to keep sessions from reviving the daemon — needed when the
 // host is quarantined after a kernel-zone incident and the daemon's write volume is
 // the thing under investigation. Delete the file to restore normal behavior.
+//
+// The CLI honors the same switch via src/lib/utils/autostart.ts (PATHS.autostartDisabledFile).
+// This copy exists because a hook cannot import from dist — keep the two in sync.
 function isAutostartDisabled() {
   if (process.env.GMAX_NO_AUTOSTART === "1") return true;
   try {

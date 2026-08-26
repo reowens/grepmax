@@ -394,7 +394,8 @@ pkill -f 'gmax-daemon|gmax-worker|gmax-embed'
 rm -f ~/.gmax/lancedb.lease/readers/*.json
 ```
 
-**Fix direction (not yet implemented):** `EPERM` means the PID exists but is not signalable — it
+**Fix (implemented 2026-08-25, `defaultProbeOwner` in `store-lease.ts`; regression tests in
+`tests/store-lease.test.ts`):** `EPERM` means the PID exists but is not signalable — it
 does not mean the owner is alive. The `processStart` comparison already below the early return is
 valid in that case and `ps -p <pid> -o lstart=` works across user boundaries. Move the reuse check
 ahead of the signalability check, or fall through to it on `EPERM` instead of returning `unknown`.

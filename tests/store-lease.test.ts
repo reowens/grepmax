@@ -4,11 +4,19 @@ import * as path from "node:path";
 import lockfile from "proper-lockfile";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  defaultProbeOwner,
+  type OwnerProbeDeps,
   StoreLease,
   type StoreLeaseOwner,
   StoreLeaseTimeoutError,
   storeLeasePaths,
 } from "../src/lib/store/store-lease";
+
+const throwErrno = (code: string) => (): never => {
+  const error: NodeJS.ErrnoException = new Error(code);
+  error.code = code;
+  throw error;
+};
 
 describe("StoreLease", () => {
   let root: string;
@@ -128,6 +136,44 @@ describe("StoreLease", () => {
     });
     leases.push(exclusive);
     expect(fs.existsSync(path.join(paths.readersDir, "stale.json"))).toBe(
+      false,
+    );
+  });
+
+  it("sweeps a reader marker whose PID was recycled by another user", async () => {
+    const paths = storeLeasePaths(storeDir);
+    fs.mkdirSync(paths.readersDir, { recursive: true });
+    const recycled: StoreLeaseOwner = {
+      pid: 924,
+      processStart: "Fri Aug 21 15:12:12 2026",
+      nonce: "recycled",
+      role: "gmax",
+      acquiredAt: 1,
+    };
+    fs.writeFileSync(
+      path.join(paths.readersDir, "recycled.json"),
+      JSON.stringify(recycled),
+    );
+
+    const exclusive = await StoreLease.acquireExclusive({
+      storeDir,
+      nonce: "writer",
+      pid: process.pid,
+      processStart: "test-process",
+      role: "writer",
+      timeoutMs: 100,
+      pollMs: 5,
+      // The PID now belongs to another user's daemon: signalling it fails with
+      // EPERM and `ps` reports a start time from days later.
+      probeOwner: (owner) =>
+        defaultProbeOwner(owner, {
+          signal: throwErrno("EPERM"),
+          processStartOf: () => "Sun Aug 23 19:57:43 2026",
+        }),
+    });
+    leases.push(exclusive);
+    expect(exclusive.mode).toBe("exclusive");
+    expect(fs.existsSync(path.join(paths.readersDir, "recycled.json"))).toBe(
       false,
     );
   });
@@ -272,5 +318,63 @@ describe("StoreLease", () => {
 
     exclusive.claim({}, storeDir);
     await exclusive.release();
+  });
+});
+
+describe("defaultProbeOwner", () => {
+  const recycledOwner = (processStart: string): StoreLeaseOwner => ({
+    pid: 924,
+    processStart,
+    nonce: "recycled",
+    role: "gmax",
+    acquiredAt: 1,
+  });
+
+  const unsignalable = (
+    processStartOf: OwnerProbeDeps["processStartOf"],
+  ): OwnerProbeDeps => ({ signal: throwErrno("EPERM"), processStartOf });
+
+  it("reports an unsignalable PID with a different start time as reused", () => {
+    expect(
+      defaultProbeOwner(
+        recycledOwner("Fri Aug 21 15:12:12 2026"),
+        unsignalable(() => "Sun Aug 23 19:57:43 2026"),
+      ),
+    ).toBe("reused");
+  });
+
+  it("reports an unsignalable PID with a matching start time as alive", () => {
+    expect(
+      defaultProbeOwner(
+        recycledOwner("Fri Aug 21 15:12:12 2026"),
+        unsignalable(() => "Fri Aug 21 15:12:12 2026"),
+      ),
+    ).toBe("same");
+  });
+
+  it("reports unknown only when the start-time lookup cannot answer", () => {
+    expect(
+      defaultProbeOwner(
+        recycledOwner("Fri Aug 21 15:12:12 2026"),
+        unsignalable(throwErrno("ENOENT")),
+      ),
+    ).toBe("unknown");
+    expect(
+      defaultProbeOwner(
+        recycledOwner("Fri Aug 21 15:12:12 2026"),
+        unsignalable(() => ""),
+      ),
+    ).toBe("unknown");
+  });
+
+  it("still reports a missing PID as dead without consulting ps", () => {
+    expect(
+      defaultProbeOwner(recycledOwner("Fri Aug 21 15:12:12 2026"), {
+        signal: throwErrno("ESRCH"),
+        processStartOf: () => {
+          throw new Error("ps must not run for a dead PID");
+        },
+      }),
+    ).toBe("dead");
   });
 });

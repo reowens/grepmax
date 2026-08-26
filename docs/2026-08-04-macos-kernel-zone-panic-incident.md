@@ -2,34 +2,45 @@
 type: doc
 status: active
 created: 2026-08-04T20:50:29Z
-updated: 2026-08-17T19:15:00Z
+updated: 2026-08-25T17:30:00Z
 surfaces:
   - host
   - store
   - daemon
 domain: macOS APFS and EndpointSecurity kernel-zone exhaustion incident
 audience: internal
-summary: Investigation and remediation record for recurring data.kalloc.1024 kernel panics on macOS 26.5.2.
+summary: Investigation and remediation record for recurring data.kalloc.1024 kernel panics on macOS 26.5.2, and the first bounded-usage evidence from macOS 26.6.2.
 related_plans:
   - archived/lancedb-fts-panic-remediation.md
 related_docs:
   - docs/2026-08-04-performance-review.md
+  - docs/known-limitations.md
 current_state: >
-  Three panics on macOS 26.5.2 build 25F84 exhausted data.kalloc.1024 at 19-20 GB. The OS
-  update was never installed, so panic 3 landed on the identical build 13 days after panic 2.
-  Panic 3 supplies the missing attribution: jetsam sampling shows a flat ~4.5 MiB/hour drift
-  for 12 days followed by a +16.5 GiB burst in 8 hours, and a microstackshot pins the burst
-  window on gmax's own LanceDB writer dirtying 549.76 GB of file-backed memory in 12.3 hours.
-  The kernel leak is Apple's; the write volume that detonates it is ours.
+  Four panics on macOS 26.5.2 build 25F84 exhausted data.kalloc.1024 at 19-20 GB. Panic 4
+  (2026-08-21) came four days after panic 3 on the identical build, and its logs show the new
+  kernel-zone guard working exactly as designed and being defeated anyway: the daemon stood itself
+  down eight times between 8.30 and 15.14 GiB and was restarted every time, because the auto-start
+  kill switch is hook-only. The host was updated to macOS 26.6.2 build 25G83 (Darwin 25.6.0,
+  APFS 2811.160.7) on 2026-08-23. On the new kernel the daemon was revived anyway and rewrote the
+  whole store nine times in 27 hours - roughly the same class of write load that detonated 25F84 -
+  and data.kalloc.1024 has stayed at ~269 MiB after 45 hours instead of climbing into the gigabytes.
+  That is the first bounded-usage evidence the Decision section asked for, from one host over two
+  days.
 next_step: >
-  Install macOS 26.6.2 build 25G83. gmax's side is mitigated: compaction is now rate-limited to a
-  30-minute floor with exponential backoff on unproductive passes, and the daemon samples
-  data.kalloc.1024 every 5 minutes and stops itself at 8 GiB. Daemon and its session auto-start
-  remain disabled until the OS update lands. After the update, one forced optimize should reclaim
-  the ~5 GB of stale FTS index copies under _indices.
+  Keep sampling data.kalloc.1024 on 25G83 at the one-hour, end-of-day, and 24-hour marks against the
+  274,985-element privileged baseline recorded 2026-08-25 17:15, and re-sample after Docker,
+  Parallels, and Simulator come back one category at a time. The stale-FTS forced optimize is no
+  longer warranted: _indices is down to 2.7 GB from ~6.0 GB, reclaimed as a side effect of the nine
+  compactions. The autostart fix (src/lib/utils/autostart.ts) shipped in v0.26.19, so a guard
+  stand-down can no longer be undone by the next `gmax add`.
 ---
 
 # macOS Kernel-Zone Panic Incident - 2026-08-04
+
+> **Status 2026-08-25.** Four panics, all on `25F84`. The host is now on macOS 26.6.2 (`25G83`) and
+> the zone has stayed bounded through two days of heavy write load. See
+> [Panic 4 And The 26.6.2 Update](#panic-4-and-the-2662-update-added-2026-08-25). The narrative
+> below is preserved as written at each revision; where it says "twice", read "the first two".
 
 ## Executive Summary
 
@@ -70,7 +81,11 @@ is not required for the failure.
 | Affected OS | macOS 26.5.2, build `25F84` |
 | Affected kernel | Darwin 25.5.0, `xnu-12377.121.10~1/RELEASE_ARM64_T6041` |
 | Available update | macOS Tahoe 26.6, build `25G72`, recommended, restart required |
+| **Installed 2026-08-23** | macOS 26.6.2, build `25G83` |
+| **Current kernel** | Darwin 25.6.0, `xnu-12377.161.14~5/RELEASE_ARM64_T6041` |
+| **Current APFS** | `com.apple.filesystems.apfs` 2811.160.7 (was 2811.121.1 in the `25F84` traces) |
 | Internal APFS container | 994.7 GB total, 755.6 GB used, 239.1 GB unallocated |
+| Internal APFS container (2026-08-25) | 994.7 GB total, 912.5 GB used (91.7%), 82.2 GB unallocated |
 | Root filesystem | 223 GiB available at investigation time |
 | Power | AC power, battery 100% |
 | Time Machine | No destination configured; no local snapshots listed |
@@ -103,6 +118,16 @@ is not required for the failure.
 | 2026-08-17 06:30 EDT | Writer report closes: **549.76 GB dirtied over 12.3 h at 12.45 MB/s**. |
 | 2026-08-17 08:50 EDT | Zone at **17.89 GiB**. +16.5 GiB in 8h19m, ~450x the baseline rate. |
 | 2026-08-17 14:56:10 EDT | Third panic exhausts the zone at 20 GB / 20,988,560 elements. |
+| 2026-08-21T06:55:35 | Kernel-zone guard warns at **4.31 GiB** (4,522,280 elements). Last guard line before `daemon.log` rotates. |
+| 2026-08-21T09:05:35 | Guard trips its 8 GiB ceiling at 8.30 GiB and stops the daemon. Something restarts it. |
+| 2026-08-21T09:05-14:57 | Guard trips seven more times, 8.60 -> 15.14 GiB. Every stand-down is undone by a restart. |
+| 2026-08-21 16:24:30 -0700 | **Fourth panic** exhausts the zone at 20 G / 21,123,392 elements, still on `25F84`. |
+| 2026-08-23T19:48:40 | Daemon shuts down cleanly ahead of the update. |
+| 2026-08-23 19:55:51 -0700 | Host boots **macOS 26.6.2 (`25G83`)**, Darwin 25.6.0, APFS 2811.160.7. |
+| 2026-08-24T03:45:04 | Four concurrent launches revive the daemon despite the quarantine file. |
+| 2026-08-24T03:50 - 2026-08-25T06:33 | Nine full compactions; `freed` totals 182,382 MB. |
+| 2026-08-25 01:51:44 -0700 | Jetsam on `25G83`: whole zone map 2.49 GiB; largest zone is `APFS_4K_OBJS`, not `data.kalloc.1024`. |
+| 2026-08-25 17:15 -0700 | `sudo zprint` after ~45.5 h uptime: 274,985 live elements, ~269 MiB. |
 
 The first failing boot lasted approximately 17 days. The second lasted 14 hours and 39 minutes.
 The third lasted 13 days, 5 hours, 50 minutes. That variance is not random: the zone is flat until
@@ -205,6 +230,177 @@ also held **8,639 empty leftover directories**, removed 2026-08-17; every mainte
   running the shipped version. The problem is compaction *frequency* against an oversized shared
   table, not the engine.
 
+## Panic 4 And The 26.6.2 Update (added 2026-08-25)
+
+### The guard worked and was defeated anyway
+
+Panic 4 landed 2026-08-21 16:24:30 -0700, four days after panic 3, on the same unpatched `25F84`.
+The kernel-zone guard shipped on 2026-08-17 had been running the whole time, and its log is the
+most useful thing in this section.
+
+The 4.31 GiB warning is where the report asked us to look, at `daemon.log.prev` line 44361:
+
+```text
+2026-08-21T06:55:35 [daemon] WARNING: data.kalloc.1024 at 4.31GiB (4,522,280 elements) - macOS
+kernel zone is leaking under write pressure. The daemon will stop itself at 8GiB. Only a reboot
+reclaims this memory.
+```
+
+**There is no 8 GiB stand-down line after it in that file.** That absence is a rotation artifact,
+not a guard failure: `daemon.log.prev` ends at `2026-08-21T07:00:20` because the log hit its 5 MB
+rotation, and the stand-downs continue in the current `daemon.log`. Reading across the rotation, the
+guard fired eleven times - three warnings and eight stand-downs:
+
+| Time | Zone | Guard action |
+|---|---:|---|
+| 2026-08-21T06:55:35 | 4.31 GiB (4,522,280) | warn |
+| 2026-08-21T07:55:36 | 6.53 GiB (6,845,445) | warn |
+| 2026-08-21T09:00:35 | 7.76 GiB (8,133,109) | warn |
+| 2026-08-21T09:05:35 | 8.30 GiB (8,708,256) | **stop** |
+| 2026-08-21T06:52:29 | 8.60 GiB (9,022,687) | **stop** |
+| 2026-08-21T11:55:08 | 10.22 GiB (10,714,905) | **stop** |
+| 2026-08-21T12:04:05 | 10.39 GiB (10,890,356) | **stop** |
+| 2026-08-21T13:08:56 | 12.81 GiB (13,427,443) | **stop** |
+| 2026-08-21T13:28:23 | 13.55 GiB (14,212,927) | **stop** |
+| 2026-08-21T13:47:26 | 14.49 GiB (15,198,968) | **stop** |
+| 2026-08-21T14:57:19 | 15.14 GiB (15,877,556) | **stop** |
+
+The 06:52:29 row is out of chronological order in the file - a concurrent daemon appending to the
+shared log - so treat its position, not its reading, as unreliable.
+
+Eight stand-downs in six hours, each one obeyed, and the zone still reached 20 G ninety minutes
+after the last. The guard stops the daemon; it does not stop the daemon from being started again.
+`~/.gmax/autostart-disabled` is checked only by the session-start hook, so every `gmax add`, MCP
+session, or manual `gmax watch` walks straight past it and hands the kernel a fresh writer. This is
+the one design defect the mitigation set still has, and panic 4 is what it costs. A fix is in the
+working tree - see *Mitigations Shipped 2026-08-25*.
+
+### The update
+
+| Item | Before | After |
+|---|---|---|
+| `sw_vers` | macOS 26.5.2 (`25F84`) | **macOS 26.6.2 (`25G83`)** |
+| `uname -v` | `Darwin ... 25.5.0 ... xnu-12377.121.10~1/RELEASE_ARM64_T6041` | **`Darwin Kernel Version 25.6.0: Fri Jul 31 19:17:26 PDT 2026; root:xnu-12377.161.14~5/RELEASE_ARM64_T6041`** |
+| APFS | 2811.121.1 (from the panic backtraces) | **2811.160.7** |
+
+`sysctl kern.boottime` reports `{ sec = 1787540151 }` - Sun Aug 23 19:55:51 2026 -0700 - and the
+daemon logged a clean `Shutdown complete` at `2026-08-23T19:48:40`, seven minutes before the
+restart. The APFS version came from `kmutil showloaded` and `apfs.kext`'s `Info.plist`, which agree
+on 2811.160.7; `diskutil apfs list` prints no version string, only container geometry (disk3,
+994.7 GB, 912.5 GB used, 91.7%).
+
+### Post-update exposure was accidental, and that is what makes it useful
+
+The quarantine file is still in place (`~/.gmax/autostart-disabled`, 172 bytes, dated Aug 17) and
+still hook-only. At `2026-08-24T03:45:04` four daemon processes launched within the same second -
+
+```text
+Daemon started (PID: 66977, ...)   Daemon started (PID: 66992, ...)
+Daemon started (PID: 66993, ...)   Daemon started (PID: 66994, ...)
+```
+
+- racing the singleton check, which resolved it by killing three. Over the next 27 hours another
+session indexed four roots on the external volume: `/Volumes/External/furni-w6-a.f0kWDN/furni`
+(`2026-08-24T11:21:06`), then the git worktrees `atlas-5-3-i` (`2026-08-25T02:13:54`),
+`atlas-5-5cd` (`02:36:19`), and `atlas-5-4a-snapshot` (`05:16:19`), all unwatched again at
+`05:32:24`.
+
+That work drove nine full-table compactions:
+
+```text
+2026-08-24T03:50:56 [vectordb] Compacted: 192 frags -> 2, pruned 1079 versions, freed 15909.7MB
+2026-08-24T11:23:48 [vectordb] Compacted: 129 frags -> 2, pruned  575 versions, freed 14568.3MB
+2026-08-24T12:15:56 [vectordb] Compacted:  63 frags -> 2, pruned  202 versions, freed 12802.8MB
+2026-08-24T18:19:04 [vectordb] Compacted: 402 frags -> 2, pruned 2341 versions, freed 14841.5MB
+2026-08-24T22:37:46 [vectordb] Compacted: 402 frags -> 2, pruned 2166 versions, freed 14496.9MB
+2026-08-25T03:08:19 [vectordb] Compacted: 255 frags -> 2, pruned  865 versions, freed 24018.6MB
+2026-08-25T03:42:08 [vectordb] Compacted: 174 frags -> 2, pruned  365 versions, freed 29834.4MB
+2026-08-25T06:00:44 [vectordb] Compacted: 107 frags -> 2, pruned  807 versions, freed 42279.2MB
+2026-08-25T06:33:12 [vectordb] Compacted:  11 frags -> 2, pruned   41 versions, freed 13630.6MB
+```
+
+**182,382.0 MB - 182.4 GB - freed across nine whole-store rewrites of a 12 GB table in 26h42m.**
+This is the same class of load that took the zone from 1.37 to 17.89 GiB in eight hours on `25F84`.
+Nobody would have approved this run; it happened because the kill switch has the hole described
+above. Having happened, it is a far better test than a cautious one would have been.
+
+### The zone stayed bounded
+
+| Sample | `data.kalloc.1024` | Context |
+|---|---:|---|
+| 2026-08-21T06:55:35 (`25F84`) | **4.31 GiB** / 4,522,280 elts | ~9.5 h before panic 4 |
+| 2026-08-21T14:57:19 (`25F84`) | **15.14 GiB** / 15,877,556 elts | last guard sample before panic 4 |
+| 2026-08-25 17:13:13 (`25G83`) | ~268 MiB / 275,057 elts | unprivileged `zprint`, ~45.3 h uptime |
+| 2026-08-25 17:15 (`25G83`) | **~269 MiB** / 274,985 inuse | privileged baseline, ~45.5 h uptime |
+
+The privileged sample is the baseline of record:
+
+```text
+$ sudo zprint data.kalloc.1024
+zone name          elem size   cur size   max size   cur #elts  max #elts   inuse   alloc size  count
+data.kalloc.1024        1024    275280K    275280K      275280     275280  274985         16K     16
+```
+
+`cur size == max size` - the zone has never exceeded its present high-water mark on this boot. The
+unprivileged reading taken two minutes earlier (275,057 inuse) agrees to within 0.03%; unprivileged
+`zprint` reports zero for the size and element columns and only `inuse` is meaningful there.
+
+`JetsamEvent-2026-08-25-015144.ips`, the first jetsam captured on `25G83`, corroborates it from the
+other direction:
+
+| Field | Value |
+|---|---|
+| `zoneMapSize` | 2,674,884,608 (2.49 GiB, against an 18,899,582,976 cap) |
+| `largestZone` | **`APFS_4K_OBJS`**, 693,731,328 (661 MiB) |
+| `largestProcess` | `com.apple.Virtualization.Virtual` |
+
+On every `25F84` jetsam in this report, `data.kalloc.1024` *was* the largest zone. On `25G83` it is
+not even close - the whole zone map is smaller than `data.kalloc.1024` alone was at the first
+warning on Aug 21, and the largest zone is an ordinary APFS object cache eight times smaller than
+the earlier leak's warning threshold.
+
+**This is the bounded-usage evidence the Decision section required**, and it is worth being precise
+about its strength. It is one host, over two days, on a workload that happened rather than one that
+was designed - not a controlled soak, no A/B against a held-back `25F84` machine, and no isolation
+of Docker, Parallels, or Simulator, which stayed closed by default rather than by protocol. What it
+does establish is that the specific failure mode - `data.kalloc.1024` climbing multiple GiB per hour
+under sustained LanceDB compaction - did not reproduce under a load of the same shape carrying
+roughly a third of panic 3's volume (182 GB vs 550 GB) spread over twice the wall time, so about a
+sixth of the sustained rate. A run at panic-3 intensity has not been attempted and should not be.
+
+### The 4-worktree indexing is now refused
+
+Commit `4ef7c67` "Refuse to index git worktrees" (2026-08-25 05:54:42 -0700, released in v0.26.17
+and v0.26.18) prevents the specific trigger. `blocked-add.log` shows it working on the first
+attempt after release:
+
+```json
+{"ts":"2026-08-25T13:27:23.223Z","reason":"git_worktree",
+ "attempted":"/Volumes/External/beyond-claude/worktrees/atlas-5-3-i", ...}
+```
+
+That closes one entry point, not the class. A worktree is now refused; a plain `gmax add` of any
+other root still revives a daemon the guard has stood down.
+
+Related: `docs/known-limitations.md`, *"A recycled PID makes a reader lease immortal and hangs every
+exclusive operation"*. That defect is what makes `gmax remove` and `gmax repair --rebuild` hang on
+this store, so the cleanup path for a wrongly-indexed root is itself unreliable - relevant here
+because removing the four external roots is exactly the operation it blocks.
+
+### Stale FTS copies: the forced optimize is no longer warranted
+
+The 2026-08-17 revision deferred a forced full optimize to reclaim ~5 GB of stale FTS index copies,
+on the grounds that a whole-store rewrite was the operation under suspicion. The nine accidental
+compactions above did that work as a side effect:
+
+| Measure | 2026-08-17 | 2026-08-25 |
+|---|---:|---:|
+| `_indices/` | 6.0 GB | **2.7 GB** |
+| `chunks.lance/` total | ~16 GB | 12 GB |
+
+At 2.7 GB there is no longer a ~5 GB reclaim on the table, so the deferred forced optimize is
+cancelled rather than rescheduled. Ordinary throttled maintenance is now sufficient.
+
 ## Panic Signature
 
 Both reports have the same failure class:
@@ -241,6 +437,20 @@ The August 17 report exhausted 20 GB with 20,988,560 elements and again named `o
 dependencies; APFS and IOStorageFamily do not appear in the third trace, though the failing zone,
 build, and kernel are identical. Compressor sat at 22% of its limit and swap was OK, so this was
 again wired kernel-zone exhaustion rather than RAM pressure.
+
+The August 21 report exhausted 20 G with **21,123,392 elements** on the same `25F84` / Darwin 25.5.0
+build. Two things differ from the first three. Its panicked task is `zsh` (PID 45929, 0 pages,
+1 thread) rather than `opencode.exe`, and its kext backtrace names only
+`AppleMobileFileIntegrity(1.0.5)` with `CoreAnalyticsFamily`, `corecrypto`, `CoreTrust`, and
+`AppleImage4` as dependencies - the strings `EndpointSecurity`, `security.quarantine`,
+`filesystems.apfs`, and `IOStorageFamily` do not appear anywhere in the file. The largest-zones
+table still shows `data.kalloc.1024` at 20 G with 0 B free against `APFS_4K_OBJS` at 342 M.
+Compressor sat at 13% of its compressed-pages limit and 29% of its segments limit with 14 swapfiles
+and OK swap, so this was again wired-zone exhaustion rather than RAM pressure.
+
+That a one-thread `zsh` was the panicked task settles the point the next paragraph makes: the
+panicked task is an accident of timing, and the varying kext backtrace means the trace names
+whichever allocator happened to be on the stack, not the owner of the 21 million leaked objects.
 
 The panicked task is the thread that requested the final allocation. It is not proof that the task
 created or retained the preceding 20 million allocations. The APFS and EndpointSecurity frames
@@ -458,6 +668,7 @@ another immediate panic. Preserve a panic report after reboot instead.
 | `/Library/Logs/DiagnosticReports/panic-full-2026-08-03-152634.0002.panic` | 2.6 MB | `5c01bb09b1781e63296f4883d27fc2ba4fe42ff5a76c0157b56d1a1ff1118101` |
 | `/Library/Logs/DiagnosticReports/panic-full-2026-08-04-060621.0002.panic` | 3.3 MB | `fb0985580c351f59e2050044ac560ec0bfc5c9179f393995ecd0f5d1c924e03f` |
 | `/Library/Logs/DiagnosticReports/panic-full-2026-08-17-145702.0002.panic` | 3.4 MB | `934e811d98b8a275666eee8ab0b7274d7ae240e55b63a603e34ef1daa556c664` |
+| `/Library/Logs/DiagnosticReports/panic-full-2026-08-21-162430.0002.panic` | 2.9 MB | `27f5c827ecba753ec19183668969e7de5ca2da0e426ba116375dccd8998c8b38` |
 
 The August 3 and August 4 panic files are **no longer present** on the host; only the August 17
 report survives diagnostic rotation. Their hashes above are from the original investigation.
@@ -471,23 +682,57 @@ Attribution evidence for panic 3, all under `/Library/Logs/DiagnosticReports/`:
 | `node_2026-08-17-063018_*.diag` | gmax LanceDB writer, 549.76 GB dirtied, 100% of samples in `write`. |
 | `bsdtar_2026-08-17-034406_*.diag` | Codex/ChatGPT tar extraction, 2.15 GB, same window. |
 
+Evidence for panic 4 and the post-update window:
+
+| File | What it establishes |
+|---|---|
+| `panic-full-2026-08-21-162430.0002.panic` | Fourth 20 G exhaustion on `25F84`; `zsh` as panicked task; no ES/APFS frames. |
+| `~/.gmax/logs/daemon.log.prev` line 44361 | Guard's 4.31 GiB warning, 2026-08-21T06:55:35. |
+| `~/.gmax/logs/daemon.log` lines 664-2056 | Two more warnings and **eight** 8 GiB stand-downs, 8.30 -> 15.14 GiB. |
+| `JetsamEvent-2026-08-25-015144.ips` | First `25G83` jetsam: zone map 2.49 GiB, largest zone `APFS_4K_OBJS`. |
+| `~/.gmax/logs/blocked-add.log` last line | First `git_worktree` refusal, 2026-08-25T13:27:23.223Z. |
+
 Supporting Jetsam reports are under `/Library/Logs/DiagnosticReports/JetsamEvent-2026-*.ips`.
 The isolated soak harness remains at `scripts/lancedb-fts-soak.mts`. The temporary snapshot, stores,
 runtimes, and NDJSON files were automatically cleared by reboot.
 
 ## Open Questions
 
-- Does macOS 26.6 change the APFS or EndpointSecurity code path that allocated the 1 KB objects?
-- Which Apple EndpointSecurity client or event type retained the allocations?
-- Does ordinary OpenCode/gmax filesystem activity grow the zone on 26.6?
-- Do mounted simulator images or external APFS storage materially change the growth rate?
-- Can LanceDB 0.31 be validated safely on an unaffected host after the OS issue is cleared?
+Updated 2026-08-25. Answers are from a single host over two days; see the caveats in
+[Panic 4 And The 26.6.2 Update](#panic-4-and-the-2662-update-added-2026-08-25).
+
+| Question | Status |
+|---|---|
+| Does macOS 26.6 change the code path that allocated the 1 KB objects? | **Answered, behaviorally.** On `25G83` (APFS 2811.160.7, xnu-12377.161.14~5), 182.4 GB of compaction rewrite over 27 h left `data.kalloc.1024` at ~269 MiB after 45 h. The same load shape on `25F84` produced multiple GiB/hour. Which change fixed it is still unknown - we observe the outcome, not the diff. |
+| Which Apple EndpointSecurity client or event type retained the allocations? | **Still open, and now less likely to be answerable from these traces.** Panic 4's backtrace contains no `EndpointSecurity`, `quarantine`, `apfs`, or `IOStorageFamily` frame at all, so the kext list varies with whoever was on the stack and never identified the retaining client. |
+| Does ordinary OpenCode/gmax filesystem activity grow the zone on 26.6? | **Answered: no, not measurably.** The Aug 24-25 window was well above ordinary activity and the zone's `cur size` never exceeded its high-water mark. |
+| Do mounted simulator images or external APFS storage materially change the growth rate? | **Partly answered.** The Aug 24-25 window indexed four roots on an external APFS volume with no zone growth. Simulator images, Docker, and Parallels were not exercised and remain untested on `25G83`. |
+| Can LanceDB 0.31 be validated safely on an unaffected host? | **Now plausible on this host,** which is no longer demonstrably unsafe. Not yet approved - the evidence is two days old and uncontrolled. |
+| Why did the kernel-zone guard not prevent panic 4? | **Answered.** It fired, warned three times, and stopped the daemon eight times. `~/.gmax/autostart-disabled` was checked only by the session-start hook, so each stand-down was undone by a restart. Fixed in v0.26.19: the check now gates every implicit spawn path. |
 
 ## Decision
 
-Install macOS 26.6 before any further storage soak or LanceDB rollout. A stable user-space soak result
-does not override a host kernel crash. Resume Phase 4 only after the updated host demonstrates bounded
-`data.kalloc.1024` usage under normal work and a separate low-risk validation strategy is approved.
+**Superseded 2026-08-25.** The original decision below was met: macOS 26.6.2 (`25G83`) is installed,
+and the updated host has demonstrated bounded `data.kalloc.1024` usage - ~269 MiB after 45.5 h -
+under a write load of the same shape as the one that produced panic 3. The host-safety block on
+storage soaks and LanceDB work is lifted.
+
+Three things carry forward:
+
+1. **Keep sampling.** Two days is not a soak. Take the one-hour, end-of-day, and 24-hour readings
+   against the 274,985-element privileged baseline of 2026-08-25 17:15, and re-sample after Docker,
+   Parallels, and Simulator are re-enabled one category at a time.
+2. **Close the auto-start hole before relying on the guard again.** A guard that stops the daemon
+   while any `gmax add` can restart it bought nothing on Aug 21, and would buy nothing on a future
+   kernel with the same defect. A fix is written and wired but not yet committed - see
+   *Mitigations Shipped 2026-08-25*.
+3. **Keep the compaction rate limit and backoff regardless of kernel version.** They are correct on
+   their own terms - 182.4 GB of rewrite in 27 hours is wasteful even on a kernel that survives it.
+
+> *Original decision, 2026-08-04:* Install macOS 26.6 before any further storage soak or LanceDB
+> rollout. A stable user-space soak result does not override a host kernel crash. Resume Phase 4
+> only after the updated host demonstrates bounded `data.kalloc.1024` usage under normal work and a
+> separate low-risk validation strategy is approved.
 
 ## Mitigations Shipped 2026-08-17
 
@@ -504,9 +749,41 @@ Test cover: `tests/vector-db-compaction-throttle.test.ts` (12 cases), `tests/ker
 
 Not done, deliberately: the ~5 GB of stale FTS index copies needs a forced full optimize, which is
 itself a whole-store rewrite. That is the exact operation under suspicion, so it waits for 26.6.2.
+**Cancelled 2026-08-25** - `_indices` is down to 2.7 GB, reclaimed as a side effect of nine
+compactions on the new kernel, so there is no longer a reclaim worth a forced pass.
+
+## Mitigations Shipped 2026-08-25
+
+| Change | Where | Effect |
+|---|---|---|
+| Worktree refusal | commit `4ef7c67`, v0.26.17/18 | `gmax add` refuses a git worktree root and records the attempt in `blocked-add.log` with `reason: "git_worktree"`. Prevents the specific 4-worktree indexing that drove the Aug 24-25 rewrite volume. |
+| macOS 26.6.2 (`25G83`) | host | Darwin 25.6.0 / APFS 2811.160.7. The kernel-side half of the fix; see the bounded-usage evidence above. |
+
+Still outstanding, and now the highest-value item: the auto-start kill switch is hook-only. A guard
+stand-down is undone by the next `gmax add`, MCP session, or manual `gmax watch`. Panic 4 is the
+cost of that gap - eight obeyed stand-downs and a 20 G exhaustion anyway.
+
+**Fixed in v0.26.19.** The fix:
+`src/lib/utils/autostart.ts` centralizes the kill-switch check (`GMAX_NO_AUTOSTART=1` first, then
+`~/.gmax/autostart-disabled`) and it is wired into `daemon-client.ts`'s implicit spawn path,
+`watcher-launcher.ts`, `gmax add`, and `gmax index`, with `plugins/grepmax/hooks/start.js` keeping a
+plain-JS copy of the same semantics. Explicit `gmax watch --daemon` stays ungated by design.
 
 ## Version History
 
+- **2026-08-25T17:30:00Z** Fourth panic (2026-08-21, still `25F84`, 20 G / 21,123,392 elements,
+  `zsh` as panicked task, no EndpointSecurity or APFS frames in the backtrace). Established that the
+  kernel-zone guard fired correctly - three warnings and eight stand-downs from 8.30 to 15.14 GiB -
+  and was defeated because the auto-start kill switch is hook-only; the 8 GiB stand-down lines are in
+  `daemon.log`, not in `daemon.log.prev` after the 4.31 GiB warning, which ends there only because
+  the log rotated. Recorded the 2026-08-23 update to macOS 26.6.2 (`25G83`), Darwin 25.6.0,
+  APFS 2811.160.7. Documented the accidental post-update exposure - daemon revived 2026-08-24T03:45
+  despite the quarantine file, four external roots indexed, nine compactions freeing 182,382 MB - and
+  the bounded result: ~269 MiB / 274,985 elements after 45.5 h, with `APFS_4K_OBJS` rather than
+  `data.kalloc.1024` as the largest zone in the first `25G83` jetsam. Converted Open Questions to a
+  status table, superseded the Decision, cancelled the deferred forced optimize (`_indices` now
+  2.7 GB), and noted commit `4ef7c67`'s worktree refusal plus the reader-lease hang in
+  `docs/known-limitations.md`.
 - **2026-08-17T19:15:00Z** Third panic on the same unpatched build; the 26.6 update from the
   previous runbook was never installed. Added the jetsam growth curve, the microstackshot that
   attributes the burst to gmax's LanceDB writer (549.76 GB in 12.3 h), and the compaction

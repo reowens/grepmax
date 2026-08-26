@@ -9,6 +9,7 @@ import {
 import { initialSync } from "../lib/index/syncer";
 import { ensureSetup } from "../lib/setup/setup-helpers";
 import { VectorDB } from "../lib/store/vector-db";
+import { autostartDisabledNotice } from "../lib/utils/autostart";
 import { gracefulExit } from "../lib/utils/exit";
 import {
   getProject,
@@ -161,6 +162,9 @@ Examples:
         }
       } else {
         // Fallback: direct mode with lock — stop any watcher first
+        const notice = autostartDisabledNotice();
+        if (notice) console.log(notice);
+
         const paths = ensureProjectPaths(projectRoot);
         vectorDb = new VectorDB(paths.lancedbDir);
 

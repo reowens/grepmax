@@ -5,6 +5,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { autostartDisabledNotice } from "./autostart";
 import { sendDaemonCommand } from "./daemon-client";
 import { spawnDaemon } from "./daemon-launcher";
 import { getProject } from "./project-registry";
@@ -16,7 +17,11 @@ import {
 
 export type LaunchResult =
   | { ok: true; pid: number; reused: boolean }
-  | { ok: false; reason: "not-registered" | "spawn-failed"; message: string };
+  | {
+      ok: false;
+      reason: "not-registered" | "spawn-failed" | "autostart-disabled";
+      message: string;
+    };
 
 export async function launchWatcher(
   projectRoot: string,
@@ -49,7 +54,14 @@ export async function launchWatcher(
     return { ok: true, pid: resp.pid, reused: true };
   }
 
-  // 4. Daemon not running — try to start it, poll until ready
+  // 4. Daemon not running — try to start it, poll until ready.
+  // Both remaining steps spawn a background process, so stop here when the
+  // autostart kill switch is on: a quarantined daemon must stay down.
+  const notice = autostartDisabledNotice();
+  if (notice) {
+    return { ok: false, reason: "autostart-disabled", message: notice };
+  }
+
   const error = resp.error as string | undefined;
   if (error === "ENOENT" || error === "ECONNREFUSED") {
     const daemonPid = await spawnDaemon();

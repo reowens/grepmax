@@ -240,11 +240,17 @@ export function isDaemonDraining(pid: number): boolean {
 /**
  * Ensure the daemon is running — start it if needed, then wait for resources.
  * Returns true if daemon is ready, false if it couldn't be started.
+ *
+ * This is the implicit spawn path, so it honors the autostart kill switch: with
+ * it on, an already-running daemon is still used, but a dead one is not
+ * revived and callers fall back to in-process work.
  */
 export async function ensureDaemonRunning(): Promise<boolean> {
   if (await isDaemonReady()) return true;
 
   if (!(await isDaemonRunning())) {
+    const { isAutostartDisabled } = await import("./autostart");
+    if (isAutostartDisabled()) return false;
     const { spawnDaemon } = await import("./daemon-launcher");
     const pid = await spawnDaemon();
     if (!pid) return false;

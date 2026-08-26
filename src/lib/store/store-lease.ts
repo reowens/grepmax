@@ -81,21 +81,46 @@ function currentProcessStart(pid: number): string {
   }
 }
 
-function defaultProbeOwner(owner: StoreLeaseOwner): OwnerProbeResult {
+/** Injection seam for {@link defaultProbeOwner}; production wiring is {@link defaultProbeDeps}. */
+export interface OwnerProbeDeps {
+  /** Signal-0 liveness check. Throws with an errno code when the probe fails. */
+  signal: (pid: number) => void;
+  /** Reads a PID's start time. Throws when the lookup itself fails. */
+  processStartOf: (pid: number) => string;
+}
+
+const defaultProbeDeps: OwnerProbeDeps = {
+  signal: (pid) => {
+    process.kill(pid, 0);
+  },
+  processStartOf: (pid) =>
+    execFileSync("ps", ["-p", String(pid), "-o", "lstart="], {
+      encoding: "utf8",
+      timeout: 1000,
+    }).trim(),
+};
+
+export function defaultProbeOwner(
+  owner: StoreLeaseOwner,
+  deps: OwnerProbeDeps = defaultProbeDeps,
+): OwnerProbeResult {
   try {
-    process.kill(owner.pid, 0);
+    deps.signal(owner.pid);
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "ESRCH"
-      ? "dead"
-      : "unknown";
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ESRCH") return "dead";
+    // EPERM means the PID exists but is not signalable by us -- the signature
+    // of a recycled PID that now belongs to another user. That is not evidence
+    // the lease owner is alive, so fall through to the processStart comparison
+    // below, which `ps` answers across user boundaries. Returning "unknown"
+    // here instead would make the reader marker immortal and hang every
+    // exclusive operation for the life of the store.
+    if (code !== "EPERM") return "unknown";
   }
   if (owner.processStart.startsWith(`pid:${owner.pid}:started:`)) return "same";
   try {
-    const start = execFileSync(
-      "ps",
-      ["-p", String(owner.pid), "-o", "lstart="],
-      { encoding: "utf8", timeout: 1000 },
-    ).trim();
+    const start = deps.processStartOf(owner.pid);
+    // Reserve "unknown" for a start-time lookup that could not answer.
     if (!start) return "unknown";
     return start === owner.processStart ? "same" : "reused";
   } catch {

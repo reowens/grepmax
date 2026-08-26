@@ -9,6 +9,7 @@ import { createIndexingSpinner } from "../lib/index/sync-helpers";
 import { initialSync } from "../lib/index/syncer";
 import { ensureSetup } from "../lib/setup/setup-helpers";
 import { VectorDB } from "../lib/store/vector-db";
+import { autostartDisabledNotice } from "../lib/utils/autostart";
 import {
   BLOCKED_ROOTS_DESCRIPTION,
   isBlockedProjectRoot,
@@ -255,6 +256,12 @@ Examples:
         }
       } else {
         // Fallback: direct mode with lock
+        const notice = autostartDisabledNotice();
+        if (notice) {
+          spinner.stop();
+          console.log(notice);
+          spinner.start();
+        }
         const paths = ensureProjectPaths(projectRoot);
         vectorDb = new VectorDB(paths.lancedbDir);
 

@@ -282,6 +282,10 @@ export const PATHS = {
   // never SIGKILLs a peer mid-cleanup once the peer has already dropped its
   // socket/PID/lock liveness markers.
   daemonDrainingFile: path.join(GLOBAL_ROOT, "daemon.draining"),
+  // Kill switch for implicit daemon auto-start (see lib/utils/autostart.ts).
+  // Its presence stops hooks and CLI commands from reviving a quarantined
+  // daemon; explicit `gmax watch --daemon` still works.
+  autostartDisabledFile: path.join(GLOBAL_ROOT, "autostart-disabled"),
   // Centralized index storage — one database for all indexed directories
   lancedbDir: path.join(GLOBAL_ROOT, "lancedb"),
   cacheDir: path.join(GLOBAL_ROOT, "cache"),

@@ -62,6 +62,16 @@ gmax-mcp (N instances, one per Claude Code session)
 | gmax-mcp | Claude Code (one per session) | Session lifetime | `src/commands/mcp.ts` |
 | llama-server (LLM) | Daemon's LlmServer, on first `llm-start` IPC or `reviewCommit` | 10min idle timeout | `src/lib/llm/server.ts` |
 
+### Autostart kill switch
+
+`~/.gmax/autostart-disabled` (or `GMAX_NO_AUTOSTART=1`) blocks every *implicit* daemon spawn — the
+SessionStart hook, `ensureDaemonRunning()`, and `launchWatcher()` — so a quarantined daemon stays
+down instead of being revived by a plain `gmax add`. Gated callers degrade exactly as they already
+do when the daemon is unavailable (in-process index/search); `add` and `index` print a one-line
+notice naming the undo step. Explicit `gmax watch --daemon` is never gated. The semantics live in
+`src/lib/utils/autostart.ts` and are mirrored in `plugins/grepmax/hooks/start.js` (a hook cannot
+import from dist) — keep the two in sync.
+
 ### Singleton enforcement (daemon)
 
 1. `killStaleProcesses()` — `pgrep -x gmax-daemon` finds every daemon process (not just whatever `daemon.pid` last named). For each:

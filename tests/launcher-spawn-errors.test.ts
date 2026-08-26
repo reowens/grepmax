@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   spawn: vi.fn(),
   sendDaemonCommand: vi.fn(async () => ({ ok: false, error: "other" })),
+  autostartDisabledNotice: vi.fn((): string | null => null),
 }));
 
 vi.mock("node:child_process", () => ({ spawn: mocks.spawn }));
@@ -12,6 +13,9 @@ vi.mock("../src/lib/utils/log-rotate", () => ({
 }));
 vi.mock("../src/lib/utils/daemon-client", () => ({
   sendDaemonCommand: mocks.sendDaemonCommand,
+}));
+vi.mock("../src/lib/utils/autostart", () => ({
+  autostartDisabledNotice: mocks.autostartDisabledNotice,
 }));
 vi.mock("../src/lib/utils/project-registry", () => ({
   getProject: vi.fn(() => ({ root: "/project" })),
@@ -82,5 +86,18 @@ describe("detached spawn error handling", () => {
       message: expect.stringContaining("missing"),
     });
     expect(spawned.unref).not.toHaveBeenCalled();
+  });
+
+  it("spawns nothing when the autostart kill switch is on", async () => {
+    mocks.autostartDisabledNotice.mockReturnValueOnce(
+      "Daemon autostart is disabled — running in-process. Re-enable with: rm /x",
+    );
+
+    await expect(launchWatcher("/project")).resolves.toMatchObject({
+      ok: false,
+      reason: "autostart-disabled",
+      message: expect.stringContaining("autostart is disabled"),
+    });
+    expect(mocks.spawn).not.toHaveBeenCalled();
   });
 });

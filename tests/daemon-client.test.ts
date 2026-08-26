@@ -6,12 +6,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 // Must compute inside factory — vi.mock is hoisted above variable declarations
 const tmpSocket = path.join(os.tmpdir(), `gmax-test-daemon.sock`);
+const tmpAutostartDisabled = path.join(
+  os.tmpdir(),
+  "gmax-test-autostart-disabled",
+);
 const spawnDaemonMock = vi.hoisted(() => vi.fn(() => 12345));
 vi.mock("../src/config", async () => {
   const p = await import("node:path");
   const o = await import("node:os");
   return {
-    PATHS: { daemonSocket: p.join(o.tmpdir(), "gmax-test-daemon.sock") },
+    PATHS: {
+      daemonSocket: p.join(o.tmpdir(), "gmax-test-daemon.sock"),
+      autostartDisabledFile: p.join(o.tmpdir(), "gmax-test-autostart-disabled"),
+    },
   };
 });
 vi.mock("../src/lib/utils/daemon-launcher", () => ({
@@ -47,8 +54,12 @@ function startMockServer(
 
 afterEach(() => {
   spawnDaemonMock.mockClear();
+  delete process.env.GMAX_NO_AUTOSTART;
   try {
     fs.unlinkSync(tmpSocket);
+  } catch {}
+  try {
+    fs.unlinkSync(tmpAutostartDisabled);
   } catch {}
 });
 
@@ -233,6 +244,24 @@ describe("daemon-client", () => {
       } finally {
         server.close();
       }
+    });
+
+    it("does not spawn a daemon when GMAX_NO_AUTOSTART=1", async () => {
+      process.env.GMAX_NO_AUTOSTART = "1";
+      await expect(ensureDaemonRunning()).resolves.toBe(false);
+      expect(spawnDaemonMock).not.toHaveBeenCalled();
+    });
+
+    it("does not spawn a daemon when the autostart-disabled file exists", async () => {
+      fs.writeFileSync(tmpAutostartDisabled, "");
+      await expect(ensureDaemonRunning()).resolves.toBe(false);
+      expect(spawnDaemonMock).not.toHaveBeenCalled();
+    });
+
+    it("spawns a daemon when the kill switch is off", async () => {
+      spawnDaemonMock.mockReturnValueOnce(null as unknown as number);
+      await expect(ensureDaemonRunning()).resolves.toBe(false);
+      expect(spawnDaemonMock).toHaveBeenCalledTimes(1);
     });
   });
 });
