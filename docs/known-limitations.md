@@ -403,12 +403,17 @@ Reserve `unknown` for the case where `ps` itself fails. A regression test wants 
 injection (the seam already exists — `StoreLeaseOptions.probeOwner`, `store-lease.ts:27`) asserting
 that an `EPERM` owner with a mismatched `processStart` resolves to `reused`.
 
-**Related, same session, mechanism not confirmed:** the daemon twice failed to exit on `SIGTERM`,
-sitting idle in `uv_run` at 0% CPU for minutes after logging `Unwatched` for every project. Both
-occurrences followed killing a `gmax` CLI mid-`add`. Shutdown step 5 awaits pending project-lock
-operations (`CLAUDE.md` — Daemon Lifecycle/Shutdown), and an interrupted add whose daemon-side
-operation never released its lock would stall exactly there; the socket drain is a less likely
-culprit, since `shutdown()` already ends and then force-destroys client connections after 1s
-(`daemon.ts:2050-2056`). Eight `gmax-mcp` clients from live sessions were connected at the time.
-`SIGKILL` is safe here — the exclusive lease reclaims from a dead owner PID — but that is the path
-that strands the reader marker above.
+**Related, same session — the daemon ignored SIGTERM (and Activity Monitor's Quit).** Twice on
+2026-08-25 (02:34:41 and 05:35:30) the daemon logged `Shutting down...`, `Unwatched` for every
+project, and then nothing, sitting idle in `uv_run` until it was SIGKILLed. Both followed an
+interrupted `gmax add`. The log places the stall at shutdown's drain of admitted operations
+(`operations.close()` / `projectMutex.close()` — the worker pool was still reaping and respawning
+minutes later, so teardown never got that far). Which operation failed to settle after its abort
+is not recorded — every stage of the add path is abort-gated on paper, and the store lease wait
+that blocks `remove`/`repair` is only cancelled by `vectorDb.close()`, which ran *after* the drain.
+
+Fixed in v0.26.22 on three levels, so the exact wedge no longer matters for exit: shutdown now
+fires `VectorDB.abortLeaseWaits()` before draining; the drain is bounded
+(`GMAX_SHUTDOWN_DRAIN_TIMEOUT_MS`, default 30 s) and logs the names of the abandoned operations and
+the roots whose project locks were still held; and the SIGTERM/SIGINT handlers arm a 90 s hard-exit
+backstop. If the drain timeout fires, its log line is the root-cause capture this incident lacked.
