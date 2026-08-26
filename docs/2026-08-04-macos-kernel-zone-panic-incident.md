@@ -333,6 +333,7 @@ above. Having happened, it is a far better test than a cautious one would have b
 | 2026-08-25 17:13:13 (`25G83`) | ~268 MiB / 275,057 elts | unprivileged `zprint`, ~45.3 h uptime |
 | 2026-08-25 17:15 (`25G83`) | **~269 MiB** / 274,985 inuse | privileged baseline, ~45.5 h uptime |
 | 2026-08-25 18:12 (`25G83`) | ~276 MiB / 282,659 inuse | privileged 1 h sample: +7,674 elts (~7.5 MiB) over 57 min, cur == max; spans four daemon restarts (v0.26.19–.22) and a 13-project catchup — within the ~4.5–9 MiB/h non-gmax baseline drift, no burst |
+| 2026-08-25 19:17 (`25G83`) | ~284 MiB / 291,014 inuse | privileged sample: +8,355 elts (~8.2 MiB) over 65 min, cur == max; daemon watching 5 projects under live `platform` edits — same drift band, no burst. Store clone (`cp -c`) taken 19:20 for the LanceDB Phase 0 soak |
 
 The privileged sample is the baseline of record:
 

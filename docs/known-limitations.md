@@ -245,7 +245,7 @@ gmax. Filed as [lance-format/lance#8310](https://github.com/lance-format/lance/i
 fires when a table accumulates many small fragments and then optimizes; the index is computed
 against a newer generation of the token dictionary than the buffer was sized for.
 
-**Not fixable by upgrading LanceDB.** 0.30 and 0.31 bundle the identical `lance-index` crate, so
+**Fixed upstream as of v0.26.23** (lance#8312, lance 11.0.0-beta.22, vendored via `scripts/postinstall.js` — see CLAUDE.md). Below is the pre-upgrade account. 0.30 and 0.31 bundle the identical `lance-index` crate, so
 the panicking code is the same in both. This was tested directly: 0.31 panicked six times in 32
 hours of production use.
 

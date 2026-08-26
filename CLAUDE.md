@@ -121,28 +121,22 @@ Maps absolute file paths to `{hash: string, mtimeMs: number, size: number}`. Use
 
 One table (`chunks`), all projects share it, scoped by path prefix (`/absolute/path/to/project/`). A path btree accelerates scoped exact search. IVF_FLAT is flag-gated by `GMAX_ANN=1` and disabled by default because the production recall soak failed its acceptance threshold. The five-minute maintenance loop runs only after writes or missing-index work; clean stores get an hourly table-version probe for external writes before compaction.
 
-#### The FTS optimize panic is expected — do not "fix" the guard
+#### The FTS optimize panic guard — fixed upstream, guard kept as a tripwire
 
-`table.optimize()` intermittently panics inside Lance's incremental FTS merge with an
-out-of-bounds index at `lance-index-7.0.0/src/scalar/inverted/builder.rs:856`. This is an
-**upstream defect**, filed as [lance-format/lance#8310](https://github.com/lance-format/lance/issues/8310).
+`table.optimize()` on lance ≤ 11.0.0-beta.21 could panic inside the incremental FTS merge
+(`builder.rs:856`, [lance#8310](https://github.com/lance-format/lance/issues/8310)). Fixed by
+[lance#8312](https://github.com/lance-format/lance/pull/8312) in lance `11.0.0-beta.22`.
 
-Do not attempt to fix it by bumping LanceDB. LanceDB 0.30 and 0.31 bundle the identical
-`lance-index` crate, so the panicking code is the same in both — this was tried, and 0.31 shipped
-in v0.26.6 only because it is no worse. Full FTS rebuild is unaffected; only incremental merge
-panics.
+gmax pins `@lancedb/lancedb 0.38.0-beta.3` on npm (lance 11.0.0-beta.16 — the last Node build
+lancedb published; their publish CI has been broken since 2026-08-22, lancedb/lancedb#3036) and
+`scripts/postinstall.js` overlays the fix-bearing `0.38.0-beta.10` darwin-arm64 build from
+`~/.gmax/vendor/lancedb-0.38.0-beta.10/` (taken from lancedb's own CI artifact; `native.js` loads
+`./lancedb.darwin-arm64.node` ahead of the platform package). `node_modules/@lancedb/lancedb/.gmax-vendored`
+exists when the overlay applied. Without the vendor dir you get plain beta.3 and the old panic.
 
-The mitigation lives in `vector-db.ts`: on panic, drop and rebuild the FTS index from scratch, then
-retry optimize. It works — over one 32-hour window it absorbed 6 panics against 8 successful
-optimizes, reclaimed 39 GB, and produced no correctness drift. Two behaviors to preserve:
-
-- `createFTSIndexUnsafe()` **throws** on terminal failure rather than returning silently. That
-  signal is load-bearing: `ftsAvailable` and maintenance success are only meaningful if failure is
-  visible. All five call sites already catch it.
-- After a failed rebuild the daemon logs `disabling auto-rebuild until an optimize succeeds`. This
-  is transient, not a wedge — a later optimize re-enables it.
-
-Tracked in `docs/plans/lance-fts-merge-upstream.md`.
+The drop-and-rebuild mitigation in `vector-db.ts` stays. After the upgrade a panic is a regression
+to report upstream, not an expected cost. Preserve: `createFTSIndexUnsafe()` **throws** on terminal
+failure; `disabling auto-rebuild until an optimize succeeds` is transient.
 
 #### Abandoned `.tmp*` files are the other half of that panic's cost
 
