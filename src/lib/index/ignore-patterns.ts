@@ -1,4 +1,37 @@
 // Shared ignore patterns for filesystem walks.
+
+// Machine-generated source (floods the index + ranks codegen as god nodes).
+// Content-based @generated/DO-NOT-EDIT header sniff (file-utils.ts) catches the
+// rest; these are the unambiguous filename/dir conventions.
+//
+// Exported separately because the FSEvents watcher must ignore these at the
+// event source too: a codegen run rewriting thousands of *.graphql.swift files
+// overflowed the FSEvents client buffer ("Events were dropped") ~290 times in
+// three days and pushed the project into 5-minute poll mode, even though the
+// file policy then discarded every one of those events as "0 reindexed".
+export const GENERATED_SOURCE_PATTERNS = [
+  "**/__generated__/**", // Relay / graphql-codegen
+  "**/Generated/**", // Apollo iOS, Xcode codegen
+  "*.graphql.swift", // Apollo iOS operations
+  "*.pb.go", // protobuf (Go)
+  "*.pb.cc",
+  "*.pb.h", // protobuf (C++)
+  "*_pb2.py",
+  "*_pb2.pyi",
+  "*_pb2_grpc.py", // protobuf (Python)
+  "*.g.dart",
+  "*.freezed.dart",
+  "*.gr.dart", // Dart codegen
+  "*.designer.cs", // C# designer
+  "*.generated.ts",
+  "*.generated.tsx", // graphql-codegen / common TS
+  // graphql-codegen client-preset output dir (emits no @generated banner, so
+  // the header sniff can't catch these — match the canonical filenames).
+  "**/gql/graphql.ts",
+  "**/gql/gql.ts",
+  "**/gql/fragment-masking.ts",
+];
+
 // Keep JSON files (package.json, tsconfig.json, etc.) but skip lockfiles and obvious binaries.
 export const DEFAULT_IGNORE_PATTERNS = [
   "*.lock",
@@ -40,29 +73,7 @@ export const DEFAULT_IGNORE_PATTERNS = [
   "*.min.css",
   "*.map",
   "*.wasm",
-  // Machine-generated source (floods the index + ranks codegen as god nodes).
-  // Content-based @generated/DO-NOT-EDIT header sniff (file-utils.ts) catches the
-  // rest; these are the unambiguous filename/dir conventions.
-  "**/__generated__/**", // Relay / graphql-codegen
-  "**/Generated/**", // Apollo iOS, Xcode codegen
-  "*.graphql.swift", // Apollo iOS operations
-  "*.pb.go", // protobuf (Go)
-  "*.pb.cc",
-  "*.pb.h", // protobuf (C++)
-  "*_pb2.py",
-  "*_pb2.pyi",
-  "*_pb2_grpc.py", // protobuf (Python)
-  "*.g.dart",
-  "*.freezed.dart",
-  "*.gr.dart", // Dart codegen
-  "*.designer.cs", // C# designer
-  "*.generated.ts",
-  "*.generated.tsx", // graphql-codegen / common TS
-  // graphql-codegen client-preset output dir (emits no @generated banner, so
-  // the header sniff can't catch these — match the canonical filenames).
-  "**/gql/graphql.ts",
-  "**/gql/gql.ts",
-  "**/gql/fragment-masking.ts",
+  ...GENERATED_SOURCE_PATTERNS,
   // Test fixtures and benchmark data
   "**/fixtures/**",
   "**/benchmark/**",

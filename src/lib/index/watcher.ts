@@ -5,6 +5,7 @@ import type { VectorDB } from "../store/vector-db";
 import { ProjectBatchProcessor } from "./batch-processor";
 import { reconcileMetaEntry } from "./cache-coherence";
 import { ProjectFilePolicy } from "./file-policy";
+import { GENERATED_SOURCE_PATTERNS } from "./ignore-patterns";
 import { createWalkState, isPathProtectedByWalkState, walk } from "./walker";
 
 export interface WatcherHandle {
@@ -65,6 +66,13 @@ export const WATCHER_IGNORE_GLOBS: string[] = [
   ...IGNORED_DIR_NAMES.flatMap((name) => [`**/${name}`, `**/${name}/**`]),
   "**/*.tmp.*", // editor atomic save artifacts
   "**/*.sb-*", // Xcode swap files
+  // Codegen output never reaches the index (file policy drops it), so don't
+  // let it reach the watcher either — it is the dominant source of FSEvents
+  // buffer overflows on large projects. Bare "*.ext" patterns are anchored to
+  // the root by picomatch, so prefix them to match at any depth.
+  ...GENERATED_SOURCE_PATTERNS.map((p) =>
+    p.startsWith("**/") ? p : `**/${p}`,
+  ),
 ];
 
 export async function startWatcher(
