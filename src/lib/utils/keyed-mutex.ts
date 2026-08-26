@@ -29,6 +29,13 @@ export class KeyedMutex {
     return count;
   }
 
+  /** Keys currently held or queued — for shutdown diagnostics. */
+  pendingKeys(): string[] {
+    return [...this.keys.entries()]
+      .filter(([, state]) => state.locked || state.queue.length > 0)
+      .map(([key]) => key);
+  }
+
   run<T>(
     key: string,
     signal: AbortSignal | undefined,

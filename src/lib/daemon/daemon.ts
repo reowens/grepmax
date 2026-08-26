@@ -84,6 +84,13 @@ import { WatcherManager } from "./watcher-manager";
 // drops, and orphan MLX cleanup. 4 hours keeps the daemon resident through a
 // normal workday while still freeing resources overnight. Override with
 // GMAX_DAEMON_IDLE_TIMEOUT_MS=<ms>; set to 0 (or negative) to disable.
+// Grace period for admitted operations to settle during shutdown. See
+// drainOperationsBounded. Env override exists for tests and for a user who
+// would rather wait on a slow-but-progressing operation.
+const SHUTDOWN_DRAIN_TIMEOUT_MS = Number(
+  process.env.GMAX_SHUTDOWN_DRAIN_TIMEOUT_MS ?? 30_000,
+);
+
 const DEFAULT_IDLE_TIMEOUT_MS = 4 * 60 * 60 * 1000;
 const IDLE_TIMEOUT_MS = (() => {
   const raw = process.env.GMAX_DAEMON_IDLE_TIMEOUT_MS;
@@ -2019,6 +2026,41 @@ export class Daemon {
     void this.shutdown().finally(() => process.exit(0));
   }
 
+  /**
+   * Wait for admitted operations to settle, but never forever. Every operation
+   * has just been aborted; one that still does not return within the grace
+   * period is wedged on something shutdown cannot influence, and holding the
+   * daemon alive for it only leaves the user with a process that ignores
+   * SIGTERM. Resources are released regardless — a wedged op loses its work
+   * either way, and the next start reconciles the store.
+   */
+  private async drainOperationsBounded(
+    ...drains: Promise<void>[]
+  ): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<"timeout">((resolve) => {
+      timer = setTimeout(() => resolve("timeout"), SHUTDOWN_DRAIN_TIMEOUT_MS);
+      timer.unref();
+    });
+    try {
+      const outcome = await Promise.race([
+        Promise.all(drains).then(() => "drained" as const),
+        timeout,
+      ]);
+      if (outcome === "timeout") {
+        const ops = this.operations.activeOperationNames();
+        const locks = this.projectMutex.pendingKeys();
+        console.error(
+          `[daemon] shutdown drain timed out after ${SHUTDOWN_DRAIN_TIMEOUT_MS / 1000}s — ` +
+            `abandoning ${ops.length} operation(s) [${ops.join(", ")}] and ` +
+            `${locks.length} project lock(s) [${locks.join(", ")}] to finish shutdown`,
+        );
+      }
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   shutdown(opts: { relaunch?: boolean } = {}): Promise<void> {
     if (!this.shutdownPromise) {
       this.shutdownPromise = this.performShutdown(opts);
@@ -2085,12 +2127,17 @@ export class Daemon {
     for (const ac of this.shutdownAbortControllers) {
       ac.abort(new OperationClosedError());
     }
+    // An operation blocked in StoreLease.acquireExclusive (remove, repair)
+    // only listens to the VectorDB's own lease abort, which `vectorDb.close()`
+    // fires — after the drain below. Fire it now, or a lease that never frees
+    // (see known-limitations: recycled-PID reader marker) deadlocks shutdown.
+    this.vectorDb?.abortLeaseWaits();
     const operationDrain = this.operations.close();
     const projectDrain = this.projectMutex.close();
 
     // Abort catchup/recovery and remove each processor before worker teardown.
     await this.watcherManager.quiesceAll();
-    await Promise.all([operationDrain, projectDrain]);
+    await this.drainOperationsBounded(operationDrain, projectDrain);
 
     // Stop LLM server if running
     try {

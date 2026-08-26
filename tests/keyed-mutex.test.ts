@@ -49,3 +49,19 @@ describe("KeyedMutex", () => {
     expect(mutex.pending).toBe(0);
   });
 });
+
+describe("KeyedMutex diagnostics", () => {
+  it("reports held and queued keys until they settle", async () => {
+    const mutex = new KeyedMutex();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const holder = mutex.run("/a", undefined, () => gate);
+    const waiter = mutex.run("/a", undefined, async () => {});
+    expect(mutex.pendingKeys()).toEqual(["/a"]);
+    release();
+    await Promise.all([holder, waiter]);
+    expect(mutex.pendingKeys()).toEqual([]);
+  });
+});

@@ -137,3 +137,18 @@ describe("OperationCoordinator", () => {
     ).rejects.toBeInstanceOf(OperationClosedError);
   });
 });
+
+describe("OperationCoordinator diagnostics", () => {
+  it("names admitted operations until they settle", async () => {
+    const coordinator = new OperationCoordinator();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const task = coordinator.runShared("remove-project", undefined, () => gate);
+    expect(coordinator.activeOperationNames()).toEqual(["remove-project"]);
+    release();
+    await task;
+    expect(coordinator.activeOperationNames()).toEqual([]);
+  });
+});

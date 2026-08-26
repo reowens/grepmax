@@ -27,6 +27,10 @@ import {
   updateWatcherStatus,
 } from "../lib/utils/watcher-store";
 
+// Hard ceiling on signal-driven shutdown; comfortably above the daemon's own
+// 30s operation-drain grace so the orderly path normally wins.
+const SIGNAL_EXIT_BACKSTOP_MS = 90_000;
+
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const IDLE_CHECK_INTERVAL_MS = 60 * 1000; // check every minute
 
@@ -155,12 +159,26 @@ export const watch = new Command("watch")
         installTimestampedOutput();
         const { Daemon } = await import("../lib/daemon/daemon");
         const daemon = new Daemon();
-        process.on("SIGINT", () =>
-          daemon.shutdown().then(() => gracefulExit()),
-        );
-        process.on("SIGTERM", () =>
-          daemon.shutdown().then(() => gracefulExit()),
-        );
+        // A shutdown that never resolves must still end the process: both
+        // signals arm a hard-exit backstop, the same way the lock-compromised
+        // path does. Without it the daemon sat idle in uv_run for minutes after
+        // SIGTERM (and ignored Activity Monitor's Quit) while a remove waited on
+        // a store lease that could never free.
+        const shutdownOnSignal = (signal: string) => {
+          const backstop = setTimeout(() => {
+            console.error(
+              `[daemon] shutdown did not complete within ${SIGNAL_EXIT_BACKSTOP_MS / 1000}s of ${signal} — forcing exit`,
+            );
+            process.exit(1);
+          }, SIGNAL_EXIT_BACKSTOP_MS);
+          backstop.unref();
+          daemon.shutdown().then(() => {
+            clearTimeout(backstop);
+            return gracefulExit();
+          });
+        };
+        process.on("SIGINT", () => shutdownOnSignal("SIGINT"));
+        process.on("SIGTERM", () => shutdownOnSignal("SIGTERM"));
         process.on("uncaughtException", (err) => {
           console.error("[daemon] uncaughtException:", err);
           daemon.shutdown().then(() => gracefulExit(1));

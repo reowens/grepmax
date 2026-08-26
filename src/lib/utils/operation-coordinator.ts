@@ -33,6 +33,7 @@ export class OperationCoordinator {
   private readonly controllers = new Set<AbortController>();
   private readonly activeTasks = new Set<Promise<unknown>>();
   private readonly sharedTasks = new Set<Promise<unknown>>();
+  private readonly taskNames = new Map<Promise<unknown>, string>();
   private closePromise: Promise<void> | null = null;
 
   get status(): CoordinatorState["kind"] {
@@ -43,8 +44,13 @@ export class OperationCoordinator {
     return this.activeTasks.size;
   }
 
+  /** Names of admitted operations that have not settled — for shutdown diagnostics. */
+  activeOperationNames(): string[] {
+    return [...this.activeTasks].map((task) => this.taskNames.get(task) ?? "?");
+  }
+
   runShared<T>(
-    _name: string,
+    name: string,
     signal: AbortSignal | undefined,
     fn: (signal: AbortSignal) => Promise<T>,
   ): Promise<T> {
@@ -65,11 +71,13 @@ export class OperationCoordinator {
     })();
     this.activeTasks.add(task);
     this.sharedTasks.add(task);
+    this.taskNames.set(task, name);
     const cleanup = () => {
       unlink();
       this.controllers.delete(controller);
       this.activeTasks.delete(task);
       this.sharedTasks.delete(task);
+      this.taskNames.delete(task);
     };
     void task.then(cleanup, cleanup);
     return task;
@@ -115,7 +123,11 @@ export class OperationCoordinator {
       }
     })();
     this.activeTasks.add(task);
-    const cleanup = () => this.activeTasks.delete(task);
+    this.taskNames.set(task, name);
+    const cleanup = () => {
+      this.activeTasks.delete(task);
+      this.taskNames.delete(task);
+    };
     void task.then(cleanup, cleanup);
     return task;
   }

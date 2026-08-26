@@ -493,6 +493,18 @@ export class VectorDB {
    * Run a destructive table mutation while holding the process-wide exclusive
    * store intent. New local writes stop before existing activity is drained.
    */
+  /**
+   * Cancel every in-flight wait on the store lease (exclusive-mutation
+   * acquisition, initial lease attach). Called by the daemon at the start of
+   * shutdown, *before* it drains active operations: a `remove`/`repair` that is
+   * polling for the exclusive lease would otherwise hold its operation slot
+   * until the lease deadline, and shutdown would wait on it — the lease abort
+   * in `close()` never fires because `close()` runs after the drain. Idempotent.
+   */
+  abortLeaseWaits(): void {
+    this.leaseAbort.abort();
+  }
+
   async withExclusiveTableMutation<T>(
     mutation: (db: lancedb.Connection) => Promise<T>,
   ): Promise<T> {
