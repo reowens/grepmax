@@ -2,45 +2,41 @@
 type: doc
 status: active
 created: 2026-08-04T20:50:29Z
-updated: 2026-08-25T17:30:00Z
+updated: 2026-09-03T18:40:00Z
 surfaces:
   - host
   - store
   - daemon
 domain: macOS APFS and EndpointSecurity kernel-zone exhaustion incident
 audience: internal
-summary: Investigation and remediation record for recurring data.kalloc.1024 kernel panics on macOS 26.5.2, and the first bounded-usage evidence from macOS 26.6.2.
+summary: Investigation and remediation record for recurring data.kalloc.1024 kernel panics on macOS 26.5.2, and the linear, unreclaimed zone drift measured across 10.6 days on macOS 26.6.2.
 related_plans:
   - archived/lancedb-fts-panic-remediation.md
 related_docs:
   - docs/2026-08-04-performance-review.md
   - docs/known-limitations.md
 current_state: >
-  Four panics on macOS 26.5.2 build 25F84 exhausted data.kalloc.1024 at 19-20 GB. Panic 4
-  (2026-08-21) came four days after panic 3 on the identical build, and its logs show the new
-  kernel-zone guard working exactly as designed and being defeated anyway: the daemon stood itself
-  down eight times between 8.30 and 15.14 GiB and was restarted every time, because the auto-start
-  kill switch is hook-only. The host was updated to macOS 26.6.2 build 25G83 (Darwin 25.6.0,
-  APFS 2811.160.7) on 2026-08-23. On the new kernel the daemon was revived anyway and rewrote the
-  whole store nine times in 27 hours - roughly the same class of write load that detonated 25F84 -
-  and data.kalloc.1024 has stayed at ~269 MiB after 45 hours instead of climbing into the gigabytes.
-  That is the first bounded-usage evidence the Decision section asked for, from one host over two
-  days.
+  Four panics on macOS 26.5.2 (25F84) exhausted data.kalloc.1024 at 19-20 GB. On macOS 26.6.2
+  (25G83, booted 2026-08-23) the violent mode - multiple GiB/hour under sustained LanceDB
+  compaction - has not reproduced. But a third privileged sample at 255.6 h uptime (2026-09-03:
+  1,369,375 inuse, 1.31 GiB) shows the ~5-8 MiB/h drift is linear and never reclaimed, same slope
+  as at 45.5 h. "Bounded" described the rate, not the total: 25F84 sat at 1.37 GiB eight hours
+  before it went violent.
 next_step: >
-  Keep sampling data.kalloc.1024 on 25G83 at the one-hour, end-of-day, and 24-hour marks against the
-  274,985-element privileged baseline recorded 2026-08-25 17:15, and re-sample after Docker,
-  Parallels, and Simulator come back one category at a time. The stale-FTS forced optimize is no
-  longer warranted: _indices is down to 2.7 GB from ~6.0 GB, reclaimed as a side effect of the nine
-  compactions. The autostart fix (src/lib/utils/autostart.ts) shipped in v0.26.19, so a guard
-  stand-down can no longer be undone by the next `gmax add`.
+  Reboot before the 41-minute APFS churn soak: at 1.31 GiB the zone is near 25F84's pre-violent
+  occupancy, and a fresh boot restores ~15.5 MiB of headroom and makes the soak attributable.
+  Then re-sample data.kalloc.1024 at 1 h, 24 h, and 7 d against that fresh baseline.
 ---
 
 # macOS Kernel-Zone Panic Incident - 2026-08-04
 
-> **Status 2026-08-25.** Four panics, all on `25F84`. The host is now on macOS 26.6.2 (`25G83`) and
-> the zone has stayed bounded through two days of heavy write load. See
-> [Panic 4 And The 26.6.2 Update](#panic-4-and-the-2662-update-added-2026-08-25). The narrative
-> below is preserved as written at each revision; where it says "twice", read "the first two".
+> **Status 2026-09-03.** Four panics, all on `25F84`. The host is now on macOS 26.6.2 (`25G83`),
+> where the violent failure mode has not reproduced - but a 255-hour sample shows the slow drift is
+> linear and unreclaimed, now at 1.31 GiB. See
+> [Panic 4 And The 26.6.2 Update](#panic-4-and-the-2662-update-added-2026-08-25) and
+> [Correction 2026-09-03](#correction-2026-09-03-the-drift-is-bounded-in-rate-not-in-total). The
+> narrative below is preserved as written at each revision; where it says "twice", read "the first
+> two".
 
 ## Executive Summary
 
@@ -369,6 +365,53 @@ does establish is that the specific failure mode - `data.kalloc.1024` climbing m
 under sustained LanceDB compaction - did not reproduce under a load of the same shape carrying
 roughly a third of panic 3's volume (182 GB vs 550 GB) spread over twice the wall time, so about a
 sixth of the sustained rate. A run at panic-3 intensity has not been attempted and should not be.
+
+### Correction 2026-09-03: the drift is bounded in rate, not in total
+
+The section above is preserved as written. Its per-hour measurements were correct; the word
+"bounded" over-reached. A third privileged sample, taken 2026-09-03 11:31 on the same unbroken
+`25G83` boot, extends the series from 2 days to 10.6 days:
+
+| Sample | Uptime | `data.kalloc.1024` | Rate since previous |
+|---|---:|---:|---|
+| fresh-boot reference | 0 h | ~15.5 MiB / 15,826 elts | - |
+| 2026-08-25 17:15 | 45.5 h | ~269 MiB / 274,985 inuse | ~5.6 MiB/h |
+| 2026-08-25 19:17 | 47.5 h | ~284 MiB / 291,014 inuse | ~8.2 MiB/h |
+| **2026-09-03 11:31** | **255.6 h** | **1.31 GiB / 1,369,375 inuse** | **~5.1 MiB/h** |
+
+```text
+$ sudo zprint | grep -E "^data.kalloc.1024|ZONE NAME"
+data.kalloc.1024   1024   1369648K   1369648K   1369648   1369648   1369375   16K   16  C
+```
+
+`cur size == max size` still holds at 255.6 h exactly as it did at 45.5 h. That is the finding: the
+zone has never been reclaimed on this boot, and the slope across the 208 hours between the last
+2026-08-25 sample and this one (~5.1 MiB/h) is the same slope the hourly samples measured then. The
+269 MiB reading was not a plateau. It was an early point on a straight line.
+
+Two consequences.
+
+**The `25F84` comparison is closer than it looked.** The panic-3 growth table above records `25F84`
+at **1.37 GiB on 2026-08-17 00:31** and at **17.89 GiB (~2.0 GiB/hour) eight hours later** under
+sustained filesystem writes. `25G83` is now at 1.31 GiB. The two kernels are at comparable zone
+occupancy; what has not been tested on `25G83` is the sustained-write trigger that carried `25F84`
+from the one to the other.
+
+**The narrower claim survives and is still useful.** The specific violent failure mode -
+`data.kalloc.1024` climbing multiple GiB per hour under sustained LanceDB compaction - did not
+reproduce on `25G83` under a load of the same shape. That is a real difference between the kernels,
+and the jetsam evidence above (`APFS_4K_OBJS` as largest zone, not `data.kalloc.1024`) still stands.
+It is not evidence that total zone growth is bounded, and this sample shows that it is not.
+
+The ~4.5-9 MiB/h band is described above as "non-gmax baseline drift". If that is right, then at
+~5.1 MiB/h the zone reaches the 4.31 GiB panic-4 warning level in roughly five weeks of uptime
+regardless of what gmax does, which makes host uptime itself a variable to track rather than
+background noise. The 2026-09-03 sample was taken at 10 days 15 h.
+
+**This blocks the 41-minute APFS churn soak until after a reboot.** Running it at 1.31 GiB starts
+from a third of the way to the panic-4 warning level, against the exact trigger class named above.
+A reboot restores the ~15.5 MiB baseline, and it also makes the soak measurable: zone growth during
+the run can be attributed to the run rather than to ten days of accumulated drift.
 
 ### The 4-worktree indexing is now refused
 
@@ -773,6 +816,14 @@ plain-JS copy of the same semantics. Explicit `gmax watch --daemon` stays ungate
 
 ## Version History
 
+- **2026-09-03T18:40:00Z** Third privileged `data.kalloc.1024` sample on the unbroken `25G83` boot:
+  1,369,375 inuse / 1.31 GiB at 255.6 h uptime, `cur == max`. Retracted the "bounded usage"
+  headline of the 2026-08-25 revision - the ~5.1 MiB/h drift between 47.5 h and 255.6 h is the same
+  slope as the hourly samples taken then, so 269 MiB was an early point on a line rather than a
+  plateau. Preserved the narrower and still-supported claim that the multiple-GiB/hour compaction
+  failure mode did not reproduce on `25G83`. Noted that `25F84` sat at 1.37 GiB eight hours before
+  its 17.89 GiB burst, that `25G83` is now at comparable occupancy, and that the sustained-write
+  trigger remains untested on it. Blocked the 41-minute APFS churn soak until after a reboot.
 - **2026-08-25T17:30:00Z** Fourth panic (2026-08-21, still `25F84`, 20 G / 21,123,392 elements,
   `zsh` as panicked task, no EndpointSecurity or APFS frames in the backtrace). Established that the
   kernel-zone guard fired correctly - three warnings and eight stand-downs from 8.30 to 15.14 GiB -
