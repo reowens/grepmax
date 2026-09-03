@@ -22,20 +22,15 @@ describe("postinstall", () => {
   });
 
   it("can run quietly as a no-op", () => {
-    // The script overlays the vendored LanceDB build onto the *real*
-    // node_modules when ~/.gmax/vendor exists — an rm -rf + copy of dist/.
-    // Spawned mid-suite, that races every test importing @lancedb/lancedb
-    // ("Cannot find module .../dist/index.js"). Disable the overlay so this
-    // is the no-op it claims to be, and prove the module was left alone.
+    // Until 0.26.26 this script overlaid a vendored LanceDB build onto the
+    // real node_modules (an rm -rf + copy of dist/). That overlay is gone
+    // with the 0.38.0 GA pin; keep proving the module is left alone so a
+    // future postinstall cannot quietly race the suite's lancedb imports.
     const before = fs.statSync(lancedbEntry).mtimeMs;
 
     const result = spawnSync(process.execPath, [scriptPath], {
       encoding: "utf-8",
-      env: {
-        ...process.env,
-        GMAX_POSTINSTALL_QUIET: "1",
-        GMAX_NO_VENDOR_LANCEDB: "1",
-      },
+      env: { ...process.env, GMAX_POSTINSTALL_QUIET: "1" },
     });
 
     expect(result.status).toBe(0);

@@ -146,12 +146,11 @@ One table (`chunks`), all projects share it, scoped by path prefix (`/absolute/p
 (`builder.rs:856`, [lance#8310](https://github.com/lance-format/lance/issues/8310)). Fixed by
 [lance#8312](https://github.com/lance-format/lance/pull/8312) in lance `11.0.0-beta.22`.
 
-gmax pins `@lancedb/lancedb 0.38.0-beta.3` on npm (lance 11.0.0-beta.16 — the last Node build
-lancedb published; their publish CI has been broken since 2026-08-22, lancedb/lancedb#3036) and
-`scripts/postinstall.js` overlays the fix-bearing `0.38.0-beta.10` darwin-arm64 build from
-`~/.gmax/vendor/lancedb-0.38.0-beta.10/` (taken from lancedb's own CI artifact; `native.js` loads
-`./lancedb.darwin-arm64.node` ahead of the platform package). `node_modules/@lancedb/lancedb/.gmax-vendored`
-exists when the overlay applied. Without the vendor dir you get plain beta.3 and the old panic.
+gmax pins `@lancedb/lancedb 0.38.0` GA (exact; lance `=11.0.0`, which carries the fix). The
+native binary comes from the `@lancedb/lancedb-darwin-arm64` platform package like any other
+dependency. From 0.26.23 through 0.26.26 the pin was `0.38.0-beta.3` (lance beta.16, pre-fix) with
+`scripts/postinstall.js` overlaying a fix-bearing beta.10 build from `~/.gmax/vendor/`; that
+overlay is gone, so the postinstall is a plain notice again and needs no `allow-scripts` grant.
 
 The drop-and-rebuild mitigation in `vector-db.ts` stays. After the upgrade a panic is a regression
 to report upstream, not an expected cost. Preserve: `createFTSIndexUnsafe()` **throws** on terminal
@@ -470,18 +469,12 @@ symlink**. If the global `gmax` is linked to this working tree, re-run `npm link
 be aware that while it is linked, any dependency change plus a daemon restart reaches the live
 shared store.
 
-#### The LanceDB overlay only applies if npm runs the postinstall
+#### Checking which lance binary the daemon actually loaded
 
-npm 12 gates lifecycle scripts behind `allow-scripts`. `postrelease.sh` passes
-`--allow-scripts=grepmax` explicitly, but a *manual* `npm install -g grepmax` relies on
-`~/.npmrc`, and the entry there must name the **package** (`grepmax`), not the binary (`gmax`).
-A `gmax` entry silently skips `scripts/postinstall.js`, so the vendored lance build is never
-copied in and the daemon runs the un-patched `@lancedb/lancedb-darwin-arm64` platform binary —
-the 2026-09-02 install did exactly this. Two checks after any global install:
-
-- `node_modules/@lancedb/lancedb/.gmax-vendored` exists under the global grepmax.
-- `lsof -p $(cat ~/.gmax/daemon.pid) | grep lancedb.*\.node` points at
-  `@lancedb/lancedb/dist/lancedb.darwin-arm64.node`, not the `lancedb-darwin-arm64` package.
+After any global install, `lsof -p $(cat ~/.gmax/daemon.pid) | grep lancedb.*\.node` should point
+at the `@lancedb/lancedb-darwin-arm64` platform package under the global grepmax. A path under
+`@lancedb/lancedb/dist/` means a stale vendored overlay from the 0.26.26-era `~/.gmax/vendor/`
+mechanism is still in place; remove that install and reinstall.
 
 Also: a same-version reinstall does **not** restart the daemon. `gmax watch --daemon -b` only
 hands off on a version mismatch, so after fixing an install in place run `gmax watch stop`

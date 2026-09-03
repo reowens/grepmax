@@ -754,7 +754,7 @@ export class VectorDB {
       table = await db.createTable(TABLE_NAME, [this.seedRow()], {
         schema,
       });
-      await table.delete('id = "seed"');
+      await table.delete("id = 'seed'");
       this.markWriteCommitted();
       return table;
     }

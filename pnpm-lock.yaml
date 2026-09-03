@@ -26,8 +26,8 @@ importers:
         specifier: ^4.2.0
         version: 4.2.0(@types/node@26.4.1)
       '@lancedb/lancedb':
-        specifier: 0.38.0-beta.3
-        version: 0.38.0-beta.3(@types/node@26.4.1)(apache-arrow@18.1.0)
+        specifier: 0.38.0
+        version: 0.38.0(@types/node@26.4.1)(apache-arrow@18.1.0)
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
         version: 1.30.0(zod@4.5.4)
@@ -539,59 +539,59 @@ packages:
   '@jridgewell/trace-mapping@0.3.9':
     resolution: {integrity: sha512-3Belt6tdc8bPgAtbcmdtNJlirVoTmEb5e2gC94PnkwEW9jI6CAHUeoG85tjWP5WquqfavoMtMwiG4P926ZKKuQ==}
 
-  '@lancedb/lancedb-darwin-arm64@0.38.0-beta.3':
-    resolution: {integrity: sha512-dYMJh6GW8ToAdrh7iAsDwn2hjT3MynmygvvrsuzHD3bM3NGKYBerlgDbh/v6KV7UxlvQTpoXljubi17YOpcdtg==}
+  '@lancedb/lancedb-darwin-arm64@0.38.0':
+    resolution: {integrity: sha512-AOSqmezmLGjv7SjZfDdzYznebdihApjPklhIJJ8cFfMsqYqc1pJtRAM8zWKotbiwLOg31ttIcGIoWbv/0dUJSQ==}
     engines: {node: '>= 18'}
     cpu: [arm64]
     os: [darwin]
 
-  '@lancedb/lancedb-linux-arm64-gnu@0.38.0-beta.3':
-    resolution: {integrity: sha512-ynsYNzTwiPm//s0M5fAV/gmaLa/OxnOBJwBvFYXO9cC01/8MHckGihS49xPQNgiMDHrYwKnAIvN08mBi6tMOzA==}
+  '@lancedb/lancedb-linux-arm64-gnu@0.38.0':
+    resolution: {integrity: sha512-Lgw64fSC5+jRpEpYtPnOOOIq7ODc+uXnAbdzAoofqmzjizfT2s8MoFVq1I/oXHxgKbEQLyeM3IrRqp7ur2+ivA==}
     engines: {node: '>= 18'}
     cpu: [arm64]
     os: [linux]
     libc: [glibc]
 
-  '@lancedb/lancedb-linux-arm64-musl@0.38.0-beta.3':
-    resolution: {integrity: sha512-cR/Ir8dT1rTwvu3Z048/PL1C6qmB/pjfhSti5qIaTkklpCZLnLGPEaLO/EaifBCEzDez+5uT1CUXWKHSowUvWw==}
+  '@lancedb/lancedb-linux-arm64-musl@0.38.0':
+    resolution: {integrity: sha512-g1TWe8QxCTU2YwSTs8LqJVnK+kmws6cSxq04xo8ap6RefybUq67ik9DUNR6H0oqkPuM5HBfPNoYvZvCIWeuFAg==}
     engines: {node: '>= 18'}
     cpu: [arm64]
     os: [linux]
     libc: [musl]
 
-  '@lancedb/lancedb-linux-x64-gnu@0.38.0-beta.3':
-    resolution: {integrity: sha512-7PL4r03J4oSqK3r33GCQnMwoSxkSakAmHRm4c1PntRSaUXvRytFl8LtMqNoz0zRtDm5J1VWGw9mOvFDVBy+gsA==}
+  '@lancedb/lancedb-linux-x64-gnu@0.38.0':
+    resolution: {integrity: sha512-RdlMdP4JjMvK1Ro7esrhtLsSwdO0jrZnD+XNEZswQz00apvPF/F3+nLcY94IVH44Tho8jBP9qgVc4y+GimIHKQ==}
     engines: {node: '>= 18'}
     cpu: [x64]
     os: [linux]
     libc: [glibc]
 
-  '@lancedb/lancedb-linux-x64-musl@0.38.0-beta.3':
-    resolution: {integrity: sha512-NyUtgTHAd56eJ2z0O7IIJf10OdZBz3ej3+PhWrXHJMeFSPgxUBnjr0QPIYL7BkMSGu+ACKu8KcLpz6B6+yLXFA==}
+  '@lancedb/lancedb-linux-x64-musl@0.38.0':
+    resolution: {integrity: sha512-5lbuUJijTuypzRrNHNGEa7iYe2T22sgTZBRmf3S/zis0sFiT3pxPvEEOu8nhF3GstPbJElBweFPW6Yzfpa4o3Q==}
     engines: {node: '>= 18'}
     cpu: [x64]
     os: [linux]
     libc: [musl]
 
-  '@lancedb/lancedb-win32-arm64-msvc@0.38.0-beta.3':
-    resolution: {integrity: sha512-AepuHMULJ08d1AizGGDTCbGHMWoodOqlhY17kYRv0ZYrFJP8CYQ3v/+YqbR/Lv3ebZlEPzw0rk3qppYdlpDCUg==}
+  '@lancedb/lancedb-win32-arm64-msvc@0.38.0':
+    resolution: {integrity: sha512-ObG2yXxZxo3mEJp7whFh1A4rspJW8DxMGRnLvjPs9EvCoyqjOXaIgrsqL+FnsZ4g3HAGYYOmUhusTYcD0Nu54g==}
     engines: {node: '>= 18'}
     cpu: [arm64]
     os: [win32]
 
-  '@lancedb/lancedb-win32-x64-msvc@0.38.0-beta.3':
-    resolution: {integrity: sha512-2dFG8GBmtJnTp5Ce2BYSIUcc6EaqzLwKUdoAFybJ/L1lpT2jkB2PLOy1ouKGDjjjdvDTz835LDubGNsrpr0bNA==}
+  '@lancedb/lancedb-win32-x64-msvc@0.38.0':
+    resolution: {integrity: sha512-DrzY0/XSyf7z8+xiSXQWhwREaNXLsxvRqbrdWLr4cisOoZe80PoEWQiwqKNIgHRyHY9alXPoyXj9BV60pkvanw==}
     engines: {node: '>= 18'}
     cpu: [x64]
     os: [win32]
 
-  '@lancedb/lancedb@0.38.0-beta.3':
-    resolution: {integrity: sha512-Q54mfDqtGxTkHSY1co1yzerUcPmZjk0BiW38lSeJ+wdYtbQPpXWt+NhNwP5mMxQCmwXyaFJXe6INEM0F3RsBGQ==}
-    engines: {node: '>= 18'}
+  '@lancedb/lancedb@0.38.0':
+    resolution: {integrity: sha512-10+Cy0P8GyGg7d6l6AmuruEfFt6sxdCZNFCmhcJyUofvopxCb1yIiFNXsfzjO8Iyh2hijTEuyKTzIi4LGlH6Kw==}
+    engines: {node: '>= 22'}
     cpu: [x64, arm64]
     os: [darwin, linux, win32]
     peerDependencies:
-      '@types/node': '>=18'
+      '@types/node': '>=22'
       apache-arrow: '>=15.0.0 <=18.1.0'
     peerDependenciesMeta:
       '@types/node':
@@ -2534,40 +2534,40 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@lancedb/lancedb-darwin-arm64@0.38.0-beta.3':
+  '@lancedb/lancedb-darwin-arm64@0.38.0':
     optional: true
 
-  '@lancedb/lancedb-linux-arm64-gnu@0.38.0-beta.3':
+  '@lancedb/lancedb-linux-arm64-gnu@0.38.0':
     optional: true
 
-  '@lancedb/lancedb-linux-arm64-musl@0.38.0-beta.3':
+  '@lancedb/lancedb-linux-arm64-musl@0.38.0':
     optional: true
 
-  '@lancedb/lancedb-linux-x64-gnu@0.38.0-beta.3':
+  '@lancedb/lancedb-linux-x64-gnu@0.38.0':
     optional: true
 
-  '@lancedb/lancedb-linux-x64-musl@0.38.0-beta.3':
+  '@lancedb/lancedb-linux-x64-musl@0.38.0':
     optional: true
 
-  '@lancedb/lancedb-win32-arm64-msvc@0.38.0-beta.3':
+  '@lancedb/lancedb-win32-arm64-msvc@0.38.0':
     optional: true
 
-  '@lancedb/lancedb-win32-x64-msvc@0.38.0-beta.3':
+  '@lancedb/lancedb-win32-x64-msvc@0.38.0':
     optional: true
 
-  '@lancedb/lancedb@0.38.0-beta.3(@types/node@26.4.1)(apache-arrow@18.1.0)':
+  '@lancedb/lancedb@0.38.0(@types/node@26.4.1)(apache-arrow@18.1.0)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       apache-arrow: 18.1.0
       reflect-metadata: 0.2.2
     optionalDependencies:
-      '@lancedb/lancedb-darwin-arm64': 0.38.0-beta.3
-      '@lancedb/lancedb-linux-arm64-gnu': 0.38.0-beta.3
-      '@lancedb/lancedb-linux-arm64-musl': 0.38.0-beta.3
-      '@lancedb/lancedb-linux-x64-gnu': 0.38.0-beta.3
-      '@lancedb/lancedb-linux-x64-musl': 0.38.0-beta.3
-      '@lancedb/lancedb-win32-arm64-msvc': 0.38.0-beta.3
-      '@lancedb/lancedb-win32-x64-msvc': 0.38.0-beta.3
+      '@lancedb/lancedb-darwin-arm64': 0.38.0
+      '@lancedb/lancedb-linux-arm64-gnu': 0.38.0
+      '@lancedb/lancedb-linux-arm64-musl': 0.38.0
+      '@lancedb/lancedb-linux-x64-gnu': 0.38.0
+      '@lancedb/lancedb-linux-x64-musl': 0.38.0
+      '@lancedb/lancedb-win32-arm64-msvc': 0.38.0
+      '@lancedb/lancedb-win32-x64-msvc': 0.38.0
       '@types/node': 26.4.1
 
   '@lmdb/lmdb-darwin-arm64@3.5.6':

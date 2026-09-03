@@ -63,7 +63,7 @@ describe("VectorDB.getSchemaVectorDim", () => {
     await expect(db.ensureTable()).resolves.toBe(table);
 
     expect(conn.createTable).toHaveBeenCalledOnce();
-    expect(table.delete).toHaveBeenCalledWith('id = "seed"');
+    expect(table.delete).toHaveBeenCalledWith("id = 'seed'");
     await db.close();
   });
 
