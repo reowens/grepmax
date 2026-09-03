@@ -3,9 +3,10 @@
 # as a dependency). Putting the mathjs pin there silently un-pinned it.
 overrides:
   mathjs: "15.2.0"
-  # Advisory patches for transitive deps. The first five stay inside their
+  # Advisory patches for transitive deps. The first six stay inside their
   # parent's declared range and only lift a stale lockfile pin.
-  fast-uri: "^3.1.5" # .>@modelcontextprotocol/sdk>ajv
+  fast-uri: "^3.1.6" # .>@modelcontextprotocol/sdk>ajv
+  qs: "^6.16.0" # .>@modelcontextprotocol/sdk>express
   ip-address: "^10.3.1" # .>@modelcontextprotocol/sdk>express-rate-limit
   hono: "^4.12.34" # .>@modelcontextprotocol/sdk
   "@hono/node-server": "^2.0.5" # .>@modelcontextprotocol/sdk
