@@ -126,7 +126,9 @@ describe("ProjectFilePolicy", () => {
             error.code = "EIO";
             throw error;
           }
-          return originalRead(...(args as [fs.PathLike, any]));
+          return (await originalRead(...(args as [fs.PathLike, any]))) as
+            | string
+            | Buffer<ArrayBuffer>;
         },
       );
 

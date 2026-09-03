@@ -29,31 +29,31 @@ afterEach(() => {
 });
 
 describe("search skeleton containment", () => {
-  it.each([
-    "poisoned outside path",
-    "post-index symlink replacement",
-  ])("marks a %s unreadable without opening it", async (scenario) => {
-    const parent = fs.mkdtempSync(path.join(os.tmpdir(), "gmax-skeleton-"));
-    tempDirs.push(parent);
-    const root = path.join(parent, "project");
-    const outside = path.join(parent, "outside");
-    fs.mkdirSync(root);
-    fs.mkdirSync(outside);
-    const secret = path.join(outside, "secret.ts");
-    fs.writeFileSync(secret, "DO_NOT_DISCLOSE");
-    const indexed = path.join(root, "source.ts");
-    if (scenario === "post-index symlink replacement") {
-      fs.writeFileSync(indexed, "safe");
-      fs.unlinkSync(indexed);
-      fs.symlinkSync(secret, indexed);
-    }
-    const poisoned = scenario === "poisoned outside path" ? secret : indexed;
-    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+  it.each(["poisoned outside path", "post-index symlink replacement"])(
+    "marks a %s unreadable without opening it",
+    async (scenario) => {
+      const parent = fs.mkdtempSync(path.join(os.tmpdir(), "gmax-skeleton-"));
+      tempDirs.push(parent);
+      const root = path.join(parent, "project");
+      const outside = path.join(parent, "outside");
+      fs.mkdirSync(root);
+      fs.mkdirSync(outside);
+      const secret = path.join(outside, "secret.ts");
+      fs.writeFileSync(secret, "DO_NOT_DISCLOSE");
+      const indexed = path.join(root, "source.ts");
+      if (scenario === "post-index symlink replacement") {
+        fs.writeFileSync(indexed, "safe");
+        fs.unlinkSync(indexed);
+        fs.symlinkSync(secret, indexed);
+      }
+      const poisoned = scenario === "poisoned outside path" ? secret : indexed;
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    await outputSkeletons([{ metadata: { path: poisoned } }], root, 1, null);
+      await outputSkeletons([{ metadata: { path: poisoned } }], root, 1, null);
 
-    expect(skeletonizeFile).not.toHaveBeenCalled();
-    expect(log.mock.calls.flat().join("\n")).toContain("File not readable");
-    expect(log.mock.calls.flat().join("\n")).not.toContain("DO_NOT_DISCLOSE");
-  });
+      expect(skeletonizeFile).not.toHaveBeenCalled();
+      expect(log.mock.calls.flat().join("\n")).toContain("File not readable");
+      expect(log.mock.calls.flat().join("\n")).not.toContain("DO_NOT_DISCLOSE");
+    },
+  );
 });

@@ -95,52 +95,54 @@ describe("search HTTP fast path", () => {
     }
   });
 
-  it.each([
-    "outside path",
-    "post-index symlink replacement",
-  ])("does not extract imports from an %s", async (scenario) => {
-    const parent = fs.mkdtempSync(path.join(os.tmpdir(), "gmax-imports-"));
-    const root = path.join(parent, "project");
-    const outside = path.join(parent, "outside");
-    fs.mkdirSync(root);
-    fs.mkdirSync(outside);
-    const secretPath = path.join(outside, "secret.ts");
-    fs.writeFileSync(secretPath, 'import secret from "DO_NOT_DISCLOSE";\n');
-    const indexedPath = path.join(root, "source.ts");
-    if (scenario === "post-index symlink replacement") {
-      fs.writeFileSync(indexedPath, "export const safe = true;\n");
-      fs.unlinkSync(indexedPath);
-      fs.symlinkSync(secretPath, indexedPath);
-    }
-    const resultPath = scenario === "outside path" ? secretPath : indexedPath;
-    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+  it.each(["outside path", "post-index symlink replacement"])(
+    "does not extract imports from an %s",
+    async (scenario) => {
+      const parent = fs.mkdtempSync(path.join(os.tmpdir(), "gmax-imports-"));
+      const root = path.join(parent, "project");
+      const outside = path.join(parent, "outside");
+      fs.mkdirSync(root);
+      fs.mkdirSync(outside);
+      const secretPath = path.join(outside, "secret.ts");
+      fs.writeFileSync(secretPath, 'import secret from "DO_NOT_DISCLOSE";\n');
+      const indexedPath = path.join(root, "source.ts");
+      if (scenario === "post-index symlink replacement") {
+        fs.writeFileSync(indexedPath, "export const safe = true;\n");
+        fs.unlinkSync(indexedPath);
+        fs.symlinkSync(secretPath, indexedPath);
+      }
+      const resultPath = scenario === "outside path" ? secretPath : indexedPath;
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    try {
-      await renderSearchOutput({
-        searchResult: {
-          data: [
-            {
-              type: "text",
-              text: "export const stale = true;",
-              metadata: { path: resultPath, hash: "" },
-              generated_metadata: { start_line: 0, end_line: 0 },
-              score: 1,
-            },
-          ],
-        },
-        options: { m: "5", agent: true, imports: true } as SearchOptions,
-        minScore: 0,
-        crossProject: { active: false } as never,
-        pattern: "stale",
-        effectiveRoot: root,
-        projectRoot: root,
-        vectorDb: null,
-      });
+      try {
+        await renderSearchOutput({
+          searchResult: {
+            data: [
+              {
+                type: "text",
+                text: "export const stale = true;",
+                metadata: { path: resultPath, hash: "" },
+                generated_metadata: { start_line: 0, end_line: 0 },
+                score: 1,
+              },
+            ],
+          },
+          options: { m: "5", agent: true, imports: true } as SearchOptions,
+          minScore: 0,
+          crossProject: { active: false } as never,
+          pattern: "stale",
+          effectiveRoot: root,
+          projectRoot: root,
+          vectorDb: null,
+        });
 
-      expect(log.mock.calls.flat().join("\n")).not.toContain("DO_NOT_DISCLOSE");
-    } finally {
-      log.mockRestore();
-      fs.rmSync(parent, { recursive: true, force: true });
-    }
-  });
+        expect(log.mock.calls.flat().join("\n")).not.toContain(
+          "DO_NOT_DISCLOSE",
+        );
+      } finally {
+        log.mockRestore();
+        fs.rmSync(parent, { recursive: true, force: true });
+      }
+    },
+  );
 });

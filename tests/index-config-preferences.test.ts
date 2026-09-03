@@ -48,29 +48,32 @@ describe("configuration preference preservation", () => {
     [true, false],
     [false, true],
     [false, false],
-  ])("preserves queryLog=%s and llmEnabled=%s across model updates", (queryLog, llmEnabled) => {
-    writeGlobalConfig({
-      modelTier: "small",
-      vectorDim: 384,
-      embedMode: "gpu",
-      queryLog,
-      llmEnabled,
-    });
+  ])(
+    "preserves queryLog=%s and llmEnabled=%s across model updates",
+    (queryLog, llmEnabled) => {
+      writeGlobalConfig({
+        modelTier: "small",
+        vectorDim: 384,
+        embedMode: "gpu",
+        queryLog,
+        llmEnabled,
+      });
 
-    writeGlobalConfig({
-      modelTier: "standard",
-      vectorDim: 768,
-      embedMode: "cpu",
-    });
+      writeGlobalConfig({
+        modelTier: "standard",
+        vectorDim: 768,
+        embedMode: "cpu",
+      });
 
-    expect(readGlobalConfig()).toMatchObject({
-      modelTier: "standard",
-      vectorDim: 768,
-      embedMode: "cpu",
-      queryLog,
-      llmEnabled,
-    });
-  });
+      expect(readGlobalConfig()).toMatchObject({
+        modelTier: "standard",
+        vectorDim: 768,
+        embedMode: "cpu",
+        queryLog,
+        llmEnabled,
+      });
+    },
+  );
 
   it("preserves preferences during a full index identity write", () => {
     writeGlobalConfig({
