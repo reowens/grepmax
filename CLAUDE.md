@@ -37,6 +37,25 @@ explicitly, unambiguously tells you to bring it up in that exact session.
 When spawning subagents (Agent tool), use `model: "opus"` unless the user asks
 for a different model.
 
+Agent worktrees land under `.claude/worktrees/` *inside* this repo. The directory is gitignored
+and `vitest.config` excludes it, but a leftover worktree still shows in `git worktree list` and
+can hold a merged branch — `git worktree remove <path>` and `git branch -d` once merged.
+
+## Handoffs: `dotmd baton`
+
+"Baton" means save a resume prompt for the next session with `dotmd baton`, not a plan doc:
+
+```bash
+dotmd baton <slug> @/path/to/draft.md     # slug mode: saves resume-<slug>, touches nothing else
+```
+
+It writes `docs/prompts/resume-<slug>.md`, which is gitignored and session-local — do not
+`git add` it, and never paste the resume text into chat. The next session consumes it with
+`dotmd use`. Put the exact state in the draft: what is done and verified (with paths and numbers),
+what is staged, why anything was deliberately not run, the exact next commands, and rollback.
+Reference plan docs under `docs/plans/` from inside the draft rather than editing them. Plan mode
+(`dotmd baton @draft` with an owned plan) also releases the plan; see `dotmd baton --help`.
+
 ---
 
 ## Process Architecture
