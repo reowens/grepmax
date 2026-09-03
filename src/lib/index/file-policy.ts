@@ -37,6 +37,8 @@ export class ProjectFilePolicy {
   private readonly rootFilter: Ignore;
   private readonly ignoreFiles: string[];
   private readonly ignoreCache = new Map<string, Promise<IgnoreScope>>();
+  // Scopes whose ignore files have finished loading, for synchronous checks.
+  private readonly loadedScopes = new Map<string, IgnoreScope>();
 
   constructor(
     projectRoot: string,
@@ -65,6 +67,32 @@ export class ProjectFilePolicy {
 
   invalidateIgnoreCache(): void {
     this.ignoreCache.clear();
+    this.loadedScopes.clear();
+  }
+
+  /**
+   * Synchronous, best-effort ignore check against policy already in memory:
+   * the default patterns plus every .gitignore/.gmaxignore scope an earlier
+   * classify has loaded. Never touches the filesystem, so it is safe on the
+   * watcher's event path. `false` only means "not provably ignored yet" —
+   * callers must still classify before indexing.
+   */
+  isIgnoredByLoadedPolicy(absPath: string): boolean {
+    const resolved = path.resolve(absPath);
+    if (!this.isLexicallyContained(resolved)) return true;
+    const rootRelative = this.relative(resolved);
+    if (!rootRelative) return false;
+    if (this.rootFilter.ignores(rootRelative)) return true;
+    for (const dir of this.scopeDirectories(path.dirname(resolved))) {
+      const scope = this.loadedScopes.get(dir);
+      if (!scope?.filter) continue;
+      const relative = path
+        .relative(scope.dir, resolved)
+        .split(path.sep)
+        .join("/");
+      if (relative && scope.filter.ignores(relative)) return true;
+    }
+    return false;
   }
 
   isLexicallyContained(absPath: string): boolean {
@@ -109,9 +137,18 @@ export class ProjectFilePolicy {
       return { dir, filter };
     })();
     this.ignoreCache.set(dir, pending);
-    void pending.catch(() => {
-      if (this.ignoreCache.get(dir) === pending) this.ignoreCache.delete(dir);
-    });
+    void pending.then(
+      (scope) => {
+        if (this.ignoreCache.get(dir) === pending) {
+          this.loadedScopes.set(dir, scope);
+        }
+      },
+      () => {
+        if (this.ignoreCache.get(dir) === pending) {
+          this.ignoreCache.delete(dir);
+        }
+      },
+    );
     return pending;
   }
 

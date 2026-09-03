@@ -136,6 +136,26 @@ export class ProjectBatchProcessor {
       !(event === "unlink" && options?.forceDelete)
     )
       return;
+    // A policy-ignored path that was never indexed has nothing to add and
+    // nothing to delete. Drop it here rather than after a debounce, a batch
+    // slot, and an lstat — transient lock/build files under a gitignored
+    // directory can arrive thousands of times a day. Anything with a meta
+    // entry still flows through so a policy change can retire its vectors,
+    // and forced repairs/deletes bypass the check because they target
+    // vectors the meta cache may not know about.
+    const isIgnored = (
+      this.filePolicy as ProjectFilePolicy & {
+        isIgnoredByLoadedPolicy?: (candidate: string) => boolean;
+      }
+    ).isIgnoredByLoadedPolicy;
+    if (
+      isIgnored &&
+      !options?.forceDelete &&
+      !options?.forceReprocess &&
+      !this.metaCache.get(normalized) &&
+      isIgnored.call(this.filePolicy, normalized)
+    )
+      return;
     if (options?.forceReprocess) {
       this.forcedReprocess.set(normalized, ++this.forceGeneration);
     }

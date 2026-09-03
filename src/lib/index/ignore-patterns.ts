@@ -49,6 +49,8 @@ export const DEFAULT_IGNORE_PATTERNS = [
   "node_modules",
   "dist",
   "build",
+  ".build", // SwiftPM
+  "DerivedData", // Xcode
   "out",
   "target",
   "__pycache__",

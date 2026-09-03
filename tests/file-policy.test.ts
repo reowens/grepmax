@@ -39,6 +39,33 @@ describe("ProjectFilePolicy", () => {
     expect((await policy.classifyFile(target)).status).toBe(status);
   });
 
+  it("answers synchronous ignore checks from policy already in memory", async () => {
+    write(".gitignore", ".runlist/\n");
+    const policy = new ProjectFilePolicy(root);
+    const lockFile = path.join(root, ".runlist/locks/a/owner.json");
+
+    // Default patterns need no filesystem access.
+    expect(
+      policy.isIgnoredByLoadedPolicy(
+        path.join(root, "node_modules/pkg/index.ts"),
+      ),
+    ).toBe(true);
+    expect(policy.isIgnoredByLoadedPolicy(path.join(root, "src/main.ts"))).toBe(
+      false,
+    );
+    // The project's .gitignore is not consulted until a classify loads it.
+    expect(policy.isIgnoredByLoadedPolicy(lockFile)).toBe(false);
+
+    await policy.classifyFile(write("src/main.ts"));
+    expect(policy.isIgnoredByLoadedPolicy(lockFile)).toBe(true);
+    expect(policy.isIgnoredByLoadedPolicy(path.join(root, "src/main.ts"))).toBe(
+      false,
+    );
+
+    policy.invalidateIgnoreCache();
+    expect(policy.isIgnoredByLoadedPolicy(lockFile)).toBe(false);
+  });
+
   it("applies additive nested ignore files", async () => {
     write(".gitignore", "ignored-root.ts\n");
     write("packages/api/.gmaxignore", "private.ts\n");

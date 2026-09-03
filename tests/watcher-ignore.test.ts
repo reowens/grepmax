@@ -15,6 +15,9 @@ describe("watcher ignore globs", () => {
     expect(WATCHER_IGNORE_GLOBS).toContain("**/.git/**");
     expect(WATCHER_IGNORE_GLOBS).toContain("**/.gmax/**");
     expect(WATCHER_IGNORE_GLOBS).toContain("**/.turbo/**");
+    // SwiftPM and Xcode build output: 12k+ file writes per build.
+    expect(WATCHER_IGNORE_GLOBS).toContain("**/.build/**");
+    expect(WATCHER_IGNORE_GLOBS).toContain("**/DerivedData/**");
   });
 
   it("contains no bare directory names (parcel treats non-globs as root-relative paths)", () => {

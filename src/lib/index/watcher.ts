@@ -41,6 +41,8 @@ const IGNORED_DIR_NAMES = [
   ".gmax",
   "dist",
   "build",
+  ".build", // SwiftPM
+  "DerivedData", // Xcode
   "out",
   "target",
   "__pycache__",

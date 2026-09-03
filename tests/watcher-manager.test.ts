@@ -57,6 +57,49 @@ describe("WatcherManager.unwatchProject", () => {
     clearInterval(other);
   });
 
+  it("coalesces overflow recoveries inside the cooldown into one catchup", async () => {
+    vi.useFakeTimers();
+    try {
+      const processor = {} as any;
+      const d = deps();
+      d.processors.set("/p/app", processor);
+      d.getShuttingDown = () => false;
+      const wm = new WatcherManager(d);
+      const runCatchup = vi.fn(async () => {});
+      (wm as any).runCatchup = runCatchup;
+
+      expect((wm as any).deferCatchup("/p/app", processor, 1000)).toBe(true);
+      expect((wm as any).deferCatchup("/p/app", processor, 1000)).toBe(false);
+      expect((wm as any).deferCatchup("/p/app", processor, 1000)).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(999);
+      expect(runCatchup).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(runCatchup).toHaveBeenCalledTimes(1);
+      expect((wm as any).deferredCatchups.has("/p/app")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("drops a deferred catchup when the project is unwatched", async () => {
+    vi.useFakeTimers();
+    try {
+      const wm = new WatcherManager(deps());
+      const runCatchup = vi.fn(async () => {});
+      (wm as any).runCatchup = runCatchup;
+      (wm as any).deferCatchup("/p/app", {} as any, 1000);
+
+      await wm.unwatchProject("/p/app");
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect((wm as any).deferredCatchups.has("/p/app")).toBe(false);
+      expect(runCatchup).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("cancels a delayed recovery before closing the old processor", async () => {
     const root = "/p/app";
     const processor = { close: vi.fn(async () => {}) };

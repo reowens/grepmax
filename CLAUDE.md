@@ -228,6 +228,30 @@ watchProject(root)
         +-- Purge deleted files from MetaCache
 ```
 
+#### FSEvents overflows: what the watcher can and cannot control
+
+"Events were dropped by the FSEvents client" means the kernel/FSEvents queue overflowed. The
+watcher's ignore globs (`WATCHER_IGNORE_GLOBS`) filter events *after* delivery, so they cannot
+prevent the overflow — a SwiftPM build writing 12k files into `.build/` or a venv install under
+`site-packages/` will overflow the queue no matter what gmax ignores. On platform this produced
+~340 overflows in 2.5 days. What gmax controls is the cost per overflow, and three things keep it
+bounded:
+
+- **Recoveries inside `CATCHUP_COOLDOWN_MS` (5 min) coalesce into one deferred catchup scan**
+  (`deferCatchup` in `watcher-manager.ts`). A catchup of platform's 26k tracked files takes ~25s
+  (p50) to ~150s; before coalescing, an overflow burst ran one per recovery, or skipped the scan
+  outright and left that drop window uncovered until the next overflow. The deferred scan walks
+  the whole project, so one scan covers every overflow in the window.
+- **Poll mode probes FSEvents every 15 min** (`FSEVENTS_RECOVERY_INTERVAL_MS`), not hourly. Poll
+  mode is the expensive state (a full catchup every 5 min); every observed episode reattached on
+  its first probe, so a shorter probe interval ends it sooner and a failed probe just falls back.
+- **`handleFileEvent` drops never-indexed paths that loaded policy already ignores**
+  (`ProjectFilePolicy.isIgnoredByLoadedPolicy`, synchronous, no filesystem access). Transient
+  lock files under a gitignored dir (dotmd's `.runlist/locks/**/owner.json` — 11k events in 2.5
+  days on platform) used to ride through the debounce, a batch slot, and an lstat only to be
+  classified `missing`. Paths with a meta entry still flow through so a policy change can retire
+  their vectors; forced repairs and deletes bypass the check.
+
 ### Batch processor (`ProjectBatchProcessor`)
 
 ```
@@ -426,6 +450,24 @@ Note that `postrelease.sh` ends with a real `npm install -g`, which **replaces a
 symlink**. If the global `gmax` is linked to this working tree, re-run `npm link` afterward — and
 be aware that while it is linked, any dependency change plus a daemon restart reaches the live
 shared store.
+
+#### The LanceDB overlay only applies if npm runs the postinstall
+
+npm 12 gates lifecycle scripts behind `allow-scripts`. `postrelease.sh` passes
+`--allow-scripts=grepmax` explicitly, but a *manual* `npm install -g grepmax` relies on
+`~/.npmrc`, and the entry there must name the **package** (`grepmax`), not the binary (`gmax`).
+A `gmax` entry silently skips `scripts/postinstall.js`, so the vendored lance build is never
+copied in and the daemon runs the un-patched `@lancedb/lancedb-darwin-arm64` platform binary —
+the 2026-09-02 install did exactly this. Two checks after any global install:
+
+- `node_modules/@lancedb/lancedb/.gmax-vendored` exists under the global grepmax.
+- `lsof -p $(cat ~/.gmax/daemon.pid) | grep lancedb.*\.node` points at
+  `@lancedb/lancedb/dist/lancedb.darwin-arm64.node`, not the `lancedb-darwin-arm64` package.
+
+Also: a same-version reinstall does **not** restart the daemon. `gmax watch --daemon -b` only
+hands off on a version mismatch, so after fixing an install in place run `gmax watch stop`
+(graceful IPC shutdown) and then `gmax watch --daemon -b`; otherwise the old process keeps
+serving from npm's deleted staging directory.
 
 ### Logging
 - `src/lib/utils/logger.ts` — `log()`, `debug()`, `timer()`, `debugTimer()`, `debugEvery()`; gated on `GMAX_DEBUG=1`

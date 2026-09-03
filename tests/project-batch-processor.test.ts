@@ -388,6 +388,23 @@ describe("ProjectBatchProcessor", () => {
     expect(metaCache.delete).toHaveBeenCalledWith(policyFile);
   });
 
+  it("drops never-indexed events under a policy-ignored directory before queueing", async () => {
+    fs.writeFileSync(path.join(tmpDir, ".gitignore"), ".runlist/\n");
+    const processor = makeProcessor();
+    await processor.filePolicy.classifyFile(filePath); // loads the root scope
+    const lockFile = path.join(tmpDir, ".runlist/locks/a/owner.json");
+
+    processor.handleFileEvent("change", lockFile);
+    processor.handleFileEvent("unlink", lockFile);
+    expect(processor.progress.pendingFiles).toBe(0);
+
+    // A path the index already knows about must still flow through, so a
+    // policy change can retire its vectors.
+    meta.set(lockFile, { hash: "h", mtimeMs: 1, size: 1 });
+    processor.handleFileEvent("unlink", lockFile);
+    expect(processor.progress.pendingFiles).toBe(1);
+  });
+
   it("rejects outside-root events before queueing", () => {
     const processor = makeProcessor();
     processor.handleFileEvent(

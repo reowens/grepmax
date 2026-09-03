@@ -22,8 +22,16 @@ import {
 import type { WorkerPool } from "../workers/pool";
 
 // Watcher health windows used for FSEvents auto-recovery.
-const FSEVENTS_RECOVERY_INTERVAL_MS = 60 * 60 * 1000; // try recovery hourly
+// Poll mode is the expensive state (a full catchup scan every 5 min), and in
+// practice the first reattach attempt succeeds once the burst that caused the
+// overflows has passed. Probe often; a failed probe just drops back to polling.
+const FSEVENTS_RECOVERY_INTERVAL_MS = 15 * 60 * 1000;
 const FSEVENTS_HEALTH_WINDOW_MS = 5 * 60 * 1000; // 5 min of quiet = "healthy"
+// Overflows arrive in bursts (a build, a checkout, a venv install). Every
+// recovery inside this window folds into one deferred catchup scan instead of
+// each rescanning the project (~25s on a 26k-file tree) or skipping outright
+// and leaving its drop window uncovered.
+const CATCHUP_COOLDOWN_MS = 5 * 60 * 1000;
 
 interface ActiveCatchup {
   controller: AbortController;
@@ -92,6 +100,10 @@ export class WatcherManager {
   >();
   private readonly lastOverflowMs = new Map<string, number>();
   private readonly lastCatchupEndMs = new Map<string, number>();
+  private readonly deferredCatchups = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
   private readonly catchups = new Map<string, ActiveCatchup>();
   private readonly degradedRoots = new Set<string>();
   private readonly terminalFailures = new Map<string, Set<string>>();
@@ -409,12 +421,15 @@ export class WatcherManager {
         try {
           await this.subscribeWatcher(root, processor);
           if (this.deps.processors.get(root) !== processor) return;
-          const lastCatchup = this.lastCatchupEndMs.get(root) ?? 0;
-          const CATCHUP_COOLDOWN_MS = 60_000;
-          if (Date.now() - lastCatchup < CATCHUP_COOLDOWN_MS) {
-            console.log(
-              `[daemon:${name}] Skipping catchup scan (last completed ${Math.round((Date.now() - lastCatchup) / 1000)}s ago)`,
-            );
+          const sinceLastMs =
+            Date.now() - (this.lastCatchupEndMs.get(root) ?? 0);
+          if (sinceLastMs < CATCHUP_COOLDOWN_MS) {
+            const delayMs = CATCHUP_COOLDOWN_MS - sinceLastMs;
+            if (this.deferCatchup(root, processor, delayMs)) {
+              console.log(
+                `[daemon:${name}] Deferring catchup scan (last completed ${Math.round(sinceLastMs / 1000)}s ago; one coalesced scan in ${Math.round(delayMs / 1000)}s)`,
+              );
+            }
           } else {
             await this.runCatchup(root, processor);
           }
@@ -427,6 +442,40 @@ export class WatcherManager {
       })();
     }, delayMs);
     this.recoveryTimeouts.set(root, timeout);
+  }
+
+  /**
+   * Schedule one catchup scan for the root at the end of the cooldown. Returns
+   * false when a deferred scan is already pending — every overflow inside the
+   * window is covered by that single scan, since it walks the whole project.
+   */
+  private deferCatchup(
+    root: string,
+    processor: ProjectBatchProcessor,
+    delayMs: number,
+  ): boolean {
+    if (this.deferredCatchups.has(root)) return false;
+    const name = path.basename(root);
+    const timer = setTimeout(() => {
+      this.deferredCatchups.delete(root);
+      if (
+        this.deps.getShuttingDown() ||
+        this.deps.processors.get(root) !== processor
+      )
+        return;
+      this.runCatchup(root, processor).catch((err) => {
+        console.error(`[daemon:${name}] Deferred catchup failed:`, err);
+      });
+    }, delayMs);
+    this.deferredCatchups.set(root, timer);
+    return true;
+  }
+
+  private cancelDeferredCatchup(root: string): void {
+    const timer = this.deferredCatchups.get(root);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.deferredCatchups.delete(root);
   }
 
   /**
@@ -756,6 +805,7 @@ export class WatcherManager {
       clearTimeout(recoveryTimeout);
       this.recoveryTimeouts.delete(root);
     }
+    this.cancelDeferredCatchup(root);
     this.pendingOps.delete(`recover:${root}`);
 
     const processor = this.deps.processors.get(root);
@@ -828,6 +878,10 @@ export class WatcherManager {
     for (const timeout of this.recoveryTimeouts.values()) {
       clearTimeout(timeout);
     }
+    for (const timeout of this.deferredCatchups.values()) {
+      clearTimeout(timeout);
+    }
+    this.deferredCatchups.clear();
     this.recoveryTimeouts.clear();
 
     const catchups = [...this.catchups.values()];
