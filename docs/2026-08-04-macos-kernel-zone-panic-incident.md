@@ -2,14 +2,14 @@
 type: doc
 status: active
 created: 2026-08-04T20:50:29Z
-updated: 2026-09-03T18:40:00Z
+updated: 2026-09-04T01:20:00Z
 surfaces:
   - host
   - store
   - daemon
 domain: macOS APFS and EndpointSecurity kernel-zone exhaustion incident
 audience: internal
-summary: Investigation and remediation record for recurring data.kalloc.1024 kernel panics on macOS 26.5.2, and the linear, unreclaimed zone drift measured across 10.6 days on macOS 26.6.2.
+summary: Investigation and remediation record for recurring data.kalloc.1024 kernel panics on macOS 26.5.2, the linear, unreclaimed zone drift measured across a full 10.9-day boot on macOS 26.6.2, and the fresh-boot baseline taken after the 2026-09-03 restart.
 related_plans:
   - archived/lancedb-fts-panic-remediation.md
 related_docs:
@@ -21,20 +21,27 @@ current_state: >
   compaction - has not reproduced. But a third privileged sample at 255.6 h uptime (2026-09-03:
   1,369,375 inuse, 1.31 GiB) shows the ~5-8 MiB/h drift is linear and never reclaimed, same slope
   as at 45.5 h. "Bounded" described the rate, not the total: 25F84 sat at 1.37 GiB eight hours
-  before it went violent.
+  before it went violent. That boot ended 2026-09-03 17:57 -0700 by clean operator restart at
+  262.0 h, without a panic; its four jetsam reports (174-227 h) all name data.kalloc.1024 as the
+  largest zone again, on the same 5.1-5.5 MiB/h line. The host is still on 25G83, and a
+  privileged zprint 7 min into the new boot reads 1,094 inuse / 1.3 MiB - the t=0 point for the
+  next series.
 next_step: >
-  Reboot before the 41-minute APFS churn soak: at 1.31 GiB the zone is near 25F84's pre-violent
-  occupancy, and a fresh boot restores ~15.5 MiB of headroom and makes the soak attributable.
-  Then re-sample data.kalloc.1024 at 1 h, 24 h, and 7 d against that fresh baseline.
+  Overnight no-gmax window is running: daemon stopped 2026-09-03 18:50 -0700 at 8,422 elements
+  with ~/.gmax/autostart-disabled set. In the morning, `sudo zprint data.kalloc.1024`, compare
+  the rate against 5 MiB/h, then rm the kill switch, `gmax watch --daemon -b`, and run the
+  41-minute APFS churn soak with a privileged sample immediately before and after.
 ---
 
 # macOS Kernel-Zone Panic Incident - 2026-08-04
 
 > **Status 2026-09-03.** Four panics, all on `25F84`. The host is now on macOS 26.6.2 (`25G83`),
 > where the violent failure mode has not reproduced - but a 255-hour sample shows the slow drift is
-> linear and unreclaimed, now at 1.31 GiB. See
-> [Panic 4 And The 26.6.2 Update](#panic-4-and-the-2662-update-added-2026-08-25) and
-> [Correction 2026-09-03](#correction-2026-09-03-the-drift-is-bounded-in-rate-not-in-total). The
+> linear and unreclaimed, reaching 1.31 GiB before that boot ended by a clean restart at 262 h.
+> The fresh boot reads 1.3 MiB. See
+> [Panic 4 And The 26.6.2 Update](#panic-4-and-the-2662-update-added-2026-08-25),
+> [Correction 2026-09-03](#correction-2026-09-03-the-drift-is-bounded-in-rate-not-in-total) and
+> [Reboot 2026-09-03](#reboot-2026-09-03-fresh-baseline-on-25g83). The
 > narrative below is preserved as written at each revision; where it says "twice", read "the first
 > two".
 
@@ -90,6 +97,7 @@ is not required for the failure.
 | Third-party system extensions | Tailscale 1.102.1 and Little Snitch 6.4.1 network extensions |
 | Other relevant software | Docker Desktop 4.85.0; Parallels Desktop 26.3.3 |
 | Current fresh-boot zone sample | `data.kalloc.1024` had 15,826 live elements, about 15.5 MiB |
+| **Fresh-boot zone sample, `25G83` (2026-09-03 18:04 -0700)** | `data.kalloc.1024` 1,094 inuse / 1,328 KiB, `cur == max`, 7 min uptime; `APFS_4K_OBJS` 64,246 inuse / 251 MiB |
 
 ## Incident Timeline
 
@@ -124,10 +132,19 @@ is not required for the failure.
 | 2026-08-24T03:50 - 2026-08-25T06:33 | Nine full compactions; `freed` totals 182,382 MB. |
 | 2026-08-25 01:51:44 -0700 | Jetsam on `25G83`: whole zone map 2.49 GiB; largest zone is `APFS_4K_OBJS`, not `data.kalloc.1024`. |
 | 2026-08-25 17:15 -0700 | `sudo zprint` after ~45.5 h uptime: 274,985 live elements, ~269 MiB. |
+| 2026-08-31 01:55:55 -0700 | Jetsam at 174.0 h: `data.kalloc.1024` is the largest zone again, 887 MiB; zone map 3.08 GiB. |
+| 2026-09-01 01:34 / 07:18 -0700 | Jetsams at 197.6 h and 203.4 h: 1,075 MiB and 1,124 MiB. |
+| 2026-09-02 07:22:52 -0700 | Jetsam at 227.5 h: 1,253 MiB; zone map 3.48 GiB of an 18.9 GiB cap. |
+| 2026-09-03 11:31 -0700 | `sudo zprint` at 255.6 h: 1,369,375 inuse, 1.31 GiB, `cur == max`. |
+| 2026-09-03T17:57:18 | Daemon shuts down cleanly for an operator restart (`Shutdown complete`, 13 projects unwatched). |
+| 2026-09-03 17:57:48 -0700 | Host reboots, still `25G83`. The boot lasted 10 d 22 h 01 m (262.0 h) and ended without a panic. |
+| 2026-09-03 18:04 -0700 | Fresh-boot `sudo zprint`: `data.kalloc.1024` 1,094 inuse / 1.3 MiB. `APFS_4K_OBJS` is the largest named zone at 251 MiB. |
+| 2026-09-03 18:50 -0700 | `sudo zprint` at 52 min: 8,422 inuse / 8.5 MiB, `cur == max`. +7.2 MiB in 46 min with the daemon up. Daemon then stopped and the autostart kill switch set for an overnight no-gmax drift window. |
 
 The first failing boot lasted approximately 17 days. The second lasted 14 hours and 39 minutes.
 The third lasted 13 days, 5 hours, 50 minutes. That variance is not random: the zone is flat until
-a sustained heavy-write window appears, then climbs roughly three orders of magnitude faster.
+a sustained heavy-write window appears, then climbs roughly three orders of magnitude faster. The
+first `25G83` boot lasted 10 days, 22 hours, 1 minute and ended by operator restart, not by panic.
 
 ## Write Amplification Is The Trigger (added 2026-08-17)
 
@@ -412,6 +429,51 @@ background noise. The 2026-09-03 sample was taken at 10 days 15 h.
 from a third of the way to the panic-4 warning level, against the exact trigger class named above.
 A reboot restores the ~15.5 MiB baseline, and it also makes the soak measurable: zone growth during
 the run can be attributed to the run rather than to ten days of accumulated drift.
+
+### Reboot 2026-09-03: fresh baseline on `25G83`
+
+The reboot the correction above called for happened the same day. Before it, the four `25G83`
+jetsam reports still on disk fill in the gap between the 47.5 h and 255.6 h samples:
+
+| Jetsam report | Uptime | Largest zone | Size | Zone map | Rate since boot |
+|---|---:|---|---:|---:|---:|
+| `JetsamEvent-2026-08-31-015555.ips` | 174.0 h | `data.kalloc.1024` | 887 MiB | 3.08 GiB | 5.1 MiB/h |
+| `JetsamEvent-2026-09-01-013429.ips` | 197.6 h | `data.kalloc.1024` | 1,075 MiB | 3.28 GiB | 5.4 MiB/h |
+| `JetsamEvent-2026-09-01-071814.ips` | 203.4 h | `data.kalloc.1024` | 1,124 MiB | 3.32 GiB | 5.5 MiB/h |
+| `JetsamEvent-2026-09-02-072252.ips` | 227.5 h | `data.kalloc.1024` | 1,253 MiB | 3.48 GiB | 5.5 MiB/h |
+
+Three things follow. First, the interior points sit on the same line as the endpoints, 5.1-5.5
+MiB/h from boot, so the drift was linear across the whole boot and not just between the samples
+that happened to be taken. Second, `data.kalloc.1024` is the largest zone in every one of them.
+The `APFS_4K_OBJS` finding from the 2026-08-25 jetsam above was a property of a 29-hour boot, not
+of the kernel: `APFS_4K_OBJS` sits near 250 MiB from the first minutes of a boot (251 MiB at 7 min
+on the new one) and is overtaken once the 1 KiB zone's drift passes it, at roughly 50 h. Third,
+the zone map as a whole was at 3.48 GiB of an 18.9 GiB cap at 227.5 h, so total kernel-zone
+pressure was nowhere near the limit when the boot ended.
+
+The boot ended at 17:57:18 -0700 with a clean daemon shutdown (`Shutting down...` through
+`Shutdown complete`, all 13 projects unwatched) and a kernel boot at 17:57:48, 262.0 h (10 d 22 h)
+after the 2026-08-23 boot. No panic report was written; the only new files in
+`/Library/Logs/DiagnosticReports` are the daily jetsams listed above. The host is still on `25G83`.
+
+```text
+$ sudo zprint | grep -E "^data.kalloc.1024|^APFS_4K_OBJS"      # 2026-09-03 18:04 -0700, up 7 min
+data.kalloc.1024   1024     1328K     1328K     1328     1328     1094   16K   16  C
+APFS_4K_OBJS       4096   257216K   257536K    64304    64384    64246   16K    4  C
+```
+
+That is 1,094 inuse / 1.3 MiB - an order of magnitude below the 15,826-element / 15.5 MiB
+"fresh-boot reference" in Host And Software State, which was a `zprint -t` reading on `25F84`
+taken 2026-08-04 at an unrecorded uptime. This reading supersedes it as the t=0 point for the
+series that follows, and the 41-minute APFS churn soak is no longer blocked by zone occupancy.
+
+A second sample at 52 min read **8,422 inuse / 8.5 MiB**, `cur == max`: +7.2 MiB over 46 min
+(~9.3 MiB/h) with the daemon up, a 13-project catchup done, and two Claude Code sessions active.
+That is above the 5.1-5.5 MiB/h whole-boot line, which is consistent with an early-boot ramp and
+also with the old 15,826-element reference having been taken an hour or two into its boot. It is
+one interval; it does not yet separate boot warm-up from gmax load. To separate them, the daemon
+was stopped at 18:50 with `gmax watch stop` and `~/.gmax/autostart-disabled` set, so the next
+sample measures the host drifting with no gmax process alive for the first time in this record.
 
 ### The 4-worktree indexing is now refused
 
@@ -750,7 +812,7 @@ Updated 2026-08-25. Answers are from a single host over two days; see the caveat
 |---|---|
 | Does macOS 26.6 change the code path that allocated the 1 KB objects? | **Answered, behaviorally.** On `25G83` (APFS 2811.160.7, xnu-12377.161.14~5), 182.4 GB of compaction rewrite over 27 h left `data.kalloc.1024` at ~269 MiB after 45 h. The same load shape on `25F84` produced multiple GiB/hour. Which change fixed it is still unknown - we observe the outcome, not the diff. |
 | Which Apple EndpointSecurity client or event type retained the allocations? | **Still open, and now less likely to be answerable from these traces.** Panic 4's backtrace contains no `EndpointSecurity`, `quarantine`, `apfs`, or `IOStorageFamily` frame at all, so the kext list varies with whoever was on the stack and never identified the retaining client. |
-| Does ordinary OpenCode/gmax filesystem activity grow the zone on 26.6? | **Answered: no, not measurably.** The Aug 24-25 window was well above ordinary activity and the zone's `cur size` never exceeded its high-water mark. |
+| Does ordinary OpenCode/gmax filesystem activity grow the zone on 26.6? | **Answered: no, not measurably.** The Aug 24-25 window was well above ordinary activity and the zone's `cur size` never exceeded its high-water mark. **Reopened 2026-09-03.** `cur == max` means the zone never shrank, not that it never grew; the boot drifted ~5 MiB/h for 262 h and nothing yet attributes that to the host rather than to gmax. The fresh boot makes it testable. |
 | Do mounted simulator images or external APFS storage materially change the growth rate? | **Partly answered.** The Aug 24-25 window indexed four roots on an external APFS volume with no zone growth. Simulator images, Docker, and Parallels were not exercised and remain untested on `25G83`. |
 | Can LanceDB 0.31 be validated safely on an unaffected host? | **Now plausible on this host,** which is no longer demonstrably unsafe. Not yet approved - the evidence is two days old and uncontrolled. |
 | Why did the kernel-zone guard not prevent panic 4? | **Answered.** It fired, warned three times, and stopped the daemon eight times. `~/.gmax/autostart-disabled` was checked only by the session-start hook, so each stand-down was undone by a restart. Fixed in v0.26.19: the check now gates every implicit spawn path. |
@@ -773,6 +835,10 @@ Three things carry forward:
    *Mitigations Shipped 2026-08-25*.
 3. **Keep the compaction rate limit and backoff regardless of kernel version.** They are correct on
    their own terms - 182.4 GB of rewrite in 27 hours is wasteful even on a kernel that survives it.
+
+*2026-09-03:* item 1's baseline is superseded. The 2026-08-25 boot ended by operator restart at
+262 h with the zone at 1.31 GiB, and the new baseline is the fresh-boot reading of 1,094 elements at
+2026-09-03 18:04 -0700 - see [Reboot 2026-09-03](#reboot-2026-09-03-fresh-baseline-on-25g83).
 
 > *Original decision, 2026-08-04:* Install macOS 26.6 before any further storage soak or LanceDB
 > rollout. A stable user-space soak result does not override a host kernel crash. Resume Phase 4
@@ -816,6 +882,14 @@ plain-JS copy of the same semantics. Explicit `gmax watch --daemon` stays ungate
 
 ## Version History
 
+- **2026-09-04T01:20:00Z** The `25G83` boot ended 2026-09-03 17:57 -0700 by clean operator restart
+  at 262.0 h (10 d 22 h) with no panic report. Added the four surviving `25G83` jetsam reports
+  (174-227.5 h) as interior points: all on the 5.1-5.5 MiB/h line, all naming `data.kalloc.1024` as
+  the largest zone, so the 2026-08-25 `APFS_4K_OBJS` finding was a short-boot artefact rather than a
+  kernel property. Recorded the fresh-boot privileged sample (1,094 inuse / 1.3 MiB at 7 min) as
+  the new t=0 baseline, superseding the 15,826-element `25F84` reference. Reopened the "ordinary
+  activity" open question, since `cur == max` never showed absence of growth. Unblocked the
+  41-minute APFS churn soak.
 - **2026-09-03T18:40:00Z** Third privileged `data.kalloc.1024` sample on the unbroken `25G83` boot:
   1,369,375 inuse / 1.31 GiB at 255.6 h uptime, `cur == max`. Retracted the "bounded usage"
   headline of the 2026-08-25 revision - the ~5.1 MiB/h drift between 47.5 h and 255.6 h is the same
