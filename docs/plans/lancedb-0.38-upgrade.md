@@ -2,7 +2,7 @@
 type: plan
 status: archived
 created: 2026-08-26T02:05:00Z
-updated: 2026-08-26T03:15:00Z
+updated: 2026-09-07T23:10:00Z
 surfaces:
   - store
   - release
@@ -91,10 +91,11 @@ that way is the cheapest path to a real fix validation, and does not commit the 
   compatibility and throughput probe, not a panic reproducer.
 - Cross-version read matrix on the clone. ✅ done — all four legs read and query cleanly; the
   predicted FTS-format wall did not appear.
-- **Still to do:** rerun the soak on a fresh clone against a fix-bearing build — either the
-  `beta.10` GitHub release prebuilts now, or an npm-published ≥ `beta.6` / stable `0.38.0` later.
-  That run is the one whose 0-panic result means something, and it only means something read
-  alongside the Phase 2 live canary.
+- ~~**Still to do:** rerun the soak on a fresh clone against a fix-bearing build — either the
+  `beta.10` GitHub release prebuilts now, or an npm-published ≥ `beta.6` / stable `0.38.0` later.~~
+  ✅ done 2026-09-07 against stable `0.38.0` (lance `11.0.0`) — see
+  [GA soak results](#ga-soak-results-2026-09-07-on-0380-stable). That run is the one whose 0-panic
+  result means something, and it only means something read alongside the Phase 2 live canary.
 - Deliverable: a results section in this plan with the numbers. ✅ below
 
 ### Phase 1 — Code (branch, gated on Phase 0)
@@ -267,8 +268,53 @@ retained; the beta.3 working clone was deleted after the matrix completed.
 Caveat on the probe scripts: their `ms` field is computed before the awaited call and is always 0.
 Timings quoted above come from the soak harness and `/usr/bin/time`, not from that field.
 
+## GA soak results (2026-09-07, on 0.38.0 stable)
+
+Same harness and counts as Phase 0, run against `@lancedb/lancedb 0.38.0` GA (lance `11.0.0`,
+the fix-bearing line) from `~/.gmax/scratch/lancedb-0.38.0`, on a fresh APFS clone of the live
+store taken 2026-09-02 (`lancedb-ga-snap-20260902`, 390,101 rows, 17 fragments, FTS + path btree
+adopted). Host conditions were the ones the 2026-09-03 baton asked for: rebooted 09-03, daemon and
+embed server down for 93 h beforehand, no model loaded, `data.kalloc.1024` at 77 MiB.
+
+```
+panicCount 0   rebuildFailureCount 0   correctnessMismatchCount 0     (100 cycles, 12 qualifying)
+```
+
+| | |
+|---|---|
+| Per-cycle optimize latency, qualifying (s) | 21.3, 19.9, 6.7, 6.5, 6.6, 6.6, 6.6, 6.6, 6.6, 6.6, 6.6, 6.5 |
+| Tail cycles (88 × 1 write) | p50 6.5 s / p95 7.8 s / max 8.4 s |
+| Wall clock | 15:39 → 15:51 PDT, 11.8 min |
+| Process RSS | 1,054 → 6,212 MB, monotonic, ~80 MB per cycle (see below) |
+| Fragments | 56 → 2 every cycle; final 390,102 rows in 2 fragments (one of 390,101, one small) |
+| `totalBytes` | 11.54 → 11.43 GB after cycle 1, flat afterwards |
+| Disk | 195 GiB free before and after; clone stayed at 17 GB |
+
+The run is 3.5× shorter than the beta.3 control because GA's compaction merges the 55 small
+fragments into one and leaves the large fragment untouched (`numSmallFragments: 1` after every
+cycle), where the control rewrote the whole table each cycle (140–190 s). The first two cycles
+(~20 s) absorbed the clone's own 16-small-fragment backlog. Golden FTS and exact-match probes
+hashed identically on all 13 probed cycles.
+
+`zprint data.kalloc.1024` inuse (unprivileged; the inuse column reads without root): **79,068**
+before → **79,778** after, +710 elements (0.7 MiB) over 11.8 min ≈ 3.5 MiB/h, against the host's
+own 2.9–3.1 MiB/h with gmax down (incident doc, *No-gmax window*). ~1.2× drift, no burst. Phase 0
+acceptance (0 panics, ≥ 12 qualifying cycles, zone delta within drift) is met on the fix build.
+
+**One thing to carry into the canary.** The soak process's RSS grew ~80 MB on every cycle and never
+came down, ending at 6.2 GB where the control peaked at 1.6 GB. The harness reopens the table
+(`db.openTable`) twice per cycle without closing the previous handle, so this may be 200 orphaned
+handles under a lazier release in lance 11 rather than a leak in `optimize` — but the daemon
+holds one long-lived table across many optimizes, which is the case that matters. Watch
+`gmax-daemon` RSS across the first day of maintenance cycles; a monotonic climb of that order
+per optimize is a regression to report upstream.
+
 ## Version History
 
+- **2026-09-07T23:10:00Z** GA soak on `0.38.0` stable: 0 panics / 0 rebuilds / 0 mismatches over
+  100 cycles, 6.5 s per cycle (GA leaves the large fragment alone), zone delta +710 elements in
+  12 min. Phase 0 acceptance met on the fix build. Flagged monotonic harness RSS growth (1.0 →
+  6.2 GB) for the Phase 2 canary to check against daemon RSS.
 - **2026-08-26T03:40:00Z** Shipped without the remaining phases. Vendored the fix-bearing beta.10 CI build via postinstall; the beta.10 soak and panic-repro port were stopped mid-run and not resumed.
 
 - **2026-08-26T03:15:00Z** Phase 0 ran as a lance-11 control on beta.3. Corrected the npm-
