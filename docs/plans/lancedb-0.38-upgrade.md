@@ -2,7 +2,7 @@
 type: plan
 status: archived
 created: 2026-08-26T02:05:00Z
-updated: 2026-09-07T23:10:00Z
+updated: 2026-09-07T23:20:00Z
 surfaces:
   - store
   - release
@@ -117,6 +117,15 @@ that way is the cheapest path to a real fix validation, and does not commit the 
 - First action after restart: one forced `optimize` and watch for the FTS merge path to run
   clean. Then 7 days of live canary: count `FTS rebuild` / panic lines in `daemon.log` (expect 0),
   compaction `freed` totals, and daily `zprint`.
+
+**Cutover done 2026-09-07.** Rollback clone `~/.gmax/scratch/lancedb-rollback-20260907` (11 GB,
+daemon down). Released v0.26.27 (`0b85113`); daemon restarted 15:56 -0700 from the global install,
+IPC ping reports 0.26.27, `lsof` shows the `@lancedb/lancedb-darwin-arm64` platform binary and no
+`.gmax-vendored` marker. The first optimize was the unforced 5-minute maintenance pass after
+catchup, at 16:01:32: `optimize: 12.9s`, `Compacted: 15 frags → 2, pruned 59 versions, freed
+11698.5MB`, FTS index rewritten, no failure line. Daemon RSS 1,663 MB before → 1,192 MB after, so
+the soak harness's per-optimize RSS growth did not show on the first live cycle. Canary runs to
+2026-09-14.
 
 ### Phase 3 — Closeout
 
@@ -311,6 +320,9 @@ per optimize is a regression to report upstream.
 
 ## Version History
 
+- **2026-09-07T23:20:00Z** Phase 2 cutover: v0.26.27 released and the daemon restarted on the GA
+  platform binary; first live optimize ran clean (15 → 2 fragments, 11.7 GB freed, RSS down).
+  Canary open until 2026-09-14.
 - **2026-09-07T23:10:00Z** GA soak on `0.38.0` stable: 0 panics / 0 rebuilds / 0 mismatches over
   100 cycles, 6.5 s per cycle (GA leaves the large fragment alone), zone delta +710 elements in
   12 min. Phase 0 acceptance met on the fix build. Flagged monotonic harness RSS growth (1.0 →
