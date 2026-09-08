@@ -357,6 +357,43 @@ MCP search-backed tools prefer `search`/`search-v2` so concurrent MCP sessions s
 <- {"type":"done","ok":true,"indexed":450}\n
 ```
 
+### Read verbs
+
+The daemon is meant to be the only process that opens the store while it runs, so every read-only
+command is a thin IPC client: one request line, one response line, render. Verbs sit at the
+*library-function* boundary, not the row boundary — the daemon runs `findTests`, `GraphBuilder`,
+`analyzeSurprisingConnections` and returns the finished answer, because proxying rows would ship
+megabytes per call and turn a multi-hop trace into dozens of round trips.
+
+| Family | Verbs | Serves |
+|---|---|---|
+| graph | `graph.resolve`, `graph.tests`, `graph.dependents`, `graph.trace`, `graph.dead`, `graph.audit` | `test`, `impact`, `trace`, `peek`, `extract`, `dead`, `audit` |
+| rows | `rows.symbols`, `rows.locate`, `rows.skeleton` | `symbols`, `project`, `extract`, `related`, `log`, `skeleton` |
+| vector | `vector.similar`, `vector.surprises` | `similar`, `surprises` |
+
+Verbs register in `src/lib/daemon/read-verbs.ts` instead of adding a `case`: `ipc-handler`'s
+`default:` looks the name up there before answering `unknown command`, which keeps the router from
+becoming a merge magnet as handler files land. Each runs through
+`Daemon.runSharedOperation(<verb>, ...)`, so an exclusive rebuild answers `DAEMON_BUSY` naming the
+verb rather than racing it, and the abort signal is bound to socket close exactly like `search`.
+`ping.capabilities.readVerbs` carries `READ_VERBS_PROTOCOL`.
+
+**Fallback rule** — `withStoreRead` in `src/lib/utils/store-access.ts` owns it, and it is
+deliberately narrow:
+
+- `ENOENT` / `ECONNREFUSED` — nothing is listening, so no daemon exists. The **only** case that
+  permits opening the store in-process.
+- `unknown command` — a daemon older than the CLI. Treated as "no daemon" for one release (the
+  `search-v2` transition rule), then removed.
+- `EPERM` / `EACCES` — a sandbox blocked the socket. Refuse with exit code 2 and the one settings
+  line; never open the store.
+- Anything else (`DAEMON_BUSY`, timeouts, scope rejections, store failures) — a *live* daemon said
+  no. Report it. Falling back here would put a second opener on the store while the first is
+  working, which is the exact failure the routing exists to prevent.
+
+An in-process lease failure with `EPERM`/`EACCES`/`EROFS` gets the same refusal, naming
+`sandbox.filesystem.allowWrite` instead of the socket key.
+
 ---
 
 ## Debugging
@@ -391,6 +428,26 @@ GMAX_DEBUG=1 gmax watch --daemon -b
 `scripts/sandbox-smoke.sh` runs the read commands under the two `sandbox-exec` profiles that
 reproduce Claude Code's Bash sandbox and prints an exit-code/first-line table. macOS only and
 manual (CI is `ubuntu-latest`); pass `--root <indexed project>` when running from a worktree.
+
+The two profiles, for reproducing one command by hand. They are the smallest thing that recreates
+the two walls Claude Code puts up — writes under `~/.gmax` denied (the store lease is a `mkdir`, so
+a read is a writer) and Unix sockets denied (the daemon is unreachable):
+
+```bash
+# 1. Writes denied, sockets allowed — the daemon path must still work.
+sandbox-exec -p '(version 1)(allow default)(deny file-write* (subpath "'"$HOME"'/.gmax"))' \
+  gmax status
+
+# 2. Writes and sockets denied — Claude Code's default. Every read command must
+#    exit 2 with one line naming a settings key, and never a stack trace.
+sandbox-exec -p '(version 1)(allow default)(deny file-write* (subpath "'"$HOME"'/.gmax"))(deny network*)' \
+  gmax test resolveTargetSymbols
+```
+
+`(deny network*)` is broader than the real profile — it takes out TCP as well — but Unix sockets
+are what matters here, and no read verb touches the network. Under profile 2 the socket connect
+surfaces as `EPERM` from `sendDaemonCommand`, which is the wire shape `classifyDaemonError` keys on.
+`gmax doctor` reports the same gap from settings, before anything is run.
 
 ### Common diagnostics
 

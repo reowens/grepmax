@@ -33,6 +33,10 @@ import { isMlxModelCached } from "../lib/utils/mlx-hf-cache";
 import { listProjects, removeProject } from "../lib/utils/project-registry";
 import { findProjectRoot } from "../lib/utils/project-root";
 import { classifyRoot } from "../lib/utils/root-availability";
+import {
+  LEASE_DENIED_MESSAGE,
+  SOCKET_DENIED_MESSAGE,
+} from "../lib/utils/store-access";
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -57,6 +61,346 @@ function getDirectorySize(dirPath: string): number {
     }
   } catch {}
   return totalSize;
+}
+
+// --- Claude Code sandbox ---------------------------------------------------
+//
+// Claude Code's Bash sandbox (the default on macOS) allows writes only under
+// the working directory, the added directories, and the session temp dir, and
+// blocks every Unix socket unless `sandbox.network.allowUnixSockets` lists it.
+// Child processes inherit the profile, so a gmax run from an agent shell hits
+// both walls at once: the daemon socket is unreachable *and* the store lease
+// mkdir under ~/.gmax is denied, because taking a read lease is a write.
+//
+// The runtime already answers that with one actionable line (store-access.ts).
+// Doctor's job is to say it *before* the user hits it, because the fix lives in
+// files gmax does not own and must not edit — hence the check reads the
+// settings and prints the snippet, and `--fix` deliberately does nothing here.
+
+type SandboxSymbol = "ok" | "WARN" | "INFO";
+
+interface SandboxScope {
+  /** Settings file path. Scopes are ordered lowest precedence first. */
+  path: string;
+  /** Parsed `sandbox` object, absent when the file carries none. */
+  sandbox?: Record<string, unknown>;
+  /** The file exists but is not parseable JSON. */
+  unreadable?: boolean;
+}
+
+export interface SandboxCheckResult {
+  symbol: SandboxSymbol;
+  /** The text after the symbol on the status line. */
+  message: string;
+  /** Continuation lines, printed indented under the status line. */
+  details: string[];
+  /** Tab-delimited row for `--agent`. */
+  agentRow: string;
+  enabled: boolean;
+  socketAllowed: boolean;
+  writeAllowed: boolean;
+}
+
+export interface SandboxCheckOptions {
+  /** Home directory holding `~/.claude` and (by default) `~/.gmax`. */
+  home: string;
+  /** Project whose `.claude/settings*.json` apply; omitted means user scope only. */
+  projectRoot?: string;
+  /** Defaults to the real daemon socket. */
+  socketPath?: string;
+  /** Defaults to the real `~/.gmax`. */
+  storeDir?: string;
+  /** Defaults to `process.platform`. */
+  platform?: NodeJS.Platform;
+}
+
+/**
+ * The settings files Claude Code merges, lowest precedence first. Project
+ * settings override user settings, and `.local.json` overrides its sibling.
+ */
+function claudeSettingsFiles(home: string, projectRoot?: string): string[] {
+  const files = [
+    path.join(home, ".claude", "settings.json"),
+    path.join(home, ".claude", "settings.local.json"),
+  ];
+  if (projectRoot) {
+    files.push(path.join(projectRoot, ".claude", "settings.json"));
+    files.push(path.join(projectRoot, ".claude", "settings.local.json"));
+  }
+  return files;
+}
+
+function asObject(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function readSandboxScopes(files: string[]): SandboxScope[] {
+  const scopes: SandboxScope[] = [];
+  for (const file of files) {
+    let raw: string;
+    try {
+      raw = fs.readFileSync(file, "utf8");
+    } catch {
+      continue; // absent (or unreadable) — that scope simply contributes nothing
+    }
+    try {
+      const sandbox = asObject(asObject(JSON.parse(raw))?.sandbox);
+      scopes.push({ path: file, sandbox });
+    } catch {
+      scopes.push({ path: file, unreadable: true });
+    }
+  }
+  return scopes;
+}
+
+/** Matches a leading `$HOME` or `${HOME}`, whole segment only. */
+const HOME_VAR = /^\$\{?HOME\}?(?=$|\/)/;
+
+/** Expand `~`/`$HOME` and resolve relative entries against the project dir. */
+function expandSettingsPath(entry: string, home: string, base: string): string {
+  let p = entry.trim();
+  if (p === "~") p = home;
+  else if (p.startsWith("~/")) p = path.join(home, p.slice(2));
+  // Function replacement: a `$` inside the home path must not be read as a
+  // capture reference.
+  else p = p.replace(HOME_VAR, () => home);
+  return path.isAbsolute(p) ? path.normalize(p) : path.resolve(base, p);
+}
+
+function globToRegExp(pattern: string): RegExp {
+  let out = "";
+  for (let i = 0; i < pattern.length; i++) {
+    const ch = pattern[i];
+    if (ch === "*") {
+      if (pattern[i + 1] === "*") {
+        out += ".*";
+        i++;
+      } else {
+        out += "[^/]*";
+      }
+      continue;
+    }
+    out += ch.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp(`^${out}$`);
+}
+
+/** `~/.gmax/**` and `~/.gmax/*` both stand for the directory itself. */
+function stripGlobSuffix(p: string): string {
+  return p.replace(/\/(?:\*\*\/\*|\*\*|\*)$/, "");
+}
+
+/** An allow entry covers a target when it is the target or contains it. */
+function coversPath(entry: string, target: string): boolean {
+  const normalized = entry.replace(/\/+$/, "");
+  return target === normalized || target.startsWith(`${normalized}/`);
+}
+
+function entryAllows(
+  entry: unknown,
+  target: string,
+  home: string,
+  base: string,
+): boolean {
+  if (typeof entry !== "string" || entry.trim() === "") return false;
+  const expanded = expandSettingsPath(entry, home, base);
+  if (expanded.includes("*")) {
+    if (globToRegExp(expanded).test(target)) return true;
+    return coversPath(stripGlobSuffix(expanded), target);
+  }
+  return coversPath(expanded, target);
+}
+
+interface EffectiveSandbox {
+  present: boolean;
+  enabled: boolean;
+  allowAllUnixSockets: boolean;
+  allowUnixSockets: unknown[];
+  allowWrite: unknown[];
+  /** Highest-precedence file carrying a `sandbox` block. */
+  source?: string;
+}
+
+/**
+ * Collapse the scopes into what Claude Code would actually apply: the
+ * highest-precedence definition of each leaf key wins. Union-ing the arrays
+ * instead would report a socket as allowed when a project override had in fact
+ * replaced the user-level list — a false OK, which is the worse failure here.
+ */
+function effectiveSandbox(scopes: SandboxScope[]): EffectiveSandbox {
+  const eff: EffectiveSandbox = {
+    present: false,
+    enabled: true,
+    allowAllUnixSockets: false,
+    allowUnixSockets: [],
+    allowWrite: [],
+  };
+  for (const scope of scopes) {
+    const sandbox = scope.sandbox;
+    if (!sandbox) continue;
+    eff.present = true;
+    eff.source = scope.path;
+    // A `sandbox` block with no `enabled` key is on: the key only exists to
+    // turn it off, and the default flipped to on for macOS Bash.
+    if (typeof sandbox.enabled === "boolean") eff.enabled = sandbox.enabled;
+    const network = asObject(sandbox.network);
+    if (network) {
+      if (typeof network.allowAllUnixSockets === "boolean")
+        eff.allowAllUnixSockets = network.allowAllUnixSockets;
+      if (Array.isArray(network.allowUnixSockets))
+        eff.allowUnixSockets = network.allowUnixSockets;
+    }
+    const filesystem = asObject(sandbox.filesystem);
+    if (filesystem && Array.isArray(filesystem.allowWrite))
+      eff.allowWrite = filesystem.allowWrite;
+  }
+  return eff;
+}
+
+function tildify(p: string, home: string): string {
+  return p === home || p.startsWith(`${home}/`)
+    ? `~${p.slice(home.length)}`
+    : p;
+}
+
+/**
+ * Report whether a sandboxed Claude Code shell can reach the gmax store.
+ *
+ * Returns null when the machine has no Claude Code settings at all — gmax has
+ * nothing to say about a sandbox that is not configured anywhere.
+ */
+export function checkClaudeSandbox(
+  opts: SandboxCheckOptions,
+): SandboxCheckResult | null {
+  const home = opts.home;
+  const socketPath = opts.socketPath ?? PATHS.daemonSocket;
+  const storeDir = opts.storeDir ?? PATHS.globalRoot;
+  const base = opts.projectRoot ?? home;
+  const platform = opts.platform ?? process.platform;
+
+  const scopes = readSandboxScopes(claudeSettingsFiles(home, opts.projectRoot));
+  if (scopes.length === 0) return null;
+
+  const unreadable = scopes.filter((s) => s.unreadable).map((s) => s.path);
+  const eff = effectiveSandbox(scopes);
+  const parseNote =
+    unreadable.length > 0
+      ? [
+          `could not parse ${unreadable.map((p) => tildify(p, home)).join(", ")} — checked the remaining scopes only`,
+        ]
+      : [];
+
+  if (!eff.present || !eff.enabled) {
+    // Nothing under ~/.gmax is at risk, so there is nothing to prescribe. Say
+    // so rather than staying silent: "not enabled" is the answer to the
+    // question anyone reaching for this check is actually asking.
+    if (!eff.present && unreadable.length > 0) {
+      return {
+        symbol: "INFO",
+        message: `Claude Code sandbox: ${parseNote[0]}`,
+        details: [],
+        agentRow: ["claude_sandbox", "enabled=unknown"].join("\t"),
+        enabled: false,
+        socketAllowed: true,
+        writeAllowed: true,
+      };
+    }
+    return {
+      symbol: "ok",
+      message: eff.present
+        ? "Claude Code sandbox: disabled in settings"
+        : "Claude Code sandbox: not enabled",
+      details: parseNote,
+      agentRow: ["claude_sandbox", "enabled=false"].join("\t"),
+      enabled: false,
+      socketAllowed: true,
+      writeAllowed: true,
+    };
+  }
+
+  const socketAllowed =
+    eff.allowAllUnixSockets ||
+    eff.allowUnixSockets.some((e) => entryAllows(e, socketPath, home, base));
+  const writeAllowed = eff.allowWrite.some((e) =>
+    entryAllows(e, storeDir, home, base),
+  );
+
+  const agentRow = [
+    "claude_sandbox",
+    "enabled=true",
+    `socket=${socketAllowed ? (eff.allowAllUnixSockets ? "all" : "allowed") : "blocked"}`,
+    `write=${writeAllowed ? "allowed" : "blocked"}`,
+    `source=${eff.source ?? "none"}`,
+  ].join("\t");
+
+  if (socketAllowed && writeAllowed) {
+    return {
+      symbol: "ok",
+      message: `Claude Code sandbox: enabled; daemon socket ${eff.allowAllUnixSockets ? "reachable (all Unix sockets allowed)" : "allowed"} and ${tildify(storeDir, home)} writable`,
+      details: parseNote,
+      agentRow,
+      enabled: true,
+      socketAllowed,
+      writeAllowed,
+    };
+  }
+
+  const blocked = [
+    socketAllowed ? null : "the daemon socket",
+    writeAllowed ? null : `writes to ${tildify(storeDir, home)}`,
+  ].filter(Boolean);
+
+  const details: string[] = [...parseNote];
+  if (!socketAllowed) {
+    details.push(SOCKET_DENIED_MESSAGE);
+    if (platform === "linux") {
+      details.push(
+        'on Linux the per-socket list does not exist — use "allowAllUnixSockets": true',
+      );
+    }
+  }
+  if (!writeAllowed) {
+    details.push(LEASE_DENIED_MESSAGE);
+    details.push(
+      "the write allowance only matters with no daemon running; with one up every read command goes over the socket",
+    );
+  }
+
+  // The snippet is the point of the WARN: the fix is one or two keys in a file
+  // gmax must not touch, so print exactly what to paste, carrying only the keys
+  // that are actually missing.
+  const snippetKeys: string[] = [];
+  if (!socketAllowed) {
+    snippetKeys.push(
+      platform === "linux"
+        ? '  "network": { "allowAllUnixSockets": true }'
+        : '  "network": { "allowUnixSockets": ["~/.gmax/daemon.sock"] }',
+    );
+  }
+  if (!writeAllowed) {
+    snippetKeys.push('  "filesystem": { "allowWrite": ["~/.gmax"] }');
+  }
+  const target = eff.source ?? path.join(home, ".claude", "settings.json");
+  details.push(
+    `add to ${tildify(target, home)} (gmax doctor --fix never edits Claude Code settings):`,
+  );
+  details.push('"sandbox": {');
+  snippetKeys.forEach((line, i) => {
+    details.push(i < snippetKeys.length - 1 ? `${line},` : line);
+  });
+  details.push("}");
+
+  return {
+    symbol: "WARN",
+    message: `Claude Code sandbox: enabled, but ${blocked.join(" and ")} ${blocked.length > 1 ? "are" : "is"} blocked`,
+    details,
+    agentRow,
+    enabled: true,
+    socketAllowed,
+    writeAllowed,
+  };
 }
 
 export const doctor = new Command("doctor")
@@ -198,6 +542,22 @@ export const doctor = new Command("doctor")
         .catch(() => false);
       const summarizerStatus = summarizerServerStatus(summarizerUp);
       console.log(`${summarizerStatus.symbol}  ${summarizerStatus.message}`);
+    }
+
+    // --- Claude Code sandbox ---
+    // Runs in both modes: an agent reading `--agent` output is exactly the
+    // caller most likely to be inside the sandbox this check is about.
+    const sandbox = checkClaudeSandbox({
+      home: os.homedir(),
+      projectRoot: findProjectRoot(process.cwd()) ?? process.cwd(),
+    });
+    if (sandbox) {
+      if (opts.agent) {
+        console.log(sandbox.agentRow);
+      } else {
+        console.log(`${sandbox.symbol}  ${sandbox.message}`);
+        for (const line of sandbox.details) console.log(`       ${line}`);
+      }
     }
 
     // --- Index Health ---

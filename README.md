@@ -217,6 +217,45 @@ gmax status                   # See all projects + watcher status
 
 The daemon auto-starts when you run `gmax add`, `gmax index`, `gmax remove`, `gmax summarize`, or `gmax mcp`. It shuts down after 30 minutes of inactivity. File-change batches are processed concurrently while reserving worker capacity for searches; LanceDB compaction runs after writes rather than on every maintenance tick.
 
+## Running under the Claude Code sandbox
+
+Claude Code's Bash sandbox (the default on macOS) allows writes only under the working directory,
+the added directories, and the session temp dir, and blocks every Unix socket unless it is listed.
+Child processes inherit the profile, so a gmax command run from an agent shell inherits it too —
+and gmax needs both kinds of access. A read command either asks the daemon over
+`~/.gmax/daemon.sock`, or, with no daemon running, opens the shared store itself; opening the store
+takes a lease, which means a `mkdir` under `~/.gmax`. A "read" is a writer as far as the filesystem
+is concerned.
+
+Two settings keys cover it (`~/.claude/settings.json`, or the project's `.claude/settings.json`):
+
+```json
+"sandbox": {
+  "network": { "allowUnixSockets": ["~/.gmax/daemon.sock"] },
+  "filesystem": { "allowWrite": ["~/.gmax"] }
+}
+```
+
+| Key | What it unlocks |
+| --- | --- |
+| `sandbox.network.allowUnixSockets` | Every read command — search, `test`, `impact`, `trace`, `peek`, `status` — via the daemon. This is the one that matters day to day. |
+| `sandbox.filesystem.allowWrite` | The in-process fallback, used only when no daemon is running (autostart disabled, CI). With a daemon up, nothing needs it. |
+
+Without them gmax refuses rather than failing with a bare `EPERM`, exits `2`, and prints the key to add:
+
+```
+gmax: cannot reach the daemon socket from this sandbox. Add to Claude Code settings: "sandbox": {"network": {"allowUnixSockets": ["~/.gmax/daemon.sock"]}}
+gmax: cannot open the store from this sandbox. Add to Claude Code settings: "sandbox": {"filesystem": {"allowWrite": ["~/.gmax"]}}
+```
+
+`gmax doctor` reports the same thing ahead of time as `WARN  Claude Code sandbox` whenever your
+settings enable the sandbox without allowing the socket or the store directory. It never edits
+Claude Code settings, `--fix` included — they are not gmax's files to write.
+
+On Linux the per-socket list does not exist; the only option is
+`"network": { "allowAllUnixSockets": true }`. See
+[`docs/known-limitations.md`](docs/known-limitations.md).
+
 ## Local LLM (optional)
 
 gmax can use a local LLM (via llama-server) for agentic codebase investigation. This is entirely opt-in and disabled by default — gmax works fine without it.
@@ -413,6 +452,7 @@ whether you need to act.
 | `Optimize panicked ... inverted/builder.rs` | Upstream Lance bug in incremental FTS merge ([lance#8310](https://github.com/lance-format/lance/issues/8310)). gmax rebuilds the index and retries automatically; no data loss, no action needed. |
 | `disabling auto-rebuild until an optimize succeeds` | Transient, not a wedge. The next successful optimize clears it. Search stays available. |
 | `ANN: vector index not built` | Normal — exact search is the default. |
+| `cannot reach the daemon socket from this sandbox` (exit 2) | The shell is sandboxed. Add the two keys in [Running under the Claude Code sandbox](#running-under-the-claude-code-sandbox); `gmax doctor` warns about the same gap. |
 | `npm audit` reports advisories on install | Two transitive advisories (`sharp`, `adm-zip`) have no upstream fix yet; neither is on a code path gmax executes. |
 
 ## Contributing

@@ -2,7 +2,7 @@
 type: doc
 status: reference
 created: 2026-04-09
-updated: 2026-08-25
+updated: 2026-09-07
 summary: Live catalog of open gmax limitations with detection + recovery steps.
 audience: internal
 related_plans:
@@ -19,7 +19,7 @@ related_docs:
 
 # Known Limitations
 
-Last updated 2026-08-25.
+Last updated 2026-09-07.
 
 ## Whole-corpus embedding rebuild is disruptive
 
@@ -417,3 +417,55 @@ fires `VectorDB.abortLeaseWaits()` before draining; the drain is bounded
 (`GMAX_SHUTDOWN_DRAIN_TIMEOUT_MS`, default 30 s) and logs the names of the abandoned operations and
 the roots whose project locks were still held; and the SIGTERM/SIGINT handlers arm a 90 s hard-exit
 backstop. If the drain timeout fires, its log line is the root-cause capture this incident lacked.
+
+## Sandboxed shells cannot reach the store without two settings keys
+
+Added 2026-09-07 from a live report: `Test find failed: EPERM: operation not permitted, mkdir
+'~/.gmax/lancedb.lease.lock'` from a Claude Code Bash tool call.
+
+**What:** Claude Code's Bash sandbox (the default on macOS) allows writes only under the working
+directory, the added directories, and the session temp dir, and blocks every Unix socket unless
+`sandbox.network.allowUnixSockets` lists it. Child processes inherit the profile, so every gmax
+command an agent runs is inside it.
+
+That collides with both of gmax's read paths at once. A read command prefers the daemon over
+`~/.gmax/daemon.sock` — a blocked socket. With no daemon it opens the shared store itself, and
+opening the store takes a `StoreLease`, which mkdirs `~/.gmax/lancedb.lease.lock` and a reader
+marker under `~/.gmax/lancedb.lease/readers/` — a blocked write. A read is a writer as far as the
+filesystem is concerned, which is why "it only reads" is not a reason to expect it to work.
+
+**Under the default profile** (writes to `~/.gmax` denied, sockets denied), reproduced with
+`sandbox-exec` before the fix: search reported `Daemon search failed: EPERM`, `test` and `peek`
+failed on the lease mkdir, and `status` crashed inside `lmdb` `env.open` — LMDB needs its lock file
+even to read, so the watcher-registry open failed before `status` reached any guard.
+
+**Fix (after 0.26.27):** both denials are classified in `src/lib/utils/store-access.ts` and answered with
+one line and exit code 2 instead of an errno. `gmax doctor` reads `~/.claude/settings.json`,
+`~/.claude/settings.local.json`, and the project's `.claude/settings*.json`, and warns before the
+command is ever run.
+
+**Configuration:**
+
+```json
+"sandbox": {
+  "network": { "allowUnixSockets": ["~/.gmax/daemon.sock"] },
+  "filesystem": { "allowWrite": ["~/.gmax"] }
+}
+```
+
+The socket key is the one that matters: with it, every read command works through the daemon. The
+write key only covers the in-process fallback, which runs when no daemon exists (autostart
+disabled, CI) — grant it if you want gmax to work with the daemon down, skip it otherwise.
+
+**Linux has no per-socket allowance.** Only `"network": { "allowAllUnixSockets": true }` exists
+there, so the choice is all Unix sockets or none. The client message names the macOS key on every
+platform; on Linux read it as "allow Unix sockets", and `gmax doctor` prints the
+`allowAllUnixSockets` form in its snippet.
+
+**gmax never writes these files.** `gmax doctor --fix` deliberately does not edit Claude Code
+settings — a tool that rewrites another tool's permission configuration to widen its own access is
+not a tool anyone should have to audit. The check prints the snippet; a human pastes it.
+
+**Detection:** `gmax doctor` (`WARN  Claude Code sandbox`), or `gmax doctor --agent`, which emits
+`claude_sandbox\tenabled=…\tsocket=…\twrite=…`. To reproduce the denials outside Claude Code, run
+`scripts/sandbox-smoke.sh` (macOS only, manual — CI is `ubuntu-latest`).
