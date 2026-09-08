@@ -2,7 +2,7 @@
 type: doc
 status: active
 created: 2026-08-04T20:50:29Z
-updated: 2026-09-07T23:10:00Z
+updated: 2026-09-08T17:10:00Z
 surfaces:
   - host
   - store
@@ -27,11 +27,11 @@ current_state: >
   privileged zprint 7 min into the new boot reads 1,094 inuse / 1.3 MiB - the t=0 point for the
   next series.
 next_step: >
-  The daemon-up rate on THIS boot is the missing number. After the 0.26.27 cutover, sample
-  `zprint data.kalloc.1024` inuse (unprivileged is enough) at the start and end of each working
-  day and divide by kernel-running hours from /var/log/powermanagement/<date>.asl, which now
-  records sleep. Near 5 MiB/running-hour confirms the host/daemon split; near 3 says the previous
-  boot's extra was the sessions. Watch the first live optimize and the 7-day FTS canary.
+  Keep the daily daemon-up series on this boot: `zprint data.kalloc.1024` inuse (unprivileged) and
+  kernel-running hours from `pmset -g log` (Sleep to next wake is asleep; running is wall minus
+  asleep). Sample 1 (17.87 running hours, heavy indexing load) read 2.98 MiB/h, equal to the
+  no-gmax rate, so the previous boot's extra 2 MiB/h is unattributed. A rate that climbs with
+  uptime while the daemon log stays quiet points at the host. FTS canary through 2026-09-14.
 ---
 
 # macOS Kernel-Zone Panic Incident - 2026-08-04
@@ -40,8 +40,9 @@ next_step: >
 > where the violent failure mode has not reproduced - but a 255-hour sample shows the slow drift is
 > linear and unreclaimed, reaching 1.31 GiB before that boot ended by a clean restart at 262 h.
 > The fresh boot reads 1.3 MiB. A 93-hour window on that boot with no gmax process alive
-> drifted 2.9 MiB per kernel-running hour, so the host owns most of the slope and gmax adds
-> roughly 2 MiB/h on top. See
+> drifted 2.9 MiB per kernel-running hour, so the host owns most of the slope. The first 18 h
+> with the 0.26.27 daemon up, under heavy indexing load, read 2.98 MiB/h: the same rate, so the
+> previous boot's extra 2 MiB/h is not yet attributed to gmax. See
 > [Panic 4 And The 26.6.2 Update](#panic-4-and-the-2662-update-added-2026-08-25),
 > [Correction 2026-09-03](#correction-2026-09-03-the-drift-is-bounded-in-rate-not-in-total),
 > [Reboot 2026-09-03](#reboot-2026-09-03-fresh-baseline-on-25g83) and
@@ -147,6 +148,7 @@ is not required for the failure.
 | 2026-09-04 21:55 -0700 | Jetsam at 28.0 h, no gmax running: largest zone `APFS_4K_OBJS` 313 MiB, zone map 1.27 GiB. `data.kalloc.1024` therefore < 313 MiB; not discriminating at that uptime. |
 | 2026-09-07 15:37 -0700 | Unprivileged `zprint` at 93.7 h, still no gmax process: 78,996 inuse (77.1 MiB). +70,574 elements over 92.8 h wall / 23.7 h kernel-running = 2.9 MiB per running hour. |
 | 2026-09-07 15:39-15:51 -0700 | LanceDB 0.38.0 GA soak on the APFS clone, daemon down, no models: 0 panics, 0 rebuilds, 0 mismatches over 100 cycles. `zprint` inuse 79,068 before, 79,778 after (+710, within drift). |
+| 2026-09-07 15:56 to 09-08 09:53 -0700 | First daemon-up sample on this boot: 80,208 to 134,781 inuse over 17.87 kernel-running hours = 2.98 MiB/h, equal to the no-gmax rate, during a heavy indexing window (five agent sessions, 54 FSEvents overflows, 664 files reindexed). Daemon RSS 444 MB. FTS canary day 1: zero failure lines. |
 
 The first failing boot lasted approximately 17 days. The second lasted 14 hours and 39 minutes.
 The third lasted 13 days, 5 hours, 50 minutes. That variance is not random: the zone is flat until
@@ -553,6 +555,34 @@ over 12 min, on a run that finished 3.5x sooner because lance 11 GA merges the 5
 into one and leaves the 390k-row fragment alone (6.5 s per cycle, not 140-190 s). Soak details are
 in `docs/plans/lancedb-0.38-upgrade.md`. The zone signature the incident is about did not appear.
 
+#### Daemon-up sample 1, 2026-09-08: 2.98 MiB per running hour, under load
+
+The first daemon-up sample on this boot, from the 0.26.27 restart to the next morning. The
+denominator is kernel-running time again, computed from `pmset -g log`: a `Sleep` entry to the
+next `DarkWake`/`Wake` counts as asleep, a `DarkWake` to the next `Sleep` as dark, and running is
+wall minus asleep (dark wakes run the kernel). 450 power events in the window, almost all
+maintenance-sleep / dark-wake cycles; the host was fully asleep for five minutes.
+
+| Sample | `data.kalloc.1024` inuse | Delta |
+|---|---:|---:|
+| 2026-09-07 15:56 -0700, daemon 0.26.27 started | 80,208 | |
+| 2026-09-08 09:53 -0700 | 134,781 | +54,573 elements (53.3 MiB) |
+
+| Wall | Asleep | Dark wake | Kernel-running | Rate |
+|---:|---:|---:|---:|---:|
+| 17.95 h | 0.08 h | 4.45 h | 17.87 h | **2.98 MiB/h** |
+
+That is the no-gmax rate (2.9 MiB/running-hour), not the previous boot's 5.1-5.5, and the window
+was not a quiet one: five agent sessions ran `pnpm install` and full test suites in worktrees
+under the gmax repo, and the daemon log for the window shows 54 FSEvents overflows, 13 catchup
+scans, 664 files reindexed across 319 batches, and 89 worker spawns. Daemon RSS was 444 MB at the
+sample, down from 1,192 MB after the first optimize. So a loaded 0.26.27 daemon on lance 11 GA
+adds nothing measurable to the host's own drift over 18 hours. What it does not settle is the
+previous boot's extra 2 MiB/h: that boot was sampled at 45 h and 255 h of uptime, and this one is
+at 112 h, so the remaining candidates are uptime dependence and something specific to that boot's
+sessions. The daily series continues; a rate that climbs with uptime while the daemon's own log
+stays quiet would point at the host.
+
 ### The 4-worktree indexing is now refused
 
 Commit `4ef7c67` "Refuse to index git worktrees" (2026-08-25 05:54:42 -0700, released in v0.26.17
@@ -890,7 +920,7 @@ Updated 2026-08-25. Answers are from a single host over two days; see the caveat
 |---|---|
 | Does macOS 26.6 change the code path that allocated the 1 KB objects? | **Answered, behaviorally.** On `25G83` (APFS 2811.160.7, xnu-12377.161.14~5), 182.4 GB of compaction rewrite over 27 h left `data.kalloc.1024` at ~269 MiB after 45 h. The same load shape on `25F84` produced multiple GiB/hour. Which change fixed it is still unknown - we observe the outcome, not the diff. |
 | Which Apple EndpointSecurity client or event type retained the allocations? | **Still open, and now less likely to be answerable from these traces.** Panic 4's backtrace contains no `EndpointSecurity`, `quarantine`, `apfs`, or `IOStorageFamily` frame at all, so the kext list varies with whoever was on the stack and never identified the retaining client. |
-| Does ordinary OpenCode/gmax filesystem activity grow the zone on 26.6? | **Answered: no, not measurably.** The Aug 24-25 window was well above ordinary activity and the zone's `cur size` never exceeded its high-water mark. **Reopened 2026-09-03.** `cur == max` means the zone never shrank, not that it never grew; the boot drifted ~5 MiB/h for 262 h and nothing yet attributes that to the host rather than to gmax. The fresh boot makes it testable. **Split 2026-09-07.** A 92.8 h window with no gmax process alive drifted 2.9 MiB per kernel-running hour (the host slept 69 h of it; the previous boot never slept), 55-60 % of the daemon-up boot's 5.1-5.5 MiB/h. The host owns most of the drift; the daemon-up configuration adds ~2 MiB/h, which is idle-drift order, not a burst. See [No-gmax window](#no-gmax-window-2026-09-03-to-09-07-the-host-drifts-on-its-own-at-about-half-the-rate). |
+| Does ordinary OpenCode/gmax filesystem activity grow the zone on 26.6? | **Answered: no, not measurably.** The Aug 24-25 window was well above ordinary activity and the zone's `cur size` never exceeded its high-water mark. **Reopened 2026-09-03.** `cur == max` means the zone never shrank, not that it never grew; the boot drifted ~5 MiB/h for 262 h and nothing yet attributes that to the host rather than to gmax. The fresh boot makes it testable. **Split 2026-09-07.** A 92.8 h window with no gmax process alive drifted 2.9 MiB per kernel-running hour (the host slept 69 h of it; the previous boot never slept), 55-60 % of the daemon-up boot's 5.1-5.5 MiB/h. The host owns most of the drift; the daemon-up configuration adds ~2 MiB/h, which is idle-drift order, not a burst. See [No-gmax window](#no-gmax-window-2026-09-03-to-09-07-the-host-drifts-on-its-own-at-about-half-the-rate). **Sample 1 2026-09-08.** The first 17.87 running hours with the 0.26.27 daemon up read 2.98 MiB/h, the same as with no gmax, under a heavy indexing window (54 FSEvents overflows, 664 files reindexed). The "daemon adds ~2 MiB/h" half of the split did not reproduce; the previous boot's extra is now unattributed and the daily series continues. See [Daemon-up sample 1](#daemon-up-sample-1-2026-09-08-298-mib-per-running-hour-under-load). |
 | Do mounted simulator images or external APFS storage materially change the growth rate? | **Partly answered.** The Aug 24-25 window indexed four roots on an external APFS volume with no zone growth. Simulator images, Docker, and Parallels were not exercised and remain untested on `25G83`. |
 | Can LanceDB 0.31 be validated safely on an unaffected host? | **Now plausible on this host,** which is no longer demonstrably unsafe. Not yet approved - the evidence is two days old and uncontrolled. |
 | Why did the kernel-zone guard not prevent panic 4? | **Answered.** It fired, warned three times, and stopped the daemon eight times. `~/.gmax/autostart-disabled` was checked only by the session-start hook, so each stand-down was undone by a restart. Fixed in v0.26.19: the check now gates every implicit spawn path. |
@@ -960,6 +990,11 @@ plain-JS copy of the same semantics. Explicit `gmax watch --daemon` stays ungate
 
 ## Version History
 
+- **2026-09-08T17:10:00Z** First daemon-up sample on the 25G83 second boot: 80,208 to 134,781
+  inuse over 17.87 kernel-running hours (17.95 wall; asleep 0.08 h, dark-wake 4.45 h) = 2.98 MiB/h,
+  equal to the no-gmax 2.9, during a heavy indexing window. The "daemon adds ~2 MiB/h" half of
+  the 2026-09-07 split did not reproduce; status, open-questions row, timeline and next_step
+  updated. FTS canary day 1 clean, daemon RSS 444 MB.
 - **2026-09-07T23:10:00Z** Closed the no-gmax drift window: 92.8 h from 2026-09-03 18:50 to
   2026-09-07 15:37 -0700 with the daemon, workers, and embed server all down, `data.kalloc.1024`
   8,422 to 78,996 inuse. Normalised by kernel-running time (23.7 h; the host slept 69 h, whereas the
