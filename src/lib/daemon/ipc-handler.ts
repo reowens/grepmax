@@ -11,6 +11,7 @@ import {
 import { resolveContainedPath } from "../utils/path-containment";
 import { listProjects } from "../utils/project-registry";
 import type { Daemon } from "./daemon";
+import { getReadVerb, READ_VERBS_PROTOCOL } from "./read-verbs";
 
 const DAEMON_VERSION = (() => {
   try {
@@ -132,6 +133,7 @@ export async function handleCommand(
           rebuildPending: daemon.hasUnfinishedRebuild(),
           capabilities: {
             exclusiveGenerationRebuild: EXCLUSIVE_GENERATION_REBUILD_PROTOCOL,
+            readVerbs: READ_VERBS_PROTOCOL,
           },
         };
 
@@ -391,8 +393,26 @@ export async function handleCommand(
       case "llm-status":
         return daemon.llmStatus();
 
-      default:
-        return { ok: false, error: `unknown command: ${cmd.cmd}` };
+      // --- Read verbs (registry in read-verbs.ts) ---
+
+      default: {
+        const verb = getReadVerb(cmd.cmd);
+        if (!verb) return { ok: false, error: `unknown command: ${cmd.cmd}` };
+        // Same abort wiring as `search`: a client ctrl-C closes the socket,
+        // which cancels the in-flight read instead of letting it run on.
+        const ac = new AbortController();
+        const onClose = () => ac.abort();
+        conn.on("close", onClose);
+        try {
+          return await daemon.runSharedOperation(
+            String(cmd.cmd),
+            ac.signal,
+            (signal) => verb(cmd, { daemon, conn, signal }),
+          );
+        } finally {
+          conn.off("close", onClose);
+        }
+      }
     }
   } catch (err) {
     return errorResponse(err);

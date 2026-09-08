@@ -17,12 +17,20 @@ import {
   listProjects,
   stampProjectFullSync,
 } from "../lib/utils/project-registry";
+import {
+  asStoreAccessError,
+  shouldFallbackFromDaemonError as classifiedFallback,
+  classifyDaemonError,
+  isStoreAccessRefused,
+  refuseStoreAccess,
+} from "../lib/utils/store-access";
 
-const DAEMON_FALLBACK_ERRORS = new Set(["ENOENT", "ECONNREFUSED"]);
-
-export function shouldFallbackFromDaemonError(error: unknown): boolean {
-  return typeof error === "string" && DAEMON_FALLBACK_ERRORS.has(error);
-}
+/**
+ * Re-exported from store-access.ts, where the errno policy now lives so every
+ * read command shares one table. Kept here because it has been this module's
+ * public predicate since v0.16.
+ */
+export const shouldFallbackFromDaemonError = classifiedFallback;
 
 export interface SearchOptions {
   m: string;
@@ -157,6 +165,10 @@ export async function runSearch(
             | undefined;
           precomputedGraph = resp.graph;
           indexState = resp.indexState as IndexState | undefined;
+        } else if (classifyDaemonError(resp.error) === "sandboxed") {
+          // The sandbox blocked the socket. Naming the settings key beats
+          // "Daemon search failed: EPERM", and the store must stay unopened.
+          throw refuseStoreAccess("socket");
         } else if (!shouldFallbackFromDaemonError(resp.error)) {
           const detail =
             typeof resp.hint === "string"
@@ -171,7 +183,11 @@ export async function runSearch(
           );
         }
       } catch (err) {
+        if (isStoreAccessRefused(err)) throw err;
         const code = (err as NodeJS.ErrnoException)?.code;
+        if (classifyDaemonError(code) === "sandboxed") {
+          throw refuseStoreAccess("socket");
+        }
         if (
           (err instanceof Error &&
             err.message.startsWith("Daemon search failed")) ||
@@ -342,6 +358,8 @@ export async function runSearch(
         await openedDb.close();
       } catch {}
     }
-    throw e;
+    // A lease/LMDB denial from the in-process path becomes the same one-line
+    // refusal as a blocked socket, naming the filesystem settings key instead.
+    throw asStoreAccessError(e);
   }
 }

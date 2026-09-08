@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { shouldFallbackFromDaemonError } from "../src/commands/search-run";
+import { classifyDaemonError } from "../src/lib/utils/store-access";
 
 describe("daemon search fallback", () => {
   it("falls back only when the daemon socket is absent or refused", () => {
@@ -21,5 +22,21 @@ describe("daemon search fallback", () => {
     ]) {
       expect(shouldFallbackFromDaemonError(error)).toBe(false);
     }
+  });
+
+  it("does not fall back when the sandbox denied the socket", () => {
+    // These used to surface as `Daemon search failed: EPERM`. They are now a
+    // distinct class: refuse with the settings hint, never open the store.
+    for (const error of ["EPERM", "EACCES", "EROFS"]) {
+      expect(shouldFallbackFromDaemonError(error)).toBe(false);
+      expect(classifyDaemonError(error)).toBe("sandboxed");
+    }
+  });
+
+  it("agrees with the shared classifier on the fallback set", () => {
+    for (const error of ["ENOENT", "ECONNREFUSED"]) {
+      expect(classifyDaemonError(error)).toBe("no-daemon");
+    }
+    expect(classifyDaemonError("timeout")).toBe("daemon-error");
   });
 });

@@ -7,12 +7,104 @@ import {
   projectEmbeddingStatus,
 } from "../lib/index/embedding-status";
 import { readGlobalConfig } from "../lib/index/index-config";
+import { sendDaemonCommand } from "../lib/utils/daemon-client";
 import { gracefulExit } from "../lib/utils/exit";
 import { pathStartsWith } from "../lib/utils/filter-builder";
 import { isLocked } from "../lib/utils/lock";
+import type { ProjectEntry } from "../lib/utils/project-registry";
 import { listProjects } from "../lib/utils/project-registry";
 import { findProjectRoot } from "../lib/utils/project-root";
+import {
+  classifyLeaseError,
+  reportStoreAccessRefusal,
+  withStoreRead,
+} from "../lib/utils/store-access";
+import type { WatcherInfo } from "../lib/utils/watcher-store";
 import { getWatcherForProject, listWatchers } from "../lib/utils/watcher-store";
+
+/**
+ * What `status` needs from the store, however it was obtained: which projects
+ * are being watched, and how many chunks each holds right now.
+ */
+interface StatusView {
+  watchers: Map<string, Pick<WatcherInfo, "status">>;
+  chunkCounts: Map<string, number>;
+}
+
+/**
+ * Ask the daemon first. Both verbs already exist, so this works against an
+ * unrestarted daemon, and it is what makes `status` survive a sandbox that
+ * denies writes to ~/.gmax: `listWatchers()` opens LMDB, which needs its lock
+ * file even to read, and died with "Attempting to setup locks" before the
+ * command ever reached the store.
+ *
+ * The in-process branch is entered only when nothing is listening on the
+ * socket. A lease/LMDB denial there is converted by withStoreRead into the
+ * one-line filesystem hint.
+ */
+async function loadStatusView(projects: ProjectEntry[]): Promise<StatusView> {
+  return withStoreRead<StatusView>("status", {
+    daemon: () => sendDaemonCommand({ cmd: "status" }),
+    render: async (resp) => {
+      const watchers = new Map<string, Pick<WatcherInfo, "status">>();
+      const entries = Array.isArray(resp.projects) ? resp.projects : [];
+      for (const entry of entries as Array<{ root?: unknown }>) {
+        if (entry && typeof entry.root === "string") {
+          watchers.set(entry.root, { status: "watching" });
+        }
+      }
+      // One project-stats call per project. A failure here is not fatal: the
+      // renderer falls back to the registry's cached chunkCount, exactly as
+      // the in-process path does when the LanceDB query fails.
+      const chunkCounts = new Map<string, number>();
+      for (const project of projects) {
+        const stats = await sendDaemonCommand(
+          { cmd: "project-stats", root: project.root },
+          { timeoutMs: 30_000 },
+        );
+        if (stats.ok && typeof stats.chunks === "number") {
+          chunkCounts.set(project.root, stats.chunks);
+        }
+      }
+      return { watchers, chunkCounts };
+    },
+    inProcess: async () => {
+      listWatchers(); // cleans stale entries as side effect
+      const watchers = new Map<string, Pick<WatcherInfo, "status">>();
+      for (const project of projects) {
+        const watcher = getWatcherForProject(project.root);
+        if (watcher) watchers.set(project.root, { status: watcher.status });
+      }
+
+      const chunkCounts = new Map<string, number>();
+      try {
+        const { VectorDB } = await import("../lib/store/vector-db");
+        const db = new VectorDB(PATHS.lancedbDir);
+        const table = await db.ensureTable();
+        for (const project of projects) {
+          const prefix = project.root.endsWith("/")
+            ? project.root
+            : `${project.root}/`;
+          const rows = await table
+            .query()
+            .select(["id"])
+            .where(pathStartsWith(prefix))
+            .toArray();
+          chunkCounts.set(project.root, rows.length);
+        }
+        await db.close();
+      } catch (err) {
+        // A sandbox denial is not "the query failed" — let it surface as the
+        // one-line refusal instead of silently degrading to cached counts.
+        if (classifyLeaseError(err) === "sandboxed") throw err;
+        console.warn(
+          `[status] Failed to query LanceDB for live chunk counts, using cached counts`,
+        );
+      }
+      return { watchers, chunkCounts };
+    },
+  });
+}
 
 const style = {
   bold: (s: string) => `\x1b[1m${s}\x1b[22m`,
@@ -61,38 +153,26 @@ Examples:
   .action(async (opts) => {
     const globalConfig = readGlobalConfig();
     const projects = listProjects();
-    listWatchers(); // cleans stale entries as side effect
     const indexing = isLocked(PATHS.globalRoot);
     const currentRoot = findProjectRoot(process.cwd());
+
+    // Resolved before the header so a sandbox refusal prints one clean line.
+    let view: StatusView;
+    try {
+      view = await loadStatusView(projects);
+    } catch (err) {
+      if (reportStoreAccessRefusal(err)) {
+        await gracefulExit(2);
+        return;
+      }
+      throw err;
+    }
+    const { watchers, chunkCounts } = view;
 
     if (!opts.agent) {
       // Header
       console.log(
         `\n${style.bold("gmax")} · ${globalConfig.modelTier} (${globalConfig.vectorDim}d, ${globalConfig.embedMode})${indexing ? style.yellow(" · indexing...") : ""}`,
-      );
-    }
-
-    // Query live chunk counts from LanceDB
-    const chunkCounts = new Map<string, number>();
-    try {
-      const { VectorDB } = await import("../lib/store/vector-db");
-      const db = new VectorDB(PATHS.lancedbDir);
-      const table = await db.ensureTable();
-      for (const project of projects) {
-        const prefix = project.root.endsWith("/")
-          ? project.root
-          : `${project.root}/`;
-        const rows = await table
-          .query()
-          .select(["id"])
-          .where(pathStartsWith(prefix))
-          .toArray();
-        chunkCounts.set(project.root, rows.length);
-      }
-      await db.close();
-    } catch {
-      console.warn(
-        `[status] Failed to query LanceDB for live chunk counts, using cached counts`,
       );
     }
 
@@ -110,7 +190,7 @@ Examples:
 
     if (opts.agent) {
       for (const project of projects) {
-        const watcher = getWatcherForProject(project.root);
+        const watcher = watchers.get(project.root);
         const projectStatus = project.status ?? "indexed";
         let st: string;
         if (projectStatus === "pending") st = "pending";
@@ -140,7 +220,7 @@ Examples:
     console.log();
     for (const project of projects) {
       const isCurrent = project.root === currentRoot;
-      const watcher = getWatcherForProject(project.root);
+      const watcher = watchers.get(project.root);
 
       // Status column
       let statusStr: string;

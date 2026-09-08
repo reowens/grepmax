@@ -10,6 +10,10 @@ import { sendDaemonCommand } from "./daemon-client";
 import { spawnDaemon } from "./daemon-launcher";
 import { getProject } from "./project-registry";
 import {
+  storeWriteDeniedNotice,
+  warnStoreWriteDeniedOnce,
+} from "./store-access";
+import {
   getWatcherCoveringPath,
   getWatcherForProject,
   isProcessRunning,
@@ -19,7 +23,11 @@ export type LaunchResult =
   | { ok: true; pid: number; reused: boolean }
   | {
       ok: false;
-      reason: "not-registered" | "spawn-failed" | "autostart-disabled";
+      reason:
+        | "not-registered"
+        | "spawn-failed"
+        | "autostart-disabled"
+        | "sandboxed";
       message: string;
     };
 
@@ -60,6 +68,16 @@ export async function launchWatcher(
   const notice = autostartDisabledNotice();
   if (notice) {
     return { ok: false, reason: "autostart-disabled", message: notice };
+  }
+
+  // A spawned daemon (or per-project watcher) inherits this process's sandbox
+  // for its whole life. If ~/.gmax is read-only here it will be read-only
+  // there, and the child dies on its own lock mkdir — so probe once and say so
+  // instead of leaving a crash in daemon.log.
+  const sandboxed = storeWriteDeniedNotice();
+  if (sandboxed) {
+    warnStoreWriteDeniedOnce(sandboxed);
+    return { ok: false, reason: "sandboxed", message: sandboxed };
   }
 
   const error = resp.error as string | undefined;

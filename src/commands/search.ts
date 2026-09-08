@@ -22,6 +22,7 @@ import {
   maybeWarnStaleChunker,
   maybeWarnStaleEmbedding,
 } from "../lib/utils/stale-hint";
+import { reportStoreAccessRefusal } from "../lib/utils/store-access";
 import { executeServerSearch, renderSearchOutput } from "./search-output";
 import { runSearch, type SearchOptions } from "./search-run";
 
@@ -408,8 +409,12 @@ Examples:
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       _searchError = message;
-      console.error("Search failed:", message);
-      process.exitCode = 1;
+      // A sandbox refusal is already one actionable line; printing it under a
+      // "Search failed:" prefix (and with exit 1) buries the fix.
+      if (!reportStoreAccessRefusal(error)) {
+        console.error("Search failed:", message);
+        process.exitCode = 1;
+      }
     } finally {
       // Best-effort query logging
       try {

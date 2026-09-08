@@ -383,6 +383,14 @@ GMAX_DEBUG=1 gmax watch --daemon -b
 
 - `GMAX_DEBUG_MODELS=1` — Model loading details in workers
 - `GMAX_DEBUG_INDEX=1` — Per-file progress during initial sync
+- `GMAX_NO_DAEMON=1` — Skip the daemon on read commands and run in-process (for
+  comparing the two paths' output; it does not relax the sandbox refusal)
+
+### Sandbox behaviour
+
+`scripts/sandbox-smoke.sh` runs the read commands under the two `sandbox-exec` profiles that
+reproduce Claude Code's Bash sandbox and prints an exit-code/first-line table. macOS only and
+manual (CI is `ubuntu-latest`); pass `--root <indexed project>` when running from a worktree.
 
 ### Common diagnostics
 
