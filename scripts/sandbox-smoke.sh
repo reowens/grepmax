@@ -14,9 +14,11 @@
 #   writes          every command exits 0
 #   writes+sockets  every command exits 2 with a line naming allowUnixSockets
 #
-# Phase 0 (WP-A) ships `status` and `search` only; the graph/rows/vector
-# commands are marked PENDING until WP-B and WP-C land. An interim
-# "exit 2 + allowWrite line" for those is accepted and reported as PENDING too.
+# Every read command is held to the same target since 0.26.28, when the daemon
+# began serving the graph/rows/vector verbs. Against an older daemon the verb
+# commands fall back in-process, hit the denied lease, and FAIL here — that is
+# a real finding (the daemon on the socket is older than this checkout), not
+# a script bug.
 #
 # macOS only: `sandbox-exec` has no Linux equivalent and CI runs on
 # ubuntu-latest, so this is a manual gate. Uses the built dist in this
@@ -26,7 +28,7 @@
 #   pnpm build && scripts/sandbox-smoke.sh [--strict] [--root DIR]
 #                                          [--symbol NAME] [--query TEXT]
 #
-#   --strict   exit 1 if any row FAILs (PENDING rows never fail)
+#   --strict   exit 1 if any row FAILs
 #   --root     cwd for every command; must be an INDEXED project, otherwise
 #              search legitimately returns nothing and exits 1. Defaults to this
 #              checkout, which is wrong inside an agent worktree — pass the main
@@ -111,7 +113,6 @@ args_for() {
 }
 
 # Commands WP-A routes through the daemon. Everything else is pending WP-B/WP-C.
-PHASE0="status search"
 
 FAILURES=0
 declare -a ROWS=()
@@ -132,23 +133,14 @@ run_case() {
 
 evaluate() {
   # $1 profile key, $2 command name, $3 exit code, $4 output file
-  local profile="$1" name="$2" code="$3" out="$4"
-  local phase0=0
-  case " $PHASE0 " in *" $name "*) phase0=1 ;; esac
-
+  local profile="$1" code="$3" out="$4"
   if [[ "$profile" == "writes" ]]; then
-    if (( phase0 )); then
-      [[ "$code" == "0" ]] && echo PASS || echo FAIL
-    else
-      echo PENDING
-    fi
+    [[ "$code" == "0" ]] && echo PASS || echo FAIL
   else
     if grep -q "allowUnixSockets" "$out" && [[ "$code" == "2" ]]; then
       echo PASS
-    elif (( phase0 )); then
-      echo FAIL
     else
-      echo PENDING
+      echo FAIL
     fi
   fi
 }
@@ -173,7 +165,7 @@ printf '%-14s %-14s %-8s %-7s %s\n' PROFILE COMMAND EXIT VERDICT "FIRST LINE"
 printf '%s\n' "----------------------------------------------------------------------------------------------------"
 printf '%s\n' "${ROWS[@]}"
 echo
-echo "PASS = meets the target for this phase · PENDING = awaiting WP-B/WP-C · FAIL = regression"
+echo "PASS = meets the target · FAIL = regression (or a daemon older than this checkout)"
 echo "failures: $FAILURES"
 
 if (( STRICT && FAILURES > 0 )); then

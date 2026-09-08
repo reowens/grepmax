@@ -439,7 +439,7 @@ filesystem is concerned, which is why "it only reads" is not a reason to expect 
 failed on the lease mkdir, and `status` crashed inside `lmdb` `env.open` — LMDB needs its lock file
 even to read, so the watcher-registry open failed before `status` reached any guard.
 
-**Fix (after 0.26.27):** both denials are classified in `src/lib/utils/store-access.ts` and answered with
+**Fix (0.26.28):** both denials are classified in `src/lib/utils/store-access.ts` and answered with
 one line and exit code 2 instead of an errno. `gmax doctor` reads `~/.claude/settings.json`,
 `~/.claude/settings.local.json`, and the project's `.claude/settings*.json`, and warns before the
 command is ever run.
