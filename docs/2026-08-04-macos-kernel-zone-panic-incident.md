@@ -567,6 +567,7 @@ maintenance-sleep / dark-wake cycles; the host was fully asleep for five minutes
 |---|---:|---:|
 | 2026-09-07 15:56 -0700, daemon 0.26.27 started | 80,208 | |
 | 2026-09-08 09:53 -0700 | 134,781 | +54,573 elements (53.3 MiB) |
+| 2026-09-08 10:30 -0700, daemon 0.26.28 started (t0 of the next segment) | 135,620 | +839 in 37 min, across the restart |
 
 | Wall | Asleep | Dark wake | Kernel-running | Rate |
 |---:|---:|---:|---:|---:|

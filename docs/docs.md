@@ -141,7 +141,6 @@ aggregation over the data gmax already has.
 | [2026 08 17 Gmax Agent Facing Health Audit](2026-08-17-gmax-agent-facing-health-audit.md) | Active |
 | [2026-08-25 Release Triage — Retrospective](2026-08-25-release-triage-retrospective.md) | Active |
 | [Embedding Layout Decision](embedding-layout-decision.md) | Active |
-| [Daemon Read Path](plans/daemon-read-path.md) | Active |
 | [Lance FTS Incremental-Merge Panic — Upstream Pursuit](plans/lance-fts-merge-upstream.md) | Active |
 
 ## Planned
@@ -159,10 +158,11 @@ aggregation over the data gmax already has.
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 57 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 58 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
+| [Daemon Read Path](archived/daemon-read-path.md) | Archived: Shipped in v0.26.28 on 2026-09-08 (daemon PID 22835 restarted onto it at 10:29 -0700, ping capabilities.readVerbs 1, platform-package lance binary). Verified over a real socket: seven read commands with zero fallback lines and byte-identical output to GMAX_NO_DAEMON=1; scripts/sandbox-smoke.sh --strict 20/20 PASS; only the live daemon holds a live reader marker. Remaining: a one-time acceptance from a Claude Code sandboxed shell with only allowUnixSockets set, dead-marker pruning (non-goal here), and removing the unknown-command fallback one release later. |
 | [LanceDB 0.31 → 0.38 Upgrade](plans/lancedb-0.38-upgrade.md) | Archived: Phase 0 ran 2026-08-25 as a lance-11 *control*, not a fix validation. The fix (lance-format/lance#8312) is in lance v11.0.0-beta.22, which lancedb 0.38.0-beta.6+ pins — but beta.6 through beta.10 exist only as git tags in the lancedb repo. npm has published exactly two 0.38 prereleases, beta.0 and beta.3, and beta.3 is built against lance 11.0.0-beta.16, six tags before the fix. npm blocks the *release*, not the soak — beta.10 prebuilts are available as GitHub release assets and can be soaked against directly. What the control did establish, on an APFS clone of the live 352k-row store, is that lance 11 is bidirectionally format-compatible with lance 8 and that the 18 table/connection methods vector-db.ts uses are signature-identical. gmax is on 0.31.0 / lance 8.0.0 with the drop-and-rebuild panic guard in vector-db.ts. |
 | [LanceDB FTS Panic Remediation](archived/lancedb-fts-panic-remediation.md) | Archived: H1 is falsified. The live daemon has run LanceDB 0.31 against the shared store since 2026-08-04T06:06:47 because the global install is a symlink to the working tree, and it recorded six FTS optimize panics in that window. Both 0.30 and 0.31 ship the identical lance-index 7.0.0 crate, so the upgrade never had a mechanism to fix the panic. The shipped guard nevertheless recovers every occurrence and the store converges, so the operator has approved shipping 0.31 as a no-worse runtime rather than pinning back. |
 | [Mcp Server Migration](archived/mcp-server-migration.md) | Archived: The Server-to-McpServer migration shipped in `e80daca`; the result-shape follow-up shipped in `04a87a4`. The current server registers 27 tools with Zod schemas, explicit registered-project scoping, protocol coverage, and subsequent lifecycle/performance hardening. |
@@ -170,7 +170,6 @@ Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signa
 | [gmax — Agent UX Backlog](archived/agent-ux-proposals.md) | Archived: All scoped Agent UX work is shipped. Phase 7 impact rollups shipped in `a71c616`, Phase 9 SQL-template skeleton summaries shipped in `504c055`, and Phase 12's daemon managers and search-output extraction shipped in `79f12d7` and `fbb8396`. Remaining ideas are measure-first reopen triggers, not an active backlog. |
 | [Repository Audit Fix Plan](archived/2026-07-09-repository-audit-fixes.md) | Archived: All fourteen audit findings and Phases 1 through 8 are implemented and released through v0.26.2, with follow-up stability fixes through v0.26.5. Current HEAD passes 124 test files / 1035 tests, production and test-source typechecks, and Biome across 308 files. |
 | [v0.26.2 Stability Cycle](archived/stability-cycle-v0.26.2.md) | Archived: Historical v0.26.2-v0.26.5 stability cycle. SC-001 and SC-003 were fixed and live-verified; SC-002 recovery shipped and restored compaction, but FTS merge panics recurred repeatedly through 2026-08-03. The dated observation window and formal exit snapshot were never completed, and the 2026-08-04 watcher/index/store changes supersede this baseline. |
-| [Performance Backlog Fixes](archived/performance-backlog-fixes.md) | Archived: Phases 1A through 5A are implemented and verified. Phase 1B measurement retained the 1536 MB worker recycle default. Phase 5B's flag-gated IVF_FLAT implementation failed its recall gate and remains disabled; its path scalar index was retained for scoped exact-search latency. The full 124-file / 1035-test regression gate passes. |
 
 - Use `dotmd list` or `dotmd json` for the full inventory.
 <!-- GENERATED:dotmd:end -->
