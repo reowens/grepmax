@@ -33,7 +33,6 @@
 
 import type { Table } from "@lancedb/lancedb";
 import { isBuiltinCallee } from "../graph/callsites";
-import type { TestHit } from "../graph/impact";
 import { getStoredSkeleton } from "../skeleton/retriever";
 import type { VectorDB } from "../store/vector-db";
 import { toArr } from "../utils/arrow";
@@ -216,7 +215,12 @@ export interface SymbolEntry {
   symbol: string;
   count: number;
   path: string;
+  /** 0-based start line of the first chunk that defines the symbol. */
   line: number;
+  /** Chunk role of that first definition. MCP's `list_symbols` tags with it. */
+  role: string;
+  /** Whether that first definition is exported. Same reason. */
+  exported: boolean;
 }
 
 export interface SymbolsRequest {
@@ -236,6 +240,11 @@ function toStringArray(val: unknown): string[] {
 /**
  * The `symbols` select plus its aggregation. Same query and same ordering as
  * before the split; only the process it runs in changed.
+ *
+ * `role` and `is_exported` were added to the select for MCP's `list_symbols`,
+ * which has always tagged each row with them. They cost nothing (the same rows,
+ * two more columns) and `gmax symbols` simply does not render them, so both
+ * callers keep the output they had.
  */
 export async function runSymbols(
   deps: StoreReadDeps,
@@ -244,7 +253,7 @@ export async function runSymbols(
   const table = await tableOf(deps);
   let query = table
     .query()
-    .select(["defined_symbols", "path", "start_line"])
+    .select(["defined_symbols", "path", "start_line", "role", "is_exported"])
     .where("array_length(defined_symbols) > 0")
     // Fetch more rows to ensure we have enough after filtering/aggregation
     .limit(req.pattern ? 10000 : Math.max(req.limit * 50, 2000));
@@ -262,6 +271,8 @@ export async function runSymbols(
     );
     const rowPath = String((row as Record<string, unknown>).path || "");
     const line = Number((row as Record<string, unknown>).start_line || 0);
+    const role = String((row as Record<string, unknown>).role || "");
+    const exported = Boolean((row as Record<string, unknown>).is_exported);
     for (const sym of defs) {
       if (
         req.pattern &&
@@ -273,7 +284,14 @@ export async function runSymbols(
       if (existing) {
         existing.count += 1;
       } else {
-        map.set(sym, { symbol: sym, count: 1, path: rowPath, line });
+        map.set(sym, {
+          symbol: sym,
+          count: 1,
+          path: rowPath,
+          line,
+          role,
+          exported,
+        });
       }
     }
   }
@@ -710,6 +728,15 @@ export async function readRows(opts: {
   limit?: number;
   scoped?: boolean;
   timeoutMs?: number;
+  /**
+   * Extra fallback allowances, passed through to `withStoreRead`. Only MCP sets
+   * these; a CLI command reports a live-daemon error rather than opening a
+   * second reader. See `isOversizeError` in store-access.ts.
+   */
+  fallback?: {
+    fallbackOnOversize?: boolean;
+    extraFallback?: (error: unknown) => boolean;
+  };
 }): Promise<LocatedRow[][]> {
   if (opts.matches.length === 0) return [];
   const { sendDaemonCommand } = await import("../utils/daemon-client");
@@ -741,6 +768,7 @@ export async function readRows(opts: {
         }),
       ),
     fallbackOnUnknownVerb: true,
+    ...opts.fallback,
   });
 }
 
@@ -768,55 +796,6 @@ export async function handleRowsSkeleton(
   });
 }
 
-// --- rows.tests -------------------------------------------------------------
-
-export interface TestsRequest {
-  symbol: string;
-  pathPrefix: string;
-  excludePrefixes?: string[];
-}
-
-/**
- * The tests footer `extract` prints under a symbol.
- *
- * NOTE for integration: this is `findTests` behind a verb, which is what WP-B's
- * `graph.tests` also wraps. `extract.ts` is WP-C's file and its footer needed a
- * daemon route in this package; when `graph.tests` lands, collapse the two —
- * this verb has no other caller.
- */
-export async function runTests(
-  deps: StoreReadDeps,
-  req: TestsRequest,
-): Promise<TestHit[] | null> {
-  if (!deps.vectorDb) throw new ReadVerbError("daemon not ready");
-  deps.touchActivity?.();
-  const { fetchTestsForFooter } = await import("../utils/tests-footer");
-  return fetchTestsForFooter(
-    req.symbol,
-    deps.vectorDb,
-    req.pathPrefix,
-    req.excludePrefixes,
-  );
-}
-
-export async function handleRowsTests(
-  deps: StoreReadDeps,
-  payload: Record<string, unknown>,
-): Promise<DaemonResponse> {
-  return asReadVerbResponse(async () => {
-    const projectRoot = assertReadableProject(payload.projectRoot);
-    const symbol = typeof payload.symbol === "string" ? payload.symbol : "";
-    if (!symbol) throw new ReadVerbError("missing symbol");
-    const scope = resolveWireScope(projectRoot, payload.scope);
-    const tests = await runTests(deps, {
-      symbol,
-      pathPrefix: scope.pathPrefix,
-      excludePrefixes: scope.excludePrefixes,
-    });
-    return { ok: true, tests };
-  });
-}
-
 // --- Registration -----------------------------------------------------------
 
 /**
@@ -834,7 +813,5 @@ export function registerRowsVerbs(): void {
       handleRowsLocate(ctx.daemon.storeReadDeps(), payload),
     "rows.skeleton": (payload, ctx) =>
       handleRowsSkeleton(ctx.daemon.storeReadDeps(), payload),
-    "rows.tests": (payload, ctx) =>
-      handleRowsTests(ctx.daemon.storeReadDeps(), payload),
   });
 }

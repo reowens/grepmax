@@ -161,6 +161,30 @@ export function isUnknownCommandError(error: unknown): boolean {
 }
 
 /**
+ * The daemon caps a single response line at 2 MB and answers `oversize` rather
+ * than writing a frame no client can parse. It is a *protocol* limit, not a
+ * store failure — the daemon is healthy and the store is fine.
+ *
+ * That is why it is opt-in (`fallbackOnOversize`) and off by default:
+ *
+ *   - **MCP opts in.** An MCP tool has no user at a terminal to re-run a
+ *     narrower query, and its whole session is one long-lived process; degrading
+ *     to its own store read returns an answer instead of an error string.
+ *   - **A CLI refuses.** The caller is a short-lived process at a prompt who can
+ *     narrow the query, and falling back would put a *second opener* on the
+ *     store while the daemon is busy enough to have produced a 2 MB answer —
+ *     exactly the concurrency this routing exists to prevent. One clear error
+ *     beats a second lease.
+ *
+ * No graph verb ships a capped response today (the largest measured is 963 KiB,
+ * `trace VectorDB -d 3`), so nothing trips this yet; the option exists so MCP's
+ * long-standing search behaviour survives the switch-over unchanged.
+ */
+export function isOversizeError(error: unknown): boolean {
+  return typeof error === "string" && error.toLowerCase().includes("oversize");
+}
+
+/**
  * Classify a failure from opening the store in-process (the `StoreLease` mkdir,
  * an LMDB `env.open`, a LanceDB write). Sandbox denials become a refusal that
  * names the filesystem settings key; everything else is a real error.
@@ -199,6 +223,22 @@ export interface StoreReadOptions<T> {
    * release. New read verbs set this; `search`/`search-v2` deliberately do not.
    */
   fallbackOnUnknownVerb?: boolean;
+  /**
+   * Treat the daemon's `oversize` refusal as "no daemon". Off by default; see
+   * `isOversizeError` for why MCP opts in and a CLI must not.
+   */
+  fallbackOnOversize?: boolean;
+  /**
+   * Caller-owned extra fallback reasons, consulted after the built-in set.
+   *
+   * Only MCP uses this, for the two daemon answers that mean "this session's
+   * daemon is not usable *yet*" rather than "the request was wrong":
+   * `project not watched` (the daemon has not picked the project up) and
+   * `daemon not ready` (its store is still opening). A CLI command reports both
+   * — the user can wait or re-run — but an MCP tool call has no second attempt,
+   * so it degrades to its own store read for the life of that call.
+   */
+  extraFallback?: (error: unknown) => boolean;
   /** Message for a live-daemon error. Defaults to `<name> failed: <error>`. */
   daemonErrorMessage?: (resp: DaemonResponse) => string;
   /** Skip the daemon attempt (same effect as GMAX_NO_DAEMON=1). */
@@ -257,7 +297,9 @@ export async function withStoreRead<T>(
   if (cls === "sandboxed") throw refuseStoreAccess("socket");
   if (
     cls === "no-daemon" ||
-    (opts.fallbackOnUnknownVerb && isUnknownCommandError(resp.error))
+    (opts.fallbackOnUnknownVerb && isUnknownCommandError(resp.error)) ||
+    (opts.fallbackOnOversize && isOversizeError(resp.error)) ||
+    opts.extraFallback?.(resp.error) === true
   ) {
     if (process.env.GMAX_DEBUG === "1") {
       console.error(`[${name}] daemon path unavailable: ${resp.error}`);

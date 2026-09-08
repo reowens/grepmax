@@ -73,13 +73,13 @@ import {
 } from "./ipc-handler";
 import { MlxServerManager } from "./mlx-server-manager";
 import { ProcessManager } from "./process-manager";
+import { registerGraphVerbs } from "./read-verbs";
 import { registerRowsVerbs, type StoreReadDeps } from "./rows-handler";
 import {
   type DaemonSearchPayload,
   type DaemonSearchResult,
   handleDaemonSearch,
 } from "./search-handler";
-import { registerGraphVerbs } from "./read-verbs";
 import { registerVectorVerbs } from "./vector-handler";
 import { WatcherManager } from "./watcher-manager";
 

@@ -14,7 +14,6 @@ import {
   handleRowsProject,
   handleRowsSkeleton,
   handleRowsSymbols,
-  handleRowsTests,
   MAX_LOCATE_ROWS,
   ReadVerbError,
   registerRowsVerbs,
@@ -539,26 +538,6 @@ describe("vector.surprises", () => {
   });
 });
 
-describe("rows.tests", () => {
-  it("returns the tests footer hits for a symbol", async () => {
-    const resp = await handleRowsTests(deps, {
-      projectRoot: PROJECT,
-      symbol: "session",
-      scope: { pathPrefix: `${PROJECT}/` },
-    });
-    expect(resp.ok).toBe(true);
-    // No test files in the fixture, so the footer is empty — the point is that
-    // the verb ran findTests daemon-side and answered.
-    expect(resp.tests).toEqual([]);
-  });
-
-  it("requires a symbol", async () => {
-    await expect(
-      handleRowsTests(deps, { projectRoot: PROJECT }),
-    ).resolves.toMatchObject({ ok: false, error: "missing symbol" });
-  });
-});
-
 describe("verb registration", () => {
   it("registers every rows and vector verb, and pulls deps from the daemon", async () => {
     clearReadVerbs();
@@ -570,7 +549,6 @@ describe("verb registration", () => {
         "rows.project",
         "rows.skeleton",
         "rows.symbols",
-        "rows.tests",
         "vector.similar",
         "vector.surprises",
       ]);

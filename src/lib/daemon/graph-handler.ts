@@ -27,8 +27,13 @@
 import * as path from "node:path";
 import { languageFamilyForPath } from "../core/languages";
 import { isBuiltinCallee } from "../graph/callsites";
-import type { CallerTree, GraphNode } from "../graph/graph-builder";
+import type {
+  CallerTree,
+  EdgeDirection,
+  GraphNode,
+} from "../graph/graph-builder";
 import { GraphBuilder } from "../graph/graph-builder";
+import type { FileSubgraph, NeighborHit } from "../graph/graph-traversal";
 import type {
   DependentHit,
   DetailedDependentHit,
@@ -50,6 +55,7 @@ import { resolveContainedPath } from "../utils/path-containment";
 import { getProject } from "../utils/project-registry";
 import type { ResolvedScope } from "../utils/scope-filter";
 import { buildScopeWhere } from "../utils/scope-filter";
+import type { StoreReadOptions } from "../utils/store-access";
 import { withStoreRead } from "../utils/store-access";
 import { fetchTestsForFooter } from "../utils/tests-footer";
 import type { ReadVerbContext, ReadVerbHandler } from "./read-verbs";
@@ -114,10 +120,35 @@ export interface GraphPeekResult {
   footerTests: TestHit[] | null;
 }
 
+/** One neighbour hit with the definition location resolved, or "" when none. */
+export type GraphNeighborHit = NeighborHit & { file: string; line: number };
+
+/**
+ * The graph half of `review risk`, per changed symbol. Git stays on the client
+ * (the diff and the churn count both need a working tree and a `git` binary);
+ * the daemon answers only what needs the store.
+ */
+export interface GraphRiskFact {
+  symbol: string;
+  /** Absolute defining path, or "" when the symbol is not indexed. */
+  file: string;
+  line: number;
+  callerCount: number;
+  hasTests: boolean;
+}
+
 const MAX_DEPTH = 3;
 const AUDIT_ROW_LIMIT = 500_000;
 const MAX_AUDIT_TOP = 1000;
 const DEAD_TOP_CALLERS = 3;
+/** `get_neighbors` caps hops at 5; the daemon re-clamps rather than trusting it. */
+const MAX_NEIGHBOR_HOPS = 5;
+/** `find_paths` caps hops at 10. */
+const MAX_PATH_HOPS = 10;
+/** A subgraph request builds one OR clause per file; bound it. */
+const MAX_SUBGRAPH_FILES = 500;
+/** A diff can name many symbols; each costs three graph queries. */
+const MAX_RISK_SYMBOLS = 200;
 
 function clampInt(value: unknown, min: number, max: number, fallback: number) {
   const n = typeof value === "number" ? value : Number.NaN;
@@ -279,6 +310,38 @@ function requireSymbols(payload: Record<string, unknown>): string[] {
   return raw.map((s) => {
     if (typeof s !== "string") throw new Error("invalid symbols");
     return s;
+  });
+}
+
+/**
+ * The traversal direction. Anything other than the two literals is a bug in the
+ * client, so it is rejected rather than silently defaulted — `callers` and
+ * `callees` answer opposite questions.
+ */
+function requireDirection(payload: Record<string, unknown>): EdgeDirection {
+  const raw = payload.direction;
+  if (raw === undefined || raw === null) return "callees";
+  if (raw !== "callers" && raw !== "callees") {
+    throw new Error("invalid direction");
+  }
+  return raw;
+}
+
+/**
+ * A file list for `graph.subgraph`, every entry re-resolved inside the project.
+ * The paths land in an `OR` of `path = '…'` equalities, so containment is what
+ * keeps a caller from naming rows belonging to another project in the shared
+ * table.
+ */
+function requireContainedFiles(projectRoot: string, raw: unknown): string[] {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    throw new Error("missing files");
+  }
+  return raw.map((file) => {
+    if (typeof file !== "string" || file === "") {
+      throw new Error("invalid files");
+    }
+    return resolveContainedPath(projectRoot, file);
   });
 }
 
@@ -510,6 +573,112 @@ export async function runGraphDead(
       .slice(0, DEAD_TOP_CALLERS)
       .map((c) => ({ file: c.file, line: c.line })),
   };
+}
+
+// --- graph primitives (MCP's get_neighbors / find_paths / subgraph_for_files)
+
+/**
+ * `GraphBuilder.getNeighbors` behind a verb.
+ *
+ * `graph.trace` cannot serve this: it walks a *caller tree* at a fixed shape,
+ * while these three are the raw traversal primitives MCP exposes — bounded BFS
+ * in either direction, shortest path between two symbols, and the local
+ * subgraph of a file set. Each is a distinct GraphBuilder entry point with its
+ * own bound, so each gets its own verb rather than an option on trace.
+ */
+export async function runGraphNeighbors(
+  db: VectorDB,
+  args: {
+    symbol: string;
+    direction: EdgeDirection;
+    maxHops: number;
+    scope: ResolvedScope;
+  },
+): Promise<GraphNeighborHit[]> {
+  const builder = new GraphBuilder(
+    db,
+    args.scope.pathPrefix,
+    args.scope.excludePrefixes,
+  );
+  return builder.getNeighbors(
+    args.symbol,
+    args.direction,
+    clampInt(args.maxHops, 1, MAX_NEIGHBOR_HOPS, 2),
+  );
+}
+
+/** `GraphBuilder.findPaths` behind a verb; null when unreachable. */
+export async function runGraphPaths(
+  db: VectorDB,
+  args: {
+    from: string;
+    to: string;
+    direction: EdgeDirection;
+    maxHops: number;
+    scope: ResolvedScope;
+  },
+): Promise<string[] | null> {
+  const builder = new GraphBuilder(
+    db,
+    args.scope.pathPrefix,
+    args.scope.excludePrefixes,
+  );
+  return builder.findPaths(
+    args.from,
+    args.to,
+    args.direction,
+    clampInt(args.maxHops, 1, MAX_PATH_HOPS, 6),
+  );
+}
+
+/** `GraphBuilder.subgraphForFiles` behind a verb. Paths arrive absolute. */
+export async function runGraphSubgraph(
+  db: VectorDB,
+  args: { files: string[]; scope: ResolvedScope },
+): Promise<FileSubgraph> {
+  const builder = new GraphBuilder(
+    db,
+    args.scope.pathPrefix,
+    args.scope.excludePrefixes,
+  );
+  return builder.subgraphForFiles(args.files.slice(0, MAX_SUBGRAPH_FILES));
+}
+
+/**
+ * The store-backed half of the risk ranking: for each changed symbol, its
+ * inbound caller count, its defining location, and whether any test reaches it.
+ *
+ * Split this way because `gatherRiskInputs` mixes two kinds of work — git
+ * (`extractDiff`, `fileChurn`) and the graph (`callersOf`, `resolveLocation`,
+ * `findTests`) — and only the second half belongs on the daemon's warm store.
+ * The caller keeps the git half and assembles the `RiskInput` rows, so the
+ * scoring stays exactly where it was.
+ */
+export async function runGraphRisk(
+  db: VectorDB,
+  args: { symbols: string[]; queryRoot: string; scope: ResolvedScope },
+): Promise<GraphRiskFact[]> {
+  const builder = new GraphBuilder(
+    db,
+    args.scope.pathPrefix,
+    args.scope.excludePrefixes,
+  );
+  return Promise.all(
+    args.symbols.slice(0, MAX_RISK_SYMBOLS).map(async (symbol) => {
+      const [callers, loc, tests] = await Promise.all([
+        builder.callersOf(symbol).catch(() => [] as string[]),
+        builder.resolveLocation(symbol).catch(() => null),
+        findTests([symbol], db, args.queryRoot).catch(() => [] as TestHit[]),
+      ]);
+      return {
+        symbol,
+        file: loc?.file ?? "",
+        line: loc?.line ?? 0,
+        callerCount: callers.length,
+        hasTests: tests.length > 0,
+      };
+    }),
+  );
 }
 
 // --- audit aggregation -----------------------------------------------------
@@ -923,6 +1092,49 @@ export function createGraphVerbs(
       return { ok: true, dead: facts };
     },
 
+    "graph.neighbors": async (payload, db) => {
+      const decoded = decodeScopePayload(payload);
+      const hits = await runGraphNeighbors(db, {
+        symbol: requireString(payload, "symbol"),
+        direction: requireDirection(payload),
+        maxHops: clampInt(payload.maxHops, 1, MAX_NEIGHBOR_HOPS, 2),
+        scope: decoded.scope,
+      });
+      return { ok: true, hits };
+    },
+
+    "graph.paths": async (payload, db) => {
+      const decoded = decodeScopePayload(payload);
+      const path = await runGraphPaths(db, {
+        from: requireString(payload, "from"),
+        to: requireString(payload, "to"),
+        direction: requireDirection(payload),
+        maxHops: clampInt(payload.maxHops, 1, MAX_PATH_HOPS, 6),
+        scope: decoded.scope,
+      });
+      // `null` (no path) is an answer, not an error — send it as one.
+      return { ok: true, path };
+    },
+
+    "graph.subgraph": async (payload, db) => {
+      const decoded = decodeScopePayload(payload);
+      const subgraph = await runGraphSubgraph(db, {
+        files: requireContainedFiles(decoded.projectRoot, payload.files),
+        scope: decoded.scope,
+      });
+      return { ok: true, subgraph };
+    },
+
+    "graph.risk": async (payload, db) => {
+      const decoded = decodeScopePayload(payload);
+      const facts = await runGraphRisk(db, {
+        symbols: requireSymbols(payload),
+        queryRoot: queryRootFor(decoded),
+        scope: decoded.scope,
+      });
+      return { ok: true, facts };
+    },
+
     "graph.audit": async (payload, db) => {
       const decoded = decodeScopePayload(payload);
       const report = await runGraphAudit(db, {
@@ -959,6 +1171,12 @@ export interface GraphVerbCall<T> {
   render: (resp: DaemonResponse) => T;
   /** Run the same `runGraph*` against a locally opened store. */
   inProcess: () => Promise<T>;
+  /**
+   * Extra fallback allowances, passed straight through to `withStoreRead`.
+   * Only MCP sets these; a CLI command reports a live-daemon error instead of
+   * opening a second reader. See `isOversizeError` in store-access.ts.
+   */
+  fallback?: Pick<StoreReadOptions<T>, "fallbackOnOversize" | "extraFallback">;
 }
 
 /**
@@ -986,5 +1204,6 @@ export function callGraphVerb<T>(
       ),
     render: call.render,
     inProcess: call.inProcess,
+    ...call.fallback,
   });
 }

@@ -6,18 +6,65 @@ import { Command } from "commander";
 import { z } from "zod";
 import { PATHS } from "../config";
 import {
-  analyzeSurprisingConnections,
   DEFAULT_SURPRISE_OPTIONS,
+  type FilePairFinding,
   findingBucketLabel,
   formatPenaltySummary,
   lineLabel,
   MAX_SURPRISE_ROWS,
-  type SurpriseAnalysisResult,
+  type SurpriseAnalysisSummary,
   skeletonHint,
 } from "../lib/analysis/surprising-connections";
-import { languageFamilyForPath } from "../lib/core/languages";
-import { type CallerTree, GraphBuilder } from "../lib/graph/graph-builder";
-import type { DetailedDependentHit } from "../lib/graph/impact";
+import type {
+  AuditResult,
+  GraphDeadFacts,
+  GraphNeighborHit,
+  GraphPeekResult,
+  GraphResolveResult,
+  GraphRiskFact,
+  GraphTraceResult,
+} from "../lib/daemon/graph-handler";
+import {
+  callGraphVerb,
+  decodeSymbolFamilies,
+  runGraphAudit,
+  runGraphDead,
+  runGraphDependents,
+  runGraphNeighbors,
+  runGraphPaths,
+  runGraphPeek,
+  runGraphResolve,
+  runGraphRisk,
+  runGraphSubgraph,
+  runGraphTests,
+  runGraphTrace,
+} from "../lib/daemon/graph-handler";
+import type {
+  ProjectOverview,
+  SkeletonLookup,
+  StoreReadDeps,
+  SymbolEntry,
+} from "../lib/daemon/rows-handler";
+import {
+  readRows,
+  runProject,
+  runSkeleton,
+  runSymbols,
+  scopeToWire,
+  withLocalStore,
+} from "../lib/daemon/rows-handler";
+import type {
+  SimilarResult,
+  SurprisesResult,
+} from "../lib/daemon/vector-handler";
+import { runSimilar, runSurprises } from "../lib/daemon/vector-handler";
+import type { CallerTree } from "../lib/graph/graph-builder";
+import type { FileSubgraph } from "../lib/graph/graph-traversal";
+import type {
+  DependentHit,
+  DetailedDependentHit,
+  TestHit,
+} from "../lib/graph/impact";
 import {
   assertEmbeddingSearchCompatible,
   embeddingFingerprintLabel,
@@ -28,10 +75,8 @@ import { generateSummaries } from "../lib/index/syncer";
 import { formatAgentSearchResults } from "../lib/output/agent-search-formatter";
 import { Searcher } from "../lib/search/searcher";
 import { annotateSkeletonLines } from "../lib/skeleton/annotator";
-import { getStoredSkeleton } from "../lib/skeleton/retriever";
 import { Skeletonizer } from "../lib/skeleton/skeletonizer";
 import { extractSymbolsFromSkeleton } from "../lib/skeleton/symbol-extractor";
-import { configureAnnVectorQuery } from "../lib/store/ann-config";
 import { MetaCache } from "../lib/store/meta-cache";
 import type {
   ChunkType,
@@ -39,14 +84,10 @@ import type {
   SearchFilter,
   SearchResponse,
 } from "../lib/store/types";
-import { VectorDB } from "../lib/store/vector-db";
 import { resolveCrossProjectScope } from "../lib/utils/cross-project";
+import type { DaemonResponse } from "../lib/utils/daemon-client";
+import { sendDaemonCommand } from "../lib/utils/daemon-client";
 import { isIndexableFile } from "../lib/utils/file-utils";
-import {
-  escapeSqlString,
-  normalizePath,
-  pathStartsWith,
-} from "../lib/utils/filter-builder";
 import { formatTimeAgo } from "../lib/utils/format-helpers";
 import { extractImports } from "../lib/utils/import-extractor";
 import {
@@ -56,10 +97,17 @@ import {
 } from "../lib/utils/path-containment";
 import { listProjects, type ProjectEntry } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
+import type { ResolvedScope } from "../lib/utils/scope-filter";
 import { resolveScope } from "../lib/utils/scope-filter";
+import {
+  classifyDaemonError,
+  isOversizeError,
+  isStoreAccessRefused,
+  isUnknownCommandError,
+  withStoreRead,
+} from "../lib/utils/store-access";
 import { launchWatcher } from "../lib/utils/watcher-launcher";
 import { getWatcherCoveringPath } from "../lib/utils/watcher-store";
-import { computeAudit } from "./audit";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -91,15 +139,55 @@ export function err(text: string): ToolResult {
   return { content: [{ type: "text", text }], isError: true };
 }
 
-export function shouldFallbackMcpDaemonSearch(error: unknown): boolean {
+/**
+ * The two daemon answers that mean "not usable *yet*", as opposed to "your
+ * request was wrong".
+ *
+ * `project not watched` is the daemon still picking a project up; `daemon not
+ * ready` is its store still opening. A CLI command reports both — there is a
+ * user at a prompt who can wait or re-run — but an MCP tool call gets no second
+ * attempt, so it degrades to its own store read for the life of that one call.
+ * That is why these live here and not in `withStoreRead`'s built-in set.
+ */
+export function isMcpSessionFallback(error: unknown): boolean {
   const message = String(error ?? "").toLowerCase();
   return (
-    message === "enoent" ||
-    message === "econnrefused" ||
     message.includes("project not watched") ||
-    message.includes("daemon not ready") ||
-    message.includes("oversize") ||
-    message.includes("unknown command")
+    message.includes("daemon not ready")
+  );
+}
+
+/**
+ * MCP's read-tool fallback policy, in one object so every tool shares it.
+ *
+ * - `fallbackOnUnknownVerb` — a daemon older than this build does not know the
+ *   read verbs (the live 0.26.27 daemon does not); answer from the store rather
+ *   than failing the tool call. Removed one release after the verbs ship.
+ * - `fallbackOnOversize` — the daemon's 2 MB response cap. See
+ *   `isOversizeError` for why MCP opts in and the CLI does not.
+ * - `extraFallback` — the two session-readiness answers above.
+ *
+ * Everything else (`DAEMON_BUSY`, timeouts, scope rejections, store failures) is
+ * a live daemon saying no, and is reported. Falling back there would put a
+ * second opener on the store while the daemon is working.
+ */
+const MCP_STORE_FALLBACK = {
+  fallbackOnUnknownVerb: true,
+  fallbackOnOversize: true,
+  extraFallback: isMcpSessionFallback,
+} as const;
+
+/**
+ * Kept as a named predicate because `daemonSearch`'s callers and its tests read
+ * as one rule; the rule itself is now assembled from `withStoreRead`'s
+ * classification rather than restated as a second string table.
+ */
+export function shouldFallbackMcpDaemonSearch(error: unknown): boolean {
+  return (
+    classifyDaemonError(error) === "no-daemon" ||
+    isUnknownCommandError(error) ||
+    isOversizeError(error) ||
+    isMcpSessionFallback(error)
   );
 }
 
@@ -258,8 +346,16 @@ export function formatMcpPointerSearchResults(
   );
 }
 
+/**
+ * Takes summary + findings rather than a whole `SurpriseAnalysisResult`: the
+ * `vector.surprises` verb drops the raw `pairs` array (the bulk of the object,
+ * and nothing renders it), so this is the shape both paths can supply.
+ */
 export function formatMcpSurprisingConnections(
-  result: SurpriseAnalysisResult,
+  result: {
+    summary: SurpriseAnalysisSummary;
+    findings: FilePairFinding[];
+  },
   top = 10,
 ): string {
   const { summary, findings } = result;
@@ -332,25 +428,16 @@ export const mcp = new Command("mcp")
 
     // --- Lifecycle ---
 
-    let _vectorDb: VectorDB | null = null;
-    let _searcher: Searcher | null = null;
+    // No per-session VectorDB. Every read tool goes through the daemon's read
+    // verbs, and the only store this process may open is the short-lived one
+    // `withLocalStore` opens and closes inside a `withStoreRead` fallback — so
+    // an MCP session holds no reader marker under ~/.gmax/lancedb.lease/readers/
+    // while a daemon serving the verbs is up.
     let _skeletonizer: Skeletonizer | null = null;
     let _indexReady = false;
 
-    const cleanup = async () => {
-      if (_vectorDb) {
-        try {
-          await _vectorDb.close();
-        } catch {}
-        _vectorDb = null;
-        _searcher = null;
-      }
-    };
-
-    const exit = async () => {
-      await cleanup();
-      process.exit(0);
-    };
+    // Nothing to close: the tools open no store of their own.
+    const exit = () => process.exit(0);
 
     process.on("SIGINT", exit);
     process.on("SIGTERM", exit);
@@ -385,18 +472,73 @@ export const mcp = new Command("mcp")
     // Propagate project root to worker processes
     process.env.GMAX_PROJECT_ROOT = paths.root;
 
-    // Lazy resource accessors — all use centralized store
-    function getVectorDb(): VectorDB {
-      if (!_vectorDb) _vectorDb = new VectorDB(paths.lancedbDir);
-      return _vectorDb;
+    // --- Store access ---
+
+    /**
+     * One read through the access policy, with MCP's fallback allowances. The
+     * `inProcess` branch is entered only when no daemon serves the verb.
+     */
+    function readStore<T>(
+      name: string,
+      opts: {
+        daemon: () => Promise<DaemonResponse>;
+        render: (resp: DaemonResponse) => T;
+        inProcess: () => Promise<T>;
+        daemonErrorMessage?: (resp: DaemonResponse) => string;
+      },
+    ): Promise<T> {
+      return withStoreRead<T>(name, { ...opts, ...MCP_STORE_FALLBACK });
     }
 
-    function getSearcher(): Searcher {
-      if (!_searcher) _searcher = new Searcher(getVectorDb());
-      return _searcher;
+    /** Open the shared store for the duration of one fallback, then close it. */
+    function localStore<T>(
+      fn: (deps: StoreReadDeps) => Promise<T>,
+    ): Promise<T> {
+      return withLocalStore(paths.lancedbDir, fn);
     }
 
-    async function daemonSearch(args: {
+    /** A graph verb with MCP's fallback allowances. */
+    function graphVerb<T>(
+      verb: string,
+      call: {
+        projectRoot: string;
+        scope: ResolvedScope;
+        payload?: Record<string, unknown>;
+        render: (resp: DaemonResponse) => T;
+        inProcess: () => Promise<T>;
+      },
+    ): Promise<T> {
+      return callGraphVerb<T>(verb, { ...call, fallback: MCP_STORE_FALLBACK });
+    }
+
+    /**
+     * MCP tools take no `--in`/`--exclude`, so a tool's scope is always the
+     * whole project. Building it through `resolveScope` anyway keeps the wire
+     * shape identical to the CLI's.
+     */
+    function projectScope(root: string): ResolvedScope {
+      return resolveScope({ projectRoot: root });
+    }
+
+    /**
+     * Turn a thrown error into a tool result. A store-access refusal is already
+     * one actionable line, so it is passed through verbatim rather than buried
+     * under a `<Tool> failed:` prefix. It should never fire here — an MCP server
+     * is spawned by the editor, not from inside a sandboxed Bash tool — but the
+     * path exists so the message is right if it ever does.
+     */
+    function toolError(prefix: string, e: unknown): ToolResult {
+      if (isStoreAccessRefused(e)) return err(e.message);
+      return err(`${prefix}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+
+    /**
+     * Search through the daemon, falling back to a Searcher over a store this
+     * process opens only for the duration of the call. Replaces the old
+     * `daemonSearch(...) ?? getSearcher().search(...)` pair, whose null return
+     * encoded the same fallback rule `withStoreRead` now owns.
+     */
+    function searchStore(args: {
       projectRoot: string;
       query: string;
       limit: number;
@@ -404,32 +546,214 @@ export const mcp = new Command("mcp")
       pathPrefix?: string;
       rerank?: boolean;
       seeds?: { files?: string[]; symbols?: string[] };
-    }): Promise<SearchResponse | null> {
-      const { sendDaemonCommand } = await import("../lib/utils/daemon-client");
-      const response = await sendDaemonCommand(
-        {
-          cmd: args.filters?.projectRoots ? "search-v2" : "search",
-          ...args,
-        },
-        { timeoutMs: 60_000 },
-      );
-      if (!response.ok) {
-        if (shouldFallbackMcpDaemonSearch(response.error)) return null;
-        const detail = [response.error, response.hint]
-          .filter((value) => typeof value === "string" && value)
-          .join(": ");
-        throw new Error(detail || "daemon search failed");
+    }): Promise<SearchResponse> {
+      return readStore<SearchResponse>("search", {
+        daemon: () =>
+          sendDaemonCommand(
+            {
+              cmd: args.filters?.projectRoots ? "search-v2" : "search",
+              ...args,
+            },
+            { timeoutMs: 60_000 },
+          ),
+        render: (resp) => ({
+          data: Array.isArray(resp.data) ? (resp.data as ChunkType[]) : [],
+          warnings: Array.isArray(resp.warnings)
+            ? resp.warnings.filter(
+                (warning): warning is string => typeof warning === "string",
+              )
+            : undefined,
+        }),
+        inProcess: () =>
+          localStore(async (deps) => {
+            const searcher = new Searcher(deps.vectorDb!);
+            return searcher.search(
+              args.query,
+              args.limit,
+              { rerank: args.rerank, seeds: args.seeds },
+              args.filters,
+              args.pathPrefix,
+            );
+          }),
+        daemonErrorMessage: (resp) =>
+          [resp.error, resp.hint]
+            .filter((value) => typeof value === "string" && value)
+            .join(": ") || "daemon search failed",
+      });
+    }
+
+    /**
+     * `graph.peek`: the symbol's single-hop graph plus its defining chunk's
+     * metadata, and the multi-hop caller tree when `depth > 1`. Shared by
+     * `peek_symbol` and `semantic_search`'s symbol mode, which used to issue the
+     * same `buildGraph` call through their own GraphBuilder.
+     */
+    function peekSymbolGraph(
+      root: string,
+      symbol: string,
+      depth: number,
+    ): Promise<GraphPeekResult> {
+      const scope = projectScope(root);
+      return graphVerb<GraphPeekResult>("graph.peek", {
+        projectRoot: root,
+        scope,
+        payload: { target: symbol, depth, includeTests: false },
+        render: (resp) => resp.peek as GraphPeekResult,
+        inProcess: () =>
+          localStore((deps) =>
+            runGraphPeek(deps.vectorDb!, {
+              symbol,
+              depth,
+              scope,
+              includeTests: false,
+            }),
+          ),
+      });
+    }
+
+    /**
+     * `graph.resolve`: a target (symbol name or file path) to the symbols it
+     * names. Shared by `find_tests` and `impact_analysis`.
+     */
+    function resolveTarget(
+      root: string,
+      target: string,
+    ): Promise<GraphResolveResult> {
+      const scope = projectScope(root);
+      return graphVerb<GraphResolveResult>("graph.resolve", {
+        projectRoot: root,
+        scope,
+        payload: { target },
+        render: (resp) => ({
+          symbols: (resp.symbols as string[]) ?? [],
+          resolvedAsFile: resp.resolvedAsFile === true,
+          symbolFamilies:
+            (resp.symbolFamilies as GraphResolveResult["symbolFamilies"]) ??
+            null,
+        }),
+        inProcess: () =>
+          localStore((deps) =>
+            runGraphResolve(deps.vectorDb!, { target, projectRoot: root }),
+          ),
+      });
+    }
+
+    /** `graph.tests`: the reverse call graph's test hits for a symbol set. */
+    function findTestsForSymbols(
+      root: string,
+      symbols: string[],
+      depth: number,
+      families: GraphResolveResult["symbolFamilies"],
+    ): Promise<TestHit[]> {
+      const scope = projectScope(root);
+      return graphVerb<TestHit[]>("graph.tests", {
+        projectRoot: root,
+        scope,
+        payload: { symbols, depth, families },
+        render: (resp) => (resp.hits as TestHit[]) ?? [],
+        inProcess: () =>
+          localStore((deps) =>
+            runGraphTests(deps.vectorDb!, {
+              symbols,
+              queryRoot: root,
+              depth,
+              excludePrefixes: scope.excludePrefixes,
+              families: decodeSymbolFamilies(families),
+            }),
+          ),
+      });
+    }
+
+    /**
+     * `rows.locate`: a batch of row selects, one result array per matcher in
+     * order. Batched so a per-symbol loop costs one round trip, not hundreds.
+     */
+    function locateRows(
+      root: string,
+      req: {
+        select: string[];
+        matches: Parameters<typeof readRows>[0]["matches"];
+        limit?: number;
+        scoped?: boolean;
+      },
+    ): Promise<Array<Record<string, unknown>>[]> {
+      return readRows({
+        name: "locate",
+        projectRoot: root,
+        lancedbDir: paths.lancedbDir,
+        scope: projectScope(root),
+        fallback: MCP_STORE_FALLBACK,
+        ...req,
+      });
+    }
+
+    /**
+     * Chunk and file totals for `index_status`, summed per registered project.
+     *
+     * The old code asked the store for `countRows()` and a distinct-path scan
+     * over the whole table. There is no whole-table read verb — deliberately:
+     * the daemon's `project-stats` is per project, and summing it keeps the
+     * daemon and in-process paths on the *same* per-prefix counts instead of
+     * one counting orphaned rows the other cannot see. A failed per-project
+     * call contributes nothing rather than failing the tool, exactly as
+     * `gmax status` degrades to its cached counts.
+     */
+    async function indexTotals(
+      projects: ProjectEntry[],
+    ): Promise<{ chunks: number; files: number }> {
+      let chunks = 0;
+      let files = 0;
+      for (const project of projects) {
+        const totals = await readStore<{ chunks: number; files: number }>(
+          "project-stats",
+          {
+            daemon: () =>
+              sendDaemonCommand(
+                { cmd: "project-stats", root: project.root },
+                { timeoutMs: 30_000 },
+              ),
+            render: (resp) => ({
+              chunks: typeof resp.chunks === "number" ? resp.chunks : 0,
+              files: typeof resp.files === "number" ? resp.files : 0,
+            }),
+            inProcess: () =>
+              localStore(async (deps) => {
+                const prefix = project.root.endsWith("/")
+                  ? project.root
+                  : `${project.root}/`;
+                return {
+                  chunks: await deps.vectorDb!.countRowsForPath(prefix),
+                  files: await deps.vectorDb!.countDistinctFilesForPath(prefix),
+                };
+              }),
+          },
+        ).catch(() => ({ chunks: 0, files: 0 }));
+        chunks += totals.chunks;
+        files += totals.files;
       }
-      return {
-        data: Array.isArray(response.data)
-          ? (response.data as ChunkType[])
-          : [],
-        warnings: Array.isArray(response.warnings)
-          ? response.warnings.filter(
-              (warning): warning is string => typeof warning === "string",
-            )
-          : undefined,
-      };
+      return { chunks, files };
+    }
+
+    /** `rows.skeleton`: the stored per-file skeleton (and the symbol lookup). */
+    function lookupSkeleton(
+      root: string,
+      req: { path?: string; symbol?: string },
+    ): Promise<SkeletonLookup> {
+      return readStore<SkeletonLookup>("skeleton", {
+        daemon: () =>
+          sendDaemonCommand(
+            { cmd: "rows.skeleton", projectRoot: root, ...req },
+            { timeoutMs: 30_000 },
+          ),
+        render: (resp) => ({
+          path: (resp.path ?? null) as string | null,
+          skeleton: (resp.skeleton ?? null) as string | null,
+        }),
+        inProcess: () =>
+          localStore((deps) =>
+            runSkeleton(deps, { projectRoot: root, ...req }),
+          ),
+      });
     }
 
     async function getSkeletonizer(): Promise<Skeletonizer> {
@@ -634,22 +958,14 @@ export const mcp = new Command("mcp")
           rerank: process.env.GMAX_RERANK === "1",
           seeds,
         };
-        const result =
-          (await daemonSearch({
-            projectRoot: resolvedRoot,
-            query,
-            limit,
-            filters: effectiveFilters,
-            pathPrefix,
-            ...searchOptions,
-          })) ??
-          (await getSearcher().search(
-            query,
-            limit,
-            searchOptions,
-            effectiveFilters,
-            pathPrefix,
-          ));
+        const result = await searchStore({
+          projectRoot: resolvedRoot,
+          query,
+          limit,
+          filters: effectiveFilters,
+          pathPrefix,
+          ...searchOptions,
+        });
 
         const allowedRoots = searchAll
           ? (filters.projectRoots ?? [])
@@ -839,9 +1155,10 @@ export const mcp = new Command("mcp")
         // Symbol mode: append call graph
         if (mode === "symbol" && !searchAll) {
           try {
-            const db = getVectorDb();
-            const builder = new GraphBuilder(db, resolvedRoot);
-            const graph = await builder.buildGraph(query);
+            // `graph.peek` is the single-hop `buildGraph` this used to call,
+            // plus metadata this branch ignores — one verb rather than a second
+            // shape for the same query.
+            const { graph } = await peekSymbolGraph(resolvedRoot, query, 1);
 
             if (graph.center) {
               const traceLines: string[] = ["", "--- Call graph ---"];
@@ -889,8 +1206,7 @@ export const mcp = new Command("mcp")
 
         return ok(prefixNotes(output));
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return err(`Search failed: ${msg}`);
+        return toolError("Search failed", e);
       }
     }
 
@@ -974,10 +1290,10 @@ export const mcp = new Command("mcp")
         let language = "";
         let tokenEstimate = 0;
 
-        // Try cached skeleton first
+        // Try the stored skeleton first, via the daemon's warm store.
         try {
-          const db = getVectorDb();
-          const cached = await getStoredSkeleton(db, absPath);
+          const cached = (await lookupSkeleton(root, { path: absPath }))
+            .skeleton;
           if (cached) {
             skeleton = cached;
             tokenEstimate = Math.ceil(cached.length / 4);
@@ -1049,10 +1365,18 @@ export const mcp = new Command("mcp")
       void ensureWatcher(root);
 
       try {
-        const db = getVectorDb();
-        const builder = new GraphBuilder(db, root);
         const depth = Math.min(Math.max(Number(args.depth) || 1, 1), 3);
-        const graph = await builder.buildGraphMultiHop(symbol, depth);
+        const scope = projectScope(root);
+        const graph = await graphVerb<GraphTraceResult>("graph.trace", {
+          projectRoot: root,
+          scope,
+          payload: { target: symbol, hops: depth },
+          render: (resp) => resp.graph as GraphTraceResult,
+          inProcess: () =>
+            localStore((deps) =>
+              runGraphTrace(deps.vectorDb!, { symbol, hops: depth, scope }),
+            ),
+        });
 
         if (!graph.center) {
           return ok(
@@ -1126,8 +1450,7 @@ export const mcp = new Command("mcp")
 
         return ok(lines.join("\n"));
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return err(`Trace failed: ${msg}`);
+        return toolError("Trace failed", e);
       }
     }
 
@@ -1141,27 +1464,23 @@ export const mcp = new Command("mcp")
       try {
         const { proj, root } = resolveRegisteredProject(args.root);
         if (!proj) return err("Project not added to gmax yet.");
-        const db = getVectorDb();
-        const table = await db.ensureTable();
-        const prefix = root.endsWith("/") ? root : `${root}/`;
 
-        const rows = await table
-          .query()
-          .select([
+        // Locations come from the daemon; the body is read below, from this
+        // process's own filesystem view — same split the `extract` CLI makes.
+        const [rows] = await locateRows(root, {
+          select: [
             "path",
             "start_line",
             "end_line",
             "role",
             "is_exported",
             "defined_symbols",
-          ])
-          .where(
-            `array_contains(defined_symbols, '${escapeSqlString(symbol)}') AND ${pathStartsWith(prefix)}`,
-          )
-          .limit(10)
-          .toArray();
+          ],
+          matches: [{ kind: "definedSymbol", symbol }],
+          limit: 10,
+        });
 
-        if (rows.length === 0) {
+        if (!rows || rows.length === 0) {
           return ok(
             `Symbol '${symbol}' not found in the index. Check \`gmax status\` to see which projects are indexed, or try \`gmax search ${symbol}\` to find similar symbols.`,
           );
@@ -1173,7 +1492,7 @@ export const mcp = new Command("mcp")
           DEFINITION: 2,
           IMPLEMENTATION: 1,
         };
-        const sorted = rows.sort((a: any, b: any) => {
+        const sorted = [...rows].sort((a: any, b: any) => {
           const aDefs = Array.isArray(a.defined_symbols)
             ? a.defined_symbols
             : [];
@@ -1235,8 +1554,7 @@ export const mcp = new Command("mcp")
 
         return ok(parts.join("\n"));
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return err(`Extract failed: ${msg}`);
+        return toolError("Extract failed", e);
       }
     }
 
@@ -1252,10 +1570,11 @@ export const mcp = new Command("mcp")
         if (!proj) return err("Project not added to gmax yet.");
         const depth = Math.min(Math.max(Number(args.depth || 1), 1), 3);
 
-        const db = getVectorDb();
-        const { GraphBuilder } = await import("../lib/graph/graph-builder");
-        const builder = new GraphBuilder(db, root);
-        const graph = await builder.buildGraph(symbol);
+        // One verb for the whole tool: the graph, the defining chunk's
+        // is_exported/start_line/end_line, and (when depth > 1) the multi-hop
+        // caller tree. Four queries became one round trip.
+        const peek = await peekSymbolGraph(root, symbol, depth);
+        const graph = peek.graph;
 
         if (!graph.center) {
           return ok(
@@ -1267,27 +1586,11 @@ export const mcp = new Command("mcp")
         const rel = (p: string) =>
           p.startsWith(root) ? p.slice(root.length + 1) : p;
 
-        // Get chunk metadata for is_exported and end_line
-        const table = await db.ensureTable();
-        const prefix = root.endsWith("/") ? root : `${root}/`;
-        const metaRows = await table
-          .query()
-          .select(["is_exported", "start_line", "end_line"])
-          .where(
-            `array_contains(defined_symbols, '${escapeSqlString(symbol)}') AND ${pathStartsWith(prefix)}`,
-          )
-          .limit(1)
-          .toArray();
-        const exported =
-          metaRows.length > 0 && Boolean((metaRows[0] as any).is_exported);
-        const startLine =
-          metaRows.length > 0
-            ? Number((metaRows[0] as any).start_line || 0)
-            : center.line;
-        const endLine =
-          metaRows.length > 0
-            ? Number((metaRows[0] as any).end_line || 0)
-            : center.line;
+        // Chunk metadata for is_exported and end_line; null when the symbol has
+        // no defining chunk, in which case the center's own line stands in.
+        const exported = peek.meta?.isExported ?? false;
+        const startLine = peek.meta?.startLine ?? center.line;
+        const endLine = peek.meta?.endLine ?? center.line;
 
         // Get signature from source
         const fs = await import("node:fs");
@@ -1315,7 +1618,6 @@ export const mcp = new Command("mcp")
           edgeKind?: "free" | "member" | "type";
         }>;
         if (depth > 1) {
-          const multiHop = await builder.buildGraphMultiHop(symbol, depth);
           const flat: Array<{
             symbol: string;
             file: string;
@@ -1333,7 +1635,7 @@ export const mcp = new Command("mcp")
               walkCallers(t.callers);
             }
           }
-          walkCallers(multiHop.callerTree);
+          walkCallers(peek.callerTree ?? []);
           callerList = flat;
         } else {
           callerList = graph.callers;
@@ -1394,8 +1696,7 @@ export const mcp = new Command("mcp")
 
         return ok(parts.join("\n"));
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return err(`Peek failed: ${msg}`);
+        return toolError("Peek failed", e);
       }
     }
 
@@ -1409,41 +1710,30 @@ export const mcp = new Command("mcp")
       try {
         const { proj, root } = resolveRegisteredProject(args.root);
         if (!proj) return err("Project not added to gmax yet.");
-        const db = getVectorDb();
-        const table = await db.ensureTable();
-        const prefix = root.endsWith("/") ? root : `${root}/`;
+        const scope = projectScope(root);
+        const facts = await graphVerb<GraphDeadFacts>("graph.dead", {
+          projectRoot: root,
+          scope,
+          payload: { target: symbol },
+          render: (resp) => resp.dead as GraphDeadFacts,
+          inProcess: () =>
+            localStore((deps) =>
+              runGraphDead(deps.vectorDb!, { symbol, scope }),
+            ),
+        });
 
-        const defRows = await table
-          .query()
-          .select(["path", "start_line", "is_exported"])
-          .where(
-            `array_contains(defined_symbols, '${escapeSqlString(symbol)}') AND ${pathStartsWith(prefix)}`,
-          )
-          .limit(1)
-          .toArray();
-
-        if (defRows.length === 0) {
+        if (!facts.found) {
           return ok(
             `Symbol '${symbol}' not found in the index. Check \`gmax status\` to see which projects are indexed, or try \`gmax search ${symbol}\` to find similar symbols.`,
           );
         }
 
-        const defRow = defRows[0] as any;
-        const defPath = String(defRow.path || "");
-        const defLine = Number(defRow.start_line || 0);
-        const isExported = Boolean(defRow.is_exported);
-
-        const builder = new GraphBuilder(db, root);
-        const callers = await builder.getCallers(
-          symbol,
-          languageFamilyForPath(defPath),
-        );
         const rel = (p: string) =>
           p.startsWith(root) ? p.slice(root.length + 1) : p;
-        const defLoc = `${rel(defPath)}:${defLine + 1}`;
+        const defLoc = `${rel(facts.defPath)}:${facts.defLine + 1}`;
 
-        if (callers.length === 0) {
-          if (isExported) {
+        if (facts.callerCount === 0) {
+          if (facts.isExported) {
             return ok(
               `PUBLIC EXPORT  ${defLoc} defines ${symbol} — no internal callers found; check external usage`,
             );
@@ -1451,17 +1741,16 @@ export const mcp = new Command("mcp")
           return ok(`DEAD  ${defLoc} defines ${symbol}`);
         }
 
-        const top = callers.slice(0, 3);
+        const top = facts.topCallers;
         const lines = [
-          `LIVE  ${defLoc} defines ${symbol} — ${callers.length} inbound caller${callers.length === 1 ? "" : "s"} (top ${top.length}):`,
+          `LIVE  ${defLoc} defines ${symbol} — ${facts.callerCount} inbound caller${facts.callerCount === 1 ? "" : "s"} (top ${top.length}):`,
         ];
         for (const c of top) {
           lines.push(`  ${rel(c.file)}:${c.line + 1}`);
         }
         return ok(lines.join("\n"));
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return err(`Dead check failed: ${msg}`);
+        return toolError("Dead check failed", e);
       }
     }
 
@@ -1471,48 +1760,32 @@ export const mcp = new Command("mcp")
       ensureWatcher();
       const { proj, root } = resolveRegisteredProject(args.root);
       if (!proj) return err("Project not added to gmax yet.");
-      const prefix = root.endsWith("/") ? root : `${root}/`;
       const top = Math.min(Math.max(Number(args.top) || 10, 1), 50);
 
       try {
-        const db = getVectorDb();
-        const table = await db.ensureTable();
-        const rows = await table
-          .query()
-          .select([
-            "path",
-            "start_line",
-            "defined_symbols",
-            "referenced_symbols",
-            "type_referenced_symbols",
-            "is_exported",
-          ])
-          .where(pathStartsWith(prefix))
-          .limit(500000)
-          .toArray();
+        // The 500k-row read and its aggregation stay wherever the store is
+        // open; what crosses the socket is the finished report.
+        const scope = projectScope(root);
+        const audit = await graphVerb<AuditResult | null>("graph.audit", {
+          projectRoot: root,
+          scope,
+          payload: { top },
+          render: (resp) => (resp.audit as AuditResult | null) ?? null,
+          inProcess: () =>
+            localStore((deps) =>
+              runGraphAudit(deps.vectorDb!, {
+                projectRoot: root,
+                scope,
+                top,
+              }),
+            ),
+        });
 
-        if (rows.length === 0) {
+        if (!audit) {
           return ok(
             `No indexed data found for ${root}. Run: gmax index --path ${root}`,
           );
         }
-
-        const audit = computeAudit(
-          rows.map((r) => ({
-            path: String((r as any).path || ""),
-            start_line: Number((r as any).start_line || 0),
-            is_exported: Boolean((r as any).is_exported),
-            defined_symbols: toStringArray((r as any).defined_symbols),
-            referenced_symbols: [
-              ...new Set([
-                ...toStringArray((r as any).referenced_symbols),
-                ...toStringArray((r as any).type_referenced_symbols),
-              ]),
-            ],
-          })),
-          prefix,
-          top,
-        );
 
         const lines: string[] = [];
         lines.push(
@@ -1561,8 +1834,7 @@ export const mcp = new Command("mcp")
         );
         return ok(lines.join("\n"));
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return err(`Audit failed: ${msg}`);
+        return toolError("Audit failed", e);
       }
     }
 
@@ -1606,24 +1878,42 @@ export const mcp = new Command("mcp")
         MAX_SURPRISE_ROWS,
       );
 
+      const options = {
+        sample,
+        neighbors,
+        dirDepth,
+        minSimilarity,
+        maxRows,
+        includeTests: Boolean(args.include_tests),
+        includeEval: Boolean(args.include_eval),
+        in: typeof args.in === "string" ? [args.in] : undefined,
+        exclude: typeof args.exclude === "string" ? [args.exclude] : undefined,
+      };
+
       try {
-        const db = getVectorDb();
-        const table = await db.ensureTable();
-        const result = await analyzeSurprisingConnections(table, root, {
-          sample,
-          neighbors,
-          dirDepth,
-          minSimilarity,
-          maxRows,
-          includeTests: Boolean(args.include_tests),
-          includeEval: Boolean(args.include_eval),
-          in: typeof args.in === "string" ? args.in : undefined,
-          exclude: typeof args.exclude === "string" ? args.exclude : undefined,
+        // The scan can touch 50k rows and every one of their vectors; the verb
+        // returns the summary plus the findings this will print, and drops the
+        // raw `pairs` array entirely.
+        const result = await readStore<SurprisesResult>("surprises", {
+          daemon: () =>
+            sendDaemonCommand(
+              {
+                cmd: "vector.surprises",
+                projectRoot: root,
+                options,
+                top,
+              },
+              { timeoutMs: 120_000 },
+            ),
+          render: (resp) => resp as unknown as SurprisesResult,
+          inProcess: () =>
+            localStore((deps) =>
+              runSurprises(deps, { projectRoot: root, options, top }),
+            ),
         });
         return ok(formatMcpSurprisingConnections(result, top));
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return err(`Surprising connections failed: ${msg}`);
+        return toolError("Surprising connections failed", e);
       }
     }
 
@@ -1638,8 +1928,22 @@ export const mcp = new Command("mcp")
       try {
         const { proj, root } = resolveRegisteredProject(args.root);
         if (!proj) return err("Project not added to gmax yet.");
-        const builder = new GraphBuilder(getVectorDb(), root);
-        const hits = await builder.getNeighbors(symbol, direction, maxHops);
+        const scope = projectScope(root);
+        const hits = await graphVerb<GraphNeighborHit[]>("graph.neighbors", {
+          projectRoot: root,
+          scope,
+          payload: { symbol, direction, maxHops },
+          render: (resp) => (resp.hits as GraphNeighborHit[]) ?? [],
+          inProcess: () =>
+            localStore((deps) =>
+              runGraphNeighbors(deps.vectorDb!, {
+                symbol,
+                direction,
+                maxHops,
+                scope,
+              }),
+            ),
+        });
         if (hits.length === 0) {
           return ok(
             `No ${direction} found for '${symbol}' within ${maxHops} hop(s). Check it is indexed (\`gmax status\`) or try the \`dead\` tool.`,
@@ -1657,8 +1961,7 @@ export const mcp = new Command("mcp")
         if (hits.length > 100) lines.push(`  … and ${hits.length - 100} more`);
         return ok(lines.join("\n"));
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return err(`get_neighbors failed: ${msg}`);
+        return toolError("get_neighbors failed", e);
       }
     }
 
@@ -1676,8 +1979,23 @@ export const mcp = new Command("mcp")
       try {
         const { proj, root } = resolveRegisteredProject(args.root);
         if (!proj) return err("Project not added to gmax yet.");
-        const builder = new GraphBuilder(getVectorDb(), root);
-        const pathSyms = await builder.findPaths(from, to, direction, maxHops);
+        const scope = projectScope(root);
+        const pathSyms = await graphVerb<string[] | null>("graph.paths", {
+          projectRoot: root,
+          scope,
+          payload: { from, to, direction, maxHops },
+          render: (resp) => (resp.path as string[] | null) ?? null,
+          inProcess: () =>
+            localStore((deps) =>
+              runGraphPaths(deps.vectorDb!, {
+                from,
+                to,
+                direction,
+                maxHops,
+                scope,
+              }),
+            ),
+        });
         if (!pathSyms) {
           return ok(
             `No ${direction} path from '${from}' to '${to}' within ${maxHops} hops.`,
@@ -1689,8 +2007,7 @@ export const mcp = new Command("mcp")
           `Path (${hops} hop${hops === 1 ? "" : "s"}): ${pathSyms.join(arrow)}`,
         );
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return err(`find_paths failed: ${msg}`);
+        return toolError("find_paths failed", e);
       }
     }
 
@@ -1707,11 +2024,23 @@ export const mcp = new Command("mcp")
       try {
         const { proj, root } = resolveRegisteredProject(args.root);
         if (!proj) return err("Project not added to gmax yet.");
+        // Resolved here, not daemon-side: verifyExistingTarget looks at this
+        // process's filesystem view, and a path outside the project must fail
+        // with the containment error before anything reaches the store.
         const abs = filesIn.map((f) =>
           resolveContainedPath(root, f, { verifyExistingTarget: true }),
         );
-        const builder = new GraphBuilder(getVectorDb(), root);
-        const sg = await builder.subgraphForFiles(abs);
+        const scope = projectScope(root);
+        const sg = await graphVerb<FileSubgraph>("graph.subgraph", {
+          projectRoot: root,
+          scope,
+          payload: { files: abs },
+          render: (resp) => resp.subgraph as FileSubgraph,
+          inProcess: () =>
+            localStore((deps) =>
+              runGraphSubgraph(deps.vectorDb!, { files: abs, scope }),
+            ),
+        });
         if (sg.symbols.length === 0) {
           return ok(
             `No indexed symbols found in: ${filesIn.join(", ")}. Check the paths and \`gmax status\`.`,
@@ -1743,8 +2072,7 @@ export const mcp = new Command("mcp")
         lines.push(`External deps: ${cap(sg.externalDeps, 50) || "none"}`);
         return ok(lines.join("\n"));
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return err(`subgraph_for_files failed: ${msg}`);
+        return toolError("subgraph_for_files failed", e);
       }
     }
 
@@ -1765,73 +2093,37 @@ export const mcp = new Command("mcp")
       }
 
       try {
-        const db = getVectorDb();
-        const table = await db.ensureTable();
+        // A single absolute prefix carries both scopes: the sub-path when one
+        // was asked for (it is already inside the root), the root otherwise.
+        const absPrefix = pathPrefix
+          ? resolveContainedPath(root, pathPrefix)
+          : root.endsWith("/")
+            ? root
+            : `${root}/`;
 
-        const rootPrefix = root.endsWith("/") ? root : `${root}/`;
-        let where = `array_length(defined_symbols) > 0 AND ${pathStartsWith(rootPrefix)}`;
-        if (pathPrefix) {
-          const absPrefix = resolveContainedPath(root, pathPrefix);
-          where += ` AND ${pathStartsWith(normalizePath(absPrefix))}`;
-        }
-
-        const query = table
-          .query()
-          .select([
-            "defined_symbols",
-            "path",
-            "start_line",
-            "role",
-            "is_exported",
-          ])
-          .where(where)
-          .limit(pattern ? 10000 : Math.max(limit * 50, 2000));
-
-        const rows = await query.toArray();
-
-        const map = new Map<
-          string,
-          {
-            symbol: string;
-            count: number;
-            path: string;
-            line: number;
-            role: string;
-            exported: boolean;
-          }
-        >();
-        for (const row of rows) {
-          const defs = toStringArray((row as any).defined_symbols);
-          const rowPath = String((row as any).path || "");
-          const line = Number((row as any).start_line || 0);
-          const role = String((row as any).role || "");
-          const exported = Boolean((row as any).is_exported);
-          for (const sym of defs) {
-            if (pattern && !sym.toLowerCase().includes(pattern.toLowerCase())) {
-              continue;
-            }
-            const existing = map.get(sym);
-            if (existing) {
-              existing.count += 1;
-            } else {
-              map.set(sym, {
-                symbol: sym,
-                count: 1,
-                path: rowPath,
-                line: Math.max(1, line + 1),
-                role,
-                exported,
-              });
-            }
-          }
-        }
-
-        const entries = Array.from(map.values())
-          .sort((a, b) => {
-            if (b.count !== a.count) return b.count - a.count;
-            return a.symbol.localeCompare(b.symbol);
-          })
-          .slice(0, limit);
+        const entries = await readStore<SymbolEntry[]>("symbols", {
+          daemon: () =>
+            sendDaemonCommand(
+              {
+                cmd: "rows.symbols",
+                projectRoot: root,
+                pathPrefix: absPrefix,
+                pattern,
+                limit,
+              },
+              { timeoutMs: 60_000 },
+            ),
+          render: (resp) => (resp.entries ?? []) as SymbolEntry[],
+          inProcess: () =>
+            localStore((deps) =>
+              runSymbols(deps, {
+                projectRoot: root,
+                pathPrefix: absPrefix,
+                pattern,
+                limit,
+              }),
+            ),
+        });
 
         if (entries.length === 0) {
           return ok(
@@ -1845,12 +2137,13 @@ export const mcp = new Command("mcp")
             : e.path;
           const roleTag = e.role ? ` [${e.role.slice(0, 4)}]` : "";
           const expTag = e.exported ? " exported" : "";
-          return `${e.symbol}${roleTag}${expTag}\t${rel}:${e.line}`;
+          // SymbolEntry.line is the 0-based start_line the store holds; this
+          // tool has always printed a 1-based line, floored at 1.
+          return `${e.symbol}${roleTag}${expTag}\t${rel}:${Math.max(1, e.line + 1)}`;
         });
         return ok(lines.join("\n"));
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return err(`Symbol listing failed: ${msg}`);
+        return toolError("Symbol listing failed", e);
       }
     }
 
@@ -1891,9 +2184,7 @@ export const mcp = new Command("mcp")
         const currentProject = resolveMcpProject(undefined, projectRoot);
         const identity = projectEmbeddingStatus(currentProject, globalConfig);
 
-        const db = getVectorDb();
-        const stats = await db.getStats();
-        const fileCount = await db.getDistinctFileCount();
+        const { chunks, files } = await indexTotals(projects);
 
         // Watcher status
         const watcher = getWatcherCoveringPath(projectRoot);
@@ -1914,7 +2205,7 @@ export const mcp = new Command("mcp")
         // per-project chunk counts) lives in `list_projects` — keep this tool
         // focused on index health and avoid the N-project LanceDB scans.
         const lines = [
-          `Index: ~/.gmax/lancedb (${stats.chunks} chunks, ${fileCount} files)`,
+          `Index: ~/.gmax/lancedb (${chunks} chunks, ${files} files)`,
           `Configured embedding: ${identity.configured.tier} ${identity.configured.vectorDim}d [${embeddingFingerprintLabel(identity.configured.fingerprint)}] (${globalConfig.embedMode})`,
           identity.built
             ? `Built embedding: ${identity.built.tier} ${identity.built.vectorDim}d [${embeddingFingerprintLabel(identity.built.fingerprint)}] (${identity.state})`
@@ -1927,8 +2218,7 @@ export const mcp = new Command("mcp")
         ].filter(Boolean);
         return ok(lines.join("\n"));
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return err(`Status check failed: ${msg}`);
+        return toolError("Status check failed", e);
       }
     }
 
@@ -1945,9 +2235,18 @@ export const mcp = new Command("mcp")
       const limit = Math.min(Math.max(Number(args.limit) || 200, 1), 5000);
 
       try {
-        const db = getVectorDb();
+        // `generateSummaries` is a deliberate no-op stub — the summarizer is
+        // decommissioned (see the HARD STOP at the top of CLAUDE.md) — and it
+        // touches neither the VectorDB it is handed nor any other store.
+        // Opening one here would take a reader lease under ~/.gmax purely to
+        // reach a function that returns {0, 0}, which is precisely the
+        // per-session reader this tool set no longer holds. It is still called
+        // rather than inlined so the stub stays the single source of truth.
+        const noStoreNeeded = null as unknown as Parameters<
+          typeof generateSummaries
+        >[0];
         const { summarized, remaining } = await generateSummaries(
-          db,
+          noStoreNeeded,
           prefix,
           (done, total) => {
             console.log(`[summarize] ${done}/${total} chunks`);
@@ -1968,8 +2267,7 @@ export const mcp = new Command("mcp")
           `Summarized ${summarized} chunks in ${path.basename(dir)}/${remainMsg}`,
         );
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return err(`Summarization failed: ${msg}`);
+        return toolError("Summarization failed", e);
       }
     }
 
@@ -1978,154 +2276,78 @@ export const mcp = new Command("mcp")
     ): Promise<ToolResult> {
       const { proj, root } = resolveRegisteredProject(args.root);
       if (!proj) return err("Project not added to gmax yet.");
-      const prefix = root.endsWith("/") ? root : `${root}/`;
       const projectName = path.basename(root);
 
       try {
-        const db = getVectorDb();
-        const table = await db.ensureTable();
+        // `rows.project` returns the finished overview, not the up-to-200 000
+        // rows it was computed from — the same aggregation `gmax project` runs,
+        // in whichever process holds the store.
+        const overview = await readStore<ProjectOverview>("project", {
+          daemon: () =>
+            sendDaemonCommand(
+              { cmd: "rows.project", projectRoot: root },
+              { timeoutMs: 120_000 },
+            ),
+          render: (resp) => resp.overview as ProjectOverview,
+          inProcess: () => localStore((deps) => runProject(deps, root)),
+        });
 
-        const rows = await table
-          .query()
-          .select([
-            "path",
-            "role",
-            "is_exported",
-            "complexity",
-            "defined_symbols",
-            "referenced_symbols",
-          ])
-          .where(pathStartsWith(prefix))
-          .limit(200000)
-          .toArray();
-
-        if (rows.length === 0) {
+        if (overview.chunks === 0) {
           return ok(
             `No indexed data found for ${root}. Run: gmax index --path ${root}`,
           );
         }
 
-        const files = new Set<string>();
-        const extCounts = new Map<string, number>();
-        const dirCounts = new Map<
-          string,
-          { files: Set<string>; chunks: number }
-        >();
-        const roleCounts = new Map<string, number>();
-        const symbolRefs = new Map<string, number>();
-        const entryPoints: Array<{ symbol: string; path: string }> = [];
-
-        for (const row of rows) {
-          const p = String((row as any).path || "");
-          const role = String((row as any).role || "IMPLEMENTATION");
-          const exported = Boolean((row as any).is_exported);
-          const complexity = Number((row as any).complexity || 0);
-          const defs = toStringArray((row as any).defined_symbols);
-          const refs = toStringArray((row as any).referenced_symbols);
-
-          files.add(p);
-
-          const ext = path.extname(p).toLowerCase() || path.basename(p);
-          extCounts.set(ext, (extCounts.get(ext) || 0) + 1);
-
-          const rel = p.startsWith(prefix) ? p.slice(prefix.length) : p;
-          const parts = rel.split("/");
-          const dir =
-            parts.length > 2
-              ? `${parts.slice(0, 2).join("/")}/`
-              : parts.length > 1
-                ? `${parts[0]}/`
-                : "(root)";
-          if (!dirCounts.has(dir)) {
-            dirCounts.set(dir, { files: new Set(), chunks: 0 });
-          }
-          const dc = dirCounts.get(dir)!;
-          dc.files.add(p);
-          dc.chunks++;
-
-          roleCounts.set(role, (roleCounts.get(role) || 0) + 1);
-
-          for (const ref of refs) {
-            symbolRefs.set(ref, (symbolRefs.get(ref) || 0) + 1);
-          }
-
-          if (
-            exported &&
-            role === "ORCHESTRATION" &&
-            complexity >= 5 &&
-            defs.length > 0
-          ) {
-            const relPath = p.startsWith(prefix) ? p.slice(prefix.length) : p;
-            entryPoints.push({ symbol: defs[0], path: relPath });
-          }
-        }
+        const pct = (count: number) =>
+          Math.round((count / overview.chunks) * 100);
 
         const lines: string[] = [];
-        const projects = listProjects();
-        const proj = projects.find((p) => p.root === root);
         lines.push(`Project: ${projectName} (${root})`);
         lines.push(
-          `Last indexed: ${proj?.lastIndexed ?? "unknown"} • ${rows.length} chunks • ${files.size} files`,
+          `Last indexed: ${proj.lastIndexed ?? "unknown"} • ${overview.chunks} chunks • ${overview.files} files`,
         );
         lines.push("");
 
-        const extEntries = Array.from(extCounts.entries())
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 8);
-        const langLine = extEntries
-          .map(
-            ([ext, count]) =>
-              `${ext} (${Math.round((count / rows.length) * 100)}%)`,
-          )
-          .join(", ");
-        lines.push(`Languages: ${langLine}`);
+        lines.push(
+          `Languages: ${overview.extEntries
+            .map(([ext, count]) => `${ext} (${pct(count)}%)`)
+            .join(", ")}`,
+        );
         lines.push("");
 
         lines.push("Directory structure:");
-        const dirEntries = Array.from(dirCounts.entries())
-          .sort((a, b) => b[1].chunks - a[1].chunks)
-          .slice(0, 12);
-        for (const [dir, data] of dirEntries) {
+        for (const [dir, data] of overview.dirEntries) {
           lines.push(
-            `  ${dir.padEnd(25)} (${data.files.size} files, ${data.chunks} chunks)`,
+            `  ${dir.padEnd(25)} (${data.files} files, ${data.chunks} chunks)`,
           );
         }
         lines.push("");
 
-        const roleEntries = Array.from(roleCounts.entries()).sort(
-          (a, b) => b[1] - a[1],
+        lines.push(
+          `Roles: ${overview.roleEntries
+            .map(([role, count]) => `${pct(count)}% ${role}`)
+            .join(", ")}`,
         );
-        const roleLine = roleEntries
-          .map(
-            ([role, count]) =>
-              `${Math.round((count / rows.length) * 100)}% ${role}`,
-          )
-          .join(", ");
-        lines.push(`Roles: ${roleLine}`);
         lines.push("");
 
-        const topSymbols = Array.from(symbolRefs.entries())
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 8);
-        if (topSymbols.length > 0) {
+        if (overview.topSymbols.length > 0) {
           lines.push("Key symbols (by reference count):");
-          for (const [sym, count] of topSymbols) {
+          for (const [sym, count] of overview.topSymbols) {
             lines.push(`  ${sym.padEnd(25)} (referenced ${count}x)`);
           }
           lines.push("");
         }
 
-        if (entryPoints.length > 0) {
+        if (overview.entryPoints.length > 0) {
           lines.push("Entry points (exported orchestration):");
-          for (const ep of entryPoints.slice(0, 10)) {
+          for (const ep of overview.entryPoints) {
             lines.push(`  ${ep.symbol.padEnd(25)} ${ep.path}`);
           }
         }
 
         return ok(lines.join("\n"));
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return err(`Project summary failed: ${msg}`);
+        return toolError("Project summary failed", e);
       }
     }
 
@@ -2145,16 +2367,14 @@ export const mcp = new Command("mcp")
       const rootPrefix = root.endsWith("/") ? root : `${root}/`;
 
       try {
-        const db = getVectorDb();
-        const table = await db.ensureTable();
+        // The file's own chunks, unscoped: the file was named explicitly.
+        const [fileChunks] = await locateRows(root, {
+          select: ["defined_symbols", "referenced_symbols"],
+          matches: [{ kind: "path", path: absPath }],
+          scoped: false,
+        });
 
-        const fileChunks = await table
-          .query()
-          .select(["defined_symbols", "referenced_symbols"])
-          .where(`path = '${escapeSqlString(absPath)}'`)
-          .toArray();
-
-        if (fileChunks.length === 0) {
+        if (!fileChunks || fileChunks.length === 0) {
           return ok(
             `File not found in index: ${file}. Check that the path is relative to the project root. Run \`gmax status\` to see indexed projects.`,
           );
@@ -2163,44 +2383,46 @@ export const mcp = new Command("mcp")
         const definedHere = new Set<string>();
         const referencedHere = new Set<string>();
         for (const chunk of fileChunks) {
-          for (const s of toStringArray((chunk as any).defined_symbols))
+          for (const s of toStringArray(chunk.defined_symbols))
             definedHere.add(s);
-          for (const s of toStringArray((chunk as any).referenced_symbols))
+          for (const s of toStringArray(chunk.referenced_symbols))
             referencedHere.add(s);
         }
 
-        // Dependencies: files that DEFINE symbols this file REFERENCES
+        // Dependencies: files that DEFINE symbols this file REFERENCES. One
+        // batched round trip instead of one per symbol — the daemon runs the
+        // same N selects, the socket carries one request.
+        const depSymbols = [...referencedHere].filter(
+          (s) => !definedHere.has(s),
+        );
         const depCounts = new Map<string, number>();
-        for (const sym of referencedHere) {
-          if (definedHere.has(sym)) continue;
-          const rows = await table
-            .query()
-            .select(["path"])
-            .where(
-              `array_contains(defined_symbols, '${escapeSqlString(sym)}') AND ${pathStartsWith(rootPrefix)}`,
-            )
-            .limit(3)
-            .toArray();
+        for (const rows of await locateRows(root, {
+          select: ["path"],
+          matches: depSymbols.map((symbol) => ({
+            kind: "definedSymbol" as const,
+            symbol,
+          })),
+          limit: 3,
+        })) {
           for (const row of rows) {
-            const p = String((row as any).path || "");
+            const p = String(row.path || "");
             if (p === absPath) continue;
             depCounts.set(p, (depCounts.get(p) || 0) + 1);
           }
         }
 
-        // Dependents: files that REFERENCE symbols this file DEFINES
+        // Dependents: files that REFERENCE symbols this file DEFINES.
         const revCounts = new Map<string, number>();
-        for (const sym of definedHere) {
-          const rows = await table
-            .query()
-            .select(["path"])
-            .where(
-              `array_contains(referenced_symbols, '${escapeSqlString(sym)}') AND ${pathStartsWith(rootPrefix)}`,
-            )
-            .limit(20)
-            .toArray();
+        for (const rows of await locateRows(root, {
+          select: ["path"],
+          matches: [...definedHere].map((symbol) => ({
+            kind: "referencedSymbol" as const,
+            symbol,
+          })),
+          limit: 20,
+        })) {
           for (const row of rows) {
-            const p = String((row as any).path || "");
+            const p = String(row.path || "");
             if (p === absPath) continue;
             revCounts.set(p, (revCounts.get(p) || 0) + 1);
           }
@@ -2247,8 +2469,7 @@ export const mcp = new Command("mcp")
 
         return ok(lines.join("\n"));
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return err(`Related files failed: ${msg}`);
+        return toolError("Related files failed", e);
       }
     }
 
@@ -2333,16 +2554,14 @@ export const mcp = new Command("mcp")
           const searchOptions = {
             rerank: process.env.GMAX_RERANK === "1",
           };
-          const response =
-            (await daemonSearch({
-              projectRoot: root,
-              query,
-              limit,
-              filters: {},
-              pathPrefix: root,
-              ...searchOptions,
-            })) ??
-            (await getSearcher().search(query, limit, searchOptions, {}, root));
+          const response = await searchStore({
+            projectRoot: root,
+            query,
+            limit,
+            filters: {},
+            pathPrefix: root,
+            ...searchOptions,
+          });
           const changedSet = new Set(changedFiles);
           // searcher.search() returns mapped chunks (path under metadata.path);
           // changedFiles are absolute, so match on the resolved absolute path.
@@ -2366,32 +2585,36 @@ export const mcp = new Command("mcp")
           return ok(lines.join("\n"));
         }
 
-        const db = getVectorDb();
-        const table = await db.ensureTable();
-        const lines: string[] = [];
-        for (const file of changedFiles) {
-          const chunks = await table
-            .query()
-            .select(["defined_symbols", "role"])
-            .where(`path = '${escapeSqlString(file)}'`)
-            .limit(50)
-            .toArray();
-          const symbols = chunks.flatMap((c: any) =>
-            toStringArray(c.defined_symbols),
-          );
-          lines.push(
-            symbols.length > 0
-              ? `${rel(file)} (${symbols.slice(0, 5).join(", ")}${symbols.length > 5 ? "..." : ""})`
-              : rel(file),
+        // One matcher per changed file, batched. `rows.locate` accepts up to
+        // 2000 matchers per request, so a very large diff is sent in chunks
+        // rather than one oversized line.
+        const MATCH_BATCH = 500;
+        const perFile: Array<Array<Record<string, unknown>>> = [];
+        for (let i = 0; i < changedFiles.length; i += MATCH_BATCH) {
+          perFile.push(
+            ...(await locateRows(root, {
+              select: ["defined_symbols", "role"],
+              matches: changedFiles
+                .slice(i, i + MATCH_BATCH)
+                .map((file) => ({ kind: "path" as const, path: file })),
+              limit: 50,
+              scoped: false,
+            })),
           );
         }
+        const lines: string[] = changedFiles.map((file, i) => {
+          const symbols = (perFile[i] ?? []).flatMap((c) =>
+            toStringArray(c.defined_symbols),
+          );
+          return symbols.length > 0
+            ? `${rel(file)} (${symbols.slice(0, 5).join(", ")}${symbols.length > 5 ? "..." : ""})`
+            : rel(file);
+        });
         return ok(
           `${changedFiles.length} changed file${changedFiles.length === 1 ? "" : "s"}${ref ? ` (vs ${ref})` : ""}:\n${lines.join("\n")}`,
         );
       } catch (e) {
-        return err(
-          `Diff failed: ${e instanceof Error ? e.message : String(e)}`,
-        );
+        return toolError("Diff failed", e);
       }
     }
 
@@ -2407,23 +2630,16 @@ export const mcp = new Command("mcp")
         const { proj, root } = resolveRegisteredProject();
         if (!proj) return err("Project not added to gmax yet.");
         const scopedTarget = containMcpTarget(root, target);
-        const { resolveTargetSymbols, findTests } = await import(
-          "../lib/graph/impact"
-        );
-        const db = getVectorDb();
-        const { symbols, symbolFamilies } = await resolveTargetSymbols(
+        const { symbols, symbolFamilies } = await resolveTarget(
+          root,
           scopedTarget,
-          db,
-          mcpRootPrefix(root),
         );
         if (symbols.length === 0) return ok(`No symbols found for: ${target}`);
 
-        const tests = await findTests(
-          symbols,
-          db,
+        const tests = await findTestsForSymbols(
           root,
+          symbols,
           depth,
-          undefined,
           symbolFamilies,
         );
         if (tests.length === 0) return ok(`No tests found for ${target}.`);
@@ -2436,9 +2652,7 @@ export const mcp = new Command("mcp")
         });
         return ok(`Tests for ${target}:\n${lines.join("\n")}`);
       } catch (e) {
-        return err(
-          `Find tests failed: ${e instanceof Error ? e.message : String(e)}`,
-        );
+        return toolError("Find tests failed", e);
       }
     }
 
@@ -2456,48 +2670,58 @@ export const mcp = new Command("mcp")
         const { proj, root } = resolveRegisteredProject();
         if (!proj) return err("Project not added to gmax yet.");
         const scopedTarget = containMcpTarget(root, target);
-        const {
-          resolveTargetSymbols,
-          findTests,
-          findDependents,
-          findDependentsDetailed,
-          isTestPath,
-        } = await import("../lib/graph/impact");
+        const { isTestPath } = await import("../lib/graph/impact");
         const { buildImpactRollup, formatImpactRollupAgent } = await import(
           "../lib/graph/impact-rollup"
         );
-        const db = getVectorDb();
-        const { symbols, resolvedAsFile, symbolFamilies } =
-          await resolveTargetSymbols(scopedTarget, db, root);
+        const { symbols, resolvedAsFile, symbolFamilies } = await resolveTarget(
+          root,
+          scopedTarget,
+        );
         if (symbols.length === 0) return ok(`No symbols found for: ${target}`);
 
         const targetPath = resolvedAsFile
           ? resolveContainedPath(root, scopedTarget)
           : undefined;
-        const excludePaths = targetPath ? new Set([targetPath]) : undefined;
-        const rollupLimit = Math.min(Math.max(top * 10, 100), 500);
+        const excludePaths = targetPath ? [targetPath] : undefined;
+        // The flat (non-rollup) call keeps findDependents' own default of 10;
+        // `undefined` on the wire is what preserves it.
+        const limit = rollup
+          ? Math.min(Math.max(top * 10, 100), 500)
+          : undefined;
+        const scope = projectScope(root);
 
         const [dependents, tests] = await Promise.all([
-          rollup
-            ? findDependentsDetailed(
+          graphVerb<DependentHit[] | DetailedDependentHit[]>(
+            "graph.dependents",
+            {
+              projectRoot: root,
+              scope,
+              payload: {
                 symbols,
-                db,
-                root,
+                detailed: rollup,
                 excludePaths,
-                rollupLimit,
-                undefined,
-                symbolFamilies,
-              )
-            : findDependents(
-                symbols,
-                db,
-                root,
-                excludePaths,
-                undefined,
-                undefined,
-                symbolFamilies,
-              ),
-          findTests(symbols, db, root, depth, undefined, symbolFamilies),
+                limit,
+                families: symbolFamilies,
+              },
+              render: (resp) =>
+                (resp.dependents as DependentHit[] | DetailedDependentHit[]) ??
+                [],
+              inProcess: () =>
+                localStore((deps) =>
+                  runGraphDependents(deps.vectorDb!, {
+                    symbols,
+                    queryRoot: root,
+                    detailed: rollup,
+                    excludePaths,
+                    limit,
+                    excludePrefixes: scope.excludePrefixes,
+                    families: decodeSymbolFamilies(symbolFamilies),
+                  }),
+                ),
+            },
+          ),
+          findTestsForSymbols(root, symbols, depth, symbolFamilies),
         ]);
 
         if (rollup) {
@@ -2544,9 +2768,7 @@ export const mcp = new Command("mcp")
         }
         return ok(sections.join("\n"));
       } catch (e) {
-        return err(
-          `Impact analysis failed: ${e instanceof Error ? e.message : String(e)}`,
-        );
+        return toolError("Impact analysis failed", e);
       }
     }
 
@@ -2563,80 +2785,66 @@ export const mcp = new Command("mcp")
         const { proj, root } = resolveRegisteredProject();
         if (!proj) return err("Project not added to gmax yet.");
         assertEmbeddingSearchCompatible([proj], readGlobalConfig());
-        const db = getVectorDb();
-        const table = await db.ensureTable();
         const isFile =
           target.includes("/") ||
           (target.includes(".") && !target.includes(" "));
+        // Resolved here: containment is this process's filesystem question.
+        const absPath = isFile ? resolveContainedPath(root, target) : undefined;
+        const scope = projectScope(root);
 
-        let sourceRows: any[];
-        if (isFile) {
-          const absPath = resolveContainedPath(root, target);
-          sourceRows = await table
-            .query()
-            .select(["vector", "path", "start_line"])
-            .where(`path = '${escapeSqlString(absPath)}'`)
-            .limit(1)
-            .toArray();
-        } else {
-          sourceRows = await table
-            .query()
-            .select(["vector", "path", "start_line"])
-            .where(
-              `array_contains(defined_symbols, '${escapeSqlString(target)}') AND ${pathStartsWith(`${root}/`)}`,
-            )
-            .limit(1)
-            .toArray();
-        }
+        // The source chunk's vector never leaves the store: the daemon looks it
+        // up, runs the vector search, and returns the ranked chunks.
+        const result = await readStore<SimilarResult>("similar", {
+          daemon: () =>
+            sendDaemonCommand(
+              {
+                cmd: "vector.similar",
+                projectRoot: root,
+                absPath,
+                symbol: isFile ? undefined : target,
+                scope: scopeToWire(scope),
+                limit,
+                threshold,
+              },
+              { timeoutMs: 60_000 },
+            ),
+          render: (resp) => resp as unknown as SimilarResult,
+          inProcess: () =>
+            localStore((deps) =>
+              runSimilar(deps, {
+                projectRoot: root,
+                absPath,
+                symbol: isFile ? undefined : target,
+                scope,
+                limit,
+                threshold,
+              }),
+            ),
+        });
 
-        if (sourceRows.length === 0)
+        if (result.status === "not-found") {
           return ok(
             isFile
               ? `File not found: ${target}`
               : `Symbol not found: ${target}`,
           );
-
-        const source = sourceRows[0];
-        if (!source.vector || source.vector.length === 0)
+        }
+        if (result.status === "no-vector") {
           return ok("Source chunk has no embedding.");
-
-        const results = await configureAnnVectorQuery(
-          table.vectorSearch(source.vector),
-        )
-          .select([
-            "path",
-            "start_line",
-            "defined_symbols",
-            "role",
-            "_distance",
-          ])
-          .where(pathStartsWith(`${root}/`))
-          .limit(limit + 5)
-          .toArray();
-
-        let filtered = results.filter(
-          (r: any) =>
-            !(r.path === source.path && r.start_line === source.start_line),
-        );
-        if (threshold > 0)
-          filtered = filtered.filter(
-            (r: any) => 1 / (1 + (r._distance ?? 0)) >= threshold,
-          );
-
-        if (filtered.length === 0)
+        }
+        if (result.results.length === 0) {
           return ok(`No similar code found for ${target}.`);
+        }
 
         const rel = (p: string) =>
           p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p;
-        const lines = filtered.slice(0, limit).map((r: any) => {
-          const sym = toStringArray(r.defined_symbols)?.[0] ?? "";
-          return `${rel(r.path)}:${Number(r.start_line ?? 0) + 1} ${sym} [${r.role || "IMPL"}] d=${(r._distance ?? 0).toFixed(3)}`;
+        const lines = result.results.slice(0, limit).map((r) => {
+          const sym = r.defined_symbols[0] ?? "";
+          return `${rel(r.path)}:${r.start_line + 1} ${sym} [${r.role || "IMPL"}] d=${r._distance.toFixed(3)}`;
         });
         return ok(`Similar to ${target}:\n${lines.join("\n")}`);
       } catch (e) {
-        return err(
-          `Similar search failed: ${e instanceof Error ? e.message : String(e)}`,
-        );
+        return toolError("Similar search failed", e);
       }
     }
 
@@ -2654,16 +2862,14 @@ export const mcp = new Command("mcp")
         if (!proj) return err("Project not added to gmax yet.");
         assertEmbeddingSearchCompatible([proj], readGlobalConfig());
         const searchOptions = { rerank: process.env.GMAX_RERANK === "1" };
-        const response =
-          (await daemonSearch({
-            projectRoot: root,
-            query: topic,
-            limit,
-            filters: {},
-            pathPrefix: root,
-            ...searchOptions,
-          })) ??
-          (await getSearcher().search(topic, limit, searchOptions, {}, root));
+        const response = await searchStore({
+          projectRoot: root,
+          query: topic,
+          limit,
+          filters: {},
+          pathPrefix: root,
+          ...searchOptions,
+        });
         if (response.data.length === 0)
           return ok(`No results found for "${topic}".`);
 
@@ -2708,9 +2914,7 @@ export const mcp = new Command("mcp")
         sections.push(`\n(~${tokensUsed}/${budget} tokens)`);
         return ok(sections.join("\n"));
       } catch (e) {
-        return err(
-          `Context generation failed: ${e instanceof Error ? e.message : String(e)}`,
-        );
+        return toolError("Context generation failed", e);
       }
     }
 
@@ -2811,22 +3015,62 @@ export const mcp = new Command("mcp")
       ensureWatcher();
       const commitRef = String(args.commit || "HEAD");
       try {
-        const db = getVectorDb();
-        const builder = new GraphBuilder(db, projectRoot);
-        const { gatherRiskInputs, computeRiskTable, formatRiskTable } =
-          await import("../lib/review/risk");
-        const inputs = await gatherRiskInputs(commitRef, projectRoot, {
-          vectorDb: db,
-          graphBuilder: builder,
+        // `gatherRiskInputs` mixes git and the graph. The git half stays here —
+        // the diff and the churn count both need a working tree — and only the
+        // graph half (callers, definition, tests) goes to the daemon, the same
+        // split `extract` makes when it reads a body locally after the daemon
+        // returns the location.
+        const { extractDiff, extractSymbols, fileChurn } = await import(
+          "../lib/llm/diff"
+        );
+        const { computeRiskTable, formatRiskTable } = await import(
+          "../lib/review/risk"
+        );
+
+        const diff = extractDiff(commitRef, projectRoot);
+        const symbols = diff ? extractSymbols(diff) : [];
+        if (symbols.length === 0) {
+          return ok("(no changed symbols in this diff)");
+        }
+
+        const scope = projectScope(projectRoot);
+        const facts = await graphVerb<GraphRiskFact[]>("graph.risk", {
+          projectRoot,
+          scope,
+          payload: { symbols },
+          render: (resp) => (resp.facts as GraphRiskFact[]) ?? [],
+          inProcess: () =>
+            localStore((deps) =>
+              runGraphRisk(deps.vectorDb!, {
+                symbols,
+                queryRoot: projectRoot,
+                scope,
+              }),
+            ),
         });
-        const rows = computeRiskTable(inputs);
+
+        const prefix = projectRoot.endsWith("/")
+          ? projectRoot
+          : `${projectRoot}/`;
+        const rows = computeRiskTable(
+          facts.map((fact) => ({
+            symbol: fact.symbol,
+            file: fact.file
+              ? fact.file.startsWith(prefix)
+                ? fact.file.slice(prefix.length)
+                : fact.file
+              : "(unindexed)",
+            line: fact.line,
+            callerCount: fact.callerCount,
+            hasTests: fact.hasTests,
+            churn: fileChurn(fact.file, projectRoot),
+          })),
+        );
         return rows.length === 0
           ? ok("(no changed symbols in this diff)")
           : ok(formatRiskTable(rows, { agent: true }));
       } catch (e) {
-        return err(
-          `Risk ranking failed: ${e instanceof Error ? e.message : String(e)}`,
-        );
+        return toolError("Risk ranking failed", e);
       }
     }
 

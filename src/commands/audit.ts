@@ -10,14 +10,6 @@ import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import { reportStoreAccessRefusal } from "../lib/utils/store-access";
 
-// The aggregator moved to graph-handler.ts so the daemon can run it without
-// importing a command module; re-exported because mcp.ts builds its own audit
-// over rows it already holds.
-export {
-  type AuditRow,
-  computeAudit,
-} from "../lib/daemon/graph-handler";
-
 const useColors = process.stdout.isTTY && !process.env.NO_COLOR;
 const style = {
   bold: (s: string) => (useColors ? `\x1b[1m${s}\x1b[22m` : s),

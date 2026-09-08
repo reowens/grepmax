@@ -11,8 +11,12 @@ import {
   runGraphAudit,
   runGraphDead,
   runGraphDependents,
+  runGraphNeighbors,
+  runGraphPaths,
   runGraphPeek,
   runGraphResolve,
+  runGraphRisk,
+  runGraphSubgraph,
   runGraphTests,
   runGraphTrace,
   scopeFromPrefixes,
@@ -434,5 +438,151 @@ describe("computeAudit", () => {
       },
     ]);
     expect(report.deadCandidates.map((d) => d.symbol)).toEqual(["beta"]);
+  });
+});
+
+/**
+ * The four verbs WP-D added for the MCP tools with no CLI twin. Same fixture,
+ * same contract: the daemon and a daemonless client both call these functions,
+ * so what they return here is what both paths render.
+ */
+describe("runGraphNeighbors", () => {
+  it("walks caller edges and resolves each hit to its definition", async () => {
+    const hits = await runGraphNeighbors(db, {
+      symbol: "handleAuth",
+      direction: "callers",
+      maxHops: 2,
+      scope: wholeProject(),
+    });
+    const byName = new Map(hits.map((h) => [h.symbol, h]));
+    expect([...byName.keys()]).toContain("startServer");
+    expect(byName.get("startServer")).toMatchObject({
+      hops: 1,
+      file: `${PROJECT}/src/server.ts`,
+      line: 7,
+    });
+  });
+
+  it("walks callee edges in the other direction", async () => {
+    const hits = await runGraphNeighbors(db, {
+      symbol: "startServer",
+      direction: "callees",
+      maxHops: 2,
+      scope: wholeProject(),
+    });
+    expect(hits.map((h) => h.symbol)).toContain("handleAuth");
+  });
+
+  it("honours the scope's exclude prefixes", async () => {
+    const scoped = resolveScope({ projectRoot: PROJECT, exclude: ["vendor"] });
+    const hits = await runGraphNeighbors(db, {
+      symbol: "handleAuth",
+      direction: "callers",
+      maxHops: 2,
+      scope: scoped,
+    });
+    expect(hits.map((h) => h.symbol)).not.toContain("vendorThing");
+  });
+
+  it("clamps hops into 1..5 rather than trusting the payload", async () => {
+    // 0 and 999 both have to become a bounded walk; the assertion is that the
+    // call returns at all and stays inside the fixture.
+    for (const maxHops of [0, 999, Number.NaN]) {
+      const hits = await runGraphNeighbors(db, {
+        symbol: "handleAuth",
+        direction: "callers",
+        maxHops,
+        scope: wholeProject(),
+      });
+      expect(Array.isArray(hits)).toBe(true);
+    }
+  });
+});
+
+describe("runGraphPaths", () => {
+  it("returns the symbol sequence from start to target", async () => {
+    const path = await runGraphPaths(db, {
+      from: "startServer",
+      to: "handleAuth",
+      direction: "callees",
+      maxHops: 6,
+      scope: wholeProject(),
+    });
+    expect(path).toEqual(["startServer", "handleAuth"]);
+  });
+
+  it("returns null when the target is unreachable", async () => {
+    const path = await runGraphPaths(db, {
+      from: "handleAuth",
+      to: "privateOnly",
+      direction: "callees",
+      maxHops: 3,
+      scope: wholeProject(),
+    });
+    expect(path).toBeNull();
+  });
+});
+
+describe("runGraphSubgraph", () => {
+  it("returns the file set's symbols, internal edges, and external deps", async () => {
+    const sg = await runGraphSubgraph(db, {
+      files: [`${PROJECT}/src/auth.ts`, `${PROJECT}/src/server.ts`],
+      scope: wholeProject(),
+    });
+    expect(sg.files).toEqual([
+      `${PROJECT}/src/auth.ts`,
+      `${PROJECT}/src/server.ts`,
+    ]);
+    expect(sg.symbols).toEqual(["handleAuth", "helper", "startServer"]);
+    // startServer references handleAuth, and both are defined in the set.
+    expect(sg.internalEdges).toEqual([
+      { from: "startServer", to: "handleAuth" },
+    ]);
+  });
+
+  it("returns an empty subgraph for an empty file list", async () => {
+    const sg = await runGraphSubgraph(db, {
+      files: [],
+      scope: wholeProject(),
+    });
+    expect(sg).toEqual({
+      files: [],
+      symbols: [],
+      internalEdges: [],
+      externalDeps: [],
+    });
+  });
+});
+
+describe("runGraphRisk", () => {
+  it("returns caller count, definition, and test presence per symbol", async () => {
+    const facts = await runGraphRisk(db, {
+      symbols: ["handleAuth", "privateOnly"],
+      queryRoot: PROJECT,
+      scope: wholeProject(),
+    });
+    expect(facts.map((f) => f.symbol)).toEqual(["handleAuth", "privateOnly"]);
+
+    const auth = facts[0];
+    expect(auth.file).toBe(`${PROJECT}/src/auth.ts`);
+    expect(auth.line).toBe(10);
+    expect(auth.callerCount).toBeGreaterThan(0);
+    expect(auth.hasTests).toBe(true);
+
+    // No caller and no test, and it still reports rather than throwing.
+    expect(facts[1]).toMatchObject({
+      symbol: "privateOnly",
+      callerCount: 0,
+      hasTests: false,
+    });
+  });
+
+  it("reports an unindexed symbol as an empty location, not an error", async () => {
+    const [fact] = await runGraphRisk(db, {
+      symbols: ["neverDefinedAnywhere"],
+      queryRoot: PROJECT,
+      scope: wholeProject(),
+    });
+    expect(fact).toMatchObject({ file: "", line: 0, callerCount: 0 });
   });
 });

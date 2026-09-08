@@ -1,14 +1,9 @@
 import * as fs from "node:fs";
 import { Command } from "commander";
-import {
-  readRows,
-  runTests,
-  scopeToWire,
-  withLocalStore,
-} from "../lib/daemon/rows-handler";
+import { callGraphVerb, runGraphTests } from "../lib/daemon/graph-handler";
+import { readRows, withLocalStore } from "../lib/daemon/rows-handler";
 import type { TestHit } from "../lib/graph/impact";
 import { symbolNotFoundLines } from "../lib/utils/agent-errors";
-import { sendDaemonCommand } from "../lib/utils/daemon-client";
 import { gracefulExit } from "../lib/utils/exit";
 import { extractImportsFromContent } from "../lib/utils/import-extractor";
 import { groupByLanguage } from "../lib/utils/language";
@@ -16,10 +11,8 @@ import { resolveContainedFile } from "../lib/utils/path-containment";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import type { ResolvedScope } from "../lib/utils/scope-filter";
-import {
-  reportStoreAccessRefusal,
-  withStoreRead,
-} from "../lib/utils/store-access";
+import { reportStoreAccessRefusal } from "../lib/utils/store-access";
+import { withFooterTimeout } from "../lib/utils/tests-footer";
 
 const useColors = process.stdout.isTTY && !process.env.NO_COLOR;
 const style = {
@@ -64,38 +57,43 @@ function pickBestMatch(chunks: ChunkMatch[], symbol: string): ChunkMatch {
 }
 
 /**
- * The tests footer. `runTests` wraps `findTests`, which walks the call graph —
- * several LanceDB queries per hop — so it belongs on the daemon's warm store
- * for the same reason the location lookup does.
+ * The tests footer: `findTests`, which walks the call graph — several LanceDB
+ * queries per hop — so it belongs on the daemon's warm store for the same
+ * reason the location lookup does.
+ *
+ * It rides `graph.tests`, not a footer-specific verb. WP-C shipped `rows.tests`
+ * for this one caller before `graph.tests` existed; the two wrapped the same
+ * library call with the same arguments, so the duplicate is gone.
+ *
+ * The footer's 1.5 s budget stays a *client-side* race (`withFooterTimeout`)
+ * rather than a daemon timeout: `null` means "the footer did not finish", and
+ * that has to include a slow round trip, not just a slow query. The verb's own
+ * 60 s socket timeout is the outer bound.
  */
 async function fetchTests(
   symbol: string,
   projectRoot: string,
   lancedbDir: string,
   scope: ResolvedScope,
+  queryRoot: string,
 ): Promise<TestHit[] | null> {
-  return withStoreRead<TestHit[] | null>("extract tests", {
-    daemon: () =>
-      sendDaemonCommand(
-        {
-          cmd: "rows.tests",
-          projectRoot,
-          symbol,
-          scope: scopeToWire(scope),
-        },
-        { timeoutMs: 30_000 },
-      ),
-    render: (resp) => (resp.tests ?? null) as TestHit[] | null,
-    inProcess: () =>
-      withLocalStore(lancedbDir, (deps) =>
-        runTests(deps, {
-          symbol,
-          pathPrefix: scope.pathPrefix,
-          excludePrefixes: scope.excludePrefixes,
-        }),
-      ),
-    fallbackOnUnknownVerb: true,
-  });
+  return withFooterTimeout(
+    callGraphVerb<TestHit[]>("graph.tests", {
+      projectRoot,
+      scope,
+      payload: { symbols: [symbol], depth: 1 },
+      render: (resp) => (resp.hits as TestHit[]) ?? [],
+      inProcess: () =>
+        withLocalStore(lancedbDir, (deps) =>
+          runGraphTests(deps.vectorDb!, {
+            symbols: [symbol],
+            queryRoot,
+            depth: 1,
+            excludePrefixes: scope.excludePrefixes,
+          }),
+        ),
+    }),
+  );
 }
 
 export const extract = new Command("extract")
@@ -131,6 +129,11 @@ export const extract = new Command("extract")
         in: opts.in,
         exclude: opts.exclude,
       });
+      // Matches `queryRootFor` daemon-side, so both paths query the same root.
+      const queryRoot =
+        opts.in && opts.in.length > 0
+          ? scope.pathPrefix.replace(/\/$/, "")
+          : projectRoot;
 
       // Locations come from the daemon; the body is read here, from this
       // process's own filesystem view.
@@ -222,6 +225,7 @@ export const extract = new Command("extract")
             projectRoot,
             paths.lancedbDir,
             scope,
+            queryRoot,
           );
           if (tests && tests.length > 0) {
             console.log("--- tests:");
@@ -276,6 +280,7 @@ export const extract = new Command("extract")
           projectRoot,
           paths.lancedbDir,
           scope,
+          queryRoot,
         );
         if (tests && tests.length > 0) {
           for (const line of renderTestsFooterHuman(tests, projectRoot)) {

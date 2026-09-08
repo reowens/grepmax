@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type AuditRow, computeAudit } from "../src/commands/audit";
+import { type AuditRow, computeAudit } from "../src/lib/daemon/graph-handler";
 
 /**
  * Unit coverage for the `gmax audit` aggregator. Pure function over synthetic

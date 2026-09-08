@@ -53,6 +53,11 @@ vi.mock("../src/lib/utils/project-registry", async (importOriginal) => ({
   >()),
   resolveRootOrExit: () => projectRoot,
   listProjects: () => [{ root: projectRoot, status: "indexed" }],
+  // `callGraphVerb` skips the daemon outright for a root the registry does not
+  // know (extract's tests footer rides `graph.tests`), so the fixture root has
+  // to look registered here too.
+  getProject: (root: string) =>
+    root === projectRoot ? { root, status: "indexed" } : undefined,
 }));
 
 // Constructing this is the observable proof that the in-process path ran.
@@ -111,6 +116,11 @@ const originalExitCode = process.exitCode;
 const originalCwd = process.cwd();
 
 beforeAll(() => {
+  // The fixture root now looks registered (see the getProject mock), which puts
+  // it in scope for the stale-generation hints; they read a real global config
+  // this fixture has no business owning. Silence them, as the other command
+  // tests do.
+  process.env.GMAX_NO_STALE_HINT = "1";
   projectRoot = fs.realpathSync(
     fs.mkdtempSync(path.join(os.tmpdir(), "gmax-read-routing-")),
   );
@@ -174,7 +184,7 @@ describe("extract", () => {
           ],
         };
       }
-      if (cmd.cmd === "rows.tests") return { ok: true, tests: [] };
+      if (cmd.cmd === "graph.tests") return { ok: true, hits: [] };
       return { ok: false, error: "unexpected" };
     });
 

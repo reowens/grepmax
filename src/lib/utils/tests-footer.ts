@@ -1,11 +1,27 @@
 import { findTests, type TestHit } from "../graph/impact";
 import type { VectorDB } from "../store/vector-db";
 
-const FOOTER_TIMEOUT_MS = 1500;
+/**
+ * The footer is a courtesy line under a body the user asked for; it must never
+ * make the command feel slow. Past this budget the lookup is abandoned and the
+ * footer is simply omitted (`null`, not an empty list — "did not finish" is not
+ * "no tests").
+ */
+export const FOOTER_TIMEOUT_MS = 1500;
 const MAX_SHOWN = 5;
 
 const useColors = process.stdout.isTTY && !process.env.NO_COLOR;
 const dim = (s: string) => (useColors ? `\x1b[2m${s}\x1b[22m` : s);
+
+/**
+ * Race a footer lookup against `FOOTER_TIMEOUT_MS`. Exported because `extract`
+ * now fetches its footer over `graph.tests` rather than calling
+ * `fetchTestsForFooter` directly, and the budget has to cover the round trip
+ * the same way it covered the local query.
+ */
+export function withFooterTimeout<T>(p: Promise<T>): Promise<T | null> {
+  return withTimeout(p, FOOTER_TIMEOUT_MS);
+}
 
 async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
   let timer: NodeJS.Timeout | undefined;

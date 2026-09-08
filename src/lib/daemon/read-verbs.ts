@@ -88,6 +88,14 @@ export function clearReadVerbs(): void {
 // selects would otherwise land in WP-C's `rows.locate`. Keeping them in one
 // composite verb costs one round trip instead of four and keeps peek's
 // rendering (and its `fs.readFileSync` signature extraction) unchanged.
+//
+// WP-D added four more for the MCP tools that have no CLI twin:
+// `graph.neighbors`, `graph.paths` and `graph.subgraph` are the GraphBuilder
+// traversal primitives behind `get_neighbors` / `find_paths` /
+// `subgraph_for_files` — distinct entry points with their own hop and size
+// bounds, which is why they are separate verbs rather than options on
+// `graph.trace`. `graph.risk` is the store half of `review_risk`: the git half
+// (diff, churn) stays with the caller, exactly as `extract` keeps its body read.
 // ---------------------------------------------------------------------------
 
 /**
@@ -100,8 +108,8 @@ export function registerGraphVerbs(): void {
 }
 
 // ---------------------------------------------------------------------------
-// rows verbs (WP-C) — rows.symbols, rows.project, rows.locate, rows.skeleton,
-// rows.tests. Handlers and their `registerRowsVerbs()` live in rows-handler.ts;
+// rows verbs (WP-C) — rows.symbols, rows.project, rows.locate, rows.skeleton.
+// Handlers and their `registerRowsVerbs()` live in rows-handler.ts;
 // `Daemon.start()` calls it, because registering at module scope would make the
 // registry non-empty on import and break the assertions in
 // tests/ipc-read-verbs.test.ts.
@@ -113,8 +121,9 @@ export function registerGraphVerbs(): void {
 // for a summary that fits in a few kilobytes. Both verbs return the finished
 // aggregate instead — see the rows-handler.ts header.
 //
-// `rows.tests` is `extract`'s tests footer (`findTests`). WP-B's `graph.tests`
-// wraps the same library call; collapse the two when it lands.
+// WP-C also shipped `rows.tests` for `extract`'s footer; WP-D removed it. It
+// wrapped the same `findTests` call `graph.tests` does, and `extract` now sends
+// that verb, so the duplicate wire shape is gone before any daemon served it.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------

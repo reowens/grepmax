@@ -367,9 +367,15 @@ megabytes per call and turn a multi-hop trace into dozens of round trips.
 
 | Family | Verbs | Serves |
 |---|---|---|
-| graph | `graph.resolve`, `graph.tests`, `graph.dependents`, `graph.trace`, `graph.peek`, `graph.dead`, `graph.audit` | `test`, `impact`, `trace`, `peek`, `dead`, `audit` |
+| graph | `graph.resolve`, `graph.tests`, `graph.dependents`, `graph.trace`, `graph.peek`, `graph.dead`, `graph.audit` | `test`, `impact`, `trace`, `peek`, `dead`, `audit`, `extract`'s tests footer |
+| graph (MCP-only) | `graph.neighbors`, `graph.paths`, `graph.subgraph`, `graph.risk` | `get_neighbors`, `find_paths`, `subgraph_for_files`, `review_risk` |
 | rows | `rows.symbols`, `rows.project`, `rows.locate`, `rows.skeleton` | `symbols`, `project`, `extract`, `related`, `log`, `skeleton`, `context` |
 | vector | `vector.similar`, `vector.surprises` | `similar`, `surprises` |
+
+The MCP-only four are GraphBuilder entry points with no CLI command behind them:
+`getNeighbors`, `findPaths`, `subgraphForFiles`, and the graph half of `gatherRiskInputs` (the
+git half — diff and churn — stays with the caller, as `extract`'s body read does). Each has its own
+hop or size bound, which is why they are separate verbs rather than options on `graph.trace`.
 
 Verbs register in `src/lib/daemon/read-verbs.ts` instead of adding a `case`: `ipc-handler`'s
 `default:` looks the name up there before answering `unknown command`, which keeps the router from
@@ -393,6 +399,15 @@ deliberately narrow:
 
 An in-process lease failure with `EPERM`/`EACCES`/`EROFS` gets the same refusal, naming
 `sandbox.filesystem.allowWrite` instead of the socket key.
+
+**MCP is the one caller with a wider fallback set.** Its read tools pass `fallbackOnOversize` plus
+an `extraFallback` for `project not watched` and `daemon not ready` (`MCP_STORE_FALLBACK` in
+`mcp.ts`). The reason is that an MCP tool call has no user at a prompt to wait or re-run, so it
+degrades to its own short-lived store read; a CLI command reports instead, because falling back
+there would put a second opener on the store while the daemon is working. `mcp.ts` holds no
+`VectorDB` of its own — the only store it may open is the one `withLocalStore` opens and closes
+inside a fallback — so an MCP session leaves no marker under `~/.gmax/lancedb.lease/readers/`
+while a daemon serving the verbs is up.
 
 ---
 

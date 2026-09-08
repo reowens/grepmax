@@ -147,6 +147,26 @@ describe("graph verbs over handleCommand", () => {
       { cmd: "graph.peek", projectRoot: PROJECT, target: "handleAuth" },
       { cmd: "graph.dead", projectRoot: PROJECT, target: "handleAuth" },
       { cmd: "graph.audit", projectRoot: PROJECT, top: 5 },
+      {
+        cmd: "graph.neighbors",
+        projectRoot: PROJECT,
+        symbol: "handleAuth",
+        direction: "callers",
+        maxHops: 2,
+      },
+      {
+        cmd: "graph.paths",
+        projectRoot: PROJECT,
+        from: "testLogin",
+        to: "handleAuth",
+        direction: "callees",
+      },
+      {
+        cmd: "graph.subgraph",
+        projectRoot: PROJECT,
+        files: [`${PROJECT}/src/auth.ts`],
+      },
+      { cmd: "graph.risk", projectRoot: PROJECT, symbols: ["handleAuth"] },
     ]) {
       const response = await send(cmd);
       expect(response, `${cmd.cmd} should answer ok`).toMatchObject({
@@ -189,6 +209,64 @@ describe("graph verbs over handleCommand", () => {
     });
   });
 
+  it("answers graph.neighbors with resolved hits and graph.paths with a path", async () => {
+    const neighbors = await send({
+      cmd: "graph.neighbors",
+      projectRoot: PROJECT,
+      symbol: "handleAuth",
+      direction: "callers",
+      maxHops: 2,
+    });
+    expect(neighbors.ok).toBe(true);
+    expect(
+      (neighbors.hits as Array<{ symbol: string }>).map((h) => h.symbol),
+    ).toContain("testLogin");
+
+    const paths = await send({
+      cmd: "graph.paths",
+      projectRoot: PROJECT,
+      from: "testLogin",
+      to: "handleAuth",
+      direction: "callees",
+    });
+    expect(paths).toMatchObject({
+      ok: true,
+      path: ["testLogin", "handleAuth"],
+    });
+  });
+
+  it("sends 'no path' as an ok answer with null, not an error", async () => {
+    const response = await send({
+      cmd: "graph.paths",
+      projectRoot: PROJECT,
+      from: "handleAuth",
+      to: "testLogin",
+      direction: "callees",
+    });
+    expect(response).toMatchObject({ ok: true, path: null });
+  });
+
+  it("rejects a subgraph file that escapes the project root", async () => {
+    const response = await send({
+      cmd: "graph.subgraph",
+      projectRoot: PROJECT,
+      files: ["../../etc/passwd"],
+    });
+    expect(response.ok).toBe(false);
+    expect(String(response.error)).toMatch(/outside project root/);
+  });
+
+  it("rejects a direction that is neither callers nor callees", async () => {
+    await expect(
+      send({
+        cmd: "graph.neighbors",
+        projectRoot: PROJECT,
+        symbol: "handleAuth",
+        direction: "sideways",
+      }),
+    ).resolves.toMatchObject({ ok: false, error: "invalid direction" });
+  });
+
   it("requires the verb's own arguments", async () => {
     await expect(
       send({ cmd: "graph.trace", projectRoot: PROJECT }),
@@ -200,6 +278,18 @@ describe("graph verbs over handleCommand", () => {
       ok: false,
       error: "missing projectRoot",
     });
+    await expect(
+      send({ cmd: "graph.neighbors", projectRoot: PROJECT }),
+    ).resolves.toMatchObject({ ok: false, error: "missing symbol" });
+    await expect(
+      send({ cmd: "graph.paths", projectRoot: PROJECT, from: "a" }),
+    ).resolves.toMatchObject({ ok: false, error: "missing to" });
+    await expect(
+      send({ cmd: "graph.subgraph", projectRoot: PROJECT }),
+    ).resolves.toMatchObject({ ok: false, error: "missing files" });
+    await expect(
+      send({ cmd: "graph.risk", projectRoot: PROJECT }),
+    ).resolves.toMatchObject({ ok: false, error: "missing symbols" });
   });
 
   it("reports daemon-not-ready rather than crashing when the store is closed", async () => {

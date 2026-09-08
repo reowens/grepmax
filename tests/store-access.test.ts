@@ -6,6 +6,7 @@ import {
   asStoreAccessError,
   classifyDaemonError,
   classifyLeaseError,
+  isOversizeError,
   isStoreAccessRefused,
   isUnknownCommandError,
   LEASE_DENIED_MESSAGE,
@@ -215,6 +216,56 @@ describe("withStoreRead", () => {
     expect(optedOut).not.toHaveBeenCalled();
   });
 
+  it("falls back on oversize only when the caller opted in", async () => {
+    // MCP opts in: an oversize answer is a protocol cap, and an MCP tool call
+    // has no user to re-run a narrower query.
+    const optedIn = vi.fn(async () => "local");
+    await expect(
+      withStoreRead("search", {
+        daemon: async () => ({ ok: false, error: "oversize" }),
+        inProcess: optedIn,
+        fallbackOnOversize: true,
+      }),
+    ).resolves.toBe("local");
+
+    // A CLI refuses: falling back would put a second opener on the store while
+    // the daemon is busy enough to have produced a 2 MB answer.
+    const optedOut = vi.fn();
+    await expect(
+      withStoreRead("graph.trace", {
+        daemon: async () => ({ ok: false, error: "oversize" }),
+        inProcess: optedOut,
+      }),
+    ).rejects.toThrow(/oversize/);
+    expect(optedOut).not.toHaveBeenCalled();
+  });
+
+  it("consults the caller's extraFallback predicate, and only it", async () => {
+    const extraFallback = (error: unknown) =>
+      String(error).includes("daemon not ready");
+
+    const allowed = vi.fn(async () => "local");
+    await expect(
+      withStoreRead("graph.peek", {
+        daemon: async () => ({ ok: false, error: "daemon not ready" }),
+        inProcess: allowed,
+        extraFallback,
+      }),
+    ).resolves.toBe("local");
+
+    // The same predicate must not widen the built-in set: a busy daemon is
+    // still reported.
+    const refused = vi.fn();
+    await expect(
+      withStoreRead("graph.peek", {
+        daemon: async () => ({ ok: false, error: "DAEMON_BUSY" }),
+        inProcess: refused,
+        extraFallback,
+      }),
+    ).rejects.toThrow(/DAEMON_BUSY/);
+    expect(refused).not.toHaveBeenCalled();
+  });
+
   it("converts an in-process lease denial into the filesystem refusal", async () => {
     await expect(
       withStoreRead("status", {
@@ -254,6 +305,15 @@ describe("isUnknownCommandError", () => {
     expect(isUnknownCommandError("unknown command: graph.trace")).toBe(true);
     expect(isUnknownCommandError("timeout")).toBe(false);
     expect(isUnknownCommandError(undefined)).toBe(false);
+  });
+});
+
+describe("isOversizeError", () => {
+  it("matches the daemon's response-cap refusal and nothing else", () => {
+    expect(isOversizeError("oversize")).toBe(true);
+    expect(isOversizeError("response oversize: 2.4MB")).toBe(true);
+    expect(isOversizeError("DAEMON_BUSY")).toBe(false);
+    expect(isOversizeError(undefined)).toBe(false);
   });
 });
 
