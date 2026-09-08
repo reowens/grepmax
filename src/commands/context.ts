@@ -1,14 +1,14 @@
 import * as fs from "node:fs";
 import { Command } from "commander";
+import { readRows, withLocalStore } from "../lib/daemon/rows-handler";
 import { Searcher } from "../lib/search/searcher";
 import { Skeletonizer } from "../lib/skeleton";
 import type { ChunkType, FileMetadata } from "../lib/store/types";
-import { VectorDB } from "../lib/store/vector-db";
 import { toArr } from "../lib/utils/arrow";
 import { packByBudget } from "../lib/utils/budget-pack";
+import { sendDaemonCommand } from "../lib/utils/daemon-client";
 import { gracefulExit } from "../lib/utils/exit";
 import { readContainedTextFileSync } from "../lib/utils/file-utils";
-import { escapeSqlString, pathStartsWith } from "../lib/utils/filter-builder";
 import {
   isPathWithin,
   resolveContainedExistingPath,
@@ -16,6 +16,10 @@ import {
 } from "../lib/utils/path-containment";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
+import {
+  reportStoreAccessRefusal,
+  withStoreRead,
+} from "../lib/utils/store-access";
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
@@ -183,14 +187,12 @@ export const context = new Command("context")
   .action(async (topic, opts) => {
     const budget = Number.parseInt(opts.budget || "4000", 10) || 4000;
     const maxResults = Number.parseInt(opts.maxResults || "10", 10) || 10;
-    let vectorDb: VectorDB | null = null;
 
     try {
       const root = resolveRootOrExit(opts.root);
       if (root === null) return;
       const projectRoot = findProjectRoot(root) ?? root;
       const paths = ensureProjectPaths(projectRoot);
-      vectorDb = new VectorDB(paths.lancedbDir);
 
       const pathTarget = resolveContainedExistingPath(projectRoot, topic, {
         cwd: root,
@@ -210,17 +212,37 @@ export const context = new Command("context")
         return;
       }
 
-      const searcher = new Searcher(vectorDb);
-
-      // Phase 1: Semantic search
-      const response = await searcher.search(
-        topic,
-        maxResults,
-        { rerank: true },
-        {},
-        `${projectRoot}/`,
-      );
-      const scopedData = response.data.filter((result) =>
+      // Phase 1: Semantic search. Routed through the daemon so the Searcher —
+      // and the PageRank cache under ~/.gmax/pagerank/ that it may write — lives
+      // in exactly one process.
+      const responseData = await withStoreRead<ChunkType[]>("context", {
+        daemon: () =>
+          sendDaemonCommand(
+            {
+              cmd: "search",
+              projectRoot,
+              query: topic,
+              limit: maxResults,
+              pathPrefix: projectRoot,
+              rerank: true,
+            },
+            { timeoutMs: 60_000 },
+          ),
+        render: (resp) => (resp.data ?? []) as ChunkType[],
+        inProcess: () =>
+          withLocalStore(paths.lancedbDir, async (deps) => {
+            const searcher = new Searcher(deps.vectorDb!);
+            const response = await searcher.search(
+              topic,
+              maxResults,
+              { rerank: true },
+              {},
+              `${projectRoot}/`,
+            );
+            return response.data;
+          }),
+      });
+      const scopedData = responseData.filter((result) =>
         isPathWithin(projectRoot, chunkPath(result)),
       );
       if (scopedData.length === 0) {
@@ -364,28 +386,31 @@ export const context = new Command("context")
       }
 
       // Phase 5: Related files summary
-      const table = await vectorDb.ensureTable();
       const allSymbols = new Set<string>();
       for (const r of scopedData) {
         for (const s of toArr(r.defined_symbols)) allSymbols.add(s);
       }
 
       if (allSymbols.size > 0) {
-        const pathScope = pathStartsWith(`${projectRoot}/`);
         const relatedCounts = new Map<string, number>();
         const searchedFiles = new Set(uniqueFiles);
 
-        for (const sym of [...allSymbols].slice(0, 20)) {
-          const rows = await table
-            .query()
-            .select(["path"])
-            .where(
-              `array_contains(referenced_symbols, '${escapeSqlString(sym)}') AND ${pathScope}`,
-            )
-            .limit(5)
-            .toArray();
+        // One batched round trip for the ≤20 symbol lookups.
+        const { resolveScope } = await import("../lib/utils/scope-filter");
+        const relatedRows = await readRows({
+          name: "context",
+          projectRoot,
+          lancedbDir: paths.lancedbDir,
+          scope: resolveScope({ projectRoot }),
+          select: ["path"],
+          matches: [...allSymbols]
+            .slice(0, 20)
+            .map((symbol) => ({ kind: "referencedSymbol" as const, symbol })),
+          limit: 5,
+        });
+        for (const rows of relatedRows) {
           for (const row of rows) {
-            const p = String((row as any).path || "");
+            const p = String(row.path || "");
             if (searchedFiles.has(p)) continue;
             relatedCounts.set(p, (relatedCounts.get(p) || 0) + 1);
           }
@@ -415,15 +440,12 @@ export const context = new Command("context")
 
       console.log(sections.join("\n"));
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "Unknown error";
-      console.error("Context generation failed:", msg);
-      process.exitCode = 1;
-    } finally {
-      if (vectorDb) {
-        try {
-          await vectorDb.close();
-        } catch {}
+      if (!reportStoreAccessRefusal(error)) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        console.error("Context generation failed:", msg);
+        process.exitCode = 1;
       }
+    } finally {
       await gracefulExit();
     }
   });

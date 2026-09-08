@@ -1,18 +1,20 @@
 import * as path from "node:path";
 import { Command } from "commander";
-import { VectorDB } from "../lib/store/vector-db";
+import {
+  type LocatedRow,
+  type RowMatch,
+  readRows,
+} from "../lib/daemon/rows-handler";
 import { fileNotFoundLines } from "../lib/utils/agent-errors";
-import { toArr } from "../lib/utils/arrow";
 import { gracefulExit } from "../lib/utils/exit";
-import { escapeSqlString } from "../lib/utils/filter-builder";
 import { resolveContainedExistingPath } from "../lib/utils/path-containment";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
-import { withQueryTimeout } from "../lib/utils/query-timeout";
 import {
   maybeWarnStaleChunker,
   maybeWarnStaleEmbedding,
 } from "../lib/utils/stale-hint";
+import { reportStoreAccessRefusal } from "../lib/utils/store-access";
 
 export const related = new Command("related")
   .description("Find files related by shared symbol references")
@@ -37,7 +39,6 @@ export const related = new Command("related")
       Math.max(Number.parseInt(opts.limit || "10", 10), 1),
       25,
     );
-    let vectorDb: VectorDB | null = null;
 
     try {
       const root = resolveRootOrExit(opts.root);
@@ -46,29 +47,44 @@ export const related = new Command("related")
       maybeWarnStaleChunker(projectRoot, { agent: opts.agent });
       maybeWarnStaleEmbedding(projectRoot, { agent: opts.agent });
       const paths = ensureProjectPaths(projectRoot);
-      vectorDb = new VectorDB(paths.lancedbDir);
 
       const absPath =
         resolveContainedExistingPath(projectRoot, file) ??
         path.resolve(projectRoot, file);
-      const table = await vectorDb.ensureTable();
-      const { resolveScope, buildScopeWhere } = await import(
-        "../lib/utils/scope-filter"
-      );
+      const { resolveScope } = await import("../lib/utils/scope-filter");
       const scope = resolveScope({
         projectRoot,
         in: opts.in,
         exclude: opts.exclude,
       });
-      const pathScope = buildScopeWhere(scope);
 
-      const fileChunks = await table
-        .query()
-        .select(["defined_symbols", "referenced_symbols"])
-        .where(`path = '${escapeSqlString(absPath)}'`)
-        .toArray();
+      const locate = (
+        matches: RowMatch[],
+        select: string[],
+        rowLimit: number | undefined,
+        scoped = true,
+      ): Promise<LocatedRow[][]> =>
+        readRows({
+          name: "related",
+          projectRoot,
+          lancedbDir: paths.lancedbDir,
+          scope,
+          select,
+          matches,
+          limit: rowLimit,
+          scoped,
+        });
 
-      if (fileChunks.length === 0) {
+      // The file's own chunks. Unscoped, exactly as before: the file was named
+      // explicitly, so an --in that excludes it must not hide it from itself.
+      const [fileChunks] = await locate(
+        [{ kind: "path", path: absPath }],
+        ["defined_symbols", "referenced_symbols"],
+        undefined,
+        false,
+      );
+
+      if (!fileChunks || fileChunks.length === 0) {
         console.log(fileNotFoundLines(file, { agent: opts.agent }).join("\n"));
         process.exitCode = 1;
         return;
@@ -77,44 +93,45 @@ export const related = new Command("related")
       const definedHere = new Set<string>();
       const referencedHere = new Set<string>();
       for (const chunk of fileChunks) {
-        for (const s of toArr((chunk as any).defined_symbols))
+        for (const s of (chunk.defined_symbols as string[]) ?? [])
           definedHere.add(s);
-        for (const s of toArr((chunk as any).referenced_symbols))
+        for (const s of (chunk.referenced_symbols as string[]) ?? [])
           referencedHere.add(s);
       }
 
-      // Dependencies
+      // Dependencies. One batched round trip instead of one per symbol — the
+      // daemon runs the same N selects, the socket carries one request.
+      const depSymbols = [...referencedHere].filter((s) => !definedHere.has(s));
+      const depResults = await locate(
+        depSymbols.map((symbol) => ({
+          kind: "definedSymbol" as const,
+          symbol,
+        })),
+        ["path"],
+        3,
+      );
       const depCounts = new Map<string, number>();
-      for (const sym of referencedHere) {
-        if (definedHere.has(sym)) continue;
-        const rows = await table
-          .query()
-          .select(["path"])
-          .where(
-            `array_contains(defined_symbols, '${escapeSqlString(sym)}') AND ${pathScope}`,
-          )
-          .limit(3)
-          .toArray();
+      for (const rows of depResults) {
         for (const row of rows) {
-          const p = String((row as any).path || "");
+          const p = String(row.path || "");
           if (p === absPath) continue;
           depCounts.set(p, (depCounts.get(p) || 0) + 1);
         }
       }
 
       // Dependents
+      const revResults = await locate(
+        [...definedHere].map((symbol) => ({
+          kind: "referencedSymbol" as const,
+          symbol,
+        })),
+        ["path"],
+        20,
+      );
       const revCounts = new Map<string, number>();
-      for (const sym of definedHere) {
-        const rows = await table
-          .query()
-          .select(["path"])
-          .where(
-            `array_contains(referenced_symbols, '${escapeSqlString(sym)}') AND ${pathScope}`,
-          )
-          .limit(20)
-          .toArray();
+      for (const rows of revResults) {
         for (const row of rows) {
-          const p = String((row as any).path || "");
+          const p = String(row.path || "");
           if (p === absPath) continue;
           revCounts.set(p, (revCounts.get(p) || 0) + 1);
         }
@@ -155,21 +172,17 @@ export const related = new Command("related")
         ) {
           basenameRejected = true;
         } else {
-          // No .limit() here: LIKE + limit deadlocks in @lancedb 0.27.x when
-          // more rows match than the limit (verified). The loop below caps.
-          const rows = await withQueryTimeout(
-            table
-              .query()
-              .select(["path"])
-              .where(
-                `content LIKE '%${escapeSqlString(basename)}%' AND ${pathScope}`,
-              )
-              .toArray(),
-            `content LIKE %${basename}% (related mentions)`,
+          // Still no .limit(): LIKE + limit deadlocks in @lancedb when more
+          // rows match than the limit (verified). The verb caps the wire
+          // response at MAX_LOCATE_ROWS; the loop below caps the output.
+          const [rows] = await locate(
+            [{ kind: "contentLike", value: basename }],
+            ["path"],
+            undefined,
           );
           const seen = new Set<string>();
-          for (const row of rows) {
-            const p = String((row as any).path || "");
+          for (const row of rows ?? []) {
+            const p = String(row.path || "");
             if (!p || p === absPath) continue;
             if (seen.has(p)) continue;
             seen.add(p);
@@ -255,15 +268,12 @@ export const related = new Command("related")
         }
       }
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "Unknown error";
-      console.error("Related files failed:", msg);
-      process.exitCode = 1;
-    } finally {
-      if (vectorDb) {
-        try {
-          await vectorDb.close();
-        } catch {}
+      if (!reportStoreAccessRefusal(error)) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        console.error("Related files failed:", msg);
+        process.exitCode = 1;
       }
+    } finally {
       await gracefulExit();
     }
   });

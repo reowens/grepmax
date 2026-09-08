@@ -73,12 +73,14 @@ import {
 } from "./ipc-handler";
 import { MlxServerManager } from "./mlx-server-manager";
 import { ProcessManager } from "./process-manager";
+import { registerRowsVerbs, type StoreReadDeps } from "./rows-handler";
 import {
   type DaemonSearchPayload,
   type DaemonSearchResult,
   handleDaemonSearch,
 } from "./search-handler";
 import { registerGraphVerbs } from "./read-verbs";
+import { registerVectorVerbs } from "./vector-handler";
 import { WatcherManager } from "./watcher-manager";
 
 // 30 min was too aggressive — every shutdown is a chance for races, FSEvents
@@ -256,10 +258,15 @@ export class Daemon {
   async start(): Promise<void> {
     process.title = "gmax-daemon";
 
-    // Read verbs are registered here rather than at read-verbs.ts module load,
-    // so importing the registry (ipc-handler and its tests do) never populates
-    // it as a side effect. Idempotent: re-registering replaces by name.
+    // Read verbs register here rather than at read-verbs.ts module scope: the
+    // registry is asserted on exactly in tests/ipc-read-verbs.test.ts, and a
+    // module-scope registration would make it non-empty on import. Register
+    // before the socket server starts (step 2) so no client can race in and
+    // get "unknown command" for a verb this daemon does support. Idempotent:
+    // re-registering replaces by name.
     registerGraphVerbs();
+    registerRowsVerbs();
+    registerVectorVerbs();
 
     // 0. Singleton enforcement: find and kill ALL stale daemon/worker processes
     await this.processManager.killStaleProcesses();
@@ -832,11 +839,12 @@ export class Daemon {
   }
 
   /**
-   * What a read verb (read-verbs.ts) needs from the daemon: the warm store, and
-   * the idle-timer touch every served request owes it. Deliberately the whole
-   * surface — handlers get no other access to daemon internals.
+   * The slice of the daemon a read verb handler needs: the warm store and the
+   * activity touch that keeps the idle timer honest. One accessor for every
+   * read verb (graph, rows, vector) — extend this rather than adding a second;
+   * handlers get no other access to daemon internals.
    */
-  storeReadDeps(): { vectorDb: VectorDB | null; touchActivity: () => void } {
+  storeReadDeps(): StoreReadDeps {
     return {
       vectorDb: this.vectorDb,
       touchActivity: () => {

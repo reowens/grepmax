@@ -1,13 +1,12 @@
 import { Command } from "commander";
-import { configureAnnVectorQuery } from "../lib/store/ann-config";
-import { VectorDB } from "../lib/store/vector-db";
+import { scopeToWire, withLocalStore } from "../lib/daemon/rows-handler";
+import { runSimilar, type SimilarResult } from "../lib/daemon/vector-handler";
 import {
   fileNotFoundLines,
   symbolNotFoundLines,
 } from "../lib/utils/agent-errors";
-import { toArr } from "../lib/utils/arrow";
+import { sendDaemonCommand } from "../lib/utils/daemon-client";
 import { gracefulExit } from "../lib/utils/exit";
-import { escapeSqlString, pathStartsWith } from "../lib/utils/filter-builder";
 import { resolveContainedPath } from "../lib/utils/path-containment";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
@@ -15,6 +14,10 @@ import {
   maybeWarnStaleChunker,
   maybeWarnStaleEmbedding,
 } from "../lib/utils/stale-hint";
+import {
+  reportStoreAccessRefusal,
+  withStoreRead,
+} from "../lib/utils/store-access";
 
 export const similar = new Command("similar")
   .description("Find semantically similar code to a symbol or file")
@@ -41,7 +44,6 @@ export const similar = new Command("similar")
       25,
     );
     const threshold = Number.parseFloat(opts.threshold || "0") || 0;
-    let vectorDb: VectorDB | null = null;
 
     try {
       const root = resolveRootOrExit(opts.root);
@@ -50,36 +52,57 @@ export const similar = new Command("similar")
       maybeWarnStaleChunker(projectRoot, { agent: opts.agent });
       maybeWarnStaleEmbedding(projectRoot, { agent: opts.agent });
       const paths = ensureProjectPaths(projectRoot);
-      vectorDb = new VectorDB(paths.lancedbDir);
 
-      const table = await vectorDb.ensureTable();
       const isFile =
         target.includes("/") || (target.includes(".") && !target.includes(" "));
+      // Resolved here, not daemon-side: verifyExistingTarget looks at this
+      // process's filesystem, and a path outside the project must fail with the
+      // containment error the user expects before anything reaches the store.
+      const absPath = isFile
+        ? resolveContainedPath(projectRoot, target, {
+            verifyExistingTarget: true,
+          })
+        : undefined;
 
-      // Look up the source chunk's vector
-      let sourceRows: any[];
-      if (isFile) {
-        const absPath = resolveContainedPath(projectRoot, target, {
-          verifyExistingTarget: true,
-        });
-        sourceRows = await table
-          .query()
-          .select(["vector", "path", "defined_symbols", "start_line"])
-          .where(`path = '${escapeSqlString(absPath)}'`)
-          .limit(1)
-          .toArray();
-      } else {
-        sourceRows = await table
-          .query()
-          .select(["vector", "path", "defined_symbols", "start_line"])
-          .where(
-            `array_contains(defined_symbols, '${escapeSqlString(target)}') AND ${pathStartsWith(`${projectRoot}/`)}`,
-          )
-          .limit(1)
-          .toArray();
-      }
+      const { resolveScope } = await import("../lib/utils/scope-filter");
+      const scope = resolveScope({
+        projectRoot,
+        in: opts.in,
+        exclude: opts.exclude,
+      });
 
-      if (sourceRows.length === 0) {
+      // The source chunk's 384-float vector never leaves the store: the daemon
+      // looks it up, runs the vector search, and returns the ranked chunks.
+      const result = await withStoreRead<SimilarResult>("similar", {
+        daemon: () =>
+          sendDaemonCommand(
+            {
+              cmd: "vector.similar",
+              projectRoot,
+              absPath,
+              symbol: isFile ? undefined : target,
+              scope: scopeToWire(scope),
+              limit,
+              threshold,
+            },
+            { timeoutMs: 60_000 },
+          ),
+        render: (resp) => resp as unknown as SimilarResult,
+        inProcess: () =>
+          withLocalStore(paths.lancedbDir, (deps) =>
+            runSimilar(deps, {
+              projectRoot,
+              absPath,
+              symbol: isFile ? undefined : target,
+              scope,
+              limit,
+              threshold,
+            }),
+          ),
+        fallbackOnUnknownVerb: true,
+      });
+
+      if (result.status === "not-found") {
         console.log(
           (isFile
             ? fileNotFoundLines(target, { agent: opts.agent })
@@ -90,54 +113,13 @@ export const similar = new Command("similar")
         return;
       }
 
-      const source = sourceRows[0];
-      const sourceVector = source.vector;
-      const sourcePath = String(source.path || "");
-
-      if (!sourceVector || sourceVector.length === 0) {
+      if (result.status === "no-vector") {
         console.log("Source chunk has no embedding vector.");
         process.exitCode = 1;
         return;
       }
 
-      // Vector search using the source chunk's embedding
-      const { resolveScope, buildScopeWhere } = await import(
-        "../lib/utils/scope-filter"
-      );
-      const scope = resolveScope({
-        projectRoot,
-        in: opts.in,
-        exclude: opts.exclude,
-      });
-      const pathScope = buildScopeWhere(scope);
-      const results = await configureAnnVectorQuery(
-        table.vectorSearch(sourceVector),
-      )
-        .select([
-          "path",
-          "start_line",
-          "end_line",
-          "defined_symbols",
-          "role",
-          "content",
-          "_distance",
-        ])
-        .where(pathScope)
-        .limit(limit + 5) // fetch extra to account for self-filtering
-        .toArray();
-
-      // Filter out self and apply threshold
-      const filtered = results.filter((r: any) => {
-        if (r.path === sourcePath && r.start_line === source.start_line)
-          return false;
-        if (threshold > 0) {
-          // LanceDB returns L2 distance; convert to similarity
-          const sim = 1 / (1 + (r._distance || 0));
-          if (sim < threshold) return false;
-        }
-        return true;
-      });
-
+      const filtered = result.results;
       if (filtered.length === 0) {
         console.log(`No similar code found for ${target}.`);
         return;
@@ -148,7 +130,7 @@ export const similar = new Command("similar")
 
       if (opts.agent) {
         for (const r of filtered.slice(0, limit)) {
-          const sym = toArr(r.defined_symbols)?.[0] ?? "";
+          const sym = r.defined_symbols?.[0] ?? "";
           const line = (r.start_line ?? 0) + 1;
           const role = (r.role || "IMPL").slice(0, 4);
           const dist = (r._distance ?? 0).toFixed(3);
@@ -157,7 +139,7 @@ export const similar = new Command("similar")
       } else {
         console.log(`Code similar to ${target}:\n`);
         for (const r of filtered.slice(0, limit)) {
-          const sym = toArr(r.defined_symbols)?.[0] ?? "";
+          const sym = r.defined_symbols?.[0] ?? "";
           const line = (r.start_line ?? 0) + 1;
           const role = r.role || "IMPLEMENTATION";
           const dist = (r._distance ?? 0).toFixed(3);
@@ -167,15 +149,12 @@ export const similar = new Command("similar")
         }
       }
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "Unknown error";
-      console.error("Similar search failed:", msg);
-      process.exitCode = 1;
-    } finally {
-      if (vectorDb) {
-        try {
-          await vectorDb.close();
-        } catch {}
+      if (!reportStoreAccessRefusal(error)) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        console.error("Similar search failed:", msg);
+        process.exitCode = 1;
       }
+    } finally {
       await gracefulExit();
     }
   });

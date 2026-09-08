@@ -100,11 +100,24 @@ export function registerGraphVerbs(): void {
 }
 
 // ---------------------------------------------------------------------------
-// rows verbs (WP-C) — rows.symbols, rows.locate, rows.skeleton;
-// handlers in rows-handler.ts.
+// rows verbs (WP-C) — rows.symbols, rows.project, rows.locate, rows.skeleton,
+// rows.tests. Handlers and their `registerRowsVerbs()` live in rows-handler.ts;
+// `Daemon.start()` calls it, because registering at module scope would make the
+// registry non-empty on import and break the assertions in
+// tests/ipc-read-verbs.test.ts.
+//
+// `rows.project` is not in the plan's table: `symbols` and `project` were to
+// share one row-proxy verb. `project.ts` selects up to 200 000 rows with two
+// symbol-array columns, and the platform project holds 266 753 chunks, so the
+// proxy shape would push hundreds of megabytes through the daemon's event loop
+// for a summary that fits in a few kilobytes. Both verbs return the finished
+// aggregate instead — see the rows-handler.ts header.
+//
+// `rows.tests` is `extract`'s tests footer (`findTests`). WP-B's `graph.tests`
+// wraps the same library call; collapse the two when it lands.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// vector verbs (WP-C) — vector.similar, vector.surprises;
-// handlers in vector-handler.ts.
+// vector verbs (WP-C) — vector.similar, vector.surprises; handlers and
+// `registerVectorVerbs()` in vector-handler.ts, called from `Daemon.start()`.
 // ---------------------------------------------------------------------------

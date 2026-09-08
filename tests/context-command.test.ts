@@ -4,6 +4,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const existingPaths = new Set<string>();
 const directoryPaths = new Set<string>();
 
+// Read commands ask the daemon first. Answering ENOENT keeps these cases on the
+// in-process path deterministically, instead of depending on whether a daemon
+// happens to be listening on the developer's machine.
+vi.mock("../src/lib/utils/daemon-client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/lib/utils/daemon-client")>()),
+  sendDaemonCommand: vi.fn(async () => ({ ok: false, error: "ENOENT" })),
+}));
+
 vi.mock("../src/lib/utils/project-root", () => ({
   ensureProjectPaths: vi.fn(() => ({
     root: "/tmp/project",

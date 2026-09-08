@@ -1,12 +1,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Command } from "commander";
-import { VectorDB } from "../lib/store/vector-db";
+import { readRows } from "../lib/daemon/rows-handler";
 import { gracefulExit } from "../lib/utils/exit";
-import { escapeSqlString } from "../lib/utils/filter-builder";
 import { type Commit, getCommitHistory } from "../lib/utils/git";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
+import { reportStoreAccessRefusal } from "../lib/utils/store-access";
 
 const useColors = process.stdout.isTTY && !process.env.NO_COLOR;
 const style = {
@@ -21,35 +21,36 @@ function relativize(p: string, projectRoot: string): string {
   return p.startsWith(prefix) ? p.slice(prefix.length) : p;
 }
 
+/**
+ * The one store read `log` does: symbol → defining files. Everything else —
+ * cwd-relative path resolution and `git log` itself — stays in this process,
+ * because both are tied to where the user is standing.
+ */
 async function resolveSymbolPaths(
-  vectorDb: VectorDB,
   symbol: string,
   projectRoot: string,
+  lancedbDir: string,
   inOpt: string[] | undefined,
   excludeOpt: string[] | undefined,
 ): Promise<string[]> {
-  const { resolveScope, buildScopeWhere } = await import(
-    "../lib/utils/scope-filter"
-  );
+  const { resolveScope } = await import("../lib/utils/scope-filter");
   const scope = resolveScope({
     projectRoot,
     in: inOpt,
     exclude: excludeOpt,
   });
-  const where = buildScopeWhere(
+  const [rows] = await readRows({
+    name: "log",
+    projectRoot,
+    lancedbDir,
     scope,
-    `array_contains(defined_symbols, '${escapeSqlString(symbol)}')`,
-  );
-  const table = await vectorDb.ensureTable();
-  const rows = await table
-    .query()
-    .select(["path"])
-    .where(where)
-    .limit(50)
-    .toArray();
+    select: ["path"],
+    matches: [{ kind: "definedSymbol", symbol }],
+    limit: 50,
+  });
   const paths = new Set<string>();
-  for (const row of rows) {
-    const p = String((row as any).path || "");
+  for (const row of rows ?? []) {
+    const p = String(row.path || "");
     if (p) paths.add(p);
   }
   return [...paths];
@@ -145,7 +146,6 @@ export const log = new Command("log")
     if (root === null) return;
     const projectRoot = findProjectRoot(root) ?? root;
 
-    let vectorDb: VectorDB | null = null;
     try {
       // 1. Try arg as path (relative to projectRoot, then cwd).
       const candidates = [
@@ -186,11 +186,10 @@ export const log = new Command("log")
 
       // 2. Try arg as symbol via index lookup.
       const paths = ensureProjectPaths(projectRoot);
-      vectorDb = new VectorDB(paths.lancedbDir);
       const symbolPaths = await resolveSymbolPaths(
-        vectorDb,
         arg,
         projectRoot,
+        paths.lancedbDir,
         opts.in,
         opts.exclude,
       );
@@ -239,15 +238,12 @@ export const log = new Command("log")
         printHuman(commits, projectRoot, symbolPaths);
       }
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "Unknown error";
-      console.error("Log failed:", msg);
-      process.exitCode = 1;
-    } finally {
-      if (vectorDb) {
-        try {
-          await vectorDb.close();
-        } catch {}
+      if (!reportStoreAccessRefusal(error)) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        console.error("Log failed:", msg);
+        process.exitCode = 1;
       }
+    } finally {
       await gracefulExit();
     }
   });

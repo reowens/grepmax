@@ -17,6 +17,14 @@ const mocks = vi.hoisted(() => {
   };
 });
 
+// Read commands ask the daemon first. Answering ENOENT keeps these cases on the
+// in-process path deterministically, instead of depending on whether a daemon
+// happens to be listening on the developer's machine.
+vi.mock("../src/lib/utils/daemon-client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/lib/utils/daemon-client")>()),
+  sendDaemonCommand: vi.fn(async () => ({ ok: false, error: "ENOENT" })),
+}));
+
 vi.mock("node:fs", async () => {
   const actual = await vi.importActual("node:fs");
   return {

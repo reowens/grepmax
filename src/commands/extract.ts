@@ -1,14 +1,25 @@
 import * as fs from "node:fs";
 import { Command } from "commander";
-import { VectorDB } from "../lib/store/vector-db";
+import {
+  readRows,
+  runTests,
+  scopeToWire,
+  withLocalStore,
+} from "../lib/daemon/rows-handler";
+import type { TestHit } from "../lib/graph/impact";
 import { symbolNotFoundLines } from "../lib/utils/agent-errors";
+import { sendDaemonCommand } from "../lib/utils/daemon-client";
 import { gracefulExit } from "../lib/utils/exit";
-import { escapeSqlString } from "../lib/utils/filter-builder";
 import { extractImportsFromContent } from "../lib/utils/import-extractor";
 import { groupByLanguage } from "../lib/utils/language";
 import { resolveContainedFile } from "../lib/utils/path-containment";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
+import type { ResolvedScope } from "../lib/utils/scope-filter";
+import {
+  reportStoreAccessRefusal,
+  withStoreRead,
+} from "../lib/utils/store-access";
 
 const useColors = process.stdout.isTTY && !process.env.NO_COLOR;
 const style = {
@@ -24,6 +35,15 @@ const ROLE_PRIORITY: Record<string, number> = {
   IMPLEMENTATION: 1,
 };
 
+const CHUNK_COLUMNS = [
+  "path",
+  "start_line",
+  "end_line",
+  "role",
+  "is_exported",
+  "defined_symbols",
+];
+
 interface ChunkMatch {
   path: string;
   startLine: number;
@@ -31,37 +51,6 @@ interface ChunkMatch {
   role: string;
   exported: boolean;
   definedSymbols: string[];
-}
-
-async function findSymbolChunks(
-  db: VectorDB,
-  whereClause: string,
-): Promise<ChunkMatch[]> {
-  const table = await db.ensureTable();
-  const rows = await table
-    .query()
-    .select([
-      "path",
-      "start_line",
-      "end_line",
-      "role",
-      "is_exported",
-      "defined_symbols",
-    ])
-    .where(whereClause)
-    .limit(10)
-    .toArray();
-
-  return rows.map((row: any) => ({
-    path: String(row.path || ""),
-    startLine: Number(row.start_line || 0),
-    endLine: Number(row.end_line || 0),
-    role: String(row.role || "IMPLEMENTATION"),
-    exported: Boolean(row.is_exported),
-    definedSymbols: Array.isArray(row.defined_symbols)
-      ? row.defined_symbols
-      : [],
-  }));
 }
 
 function pickBestMatch(chunks: ChunkMatch[], symbol: string): ChunkMatch {
@@ -72,6 +61,41 @@ function pickBestMatch(chunks: ChunkMatch[], symbol: string): ChunkMatch {
     if (bFirst !== aFirst) return bFirst - aFirst;
     return (ROLE_PRIORITY[b.role] || 0) - (ROLE_PRIORITY[a.role] || 0);
   })[0];
+}
+
+/**
+ * The tests footer. `runTests` wraps `findTests`, which walks the call graph —
+ * several LanceDB queries per hop — so it belongs on the daemon's warm store
+ * for the same reason the location lookup does.
+ */
+async function fetchTests(
+  symbol: string,
+  projectRoot: string,
+  lancedbDir: string,
+  scope: ResolvedScope,
+): Promise<TestHit[] | null> {
+  return withStoreRead<TestHit[] | null>("extract tests", {
+    daemon: () =>
+      sendDaemonCommand(
+        {
+          cmd: "rows.tests",
+          projectRoot,
+          symbol,
+          scope: scopeToWire(scope),
+        },
+        { timeoutMs: 30_000 },
+      ),
+    render: (resp) => (resp.tests ?? null) as TestHit[] | null,
+    inProcess: () =>
+      withLocalStore(lancedbDir, (deps) =>
+        runTests(deps, {
+          symbol,
+          pathPrefix: scope.pathPrefix,
+          excludePrefixes: scope.excludePrefixes,
+        }),
+      ),
+    fallbackOnUnknownVerb: true,
+  });
 }
 
 export const extract = new Command("extract")
@@ -94,28 +118,40 @@ export const extract = new Command("extract")
   .option("--imports", "Prepend file imports", false)
   .option("--no-tests", "Suppress the tests footer")
   .action(async (symbol, opts) => {
-    let vectorDb: VectorDB | null = null;
     const root = resolveRootOrExit(opts.root);
     if (root === null) return;
 
     try {
       const projectRoot = findProjectRoot(root) ?? root;
       const paths = ensureProjectPaths(projectRoot);
-      vectorDb = new VectorDB(paths.lancedbDir);
 
-      const { resolveScope, buildScopeWhere } = await import(
-        "../lib/utils/scope-filter"
-      );
+      const { resolveScope } = await import("../lib/utils/scope-filter");
       const scope = resolveScope({
         projectRoot,
         in: opts.in,
         exclude: opts.exclude,
       });
-      const where = buildScopeWhere(
+
+      // Locations come from the daemon; the body is read here, from this
+      // process's own filesystem view.
+      const [indexedRows] = await readRows({
+        name: "extract",
+        projectRoot,
+        lancedbDir: paths.lancedbDir,
         scope,
-        `array_contains(defined_symbols, '${escapeSqlString(symbol)}')`,
-      );
-      const indexedChunks = await findSymbolChunks(vectorDb, where);
+        select: CHUNK_COLUMNS,
+        matches: [{ kind: "definedSymbol", symbol }],
+        limit: 10,
+      });
+
+      const indexedChunks: ChunkMatch[] = (indexedRows ?? []).map((row) => ({
+        path: String(row.path || ""),
+        startLine: Number(row.start_line || 0),
+        endLine: Number(row.end_line || 0),
+        role: String(row.role || "IMPLEMENTATION"),
+        exported: Boolean(row.is_exported),
+        definedSymbols: (row.defined_symbols as string[]) ?? [],
+      }));
       const chunks = indexedChunks.flatMap((chunk) => {
         try {
           return [
@@ -178,14 +214,14 @@ export const extract = new Command("extract")
         console.log(`${relPath}:${startLine + 1}-${endLine + 1}`);
         console.log(body.join("\n"));
         if (opts.tests !== false) {
-          const { fetchTestsForFooter, renderTestsFooterAgent } = await import(
+          const { renderTestsFooterAgent } = await import(
             "../lib/utils/tests-footer"
           );
-          const tests = await fetchTestsForFooter(
+          const tests = await fetchTests(
             symbol,
-            vectorDb,
-            scope.pathPrefix,
-            scope.excludePrefixes,
+            projectRoot,
+            paths.lancedbDir,
+            scope,
           );
           if (tests && tests.length > 0) {
             console.log("--- tests:");
@@ -213,7 +249,7 @@ export const extract = new Command("extract")
         const lineNumWidth = String(endLine + 1).length;
         for (let i = 0; i < body.length; i++) {
           const lineNum = String(startLine + 1 + i).padStart(lineNumWidth);
-          console.log(`${style.dim(`${lineNum}\u2502`)} ${body[i]}`);
+          console.log(`${style.dim(`${lineNum}│`)} ${body[i]}`);
         }
       }
 
@@ -232,14 +268,14 @@ export const extract = new Command("extract")
       }
 
       if (!opts.agent && opts.tests !== false) {
-        const { fetchTestsForFooter, renderTestsFooterHuman } = await import(
+        const { renderTestsFooterHuman } = await import(
           "../lib/utils/tests-footer"
         );
-        const tests = await fetchTestsForFooter(
+        const tests = await fetchTests(
           symbol,
-          vectorDb,
-          scope.pathPrefix,
-          scope.excludePrefixes,
+          projectRoot,
+          paths.lancedbDir,
+          scope,
         );
         if (tests && tests.length > 0) {
           for (const line of renderTestsFooterHuman(tests, projectRoot)) {
@@ -248,15 +284,13 @@ export const extract = new Command("extract")
         }
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      console.error("Extract failed:", message);
-      process.exitCode = 1;
-    } finally {
-      if (vectorDb) {
-        try {
-          await vectorDb.close();
-        } catch {}
+      if (!reportStoreAccessRefusal(error)) {
+        const message =
+          error instanceof Error ? error.message : "Unknown error";
+        console.error("Extract failed:", message);
+        process.exitCode = 1;
       }
+    } finally {
       await gracefulExit();
     }
   });

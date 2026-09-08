@@ -10,22 +10,32 @@
 import * as fs from "node:fs";
 import { Command } from "commander";
 import { CONFIG } from "../config";
+import {
+  runSkeleton,
+  type SkeletonLookup,
+  withLocalStore,
+} from "../lib/daemon/rows-handler";
 import { createIndexingSpinner } from "../lib/index/sync-helpers";
-import { initialSync } from "../lib/index/syncer";
 import { Searcher } from "../lib/search/searcher";
 import { ensureSetup } from "../lib/setup/setup-helpers";
-import { getStoredSkeleton } from "../lib/skeleton/retriever";
 import { Skeletonizer } from "../lib/skeleton/skeletonizer";
-import { VectorDB } from "../lib/store/vector-db";
+import type { ChunkType } from "../lib/store/types";
+import {
+  sendDaemonCommand,
+  sendStreamingCommand,
+} from "../lib/utils/daemon-client";
 import { gracefulExit } from "../lib/utils/exit";
 import { readContainedTextFileSync } from "../lib/utils/file-utils";
-import { pathStartsWith } from "../lib/utils/filter-builder";
 import {
   resolveContainedExistingPath,
   resolveContainedPath,
 } from "../lib/utils/path-containment";
 import { stampProjectFullSync } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
+import {
+  reportStoreAccessRefusal,
+  withStoreRead,
+} from "../lib/utils/store-access";
 
 interface SkeletonOptions {
   limit: string;
@@ -55,40 +65,147 @@ function isSymbolLike(target: string): boolean {
 }
 
 /**
- * Find a file by symbol name in the index.
+ * `--sync`. With a daemon up this is the existing `ensure-project` streaming
+ * verb — the daemon already owns first-run indexing and is the only process
+ * that should be writing to the store. `initialSync` runs here only when no
+ * daemon is listening.
  */
-async function findFileBySymbol(
-  symbol: string,
-  db: VectorDB,
+async function syncIndex(
   projectRoot: string,
-): Promise<string | null> {
-  try {
-    const table = await db.ensureTable();
+  lancedbDir: string,
+): Promise<void> {
+  const { spinner, onProgress } = createIndexingSpinner(
+    projectRoot,
+    "Syncing...",
+    { verbose: false },
+  );
 
-    // Search for files that define this symbol
-    const results = await table
-      .search(symbol)
-      .where(pathStartsWith(`${projectRoot}/`))
-      .limit(10)
-      .toArray();
-
-    // Find a result where this symbol is defined
-    for (const result of results) {
-      const defined = result.defined_symbols as string[] | undefined;
-      if (defined?.includes(symbol)) {
-        return result.path as string;
+  await withStoreRead<void>("skeleton sync", {
+    daemon: async () => {
+      try {
+        const done = await sendStreamingCommand(
+          { cmd: "ensure-project", root: projectRoot },
+          (msg) =>
+            onProgress({
+              processed: Number(msg.processed ?? 0),
+              total: Number(msg.total ?? 0),
+              indexed: Number(msg.indexed ?? 0),
+              filePath: typeof msg.filePath === "string" ? msg.filePath : "",
+            }),
+        );
+        return { ...done, ok: done.ok !== false };
+      } catch (err) {
+        // sendStreamingCommand rejects with the socket errno as the message,
+        // which is exactly what the access policy classifies on.
+        return {
+          ok: false,
+          error:
+            (err as NodeJS.ErrnoException)?.code ?? (err as Error)?.message,
+        };
       }
-    }
+    },
+    render: () => {
+      spinner.succeed("Sync complete");
+    },
+    inProcess: async () => {
+      const { initialSync } = await import("../lib/index/syncer");
+      const result = await initialSync({ projectRoot, onProgress });
+      if (result.degraded) {
+        spinner.warn(
+          `Sync incomplete: ${result.scanErrors} scan error(s), ${result.failedFiles} file failure(s)`,
+        );
+        return;
+      }
+      const prefix = projectRoot.endsWith("/")
+        ? projectRoot
+        : `${projectRoot}/`;
+      const chunkCount = await withLocalStore(lancedbDir, (deps) =>
+        deps.vectorDb!.countRowsForPath(prefix),
+      );
+      stampProjectFullSync({
+        root: projectRoot,
+        generation: result.generation,
+        embedMode: result.embedMode,
+        chunkCount,
+        chunkerVersion: CONFIG.CHUNKER_VERSION,
+        expectedFingerprint: result.registryExpectation.embeddingFingerprint,
+        expectedRebuildId: result.registryExpectation.rebuildId,
+      });
+      spinner.succeed("Sync complete");
+    },
+  });
+}
 
-    // Fallback: just return the first match's file
-    if (results.length > 0) {
-      return results[0].path as string;
-    }
+/**
+ * The stored skeleton for a file, and/or the file that defines a symbol. One
+ * verb covers both because symbol mode always follows the lookup with the
+ * skeleton fetch.
+ */
+async function lookupSkeleton(
+  projectRoot: string,
+  lancedbDir: string,
+  req: { path?: string; symbol?: string },
+): Promise<SkeletonLookup> {
+  return withStoreRead<SkeletonLookup>("skeleton", {
+    daemon: () =>
+      sendDaemonCommand(
+        {
+          cmd: "rows.skeleton",
+          projectRoot,
+          path: req.path,
+          symbol: req.symbol,
+        },
+        { timeoutMs: 30_000 },
+      ),
+    render: (resp) => ({
+      path: (resp.path ?? null) as string | null,
+      skeleton: (resp.skeleton ?? null) as string | null,
+    }),
+    inProcess: () =>
+      withLocalStore(lancedbDir, (deps) =>
+        runSkeleton(deps, { projectRoot, ...req }),
+      ),
+    fallbackOnUnknownVerb: true,
+  });
+}
 
-    return null;
-  } catch {
-    return null;
-  }
+/**
+ * Query mode's search. Routed through the daemon's `search` verb so the
+ * Searcher — and with it the PageRank cache under ~/.gmax/pagerank/ — stays in
+ * one process.
+ */
+async function searchFiles(
+  projectRoot: string,
+  lancedbDir: string,
+  query: string,
+  limit: number,
+): Promise<ChunkType[]> {
+  return withStoreRead<ChunkType[]>("skeleton search", {
+    daemon: () =>
+      sendDaemonCommand(
+        {
+          cmd: "search",
+          projectRoot,
+          query,
+          limit,
+          pathPrefix: projectRoot,
+        },
+        { timeoutMs: 60_000 },
+      ),
+    render: (resp) => (resp.data ?? []) as ChunkType[],
+    inProcess: () =>
+      withLocalStore(lancedbDir, async (deps) => {
+        const searcher = new Searcher(deps.vectorDb!);
+        const results = await searcher.search(
+          query,
+          limit,
+          {},
+          {},
+          `${projectRoot}/`,
+        );
+        return results.data ?? [];
+      }),
+  });
 }
 
 export const skeleton = new Command("skeleton")
@@ -109,44 +226,16 @@ Examples:
 `,
   )
   .action(async (target: string, options: SkeletonOptions, _cmd) => {
-    let vectorDb: VectorDB | null = null;
-
     try {
       // Initialize
       await ensureSetup();
       const projectRoot = findProjectRoot(process.cwd()) ?? process.cwd();
       const paths = ensureProjectPaths(projectRoot);
-      vectorDb = new VectorDB(paths.lancedbDir);
+      const lancedbDir = paths.lancedbDir;
 
       // Sync if requested
       if (options.sync) {
-        const { spinner, onProgress } = createIndexingSpinner(
-          projectRoot,
-          "Syncing...",
-          { verbose: false },
-        );
-        const result = await initialSync({ projectRoot, onProgress });
-        if (result.degraded) {
-          spinner.warn(
-            `Sync incomplete: ${result.scanErrors} scan error(s), ${result.failedFiles} file failure(s)`,
-          );
-        } else {
-          const prefix = projectRoot.endsWith("/")
-            ? projectRoot
-            : `${projectRoot}/`;
-          const chunkCount = await vectorDb.countRowsForPath(prefix);
-          stampProjectFullSync({
-            root: projectRoot,
-            generation: result.generation,
-            embedMode: result.embedMode,
-            chunkCount,
-            chunkerVersion: CONFIG.CHUNKER_VERSION,
-            expectedFingerprint:
-              result.registryExpectation.embeddingFingerprint,
-            expectedRebuildId: result.registryExpectation.rebuildId,
-          });
-          spinner.succeed("Sync complete");
-        }
+        await syncIndex(projectRoot, lancedbDir);
       }
 
       // Initialize skeletonizer
@@ -226,20 +315,20 @@ Examples:
           return;
         }
 
-        if (vectorDb) {
-          // Use absolute path for DB lookup (centralized index stores absolute paths)
-          const cached = await getStoredSkeleton(vectorDb, filePath);
-          if (cached) {
-            outputResult(
-              {
-                success: true,
-                skeleton: cached,
-                tokenEstimate: Math.ceil(cached.length / 4),
-              },
-              options,
-            );
-            return;
-          }
+        // Use absolute path for DB lookup (centralized index stores absolute paths)
+        const cached = (
+          await lookupSkeleton(projectRoot, lancedbDir, { path: filePath })
+        ).skeleton;
+        if (cached) {
+          outputResult(
+            {
+              success: true,
+              skeleton: cached,
+              tokenEstimate: Math.ceil(cached.length / 4),
+            },
+            options,
+          );
+          return;
         }
 
         const content = readContainedTextFileSync(projectRoot, filePath);
@@ -252,9 +341,11 @@ Examples:
         outputResult(result, options);
       } else if (isSymbolLike(target) && !target.includes(" ")) {
         // === SYMBOL MODE ===
-        const filePath = await findFileBySymbol(target, vectorDb, projectRoot);
+        const found = await lookupSkeleton(projectRoot, lancedbDir, {
+          symbol: target,
+        });
 
-        if (!filePath) {
+        if (!found.path) {
           console.error(`Symbol not found in index: ${target}`);
           console.error(
             "Try running 'gmax index' first or use a search query.",
@@ -264,7 +355,7 @@ Examples:
         }
 
         // filePath from DB is absolute (centralized index)
-        const absolutePath = resolveContainedPath(projectRoot, filePath, {
+        const absolutePath = resolveContainedPath(projectRoot, found.path, {
           verifyExistingTarget: true,
         });
         if (!fs.existsSync(absolutePath)) {
@@ -273,7 +364,7 @@ Examples:
           return;
         }
 
-        const cached = await getStoredSkeleton(vectorDb!, absolutePath);
+        const cached = found.skeleton;
         if (cached) {
           outputResult(
             {
@@ -296,18 +387,15 @@ Examples:
         outputResult(result, options);
       } else {
         // === QUERY MODE ===
-        const searcher = new Searcher(vectorDb);
         const limit = Math.min(Number.parseInt(options.limit, 10) || 3, 10);
-
-        const searchResults = await searcher.search(
+        const searchData = await searchFiles(
+          projectRoot,
+          lancedbDir,
           target,
           limit,
-          {},
-          {},
-          `${projectRoot}/`,
         );
 
-        if (!searchResults.data || searchResults.data.length === 0) {
+        if (searchData.length === 0) {
           console.error(`No results found for: ${target}`);
           process.exitCode = 1;
           return;
@@ -317,7 +405,7 @@ Examples:
         const seenPaths = new Set<string>();
         const filePaths: string[] = [];
 
-        for (const result of searchResults.data) {
+        for (const result of searchData) {
           const resultPath = (result.metadata as { path?: string })?.path;
           if (resultPath && !seenPaths.has(resultPath)) {
             seenPaths.add(resultPath);
@@ -362,7 +450,11 @@ Examples:
           }
 
           // Try cache first
-          const cached = await getStoredSkeleton(vectorDb!, absolutePath);
+          const cached = (
+            await lookupSkeleton(projectRoot, lancedbDir, {
+              path: absolutePath,
+            })
+          ).skeleton;
           if (cached) {
             results.push({
               file: filePath,
@@ -398,17 +490,12 @@ Examples:
         }
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error("Error:", message);
-      process.exitCode = 1;
-    } finally {
-      if (vectorDb) {
-        try {
-          await vectorDb.close();
-        } catch {
-          // Ignore close errors
-        }
+      if (!reportStoreAccessRefusal(error)) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error("Error:", message);
+        process.exitCode = 1;
       }
+    } finally {
       const code = typeof process.exitCode === "number" ? process.exitCode : 0;
       await gracefulExit(code);
     }

@@ -1,6 +1,5 @@
 import { Command } from "commander";
 import {
-  analyzeSurprisingConnections,
   DEFAULT_SURPRISE_OPTIONS,
   findingBucketLabel,
   findingExamples,
@@ -9,7 +8,12 @@ import {
   MAX_SURPRISE_ROWS,
   skeletonHint,
 } from "../lib/analysis/surprising-connections";
-import { VectorDB } from "../lib/store/vector-db";
+import { withLocalStore } from "../lib/daemon/rows-handler";
+import {
+  runSurprises,
+  type SurprisesResult,
+} from "../lib/daemon/vector-handler";
+import { sendDaemonCommand } from "../lib/utils/daemon-client";
 import { gracefulExit } from "../lib/utils/exit";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
@@ -17,6 +21,10 @@ import {
   maybeWarnStaleChunker,
   maybeWarnStaleEmbedding,
 } from "../lib/utils/stale-hint";
+import {
+  reportStoreAccessRefusal,
+  withStoreRead,
+} from "../lib/utils/store-access";
 
 const useColors = process.stdout.isTTY && !process.env.NO_COLOR;
 const style = {
@@ -40,10 +48,7 @@ function parseFloatOption(value: unknown, fallback: number): number {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
-function formatAgent(
-  result: Awaited<ReturnType<typeof analyzeSurprisingConnections>>,
-  top: number,
-) {
+function formatAgent(result: SurprisesResult, top: number) {
   const lines: string[] = [];
   const { summary, findings } = result;
   lines.push(
@@ -72,10 +77,7 @@ function formatAgent(
   return lines.join("\n");
 }
 
-function formatHuman(
-  result: Awaited<ReturnType<typeof analyzeSurprisingConnections>>,
-  top: number,
-) {
+function formatHuman(result: SurprisesResult, top: number) {
   const { summary, findings } = result;
   const out: string[] = [];
   out.push(
@@ -194,7 +196,6 @@ export const surprises = new Command("surprises")
       return;
     }
 
-    let vectorDb: VectorDB | null = null;
     try {
       const root = resolveRootOrExit(opts.root);
       if (root === null) return;
@@ -202,11 +203,31 @@ export const surprises = new Command("surprises")
       maybeWarnStaleChunker(projectRoot, { agent: opts.agent });
       maybeWarnStaleEmbedding(projectRoot, { agent: opts.agent });
       const paths = ensureProjectPaths(projectRoot);
-      vectorDb = new VectorDB(paths.lancedbDir);
-      const table = await vectorDb.ensureTable();
       const top = parseIntOption(opts.top, 20, 100);
 
-      const result = await analyzeSurprisingConnections(table, projectRoot, {
+      // --in/--exclude resolve against this process's cwd and filesystem, so
+      // they are resolved here and shipped as absolute prefixes.
+      // analyzeSurprisingConnections re-resolves them daemon-side; absolute
+      // input makes that a no-op, so both paths scan under the same scope.
+      const { resolveScope } = await import("../lib/utils/scope-filter");
+      const scope = resolveScope({
+        projectRoot,
+        in: opts.in,
+        exclude: opts.exclude,
+      });
+      const projectPrefix = projectRoot.endsWith("/")
+        ? projectRoot
+        : `${projectRoot}/`;
+      const analysisIn =
+        scope.inPrefixes.length > 0
+          ? scope.inPrefixes
+          : scope.pathPrefix !== projectPrefix
+            ? [scope.pathPrefix]
+            : undefined;
+      const analysisExclude =
+        scope.excludePrefixes.length > 0 ? scope.excludePrefixes : undefined;
+
+      const options = {
         sample: parseIntOption(opts.sample, DEFAULT_SURPRISE_OPTIONS.sample),
         neighbors: parseIntOption(
           opts.neighbors,
@@ -229,23 +250,37 @@ export const surprises = new Command("surprises")
         ),
         includeTests: Boolean(opts.includeTests),
         includeEval: Boolean(opts.includeEval),
-        in: opts.in,
-        exclude: opts.exclude,
+        in: analysisIn,
+        exclude: analysisExclude,
+      };
+
+      // The scan reads up to MAX_SURPRISE_ROWS rows with their vectors; the
+      // daemon runs it against its warm store and returns the summary plus the
+      // findings that will actually be printed.
+      const result = await withStoreRead<SurprisesResult>("surprises", {
+        daemon: () =>
+          sendDaemonCommand(
+            { cmd: "vector.surprises", projectRoot, options, top },
+            { timeoutMs: 300_000 },
+          ),
+        render: (resp) => resp as unknown as SurprisesResult,
+        inProcess: () =>
+          withLocalStore(paths.lancedbDir, (deps) =>
+            runSurprises(deps, { projectRoot, options, top }),
+          ),
+        fallbackOnUnknownVerb: true,
       });
 
       console.log(
         opts.agent ? formatAgent(result, top) : formatHuman(result, top),
       );
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "Unknown error";
-      console.error("Surprises failed:", msg);
-      process.exitCode = 1;
-    } finally {
-      if (vectorDb) {
-        try {
-          await vectorDb.close();
-        } catch {}
+      if (!reportStoreAccessRefusal(error)) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        console.error("Surprises failed:", msg);
+        process.exitCode = 1;
       }
+    } finally {
       await gracefulExit();
     }
   });

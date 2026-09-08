@@ -1,10 +1,18 @@
 import * as path from "node:path";
 import { Command } from "commander";
-import { VectorDB } from "../lib/store/vector-db";
+import {
+  runSymbols,
+  type SymbolEntry,
+  withLocalStore,
+} from "../lib/daemon/rows-handler";
+import { sendDaemonCommand } from "../lib/utils/daemon-client";
 import { gracefulExit } from "../lib/utils/exit";
-import { normalizePath, pathStartsWith } from "../lib/utils/filter-builder";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
+import {
+  reportStoreAccessRefusal,
+  withStoreRead,
+} from "../lib/utils/store-access";
 
 const style = {
   bold: (s: string) => `\x1b[1m${s}\x1b[22m`,
@@ -12,26 +20,11 @@ const style = {
   green: (s: string) => `\x1b[32m${s}\x1b[39m`,
 };
 
-type SymbolEntry = {
-  symbol: string;
-  count: number;
-  path: string;
-  line: number;
-};
-
-function toStringArray(val: unknown): string[] {
-  if (Array.isArray(val)) return val.filter((v) => typeof v === "string");
-  if (val && typeof (val as any).toArray === "function") {
-    try {
-      const arr = (val as any).toArray();
-      return Array.isArray(arr) ? arr.filter((v) => typeof v === "string") : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-}
-
+/**
+ * Ask the daemon for the symbol table; open the store only when no daemon is
+ * listening. Both branches run the same `runSymbols`, so the two paths cannot
+ * disagree — only the process the query runs in changes.
+ */
 async function collectSymbols(options: {
   projectRoot: string;
   limit: number;
@@ -39,59 +32,38 @@ async function collectSymbols(options: {
   pattern?: string;
 }): Promise<SymbolEntry[]> {
   const paths = ensureProjectPaths(options.projectRoot);
-  const db = new VectorDB(paths.lancedbDir);
+  // Resolve to absolute for the centralized index. No trailing slash: the
+  // query has always matched starts_with on the bare prefix.
+  const absPrefix = options.pathPrefix
+    ? path.isAbsolute(options.pathPrefix)
+      ? options.pathPrefix
+      : path.resolve(options.projectRoot, options.pathPrefix)
+    : undefined;
 
-  try {
-    const table = await db.ensureTable();
-
-    let query = table
-      .query()
-      .select(["defined_symbols", "path", "start_line"])
-      .where("array_length(defined_symbols) > 0")
-      // Fetch more rows to ensure we have enough after filtering/aggregation
-      .limit(options.pattern ? 10000 : Math.max(options.limit * 50, 2000));
-
-    if (options.pathPrefix) {
-      // Resolve to absolute path for centralized index
-      const absPrefix = path.isAbsolute(options.pathPrefix)
-        ? options.pathPrefix
-        : path.resolve(options.projectRoot, options.pathPrefix);
-      query = query.where(pathStartsWith(normalizePath(absPrefix)));
-    }
-
-    const rows = await query.toArray();
-
-    const map = new Map<string, SymbolEntry>();
-    for (const row of rows) {
-      const defs = toStringArray((row as any).defined_symbols);
-      const path = String((row as any).path || "");
-      const line = Number((row as any).start_line || 0);
-      for (const sym of defs) {
-        if (
-          options.pattern &&
-          !sym.toLowerCase().includes(options.pattern.toLowerCase())
-        ) {
-          continue;
-        }
-        const existing = map.get(sym);
-        if (existing) {
-          existing.count += 1;
-        } else {
-          map.set(sym, { symbol: sym, count: 1, path, line });
-        }
-      }
-    }
-
-    return Array.from(map.values())
-      .sort((a, b) => {
-        // Sort by count desc, then symbol asc
-        if (b.count !== a.count) return b.count - a.count;
-        return a.symbol.localeCompare(b.symbol);
-      })
-      .slice(0, options.limit);
-  } finally {
-    await db.close();
-  }
+  return withStoreRead<SymbolEntry[]>("symbols", {
+    daemon: () =>
+      sendDaemonCommand(
+        {
+          cmd: "rows.symbols",
+          projectRoot: options.projectRoot,
+          pathPrefix: absPrefix,
+          pattern: options.pattern,
+          limit: options.limit,
+        },
+        { timeoutMs: 60_000 },
+      ),
+    render: (resp) => (resp.entries ?? []) as SymbolEntry[],
+    inProcess: () =>
+      withLocalStore(paths.lancedbDir, (deps) =>
+        runSymbols(deps, {
+          projectRoot: options.projectRoot,
+          pathPrefix: absPrefix,
+          pattern: options.pattern,
+          limit: options.limit,
+        }),
+      ),
+    fallbackOnUnknownVerb: true,
+  });
 }
 
 function formatTable(entries: SymbolEntry[]): string {
@@ -163,24 +135,35 @@ export const symbols = new Command("symbols")
     const limit = Number.parseInt(cmd.limit, 10);
     // Auto-scope to project root; --path narrows further within it
     const pathPrefix = cmd.path ?? projectRoot;
-    const entries = await collectSymbols({
-      projectRoot,
-      limit: Number.isFinite(limit) && limit > 0 ? limit : 20,
-      pathPrefix,
-      pattern: pattern as string | undefined,
-    });
 
-    if (cmd.agent) {
-      console.log(formatAgent(entries, projectRoot));
-    } else {
-      console.log(
-        `${style.bold("Project")}: ${style.green(projectRoot)}\n${formatTable(entries)}`,
-      );
+    try {
+      const entries = await collectSymbols({
+        projectRoot,
+        limit: Number.isFinite(limit) && limit > 0 ? limit : 20,
+        pathPrefix,
+        pattern: pattern as string | undefined,
+      });
+
+      if (cmd.agent) {
+        console.log(formatAgent(entries, projectRoot));
+      } else {
+        console.log(
+          `${style.bold("Project")}: ${style.green(projectRoot)}\n${formatTable(entries)}`,
+        );
+      }
+
+      if (entries.length === 0) {
+        process.exitCode = 1;
+      }
+    } catch (error) {
+      // `symbols` was the one read command with no catch at all, so a denied
+      // lease escaped as a raw node:fs stack trace instead of the one-line hint.
+      if (!reportStoreAccessRefusal(error)) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        console.error("Symbols failed:", msg);
+        process.exitCode = 1;
+      }
+    } finally {
+      await gracefulExit();
     }
-
-    if (entries.length === 0) {
-      process.exitCode = 1;
-    }
-
-    await gracefulExit();
   });
