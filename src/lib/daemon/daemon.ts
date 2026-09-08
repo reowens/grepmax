@@ -844,7 +844,7 @@ export class Daemon {
    * read verb (graph, rows, vector) — extend this rather than adding a second;
    * handlers get no other access to daemon internals.
    */
-  storeReadDeps(): StoreReadDeps {
+  storeReadDeps(): Required<StoreReadDeps> {
     return {
       vectorDb: this.vectorDb,
       touchActivity: () => {
