@@ -368,7 +368,7 @@ megabytes per call and turn a multi-hop trace into dozens of round trips.
 | Family | Verbs | Serves |
 |---|---|---|
 | graph | `graph.resolve`, `graph.tests`, `graph.dependents`, `graph.trace`, `graph.peek`, `graph.dead`, `graph.audit` | `test`, `impact`, `trace`, `peek`, `dead`, `audit` |
-| rows | `rows.symbols`, `rows.locate`, `rows.skeleton` | `symbols`, `project`, `extract`, `related`, `log`, `skeleton` |
+| rows | `rows.symbols`, `rows.project`, `rows.locate`, `rows.skeleton` | `symbols`, `project`, `extract`, `related`, `log`, `skeleton`, `context` |
 | vector | `vector.similar`, `vector.surprises` | `similar`, `surprises` |
 
 Verbs register in `src/lib/daemon/read-verbs.ts` instead of adding a `case`: `ipc-handler`'s
