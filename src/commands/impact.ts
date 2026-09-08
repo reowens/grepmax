@@ -1,12 +1,18 @@
 import * as path from "node:path";
 import { Command } from "commander";
 import {
+  callGraphVerb,
+  decodeSymbolFamilies,
+  type GraphResolveResult,
+  runGraphDependents,
+  runGraphResolve,
+  runGraphTests,
+} from "../lib/daemon/graph-handler";
+import {
+  type DependentHit,
   type DetailedDependentHit,
-  findDependents,
-  findDependentsDetailed,
-  findTests,
   isTestPath,
-  resolveTargetSymbols,
+  type TestHit,
 } from "../lib/graph/impact";
 import {
   buildImpactRollup,
@@ -29,6 +35,7 @@ import {
   maybeWarnStaleChunker,
   maybeWarnStaleEmbedding,
 } from "../lib/utils/stale-hint";
+import { reportStoreAccessRefusal } from "../lib/utils/store-access";
 
 export const impact = new Command("impact")
   .description("Analyze change impact: dependents and affected tests")
@@ -70,7 +77,8 @@ export const impact = new Command("impact")
       Math.max(Number.parseInt(opts.top || "10", 10) || 10, 1),
       100,
     );
-    let vectorDb: VectorDB | null = null;
+    // Opened only if the daemon is unreachable; withStoreRead decides.
+    const local: { db: VectorDB | null } = { db: null };
 
     try {
       const root = resolveRootOrExit(opts.root);
@@ -78,11 +86,32 @@ export const impact = new Command("impact")
       const projectRoot = findProjectRoot(root) ?? root;
       maybeWarnStaleChunker(projectRoot, { agent: opts.agent });
       maybeWarnStaleEmbedding(projectRoot, { agent: opts.agent });
-      const paths = ensureProjectPaths(projectRoot);
-      vectorDb = new VectorDB(paths.lancedbDir);
+      const localDb = () => {
+        local.db ??= new VectorDB(ensureProjectPaths(projectRoot).lancedbDir);
+        return local.db;
+      };
+
+      const { resolveScope } = await import("../lib/utils/scope-filter");
+      const scope = resolveScope({
+        projectRoot,
+        in: opts.in,
+        exclude: opts.exclude,
+      });
 
       const { symbols, resolvedAsFile, symbolFamilies } =
-        await resolveTargetSymbols(target, vectorDb, projectRoot);
+        await callGraphVerb<GraphResolveResult>("graph.resolve", {
+          projectRoot,
+          scope,
+          payload: { target },
+          render: (resp) => ({
+            symbols: (resp.symbols as string[]) ?? [],
+            resolvedAsFile: resp.resolvedAsFile === true,
+            symbolFamilies:
+              (resp.symbolFamilies as GraphResolveResult["symbolFamilies"]) ??
+              null,
+          }),
+          inProcess: () => runGraphResolve(localDb(), { target, projectRoot }),
+        });
 
       if (symbols.length === 0) {
         console.log(
@@ -100,14 +129,8 @@ export const impact = new Command("impact")
           ? target
           : path.resolve(projectRoot, target)
         : undefined;
-      const excludePaths = targetPath ? new Set([targetPath]) : undefined;
+      const excludePaths = targetPath ? [targetPath] : undefined;
 
-      const { resolveScope } = await import("../lib/utils/scope-filter");
-      const scope = resolveScope({
-        projectRoot,
-        in: opts.in,
-        exclude: opts.exclude,
-      });
       // Treat --in as an exclude-everything-else when set: any prefix that
       // isn't the --in scope becomes effectively excluded. Today findDependents
       // always queries within projectRoot; passing scope.pathPrefix when --in
@@ -119,40 +142,53 @@ export const impact = new Command("impact")
       const useRollup =
         !opts.flat && ((resolvedAsFile && !opts.agent) || opts.rollup === true);
       const rollupLimit = Math.min(Math.max(top * 10, 100), 500);
+      const families = decodeSymbolFamilies(symbolFamilies);
 
       // Run dependents and tests in parallel. --no-tests skips the test
       // traversal entirely so the affected-tests section is omitted (not just
       // empty) below.
       const [dependents, tests] = await Promise.all([
-        useRollup
-          ? findDependentsDetailed(
+        callGraphVerb<DependentHit[] | DetailedDependentHit[]>(
+          "graph.dependents",
+          {
+            projectRoot,
+            scope,
+            payload: {
               symbols,
-              vectorDb,
-              queryRoot,
+              detailed: useRollup,
               excludePaths,
-              rollupLimit,
-              scope.excludePrefixes,
-              symbolFamilies,
-            )
-          : findDependents(
-              symbols,
-              vectorDb,
-              queryRoot,
-              excludePaths,
-              undefined,
-              scope.excludePrefixes,
-              symbolFamilies,
-            ),
+              limit: useRollup ? rollupLimit : undefined,
+              families: symbolFamilies,
+            },
+            render: (resp) => (resp.dependents as DependentHit[]) ?? [],
+            inProcess: () =>
+              runGraphDependents(localDb(), {
+                symbols,
+                queryRoot,
+                detailed: useRollup,
+                excludePaths,
+                limit: useRollup ? rollupLimit : undefined,
+                excludePrefixes: scope.excludePrefixes,
+                families,
+              }),
+          },
+        ),
         includeTests
-          ? findTests(
-              symbols,
-              vectorDb,
-              queryRoot,
-              depth,
-              scope.excludePrefixes,
-              symbolFamilies,
-            )
-          : Promise.resolve([]),
+          ? callGraphVerb<TestHit[]>("graph.tests", {
+              projectRoot,
+              scope,
+              payload: { symbols, depth, families: symbolFamilies },
+              render: (resp) => (resp.hits as TestHit[]) ?? [],
+              inProcess: () =>
+                runGraphTests(localDb(), {
+                  symbols,
+                  queryRoot,
+                  depth,
+                  excludePrefixes: scope.excludePrefixes,
+                  families,
+                }),
+            })
+          : Promise.resolve([] as TestHit[]),
       ]);
 
       if (useRollup) {
@@ -229,13 +265,17 @@ export const impact = new Command("impact")
         }
       }
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "Unknown error";
-      console.error("Impact analysis failed:", msg);
-      process.exitCode = 1;
+      // A sandbox refusal is already one actionable line; the "Impact analysis
+      // failed:" prefix would bury the settings key that fixes it.
+      if (!reportStoreAccessRefusal(error)) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        console.error("Impact analysis failed:", msg);
+        process.exitCode = 1;
+      }
     } finally {
-      if (vectorDb) {
+      if (local.db) {
         try {
-          await vectorDb.close();
+          await local.db.close();
         } catch {}
       }
       await gracefulExit();

@@ -78,6 +78,7 @@ import {
   type DaemonSearchResult,
   handleDaemonSearch,
 } from "./search-handler";
+import { registerGraphVerbs } from "./read-verbs";
 import { WatcherManager } from "./watcher-manager";
 
 // 30 min was too aggressive — every shutdown is a chance for races, FSEvents
@@ -254,6 +255,11 @@ export class Daemon {
 
   async start(): Promise<void> {
     process.title = "gmax-daemon";
+
+    // Read verbs are registered here rather than at read-verbs.ts module load,
+    // so importing the registry (ipc-handler and its tests do) never populates
+    // it as a side effect. Idempotent: re-registering replaces by name.
+    registerGraphVerbs();
 
     // 0. Singleton enforcement: find and kill ALL stale daemon/worker processes
     await this.processManager.killStaleProcesses();
@@ -823,6 +829,20 @@ export class Daemon {
         operationSignal,
       ),
     );
+  }
+
+  /**
+   * What a read verb (read-verbs.ts) needs from the daemon: the warm store, and
+   * the idle-timer touch every served request owes it. Deliberately the whole
+   * surface — handlers get no other access to daemon internals.
+   */
+  storeReadDeps(): { vectorDb: VectorDB | null; touchActivity: () => void } {
+    return {
+      vectorDb: this.vectorDb,
+      touchActivity: () => {
+        this.lastActivity = Date.now();
+      },
+    };
   }
 
   listProjects(): Array<{ root: string; status: string }> {

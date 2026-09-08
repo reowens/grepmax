@@ -22,6 +22,7 @@
 import type * as net from "node:net";
 import type { DaemonResponse } from "../utils/daemon-client";
 import type { Daemon } from "./daemon";
+import { createGraphVerbs } from "./graph-handler";
 
 /** Bumped when the verb wire shapes change incompatibly. */
 export const READ_VERBS_PROTOCOL = 1;
@@ -79,8 +80,24 @@ export function clearReadVerbs(): void {
 
 // ---------------------------------------------------------------------------
 // graph verbs (WP-B) — graph.resolve, graph.tests, graph.dependents,
-// graph.trace, graph.dead, graph.audit; handlers in graph-handler.ts.
+// graph.trace, graph.peek, graph.dead, graph.audit; handlers in
+// graph-handler.ts.
+//
+// `graph.peek` is not in the plan's table: `peek` needs its defining-chunk rows
+// and its `is_exported`/`end_line` metadata alongside the graph, and those
+// selects would otherwise land in WP-C's `rows.locate`. Keeping them in one
+// composite verb costs one round trip instead of four and keeps peek's
+// rendering (and its `fs.readFileSync` signature extraction) unchanged.
 // ---------------------------------------------------------------------------
+
+/**
+ * Called once from the Daemon constructor rather than at module load, so that
+ * importing this registry (as `ipc-handler` and its tests do) does not populate
+ * it behind a test's back.
+ */
+export function registerGraphVerbs(): void {
+  registerReadVerbs(createGraphVerbs((ctx) => ctx.daemon.storeReadDeps()));
+}
 
 // ---------------------------------------------------------------------------
 // rows verbs (WP-C) — rows.symbols, rows.locate, rows.skeleton;

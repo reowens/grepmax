@@ -1,6 +1,10 @@
 import { Command } from "commander";
+import {
+  callGraphVerb,
+  type GraphTraceResult,
+  runGraphTrace,
+} from "../lib/daemon/graph-handler";
 import { findCallSiteSnippet } from "../lib/graph/callsites";
-import { GraphBuilder } from "../lib/graph/graph-builder";
 import { formatTrace } from "../lib/output/formatter";
 import { VectorDB } from "../lib/store/vector-db";
 import { symbolNotFoundLines } from "../lib/utils/agent-errors";
@@ -11,6 +15,7 @@ import {
   maybeWarnStaleChunker,
   maybeWarnStaleEmbedding,
 } from "../lib/utils/stale-hint";
+import { reportStoreAccessRefusal } from "../lib/utils/store-access";
 
 const useColors = process.stdout.isTTY && !process.env.NO_COLOR;
 const dim = (s: string) => (useColors ? `\x1b[2m${s}\x1b[22m` : s);
@@ -291,15 +296,13 @@ export const trace = new Command("trace")
     );
     const root = resolveRootOrExit(opts.root);
     if (root === null) return;
-    let vectorDb: VectorDB | null = null;
+    // Opened only if the daemon is unreachable; withStoreRead decides.
+    const local: { db: VectorDB | null } = { db: null };
 
     try {
       const projectRoot = findProjectRoot(root) ?? root;
       maybeWarnStaleChunker(projectRoot, { agent: opts.agent });
       maybeWarnStaleEmbedding(projectRoot, { agent: opts.agent });
-      const paths = ensureProjectPaths(projectRoot);
-
-      vectorDb = new VectorDB(paths.lancedbDir);
 
       const { resolveScope } = await import("../lib/utils/scope-filter");
       const scope = resolveScope({
@@ -307,12 +310,19 @@ export const trace = new Command("trace")
         in: opts.in,
         exclude: opts.exclude,
       });
-      const graphBuilder = new GraphBuilder(
-        vectorDb,
-        scope.pathPrefix,
-        scope.excludePrefixes,
-      );
-      const graph = await graphBuilder.buildGraphMultiHop(symbol, depth);
+
+      // The daemon returns the graph; call-site snippets below are read from
+      // the working tree by this process, which can already see it.
+      const graph = await callGraphVerb<GraphTraceResult>("graph.trace", {
+        projectRoot,
+        scope,
+        payload: { target: symbol, hops: depth },
+        render: (resp) => resp.graph as GraphTraceResult,
+        inProcess: () => {
+          local.db ??= new VectorDB(ensureProjectPaths(projectRoot).lancedbDir);
+          return runGraphTrace(local.db, { symbol, hops: depth, scope });
+        },
+      });
 
       if (opts.inbound) {
         if (!graph.center) {
@@ -348,13 +358,18 @@ export const trace = new Command("trace")
         if (!graph.center) process.exitCode = 1;
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      console.error("Trace failed:", message);
-      process.exitCode = 1;
+      // A sandbox refusal is already one actionable line; a "Trace failed:"
+      // prefix would bury the settings key that fixes it.
+      if (!reportStoreAccessRefusal(error)) {
+        const message =
+          error instanceof Error ? error.message : "Unknown error";
+        console.error("Trace failed:", message);
+        process.exitCode = 1;
+      }
     } finally {
-      if (vectorDb) {
+      if (local.db) {
         try {
-          await vectorDb.close();
+          await local.db.close();
         } catch (err) {
           console.error("Failed to close VectorDB:", err);
         }

@@ -1,16 +1,19 @@
 import { Command } from "commander";
-import { languageFamilyForPath } from "../lib/core/languages";
-import { GraphBuilder, type GraphNode } from "../lib/graph/graph-builder";
+import {
+  callGraphVerb,
+  type GraphDeadFacts,
+  runGraphDead,
+} from "../lib/daemon/graph-handler";
 import { VectorDB } from "../lib/store/vector-db";
 import { symbolNotFoundLines } from "../lib/utils/agent-errors";
 import { gracefulExit } from "../lib/utils/exit";
-import { escapeSqlString } from "../lib/utils/filter-builder";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import {
   maybeWarnStaleChunker,
   maybeWarnStaleEmbedding,
 } from "../lib/utils/stale-hint";
+import { reportStoreAccessRefusal } from "../lib/utils/store-access";
 
 const useColors = process.stdout.isTTY && !process.env.NO_COLOR;
 const style = {
@@ -104,38 +107,34 @@ export const dead = new Command("dead")
   .action(async (symbol, opts) => {
     const root = resolveRootOrExit(opts.root);
     if (root === null) return;
-    let vectorDb: VectorDB | null = null;
+    // Opened only if the daemon is unreachable; withStoreRead decides.
+    const local: { db: VectorDB | null } = { db: null };
     try {
       const projectRoot = findProjectRoot(root) ?? root;
       maybeWarnStaleChunker(projectRoot, { agent: opts.agent });
       maybeWarnStaleEmbedding(projectRoot, { agent: opts.agent });
-      const paths = ensureProjectPaths(projectRoot);
-      vectorDb = new VectorDB(paths.lancedbDir);
 
-      const { resolveScope, buildScopeWhere } = await import(
-        "../lib/utils/scope-filter"
-      );
+      const { resolveScope } = await import("../lib/utils/scope-filter");
       const scope = resolveScope({
         projectRoot,
         in: opts.in,
         exclude: opts.exclude,
       });
 
-      // Resolve the defining chunk to get path, line, and is_exported.
-      const table = await vectorDb.ensureTable();
-      const defRows = await table
-        .query()
-        .select(["path", "start_line", "is_exported"])
-        .where(
-          buildScopeWhere(
-            scope,
-            `array_contains(defined_symbols, '${escapeSqlString(symbol)}')`,
-          ),
-        )
-        .limit(1)
-        .toArray();
+      // The defining chunk plus its inbound callers, counted store-side: the
+      // caller set can be large and only its size and top 3 are rendered.
+      const facts = await callGraphVerb<GraphDeadFacts>("graph.dead", {
+        projectRoot,
+        scope,
+        payload: { target: symbol },
+        render: (resp) => resp.dead as GraphDeadFacts,
+        inProcess: () => {
+          local.db ??= new VectorDB(ensureProjectPaths(projectRoot).lancedbDir);
+          return runGraphDead(local.db, { symbol, scope });
+        },
+      });
 
-      if (defRows.length === 0) {
+      if (!facts.found) {
         console.log(
           symbolNotFoundLines(symbol, { agent: opts.agent }).join("\n"),
         );
@@ -143,35 +142,20 @@ export const dead = new Command("dead")
         return;
       }
 
-      const defRow = defRows[0] as any;
-      const defPath = String(defRow.path || "");
-      const defLine = Number(defRow.start_line || 0);
-      const isExported = Boolean(defRow.is_exported);
-
-      const builder = new GraphBuilder(
-        vectorDb,
-        scope.pathPrefix,
-        scope.excludePrefixes,
-      );
-      const callers: GraphNode[] = await builder.getCallers(
-        symbol,
-        languageFamilyForPath(defPath),
-      );
-
       const status: Status =
-        callers.length === 0 ? (isExported ? "PUBLIC_EXPORT" : "DEAD") : "LIVE";
-
-      const topCallers = callers
-        .slice(0, TOP_CALLERS)
-        .map((c) => ({ file: c.file, line: c.line }));
+        facts.callerCount === 0
+          ? facts.isExported
+            ? "PUBLIC_EXPORT"
+            : "DEAD"
+          : "LIVE";
 
       const result: DeadResult = {
         status,
         symbol,
-        defPath,
-        defLine,
-        callerCount: callers.length,
-        topCallers,
+        defPath: facts.defPath,
+        defLine: facts.defLine,
+        callerCount: facts.callerCount,
+        topCallers: facts.topCallers,
       };
 
       console.log(
@@ -180,13 +164,18 @@ export const dead = new Command("dead")
           : formatHuman(result, projectRoot),
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      console.error("Dead check failed:", message);
-      process.exitCode = 1;
+      // A sandbox refusal is already one actionable line; a "Dead check
+      // failed:" prefix would bury the settings key that fixes it.
+      if (!reportStoreAccessRefusal(error)) {
+        const message =
+          error instanceof Error ? error.message : "Unknown error";
+        console.error("Dead check failed:", message);
+        process.exitCode = 1;
+      }
     } finally {
-      if (vectorDb) {
+      if (local.db) {
         try {
-          await vectorDb.close();
+          await local.db.close();
         } catch (err) {
           console.error("Failed to close VectorDB:", err);
         }

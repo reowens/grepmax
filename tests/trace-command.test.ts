@@ -29,6 +29,23 @@ fs.writeFileSync(
   ].join("\n"),
 );
 
+// Whether the project looks registered decides whether `trace` tries the
+// daemon at all: an unregistered root has no chunks in the shared table.
+let registered = false;
+const sendDaemonCommand = vi.fn();
+
+vi.mock("../src/lib/utils/daemon-client", () => ({
+  sendDaemonCommand: (...args: unknown[]) => sendDaemonCommand(...args),
+}));
+
+vi.mock("../src/lib/utils/project-registry", () => ({
+  resolveRootOrExit: (arg?: string) => arg ?? tmpRoot,
+  getProject: (root: string) =>
+    registered ? { root, name: "project", status: "indexed" } : undefined,
+  listProjects: () =>
+    registered ? [{ root: tmpRoot, status: "indexed" }] : [],
+}));
+
 vi.mock("../src/lib/utils/project-root", () => ({
   ensureProjectPaths: vi.fn(() => ({
     root: tmpRoot,
@@ -60,15 +77,20 @@ vi.mock("../src/lib/graph/graph-builder", () => ({
 
 import { trace } from "../src/commands/trace";
 
+// File-scope cleanup: the snippet reader needs the temp source file for every
+// describe below, so it outlives the first one.
+afterAll(() => {
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+});
+
 describe("trace --inbound", () => {
   beforeAll(() => {
     process.env.NO_COLOR = "1";
   });
-  afterAll(() => {
-    fs.rmSync(tmpRoot, { recursive: true, force: true });
-  });
   beforeEach(() => {
     vi.clearAllMocks();
+    registered = false;
+    process.exitCode = undefined;
     (trace as Command).exitOverride();
   });
 
@@ -370,5 +392,127 @@ describe("trace --inbound", () => {
     expect(runSearchLines).toHaveLength(2);
     // Self-edge retained under --raw.
     expect(out).toMatch(/<-\s+doWork/);
+  });
+});
+
+/**
+ * `trace` as a thin IPC client: the daemon builds the graph, this process only
+ * reads call-site snippets out of the working tree and renders.
+ */
+describe("trace store access", () => {
+  const GRAPH = {
+    center: {
+      symbol: "doWork",
+      file: `${tmpRoot}/src/lib.ts`,
+      line: 0,
+      role: "DEFINITION",
+    },
+    callerTree: [
+      {
+        node: {
+          symbol: "helper",
+          file: callerFile,
+          line: 0,
+          role: "IMPLEMENTATION",
+        },
+        callers: [],
+      },
+    ],
+    callees: [],
+    importers: [],
+  };
+
+  beforeAll(() => {
+    process.env.NO_COLOR = "1";
+    process.env.GMAX_NO_STALE_HINT = "1";
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    registered = true;
+    process.exitCode = undefined;
+    (trace as Command).exitOverride();
+  });
+
+  it("renders the daemon's graph without building one locally", async () => {
+    sendDaemonCommand.mockResolvedValue({ ok: true, graph: GRAPH });
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await (trace as Command).parseAsync(["doWork", "--agent"], {
+      from: "user",
+    });
+    const out = spy.mock.calls.map((c) => String(c[0])).join("\n");
+    spy.mockRestore();
+
+    expect(out).toMatch(/<-\s+helper/);
+    expect(sendDaemonCommand.mock.calls[0][0]).toMatchObject({
+      cmd: "graph.trace",
+      projectRoot: tmpRoot,
+      target: "doWork",
+      hops: 1,
+    });
+    expect(buildGraphMultiHop).not.toHaveBeenCalled();
+  });
+
+  it("still reads call-site snippets locally under --inbound", async () => {
+    sendDaemonCommand.mockResolvedValue({ ok: true, graph: GRAPH });
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await (trace as Command).parseAsync(["doWork", "--inbound", "--agent"], {
+      from: "user",
+    });
+    const out = spy.mock.calls.map((c) => String(c[0])).join("\n");
+    spy.mockRestore();
+
+    expect(out).toMatch(
+      /src\/caller\.ts:3\thelper\tconst result = doWork\(arg\);/,
+    );
+  });
+
+  it("falls back in-process only when nothing is listening", async () => {
+    sendDaemonCommand.mockResolvedValue({ ok: false, error: "ENOENT" });
+    buildGraphMultiHop.mockResolvedValueOnce(GRAPH);
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await (trace as Command).parseAsync(["doWork", "--agent"], {
+      from: "user",
+    });
+    const out = spy.mock.calls.map((c) => String(c[0])).join("\n");
+    spy.mockRestore();
+
+    expect(out).toMatch(/<-\s+helper/);
+    expect(buildGraphMultiHop).toHaveBeenCalledOnce();
+  });
+
+  it("refuses with the socket hint when the sandbox blocks the socket", async () => {
+    sendDaemonCommand.mockResolvedValue({ ok: false, error: "EPERM" });
+
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await (trace as Command).parseAsync(["doWork"], { from: "user" });
+    const errors = errSpy.mock.calls.map((c) => String(c[0]));
+    errSpy.mockRestore();
+    logSpy.mockRestore();
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("allowUnixSockets");
+    expect(errors[0]).not.toContain("Trace failed");
+    expect(process.exitCode).toBe(2);
+    // The refusal must not turn into an in-process store read.
+    expect(buildGraphMultiHop).not.toHaveBeenCalled();
+  });
+
+  it("reports a live-daemon error without falling back", async () => {
+    sendDaemonCommand.mockResolvedValue({ ok: false, error: "DAEMON_BUSY" });
+
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    await (trace as Command).parseAsync(["doWork"], { from: "user" });
+    const errors = errSpy.mock.calls.map((c) => c.join(" "));
+    errSpy.mockRestore();
+
+    expect(errors.join("\n")).toContain("Trace failed");
+    expect(errors.join("\n")).toContain("DAEMON_BUSY");
+    expect(process.exitCode).toBe(1);
+    expect(buildGraphMultiHop).not.toHaveBeenCalled();
   });
 });

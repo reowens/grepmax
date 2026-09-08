@@ -1,11 +1,14 @@
 import * as fs from "node:fs";
 import { Command } from "commander";
+import {
+  callGraphVerb,
+  type GraphPeekResult,
+  runGraphPeek,
+} from "../lib/daemon/graph-handler";
 import { isBuiltinCallee, resolveCallSites } from "../lib/graph/callsites";
-import { GraphBuilder } from "../lib/graph/graph-builder";
 import { VectorDB } from "../lib/store/vector-db";
 import { symbolNotFoundLines } from "../lib/utils/agent-errors";
 import { gracefulExit } from "../lib/utils/exit";
-import { escapeSqlString } from "../lib/utils/filter-builder";
 import { groupByLanguage } from "../lib/utils/language";
 import { resolveContainedFile } from "../lib/utils/path-containment";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
@@ -14,6 +17,7 @@ import {
   maybeWarnStaleChunker,
   maybeWarnStaleEmbedding,
 } from "../lib/utils/stale-hint";
+import { reportStoreAccessRefusal } from "../lib/utils/store-access";
 
 const useColors = process.stdout.isTTY && !process.env.NO_COLOR;
 const style = {
@@ -102,7 +106,7 @@ export const peek = new Command("peek")
   .option("--agent", "Compact output for AI agents", false)
   .option("--no-tests", "Suppress the tests footer")
   .action(async (symbol, opts) => {
-    let vectorDb: VectorDB | null = null;
+    const local: { db: VectorDB | null } = { db: null };
     const root = resolveRootOrExit(opts.root);
     if (root === null) return;
     const depth = Math.min(
@@ -114,18 +118,36 @@ export const peek = new Command("peek")
       const projectRoot = findProjectRoot(root) ?? root;
       maybeWarnStaleChunker(projectRoot, { agent: opts.agent });
       maybeWarnStaleEmbedding(projectRoot, { agent: opts.agent });
-      const paths = ensureProjectPaths(projectRoot);
-      vectorDb = new VectorDB(paths.lancedbDir);
 
-      const { resolveScope, buildScopeWhere } = await import(
-        "../lib/utils/scope-filter"
-      );
+      const { resolveScope } = await import("../lib/utils/scope-filter");
       const scope = resolveScope({
         projectRoot,
         in: opts.in,
         exclude: opts.exclude,
       });
-      const scopeWhere = (cond: string) => buildScopeWhere(scope, cond);
+
+      // One round trip for everything peek needs out of the store: the
+      // defining chunks, the graph, the chunk metadata, and the tests footer.
+      // The signature below is read from the working tree by this process.
+      const store = await callGraphVerb<GraphPeekResult>("graph.peek", {
+        projectRoot,
+        scope,
+        payload: {
+          target: symbol,
+          depth,
+          includeTests: opts.tests !== false,
+        },
+        render: (resp) => resp.peek as GraphPeekResult,
+        inProcess: () => {
+          local.db ??= new VectorDB(ensureProjectPaths(projectRoot).lancedbDir);
+          return runGraphPeek(local.db, {
+            symbol,
+            depth,
+            scope,
+            includeTests: opts.tests !== false,
+          });
+        },
+      });
 
       // Cross-language disambiguation: when the symbol is defined in 2+
       // languages, refuse to silently pick one. The graph builder otherwise
@@ -135,21 +157,7 @@ export const peek = new Command("peek")
       // the first definition still wins, but the agent learns it guessed.
       let otherDefs: Array<{ path: string; startLine: number }> = [];
       {
-        const tableForCheck = await vectorDb.ensureTable();
-        const allDefs = await tableForCheck
-          .query()
-          .select(["path", "start_line"])
-          .where(
-            scopeWhere(
-              `array_contains(defined_symbols, '${escapeSqlString(symbol)}')`,
-            ),
-          )
-          .limit(20)
-          .toArray();
-        const chunks = allDefs.map((row: any) => ({
-          path: String(row.path || ""),
-          startLine: Number(row.start_line || 0),
-        }));
+        const chunks = store.defChunks;
         // Dedupe by file: split sub-chunks of one definition share a path,
         // while genuine ambiguity (same name defined elsewhere) crosses files.
         const distinct = new Map<string, { path: string; startLine: number }>();
@@ -177,12 +185,7 @@ export const peek = new Command("peek")
         }
       }
 
-      const graphBuilder = new GraphBuilder(
-        vectorDb,
-        scope.pathPrefix,
-        scope.excludePrefixes,
-      );
-      const graph = await graphBuilder.buildGraph(symbol);
+      const graph = store.graph;
 
       if (!graph.center) {
         console.log(
@@ -200,30 +203,13 @@ export const peek = new Command("peek")
       const rel = (p: string) =>
         p.startsWith(projectRoot) ? p.slice(projectRoot.length + 1) : p;
 
-      // Get chunk metadata for is_exported and end_line
-      const table = await vectorDb.ensureTable();
-      const metaRows = await table
-        .query()
-        .select(["is_exported", "start_line", "end_line"])
-        .where(
-          scopeWhere(
-            `array_contains(defined_symbols, '${escapeSqlString(symbol)}')`,
-          ),
-        )
-        .limit(1)
-        .toArray();
-      const exported =
-        metaRows.length > 0 && Boolean((metaRows[0] as any).is_exported);
-      const startLine =
-        metaRows.length > 0
-          ? Number((metaRows[0] as any).start_line || 0)
-          : center.line;
-      const endLine =
-        metaRows.length > 0
-          ? Number((metaRows[0] as any).end_line || 0)
-          : center.line;
+      // Chunk metadata for is_exported and end_line
+      const meta = store.meta;
+      const exported = meta?.isExported === true;
+      const startLine = meta ? meta.startLine : center.line;
+      const endLine = meta ? meta.endLine : center.line;
 
-      // Get multi-hop callers if depth > 1
+      // Multi-hop callers when depth > 1
       type CallerEntry = {
         symbol: string;
         file: string;
@@ -231,8 +217,7 @@ export const peek = new Command("peek")
         edgeKind?: "free" | "member" | "type";
       };
       let callerList: CallerEntry[];
-      if (depth > 1) {
-        const multiHop = await graphBuilder.buildGraphMultiHop(symbol, depth);
+      if (depth > 1 && store.callerTree) {
         // Flatten caller tree
         const flat: CallerEntry[] = [];
         function walkCallers(tree: any[]) {
@@ -246,7 +231,7 @@ export const peek = new Command("peek")
             walkCallers(t.callers);
           }
         }
-        walkCallers(multiHop.callerTree);
+        walkCallers(store.callerTree);
         callerList = flat;
       } else {
         callerList = graph.callers.map((c) => ({
@@ -362,15 +347,10 @@ export const peek = new Command("peek")
           console.log(`-> ... ${calleeList.length - MAX_CALLEES} more`);
         }
         if (opts.tests !== false) {
-          const { fetchTestsForFooter, renderTestsFooterAgent } = await import(
+          const { renderTestsFooterAgent } = await import(
             "../lib/utils/tests-footer"
           );
-          const tests = await fetchTestsForFooter(
-            symbol,
-            vectorDb,
-            scope.pathPrefix,
-            scope.excludePrefixes,
-          );
+          const tests = store.footerTests;
           if (tests && tests.length > 0) {
             for (const line of renderTestsFooterAgent(tests, projectRoot)) {
               console.log(line);
@@ -463,15 +443,10 @@ export const peek = new Command("peek")
         }
 
         if (opts.tests !== false) {
-          const { fetchTestsForFooter, renderTestsFooterHuman } = await import(
+          const { renderTestsFooterHuman } = await import(
             "../lib/utils/tests-footer"
           );
-          const tests = await fetchTestsForFooter(
-            symbol,
-            vectorDb,
-            scope.pathPrefix,
-            scope.excludePrefixes,
-          );
+          const tests = store.footerTests;
           if (tests && tests.length > 0) {
             for (const line of renderTestsFooterHuman(tests, projectRoot)) {
               console.log(line);
@@ -480,13 +455,18 @@ export const peek = new Command("peek")
         }
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      console.error("Peek failed:", message);
-      process.exitCode = 1;
+      // A sandbox refusal is already one actionable line; a "Peek failed:"
+      // prefix would bury the settings key that fixes it.
+      if (!reportStoreAccessRefusal(error)) {
+        const message =
+          error instanceof Error ? error.message : "Unknown error";
+        console.error("Peek failed:", message);
+        process.exitCode = 1;
+      }
     } finally {
-      if (vectorDb) {
+      if (local.db) {
         try {
-          await vectorDb.close();
+          await local.db.close();
         } catch {}
       }
       await gracefulExit();

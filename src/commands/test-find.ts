@@ -1,5 +1,12 @@
 import { Command } from "commander";
-import { findTests, resolveTargetSymbols } from "../lib/graph/impact";
+import {
+  callGraphVerb,
+  decodeSymbolFamilies,
+  type GraphResolveResult,
+  runGraphResolve,
+  runGraphTests,
+} from "../lib/daemon/graph-handler";
+import type { TestHit } from "../lib/graph/impact";
 import {
   formatViaAgent,
   formatViaHuman,
@@ -15,6 +22,7 @@ import {
   maybeWarnStaleChunker,
   maybeWarnStaleEmbedding,
 } from "../lib/utils/stale-hint";
+import { reportStoreAccessRefusal } from "../lib/utils/store-access";
 
 export const testFind = new Command("test")
   .description("Find tests that exercise a symbol or file")
@@ -39,7 +47,8 @@ export const testFind = new Command("test")
       Math.max(Number.parseInt(opts.depth || "1", 10), 1),
       3,
     );
-    let vectorDb: VectorDB | null = null;
+    // Opened only if the daemon is unreachable; withStoreRead decides.
+    const local: { db: VectorDB | null } = { db: null };
 
     try {
       const root = resolveRootOrExit(opts.root);
@@ -47,11 +56,32 @@ export const testFind = new Command("test")
       const projectRoot = findProjectRoot(root) ?? root;
       maybeWarnStaleChunker(projectRoot, { agent: opts.agent });
       maybeWarnStaleEmbedding(projectRoot, { agent: opts.agent });
-      const paths = ensureProjectPaths(projectRoot);
-      vectorDb = new VectorDB(paths.lancedbDir);
+      const localDb = () => {
+        local.db ??= new VectorDB(ensureProjectPaths(projectRoot).lancedbDir);
+        return local.db;
+      };
+
+      const { resolveScope } = await import("../lib/utils/scope-filter");
+      const scope = resolveScope({
+        projectRoot,
+        in: opts.in,
+        exclude: opts.exclude,
+      });
 
       const { symbols, resolvedAsFile, symbolFamilies } =
-        await resolveTargetSymbols(target, vectorDb, projectRoot);
+        await callGraphVerb<GraphResolveResult>("graph.resolve", {
+          projectRoot,
+          scope,
+          payload: { target },
+          render: (resp) => ({
+            symbols: (resp.symbols as string[]) ?? [],
+            resolvedAsFile: resp.resolvedAsFile === true,
+            symbolFamilies:
+              (resp.symbolFamilies as GraphResolveResult["symbolFamilies"]) ??
+              null,
+          }),
+          inProcess: () => runGraphResolve(localDb(), { target, projectRoot }),
+        });
 
       if (symbols.length === 0) {
         console.log(
@@ -63,24 +93,24 @@ export const testFind = new Command("test")
         return;
       }
 
-      const { resolveScope } = await import("../lib/utils/scope-filter");
-      const scope = resolveScope({
-        projectRoot,
-        in: opts.in,
-        exclude: opts.exclude,
-      });
       const queryRoot =
         opts.in && opts.in.length > 0
           ? scope.pathPrefix.replace(/\/$/, "")
           : projectRoot;
-      const tests = await findTests(
-        symbols,
-        vectorDb,
-        queryRoot,
-        depth,
-        scope.excludePrefixes,
-        symbolFamilies,
-      );
+      const tests = await callGraphVerb<TestHit[]>("graph.tests", {
+        projectRoot,
+        scope,
+        payload: { symbols, depth, families: symbolFamilies },
+        render: (resp) => (resp.hits as TestHit[]) ?? [],
+        inProcess: () =>
+          runGraphTests(localDb(), {
+            symbols,
+            queryRoot,
+            depth,
+            excludePrefixes: scope.excludePrefixes,
+            families: decodeSymbolFamilies(symbolFamilies),
+          }),
+      });
 
       if (tests.length === 0) {
         console.log(`No tests found for ${target}.`);
@@ -108,13 +138,17 @@ export const testFind = new Command("test")
         }
       }
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "Unknown error";
-      console.error("Test find failed:", msg);
-      process.exitCode = 1;
+      // A sandbox refusal is already one actionable line; a "Test find failed:"
+      // prefix would bury the settings key that fixes it.
+      if (!reportStoreAccessRefusal(error)) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        console.error("Test find failed:", msg);
+        process.exitCode = 1;
+      }
     } finally {
-      if (vectorDb) {
+      if (local.db) {
         try {
-          await vectorDb.close();
+          await local.db.close();
         } catch {}
       }
       await gracefulExit();
