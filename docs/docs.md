@@ -141,6 +141,7 @@ aggregation over the data gmax already has.
 | [2026 08 17 Gmax Agent Facing Health Audit](2026-08-17-gmax-agent-facing-health-audit.md) | Active |
 | [2026-08-25 Release Triage — Retrospective](2026-08-25-release-triage-retrospective.md) | Active |
 | [Embedding Layout Decision](embedding-layout-decision.md) | Active |
+| [Daemon Read Path](plans/daemon-read-path.md) | Active |
 | [Lance FTS Incremental-Merge Panic — Upstream Pursuit](plans/lance-fts-merge-upstream.md) | Active |
 
 ## Planned

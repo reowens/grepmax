@@ -367,7 +367,7 @@ megabytes per call and turn a multi-hop trace into dozens of round trips.
 
 | Family | Verbs | Serves |
 |---|---|---|
-| graph | `graph.resolve`, `graph.tests`, `graph.dependents`, `graph.trace`, `graph.dead`, `graph.audit` | `test`, `impact`, `trace`, `peek`, `extract`, `dead`, `audit` |
+| graph | `graph.resolve`, `graph.tests`, `graph.dependents`, `graph.trace`, `graph.peek`, `graph.dead`, `graph.audit` | `test`, `impact`, `trace`, `peek`, `dead`, `audit` |
 | rows | `rows.symbols`, `rows.locate`, `rows.skeleton` | `symbols`, `project`, `extract`, `related`, `log`, `skeleton` |
 | vector | `vector.similar`, `vector.surprises` | `similar`, `surprises` |
 
