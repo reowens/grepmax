@@ -460,7 +460,7 @@ export const cases: EvalCase[] = [
     query:
       "Where do we download models via a worker thread to avoid ONNX in main thread?",
     expectedPath: "src/lib/setup/model-loader.ts",
-    note: "downloadModels spawns worker with ts-node/register when dev.",
+    note: "downloadModels spawns worker with the tsx loader when dev.",
   },
   {
     query: "Where do we check areModelsDownloaded before running setup?",

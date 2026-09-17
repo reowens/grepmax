@@ -14,8 +14,7 @@
     "incremental": true,
     "sourceMap": false,
     "skipLibCheck": true,
-    "moduleResolution": "node",
-    "ignoreDeprecations": "6.0"
+    "moduleResolution": "bundler"
   },
   "include": ["src/**/*"],
   "exclude": [

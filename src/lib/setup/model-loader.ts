@@ -24,7 +24,7 @@ export async function downloadModels(): Promise<void> {
     const isDev = (runningTs && hasTsWorker) || (hasTsWorker && !hasJsWorker);
 
     const workerPath = isDev ? tsWorkerPath : jsWorkerPath;
-    const execArgv = isDev ? ["-r", "ts-node/register"] : [];
+    const execArgv = isDev ? ["--import", require.resolve("tsx")] : [];
 
     const worker = new Worker(workerPath, { execArgv });
 
