@@ -67,6 +67,10 @@ export const WATCHER_IGNORE_GLOBS: string[] = [
   // "**/<name>" ignores the directory entry itself, "**/<name>/**" its contents.
   ...IGNORED_DIR_NAMES.flatMap((name) => [`**/${name}`, `**/${name}/**`]),
   "**/*.tmp.*", // editor atomic save artifacts
+  // Atomic-save temp files named `.!<pid>!<name>` (e.g. `.!8903!dotmd.md`).
+  // picomatch treats `!` as a literal unless it leads the pattern or opens
+  // an `!(...)` extglob, so this matches only that shape, at any depth.
+  "**/.!*!*",
   "**/*.sb-*", // Xcode swap files
   // Codegen output never reaches the index (file policy drops it), so don't
   // let it reach the watcher either — it is the dominant source of FSEvents

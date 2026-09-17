@@ -41,6 +41,7 @@ describe("Daemon watcher embedding admission", () => {
     watchProject = vi
       .spyOn(daemon.watcherManager, "watchProject")
       .mockResolvedValue(undefined);
+    daemon.watchLeases.acquire("/work/app", { holder: "test", ttlMs: 60_000 });
   });
 
   it("admits a compatible legacy project", async () => {
@@ -49,6 +50,15 @@ describe("Daemon watcher embedding admission", () => {
     await daemon.watchProjectWithinOperation("/work/app");
 
     expect(watchProject).toHaveBeenCalledWith("/work/app");
+  });
+
+  it("does not watch a project no session holds a lease on", async () => {
+    mocks.project = project();
+    daemon.watchLeases.release("/work/app");
+
+    await daemon.watchProjectWithinOperation("/work/app");
+
+    expect(watchProject).not.toHaveBeenCalled();
   });
 
   it("rejects a stale generation before watcher catchup", async () => {

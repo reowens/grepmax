@@ -42,6 +42,7 @@ describe("watcher ignore globs", () => {
   it("keeps editor/Xcode temp-file globs", () => {
     expect(WATCHER_IGNORE_GLOBS).toContain("**/*.tmp.*");
     expect(WATCHER_IGNORE_GLOBS).toContain("**/*.sb-*");
+    expect(WATCHER_IGNORE_GLOBS).toContain("**/.!*!*");
   });
 });
 
@@ -95,6 +96,7 @@ describe("watcher ignore globs: generated source", () => {
         "// gen\n",
       );
       await fs.writeFile(path.join(genDir, "Bar.pb.go"), "// gen\n");
+      await fs.writeFile(path.join(srcDir, ".!8903!dotmd.md"), "# tmp\n");
       await fs.writeFile(path.join(srcDir, "handler.ts"), "export {};\n");
       const deadline = Date.now() + 5000;
       while (
@@ -113,5 +115,7 @@ describe("watcher ignore globs: generated source", () => {
     expect(seen.some((p) => p.endsWith("handler.ts"))).toBe(true);
     expect(seen.filter((p) => p.endsWith(".graphql.swift"))).toEqual([]);
     expect(seen.filter((p) => p.endsWith(".pb.go"))).toEqual([]);
+    // Editor atomic-save temp file (`.!<pid>!<name>`).
+    expect(seen.filter((p) => path.basename(p).startsWith(".!"))).toEqual([]);
   });
 });

@@ -20,6 +20,7 @@
  */
 
 import type * as net from "node:net";
+import { AsyncSemaphore } from "../utils/async-semaphore";
 import type { DaemonResponse } from "../utils/daemon-client";
 import type { Daemon } from "./daemon";
 import { createGraphVerbs } from "./graph-handler";
@@ -71,6 +72,67 @@ export function getReadVerb(name: unknown): ReadVerbHandler | undefined {
 
 export function readVerbNames(): string[] {
   return [...registry.keys()].sort();
+}
+
+// ---------------------------------------------------------------------------
+// Heavy-verb admission.
+//
+// `runSharedOperation` only tracks a verb; it never limits how many run. These
+// verbs each scan a large slice of the table (tens to hundreds of thousands of
+// rows, or one vector search per sampled anchor), and their Arrow buffers sit
+// in native memory until the answer is built. With one MCP session per Claude
+// Code window, N sessions asking at once meant N such scans resident together.
+// They now share a small global semaphore; everything else stays unbounded,
+// because point lookups (`graph.resolve`, `rows.locate`, ...) are cheap and
+// must not queue behind an audit.
+//
+// A queued request waits *before* `runSharedOperation` admits it (see
+// `runReadVerb`), so an exclusive rebuild does not have to sit behind scans
+// that have not started yet, and a client that disconnects while queued
+// leaves without ever touching the store.
+// ---------------------------------------------------------------------------
+
+export const HEAVY_READ_VERBS: ReadonlySet<string> = new Set([
+  "graph.audit", // up to AUDIT_ROW_LIMIT rows with symbol arrays
+  "graph.dead", // whole caller set
+  "graph.risk", // up to MAX_RISK_SYMBOLS x three content scans
+  "graph.subgraph", // per-file symbol scans over up to MAX_SUBGRAPH_FILES
+  "graph.trace", // multi-hop caller/callee expansion
+  "rows.project", // up to 200k rows with two symbol-array columns
+  "vector.similar", // vector search plus content
+  "vector.surprises", // up to 100k-row scan plus one search per anchor
+]);
+
+export const DEFAULT_HEAVY_READ_CONCURRENCY = 2;
+
+/** `GMAX_HEAVY_READ_CONCURRENCY`, or the default when unset or not a positive integer. */
+export function resolveHeavyReadConcurrency(
+  raw: string | undefined = process.env.GMAX_HEAVY_READ_CONCURRENCY,
+): number {
+  const n = Number(raw);
+  return raw !== undefined && Number.isInteger(n) && n >= 1
+    ? n
+    : DEFAULT_HEAVY_READ_CONCURRENCY;
+}
+
+export const heavyReadGate = new AsyncSemaphore(resolveHeavyReadConcurrency());
+
+export function isHeavyReadVerb(name: unknown): boolean {
+  return typeof name === "string" && HEAVY_READ_VERBS.has(name);
+}
+
+/**
+ * Admission wrapper `ipc-handler` puts around a verb's shared operation: heavy
+ * verbs wait for a gate slot first (abortable through `signal`), light verbs
+ * run straight through.
+ */
+export function runReadVerb<T>(
+  name: string,
+  signal: AbortSignal,
+  run: () => Promise<T>,
+  gate: AsyncSemaphore = heavyReadGate,
+): Promise<T> {
+  return isHeavyReadVerb(name) ? gate.run(signal, run) : run();
 }
 
 /** Test hook: drop every registration. */

@@ -2,6 +2,7 @@ import * as path from "node:path";
 import { isBuiltinCallee } from "../graph/callsites";
 import { configureAnnVectorQuery } from "../store/ann-config";
 import { toArr } from "../utils/arrow";
+import { escapeSqlString } from "../utils/filter-builder";
 import { buildScopeWhere, resolveScope } from "../utils/scope-filter";
 
 type RawRow = Record<string, unknown>;
@@ -114,6 +115,11 @@ export const DEFAULT_SURPRISE_OPTIONS: SurpriseAnalysisOptions = {
 
 export const MAX_SURPRISE_ROWS = 100_000;
 
+/**
+ * Columns a pair row carries: the scan's metadata plus `content`, which the
+ * weak-code filter and the scorer read. `vector` is not here — only sampled
+ * anchors need one, and they fetch it by id (see `hydrateRows`).
+ */
 export const SURPRISE_COLUMNS = [
   "id",
   "path",
@@ -124,8 +130,46 @@ export const SURPRISE_COLUMNS = [
   "type_referenced_symbols",
   "role",
   "content",
-  "vector",
 ];
+
+const MIN_CODE_CONTENT_LENGTH = 80;
+
+/**
+ * The row scan reads up to MAX_SURPRISE_ROWS rows. Selecting `content` and
+ * `vector` there held every chunk body and embedding in memory for an answer
+ * that needs ~160 vectors. It now selects metadata plus two bounds on the
+ * weak-code test (`content.trim().length >= 80`), computed in the store:
+ *
+ * - `content_min_len` trims a *superset* of JS whitespace (Unicode White_Space
+ *   plus U+FEFF) and counts code points, so it never exceeds the JS length —
+ *   at or above the threshold, the row passes.
+ * - `content_max_len` trims a *subset* (ASCII whitespace) and counts UTF-8
+ *   bytes, so it is never below the JS length — under the threshold, it fails.
+ *
+ * Anything between the two (non-ASCII text or whitespace near the threshold)
+ * fetches its content by id and takes the exact JS test, so `codeRows` and the
+ * anchor sample are unchanged. Backslashes are literal in DataFusion strings.
+ */
+const CONTENT_MIN_LEN_EXPR =
+  "char_length(regexp_replace(content, '^[\\s\\x{FEFF}]+|[\\s\\x{FEFF}]+$', '', 'g'))";
+const CONTENT_MAX_LEN_EXPR =
+  "octet_length(regexp_replace(content, '^[\\t\\n\\x0B\\f\\r ]+|[\\t\\n\\x0B\\f\\r ]+$', '', 'g'))";
+
+const SCAN_SELECT: Record<string, string> = {
+  id: "id",
+  path: "path",
+  start_line: "start_line",
+  end_line: "end_line",
+  defined_symbols: "defined_symbols",
+  referenced_symbols: "referenced_symbols",
+  type_referenced_symbols: "type_referenced_symbols",
+  role: "role",
+  content_min_len: CONTENT_MIN_LEN_EXPR,
+  content_max_len: CONTENT_MAX_LEN_EXPR,
+};
+
+/** Ids per `id IN (...)` hydration query. */
+const HYDRATE_BATCH = 200;
 
 const CODE_EXTENSIONS = new Set([
   ".ts",
@@ -561,16 +605,63 @@ function hasDirectFileEdge(edges: Set<string>, a: ChunkRow, b: ChunkRow) {
   return edges.has(`${a.path}\0${b.path}`) || edges.has(`${b.path}\0${a.path}`);
 }
 
-function filterableCodeRow(
+/** The anchor filter minus its content and vector tests (see below). */
+function filterableCodeMeta(
   row: ChunkRow,
   opts: SurpriseAnalysisOptions,
 ): boolean {
   if (!row.path || !isCodePath(row.path)) return false;
   if (!opts.includeTests && isTestPath(row.relPath)) return false;
   if (!opts.includeEval && isEvalPath(row.relPath)) return false;
-  if (vectorLength(row.vector) === 0) return false;
-  if (row.content.trim().length < 80) return false;
   return row.definedSymbols.length > 0;
+}
+
+function hasCodeContent(content: string): boolean {
+  return content.trim().length >= MIN_CODE_CONTENT_LENGTH;
+}
+
+/**
+ * The weak-code verdict from the scan alone: true/false when the store-side
+ * bounds decide it, null when the row needs its content fetched. A row that
+ * already carries `content` (a caller-supplied table) is decided exactly.
+ */
+function contentVerdict(raw: RawRow): boolean | null {
+  if (typeof raw.content === "string") return hasCodeContent(raw.content);
+  const min = Number(raw.content_min_len);
+  const max = Number(raw.content_max_len);
+  if (Number.isFinite(min) && min >= MIN_CODE_CONTENT_LENGTH) return true;
+  if (Number.isFinite(max) && max < MIN_CODE_CONTENT_LENGTH) return false;
+  return null;
+}
+
+/**
+ * Fetch `columns` for the given ids, keyed by id. The scope clause is ANDed
+ * on so a hydration can never reach outside the scan that produced the ids.
+ */
+async function hydrateRows(
+  table: any,
+  where: string,
+  ids: string[],
+  columns: string[],
+): Promise<Map<string, RawRow>> {
+  const out = new Map<string, RawRow>();
+  for (let i = 0; i < ids.length; i += HYDRATE_BATCH) {
+    const batch = ids.slice(i, i + HYDRATE_BATCH);
+    const list = batch.map((id) => `'${escapeSqlString(id)}'`).join(", ");
+    const rows = (await table
+      .query()
+      .select(["id", ...columns])
+      .where(`(${where}) AND id IN (${list})`)
+      .limit(batch.length)
+      .toArray()) as RawRow[];
+    for (const row of rows) out.set(String(row.id || ""), row);
+  }
+  return out;
+}
+
+/** Pair rows carry no vector: nothing downstream reads one, and findings cross the socket. */
+function withoutVector(row: ChunkRow): ChunkRow {
+  return row.vector === undefined ? row : { ...row, vector: undefined };
 }
 
 export function buildFindings(pairs: SurprisePair[]): FilePairFinding[] {
@@ -643,16 +734,68 @@ export async function analyzeSurprisingConnections(
   const where = buildScopeWhere(scope);
   const rawRows = (await table
     .query()
-    .select(SURPRISE_COLUMNS)
+    .select(SCAN_SELECT)
     .where(where)
     .limit(opts.maxRows)
     .toArray()) as RawRow[];
   const rows = rawRows.map((row) => toChunkRow(row, prefix));
-  const codeRows = rows.filter((row) => filterableCodeRow(row, opts));
   const fileEdges = buildFileEdges(rows);
-  const anchors = [...codeRows]
-    .sort((a, b) => stableHash(rowKey(a)) - stableHash(rowKey(b)))
-    .slice(0, opts.sample);
+
+  // Weak-code test: decided from the scan's bounds where possible, otherwise
+  // from content fetched for just the undecided rows.
+  const candidates: Array<{ row: ChunkRow; verdict: boolean | null }> = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (!filterableCodeMeta(rows[i], opts)) continue;
+    candidates.push({ row: rows[i], verdict: contentVerdict(rawRows[i]) });
+  }
+  const undecidedContent = await hydrateRows(
+    table,
+    where,
+    candidates
+      .filter((c) => c.verdict === null && c.row.id)
+      .map((c) => c.row.id),
+    ["content"],
+  );
+  const codeRows = candidates
+    .filter(({ row, verdict }) => {
+      if (verdict !== null) return verdict;
+      const hydrated = undecidedContent.get(row.id);
+      return hydrated ? hasCodeContent(String(hydrated.content || "")) : false;
+    })
+    .map(({ row }) => row);
+
+  // Anchors are the first `sample` code rows in hash order, and only they need
+  // content and a vector. Fetch those a page at a time, skipping any row that
+  // comes back without a vector (the column is non-nullable, so this is
+  // defensive) just as the old whole-scan filter did.
+  const ordered = [...codeRows].sort(
+    (a, b) => stableHash(rowKey(a)) - stableHash(rowKey(b)),
+  );
+  const anchors: ChunkRow[] = [];
+  for (
+    let i = 0;
+    i < ordered.length && anchors.length < opts.sample;
+    i += opts.sample
+  ) {
+    const page = ordered.slice(i, i + opts.sample);
+    const fetched = await hydrateRows(
+      table,
+      where,
+      page
+        .filter((row) => row.id && vectorLength(row.vector) === 0)
+        .map((row) => row.id),
+      ["content", "vector"],
+    );
+    for (const row of page) {
+      if (anchors.length >= opts.sample) break;
+      const extra = fetched.get(row.id);
+      const anchor: ChunkRow = extra
+        ? { ...row, content: String(extra.content || ""), vector: extra.vector }
+        : row;
+      if (vectorLength(anchor.vector) === 0) continue;
+      anchors.push(anchor);
+    }
+  }
   const filters = {
     rawNeighbors: 0,
     sameChunk: 0,
@@ -667,9 +810,10 @@ export async function analyzeSurprisingConnections(
   };
   const pairs = new Map<string, SurprisePair>();
 
-  for (const source of anchors) {
+  for (const anchor of anchors) {
+    const source = withoutVector(anchor);
     const neighbors = (await configureAnnVectorQuery(
-      table.vectorSearch(source.vector as number[]),
+      table.vectorSearch(anchor.vector as number[]),
     )
       .select([...SURPRISE_COLUMNS, "_distance"])
       .where(where)
@@ -678,7 +822,7 @@ export async function analyzeSurprisingConnections(
 
     for (const rawTarget of neighbors) {
       filters.rawNeighbors++;
-      const target = toChunkRow(rawTarget, prefix);
+      const target = withoutVector(toChunkRow(rawTarget, prefix));
       if (rowKey(source) === rowKey(target)) {
         filters.sameChunk++;
         continue;
@@ -687,7 +831,9 @@ export async function analyzeSurprisingConnections(
         filters.sameFile++;
         continue;
       }
-      if (!isCodePath(target.path) || vectorLength(target.vector) === 0) {
+      // A vector-search hit has a vector by construction, and `vector` is not
+      // selected, so only the path decides "non-code" here.
+      if (!isCodePath(target.path)) {
         filters.nonCode++;
         continue;
       }

@@ -41,9 +41,14 @@ const DEFAULT_WORKER_THREADS = (() => {
   const fromEnv = Number.parseInt(process.env.GMAX_WORKER_THREADS ?? "", 10);
   if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv;
 
+  // Each worker is a separate process that loads the ONNX models, peaking at
+  // ~800 MB-1 GB. The old max(4, cores/2) let a 14-core host run 7 of them;
+  // together with the daemon that froze a 48 GB machine. Four is the ceiling;
+  // two is the floor where the cores exist, so one worker can stay free for
+  // search. GMAX_WORKER_THREADS still overrides.
   const cores = os.cpus().length || 1;
-  const HARD_CAP = Math.max(4, Math.floor(cores * 0.5));
-  return Math.max(1, Math.min(HARD_CAP, cores));
+  const target = Math.min(4, Math.max(2, Math.floor(cores * 0.5)));
+  return Math.max(1, Math.min(target, cores));
 })();
 
 export const CONFIG = {
@@ -277,6 +282,7 @@ export const PATHS = {
   daemonSocket: path.join(GLOBAL_ROOT, "daemon.sock"),
   daemonPidFile: path.join(GLOBAL_ROOT, "daemon.pid"),
   daemonLockFile: path.join(GLOBAL_ROOT, "daemon.lock"),
+  watchLeasesFile: path.join(GLOBAL_ROOT, "watch-leases.json"),
   // Written by a daemon while it is gracefully shutting down (draining workers,
   // closing LanceDB). A successor's killStaleProcesses() respects this so it
   // never SIGKILLs a peer mid-cleanup once the peer has already dropped its

@@ -1,22 +1,54 @@
 import * as fs from "node:fs";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import {
   _cachePathForTests,
   _clearMemoryCacheForTests,
+  _memoryCacheKeysForTests,
   buildGraphFromDb,
   computePageRank,
   loadOrComputePageRank,
+  PAGERANK_MEMORY_CACHE_MAX,
+  PAGERANK_ROW_LIMIT,
   pageRankBoostForSymbols,
 } from "../src/lib/search/pagerank";
 
+// Keep the disk cache out of the real ~/.gmax.
+const { tmpGlobalRoot } = vi.hoisted(() => {
+  const nodeFs = require("node:fs") as typeof import("node:fs");
+  const nodeOs = require("node:os") as typeof import("node:os");
+  const nodePath = require("node:path") as typeof import("node:path");
+  return {
+    tmpGlobalRoot: nodeFs.mkdtempSync(
+      nodePath.join(nodeOs.tmpdir(), "gmax-pagerank-test-"),
+    ),
+  };
+});
+vi.mock("../src/config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/config")>();
+  return {
+    ...actual,
+    PATHS: { ...actual.PATHS, globalRoot: tmpGlobalRoot },
+  };
+});
+
+afterAll(() => {
+  fs.rmSync(tmpGlobalRoot, { recursive: true, force: true });
+});
+
 function mockDbWithRows(
   rows: Array<{ defined_symbols: string[]; referenced_symbols: string[] }>,
+  onLimit?: (n: number) => void,
 ) {
+  const result = { toArray: async () => rows };
   const ensureTable = vi.fn(async () => ({
     query: () => ({
       select: () => ({
         where: () => ({
-          toArray: async () => rows,
+          ...result,
+          limit: (n: number) => {
+            onLimit?.(n);
+            return result;
+          },
         }),
       }),
     }),
@@ -184,6 +216,82 @@ describe("loadOrComputePageRank cache", () => {
 
     await loadOrComputePageRank(db, TEST_PREFIX);
     expect(ensureTableMock).toHaveBeenCalledTimes(1); // memory hit
+  });
+
+  it("caps the graph scan", async () => {
+    const limits: number[] = [];
+    await buildGraphFromDb(
+      mockDbWithRows(
+        [{ defined_symbols: ["a"], referenced_symbols: [] }],
+        (n) => limits.push(n),
+      ),
+      TEST_PREFIX,
+    );
+    expect(limits).toEqual([PAGERANK_ROW_LIMIT]);
+  });
+
+  it("shares one scan between concurrent cold lookups", async () => {
+    const db = mockDbWithRows([
+      { defined_symbols: ["a"], referenced_symbols: ["b"] },
+      { defined_symbols: ["b"], referenced_symbols: ["a"] },
+    ]);
+    const [r1, r2] = await Promise.all([
+      loadOrComputePageRank(db, TEST_PREFIX),
+      loadOrComputePageRank(db, TEST_PREFIX),
+    ]);
+    expect(r1.scores).toBe(r2.scores);
+    const ensureTableMock = (
+      db as unknown as { ensureTable: ReturnType<typeof vi.fn> }
+    ).ensureTable;
+    expect(ensureTableMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps only the most recently used prefixes in memory", async () => {
+    const db = mockDbWithRows([
+      { defined_symbols: ["a"], referenced_symbols: [] },
+    ]);
+    const prefixes = Array.from(
+      { length: PAGERANK_MEMORY_CACHE_MAX + 2 },
+      (_, i) => `${TEST_PREFIX}lru${i}/`,
+    );
+    try {
+      for (const prefix of prefixes) {
+        await loadOrComputePageRank(db, prefix);
+      }
+      // Touch the oldest survivor so it becomes most recent.
+      await loadOrComputePageRank(db, prefixes[2]);
+      const keys = _memoryCacheKeysForTests();
+      expect(keys).toHaveLength(PAGERANK_MEMORY_CACHE_MAX);
+      expect(keys).not.toContain(prefixes[0]);
+      expect(keys).not.toContain(prefixes[1]);
+      expect(keys[keys.length - 1]).toBe(prefixes[2]);
+    } finally {
+      for (const prefix of prefixes) {
+        try {
+          fs.unlinkSync(_cachePathForTests(prefix));
+        } catch {}
+      }
+    }
+  });
+
+  it("drops an expired memory entry and recomputes", async () => {
+    const db = mockDbWithRows([
+      { defined_symbols: ["a"], referenced_symbols: [] },
+    ]);
+    const now = Date.now();
+    const spy = vi.spyOn(Date, "now").mockReturnValue(now);
+    try {
+      await loadOrComputePageRank(db, TEST_PREFIX);
+      fs.unlinkSync(_cachePathForTests(TEST_PREFIX));
+      spy.mockReturnValue(now + 2 * 60 * 60 * 1000);
+      await loadOrComputePageRank(db, TEST_PREFIX);
+      const ensureTableMock = (
+        db as unknown as { ensureTable: ReturnType<typeof vi.fn> }
+      ).ensureTable;
+      expect(ensureTableMock).toHaveBeenCalledTimes(2);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("falls back to disk cache when memory is cleared", async () => {

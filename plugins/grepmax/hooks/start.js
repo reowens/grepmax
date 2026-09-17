@@ -1,6 +1,11 @@
 const fs = require("node:fs");
 const _path = require("node:path");
 const { execFileSync } = require("node:child_process");
+const {
+  acquireSessionLease,
+  readHookInput,
+  registeredRootFor,
+} = require("./watch-lease");
 
 // Inline fallback so SessionStart context is never empty if the installed
 // gmax package can't be resolved (e.g. gmax not yet on PATH). The canonical
@@ -61,21 +66,8 @@ function getSessionStartHint() {
   return FALLBACK_SESSION_START_HINT;
 }
 
-function isProjectRegistered() {
-  try {
-    const projectsPath = _path.join(
-      require("node:os").homedir(),
-      ".gmax",
-      "projects.json",
-    );
-    const projects = JSON.parse(
-      require("node:fs").readFileSync(projectsPath, "utf-8"),
-    );
-    const cwd = process.cwd();
-    return projects.some((p) => cwd.startsWith(p.root));
-  } catch {
-    return false;
-  }
+function isProjectRegistered(dir) {
+  return registeredRootFor(dir) !== null;
 }
 
 // A kill switch for the auto-start. Create ~/.gmax/autostart-disabled (or export
@@ -96,9 +88,10 @@ function isAutostartDisabled() {
   }
 }
 
-function startWatcher() {
+async function startWatcher(input) {
   if (isAutostartDisabled()) return;
-  if (!isProjectRegistered()) return;
+  const dir = input.cwd || process.cwd();
+  if (!isProjectRegistered(dir)) return;
   try {
     execFileSync("gmax", ["watch", "--daemon", "-b"], {
       timeout: 5000,
@@ -112,11 +105,14 @@ function startWatcher() {
       // Watcher may already be running or gmax not in PATH — ignore
     }
   }
+  // The daemon only watches projects a session holds a lease on.
+  await acquireSessionLease(input, dir);
 }
 
-function main() {
+async function main() {
+  const input = await readHookInput();
   // The daemon owns embed-server configuration and lifecycle.
-  startWatcher();
+  await startWatcher(input);
 
   const response = {
     hookSpecificOutput: {

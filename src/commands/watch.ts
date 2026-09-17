@@ -37,7 +37,10 @@ const IDLE_CHECK_INTERVAL_MS = 60 * 1000; // check every minute
 export const watch = new Command("watch")
   .description("Start background file watcher for live reindexing")
   .option("-b, --background", "Run watcher in background and exit")
-  .option("-d, --daemon", "Run as centralized daemon watching all projects")
+  .option(
+    "-d, --daemon",
+    "Run as centralized daemon watching projects that active sessions hold",
+  )
   .option("-p, --path <dir>", "Directory to watch (defaults to project root)")
   .option("--no-idle-timeout", "Disable the 30-minute idle shutdown")
   .action(

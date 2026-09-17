@@ -39,6 +39,7 @@ import {
   OperationCoordinator,
 } from "../utils/operation-coordinator";
 import { killProcess } from "../utils/process";
+import { readFootprintMb } from "../utils/process-footprint";
 import {
   completeProjectRebuild,
   getProject,
@@ -81,6 +82,12 @@ import {
   handleDaemonSearch,
 } from "./search-handler";
 import { registerVectorVerbs } from "./vector-handler";
+import {
+  DEFAULT_LEASE_TTL_MS,
+  type LeaseRequest,
+  type WatchLease,
+  WatchLeases,
+} from "./watch-leases";
 import { WatcherManager } from "./watcher-manager";
 
 // 30 min was too aggressive — every shutdown is a chance for races, FSEvents
@@ -104,6 +111,10 @@ const IDLE_TIMEOUT_MS = (() => {
 })();
 const HEARTBEAT_INTERVAL_MS = 60 * 1000;
 
+// Escape hatch for the pre-lease behavior: watch every indexed project for the
+// daemon's whole life. See WatchLeases for why that is no longer the default.
+const WATCH_ALL = process.env.GMAX_WATCH_ALL === "1";
+
 // Self-recycle. Under continuous load (a busy monorepo) the idle timeout never
 // fires, so a long-lived daemon never gets a fresh start. The 24h age trigger
 // is the primary hygiene mechanism. The RSS trigger is a backstop for a genuine
@@ -122,7 +133,14 @@ const MAX_LIFETIME_MS = envNum(
   "GMAX_DAEMON_MAX_LIFETIME_MS",
   24 * 60 * 60 * 1000,
 );
+// Compared against the physical footprint (compressed + swapped included), not
+// RSS — see readFootprintMb. The env name is kept for existing overrides.
 const RSS_WATERMARK_MB = envNum("GMAX_DAEMON_RSS_WATERMARK_MB", 2560);
+const FOOTPRINT_RECYCLE_MIN_AGE_MS = 30 * 60 * 1000;
+const RECYCLE_FORCE_AFTER_MS = envNum(
+  "GMAX_DAEMON_RECYCLE_FORCE_AFTER_MS",
+  60 * 60 * 1000,
+);
 
 interface DaemonResourceGeneration {
   readonly id: number;
@@ -156,6 +174,9 @@ export class Daemon {
   private lastZoneWarnMs = 0;
   private shuttingDown = false;
   private recycling = false;
+  private recycleDueSinceMs: number | null = null;
+  private recycleReason = "";
+  private lastRecycleDeferLogMs = 0;
   // False until LanceDB + MetaCache are open. The socket starts listening early
   // (so liveness probes succeed during slow init), so commands that need those
   // resources must be gated on this to avoid hitting null stores mid-startup.
@@ -186,6 +207,10 @@ export class Daemon {
       ),
   });
   private readonly projectMutex = new KeyedMutex();
+  // Tests construct daemons against the real HOME; keep their leases in memory.
+  private readonly watchLeases = new WatchLeases(
+    process.env.VITEST ? null : PATHS.watchLeasesFile,
+  );
   private readonly operations = new OperationCoordinator();
   private shutdownPromise: Promise<void> | null = null;
   // Full-index progress per root while initialSync runs (--reset / initial
@@ -430,9 +455,17 @@ export class Daemon {
     // 7. Register daemon (only after resources are open)
     registerDaemon(process.pid);
 
-    // 8. Subscribe to all registered projects (skip missing directories)
+    // 8. Subscribe to the registered projects some session still holds a lease
+    // on (skip missing directories). Everything else waits for a lease.
     const allProjects = listProjects();
-    const indexed = allProjects.filter((p) => p.status === "indexed");
+    this.watchLeases.load();
+    const indexed = allProjects.filter(
+      (p) => p.status === "indexed" && this.shouldWatch(p.root),
+    );
+    console.log(
+      `[daemon] Watching ${indexed.length} of ${allProjects.length} registered projects` +
+        (WATCH_ALL ? " (GMAX_WATCH_ALL=1)" : " (leased by active sessions)"),
+    );
     for (const p of indexed) {
       if (!fs.existsSync(p.root)) {
         // Skipping is already the safe behavior — the project keeps its registry
@@ -488,6 +521,7 @@ export class Daemon {
         fs.utimesSync(PATHS.daemonLockFile, now, now);
       } catch {}
       rotateLogFds(path.join(PATHS.logsDir, "daemon.log"));
+      this.sweepWatchLeases();
       // Every 5 ticks (5 min), probe the MLX embed server and respawn if
       // it's gone zombie (port held but /health unresponsive). Closes the
       // 42h-degradation window where workers silently fell back to ONNX CPU
@@ -498,6 +532,8 @@ export class Daemon {
         this.processManager.sweepOrphanWorkers();
         this.maybeRecycle();
         this.checkKernelZonePressure();
+      } else if (this.recycleDueSinceMs !== null) {
+        this.maybeRecycle(false);
       }
     }, HEARTBEAT_INTERVAL_MS);
 
@@ -576,6 +612,9 @@ export class Daemon {
   }
 
   private watchProjectWithinOperation(root: string): Promise<void> {
+    // Every path that re-watches after an index/rebuild/remove goes through
+    // here, so an unleased project stays unwatched after the operation too.
+    if (!this.shouldWatch(root)) return Promise.resolve();
     const project = getProject(root);
     if (
       project?.status === "indexed" &&
@@ -588,6 +627,77 @@ export class Daemon {
       );
     }
     return this.watcherManager.watchProject(root);
+  }
+
+  private shouldWatch(root: string): boolean {
+    return WATCH_ALL || this.watchLeases.isWanted(root);
+  }
+
+  /**
+   * Take (or renew) a lease on `root` and make sure it is watched. Called for
+   * every `watch` IPC — MCP servers renew theirs every few minutes, so the
+   * common case is a lease bump on an already-watched project.
+   */
+  requestWatch(
+    root: string,
+    lease: Partial<LeaseRequest> = {},
+    signal?: AbortSignal,
+  ): Promise<void> {
+    this.watchLeases.acquire(root, {
+      holder: lease.holder || "cli",
+      pid: lease.pid,
+      ttlMs: lease.ttlMs ?? DEFAULT_LEASE_TTL_MS,
+    });
+    if (this.processors.has(root)) return Promise.resolve();
+    return this.watchProject(root, signal);
+  }
+
+  /**
+   * Drop a lease — every lease on the root when `holder` is omitted, which is
+   * what an explicit `unwatch` means — and unwatch once nothing wants it.
+   */
+  releaseWatch(
+    root: string,
+    holder?: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    this.watchLeases.release(root, holder);
+    if (this.shouldWatch(root) || !this.processors.has(root)) {
+      return Promise.resolve();
+    }
+    return this.unwatchProject(root, signal);
+  }
+
+  /**
+   * A short lease for a CLI add/index: the project stays watched after the
+   * operation re-watches it, and lapses unless a session picks it up.
+   */
+  leaseForCli(root: string): void {
+    this.watchLeases.acquire(root, {
+      holder: "cli",
+      ttlMs: DEFAULT_LEASE_TTL_MS,
+    });
+  }
+
+  listWatchLeases(): WatchLease[] {
+    return this.watchLeases.list();
+  }
+
+  /** Unwatch projects whose last lease expired or whose holder exited. */
+  private sweepWatchLeases(): void {
+    if (this.shuttingDown || WATCH_ALL) return;
+    for (const root of this.watchLeases.sweep()) {
+      if (!this.processors.has(root) || this.shouldWatch(root)) continue;
+      console.log(
+        `[daemon] No session holds ${path.basename(root)} any more — unwatching`,
+      );
+      void this.unwatchProject(root).catch((err) => {
+        console.error(
+          `[daemon] Failed to unwatch ${path.basename(root)}:`,
+          err,
+        );
+      });
+    }
   }
 
   runSharedOperation<T>(
@@ -1820,6 +1930,7 @@ export class Daemon {
 
             const keys = await this.metaCache.getKeysWithPrefix(rootPrefix);
             for (const key of keys) this.metaCache.delete(key);
+            this.watchLeases.release(root);
 
             writeDone(conn, { ok: true });
           } catch (err) {
@@ -1982,25 +2093,66 @@ export class Daemon {
    * too large. Only fires when quiet — no active compaction and no in-flight
    * project operations — so a recycle never interrupts indexing work. The
    * successor re-runs catchup on startup, so nothing is lost.
+   *
+   * "Quiet" alone was not enough: with a dozen watched projects some batch or
+   * catchup was in flight at nearly every 5-minute probe, and one daemon ran for
+   * 8 days past its 24h limit while its footprint sat at 4 GB. So once a recycle
+   * is due it is re-checked every heartbeat to catch a quiet minute, and after
+   * RECYCLE_FORCE_AFTER_MS of deferral it proceeds over in-flight project work
+   * (shutdown aborts it; the successor's catchup redoes it). Compaction is still
+   * waited out — killing it strands scratch files and wastes the rewrite.
+   *
+   * @param sampleFootprint false on the in-between ticks: `footprint` costs ~50 ms,
+   *   so it is only sampled on the 5-minute probe.
    */
-  private maybeRecycle(): void {
+  private maybeRecycle(sampleFootprint = true): void {
     if (this.shuttingDown || this.recycling) return;
     const ageMs = process.uptime() * 1000;
-    const rssMb = process.memoryUsage().rss / (1024 * 1024);
     const ageExceeded = MAX_LIFETIME_MS > 0 && ageMs > MAX_LIFETIME_MS;
-    const rssExceeded = RSS_WATERMARK_MB > 0 && rssMb > RSS_WATERMARK_MB;
-    if (!ageExceeded && !rssExceeded) return;
+    let footprintMb: number | null = null;
+    if (
+      this.recycleDueSinceMs === null &&
+      !ageExceeded &&
+      sampleFootprint &&
+      RSS_WATERMARK_MB > 0 &&
+      // A fresh daemon above the watermark would recycle in a loop; give the
+      // caches a chance to settle before judging the footprint.
+      ageMs > FOOTPRINT_RECYCLE_MIN_AGE_MS
+    ) {
+      footprintMb = readFootprintMb();
+    }
+    const footprintExceeded =
+      footprintMb !== null && footprintMb > RSS_WATERMARK_MB;
+    if (this.recycleDueSinceMs === null) {
+      if (!ageExceeded && !footprintExceeded) return;
+      this.recycleDueSinceMs = Date.now();
+      this.recycleReason = ageExceeded
+        ? `age ${(ageMs / 3_600_000).toFixed(1)}h > ${(MAX_LIFETIME_MS / 3_600_000).toFixed(1)}h`
+        : `footprint ${Math.round(footprintMb ?? 0)}MB > ${RSS_WATERMARK_MB}MB`;
+    }
 
-    // Defer while busy; we'll re-check next tick.
+    // Defer while busy; re-checked on every heartbeat until it goes through.
     if (this.vectorDb?.isMaintenanceActive()) return;
-    if (this.projectMutex.pending > 0 || this.operations.activeCount > 0)
+    const busy =
+      this.projectMutex.pending > 0 || this.operations.activeCount > 0;
+    const deferredMs = Date.now() - this.recycleDueSinceMs;
+    if (busy && deferredMs < RECYCLE_FORCE_AFTER_MS) {
+      if (Date.now() - this.lastRecycleDeferLogMs >= 30 * 60 * 1000) {
+        this.lastRecycleDeferLogMs = Date.now();
+        console.log(
+          `[daemon] Recycle due (${this.recycleReason}) — deferred ${Math.round(deferredMs / 60_000)}min, busy: ` +
+            [
+              ...this.operations.activeOperationNames(),
+              ...this.projectMutex.pendingKeys().map((k) => path.basename(k)),
+            ].join(", "),
+        );
+      }
       return;
+    }
 
-    const reason = ageExceeded
-      ? `age ${(ageMs / 3_600_000).toFixed(1)}h > ${(MAX_LIFETIME_MS / 3_600_000).toFixed(1)}h`
-      : `rss ${Math.round(rssMb)}MB > ${RSS_WATERMARK_MB}MB`;
+    const forced = busy ? " (forced over in-flight work)" : "";
     console.log(
-      `[daemon] Recycling (${reason}) — handing off to a fresh daemon`,
+      `[daemon] Recycling (${this.recycleReason})${forced} — handing off to a fresh daemon`,
     );
     this.recycling = true;
     void this.shutdown({ relaunch: true }).finally(() => process.exit(0));

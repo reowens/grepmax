@@ -1,44 +1,26 @@
-const fs = require("node:fs");
-const _path = require("node:path");
 const { execFileSync } = require("node:child_process");
+const {
+  acquireSessionLease,
+  readHookInput,
+  registeredRootFor,
+  releaseSessionLeases,
+} = require("./watch-lease");
 
-function readStdin() {
-  return new Promise((resolve) => {
-    let data = "";
-    process.stdin.setEncoding("utf-8");
-    process.stdin.on("data", (chunk) => (data += chunk));
-    process.stdin.on("end", () => {
-      try {
-        resolve(JSON.parse(data));
-      } catch {
-        resolve({});
-      }
-    });
-    // If no stdin arrives within 1s, proceed with empty input
-    setTimeout(() => resolve({}), 1000);
-  });
-}
-
-function isProjectRegistered(dir) {
-  try {
-    const projectsPath = _path.join(
-      require("node:os").homedir(),
-      ".gmax",
-      "projects.json",
-    );
-    if (!fs.existsSync(projectsPath)) return false;
-    const projects = JSON.parse(fs.readFileSync(projectsPath, "utf-8"));
-    return projects.some((p) => dir.startsWith(p.root));
-  } catch {
-    return false;
-  }
-}
-
+// Keep the daemon watching the project this session is in now, and let go of
+// the one it left. See watch-lease.js.
 async function main() {
-  const input = await readStdin();
-  const newCwd = input.new_cwd || process.cwd();
+  const input = await readHookInput();
+  const newCwd = input.new_cwd || input.cwd || process.cwd();
+  const oldCwd = input.old_cwd;
 
-  if (!isProjectRegistered(newCwd)) return;
+  if (oldCwd) {
+    const oldRoot = registeredRootFor(oldCwd);
+    if (oldRoot && oldRoot !== registeredRootFor(newCwd)) {
+      await releaseSessionLeases(input, oldCwd);
+    }
+  }
+
+  if (!registeredRootFor(newCwd)) return;
 
   try {
     execFileSync("gmax", ["watch", "--daemon", "-b"], {
@@ -50,6 +32,7 @@ async function main() {
       execFileSync("gmax", ["watch", "-b"], { timeout: 5000, stdio: "ignore" });
     } catch {}
   }
+  await acquireSessionLease(input, newCwd);
 }
 
 main();

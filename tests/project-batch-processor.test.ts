@@ -134,7 +134,7 @@ describe("ProjectBatchProcessor", () => {
   });
 
   it("runs up to the configured concurrency and dispatches the next file on settlement", async () => {
-    const files = makeFiles(4);
+    const files = makeFiles(12);
     let active = 0;
     let maxActive = 0;
     const pending: Array<{
@@ -164,12 +164,48 @@ describe("ProjectBatchProcessor", () => {
 
     pending[0].resolve(makeWorkerResult(pending[0].path));
     await vi.waitFor(() => expect(pool.processFile).toHaveBeenCalledTimes(4));
-    for (const task of pending.slice(1)) {
+    let next = 1;
+    while (next < files.length) {
+      await vi.waitFor(() => expect(pending.length).toBeGreaterThan(next));
+      const task = pending[next++];
       task.resolve(makeWorkerResult(task.path));
     }
     await (processor as any).activeBatch;
 
+    expect(pool.processFile).toHaveBeenCalledTimes(12);
     expect(maxActive).toBe(3);
+    expect(processor.progress.pendingFiles).toBe(0);
+  });
+
+  it("caps fan-out by batch size so small batches do not spread across workers", async () => {
+    const files = makeFiles(6);
+    let active = 0;
+    let maxActive = 0;
+    const pending: Array<() => void> = [];
+    pool.processFile.mockImplementation(
+      (input: { path: string }) =>
+        new Promise((resolve) => {
+          active++;
+          maxActive = Math.max(maxActive, active);
+          pending.push(() => {
+            active--;
+            resolve(makeWorkerResult(input.path));
+          });
+        }),
+    );
+    const processor = makeProcessor({ concurrency: 3 });
+    for (const file of files) processor.handleFileEvent("change", file);
+
+    (processor as any).startBatch();
+    let resolved = 0;
+    while (resolved < files.length) {
+      await vi.waitFor(() => expect(pending.length).toBeGreaterThan(resolved));
+      pending[resolved++]();
+    }
+    await (processor as any).activeBatch;
+
+    // ceil(6 / 4) = 2 slots, below the configured 3.
+    expect(maxActive).toBe(2);
     expect(processor.progress.pendingFiles).toBe(0);
   });
 
@@ -199,27 +235,36 @@ describe("ProjectBatchProcessor", () => {
   });
 
   it("waits for out-of-order workers before one insert-then-delete commit", async () => {
-    const files = makeFiles(3);
+    const files = makeFiles(9);
     const pending = new Map<string, (result: any) => void>();
+    const dispatched: string[] = [];
     pool.processFile.mockImplementation(
       (input: { path: string }) =>
-        new Promise((resolve) => pending.set(input.path, resolve)),
+        new Promise((resolve) => {
+          dispatched.push(input.path);
+          pending.set(input.path, resolve);
+        }),
     );
     const processor = makeProcessor({ concurrency: 3 });
     for (const file of files) processor.handleFileEvent("change", file);
 
     (processor as any).startBatch();
-    await vi.waitFor(() => expect(pool.processFile).toHaveBeenCalledTimes(3));
-    for (const file of [files[2], files[0], files[1]]) {
-      pending.get(file)?.({
-        ...makeWorkerResult(file),
-        vectors: [{ id: path.basename(file), path: file }],
-      });
+    // Settle each full wave of three in reverse dispatch order.
+    for (let wave = 1; wave <= 3; wave++) {
+      await vi.waitFor(() =>
+        expect(pool.processFile).toHaveBeenCalledTimes(wave * 3),
+      );
+      for (const file of dispatched.slice((wave - 1) * 3, wave * 3).reverse()) {
+        pending.get(file)?.({
+          ...makeWorkerResult(file),
+          vectors: [{ id: path.basename(file), path: file }],
+        });
+      }
     }
     await (processor as any).activeBatch;
 
     expect(vectorDb.insertBatch).toHaveBeenCalledOnce();
-    expect(vectorDb.insertBatch.mock.calls[0][0]).toHaveLength(3);
+    expect(vectorDb.insertBatch.mock.calls[0][0]).toHaveLength(9);
     expect(vectorDb.deletePathsExcludingIds).toHaveBeenCalledOnce();
     expect(vectorDb.insertBatch.mock.invocationCallOrder[0]).toBeLessThan(
       vectorDb.deletePathsExcludingIds.mock.invocationCallOrder[0],
@@ -227,7 +272,7 @@ describe("ProjectBatchProcessor", () => {
   });
 
   it("requeues the whole batch without retry cost when concurrent work is aborted", async () => {
-    const files = makeFiles(5);
+    const files = makeFiles(12);
     pool.processFile.mockImplementation(
       (_input: unknown, signal: AbortSignal) =>
         new Promise((_resolve, reject) => {
@@ -242,7 +287,7 @@ describe("ProjectBatchProcessor", () => {
     (processor as any).currentBatchAc.abort();
     await (processor as any).activeBatch;
 
-    expect(processor.progress.pendingFiles).toBe(5);
+    expect(processor.progress.pendingFiles).toBe(12);
     expect((processor as any).retryCount.size).toBe(0);
     expect(vectorDb.insertBatch).not.toHaveBeenCalled();
   });

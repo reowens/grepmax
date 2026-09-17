@@ -69,12 +69,24 @@ describe("detached spawn error handling", () => {
   });
 
   it("returns watcher spawn errors instead of emitting them uncaught", async () => {
+    // No daemon is listening, and starting one fails too — only then does the
+    // launcher fall back to a per-project watcher.
+    mocks.sendDaemonCommand.mockResolvedValueOnce({
+      ok: false,
+      error: "ECONNREFUSED",
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const daemonChild = child();
     const spawned = child();
-    mocks.spawn.mockReturnValue(spawned);
+    mocks.spawn.mockReturnValueOnce(daemonChild).mockReturnValueOnce(spawned);
 
     const pending = launchWatcher("/project");
-    await Promise.resolve();
-    await Promise.resolve();
+    await vi.waitFor(() => expect(mocks.spawn).toHaveBeenCalledTimes(1));
+    daemonChild.emit(
+      "error",
+      Object.assign(new Error("no daemon"), { code: "ENOENT" }),
+    );
+    await vi.waitFor(() => expect(mocks.spawn).toHaveBeenCalledTimes(2));
     spawned.emit(
       "error",
       Object.assign(new Error("missing"), { code: "ENOENT" }),
@@ -86,6 +98,18 @@ describe("detached spawn error handling", () => {
       message: expect.stringContaining("missing"),
     });
     expect(spawned.unref).not.toHaveBeenCalled();
+  });
+
+  it("never spawns a per-project watcher beside a live daemon that refused", async () => {
+    mocks.sendDaemonCommand.mockResolvedValueOnce({
+      ok: false,
+      error: "daemon initializing",
+    });
+
+    await expect(
+      launchWatcher("/project", { holder: "mcp:1", pid: 1 }),
+    ).resolves.toMatchObject({ ok: false, reason: "daemon-refused" });
+    expect(mocks.spawn).not.toHaveBeenCalled();
   });
 
   it("spawns nothing when the autostart kill switch is on", async () => {

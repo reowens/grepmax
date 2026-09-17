@@ -171,6 +171,13 @@ export function isMcpSessionFallback(error: unknown): boolean {
  * a live daemon saying no, and is reported. Falling back there would put a
  * second opener on the store while the daemon is working.
  */
+/**
+ * Watch-lease cadence. Renewal is cheap (one IPC line), and the TTL is three
+ * renewals long so a slow tick or a daemon restart does not drop the project.
+ */
+const MCP_WATCH_LEASE_RENEW_MS = 5 * 60 * 1000;
+const MCP_WATCH_LEASE_TTL_MS = 3 * MCP_WATCH_LEASE_RENEW_MS;
+
 const MCP_STORE_FALLBACK = {
   fallbackOnUnknownVerb: true,
   fallbackOnOversize: true,
@@ -779,12 +786,20 @@ export const mcp = new Command("mcp")
 
     // --- Background watcher ---
 
+    // This server's watch lease. It names our PID, so the daemon drops it the
+    // minute this session exits; the TTL only covers a wedged server.
+    const WATCH_LEASE = {
+      holder: `mcp:${process.pid}`,
+      pid: process.pid,
+      ttlMs: MCP_WATCH_LEASE_TTL_MS,
+    };
+
     async function ensureWatcher(root?: string): Promise<void> {
       try {
         const watchRoot =
           root ?? resolveMcpProject(undefined, projectRoot)?.root;
         if (!watchRoot) return;
-        const result = await launchWatcher(watchRoot);
+        const result = await launchWatcher(watchRoot, WATCH_LEASE);
         if (result.ok && !result.reused) {
           console.log(
             `[MCP] Started background watcher for ${watchRoot} (PID: ${result.pid})`,
@@ -3772,4 +3787,7 @@ export const mcp = new Command("mcp")
       console.error("[MCP] Index readiness check failed:", e),
     );
     ensureWatcher();
+    // Keep this session's project leased while the session lives. The daemon
+    // only watches projects some session holds.
+    setInterval(() => void ensureWatcher(), MCP_WATCH_LEASE_RENEW_MS).unref();
   });

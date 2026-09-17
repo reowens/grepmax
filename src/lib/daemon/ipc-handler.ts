@@ -11,7 +11,7 @@ import {
 import { resolveContainedPath } from "../utils/path-containment";
 import { listProjects } from "../utils/project-registry";
 import type { Daemon } from "./daemon";
-import { getReadVerb, READ_VERBS_PROTOCOL } from "./read-verbs";
+import { getReadVerb, READ_VERBS_PROTOCOL, runReadVerb } from "./read-verbs";
 
 const DAEMON_VERSION = (() => {
   try {
@@ -134,20 +134,31 @@ export async function handleCommand(
           capabilities: {
             exclusiveGenerationRebuild: EXCLUSIVE_GENERATION_REBUILD_PROTOCOL,
             readVerbs: READ_VERBS_PROTOCOL,
+            // `watch`/`unwatch` accept holder/pid/ttlMs. A daemon without this
+            // treats `unwatch` as unwatch-for-everyone, so clients releasing a
+            // single lease must check it first.
+            watchLeases: 1,
           },
         };
 
       case "watch": {
         const root = String(cmd.root || "");
         if (!root) return { ok: false, error: "missing root" };
-        await daemon.watchProject(root);
+        await daemon.requestWatch(root, {
+          holder: typeof cmd.holder === "string" ? cmd.holder : undefined,
+          pid: typeof cmd.pid === "number" ? cmd.pid : undefined,
+          ttlMs: typeof cmd.ttlMs === "number" ? cmd.ttlMs : undefined,
+        });
         return { ok: true, pid: process.pid };
       }
 
       case "unwatch": {
         const root = String(cmd.root || "");
         if (!root) return { ok: false, error: "missing root" };
-        await daemon.unwatchProject(root);
+        await daemon.releaseWatch(
+          root,
+          typeof cmd.holder === "string" ? cmd.holder : undefined,
+        );
         return { ok: true };
       }
 
@@ -157,6 +168,7 @@ export async function handleCommand(
           pid: process.pid,
           uptime: daemon.uptime(),
           projects: daemon.listProjects(),
+          leases: daemon.listWatchLeases(),
           diskPressure: daemon.getDiskPressure(),
           mlx: daemon.getMlxStatus(),
         };
@@ -309,6 +321,7 @@ export async function handleCommand(
       case "add": {
         const root = String(cmd.root || "");
         if (!root) return { ok: false, error: "missing root" };
+        daemon.leaseForCli(root);
         startStreaming(conn, () => daemon.addProject(root, conn));
         return null;
       }
@@ -316,6 +329,7 @@ export async function handleCommand(
       case "ensure-project": {
         const root = String(cmd.root || "");
         if (!root) return { ok: false, error: "missing root" };
+        daemon.leaseForCli(root);
         startStreaming(conn, () => daemon.ensureProject(root, conn));
         return null;
       }
@@ -323,6 +337,7 @@ export async function handleCommand(
       case "index": {
         const root = String(cmd.root || "");
         if (!root) return { ok: false, error: "missing root" };
+        daemon.leaseForCli(root);
         startStreaming(conn, () =>
           daemon.indexProject(root, conn, {
             reset: !!cmd.reset,
@@ -403,11 +418,14 @@ export async function handleCommand(
         const ac = new AbortController();
         const onClose = () => ac.abort();
         conn.on("close", onClose);
+        const name = String(cmd.cmd);
         try {
-          return await daemon.runSharedOperation(
-            String(cmd.cmd),
-            ac.signal,
-            (signal) => verb(cmd, { daemon, conn, signal }),
+          // Heavy verbs queue on a global gate before admission; see
+          // HEAVY_READ_VERBS in read-verbs.ts.
+          return await runReadVerb(name, ac.signal, () =>
+            daemon.runSharedOperation(name, ac.signal, (signal) =>
+              verb(cmd, { daemon, conn, signal }),
+            ),
           );
         } finally {
           conn.off("close", onClose);

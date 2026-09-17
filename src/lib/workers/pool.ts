@@ -50,6 +50,9 @@ type PendingTask<M extends TaskMethod = TaskMethod> = {
   // Absolute deadline timer, armed at dispatch and never reset by heartbeats.
   hardTimeout?: NodeJS.Timeout;
   startTime?: number;
+  // Wall-clock at enqueue. The scale-up policy spawns a worker for a task
+  // that has waited longer than SCALE_UP_WAIT_MS.
+  queuedAt: number;
   signal?: AbortSignal;
   abortListener?: () => void;
   callerAborted?: boolean;
@@ -203,6 +206,26 @@ const WORKER_RSS_RECYCLE_MB = (() => {
 // reading confirms the memory is actually sticky.
 const BLOAT_STREAK_TO_RECYCLE = 2;
 
+// Scale-up policy. A new worker costs a cold start (~10-15s to boot and load
+// models, ~1 GB peak) and is reaped after 60s idle, so spawning one whenever a
+// task finds no idle worker turned every small watcher batch into 3-4 spawns
+// (~300 cold spawns/day measured on a live host). An extra worker is spawned
+// only when one of these holds:
+//   - the pool has no workers at all;
+//   - a priority task (search) is waiting — search never queues behind indexing;
+//   - unassigned tasks exceed SCALE_UP_BACKLOG_PER_WORKER per live worker;
+//   - the oldest unassigned task has waited SCALE_UP_WAIT_MS. A timer
+//     re-checks this, so a queued task is never starved by a quiet pool.
+const SCALE_UP_BACKLOG_PER_WORKER = 4;
+const SCALE_UP_WAIT_MS = (() => {
+  const fromEnv = Number.parseInt(
+    process.env.GMAX_WORKER_SCALE_UP_WAIT_MS ?? "",
+    10,
+  );
+  if (Number.isFinite(fromEnv) && fromEnv >= 0) return fromEnv;
+  return 2_000;
+})();
+
 // Methods that must skip the indexing backlog. encodeQuery is the search hot
 // path: a single query is ~17ms but waits behind every queued processFile.
 // rerank is similarly small and latency-sensitive.
@@ -230,6 +253,8 @@ export class WorkerPool {
   private respawnLimitReached = false;
   private static readonly MAX_RESPAWNS = 10;
   private idleReapInterval: ReturnType<typeof setInterval> | null = null;
+  // Re-runs dispatch once the oldest unassigned task reaches SCALE_UP_WAIT_MS.
+  private scaleUpTimer: ReturnType<typeof setTimeout> | null = null;
   readonly generation: Readonly<EmbeddingGenerationConfig>;
   readonly embedMode: "cpu" | "gpu";
 
@@ -525,6 +550,7 @@ export class WorkerPool {
         payload,
         resolve: safeResolve,
         reject: safeReject,
+        queuedAt: Date.now(),
         signal,
       };
 
@@ -612,9 +638,13 @@ export class WorkerPool {
     const nextTaskId =
       findUnassigned(this.priorityQueue) ?? findUnassigned(this.taskQueue);
 
-    if (nextTaskId === undefined) return;
+    if (nextTaskId === undefined) {
+      this.clearScaleUpTimer();
+      return;
+    }
 
-    // Lazy spawn: if no idle worker and below max, spawn one
+    // Lazy spawn: if no idle worker and below max, spawn one when the backlog
+    // warrants it (see SCALE_UP_WAIT_MS); otherwise wait for a busy worker.
     if (!idle && this.workers.length < this.maxWorkers) {
       if (this.respawnLimitReached) {
         if (this.workers.length === 0) {
@@ -622,6 +652,11 @@ export class WorkerPool {
             `Worker respawn limit reached (${WorkerPool.MAX_RESPAWNS}). Not spawning more workers.`,
           );
         }
+        return;
+      }
+      const waitMs = this.scaleUpDelayMs();
+      if (waitMs > 0) {
+        this.armScaleUpTimer(waitMs);
         return;
       }
       this.spawnWorker();
@@ -678,6 +713,45 @@ export class WorkerPool {
     }
 
     this.dispatch();
+  }
+
+  /**
+   * How long to hold off spawning another worker for the queued work: 0 means
+   * spawn now. Called only when no worker is idle and the pool is below max.
+   */
+  private scaleUpDelayMs(): number {
+    if (this.workers.length === 0) return 0;
+    const unassigned = (queue: number[]) =>
+      queue.flatMap((id) => {
+        const t = this.tasks.get(id);
+        return t && !t.worker ? [t] : [];
+      });
+    if (unassigned(this.priorityQueue).length > 0) return 0;
+    const waiting = unassigned(this.taskQueue);
+    if (waiting.length === 0) return 0;
+    if (waiting.length > this.workers.length * SCALE_UP_BACKLOG_PER_WORKER) {
+      return 0;
+    }
+    const oldest = Math.min(...waiting.map((t) => t.queuedAt));
+    return Math.max(0, oldest + SCALE_UP_WAIT_MS - Date.now());
+  }
+
+  private armScaleUpTimer(delayMs: number) {
+    // An armed timer belongs to a task at least as old as this one, so it
+    // fires no later than this one would. Firing early only re-evaluates.
+    if (this.scaleUpTimer) return;
+    this.scaleUpTimer = setTimeout(() => {
+      this.scaleUpTimer = null;
+      this.dispatch();
+    }, delayMs);
+    this.scaleUpTimer.unref?.();
+  }
+
+  private clearScaleUpTimer() {
+    if (this.scaleUpTimer) {
+      clearTimeout(this.scaleUpTimer);
+      this.scaleUpTimer = null;
+    }
   }
 
   processFile(input: ProcessFileInput, signal?: AbortSignal) {
@@ -875,6 +949,7 @@ export class WorkerPool {
       clearInterval(this.idleReapInterval);
       this.idleReapInterval = null;
     }
+    this.clearScaleUpTimer();
 
     for (const task of this.tasks.values()) {
       task.reject(new Error("Worker pool destroyed"));

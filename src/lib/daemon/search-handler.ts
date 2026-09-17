@@ -85,11 +85,13 @@ export async function handleDaemonSearch(
   if (!deps.processors.has(root)) {
     // A full index (--reset) or the initial index removes/defers the
     // processor while (re)building. The partial index is still queryable, so
-    // answer the search and flag it partial (below) rather than erroring —
-    // only truly-unwatched, not-indexing projects get "not watched".
-    const indexingNow =
-      deps.indexProgress.has(root) || getProject(root)?.status === "pending";
-    if (!indexingNow) {
+    // answer the search and flag it partial (below) rather than erroring.
+    // An indexed project nobody holds a watch lease on is served from its
+    // last-synced vectors — watching is per session now, not a precondition
+    // for reading. Only unknown, never-indexed roots get "not watched".
+    const status = getProject(root)?.status;
+    const indexingNow = deps.indexProgress.has(root) || status === "pending";
+    if (!indexingNow && status !== "indexed") {
       return {
         ok: false,
         error: "project not watched",

@@ -41,6 +41,11 @@ const MAX_BATCH_SIZE = 50;
 // Pool priority cannot preempt an active processFile, so keep one worker free
 // for latency-sensitive encodeQuery/rerank work during indexing bursts.
 const DEFAULT_BATCH_CONCURRENCY = Math.max(1, CONFIG.WORKER_THREADS - 1);
+// Files per concurrent task slot. A watcher batch of a handful of small files
+// finishes in a second or two on one worker, so fanning it out only makes the
+// pool cold-spawn workers (each loads the models, ~1 GB) that are reaped
+// unused 60s later. Scale fan-out with the batch instead.
+const FILES_PER_BATCH_SLOT = 4;
 
 export class ProjectBatchProcessor {
   readonly projectRoot: string;
@@ -520,6 +525,10 @@ export class ProjectBatchProcessor {
         }
       };
 
+      const batchConcurrency = Math.min(
+        this.concurrency,
+        Math.max(1, Math.ceil(batch.size / FILES_PER_BATCH_SLOT)),
+      );
       const activeTasks: Promise<void>[] = [];
       const schedule = async (task: () => Promise<void>): Promise<void> => {
         const taskPromise = task();
@@ -529,7 +538,7 @@ export class ProjectBatchProcessor {
           if (index !== -1) activeTasks.splice(index, 1);
         };
         void taskPromise.then(removeActiveTask, removeActiveTask);
-        if (activeTasks.length >= this.concurrency) {
+        if (activeTasks.length >= batchConcurrency) {
           await Promise.race(activeTasks);
         }
       };

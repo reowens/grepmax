@@ -64,7 +64,7 @@ gmax runs as cooperating processes. Only `gmax-mcp` may have multiple instances.
 
 ```
 gmax-daemon (singleton via lockfile)
-  |-- gmax-worker (1-7 child processes, lazy-spawned, reaped after 60s idle, min 1 kept alive)
+  |-- gmax-worker (1-4 child processes, spawned on backlog, reaped after 60s idle, min 1 kept alive)
   |-- [gmax-embed] (MLX GPU server on port 8100; daemon heartbeat respawns it if zombie or dead)
   +-- Unix socket server (~/.gmax/daemon.sock)
 
@@ -75,11 +75,39 @@ gmax-mcp (N instances, one per Claude Code session)
 
 | Process | Started by | Lifecycle | Code |
 |---------|-----------|-----------|------|
-| gmax-daemon | `gmax watch --daemon -b` (SessionStart hook or manual) | Singleton. 30min idle timeout. | `src/commands/watch.ts` |
+| gmax-daemon | `gmax watch --daemon -b` (SessionStart hook or manual) | Singleton. 4h idle timeout; recycles at 24h age or 2.56 GB footprint. | `src/commands/watch.ts` |
 | gmax-worker | Daemon's WorkerPool, lazy on first task | Reaped after 60s idle, min 1 kept alive | `src/lib/workers/pool.ts` |
 | gmax-embed | Daemon's `ensureMlxServer()` (startup + 5min heartbeat health check) or `gmax serve` | 30min idle timeout. Spawned with `HF_HOME=~/.gmax/hf` (pinned local model cache) | `src/lib/daemon/mlx-server-manager.ts` |
 | gmax-mcp | Claude Code (one per session) | Session lifetime | `src/commands/mcp.ts` |
 | llama-server (LLM) | Daemon's LlmServer, on first `llm-start` IPC or `reviewCommit` | 10min idle timeout | `src/lib/llm/server.ts` |
+
+### Session-scoped watching (watch leases)
+
+The daemon watches a registered project only while something holds a lease on it
+(`src/lib/daemon/watch-leases.ts`, persisted in `~/.gmax/watch-leases.json`). It used to
+subscribe to every indexed project for its whole life; with 14 registered projects that meant
+~300 cold worker spawns, 129 FSEvents overflows and 32 catchup scans a day for sessions that did
+not exist, and it was a large part of the memory pressure that froze the host.
+
+| Holder | Taken by | Ends when |
+|---|---|---|
+| `mcp:<pid>` | each MCP server, renewed every 5 min (15 min TTL) via `launchWatcher(root, lease)` | that process exits, or the TTL lapses |
+| `session:<id>` | SessionStart / CwdChanged hooks (`plugins/grepmax/hooks/watch-lease.js`, 4h TTL) | SessionEnd releases it, CwdChanged releases the old root |
+| `cli` | `watch` IPC without a holder, and `add` / `ensure-project` / `index` (30 min TTL) | TTL |
+
+- The heartbeat sweeps leases every minute and unwatches roots nobody holds. Vectors stay; the
+  catchup scan on the next watch picks up what changed.
+- Every re-watch after an index/rebuild/remove goes through `watchProjectWithinOperation`,
+  which is gated on a lease, so an operation never leaves an unleased project watched.
+- An indexed project without a lease is still searchable — `search` no longer answers
+  `project not watched` for it.
+- `unwatch` with a `holder` drops that lease; without one it drops every lease on the root.
+  Older daemons ignore `holder`, so the hooks only release after `ping` reports
+  `capabilities.watchLeases`.
+- `GMAX_WATCH_ALL=1` restores watch-everything.
+- `launchWatcher` only falls back to a per-project `gmax watch --path` when no daemon exists and
+  none could be started. A live daemon that refuses or is still starting is reported instead;
+  otherwise a lease renewal every few minutes would spawn a second writer beside it.
 
 ### Autostart kill switch
 
@@ -140,6 +168,22 @@ Maps absolute file paths to `{hash: string, mtimeMs: number, size: number}`. Use
 
 One table (`chunks`), all projects share it, scoped by path prefix (`/absolute/path/to/project/`). A path btree accelerates scoped exact search. IVF_FLAT is flag-gated by `GMAX_ANN=1` and disabled by default because the production recall soak failed its acceptance threshold. The five-minute maintenance loop runs only after writes or missing-index work; clean stores get an hourly table-version probe for external writes before compaction.
 
+#### LanceDB cache bounds and the daemon's footprint
+
+`lancedb.connect()` without a `Session` gets a 6 GB index cache and a 1 GB metadata cache, held
+for the connection's life. The daemon reached a 4 GB footprint (9.6 GB peak) that way, nearly all
+native malloc. `VectorDB` now connects with a Session capped at 1 GB / 256 MB
+(`GMAX_LANCE_INDEX_CACHE_MB`, `GMAX_LANCE_METADATA_CACHE_MB`); the whole index directory is
+~650 MB. `VectorDB.cacheSizeBytes()` reports what the caches currently hold.
+
+The recycle watermark (`GMAX_DAEMON_RSS_WATERMARK_MB`, 2560) is compared against the physical
+footprint from `footprint -p` (`src/lib/utils/process-footprint.ts`), not RSS: RSS read 469 MB
+while the footprint was 4 GB, because compressed and swapped pages drop out of RSS. The footprint
+trigger waits for 30 min of uptime so a fresh daemon cannot recycle in a loop. Once a recycle is
+due it is re-checked every heartbeat, and after `GMAX_DAEMON_RECYCLE_FORCE_AFTER_MS` (1h) it
+proceeds over in-flight project work (compaction is still waited out). One daemon ran 8 days past
+its 24h limit because some batch was in flight at every 5-minute probe.
+
 #### The FTS optimize panic guard — fixed upstream, guard kept as a tripwire
 
 `table.optimize()` on lance ≤ 11.0.0-beta.21 could panic inside the incremental FTS merge
@@ -180,7 +224,7 @@ is real. Two things to preserve:
 
 Status values: `"pending"` | `"indexed"` | `"error"`
 
-- `indexed` — daemon watches this project, runs catchup on startup
+- `indexed` — searchable; the daemon watches it (and runs catchup) while a session holds a lease
 - `pending` — daemon indexes in background on startup via `indexPendingProject()`
 - `error` — **daemon ignores it**. Must be manually re-added or status edited.
 
@@ -219,7 +263,7 @@ deregisters a live one.
  6. Open LanceDB + MetaCache (shared resources)
  7. Construct LlmServer (lazy, not started)
  8. Register daemon in watcher store
- 9. Watch all "indexed" projects (subscribe + catchup)
+ 9. Load watch leases; watch the "indexed" projects a live lease holds (subscribe + catchup)
  9b. Index all "pending" projects (background, async)
 10. Start heartbeat (60s interval; every 5 ticks probes MLX `/health` and respawns the embed server if it's zombie — port held but unresponsive — or dead — nothing on the port, e.g. crashed at model load)
 11. Start idle checker (30min timeout)
@@ -288,7 +332,8 @@ File event (from watcher or catchup) -> pending map -> debounce 2s -> processBat
 
 ### Worker pool
 
-- Starts with 1 worker, scales up to `floor(cores * 0.5)` on demand in `dispatch()`
+- Starts with 1 worker and scales up to `CONFIG.WORKER_THREADS` (`min(4, max(2, cores/2))`, capped at cores; `GMAX_WORKER_THREADS` overrides). `dispatch()` adds a worker only when the pool is empty, a search task is waiting, more than 4 queued tasks per live worker are waiting, or the oldest queued task has waited 2s (`GMAX_WORKER_SCALE_UP_WAIT_MS`). Before this, a 6-file batch cold-started 3–4 workers that were reaped a minute later, ~300 times a day
+- `ProjectBatchProcessor` runs at most `ceil(batch.size / 4)` files of a batch at once
 - Workers are child processes (not threads) — isolates ONNX Runtime segfaults
 - IPC uses Node's advanced serialization so Buffer and typed-array payloads retain their binary types and view offsets
 - Idle workers reaped after 60s back down to `MIN_KEEP_WORKERS = 1` (favors low resident memory over search warmth — an idle worker holds ~300MB–1GB; the rare search pays a one-off cold start). Reap sends SIGTERM, then escalates to SIGKILL after 5s if the worker is still alive (defends against a worker stuck inside a native ONNX matmul tight loop that won't service signals)
@@ -384,6 +429,11 @@ becoming a merge magnet as handler files land. Each runs through
 verb rather than racing it, and the abort signal is bound to socket close exactly like `search`.
 `ping.capabilities.readVerbs` carries `READ_VERBS_PROTOCOL`.
 
+Heavy verbs (`HEAVY_READ_VERBS` in `read-verbs.ts`: audit, dead, risk, subgraph, trace,
+`rows.project`, `vector.similar`, `vector.surprises`) queue on a global semaphore before admission,
+2 at a time by default (`GMAX_HEAVY_READ_CONCURRENCY`), so N MCP sessions cannot run N full-table
+scans at once. A client that disconnects while queued never touches the store.
+
 **Fallback rule** — `withStoreRead` in `src/lib/utils/store-access.ts` owns it, and it is
 deliberately narrow:
 
@@ -428,7 +478,7 @@ GMAX_DEBUG=1 gmax watch --daemon -b
 | `[orch]` | orchestrator.ts | processFile start/done, chunk count, embed batch timing, MLX vs ONNX |
 | `[mlx]` | mlx-client.ts | HTTP timing, health checks, availability cache state |
 | `[index]` | syncer.ts | Walk progress, file outcomes, flush stats, coherence check |
-| `[daemon]` | daemon.ts + ipc-handler.ts | Lock, socket, IPC commands, indexPendingProject timing |
+| `[daemon]` | daemon.ts + ipc-handler.ts | Lock, socket, IPC commands, indexPendingProject timing, lease unwatches, recycle deferrals |
 | `[catchup]` | daemon.ts | Per-file miss reasons (null cache, mtime mismatch), summary stats |
 
 ### Other debug env vars

@@ -70,6 +70,7 @@ describe("WorkerPool resilience", () => {
       pool.destroyed = true;
     }
     if (pool?.idleReapInterval) clearInterval(pool.idleReapInterval);
+    if (pool?.scaleUpTimer) clearTimeout(pool.scaleUpTimer);
     pool = null;
   });
 
@@ -346,6 +347,115 @@ describe("WorkerPool resilience", () => {
 
     expect(worker.child.kill).toHaveBeenCalledWith("SIGTERM");
     expect(pool.workers).toEqual([]);
+  });
+
+  describe("demand-driven scale-up", () => {
+    const sentMethods = (child: any) =>
+      child.send.mock.calls.map((call: any[]) => call[0].method);
+
+    it("does not spawn for a small queue behind one busy worker", () => {
+      vi.useFakeTimers();
+      pool = new WorkerPool();
+      pool.maxWorkers = 4;
+
+      for (let i = 0; i < 5; i++) {
+        pool.processFile({ path: `/small-${i}.md` } as any).catch(() => {});
+      }
+
+      // One running, four waiting: exactly the per-worker backlog allowance.
+      expect(h.children).toHaveLength(1);
+      expect(h.children[0].send).toHaveBeenCalledTimes(1);
+    });
+
+    it("scales up when the backlog outgrows the live workers", () => {
+      vi.useFakeTimers();
+      pool = new WorkerPool();
+      pool.maxWorkers = 4;
+
+      for (let i = 0; i < 6; i++) {
+        pool.processFile({ path: `/bulk-${i}.ts` } as any).catch(() => {});
+      }
+
+      // The sixth task leaves five waiting (> 4 per worker), so a second
+      // worker spawns and takes one; four waiting across two is under the bar.
+      expect(h.children).toHaveLength(2);
+      expect(h.children[1].send).toHaveBeenCalledTimes(1);
+    });
+
+    it("spawns for a task that has waited past the threshold", () => {
+      vi.useFakeTimers();
+      pool = new WorkerPool();
+      pool.maxWorkers = 4;
+
+      pool.processFile({ path: "/slow.ts" } as any).catch(() => {});
+      pool.processFile({ path: "/waiting.ts" } as any).catch(() => {});
+      expect(h.children).toHaveLength(1);
+
+      vi.advanceTimersByTime(1_999);
+      expect(h.children).toHaveLength(1);
+
+      vi.advanceTimersByTime(1);
+      expect(h.children).toHaveLength(2);
+      expect(h.children[1].send.mock.calls[0][0].payload).toEqual({
+        path: "/waiting.ts",
+      });
+    });
+
+    it("does not spawn when the waiting task is served before the threshold", () => {
+      vi.useFakeTimers();
+      pool = new WorkerPool();
+      pool.maxWorkers = 4;
+      const worker = pool.workers[0];
+
+      pool.processFile({ path: "/quick.md" } as any).catch(() => {});
+      pool.processFile({ path: "/next.md" } as any).catch(() => {});
+      const firstId = worker.child.send.mock.calls[0][0].id;
+
+      vi.advanceTimersByTime(500);
+      worker.child.emit("message", { id: firstId, result: { vectors: [] } });
+      expect(worker.child.send).toHaveBeenCalledTimes(2);
+
+      vi.advanceTimersByTime(5_000);
+      expect(h.children).toHaveLength(1);
+      expect(pool.scaleUpTimer).toBeNull();
+    });
+
+    it("spawns immediately for a priority task when no worker is idle", () => {
+      vi.useFakeTimers();
+      pool = new WorkerPool();
+      pool.maxWorkers = 4;
+
+      pool.processFile({ path: "/indexing.ts" } as any).catch(() => {});
+      pool.encodeQuery("where is the pool").catch(() => {});
+
+      expect(h.children).toHaveLength(2);
+      expect(sentMethods(h.children[1])).toEqual(["encodeQuery"]);
+    });
+
+    it("never spawns past maxWorkers however large the backlog", () => {
+      vi.useFakeTimers();
+      pool = new WorkerPool();
+      pool.maxWorkers = 2;
+
+      for (let i = 0; i < 40; i++) {
+        pool.processFile({ path: `/huge-${i}.ts` } as any).catch(() => {});
+      }
+      vi.advanceTimersByTime(10_000);
+
+      expect(h.children).toHaveLength(2);
+    });
+
+    it("spawns when the pool has no workers even with a short queue", () => {
+      vi.useFakeTimers();
+      pool = new WorkerPool();
+      pool.maxWorkers = 4;
+      pool.workers = [];
+
+      pool.processFile({ path: "/first.ts" } as any).catch(() => {});
+
+      expect(h.children).toHaveLength(2);
+      expect(h.children[1].send).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("keeps the worker embedding environment stable across replacements", () => {

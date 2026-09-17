@@ -170,8 +170,36 @@ const COMPACTION_MIN_INTERVAL_MS = 30 * 60 * 1000;
  */
 const COMPACTION_MAX_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
+/**
+ * Bounds for LanceDB's per-connection caches.
+ *
+ * `lancedb.connect()` without a Session gets a 6 GB index cache and a 1 GB
+ * metadata cache, and a connection lives as long as the daemon. On a 48 GB host
+ * that was already swapping, the daemon reached a 4 GB footprint (9.6 GB peak),
+ * almost all native malloc and invisible to the RSS-based recycle because most of
+ * it had been compressed or swapped. The whole on-disk index directory for a
+ * 430k-row store is ~650 MB, so 1 GB still holds every index; the metadata cache
+ * only needs the latest manifests, not every retained version.
+ */
+const LANCE_INDEX_CACHE_MB = envMb("GMAX_LANCE_INDEX_CACHE_MB", 1024);
+const LANCE_METADATA_CACHE_MB = envMb("GMAX_LANCE_METADATA_CACHE_MB", 256);
+
+function envMb(name: string, fallback: number): number {
+  const parsed = Number(process.env[name]);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+function createLanceSession(): lancedb.Session {
+  const mb = (n: number) => BigInt(n * 1024 * 1024);
+  return new lancedb.Session(
+    mb(LANCE_INDEX_CACHE_MB),
+    mb(LANCE_METADATA_CACHE_MB),
+  );
+}
+
 export class VectorDB {
   private db: lancedb.Connection | null = null;
+  private session: lancedb.Session | null = null;
   private unregisterCleanup?: () => void;
   private closed = false;
   private readonly vectorDim: number;
@@ -283,6 +311,15 @@ export class VectorDB {
 
   /** True iff a maintenance tick is currently running. Used by the daemon to
    *  defer idle shutdown so we don't tear down LanceDB mid-optimize. */
+  /** Bytes held by LanceDB's index + metadata caches (0 before first connect). */
+  cacheSizeBytes(): number {
+    try {
+      return Number(this.session?.sizeBytes() ?? 0);
+    } catch {
+      return 0;
+    }
+  }
+
   isMaintenanceActive(): boolean {
     return this.maintenancePromise !== null;
   }
@@ -322,7 +359,8 @@ export class VectorDB {
     }
     if (!this.db) {
       fs.mkdirSync(this.lancedbDir, { recursive: true });
-      this.db = await lancedb.connect(this.lancedbDir);
+      this.session = createLanceSession();
+      this.db = await lancedb.connect(this.lancedbDir, {}, this.session);
     }
     return this.db;
   }
@@ -1689,6 +1727,7 @@ export class VectorDB {
       }
     }
     this.db = null;
+    this.session = null;
     if (this.leasePromise) {
       let lease: StoreLease | null = null;
       try {

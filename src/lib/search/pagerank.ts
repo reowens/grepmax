@@ -28,7 +28,55 @@ const DEFAULT_MAX_ITER = 50;
 const DEFAULT_TOL = 1e-6;
 const DEFAULT_TTL_MS = 60 * 60 * 1000;
 
+/**
+ * Row cap for the graph scan. Matches `graph.audit`'s AUDIT_ROW_LIMIT: the
+ * largest indexed project holds ~270k chunks, so this never truncates a real
+ * project, but a runaway prefix (a home directory, a monorepo root) can no
+ * longer pull millions of symbol-array rows into daemon memory at once. A
+ * truncated scan ranks the symbols it saw; the ranking is a search boost, not
+ * an answer, so a partial graph degrades gracefully.
+ */
+export const PAGERANK_ROW_LIMIT = 500_000;
+
+/**
+ * Score maps stay in the daemon for its lifetime, one per scoped prefix a
+ * search has used (`--in` makes those open-ended). Keep the most recently
+ * used few; each is a Map over every defined symbol in its scope.
+ */
+export const PAGERANK_MEMORY_CACHE_MAX = 8;
+
+// Map iteration order is insertion order, so re-inserting on a hit makes the
+// first key the least recently used.
 const memoryCache = new Map<string, CachedScores>();
+// Concurrent searches on a cold prefix share one scan instead of each running
+// their own.
+const inFlight = new Map<
+  string,
+  Promise<{ scores: Map<string, number>; max: number }>
+>();
+
+function memoryGet(pathPrefix: string): CachedScores | undefined {
+  const entry = memoryCache.get(pathPrefix);
+  if (!entry) return undefined;
+  memoryCache.delete(pathPrefix);
+  if (Date.now() - entry.computedAt >= getTtlMs()) return undefined;
+  memoryCache.set(pathPrefix, entry);
+  return entry;
+}
+
+function memorySet(pathPrefix: string, entry: CachedScores): void {
+  memoryCache.delete(pathPrefix);
+  memoryCache.set(pathPrefix, entry);
+  const ttl = getTtlMs();
+  const now = Date.now();
+  for (const [key, value] of memoryCache) {
+    if (now - value.computedAt >= ttl) memoryCache.delete(key);
+  }
+  while (memoryCache.size > PAGERANK_MEMORY_CACHE_MAX) {
+    const oldest = memoryCache.keys().next().value as string;
+    memoryCache.delete(oldest);
+  }
+}
 
 export function computePageRank(
   graph: PageRankGraph,
@@ -127,6 +175,7 @@ export async function buildGraphFromDb(
     .query()
     .select(["defined_symbols", "referenced_symbols"])
     .where(pathStartsWith(prefix))
+    .limit(PAGERANK_ROW_LIMIT)
     .toArray();
 
   const nodes = new Set<string>();
@@ -209,25 +258,32 @@ export async function loadOrComputePageRank(
   db: VectorDB,
   pathPrefix: string,
 ): Promise<{ scores: Map<string, number>; max: number }> {
-  const mem = memoryCache.get(pathPrefix);
-  if (mem && Date.now() - mem.computedAt < getTtlMs()) {
-    return { scores: mem.scores, max: mem.max };
-  }
-  const disk = readDiskCache(pathPrefix);
-  if (disk) {
-    memoryCache.set(pathPrefix, disk);
-    return { scores: disk.scores, max: disk.max };
-  }
-  const graph = await buildGraphFromDb(db, pathPrefix);
-  const scores = computePageRank(graph);
-  let max = 0;
-  for (const v of scores.values()) if (v > max) max = v;
-  const entry: CachedScores = { scores, max, computedAt: Date.now() };
-  memoryCache.set(pathPrefix, entry);
+  const mem = memoryGet(pathPrefix);
+  if (mem) return { scores: mem.scores, max: mem.max };
+  const pending = inFlight.get(pathPrefix);
+  if (pending) return pending;
+  const task = (async () => {
+    const disk = readDiskCache(pathPrefix);
+    if (disk) {
+      memorySet(pathPrefix, disk);
+      return { scores: disk.scores, max: disk.max };
+    }
+    const graph = await buildGraphFromDb(db, pathPrefix);
+    const scores = computePageRank(graph);
+    let max = 0;
+    for (const v of scores.values()) if (v > max) max = v;
+    memorySet(pathPrefix, { scores, max, computedAt: Date.now() });
+    try {
+      writeDiskCache(pathPrefix, scores);
+    } catch {}
+    return { scores, max };
+  })();
+  inFlight.set(pathPrefix, task);
   try {
-    writeDiskCache(pathPrefix, scores);
-  } catch {}
-  return { scores, max };
+    return await task;
+  } finally {
+    inFlight.delete(pathPrefix);
+  }
 }
 
 export function pageRankBoostForSymbols(
@@ -246,6 +302,11 @@ export function pageRankBoostForSymbols(
 
 export function _clearMemoryCacheForTests(): void {
   memoryCache.clear();
+  inFlight.clear();
+}
+
+export function _memoryCacheKeysForTests(): string[] {
+  return [...memoryCache.keys()];
 }
 
 export function _cachePathForTests(pathPrefix: string): string {

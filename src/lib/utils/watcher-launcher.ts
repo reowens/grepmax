@@ -27,12 +27,24 @@ export type LaunchResult =
         | "not-registered"
         | "spawn-failed"
         | "autostart-disabled"
-        | "sandboxed";
+        | "sandboxed"
+        | "daemon-refused";
       message: string;
     };
 
+/**
+ * A watch lease to take or renew with the daemon — see WatchLeases. Callers
+ * without one get the daemon's default short CLI lease.
+ */
+export interface WatchLeaseOptions {
+  holder: string;
+  pid?: number;
+  ttlMs?: number;
+}
+
 export async function launchWatcher(
   projectRoot: string,
+  lease?: WatchLeaseOptions,
 ): Promise<LaunchResult> {
   // 1. Project must be registered
   const project = getProject(projectRoot);
@@ -44,17 +56,21 @@ export async function launchWatcher(
     };
   }
 
-  // 2. Check if watcher already running (daemon registers per-project entries)
-  const existing =
-    getWatcherForProject(projectRoot) ?? getWatcherCoveringPath(projectRoot);
+  // 2. Check if watcher already running (daemon registers per-project entries).
+  // A lease holder must reach the daemon every time: the renewal is the point.
+  const existing = lease
+    ? undefined
+    : (getWatcherForProject(projectRoot) ??
+      getWatcherCoveringPath(projectRoot));
   if (existing && isProcessRunning(existing.pid)) {
     return { ok: true, pid: existing.pid, reused: true };
   }
+  const watchCmd = { cmd: "watch", root: projectRoot, ...lease };
 
   // 3. Try daemon IPC
   let resp: Awaited<ReturnType<typeof sendDaemonCommand>>;
   try {
-    resp = await sendDaemonCommand({ cmd: "watch", root: projectRoot });
+    resp = await sendDaemonCommand(watchCmd);
   } catch {
     resp = { ok: false, error: "request-failed" };
   }
@@ -81,25 +97,38 @@ export async function launchWatcher(
   }
 
   const error = resp.error as string | undefined;
-  if (error === "ENOENT" || error === "ECONNREFUSED") {
-    const daemonPid = await spawnDaemon();
-    if (daemonPid) {
-      for (let i = 0; i < 25; i++) {
-        await new Promise((r) => setTimeout(r, 200));
-        try {
-          const retry = await sendDaemonCommand({
-            cmd: "watch",
-            root: projectRoot,
-          });
-          if (retry.ok && typeof retry.pid === "number") {
-            return { ok: true, pid: retry.pid, reused: false };
-          }
-        } catch {}
-      }
+  // Anything but "nothing is listening" is a live daemon that said no or was
+  // slow (initializing, busy, timeout). A per-project watcher next to it would
+  // be a second writer on the store, and the MCP lease renewal would spawn one
+  // every few minutes — so report instead of falling through.
+  if (error !== "ENOENT" && error !== "ECONNREFUSED") {
+    return {
+      ok: false,
+      reason: "daemon-refused",
+      message: `Daemon did not accept the watch: ${error ?? "unknown error"}`,
+    };
+  }
+  const daemonPid = await spawnDaemon();
+  if (daemonPid) {
+    for (let i = 0; i < 25; i++) {
+      await new Promise((r) => setTimeout(r, 200));
+      try {
+        const retry = await sendDaemonCommand(watchCmd);
+        if (retry.ok && typeof retry.pid === "number") {
+          return { ok: true, pid: retry.pid, reused: false };
+        }
+      } catch {}
     }
+    // Still opening its stores. The daemon only kills per-project watchers at
+    // startup, so one spawned now would outlive that sweep and run beside it.
+    return {
+      ok: false,
+      reason: "daemon-refused",
+      message: `Daemon (PID ${daemonPid}) is still starting; the watch will be retried`,
+    };
   }
 
-  // 5. Fall back to per-project spawn
+  // 5. Fall back to per-project spawn (the daemon could not be started)
   try {
     const child = spawn(
       process.argv[0],

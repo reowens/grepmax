@@ -48,6 +48,7 @@ import {
 } from "../graph/impact";
 import type { VectorDB } from "../store/vector-db";
 import { toArr } from "../utils/arrow";
+import { mapWithConcurrency } from "../utils/async-semaphore";
 import type { DaemonResponse } from "../utils/daemon-client";
 import { sendDaemonCommand } from "../utils/daemon-client";
 import { escapeSqlString } from "../utils/filter-builder";
@@ -149,6 +150,8 @@ const MAX_PATH_HOPS = 10;
 const MAX_SUBGRAPH_FILES = 500;
 /** A diff can name many symbols; each costs three graph queries. */
 const MAX_RISK_SYMBOLS = 200;
+/** Symbols `graph.risk` resolves at once (three store scans each). */
+const RISK_SYMBOL_CONCURRENCY = 4;
 
 function clampInt(value: unknown, min: number, max: number, fallback: number) {
   const n = typeof value === "number" ? value : Number.NaN;
@@ -657,14 +660,20 @@ export async function runGraphSubgraph(
 export async function runGraphRisk(
   db: VectorDB,
   args: { symbols: string[]; queryRoot: string; scope: ResolvedScope },
+  signal?: AbortSignal,
 ): Promise<GraphRiskFact[]> {
   const builder = new GraphBuilder(
     db,
     args.scope.pathPrefix,
     args.scope.excludePrefixes,
   );
-  return Promise.all(
-    args.symbols.slice(0, MAX_RISK_SYMBOLS).map(async (symbol) => {
+  // Each symbol costs three unindexed content scans. Fanning all of them out
+  // at once put up to MAX_RISK_SYMBOLS x 3 scans in native memory together;
+  // the pool keeps it at RISK_SYMBOL_CONCURRENCY x 3.
+  return mapWithConcurrency(
+    args.symbols.slice(0, MAX_RISK_SYMBOLS),
+    RISK_SYMBOL_CONCURRENCY,
+    async (symbol) => {
       const [callers, loc, tests] = await Promise.all([
         builder.callersOf(symbol).catch(() => [] as string[]),
         builder.resolveLocation(symbol).catch(() => null),
@@ -677,7 +686,8 @@ export async function runGraphRisk(
         callerCount: callers.length,
         hasTests: tests.length > 0,
       };
-    }),
+    },
+    signal,
   );
 }
 
@@ -1022,7 +1032,11 @@ export function createGraphVerbs(
 ): Record<string, ReadVerbHandler> {
   const handlers: Record<
     string,
-    (payload: Record<string, unknown>, db: VectorDB) => Promise<DaemonResponse>
+    (
+      payload: Record<string, unknown>,
+      db: VectorDB,
+      signal: AbortSignal,
+    ) => Promise<DaemonResponse>
   > = {
     "graph.resolve": async (payload, db) => {
       const { projectRoot } = decodeScopePayload(payload);
@@ -1125,13 +1139,17 @@ export function createGraphVerbs(
       return { ok: true, subgraph };
     },
 
-    "graph.risk": async (payload, db) => {
+    "graph.risk": async (payload, db, signal) => {
       const decoded = decodeScopePayload(payload);
-      const facts = await runGraphRisk(db, {
-        symbols: requireSymbols(payload),
-        queryRoot: queryRootFor(decoded),
-        scope: decoded.scope,
-      });
+      const facts = await runGraphRisk(
+        db,
+        {
+          symbols: requireSymbols(payload),
+          queryRoot: queryRootFor(decoded),
+          scope: decoded.scope,
+        },
+        signal,
+      );
       return { ok: true, facts };
     },
 
@@ -1149,7 +1167,7 @@ export function createGraphVerbs(
   const wired: Record<string, ReadVerbHandler> = {};
   for (const [name, run] of Object.entries(handlers)) {
     wired[name] = async (payload, ctx) =>
-      run(payload, requireStore(getDeps(ctx)));
+      run(payload, requireStore(getDeps(ctx)), ctx.signal);
   }
   return wired;
 }

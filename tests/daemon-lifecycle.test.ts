@@ -5,6 +5,11 @@ import { Daemon } from "../src/lib/daemon/daemon";
 import { handleCommand } from "../src/lib/daemon/ipc-handler";
 import { getWorkerPool } from "../src/lib/workers/pool";
 
+const footprint = vi.hoisted(() => ({ mb: 100 }));
+vi.mock("../src/lib/utils/process-footprint", () => ({
+  readFootprintMb: () => footprint.mb,
+}));
+
 // tests/setup.ts mocks the pool module; augment its stub pool with the
 // getWorkerPids() method the orphan sweep calls.
 function setTrackedPids(daemon: any, pids: number[]) {
@@ -113,6 +118,7 @@ describe("Daemon readiness gate (IPC)", () => {
     expect(resp?.capabilities).toEqual({
       exclusiveGenerationRebuild: 1,
       readVerbs: 1,
+      watchLeases: 1,
     });
   });
 
@@ -197,22 +203,23 @@ describe("Daemon self-recycle", () => {
 
   beforeEach(() => {
     daemon = new Daemon();
+    footprint.mb = 100;
+    // Past the footprint trigger's settle-in window, short of the age limit.
+    vi.spyOn(process, "uptime").mockReturnValue(60 * 60);
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("recycles when RSS exceeds the watermark and the daemon is quiet", async () => {
+  it("recycles when the footprint exceeds the watermark and the daemon is quiet", async () => {
     const exitSpy = vi
       .spyOn(process, "exit")
       .mockImplementation((() => {}) as never);
     const shutdownSpy = vi
       .spyOn(daemon, "shutdown")
       .mockResolvedValue(undefined);
-    vi.spyOn(process, "memoryUsage").mockReturnValue({
-      rss: 4096 * 1024 * 1024,
-    } as unknown as NodeJS.MemoryUsage);
+    footprint.mb = 4096;
 
     daemon.maybeRecycle();
 
@@ -225,14 +232,26 @@ describe("Daemon self-recycle", () => {
     expect(exitSpy).toHaveBeenCalledWith(0);
   });
 
-  it("does not recycle while a project operation is in flight", async () => {
-    vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
+  it("ignores a large footprint on a freshly started daemon", () => {
     const shutdownSpy = vi
       .spyOn(daemon, "shutdown")
       .mockResolvedValue(undefined);
-    vi.spyOn(process, "memoryUsage").mockReturnValue({
-      rss: 4096 * 1024 * 1024,
-    } as unknown as NodeJS.MemoryUsage);
+    vi.spyOn(process, "uptime").mockReturnValue(60);
+    footprint.mb = 4096;
+
+    daemon.maybeRecycle();
+
+    expect(shutdownSpy).not.toHaveBeenCalled();
+    expect(daemon.recycleDueSinceMs).toBeNull();
+  });
+
+  it("defers while a project operation is in flight, then forces after the grace period", async () => {
+    vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const shutdownSpy = vi
+      .spyOn(daemon, "shutdown")
+      .mockResolvedValue(undefined);
+    footprint.mb = 4096;
     let release!: () => void;
     const active = daemon.projectMutex.run(
       "/some/project",
@@ -245,19 +264,38 @@ describe("Daemon self-recycle", () => {
     await Promise.resolve();
 
     daemon.maybeRecycle();
-
     expect(shutdownSpy).not.toHaveBeenCalled();
+    expect(daemon.recycleDueSinceMs).not.toBeNull();
+
+    // Once due, the in-between heartbeat ticks re-check without resampling.
+    footprint.mb = 100;
+    daemon.maybeRecycle(false);
+    expect(shutdownSpy).not.toHaveBeenCalled();
+
+    daemon.recycleDueSinceMs = Date.now() - 2 * 60 * 60 * 1000;
+    daemon.maybeRecycle(false);
+    expect(shutdownSpy).toHaveBeenCalledWith({ relaunch: true });
+
     release();
     await active;
+  });
+
+  it("recycles on age alone", () => {
+    vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
+    const shutdownSpy = vi
+      .spyOn(daemon, "shutdown")
+      .mockResolvedValue(undefined);
+    vi.spyOn(process, "uptime").mockReturnValue(25 * 60 * 60);
+
+    daemon.maybeRecycle();
+
+    expect(shutdownSpy).toHaveBeenCalledWith({ relaunch: true });
   });
 
   it("does not recycle when under both ceilings", () => {
     const shutdownSpy = vi
       .spyOn(daemon, "shutdown")
       .mockResolvedValue(undefined);
-    vi.spyOn(process, "memoryUsage").mockReturnValue({
-      rss: 100 * 1024 * 1024,
-    } as unknown as NodeJS.MemoryUsage);
 
     daemon.maybeRecycle();
 
