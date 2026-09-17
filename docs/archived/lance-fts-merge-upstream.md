@@ -1,21 +1,21 @@
 ---
 type: plan
-status: active
+status: archived
 created: 2026-08-05T22:15:40Z
-updated: 2026-08-05T22:15:40Z
+updated: 2026-09-17T00:41:38Z
 surfaces:
   - store
 modules:
   - src/lib/store/vector-db.ts
 domain: upstream lance-index FTS incremental-merge out-of-bounds panic
 audience: internal
-parent_plan: docs/archived/lancedb-fts-panic-remediation.md
+parent_plan: lancedb-fts-panic-remediation.md
 related_plans:
-  - docs/archived/stability-cycle-v0.26.2.md
+  - stability-cycle-v0.26.2.md
 related_docs:
-  - docs/2026-08-04-macos-kernel-zone-panic-incident.md
-current_state: The FTS merge panic is an upstream out-of-bounds in lance-index 7.0.0 at scalar/inverted/builder.rs:856, identical in LanceDB 0.30 and 0.31 because both bundle the same crate. Twenty-six retained backtraces show the index exceeding the buffer length by +89 to +2006, with length growing monotonically — a stale-length read during incremental merge. The local drop-and-rebuild guard absorbs it without correctness loss; v0.26.6 ships on 0.31.
-next_step: File the upstream issue against lancedb/lance with the backtrace set, overshoot table, and workload shape. Then evaluate whether disabling incremental FTS merge in favour of periodic full rebuild removes the panic locally while upstream is pending.
+  - ../2026-08-04-macos-kernel-zone-panic-incident.md
+current_state: Closed. lance-format/lance#8310 was fixed by lance#8312 (lance 11.0.0-beta.22); gmax pins @lancedb/lancedb 0.38.0 GA (lance 11.0.0). The 0.26.27/0.26.28 canary on the GA pin ran 2026-09-07 to 2026-09-16 with zero optimize failures, FTS rebuilds, or panics. The drop-and-rebuild guard stays as a tripwire.
+next_step: None. A future FTS panic is a regression to report upstream against the GA line.
 summary: Pursue the upstream fix for the FTS merge panic that no LanceDB version bump can address.
 ---
 
@@ -82,7 +82,23 @@ catchup should serialize FTS index creation.
 - A decision recorded on incremental-merge versus periodic rebuild, with measured cost.
 - No FTS panic reaches a state where search is unavailable.
 
+## Outcome
+
+- **Step 1 (upstream):** fixed upstream by [lance#8312](https://github.com/lance-format/lance/pull/8312),
+  released in lance `11.0.0-beta.22` and carried by lance `11.0.0` GA, which `@lancedb/lancedb 0.38.0`
+  bundles.
+- **Step 2 (local mitigation):** not needed. The panic is fixed at the source, so incremental merge
+  stays; the guard's drop-and-rebuild remains as a tripwire.
+- **Step 3 (retry headroom):** not pursued. The exhausted-retry case was one conflict during a
+  many-project catchup; since 0.26.30 the daemon watches only session-leased projects, which shrinks
+  that catchup, and the canary saw no recurrence.
+- **Canary:** 2026-09-07 15:56 to 2026-09-16 on the GA pin, `Optimize failed|FTS rebuild failed|
+  Periodic maintenance failed|Panic|Rebuilt FTS` = 0 in the daemon log.
+
 ## Version History
+
+- **2026-09-17T00:41:38Z** Archived.
+- **2026-09-16T17:45:00Z** Closed after the GA canary; see Outcome.
 
 - **2026-08-05T22:20:00Z** Filed upstream issue lance-format/lance#8310.
 - **2026-08-05T22:15:00Z** Created as successor to the closed LanceDB 0.31 remediation plan.

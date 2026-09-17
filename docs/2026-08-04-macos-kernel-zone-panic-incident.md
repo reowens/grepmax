@@ -584,6 +584,33 @@ at 112 h, so the remaining candidates are uptime dependence and something specif
 sessions. The daily series continues; a rate that climbs with uptime while the daemon's own log
 stays quiet would point at the host.
 
+#### Daemon-up sample 2, 2026-09-16: 6.04 MiB per running hour, watch-everything daemon
+
+The 0.26.28 segment, measured the same way as sample 1. The host essentially never slept: 412
+power events, 0.08 h asleep, 0.23 h dark.
+
+| Sample | `data.kalloc.1024` inuse | Delta |
+|---|---:|---:|
+| 2026-09-08 10:30 -0700, daemon 0.26.28 started | 135,620 | |
+| 2026-09-16 17:40 -0700, 13 min after daemon 0.26.30 started (t0 of the next segment) | 1,367,349 | +1,231,729 elements (1,202.9 MiB) |
+
+| Wall | Asleep | Dark wake | Kernel-running | Rate |
+|---:|---:|---:|---:|---:|
+| 199.18 h | 0.08 h | 0.23 h | 199.10 h | **6.04 MiB/h** |
+
+Twice sample 1's rate and above the previous boot's 5.1-5.5. The 0.26.28 daemon watched all
+13-14 registered projects for the whole segment, and its log for 2026-09-16 alone shows 301 worker
+spawns, 129 FSEvents overflows and 32 catchup scans; the daemon's footprint reached 4 GB (9.6 GB
+peak) and the host was 17 of 18 GB into swap by the end. Swap and compressor churn are also
+filesystem writes, so this sample cannot separate the daemon's own write volume from the memory
+pressure it helped create. The 1.31 GiB total is under the daemon's 4 GiB warn threshold and it
+logged no zone warning.
+
+0.26.30 changes the variable under test: the daemon watches only projects a live session holds a
+lease on, caps LanceDB's caches, runs at most four workers, and recycles on its physical footprint.
+The next segment starts from the 17:40 reading, or from the next boot's first sample if the host
+is restarted first.
+
 ### The 4-worktree indexing is now refused
 
 Commit `4ef7c67` "Refuse to index git worktrees" (2026-08-25 05:54:42 -0700, released in v0.26.17
@@ -921,7 +948,7 @@ Updated 2026-08-25. Answers are from a single host over two days; see the caveat
 |---|---|
 | Does macOS 26.6 change the code path that allocated the 1 KB objects? | **Answered, behaviorally.** On `25G83` (APFS 2811.160.7, xnu-12377.161.14~5), 182.4 GB of compaction rewrite over 27 h left `data.kalloc.1024` at ~269 MiB after 45 h. The same load shape on `25F84` produced multiple GiB/hour. Which change fixed it is still unknown - we observe the outcome, not the diff. |
 | Which Apple EndpointSecurity client or event type retained the allocations? | **Still open, and now less likely to be answerable from these traces.** Panic 4's backtrace contains no `EndpointSecurity`, `quarantine`, `apfs`, or `IOStorageFamily` frame at all, so the kext list varies with whoever was on the stack and never identified the retaining client. |
-| Does ordinary OpenCode/gmax filesystem activity grow the zone on 26.6? | **Answered: no, not measurably.** The Aug 24-25 window was well above ordinary activity and the zone's `cur size` never exceeded its high-water mark. **Reopened 2026-09-03.** `cur == max` means the zone never shrank, not that it never grew; the boot drifted ~5 MiB/h for 262 h and nothing yet attributes that to the host rather than to gmax. The fresh boot makes it testable. **Split 2026-09-07.** A 92.8 h window with no gmax process alive drifted 2.9 MiB per kernel-running hour (the host slept 69 h of it; the previous boot never slept), 55-60 % of the daemon-up boot's 5.1-5.5 MiB/h. The host owns most of the drift; the daemon-up configuration adds ~2 MiB/h, which is idle-drift order, not a burst. See [No-gmax window](#no-gmax-window-2026-09-03-to-09-07-the-host-drifts-on-its-own-at-about-half-the-rate). **Sample 1 2026-09-08.** The first 17.87 running hours with the 0.26.27 daemon up read 2.98 MiB/h, the same as with no gmax, under a heavy indexing window (54 FSEvents overflows, 664 files reindexed). The "daemon adds ~2 MiB/h" half of the split did not reproduce; the previous boot's extra is now unattributed and the daily series continues. See [Daemon-up sample 1](#daemon-up-sample-1-2026-09-08-298-mib-per-running-hour-under-load). |
+| Does ordinary OpenCode/gmax filesystem activity grow the zone on 26.6? | **Answered: no, not measurably.** The Aug 24-25 window was well above ordinary activity and the zone's `cur size` never exceeded its high-water mark. **Reopened 2026-09-03.** `cur == max` means the zone never shrank, not that it never grew; the boot drifted ~5 MiB/h for 262 h and nothing yet attributes that to the host rather than to gmax. The fresh boot makes it testable. **Split 2026-09-07.** A 92.8 h window with no gmax process alive drifted 2.9 MiB per kernel-running hour (the host slept 69 h of it; the previous boot never slept), 55-60 % of the daemon-up boot's 5.1-5.5 MiB/h. The host owns most of the drift; the daemon-up configuration adds ~2 MiB/h, which is idle-drift order, not a burst. See [No-gmax window](#no-gmax-window-2026-09-03-to-09-07-the-host-drifts-on-its-own-at-about-half-the-rate). **Sample 1 2026-09-08.** The first 17.87 running hours with the 0.26.27 daemon up read 2.98 MiB/h, the same as with no gmax, under a heavy indexing window (54 FSEvents overflows, 664 files reindexed). The "daemon adds ~2 MiB/h" half of the split did not reproduce; the previous boot's extra is now unattributed and the daily series continues. See [Daemon-up sample 1](#daemon-up-sample-1-2026-09-08-298-mib-per-running-hour-under-load). **Sample 2 2026-09-16.** The next 199 running hours read 6.04 MiB/h with the watch-everything 0.26.28 daemon under heavy memory pressure, above the previous boot's rate; 0.26.30 (session-scoped watching, bounded memory) starts the next segment. See [Daemon-up sample 2](#daemon-up-sample-2-2026-09-16-604-mib-per-running-hour-watch-everything-daemon). |
 | Do mounted simulator images or external APFS storage materially change the growth rate? | **Partly answered.** The Aug 24-25 window indexed four roots on an external APFS volume with no zone growth. Simulator images, Docker, and Parallels were not exercised and remain untested on `25G83`. |
 | Can LanceDB 0.31 be validated safely on an unaffected host? | **Now plausible on this host,** which is no longer demonstrably unsafe. Not yet approved - the evidence is two days old and uncontrolled. |
 | Why did the kernel-zone guard not prevent panic 4? | **Answered.** It fired, warned three times, and stopped the daemon eight times. `~/.gmax/autostart-disabled` was checked only by the session-start hook, so each stand-down was undone by a restart. Fixed in v0.26.19: the check now gates every implicit spawn path. |

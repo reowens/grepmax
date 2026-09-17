@@ -207,7 +207,9 @@ The CLI and MCP output include score, max similarity, pair count, representative
 
 ## Background Daemon
 
-A single daemon watches all registered projects via native OS file events (FSEvents/inotify). Changes are detected in sub-second and incrementally reindexed. All writes to LanceDB are routed through the daemon via IPC, eliminating lock contention.
+A single daemon watches your projects via native OS file events (FSEvents/inotify). Changes are detected in sub-second and incrementally reindexed. All writes to LanceDB are routed through the daemon via IPC, eliminating lock contention.
+
+The daemon watches only projects that are in use: each Claude Code session (its MCP server and session hooks) holds a lease on its project, and `gmax add` / `gmax index` take a short one. When the last lease ends the project is unwatched; its index stays searchable, and the next session's catch-up scan picks up whatever changed in between. Set `GMAX_WATCH_ALL=1` to watch every registered project instead.
 
 ```bash
 gmax watch --daemon -b        # Start daemon manually
@@ -215,7 +217,7 @@ gmax watch stop               # Stop daemon
 gmax status                   # See all projects + watcher status
 ```
 
-The daemon auto-starts when you run `gmax add`, `gmax index`, `gmax remove`, `gmax summarize`, or `gmax mcp`. It shuts down after 30 minutes of inactivity. File-change batches are processed concurrently while reserving worker capacity for searches; LanceDB compaction runs after writes rather than on every maintenance tick.
+The daemon auto-starts when you run `gmax add`, `gmax index`, `gmax remove`, `gmax summarize`, or `gmax mcp`. It shuts down after 4 hours of inactivity, and hands off to a fresh daemon after 24 hours or once its memory footprint passes 2.5 GB. File-change batches are processed on at most four worker processes, added only when work backs up, with one kept free for searches; LanceDB compaction runs after writes rather than on every maintenance tick.
 
 ## Running under the Claude Code sandbox
 

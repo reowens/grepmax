@@ -12,7 +12,7 @@ modules:
   - pnpm-workspace.yaml
 domain: upgrade @lancedb/lancedb 0.31 (lance 8) to 0.38 (lance 11) to pick up the upstream FTS merge fix
 audience: internal
-parent_plan: docs/plans/lance-fts-merge-upstream.md
+parent_plan: ../archived/lance-fts-merge-upstream.md
 related_docs:
   - docs/2026-08-04-macos-kernel-zone-panic-incident.md
   - docs/known-limitations.md

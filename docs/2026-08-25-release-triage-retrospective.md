@@ -13,7 +13,7 @@ related_docs:
   - docs/2026-08-04-macos-kernel-zone-panic-incident.md
   - docs/known-limitations.md
   - docs/plans/lancedb-0.38-upgrade.md
-  - docs/plans/lance-fts-merge-upstream.md
+  - archived/lance-fts-merge-upstream.md
 summary: What was found on entry, what shipped in v0.26.19–v0.26.22, the evidence behind each fix, and what is left.
 ---
 
