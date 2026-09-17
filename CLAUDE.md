@@ -591,6 +591,10 @@ would report success even against a stale daemon. It only restarts a daemon that
 running, and never fails the release — the publish is irreversible by then, so a restart problem is
 a warning, not an exit code.
 
+Before the global install, `postrelease.sh` polls the abbreviated packument that `npm install`
+reads (not `npm view`'s full document, which can go live first) and installs with
+`--prefer-online`, so a stale cached packument cannot fail every retry with `ETARGET`.
+
 `postrelease.sh` is not in the package's `files` list, so changes to it take effect on the next
 `npm version patch` without needing a release of their own.
 
