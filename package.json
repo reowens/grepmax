@@ -78,7 +78,7 @@
   "description": "Semantic code search for coding agents. Local embeddings, LLM summaries, call graph tracing.",
   "dependencies": {
     "@clack/prompts": "^1.8.1",
-    "@huggingface/transformers": "^4.2.0",
+    "@huggingface/transformers": "^4.3.0",
     "@lancedb/lancedb": "0.38.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@parcel/watcher": "^2.6.0",
