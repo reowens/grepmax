@@ -8,17 +8,17 @@ overrides:
   fast-uri: "^3.1.6" # .>@modelcontextprotocol/sdk>ajv
   qs: "^6.16.0" # .>@modelcontextprotocol/sdk>express
   ip-address: "^10.3.1" # .>@modelcontextprotocol/sdk>express-rate-limit
-  hono: "^4.12.34" # .>@modelcontextprotocol/sdk
+  hono: "^4.13.5" # .>@modelcontextprotocol/sdk
   "@hono/node-server": "^2.0.5" # .>@modelcontextprotocol/sdk
   protobufjs: "^7.6.5" # .>@huggingface/transformers>onnxruntime-web
   # These two force past the parent's range, so they need justifying:
-  # sharp — @huggingface/transformers declares ^0.34.5, patch needs >=0.35.0.
+  # sharp — @huggingface/transformers declared ^0.34.5; patch needs >=0.35.4.
   # Safe here because transformers is in ignoredOptionalDependencies and gmax
   # embeds via onnxruntime-node; sharp's image path is never entered.
-  sharp: "^0.35.0"
-  # adm-zip — onnxruntime-node declares ^0.5.16, patch needs >=0.6.0. Used only
+  sharp: "^0.35.4"
+  # adm-zip — onnxruntime-node declares ^0.6.0, patch needs >=0.6.1. Used only
   # by that package's install script, which ignoredBuiltDependencies suppresses.
-  adm-zip: "^0.6.0"
+  adm-zip: "^0.6.1"
 
 ignoredBuiltDependencies:
   - msgpackr-extract
