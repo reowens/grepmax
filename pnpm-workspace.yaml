@@ -17,18 +17,21 @@ overrides:
   # embeds via onnxruntime-node; sharp's image path is never entered.
   sharp: "^0.35.4"
   # adm-zip — onnxruntime-node declares ^0.6.0, patch needs >=0.6.1. Used only
-  # by that package's install script, which ignoredBuiltDependencies suppresses.
+  # by that package's install script, which allowBuilds suppresses.
   adm-zip: "^0.6.1"
-
-ignoredBuiltDependencies:
-  - msgpackr-extract
-  - numkong # ships prebuilt platform binaries; no local build needed
-  - onnxruntime-node
-  - protobufjs
-  - sharp
 
 ignoredOptionalDependencies:
   - "@huggingface/transformers"
   - openai
 
-onlyBuiltDependencies: '["@parcel/watcher"]'
+# Only @parcel/watcher runs its build script. numkong ships prebuilt platform
+# binaries, so no local build is needed.
+allowBuilds:
+  "@parcel/watcher": true
+  esbuild: false
+  lmdb: false
+  msgpackr-extract: false
+  numkong: false
+  onnxruntime-node: false
+  protobufjs: false
+  sharp: false
