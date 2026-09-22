@@ -24,23 +24,35 @@ function setup() {
 describe("matchStore", () => {
   it("routes a project under a store prefix to that store", () => {
     const { drive, store } = setup();
-    expect(matchStore(path.join(drive, "codenotch"), [store])).toEqual({ kind: "store", store });
+    expect(matchStore(path.join(drive, "codenotch"), [store])).toEqual({
+      kind: "store",
+      store,
+    });
   });
 
   it("matches through a symlink to the drive", () => {
     const { link, store } = setup();
-    expect(matchStore(path.join(link, "codenotch", "Sources"), [store])).toEqual({ kind: "store", store });
+    expect(
+      matchStore(path.join(link, "codenotch", "Sources"), [store]),
+    ).toEqual({ kind: "store", store });
   });
 
   it("leaves everything else on the primary store", () => {
     const { store } = setup();
-    expect(matchStore(path.join(tmp, "Development"), [store])).toEqual({ kind: "primary" });
+    expect(matchStore(path.join(tmp, "Development"), [store])).toEqual({
+      kind: "primary",
+    });
     expect(matchStore("/anywhere", [])).toEqual({ kind: "primary" });
   });
 
   it("reports a store whose volume is not mounted as offline", () => {
-    const store = { prefix: "/Volumes/NoSuchDrive-gmax-test/packages", home: "/Volumes/NoSuchDrive-gmax-test/.gmax-store" };
-    expect(matchStore("/Volumes/NoSuchDrive-gmax-test/packages/pock", [store])).toEqual({
+    const store = {
+      prefix: "/Volumes/NoSuchDrive-gmax-test/packages",
+      home: "/Volumes/NoSuchDrive-gmax-test/.gmax-store",
+    };
+    expect(
+      matchStore("/Volumes/NoSuchDrive-gmax-test/packages/pock", [store]),
+    ).toEqual({
       kind: "offline",
       store,
       volume: "/Volumes/NoSuchDrive-gmax-test",
@@ -48,10 +60,15 @@ describe("matchStore", () => {
   });
 
   it("follows a dangling symlink to name the offline store", () => {
-    tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gmax-stores-")));
+    tmp = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), "gmax-stores-")),
+    );
     const link = path.join(tmp, "packages");
     fs.symlinkSync("/Volumes/NoSuchDrive-gmax-test/packages", link);
-    const store = { prefix: "/Volumes/NoSuchDrive-gmax-test/packages", home: "/Volumes/NoSuchDrive-gmax-test/.gmax-store" };
+    const store = {
+      prefix: "/Volumes/NoSuchDrive-gmax-test/packages",
+      home: "/Volumes/NoSuchDrive-gmax-test/.gmax-store",
+    };
     expect(matchStore(path.join(link, "pock"), [store]).kind).toBe("offline");
   });
 });
@@ -68,14 +85,18 @@ describe("readStores and volumeOf", () => {
   });
 
   it("names the volume only for /Volumes paths", () => {
-    expect(volumeOf("/Volumes/External/dev/packages")).toBe("/Volumes/External");
+    expect(volumeOf("/Volumes/External/dev/packages")).toBe(
+      "/Volumes/External",
+    );
     expect(volumeOf("/Users/x/.gmax")).toBeNull();
   });
 });
 
 describe("commandTarget", () => {
   it("prefers --root and --store, then index --path, then a directory argument, then cwd", () => {
-    expect(commandTarget(["search", "q", "--root", "/a/b"], "/cwd")).toBe("/a/b");
+    expect(commandTarget(["search", "q", "--root", "/a/b"], "/cwd")).toBe(
+      "/a/b",
+    );
     expect(commandTarget(["search", "q", "--store=/a/c"], "/cwd")).toBe("/a/c");
     expect(commandTarget(["index", "--path", "rel"], "/cwd")).toBe("/cwd/rel");
     expect(commandTarget(["add", "/x/y"], "/cwd")).toBe("/x/y");
@@ -85,10 +106,14 @@ describe("commandTarget", () => {
 
 describe("secondary store autostart", () => {
   it("keeps the autostart gate closed and says why", async () => {
-    const { autostartDisabledNotice } = await import("../src/lib/utils/autostart");
+    const { autostartDisabledNotice } = await import(
+      "../src/lib/utils/autostart"
+    );
     process.env.GMAX_SECONDARY_STORE = "1";
     try {
-      expect(autostartDisabledNotice()).toMatch(/external drive — running in-process, not watched/);
+      expect(autostartDisabledNotice()).toMatch(
+        /external drive — running in-process, not watched/,
+      );
     } finally {
       delete process.env.GMAX_SECONDARY_STORE;
     }

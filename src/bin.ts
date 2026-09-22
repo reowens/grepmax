@@ -28,7 +28,11 @@ export function commandTarget(argv: string[], cwd: string): string {
   if (explicit) return path.resolve(cwd, explicit);
   if (DIR_ARG_COMMANDS.has(argv[0])) {
     const positional = argv.slice(1).find((a) => !a.startsWith("-"));
-    if (positional && (positional.includes(path.sep) || fs.existsSync(path.resolve(cwd, positional)))) {
+    if (
+      positional &&
+      (positional.includes(path.sep) ||
+        fs.existsSync(path.resolve(cwd, positional)))
+    ) {
       return path.resolve(cwd, positional);
     }
   }

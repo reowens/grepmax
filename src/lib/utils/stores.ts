@@ -49,7 +49,9 @@ export function readStores(file = storesFilePath()): StoreEntry[] {
 // The volume a path lives on, for paths under /Volumes; null for the boot disk.
 export function volumeOf(p: string): string | null {
   const parts = path.resolve(p).split(path.sep);
-  return parts[1] === "Volumes" && parts[2] ? path.join("/Volumes", parts[2]) : null;
+  return parts[1] === "Volumes" && parts[2]
+    ? path.join("/Volumes", parts[2])
+    : null;
 }
 
 function realOrResolved(p: string): string {
@@ -62,7 +64,9 @@ function realOrResolved(p: string): string {
 
 function within(child: string, parent: string): boolean {
   const rel = path.relative(parent, child);
-  return rel === "" || (!!rel && !rel.startsWith("..") && !path.isAbsolute(rel));
+  return (
+    rel === "" || (!!rel && !rel.startsWith("..") && !path.isAbsolute(rel))
+  );
 }
 
 // A path behind a symlink (~/Development/packages -> /Volumes/External/...)
