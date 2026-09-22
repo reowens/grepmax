@@ -56,6 +56,52 @@ function selectHome(): void {
   process.env.GMAX_NO_AUTOSTART = "1";
   process.env.GMAX_SECONDARY_STORE = "1";
   seedConfig(match.store.home);
+  alignCwdWithRegistry(match.store.home);
+}
+
+// Node reports the physical working directory, so a shell standing in
+// ~/Development/packages/x (a symlink onto the drive) looks like
+// /Volumes/External/dev/packages/x, while the store registered the path it was
+// given. When the physical cwd sits inside a registered root's realpath,
+// report the cwd in the registered form so project lookup finds it.
+export function registeredForm(
+  cwd: string,
+  roots: string[],
+  real: (p: string) => string = realpathOr,
+): string | null {
+  for (const root of roots) {
+    const rootReal = real(root);
+    const rel = path.relative(rootReal, cwd);
+    if (rel === "" || (rel && !rel.startsWith("..") && !path.isAbsolute(rel))) {
+      return rel ? path.join(root, rel) : root;
+    }
+  }
+  return null;
+}
+
+function realpathOr(p: string): string {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return path.resolve(p);
+  }
+}
+
+function alignCwdWithRegistry(home: string): void {
+  let roots: string[];
+  try {
+    const parsed = JSON.parse(
+      fs.readFileSync(path.join(home, "projects.json"), "utf-8"),
+    ) as Array<{ root?: unknown }>;
+    roots = parsed
+      .map((p) => p.root)
+      .filter((r): r is string => typeof r === "string");
+  } catch {
+    return;
+  }
+  const physical = process.cwd();
+  const logical = registeredForm(physical, roots);
+  if (logical && logical !== physical) process.cwd = () => logical;
 }
 
 // A new store embeds with the same model as the primary one.

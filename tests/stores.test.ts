@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { commandTarget } from "../src/bin";
+import { commandTarget, registeredForm } from "../src/bin";
 import { matchStore, readStores, volumeOf } from "../src/lib/utils/stores";
 
 let tmp: string;
@@ -117,5 +117,29 @@ describe("secondary store autostart", () => {
     } finally {
       delete process.env.GMAX_SECONDARY_STORE;
     }
+  });
+});
+
+describe("registeredForm", () => {
+  it("maps a physical cwd inside a registered root back to the registered path", () => {
+    const real = (p: string) =>
+      p.replace(
+        "/Users/me/Development/packages",
+        "/Volumes/External/dev/packages",
+      );
+    const roots = ["/Users/me/Development/packages/agent-isle"];
+    expect(
+      registeredForm(
+        "/Volumes/External/dev/packages/agent-isle/Sources",
+        roots,
+        real,
+      ),
+    ).toBe("/Users/me/Development/packages/agent-isle/Sources");
+    expect(
+      registeredForm("/Volumes/External/dev/packages/agent-isle", roots, real),
+    ).toBe("/Users/me/Development/packages/agent-isle");
+    expect(
+      registeredForm("/Volumes/External/dev/packages/pock", roots, real),
+    ).toBeNull();
   });
 });
