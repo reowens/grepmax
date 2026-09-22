@@ -50,6 +50,17 @@ export const watch = new Command("watch")
       path?: string;
       idleTimeout?: boolean;
     }) => {
+      // A secondary store (src/bin.ts) never runs a daemon or a watcher: one
+      // would hold the external drive open, and its startup sweep of stale
+      // daemons judges liveness by its own home's lock and socket, so it takes
+      // the primary daemon for dead and shuts it down (seen 2026-09-22).
+      if (process.env.GMAX_SECONDARY_STORE === "1") {
+        console.error(
+          "gmax: this project's index lives on an external drive and runs in-process; it is never watched. Run `gmax index` after changing it.",
+        );
+        process.exitCode = 2;
+        return;
+      }
       // --- Daemon mode ---
       if (options.daemon) {
         if (options.path) {

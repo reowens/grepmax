@@ -43,6 +43,12 @@ export function autostartDisabledUndo(): string | null {
 }
 
 export function autostartDisabledNotice(): string | null {
+  // A secondary store (src/bin.ts) runs in-process by design, not because the
+  // kill switch is on, so say that instead of naming an undo step. Callers use
+  // a non-null notice as the gate, so this must stay non-null.
+  if (process.env.GMAX_SECONDARY_STORE === "1") {
+    return `This project's index lives in ${PATHS.globalRoot} on an external drive — running in-process, not watched. Run \`gmax index\` after changing it.`;
+  }
   const undo = autostartDisabledUndo();
   if (!undo) return null;
   return `Daemon autostart is disabled — running in-process. Re-enable with: ${undo}`;

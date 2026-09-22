@@ -269,15 +269,24 @@ export const MAX_WORKER_MEMORY_MB = (() => {
 })();
 
 const HOME = os.homedir();
-const GLOBAL_ROOT = path.join(HOME, ".gmax");
+// Models, grammars and the pinned HF cache are shared by every store and always
+// live on the internal disk. GMAX_HOME moves only the data root: a secondary
+// store on an external drive (see src/lib/utils/stores.ts) sets it before this
+// module loads, so a project's index can live on the drive with its files.
+const SHARED_ROOT = path.join(HOME, ".gmax");
+const GLOBAL_ROOT = process.env.GMAX_HOME
+  ? path.resolve(process.env.GMAX_HOME)
+  : SHARED_ROOT;
 
 export const PATHS = {
   globalRoot: GLOBAL_ROOT,
-  models: path.join(GLOBAL_ROOT, "models"),
-  grammars: path.join(GLOBAL_ROOT, "grammars"),
+  sharedRoot: SHARED_ROOT,
+  storesFile: path.join(SHARED_ROOT, "stores.json"),
+  models: path.join(SHARED_ROOT, "models"),
+  grammars: path.join(SHARED_ROOT, "grammars"),
   // HF cache for the MLX embed server, pinned to internal disk so the server
   // survives an unmounted external volume behind the user's HF_HOME.
-  hfDir: path.join(GLOBAL_ROOT, "hf"),
+  hfDir: path.join(SHARED_ROOT, "hf"),
   logsDir: path.join(GLOBAL_ROOT, "logs"),
   daemonSocket: path.join(GLOBAL_ROOT, "daemon.sock"),
   daemonPidFile: path.join(GLOBAL_ROOT, "daemon.pid"),
