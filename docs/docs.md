@@ -170,5 +170,5 @@ Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signa
 | [gmax — Agent UX Backlog](archived/agent-ux-proposals.md) | Archived: All scoped Agent UX work is shipped. Phase 7 impact rollups shipped in `a71c616`, Phase 9 SQL-template skeleton summaries shipped in `504c055`, and Phase 12's daemon managers and search-output extraction shipped in `79f12d7` and `fbb8396`. Remaining ideas are measure-first reopen triggers, not an active backlog. |
 | [Repository Audit Fix Plan](archived/2026-07-09-repository-audit-fixes.md) | Archived: All fourteen audit findings and Phases 1 through 8 are implemented and released through v0.26.2, with follow-up stability fixes through v0.26.5. Current HEAD passes 124 test files / 1035 tests, production and test-source typechecks, and Biome across 308 files. |
 
-- Use `dotmd list` or `dotmd json` for the full inventory.
+- Use `runlist list` or `runlist json` for the full inventory.
 <!-- GENERATED:dotmd:end -->
