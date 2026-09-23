@@ -7,6 +7,11 @@ import { initialSync } from "../lib/index/syncer";
 import { startWatcher } from "../lib/index/watcher";
 import { MetaCache } from "../lib/store/meta-cache";
 import { VectorDB } from "../lib/store/vector-db";
+import {
+  formatRestartResult,
+  type RestartResult,
+  restartDaemon,
+} from "../lib/utils/daemon-restart";
 import { gracefulExit } from "../lib/utils/exit";
 import { pathStartsWith } from "../lib/utils/filter-builder";
 import { openRotatedLog } from "../lib/utils/log-rotate";
@@ -128,39 +133,23 @@ export const watch = new Command("watch")
             process.exit(0);
           }
 
-          const logFile = path.join(PATHS.logsDir, "daemon.log");
-          const out = openRotatedLog(logFile);
-
-          let child: ReturnType<typeof spawn>;
+          const { spawnDaemonProcess } = await import(
+            "../lib/utils/daemon-launcher"
+          );
+          let started: { pid: number; logFile: string };
           try {
-            child = spawn(
-              process.argv[0],
-              [process.argv[1], "watch", "--daemon"],
-              {
-                detached: true,
-                stdio: ["ignore", out, out],
-                cwd: process.cwd(),
-                env: { ...process.env, GMAX_BACKGROUND: "true" },
-              },
-            );
-            await new Promise<void>((resolve, reject) => {
-              child.once("spawn", resolve);
-              child.once("error", reject);
-            });
+            started = await spawnDaemonProcess();
           } catch (error) {
             const message =
               error instanceof Error ? error.message : String(error);
             console.error(`Failed to start daemon: ${message}`);
             process.exitCode = 1;
             return;
-          } finally {
-            try {
-              fs.closeSync(out);
-            } catch {}
           }
-          child.unref();
 
-          console.log(`Daemon started (PID: ${child.pid}, log: ${logFile})`);
+          console.log(
+            `Daemon started (PID: ${started.pid}, log: ${started.logFile})`,
+          );
           process.exit(0);
         }
 
@@ -485,6 +474,97 @@ watch
     }
 
     await gracefulExit();
+  });
+
+watch
+  .command("restart")
+  .description(
+    "Stop the daemon and start a fresh one; waits for the old one to exit",
+  )
+  .option("--json", "Machine-readable result", false)
+  .action(async (options: { json?: boolean }) => {
+    const emit = (result: RestartResult) => {
+      if (options.json) console.log(JSON.stringify(result));
+      else if (result.ok) console.log(formatRestartResult(result));
+      else console.error(formatRestartResult(result));
+    };
+    const refuse = (error: string) => {
+      emit({
+        ok: false,
+        previousPid: null,
+        stoppedVia: null,
+        pid: null,
+        version: null,
+        workers: null,
+        workerThreads: null,
+        adopted: false,
+        readyMs: null,
+        error,
+      });
+    };
+
+    // Refused before anything is stopped: a daemon that cannot be started
+    // again from here must not be taken down.
+    if (process.env.GMAX_SECONDARY_STORE === "1") {
+      refuse(
+        "this project's index lives on an external drive and never runs a daemon",
+      );
+      await gracefulExit(2);
+      return;
+    }
+    const { storeWriteDeniedNotice } = await import(
+      "../lib/utils/store-access"
+    );
+    const denied = storeWriteDeniedNotice();
+    if (denied) {
+      refuse(denied);
+      await gracefulExit(2);
+      return;
+    }
+
+    const client = await import("../lib/utils/daemon-client");
+    const { spawnDaemonProcess } = await import("../lib/utils/daemon-launcher");
+    let parentCmd = "?";
+    try {
+      const { execSync } = await import("node:child_process");
+      parentCmd = execSync(`ps -o command= -p ${process.ppid}`, {
+        encoding: "utf8",
+      }).trim();
+    } catch {}
+
+    const result = await restartDaemon({
+      ping: (timeoutMs) =>
+        client.sendDaemonCommand({ cmd: "ping" }, { timeoutMs }),
+      status: () => client.sendDaemonCommand({ cmd: "status" }),
+      requestShutdown: () =>
+        client.sendDaemonCommand(
+          {
+            cmd: "shutdown",
+            reason: "gmax-watch-restart",
+            from_pid: process.pid,
+            from_ppid: process.ppid,
+            from_argv: process.argv.slice(0, 4),
+            from_parent_cmd: parentCmd,
+          },
+          { timeoutMs: 10_000 },
+        ),
+      liveDaemonPidFromFiles: () =>
+        client.isDaemonHeartbeatFresh() ? client.readDaemonPid() : null,
+      isAlive: isProcessRunning,
+      terminate: (pid) => process.kill(pid, "SIGTERM"),
+      spawn: async () => {
+        try {
+          return (await spawnDaemonProcess()).pid;
+        } catch {
+          return null;
+        }
+      },
+      sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+      now: () => Date.now(),
+    });
+
+    emit(result);
+    await gracefulExit(result.ok ? 0 : 1);
   });
 
 watch

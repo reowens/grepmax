@@ -38,3 +38,39 @@ export async function spawnDaemon(): Promise<number | null> {
     }
   }
 }
+
+/**
+ * Spawn the daemon itself (`watch --daemon`, not the `-b` launcher), detached,
+ * logging to daemon.log. Resolves to the daemon's own PID; throws when the
+ * spawn fails.
+ */
+export async function spawnDaemonProcess(): Promise<{
+  pid: number;
+  logFile: string;
+}> {
+  const logFile = path.join(PATHS.logsDir, "daemon.log");
+  const out = openRotatedLog(logFile);
+  try {
+    const child = spawn(
+      process.argv[0],
+      [process.argv[1], "watch", "--daemon"],
+      {
+        detached: true,
+        stdio: ["ignore", out, out],
+        cwd: process.cwd(),
+        env: { ...process.env, GMAX_BACKGROUND: "true" },
+      },
+    );
+    await new Promise<void>((resolve, reject) => {
+      child.once("spawn", resolve);
+      child.once("error", reject);
+    });
+    child.unref();
+    if (child.pid === undefined) throw new Error("spawned without a PID");
+    return { pid: child.pid, logFile };
+  } finally {
+    try {
+      fs.closeSync(out);
+    } catch {}
+  }
+}

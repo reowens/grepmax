@@ -75,7 +75,7 @@ gmax-mcp (N instances, one per Claude Code session)
 
 | Process | Started by | Lifecycle | Code |
 |---------|-----------|-----------|------|
-| gmax-daemon | `gmax watch --daemon -b` (SessionStart hook or manual) | Singleton. 4h idle timeout; recycles at 24h age or 2.56 GB footprint. | `src/commands/watch.ts` |
+| gmax-daemon | `gmax watch --daemon -b` (SessionStart hook or manual); `gmax watch restart` | Singleton. 4h idle timeout; recycles at 24h age or 2.56 GB footprint. | `src/commands/watch.ts` |
 | gmax-worker | Daemon's WorkerPool, lazy on first task | Reaped after 60s idle, min 1 kept alive | `src/lib/workers/pool.ts` |
 | gmax-embed | Daemon's `ensureMlxServer()` (startup + 5min heartbeat health check) or `gmax serve` | 30min idle timeout. Spawned with `HF_HOME=~/.gmax/hf` (pinned local model cache) | `src/lib/daemon/mlx-server-manager.ts` |
 | gmax-mcp | Claude Code (one per session) | Session lifetime | `src/commands/mcp.ts` |
@@ -536,7 +536,8 @@ curl -s http://127.0.0.1:8100/health               # MLX embed server up?
 - `src/lib/daemon/daemon.ts` — Daemon class: startup, shutdown, watchProject, catchupScan, indexPendingProject
 - `src/lib/daemon/ipc-handler.ts` — IPC command routing
 - `src/lib/utils/daemon-client.ts` — Client-side IPC: sendDaemonCommand, ensureDaemonRunning
-- `src/lib/utils/daemon-launcher.ts` — spawnDaemon() for background mode
+- `src/lib/utils/daemon-launcher.ts` — spawnDaemon() for background mode; spawnDaemonProcess() spawns the daemon itself
+- `src/lib/utils/daemon-restart.ts` — `gmax watch restart`: stop, wait for exit (IPC, then SIGTERM), start or adopt a successor; never two daemons
 
 ### Indexing Pipeline
 - `src/lib/index/syncer.ts` — `initialSync()`: full project index (walk -> chunk -> embed -> flush)
@@ -611,8 +612,8 @@ at the `@lancedb/lancedb-darwin-arm64` platform package under the global grepmax
 mechanism is still in place; remove that install and reinstall.
 
 Also: a same-version reinstall does **not** restart the daemon. `gmax watch --daemon -b` only
-hands off on a version mismatch, so after fixing an install in place run `gmax watch stop`
-(graceful IPC shutdown) and then `gmax watch --daemon -b`; otherwise the old process keeps
+hands off on a version mismatch, so after fixing an install in place run `gmax watch restart`
+(graceful IPC shutdown, waits for the old process to exit, then starts one); otherwise the old process keeps
 serving from npm's deleted staging directory.
 
 ### Logging

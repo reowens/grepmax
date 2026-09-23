@@ -216,6 +216,7 @@ The daemon watches only projects that are in use: each Claude Code session (its 
 ```bash
 gmax watch --daemon -b        # Start daemon manually
 gmax watch stop               # Stop daemon
+gmax watch restart            # Stop it, wait for it to exit, start a fresh one (--json)
 gmax status                   # See all projects + watcher status
 ```
 
@@ -440,7 +441,7 @@ gmax doctor --fix             # Auto-repair (compact, prune, fix locks)
 gmax doctor --agent           # Machine-readable health output
 gmax index                    # Reindex (auto-detects and repairs cache/vector mismatches)
 gmax index --reset            # Full reindex from scratch
-gmax watch stop && gmax watch --daemon -b  # Restart daemon
+gmax watch restart            # Restart daemon
 ```
 
 `gmax doctor` reports ANN index state. `ANN: vector index not built` is normal with the default exact-search configuration.
