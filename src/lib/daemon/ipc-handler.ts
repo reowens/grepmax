@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import type * as net from "node:net";
 import * as path from "node:path";
+import { WORKER_THREADS_SETTING } from "../../config";
 import type { SearchFilter } from "../store/types";
 import type { DaemonResponse } from "../utils/daemon-client";
 import { debug } from "../utils/logger";
@@ -171,6 +172,8 @@ export async function handleCommand(
           leases: daemon.listWatchLeases(),
           diskPressure: daemon.getDiskPressure(),
           mlx: daemon.getMlxStatus(),
+          workers: daemon.workerCount(),
+          workerThreads: WORKER_THREADS_SETTING,
         };
 
       case "optimize":

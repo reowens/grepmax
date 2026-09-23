@@ -1,5 +1,11 @@
+import * as os from "node:os";
 import { Command } from "commander";
-import { MODEL_TIERS } from "../config";
+import {
+  defaultWorkerThreads,
+  MODEL_TIERS,
+  parseWorkerThreads,
+  resolveWorkerThreads,
+} from "../config";
 import {
   embeddingFingerprintLabel,
   formatLegacyEmbeddingNotice,
@@ -25,6 +31,10 @@ export const config = new Command("config")
     "--query-log <on|off>",
     "Enable/disable query logging to ~/.gmax/logs/queries.jsonl",
   )
+  .option(
+    "--worker-threads <n|auto>",
+    "Set the number of embedding worker processes, or auto for the default",
+  )
   .addHelpText(
     "after",
     `
@@ -33,6 +43,8 @@ Examples:
   gmax config --embed-mode cpu         Switch to CPU embeddings
   gmax config --model-tier standard    Switch to standard model (768d)
   gmax config --query-log on           Enable query logging
+  gmax config --worker-threads 2       Run at most 2 worker processes
+  gmax config --worker-threads auto    Back to the computed default
 `,
   )
   .action(async (_opts, cmd) => {
@@ -40,6 +52,7 @@ Examples:
       embedMode?: string;
       modelTier?: string;
       queryLog?: string;
+      workerThreads?: string;
     } = cmd.optsWithGlobals();
 
     const globalConfig = readGlobalConfig();
@@ -49,7 +62,8 @@ Examples:
     const hasUpdates =
       options.embedMode !== undefined ||
       options.modelTier !== undefined ||
-      options.queryLog !== undefined;
+      options.queryLog !== undefined ||
+      options.workerThreads !== undefined;
 
     if (!hasUpdates) {
       // Show current config
@@ -78,11 +92,16 @@ Examples:
         }
       }
       console.log(`  Query log:   ${globalConfig.queryLog ? "on" : "off"}`);
+      const threads = resolveWorkerThreads({
+        env: process.env.GMAX_WORKER_THREADS,
+        configValue: globalConfig.workerThreads,
+      });
+      console.log(`  Worker threads: ${threads.value} (${threads.source})`);
       if (project?.lastIndexed) {
         console.log(`  Last indexed: ${project.lastIndexed}`);
       }
       console.log(
-        `\nTo change: gmax config --embed-mode <cpu|gpu> --model-tier <small|standard> --query-log <on|off>`,
+        `\nTo change: gmax config --embed-mode <cpu|gpu> --model-tier <small|standard> --query-log <on|off> --worker-threads <n|auto>`,
       );
       await gracefulExit();
       return;
@@ -102,6 +121,47 @@ Examples:
       );
       await gracefulExit(1);
       return;
+    }
+
+    if (options.workerThreads !== undefined) {
+      const cores = os.cpus().length || 1;
+      const raw = options.workerThreads.trim().toLowerCase();
+      const value = raw === "auto" ? undefined : parseWorkerThreads(raw, cores);
+      if (value === null) {
+        console.error(
+          `Invalid worker threads: ${options.workerThreads} (use a whole number from 1 to ${cores}, or auto)`,
+        );
+        await gracefulExit(1);
+        return;
+      }
+      writeGlobalConfig({ ...globalConfig, workerThreads: value });
+      globalConfig.workerThreads = value;
+      const effective = resolveWorkerThreads({
+        env: process.env.GMAX_WORKER_THREADS,
+        configValue: value,
+        cores,
+      });
+      console.log(
+        value === undefined
+          ? `Worker threads set to auto (${defaultWorkerThreads(cores)} on this machine).`
+          : `Worker threads set to ${value}.`,
+      );
+      if (effective.source === "env") {
+        console.log(
+          `GMAX_WORKER_THREADS=${process.env.GMAX_WORKER_THREADS} is set in this shell and overrides it here.`,
+        );
+      }
+      console.log(
+        "Takes effect when the gmax daemon restarts: gmax watch stop, then gmax watch --daemon -b.",
+      );
+      if (
+        options.queryLog === undefined &&
+        !options.embedMode &&
+        !options.modelTier
+      ) {
+        await gracefulExit();
+        return;
+      }
     }
 
     // Handle query-log toggle (independent of model/embed changes)
@@ -140,6 +200,7 @@ Examples:
       embedMode: newMode,
       mlxModel: newMode === "gpu" ? tier.mlxModel : undefined,
       queryLog: globalConfig.queryLog,
+      workerThreads: globalConfig.workerThreads,
     });
 
     writeSetupConfig(paths.configPath, {

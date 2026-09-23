@@ -1,12 +1,17 @@
+import { execFileSync } from "node:child_process";
 import * as os from "node:os";
 import { Command } from "commander";
-import { PATHS } from "../config";
+import {
+  PATHS,
+  resolveWorkerThreads,
+  type WorkerThreadsSource,
+} from "../config";
 import {
   countLegacyEmbeddingProjects,
   formatLegacyEmbeddingNotice,
   projectEmbeddingStatus,
 } from "../lib/index/embedding-status";
-import { readGlobalConfig } from "../lib/index/index-config";
+import { type GlobalConfig, readGlobalConfig } from "../lib/index/index-config";
 import { sendDaemonCommand } from "../lib/utils/daemon-client";
 import { gracefulExit } from "../lib/utils/exit";
 import { pathStartsWith } from "../lib/utils/filter-builder";
@@ -26,9 +31,16 @@ import { getWatcherForProject, listWatchers } from "../lib/utils/watcher-store";
  * What `status` needs from the store, however it was obtained: which projects
  * are being watched, and how many chunks each holds right now.
  */
-interface StatusView {
+export interface StatusView {
   watchers: Map<string, Pick<WatcherInfo, "status">>;
   chunkCounts: Map<string, number>;
+  /** Present only when the daemon answered. */
+  daemon?: {
+    pid: number | null;
+    uptimeSec: number | null;
+    workers: number | null;
+    workerThreads: number | null;
+  };
 }
 
 /**
@@ -66,7 +78,18 @@ async function loadStatusView(projects: ProjectEntry[]): Promise<StatusView> {
           chunkCounts.set(project.root, stats.chunks);
         }
       }
-      return { watchers, chunkCounts };
+      const daemon = {
+        pid: typeof resp.pid === "number" ? resp.pid : null,
+        uptimeSec: typeof resp.uptime === "number" ? resp.uptime : null,
+        // Older daemons do not report these.
+        workers: typeof resp.workers === "number" ? resp.workers : null,
+        workerThreads:
+          resp.workerThreads &&
+          typeof (resp.workerThreads as { value?: unknown }).value === "number"
+            ? (resp.workerThreads as { value: number }).value
+            : null,
+      };
+      return { watchers, chunkCounts, daemon };
     },
     inProcess: async () => {
       listWatchers(); // cleans stale entries as side effect
@@ -106,6 +129,121 @@ async function loadStatusView(projects: ProjectEntry[]): Promise<StatusView> {
   });
 }
 
+/** State shown per project; shared by --agent and --json. */
+function projectState(
+  project: ProjectEntry,
+  watcher: Pick<WatcherInfo, "status"> | undefined,
+): string {
+  const projectStatus = project.status ?? "indexed";
+  if (projectStatus === "pending") return "pending";
+  if (projectStatus === "error") return "error";
+  if (watcher?.status === "syncing") return "indexing";
+  if (watcher) return "watching";
+  return "idle";
+}
+
+/**
+ * Worker processes under the daemon, from the process table. Used only when
+ * the daemon is too old to report its pool size.
+ */
+function countWorkerProcesses(daemonPid: number): number | null {
+  try {
+    const out = execFileSync("ps", ["-axo", "ppid=,command="], {
+      encoding: "utf8",
+      timeout: 2000,
+    });
+    let n = 0;
+    for (const line of out.split("\n")) {
+      const m = line.trim().match(/^(\d+)\s+(\S+)/);
+      if (m && Number(m[1]) === daemonPid && m[2] === "gmax-worker") n++;
+    }
+    return n;
+  } catch {
+    return null;
+  }
+}
+
+function toMs(iso: string | undefined): number | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  return Number.isFinite(t) ? t : null;
+}
+
+export interface StatusJson {
+  daemon: {
+    running: boolean;
+    pid: number | null;
+    since: number | null;
+    workerThreads: number | null;
+  };
+  settings: {
+    embedMode: "cpu" | "gpu";
+    modelTier: string;
+    vectorDim: number;
+    queryLog: boolean;
+    workerThreads: { value: number; source: WorkerThreadsSource };
+  };
+  workersRunning: number | null;
+  indexing: boolean;
+  projects: Array<{
+    name: string;
+    root: string;
+    chunks: number;
+    indexedAt: number | null;
+    state: string;
+    embedding: string;
+  }>;
+  at: number;
+}
+
+export function buildStatusJson(input: {
+  view: StatusView;
+  projects: ProjectEntry[];
+  globalConfig: GlobalConfig;
+  indexing: boolean;
+  workerThreads: { value: number; source: WorkerThreadsSource };
+  now?: number;
+  countWorkers?: (daemonPid: number) => number | null;
+}): StatusJson {
+  const now = input.now ?? Date.now();
+  const { view, globalConfig } = input;
+  const d = view.daemon;
+  let workersRunning: number | null = null;
+  if (d) {
+    workersRunning =
+      d.workers ??
+      (d.pid !== null
+        ? (input.countWorkers ?? countWorkerProcesses)(d.pid)
+        : null);
+  }
+  return {
+    daemon: {
+      running: d !== undefined,
+      pid: d?.pid ?? null,
+      since: d?.uptimeSec != null ? now - d.uptimeSec * 1000 : null,
+      workerThreads: d?.workerThreads ?? null,
+    },
+    settings: {
+      embedMode: globalConfig.embedMode,
+      modelTier: globalConfig.modelTier,
+      vectorDim: globalConfig.vectorDim,
+      queryLog: globalConfig.queryLog === true,
+      workerThreads: input.workerThreads,
+    },
+    workersRunning,
+    indexing: input.indexing,
+    projects: input.projects.map((project) => ({
+      name: project.name,
+      root: project.root,
+      chunks: view.chunkCounts.get(project.root) ?? project.chunkCount ?? 0,
+      indexedAt: toMs(project.lastIndexed),
+      state: projectState(project, view.watchers.get(project.root)),
+      embedding: projectEmbeddingStatus(project, globalConfig).state,
+    })),
+    at: now,
+  };
+}
+
 const style = {
   bold: (s: string) => `\x1b[1m${s}\x1b[22m`,
   dim: (s: string) => `\x1b[2m${s}\x1b[22m`,
@@ -143,11 +281,17 @@ function formatChunks(n?: number): string {
 export const status = new Command("status")
   .description("Show gmax index status for all projects")
   .option("--agent", "Compact output for AI agents", false)
+  .option(
+    "--json",
+    "Machine-readable status: daemon, settings, projects",
+    false,
+  )
   .addHelpText(
     "after",
     `
 Examples:
   gmax status              Show status of all indexed projects
+  gmax status --json       The same, plus daemon and settings, as JSON
 `,
   )
   .action(async (opts) => {
@@ -168,6 +312,22 @@ Examples:
       throw err;
     }
     const { watchers, chunkCounts } = view;
+
+    if (opts.json) {
+      const json = buildStatusJson({
+        view,
+        projects,
+        globalConfig,
+        indexing,
+        workerThreads: resolveWorkerThreads({
+          env: process.env.GMAX_WORKER_THREADS,
+          configValue: globalConfig.workerThreads,
+        }),
+      });
+      console.log(JSON.stringify(json));
+      await gracefulExit();
+      return;
+    }
 
     if (!opts.agent) {
       // Header
@@ -190,14 +350,7 @@ Examples:
 
     if (opts.agent) {
       for (const project of projects) {
-        const watcher = watchers.get(project.root);
-        const projectStatus = project.status ?? "indexed";
-        let st: string;
-        if (projectStatus === "pending") st = "pending";
-        else if (projectStatus === "error") st = "error";
-        else if (watcher?.status === "syncing") st = "indexing";
-        else if (watcher) st = "watching";
-        else st = "idle";
+        const st = projectState(project, watchers.get(project.root));
         const isCurrent = project.root === currentRoot;
         const count = chunkCounts.get(project.root) ?? project.chunkCount;
         const identity = projectEmbeddingStatus(project, globalConfig);

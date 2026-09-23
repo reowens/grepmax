@@ -156,4 +156,54 @@ describe("config command", () => {
       spy.mockRestore();
     });
   });
+
+  describe("worker threads", () => {
+    it("stores a valid count and says a daemon restart applies it", async () => {
+      const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+      await (config as Command).parseAsync(["--worker-threads", "1"], {
+        from: "user",
+      });
+      expect(writeGlobalConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ workerThreads: 1 }),
+      );
+      const output = spy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Worker threads set to 1");
+      expect(output).toContain("gmax daemon restarts");
+      expect(writeSetupConfig).not.toHaveBeenCalled();
+      spy.mockRestore();
+    });
+
+    it("auto removes the stored value", async () => {
+      const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+      await (config as Command).parseAsync(["--worker-threads", "auto"], {
+        from: "user",
+      });
+      const arg = vi.mocked(writeGlobalConfig).mock.calls[0][0];
+      expect("workerThreads" in arg).toBe(true);
+      expect(arg.workerThreads).toBeUndefined();
+      spy.mockRestore();
+    });
+
+    it("rejects a count outside 1..cores", async () => {
+      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+      for (const bad of ["0", "100000", "two"]) {
+        await (config as Command).parseAsync(["--worker-threads", bad], {
+          from: "user",
+        });
+      }
+      const output = spy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Invalid worker threads");
+      expect(output).toContain("or auto");
+      expect(writeGlobalConfig).not.toHaveBeenCalled();
+      spy.mockRestore();
+    });
+
+    it("shows the value and its source", async () => {
+      const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+      await (config as Command).parseAsync([], { from: "user" });
+      const output = spy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toMatch(/Worker threads: \d+ \((env|config|default)\)/);
+      spy.mockRestore();
+    });
+  });
 });

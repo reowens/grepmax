@@ -50,6 +50,7 @@ No setup required — gmax auto-detects your platform (GPU on Apple Silicon, CPU
 gmax setup                    # Interactive wizard (models, embedding mode, plugins)
 gmax config                   # View current settings
 gmax config --embed-mode gpu  # Switch to GPU (Apple Silicon)
+gmax config --worker-threads 2  # Cap worker processes (auto = default); applies on daemon restart
 gmax doctor                   # Health check
 gmax doctor --fix             # Auto-repair (compact, prune, remove stale locks)
 ```
@@ -85,6 +86,7 @@ gmax context src/lib/auth.ts --budget 4000 # Deterministic file/path context
 gmax project                  # Languages, structure, key symbols
 gmax related src/lib/auth.ts  # Dependencies + dependents
 gmax status                   # All indexed projects + chunk counts
+gmax status --json            # The same plus daemon, settings and workers, as JSON
 ```
 
 In our public benchmarks, `grepmax` can save about 20% of your LLM tokens and deliver a 30% speedup.
@@ -423,7 +425,7 @@ fixtures/
 | Variable | Description | Default |
 | --- | --- | --- |
 | `GMAX_EMBED_MODE` | Force `cpu` or `gpu` | Auto-detect |
-| `GMAX_WORKER_THREADS` | Worker threads for embedding | 50% of cores |
+| `GMAX_WORKER_THREADS` | Worker processes for embedding; overrides `gmax config --worker-threads` | `min(4, max(2, cores/2))` |
 | `GMAX_WORKER_RSS_RECYCLE_MB` | Recycle workers that remain above this RSS; `0` disables the check | `1536` |
 | `GMAX_DEBUG` | Debug logging | Off |
 | `GMAX_SUMMARIZER` | Enable summarizer auto-start (`1`) | Off |

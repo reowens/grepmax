@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
@@ -37,19 +38,90 @@ export const MODEL_IDS = {
   colbert: "ryandono/mxbai-edge-colbert-v0-17m-onnx-int8",
 };
 
-const DEFAULT_WORKER_THREADS = (() => {
-  const fromEnv = Number.parseInt(process.env.GMAX_WORKER_THREADS ?? "", 10);
-  if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv;
+const HOME = os.homedir();
+// Models, grammars and the pinned HF cache are shared by every store and always
+// live on the internal disk. GMAX_HOME moves only the data root: a secondary
+// store on an external drive (see src/lib/utils/stores.ts) sets it before this
+// module loads, so a project's index can live on the drive with its files.
+const SHARED_ROOT = path.join(HOME, ".gmax");
+const GLOBAL_ROOT = process.env.GMAX_HOME
+  ? path.resolve(process.env.GMAX_HOME)
+  : SHARED_ROOT;
 
-  // Each worker is a separate process that loads the ONNX models, peaking at
-  // ~800 MB-1 GB. The old max(4, cores/2) let a 14-core host run 7 of them;
-  // together with the daemon that froze a 48 GB machine. Four is the ceiling;
-  // two is the floor where the cores exist, so one worker can stay free for
-  // search. GMAX_WORKER_THREADS still overrides.
-  const cores = os.cpus().length || 1;
+export type WorkerThreadsSource = "env" | "config" | "default";
+
+export interface WorkerThreadsSetting {
+  value: number;
+  source: WorkerThreadsSource;
+}
+
+function coreCount(): number {
+  return os.cpus().length || 1;
+}
+
+/**
+ * Each worker is a separate process that loads the ONNX models, peaking at
+ * ~800 MB-1 GB. The old max(4, cores/2) let a 14-core host run 7 of them;
+ * together with the daemon that froze a 48 GB machine. Four is the ceiling;
+ * two is the floor where the cores exist, so one worker can stay free for
+ * search.
+ */
+export function defaultWorkerThreads(cores = coreCount()): number {
   const target = Math.min(4, Math.max(2, Math.floor(cores * 0.5)));
   return Math.max(1, Math.min(target, cores));
-})();
+}
+
+/** A stored or typed worker count is a whole number from 1 to the core count. */
+export function parseWorkerThreads(
+  value: unknown,
+  cores = coreCount(),
+): number | null {
+  const n =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && /^\d+$/.test(value.trim())
+        ? Number(value.trim())
+        : Number.NaN;
+  if (!Number.isInteger(n) || n < 1 || n > cores) return null;
+  return n;
+}
+
+/**
+ * GMAX_WORKER_THREADS wins, then `workerThreads` in ~/.gmax/config.json
+ * (`gmax config --worker-threads`), then the computed default. The env var
+ * keeps its old meaning (any positive whole number); a stored value outside
+ * 1..cores is ignored.
+ */
+export function resolveWorkerThreads(opts: {
+  env?: string;
+  configValue?: unknown;
+  cores?: number;
+}): WorkerThreadsSetting {
+  const cores = opts.cores ?? coreCount();
+  const fromEnv = Number.parseInt(opts.env ?? "", 10);
+  if (Number.isFinite(fromEnv) && fromEnv > 0) {
+    return { value: fromEnv, source: "env" };
+  }
+  const fromConfig = parseWorkerThreads(opts.configValue, cores);
+  if (fromConfig !== null) return { value: fromConfig, source: "config" };
+  return { value: defaultWorkerThreads(cores), source: "default" };
+}
+
+function storedWorkerThreads(): unknown {
+  try {
+    const raw = fs.readFileSync(path.join(GLOBAL_ROOT, "config.json"), "utf-8");
+    return (JSON.parse(raw) as { workerThreads?: unknown }).workerThreads;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Read once at load: a running daemon keeps the value it started with. */
+export const WORKER_THREADS_SETTING: WorkerThreadsSetting =
+  resolveWorkerThreads({
+    env: process.env.GMAX_WORKER_THREADS,
+    configValue: storedWorkerThreads(),
+  });
 
 export const CONFIG = {
   VECTOR_DIM: 384,
@@ -57,7 +129,7 @@ export const CONFIG = {
   MAX_CHUNK_CHARS: 2000,
   MAX_CHUNK_LINES: 75,
   EMBED_BATCH_SIZE: 24,
-  WORKER_THREADS: DEFAULT_WORKER_THREADS,
+  WORKER_THREADS: WORKER_THREADS_SETTING.value,
   QUERY_PREFIX: "",
   // Bump when chunk metadata semantics change in a way that requires a full
   // reindex to take effect. Must equal the latest entry's `v` in
@@ -267,16 +339,6 @@ export const MAX_WORKER_MEMORY_MB = (() => {
     Math.max(2048, Math.floor((os.totalmem() / 1024 / 1024) * 0.5)),
   );
 })();
-
-const HOME = os.homedir();
-// Models, grammars and the pinned HF cache are shared by every store and always
-// live on the internal disk. GMAX_HOME moves only the data root: a secondary
-// store on an external drive (see src/lib/utils/stores.ts) sets it before this
-// module loads, so a project's index can live on the drive with its files.
-const SHARED_ROOT = path.join(HOME, ".gmax");
-const GLOBAL_ROOT = process.env.GMAX_HOME
-  ? path.resolve(process.env.GMAX_HOME)
-  : SHARED_ROOT;
 
 export const PATHS = {
   globalRoot: GLOBAL_ROOT,

@@ -65,7 +65,7 @@ vi.mock("../src/lib/store/vector-db", () => ({
   },
 }));
 
-import { status } from "../src/commands/status";
+import { buildStatusJson, status } from "../src/commands/status";
 
 const originalExitCode = process.exitCode;
 let out: string[];
@@ -166,5 +166,100 @@ describe("gmax status", () => {
     expect(err).toHaveLength(1);
     expect(err[0]).toContain("allowWrite");
     expect(process.exitCode).toBe(2);
+  });
+
+  it("--json reports daemon, settings, workers and per-project state", async () => {
+    sendDaemonCommand.mockImplementation(async (cmd: { cmd: string }) => {
+      if (cmd.cmd === "status") {
+        return {
+          ok: true,
+          pid: 4242,
+          uptime: 60,
+          workers: 2,
+          workerThreads: { value: 3, source: "config" },
+          projects: [{ root: "/work/api", status: "watching" }],
+        };
+      }
+      if (cmd.cmd === "project-stats") return { ok: true, chunks: 4321 };
+      return { ok: false, error: "unexpected" };
+    });
+
+    await runStatus(["--json"]);
+
+    expect(out).toHaveLength(1);
+    const json = JSON.parse(out[0]);
+    expect(json.daemon).toMatchObject({
+      running: true,
+      pid: 4242,
+      workerThreads: 3,
+    });
+    expect(json.daemon.since).toBeLessThanOrEqual(Date.now() - 59_000);
+    expect(json.settings).toMatchObject({
+      embedMode: "cpu",
+      modelTier: "small",
+      vectorDim: 384,
+      queryLog: false,
+    });
+    expect(json.settings.workerThreads.value).toBeGreaterThan(0);
+    expect(["env", "config", "default"]).toContain(
+      json.settings.workerThreads.source,
+    );
+    expect(json.workersRunning).toBe(2);
+    expect(json.indexing).toBe(false);
+    expect(json.projects).toEqual([
+      {
+        name: "api",
+        root: "/work/api",
+        chunks: 4321,
+        indexedAt: Date.parse("2026-01-01T00:00:00.000Z"),
+        state: "watching",
+        embedding: expect.any(String),
+      },
+    ]);
+    expect(typeof json.at).toBe("number");
+  });
+});
+
+describe("buildStatusJson", () => {
+  const base = {
+    projects: [],
+    globalConfig: {
+      modelTier: "small",
+      vectorDim: 384,
+      embedMode: "gpu" as const,
+    },
+    indexing: false,
+    workerThreads: { value: 2, source: "default" as const },
+    now: 1_000_000,
+  };
+
+  it("reports a down daemon with nulls", () => {
+    const json = buildStatusJson({
+      ...base,
+      view: { watchers: new Map(), chunkCounts: new Map() },
+    });
+    expect(json.daemon).toEqual({
+      running: false,
+      pid: null,
+      since: null,
+      workerThreads: null,
+    });
+    expect(json.workersRunning).toBeNull();
+  });
+
+  it("counts worker processes when an older daemon does not report them", () => {
+    const countWorkers = vi.fn(() => 1);
+    const json = buildStatusJson({
+      ...base,
+      countWorkers,
+      view: {
+        watchers: new Map(),
+        chunkCounts: new Map(),
+        daemon: { pid: 7, uptimeSec: 10, workers: null, workerThreads: null },
+      },
+    });
+    expect(countWorkers).toHaveBeenCalledWith(7);
+    expect(json.workersRunning).toBe(1);
+    expect(json.daemon.since).toBe(990_000);
   });
 });

@@ -332,7 +332,7 @@ File event (from watcher or catchup) -> pending map -> debounce 2s -> processBat
 
 ### Worker pool
 
-- Starts with 1 worker and scales up to `CONFIG.WORKER_THREADS` (`min(4, max(2, cores/2))`, capped at cores; `GMAX_WORKER_THREADS` overrides). `dispatch()` adds a worker only when the pool is empty, a search task is waiting, more than 4 queued tasks per live worker are waiting, or the oldest queued task has waited 2s (`GMAX_WORKER_SCALE_UP_WAIT_MS`). Before this, a 6-file batch cold-started 3–4 workers that were reaped a minute later, ~300 times a day
+- Starts with 1 worker and scales up to `CONFIG.WORKER_THREADS` (`min(4, max(2, cores/2))`, capped at cores; `workerThreads` in `~/.gmax/config.json` (`gmax config --worker-threads`) overrides it and `GMAX_WORKER_THREADS` overrides both; read once at daemon start). `dispatch()` adds a worker only when the pool is empty, a search task is waiting, more than 4 queued tasks per live worker are waiting, or the oldest queued task has waited 2s (`GMAX_WORKER_SCALE_UP_WAIT_MS`). Before this, a 6-file batch cold-started 3–4 workers that were reaped a minute later, ~300 times a day
 - `ProjectBatchProcessor` runs at most `ceil(batch.size / 4)` files of a batch at once
 - Workers are child processes (not threads) — isolates ONNX Runtime segfaults
 - IPC uses Node's advanced serialization so Buffer and typed-array payloads retain their binary types and view offsets

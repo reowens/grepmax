@@ -974,6 +974,11 @@ export class Daemon {
     return Math.floor((Date.now() - this.startTime) / 1000);
   }
 
+  /** Worker processes alive in the pool right now (0 before it exists). */
+  workerCount(): number {
+    return this.workerPool?.getWorkerPids().length ?? 0;
+  }
+
   /** True once shared resources (LanceDB + MetaCache) are open. */
   isReady(): boolean {
     return this.ready;

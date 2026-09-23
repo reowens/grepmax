@@ -36,6 +36,8 @@ export interface GlobalConfig {
   mlxModel?: string;
   queryLog?: boolean;
   llmEnabled?: boolean;
+  /** Worker process count; absent means the computed default. */
+  workerThreads?: number;
 }
 
 const GLOBAL_CONFIG_PATH = path.join(PATHS.globalRoot, "config.json");
