@@ -19,6 +19,13 @@ import {
   FRAGMENT_COMPACT_THRESHOLD,
   STALE_TEMP_FILE_AGE_MS,
 } from "../../config";
+import {
+  embeddingReuseKey,
+  type ReusableEmbedding,
+  toBytes,
+  toFloat32,
+  toInt32,
+} from "../index/embedding-reuse";
 import { readGlobalConfig } from "../index/index-config";
 import { registerCleanup } from "../utils/cleanup";
 import { escapeSqlString, pathStartsWith } from "../utils/filter-builder";
@@ -1557,6 +1564,50 @@ export class VectorDB {
       unique.add(String(r.path));
     }
     return unique;
+  }
+
+  /**
+   * The stored embeddings of one file, keyed by `embeddingReuseKey(content)`.
+   * Rows whose dense width disagrees with this table are left out rather than
+   * offered — reuse must never be the way a wrong-width vector gets copied.
+   */
+  async getReusableEmbeddings(
+    filePath: string,
+  ): Promise<Map<string, ReusableEmbedding>> {
+    const table = await this.ensureTable();
+    const rows = await table
+      .query()
+      .select([
+        "content",
+        "vector",
+        "colbert",
+        "colbert_scale",
+        "pooled_colbert_48d",
+        "doc_token_ids",
+      ])
+      .where(`path = '${escapeSqlString(filePath)}'`)
+      .toArray();
+    const reusable = new Map<string, ReusableEmbedding>();
+    for (const row of rows) {
+      const vector = toFloat32(row.vector);
+      const colbert = toBytes(row.colbert);
+      if (vector.length !== this.vectorDim || colbert.length === 0) continue;
+      const pooled =
+        row.pooled_colbert_48d == null
+          ? undefined
+          : toFloat32(row.pooled_colbert_48d);
+      const tokenIds =
+        row.doc_token_ids == null ? undefined : toInt32(row.doc_token_ids);
+      reusable.set(embeddingReuseKey(String(row.content ?? "")), {
+        vector,
+        colbert,
+        colbert_scale:
+          typeof row.colbert_scale === "number" ? row.colbert_scale : 1,
+        pooled_colbert_48d: pooled?.length ? pooled : undefined,
+        doc_token_ids: tokenIds,
+      });
+    }
+    return reusable;
   }
 
   async getStats(): Promise<{ chunks: number; totalBytes: number }> {

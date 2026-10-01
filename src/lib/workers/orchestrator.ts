@@ -14,6 +14,7 @@ import {
   type EmbeddingGenerationConfig,
   isOnnxFallbackCompatible,
 } from "../index/embedding-generation";
+import { embeddingReuseKey } from "../index/embedding-reuse";
 import { Skeletonizer } from "../skeleton";
 import type { PreparedChunk, VectorRecord } from "../store/types";
 import {
@@ -36,6 +37,8 @@ export type ProcessFileInput = {
   path: string;
   absolutePath?: string;
   projectRoot: string;
+  /** `embeddingReuseKey`s of chunks the caller already holds embeddings for. */
+  reusableKeys?: string[];
 };
 
 export type ProcessFileResult = {
@@ -44,6 +47,12 @@ export type ProcessFileResult = {
   mtimeMs: number;
   size: number;
   shouldDelete?: boolean;
+  /**
+   * Chunks left unembedded because their key was in `reusableKeys`. Their
+   * records carry empty embeddings that the caller must fill before insert —
+   * an unfilled one fails `insertBatch`'s width check instead of being stored.
+   */
+  reused?: { index: number; key: string }[];
 };
 
 export type RerankDoc = {
@@ -347,18 +356,38 @@ export class WorkerOrchestrator {
       skeletonResult.success ? skeletonResult.skeleton : undefined,
     );
 
+    const reusableKeys = input.reusableKeys?.length
+      ? new Set(input.reusableKeys)
+      : null;
+    const reused: { index: number; key: string }[] = [];
+    const toEmbed: number[] = [];
+    preparedChunks.forEach((chunk, idx) => {
+      if (reusableKeys) {
+        const key = embeddingReuseKey(chunk.content);
+        if (reusableKeys.has(key)) {
+          reused.push({ index: idx, key });
+          return;
+        }
+      }
+      toEmbed.push(idx);
+    });
+
     const embedStart = performance.now();
-    const hybrids = await this.computeHybrid(
-      preparedChunks.map((chunk) => chunk.content),
+    const embedded = await this.computeHybrid(
+      toEmbed.map((idx) => preparedChunks[idx].content),
       onProgress,
     );
+    const hybrids = new Map<number, HybridResult>();
+    toEmbed.forEach((chunkIdx, i) => {
+      if (embedded[i]) hybrids.set(chunkIdx, embedded[i]);
+    });
     dbg(
       "orch",
-      `embedded ${input.path} → ${hybrids.length} vectors ${(performance.now() - embedStart).toFixed(0)}ms`,
+      `embedded ${input.path} → ${embedded.length} vectors (${reused.length} reused) ${(performance.now() - embedStart).toFixed(0)}ms`,
     );
 
     const vectors = preparedChunks.map((chunk, idx) => {
-      const hybrid = hybrids[idx] ?? {
+      const hybrid = hybrids.get(idx) ?? {
         dense: new Float32Array(),
         colbert: new Int8Array(),
         scale: 1,
@@ -378,7 +407,9 @@ export class WorkerOrchestrator {
       "orch",
       `processFile done: ${input.path} ${vectors.length} vectors ${(performance.now() - fileStart).toFixed(0)}ms`,
     );
-    return { vectors, hash, mtimeMs, size };
+    return reused.length
+      ? { vectors, hash, mtimeMs, size, reused }
+      : { vectors, hash, mtimeMs, size };
   }
 
   async encodeQuery(text: string): Promise<{

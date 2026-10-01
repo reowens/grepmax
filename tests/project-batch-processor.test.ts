@@ -841,4 +841,116 @@ describe("ProjectBatchProcessor", () => {
     expect(vectorDb.deletePaths).toHaveBeenCalledWith([filePath]);
     expect(metaCache.delete).toHaveBeenCalledWith(filePath);
   });
+
+  describe("embedding reuse", () => {
+    const stored = {
+      vector: new Float32Array([1, 2, 3]),
+      colbert: Buffer.from([4, 5]),
+      colbert_scale: 0.5,
+      pooled_colbert_48d: new Float32Array([6]),
+      doc_token_ids: new Int32Array([7, 8]),
+    };
+
+    function seedIndexedMeta() {
+      const stats = fs.statSync(filePath);
+      meta.set(filePath, {
+        hash: "old-hash",
+        mtimeMs: stats.mtimeMs - 1000,
+        size: stats.size + 1,
+        hashVersion: 1,
+        hasVectors: true,
+      });
+    }
+
+    it("offers stored keys and fills the chunks the worker reused", async () => {
+      seedIndexedMeta();
+      vectorDb.getReusableEmbeddings = vi.fn(
+        async () => new Map([["kept-key", stored]]),
+      );
+      pool.processFile.mockResolvedValue({
+        ...makeWorkerResult(filePath),
+        vectors: [
+          { id: "fresh", path: filePath, vector: new Float32Array([9]) },
+          { id: "kept", path: filePath, vector: new Float32Array() },
+        ],
+        reused: [{ index: 1, key: "kept-key" }],
+      });
+      const processor = makeProcessor();
+
+      processor.handleFileEvent("change", filePath);
+      (processor as any).startBatch();
+      await (processor as any).activeBatch;
+
+      expect(vectorDb.getReusableEmbeddings).toHaveBeenCalledWith(filePath);
+      expect(pool.processFile.mock.calls[0][0].reusableKeys).toEqual([
+        "kept-key",
+      ]);
+      const inserted = vectorDb.insertBatch.mock.calls[0][0];
+      expect(inserted[0].vector).toEqual(new Float32Array([9]));
+      expect(inserted[1]).toMatchObject({ id: "kept", ...stored });
+    });
+
+    it("does not offer stored embeddings to a forced repair", async () => {
+      seedIndexedMeta();
+      vectorDb.getReusableEmbeddings = vi.fn(
+        async () => new Map([["kept-key", stored]]),
+      );
+      const processor = makeProcessor();
+
+      processor.handleFileEvent("change", filePath, { forceReprocess: true });
+      (processor as any).startBatch();
+      await (processor as any).activeBatch;
+
+      expect(vectorDb.getReusableEmbeddings).not.toHaveBeenCalled();
+      expect(pool.processFile.mock.calls[0][0].reusableKeys).toBeUndefined();
+    });
+
+    it("does not look up a file that was never indexed", async () => {
+      vectorDb.getReusableEmbeddings = vi.fn(async () => new Map());
+      const processor = makeProcessor();
+
+      processor.handleFileEvent("change", filePath);
+      (processor as any).startBatch();
+      await (processor as any).activeBatch;
+
+      expect(vectorDb.getReusableEmbeddings).not.toHaveBeenCalled();
+    });
+
+    it("re-embeds everything when the lookup fails", async () => {
+      seedIndexedMeta();
+      vectorDb.getReusableEmbeddings = vi.fn(async () => {
+        throw new Error("store busy");
+      });
+      const processor = makeProcessor();
+
+      processor.handleFileEvent("change", filePath);
+      (processor as any).startBatch();
+      await (processor as any).activeBatch;
+
+      expect(pool.processFile).toHaveBeenCalledOnce();
+      expect(pool.processFile.mock.calls[0][0].reusableKeys).toBeUndefined();
+    });
+
+    it("retries instead of storing a reused chunk it cannot fill", async () => {
+      seedIndexedMeta();
+      vectorDb.getReusableEmbeddings = vi.fn(
+        async () => new Map([["kept-key", stored]]),
+      );
+      pool.processFile.mockResolvedValue({
+        ...makeWorkerResult(filePath),
+        vectors: [{ id: "kept", path: filePath, vector: new Float32Array() }],
+        reused: [{ index: 0, key: "unknown-key" }],
+      });
+      const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+      const processor = makeProcessor();
+
+      processor.handleFileEvent("change", filePath);
+      (processor as any).startBatch();
+      await (processor as any).activeBatch;
+
+      expect(vectorDb.insertBatch).not.toHaveBeenCalled();
+      expect((processor as any).pending.has(filePath)).toBe(true);
+      errors.mockRestore();
+    });
+  });
 });

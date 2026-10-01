@@ -10,12 +10,14 @@ import {
   isIndexableFile,
   readFileSnapshot,
 } from "../utils/file-utils";
-import { log } from "../utils/logger";
+import { debug, log } from "../utils/logger";
+import type { ProcessFileResult } from "../workers/orchestrator";
 import { getWorkerPool, type WorkerPool } from "../workers/pool";
 import {
   CURRENT_META_HASH_VERSION,
   isMetaEntryCacheCurrent,
 } from "./cache-coherence";
+import type { ReusableEmbedding } from "./embedding-reuse";
 import { ProjectFilePolicy } from "./file-policy";
 import { computePathRetry } from "./watcher-batch";
 
@@ -198,6 +200,21 @@ export class ProjectBatchProcessor {
       recentFiles,
       recentReindexed,
     };
+  }
+
+  private async loadReusableEmbeddings(
+    absPath: string,
+  ): Promise<Map<string, ReusableEmbedding> | undefined> {
+    // An optimisation only: a failed lookup costs a full re-embed, nothing more.
+    try {
+      return await this.vectorDb.getReusableEmbeddings(absPath);
+    } catch (err) {
+      debug(
+        this.wtag,
+        `embedding reuse lookup failed for ${absPath}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return undefined;
+    }
   }
 
   async close(): Promise<void> {
@@ -427,14 +444,23 @@ export class ProjectBatchProcessor {
             }
           }
 
+          // A forced reprocess is a repair; it must not trust what is stored.
+          const reusable =
+            !forceReprocess && cached?.hasVectors !== false && cached?.hash
+              ? await this.loadReusableEmbeddings(absPath)
+              : undefined;
           const result = await pool.processFile(
             {
               path: absPath,
               absolutePath: absPath,
               projectRoot: this.projectRoot,
+              ...(reusable?.size
+                ? { reusableKeys: Array.from(reusable.keys()) }
+                : {}),
             },
             batchAc.signal,
           );
+          applyReusedEmbeddings(result, reusable);
 
           // Policy and filesystem state can change while embedding is in
           // flight. Never commit a result that no longer describes the path.
@@ -744,5 +770,31 @@ export class ProjectBatchProcessor {
       }
       if (!this.closed) this.onBatchSettled?.();
     }
+  }
+}
+
+/**
+ * Fill the records a worker left unembedded from the embeddings offered to it.
+ * Throws when one cannot be filled, so the file is retried rather than stored
+ * with an empty vector.
+ */
+export function applyReusedEmbeddings(
+  result: ProcessFileResult,
+  reusable: Map<string, ReusableEmbedding> | undefined,
+): void {
+  if (!result.reused?.length) return;
+  for (const { index, key } of result.reused) {
+    const record = result.vectors[index];
+    const embedding = reusable?.get(key);
+    if (!record || !embedding) {
+      throw new Error(
+        `worker reused an embedding that was not offered (chunk ${index})`,
+      );
+    }
+    record.vector = embedding.vector;
+    record.colbert = embedding.colbert;
+    record.colbert_scale = embedding.colbert_scale;
+    record.pooled_colbert_48d = embedding.pooled_colbert_48d;
+    record.doc_token_ids = embedding.doc_token_ids;
   }
 }
