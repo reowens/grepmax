@@ -56,6 +56,19 @@ describe("VectorDB maintenance gating", () => {
     expect(db.runMaintenance).toHaveBeenCalledOnce();
   });
 
+  it("clears the active flag once a tick settles, so the next tick can run", async () => {
+    const runner = vi.fn(async (fn: () => Promise<void>) => fn());
+    vi.spyOn(db, "runMaintenance").mockResolvedValue(undefined);
+    db.startMaintenanceLoop(runner);
+
+    await vi.advanceTimersByTimeAsync(TICK_MS);
+    expect(db.isMaintenanceActive()).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(TICK_MS);
+    expect(runner).toHaveBeenCalledTimes(2);
+    expect(db.isMaintenanceActive()).toBe(false);
+  });
+
   it("hourly probes skip a full pass when the table version is unchanged", async () => {
     markClean(7);
     (db as any).lastMaintenanceMs = Date.now() - HOUR_MS;

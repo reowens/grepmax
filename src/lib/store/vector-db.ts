@@ -302,9 +302,14 @@ export class VectorDB {
           log("vectordb", `Periodic maintenance failed: ${err}`);
         }
       });
-      this.maintenancePromise = run.finally(() => {
-        if (this.maintenancePromise === run) this.maintenancePromise = null;
+      // Compare against the promise actually stored, not `run`: `.finally()`
+      // returns a new promise, so checking `run` never matched and the field
+      // latched non-null forever — isMaintenanceActive() then read true for the
+      // daemon's whole life, silently blocking every recycle and idle shutdown.
+      const tracked: Promise<void> = run.finally(() => {
+        if (this.maintenancePromise === tracked) this.maintenancePromise = null;
       });
+      this.maintenancePromise = tracked;
     }, MAINTENANCE_INTERVAL_MS);
     this.maintenanceTimer.unref();
   }
