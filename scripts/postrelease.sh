@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Runs as npm `postversion`: push the just-tagged release, cut the GitHub
-# release, wait for the release.yml CI run (which publishes to npm), then
-# install the freshly-published version globally.
+# Runs as npm `postversion`: push the just-tagged release, wait for the
+# release.yml CI run (which publishes to npm and then cuts the GitHub release),
+# then install the freshly-published version globally.
+#
+# The GitHub release is deliberately left to CI. Creating it here, before CI
+# had run, left an orphaned release behind whenever CI failed (v0.26.38: the
+# audit gate blocked the publish, but the release already existed).
 #
 # Why a poll loop instead of `sleep 5 && gh run watch $(gh run list ...)`:
 # the tag push triggers release.yml, but the run can take several seconds to
@@ -18,9 +22,6 @@ TAG="v${VERSION}"
 echo "==> Pushing main + ${TAG}"
 git push origin main
 git push origin "${TAG}"
-
-echo "==> Creating GitHub release ${TAG}"
-gh release create "${TAG}" --generate-notes --title "${TAG}"
 
 echo "==> Waiting for release.yml run on ${TAG}"
 RUN_ID=""
@@ -43,7 +44,19 @@ if [ -z "${RUN_ID}" ]; then
 fi
 
 echo "==> Watching run ${RUN_ID}"
-gh run watch "${RUN_ID}" --exit-status
+if ! gh run watch "${RUN_ID}" --exit-status; then
+  echo "ERROR: release.yml failed for ${TAG}." >&2
+  echo "       Failed step log: gh run view ${RUN_ID} --log-failed" >&2
+  if npm view "grepmax@${VERSION}" version >/dev/null 2>&1; then
+    echo "       grepmax@${VERSION} IS on npm — do not delete the tag; fix forward." >&2
+  else
+    echo "       Nothing was published. Fix the cause, then drop this tag and re-release:" >&2
+    echo "         git push origin :refs/tags/${TAG} && git tag -d ${TAG}" >&2
+    echo "         gh release delete ${TAG} --yes   # only if one exists" >&2
+    echo "         npm version patch" >&2
+  fi
+  exit 1
+fi
 
 # `gh run watch` returns the instant CI marks the publish job done, but npm's
 # registry CDN takes a while longer to serve the new version to a fresh install.
@@ -98,7 +111,7 @@ done
 
 if [ -z "${INSTALLED}" ]; then
   echo "ERROR: global install of grepmax@${VERSION} failed after 6 attempts." >&2
-  echo "       The release itself is live (pushed, GH release cut, npm published)." >&2
+  echo "       The release itself is live (pushed, npm published, GH release cut by CI)." >&2
   echo "       Finish manually once propagated:" >&2
   echo "         npm install -g --prefer-online grepmax@${VERSION}" >&2
   echo "       Then hand the daemon over (graceful, version-mismatch path):" >&2

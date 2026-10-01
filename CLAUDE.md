@@ -577,9 +577,11 @@ curl -s http://127.0.0.1:8100/health               # MLX embed server up?
   the release CI audit gate then blocked on.
 
 ### Release
-`npm version patch` runs the whole chain: `preversion` gates (tests, both typechecks, Biome) ->
-`sync-versions.sh` (plugin.json + marketplace.json) -> `postrelease.sh` (push, tag, GitHub
-release, wait for `release.yml`, npm publish, global install, daemon restart). CI re-runs every
+`npm version patch` runs the whole chain: `preversion` gates (`pnpm audit --prod`, tests, both typechecks, Biome) ->
+`sync-versions.sh` (plugin.json + marketplace.json) -> `postrelease.sh` (push, tag, wait for
+`release.yml` — which publishes to npm and only then cuts the GitHub release — global install,
+daemon restart). The audit runs locally first so a new advisory fails before a tag is burned; if CI
+fails anyway, `postrelease.sh` prints whether anything reached npm and the exact cleanup commands. CI re-runs every
 gate plus `pnpm audit --prod`, a tag/version match check, and a tarball source-leak audit.
 
 The daemon restart is the step that makes a release actually live. The global install only updates
