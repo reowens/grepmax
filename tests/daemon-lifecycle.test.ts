@@ -232,7 +232,7 @@ describe("Daemon self-recycle", () => {
     expect(exitSpy).toHaveBeenCalledWith(0);
   });
 
-  it("captures resource counters once when recycling becomes due, even during maintenance", () => {
+  it("captures a baseline and one due snapshot, with no extra heartbeat sampling", () => {
     footprint.mb = 4096;
     daemon.vectorDb = {
       isMaintenanceActive: () => true,
@@ -245,13 +245,29 @@ describe("Daemon self-recycle", () => {
     const snapshots = log.mock.calls.filter((args) =>
       String(args[0]).includes("Resource snapshot:"),
     );
-    expect(snapshots).toHaveLength(1);
+    expect(snapshots).toHaveLength(2);
     expect(daemon.resourceSnapshot()).toMatchObject({
       reason: "recycle-due",
       footprintMb: 4096,
       lanceCacheMb: 100,
       maintenance: true,
     });
+  });
+  it("records periodic counters while healthy without recycling", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const shutdown = vi.spyOn(daemon, "shutdown").mockResolvedValue(undefined);
+    daemon.maybeRecycle();
+    daemon.maybeRecycle(false);
+    expect(
+      log.mock.calls.filter(([line]) =>
+        String(line).includes("Resource snapshot:"),
+      ),
+    ).toHaveLength(1);
+    expect(daemon.resourceSnapshot()).toMatchObject({
+      reason: "periodic",
+      footprintMb: 100,
+    });
+    expect(shutdown).not.toHaveBeenCalled();
   });
   it("ignores a large footprint on a freshly started daemon", () => {
     const shutdownSpy = vi

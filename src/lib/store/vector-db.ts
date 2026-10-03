@@ -31,6 +31,7 @@ import { registerCleanup } from "../utils/cleanup";
 import { escapeSqlString, pathStartsWith } from "../utils/filter-builder";
 import { debug, log, timer } from "../utils/logger";
 import { annMinRows, isAnnEnabled } from "./ann-config";
+import { type CompactionResult, skippedCompaction } from "./compaction-result";
 import { StoreLease } from "./store-lease";
 import type { VectorRecord } from "./types";
 
@@ -225,6 +226,7 @@ export class VectorDB {
   /** Only an index owner may create/rebuild shared indexes — see markIndexOwner. */
   private indexOwner = false;
   private lastOptimizeDidWork = false;
+  private lastCompactionResult: CompactionResult | null = null;
   /** Compaction rate limiter — see COMPACTION_MIN_INTERVAL_MS. */
   private lastCompactionMs = 0;
   private compactionIntervalMs = COMPACTION_MIN_INTERVAL_MS;
@@ -1166,11 +1168,22 @@ export class VectorDB {
     }
   }
 
+  compactionStatus(): CompactionResult | null {
+    return this.lastCompactionResult ? { ...this.lastCompactionResult } : null;
+  }
+
+  private recordSkippedCompaction(reason: string): CompactionResult {
+    const result = skippedCompaction(reason);
+    this.lastCompactionResult = result;
+    log("vectordb", `Compaction result: ${JSON.stringify(result)}`);
+    return { ...result };
+  }
+
   async optimize(
     retries = COMPACTION_MAX_ATTEMPTS,
     retentionMs = 0,
     bypassExclusiveMutation = false,
-  ): Promise<void> {
+  ): Promise<CompactionResult> {
     if (!bypassExclusiveMutation) {
       while (this.exclusiveMutationPromise) await this.exclusiveMutationPromise;
       if (this.closed) throw new Error("VectorDB connection is closed");
@@ -1178,7 +1191,9 @@ export class VectorDB {
     if (this.compactingPromise) {
       debug("vectordb", "Optimize already in progress, skipping");
       await this.compactingPromise;
-      return;
+      return (
+        this.compactionStatus() ?? skippedCompaction("compaction unavailable")
+      );
     }
     this.lastOptimizeDidWork = false;
 
@@ -1187,6 +1202,33 @@ export class VectorDB {
       resolveCompacting = resolve;
     });
     this.activeCompactions++;
+    const startedAt = Date.now();
+    let attempts = 0;
+    let logicalBytes: number | undefined;
+    let diskBytesBefore: number | undefined;
+    let freeBytesBefore: number | undefined;
+    const finish = (
+      status: CompactionResult["status"],
+      reason?: string,
+      bytesReclaimed?: number,
+    ): CompactionResult => {
+      const result: CompactionResult = {
+        status,
+        at: Date.now(),
+        attempts,
+        elapsedMs: Date.now() - startedAt,
+        reason: reason?.replace(/[\r\n\t]/g, " ").slice(0, 512),
+        logicalBytes,
+        diskBytesBefore,
+        freeBytesBefore,
+        diskBytesAfter: this.getDirectorySize(this.lancedbDir),
+        freeBytesAfter: this.getAvailableBytes(),
+        bytesReclaimed,
+      };
+      this.lastCompactionResult = result;
+      log("vectordb", `Compaction result: ${JSON.stringify(result)}`);
+      return { ...result };
+    };
     try {
       const maxAttempts = Math.min(retries, COMPACTION_MAX_ATTEMPTS);
       let rebuiltFts = false;
@@ -1208,13 +1250,20 @@ export class VectorDB {
           // for rewrite/index overhead, leaving the critical reserve untouched.
           const availableBytes = this.getAvailableBytes();
           const requiredBytes = totalBytes * 2 + DISK_CRITICAL_BYTES;
+          logicalBytes = totalBytes;
+          const diskBytes = this.getDirectorySize(this.lancedbDir);
+          diskBytesBefore ??= diskBytes;
+          freeBytesBefore ??= availableBytes;
           if (availableBytes < requiredBytes) {
-            log(
-              "vectordb",
-              `Optimize skipped: insufficient rewrite headroom (${(availableBytes / 1024 ** 3).toFixed(1)}GB free, ${(requiredBytes / 1024 ** 3).toFixed(1)}GB required)`,
-            );
-            return;
+            const reason = `insufficient rewrite headroom (${(availableBytes / 1024 ** 3).toFixed(1)}GB free, ${(requiredBytes / 1024 ** 3).toFixed(1)}GB required)`;
+            log("vectordb", `Optimize skipped: ${reason}`);
+            return finish("skipped", reason);
           }
+          attempts++;
+          log(
+            "vectordb",
+            `Compaction attempt: ${JSON.stringify({ attempt, maxAttempts, logicalBytes, diskBytes, freeBytes: availableBytes, requiredBytes })}`,
+          );
           const done = timer("vectordb", "optimize");
           // deleteUnverified deletes files Lance cannot prove are unreferenced.
           // LanceDB's own docs: only safe "if you can guarantee that no other
@@ -1249,13 +1298,17 @@ export class VectorDB {
           } else {
             debug("vectordb", "Optimize: nothing to compact or prune");
           }
-          return;
+          return finish("completed", undefined, prune.bytesRemoved);
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           if (msg.includes("Nothing to do")) {
             debug("vectordb", "Optimize: nothing to do");
-            return;
+            return finish("completed", "nothing to compact or prune", 0);
           }
+          log(
+            "vectordb",
+            `Compaction attempt failed: ${JSON.stringify({ attempt, elapsedMs: Date.now() - startedAt, diskBytes: this.getDirectorySize(this.lancedbDir), freeBytes: this.getAvailableBytes(), reason: msg.slice(0, 512) })}`,
+          );
           // ENOSPC: return immediately — retrying will only make things worse
           if (
             msg.includes("No space left on device") ||
@@ -1265,7 +1318,7 @@ export class VectorDB {
               "vectordb",
               `Optimize failed (ENOSPC): disk full — skipping retries`,
             );
-            return;
+            return finish("failed", "disk full — skipping retries");
           }
           if (
             attempt < maxAttempts &&
@@ -1304,7 +1357,7 @@ export class VectorDB {
               } catch (rebuildErr) {
                 this.ftsPanicRecoveryExhausted = true;
                 log("vectordb", `FTS rebuild failed: ${rebuildErr}`);
-                return;
+                return finish("failed", `FTS rebuild failed: ${rebuildErr}`);
               }
             }
             if (rebuiltFts) {
@@ -1316,9 +1369,10 @@ export class VectorDB {
             }
           }
           log("vectordb", `Optimize failed: ${msg}`);
-          return;
+          return finish("failed", msg);
         }
       }
+      return finish("skipped", "no compaction attempts requested");
     } finally {
       this.compactingPromise = null;
       resolveCompacting();
@@ -1335,13 +1389,16 @@ export class VectorDB {
    * Safe to call from multiple project processors — only one runs at a time.
    * Checks disk bloat ratio and retries optimize when bloat persists.
    */
-  async runMaintenance(options: { force?: boolean } = {}): Promise<void> {
+  async runMaintenance(
+    options: { force?: boolean } = {},
+  ): Promise<CompactionResult | undefined> {
     if (this.maintenanceRunning) {
       debug("vectordb", "Maintenance already running, skipping");
-      return;
+      return skippedCompaction("maintenance already running");
     }
     this.maintenanceRunning = true;
     const epochSnapshot = this.writeEpoch;
+    let result: CompactionResult | undefined;
     try {
       const pressure = this.checkDiskPressure();
 
@@ -1353,7 +1410,9 @@ export class VectorDB {
           "vectordb",
           `Maintenance skipped: disk critically low (${freeGb}GB free)`,
         );
-        return;
+        return this.recordSkippedCompaction(
+          `disk critically low (${freeGb}GB free)`,
+        );
       }
 
       if (
@@ -1392,11 +1451,11 @@ export class VectorDB {
         );
       } else if (pressure === "low") {
         log("vectordb", `Low disk — single-pass optimize (no bloat retry)`);
-        await this.optimize(1, 0, true);
+        result = await this.optimize(1, 0, true);
         this.noteCompaction(this.lastOptimizeDidWork);
       } else {
         // Normal maintenance: full optimize + bloat check
-        await this.optimize(5, 0, true);
+        result = await this.optimize(5, 0, true);
         // Track across both passes: `lastOptimizeDidWork` is reset per optimize()
         // call, so a productive first pass followed by a barren bloat retry would
         // otherwise read as unproductive and trigger a spurious backoff.
@@ -1430,7 +1489,7 @@ export class VectorDB {
                 `Bloat detected after optimize: ${(diskSize / 1024 / 1024).toFixed(0)}MB disk vs ${(logicalSize / 1024 / 1024).toFixed(0)}MB logical (${bloatRatio.toFixed(1)}x) — retrying`,
               );
               await new Promise((r) => setTimeout(r, 2000));
-              await this.optimize(5, 0, true);
+              result = await this.optimize(5, 0, true);
               didWork = didWork || this.lastOptimizeDidWork;
             }
           }
@@ -1443,6 +1502,7 @@ export class VectorDB {
         await this.readTableVersion(maintainedTable);
       this.maintainedEpoch = epochSnapshot;
       this.lastMaintenanceMs = Date.now();
+      return result;
     } finally {
       this.maintenanceRunning = false;
     }
@@ -1518,9 +1578,9 @@ export class VectorDB {
           "vectordb",
           `Fragment threshold exceeded (${stats.fragmentStats.numSmallFragments} > ${threshold}) — compacting`,
         );
-        await this.optimize(2, 0, true);
+        const result = await this.optimize(2, 0, true);
         this.noteCompaction(this.lastOptimizeDidWork);
-        return true;
+        return result.status === "completed";
       }
     } catch (err) {
       debug("vectordb", `compactIfNeeded check failed: ${err}`);

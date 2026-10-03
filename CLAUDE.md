@@ -43,6 +43,8 @@ can hold a merged branch — `git worktree remove <path>` and `git branch -d` on
 
 ## Handoffs: `dotmd baton`
 
+The current reliability queue is in `docs/future-sessions.md` (local internal notes); tracked `docs/known-limitations.md` records consumer dependency audit caveats. Consume the latest runlist handoff before reusing old release or soak instructions. Native query deadlines/bounded scans, memory soaks and external-store MCP/status are still open; embedding migration and recall experiments remain measurement-gated.
+
 "Baton" means save a resume prompt for the next session with `dotmd baton`, not a plan doc:
 
 ```bash
@@ -169,6 +171,8 @@ Maps absolute file paths to `{hash: string, mtimeMs: number, size: number}`. Use
 One table (`chunks`), all projects share it, scoped by path prefix (`/absolute/path/to/project/`). A path btree accelerates scoped exact search. IVF_FLAT is flag-gated by `GMAX_ANN=1` and disabled by default because the production recall soak failed its acceptance threshold. The five-minute maintenance loop runs only after writes or missing-index work; clean stores get an hourly table-version probe for external writes before compaction.
 
 Compaction must take its snapshot **after** `drainWrites()`, and reopen the table on each retry. In the October 2 disk incident, opening before the drain let an outstanding delete invalidate the snapshot; all five retries reused it and stranded about 70 GB of full fragment copies. `optimize()` now caps calls at two attempts, updates the prune cutoff each time to include earlier failed copies, and checks fresh available space (not the cached pressure level) against twice the logical table size plus `DISK_CRITICAL_BYTES`. This is an estimate with overhead margin, not a reservation against other applications writing to disk. Regression coverage includes a native Lance delete/compact/reopen test in a temporary store. Do not reproduce the incident by rewriting the live store.
+
+Compaction attempts and final outcomes are logged as bounded JSON records in `daemon.log`: `Compaction attempt:`, `Compaction attempt failed:`, and `Compaction result:`. Results distinguish completed/skipped/failed and carry timestamps, attempt counts, duration, logical size, physical bytes before/after, free bytes before/after and reclaimed bytes where known. Status IPC and `gmax status --json` retain the latest outcome without directory scans. `doctor --fix` releases its diagnostic reader before requesting compaction; only exact socket absence errors permit a fresh local repair connection. Failed/skipped/unverified repairs are not counted as fixes and exit nonzero. The existing five-minute recycle probe also logs periodic resource baselines; one-minute intervening heartbeats add no sampling, and the 30-minute settling window still protects young daemons from recycling.
 
 #### LanceDB cache bounds and the daemon's footprint
 

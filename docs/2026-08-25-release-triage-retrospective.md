@@ -12,7 +12,7 @@ audience: internal
 related_docs:
   - docs/2026-08-04-macos-kernel-zone-panic-incident.md
   - docs/known-limitations.md
-  - docs/plans/lancedb-0.38-upgrade.md
+  - archived/lancedb-0.38-upgrade.md
   - archived/lance-fts-merge-upstream.md
 summary: What was found on entry, what shipped in v0.26.19–v0.26.22, the evidence behind each fix, and what is left.
 ---
@@ -89,7 +89,7 @@ Panic 4's backtrace has no EndpointSecurity or APFS frame; the panicked task was
 as completed on 2026-08-23 by [lance#8312](https://github.com/lance-format/lance/pull/8312) after
 a third party reproduced it in 4 s. The fix is in lance `v11.0.0-beta.22` → lancedb
 `0.38.0-beta.6+`. No stable lancedb release has it; `0.37.1` is on lance 10. Scoped in
-[`plans/lancedb-0.38-upgrade.md`](plans/lancedb-0.38-upgrade.md): store-clone soak now, cutover on
+[`plans/lancedb-0.38-upgrade.md`](archived/lancedb-0.38-upgrade.md): store-clone soak now, cutover on
 stable 0.38.0, 7-day live canary, FTS-v2 format identified as the rollback constraint.
 
 ## Outstanding

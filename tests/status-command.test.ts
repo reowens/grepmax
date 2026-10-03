@@ -105,6 +105,12 @@ describe("gmax status", () => {
             pid: 123,
             workers: 0,
             resources: { rssMb: 500 },
+            compaction: {
+              status: "failed",
+              attempts: 2,
+              at: 123,
+              elapsedMs: 40,
+            },
             projects: [
               {
                 root: "/work/api",
@@ -123,6 +129,10 @@ describe("gmax status", () => {
     await runStatus(["--json"]);
     const result = JSON.parse(out.join("\n"));
     expect(result.daemon.resources).toEqual({ rssMb: 500 });
+    expect(result.daemon.compaction).toMatchObject({
+      status: "failed",
+      attempts: 2,
+    });
     expect(result.projects[0]).toMatchObject({
       state: "degraded",
       health: { failedFiles: 3, watcherMode: "polling" },

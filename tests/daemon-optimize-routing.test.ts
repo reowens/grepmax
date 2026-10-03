@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { Daemon } from "../src/lib/daemon/daemon";
 import { handleCommand } from "../src/lib/daemon/ipc-handler";
 
 // Lance's optimize runs with deleteUnverified: true, which its docs say is only
@@ -57,4 +58,27 @@ describe("optimize IPC routing", () => {
     expect(String(resp?.error)).toContain("initializing");
     expect(String(resp?.error)).not.toMatch(/ECONNREFUSED|ENOENT/);
   });
+
+  it.each(["completed", "skipped", "failed"] as const)(
+    "reports forced maintenance as %s through IPC",
+    async (status) => {
+      const compaction = {
+        status,
+        at: 1,
+        attempts: 1,
+        elapsedMs: 2,
+        reason: "test reason",
+      };
+      const d = Object.create(Daemon.prototype);
+      d.vectorDb = { runMaintenance: vi.fn(async () => compaction) };
+      d.runSharedOperation = vi.fn(async (_name, _signal, fn) => fn());
+      d.isReady = () => true;
+      d.operationStatus = () => "idle";
+      const response = await handleCommand(d, { cmd: "optimize" }, {} as any);
+      expect(response).toMatchObject({
+        ok: status === "completed",
+        compaction,
+      });
+    },
+  );
 });

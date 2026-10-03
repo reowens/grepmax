@@ -452,6 +452,10 @@ gmax watch restart            # Restart daemon
 
 Compaction pauses index writes, waits for pending writes to commit, and opens a fresh table snapshot for each attempt. Each optimize call makes at most two attempts. Before each attempt it checks current free space against twice the table's logical size plus the critical-space reserve (5 GB by default). If there is insufficient headroom, it skips the rewrite and logs the required space; search remains available. A successful prune can reclaim fragment copies left by failed attempts.
 
+`~/.gmax/logs/daemon.log` records compaction attempts and outcomes, including duration, logical size, disk size before/after, free space, and bytes reclaimed. `gmax status --json` exposes the last outcome under `daemon.compaction`; its `at` timestamp identifies when it was recorded. Five-minute resource snapshots track footprint, RSS, heap, external/ArrayBuffer memory, Lance cache, workers and pending work for memory investigations. Reading status uses retained snapshots and does not scan the index directory. Logs rotate to `daemon.log.prev`.
+
+`gmax doctor --fix` reports completed, skipped, failed, or unverified optimization. It exits nonzero when a requested optimization did not complete or an older daemon could not verify its outcome. A busy or failed daemon is never retried as a second writer in the CLI process.
+
 ### Known issues
 
 Some log output looks alarming but is expected and self-healing. Before filing a bug, check

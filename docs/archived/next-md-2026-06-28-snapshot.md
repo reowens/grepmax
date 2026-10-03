@@ -19,9 +19,9 @@ related_docs:
 
 # Next: Sentinel
 
-gmax is being absorbed into [Sentinel](../sentinel/PLAN.md) — Claude's local toolkit for gathering intelligence without burning API tokens. gmax's indexing and search become Sentinel's core, with an optional local LLM (Qwen3.5-35B-A3B) for autonomous investigation and commit review.
+Historical June 28 direction: gmax was being absorbed into Sentinel (`../sentinel/PLAN.md`, no longer present in this checkout) — Claude's local toolkit for gathering intelligence without burning API tokens. gmax's indexing and search would become Sentinel's core, with an optional local LLM (Qwen3.5-35B-A3B) for autonomous investigation and commit review.
 
-See [sentinel/PLAN.md](../sentinel/PLAN.md) for the full roadmap.
+The historical roadmap was `../sentinel/PLAN.md`. This archived snapshot is not authorization to start a large LLM; current work follows CLAUDE.md.
 
 ---
 
@@ -438,4 +438,3 @@ TBD — waiting on model details. Rough shape:
 - **2026-06-28T22:06:28Z** Created.
 
 ## Related Documentation
-

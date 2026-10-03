@@ -2,7 +2,7 @@
 type: plan
 status: archived
 created: 2026-08-26T02:05:00Z
-updated: 2026-09-07T23:20:00Z
+updated: 2026-10-03T02:35:45Z
 surfaces:
   - store
   - release
@@ -12,10 +12,10 @@ modules:
   - pnpm-workspace.yaml
 domain: upgrade @lancedb/lancedb 0.31 (lance 8) to 0.38 (lance 11) to pick up the upstream FTS merge fix
 audience: internal
-parent_plan: ../archived/lance-fts-merge-upstream.md
+parent_plan: lance-fts-merge-upstream.md
 related_docs:
-  - docs/2026-08-04-macos-kernel-zone-panic-incident.md
-  - docs/known-limitations.md
+  - ../2026-08-04-macos-kernel-zone-panic-incident.md
+  - ../known-limitations.md
 current_state: Phase 0 ran 2026-08-25 as a lance-11 *control*, not a fix validation. The fix (lance-format/lance#8312) is in lance v11.0.0-beta.22, which lancedb 0.38.0-beta.6+ pins — but beta.6 through beta.10 exist only as git tags in the lancedb repo. npm has published exactly two 0.38 prereleases, beta.0 and beta.3, and beta.3 is built against lance 11.0.0-beta.16, six tags before the fix. npm blocks the *release*, not the soak — beta.10 prebuilts are available as GitHub release assets and can be soaked against directly. What the control did establish, on an APFS clone of the live 352k-row store, is that lance 11 is bidirectionally format-compatible with lance 8 and that the 18 table/connection methods vector-db.ts uses are signature-identical. gmax is on 0.31.0 / lance 8.0.0 with the drop-and-rebuild panic guard in vector-db.ts.
 next_step: none — shipped in v0.26.23 as beta.3 on npm + vendored beta.10 overlay (scripts/postinstall.js). Phases 1–3, canary and rollback clone dropped by decision 2026-08-25: single-user tool, rebuild on failure.
 summary: Upgrade LanceDB three lance majors to remove the FTS merge panic at the source, with a rollback-safe cutover.
@@ -320,6 +320,7 @@ per optimize is a regression to report upstream.
 
 ## Version History
 
+- **2026-10-03T02:35:45Z** Archived.
 - **2026-09-07T23:20:00Z** Phase 2 cutover: v0.26.27 released and the daemon restarted on the GA
   platform binary; first live optimize ran clean (15 → 2 fragments, 11.7 GB freed, RSS down).
   Canary open until 2026-09-14.

@@ -17,6 +17,7 @@ import { generateSummaries, initialSync } from "../index/syncer";
 import { LlmServer } from "../llm/server";
 import type { IndexState } from "../output/index-state-footer";
 import type { Searcher } from "../search/searcher";
+import type { CompactionResult } from "../store/compaction-result";
 import { MetaCache } from "../store/meta-cache";
 import { type StoreLease, StoreLeaseTimeoutError } from "../store/store-lease";
 import { VectorDB } from "../store/vector-db";
@@ -726,13 +727,31 @@ export class Daemon {
    * fall back to in-process only when no daemon answers, and are then the sole
    * writer themselves.
    */
-  async runOptimize(): Promise<{ ok: true }> {
+  compactionStatus(): CompactionResult | null {
+    return this.vectorDb?.compactionStatus() ?? null;
+  }
+
+  async runOptimize(): Promise<{
+    ok: boolean;
+    compaction?: CompactionResult;
+    error?: string;
+  }> {
     const db = this.vectorDb;
     if (!db) throw new Error("daemon resources not ready");
-    await this.runSharedOperation("store-maintenance", undefined, () =>
-      db.runMaintenance({ force: true }),
+    const compaction = await this.runSharedOperation(
+      "store-maintenance",
+      undefined,
+      () => db.runMaintenance({ force: true }),
     );
-    return { ok: true };
+    if (!compaction)
+      return { ok: false, error: "maintenance produced no compaction outcome" };
+    return {
+      ok: compaction.status === "completed",
+      compaction,
+      ...(compaction.status === "completed"
+        ? {}
+        : { error: compaction.reason ?? compaction.status }),
+    };
   }
 
   operationStatus(): string {
@@ -2172,15 +2191,19 @@ export class Daemon {
       this.recycleDueSinceMs === null &&
       !ageExceeded &&
       sampleFootprint &&
-      RSS_WATERMARK_MB > 0 &&
-      // A fresh daemon above the watermark would recycle in a loop; give the
-      // caches a chance to settle before judging the footprint.
-      ageMs > FOOTPRINT_RECYCLE_MIN_AGE_MS
+      RSS_WATERMARK_MB > 0
     ) {
       footprintMb = readFootprintMb();
     }
+    // The existing five-minute probe also records a baseline for memory soaks;
+    // the intervening heartbeat ticks add no footprint probe or snapshot.
+    if (sampleFootprint) this.logResourceSnapshot("periodic", footprintMb);
     const footprintExceeded =
-      footprintMb !== null && footprintMb > RSS_WATERMARK_MB;
+      footprintMb !== null &&
+      footprintMb > RSS_WATERMARK_MB &&
+      // Sampling young daemons is useful; recycling them would loop before
+      // their caches have had a chance to settle.
+      ageMs > FOOTPRINT_RECYCLE_MIN_AGE_MS;
     if (this.recycleDueSinceMs === null) {
       if (!ageExceeded && !footprintExceeded) return;
       this.recycleDueSinceMs = Date.now();

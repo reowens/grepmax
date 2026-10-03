@@ -82,6 +82,7 @@ import { Searcher } from "../lib/search/searcher";
 import { annotateSkeletonLines } from "../lib/skeleton/annotator";
 import { Skeletonizer } from "../lib/skeleton/skeletonizer";
 import { extractSymbolsFromSkeleton } from "../lib/skeleton/symbol-extractor";
+import { formatCompactionStatus } from "../lib/store/compaction-result";
 import { MetaCache } from "../lib/store/meta-cache";
 import type {
   ChunkType,
@@ -2263,6 +2264,7 @@ export const mcp = new Command("mcp")
             ? `Last indexed: ${currentProject.lastIndexed}`
             : "",
           watcherLine,
+          formatCompactionStatus(daemonStatus.compaction),
           `Projects: ${projects.length} indexed (call list_projects for names + per-project chunk counts)`,
         ].filter(Boolean);
         return ok(lines.join("\n"));

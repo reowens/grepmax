@@ -22,6 +22,10 @@ import {
 } from "../lib/index/embedding-status";
 import { readGlobalConfig } from "../lib/index/index-config";
 import {
+  formatDoctorOptimize,
+  runDoctorOptimize,
+} from "../lib/utils/doctor-optimize";
+import {
   gpuEmbedModelStatus,
   onnxModelStatus,
   summarizerServerStatus,
@@ -990,37 +994,26 @@ export const doctor = new Command("doctor")
           const { sendDaemonCommand } = await import(
             "../lib/utils/daemon-client"
           );
-          const resp = await sendDaemonCommand(
-            { cmd: "optimize" },
-            { timeoutMs: 10 * 60 * 1000 },
+          // Release the diagnostic reader before the daemon prunes old files.
+          await db.close();
+          const report = await runDoctorOptimize(
+            () =>
+              sendDaemonCommand(
+                { cmd: "optimize" },
+                { timeoutMs: 10 * 60 * 1000 },
+              ),
+            async () => {
+              const repairDb = new VectorDB(PATHS.lancedbDir);
+              try {
+                return await repairDb.optimize();
+              } finally {
+                await repairDb.close();
+              }
+            },
           );
-          let via = "daemon";
-          if (!resp.ok) {
-            // Only fall back when the daemon could not take it. A daemon that
-            // answered with a real failure should surface, not be retried here
-            // as a competing writer.
-            const reason = String(resp.error ?? "");
-            // Fall back ONLY when nothing is listening. A daemon that is merely
-            // too old ("unknown command") or busy ("timeout") is still a live
-            // writer on the store, so optimizing here would recreate the
-            // two-writer case this routing exists to prevent.
-            const daemonAbsent =
-              reason.includes("ECONNREFUSED") || reason.includes("ENOENT");
-            if (daemonAbsent) {
-              await db.optimize(3, 0);
-              via = "in-process (no daemon)";
-            } else if (reason.includes("unknown command")) {
-              via = "";
-              console.log(
-                "WARN  Optimize skipped: the running daemon predates the optimize command. Restart it (gmax watch --daemon -b) and re-run.",
-              );
-            } else {
-              via = "";
-              console.log(`WARN  Optimize failed via daemon: ${reason}`);
-            }
-          }
-          if (via && !opts.agent) console.log(`ok  Optimize complete (${via})`);
-          fixed++;
+          console.log(formatDoctorOptimize(report, opts.agent));
+          if (report.status === "completed") fixed++;
+          else process.exitCode = 1;
         }
 
         // Only roots whose volume is mounted and whose directory is still gone
@@ -1082,7 +1075,7 @@ export const doctor = new Command("doctor")
           }
         }
 
-        if (fixed === 0) {
+        if (fixed === 0 && !needsOptimize) {
           if (!opts.agent) console.log("ok  Nothing to fix");
         }
       }

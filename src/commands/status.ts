@@ -16,6 +16,7 @@ import {
   formatIndexStateFooter,
   type IndexState,
 } from "../lib/output/index-state-footer";
+import type { CompactionResult } from "../lib/store/compaction-result";
 import { sendDaemonCommand } from "../lib/utils/daemon-client";
 import { gracefulExit } from "../lib/utils/exit";
 import { pathStartsWith } from "../lib/utils/filter-builder";
@@ -47,6 +48,7 @@ export interface StatusView {
     workers: number | null;
     workerThreads: number | null;
     resources?: ResourceSnapshot | null;
+    compaction?: CompactionResult | null;
   };
 }
 
@@ -92,6 +94,9 @@ async function loadStatusView(projects: ProjectEntry[]): Promise<StatusView> {
         }
       }
       const daemon = {
+        ...(resp.compaction !== undefined
+          ? { compaction: resp.compaction as CompactionResult | null }
+          : {}),
         ...(resp.resources !== undefined
           ? { resources: resp.resources as ResourceSnapshot | null }
           : {}),
@@ -193,6 +198,7 @@ export interface StatusJson {
     since: number | null;
     workerThreads: number | null;
     resources?: ResourceSnapshot | null;
+    compaction?: CompactionResult | null;
   };
   settings: {
     embedMode: "cpu" | "gpu";
@@ -242,6 +248,7 @@ export function buildStatusJson(input: {
       since: d?.uptimeSec != null ? now - d.uptimeSec * 1000 : null,
       workerThreads: d?.workerThreads ?? null,
       ...(d?.resources !== undefined ? { resources: d.resources } : {}),
+      ...(d?.compaction !== undefined ? { compaction: d.compaction } : {}),
     },
     settings: {
       embedMode: globalConfig.embedMode,

@@ -293,42 +293,13 @@ grep "DATA CORRUPTION" ~/.gmax/logs/daemon.log | tail
 
 **Fix:** None planned. Compaction interrupts (laptop sleep mid-write, kill -9, disk pressure) are rare enough that the detect-and-back-off behavior is sufficient.
 
-## Two transitive advisories have no upstream fix
+## Consumer dependency audits differ from repository audits
 
-**What:** A fresh `npm install grepmax` reports 6 high-severity advisories. Two are real roots;
-the rest are cascade entries naming the packages that depend on them.
+Verified October 2, 2026 with a fresh npm package-lock-only consumer install of grepmax 0.26.42. The repository's production audit is clean, but the consumer audit reports two high entries rooted in sharp 0.33.5 through LanceDB's optional transformers 3.0.2 dependency. The installed global tree confirms that route. Direct gmax transformers 4.3.0 resolves sharp 0.35.5; onnxruntime-node 1.30.0 resolves adm-zip 0.6.1, so the old adm-zip finding is no longer outstanding.
 
-| Advisory | Reaches gmax via | Parent declares | Patch requires |
-|---|---|---|---|
-| `sharp <0.35.0` | `@huggingface/transformers` | `^0.34.5` | `>=0.35.0` |
-| `adm-zip <0.6.0` | `onnxruntime-node` | `^0.5.16` | `>=0.6.0` |
+The relevant advisories are [libvips](https://github.com/advisories/GHSA-f88m-g3jw-g9cj) and [libheif](https://github.com/advisories/GHSA-rgj7-g3m4-5g8c). gmax supplies its own text vectors and does not invoke LanceDB's optional transformers image pipeline; that provider imports transformers lazily in its init method. Installed vulnerable dependencies still merit tracking even when this path is unused.
 
-**Why it is not fixable here.** Both parents are already at their latest published version and
-still declare a range that excludes the patched release, so `npm audit fix` reports
-`fixAvailable: false`. Overrides do not help either: npm ignores a dependency's own `overrides`
-field, so a pin in this package's manifest has no effect on anyone installing it. The
-`pnpm-workspace.yaml` overrides protect this repo's own installs only.
-
-**Do not work around it with `--omit=optional`.** That flag would also skip
-`@lancedb/lancedb-darwin-arm64`, `@lmdb/lmdb-darwin-arm64`, and the other platform native
-binaries, which breaks the install outright.
-
-**Actual exposure.** gmax never imports `sharp` — it arrives through the transformers image
-pipeline, and gmax embeds text only. `adm-zip` runs inside `onnxruntime-node`'s install script,
-which `ignoredBuiltDependencies` suppresses locally, though a consumer's npm install may still
-execute it.
-
-**Fix:** Blocked on upstream. Clears when `@huggingface/transformers` widens its `sharp` range and
-`onnxruntime-node` widens its `adm-zip` range. Re-check with:
-
-```bash
-npm view @huggingface/transformers dependencies | grep sharp
-npm view onnxruntime-node dependencies | grep adm-zip
-```
-
-A third advisory (`mathjs`, via `simsimd`) was removed in v0.26.7 by migrating to `numkong`,
-simsimd's maintained successor, which does not carry benchmarking packages as optional
-dependencies.
+LanceDB 0.39.0, the latest SDK checked on October 2, still pins optional transformers 3.0.2. Updating the SDK alone does not remove the route. The remaining work is an upstream removal/widening or a maintainable packaging solution, plus a fresh packed-consumer audit during release verification. Repository-only overrides do not protect consumer installs. Do not omit all optional dependencies: the native LanceDB platform packages are optional too.
 
 ## A recycled PID makes a reader lease immortal and hangs every exclusive operation
 

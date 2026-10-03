@@ -117,7 +117,9 @@ describe("VectorDB compaction safety", () => {
     await pending;
 
     expect(failed.optimize).toHaveBeenCalledOnce();
-    expect(db.getAvailableBytes).toHaveBeenCalledTimes(2);
+    expect(
+      vi.mocked(db.getAvailableBytes).mock.calls.length,
+    ).toBeGreaterThanOrEqual(2);
   });
 
   it("preserves a critical-space reserve and releases queued writes on skip", async () => {
@@ -172,5 +174,49 @@ describe("VectorDB compaction safety", () => {
 
     expect(current.optimize).not.toHaveBeenCalled();
     expect((db as any).activeCompactions).toBe(0);
+  });
+
+  it("records disk growth and bounded diagnostics when both attempts fail", async () => {
+    vi.useFakeTimers();
+    const failed = table(vi.fn().mockRejectedValue(conflict()));
+    vi.spyOn(db as any, "ensureTableUnsafe").mockResolvedValue(failed);
+    vi.spyOn(db as any, "getDirectorySize")
+      .mockReturnValueOnce(87 * GB)
+      .mockReturnValueOnce(101 * GB)
+      .mockReturnValueOnce(101 * GB)
+      .mockReturnValue(115 * GB);
+    const output = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      const pending = db.optimize(5);
+      await vi.runAllTimersAsync();
+      const result = await pending;
+
+      expect(result).toMatchObject({
+        status: "failed",
+        attempts: 2,
+        logicalBytes: 14 * GB,
+        diskBytesBefore: 87 * GB,
+        diskBytesAfter: 115 * GB,
+      });
+      expect(db.compactionStatus()).toEqual(result);
+      const lines = output.mock.calls.map(([line]) => String(line));
+      expect(
+        lines.filter((line) => line.includes("Compaction attempt: ")),
+      ).toHaveLength(2);
+      expect(
+        lines.filter((line) => line.includes("Compaction result: ")),
+      ).toHaveLength(1);
+    } finally {
+      output.mockRestore();
+    }
+  });
+
+  it("reports insufficient headroom as skipped without claiming an attempt", async () => {
+    vi.spyOn(db as any, "ensureTableUnsafe").mockResolvedValue(table());
+    vi.mocked(db.getAvailableBytes).mockReturnValue(10 * GB);
+    expect(await db.optimize()).toMatchObject({
+      status: "skipped",
+      attempts: 0,
+    });
   });
 });

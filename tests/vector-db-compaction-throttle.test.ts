@@ -7,6 +7,12 @@ import { VectorDB } from "../src/lib/store/vector-db";
 const MIN_INTERVAL_MS = 30 * 60 * 1000;
 const MAX_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const START = new Date("2026-08-17T00:00:00Z");
+const completed = {
+  status: "completed" as const,
+  at: 0,
+  attempts: 1,
+  elapsedMs: 0,
+};
 
 /**
  * Regression cover for the compaction rate limiter.
@@ -43,6 +49,7 @@ describe("VectorDB compaction throttle", () => {
   function stubOptimize(didWork: boolean) {
     return vi.spyOn(db, "optimize").mockImplementation(async () => {
       (db as any).lastOptimizeDidWork = didWork;
+      return completed;
     });
   }
 
@@ -142,6 +149,7 @@ describe("VectorDB compaction throttle", () => {
 
     optimize.mockImplementation(async () => {
       (db as any).lastOptimizeDidWork = true;
+      return completed;
     });
     await db.runMaintenance({ force: true });
 
@@ -154,6 +162,7 @@ describe("VectorDB compaction throttle", () => {
     let call = 0;
     vi.spyOn(db, "optimize").mockImplementation(async () => {
       (db as any).lastOptimizeDidWork = call++ === 0;
+      return completed;
     });
     vi.spyOn(db as any, "getDirectorySize").mockReturnValue(1024 * 10);
 

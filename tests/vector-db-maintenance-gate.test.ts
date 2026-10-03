@@ -6,6 +6,12 @@ import { VectorDB } from "../src/lib/store/vector-db";
 
 const TICK_MS = 5 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
+const completed = {
+  status: "completed" as const,
+  at: 0,
+  attempts: 1,
+  elapsedMs: 0,
+};
 
 describe("VectorDB maintenance gating", () => {
   let root: string;
@@ -75,7 +81,7 @@ describe("VectorDB maintenance gating", () => {
     const table = { version: vi.fn(async () => 7) };
     vi.spyOn(db as any, "openExistingTableUnsafe").mockResolvedValue(table);
     const fts = vi.spyOn(db, "createFTSIndex").mockResolvedValue(undefined);
-    const optimize = vi.spyOn(db, "optimize").mockResolvedValue(undefined);
+    const optimize = vi.spyOn(db, "optimize").mockResolvedValue(completed);
 
     await db.runMaintenance();
 
@@ -94,7 +100,7 @@ describe("VectorDB maintenance gating", () => {
     };
     vi.spyOn(db as any, "openExistingTableUnsafe").mockResolvedValue(table);
     const fts = vi.spyOn(db, "createFTSIndex").mockResolvedValue(undefined);
-    const optimize = vi.spyOn(db, "optimize").mockResolvedValue(undefined);
+    const optimize = vi.spyOn(db, "optimize").mockResolvedValue(completed);
 
     await db.runMaintenance();
 
@@ -109,6 +115,7 @@ describe("VectorDB maintenance gating", () => {
     vi.spyOn(db, "createFTSIndex").mockResolvedValue(undefined);
     vi.spyOn(db, "optimize").mockImplementation(async () => {
       (db as any).markWriteCommitted();
+      return completed;
     });
 
     await db.runMaintenance({ force: true });
@@ -125,7 +132,7 @@ describe("VectorDB maintenance gating", () => {
     };
     vi.spyOn(db as any, "openExistingTableUnsafe").mockResolvedValue(table);
     vi.spyOn(db, "createFTSIndex").mockResolvedValue(undefined);
-    vi.spyOn(db, "optimize").mockResolvedValue(undefined);
+    vi.spyOn(db, "optimize").mockResolvedValue(completed);
     const directorySize = vi.spyOn(db as any, "getDirectorySize");
 
     await db.runMaintenance({ force: true });

@@ -174,6 +174,7 @@ export async function handleCommand(
           mlx: daemon.getMlxStatus(),
           workers: daemon.workerCount(),
           resources: daemon.resourceSnapshot?.() ?? null,
+          compaction: daemon.compactionStatus?.() ?? null,
           workerThreads: WORKER_THREADS_SETTING,
         };
 
