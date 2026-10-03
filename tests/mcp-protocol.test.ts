@@ -45,126 +45,150 @@ describe("MCP protocol", () => {
     }
   });
 
-  it("advertises surprising_connections over tools/list", async () => {
-    const root = process.cwd();
-    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "gmax-mcp-protocol-"));
-    const child = spawn(
-      path.join(root, "node_modules", ".bin", "tsx"),
-      [path.join(root, "src", "index.ts"), "mcp"],
-      {
-        cwd,
-        env: {
-          ...process.env,
-          HOME: cwd,
-          GMAX_HOME: path.join(cwd, ".gmax"),
-          GMAX_NO_AUTOSTART: "1",
-          GMAX_NO_STALE_HINT: "1",
+  it.each(["legacy", "modern"])(
+    "advertises tool contracts over %s stdio",
+    async (era) => {
+      const root = process.cwd();
+      const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "gmax-mcp-protocol-"));
+      const child = spawn(
+        path.join(root, "node_modules", ".bin", "tsx"),
+        [path.join(root, "src", "index.ts"), "mcp"],
+        {
+          cwd,
+          env: {
+            ...process.env,
+            HOME: cwd,
+            GMAX_HOME: path.join(cwd, ".gmax"),
+            GMAX_NO_AUTOSTART: "1",
+            GMAX_NO_STALE_HINT: "1",
+          },
         },
-      },
-    );
-    children.push(child);
+      );
+      children.push(child);
 
-    const messages: JsonRpcMessage[] = [];
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => {
-      stdout += String(chunk);
-      let newline = stdout.indexOf("\n");
-      while (newline >= 0) {
-        const line = stdout.slice(0, newline).trim();
-        stdout = stdout.slice(newline + 1);
-        if (line) messages.push(JSON.parse(line));
-        newline = stdout.indexOf("\n");
-      }
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += String(chunk);
-    });
-
-    send(child, {
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: {
-        protocolVersion: "2025-06-18",
-        capabilities: {},
-        clientInfo: { name: "gmax-vitest", version: "0" },
-      },
-    });
-    const initialized = await waitForMessage(
-      messages,
-      (message) => message.id === 1,
-    );
-    expect(initialized.error, stderr).toBeUndefined();
-
-    send(child, {
-      jsonrpc: "2.0",
-      method: "notifications/initialized",
-      params: {},
-    });
-    send(child, {
-      jsonrpc: "2.0",
-      id: 2,
-      method: "tools/list",
-      params: {},
-    });
-
-    const listed = await waitForMessage(
-      messages,
-      (message) => message.id === 2,
-    );
-    expect(listed.error, stderr).toBeUndefined();
-    const tools = listed.result?.tools ?? [];
-    const tool = tools.find(
-      (entry: any) => entry.name === "surprising_connections",
-    );
-
-    expect(tool).toBeDefined();
-    expect(tool.description).toContain("Experimental orientation signal");
-    expect(tool.inputSchema.required).toContain("experimental");
-    expect(tool.inputSchema.properties.experimental.type).toBe("boolean");
-    expect(tool.inputSchema.properties.in.type).toBe("string");
-    expect(tool.inputSchema.properties.exclude.type).toBe("string");
-
-    for (const name of [
-      "semantic_search",
-      "trace_calls",
-      "dead",
-      "index_status",
-    ]) {
-      const readTool = tools.find((entry: any) => entry.name === name);
-      expect(readTool.outputSchema.type).toBe("object");
-      expect(readTool.outputSchema.required).toContain("schemaVersion");
-      expect(readTool.annotations).toEqual({
-        readOnlyHint: true,
-        destructiveHint: false,
-        openWorldHint: false,
+      const messages: JsonRpcMessage[] = [];
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (chunk) => {
+        stdout += String(chunk);
+        let newline = stdout.indexOf("\n");
+        while (newline >= 0) {
+          const line = stdout.slice(0, newline).trim();
+          stdout = stdout.slice(newline + 1);
+          if (line) messages.push(JSON.parse(line));
+          newline = stdout.indexOf("\n");
+        }
       });
-    }
-    expect(tool.outputSchema).toBeUndefined();
+      child.stderr.on("data", (chunk) => {
+        stderr += String(chunk);
+      });
 
-    send(child, {
-      jsonrpc: "2.0",
-      id: 3,
-      method: "tools/call",
-      params: {
-        name: "surprising_connections",
-        arguments: {
-          experimental: true,
-          root: cwd,
-          sample: 1,
-          neighbors: 1,
-          top: 1,
+      const envelope =
+        era === "modern"
+          ? {
+              _meta: {
+                "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                "io.modelcontextprotocol/clientCapabilities": {},
+                "io.modelcontextprotocol/clientInfo": {
+                  name: "gmax-vitest",
+                  version: "0",
+                },
+              },
+            }
+          : {};
+      send(child, {
+        jsonrpc: "2.0",
+        id: 1,
+        method: era === "modern" ? "server/discover" : "initialize",
+        params:
+          era === "modern"
+            ? envelope
+            : {
+                protocolVersion: "2025-06-18",
+                capabilities: {},
+                clientInfo: { name: "gmax-vitest", version: "0" },
+              },
+      });
+      const initialized = await waitForMessage(
+        messages,
+        (message) => message.id === 1,
+      );
+      expect(initialized.error, stderr).toBeUndefined();
+
+      if (era === "legacy")
+        send(child, {
+          jsonrpc: "2.0",
+          method: "notifications/initialized",
+          params: {},
+        });
+      send(child, {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/list",
+        params: envelope,
+      });
+
+      const listed = await waitForMessage(
+        messages,
+        (message) => message.id === 2,
+      );
+      expect(listed.error, stderr).toBeUndefined();
+      const tools = listed.result?.tools ?? [];
+      const tool = tools.find(
+        (entry: any) => entry.name === "surprising_connections",
+      );
+
+      expect(tool).toBeDefined();
+      expect(tool.description).toContain("Experimental orientation signal");
+      expect(tool.inputSchema.required).toContain("experimental");
+      expect(tool.inputSchema.properties.experimental.type).toBe("boolean");
+      expect(tool.inputSchema.properties.in.type).toBe("string");
+      expect(tool.inputSchema.properties.exclude.type).toBe("string");
+
+      for (const name of [
+        "semantic_search",
+        "trace_calls",
+        "dead",
+        "index_status",
+      ]) {
+        const readTool = tools.find((entry: any) => entry.name === name);
+        expect(readTool.outputSchema.type).toBe("object");
+        expect(readTool.outputSchema.required).toContain("schemaVersion");
+        expect(readTool.annotations).toEqual({
+          readOnlyHint: true,
+          destructiveHint: false,
+          openWorldHint: false,
+        });
+      }
+      expect(tool.outputSchema).toBeUndefined();
+
+      send(child, {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: {
+          ...envelope,
+          name: "surprising_connections",
+          arguments: {
+            experimental: true,
+            root: cwd,
+            sample: 1,
+            neighbors: 1,
+            top: 1,
+          },
         },
-      },
-    });
+      });
 
-    const called = await waitForMessage(
-      messages,
-      (message) => message.id === 3,
-    );
-    expect(called.error, stderr).toBeUndefined();
-    const text = called.result?.content?.[0]?.text ?? "";
-    expect(text).toContain("Unknown registered project");
-  }, 15_000);
+      const called = await waitForMessage(
+        messages,
+        (message) => message.id === 3,
+      );
+      expect(called.error, stderr).toBeUndefined();
+      const text = called.result?.content?.[0]?.text ?? "";
+      expect(text).toContain("Unknown registered project");
+      expect(called.result.isError).toBe(true);
+      if (era === "modern") expect(called.result.resultType).toBe("complete");
+    },
+    15_000,
+  );
 });

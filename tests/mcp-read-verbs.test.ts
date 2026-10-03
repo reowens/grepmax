@@ -27,7 +27,7 @@ import {
   it,
   vi,
 } from "vitest";
-import { z } from "zod";
+import type { z } from "zod";
 
 type ToolHandler = (args: Record<string, unknown>) => Promise<{
   content: Array<{ text: string }>;
@@ -36,18 +36,18 @@ type ToolHandler = (args: Record<string, unknown>) => Promise<{
 }>;
 
 const tools = new Map<string, ToolHandler>();
-const configs = new Map<string, { outputSchema?: z.ZodRawShape }>();
+const configs = new Map<string, { outputSchema?: z.ZodObject }>();
 const sendDaemonCommand = vi.fn();
 const vectorDbCtor = vi.fn();
 
 let projectRoot: string;
 let sourceFile: string;
 
-vi.mock("@modelcontextprotocol/sdk/server/mcp.js", () => ({
+vi.mock("@modelcontextprotocol/server", () => ({
   McpServer: class {
     registerTool(
       name: string,
-      config: { outputSchema?: z.ZodRawShape },
+      config: { outputSchema?: z.ZodObject },
       handler: ToolHandler,
     ) {
       tools.set(name, handler);
@@ -57,8 +57,11 @@ vi.mock("@modelcontextprotocol/sdk/server/mcp.js", () => ({
   },
 }));
 
-vi.mock("@modelcontextprotocol/sdk/server/stdio.js", () => ({
-  StdioServerTransport: class {},
+vi.mock("@modelcontextprotocol/server/stdio", () => ({
+  serveStdio: (factory: () => unknown) => {
+    factory();
+    return { close: async () => {} };
+  },
 }));
 
 vi.mock("../src/lib/utils/daemon-client", () => ({
@@ -192,8 +195,7 @@ async function callRaw(name: string, args: Record<string, unknown> = {}) {
   if (!handler) throw new Error(`tool not registered: ${name}`);
   const result = await handler(args);
   const schema = configs.get(name)?.outputSchema;
-  if (schema && !result.isError)
-    z.object(schema).parse(result.structuredContent);
+  if (schema && !result.isError) schema.parse(result.structuredContent);
   return result;
 }
 

@@ -33,8 +33,11 @@ v0.26.45 adds structured results/output schemas for semantic_search, trace_calls
 and index_status alongside existing text, with truthful read-only annotations and pipe-only tests.
 Installed SDK-client smoke passed all four tools with every server listener forbidden. Doctor:
 507,700 rows, 13.9 GB logical / 15.0 GB physical, 107.2 GB free, no orphan/stale temporary files.
-Next assess a compatible SDK v2 migration, then progress/cancellation. Keep STDIO only;
-Tasks/subscriptions remain workflow-gated.
+The SDK v2 migration now uses the pinned official server 2.3.0 and its dual-era STDIO entry.
+Both protocol eras pass native store/isolation tests. Discovery starts no background work;
+active reads share one lease-renewal timer, and disconnect closes queued IPC and expires leases.
+Release validation follows. Progress/cancellation is next where backend work is abortable;
+Tasks/subscriptions remain workflow-gated. Keep STDIO only.
 
 ## Deferred work
 
@@ -75,7 +78,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 73 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 74 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|

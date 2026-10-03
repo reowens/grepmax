@@ -3,13 +3,13 @@
 # as a dependency). Putting the mathjs pin there silently un-pinned it.
 overrides:
   mathjs: "15.2.0"
-  # Advisory patches for transitive deps. The first seven stay inside their
-  # parent's declared range and only lift a stale lockfile pin.
-  fast-uri: "^3.1.8" # .>@modelcontextprotocol/sdk>ajv
-  qs: "^6.16.0" # .>@modelcontextprotocol/sdk>express
-  ip-address: "^10.7.1" # .>@modelcontextprotocol/sdk>express-rate-limit
-  hono: "^4.13.5" # .>@modelcontextprotocol/sdk
-  "@hono/node-server": "^2.0.5" # .>@modelcontextprotocol/sdk
+  # In-range advisory patches for transitive dependencies.
+  fast-uri: "^3.1.8" # .>@modelcontextprotocol/client>ajv
+  # Legacy client fixture only: keep its unused HTTP dependencies patched in dev.
+  qs: "^6.16.0"
+  ip-address: "^10.7.1"
+  hono: "^4.13.5"
+  "@hono/node-server": "^2.0.5"
   protobufjs: "^7.6.5" # .>@huggingface/transformers>onnxruntime-web
   undici: "^8.10.2" # .>openai (peer >=5 <9)
   # These two force past the parent's range, so they need justifying:
@@ -42,3 +42,7 @@ allowBuilds:
 # fails with VERS_1.30.0 not found. Remove once 4.3.0 is past the release-age window.
 minimumReleaseAgeExclude:
   - '@huggingface/transformers@4.3.0'
+  # Explicitly requested SDK v2 migration; exact tested server/client/core pins.
+  - '@modelcontextprotocol/core@2.3.0'
+  - '@modelcontextprotocol/server@2.3.0'
+  - '@modelcontextprotocol/client@2.3.0'
