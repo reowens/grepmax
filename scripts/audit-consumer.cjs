@@ -5,9 +5,16 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const root = path.resolve(__dirname, "..");
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "gmax-packed-consumer-"));
+// npm 12 exports the parent lifecycle script policy as CLI-like env config.
+// It is invalid for this separate consumer project; all our installs explicitly
+// ignore scripts, so do not inherit that parent allowance.
+const npmEnv = { ...process.env };
+for (const key of Object.keys(npmEnv)) {
+  if (/^npm_config_(allow_scripts|strict_allow_scripts|dangerously_allow_all_scripts)$/i.test(key)) delete npmEnv[key];
+}
 function npm(args, cwd = temp, acceptFailure = false) {
   const r = spawnSync(process.platform === "win32" ? "npm.cmd" : "npm", args, {
-    cwd, encoding: "utf8", timeout: 180_000,
+    cwd, env: npmEnv, encoding: "utf8", timeout: 180_000,
   });
   if (r.error || (r.status !== 0 && !acceptFailure)) {
     throw new Error(`npm ${args.join(" ")} failed: ${r.error ?? r.stderr ?? r.stdout}`);
