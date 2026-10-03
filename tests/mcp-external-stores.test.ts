@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { expect, it } from "vitest";
 import { VectorDB } from "../src/lib/store/vector-db";
 
-it("one MCP process routes concurrent roots, symlinks and offline stores", async () => {
+it("MCP stays pipe-only while routing concurrent roots, symlinks and offline stores", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gmax-mcp-stores-"));
   const primary = path.join(dir, ".gmax");
   const secondary = path.join(dir, "secondary-store");
@@ -68,14 +68,30 @@ it("one MCP process routes concurrent roots, symlinks and offline stores", async
         ],
       }),
     );
+    const listenMarker = path.join(dir, "unexpected-listener");
+    const listenGuard = path.join(dir, "no-listeners.cjs");
+    fs.writeFileSync(
+      listenGuard,
+      `const fs = require("node:fs");
+       require("node:net").Server.prototype.listen = function () {
+         fs.writeFileSync(${JSON.stringify(listenMarker)}, "MCP attempted a server listener");
+         throw new Error("MCP must communicate over pipes only");
+       };`,
+    );
     child = spawn(
-      path.join(process.cwd(), "node_modules/.bin/tsx"),
-      [path.join(process.cwd(), "src/bin.ts"), "mcp"],
+      process.execPath,
+      [
+        "--import",
+        path.join(process.cwd(), "node_modules/tsx/dist/loader.mjs"),
+        path.join(process.cwd(), "src/bin.ts"),
+        "mcp",
+      ],
       {
         cwd: roots[0],
         env: {
           ...process.env,
           HOME: dir,
+          NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --require ${JSON.stringify(listenGuard)}`,
           GMAX_HOME: primary,
           GMAX_NO_AUTOSTART: "1",
           GMAX_NO_STALE_HINT: "1",
@@ -174,6 +190,7 @@ it("one MCP process routes concurrent roots, symlinks and offline stores", async
     });
     expect(empty.result.content[0].text).toContain("offline");
     expect(empty.result.content[0].text).toContain("0 indexed project(s)");
+    expect(fs.existsSync(listenMarker)).toBe(false);
     expect(fs.existsSync(path.join(secondary, "daemon.pid"))).toBe(false);
     const readers = path.join(secondary, "lancedb.lease", "readers");
     expect(fs.existsSync(readers) ? fs.readdirSync(readers) : []).toHaveLength(

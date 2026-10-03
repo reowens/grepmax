@@ -55,6 +55,9 @@ describe("MCP protocol", () => {
         cwd,
         env: {
           ...process.env,
+          HOME: cwd,
+          GMAX_HOME: path.join(cwd, ".gmax"),
+          GMAX_NO_AUTOSTART: "1",
           GMAX_NO_STALE_HINT: "1",
         },
       },

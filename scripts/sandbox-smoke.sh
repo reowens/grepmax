@@ -16,7 +16,7 @@
 #
 # Every read command is held to the same target since 0.26.28, when the daemon
 # began serving the graph/rows/vector verbs. Against an older daemon the verb
-# commands fall back in-process, hit the denied lease, and FAIL here — that is
+# commands refuse with a daemon restart instruction and FAIL here — that is
 # a real finding (the daemon on the socket is older than this checkout), not
 # a script bug.
 #

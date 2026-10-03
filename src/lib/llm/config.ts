@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+
 export interface LlmConfig {
   model: string;
   binary: string;
@@ -29,10 +31,17 @@ function envInt(key: string, fallback: number): number {
 }
 
 export function getLlmConfig(): LlmConfig {
+  const requestedHost = process.env.GMAX_LLM_HOST ?? "127.0.0.1";
+  const host = requestedHost === "localhost" ? "127.0.0.1" : requestedHost;
+  if (!(host === "::1" || (isIP(host) === 4 && host.startsWith("127.")))) {
+    throw new Error(
+      "gmax is local-only: GMAX_LLM_HOST must be a loopback address",
+    );
+  }
   return {
     model: process.env.GMAX_LLM_MODEL ?? DEFAULT_MODEL,
     binary: process.env.GMAX_LLM_BINARY ?? "llama-server",
-    host: process.env.GMAX_LLM_HOST ?? "127.0.0.1",
+    host,
     port: envInt("GMAX_LLM_PORT", 8079),
     ctxSize: envInt("GMAX_LLM_CTX_SIZE", 16384),
     ngl: envInt("GMAX_LLM_NGL", 99),

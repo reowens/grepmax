@@ -126,7 +126,9 @@ Plugins auto-update when you run `npm install -g grepmax@latest` — no need to 
 
 ### MCP Server
 
-`gmax mcp` starts a stdio-based MCP server for clients that support MCP but can't run shell commands (Cursor, Windsurf, custom agents). Search-backed tools use the singleton daemon when available, avoiding a separate embedding worker per MCP session, and fall back to an in-process worker only when the daemon is unavailable or does not support the request.
+MCP is local-only: the client spawns it and communicates through stdin/stdout pipes. It has no HTTP, SSE, or TCP listener and cannot be reached over the network. The daemon socket is restricted to your user account.
+
+`gmax mcp` starts a stdio-based MCP server for clients that support MCP but can't run shell commands (Cursor, Windsurf, custom agents). Search-backed tools use the singleton daemon when available, avoiding a separate embedding worker per MCP session, and use an in-process worker for supported offline/secondary-store access. An unsupported daemon command requires `gmax watch restart`.
 
 | Tool | Description |
 | --- | --- |

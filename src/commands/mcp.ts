@@ -3255,6 +3255,7 @@ export const mcp = new Command("mcp")
 
     // --- MCP server setup ---
 
+    // Local-only MCP: client-owned pipes, no HTTP/SSE/TCP listener or host option.
     const transport = new StdioServerTransport();
     const server = new McpServer(
       {

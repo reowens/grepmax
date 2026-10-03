@@ -15,7 +15,9 @@ function npm(args, cwd = temp, acceptFailure = false) {
   return r;
 }
 try {
-  const packed = JSON.parse(npm(["pack", "--ignore-scripts", "--json", "--pack-destination", temp], root).stdout)[0];
+  const packOutput = JSON.parse(npm(["pack", "--ignore-scripts", "--json", "--pack-destination", temp], root).stdout);
+  const packed = (Array.isArray(packOutput) ? packOutput : Object.values(packOutput))[0];
+  if (!packed?.filename) throw new Error("npm pack returned no tarball metadata");
   fs.writeFileSync(path.join(temp, "package.json"), JSON.stringify({ name: "gmax-consumer-check", version: "1.0.0", private: true }));
   npm(["install", path.join(temp, packed.filename), "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-online"]);
   const auditResult = npm(["audit", "--omit=dev", "--json"], temp, true);

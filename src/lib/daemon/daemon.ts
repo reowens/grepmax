@@ -304,7 +304,10 @@ export class Daemon {
     this.assertStartupActive();
 
     // 1. Acquire exclusive lock — kernel-enforced, atomic, auto-released on death
-    fs.mkdirSync(path.dirname(PATHS.daemonLockFile), { recursive: true });
+    const ipcHome = path.dirname(PATHS.daemonLockFile);
+    fs.mkdirSync(ipcHome, { recursive: true, mode: 0o700 });
+    // IPC is local and private to this account, including an existing home.
+    fs.chmodSync(ipcHome, 0o700);
     fs.writeFileSync(PATHS.daemonLockFile, "", { flag: "a" }); // ensure file exists
     dbg("daemon", "acquiring lock...");
     try {
@@ -391,7 +394,15 @@ export class Daemon {
           reject(err);
         }
       });
-      this.server!.listen(PATHS.daemonSocket, () => resolve());
+      this.server!.listen(PATHS.daemonSocket, () => {
+        try {
+          fs.chmodSync(PATHS.daemonSocket, 0o600);
+          resolve();
+        } catch (error) {
+          this.server!.close();
+          reject(error);
+        }
+      });
     });
     this.assertStartupActive();
 

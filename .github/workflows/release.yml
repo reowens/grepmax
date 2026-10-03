@@ -114,7 +114,9 @@ jobs:
           npm pack --dry-run --ignore-scripts --json > pack.json
           node <<'NODE'
           const fs = require('node:fs');
-          const pack = JSON.parse(fs.readFileSync('pack.json', 'utf8'))[0];
+          const output = JSON.parse(fs.readFileSync('pack.json', 'utf8'));
+          const pack = (Array.isArray(output) ? output : Object.values(output))[0];
+          if (!pack?.files) throw new Error('npm pack returned no tarball metadata');
           const allowed = /^(dist\/|\.claude-plugin\/|plugins\/|mlx-embed-server\/|scripts\/postinstall\.js$|package\.json$|README\.md$|LICENSE$|NOTICE$)/;
           const leaked = pack.files.map((f) => f.path).filter((p) => !allowed.test(p));
           if (leaked.length) {

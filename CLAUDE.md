@@ -83,6 +83,15 @@ gmax-mcp (N instances, one per Claude Code session)
 | gmax-mcp | Claude Code (one per session) | Session lifetime | `src/commands/mcp.ts` |
 | llama-server (LLM) | Daemon's LlmServer, on first `llm-start` IPC or `reviewCommit` | 10min idle timeout | `src/lib/llm/server.ts` |
 
+### Local-only access
+
+MCP exposes only stdin/stdout to its spawning client; it has no HTTP/SSE/TCP transport or host
+option. A runtime regression exercises tools with server listeners forbidden. The daemon uses
+only a Unix-domain socket in a 0700 home, with socket mode 0600; startup refuses if privacy cannot
+be applied. HTTP serve and the Python embedding services bind 127.0.0.1. The optional LLM rejects non-loopback GMAX_LLM_HOST values without
+starting a model. Preserve these boundaries:
+never add a public MCP listener or wildcard bind. No MCP port needs a firewall rule.
+
 ### Session-scoped watching (watch leases)
 
 The daemon watches a registered project only while something holds a lease on it
