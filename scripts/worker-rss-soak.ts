@@ -1,5 +1,5 @@
+import { glob, stat } from "node:fs/promises";
 import * as path from "node:path";
-import fg from "fast-glob";
 import { WorkerPool } from "../src/lib/workers/pool";
 
 const modeArg = process.argv.find((arg) => arg.startsWith("--mode="));
@@ -31,14 +31,17 @@ async function main(): Promise<void> {
   }
 
   const root = process.cwd();
-  const files = (
-    await fg(["src/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"], {
-      cwd: root,
-      absolute: true,
-      onlyFiles: true,
-      ignore: ["**/*.d.ts"],
-    })
-  ).sort();
+  const files: string[] = [];
+  for await (const relative of glob(
+    ["src/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"],
+    { cwd: root },
+  )) {
+    const absolute = path.resolve(root, relative);
+    if (!relative.endsWith(".d.ts") && (await stat(absolute)).isFile()) {
+      files.push(absolute);
+    }
+  }
+  files.sort();
 
   if (files.length === 0) throw new Error("No TypeScript files found");
 
