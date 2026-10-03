@@ -43,7 +43,7 @@ can hold a merged branch — `git worktree remove <path>` and `git branch -d` on
 
 ## Handoffs: `dotmd baton`
 
-The current reliability queue is in `docs/future-sessions.md` (local internal notes); tracked `docs/known-limitations.md` records consumer dependency audit caveats. Consume the latest runlist handoff before reusing old release or soak instructions. The ordered reliability fixes cover native cache wiring, consumer packaging, query deadlines/bounded scans, external-store MCP/status and obsolete fallback removal. Release verification is in progress; longer memory cycles remain an observation task. Embedding migration and recall experiments remain measurement-gated.
+The current reliability queue is in `docs/future-sessions.md` (local internal notes); tracked `docs/known-limitations.md` records consumer dependency audit caveats. Consume the latest runlist handoff before reusing old release or soak instructions. The ordered reliability fixes cover native cache wiring, consumer packaging, query deadlines/bounded scans, external-store MCP/status and obsolete fallback removal. These shipped in v0.26.44; longer memory cycles remain an observation task. Embedding migration and recall experiments remain measurement-gated.
 
 "Baton" means save a resume prompt for the next session with `dotmd baton`, not a plan doc:
 
