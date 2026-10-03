@@ -12,6 +12,7 @@ import type { SearchFilter } from "../store/types";
 import type { VectorDB } from "../store/vector-db";
 import { toArr } from "../utils/arrow";
 import { escapeSqlString, pathStartsWith } from "../utils/filter-builder";
+import { QUERY_EXECUTION_OPTIONS } from "../utils/query-timeout";
 
 export interface InvestigateContext {
   vectorDb: VectorDB;
@@ -247,7 +248,7 @@ async function executePeek(
       `array_contains(defined_symbols, '${escapeSqlString(symbol)}') AND ${pathStartsWith(prefix)}`,
     )
     .limit(1)
-    .toArray();
+    .toArray(QUERY_EXECUTION_OPTIONS);
 
   const exported =
     metaRows.length > 0 && Boolean((metaRows[0] as any).is_exported);
@@ -374,7 +375,7 @@ async function executeRelated(
       "type_referenced_symbols",
     ])
     .where(`path = '${escapeSqlString(absPath)}'`)
-    .toArray();
+    .toArray(QUERY_EXECUTION_OPTIONS);
 
   if (fileChunks.length === 0) return "(file not indexed)";
 
@@ -397,7 +398,7 @@ async function executeRelated(
       .select(["path"])
       .where(`array_contains(defined_symbols, '${escapeSqlString(sym)}')`)
       .limit(3)
-      .toArray();
+      .toArray(QUERY_EXECUTION_OPTIONS);
     for (const row of rows) {
       const p = String((row as any).path || "");
       if (p === absPath) continue;
@@ -415,7 +416,7 @@ async function executeRelated(
         `(array_contains(referenced_symbols, '${escapeSqlString(sym)}') OR array_contains(type_referenced_symbols, '${escapeSqlString(sym)}'))`,
       )
       .limit(20)
-      .toArray();
+      .toArray(QUERY_EXECUTION_OPTIONS);
     for (const row of rows) {
       const p = String((row as any).path || "");
       if (p === absPath) continue;

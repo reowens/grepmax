@@ -66,6 +66,7 @@ import type {
   TestHit,
 } from "../lib/graph/impact";
 import { hopLabelAgent } from "../lib/graph/test-hits";
+import { resolveEmbeddingGeneration } from "../lib/index/embedding-generation";
 import {
   assertEmbeddingSearchCompatible,
   embeddingFingerprintLabel,
@@ -109,11 +110,17 @@ import {
   classifyDaemonError,
   isOversizeError,
   isStoreAccessRefused,
-  isUnknownCommandError,
   withStoreRead,
 } from "../lib/utils/store-access";
+import {
+  currentStoreContext,
+  storeInventory,
+  withStoreContext,
+} from "../lib/utils/store-context";
+import { matchStore } from "../lib/utils/stores";
 import { launchWatcher } from "../lib/utils/watcher-launcher";
 import { getWatcherCoveringPath } from "../lib/utils/watcher-store";
+import { WorkerPool } from "../lib/workers/pool";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -166,9 +173,6 @@ export function isMcpSessionFallback(error: unknown): boolean {
 /**
  * MCP's read-tool fallback policy, in one object so every tool shares it.
  *
- * - `fallbackOnUnknownVerb` — a daemon older than this build does not know the
- *   read verbs (the live 0.26.27 daemon does not); answer from the store rather
- *   than failing the tool call. Removed one release after the verbs ship.
  * - `fallbackOnOversize` — the daemon's 2 MB response cap. See
  *   `isOversizeError` for why MCP opts in and the CLI does not.
  * - `extraFallback` — the two session-readiness answers above.
@@ -185,7 +189,6 @@ const MCP_WATCH_LEASE_RENEW_MS = 5 * 60 * 1000;
 const MCP_WATCH_LEASE_TTL_MS = 3 * MCP_WATCH_LEASE_RENEW_MS;
 
 const MCP_STORE_FALLBACK = {
-  fallbackOnUnknownVerb: true,
   fallbackOnOversize: true,
   extraFallback: isMcpSessionFallback,
 } as const;
@@ -198,7 +201,6 @@ const MCP_STORE_FALLBACK = {
 export function shouldFallbackMcpDaemonSearch(error: unknown): boolean {
   return (
     classifyDaemonError(error) === "no-daemon" ||
-    isUnknownCommandError(error) ||
     isOversizeError(error) ||
     isMcpSessionFallback(error)
   );
@@ -228,16 +230,34 @@ export function resolveMcpProject(
     if (byName.length === 1) return byName[0];
     if (byName.length > 1) return undefined;
     const resolved = path.resolve(value);
-    return projects.find((project) => path.resolve(project.root) === resolved);
+    const physical = (value: string): string => {
+      try {
+        return fs.realpathSync(value);
+      } catch {
+        return path.resolve(value);
+      }
+    };
+    return projects.find(
+      (project) => physical(project.root) === physical(resolved),
+    );
   }
 
   const resolvedCurrent = path.resolve(currentRoot);
+  const physical = (value: string): string => {
+    try {
+      return fs.realpathSync(value);
+    } catch {
+      return path.resolve(value);
+    }
+  };
   const exact = projects.find(
-    (project) => path.resolve(project.root) === resolvedCurrent,
+    (project) => physical(project.root) === physical(resolvedCurrent),
   );
   if (exact) return exact;
   return projects
-    .filter((project) => isPathWithin(project.root, resolvedCurrent))
+    .filter((project) =>
+      isPathWithin(physical(project.root), physical(resolvedCurrent)),
+    )
     .sort((a, b) => b.root.length - a.root.length)[0];
 }
 
@@ -481,6 +501,14 @@ export const mcp = new Command("mcp")
 
     const projectRoot = findProjectRoot(process.cwd());
     const paths = ensureProjectPaths(projectRoot);
+    const currentRoot = () => currentStoreContext()?.root ?? projectRoot;
+    const storeProjects = () =>
+      currentStoreContext()?.projects ?? listProjects();
+    const storeConfig = () =>
+      currentStoreContext()?.config ?? readGlobalConfig();
+    const secondary = () => currentStoreContext()?.secondary ?? false;
+    const storeDir = () =>
+      currentStoreContext()?.lancedbDir ?? paths.lancedbDir;
 
     // Propagate project root to worker processes
     process.env.GMAX_PROJECT_ROOT = paths.root;
@@ -500,14 +528,18 @@ export const mcp = new Command("mcp")
         daemonErrorMessage?: (resp: DaemonResponse) => string;
       },
     ): Promise<T> {
-      return withStoreRead<T>(name, { ...opts, ...MCP_STORE_FALLBACK });
+      return withStoreRead<T>(name, {
+        ...opts,
+        ...MCP_STORE_FALLBACK,
+        skipDaemon: secondary(),
+      });
     }
 
     /** Open the shared store for the duration of one fallback, then close it. */
     function localStore<T>(
       fn: (deps: StoreReadDeps) => Promise<T>,
     ): Promise<T> {
-      return withLocalStore(paths.lancedbDir, fn);
+      return withLocalStore(storeDir(), fn, storeConfig().vectorDim);
     }
 
     /** A graph verb with MCP's fallback allowances. */
@@ -521,7 +553,13 @@ export const mcp = new Command("mcp")
         inProcess: () => Promise<T>;
       },
     ): Promise<T> {
-      return callGraphVerb<T>(verb, { ...call, fallback: MCP_STORE_FALLBACK });
+      return callGraphVerb<T>(verb, {
+        ...call,
+        fallback: {
+          ...MCP_STORE_FALLBACK,
+          ...(secondary() ? { skipDaemon: true } : {}),
+        },
+      });
     }
 
     /**
@@ -585,14 +623,24 @@ export const mcp = new Command("mcp")
         },
         inProcess: () =>
           localStore(async (deps) => {
-            const searcher = new Searcher(deps.vectorDb!);
-            return searcher.search(
-              args.query,
-              args.limit,
-              { rerank: args.rerank, seeds: args.seeds },
-              args.filters,
-              args.pathPrefix,
-            );
+            const pool = secondary()
+              ? new WorkerPool(
+                  resolveEmbeddingGeneration(storeConfig()),
+                  storeConfig().embedMode,
+                )
+              : undefined;
+            try {
+              const searcher = new Searcher(deps.vectorDb!, pool);
+              return await searcher.search(
+                args.query,
+                args.limit,
+                { rerank: args.rerank, seeds: args.seeds },
+                args.filters,
+                args.pathPrefix,
+              );
+            } finally {
+              await pool?.destroy();
+            }
           }),
         daemonErrorMessage: (resp) =>
           [resp.error, resp.hint]
@@ -699,9 +747,10 @@ export const mcp = new Command("mcp")
       return readRows({
         name: "locate",
         projectRoot: root,
-        lancedbDir: paths.lancedbDir,
+        lancedbDir: storeDir(),
+        vectorDim: storeConfig().vectorDim,
         scope: projectScope(root),
-        fallback: MCP_STORE_FALLBACK,
+        fallback: { ...MCP_STORE_FALLBACK, skipDaemon: secondary() },
         ...req,
       });
     }
@@ -788,8 +837,8 @@ export const mcp = new Command("mcp")
     async function ensureIndexReady(): Promise<void> {
       if (_indexReady) return;
 
-      const projects = listProjects();
-      const isRegistered = projects.some((p) => p.root === projectRoot);
+      const projects = storeProjects();
+      const isRegistered = projects.some((p) => p.root === currentRoot());
 
       if (isRegistered) {
         _indexReady = true;
@@ -809,8 +858,14 @@ export const mcp = new Command("mcp")
     async function ensureWatcher(root?: string): Promise<void> {
       try {
         const watchRoot =
-          root ?? resolveMcpProject(undefined, projectRoot)?.root;
-        if (!watchRoot) return;
+          root ??
+          resolveMcpProject(undefined, currentRoot(), storeProjects())?.root;
+        if (
+          !watchRoot ||
+          secondary() ||
+          matchStore(watchRoot).kind !== "primary"
+        )
+          return;
         const result = await launchWatcher(watchRoot, WATCH_LEASE);
         if (result.ok && !result.reused) {
           console.log(
@@ -833,9 +888,13 @@ export const mcp = new Command("mcp")
       proj: ProjectEntry | undefined;
       root: string;
     } {
-      const project = resolveMcpProject(requested, projectRoot);
+      const project = resolveMcpProject(
+        requested,
+        currentRoot(),
+        storeProjects(),
+      );
       if (project) return { proj: project, root: project.root };
-      return { proj: undefined, root: projectRoot };
+      return { proj: undefined, root: currentRoot() };
     }
 
     // --- Tool handlers ---
@@ -878,7 +937,7 @@ export const mcp = new Command("mcp")
               "Project not added to gmax yet. Run `gmax add` to index it first.",
             );
           }
-          const indexed = listProjects().filter(
+          const indexed = storeProjects().filter(
             (p) => p.status !== "pending" && (p.chunkCount ?? 0) > 0,
           );
           if (indexed.length === 0) {
@@ -927,17 +986,20 @@ export const mcp = new Command("mcp")
           filters.role = args.role;
         }
         if (searchAll) {
-          const crossScope = resolveCrossProjectScope({
-            allProjects:
-              searchAll &&
-              !(typeof args.projects === "string" && args.projects.trim()),
-            projects:
-              typeof args.projects === "string" ? args.projects : undefined,
-            excludeProjects:
-              typeof args.exclude_projects === "string"
-                ? args.exclude_projects
-                : undefined,
-          });
+          const crossScope = resolveCrossProjectScope(
+            {
+              allProjects:
+                searchAll &&
+                !(typeof args.projects === "string" && args.projects.trim()),
+              projects:
+                typeof args.projects === "string" ? args.projects : undefined,
+              excludeProjects:
+                typeof args.exclude_projects === "string"
+                  ? args.exclude_projects
+                  : undefined,
+            },
+            storeProjects(),
+          );
           if (crossScope.projectRoots.length === 0) {
             return err("No matching indexed projects.");
           }
@@ -955,8 +1017,8 @@ export const mcp = new Command("mcp")
           ? new Set(filters.projectRoots ?? [])
           : new Set([resolvedRoot]);
         assertEmbeddingSearchCompatible(
-          listProjects().filter((project) => selectedRoots.has(project.root)),
-          readGlobalConfig(),
+          storeProjects().filter((project) => selectedRoots.has(project.root)),
+          storeConfig(),
         );
         // Aider-style seeding: the agent passes its open files / discussed
         // symbols; the searcher biases candidate generation toward them.
@@ -2180,29 +2242,58 @@ export const mcp = new Command("mcp")
       }
     }
 
-    async function handleListProjects(): Promise<ToolResult> {
+    async function handleListProjects(
+      args: Record<string, unknown> = {},
+    ): Promise<ToolResult> {
       try {
-        const projects = listProjects();
-        if (projects.length === 0) {
+        const inventory = args.root === undefined ? storeInventory() : [];
+        const projects = [
+          ...storeProjects(),
+          ...inventory
+            .filter(
+              (store) =>
+                store.home !==
+                (currentStoreContext()?.home ?? PATHS.globalRoot),
+            )
+            .flatMap((store) => store.projects),
+        ];
+        if (projects.length === 0 && inventory.length === 0) {
           return ok(
             "No projects indexed yet. cd into a repo and run `gmax add` to index it.",
           );
         }
-        const currentName = resolveMcpProject(undefined, projectRoot)?.name;
-        const globalConfig = readGlobalConfig();
+        const currentName = resolveMcpProject(
+          undefined,
+          currentRoot(),
+          storeProjects(),
+        )?.name;
+        const globalConfig = storeConfig();
         const lines = projects.map((p) => {
           const here = p.name === currentName ? " (current)" : "";
           const chunks =
             typeof p.chunkCount === "number"
               ? `\t(${p.chunkCount} chunks)`
               : "";
-          const identity = projectEmbeddingStatus(p, globalConfig);
+          const matching = inventory.find((store) =>
+            store.projects.some((project) => project.root === p.root),
+          );
+          const identity = projectEmbeddingStatus(
+            p,
+            matching ? readGlobalConfig(matching.home) : globalConfig,
+          );
           return `${p.name}${here}\t${p.root}\t${p.status}\tembedding=${identity.state}${chunks}`;
         });
         return ok(
           `${projects.length} indexed project(s). ` +
             `Pass a name to semantic_search via projects:"name", or use scope:"all".\n\n` +
-            lines.join("\n"),
+            lines.join("\n") +
+            inventory
+              .filter((store) => store.state !== "mounted")
+              .map(
+                (store) =>
+                  `\nStore ${store.home}: ${store.state}${store.error ? ` — ${store.error}` : ""}`,
+              )
+              .join(""),
         );
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -2212,14 +2303,20 @@ export const mcp = new Command("mcp")
 
     async function handleIndexStatus(): Promise<ToolResult> {
       try {
-        const globalConfig = readGlobalConfig();
-        const projects = listProjects();
-        const currentProject = resolveMcpProject(undefined, projectRoot);
+        const globalConfig = storeConfig();
+        const projects = storeProjects();
+        const currentProject = resolveMcpProject(
+          undefined,
+          currentRoot(),
+          storeProjects(),
+        );
         const identity = projectEmbeddingStatus(currentProject, globalConfig);
 
         const { chunks, files } = await indexTotals(projects);
 
-        const daemonStatus = await sendDaemonCommand({ cmd: "status" });
+        const daemonStatus: DaemonResponse = secondary()
+          ? { ok: true, projects: [] }
+          : await sendDaemonCommand({ cmd: "status" });
         const watched = (
           Array.isArray(daemonStatus.projects) ? daemonStatus.projects : []
         ) as Array<{ root: string; status?: string; indexState?: IndexState }>;
@@ -2229,7 +2326,7 @@ export const mcp = new Command("mcp")
         // Only use the registry when no daemon answered; sandboxed reads stay IPC-only.
         const watcher = daemonStatus.ok
           ? undefined
-          : getWatcherCoveringPath(projectRoot);
+          : getWatcherCoveringPath(currentRoot());
         let watcherLine = "Watcher: not running";
         if (watcher) {
           const status = watcher.status ?? "unknown";
@@ -2255,7 +2352,7 @@ export const mcp = new Command("mcp")
         // per-project chunk counts) lives in `list_projects` — keep this tool
         // focused on index health and avoid the N-project LanceDB scans.
         const lines = [
-          `Index: ~/.gmax/lancedb (${chunks} chunks, ${files} files)`,
+          `Index: ${storeDir()} (${chunks} chunks, ${files} files)`,
           `Configured embedding: ${identity.configured.tier} ${identity.configured.vectorDim}d [${embeddingFingerprintLabel(identity.configured.fingerprint)}] (${globalConfig.embedMode})`,
           identity.built
             ? `Built embedding: ${identity.built.tier} ${identity.built.vectorDim}d [${embeddingFingerprintLabel(identity.built.fingerprint)}] (${identity.state})`
@@ -2534,7 +2631,9 @@ export const mcp = new Command("mcp")
       const prefix = root.endsWith("/") ? root : `${root}/`;
 
       try {
-        const metaCache = new MetaCache(PATHS.lmdbPath);
+        const metaCache = new MetaCache(
+          currentStoreContext()?.lmdbPath ?? PATHS.lmdbPath,
+        );
         try {
           const files: Array<{ path: string; mtimeMs: number }> = [];
           for await (const { path: p, entry } of metaCache.entries()) {
@@ -2588,7 +2687,7 @@ export const mcp = new Command("mcp")
       try {
         const { proj, root } = resolveRegisteredProject();
         if (!proj) return err("Project not added to gmax yet.");
-        assertEmbeddingSearchCompatible([proj], readGlobalConfig());
+        assertEmbeddingSearchCompatible([proj], storeConfig());
         const changedFiles = getChangedFiles(ref, root);
         if (changedFiles.length === 0) {
           return ok(
@@ -2835,7 +2934,7 @@ export const mcp = new Command("mcp")
       try {
         const { proj, root } = resolveRegisteredProject();
         if (!proj) return err("Project not added to gmax yet.");
-        assertEmbeddingSearchCompatible([proj], readGlobalConfig());
+        assertEmbeddingSearchCompatible([proj], storeConfig());
         const isFile =
           target.includes("/") ||
           (target.includes(".") && !target.includes(" "));
@@ -2911,7 +3010,7 @@ export const mcp = new Command("mcp")
       try {
         const { proj, root } = resolveRegisteredProject();
         if (!proj) return err("Project not added to gmax yet.");
-        assertEmbeddingSearchCompatible([proj], readGlobalConfig());
+        assertEmbeddingSearchCompatible([proj], storeConfig());
         const searchOptions = { rerank: process.env.GMAX_RERANK === "1" };
         const response = await searchStore({
           projectRoot: root,
@@ -3000,7 +3099,11 @@ export const mcp = new Command("mcp")
           );
         }
         const { investigate } = await import("../lib/llm/investigate");
-        const inv = await investigate({ question, projectRoot, maxRounds });
+        const inv = await investigate({
+          question,
+          projectRoot: currentRoot(),
+          maxRounds,
+        });
         return ok(inv.answer);
       } catch (e) {
         return err(
@@ -3033,14 +3136,17 @@ export const mcp = new Command("mcp")
           );
         }
         const { reviewCommit } = await import("../lib/llm/review");
-        const rev = await reviewCommit({ commitRef, projectRoot });
+        const rev = await reviewCommit({
+          commitRef,
+          projectRoot: currentRoot(),
+        });
         if (rev.clean) {
           return ok(
             `Clean commit (${rev.commit}) — no issues found in ${rev.duration}s.`,
           );
         }
         const { readReport } = await import("../lib/llm/report");
-        const report = readReport(projectRoot);
+        const report = readReport(currentRoot());
         const entry = report?.reviews.find((r) => r.commit === rev.commit);
         return ok(
           JSON.stringify(
@@ -3078,15 +3184,15 @@ export const mcp = new Command("mcp")
           "../lib/review/risk"
         );
 
-        const diff = extractDiff(commitRef, projectRoot);
+        const diff = extractDiff(commitRef, currentRoot());
         const symbols = diff ? extractSymbols(diff) : [];
         if (symbols.length === 0) {
           return ok("(no changed symbols in this diff)");
         }
 
-        const scope = projectScope(projectRoot);
+        const scope = projectScope(currentRoot());
         const facts = await graphVerb<GraphRiskFact[]>("graph.risk", {
-          projectRoot,
+          projectRoot: currentRoot(),
           scope,
           payload: { symbols },
           render: (resp) => (resp.facts as GraphRiskFact[]) ?? [],
@@ -3094,15 +3200,15 @@ export const mcp = new Command("mcp")
             localStore((deps) =>
               runGraphRisk(deps.vectorDb!, {
                 symbols,
-                queryRoot: projectRoot,
+                queryRoot: currentRoot(),
                 scope,
               }),
             ),
         });
 
-        const prefix = projectRoot.endsWith("/")
-          ? projectRoot
-          : `${projectRoot}/`;
+        const prefix = currentRoot().endsWith("/")
+          ? currentRoot()
+          : `${currentRoot()}/`;
         const rows = computeRiskTable(
           facts.map((fact) => ({
             symbol: fact.symbol,
@@ -3114,7 +3220,7 @@ export const mcp = new Command("mcp")
             line: fact.line,
             callerCount: fact.callerCount,
             hasTests: fact.hasTests,
-            churn: fileChurn(fact.file, projectRoot),
+            churn: fileChurn(fact.file, currentRoot()),
           })),
         );
         return rows.length === 0
@@ -3132,7 +3238,7 @@ export const mcp = new Command("mcp")
         const { readReport, formatReportText } = await import(
           "../lib/llm/report"
         );
-        const report = readReport(projectRoot);
+        const report = readReport(currentRoot());
         if (!report || report.reviews.length === 0) {
           return ok("No review findings yet.");
         }
@@ -3194,7 +3300,7 @@ export const mcp = new Command("mcp")
           source: "mcp",
           tool: name,
           query: mcpLogQuery(name, toolArgs),
-          project: projectRoot,
+          project: currentRoot(),
           results: resultLines,
           ms: Date.now() - startMs,
           error: result.isError ? text.slice(0, 200) : undefined,
@@ -3214,24 +3320,60 @@ export const mcp = new Command("mcp")
       },
       handler: (args: Record<string, unknown>) => Promise<ToolResult>,
     ): void {
-      server.registerTool(name, config, async (rawArgs) => {
-        let args = (rawArgs ?? {}) as Record<string, unknown>;
-        const startMs = Date.now();
-        if (typeof args.root === "string" && args.root.trim()) {
-          const selected = resolveMcpProject(args.root, projectRoot);
-          if (!selected) {
-            const result = err(
-              `Unknown registered project: ${args.root}. Use list_projects to select a project name or exact root.`,
-            );
-            await logToolCall(name, args, startMs, result);
-            return result;
+      server.registerTool(
+        name,
+        {
+          ...config,
+          inputSchema: { root: z.string().optional(), ...config.inputSchema },
+        },
+        async (rawArgs) => {
+          let args = (rawArgs ?? {}) as Record<string, unknown>;
+          const startMs = Date.now();
+          let target = projectRoot;
+          try {
+            if (typeof args.root === "string" && args.root.trim()) {
+              const raw = args.root.trim();
+              if (path.isAbsolute(raw) || raw.includes(path.sep))
+                target = path.resolve(raw);
+              else {
+                const projects = [
+                  ...listProjects(),
+                  ...storeInventory().flatMap((store) => store.projects),
+                ].filter(
+                  (project, i, all) =>
+                    all.findIndex((p) => p.root === project.root) === i,
+                );
+                const selected = resolveMcpProject(raw, projectRoot, projects);
+                if (!selected)
+                  return err(
+                    `Unknown or ambiguous registered project: ${raw}. Use list_projects or an exact root.`,
+                  );
+                target = selected.root;
+              }
+            }
+            return await withStoreContext(target, async () => {
+              if (args.root !== undefined) {
+                const selected = resolveMcpProject(
+                  args.root,
+                  currentRoot(),
+                  storeProjects(),
+                );
+                if (!selected)
+                  return err(
+                    `Unknown registered project: ${args.root}. Use list_projects to select a project name or exact root.`,
+                  );
+                args = { ...args, root: selected.root };
+                currentStoreContext()!.root = selected.root;
+              }
+              const result = await handler(args);
+              await logToolCall(name, args, startMs, result);
+              return result;
+            });
+          } catch (error) {
+            return toolError("Tool failed", error);
           }
-          args = { ...args, root: selected.root };
-        }
-        const result = await handler(args);
-        await logToolCall(name, args, startMs, result);
-        return result;
-      });
+        },
+      );
     }
 
     tool(

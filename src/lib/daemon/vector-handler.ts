@@ -1,3 +1,4 @@
+import { QUERY_EXECUTION_OPTIONS } from "../utils/query-timeout";
 /**
  * Daemon-side handlers for the `vector.*` read verbs — the two commands whose
  * store work is a vector scan rather than a row select.
@@ -85,7 +86,7 @@ export async function runSimilar(
         : `array_contains(defined_symbols, '${escapeSqlString(req.symbol ?? "")}') AND ${pathStartsWith(`${req.projectRoot}/`)}`,
     )
     .limit(1)
-    .toArray();
+    .toArray(QUERY_EXECUTION_OPTIONS);
 
   if (sourceRows.length === 0) return { status: "not-found" };
 
@@ -110,7 +111,7 @@ export async function runSimilar(
     ])
     .where(pathScope)
     .limit(req.limit + 5) // fetch extra to account for self-filtering
-    .toArray();
+    .toArray(QUERY_EXECUTION_OPTIONS);
 
   // Filter out self and apply threshold
   const filtered = results.filter((raw) => {

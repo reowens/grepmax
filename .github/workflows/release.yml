@@ -91,6 +91,9 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Audit and smoke-test the packed npm consumer
+        run: pnpm run audit:consumer
+
       # Audit the npm tarball to ensure no source code or internal files leak.
       #
       # Why this exists: In March 2025, a major project accidentally shipped

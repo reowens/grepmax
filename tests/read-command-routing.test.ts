@@ -2,8 +2,8 @@
  * Routing tests for the WP-C read commands.
  *
  * The store-access policy is the whole point of these: a daemon answer is
- * rendered without opening the store, ENOENT/ECONNREFUSED (and, for one
- * release, `unknown command`) fall back in-process, and a sandbox denial
+ * rendered without opening the store, only ENOENT/ECONNREFUSED fall back
+ * in-process, unsupported verbs require a daemon restart, and a sandbox denial
  * refuses with one actionable line and exit 2 — never a stack, never a store
  * open. `vectorDbCtor` is the tripwire: if it fires on a path that should not
  * have opened the store, the test fails.
@@ -213,10 +213,12 @@ describe("extract", () => {
     expect(vectorDbCtor).toHaveBeenCalled();
   });
 
-  it("falls back for one release when the daemon does not know the verb", async () => {
+  it("requires a restart without opening the store for an unsupported verb", async () => {
     daemonFails("unknown command: rows.locate");
     await run(["--agent"]);
-    expect(vectorDbCtor).toHaveBeenCalled();
+    expect(vectorDbCtor).not.toHaveBeenCalled();
+    expect(err.join("\n")).toContain("gmax watch restart");
+    expect(process.exitCode).toBe(1);
   });
 
   it("never opens the store after a live-daemon error", async () => {

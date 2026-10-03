@@ -1,3 +1,4 @@
+import { QUERY_EXECUTION_OPTIONS } from "../utils/query-timeout";
 /**
  * Daemon-side handlers for the `rows.*` read verbs.
  *
@@ -72,9 +73,10 @@ export interface StoreReadDeps {
 export async function withLocalStore<T>(
   lancedbDir: string,
   fn: (deps: StoreReadDeps) => Promise<T>,
+  vectorDim?: number,
 ): Promise<T> {
   const { VectorDB } = await import("../store/vector-db");
-  const db = new VectorDB(lancedbDir);
+  const db = new VectorDB(lancedbDir, vectorDim);
   try {
     return await fn({ vectorDb: db });
   } finally {
@@ -262,7 +264,7 @@ export async function runSymbols(
     query = query.where(pathStartsWith(normalizePath(req.pathPrefix)));
   }
 
-  const rows = await query.toArray();
+  const rows = await query.toArray(QUERY_EXECUTION_OPTIONS);
 
   const map = new Map<string, SymbolEntry>();
   for (const row of rows) {
@@ -366,7 +368,7 @@ export async function runProject(
     ])
     .where(pathStartsWith(prefix))
     .limit(200000)
-    .toArray();
+    .toArray(QUERY_EXECUTION_OPTIONS);
 
   const nodePath = await import("node:path");
   const files = new Set<string>();
@@ -484,13 +486,7 @@ const LOCATE_COLUMNS = new Set([
 
 const ARRAY_COLUMNS = new Set(["defined_symbols", "referenced_symbols"]);
 
-/**
- * Upper bound on rows one matcher may return when the caller sets no limit.
- * `related`'s `content LIKE` scan deliberately has no `.limit()` — the limit
- * pushdown deadlocks on that shape (see query-timeout.ts) — and its JS loop
- * caps at `--limit` distinct paths, so a wire cap only bites on a query that
- * would already have been unreasonable to render.
- */
+/** Upper bound applied by the native query before materialization/wire output. */
 export const MAX_LOCATE_ROWS = 5000;
 
 export type RowMatch =
@@ -506,7 +502,7 @@ export interface LocateRequest {
   scope: ResolvedScope;
   select: string[];
   matches: RowMatch[];
-  /** Per-matcher row limit; omitted means "no LIMIT", capped at MAX_LOCATE_ROWS. */
+  /** Per-matcher row limit; omitted uses MAX_LOCATE_ROWS. */
   limit?: number;
   /** AND the resolved scope onto each matcher. Default true. */
   scoped?: boolean;
@@ -573,8 +569,11 @@ export async function runLocate(
       .query()
       .select(req.select)
       .where(scoped ? `${where} AND ${pathScope}` : where);
-    if (req.limit !== undefined) query = query.limit(req.limit);
-    const rows = await withQueryTimeout(query.toArray(), label);
+    query = query.limit(req.limit ?? MAX_LOCATE_ROWS);
+    const rows = await withQueryTimeout(
+      query.toArray(QUERY_EXECUTION_OPTIONS),
+      label,
+    );
     results.push(
       rows
         .slice(0, req.limit ?? MAX_LOCATE_ROWS)
@@ -695,7 +694,7 @@ export async function findFileBySymbol(
       .search(symbol)
       .where(pathStartsWith(`${projectRoot}/`))
       .limit(10)
-      .toArray();
+      .toArray(QUERY_EXECUTION_OPTIONS);
 
     for (const result of results) {
       const defined = (result as Record<string, unknown>).defined_symbols;
@@ -722,6 +721,7 @@ export async function readRows(opts: {
   name: string;
   projectRoot: string;
   lancedbDir: string;
+  vectorDim?: number;
   scope: ResolvedScope;
   select: string[];
   matches: RowMatch[];
@@ -734,6 +734,7 @@ export async function readRows(opts: {
    * second reader. See `isOversizeError` in store-access.ts.
    */
   fallback?: {
+    skipDaemon?: boolean;
     fallbackOnOversize?: boolean;
     extraFallback?: (error: unknown) => boolean;
   };
@@ -757,17 +758,19 @@ export async function readRows(opts: {
       ),
     render: (resp) => (resp.rows ?? []) as LocatedRow[][],
     inProcess: () =>
-      withLocalStore(opts.lancedbDir, (deps) =>
-        runLocate(deps, {
-          projectRoot: opts.projectRoot,
-          scope: opts.scope,
-          select: opts.select,
-          matches: opts.matches,
-          limit: opts.limit,
-          scoped: opts.scoped,
-        }),
+      withLocalStore(
+        opts.lancedbDir,
+        (deps) =>
+          runLocate(deps, {
+            projectRoot: opts.projectRoot,
+            scope: opts.scope,
+            select: opts.select,
+            matches: opts.matches,
+            limit: opts.limit,
+            scoped: opts.scoped,
+          }),
+        opts.vectorDim,
       ),
-    fallbackOnUnknownVerb: true,
     ...opts.fallback,
   });
 }

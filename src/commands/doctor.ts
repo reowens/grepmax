@@ -36,6 +36,7 @@ import { isProcessAlive, parseLock, removeLock } from "../lib/utils/lock";
 import { isMlxModelCached } from "../lib/utils/mlx-hf-cache";
 import { listProjects, removeProject } from "../lib/utils/project-registry";
 import { findProjectRoot } from "../lib/utils/project-root";
+import { QUERY_EXECUTION_OPTIONS } from "../lib/utils/query-timeout";
 import { classifyRoot } from "../lib/utils/root-availability";
 import {
   LEASE_DENIED_MESSAGE,
@@ -595,7 +596,7 @@ export const doctor = new Command("doctor")
             .query()
             .where("length(summary) > 5")
             .select(["id"])
-            .toArray()
+            .toArray(QUERY_EXECUTION_OPTIONS)
         ).length;
         const coverage = summaryCoverageStatus(withSummary, totalChunks);
         console.log(`${coverage.symbol}  ${coverage.message}`);

@@ -145,16 +145,15 @@ export function classifyDaemonError(error: unknown): DaemonErrorClass {
  *
  * Kept as a named predicate because it is the exact rule `search-run.ts` has
  * always applied (and re-exports); `unknown command` is deliberately NOT in the
- * set — see `isUnknownCommandError` for the version-skew allowance.
+ * set; an unsupported verb is a live daemon refusing the request.
  */
 export function shouldFallbackFromDaemonError(error: unknown): boolean {
   return classifyDaemonError(error) === "no-daemon";
 }
 
 /**
- * A daemon older than this CLI does not know a newly added verb. Treat that as
- * "no daemon" for one release so an unrestarted daemon does not break the
- * command, then remove the allowance. Mirrors the `search-v2` transition rule.
+ * An unsupported verb means a live daemon is outdated or incompatible. It must
+ * be restarted, never bypassed by opening a second reader.
  */
 export function isUnknownCommandError(error: unknown): boolean {
   return typeof error === "string" && error.startsWith("unknown command");
@@ -218,11 +217,6 @@ export interface StoreReadOptions<T> {
   inProcess: () => Promise<T>;
   /** Map an ok daemon response to the command's own shape. */
   render?: (resp: DaemonResponse) => T | Promise<T>;
-  /**
-   * Treat `unknown command` from an older daemon as "no daemon" for one
-   * release. New read verbs set this; `search`/`search-v2` deliberately do not.
-   */
-  fallbackOnUnknownVerb?: boolean;
   /**
    * Treat the daemon's `oversize` refusal as "no daemon". Off by default; see
    * `isOversizeError` for why MCP opts in and a CLI must not.
@@ -295,9 +289,13 @@ export async function withStoreRead<T>(
 
   const cls = classifyDaemonError(resp.error);
   if (cls === "sandboxed") throw refuseStoreAccess("socket");
+  if (isUnknownCommandError(resp.error)) {
+    throw new Error(
+      `${defaultDaemonErrorMessage(name, resp)}. The daemon is outdated or incompatible; run: gmax watch restart`,
+    );
+  }
   if (
     cls === "no-daemon" ||
-    (opts.fallbackOnUnknownVerb && isUnknownCommandError(resp.error)) ||
     (opts.fallbackOnOversize && isOversizeError(resp.error)) ||
     opts.extraFallback?.(resp.error) === true
   ) {

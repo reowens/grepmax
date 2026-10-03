@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   QueryTimeoutError,
+  streamQueryRows,
   withQueryTimeout,
 } from "../src/lib/utils/query-timeout";
 
@@ -33,5 +34,51 @@ describe("withQueryTimeout", () => {
     const before = Date.now();
     await withQueryTimeout(Promise.resolve("ok"), "quick", 60_000);
     expect(Date.now() - before).toBeLessThan(1000);
+  });
+});
+
+describe("streamQueryRows", () => {
+  it("passes native bounds and closes the iterator on early termination", async () => {
+    const closed = vi.fn();
+    const execute = vi.fn(async function* () {
+      try {
+        yield { toArray: () => [{ path: "a" }, { path: "b" }] };
+        throw new Error("consumer should have stopped");
+      } finally {
+        closed();
+      }
+    });
+    for await (const row of streamQueryRows({ execute }, "bounded", 500)) {
+      expect(row.path).toBe("a");
+      break;
+    }
+    await Promise.resolve();
+    expect(execute).toHaveBeenCalledWith({
+      timeoutMs: 500,
+      maxBatchLength: 512,
+    });
+    expect(closed).toHaveBeenCalledOnce();
+  });
+
+  it("enforces an overall deadline when a batch never arrives", async () => {
+    const close = vi.fn(async () => ({
+      done: true as const,
+      value: undefined,
+    }));
+    const execute = () => ({
+      next: () => new Promise<never>(() => {}),
+      return: close,
+    });
+    await expect(
+      (async () => {
+        for await (const _row of streamQueryRows(
+          { execute },
+          "stuck stream",
+          20,
+        )) {
+        }
+      })(),
+    ).rejects.toBeInstanceOf(QueryTimeoutError);
+    expect(close).toHaveBeenCalledOnce();
   });
 });

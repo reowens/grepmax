@@ -25,6 +25,7 @@ import {
   stampProjectFullSync,
 } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
+import { QUERY_EXECUTION_OPTIONS } from "../lib/utils/query-timeout";
 import {
   getWatcherCoveringPath,
   getWatcherForProject,
@@ -313,7 +314,7 @@ export const watch = new Command("watch")
         .select(["id"])
         .where(pathStartsWith(prefix))
         .limit(1)
-        .toArray();
+        .toArray(QUERY_EXECUTION_OPTIONS);
 
       let degraded = false;
       let degradedErrors = 0;

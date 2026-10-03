@@ -19,7 +19,7 @@
   },
   "scripts": {
     "postinstall": "node scripts/postinstall.js",
-    "prebuild": "rm -rf dist tsconfig.tsbuildinfo && mkdir -p dist",
+    "prebuild": "rm -rf dist tsconfig.tsbuildinfo && node scripts/prepare-lance-runtime.cjs",
     "build": "tsc",
     "postbuild": "chmod +x dist/bin.js dist/index.js",
     "dev": "npx tsc && node dist/bin.js",
@@ -40,9 +40,10 @@
     "typecheck": "tsc --noEmit",
     "test:typecheck": "tsc -p tsconfig.tests.json",
     "prepublishOnly": "pnpm run test:typecheck && pnpm build",
-    "preversion": "pnpm audit --prod && pnpm test && pnpm typecheck && pnpm run test:typecheck && pnpm run format:check",
+    "preversion": "pnpm audit --prod && pnpm test && pnpm typecheck && pnpm run test:typecheck && pnpm run format:check && pnpm build && pnpm run audit:consumer",
     "version": "bash scripts/sync-versions.sh && git add -A",
-    "postversion": "bash scripts/postrelease.sh"
+    "postversion": "bash scripts/postrelease.sh",
+    "audit:consumer": "node scripts/audit-consumer.cjs"
   },
   "keywords": [
     "grepmax",
@@ -79,7 +80,6 @@
   "dependencies": {
     "@clack/prompts": "^1.8.1",
     "@huggingface/transformers": "^4.3.0",
-    "@lancedb/lancedb": "0.38.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@parcel/watcher": "^2.6.0",
     "apache-arrow": "^18.1.0",
@@ -95,7 +95,9 @@
     "proper-lockfile": "^4.1.2",
     "uuid": "^14.0.2",
     "web-tree-sitter": "^0.27.0",
-    "zod": "^4.6.5"
+    "zod": "^4.6.5",
+    "@opentelemetry/api": "^1.9.0",
+    "reflect-metadata": "^0.2.2"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.13",
@@ -105,6 +107,16 @@
     "tsx": "^4.23.13",
     "typescript": "^7.0.2",
     "vite": "^8.3.0",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.1",
+    "@lancedb/lancedb": "0.38.0"
+  },
+  "optionalDependencies": {
+    "@lancedb/lancedb-darwin-arm64": "0.38.0",
+    "@lancedb/lancedb-linux-x64-gnu": "0.38.0",
+    "@lancedb/lancedb-linux-arm64-gnu": "0.38.0",
+    "@lancedb/lancedb-linux-x64-musl": "0.38.0",
+    "@lancedb/lancedb-linux-arm64-musl": "0.38.0",
+    "@lancedb/lancedb-win32-x64-msvc": "0.38.0",
+    "@lancedb/lancedb-win32-arm64-msvc": "0.38.0"
   }
 }

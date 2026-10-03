@@ -190,30 +190,21 @@ describe("withStoreRead", () => {
     expect(inProcess).not.toHaveBeenCalled();
   });
 
-  it("falls back for an unknown verb only when the caller opted in", async () => {
-    const optedIn = vi.fn(async () => "local");
-    await expect(
-      withStoreRead("graph.trace", {
-        daemon: async () => ({
-          ok: false,
-          error: "unknown command: graph.trace",
+  it("refuses unsupported verbs even when a caller's extra fallback would allow them", async () => {
+    for (const verb of ["graph.trace", "search-v2"]) {
+      const inProcess = vi.fn();
+      await expect(
+        withStoreRead(verb, {
+          daemon: async () => ({
+            ok: false,
+            error: `unknown command: ${verb}`,
+          }),
+          inProcess,
+          extraFallback: () => true,
         }),
-        inProcess: optedIn,
-        fallbackOnUnknownVerb: true,
-      }),
-    ).resolves.toBe("local");
-
-    const optedOut = vi.fn();
-    await expect(
-      withStoreRead("search-v2", {
-        daemon: async () => ({
-          ok: false,
-          error: "unknown command: search-v2",
-        }),
-        inProcess: optedOut,
-      }),
-    ).rejects.toThrow(/unknown command/);
-    expect(optedOut).not.toHaveBeenCalled();
+      ).rejects.toThrow(/unknown command.*gmax watch restart/);
+      expect(inProcess).not.toHaveBeenCalled();
+    }
   });
 
   it("falls back on oversize only when the caller opted in", async () => {

@@ -42,6 +42,9 @@ export function commandTarget(argv: string[], cwd: string): string {
 function selectHome(): void {
   if (process.env.GMAX_HOME) return;
   const argv = process.argv.slice(2);
+  // These enumerate/route stores per request rather than pinning the process
+  // to its launch cwd's store. In particular an MCP session can serve both.
+  if (argv[0] === "mcp" || argv[0] === "status") return;
   const match = matchStore(commandTarget(argv, process.cwd()));
   if (match.kind === "primary") return;
   if (match.kind === "offline") {

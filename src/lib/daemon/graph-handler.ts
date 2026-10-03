@@ -1,3 +1,4 @@
+import { QUERY_EXECUTION_OPTIONS } from "../utils/query-timeout";
 /**
  * Daemon-side handlers for the `graph.*` read verbs.
  *
@@ -475,7 +476,7 @@ export async function runGraphPeek(
     .select(["path", "start_line"])
     .where(definedWhere)
     .limit(20)
-    .toArray();
+    .toArray(QUERY_EXECUTION_OPTIONS);
   const defChunks = defRows.map((row: unknown) => ({
     path: String((row as { path?: unknown }).path || ""),
     startLine: Number((row as { start_line?: unknown }).start_line || 0),
@@ -493,7 +494,7 @@ export async function runGraphPeek(
     .select(["is_exported", "start_line", "end_line"])
     .where(definedWhere)
     .limit(1)
-    .toArray();
+    .toArray(QUERY_EXECUTION_OPTIONS);
   const metaRow = metaRows[0] as
     | { is_exported?: unknown; start_line?: unknown; end_line?: unknown }
     | undefined;
@@ -537,7 +538,7 @@ export async function runGraphDead(
       ),
     )
     .limit(1)
-    .toArray();
+    .toArray(QUERY_EXECUTION_OPTIONS);
 
   if (defRows.length === 0) {
     return {
@@ -994,7 +995,7 @@ export async function runGraphAudit(
     ])
     .where(buildScopeWhere(args.scope))
     .limit(AUDIT_ROW_LIMIT)
-    .toArray();
+    .toArray(QUERY_EXECUTION_OPTIONS);
 
   if (rows.length === 0) return null;
 
@@ -1194,15 +1195,17 @@ export interface GraphVerbCall<T> {
    * Only MCP sets these; a CLI command reports a live-daemon error instead of
    * opening a second reader. See `isOversizeError` in store-access.ts.
    */
-  fallback?: Pick<StoreReadOptions<T>, "fallbackOnOversize" | "extraFallback">;
+  fallback?: Pick<
+    StoreReadOptions<T>,
+    "fallbackOnOversize" | "extraFallback" | "skipDaemon"
+  >;
 }
 
 /**
  * Send one graph verb through the store-access policy.
  *
- * `fallbackOnUnknownVerb` is the one-release skew allowance: a daemon older
- * than this CLI answers `unknown command`, and the command still works. An
- * unregistered project skips the daemon outright — see isDaemonReadableProject.
+ * An unsupported verb requires restarting the live daemon. An unregistered
+ * project skips the daemon outright — see isDaemonReadableProject.
  */
 export function callGraphVerb<T>(
   verb: string,
@@ -1210,7 +1213,6 @@ export function callGraphVerb<T>(
 ): Promise<T> {
   return withStoreRead<T>(verb, {
     skipDaemon: !isDaemonReadableProject(call.projectRoot),
-    fallbackOnUnknownVerb: true,
     daemon: () =>
       sendDaemonCommand(
         {

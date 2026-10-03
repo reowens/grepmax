@@ -7,7 +7,10 @@ import {
   pathNotStartsWith,
   pathStartsWith,
 } from "../utils/filter-builder";
-import { withQueryTimeout } from "../utils/query-timeout";
+import {
+  QUERY_EXECUTION_OPTIONS,
+  streamQueryRows,
+} from "../utils/query-timeout";
 import { isBuiltinCallee } from "./callsites";
 import {
   bfsNeighbors,
@@ -137,7 +140,7 @@ export class GraphBuilder {
         ),
       )
       .limit(100)
-      .toArray();
+      .toArray(QUERY_EXECUTION_OPTIONS);
 
     // Cross-language phantom-edge guard. When the anchor family is known, drop
     // callers from a *different known* family; callers we can't classify (unknown
@@ -192,7 +195,7 @@ export class GraphBuilder {
       ])
       .where(this.scopeWhere(`array_contains(defined_symbols, '${escaped}')`))
       .limit(1)
-      .toArray();
+      .toArray(QUERY_EXECUTION_OPTIONS);
 
     if (rows.length === 0) return [];
 
@@ -207,7 +210,7 @@ export class GraphBuilder {
         .where(
           this.scopeWhere(`path = '${escapeSqlString(String(record.path))}'`),
         )
-        .toArray();
+        .toArray(QUERY_EXECUTION_OPTIONS);
       localDefinitions = localRows.flatMap((row) =>
         toArr((row as any).defined_symbols),
       );
@@ -251,7 +254,7 @@ export class GraphBuilder {
       ])
       .where(this.scopeWhere(`array_contains(defined_symbols, '${escaped}')`))
       .limit(1)
-      .toArray();
+      .toArray(QUERY_EXECUTION_OPTIONS);
 
     const center =
       centerRows.length > 0
@@ -290,7 +293,7 @@ export class GraphBuilder {
           "complexity",
         ])
         .limit(25)
-        .toArray();
+        .toArray(QUERY_EXECUTION_OPTIONS);
       const memberNames = toArr(
         (centerRows[0] as any)?.member_referenced_symbols,
       );
@@ -362,19 +365,16 @@ export class GraphBuilder {
   async getImporters(symbol: string): Promise<string[]> {
     const table = await this.db.ensureTable();
     const escaped = escapeSqlString(symbol);
-    // No .limit() here: LIKE + limit deadlocks in @lancedb 0.27.x when more
-    // rows match than the limit (verified). Unlimited scan is fast; cap in JS.
-    const rows = await withQueryTimeout(
+    const rows = streamQueryRows(
       table
         .query()
         .select(["path"])
-        .where(this.scopeWhere(`content LIKE '%import%${escaped}%'`))
-        .toArray(),
+        .where(this.scopeWhere(`content LIKE '%import%${escaped}%'`)),
       `content LIKE %import%${symbol}% (importers)`,
     );
 
     const files = new Set<string>();
-    for (const row of rows) {
+    for await (const row of rows) {
       files.add(String((row as any).path || ""));
       if (files.size >= 100) break;
     }
@@ -551,7 +551,7 @@ export class GraphBuilder {
       // No anchor → keep the cheap single-row fetch. With one, pull a few
       // candidates so we can pick the same-family definition instead of guessing.
       .limit(anchorFamily ? 25 : 1)
-      .toArray();
+      .toArray(QUERY_EXECUTION_OPTIONS);
     if (rows.length === 0) return null;
     let r = rows[0] as any;
     if (anchorFamily) {
@@ -593,7 +593,7 @@ export class GraphBuilder {
       .select(["path", "defined_symbols", "referenced_symbols"])
       .where(this.scopeWhere(`(${orClause})`))
       .limit(100000)
-      .toArray();
+      .toArray(QUERY_EXECUTION_OPTIONS);
 
     const toArray = (val: any): string[] => {
       if (val && typeof val.toArray === "function") return val.toArray();

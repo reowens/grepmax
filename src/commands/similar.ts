@@ -99,7 +99,6 @@ export const similar = new Command("similar")
               threshold,
             }),
           ),
-        fallbackOnUnknownVerb: true,
       });
 
       if (result.status === "not-found") {

@@ -3,6 +3,7 @@ import { isBuiltinCallee } from "../graph/callsites";
 import { configureAnnVectorQuery } from "../store/ann-config";
 import { toArr } from "../utils/arrow";
 import { escapeSqlString } from "../utils/filter-builder";
+import { QUERY_EXECUTION_OPTIONS } from "../utils/query-timeout";
 import { buildScopeWhere, resolveScope } from "../utils/scope-filter";
 
 type RawRow = Record<string, unknown>;
@@ -653,7 +654,7 @@ async function hydrateRows(
       .select(["id", ...columns])
       .where(`(${where}) AND id IN (${list})`)
       .limit(batch.length)
-      .toArray()) as RawRow[];
+      .toArray(QUERY_EXECUTION_OPTIONS)) as RawRow[];
     for (const row of rows) out.set(String(row.id || ""), row);
   }
   return out;
@@ -737,7 +738,7 @@ export async function analyzeSurprisingConnections(
     .select(SCAN_SELECT)
     .where(where)
     .limit(opts.maxRows)
-    .toArray()) as RawRow[];
+    .toArray(QUERY_EXECUTION_OPTIONS)) as RawRow[];
   const rows = rawRows.map((row) => toChunkRow(row, prefix));
   const fileEdges = buildFileEdges(rows);
 
@@ -818,7 +819,7 @@ export async function analyzeSurprisingConnections(
       .select([...SURPRISE_COLUMNS, "_distance"])
       .where(where)
       .limit(opts.neighbors + 8)
-      .toArray()) as RawRow[];
+      .toArray(QUERY_EXECUTION_OPTIONS)) as RawRow[];
 
     for (const rawTarget of neighbors) {
       filters.rawNeighbors++;

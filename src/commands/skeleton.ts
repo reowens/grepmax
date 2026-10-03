@@ -165,7 +165,6 @@ async function lookupSkeleton(
       withLocalStore(lancedbDir, (deps) =>
         runSkeleton(deps, { projectRoot, ...req }),
       ),
-    fallbackOnUnknownVerb: true,
   });
 }
 

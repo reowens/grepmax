@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { PATHS } from "../../config";
 import type { VectorDB } from "../store/vector-db";
 import { pathStartsWith } from "../utils/filter-builder";
+import { QUERY_EXECUTION_OPTIONS } from "../utils/query-timeout";
 
 export interface PageRankGraph {
   nodes: string[];
@@ -176,7 +177,7 @@ export async function buildGraphFromDb(
     .select(["defined_symbols", "referenced_symbols"])
     .where(pathStartsWith(prefix))
     .limit(PAGERANK_ROW_LIMIT)
-    .toArray();
+    .toArray(QUERY_EXECUTION_OPTIONS);
 
   const nodes = new Set<string>();
   const edges = new Map<string, Set<string>>();

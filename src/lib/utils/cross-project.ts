@@ -27,18 +27,21 @@ export interface CrossProjectScope {
   warnings: string[];
 }
 
-export function resolveCrossProjectScope(opts: {
-  allProjects?: boolean;
-  projects?: string;
-  excludeProjects?: string;
-}): CrossProjectScope {
+export function resolveCrossProjectScope(
+  opts: {
+    allProjects?: boolean;
+    projects?: string;
+    excludeProjects?: string;
+  },
+  registeredProjects = listProjects(),
+): CrossProjectScope {
   const active = !!(opts.allProjects || opts.projects);
   if (!active) {
     return { active: false, roots: [], projectRoots: [], warnings: [] };
   }
 
   // Ignore "error"-status projects: the daemon won't search them anyway.
-  const all = listProjects().filter((p) => p.status !== "error");
+  const all = registeredProjects.filter((p) => p.status !== "error");
   const byName = new Map(all.map((p) => [p.name, p]));
   const warnings: string[] = [];
 

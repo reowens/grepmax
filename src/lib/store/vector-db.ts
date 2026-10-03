@@ -1,5 +1,4 @@
 import * as fs from "node:fs";
-import * as lancedb from "@lancedb/lancedb";
 import {
   Binary,
   Bool,
@@ -30,8 +29,13 @@ import { readGlobalConfig } from "../index/index-config";
 import { registerCleanup } from "../utils/cleanup";
 import { escapeSqlString, pathStartsWith } from "../utils/filter-builder";
 import { debug, log, timer } from "../utils/logger";
+import {
+  QUERY_EXECUTION_OPTIONS,
+  streamQueryRows,
+} from "../utils/query-timeout";
 import { annMinRows, isAnnEnabled } from "./ann-config";
 import { type CompactionResult, skippedCompaction } from "./compaction-result";
+import * as lancedb from "./lance-sdk";
 import { StoreLease } from "./store-lease";
 import type { VectorRecord } from "./types";
 
@@ -378,7 +382,11 @@ export class VectorDB {
     if (!this.db) {
       fs.mkdirSync(this.lancedbDir, { recursive: true });
       this.session = createLanceSession();
-      this.db = await lancedb.connect(this.lancedbDir, {}, this.session);
+      // 0.38 accepts the legacy third argument in its types but drops it in
+      // the JS wrapper. Put the session in native ConnectionOptions instead.
+      this.db = await lancedb.connect(this.lancedbDir, {
+        session: this.session,
+      });
     }
     return this.db;
   }
@@ -1609,7 +1617,11 @@ export class VectorDB {
 
   async hasAnyRows(): Promise<boolean> {
     const table = await this.ensureTable();
-    const rows = await table.query().select(["id"]).limit(1).toArray();
+    const rows = await table
+      .query()
+      .select(["id"])
+      .limit(1)
+      .toArray(QUERY_EXECUTION_OPTIONS);
     return rows.length > 0;
   }
 
@@ -1621,7 +1633,7 @@ export class VectorDB {
       .select(["id"])
       .where(pathStartsWith(prefix))
       .limit(1)
-      .toArray();
+      .toArray(QUERY_EXECUTION_OPTIONS);
     return rows.length > 0;
   }
 
@@ -1638,13 +1650,12 @@ export class VectorDB {
   async getDistinctPathsForPrefix(pathPrefix: string): Promise<Set<string>> {
     const table = await this.ensureTable();
     const prefix = pathPrefix.endsWith("/") ? pathPrefix : `${pathPrefix}/`;
-    const rows = await table
-      .query()
-      .select(["path"])
-      .where(pathStartsWith(prefix))
-      .toArray();
+    const rows = streamQueryRows(
+      table.query().select(["path"]).where(pathStartsWith(prefix)),
+      "distinct project paths",
+    );
     const unique = new Set<string>();
-    for (const r of rows) {
+    for await (const r of rows) {
       unique.add(String(r.path));
     }
     return unique;
@@ -1670,7 +1681,7 @@ export class VectorDB {
         "doc_token_ids",
       ])
       .where(`path = '${escapeSqlString(filePath)}'`)
-      .toArray();
+      .toArray(QUERY_EXECUTION_OPTIONS);
     const reusable = new Map<string, ReusableEmbedding>();
     for (const row of rows) {
       const vector = toFloat32(row.vector);
@@ -1705,8 +1716,14 @@ export class VectorDB {
 
   async getDistinctFileCount(): Promise<number> {
     const table = await this.ensureTable();
-    const rows = await table.query().select(["path"]).toArray();
-    return new Set(rows.map((r) => r.path)).size;
+    const paths = new Set<string>();
+    for await (const row of streamQueryRows(
+      table.query().select(["path"]),
+      "distinct file count",
+    )) {
+      paths.add(String(row.path));
+    }
+    return paths.size;
   }
 
   async deletePaths(paths: string[]): Promise<void> {
@@ -1726,7 +1743,7 @@ export class VectorDB {
           .select(["id"])
           .where(where)
           .limit(1)
-          .toArray();
+          .toArray(QUERY_EXECUTION_OPTIONS);
         if (existing.length > 0) {
           await table.delete(where);
           this.markWriteCommitted();
@@ -1777,7 +1794,7 @@ export class VectorDB {
           .select(["id"])
           .where(where)
           .limit(1)
-          .toArray();
+          .toArray(QUERY_EXECUTION_OPTIONS);
         if (existing.length > 0) {
           await table.delete(where);
           this.markWriteCommitted();

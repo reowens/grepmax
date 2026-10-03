@@ -258,20 +258,20 @@ describe("test-find store access", () => {
     expect(mockFindTests).toHaveBeenCalled();
   });
 
-  it("falls back in-process for a daemon too old to know the verb", async () => {
+  it("requires a restart without opening the store for an unsupported verb", async () => {
     sendDaemonCommand.mockResolvedValue({
       ok: false,
       error: "unknown command: graph.resolve",
     });
-    mockFindTests.mockResolvedValueOnce([TEST_HIT]);
-
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     await (testFind as Command).parseAsync(["handleAuth", "--agent"], {
       from: "user",
     });
+    const errors = spy.mock.calls.flatMap((c) => c.map(String));
     spy.mockRestore();
-
-    expect(mockFindTests).toHaveBeenCalled();
+    expect(mockFindTests).not.toHaveBeenCalled();
+    expect(errors.join("\n")).toContain("gmax watch restart");
+    expect(process.exitCode).toBe(1);
   });
 
   it("refuses with the socket hint when the sandbox blocks the socket", async () => {

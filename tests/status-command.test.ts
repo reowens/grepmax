@@ -3,6 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const sendDaemonCommand = vi.fn();
 const listWatchers = vi.fn();
 const getWatcherForProject = vi.fn();
+const storeInventory = vi.fn(() => [] as any[]);
+
+vi.mock("../src/lib/utils/store-context", () => ({
+  storeInventory: () => storeInventory(),
+}));
 
 vi.mock("../src/lib/utils/daemon-client", () => ({
   sendDaemonCommand: (...args: unknown[]) => sendDaemonCommand(...args),
@@ -85,6 +90,7 @@ beforeEach(() => {
   listWatchers.mockReset();
   getWatcherForProject.mockReset();
   vectorDbCtor.mockReset();
+  storeInventory.mockReset().mockReturnValue([]);
 });
 
 afterEach(() => {
@@ -97,6 +103,46 @@ async function runStatus(args: string[] = []): Promise<void> {
 }
 
 describe("gmax status", () => {
+  it("reports mounted/offline store metadata without opening secondary databases", async () => {
+    storeInventory.mockReturnValue([
+      {
+        home: "/external/store",
+        prefixes: ["/external/repos"],
+        volume: null,
+        state: "mounted",
+        projects: [
+          {
+            name: "clone",
+            root: "/external/repos/clone",
+            chunkCount: 4,
+            status: "indexed",
+          },
+        ],
+      },
+      {
+        home: "/Volumes/Absent/store",
+        prefixes: ["/Volumes/Absent/repos"],
+        volume: "/Volumes/Absent",
+        state: "offline",
+        projects: [],
+      },
+    ]);
+    sendDaemonCommand.mockResolvedValue({ ok: true, projects: [], chunks: 11 });
+    await runStatus(["--json"]);
+    const json = JSON.parse(out.join("\n"));
+    expect(json.stores.map((store: any) => store.state)).toEqual([
+      "mounted",
+      "offline",
+    ]);
+    expect(json.stores[0].projects[0].name).toBe("clone");
+    expect(vectorDbCtor).not.toHaveBeenCalled();
+    out.length = 0;
+    await runStatus(["--agent"]);
+    expect(out.join("\n")).toContain(
+      "store_project\t/external/store\tclone\t4",
+    );
+    expect(out.join("\n")).toContain("offline");
+  });
   it("preserves daemon degraded status and health in JSON", async () => {
     sendDaemonCommand.mockImplementation(async (cmd: { cmd: string }) =>
       cmd.cmd === "status"

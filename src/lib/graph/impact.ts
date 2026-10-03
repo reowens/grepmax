@@ -5,7 +5,10 @@ import {
   pathNotStartsWith,
   pathStartsWith,
 } from "../utils/filter-builder";
-import { withQueryTimeout } from "../utils/query-timeout";
+import {
+  QUERY_EXECUTION_OPTIONS,
+  withQueryTimeout,
+} from "../utils/query-timeout";
 import { GraphBuilder } from "./graph-builder";
 
 const TEST_DIR_RE = /(^|\/)(__tests__|tests?|specs?|benchmark)(\/|$)/i;
@@ -68,7 +71,7 @@ export async function resolveTargetSymbols(
       .query()
       .select(["defined_symbols"])
       .where(`path = '${escapeSqlString(absPath)}'`)
-      .toArray();
+      .toArray(QUERY_EXECUTION_OPTIONS);
 
     const symbols = new Set<string>();
     for (const chunk of chunks) {
@@ -123,7 +126,7 @@ async function resolveSymbolFamilies(
         `array_contains(defined_symbols, '${escapeSqlString(sym)}') AND ${pathScope}`,
       )
       .limit(25)
-      .toArray();
+      .toArray(QUERY_EXECUTION_OPTIONS);
     const file = String((rows[0] as any)?.path || "");
     families.set(sym, file ? languageFamilyForPath(file) : null);
   }
@@ -159,7 +162,7 @@ async function expandFileSymbols(
     .select(["path"])
     .where(where)
     .limit(1)
-    .toArray();
+    .toArray(QUERY_EXECUTION_OPTIONS);
 
   if (defRows.length === 0) return symbols;
   const filePath = String((defRows[0] as any).path);
@@ -169,7 +172,7 @@ async function expandFileSymbols(
     .query()
     .select(["defined_symbols"])
     .where(`path = '${escapeSqlString(filePath)}'`)
-    .toArray();
+    .toArray(QUERY_EXECUTION_OPTIONS);
 
   const expanded = new Set<string>(symbols);
   for (const row of fileRows) {
@@ -306,14 +309,15 @@ async function findImportFallbackTests(
   // that mentions them, drowning the answer in false positives.
   for (const sym of originalSymbols) {
     const family = symbolFamilies?.get(sym) ?? null;
-    // No .limit() here: LIKE + limit deadlocks in @lancedb 0.27.x when more
-    // rows match than the limit (verified). Unlimited scan is fast; cap in JS.
+    // The pinned SDK passes the native LIKE+limit regression; bound rows at
+    // the same cap the old unlimited scan applied after materializing them.
     const rows = await withQueryTimeout(
       table
         .query()
         .select(["path"])
         .where(`content LIKE '%${escapeSqlString(sym)}%' AND ${pathScope}`)
-        .toArray(),
+        .limit(500)
+        .toArray(QUERY_EXECUTION_OPTIONS),
       `content LIKE %${sym}% (test fallback)`,
     );
     for (const row of rows.slice(0, 500)) {
@@ -432,7 +436,7 @@ export async function findDependentsDetailed(
         `(array_contains(referenced_symbols, '${escapeSqlString(sym)}') OR array_contains(type_referenced_symbols, '${escapeSqlString(sym)}')) AND ${pathScope}`,
       )
       .limit(200)
-      .toArray();
+      .toArray(QUERY_EXECUTION_OPTIONS);
 
     for (const row of rows) {
       const p = String((row as any).path || "");

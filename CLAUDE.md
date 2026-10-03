@@ -43,7 +43,7 @@ can hold a merged branch — `git worktree remove <path>` and `git branch -d` on
 
 ## Handoffs: `dotmd baton`
 
-The current reliability queue is in `docs/future-sessions.md` (local internal notes); tracked `docs/known-limitations.md` records consumer dependency audit caveats. Consume the latest runlist handoff before reusing old release or soak instructions. Native query deadlines/bounded scans, memory soaks and external-store MCP/status are still open; embedding migration and recall experiments remain measurement-gated.
+The current reliability queue is in `docs/future-sessions.md` (local internal notes); tracked `docs/known-limitations.md` records consumer dependency audit caveats. Consume the latest runlist handoff before reusing old release or soak instructions. The ordered reliability fixes cover native cache wiring, consumer packaging, query deadlines/bounded scans, external-store MCP/status and obsolete fallback removal. Release verification is in progress; longer memory cycles remain an observation task. Embedding migration and recall experiments remain measurement-gated.
 
 "Baton" means save a resume prompt for the next session with `dotmd baton`, not a plan doc:
 
@@ -179,7 +179,7 @@ Compaction attempts and final outcomes are logged as bounded JSON records in `da
 `lancedb.connect()` without a `Session` gets a 6 GB index cache and a 1 GB metadata cache, held
 for the connection's life. The daemon reached a 4 GB footprint (9.6 GB peak) that way, nearly all
 native malloc. `VectorDB` now connects with a Session capped at 1 GB / 256 MB
-(`GMAX_LANCE_INDEX_CACHE_MB`, `GMAX_LANCE_METADATA_CACHE_MB`); the whole index directory is
+(`GMAX_LANCE_INDEX_CACHE_MB`, `GMAX_LANCE_METADATA_CACHE_MB`). Pass the Session in `ConnectionOptions.session`: SDK 0.38 silently ignores the legacy positional third argument despite retaining its type declaration. The native regression test verifies queries populate the measured session; the whole index directory is
 ~650 MB. `VectorDB.cacheSizeBytes()` reports what the caches currently hold.
 
 The recycle watermark (`GMAX_DAEMON_RSS_WATERMARK_MB`, 2560) is compared against the physical
@@ -196,7 +196,7 @@ its 24h limit because some batch was in flight at every 5-minute probe.
 (`builder.rs:856`, [lance#8310](https://github.com/lance-format/lance/issues/8310)). Fixed by
 [lance#8312](https://github.com/lance-format/lance/pull/8312) in lance `11.0.0-beta.22`.
 
-gmax pins `@lancedb/lancedb 0.38.0` GA (exact; lance `=11.0.0`, which carries the fix). The
+gmax pins `@lancedb/lancedb 0.38.0` GA as a development dependency and copies its unmodified JS runtime into `dist/vendor/lancedb` at build time (lance `=11.0.0`, which carries the fix). Exact optional platform packages supply the native binary. This prevents npm consumers from resolving the SDK's unused old transformers/openai provider pins; root runtime dependencies, license and provenance are checked during the build. The
 native binary comes from the `@lancedb/lancedb-darwin-arm64` platform package like any other
 dependency. From 0.26.23 through 0.26.26 the pin was `0.38.0-beta.3` (lance beta.16, pre-fix) with
 `scripts/postinstall.js` overlaying a fix-bearing beta.10 build from `~/.gmax/vendor/`; that
@@ -447,8 +447,9 @@ deliberately narrow:
 
 - `ENOENT` / `ECONNREFUSED` — nothing is listening, so no daemon exists. The **only** case that
   permits opening the store in-process.
-- `unknown command` — a daemon older than the CLI. Treated as "no daemon" for one release (the
-  `search-v2` transition rule), then removed.
+- `unknown command` — an outdated or incompatible live daemon. Report it with `gmax watch restart`;
+  never open a second reader. The one-release transition allowance was removed after verifying
+  the running v0.26.43 daemon advertises `capabilities.readVerbs: 1`.
 - `EPERM` / `EACCES` — a sandbox blocked the socket. Refuse with exit code 2 and the one settings
   line; never open the store.
 - Anything else (`DAEMON_BUSY`, timeouts, scope rejections, store failures) — a *live* daemon said
@@ -596,7 +597,7 @@ curl -s http://127.0.0.1:8100/health               # MLX embed server up?
 `release.yml` — which publishes to npm and only then cuts the GitHub release — global install,
 daemon restart). The audit runs locally first so a new advisory fails before a tag is burned; if CI
 fails anyway, `postrelease.sh` prints whether anything reached npm and the exact cleanup commands. CI re-runs every
-gate plus `pnpm audit --prod`, a tag/version match check, and a tarball source-leak audit.
+gate plus `pnpm audit --prod`, a packed-consumer audit/native temporary-store smoke test, a tag/version match check, and a tarball source-leak audit.
 
 The daemon restart is the step that makes a release actually live. The global install only updates
 the binary on PATH; a daemon spawned from the old one keeps serving the socket, so every command
@@ -631,6 +632,9 @@ Also: a same-version reinstall does **not** restart the daemon. `gmax watch --da
 hands off on a version mismatch, so after fixing an install in place run `gmax watch restart`
 (graceful IPC shutdown, waits for the old process to exit, then starts one); otherwise the old process keeps
 serving from npm's deleted staging directory.
+
+### SDK packaging
+`src/lib/store/lance-sdk.ts` loads the generated official SDK runtime for compiled consumers and the exact development pin for source tests. `scripts/prepare-lance-runtime.cjs` preserves licenses and checks native/runtime dependency pins. `pnpm run audit:consumer` packs the built distribution, resolves a fresh npm consumer without workspace overrides, audits it, and exercises the native store with synthetic vectors. It never loads a model.
 
 ### Logging
 - `src/lib/utils/logger.ts` — `log()`, `debug()`, `timer()`, `debugTimer()`, `debugEvery()`; gated on `GMAX_DEBUG=1`

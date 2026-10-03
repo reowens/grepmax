@@ -60,14 +60,13 @@ describe("search-result shape extraction (mapped ChunkType)", () => {
 });
 
 describe("MCP daemon search fallback", () => {
-  it("falls back for transport absence, startup races, oversize, and old daemons", () => {
+  it("falls back for transport absence, startup races, and oversize", () => {
     for (const error of [
       "ENOENT",
       "ECONNREFUSED",
       "project not watched",
       "daemon not ready",
       "oversize",
-      "unknown command: search-v2",
     ]) {
       expect(shouldFallbackMcpDaemonSearch(error)).toBe(true);
     }
@@ -75,6 +74,7 @@ describe("MCP daemon search fallback", () => {
 
   it("surfaces semantic, scope, and ambiguous daemon failures", () => {
     for (const error of [
+      "unknown command: search-v2",
       "stale_embedding",
       "invalid projectRoots",
       "missing projectRoots",

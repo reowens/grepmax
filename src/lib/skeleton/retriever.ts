@@ -1,5 +1,6 @@
 import type { VectorDB } from "../store/vector-db";
 import { escapeSqlString } from "../utils/filter-builder";
+import { QUERY_EXECUTION_OPTIONS } from "../utils/query-timeout";
 
 export async function getStoredSkeleton(
   db: VectorDB,
@@ -13,7 +14,7 @@ export async function getStoredSkeleton(
       .select(["file_skeleton"])
       .where(`path = '${escapeSqlString(filePath)}' AND is_anchor = true`)
       .limit(1)
-      .toArray();
+      .toArray(QUERY_EXECUTION_OPTIONS);
 
     if (results.length > 0) {
       const skel = results[0].file_skeleton;

@@ -53,15 +53,15 @@ export class ProjectRegistryConflictError extends Error {
   }
 }
 
-function loadRegistry(): ProjectEntry[] {
+function loadRegistry(registryPath = REGISTRY_PATH): ProjectEntry[] {
   let raw: string;
   try {
-    raw = fs.readFileSync(REGISTRY_PATH, "utf-8");
+    raw = fs.readFileSync(registryPath, "utf-8");
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
     const message = err instanceof Error ? err.message : String(err);
     throw new Error(
-      `Failed to read project registry ${REGISTRY_PATH}: ${message}`,
+      `Failed to read project registry ${registryPath}: ${message}`,
     );
   }
 
@@ -71,19 +71,19 @@ function loadRegistry(): ProjectEntry[] {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new Error(
-      `Invalid project registry JSON ${REGISTRY_PATH}: ${message}`,
+      `Invalid project registry JSON ${registryPath}: ${message}`,
     );
   }
   if (!Array.isArray(parsed)) {
     throw new Error(
-      `Invalid project registry ${REGISTRY_PATH}: expected an array`,
+      `Invalid project registry ${registryPath}: expected an array`,
     );
   }
 
   for (const [index, entry] of parsed.entries()) {
     if (!isProjectEntry(entry)) {
       throw new Error(
-        `Invalid project registry entry at index ${index} in ${REGISTRY_PATH}`,
+        `Invalid project registry entry at index ${index} in ${registryPath}`,
       );
     }
   }
@@ -562,8 +562,8 @@ export function stampProjectFullSync(
   });
 }
 
-export function listProjects(): ProjectEntry[] {
-  return loadRegistry();
+export function listProjects(home?: string): ProjectEntry[] {
+  return loadRegistry(home ? path.join(home, "projects.json") : undefined);
 }
 
 export function getProject(root: string): ProjectEntry | undefined {

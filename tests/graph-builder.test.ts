@@ -29,6 +29,10 @@ function createMockDb(data: Record<string, any[]>) {
           }
           return [];
         },
+        execute: async function* () {
+          const rows = await chain.toArray();
+          yield { toArray: () => rows };
+        },
       };
       return chain;
     },

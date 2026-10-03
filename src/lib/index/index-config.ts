@@ -42,11 +42,14 @@ export interface GlobalConfig {
 
 const GLOBAL_CONFIG_PATH = path.join(PATHS.globalRoot, "config.json");
 
-export function readGlobalConfig(): GlobalConfig {
+export function readGlobalConfig(home?: string): GlobalConfig {
   const defaultEmbedMode =
     process.arch === "arm64" && process.platform === "darwin" ? "gpu" : "cpu";
   try {
-    const raw = fs.readFileSync(GLOBAL_CONFIG_PATH, "utf-8");
+    const raw = fs.readFileSync(
+      home ? path.join(home, "config.json") : GLOBAL_CONFIG_PATH,
+      "utf-8",
+    );
     const parsed = JSON.parse(raw) as GlobalConfig;
     // Ensure embedMode has a default even if missing from stored config
     if (!parsed.embedMode) parsed.embedMode = defaultEmbedMode;

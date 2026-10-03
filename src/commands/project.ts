@@ -38,7 +38,6 @@ export const project = new Command("project")
         render: (resp) => resp.overview as ProjectOverview,
         inProcess: () =>
           withLocalStore(paths.lancedbDir, (deps) => runProject(deps, root)),
-        fallbackOnUnknownVerb: true,
       });
 
       if (overview.chunks === 0) {

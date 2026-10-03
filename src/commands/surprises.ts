@@ -268,7 +268,6 @@ export const surprises = new Command("surprises")
           withLocalStore(paths.lancedbDir, (deps) =>
             runSurprises(deps, { projectRoot, options, top }),
           ),
-        fallbackOnUnknownVerb: true,
       });
 
       console.log(

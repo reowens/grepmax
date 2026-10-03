@@ -2,23 +2,22 @@
 
 ## Current reliability work
 
-v0.26.43 is released. v0.26.42 fixed compaction snapshot races and bounded rewrite attempts;
-v0.26.43 adds explicit maintenance outcomes, disk measurements, honest repair reports and
-five-minute resource baselines. Confirm the running daemon over ping IPC before interpreting logs.
+The ordered reliability fixes are implemented and release verification is in progress:
 
-The current queue is:
+1. Native cache limits now reach the actual SDK Session. The old positional Session was silently
+   ignored; a native regression fails with the old wiring and passes with the fix.
+2. Production packaging uses the pinned official Lance SDK runtime without its unused provider
+   dependency manifest. Fresh packed-consumer audit and native runtime smoke pass; releases gate both.
+3. Native query deadlines apply to production query execution. Importer/path scans stream 512-row
+   batches; row fallbacks apply output caps before materialization. Temporary LIKE+limit regression passes.
+4. MCP routes each request to its selected store; status includes mounted/offline store metadata.
+   Real disk-image eject/remount passed while MCP remained running, with no reindex or secondary daemon.
+5. Unsupported daemon commands require `gmax watch restart` and never create a fallback reader.
+   Transport absence and in-process secondary access remain supported.
 
-1. Measure memory and compaction under normal session traffic across recycle cycles. Use
-   `Resource snapshot:` and `Compaction result:` records in `~/.gmax/logs/daemon.log` and `.prev`.
-   Native growth remains unproven; avoid forced rewrites of the live store.
-2. Resolve the remaining consumer dependency audit finding: LanceDB's optional transformers
-   provider pulls old `sharp`, while the repository audit is clean. See
-   [Known Limitations](known-limitations.md). An SDK update alone does not remove this route.
-3. Apply native query deadlines and bound importer/path scans after validating tiny temporary
-   fixtures. The existing JavaScript timeout leaves native work running.
-4. Finish [external stores](plans/external-stores.md) phase 3: MCP routing and mounted/offline
-   status, preserving in-process access to secondary stores.
-5. Remove expired unknown-command fallbacks after checking daemon version/capability skew.
+Longer memory behavior still needs observation under ordinary sessions. Compare `Resource snapshot:`
+and `Compaction result:` records across cycles, accounting for hdev's memory guard. Do not force
+full rewrites of the live store to produce evidence.
 
 [Future Sessions](future-sessions.md) contains the detailed local evidence and precautions.
 Use runlist to consume the latest handoff and claim plan work; older archived notes describe
@@ -48,7 +47,6 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 | [2026-08-25 Release Triage — Retrospective](2026-08-25-release-triage-retrospective.md) | Active |
 | [Embedding Layout Decision](embedding-layout-decision.md) | Active |
 | [Future Sessions](future-sessions.md) | Active |
-| [External stores](plans/external-stores.md) | Active |
 
 ## Planned
 
@@ -65,7 +63,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 68 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 69 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|

@@ -9,14 +9,9 @@
  *      daemon's answer — without constructing a VectorDB. `vectorDbCtor` is the
  *      tripwire: an MCP session must hold no store of its own while a daemon
  *      serving the verbs is up.
- *   2. The in-process fallback is entered for exactly the three reasons MCP
- *      allows (nothing listening, a daemon too old for the verb, an oversize
- *      response) and never for a live daemon saying no.
+ *   2. The in-process fallback handles transport absence, readiness races and
+ *      response caps, never unsupported verbs or a live daemon saying no.
  *
- * Note the live daemon cannot exercise any of this: 0.26.27 does not know the
- * read verbs, so a real socket would answer `unknown command` and every call
- * would take the fallback. The daemon side is covered by the handler unit tests
- * and the fake-Daemon dispatch tests instead.
  */
 
 import * as fs from "node:fs";
@@ -748,11 +743,10 @@ describe("MCP fallback policy", () => {
     return callRaw("dead", { symbol: "handleAuth" });
   }
 
-  it("falls back in-process for the three allowed reasons", async () => {
+  it("falls back in-process for the allowed availability reasons", async () => {
     for (const error of [
       "ENOENT",
       "ECONNREFUSED",
-      "unknown command: graph.dead",
       "oversize",
       "daemon not ready",
       "project not watched",
@@ -768,6 +762,7 @@ describe("MCP fallback policy", () => {
 
   it("never falls back for a live daemon saying no", async () => {
     for (const error of [
+      "unknown command: graph.dead",
       "DAEMON_BUSY",
       "timeout",
       "project not registered",
@@ -781,6 +776,8 @@ describe("MCP fallback policy", () => {
       ).not.toHaveBeenCalled();
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(error);
+      if (error.startsWith("unknown command"))
+        expect(result.content[0].text).toContain("gmax watch restart");
     }
   });
 

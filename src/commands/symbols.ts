@@ -62,7 +62,6 @@ async function collectSymbols(options: {
           limit: options.limit,
         }),
       ),
-    fallbackOnUnknownVerb: true,
   });
 }
 

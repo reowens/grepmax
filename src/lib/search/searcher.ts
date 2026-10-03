@@ -15,6 +15,7 @@ import {
   pathStartsWith,
 } from "../utils/filter-builder";
 import { debug } from "../utils/logger";
+import { QUERY_EXECUTION_OPTIONS } from "../utils/query-timeout";
 import { getWorkerPool } from "../workers/pool";
 import { detectIntent, type SearchIntent } from "./intent";
 import { loadOrComputePageRank, pageRankBoostForSymbols } from "./pagerank";
@@ -581,7 +582,9 @@ export class Searcher {
     if (whereClause) {
       vectorQuery = vectorQuery.where(whereClause);
     }
-    const vectorResults = (await vectorQuery.toArray()).map((r: any) => ({
+    const vectorResults = (
+      await vectorQuery.toArray(QUERY_EXECUTION_OPTIONS)
+    ).map((r: any) => ({
       ...r,
     })) as VectorRecord[];
 
@@ -596,9 +599,11 @@ export class Searcher {
         if (whereClause) {
           ftsQuery = ftsQuery.where(whereClause);
         }
-        ftsResults = (await ftsQuery.toArray()).map((r: any) => ({
-          ...r,
-        })) as VectorRecord[];
+        ftsResults = (await ftsQuery.toArray(QUERY_EXECUTION_OPTIONS)).map(
+          (r: any) => ({
+            ...r,
+          }),
+        ) as VectorRecord[];
       } catch (e) {
         ftsSearchFailed = true;
         this.ftsAvailable = false;
@@ -893,7 +898,7 @@ export class Searcher {
           .select(["id", "colbert", "colbert_scale", "doc_token_ids"])
           .where(`id IN (${rerankIds.join(",")})`)
           .limit(rerankIds.length)
-          .toArray();
+          .toArray(QUERY_EXECUTION_OPTIONS);
         const colbertMap = new Map(colbertRows.map((r: any) => [r.id, r]));
         for (const doc of rerankCandidates) {
           const extra = colbertMap.get(doc.id);
@@ -1058,7 +1063,7 @@ export class Searcher {
         ])
         .where(`id IN (${finalIds.join(",")})`)
         .limit(finalIds.length)
-        .toArray();
+        .toArray(QUERY_EXECUTION_OPTIONS);
       const displayMap = new Map(displayRows.map((r: any) => [r.id, r]));
       for (const item of diversified) {
         const extra = displayMap.get(item.record.id);

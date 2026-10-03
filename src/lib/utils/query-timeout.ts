@@ -1,5 +1,9 @@
-const DEFAULT_TIMEOUT_MS =
-  Number(process.env.GMAX_QUERY_TIMEOUT_MS || "") || 15_000;
+const configuredTimeout = Number(process.env.GMAX_QUERY_TIMEOUT_MS);
+export const QUERY_TIMEOUT_MS =
+  Number.isFinite(configuredTimeout) && configuredTimeout > 0
+    ? Math.max(1, Math.min(Math.floor(configuredTimeout), 2_147_483_647))
+    : 15_000;
+export const QUERY_EXECUTION_OPTIONS = { timeoutMs: QUERY_TIMEOUT_MS };
 
 export class QueryTimeoutError extends Error {
   constructor(label: string, ms: number) {
@@ -15,21 +19,15 @@ export class QueryTimeoutError extends Error {
  * Race a LanceDB query against a wall-clock timeout so a native-layer deadlock
  * surfaces as a loud error instead of hanging the process forever.
  *
- * Known trigger (@lancedb/lancedb 0.27.x): a `content LIKE` scan with
- * `.limit(N)` where more than N rows match never resolves — the limit-pushdown
- * cancellation loses the completion (see lancedb/lancedb#2189 for the same
- * family of hangs). Callers should also avoid that query shape (scan without
- * a limit and cap in JS); this wrapper is the backstop for shapes we missed.
- *
- * The timed-out native promise is NOT cancelled — its tokio task may stay
- * parked. CLI commands exit via gracefulExit() (process.exit), so the leak is
- * bounded to the command's lifetime. Long-lived callers (daemon) should treat
- * a QueryTimeoutError as a signal that the connection may be wedged.
+ * This JavaScript backstop does not cancel its input. Native query callers
+ * must also pass QUERY_EXECUTION_OPTIONS to toArray/execute so Lance enforces
+ * an execution deadline. The historical 0.27 LIKE+limit hang has a native
+ * temporary-store regression on the pinned SDK.
  */
 export async function withQueryTimeout<T>(
   promise: Promise<T>,
   label: string,
-  ms = DEFAULT_TIMEOUT_MS,
+  ms = QUERY_TIMEOUT_MS,
 ): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
@@ -39,5 +37,38 @@ export async function withQueryTimeout<T>(
     return await Promise.race([promise, timeout]);
   } finally {
     if (timer) clearTimeout(timer);
+  }
+}
+
+/** Stream bounded Arrow batches with a native and overall wall-clock deadline.
+ * SDK 0.38 exposes execute(options) at runtime but marks it protected in its
+ * declarations. Keep this version-specific adapter here and cover it natively.
+ */
+export async function* streamQueryRows(
+  query: unknown,
+  label: string,
+  ms = QUERY_TIMEOUT_MS,
+): AsyncGenerator<any> {
+  const streaming = query as {
+    execute(options: {
+      timeoutMs: number;
+      maxBatchLength: number;
+    }): AsyncIterator<{
+      toArray(): any[];
+    }>;
+  };
+  const iterator = streaming.execute({ timeoutMs: ms, maxBatchLength: 512 });
+  const deadline = Date.now() + ms;
+  try {
+    for (;;) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw new QueryTimeoutError(label, ms);
+      const batch = await withQueryTimeout(iterator.next(), label, remaining);
+      if (batch.done) return;
+      for (const row of batch.value.toArray()) yield row;
+    }
+  } finally {
+    // Do not let a broken native iterator's pending next() hang cleanup.
+    void iterator.return?.().catch(() => {});
   }
 }

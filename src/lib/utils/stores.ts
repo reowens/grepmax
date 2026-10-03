@@ -98,7 +98,9 @@ export function matchStore(
 ): StoreMatch {
   if (!stores.length) return { kind: "primary" };
   for (const cand of candidates(target)) {
-    for (const store of stores) {
+    for (const store of [...stores].sort(
+      (a, b) => path.resolve(b.prefix).length - path.resolve(a.prefix).length,
+    )) {
       if (!within(cand, path.resolve(store.prefix))) continue;
       const volume = volumeOf(store.home) ?? volumeOf(store.prefix);
       if (volume && !fs.existsSync(volume)) {

@@ -24,12 +24,17 @@ import { isLocked } from "../lib/utils/lock";
 import type { ProjectEntry } from "../lib/utils/project-registry";
 import { listProjects } from "../lib/utils/project-registry";
 import { findProjectRoot } from "../lib/utils/project-root";
+import { QUERY_EXECUTION_OPTIONS } from "../lib/utils/query-timeout";
 import type { ResourceSnapshot } from "../lib/utils/resource-snapshot";
 import {
   classifyLeaseError,
   reportStoreAccessRefusal,
   withStoreRead,
 } from "../lib/utils/store-access";
+import {
+  type StoreInventory,
+  storeInventory,
+} from "../lib/utils/store-context";
 import type { WatcherInfo } from "../lib/utils/watcher-store";
 import { getWatcherForProject, listWatchers } from "../lib/utils/watcher-store";
 
@@ -121,9 +126,10 @@ async function loadStatusView(projects: ProjectEntry[]): Promise<StatusView> {
       }
 
       const chunkCounts = new Map<string, number>();
+      let db: import("../lib/store/vector-db").VectorDB | undefined;
       try {
         const { VectorDB } = await import("../lib/store/vector-db");
-        const db = new VectorDB(PATHS.lancedbDir);
+        db = new VectorDB(PATHS.lancedbDir);
         const table = await db.ensureTable();
         for (const project of projects) {
           const prefix = project.root.endsWith("/")
@@ -133,10 +139,9 @@ async function loadStatusView(projects: ProjectEntry[]): Promise<StatusView> {
             .query()
             .select(["id"])
             .where(pathStartsWith(prefix))
-            .toArray();
+            .toArray(QUERY_EXECUTION_OPTIONS);
           chunkCounts.set(project.root, rows.length);
         }
-        await db.close();
       } catch (err) {
         // A sandbox denial is not "the query failed" — let it surface as the
         // one-line refusal instead of silently degrading to cached counts.
@@ -144,6 +149,8 @@ async function loadStatusView(projects: ProjectEntry[]): Promise<StatusView> {
         console.warn(
           `[status] Failed to query LanceDB for live chunk counts, using cached counts`,
         );
+      } finally {
+        await db?.close();
       }
       return { watchers, chunkCounts };
     },
@@ -192,6 +199,7 @@ function toMs(iso: string | undefined): number | null {
 }
 
 export interface StatusJson {
+  stores?: StoreInventory[];
   daemon: {
     running: boolean;
     pid: number | null;
@@ -222,6 +230,7 @@ export interface StatusJson {
 }
 
 export function buildStatusJson(input: {
+  stores?: StoreInventory[];
   view: StatusView;
   projects: ProjectEntry[];
   globalConfig: GlobalConfig;
@@ -242,6 +251,7 @@ export function buildStatusJson(input: {
         : null);
   }
   return {
+    ...(input.stores ? { stores: input.stores } : {}),
     daemon: {
       running: d !== undefined,
       pid: d?.pid ?? null,
@@ -329,6 +339,7 @@ Examples:
     const projects = listProjects();
     const indexing = isLocked(PATHS.globalRoot);
     const currentRoot = findProjectRoot(process.cwd());
+    const stores = storeInventory();
 
     // Resolved before the header so a sandbox refusal prints one clean line.
     let view: StatusView;
@@ -345,6 +356,7 @@ Examples:
 
     if (opts.json) {
       const json = buildStatusJson({
+        stores,
         view,
         projects,
         globalConfig,
@@ -366,6 +378,27 @@ Examples:
       );
     }
 
+    for (const store of stores) {
+      if (opts.agent) {
+        console.log(
+          `store\t${store.home}\t${store.state}\tprefixes=${store.prefixes.join(",")}${store.error ? `\terror=${store.error}` : ""}`,
+        );
+        for (const project of store.projects)
+          console.log(
+            `store_project\t${store.home}\t${project.name}\t${project.chunkCount ?? 0}\t${project.status ?? "indexed"}\tcounts=cached`,
+          );
+      } else {
+        console.log(
+          `\nStore: ${shortenPath(store.home)} — ${store.state}${store.error ? ` (${store.error})` : ""}`,
+        );
+        if (store.state === "offline")
+          console.log("  Connect the drive to list its projects.");
+        for (const project of store.projects)
+          console.log(
+            `  ${project.name}  ${formatChunks(project.chunkCount)} chunks (cached)  ${project.status ?? "indexed"}`,
+          );
+      }
+    }
     if (projects.length === 0) {
       if (opts.agent) {
         console.log("(none)");
