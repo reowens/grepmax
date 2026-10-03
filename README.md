@@ -450,6 +450,8 @@ gmax watch restart            # Restart daemon
 
 `gmax doctor` reports ANN index state. `ANN: vector index not built` is normal with the default exact-search configuration.
 
+Compaction pauses index writes, waits for pending writes to commit, and opens a fresh table snapshot for each attempt. Each optimize call makes at most two attempts. Before each attempt it checks current free space against twice the table's logical size plus the critical-space reserve (5 GB by default). If there is insufficient headroom, it skips the rewrite and logs the required space; search remains available. A successful prune can reclaim fragment copies left by failed attempts.
+
 ### Known issues
 
 Some log output looks alarming but is expected and self-healing. Before filing a bug, check

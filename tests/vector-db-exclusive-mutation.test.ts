@@ -236,6 +236,7 @@ describe("VectorDB exclusive table mutation", () => {
       finishWrite = resolve;
     });
     const table = {
+      stats: vi.fn(async () => ({ totalBytes: 1024 })),
       optimize: vi.fn(async () => ({
         compaction: { fragmentsRemoved: 0, fragmentsAdded: 0 },
         prune: { oldVersionsRemoved: 0, bytesRemoved: 0 },
@@ -349,6 +350,7 @@ describe("VectorDB exclusive table mutation", () => {
       finishSetup = resolve;
     });
     const table = {
+      stats: vi.fn(async () => ({ totalBytes: 1024 })),
       optimize: vi.fn(async () => ({
         compaction: { fragmentsRemoved: 0, fragmentsAdded: 0 },
         prune: { oldVersionsRemoved: 0, bytesRemoved: 0 },

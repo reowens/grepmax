@@ -177,6 +177,10 @@ const COMPACTION_MIN_INTERVAL_MS = 30 * 60 * 1000;
  */
 const COMPACTION_MAX_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
+// Failed rewrites leave complete fragment copies until a later successful prune.
+// One fresh-snapshot retry is enough; five attempts stranded ~70 GB in Oct 2026.
+const COMPACTION_MAX_ATTEMPTS = 2;
+
 /**
  * Bounds for LanceDB's per-connection caches.
  *
@@ -1163,7 +1167,7 @@ export class VectorDB {
   }
 
   async optimize(
-    retries = 5,
+    retries = COMPACTION_MAX_ATTEMPTS,
     retentionMs = 0,
     bypassExclusiveMutation = false,
   ): Promise<void> {
@@ -1184,14 +1188,33 @@ export class VectorDB {
     });
     this.activeCompactions++;
     try {
-      const table = await this.ensureTableUnsafe();
-      const cutoff = new Date(Date.now() - retentionMs);
+      const maxAttempts = Math.min(retries, COMPACTION_MAX_ATTEMPTS);
       let rebuiltFts = false;
 
-      for (let attempt = 1; attempt <= retries; attempt++) {
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         await this.drainWrites();
 
         try {
+          // Open AFTER outstanding writes commit, and reopen on every retry.
+          // A handle opened before drainWrites carries the old snapshot even
+          // though new writes are gated. Reusing it repeats the same conflict.
+          const table = await this.ensureTableUnsafe();
+          const { totalBytes } = await table.stats();
+          if (!Number.isFinite(totalBytes) || totalBytes < 0) {
+            throw new Error("Cannot estimate compaction size from table stats");
+          }
+          // Bypass the cached pressure check: a failed attempt can consume a
+          // whole table within its 30s cache window. Budget two logical copies
+          // for rewrite/index overhead, leaving the critical reserve untouched.
+          const availableBytes = this.getAvailableBytes();
+          const requiredBytes = totalBytes * 2 + DISK_CRITICAL_BYTES;
+          if (availableBytes < requiredBytes) {
+            log(
+              "vectordb",
+              `Optimize skipped: insufficient rewrite headroom (${(availableBytes / 1024 ** 3).toFixed(1)}GB free, ${(requiredBytes / 1024 ** 3).toFixed(1)}GB required)`,
+            );
+            return;
+          }
           const done = timer("vectordb", "optimize");
           // deleteUnverified deletes files Lance cannot prove are unreferenced.
           // LanceDB's own docs: only safe "if you can guarantee that no other
@@ -1203,7 +1226,8 @@ export class VectorDB {
           // Anything new that calls optimize() must preserve that: either be the
           // daemon, or be the only process on the store.
           const stats = await table.optimize({
-            cleanupOlderThan: cutoff,
+            // Include fragment copies left by earlier failed attempts.
+            cleanupOlderThan: new Date(Date.now() - retentionMs),
             deleteUnverified: true,
           });
           done();
@@ -1244,13 +1268,13 @@ export class VectorDB {
             return;
           }
           if (
-            attempt < retries &&
+            attempt < maxAttempts &&
             (msg.includes("conflict") || msg.includes("Retryable"))
           ) {
             const delay = 1000 * 2 ** (attempt - 1);
             log(
               "vectordb",
-              `Optimize conflict (attempt ${attempt}/${retries}), retrying in ${delay}ms`,
+              `Optimize conflict (attempt ${attempt}/${maxAttempts}), retrying with a fresh snapshot in ${delay}ms`,
             );
             await new Promise((r) => setTimeout(r, delay));
             continue;
@@ -1264,7 +1288,7 @@ export class VectorDB {
           // compactingPromise, which we hold.
           if (msg.includes("Panic")) {
             if (
-              attempt < retries &&
+              attempt < maxAttempts &&
               !rebuiltFts &&
               !this.ftsPanicRecoveryExhausted
             ) {

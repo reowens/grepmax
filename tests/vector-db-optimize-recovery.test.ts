@@ -14,6 +14,7 @@ const panic = () => new Error("Panic in async function");
 function fakeTable(optimize: ReturnType<typeof vi.fn>) {
   return {
     optimize,
+    stats: vi.fn(async () => ({ totalBytes: 1024 })),
     dropIndex: vi.fn(async () => {}),
     createIndex: vi.fn(async () => {}),
   };

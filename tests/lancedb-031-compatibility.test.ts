@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as lancedb from "@lancedb/lancedb";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { VectorRecord } from "../src/lib/store/types";
 import { VectorDB } from "../src/lib/store/vector-db";
 import { pathStartsWith } from "../src/lib/utils/filter-builder";
@@ -40,6 +40,49 @@ describe("LanceDB 0.31 real-store compatibility", () => {
   afterEach(async () => {
     await db.close();
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("compacts from the committed native snapshot after a pending delete", async () => {
+    await db.insertBatch([
+      record("keep", "/repo/keep.ts", "keep service", [1, 0, 0, 0]),
+      record("remove", "/repo/remove.ts", "remove service", [0, 1, 0, 0]),
+    ]);
+    const before = await (await db.ensureTable()).version();
+    let finishDelete!: () => void;
+    const pendingDelete = new Promise<void>((resolve) => {
+      finishDelete = resolve;
+    });
+    const write = (db as any).withWriteGate(async () => {
+      await pendingDelete;
+      const table = await (db as any).openExistingTableUnsafe();
+      await table.delete("id = 'remove'");
+      (db as any).markWriteCommitted();
+    });
+    const open = (db as any).ensureTableUnsafe.bind(db);
+    const snapshots: number[] = [];
+    vi.spyOn(db as any, "ensureTableUnsafe").mockImplementation(async () => {
+      const table = await open();
+      snapshots.push(await table.version());
+      return table;
+    });
+
+    const optimize = db.optimize(1);
+    // Allow the old implementation to open its stale native handle, so this
+    // regression checks the actual Lance snapshot behavior as well as the gate.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    finishDelete();
+    await Promise.all([write, optimize]);
+
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]).toBeGreaterThan(before);
+    expect((db as any).lastOptimizeDidWork).toBe(true);
+    await db.close();
+    db = new VectorDB(dir, 4);
+    const rows = await (await db.ensureTable())
+      .query()
+      .select(["id"])
+      .toArray();
+    expect(rows.map((row) => row.id)).toEqual(["keep"]);
   });
 
   it("preserves FTS, exact-vector, filter, index, mutation, and reopen contracts", async () => {
