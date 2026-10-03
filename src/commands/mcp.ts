@@ -79,6 +79,12 @@ import {
   formatIndexStateFooter,
   type IndexState,
 } from "../lib/output/index-state-footer";
+import {
+  compactionSchema,
+  deadResult,
+  MCP_READ_OUTPUT_SCHEMAS,
+  traceResult,
+} from "../lib/output/mcp-results";
 import { Searcher } from "../lib/search/searcher";
 import { annotateSkeletonLines } from "../lib/skeleton/annotator";
 import { Skeletonizer } from "../lib/skeleton/skeletonizer";
@@ -142,10 +148,17 @@ export function toStringArray(val: unknown): string[] {
 export type ToolResult = {
   content: Array<{ type: "text"; text: string }>;
   isError?: boolean;
+  structuredContent?: Record<string, unknown>;
 };
 
-export function ok(text: string): ToolResult {
-  return { content: [{ type: "text", text }] };
+export function ok(
+  text: string,
+  structuredContent?: Record<string, unknown>,
+): ToolResult {
+  return {
+    content: [{ type: "text", text }],
+    ...(structuredContent ? { structuredContent } : {}),
+  };
 }
 
 export function err(text: string): ToolResult {
@@ -316,12 +329,17 @@ export function searchResultPath(r: any): string {
 }
 
 export function searchResultStartLine(r: any): number {
-  return Number(r?.start_line ?? r?.generated_metadata?.start_line ?? 0);
+  return Number(
+    r?.startLine ?? r?.start_line ?? r?.generated_metadata?.start_line ?? 0,
+  );
 }
 
 export function searchResultEndLine(r: any, fallbackStart = 0): number {
   return Number(
-    r?.end_line ?? r?.generated_metadata?.end_line ?? fallbackStart,
+    r?.endLine ??
+      r?.end_line ??
+      r?.generated_metadata?.end_line ??
+      fallbackStart,
   );
 }
 
@@ -1067,6 +1085,27 @@ export const mcp = new Command("mcp")
           );
         });
 
+        const structuredSearch = (matches: ChunkType[]) => ({
+          schemaVersion: 1,
+          query,
+          roots: allowedRoots,
+          warnings: (result.warnings ?? []).filter(Boolean),
+          matches: matches.map((r: any) => {
+            const startLine = searchResultStartLine(r);
+            return {
+              path: chunkAbsPath(r),
+              startLine: startLine + 1,
+              endLine: searchResultEndLine(r, startLine) + 1,
+              symbols: chunkSymbols(r),
+              role: String(r.role ?? "IMPLEMENTATION"),
+              score:
+                typeof r.score === "number" && Number.isFinite(r.score)
+                  ? r.score
+                  : null,
+            };
+          }),
+        });
+
         // Prepend any searcher warnings to whatever body we return.
         const prefixNotes = (body: string): string => {
           const notes = (result.warnings ?? []).filter(Boolean);
@@ -1078,6 +1117,7 @@ export const mcp = new Command("mcp")
             prefixNotes(
               "No matches found. Try broadening your query, using fewer keywords, or check `gmax status` to verify the project is indexed.",
             ),
+            structuredSearch([]),
           );
         }
 
@@ -1115,7 +1155,16 @@ export const mcp = new Command("mcp")
               query,
             },
           );
-          return ok(prefixNotes(output));
+          return ok(
+            prefixNotes(output),
+            structuredSearch(
+              filterMcpSearchResults(result.data, {
+                minScore,
+                maxPerFile,
+                namePattern,
+              }),
+            ),
+          );
         }
 
         let results = result.data.map((r: any) => {
@@ -1123,9 +1172,8 @@ export const mcp = new Command("mcp")
           const relPath = absPath.startsWith(displayRoot)
             ? absPath.slice(displayRoot.length + 1)
             : absPath;
-          const startLine =
-            r.startLine ?? r.generated_metadata?.start_line ?? 0;
-          const endLine = r.endLine ?? r.generated_metadata?.end_line ?? 0;
+          const startLine = searchResultStartLine(r);
+          const endLine = searchResultEndLine(r, startLine);
           const defs = toStringArray(r.definedSymbols ?? r.defined_symbols);
           const refs = toStringArray(
             r.referenced_symbols ?? r.referencedSymbols,
@@ -1207,6 +1255,7 @@ export const mcp = new Command("mcp")
           }
 
           return {
+            row: r as ChunkType,
             absPath,
             text,
             score: typeof r.score === "number" ? r.score : 0,
@@ -1295,7 +1344,10 @@ export const mcp = new Command("mcp")
           }
         }
 
-        return ok(prefixNotes(output));
+        return ok(
+          prefixNotes(output),
+          structuredSearch(results.map((r) => r.row)),
+        );
       } catch (e) {
         return toolError("Search failed", e);
       }
@@ -1469,9 +1521,11 @@ export const mcp = new Command("mcp")
             ),
         });
 
+        const structured = traceResult(symbol, root, graph);
         if (!graph.center) {
           return ok(
             `Symbol '${symbol}' not found in the index. Check \`gmax status\` to see which projects are indexed, or try \`gmax search ${symbol}\` to find similar symbols.`,
+            structured,
           );
         }
 
@@ -1541,7 +1595,7 @@ export const mcp = new Command("mcp")
           lines.push("Calls: none");
         }
 
-        return ok(lines.join("\n"));
+        return ok(lines.join("\n"), structured);
       } catch (e) {
         return toolError("Trace failed", e);
       }
@@ -1817,9 +1871,11 @@ export const mcp = new Command("mcp")
             ),
         });
 
+        const structured = deadResult(symbol, root, facts);
         if (!facts.found) {
           return ok(
             `Symbol '${symbol}' not found in the index. Check \`gmax status\` to see which projects are indexed, or try \`gmax search ${symbol}\` to find similar symbols.`,
+            structured,
           );
         }
 
@@ -1831,9 +1887,10 @@ export const mcp = new Command("mcp")
           if (facts.isExported) {
             return ok(
               `PUBLIC EXPORT  ${defLoc} defines ${symbol} — no internal callers found; check external usage`,
+              structured,
             );
           }
-          return ok(`DEAD  ${defLoc} defines ${symbol}`);
+          return ok(`DEAD  ${defLoc} defines ${symbol}`, structured);
         }
 
         const top = facts.topCallers;
@@ -1843,7 +1900,7 @@ export const mcp = new Command("mcp")
         for (const c of top) {
           lines.push(`  ${rel(c.file)}:${c.line + 1}`);
         }
-        return ok(lines.join("\n"));
+        return ok(lines.join("\n"), structured);
       } catch (e) {
         return toolError("Dead check failed", e);
       }
@@ -2364,7 +2421,39 @@ export const mcp = new Command("mcp")
           formatCompactionStatus(daemonStatus.compaction),
           `Projects: ${projects.length} indexed (call list_projects for names + per-project chunk counts)`,
         ].filter(Boolean);
-        return ok(lines.join("\n"));
+        const compaction = compactionSchema.safeParse(daemonStatus.compaction);
+        return ok(lines.join("\n"), {
+          schemaVersion: 1,
+          root: currentRoot(),
+          store: storeDir(),
+          secondary: secondary(),
+          chunks,
+          files,
+          projects: projects.length,
+          embedding: {
+            state: identity.state,
+            configured: {
+              tier: identity.configured.tier,
+              vectorDim: identity.configured.vectorDim,
+              fingerprint: identity.configured.fingerprint,
+            },
+            built: identity.built
+              ? {
+                  tier: identity.built.tier,
+                  vectorDim: identity.built.vectorDim,
+                  fingerprint: identity.built.fingerprint,
+                }
+              : null,
+          },
+          watcher: {
+            status:
+              daemonProject?.status ??
+              watcher?.status ??
+              (secondary() || !daemonStatus.ok ? "unobserved" : "not_running"),
+            indexState: daemonProject?.indexState ?? null,
+          },
+          compaction: compaction.success ? compaction.data : null,
+        });
       } catch (e) {
         return toolError("Status check failed", e);
       }
@@ -3325,6 +3414,16 @@ export const mcp = new Command("mcp")
         name,
         {
           ...config,
+          ...(MCP_READ_OUTPUT_SCHEMAS[name]
+            ? {
+                outputSchema: MCP_READ_OUTPUT_SCHEMAS[name],
+                annotations: {
+                  readOnlyHint: true,
+                  destructiveHint: false,
+                  openWorldHint: false,
+                },
+              }
+            : {}),
           inputSchema: { root: z.string().optional(), ...config.inputSchema },
         },
         async (rawArgs) => {

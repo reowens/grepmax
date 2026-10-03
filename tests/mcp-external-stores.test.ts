@@ -181,6 +181,62 @@ it("MCP stays pipe-only while routing concurrent roots, symlinks and offline sto
     });
     expect(status.result.isError, JSON.stringify(status)).not.toBe(true);
     expect(status.result.content[0].text).toContain(secondary);
+    expect(status.result.structuredContent).toMatchObject({
+      root: roots[1],
+      store: path.join(secondary, "lancedb"),
+      secondary: true,
+      chunks: 1,
+      files: 1,
+      watcher: { status: "unobserved", indexState: null },
+      compaction: null,
+    });
+    const structuredGraphs = await Promise.all(
+      [roots[0], alias].map((root) =>
+        request("tools/call", {
+          name: "trace_calls",
+          arguments: { symbol: "Fixture", root },
+        }),
+      ),
+    );
+    for (const [i, response] of structuredGraphs.entries()) {
+      expect(response.error, stderr).toBeUndefined();
+      expect(response.result.isError, JSON.stringify(response)).not.toBe(true);
+      expect(response.result.structuredContent).toMatchObject({
+        root: roots[i],
+        found: true,
+        center: {
+          location: {
+            path: path.join(
+              roots[i],
+              i ? "external-fixture.ts" : "primary-fixture.ts",
+            ),
+            line: 2,
+          },
+        },
+        approximate: true,
+      });
+    }
+    const dead = await request("tools/call", {
+      name: "dead",
+      arguments: { symbol: "Fixture", root: "external" },
+    });
+    expect(dead.error, stderr).toBeUndefined();
+    expect(dead.result.structuredContent).toMatchObject({
+      root: roots[1],
+      status: "dead",
+      definition: { line: 2 },
+      approximate: true,
+    });
+    const missing = await request("tools/call", {
+      name: "dead",
+      arguments: { symbol: "Missing", root: "external" },
+    });
+    expect(missing.error, stderr).toBeUndefined();
+    expect(missing.result.structuredContent).toMatchObject({
+      status: "not_found",
+      definition: null,
+    });
+
     // Offline inventory must remain visible even when no mounted store has projects.
     fs.writeFileSync(path.join(primary, "projects.json"), "[]");
     fs.writeFileSync(path.join(secondary, "projects.json"), "[]");

@@ -29,8 +29,10 @@ Use runlist to consume the latest handoff and claim plan work; older archived no
 historical states. The upstream FTS panic is resolved in the shipped LanceDB 0.38.0 GA pin;
 the rebuild guard remains as a recovery tripwire.
 
-The next MCP improvements to assess are structured results/output schemas, a compatible SDK v2
-migration, and progress/cancellation. Keep STDIO only; Tasks/subscriptions remain workflow-gated.
+The next patch adds structured results/output schemas for semantic_search, trace_calls, dead,
+and index_status alongside existing text, with truthful read-only annotations and pipe-only tests.
+Next assess a compatible SDK v2 migration, then progress/cancellation. Keep STDIO only;
+Tasks/subscriptions remain workflow-gated.
 
 ## Deferred work
 
@@ -71,7 +73,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 71 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 72 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|

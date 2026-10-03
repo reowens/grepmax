@@ -27,12 +27,16 @@ import {
   it,
   vi,
 } from "vitest";
+import { z } from "zod";
 
-type ToolHandler = (
-  args: Record<string, unknown>,
-) => Promise<{ content: Array<{ text: string }>; isError?: boolean }>;
+type ToolHandler = (args: Record<string, unknown>) => Promise<{
+  content: Array<{ text: string }>;
+  isError?: boolean;
+  structuredContent?: Record<string, unknown>;
+}>;
 
 const tools = new Map<string, ToolHandler>();
+const configs = new Map<string, { outputSchema?: z.ZodRawShape }>();
 const sendDaemonCommand = vi.fn();
 const vectorDbCtor = vi.fn();
 
@@ -41,8 +45,13 @@ let sourceFile: string;
 
 vi.mock("@modelcontextprotocol/sdk/server/mcp.js", () => ({
   McpServer: class {
-    registerTool(name: string, _config: unknown, handler: ToolHandler) {
+    registerTool(
+      name: string,
+      config: { outputSchema?: z.ZodRawShape },
+      handler: ToolHandler,
+    ) {
       tools.set(name, handler);
+      configs.set(name, config);
     }
     async connect() {}
   },
@@ -174,16 +183,18 @@ async function call(
   name: string,
   args: Record<string, unknown> = {},
 ): Promise<string> {
-  const handler = tools.get(name);
-  if (!handler) throw new Error(`tool not registered: ${name}`);
-  const result = await handler(args);
+  const result = await callRaw(name, args);
   return result.content?.[0]?.text ?? "";
 }
 
 async function callRaw(name: string, args: Record<string, unknown> = {}) {
   const handler = tools.get(name);
   if (!handler) throw new Error(`tool not registered: ${name}`);
-  return handler(args);
+  const result = await handler(args);
+  const schema = configs.get(name)?.outputSchema;
+  if (schema && !result.isError)
+    z.object(schema).parse(result.structuredContent);
+  return result;
 }
 
 /** The single verb each canned answer is for, in call order. */
@@ -286,6 +297,314 @@ describe("MCP read tools go through the daemon read verbs", () => {
     const text = await call("semantic_search", { query: "auth handling" });
     expect(sendDaemonCommand.mock.calls[0][0].cmd).toBe("search");
     expect(text).toContain("src/auth.ts");
+    expect(vectorDbCtor).not.toHaveBeenCalled();
+  });
+
+  it.each(["pointer", "code", "full"])(
+    "search %s structured matches follow scope and display filters",
+    async (detail) => {
+      const row = (file: string, symbol: string, score: number, line = 0) => ({
+        metadata: { path: file },
+        generated_metadata: { start_line: line, end_line: line + 2 },
+        defined_symbols: [symbol],
+        score,
+        role: "IMPLEMENTATION",
+        content: "function example() {}",
+        vector: [999],
+      });
+      respond({
+        search: {
+          ok: true,
+          warnings: ["Index incomplete"],
+          data: [
+            row(sourceFile, "skip", 0.2),
+            row(sourceFile, "handleAuth", 0.9, 3),
+            row(sourceFile, "handleOther", 0.8),
+            row(path.join(projectRoot, "src/other.ts"), "other", 0.9),
+            row(
+              path.join(path.dirname(projectRoot), "private.ts"),
+              "handlePrivate",
+              1,
+            ),
+          ],
+        },
+      });
+      const result = await callRaw("semantic_search", {
+        query: "auth handling",
+        detail,
+        min_score: 0.5,
+        max_per_file: 1,
+        name_pattern: "handle",
+      });
+      expect(result.structuredContent).toEqual({
+        schemaVersion: 1,
+        query: "auth handling",
+        roots: [projectRoot],
+        warnings: ["Index incomplete"],
+        matches: [
+          {
+            path: sourceFile,
+            startLine: 4,
+            endLine: 6,
+            symbols: ["handleAuth"],
+            role: "IMPLEMENTATION",
+            score: 0.9,
+          },
+        ],
+      });
+      const text = result.content[0].text;
+      expect(text).toContain("handleAuth");
+      expect(text).not.toContain("handleOther");
+      expect(text).not.toContain("handlePrivate");
+      expect(text).toContain("Index incomplete");
+      expect(vectorDbCtor).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["project", "all"])(
+    "search scope %s returns an empty contract when no rows survive",
+    async (scope) => {
+      respond({
+        search: { ok: true, warnings: ["Pending files"], data: [] },
+        "search-v2": { ok: true, warnings: ["Pending files"], data: [] },
+      });
+      const result = await callRaw("semantic_search", {
+        query: "auth handling",
+        scope,
+      });
+      expect(result.structuredContent).toMatchObject({
+        schemaVersion: 1,
+        query: "auth handling",
+        warnings: ["Pending files"],
+        matches: [],
+      });
+      expect(result.content[0].text).toContain("No matches found");
+      expect(result.structuredContent?.roots).toEqual([projectRoot]);
+    },
+  );
+
+  it.each([
+    { startLine: 7, endLine: 9 },
+    { start_line: 7, end_line: 9 },
+    { generated_metadata: { start_line: 7, end_line: 9 } },
+  ])("search locations agree across pointer and code for %j", async (lines) => {
+    respond({
+      search: {
+        ok: true,
+        data: [
+          {
+            path: sourceFile,
+            ...lines,
+            defined_symbols: ["handleAuth"],
+            role: "IMPLEMENTATION",
+            content: "function handleAuth() {}",
+          },
+        ],
+      },
+    });
+    for (const detail of ["pointer", "code"]) {
+      const result = await callRaw("semantic_search", {
+        query: "auth handling",
+        detail,
+      });
+      expect(result.structuredContent?.matches).toEqual([
+        {
+          path: sourceFile,
+          startLine: 8,
+          endLine: 10,
+          symbols: ["handleAuth"],
+          role: "IMPLEMENTATION",
+          score: null,
+        },
+      ]);
+      expect(result.content[0].text).toContain("src/auth.ts:8");
+    }
+  });
+
+  it("search filters can leave a valid empty result and errors do not claim success", async () => {
+    respond({
+      search: {
+        ok: true,
+        data: [{ metadata: { path: sourceFile }, defined_symbols: ["other"] }],
+      },
+    });
+    const empty = await callRaw("semantic_search", {
+      query: "auth handling",
+      name_pattern: "handle",
+    });
+    expect(empty.structuredContent?.matches).toEqual([]);
+    const failure = await callRaw("semantic_search", { query: "" });
+    expect(failure.isError).toBe(true);
+    expect(failure.structuredContent).toBeUndefined();
+  });
+
+  it("trace structured callers preserve ancestry, uncertainty and display caps", async () => {
+    respond({
+      "graph.trace": {
+        ok: true,
+        graph: {
+          center: CENTER,
+          callerTree: [
+            {
+              node: {
+                ...CENTER,
+                symbol: "outer",
+                edgeKind: "member",
+                confidence: "INFERRED",
+              },
+              callers: [
+                { node: { ...CENTER, symbol: "ancestor" }, callers: [] },
+              ],
+            },
+          ],
+          callees: [
+            {
+              ...CENTER,
+              symbol: "unknown",
+              file: "",
+              resolution: "ambiguous-member",
+            },
+            ...Array.from({ length: 15 }, (_, i) => ({
+              ...CENTER,
+              symbol: `callee${i}`,
+            })),
+          ],
+          importers: [
+            sourceFile,
+            ...Array.from({ length: 12 }, (_, i) =>
+              path.join(projectRoot, `importer${i}.ts`),
+            ),
+          ],
+        },
+      },
+    });
+    const result = await callRaw("trace_calls", {
+      symbol: "handleAuth",
+      depth: 2,
+    });
+    expect(result.structuredContent).toMatchObject({
+      found: true,
+      approximate: true,
+      center: { location: { path: sourceFile, line: 10 } },
+      callers: [
+        {
+          node: { symbol: "outer", edgeKind: "member", confidence: "INFERRED" },
+          depth: 1,
+          parentIndex: null,
+        },
+        { node: { symbol: "ancestor" }, depth: 2, parentIndex: 0 },
+      ],
+      omittedCallees: 1,
+      omittedImporters: 2,
+    });
+    expect(result.structuredContent?.callees).toHaveLength(15);
+    expect(result.structuredContent?.importers).toHaveLength(10);
+    expect(
+      (result.structuredContent?.callees as any[] | undefined)?.[0],
+    ).toMatchObject({
+      location: null,
+      resolution: "ambiguous_member",
+    });
+  });
+
+  it("trace and dead not-found responses still fulfill their success schemas", async () => {
+    respond({
+      "graph.trace": {
+        ok: true,
+        graph: { center: null, callerTree: [], callees: [], importers: [] },
+      },
+      "graph.dead": {
+        ok: true,
+        dead: {
+          found: false,
+          defPath: "",
+          defLine: 0,
+          isExported: false,
+          callerCount: 0,
+          topCallers: [],
+        },
+      },
+    });
+    expect(
+      (await callRaw("trace_calls", { symbol: "missing" })).structuredContent,
+    ).toMatchObject({ found: false, center: null, callers: [] });
+    expect(
+      (await callRaw("dead", { symbol: "missing" })).structuredContent,
+    ).toMatchObject({ status: "not_found", definition: null, callerCount: 0 });
+  });
+
+  it.each([
+    { exported: true, count: 0, status: "public_export" },
+    { exported: false, count: 0, status: "dead" },
+    { exported: false, count: 2, status: "live" },
+  ])(
+    "dead publishes $status as an approximate graph result",
+    async ({ exported, count, status }) => {
+      respond({
+        "graph.dead": {
+          ok: true,
+          dead: {
+            found: true,
+            defPath: sourceFile,
+            defLine: 9,
+            isExported: exported,
+            callerCount: count,
+            topCallers: count ? [{ file: sourceFile, line: 4 }] : [],
+          },
+        },
+      });
+      const result = await callRaw("dead", { symbol: "handleAuth" });
+      expect(result.structuredContent).toMatchObject({
+        root: projectRoot,
+        status,
+        definition: { path: sourceFile, line: 10 },
+        isExported: exported,
+        callerCount: count,
+        approximate: true,
+      });
+      expect(result.structuredContent?.callers).toEqual(
+        count ? [{ path: sourceFile, line: 5 }] : [],
+      );
+    },
+  );
+
+  it("index health carries degraded watcher and failed compaction facts", async () => {
+    const indexState = {
+      indexing: false,
+      pendingFiles: 0,
+      failedFiles: 2,
+      degraded: true,
+      watcherMode: "polling",
+    };
+    const compaction = {
+      status: "failed",
+      at: 123456789,
+      attempts: 1,
+      elapsedMs: 100,
+      reason: "conflict",
+      diskBytesBefore: 1024,
+      diskBytesAfter: 2048,
+    };
+    respond({
+      "project-stats": { ok: true, chunks: 120, files: 8 },
+      status: {
+        ok: true,
+        projects: [{ root: projectRoot, status: "degraded", indexState }],
+        compaction,
+      },
+    });
+    const result = await callRaw("index_status");
+    expect(result.structuredContent).toMatchObject({
+      root: projectRoot,
+      secondary: false,
+      chunks: 120,
+      files: 8,
+      projects: 1,
+      watcher: { status: "degraded", indexState },
+      compaction,
+      embedding: { state: "current", built: null },
+    });
+    expect(result.content[0].text).toContain("Last compaction: failed");
     expect(vectorDbCtor).not.toHaveBeenCalled();
   });
 

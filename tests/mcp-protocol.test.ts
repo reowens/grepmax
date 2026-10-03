@@ -126,6 +126,23 @@ describe("MCP protocol", () => {
     expect(tool.inputSchema.properties.in.type).toBe("string");
     expect(tool.inputSchema.properties.exclude.type).toBe("string");
 
+    for (const name of [
+      "semantic_search",
+      "trace_calls",
+      "dead",
+      "index_status",
+    ]) {
+      const readTool = tools.find((entry: any) => entry.name === name);
+      expect(readTool.outputSchema.type).toBe("object");
+      expect(readTool.outputSchema.required).toContain("schemaVersion");
+      expect(readTool.annotations).toEqual({
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: false,
+      });
+    }
+    expect(tool.outputSchema).toBeUndefined();
+
     send(child, {
       jsonrpc: "2.0",
       id: 3,
