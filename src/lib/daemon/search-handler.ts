@@ -1,6 +1,9 @@
 import type { EmbeddingGenerationConfig } from "../index/embedding-generation";
 import { compareEmbeddingGeneration } from "../index/embedding-generation";
-import type { IndexState } from "../output/index-state-footer";
+import {
+  formatIndexStateFooter,
+  type IndexState,
+} from "../output/index-state-footer";
 import { Searcher } from "../search/searcher";
 import { getStoredSkeleton } from "../skeleton/retriever";
 import type { ChunkType, SearchFilter } from "../store/types";
@@ -142,10 +145,19 @@ export async function handleDaemonSearch(
   if (result.warnings?.length) response.warnings = result.warnings;
 
   // Annotate partial results when the index is still catching up, so an
-  // agent can caveat or retry. Only attached when actually indexing (the
-  // formatter suppresses the settled case anyway).
+  // agent can caveat or retry. Settled failures remain visible too.
   const idx = deps.getIndexState(root);
-  if (idx.indexing) response.indexState = idx;
+  response.indexState = idx;
+  for (const candidateRoot of roots) {
+    if (candidateRoot === root) continue;
+    const health = formatIndexStateFooter(deps.getIndexState(candidateRoot), {
+      agent: true,
+    });
+    if (health) {
+      response.warnings ??= [];
+      response.warnings.push(`${candidateRoot}: ${health}`);
+    }
+  }
 
   // --skeleton support: fetch per-file skeletons inline so the CLI doesn't
   // have to open its own VectorDB. getStoredSkeleton is a single LIMIT-1

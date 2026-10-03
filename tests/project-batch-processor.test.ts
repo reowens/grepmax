@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectBatchProcessor } from "../src/lib/index/batch-processor";
+import { EmbeddingBackendUnavailableError } from "../src/lib/workers/embedding-error";
 import { getWorkerPool } from "../src/lib/workers/pool";
 
 function makeWorkerResult(absPath: string) {
@@ -83,6 +84,59 @@ describe("ProjectBatchProcessor", () => {
     return files;
   }
 
+  it("preserves retry budgets through a backend outage and recovers without a new file event", async () => {
+    const processor = makeProcessor() as any;
+    pool.processFile.mockRejectedValue(
+      new EmbeddingBackendUnavailableError("backend offline"),
+    );
+    processor.handleFileEvent("change", filePath);
+    for (let i = 0; i < 8; i++) {
+      await processor.processBatch(new AbortController().signal);
+      expect(processor.progress.failedFiles).toBe(0);
+      expect(processor.retryCount.size).toBe(0);
+      expect(processor.pending.has(filePath)).toBe(true);
+      expect(processor.backendRetryAt - Date.now()).toBeGreaterThan(0);
+      expect(processor.backendRetryAt - Date.now()).toBeLessThanOrEqual(60_000);
+    }
+    expect(vectorDb.deletePaths).not.toHaveBeenCalled();
+    expect(metaCache.put).not.toHaveBeenCalled();
+    pool.processFile.mockResolvedValue(makeWorkerResult(filePath));
+    await processor.processBatch(new AbortController().signal);
+    expect(processor.pending.size).toBe(0);
+    expect(processor.backendRetryAt).toBe(0);
+    expect(metaCache.put).toHaveBeenCalled();
+  });
+
+  it("logs shutdown admission cancellation without a failure stack", async () => {
+    const error = Object.assign(new Error("Aborted"), { name: "AbortError" });
+    const processor = makeProcessor({
+      runOperation: async () => {
+        throw error;
+      },
+    }) as any;
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    processor.handleFileEvent("change", filePath);
+    processor.startBatch();
+    await processor.activeBatch;
+    expect(spy).not.toHaveBeenCalled();
+    expect(processor.retryCount.size).toBe(0);
+    spy.mockRestore();
+  });
+  it("moves an existing event timer behind a newly established backend backoff", async () => {
+    vi.useFakeTimers();
+    const processor = makeProcessor() as any;
+    processor.handleFileEvent("change", filePath);
+    const start = vi
+      .spyOn(processor, "startBatch")
+      .mockImplementation(() => {});
+    processor.backendRetryAt = Date.now() + 5000;
+    processor.scheduleBatch();
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(start).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(start).toHaveBeenCalledOnce();
+    start.mockRestore();
+  });
   it("close waits for the active batch to settle", async () => {
     let resolveWorker!: (result: ReturnType<typeof makeWorkerResult>) => void;
     pool.processFile.mockImplementationOnce(

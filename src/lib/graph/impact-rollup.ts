@@ -195,7 +195,7 @@ export function formatImpactRollupHuman(
     } else {
       for (const test of rollup.topTests) {
         lines.push(
-          `  ${relativeToProject(opts.projectRoot, test.file)}:${test.line + 1}  (${hopLabelHuman(test.hops)}${formatViaHuman(test.via)})`,
+          `  ${relativeToProject(opts.projectRoot, test.file)}:${test.line + 1}  (${hopLabelHuman(test.hops, test.evidence)}${formatViaHuman(test.via)})`,
         );
       }
     }
@@ -251,7 +251,7 @@ export function formatImpactRollupAgent(
         [
           "test",
           `${relativeToProject(opts.projectRoot, test.file)}:${test.line + 1}`,
-          hopLabelAgent(test.hops),
+          hopLabelAgent(test.hops, test.evidence),
           formatViaAgent(test.via).trim(),
         ]
           .filter(Boolean)

@@ -232,6 +232,27 @@ describe("Daemon self-recycle", () => {
     expect(exitSpy).toHaveBeenCalledWith(0);
   });
 
+  it("captures resource counters once when recycling becomes due, even during maintenance", () => {
+    footprint.mb = 4096;
+    daemon.vectorDb = {
+      isMaintenanceActive: () => true,
+      cacheSizeBytes: () => 100 * 1024 * 1024,
+    };
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    daemon.maybeRecycle();
+    daemon.maybeRecycle(false);
+    daemon.maybeRecycle(false);
+    const snapshots = log.mock.calls.filter((args) =>
+      String(args[0]).includes("Resource snapshot:"),
+    );
+    expect(snapshots).toHaveLength(1);
+    expect(daemon.resourceSnapshot()).toMatchObject({
+      reason: "recycle-due",
+      footprintMb: 4096,
+      lanceCacheMb: 100,
+      maintenance: true,
+    });
+  });
   it("ignores a large footprint on a freshly started daemon", () => {
     const shutdownSpy = vi
       .spyOn(daemon, "shutdown")

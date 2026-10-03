@@ -279,14 +279,14 @@ export const peek = new Command("peek")
       // Dedupe by symbol — repeated references arrive once per chunk.
       const seenCallees = new Set<string>();
       const calleeList = graph.callees
-        .filter((c) => c.file || !isBuiltinCallee(c.symbol))
+        .filter((c) => c.file || c.resolution || !isBuiltinCallee(c.symbol))
         .filter((c) => {
           if (seenCallees.has(c.symbol)) return false;
           seenCallees.add(c.symbol);
           return true;
         })
         .map((c) => ({
-          symbol: c.symbol,
+          symbol: c.resolution ? `${c.symbol} (receiver unresolved)` : c.symbol,
           file: c.file,
           line: c.line,
         }));

@@ -65,6 +65,7 @@ import type {
   DetailedDependentHit,
   TestHit,
 } from "../lib/graph/impact";
+import { hopLabelAgent } from "../lib/graph/test-hits";
 import {
   assertEmbeddingSearchCompatible,
   embeddingFingerprintLabel,
@@ -73,6 +74,10 @@ import {
 import { readGlobalConfig } from "../lib/index/index-config";
 import { generateSummaries } from "../lib/index/syncer";
 import { formatAgentSearchResults } from "../lib/output/agent-search-formatter";
+import {
+  formatIndexStateFooter,
+  type IndexState,
+} from "../lib/output/index-state-footer";
 import { Searcher } from "../lib/search/searcher";
 import { annotateSkeletonLines } from "../lib/skeleton/annotator";
 import { Skeletonizer } from "../lib/skeleton/skeletonizer";
@@ -563,14 +568,20 @@ export const mcp = new Command("mcp")
             },
             { timeoutMs: 60_000 },
           ),
-        render: (resp) => ({
-          data: Array.isArray(resp.data) ? (resp.data as ChunkType[]) : [],
-          warnings: Array.isArray(resp.warnings)
-            ? resp.warnings.filter(
-                (warning): warning is string => typeof warning === "string",
-              )
-            : undefined,
-        }),
+        render: (resp) => {
+          const warnings = Array.isArray(resp.warnings)
+            ? resp.warnings.filter((w): w is string => typeof w === "string")
+            : [];
+          const health = formatIndexStateFooter(
+            resp.indexState as IndexState | undefined,
+            { agent: true },
+          );
+          if (health) warnings.push(health);
+          return {
+            data: Array.isArray(resp.data) ? (resp.data as ChunkType[]) : [],
+            warnings,
+          };
+        },
         inProcess: () =>
           localStore(async (deps) => {
             const searcher = new Searcher(deps.vectorDb!);
@@ -1207,7 +1218,9 @@ export const mcp = new Command("mcp")
                       `  -> ${callee.symbol} ${rel}:${callee.line + 1}`,
                     );
                   } else {
-                    traceLines.push(`  -> ${callee.symbol} (not indexed)`);
+                    traceLines.push(
+                      `  -> ${callee.symbol} (${callee.resolution === "ambiguous-member" ? "receiver unresolved" : "not indexed"})`,
+                    );
                   }
                 }
               }
@@ -1453,7 +1466,9 @@ export const mcp = new Command("mcp")
                 : callee.file;
               lines.push(`  -> ${callee.symbol} ${rel}:${callee.line + 1}`);
             } else {
-              lines.push(`  -> ${callee.symbol} (not indexed)`);
+              lines.push(
+                `  -> ${callee.symbol} (${callee.resolution === "ambiguous-member" ? "receiver unresolved" : "not indexed"})`,
+              );
             }
           }
           if (graph.callees.length > 15) {
@@ -1699,7 +1714,9 @@ export const mcp = new Command("mcp")
           for (const c of graph.callees.slice(0, maxCallees)) {
             const loc = c.file
               ? `${rel(c.file)}:${c.line + 1}`
-              : "(not indexed)";
+              : c.resolution === "ambiguous-member"
+                ? "(receiver unresolved)"
+                : "(not indexed)";
             parts.push(`  -> ${c.symbol}  ${loc}`);
           }
           if (graph.callees.length > maxCallees) {
@@ -2201,8 +2218,17 @@ export const mcp = new Command("mcp")
 
         const { chunks, files } = await indexTotals(projects);
 
-        // Watcher status
-        const watcher = getWatcherCoveringPath(projectRoot);
+        const daemonStatus = await sendDaemonCommand({ cmd: "status" });
+        const watched = (
+          Array.isArray(daemonStatus.projects) ? daemonStatus.projects : []
+        ) as Array<{ root: string; status?: string; indexState?: IndexState }>;
+        const daemonProject = watched.find(
+          (p) => p.root === currentProject?.root,
+        );
+        // Only use the registry when no daemon answered; sandboxed reads stay IPC-only.
+        const watcher = daemonStatus.ok
+          ? undefined
+          : getWatcherCoveringPath(projectRoot);
         let watcherLine = "Watcher: not running";
         if (watcher) {
           const status = watcher.status ?? "unknown";
@@ -2214,6 +2240,14 @@ export const mcp = new Command("mcp")
           if (status === "syncing") {
             watcherLine += " — search results may be incomplete";
           }
+        }
+
+        if (daemonProject) {
+          watcherLine = `Watcher: ${daemonProject.status ?? "unknown"} (${path.basename(daemonProject.root)}/)`;
+          const health = formatIndexStateFooter(daemonProject.indexState, {
+            agent: true,
+          });
+          if (health) watcherLine += `\n${health}`;
         }
 
         // Health overview only. The per-project listing (names, roots,
@@ -2662,7 +2696,7 @@ export const mcp = new Command("mcp")
         const rel = (p: string) =>
           p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p;
         const lines = tests.map((t) => {
-          const hop = t.hops === 0 ? "direct" : `${t.hops}-hop`;
+          const hop = hopLabelAgent(t.hops, t.evidence);
           return `${rel(t.file)}:${t.line + 1} ${t.symbol} (${hop})`;
         });
         return ok(`Tests for ${target}:\n${lines.join("\n")}`);
@@ -2773,7 +2807,7 @@ export const mcp = new Command("mcp")
         if (tests.length > 0) {
           sections.push(`Affected tests (${tests.length}):`);
           for (const t of tests) {
-            const hop = t.hops === 0 ? "direct" : `${t.hops}-hop`;
+            const hop = hopLabelAgent(t.hops, t.evidence);
             sections.push(
               `  ${rel(t.file)}:${t.line + 1} ${t.symbol} (${hop})`,
             );

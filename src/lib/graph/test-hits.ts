@@ -13,6 +13,7 @@ export interface TestFileHit {
   line: number;
   /** Min hops across the file's hits (-1 = import fallback). */
   hops: number;
+  evidence?: "file-candidate";
   /** Caller symbols inside the test file, best hop first. */
   via: string[];
 }
@@ -23,13 +24,20 @@ export function groupTestHitsByFile(hits: TestHit[]): TestFileHit[] {
   // `via` lists closest callers first ((referenced) fallback hits sort last).
   const ordered = [...hits].sort(
     (a, b) =>
+      Number(!!a.evidence) - Number(!!b.evidence) ||
       (a.hops === -1 ? Number.MAX_SAFE_INTEGER : a.hops) -
-      (b.hops === -1 ? Number.MAX_SAFE_INTEGER : b.hops),
+        (b.hops === -1 ? Number.MAX_SAFE_INTEGER : b.hops),
   );
   for (const h of ordered) {
     let g = byFile.get(h.file);
     if (!g) {
-      g = { file: h.file, line: h.line, hops: h.hops, via: [] };
+      g = {
+        file: h.file,
+        line: h.line,
+        hops: h.hops,
+        via: [],
+        ...(h.evidence ? { evidence: h.evidence } : {}),
+      };
       byFile.set(h.file, g);
     }
     if (h.symbol && h.symbol !== "(referenced)" && !g.via.includes(h.symbol)) {
@@ -38,6 +46,7 @@ export function groupTestHitsByFile(hits: TestHit[]): TestFileHit[] {
   }
   return [...byFile.values()].sort(
     (a, b) =>
+      Number(!!a.evidence) - Number(!!b.evidence) ||
       (a.hops === -1 ? Number.MAX_SAFE_INTEGER : a.hops) -
         (b.hops === -1 ? Number.MAX_SAFE_INTEGER : b.hops) ||
       a.file.localeCompare(b.file),
@@ -62,11 +71,19 @@ export function formatViaHuman(via: string[]): string {
   return `, via ${shown}${more}`;
 }
 
-export function hopLabelAgent(hops: number): string {
+export function hopLabelAgent(
+  hops: number,
+  evidence?: TestHit["evidence"],
+): string {
+  if (evidence) return "file-candidate";
   return hops === -1 ? "via-import" : hops === 0 ? "direct" : `${hops}-hop`;
 }
 
-export function hopLabelHuman(hops: number): string {
+export function hopLabelHuman(
+  hops: number,
+  evidence?: TestHit["evidence"],
+): string {
+  if (evidence) return "same-file candidate";
   return hops === -1
     ? "via import"
     : hops === 0

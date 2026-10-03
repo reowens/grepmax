@@ -44,31 +44,31 @@ describe("formatIndexStateFooter", () => {
   // A catchup after an FSEvents drop queues the whole project — 10k+ files
   // clearing at ~0.0s per batch with 0 reindexed. Reporting that as "results may
   // be incomplete" trains agents to distrust and retry correct answers.
-  it("reports re-verification as current, not incomplete, in agent mode", () => {
+  it("reports re-verification without claiming current coverage, in agent mode", () => {
     const footer = formatIndexStateFooter(
       { indexing: true, pendingFiles: 10943, verifying: true },
       { agent: true },
     );
     expect(footer).toBe(
-      "[index: verifying ~10943 unchanged files · results current]",
+      "[index: verifying ~10943 files · coverage not yet verified]",
     );
     expect(footer).not.toContain("incomplete");
     expect(footer).not.toContain("retry");
   });
 
-  it("reports re-verification as current in non-agent mode", () => {
+  it("reports unverified coverage in non-agent mode", () => {
     expect(
       formatIndexStateFooter(
         { indexing: true, pendingFiles: 10943, verifying: true },
         { agent: false },
       ),
-    ).toBe("Index verifying 10943 unchanged files — results are current.");
+    ).toBe("Index verifying 10943 files — coverage is not yet verified.");
     expect(
       formatIndexStateFooter(
         { indexing: true, pendingFiles: 1, verifying: true },
         { agent: false },
       ),
-    ).toBe("Index verifying 1 unchanged file — results are current.");
+    ).toBe("Index verifying 1 file — coverage is not yet verified.");
   });
 
   it("still warns when there is real outstanding work", () => {
@@ -111,5 +111,36 @@ describe("formatIndexStateFooter", () => {
         { agent: false },
       ),
     ).toBe("⚠️  Index still syncing — results may be incomplete.");
+  });
+  it("warns about failed files even after the queue settles", () => {
+    for (const agent of [true, false]) {
+      expect(
+        formatIndexStateFooter(
+          { indexing: false, pendingFiles: 0, failedFiles: 3 },
+          { agent },
+        ),
+      ).toContain("3 files failed");
+      expect(
+        formatIndexStateFooter(
+          { indexing: true, pendingFiles: 1, failedFiles: 3, verifying: true },
+          { agent },
+        ),
+      ).not.toContain("results current");
+    }
+  });
+  it("warns while polling, recovering, or reconciling with no queued files", () => {
+    for (const health of [
+      { watcherMode: "polling" as const },
+      { watcherMode: "recovering" as const },
+      { catchupRunning: true },
+      { degraded: true },
+    ]) {
+      expect(
+        formatIndexStateFooter(
+          { indexing: false, pendingFiles: 0, ...health },
+          { agent: true },
+        ),
+      ).toContain("may be incomplete");
+    }
   });
 });

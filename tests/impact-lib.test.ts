@@ -12,6 +12,7 @@ import {
   formatImpactRollupHuman,
   impactPackageBucket,
 } from "../src/lib/graph/impact-rollup";
+import { groupTestHitsByFile, hopLabelAgent } from "../src/lib/graph/test-hits";
 
 function createMockDb(data: Record<string, any[]>) {
   const mockTable = {
@@ -57,6 +58,55 @@ function makeRow(
     complexity: 1,
   };
 }
+
+describe("test evidence", () => {
+  it("does not promote file candidates when the target has no test references", async () => {
+    const db = createMockDb({
+      "defined_symbols, 'recover'": [
+        makeRow("recover", "/project/src/watch.ts", 1),
+      ],
+      "path = '/project/src/watch.ts'": [
+        { defined_symbols: ["recover", "helper"] },
+      ],
+      "referenced_symbols, 'helper'": [
+        makeRow("unrelatedMock", "/project/tests/other.test.ts", 2, ["helper"]),
+      ],
+    });
+    const hits = await findTests(["recover"], db, "/project");
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toMatchObject({
+      symbol: "unrelatedMock",
+      evidence: "file-candidate",
+    });
+  });
+  it("labels co-defined symbol coverage as candidates, preserving direct matches", async () => {
+    const root = "/project";
+    const db = createMockDb({
+      "defined_symbols, 'recover'": [
+        makeRow("recover", `${root}/src/watch.ts`, 1),
+      ],
+      "path = '/project/src/watch.ts'": [
+        { defined_symbols: ["recover", "helper"] },
+      ],
+      "referenced_symbols, 'recover'": [
+        makeRow("recoverTest", `${root}/tests/recover.test.ts`, 1, ["recover"]),
+      ],
+      "referenced_symbols, 'helper'": [
+        makeRow("unrelatedMock", `${root}/tests/other.test.ts`, 2, ["helper"]),
+      ],
+    });
+    const hits = await findTests(["recover"], db, root);
+    expect(
+      hits.find((h) => h.symbol === "recoverTest")?.evidence,
+    ).toBeUndefined();
+    const candidate = hits.find((h) => h.symbol === "unrelatedMock")!;
+    expect(candidate.evidence).toBe("file-candidate");
+    const grouped = groupTestHitsByFile(hits);
+    expect(hopLabelAgent(grouped[1].hops, grouped[1].evidence)).toBe(
+      "file-candidate",
+    );
+  });
+});
 
 describe("isTestPath", () => {
   it("detects __tests__ directory", () => {

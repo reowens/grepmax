@@ -29,6 +29,7 @@ export interface TestHit {
   file: string;
   symbol: string;
   line: number;
+  evidence?: "file-candidate";
   hops: number; // 0 = direct caller, 1 = caller-of-caller, etc.
 }
 
@@ -218,20 +219,30 @@ export async function findTests(
   );
 
   for (const symbol of expanded) {
+    const candidates = new Map<string, TestHit>();
     await walkCallers(
       symbol,
       graphBuilder,
-      testHits,
+      candidates,
       0,
       depth,
       new Set(),
       families.get(symbol) ?? null,
     );
+    for (const [key, hit] of candidates) {
+      if (!symbols.includes(symbol)) hit.evidence = "file-candidate";
+      const previous = testHits.get(key);
+      if (
+        !previous ||
+        (previous.evidence && !hit.evidence) ||
+        (previous.evidence === hit.evidence && hit.hops < previous.hops)
+      )
+        testHits.set(key, hit);
+    }
   }
 
-  if (testHits.size === 0) {
+  if (![...testHits.values()].some((hit) => !hit.evidence)) {
     const importFiles = await findImportFallbackTests(
-      expanded,
       symbols,
       vectorDb,
       projectRoot,
@@ -249,12 +260,14 @@ export async function findTests(
   }
 
   return [...testHits.values()].sort(
-    (a, b) => a.hops - b.hops || a.file.localeCompare(b.file),
+    (a, b) =>
+      Number(!!a.evidence) - Number(!!b.evidence) ||
+      a.hops - b.hops ||
+      a.file.localeCompare(b.file),
   );
 }
 
 async function findImportFallbackTests(
-  expandedSymbols: string[],
   originalSymbols: string[],
   vectorDb: VectorDB,
   projectRoot: string,
@@ -264,10 +277,10 @@ async function findImportFallbackTests(
   const files = new Set<string>();
 
   // Signal 1: referenced_symbols match (precise; works when the chunker
-  // captured call references in test bodies). Uses the expanded set so tests
-  // that call a method of the target class still match.
+  // captured call references in test bodies). Co-defined symbols are already
+  // exposed as file candidates and must not become target coverage here.
   const dependents = await findDependents(
-    expandedSymbols,
+    originalSymbols,
     vectorDb,
     projectRoot,
     undefined,

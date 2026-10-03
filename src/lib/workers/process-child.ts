@@ -33,7 +33,7 @@ type OutgoingMessage =
   | { id: number; result: ProcessFileResult }
   | { id: number; result: Awaited<ReturnType<typeof encodeQuery>> }
   | { id: number; result: Awaited<ReturnType<typeof rerank>> }
-  | { id: number; error: string }
+  | { id: number; error: string; code?: string }
   | { id: number; heartbeat: true };
 
 // Every outgoing message also carries `rss` (see send()).
@@ -91,7 +91,8 @@ const handleMessage = async (msg: IncomingMessage) => {
       "worker",
       `fail task=${id} method=${method} ${(performance.now() - start).toFixed(0)}ms: ${message}`,
     );
-    send({ id, error: message });
+    const code = (err as { code?: unknown })?.code;
+    send({ id, error: message, ...(typeof code === "string" ? { code } : {}) });
   }
 };
 

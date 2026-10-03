@@ -60,6 +60,55 @@ function makeRow(
 }
 
 describe("GraphBuilder", () => {
+  it("does not link builtin member calls to unrelated project definitions", async () => {
+    const caller = makeRow(
+      "recover",
+      "/src/watch.ts",
+      1,
+      ["add", "get", "now"],
+      ["add", "get", "now"],
+    );
+    caller.content =
+      "this.pending.add(root); this.values.get(root); Date.now();";
+    const db = createMockDb({
+      "defined_symbols, 'recover'": [caller],
+      "defined_symbols, 'add'": [makeRow("add", "/src/commands/add.ts", 5)],
+      "defined_symbols, 'get'": [makeRow("get", "/src/sync.ts", 6)],
+      "defined_symbols, 'now'": [makeRow("now", "/tests/clock.test.ts", 7)],
+    });
+    const graph = await new GraphBuilder(db).buildGraph("recover");
+    expect(await new GraphBuilder(db).getCallees("recover")).toEqual([]);
+    expect(graph.callees).toHaveLength(3);
+    expect(
+      graph.callees.every(
+        (n) => n.file === "" && n.resolution === "ambiguous-member",
+      ),
+    ).toBe(true);
+  });
+  it("keeps a genuine free call even when the name is also used as a member", async () => {
+    const caller = makeRow("handle", "/src/handle.ts", 1, ["get"], ["get"]);
+    caller.content = "cache.get(key); get(key);";
+    const db = createMockDb({
+      "defined_symbols, 'handle'": [caller],
+      "defined_symbols, 'get'": [makeRow("get", "/src/api.ts", 4)],
+    });
+    expect(
+      (await new GraphBuilder(db).buildGraph("handle")).callees[0].file,
+    ).toBe("/src/api.ts");
+  });
+  it("retains a same-file project method sharing a builtin name", async () => {
+    const caller = makeRow("handle", "/src/handle.ts", 1, ["get"], ["get"]);
+    const db = createMockDb({
+      "defined_symbols, 'handle'": [caller],
+      "defined_symbols, 'get'": [makeRow("get", "/src/handle.ts", 4)],
+      "path = '/src/handle.ts'": [{ defined_symbols: ["handle", "get"] }],
+    });
+    expect(
+      (await new GraphBuilder(db).buildGraph("handle")).callees[0].file,
+    ).toBe("/src/handle.ts");
+    expect(await new GraphBuilder(db).getCallees("handle")).toEqual(["get"]);
+  });
+
   it("buildGraph returns center with callers and callees", async () => {
     const db = createMockDb({
       "defined_symbols, 'handleAuth'": [

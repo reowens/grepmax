@@ -246,6 +246,33 @@ afterEach(() => {
 });
 
 describe("MCP read tools go through the daemon read verbs", () => {
+  it("keeps settled indexing failures visible in search and index status", async () => {
+    const indexState = {
+      indexing: false,
+      pendingFiles: 0,
+      failedFiles: 3,
+      watcherMode: "polling",
+    };
+    respond({
+      search: { ok: true, data: [], indexState },
+      status: {
+        ok: true,
+        projects: [{ root: projectRoot, status: "degraded", indexState }],
+      },
+      "project-stats": { ok: true, chunks: 120, files: 8 },
+    });
+    const search = await call("semantic_search", {
+      query: "recover dropped watcher events",
+    });
+    const status = await call("index_status", {});
+    for (const text of [search, status]) {
+      expect(text).toContain("3 files failed");
+      expect(text).toContain("polling");
+      expect(text).toContain("results may be incomplete");
+    }
+    expect(status).toContain("Watcher: degraded");
+    expect(vectorDbCtor).not.toHaveBeenCalled();
+  });
   it("semantic_search renders the daemon's search answer", async () => {
     respond({
       search: {

@@ -1,6 +1,7 @@
 import { languageFamilyForPath } from "../core/languages";
 import type { VectorRecord } from "../store/types";
 import type { VectorDB } from "../store/vector-db";
+import { toArr } from "../utils/arrow";
 import {
   escapeSqlString,
   pathNotStartsWith,
@@ -26,6 +27,7 @@ export interface GraphNode {
   calls: string[];
   calledBy: string[];
   complexity?: number;
+  resolution?: "ambiguous-member";
   /**
    * Edge provenance for a caller node (how this chunk references the target):
    * `free` = a free call `T()` (call position, high confidence) ·
@@ -182,7 +184,12 @@ export class GraphBuilder {
     // Find the definition of the symbol
     const rows = await table
       .query()
-      .select(["referenced_symbols"])
+      .select([
+        "path",
+        "referenced_symbols",
+        "member_referenced_symbols",
+        "content",
+      ])
       .where(this.scopeWhere(`array_contains(defined_symbols, '${escaped}')`))
       .limit(1)
       .toArray();
@@ -190,7 +197,31 @@ export class GraphBuilder {
     if (rows.length === 0) return [];
 
     const record = rows[0] as unknown as VectorRecord;
-    return record.referenced_symbols || [];
+    const memberNames = toArr(record.member_referenced_symbols);
+    const content = String(record.content ?? "");
+    let localDefinitions: string[] = [];
+    if (record.path && memberNames.some(isBuiltinCallee)) {
+      const localRows = await table
+        .query()
+        .select(["defined_symbols"])
+        .where(
+          this.scopeWhere(`path = '${escapeSqlString(String(record.path))}'`),
+        )
+        .toArray();
+      localDefinitions = localRows.flatMap((row) =>
+        toArr((row as any).defined_symbols),
+      );
+    }
+    return toArr(record.referenced_symbols).filter((name) => {
+      if (
+        !isBuiltinCallee(name) ||
+        !memberNames.includes(name) ||
+        localDefinitions.includes(name)
+      )
+        return true;
+      const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`(?<![\\w.$])${escapedName}\\s*\\(`).test(content);
+    });
   }
 
   /**
@@ -212,6 +243,8 @@ export class GraphBuilder {
         "start_line",
         "defined_symbols",
         "referenced_symbols",
+        "member_referenced_symbols",
+        "content",
         "role",
         "parent_symbol",
         "complexity",
@@ -258,6 +291,34 @@ export class GraphBuilder {
         ])
         .limit(25)
         .toArray();
+      const memberNames = toArr(
+        (centerRows[0] as any)?.member_referenced_symbols,
+      );
+      const content = String((centerRows[0] as any)?.content ?? "");
+      const bareCall = new RegExp(
+        `(?<![\\w.$])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\(`,
+      ).test(content);
+      const selfDefinition = rows.find(
+        (r) => String((r as any).path ?? "") === centerFile,
+      );
+      if (
+        isBuiltinCallee(name) &&
+        memberNames.includes(name) &&
+        !bareCall &&
+        !selfDefinition
+      ) {
+        calleeNodes.push({
+          symbol: name,
+          file: "",
+          line: 0,
+          role: "",
+          calls: [],
+          calledBy: [],
+          resolution: "ambiguous-member",
+          confidence: "INFERRED",
+        });
+        continue;
+      }
       if (rows.length > 0) {
         // Prefer-self-file, then same-language-family. Only fall back to the
         // first row when no candidate shares the center's file or family.

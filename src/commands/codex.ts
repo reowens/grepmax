@@ -13,6 +13,14 @@ const AGENTS_PATH = path.join(os.homedir(), ".codex", "AGENTS.md");
 const SKILL_START = "<!-- gmax:start -->";
 const SKILL_END = "<!-- gmax:end -->";
 
+function ownedSkillBlocks(): RegExp {
+  // A new start marker cannot terminate an earlier incomplete block.
+  return new RegExp(
+    `${SKILL_START}(?:(?!${SKILL_START})[\\s\\S])*?${SKILL_END}`,
+    "g",
+  );
+}
+
 function getPackageRoot(): string {
   return path.resolve(__dirname, "../..");
 }
@@ -52,25 +60,24 @@ function writeSkillToAgents(skill: string): void {
 
   const content = fs.readFileSync(AGENTS_PATH, "utf-8");
 
-  // Check if file has any gmax content (markers or legacy)
-  if (content.includes("gmax")) {
-    // Remove all gmax content and rewrite with just our block
-    const markerRe = new RegExp(
-      `\n?${SKILL_START}[\\s\\S]*?${SKILL_END}\n?`,
-      "g",
-    );
-    const cleaned = content.replace(markerRe, "");
-    // Remove legacy content (everything between --- blocks mentioning gmax)
-    const withoutLegacy = cleaned
-      .replace(/---[\s\S]*?(?:gmax|--compact)[\s\S]*?(?=\n<!-- |$)/, "")
-      .trim();
-    fs.writeFileSync(
-      AGENTS_PATH,
-      withoutLegacy ? `${withoutLegacy}\n\n${block}` : block,
-    );
-  } else {
-    fs.writeFileSync(AGENTS_PATH, `${content.trim()}\n\n${block}`);
-  }
+  // Only complete marker pairs establish ownership. Unmarked prose, legacy
+  // instructions, and incomplete markers belong to the user and stay intact.
+  const markerRe = ownedSkillBlocks();
+  let replaced = false;
+  const updated = content.replace(markerRe, () => {
+    if (replaced) return "";
+    replaced = true;
+    return block;
+  });
+  const separator = content.endsWith("\n\n")
+    ? ""
+    : content.endsWith("\n")
+      ? "\n"
+      : "\n\n";
+  fs.writeFileSync(
+    AGENTS_PATH,
+    replaced ? updated : `${content}${separator}${block}`,
+  );
 }
 
 async function installPlugin() {
@@ -106,12 +113,9 @@ async function uninstallPlugin() {
   if (fs.existsSync(AGENTS_PATH)) {
     let content = fs.readFileSync(AGENTS_PATH, "utf-8");
     // Remove marked block
-    const markerRe = new RegExp(
-      `\n?${SKILL_START}[\\s\\S]*?${SKILL_END}\n?`,
-      "g",
-    );
+    const markerRe = ownedSkillBlocks();
     if (markerRe.test(content)) {
-      content = content.replace(markerRe, "").trim();
+      content = content.replace(ownedSkillBlocks(), "");
       fs.writeFileSync(AGENTS_PATH, content || "");
       console.log("✅ gmax instructions removed from AGENTS.md");
     }

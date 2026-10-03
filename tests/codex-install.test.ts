@@ -31,7 +31,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 // Spy on writes so we can assert AGENTS.md is (not) mutated without touching disk.
 const fsMock = vi.hoisted(() => ({
   existsSync: vi.fn(() => false),
-  readFileSync: vi.fn(() => {
+  readFileSync: vi.fn<(...args: unknown[]) => string>(() => {
     throw new Error("no file");
   }),
   writeFileSync: vi.fn(),
@@ -48,6 +48,10 @@ describe("codex install", () => {
     h.shouldFail = false;
     fsMock.writeFileSync.mockClear();
     fsMock.existsSync.mockReturnValue(false);
+    fsMock.readFileSync.mockReset();
+    fsMock.readFileSync.mockImplementation(() => {
+      throw new Error("no file");
+    });
     (installCodex as Command).exitOverride();
   });
 
@@ -75,5 +79,74 @@ describe("codex install", () => {
       String(c[0]).endsWith("AGENTS.md"),
     );
     expect(wrote).toBe(true);
+  });
+  function existingAgents(content: string) {
+    fsMock.existsSync.mockReturnValue(true);
+    fsMock.readFileSync.mockImplementation((...args: unknown[]) =>
+      String(args[0]).endsWith("AGENTS.md") ? content : "Use gmax.",
+    );
+  }
+
+  it("preserves unmarked prose, frontmatter, separators, and trailing spaces", async () => {
+    const content =
+      "---\nteam: dev\n---\n\nUse gmax.\n\n## Deploy\nReview first.\n  ";
+    existingAgents(content);
+    await installCodex.parseAsync([], { from: "user" });
+    const written = String(
+      fsMock.writeFileSync.mock.calls[
+        fsMock.writeFileSync.mock.calls.length - 1
+      ]?.[1],
+    );
+    expect(written.startsWith(content)).toBe(true);
+    expect(written.match(/<!-- gmax:start -->/g)).toHaveLength(1);
+  });
+
+  it("updates only owned blocks and collapses duplicates idempotently", async () => {
+    const prefix = "# Team\nKeep trailing spaces.  \n\n";
+    const between = "\n\n## Deploy\nReview first.\n\n";
+    const old = "<!-- gmax:start -->\nold\n<!-- gmax:end -->";
+    const suffix = "\n## Footer\nKeep me.\n";
+    existingAgents(`${prefix}${old}${between}${old}${suffix}`);
+    await installCodex.parseAsync([], { from: "user" });
+    const written = String(
+      fsMock.writeFileSync.mock.calls[
+        fsMock.writeFileSync.mock.calls.length - 1
+      ]?.[1],
+    );
+    expect(written.startsWith(prefix)).toBe(true);
+    expect(written.endsWith(`${between}${suffix}`)).toBe(true);
+    expect(written.match(/<!-- gmax:start -->/g)).toHaveLength(1);
+    existingAgents(written);
+    await installCodex.parseAsync([], { from: "user" });
+    expect(
+      fsMock.writeFileSync.mock.calls[
+        fsMock.writeFileSync.mock.calls.length - 1
+      ]?.[1],
+    ).toBe(written);
+  });
+
+  it("preserves incomplete markers and following text on repeated installs", async () => {
+    const content = "<!-- gmax:start -->\nUser instructions\n";
+    existingAgents(content);
+    await installCodex.parseAsync([], { from: "user" });
+    const written = String(
+      fsMock.writeFileSync.mock.calls[
+        fsMock.writeFileSync.mock.calls.length - 1
+      ]?.[1],
+    );
+    existingAgents(written);
+    await installCodex.parseAsync([], { from: "user" });
+    expect(
+      String(
+        fsMock.writeFileSync.mock.calls[
+          fsMock.writeFileSync.mock.calls.length - 1
+        ]?.[1],
+      ).startsWith(content),
+    ).toBe(true);
+    expect(
+      fsMock.writeFileSync.mock.calls[
+        fsMock.writeFileSync.mock.calls.length - 1
+      ]?.[1],
+    ).toBe(written);
   });
 });

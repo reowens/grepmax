@@ -94,6 +94,33 @@ describe("trace --inbound", () => {
     (trace as Command).exitOverride();
   });
 
+  it.each([{ flags: [] }, { flags: ["--agent"] }])(
+    "reports receiver ambiguity without a source location ($flags)",
+    async ({ flags }) => {
+      buildGraphMultiHop.mockResolvedValueOnce({
+        center: {
+          symbol: "doWork",
+          file: `${tmpRoot}/src/lib.ts`,
+          line: 0,
+          role: "DEFINITION",
+        },
+        callerTree: [],
+        callees: [
+          { symbol: "get", file: "", line: 0, resolution: "ambiguous-member" },
+        ],
+        importers: [],
+      });
+      const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+      await (trace as Command).parseAsync(["doWork", ...flags], {
+        from: "user",
+      });
+      const output = spy.mock.calls.map((c) => String(c[0])).join("\n");
+      spy.mockRestore();
+      expect(output).toContain("get");
+      expect(output).toContain("receiver unresolved");
+    },
+  );
+
   it("emits center + caller rows with call-site snippets", async () => {
     buildGraphMultiHop.mockResolvedValueOnce({
       center: {

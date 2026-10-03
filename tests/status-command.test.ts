@@ -97,6 +97,37 @@ async function runStatus(args: string[] = []): Promise<void> {
 }
 
 describe("gmax status", () => {
+  it("preserves daemon degraded status and health in JSON", async () => {
+    sendDaemonCommand.mockImplementation(async (cmd: { cmd: string }) =>
+      cmd.cmd === "status"
+        ? {
+            ok: true,
+            pid: 123,
+            workers: 0,
+            resources: { rssMb: 500 },
+            projects: [
+              {
+                root: "/work/api",
+                status: "degraded",
+                indexState: {
+                  indexing: false,
+                  pendingFiles: 0,
+                  failedFiles: 3,
+                  watcherMode: "polling",
+                },
+              },
+            ],
+          }
+        : { ok: true, chunks: 11 },
+    );
+    await runStatus(["--json"]);
+    const result = JSON.parse(out.join("\n"));
+    expect(result.daemon.resources).toEqual({ rssMb: 500 });
+    expect(result.projects[0]).toMatchObject({
+      state: "degraded",
+      health: { failedFiles: 3, watcherMode: "polling" },
+    });
+  });
   it("uses the daemon's project list and per-project stats, never LMDB or the store", async () => {
     sendDaemonCommand.mockImplementation(async (cmd: { cmd: string }) => {
       if (cmd.cmd === "status") {

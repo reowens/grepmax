@@ -173,6 +173,7 @@ export async function handleCommand(
           diskPressure: daemon.getDiskPressure(),
           mlx: daemon.getMlxStatus(),
           workers: daemon.workerCount(),
+          resources: daemon.resourceSnapshot?.() ?? null,
           workerThreads: WORKER_THREADS_SETTING,
         };
 

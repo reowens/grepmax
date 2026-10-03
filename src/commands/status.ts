@@ -12,6 +12,10 @@ import {
   projectEmbeddingStatus,
 } from "../lib/index/embedding-status";
 import { type GlobalConfig, readGlobalConfig } from "../lib/index/index-config";
+import {
+  formatIndexStateFooter,
+  type IndexState,
+} from "../lib/output/index-state-footer";
 import { sendDaemonCommand } from "../lib/utils/daemon-client";
 import { gracefulExit } from "../lib/utils/exit";
 import { pathStartsWith } from "../lib/utils/filter-builder";
@@ -19,6 +23,7 @@ import { isLocked } from "../lib/utils/lock";
 import type { ProjectEntry } from "../lib/utils/project-registry";
 import { listProjects } from "../lib/utils/project-registry";
 import { findProjectRoot } from "../lib/utils/project-root";
+import type { ResourceSnapshot } from "../lib/utils/resource-snapshot";
 import {
   classifyLeaseError,
   reportStoreAccessRefusal,
@@ -34,12 +39,14 @@ import { getWatcherForProject, listWatchers } from "../lib/utils/watcher-store";
 export interface StatusView {
   watchers: Map<string, Pick<WatcherInfo, "status">>;
   chunkCounts: Map<string, number>;
+  health?: Map<string, IndexState>;
   /** Present only when the daemon answered. */
   daemon?: {
     pid: number | null;
     uptimeSec: number | null;
     workers: number | null;
     workerThreads: number | null;
+    resources?: ResourceSnapshot | null;
   };
 }
 
@@ -60,9 +67,15 @@ async function loadStatusView(projects: ProjectEntry[]): Promise<StatusView> {
     render: async (resp) => {
       const watchers = new Map<string, Pick<WatcherInfo, "status">>();
       const entries = Array.isArray(resp.projects) ? resp.projects : [];
-      for (const entry of entries as Array<{ root?: unknown }>) {
+      const health = new Map<string, IndexState>();
+      for (const entry of entries as Array<{
+        root?: unknown;
+        status?: WatcherInfo["status"];
+        indexState?: IndexState;
+      }>) {
         if (entry && typeof entry.root === "string") {
-          watchers.set(entry.root, { status: "watching" });
+          watchers.set(entry.root, { status: entry.status ?? "watching" });
+          if (entry.indexState) health.set(entry.root, entry.indexState);
         }
       }
       // One project-stats call per project. A failure here is not fatal: the
@@ -79,6 +92,9 @@ async function loadStatusView(projects: ProjectEntry[]): Promise<StatusView> {
         }
       }
       const daemon = {
+        ...(resp.resources !== undefined
+          ? { resources: resp.resources as ResourceSnapshot | null }
+          : {}),
         pid: typeof resp.pid === "number" ? resp.pid : null,
         uptimeSec: typeof resp.uptime === "number" ? resp.uptime : null,
         // Older daemons do not report these.
@@ -89,7 +105,7 @@ async function loadStatusView(projects: ProjectEntry[]): Promise<StatusView> {
             ? (resp.workerThreads as { value: number }).value
             : null,
       };
-      return { watchers, chunkCounts, daemon };
+      return { watchers, chunkCounts, daemon, health };
     },
     inProcess: async () => {
       listWatchers(); // cleans stale entries as side effect
@@ -137,6 +153,7 @@ function projectState(
   const projectStatus = project.status ?? "indexed";
   if (projectStatus === "pending") return "pending";
   if (projectStatus === "error") return "error";
+  if (watcher?.status === "degraded") return "degraded";
   if (watcher?.status === "syncing") return "indexing";
   if (watcher) return "watching";
   return "idle";
@@ -175,6 +192,7 @@ export interface StatusJson {
     pid: number | null;
     since: number | null;
     workerThreads: number | null;
+    resources?: ResourceSnapshot | null;
   };
   settings: {
     embedMode: "cpu" | "gpu";
@@ -192,6 +210,7 @@ export interface StatusJson {
     indexedAt: number | null;
     state: string;
     embedding: string;
+    health?: IndexState;
   }>;
   at: number;
 }
@@ -222,6 +241,7 @@ export function buildStatusJson(input: {
       pid: d?.pid ?? null,
       since: d?.uptimeSec != null ? now - d.uptimeSec * 1000 : null,
       workerThreads: d?.workerThreads ?? null,
+      ...(d?.resources !== undefined ? { resources: d.resources } : {}),
     },
     settings: {
       embedMode: globalConfig.embedMode,
@@ -239,6 +259,9 @@ export function buildStatusJson(input: {
       indexedAt: toMs(project.lastIndexed),
       state: projectState(project, view.watchers.get(project.root)),
       embedding: projectEmbeddingStatus(project, globalConfig).state,
+      ...(view.health?.has(project.root)
+        ? { health: view.health.get(project.root) }
+        : {}),
     })),
     at: now,
   };
@@ -355,7 +378,7 @@ Examples:
         const count = chunkCounts.get(project.root) ?? project.chunkCount;
         const identity = projectEmbeddingStatus(project, globalConfig);
         console.log(
-          `${project.name}\t${formatChunks(count)}\t${formatAge(project.lastIndexed)}\t${st}\tembedding=${identity.state}${isCurrent ? "\tcurrent" : ""}`,
+          `${project.name}\t${formatChunks(count)}\t${formatAge(project.lastIndexed)}\t${st}\tembedding=${identity.state}${isCurrent ? "\tcurrent" : ""}${view.health?.get(project.root) ? `\t${formatIndexStateFooter(view.health.get(project.root), { agent: true }) ?? ""}` : ""}`,
         );
       }
       const legacyNotice = formatLegacyEmbeddingNotice(
@@ -382,6 +405,8 @@ Examples:
         statusStr = style.yellow("pending");
       } else if (projectStatus === "error") {
         statusStr = style.red("error");
+      } else if (watcher?.status === "degraded") {
+        statusStr = style.red("degraded");
       } else if (watcher?.status === "syncing") {
         statusStr = style.yellow("indexing");
       } else if (watcher) {
@@ -405,6 +430,10 @@ Examples:
       console.log(
         `  ${name}  ${chunks.padEnd(12)}  ${age.padEnd(10)}  ${statusStr}  embedding:${embedding}${marker}`,
       );
+      const health = formatIndexStateFooter(view.health?.get(project.root), {
+        agent: false,
+      });
+      if (health) console.log(`    ${health}`);
     }
 
     const legacyNotice = formatLegacyEmbeddingNotice(

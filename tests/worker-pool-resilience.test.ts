@@ -74,6 +74,24 @@ describe("WorkerPool resilience", () => {
     pool = null;
   });
 
+  it("preserves shared-backend error identity through worker IPC", async () => {
+    pool = new WorkerPool();
+    const result = pool.processFile({
+      path: "/repo/file.ts",
+      projectRoot: "/repo",
+    });
+    const rejected = expect(result).rejects.toMatchObject({
+      code: "EMBED_BACKEND_UNAVAILABLE",
+    });
+    const worker = pool.workers[0];
+    const id = worker.pendingTaskId;
+    worker.child.emit("message", {
+      id,
+      error: "backend unavailable",
+      code: "EMBED_BACKEND_UNAVAILABLE",
+    });
+    await rejected;
+  });
   it("loads the source worker through an absolute tsx preload", () => {
     pool = new WorkerPool();
 

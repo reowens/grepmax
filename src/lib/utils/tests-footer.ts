@@ -1,4 +1,5 @@
 import { findTests, type TestHit } from "../graph/impact";
+import { hopLabelAgent } from "../graph/test-hits";
 import type { VectorDB } from "../store/vector-db";
 
 /**
@@ -51,18 +52,6 @@ function relPath(p: string, projectRoot: string): string {
   return p.startsWith(`${projectRoot}/`) ? p.slice(projectRoot.length + 1) : p;
 }
 
-function hopLabelAgent(hops: number): string {
-  if (hops === -1) return "via-import";
-  if (hops === 0) return "direct";
-  return `${hops}-hop`;
-}
-
-function hopLabelHuman(hops: number): string {
-  if (hops === -1) return "via import";
-  if (hops === 0) return "direct";
-  return `${hops} hop${hops > 1 ? "s" : ""}`;
-}
-
 export function renderTestsFooterAgent(
   tests: TestHit[],
   projectRoot: string,
@@ -70,7 +59,7 @@ export function renderTestsFooterAgent(
   const lines: string[] = [];
   for (const t of tests.slice(0, MAX_SHOWN)) {
     lines.push(
-      `t: ${relPath(t.file, projectRoot)}:${t.line + 1}\t${t.symbol}\t${hopLabelAgent(t.hops)}`,
+      `t: ${relPath(t.file, projectRoot)}:${t.line + 1}\t${t.symbol}\t${hopLabelAgent(t.hops, t.evidence)}`,
     );
   }
   if (tests.length > MAX_SHOWN) {
@@ -87,8 +76,13 @@ export function renderTestsFooterHuman(
   lines.push("");
   lines.push(`tests (${tests.length}):`);
   for (const t of tests.slice(0, MAX_SHOWN)) {
+    const label = t.evidence
+      ? "same-file candidate"
+      : t.hops === -1
+        ? "via import"
+        : hopLabelAgent(t.hops);
     lines.push(
-      `  ${t.symbol.padEnd(25)} ${dim(`${relPath(t.file, projectRoot)}:${t.line + 1}`)} ${dim(`(${hopLabelHuman(t.hops)})`)}`,
+      `  ${t.symbol.padEnd(25)} ${dim(`${relPath(t.file, projectRoot)}:${t.line + 1}`)} ${dim(`(${label})`)}`,
     );
   }
   if (tests.length > MAX_SHOWN) {

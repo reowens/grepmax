@@ -5,6 +5,10 @@ import { Command } from "commander";
 import { CONFIG, PATHS } from "../config";
 import { initialSync } from "../lib/index/syncer";
 import { startWatcher } from "../lib/index/watcher";
+import {
+  formatIndexStateFooter,
+  type IndexState,
+} from "../lib/output/index-state-footer";
 import { MetaCache } from "../lib/store/meta-cache";
 import { VectorDB } from "../lib/store/vector-db";
 import {
@@ -436,7 +440,11 @@ watch
     const resp = await sendDaemonCommand({ cmd: "status" });
 
     if (resp.ok) {
-      const projects = resp.projects as Array<{ root: string; status: string }>;
+      const projects = resp.projects as Array<{
+        root: string;
+        status: string;
+        indexState?: IndexState;
+      }>;
       const uptime = Math.floor((resp.uptime as number) / 60);
       console.log(`Daemon (PID: ${resp.pid}, uptime: ${uptime}m):`);
       const mlx = resp.mlx as
@@ -449,6 +457,12 @@ watch
       }
       for (const p of projects) {
         console.log(`  - ${p.root} [${p.status}]`);
+        const health = formatIndexStateFooter(p.indexState, { agent: true });
+        if (health) console.log(`    ${health}`);
+        if (p.indexState)
+          console.log(
+            `    watcher=${p.indexState.watcherMode ?? "unknown"} overflows=${p.indexState.overflowCount ?? 0} lastReconciled=${p.indexState.lastReconciledAt ? new Date(p.indexState.lastReconciledAt).toISOString() : "unknown"} catchupMs=${p.indexState.catchupMs ?? "unknown"}`,
+          );
       }
       if (projects.length === 0) {
         console.log("  (no projects)");

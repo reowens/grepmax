@@ -356,7 +356,9 @@ processFile(path)
   Return vectors + hash + meta
 ```
 
-MLX client (`mlx-client.ts`) caches availability for 30s. The cache is module-level state inside each worker process, so the daemon cannot invalidate it directly — recovery relies on the TTL expiring and on `mlxEmbed` flipping `mlxAvailable = false` on POST failure to force a re-probe.
+MLX client (`mlx-client.ts`) caches availability for 30s. The cache is module-level state inside each worker process, so the daemon cannot invalidate it directly. A failed POST marks the cache unavailable; recovery probes health after the TTL expires.
+
+MLX transport errors, deadlines, HTTP 408/429, and 5xx responses are temporary backend failures. Invalid JSON, vector/model mismatches, and other 4xx responses are deterministic errors. Workers preserve `EMBED_BACKEND_UNAVAILABLE` through IPC; incremental batches back off 5–60s without consuming per-file retries or deleting existing rows. New file events cannot bypass that backoff. The initial compatible ONNX fallback remains available; an operation cannot switch embedding identity midway.
 
 ### Shutdown (`daemon.ts:shutdown()`)
 
@@ -516,9 +518,15 @@ surfaces as `EPERM` from `sendDaemonCommand`, which is the wire shape `classifyD
 
 ### Common diagnostics
 
+Search/status/MCP health includes failed files even when no batch is running. Native watcher recovery and polling remain visible separately from index work; polling may lag by five minutes. `lastReconciledAt` records the last complete filesystem scan, not completion of queued embeddings. Same-file test expansion is labeled `file-candidate` rather than direct coverage. Builtin member names such as `get`, `add`, and `now` remain unresolved unless there is a free call or a same-file definition; cross-file receiver binding is still approximate.
+
+Recycle threshold crossings and handoffs log `[daemon] Resource snapshot:` with the sampled footprint, RSS, heap, external/ArrayBuffer counters, Lance cache, workers, pending files, active operations, and maintenance state. `gmax status --json` exposes the most recent snapshot (or null before any capture). Snapshots do not scan process tables or store directories. Compare several recycle cycles under a repeatable workload to distinguish JS heap growth from native/cache growth; these diagnostics do not establish a memory leak's cause by themselves. Watcher drop messages are throttled to one per root per minute while every event still increments the overflow counter and triggers recovery.
+
 ```bash
 ps aux | grep "gmax-"                              # Process state
 gmax status                                        # Daemon responsive?
+gmax status --json                                 # Health + last resource snapshot
+gmax watch status                                  # Watcher mode, failures, reconciliation
 tail -f ~/.gmax/logs/daemon.log                    # Live log
 cat ~/.gmax/projects.json | python3 -m json.tool   # Project registry
 cat ~/.gmax/config.json | python3 -m json.tool     # Global config

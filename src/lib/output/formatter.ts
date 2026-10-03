@@ -204,7 +204,7 @@ export function formatTrace(
         );
       } else {
         lines.push(
-          `  ${style.cyan("↓")} ${callee.symbol} ${style.dim("(not indexed)")}`,
+          `  ${style.cyan("↓")} ${callee.symbol} ${style.dim(callee.resolution === "ambiguous-member" ? "(receiver unresolved)" : "(not indexed)")}`,
         );
       }
     });

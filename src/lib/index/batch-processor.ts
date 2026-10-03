@@ -11,6 +11,7 @@ import {
   readFileSnapshot,
 } from "../utils/file-utils";
 import { debug, log } from "../utils/logger";
+import { isEmbeddingBackendUnavailable } from "../workers/embedding-error";
 import type { ProcessFileResult } from "../workers/orchestrator";
 import { getWorkerPool, type WorkerPool } from "../workers/pool";
 import {
@@ -79,6 +80,8 @@ export class ProjectBatchProcessor {
   private closed = false;
   private currentBatchAc: AbortController | null = null;
   private lastCorruptionLogMs = 0;
+  private backendFailures = 0;
+  private backendRetryAt = 0;
   private policyChangedDuringBatch = false;
   /** Rolling window of recent batch outcomes — see `progress`. */
   private readonly recentBatches: { files: number; reindexed: number }[] = [];
@@ -231,8 +234,14 @@ export class ProjectBatchProcessor {
   }
 
   private scheduleBatch(delayMs = DEBOUNCE_MS): void {
+    delayMs = Math.max(delayMs, this.backendRetryAt - Date.now());
     const dueMs = Date.now() + Math.max(0, delayMs);
-    if (this.debounceTimer && this.debounceDueMs <= dueMs) return;
+    if (
+      this.debounceTimer &&
+      this.debounceDueMs <= dueMs &&
+      this.debounceDueMs >= this.backendRetryAt
+    )
+      return;
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
     this.debounceDueMs = dueMs;
     this.debounceTimer = setTimeout(
@@ -269,7 +278,9 @@ export class ProjectBatchProcessor {
         ? this.runOperation(execute)
         : execute(new AbortController().signal)
     ).catch((err) => {
-      console.error(`[${this.wtag}] Batch processing failed:`, err);
+      if ((err as Error)?.name === "AbortError")
+        log(this.wtag, "Batch cancelled during shutdown");
+      else console.error(`[${this.wtag}] Batch processing failed:`, err);
     });
     this.activeBatch = run;
     void run.finally(() => {
@@ -346,6 +357,7 @@ export class ProjectBatchProcessor {
       const metaDeletes: string[] = [];
       const completed = new Set<string>();
       const retryFailures = new Set<string>();
+      let backendUnavailable = false;
       const requeuePath = (
         absPath: string,
         event: "change" | "unlink",
@@ -521,6 +533,11 @@ export class ProjectBatchProcessor {
         } catch (err) {
           if (batchAc.signal.aborted) return;
           const code = (err as NodeJS.ErrnoException)?.code;
+          if (isEmbeddingBackendUnavailable(err)) {
+            backendUnavailable = true;
+            stopDispatch = true;
+            return;
+          }
           if (code === "ENOENT") {
             deletes.push(absPath);
             metaDeletes.push(absPath);
@@ -574,6 +591,22 @@ export class ProjectBatchProcessor {
         await schedule(() => processOne(absPath, event));
       }
       await Promise.allSettled(activeTasks);
+
+      if (backendUnavailable) {
+        this.backendFailures++;
+        const backoffMs = Math.min(
+          60_000,
+          5_000 * 2 ** Math.min(this.backendFailures - 1, 4),
+        );
+        this.backendRetryAt = Date.now() + backoffMs;
+        log(
+          this.wtag,
+          `Embedding backend unavailable — preserving file retry budgets; retry in ${backoffMs / 1000}s`,
+        );
+      } else {
+        this.backendFailures = 0;
+        this.backendRetryAt = 0;
+      }
 
       const pureDeleteCandidates = new Set(metaDeletes);
       const authoritativeMetaDeletes = new Set<string>();

@@ -35,7 +35,7 @@ type TaskResults = {
 
 type WorkerMessage = (
   | { id: number; result: TaskResults[TaskMethod] }
-  | { id: number; error: string }
+  | { id: number; error: string; code?: string }
   | { id: number; heartbeat: true }
 ) & { rss?: number };
 
@@ -476,7 +476,12 @@ export class WorkerPool {
           "pool",
           `error task=${task.id} method=${task.method} file=${filePath}: ${msg.error}`,
         );
-        task.reject(new Error(msg.error));
+        task.reject(
+          Object.assign(
+            new Error(msg.error),
+            typeof msg.code === "string" ? { code: msg.code } : {},
+          ),
+        );
       } else {
         const elapsed = task.startTime
           ? `${Date.now() - task.startTime}ms`

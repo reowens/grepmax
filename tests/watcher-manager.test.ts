@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@parcel/watcher", () => ({ subscribe: vi.fn() }));
+
 vi.mock("../src/lib/utils/watcher-store", () => ({
   registerWatcher: vi.fn(),
   unregisterWatcherByRoot: vi.fn(),
@@ -24,6 +26,51 @@ describe("WatcherManager.unwatchProject", () => {
     } as any;
   }
 
+  it("counts every watcher drop and recovers while throttling repeated error logs", async () => {
+    const watcher = await import("@parcel/watcher");
+    let notify!: (error: Error, events: []) => void;
+    vi.mocked(watcher.subscribe).mockImplementation(async (_root, callback) => {
+      notify = callback;
+      return { unsubscribe: async () => {} };
+    });
+    const d = deps();
+    const root = "/p/app";
+    const processor = {};
+    d.processors.set(root, processor);
+    const wm = new WatcherManager(d) as any;
+    const recover = vi.spyOn(wm, "recoverWatcher").mockImplementation(() => {});
+    const logs = vi.spyOn(console, "error").mockImplementation(() => {});
+    const now = vi.spyOn(Date, "now").mockReturnValue(1000);
+    await wm.subscribeWatcher(root, processor);
+    for (let i = 0; i < 5; i++) notify(new Error("Events were dropped"), []);
+    expect(wm.health(root).overflowCount).toBe(5);
+    expect(logs).toHaveBeenCalledOnce();
+    expect(recover).toHaveBeenCalledTimes(5);
+    now.mockReturnValue(61_000);
+    notify(new Error("Events were dropped"), []);
+    expect(wm.health(root).overflowCount).toBe(6);
+    expect(logs).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports polling, recovery, failures, and successful reconciliation independently", async () => {
+    const wm = new WatcherManager(deps());
+    const root = "/p/app";
+    const poll = setInterval(() => {}, 1_000_000);
+    (wm as any).pollIntervals.set(root, poll);
+    (wm as any).terminalFailures.set(root, new Set(["/p/app/a.ts"]));
+    (wm as any).reconciledAt.set(root, 123);
+    (wm as any).catchupDurations.set(root, 45);
+    (wm as any).overflowCounts.set(root, 8);
+    expect(wm.health(root)).toMatchObject({
+      watcherMode: "polling",
+      failedFiles: 1,
+      degraded: true,
+      lastReconciledAt: 123,
+      catchupMs: 45,
+      overflowCount: 8,
+    });
+    await wm.unwatchProject(root);
+  });
   it("stops poll-mode timers and the FSEvents recovery probe for the root", async () => {
     // Empty processors map → unwatchProject early-returns after timer cleanup,
     // which is exactly the path we're exercising. Other deps go unused here.

@@ -684,7 +684,7 @@ export async function runGraphRisk(
         file: loc?.file ?? "",
         line: loc?.line ?? 0,
         callerCount: callers.length,
-        hasTests: tests.length > 0,
+        hasTests: tests.some((test) => !test.evidence),
       };
     },
     signal,

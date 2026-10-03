@@ -52,6 +52,10 @@ import {
   restoreProjectsAfterRebuild,
   stampProjectFullSync,
 } from "../utils/project-registry";
+import {
+  buildResourceSnapshot,
+  type ResourceSnapshot,
+} from "../utils/resource-snapshot";
 import { describeRoot } from "../utils/root-availability";
 import {
   heartbeat,
@@ -153,6 +157,7 @@ interface DaemonResourceGeneration {
 
 export class Daemon {
   private readonly processors = new Map<string, ProjectBatchProcessor>();
+  private lastResourceSnapshot: ResourceSnapshot | null = null;
   private readonly searchers = new Map<string, Searcher>();
   private readonly subscriptions = new Map<string, AsyncSubscription>();
   private vectorDb: VectorDB | null = null;
@@ -887,8 +892,8 @@ export class Daemon {
    */
   indexState(root: string): IndexState {
     const processor = this.processors.get(root);
-    const batchPending = processor?.progress.pendingFiles ?? 0;
-    const processing = processor?.progress.processing ?? false;
+    const batchPending = processor?.progress?.pendingFiles ?? 0;
+    const processing = processor?.progress?.processing ?? false;
     // status === "pending" means the initial full index hasn't completed.
     const initialPending = getProject(root)?.status === "pending";
     // A full index (--reset / initial) bypasses the batch processor; its
@@ -914,10 +919,16 @@ export class Daemon {
       recentReindexed === 0 &&
       pendingFiles > 0;
 
+    const health = this.watcherManager.health(root);
     return {
       indexing: !!fullIdx || processing || batchPending > 0 || initialPending,
       pendingFiles,
       verifying,
+      ...health,
+      failedFiles: Math.max(
+        processor?.progress?.failedFiles ?? 0,
+        health.failedFiles ?? 0,
+      ),
     };
   }
 
@@ -963,11 +974,24 @@ export class Daemon {
     };
   }
 
-  listProjects(): Array<{ root: string; status: string }> {
-    return [...this.processors.keys()].map((root) => ({
-      root,
-      status: "watching",
-    }));
+  listProjects(): Array<{
+    root: string;
+    status: string;
+    indexState: IndexState;
+  }> {
+    return [...this.processors.keys()].map((root) => {
+      const indexState = this.indexState(root);
+      return {
+        root,
+        status:
+          indexState.failedFiles || indexState.degraded
+            ? "degraded"
+            : indexState.indexing
+              ? "syncing"
+              : "watching",
+        indexState,
+      };
+    });
   }
 
   uptime(): number {
@@ -2093,6 +2117,35 @@ export class Daemon {
     });
   }
 
+  resourceSnapshot(): ResourceSnapshot | null {
+    return this.lastResourceSnapshot;
+  }
+
+  private logResourceSnapshot(
+    reason: string,
+    footprintMb: number | null,
+  ): void {
+    let lanceCacheBytes: number | null = null;
+    try {
+      lanceCacheBytes = this.vectorDb?.cacheSizeBytes() ?? null;
+    } catch {}
+    this.lastResourceSnapshot = buildResourceSnapshot({
+      reason,
+      footprintMb,
+      lanceCacheBytes,
+      workers: this.workerCount(),
+      pendingFiles: [...this.processors.values()].reduce(
+        (sum, processor) => sum + processor.progress.pendingFiles,
+        0,
+      ),
+      operations: this.operations.activeCount,
+      maintenance: this.vectorDb?.isMaintenanceActive() ?? false,
+    });
+    console.log(
+      `[daemon] Resource snapshot: ${JSON.stringify(this.lastResourceSnapshot)}`,
+    );
+  }
+
   /**
    * Gracefully hand off to a fresh daemon when this one has grown too old or
    * too large. Only fires when quiet — no active compaction and no in-flight
@@ -2134,6 +2187,7 @@ export class Daemon {
       this.recycleReason = ageExceeded
         ? `age ${(ageMs / 3_600_000).toFixed(1)}h > ${(MAX_LIFETIME_MS / 3_600_000).toFixed(1)}h`
         : `footprint ${Math.round(footprintMb ?? 0)}MB > ${RSS_WATERMARK_MB}MB`;
+      this.logResourceSnapshot("recycle-due", footprintMb);
     }
 
     // Defer while busy; re-checked on every heartbeat until it goes through.
@@ -2155,6 +2209,7 @@ export class Daemon {
       return;
     }
 
+    this.logResourceSnapshot("recycling", footprintMb);
     const forced = busy ? " (forced over in-flight work)" : "";
     console.log(
       `[daemon] Recycling (${this.recycleReason})${forced} — handing off to a fresh daemon`,

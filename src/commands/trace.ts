@@ -34,7 +34,12 @@ function formatTraceAgent(
       node: { symbol: string; file: string; line: number };
       callers: any[];
     }>;
-    callees: Array<{ symbol: string; file: string; line: number }>;
+    callees: Array<{
+      symbol: string;
+      file: string;
+      line: number;
+      resolution?: "ambiguous-member";
+    }>;
     importers: string[];
   },
   projectRoot: string,
@@ -114,7 +119,9 @@ function formatTraceAgent(
     if (c.file) {
       lines.push(`-> ${c.symbol}\t${rel(c.file)}:${c.line}`);
     } else {
-      lines.push(`-> ${c.symbol}\t(not indexed)`);
+      lines.push(
+        `-> ${c.symbol}\t(${c.resolution === "ambiguous-member" ? "receiver unresolved" : "not indexed"})`,
+      );
     }
   }
   return lines.join("\n");

@@ -63,107 +63,131 @@ export function validateMlxEmbeddingResponse(
   );
 }
 
-function postJSON(
+export interface MlxHttpResult {
+  ok: boolean;
+  data?: any;
+  category?: "transport" | "timeout" | "http" | "protocol";
+  status?: number;
+  detail?: string;
+  ms: number;
+}
+
+/** A hard deadline also bounds stalled/truncated response bodies. */
+export function requestMlxJSON(
   reqPath: string,
-  body: unknown,
-): Promise<{ ok: boolean; data?: any }> {
+  body?: unknown,
+): Promise<MlxHttpResult> {
   const start = performance.now();
   return new Promise((resolve) => {
-    const payload = JSON.stringify(body);
+    const payload = body === undefined ? undefined : JSON.stringify(body);
+    let settled = false;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    const finish = (result: Omit<MlxHttpResult, "ms">) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      resolve({ ...result, ms: Math.round(performance.now() - start) });
+    };
     const req = http.request(
       {
         hostname: MLX_HOST,
         port: MLX_PORT,
         path: reqPath,
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Content-Length": Buffer.byteLength(payload),
-        },
-        timeout: MLX_TIMEOUT_MS,
+        method: payload === undefined ? "GET" : "POST",
+        headers:
+          payload === undefined
+            ? undefined
+            : {
+                "Content-Type": "application/json",
+                "Content-Length": Buffer.byteLength(payload),
+              },
       },
       (res) => {
         const chunks: Buffer[] = [];
-        res.on("data", (chunk) => chunks.push(chunk));
+        let bytes = 0;
+        res.on("data", (chunk: Buffer) => {
+          bytes += chunk.length;
+          if (bytes > 16 * 1024 * 1024) {
+            finish({
+              ok: false,
+              category: "protocol",
+              status: res.statusCode,
+              detail: "response exceeds 16MiB",
+            });
+            req.destroy();
+          } else chunks.push(chunk);
+        });
+        res.on("aborted", () =>
+          finish({
+            ok: false,
+            category: "transport",
+            status: res.statusCode,
+            detail: "response aborted",
+          }),
+        );
+        res.on("error", (err: Error) =>
+          finish({
+            ok: false,
+            category: "transport",
+            status: res.statusCode,
+            detail: err.message.slice(0, 512),
+          }),
+        );
         res.on("end", () => {
+          const raw = Buffer.concat(chunks).toString("utf8");
+          if (res.statusCode !== 200) {
+            finish({
+              ok: false,
+              category: "http",
+              status: res.statusCode,
+              detail: raw.slice(0, 512),
+            });
+            return;
+          }
           try {
-            const data = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
-            const ok = res.statusCode === 200;
-            debug(
-              "mlx",
-              `POST ${reqPath} → ${res.statusCode} ${(performance.now() - start).toFixed(0)}ms payload=${payload.length}B`,
-            );
-            resolve({ ok, data });
+            finish({ ok: true, status: res.statusCode, data: JSON.parse(raw) });
           } catch {
-            debug(
-              "mlx",
-              `POST ${reqPath} → parse error ${(performance.now() - start).toFixed(0)}ms`,
-            );
-            resolve({ ok: false });
+            finish({
+              ok: false,
+              category: "protocol",
+              status: res.statusCode,
+              detail: "invalid JSON",
+            });
           }
         });
       },
     );
-    req.on("error", (err) => {
-      debug(
-        "mlx",
-        `POST ${reqPath} → error: ${err.message} ${(performance.now() - start).toFixed(0)}ms`,
-      );
-      resolve({ ok: false });
-    });
-    req.on("timeout", () => {
-      debug("mlx", `POST ${reqPath} → timeout after ${MLX_TIMEOUT_MS}ms`);
-      req.destroy();
-      resolve({ ok: false });
-    });
-    req.write(payload);
-    req.end();
+    req.on("error", (err: Error) =>
+      finish({
+        ok: false,
+        category: "transport",
+        detail: err.message.slice(0, 512),
+      }),
+    );
+    deadline = setTimeout(
+      () => {
+        finish({
+          ok: false,
+          category: "timeout",
+          detail: "request deadline exceeded",
+        });
+        req.destroy();
+      },
+      reqPath === "/health" ? 2000 : MLX_TIMEOUT_MS,
+    );
+    req.end(payload);
   });
 }
 
-/**
- * Check if MLX server is reachable. Caches result for CHECK_INTERVAL_MS.
- */
 async function checkHealth(expectedModel?: string): Promise<boolean> {
-  const start = performance.now();
-  return new Promise<boolean>((resolve) => {
-    const req = http.get(
-      { hostname: MLX_HOST, port: MLX_PORT, path: "/health", timeout: 2000 },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on("data", (chunk) => chunks.push(chunk));
-        res.on("end", () => {
-          let model: unknown;
-          try {
-            model = JSON.parse(Buffer.concat(chunks).toString("utf8")).model;
-          } catch {}
-          const ok =
-            res.statusCode === 200 &&
-            (!expectedModel || model === expectedModel);
-          debug(
-            "mlx",
-            `health → ${ok ? "ok" : `status=${res.statusCode} model=${String(model)}`} ${(performance.now() - start).toFixed(0)}ms`,
-          );
-          resolve(ok);
-        });
-      },
-    );
-    req.on("error", (err) => {
-      debug(
-        "mlx",
-        `health → error: ${err.message} ${(performance.now() - start).toFixed(0)}ms`,
-      );
-      resolve(false);
-    });
-    req.on("timeout", () => {
-      debug(
-        "mlx",
-        `health → timeout ${(performance.now() - start).toFixed(0)}ms`,
-      );
-      req.destroy();
-      resolve(false);
-    });
-  });
+  const result = await requestMlxJSON("/health");
+  const ok =
+    result.ok && (!expectedModel || result.data?.model === expectedModel);
+  debug(
+    "mlx",
+    `health ok=${ok} category=${result.category ?? "none"} status=${result.status ?? "none"} ms=${result.ms}`,
+  );
+  return ok;
 }
 
 export async function isMlxUp(expectedModel?: string): Promise<boolean> {
@@ -210,9 +234,9 @@ export async function mlxEmbed(
   if (!(await isMlxUp(options?.expectedModel))) return null;
   debug("mlx", `embed ${texts.length} texts`);
 
-  let postResult: { ok: boolean; data?: any };
+  let postResult: MlxHttpResult;
   try {
-    postResult = await postJSON("/embed", {
+    postResult = await requestMlxJSON("/embed", {
       texts,
       expected_model: options?.expectedModel,
     });
@@ -241,17 +265,21 @@ export async function mlxEmbed(
       now - lastMlxWarning >= MLX_WARNING_INTERVAL_MS
     ) {
       console.error(
-        "[mlx] Embed server failed: bad response (ok=" +
-          ok +
-          ", validResponse=" +
-          responseMatches +
-          ", dim=" +
-          String(data?.dim) +
-          ", model=" +
-          String(data?.model) +
-          ")",
+        `[mlx] Embed failed: category=${postResult.category ?? "protocol"} status=${postResult.status ?? "none"} ms=${postResult.ms} batch=${texts.length} detail=${JSON.stringify(postResult.detail ?? `invalid vectors/model: dim=${String(data?.dim)} model=${String(data?.model)}`).slice(0, 600)}`,
       );
       lastMlxWarning = now;
+    }
+    if (
+      (postResult.ok && !responseMatches) ||
+      postResult.category === "protocol" ||
+      (postResult.category === "http" &&
+        (postResult.status ?? 500) < 500 &&
+        postResult.status !== 429 &&
+        postResult.status !== 408)
+    ) {
+      throw new Error(
+        `MLX embedding protocol failure: status=${postResult.status ?? "none"} ${postResult.detail ?? "invalid vectors or model identity"}`,
+      );
     }
     return null;
   }

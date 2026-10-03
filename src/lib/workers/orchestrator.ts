@@ -27,6 +27,7 @@ import {
 import { debug as dbg, debugTimer } from "../utils/logger";
 import { resolveContainedPath } from "../utils/path-containment";
 import { maxSim } from "./colbert-math";
+import { EmbeddingBackendUnavailableError } from "./embedding-error";
 import { ColbertModel, type HybridResult } from "./embeddings/colbert";
 import { GraniteModel } from "./embeddings/granite";
 import { mlxEmbed } from "./embeddings/mlx-client";
@@ -171,12 +172,12 @@ export class WorkerOrchestrator {
               expectedDim: this.generation.vectorDim,
             });
       if (!mlxResult && !this.allowOnnxFallback) {
-        throw new Error(
+        throw new EmbeddingBackendUnavailableError(
           `MLX embedding model ${this.generation.mlxModel} is unavailable; ONNX fallback is disabled for this custom embedding generation`,
         );
       }
       if (!mlxResult && denseBackend === "mlx") {
-        throw new Error(
+        throw new EmbeddingBackendUnavailableError(
           `MLX embedding model ${this.generation.mlxModel} became unavailable during this embedding operation`,
         );
       }

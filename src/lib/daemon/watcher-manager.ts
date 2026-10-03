@@ -10,6 +10,7 @@ import {
   walk,
 } from "../index/walker";
 import { WATCHER_IGNORE_GLOBS } from "../index/watcher";
+import type { IndexState } from "../output/index-state-footer";
 import type { MetaCache } from "../store/meta-cache";
 import type { VectorDB } from "../store/vector-db";
 import { computeContentHash, readFileSnapshot } from "../utils/file-utils";
@@ -99,6 +100,10 @@ export class WatcherManager {
     ReturnType<typeof setTimeout>
   >();
   private readonly lastOverflowMs = new Map<string, number>();
+  private readonly lastWatcherErrorLogMs = new Map<string, number>();
+  private readonly overflowCounts = new Map<string, number>();
+  private readonly reconciledAt = new Map<string, number>();
+  private readonly catchupDurations = new Map<string, number>();
   private readonly lastCatchupEndMs = new Map<string, number>();
   private readonly deferredCatchups = new Map<
     string,
@@ -110,6 +115,23 @@ export class WatcherManager {
   private readonly watchLifecycles = new Map<string, AbortController>();
 
   constructor(private readonly deps: WatcherManagerDeps) {}
+
+  health(root: string): Partial<IndexState> {
+    return {
+      failedFiles: this.terminalFailures.get(root)?.size ?? 0,
+      degraded: this.isRootDegraded(root),
+      watcherMode: this.pollIntervals.has(root)
+        ? "polling"
+        : this.pendingOps.has(`recover:${root}`) ||
+            this.deferredCatchups.has(root)
+          ? "recovering"
+          : "native",
+      catchupRunning: this.catchups.has(root),
+      lastReconciledAt: this.reconciledAt.get(root),
+      overflowCount: this.overflowCounts.get(root) ?? 0,
+      catchupMs: this.catchupDurations.get(root),
+    };
+  }
 
   async watchProject(
     root: string,
@@ -310,7 +332,21 @@ export class WatcherManager {
       root,
       (err, events) => {
         if (err) {
-          console.error(`[daemon:${name}] Watcher error:`, err);
+          this.overflowCounts.set(
+            root,
+            (this.overflowCounts.get(root) ?? 0) + 1,
+          );
+          const now = Date.now();
+          if (
+            !this.lastWatcherErrorLogMs.has(root) ||
+            now - this.lastWatcherErrorLogMs.get(root)! >= 60_000
+          ) {
+            this.lastWatcherErrorLogMs.set(root, now);
+            console.error(
+              `[daemon:${name}] Watcher error (total=${this.overflowCounts.get(root)}):`,
+              err,
+            );
+          }
           this.recoverWatcher(root, processor);
           return;
         }
@@ -564,6 +600,7 @@ export class WatcherManager {
     processor: ProjectBatchProcessor,
     signal: AbortSignal,
   ): Promise<boolean> {
+    const scanStart = Date.now();
     const { isFileCached } = await import("../utils/cache-check");
 
     const metaCache = this.deps.getMetaCache()!;
@@ -728,7 +765,10 @@ export class WatcherManager {
       );
     }
 
-    this.lastCatchupEndMs.set(root, Date.now());
+    const ended = Date.now();
+    this.lastCatchupEndMs.set(root, ended);
+    this.catchupDurations.set(root, ended - scanStart);
+    if (complete) this.reconciledAt.set(root, ended);
     return complete;
   }
 

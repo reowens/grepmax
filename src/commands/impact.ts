@@ -229,7 +229,7 @@ export const impact = new Command("impact")
         }
         for (const t of groupedTests) {
           console.log(
-            `test: ${rel(t.file)}:${t.line + 1}\t${hopLabelAgent(t.hops)}${formatViaAgent(t.via)}`,
+            `test: ${rel(t.file)}:${t.line + 1}\t${hopLabelAgent(t.hops, t.evidence)}${formatViaAgent(t.via)}`,
           );
         }
         if (!nonTestDeps.length && !tests.length) {
@@ -256,7 +256,7 @@ export const impact = new Command("impact")
             console.log(`Affected tests (${groupedTests.length}):`);
             for (const t of groupedTests) {
               console.log(
-                `  ${rel(t.file)}:${t.line + 1}  (${hopLabelHuman(t.hops)}${formatViaHuman(t.via)})`,
+                `  ${rel(t.file)}:${t.line + 1}  (${hopLabelHuman(t.hops, t.evidence)}${formatViaHuman(t.via)})`,
               );
             }
           } else {

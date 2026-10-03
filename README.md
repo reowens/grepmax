@@ -222,6 +222,10 @@ gmax status                   # See all projects + watcher status
 
 The daemon auto-starts when you run `gmax add`, `gmax index`, `gmax remove`, `gmax summarize`, or `gmax mcp`. It shuts down after 4 hours of inactivity, and hands off to a fresh daemon after 24 hours or once its memory footprint passes 2.5 GB. File-change batches are processed on at most four worker processes, added only when work backs up, with one kept free for searches; LanceDB compaction runs after writes rather than on every maintenance tick.
 
+`gmax watch status` reports failed files, native watcher recovery or polling, dropped-event counts, and the last complete filesystem reconciliation. Polling scans run every five minutes, so recent edits can lag. Search and MCP responses retain health warnings even after the file queue drains. A complete reconciliation means the filesystem scan completed; queued embedding work can still be pending.
+
+Temporary embedding backend outages preserve existing indexed rows and retry with backoff from five seconds up to one minute, without exhausting individual files' retry budgets. MLX failures report bounded transport/protocol details in the daemon log. `gmax status --json` includes the most recent resource snapshot when a recycle threshold has been reached; these counters help investigate memory growth, whose cause requires measurement over time.
+
 ## Running under the Claude Code sandbox
 
 Claude Code's Bash sandbox (the default on macOS) allows writes only under the working directory,
