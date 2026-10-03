@@ -2,9 +2,9 @@
 
 ## Current reliability work
 
-v0.26.44 is released and installed; daemon PID 52659 confirmed the version over IPC. All 1,479
+v0.26.45 is released and installed; daemon PID 486 confirmed the version over IPC. All 1,494
 tests passed locally and in Linux CI, with both typechecks, formatting, build, repository audit
-and fresh packed-consumer audit/native smoke. The ordered reliability fixes are:
+and fresh packed-consumer audit/native smoke. The ordered reliability fixes shipped in v0.26.44:
 
 1. Native cache limits now reach the actual SDK Session. The old positional Session was silently
    ignored; a native regression fails with the old wiring and passes with the fix.
@@ -29,8 +29,10 @@ Use runlist to consume the latest handoff and claim plan work; older archived no
 historical states. The upstream FTS panic is resolved in the shipped LanceDB 0.38.0 GA pin;
 the rebuild guard remains as a recovery tripwire.
 
-The next patch adds structured results/output schemas for semantic_search, trace_calls, dead,
+v0.26.45 adds structured results/output schemas for semantic_search, trace_calls, dead,
 and index_status alongside existing text, with truthful read-only annotations and pipe-only tests.
+Installed SDK-client smoke passed all four tools with every server listener forbidden. Doctor:
+507,700 rows, 13.9 GB logical / 15.0 GB physical, 107.2 GB free, no orphan/stale temporary files.
 Next assess a compatible SDK v2 migration, then progress/cancellation. Keep STDIO only;
 Tasks/subscriptions remain workflow-gated.
 
@@ -73,7 +75,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 72 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 73 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
