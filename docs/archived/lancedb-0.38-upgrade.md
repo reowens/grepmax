@@ -16,8 +16,8 @@ parent_plan: lance-fts-merge-upstream.md
 related_docs:
   - ../2026-08-04-macos-kernel-zone-panic-incident.md
   - ../known-limitations.md
-current_state: Phase 0 ran 2026-08-25 as a lance-11 *control*, not a fix validation. The fix (lance-format/lance#8312) is in lance v11.0.0-beta.22, which lancedb 0.38.0-beta.6+ pins — but beta.6 through beta.10 exist only as git tags in the lancedb repo. npm has published exactly two 0.38 prereleases, beta.0 and beta.3, and beta.3 is built against lance 11.0.0-beta.16, six tags before the fix. npm blocks the *release*, not the soak — beta.10 prebuilts are available as GitHub release assets and can be soaked against directly. What the control did establish, on an APFS clone of the live 352k-row store, is that lance 11 is bidirectionally format-compatible with lance 8 and that the 18 table/connection methods vector-db.ts uses are signature-identical. gmax is on 0.31.0 / lance 8.0.0 with the drop-and-rebuild panic guard in vector-db.ts.
-next_step: none — shipped in v0.26.23 as beta.3 on npm + vendored beta.10 overlay (scripts/postinstall.js). Phases 1–3, canary and rollback clone dropped by decision 2026-08-25: single-user tool, rebuild on failure.
+current_state: Shipped initially in v0.26.23 with a beta overlay, then replaced by the LanceDB 0.38.0 GA pin. The upstream FTS fix is included; the v0.26.27/0.26.28 canary ran September 7–16 with zero optimize failures, FTS rebuilds or panics. The drop-and-rebuild guard remains a recovery tripwire. The body below preserves the August prerelease investigation as historical evidence.
+next_step: None — the GA upgrade and canary are complete; remaining reliability work is tracked in the current docs index.
 summary: Upgrade LanceDB three lance majors to remove the FTS merge panic at the source, with a rollback-safe cutover.
 ---
 

@@ -2,7 +2,7 @@
 type: doc
 status: reference
 created: 2026-04-09
-updated: 2026-09-07
+updated: 2026-10-02
 summary: Live catalog of open gmax limitations with detection + recovery steps.
 audience: internal
 related_plans:
@@ -19,7 +19,7 @@ related_docs:
 
 # Known Limitations
 
-Last updated 2026-09-07.
+Last updated 2026-10-02.
 
 ## Whole-corpus embedding rebuild is disruptive
 
