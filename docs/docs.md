@@ -65,11 +65,11 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 67 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 68 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
-| [Maintenance Observability](archived/maintenance-observability.md) | Archived: Released v0.26.43; source b59c6ad and tag e056fe0, CI 37090715709 passed all 1470 tests plus typechecks, formatting, build and repository audit. Global install completed and daemon PID 82555 confirmed 0.26.43 over IPC. Search and read-only doctor passed: 14.8 GB physical index and 106.8 GB free. Consumer sharp finding remains documented separately. |
+| [Maintenance Observability](archived/maintenance-observability.md) | Archived: Released v0.26.43; source b59c6ad and tag e056fe0, CI 37090715709 passed all 1470 tests plus typechecks, formatting, build and repository audit. Global install completed and daemon PID 82555 confirmed 0.26.43 over IPC. Search and read-only doctor passed. The first scheduled live pass completed in one attempt in 42.3 seconds, with physical bytes 16.53 GB to 14.85 GB; new resource and compaction JSON records were verified in the log and status. Consumer sharp finding remains documented separately. |
 | [LanceDB 0.31 → 0.38 Upgrade](archived/lancedb-0.38-upgrade.md) | Archived: Shipped initially in v0.26.23 with a beta overlay, then replaced by the LanceDB 0.38.0 GA pin. The upstream FTS fix is included; the v0.26.27/0.26.28 canary ran September 7–16 with zero optimize failures, FTS rebuilds or panics. The drop-and-rebuild guard remains a recovery tripwire. The body below preserves the August prerelease investigation as historical evidence. |
 | [Compaction Disk Safety](archived/compaction-disk-safety.md) | Archived: Released v0.26.42 with fresh compaction snapshots, a two-attempt cap, and fresh disk headroom checks. All 1452 tests passed locally and in CI; installed daemon PID 55958 confirmed version 0.26.42 over IPC. The recovered store remains around 14 GB with roughly 112 GB free. |
 | [Agent Reliability Hardening](archived/agent-reliability-hardening.md) | Archived: Implemented all six phases; 1439 tests across 154 files pass, both typechecks and build pass, and compiled CLI/graph smoke checks pass. |
