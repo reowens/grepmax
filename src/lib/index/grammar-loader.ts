@@ -14,25 +14,34 @@ for (const lang of LANGUAGES) {
 }
 
 const downloadFile = async (url: string, dest: string) => {
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent": "gmax",
-    },
-  });
-  if (!response.ok) throw new Error(`Failed to download ${url}`);
-  const arrayBuffer = await response.arrayBuffer();
-  fs.writeFileSync(dest, Buffer.from(arrayBuffer));
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const response = await fetch(url, {
+        headers: { "User-Agent": "gmax" },
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!response.ok)
+        throw new Error(`Failed to download ${url}: HTTP ${response.status}`);
+      const arrayBuffer = await response.arrayBuffer();
+      fs.writeFileSync(dest, Buffer.from(arrayBuffer));
+      return;
+    } catch (error) {
+      if (attempt === 3) throw error;
+      await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+    }
+  }
 };
 
 export async function ensureGrammars(
   log: (msg: string) => void = console.log,
-  options?: { silent?: boolean },
+  options?: { silent?: boolean; strict?: boolean },
 ) {
   if (!fs.existsSync(GRAMMARS_DIR)) {
     fs.mkdirSync(GRAMMARS_DIR, { recursive: true });
   }
 
   const silent = options?.silent ?? false;
+  const failed: string[] = [];
 
   for (const [lang, url] of Object.entries(GRAMMAR_URLS)) {
     const dest = path.join(GRAMMARS_DIR, `tree-sitter-${lang}.wasm`);
@@ -57,6 +66,7 @@ export async function ensureGrammars(
           log(`Downloaded ${lang} grammar`);
         }
       } catch (err) {
+        failed.push(lang);
         if (log === console.log) {
           console.log("Failed");
         }
@@ -64,4 +74,8 @@ export async function ensureGrammars(
       }
     }
   }
+  if (options?.strict && failed.length)
+    throw new Error(
+      `Required grammars could not be downloaded: ${failed.join(", ")}`,
+    );
 }

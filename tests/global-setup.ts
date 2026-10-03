@@ -7,5 +7,5 @@
 import { ensureGrammars } from "../src/lib/index/grammar-loader";
 
 export default async function globalSetup(): Promise<void> {
-  await ensureGrammars(() => {}, { silent: true });
+  await ensureGrammars(() => {}, { silent: true, strict: true });
 }
