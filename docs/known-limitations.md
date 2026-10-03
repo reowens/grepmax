@@ -295,7 +295,7 @@ grep "DATA CORRUPTION" ~/.gmax/logs/daemon.log | tail
 
 ## Consumer dependency audits differ from repository audits
 
-Verified October 2, 2026 with a fresh npm package-lock-only consumer install of grepmax 0.26.42. The repository's production audit is clean, but the consumer audit reports two high entries rooted in sharp 0.33.5 through LanceDB's optional transformers 3.0.2 dependency. The installed global tree confirms that route. Direct gmax transformers 4.3.0 resolves sharp 0.35.5; onnxruntime-node 1.30.0 resolves adm-zip 0.6.1, so the old adm-zip finding is no longer outstanding.
+Verified October 2, 2026 with fresh npm package-lock-only consumer installs. The repository's production audit is clean, but the latest consumer audit of grepmax 0.26.43 reports four high package entries (`sharp`, transformers, LanceDB and grepmax), all rooted in sharp 0.33.5 through LanceDB's optional transformers 3.0.2 dependency. The earlier 0.26.42 audit reported two entries along this same route; these counts include propagated package findings, not four separate root advisories. The installed global tree confirms that route. Direct gmax transformers 4.3.0 resolves sharp 0.35.5; onnxruntime-node 1.30.0 resolves adm-zip 0.6.1, so the old adm-zip finding is no longer outstanding.
 
 The relevant advisories are [libvips](https://github.com/advisories/GHSA-f88m-g3jw-g9cj) and [libheif](https://github.com/advisories/GHSA-rgj7-g3m4-5g8c). gmax supplies its own text vectors and does not invoke LanceDB's optional transformers image pipeline; that provider imports transformers lazily in its init method. Installed vulnerable dependencies still merit tracking even when this path is unused.
 
