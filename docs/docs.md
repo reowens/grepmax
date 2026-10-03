@@ -2,7 +2,7 @@
 
 ## Current reliability work
 
-v0.26.45 is released and installed; daemon PID 486 confirmed the version over IPC. All 1,494
+v0.26.46 is released and installed; daemon PID 41900 confirmed the version over IPC. All 1,502
 tests passed locally and in Linux CI, with both typechecks, formatting, build, repository audit
 and fresh packed-consumer audit/native smoke. The ordered reliability fixes shipped in v0.26.44:
 
@@ -36,7 +36,10 @@ Installed SDK-client smoke passed all four tools with every server listener forb
 The SDK v2 migration now uses the pinned official server 2.3.0 and its dual-era STDIO entry.
 Both protocol eras pass native store/isolation tests. Discovery starts no background work;
 active reads share one lease-renewal timer, and disconnect closes queued IPC and expires leases.
-Release validation follows. Progress/cancellation is next where backend work is abortable;
+The installed CommonJS build passed real v1, legacy v2, modern v2 and auto-discovering v2 clients
+on all four structured tools, with server listeners forbidden. The v1 fixture is dev-only.
+Doctor: 508,523 rows, 13.9 GB logical / 14.5 GB physical, 96.6 GB free, no orphan/stale temp data.
+Progress/cancellation is next where backend work is abortable;
 Tasks/subscriptions remain workflow-gated. Keep STDIO only.
 
 ## Deferred work
@@ -78,7 +81,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 74 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 75 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
