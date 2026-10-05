@@ -2,7 +2,7 @@
 type: doc
 status: reference
 created: 2026-04-09
-updated: 2026-10-02
+updated: 2026-10-04
 summary: Live catalog of open gmax limitations with detection + recovery steps.
 audience: internal
 related_plans:
@@ -19,7 +19,13 @@ related_docs:
 
 # Known Limitations
 
-Last updated 2026-10-02.
+Last updated 2026-10-04.
+
+## MCP cancellation has native-operation boundaries
+
+v0.26.47 forwards each client's cancellation signal to daemon graph, row and search reads. Aborting closes only that request's Unix IPC connection, allowing daemon admission/worker cancellation to stop queued work. New tool operations and fallback admission check the signal; other requests and session watch renewal continue.
+
+An already-running local native operation is awaited under existing query deadlines before its store closes. Cancellation does not roll back indexing writes or interrupt optional LLM workflows. Progress is opt-in through the client's progress token and counts started operation stages, without an estimated percentage or heartbeat timer. Cancellation errors are recorded by the existing query log only when queryLog is enabled (disabled by default).
 
 ## Whole-corpus embedding rebuild is disruptive
 
