@@ -33,6 +33,53 @@ function errno(
 
 const originalExitCode = process.exitCode;
 
+it.each(["absent", "not-ready", "oversize", "thrown"])(
+  "does not open a fallback when cancellation coincides with a %s daemon response",
+  async (failure) => {
+    const controller = new AbortController();
+    const inProcess = vi.fn(async () => "local");
+    await expect(
+      withStoreRead("cancelled", {
+        signal: controller.signal,
+        daemon: async () => {
+          controller.abort();
+          if (failure === "thrown") throw errno("ENOENT");
+          return {
+            ok: false,
+            error:
+              failure === "absent"
+                ? "ENOENT"
+                : failure === "oversize"
+                  ? "oversize"
+                  : "daemon not ready",
+          };
+        },
+        inProcess,
+        fallbackOnOversize: true,
+        extraFallback: () => true,
+      }),
+    ).rejects.toThrow();
+    expect(inProcess).not.toHaveBeenCalled();
+  },
+);
+
+it("does not open a bypassed store for an already cancelled request", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  const daemon = vi.fn();
+  const inProcess = vi.fn();
+  await expect(
+    withStoreRead("cancelled", {
+      signal: controller.signal,
+      skipDaemon: true,
+      daemon,
+      inProcess,
+    }),
+  ).rejects.toThrow();
+  expect(daemon).not.toHaveBeenCalled();
+  expect(inProcess).not.toHaveBeenCalled();
+});
+
 afterEach(() => {
   process.exitCode = originalExitCode;
   delete process.env.GMAX_NO_DAEMON;

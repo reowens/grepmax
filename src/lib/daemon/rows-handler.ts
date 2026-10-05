@@ -718,6 +718,7 @@ export async function findFileBySymbol(
  * one producer and one consumer.
  */
 export async function readRows(opts: {
+  signal?: AbortSignal;
   name: string;
   projectRoot: string;
   lancedbDir: string;
@@ -743,6 +744,7 @@ export async function readRows(opts: {
   const { sendDaemonCommand } = await import("../utils/daemon-client");
   const { withStoreRead } = await import("../utils/store-access");
   return withStoreRead<LocatedRow[][]>(opts.name, {
+    signal: opts.signal,
     daemon: () =>
       sendDaemonCommand(
         {
@@ -754,21 +756,23 @@ export async function readRows(opts: {
           limit: opts.limit,
           scoped: opts.scoped,
         },
-        { timeoutMs: opts.timeoutMs ?? 60_000 },
+        { timeoutMs: opts.timeoutMs ?? 60_000, signal: opts.signal },
       ),
     render: (resp) => (resp.rows ?? []) as LocatedRow[][],
     inProcess: () =>
       withLocalStore(
         opts.lancedbDir,
-        (deps) =>
-          runLocate(deps, {
+        (deps) => {
+          opts.signal?.throwIfAborted();
+          return runLocate(deps, {
             projectRoot: opts.projectRoot,
             scope: opts.scope,
             select: opts.select,
             matches: opts.matches,
             limit: opts.limit,
             scoped: opts.scoped,
-          }),
+          });
+        },
         opts.vectorDim,
       ),
     ...opts.fallback,

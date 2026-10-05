@@ -24,6 +24,8 @@ export function sendDaemonCommand(
   cmd: Record<string, unknown>,
   opts?: { timeoutMs?: number; signal?: AbortSignal },
 ): Promise<DaemonResponse> {
+  if (opts?.signal?.aborted)
+    return Promise.resolve({ ok: false, error: "aborted" });
   const timeout = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   return new Promise((resolve) => {

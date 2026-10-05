@@ -211,6 +211,8 @@ export function asStoreAccessError(err: unknown): unknown {
 }
 
 export interface StoreReadOptions<T> {
+  /** Stop before a fallback or subsequent read after the caller cancels. */
+  signal?: AbortSignal;
   /** Ask the daemon. Should resolve (not throw) with the daemon's response. */
   daemon: () => Promise<DaemonResponse>;
   /** Open the store here. Entered only when no daemon is listening. */
@@ -262,9 +264,13 @@ export async function withStoreRead<T>(
   name: string,
   opts: StoreReadOptions<T>,
 ): Promise<T> {
+  opts.signal?.throwIfAborted();
   const runInProcess = async (): Promise<T> => {
+    opts.signal?.throwIfAborted();
     try {
-      return await opts.inProcess();
+      const result = await opts.inProcess();
+      opts.signal?.throwIfAborted();
+      return result;
     } catch (err) {
       throw asStoreAccessError(err);
     }
@@ -276,6 +282,7 @@ export async function withStoreRead<T>(
   try {
     resp = await opts.daemon();
   } catch (err) {
+    opts.signal?.throwIfAborted();
     if (isStoreAccessRefused(err)) throw err;
     const cls = classifyDaemonError((err as NodeJS.ErrnoException)?.code);
     if (cls === "sandboxed") throw refuseStoreAccess("socket");
@@ -283,6 +290,7 @@ export async function withStoreRead<T>(
     return runInProcess();
   }
 
+  opts.signal?.throwIfAborted();
   if (resp.ok) {
     return opts.render ? await opts.render(resp) : (resp as unknown as T);
   }

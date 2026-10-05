@@ -165,7 +165,7 @@ it.each(["legacy", "modern", "auto"])(
 );
 
 it.each(["legacy", "modern", "v1"])(
-  "%s active reads share one renewal timer and disconnect closes queued IPC",
+  "%s reads cancel independently, report progress and share one watch timer",
   async (era) => {
     const dir = fs.realpathSync(
       fs.mkdtempSync(path.join(os.tmpdir(), "gmax-v2-leases-")),
@@ -177,7 +177,12 @@ it.each(["legacy", "modern", "v1"])(
       fs.mkdirSync(root);
       fs.mkdirSync(path.join(root, ".git"));
     }
-    const config = { modelTier: "small", vectorDim: 384, embedMode: "cpu" };
+    const config = {
+      modelTier: "small",
+      vectorDim: 384,
+      embedMode: "cpu",
+      queryLog: true,
+    };
     fs.writeFileSync(path.join(home, "config.json"), JSON.stringify(config));
     fs.writeFileSync(
       path.join(home, "projects.json"),
@@ -211,6 +216,7 @@ it.each(["legacy", "modern", "v1"])(
     const sockets = new Set<net.Socket>();
     let pendingSocket: net.Socket | undefined;
     let pendingClosed = false;
+    const held = new Map<string, net.Socket>();
     const daemon = net.createServer((socket) => {
       sockets.add(socket);
       socket.on("close", () => {
@@ -232,6 +238,10 @@ it.each(["legacy", "modern", "v1"])(
           socket.end(`${JSON.stringify({ ok: true, pid: process.pid })}\n`);
         } else if (cmd.cmd === "graph.trace" && cmd.target === "Wait") {
           pendingSocket = socket;
+        } else if (cmd.cmd === "graph.trace" && cmd.target.startsWith("Hold")) {
+          held.set(cmd.target, socket);
+        } else if (cmd.cmd === "rows.locate" || cmd.cmd === "search") {
+          held.set(cmd.cmd, socket);
         } else if (cmd.cmd === "graph.trace") {
           socket.end(
             `${JSON.stringify({ ok: true, graph: { center: { symbol: "Fixture", file: path.join(cmd.projectRoot, "fixture.ts"), line: 0, role: "IMPLEMENTATION", calls: [], calledBy: [] }, callerTree: [], callees: [], importers: [] } })}\n`,
@@ -316,6 +326,90 @@ it.each(["legacy", "modern", "v1"])(
           (cmd) => cmd.pid === pid && cmd.holder === `mcp:${pid}`,
         ),
       ).toBe(true);
+      expect(fs.readFileSync(events, "utf8").trim().split("\n")).toEqual([
+        "interval:300000",
+      ]);
+      const sibling = client.callTool({
+        name: "trace_calls",
+        arguments: { symbol: "HoldSibling", root: roots[1] },
+      });
+      void sibling.catch(() => {});
+      await until(() => held.has("HoldSibling"));
+      for (const [name, args, key] of [
+        ["trace_calls", { symbol: "HoldCancelled" }, "HoldCancelled"],
+        ["extract_symbol", { symbol: "Fixture" }, "rows.locate"],
+        [
+          "semantic_search",
+          { query: "find the synthetic fixture function" },
+          "search",
+        ],
+      ] as const) {
+        const controller = new AbortController();
+        const progress: Array<{
+          progress: number;
+          message?: string;
+          total?: number;
+        }> = [];
+        const params = { name, arguments: { ...args, root: roots[0] } };
+        const options = {
+          signal: controller.signal,
+          onprogress: (p: (typeof progress)[number]) => progress.push(p),
+        };
+        const cancelled =
+          client instanceof V1Client
+            ? client.callTool(params, undefined, options)
+            : client.callTool(params, options);
+        void cancelled.catch(() => {});
+        await until(() => held.has(key) && progress.length >= 2);
+        const socket = held.get(key)!;
+        let closed = false;
+        socket.once("close", () => {
+          closed = true;
+        });
+        controller.abort();
+        await expect(cancelled).rejects.toThrow();
+        await until(() => closed);
+        expect(progress.map((p) => p.progress)).toEqual(
+          progress.map((_, i) => i + 1),
+        );
+        expect(progress.every((p) => p.total === undefined)).toBe(true);
+        expect(progress[0].message).toBe(`Starting ${name}`);
+        const progressCount = progress.length;
+        const next = await client.callTool({
+          name: "trace_calls",
+          arguments: { symbol: "Fixture", root: roots[1] },
+        });
+        expect(next.structuredContent).toMatchObject({
+          root: roots[1],
+          found: true,
+        });
+        expect(progress).toHaveLength(progressCount);
+        expect(held.get("HoldSibling")!.destroyed).toBe(false);
+        expect(fs.existsSync(path.join(home, "lancedb"))).toBe(false);
+      }
+      held
+        .get("HoldSibling")!
+        .end(
+          `${JSON.stringify({ ok: true, graph: { center: null, callerTree: [], callees: [], importers: [] } })}\n`,
+        );
+      expect((await sibling).isError).not.toBe(true);
+      const logPath = path.join(home, "logs", "queries.jsonl");
+      const cancelledLogs = () =>
+        fs
+          .readFileSync(logPath, "utf8")
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line))
+          .filter((entry) => entry.error?.includes("abort"));
+      await until(() => fs.existsSync(logPath) && cancelledLogs().length === 3);
+      expect(cancelledLogs().map((entry) => entry.tool)).toEqual([
+        "trace_calls",
+        "extract_symbol",
+        "semantic_search",
+      ]);
+      expect(cancelledLogs().every((entry) => entry.project === roots[0])).toBe(
+        true,
+      );
       expect(fs.readFileSync(events, "utf8").trim().split("\n")).toEqual([
         "interval:300000",
       ]);

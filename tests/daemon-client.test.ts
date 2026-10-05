@@ -11,6 +11,10 @@ const tmpAutostartDisabled = path.join(
   "gmax-test-autostart-disabled",
 );
 const spawnDaemonMock = vi.hoisted(() => vi.fn(() => 12345));
+vi.mock("node:net", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:net")>();
+  return { ...original, createConnection: vi.fn(original.createConnection) };
+});
 vi.mock("../src/config", async () => {
   const p = await import("node:path");
   const o = await import("node:os");
@@ -65,6 +69,20 @@ afterEach(() => {
 
 describe("daemon-client", () => {
   describe("sendDaemonCommand", () => {
+    it("does not create a socket for an already cancelled command", async () => {
+      const connect = vi.mocked(net.createConnection);
+      connect.mockClear();
+      try {
+        const controller = new AbortController();
+        controller.abort();
+        await expect(
+          sendDaemonCommand({ cmd: "search" }, { signal: controller.signal }),
+        ).resolves.toEqual({ ok: false, error: "aborted" });
+        expect(connect).not.toHaveBeenCalled();
+      } finally {
+        connect.mockClear();
+      }
+    });
     it("sends command and receives response", async () => {
       const server = startMockServer((data, socket) => {
         const cmd = JSON.parse(data);

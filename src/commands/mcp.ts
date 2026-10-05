@@ -107,6 +107,13 @@ import { isIndexableFile } from "../lib/utils/file-utils";
 import { formatTimeAgo } from "../lib/utils/format-helpers";
 import { extractImports } from "../lib/utils/import-extractor";
 import {
+  checkMcpCancellation,
+  mcpOperation,
+  mcpSignal,
+  withMcpExecution,
+  withoutMcpExecution,
+} from "../lib/utils/mcp-execution";
+import {
   isPathWithin,
   resolveContainedFile,
   resolveContainedPath,
@@ -545,6 +552,15 @@ export const mcp = new Command("mcp")
 
     // --- Store access ---
 
+    function sendMcpCommand(
+      cmd: Record<string, unknown>,
+      opts?: { timeoutMs?: number },
+    ): Promise<DaemonResponse> {
+      return mcpOperation(`Daemon: ${cmd.cmd}`, () =>
+        sendDaemonCommand(cmd, { ...opts, signal: mcpSignal() }),
+      );
+    }
+
     /**
      * One read through the access policy, with MCP's fallback allowances. The
      * `inProcess` branch is entered only when no daemon serves the verb.
@@ -559,6 +575,7 @@ export const mcp = new Command("mcp")
       },
     ): Promise<T> {
       return withStoreRead<T>(name, {
+        signal: mcpSignal(),
         ...opts,
         ...MCP_STORE_FALLBACK,
         skipDaemon: secondary(),
@@ -569,7 +586,16 @@ export const mcp = new Command("mcp")
     function localStore<T>(
       fn: (deps: StoreReadDeps) => Promise<T>,
     ): Promise<T> {
-      return withLocalStore(storeDir(), fn, storeConfig().vectorDim);
+      return mcpOperation("Reading selected local store", () =>
+        withLocalStore(
+          storeDir(),
+          async (deps) => {
+            checkMcpCancellation();
+            return fn(deps);
+          },
+          storeConfig().vectorDim,
+        ),
+      );
     }
 
     /** A graph verb with MCP's fallback allowances. */
@@ -583,13 +609,16 @@ export const mcp = new Command("mcp")
         inProcess: () => Promise<T>;
       },
     ): Promise<T> {
-      return callGraphVerb<T>(verb, {
-        ...call,
-        fallback: {
-          ...MCP_STORE_FALLBACK,
-          ...(secondary() ? { skipDaemon: true } : {}),
-        },
-      });
+      return mcpOperation(`Reading ${verb}`, () =>
+        callGraphVerb<T>(verb, {
+          ...call,
+          signal: mcpSignal(),
+          fallback: {
+            ...MCP_STORE_FALLBACK,
+            ...(secondary() ? { skipDaemon: true } : {}),
+          },
+        }),
+      );
     }
 
     /**
@@ -630,7 +659,7 @@ export const mcp = new Command("mcp")
     }): Promise<SearchResponse> {
       return readStore<SearchResponse>("search", {
         daemon: () =>
-          sendDaemonCommand(
+          sendMcpCommand(
             {
               cmd: args.filters?.projectRoots ? "search-v2" : "search",
               ...args,
@@ -667,6 +696,8 @@ export const mcp = new Command("mcp")
                 { rerank: args.rerank, seeds: args.seeds },
                 args.filters,
                 args.pathPrefix,
+                undefined,
+                mcpSignal(),
               );
             } finally {
               await pool?.destroy();
@@ -774,15 +805,18 @@ export const mcp = new Command("mcp")
         scoped?: boolean;
       },
     ): Promise<Array<Record<string, unknown>>[]> {
-      return readRows({
-        name: "locate",
-        projectRoot: root,
-        lancedbDir: storeDir(),
-        vectorDim: storeConfig().vectorDim,
-        scope: projectScope(root),
-        fallback: { ...MCP_STORE_FALLBACK, skipDaemon: secondary() },
-        ...req,
-      });
+      return mcpOperation("Locating indexed rows", () =>
+        readRows({
+          signal: mcpSignal(),
+          name: "locate",
+          projectRoot: root,
+          lancedbDir: storeDir(),
+          vectorDim: storeConfig().vectorDim,
+          scope: projectScope(root),
+          fallback: { ...MCP_STORE_FALLBACK, skipDaemon: secondary() },
+          ...req,
+        }),
+      );
     }
 
     /**
@@ -802,11 +836,12 @@ export const mcp = new Command("mcp")
       let chunks = 0;
       let files = 0;
       for (const project of projects) {
+        checkMcpCancellation();
         const totals = await readStore<{ chunks: number; files: number }>(
           "project-stats",
           {
             daemon: () =>
-              sendDaemonCommand(
+              sendMcpCommand(
                 { cmd: "project-stats", root: project.root },
                 { timeoutMs: 30_000 },
               ),
@@ -839,7 +874,7 @@ export const mcp = new Command("mcp")
     ): Promise<SkeletonLookup> {
       return readStore<SkeletonLookup>("skeleton", {
         daemon: () =>
-          sendDaemonCommand(
+          sendMcpCommand(
             { cmd: "rows.skeleton", projectRoot: root, ...req },
             { timeoutMs: 30_000 },
           ),
@@ -873,34 +908,36 @@ export const mcp = new Command("mcp")
     };
 
     async function ensureWatcher(root?: string): Promise<void> {
-      try {
-        const watchRoot =
-          root ??
-          resolveMcpProject(undefined, currentRoot(), storeProjects())?.root;
-        if (
-          !watchRoot ||
-          secondary() ||
-          matchStore(watchRoot).kind !== "primary"
-        )
-          return;
-        const result = await launchWatcher(watchRoot, WATCH_LEASE);
-        if (closing) return;
-        if (result.ok) {
-          watchedRoots.add(watchRoot);
-          // Discovery/catalog requests never reach this path. Renew only roots
-          // actually read by this session, with one timer for the whole process.
-          watchTimer ??= setInterval(() => {
-            for (const root of watchedRoots) void ensureWatcher(root);
-          }, MCP_WATCH_LEASE_RENEW_MS).unref();
+      return withoutMcpExecution(async () => {
+        try {
+          const watchRoot =
+            root ??
+            resolveMcpProject(undefined, currentRoot(), storeProjects())?.root;
+          if (
+            !watchRoot ||
+            secondary() ||
+            matchStore(watchRoot).kind !== "primary"
+          )
+            return;
+          const result = await launchWatcher(watchRoot, WATCH_LEASE);
+          if (closing) return;
+          if (result.ok) {
+            watchedRoots.add(watchRoot);
+            // Discovery/catalog requests never reach this path. Renew only roots
+            // actually read by this session, with one timer for the whole process.
+            watchTimer ??= setInterval(() => {
+              for (const root of watchedRoots) void ensureWatcher(root);
+            }, MCP_WATCH_LEASE_RENEW_MS).unref();
+          }
+          if (result.ok && !result.reused) {
+            console.log(
+              `[MCP] Started background watcher for ${watchRoot} (PID: ${result.pid})`,
+            );
+          }
+        } catch (err) {
+          console.error("[MCP] Watcher startup failed:", err);
         }
-        if (result.ok && !result.reused) {
-          console.log(
-            `[MCP] Started background watcher for ${watchRoot} (PID: ${result.pid})`,
-          );
-        }
-      } catch (err) {
-        console.error("[MCP] Watcher startup failed:", err);
-      }
+      });
     }
 
     // Resolve the registered project this server scopes to. The server pins to
@@ -2056,7 +2093,7 @@ export const mcp = new Command("mcp")
         // raw `pairs` array entirely.
         const result = await readStore<SurprisesResult>("surprises", {
           daemon: () =>
-            sendDaemonCommand(
+            sendMcpCommand(
               {
                 cmd: "vector.surprises",
                 projectRoot: root,
@@ -2263,7 +2300,7 @@ export const mcp = new Command("mcp")
 
         const entries = await readStore<SymbolEntry[]>("symbols", {
           daemon: () =>
-            sendDaemonCommand(
+            sendMcpCommand(
               {
                 cmd: "rows.symbols",
                 projectRoot: root,
@@ -2381,7 +2418,7 @@ export const mcp = new Command("mcp")
 
         const daemonStatus: DaemonResponse = secondary()
           ? { ok: true, projects: [] }
-          : await sendDaemonCommand({ cmd: "status" });
+          : await sendMcpCommand({ cmd: "status" });
         const watched = (
           Array.isArray(daemonStatus.projects) ? daemonStatus.projects : []
         ) as Array<{ root: string; status?: string; indexState?: IndexState }>;
@@ -2529,7 +2566,7 @@ export const mcp = new Command("mcp")
         // in whichever process holds the store.
         const overview = await readStore<ProjectOverview>("project", {
           daemon: () =>
-            sendDaemonCommand(
+            sendMcpCommand(
               { cmd: "rows.project", projectRoot: root },
               { timeoutMs: 120_000 },
             ),
@@ -3043,7 +3080,7 @@ export const mcp = new Command("mcp")
         // up, runs the vector search, and returns the ranked chunks.
         const result = await readStore<SimilarResult>("similar", {
           daemon: () =>
-            sendDaemonCommand(
+            sendMcpCommand(
               {
                 cmd: "vector.similar",
                 projectRoot: root,
@@ -3389,6 +3426,7 @@ export const mcp = new Command("mcp")
         toolArgs: Record<string, unknown>,
         startMs: number,
         result: ToolResult,
+        root = currentRoot(),
       ): Promise<void> => {
         try {
           const { logQuery } = await import("../lib/utils/query-log");
@@ -3399,7 +3437,7 @@ export const mcp = new Command("mcp")
             source: "mcp",
             tool: name,
             query: mcpLogQuery(name, toolArgs),
-            project: currentRoot(),
+            project: root,
             results: resultLines,
             ms: Date.now() - startMs,
             error: result.isError ? text.slice(0, 200) : undefined,
@@ -3438,57 +3476,63 @@ export const mcp = new Command("mcp")
               ...config.inputSchema,
             }),
           },
-          async (rawArgs) => {
-            let args = (rawArgs ?? {}) as Record<string, unknown>;
-            const startMs = Date.now();
-            let target = projectRoot;
-            try {
-              if (typeof args.root === "string" && args.root.trim()) {
-                const raw = args.root.trim();
-                if (path.isAbsolute(raw) || raw.includes(path.sep))
-                  target = path.resolve(raw);
-                else {
-                  const projects = [
-                    ...listProjects(),
-                    ...storeInventory().flatMap((store) => store.projects),
-                  ].filter(
-                    (project, i, all) =>
-                      all.findIndex((p) => p.root === project.root) === i,
-                  );
-                  const selected = resolveMcpProject(
-                    raw,
-                    projectRoot,
-                    projects,
-                  );
-                  if (!selected)
-                    return err(
-                      `Unknown or ambiguous registered project: ${raw}. Use list_projects or an exact root.`,
+          async (rawArgs, context) =>
+            withMcpExecution(context?.mcpReq, async () => {
+              let args = (rawArgs ?? {}) as Record<string, unknown>;
+              const startMs = Date.now();
+              let target = projectRoot;
+              try {
+                checkMcpCancellation();
+                if (typeof args.root === "string" && args.root.trim()) {
+                  const raw = args.root.trim();
+                  if (path.isAbsolute(raw) || raw.includes(path.sep))
+                    target = path.resolve(raw);
+                  else {
+                    const projects = [
+                      ...listProjects(),
+                      ...storeInventory().flatMap((store) => store.projects),
+                    ].filter(
+                      (project, i, all) =>
+                        all.findIndex((p) => p.root === project.root) === i,
                     );
-                  target = selected.root;
-                }
-              }
-              return await withStoreContext(target, async () => {
-                if (args.root !== undefined) {
-                  const selected = resolveMcpProject(
-                    args.root,
-                    currentRoot(),
-                    storeProjects(),
-                  );
-                  if (!selected)
-                    return err(
-                      `Unknown registered project: ${args.root}. Use list_projects to select a project name or exact root.`,
+                    const selected = resolveMcpProject(
+                      raw,
+                      projectRoot,
+                      projects,
                     );
-                  args = { ...args, root: selected.root };
-                  currentStoreContext()!.root = selected.root;
+                    if (!selected)
+                      return err(
+                        `Unknown or ambiguous registered project: ${raw}. Use list_projects or an exact root.`,
+                      );
+                    target = selected.root;
+                  }
                 }
-                const result = await handler(args);
-                await logToolCall(name, args, startMs, result);
+                return await withStoreContext(target, async () => {
+                  if (args.root !== undefined) {
+                    const selected = resolveMcpProject(
+                      args.root,
+                      currentRoot(),
+                      storeProjects(),
+                    );
+                    if (!selected)
+                      return err(
+                        `Unknown registered project: ${args.root}. Use list_projects to select a project name or exact root.`,
+                      );
+                    args = { ...args, root: selected.root };
+                    currentStoreContext()!.root = selected.root;
+                  }
+                  const result = await mcpOperation(`Starting ${name}`, () =>
+                    handler(args),
+                  );
+                  await logToolCall(name, args, startMs, result);
+                  return result;
+                });
+              } catch (error) {
+                const result = toolError("Tool failed", error);
+                await logToolCall(name, args, startMs, result, target);
                 return result;
-              });
-            } catch (error) {
-              return toolError("Tool failed", error);
-            }
-          },
+              }
+            }),
         );
       }
 

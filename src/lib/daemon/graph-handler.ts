@@ -1182,6 +1182,7 @@ export function createGraphVerbs(
 export const GRAPH_VERB_TIMEOUT_MS = 60_000;
 
 export interface GraphVerbCall<T> {
+  signal?: AbortSignal;
   projectRoot: string;
   scope: ResolvedScope;
   /** Verb-specific fields, merged over the scope fields. */
@@ -1212,6 +1213,7 @@ export function callGraphVerb<T>(
   call: GraphVerbCall<T>,
 ): Promise<T> {
   return withStoreRead<T>(verb, {
+    signal: call.signal,
     skipDaemon: !isDaemonReadableProject(call.projectRoot),
     daemon: () =>
       sendDaemonCommand(
@@ -1220,7 +1222,7 @@ export function callGraphVerb<T>(
           ...encodeScope(call.projectRoot, call.scope),
           ...call.payload,
         },
-        { timeoutMs: GRAPH_VERB_TIMEOUT_MS },
+        { timeoutMs: GRAPH_VERB_TIMEOUT_MS, signal: call.signal },
       ),
     render: call.render,
     inProcess: call.inProcess,
