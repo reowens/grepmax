@@ -21,6 +21,12 @@ related_docs:
 
 Last updated 2026-10-04.
 
+## Small result lists preserve ranks; relevance still needs validation
+
+v0.26.48 fixes a result-window bug: requesting one or three matches used to discard candidates before structural scoring, so a ten-result request could reveal better matches missing from the short list. Search now ranks the already bounded candidate pool before applying the requested result count, while preserving the expensive rerank and final display-fetch bounds. Regression tests and six installed real-query comparisons verify consistent short-result prefixes within the same retrieval pool.
+
+This does not make every top match relevant. For example, a natural-language query about cancelled MCP requests still ranked daemon restart code first, and some search-pipeline queries ranked experiment/test scripts ahead of production code. Validate discovery results with extract/peek and record real misses across repos before changing weights, embeddings or retrieval mechanisms. Approximate vector search remains disabled by default after its earlier recall acceptance failure; an absent ANN index in doctor is expected.
+
 ## MCP cancellation has native-operation boundaries
 
 v0.26.47 forwards each client's cancellation signal to daemon graph, row and search reads. Aborting closes only that request's Unix IPC connection, allowing daemon admission/worker cancellation to stop queued work. New tool operations and fallback admission check the signal; other requests and session watch renewal continue.
