@@ -2,7 +2,7 @@
 type: doc
 status: active
 created: 2026-08-04T08:22:27Z
-updated: 2026-08-04T08:22:27Z
+updated: 2026-10-05T02:45:51Z
 modules:
   - src/lib/index/chunker.ts
   - src/lib/index/syncer.ts

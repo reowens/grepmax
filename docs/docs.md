@@ -1,52 +1,26 @@
 # Docs
 
-## Current reliability work
+## Current release and follow-ups — reviewed October 4, 2026
 
-v0.26.46 is released and installed; daemon PID 41900 confirmed the version over IPC. All 1,502
-tests passed locally and in Linux CI, with both typechecks, formatting, build, repository audit
-and fresh packed-consumer audit/native smoke. The ordered reliability fixes shipped in v0.26.44:
+**v0.26.48 is released and installed.** It fixes short-result search requests trimming candidates before structural scoring and dedup. Source `6e030a6`, tag `996df70`; [release CI 37255086012](https://github.com/reowens/grepmax/actions/runs/37255086012) passed 1,512 tests / 164 files, both typechecks, formatting, build, production audit and fresh packed-consumer audit/native smoke. Six installed queries at limits 1/3/10 now have stable result prefixes. General semantic relevance still needs held-out multi-repository validation.
 
-1. Native cache limits now reach the actual SDK Session. The old positional Session was silently
-   ignored; a native regression fails with the old wiring and passes with the fix.
-2. Production packaging uses the pinned official Lance SDK runtime without its unused provider
-   dependency manifest. Fresh packed-consumer audit and native runtime smoke pass; releases gate both.
-3. Native query deadlines apply to production query execution. Importer/path scans stream 512-row
-   batches; row fallbacks apply output caps before materialization. Temporary LIKE+limit regression passes.
-4. MCP routes each request to its selected store; status includes mounted/offline store metadata.
-   Real disk-image eject/remount passed while MCP remained running, with no reindex or secondary daemon.
-5. Unsupported daemon commands require `gmax watch restart` and never create a fallback reader.
-   Transport absence and in-process secondary access remain supported.
+The earlier reliability work remains shipped: native Session cache wiring, bounded query/row reads, reproducible consumer packaging, external-store request isolation and refusal of unsupported-daemon fallback readers. The historical FTS merge defect is fixed in the pinned LanceDB 0.38.0 GA runtime; a fresh panic should be investigated as a regression.
 
-MCP is explicitly local-only: stdin/stdout pipes, no HTTP/SSE/TCP listener; daemon home/socket
-permissions are 0700/0600. Non-loopback optional LLM configuration is refused without model startup.
+MCP uses the pinned SDK server 2.3.0 with legacy and modern STDIO compatibility. Installed CommonJS checks passed real v1, legacy v2, modern v2 and auto-discovering clients; the v1 fixture is development-only. Structured search/trace/dead/health results shipped in .45, the SDK migration in .46, and request cancellation/progress in .47. Cancellation closes only the affected read's IPC connection; active local native work waits for its deadline before store close. Optional LLM workflows and indexing writes are not interrupted. Tasks/subscriptions remain workflow-gated.
 
-Longer memory behavior still needs observation under ordinary sessions. Compare `Resource snapshot:`
-and `Compaction result:` records across cycles, accounting for hdev's memory guard. Do not force
-full rewrites of the live store to produce evidence.
+MCP remains local-only: stdin/stdout pipes, no HTTP/SSE/TCP listener; daemon home/socket permissions are 0700/0600. Non-loopback optional LLM configuration is refused before model startup. Discovery and catalog listing start no daemon, model or watcher work.
 
-[Future Sessions](future-sessions.md) contains the detailed local evidence and precautions.
-Use runlist to consume the latest handoff and claim plan work; older archived notes describe
-historical states. The upstream FTS panic is resolved in the shipped LanceDB 0.38.0 GA pin;
-the rebuild guard remains as a recovery tripwire.
+Longer resource cycles remain an observation task under ordinary sessions. Compare timestamped `Resource snapshot:` and `Compaction result:` records within the same daemon PID, accounting for hdev's memory guard. Do not substitute old process samples or force full rewrites to produce evidence. Exact search remains the default; an absent ANN index is expected after its recall-gate failure.
 
-v0.26.45 adds structured results/output schemas for semantic_search, trace_calls, dead,
-and index_status alongside existing text, with truthful read-only annotations and pipe-only tests.
-Installed SDK-client smoke passed all four tools with every server listener forbidden. Doctor:
-507,700 rows, 13.9 GB logical / 15.0 GB physical, 107.2 GB free, no orphan/stale temporary files.
-The SDK v2 migration now uses the pinned official server 2.3.0 and its dual-era STDIO entry.
-Both protocol eras pass native store/isolation tests. Discovery starts no background work;
-active reads share one lease-renewal timer, and disconnect closes queued IPC and expires leases.
-The installed CommonJS build passed real v1, legacy v2, modern v2 and auto-discovering v2 clients
-on all four structured tools, with server listeners forbidden. The v1 fixture is dev-only.
-Doctor: 508,523 rows, 13.9 GB logical / 14.5 GB physical, 96.6 GB free, no orphan/stale temp data.
-Progress/cancellation is next where backend work is abortable;
-Tasks/subscriptions remain workflow-gated. Keep STDIO only.
+The October 4 documentation audit corrected README defaults, explicit plugin updates, disabled summary guidance and historical benchmark/audit claims. Both retrieval harnesses still credit ranks 11–20 in a field named `mrrAt10`; fix or rename that metric before using it as a research acceptance gate. The deferred plans below were reviewed and retain their existing measurement gates.
+
+Use runlist to consume the latest local handoff and claim plan work. `docs/future-sessions.md` contains detailed local evidence; archived notes describe historical states rather than current operating instructions.
 
 ## Deferred work
 
 - [Embedding Reembed Atomic Cutover](plans/embedding-reembed-atomic-cutover.md) requires a
   meaningfully better measured model before implementation. The earlier 768d tier lost to 384d.
-- [Semantic Search — Open Backlog](plans/2026-05-25-semantic-search-landscape.md) keeps
+- [Semantic Search — Measure-First Decision Record](plans/2026-05-25-semantic-search-landscape.md) keeps
   PPR, HyDE, query expansion and semantic caching gated on measured misses or latency.
 - Static graph results remain approximate for dynamic dispatch, reflection and receiver binding;
   dead symbols and test candidates are hypotheses. See [Known Limitations](known-limitations.md).
@@ -81,18 +55,18 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 81 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 83 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
+| [Lance FTS Incremental-Merge Panic — Upstream Pursuit](archived/lance-fts-merge-upstream.md) | Archived: Closed. lance-format/lance#8310 was fixed by lance#8312 (lance 11.0.0-beta.22); gmax pins @lancedb/lancedb 0.38.0 GA (lance 11.0.0). The 0.26.27/0.26.28 canary on the GA pin ran 2026-09-07 to 2026-09-16 with zero optimize failures, FTS rebuilds, or panics. The drop-and-rebuild guard stays as a tripwire. |
+| [LanceDB 0.31 → 0.38 Upgrade](archived/lancedb-0.38-upgrade.md) | Archived: Shipped initially in v0.26.23 with a beta overlay, then replaced by the LanceDB 0.38.0 GA pin. The upstream FTS fix is included; the v0.26.27/0.26.28 canary ran September 7–16 with zero optimize failures, FTS rebuilds or panics. The drop-and-rebuild guard remains a recovery tripwire. The body below preserves the August prerelease investigation as historical evidence. |
+| [Mcp Server Migration](archived/mcp-server-migration.md) | Archived: The Server-to-McpServer migration shipped in `e80daca`; the result-shape follow-up shipped in `04a87a4`. The current server registers 27 tools with Zod schemas, explicit registered-project scoping, protocol coverage, and subsequent lifecycle/performance hardening. |
+| [v0.26.2 Stability Cycle](archived/stability-cycle-v0.26.2.md) | Archived: Historical v0.26.2-v0.26.5 stability cycle. SC-001 and SC-003 were fixed and live-verified; SC-002 recovery shipped and restored compaction, but FTS merge panics recurred repeatedly through 2026-08-03. The dated observation window and formal exit snapshot were never completed, and the 2026-08-04 watcher/index/store changes supersede this baseline. |
+| [Documentation refresh, October 2026](archived/docs-refresh-oct-2026.md) | Archived: README, docs index, limitations, contributor guidance and deferred plans now reflect v0.26.48. Historical rollout instructions and FTS closeouts are corrected; all runlist warnings are resolved. |
 | [Ordered Reliability Follow-ups](archived/ordered-reliability-followups.md) | Archived: All five fixes and local-only security shipped in v0.26.44; CI, installed IPC, health, sandbox, native cache telemetry and scheduled compaction passed. |
 | [External stores](archived/external-stores.md) | Archived: Phase 3 shipped in v0.26.44, tag 825ccd6. Native protocol plus real eject/remount verification passed; CI 37094408479 passed and installed daemon reports the correct version. |
 | [Maintenance Observability](archived/maintenance-observability.md) | Archived: Released v0.26.43; source b59c6ad and tag e056fe0, CI 37090715709 passed all 1470 tests plus typechecks, formatting, build and repository audit. Global install completed and daemon PID 82555 confirmed 0.26.43 over IPC. Search and read-only doctor passed. The first scheduled live pass completed in one attempt in 42.3 seconds, with physical bytes 16.53 GB to 14.85 GB; new resource and compaction JSON records were verified in the log and status. Consumer sharp finding remains documented separately. |
-| [LanceDB 0.31 → 0.38 Upgrade](archived/lancedb-0.38-upgrade.md) | Archived: Shipped initially in v0.26.23 with a beta overlay, then replaced by the LanceDB 0.38.0 GA pin. The upstream FTS fix is included; the v0.26.27/0.26.28 canary ran September 7–16 with zero optimize failures, FTS rebuilds or panics. The drop-and-rebuild guard remains a recovery tripwire. The body below preserves the August prerelease investigation as historical evidence. |
-| [Compaction Disk Safety](archived/compaction-disk-safety.md) | Archived: Released v0.26.42 with fresh compaction snapshots, a two-attempt cap, and fresh disk headroom checks. All 1452 tests passed locally and in CI; installed daemon PID 55958 confirmed version 0.26.42 over IPC. The recovered store remains around 14 GB with roughly 112 GB free. |
-| [Agent Reliability Hardening](archived/agent-reliability-hardening.md) | Archived: Implemented all six phases; 1439 tests across 154 files pass, both typechecks and build pass, and compiled CLI/graph smoke checks pass. |
-| [Lance FTS Incremental-Merge Panic — Upstream Pursuit](archived/lance-fts-merge-upstream.md) | Archived: Closed. lance-format/lance#8310 was fixed by lance#8312 (lance 11.0.0-beta.22); gmax pins @lancedb/lancedb 0.38.0 GA (lance 11.0.0). The 0.26.27/0.26.28 canary on the GA pin ran 2026-09-07 to 2026-09-16 with zero optimize failures, FTS rebuilds, or panics. The drop-and-rebuild guard stays as a tripwire. |
-| [Daemon Read Path](archived/daemon-read-path.md) | Archived: Shipped in v0.26.28 on 2026-09-08 (daemon PID 22835 restarted onto it at 10:29 -0700, ping capabilities.readVerbs 1, platform-package lance binary). Verified over a real socket: seven read commands with zero fallback lines and byte-identical output to GMAX_NO_DAEMON=1; scripts/sandbox-smoke.sh --strict 20/20 PASS; only the live daemon holds a live reader marker. Remaining: a one-time acceptance from a Claude Code sandboxed shell with only allowUnixSockets set, dead-marker pruning (non-goal here), and removing the unknown-command fallback one release later. |
 
 - Use `runlist list` or `runlist json` for the full inventory.
 <!-- GENERATED:dotmd:end -->

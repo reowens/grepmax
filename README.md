@@ -36,6 +36,8 @@ Natural-language search that works like `grep`. Fast, local, and built for codin
 
 ## Quick Start
 
+Requires **Node.js 22.12.0 or newer**.
+
 ```bash
 npm install -g grepmax        # 1. Install
 cd my-repo && gmax add        # 2. Add + index
@@ -89,7 +91,7 @@ gmax status                   # All indexed projects + chunk counts
 gmax status --json            # The same plus daemon, settings and workers, as JSON
 ```
 
-In our public benchmarks, `grepmax` can save about 20% of your LLM tokens and deliver a 30% speedup.
+The recorded benchmark below showed about 20% fewer LLM tokens and a 30% speedup on its workload. Results depend on the repository, query and agent workflow.
 
 <div align="center">
   <img src="public/bench.png" alt="gmax benchmark" width="100%" style="border-radius: 8px; margin: 20px 0;" />
@@ -115,11 +117,11 @@ gmax plugin add droid          # Factory Droid only
 gmax plugin remove claude      # Remove specific plugin
 ```
 
-Plugins auto-update when you run `npm install -g grepmax@latest` — no need to re-run `gmax plugin add`.
+After upgrading with `npm install -g grepmax@latest`, run `gmax plugin update` (or `gmax plugin update <client>`) to refresh integrations. Package installation does not modify your agent configuration; its postinstall script only prints this reminder.
 
 ### How it works per client
 
-- **Claude Code:** Plugin with hooks (SessionStart, CwdChanged, SubagentStart, PreToolUse). Model uses CLI via `Bash(gmax ... --agent)`.
+- **Claude Code:** Plugin with hooks (SessionStart, SessionEnd, CwdChanged, SubagentStart, PreToolUse). Model uses CLI via `Bash(gmax ... --agent)`.
 - **OpenCode:** Tool shim with dynamic SKILL + session plugin for daemon startup. Model calls gmax tool directly.
 - **Codex:** MCP server registration + AGENTS.md skill instructions.
 - **Factory Droid:** Skills + SessionStart/SessionEnd hooks for daemon lifecycle.
@@ -153,7 +155,7 @@ Clients requesting progress receive operation-stage messages with increasing sta
 | `list_projects` | List every indexed project (name, root, status, chunks) to pick a search scope. |
 | `index_status` | Index health: chunks, files, projects, watcher status. |
 | `summarize_project` | Project overview: languages, structure, key symbols, entry points. |
-| `summarize_directory` | Generate LLM summaries for indexed chunks. |
+| `summarize_directory` | Compatibility entry; summarization is disabled and generates no summaries. |
 | `related_files` | Dependencies and dependents by shared symbols. |
 | `recent_changes` | Recently modified indexed files. |
 | `diff_changes` | Search scoped to git changes. |
@@ -189,18 +191,6 @@ gmax "query" [options]
 | `--seed-symbol <name>` | Bias results toward an identifier you're working with (repeatable). | — |
 | `--skeleton` | Show file skeletons for top matches. | `false` |
 | `--context-for-llm` | Full function bodies + imports per result. | `false` |
-
-## Experimental Orientation
-
-`gmax surprises --experimental` finds file pairs that are semantically similar but not already connected by the indexed static graph. Use it for architecture orientation, duplicate-logic sweeps, and cross-package drift checks, not as proof that two files are unrelated.
-
-```bash
-gmax surprises --experimental --agent
-gmax surprises --experimental --in packages/app/src --dir-depth 4 --agent
-gmax surprises --experimental --exclude generated --top 10
-```
-
-The CLI and MCP output include score, max similarity, pair count, representative symbols, directory buckets, top similarities, applied penalties, and `gmax skeleton` follow-up hints. On large monorepos, prefer `--in`/`--exclude`; the default scan is capped at 50,000 rows and user-provided `--max-rows` is capped at 100,000. If a narrow `--in` scope returns no findings, increase `--dir-depth` so subdirectories are compared inside the scope.
 | `--budget <tokens>` | Cap output tokens (for `--context-for-llm`). | `8000` |
 | `--explain` | Show scoring breakdown per result. | `false` |
 | `--scores` | Show relevance scores. | `false` |
@@ -213,7 +203,19 @@ The CLI and MCP output include score, max similarity, pair count, representative
 | `--all-projects` | Search every indexed project; results grouped by project. | `false` |
 | `--projects <list>` | Search only these projects (comma-separated names). | — |
 | `--exclude-projects <list>` | With `--all-projects`, skip these projects. | — |
-| `--min-score <n>` | Minimum relevance score. | `0` |
+| `--min-score <n>` | Minimum score relative to this query’s top match, not an absolute confidence threshold. | `0` |
+
+## Experimental Orientation
+
+`gmax surprises --experimental` finds file pairs that are semantically similar but not already connected by the indexed static graph. Use it for architecture orientation, duplicate-logic sweeps, and cross-package drift checks, not as proof that two files are unrelated.
+
+```bash
+gmax surprises --experimental --agent
+gmax surprises --experimental --in packages/app/src --dir-depth 4 --agent
+gmax surprises --experimental --exclude generated --top 10
+```
+
+The CLI and MCP output include score, max similarity, pair count, representative symbols, directory buckets, top similarities, applied penalties, and `gmax skeleton` follow-up hints. On large monorepos, prefer `--in`/`--exclude`; the default scan is capped at 50,000 rows and user-provided `--max-rows` is capped at 100,000. If a narrow `--in` scope returns no findings, increase `--dir-depth` so subdirectories are compared inside the scope.
 
 ## Background Daemon
 
@@ -228,7 +230,7 @@ gmax watch restart            # Stop it, wait for it to exit, start a fresh one 
 gmax status                   # See all projects + watcher status
 ```
 
-The daemon auto-starts when you run `gmax add`, `gmax index`, `gmax remove`, `gmax summarize`, or `gmax mcp`. It shuts down after 4 hours of inactivity, and hands off to a fresh daemon after 24 hours or once its memory footprint passes 2.5 GB. File-change batches are processed on at most four worker processes, added only when work backs up, with one kept free for searches; LanceDB compaction runs after writes rather than on every maintenance tick.
+Adding or indexing a project can start the daemon automatically. MCP acquires primary-project watch leases lazily when an index-reading tool is used; discovery and catalog listing start no background work. It shuts down after 4 hours of inactivity, and hands off to a fresh daemon after 24 hours or once its memory footprint passes 2.5 GB. File-change batches are processed on up to four worker processes by default, added only when work backs up, with one kept free for searches; LanceDB compaction runs after writes rather than on every maintenance tick.
 
 `gmax watch status` reports failed files, native watcher recovery or polling, dropped-event counts, and the last complete filesystem reconciliation. Polling scans run every five minutes, so recent edits can lag. Search and MCP responses retain health warnings even after the file queue drains. A complete reconciliation means the filesystem scan completed; queued embedding work can still be pending.
 
@@ -277,14 +279,14 @@ On Linux the per-socket list does not exist; the only option is
 
 gmax can use a local LLM (via llama-server) for agentic codebase investigation. This is entirely opt-in and disabled by default — gmax works fine without it.
 
-> **Memory footprint.** `gmax llm start`, `investigate`, `review`, and `summarize` load a multi-GB
+> **Memory footprint.** `gmax llm start`, `investigate`, and `review` can load a multi-GB
 > GGUF model (typical coding models run 16–21 GB). On a memory-constrained machine that can stall
 > or hang the host. Start it deliberately, not as a reflex — and if you run coding agents against
 > this repo, they should be told not to invoke these on their own initiative. The bundled skill
 > already carries that instruction.
 >
-> Everything else in gmax — search, `trace`, `impact`, `context`, `--context-for-llm` — runs off
-> the local index with no model load.
+> Everything else in gmax — search, `trace`, `impact`, `context`, `--context-for-llm` — uses
+> local embeddings and the index without a generative LLM.
 
 ```bash
 gmax llm on                   # Enable LLM features (persists to config)
@@ -330,16 +332,23 @@ The hook sends an IPC message to the daemon and returns instantly — it never b
 
 ### LLM Configuration
 
+Set `GMAX_LLM_MODEL` to a GGUF file on your machine before starting; the built-in fallback path is machine-specific and may not exist. The server accepts loopback addresses only.
+
 | Variable | Description | Default |
 | --- | --- | --- |
-| `GMAX_LLM_MODEL` | Path to GGUF model file | (none) |
+| `GMAX_LLM_MODEL` | Path to GGUF model file | Machine-specific fallback |
+| `GMAX_LLM_HOST` | Loopback address (`localhost` maps to IPv4 loopback) | `127.0.0.1` |
 | `GMAX_LLM_BINARY` | llama-server binary | `llama-server` |
 | `GMAX_LLM_PORT` | Server port | `8079` |
 | `GMAX_LLM_IDLE_TIMEOUT` | Minutes before auto-stop | `30` |
 
+### Summary compatibility commands
+
+The summarizer is decommissioned. `gmax summarize` and MCP `summarize_directory` remain compatibility entries backed by a no-op; they do not generate summaries. `GMAX_SUMMARIZER` does not enable them. Investigation and review use the separate optional LLM described above.
+
 ## Architecture
 
-All data lives in `~/.gmax/`:
+Default shared data lives in `~/.gmax/`; configured secondary stores retain their own project indexes:
 - `lancedb/` — LanceDB vector store (centralized, all projects)
 - `cache/meta.lmdb` — file metadata cache (hashes, mtimes)
 - `cache/watchers.lmdb` — watcher/daemon registry (LMDB, crash-safe)
@@ -347,7 +356,9 @@ All data lives in `~/.gmax/`:
 - `daemon.pid` — PID file for daemon dedup
 - `logs/` — daemon and server logs (5MB rotation)
 - `config.json` — global config (model tier, embed mode)
-- `models/` — embedding models
+- `models/` — ONNX embedding models
+- `hf/` — pinned Hugging Face cache for MLX embedding models
+- `watch-leases.json` — active session/CLI watch leases
 - `grammars/` — Tree-sitter grammars
 - `projects.json` — registry of indexed directories
 
@@ -378,22 +389,19 @@ gmax embeds with IBM's Granite r2 code-embedding models. Two tiers are available
 | `small` (default) | `granite-embedding-small-english-r2` | 384 | 47M |
 | `standard` | `granite-embedding-english-r2` | 768 | 149M |
 
-**384d is the default — and benchmarking says keep it.** On gmax's own 97-case
-retrieval eval (`pnpm bench:recall`), the larger 768d model scored **~10 points
+**384d remains the default.** In the recorded 97-case model-tier comparison
+on gmax's own repo, the larger 768d model scored **~10 points
 *worse* on Recall@10** than 384d, consistently on both the MLX GPU and ONNX CPU
 embedding paths, with and without ColBERT rerank:
 
-| Model | Recall@10 | MRR@10 |
+| Model | Recall@10 | Reported MRR |
 | --- | --- | --- |
 | `small` / 384d | **0.72** | **0.51** |
 | `standard` / 768d | 0.62 | 0.44 |
 
-<sub>gmax repo, 97 cases, MLX GPU, rerank off (the shipped default). The CPU/q4
-path and the rerank-on path show the same ~0.10 Recall@10 gap, so it isn't a
-quantization artifact — the bigger model just retrieves worse on code here.</sub>
+<sub>Historical gmax-repo comparison: 97 cases, MLX GPU, rerank off. CPU/q4 and rerank-on comparisons showed a similar gap. These figures are not a v0.26.48 benchmark; see the evaluation caveats below.</sub>
 
-Bigger isn't better for this workload: 768d roughly doubles embedding compute,
-worker RAM, and dense-vector storage while *lowering* recall on code search.
+The larger tier performed worse on that fixture and doubles dense-vector width; compute and memory costs depend on the backend.
 Unless you have a measured reason to switch (e.g. a recall complaint on a very
 large repo — benchmark it first), stay on 384d.
 
@@ -438,11 +446,11 @@ fixtures/
 | Variable | Description | Default |
 | --- | --- | --- |
 | `GMAX_EMBED_MODE` | Force `cpu` or `gpu` | Auto-detect |
-| `GMAX_WORKER_THREADS` | Worker processes for embedding; overrides `gmax config --worker-threads` | `min(4, max(2, cores/2))` |
+| `GMAX_WORKER_THREADS` | Worker processes for embedding; overrides `gmax config --worker-threads` | `min(cores, 4, max(2, floor(cores/2)))` |
 | `GMAX_WORKER_RSS_RECYCLE_MB` | Recycle workers that remain above this RSS; `0` disables the check | `1536` |
 | `GMAX_DEBUG` | Debug logging | Off |
-| `GMAX_SUMMARIZER` | Enable summarizer auto-start (`1`) | Off |
-| `GMAX_RERANK` | Enable ColBERT rerank (`1`) — off by default since v0.17.1 ([why](docs/known-limitations.md)) | Off |
+| `GMAX_RERANK` | Force ColBERT rerank (`1`); concentrated candidates can also enable it automatically ([why](docs/known-limitations.md)) | Off |
+| `GMAX_CONCENTRATION_THRESHOLD` | Top-ten candidate share in one file that enables ColBERT; set above `1` for a true rerank-off baseline | `0.7` |
 | `GMAX_ANN` | Experimental IVF_FLAT vector index (`1`); leave off unless validating recall on your corpus | Off |
 
 ## Troubleshooting
@@ -466,17 +474,17 @@ Compaction pauses index writes, waits for pending writes to commit, and opens a 
 
 ### Known issues
 
-Some log output looks alarming but is expected and self-healing. Before filing a bug, check
+For detection and recovery guidance, check
 [`docs/known-limitations.md`](docs/known-limitations.md) — it covers what each case means and
 whether you need to act.
 
 | You see | What it means |
 |---|---|
-| `Optimize panicked ... inverted/builder.rs` | Upstream Lance bug in incremental FTS merge ([lance#8310](https://github.com/lance-format/lance/issues/8310)). gmax rebuilds the index and retries automatically; no data loss, no action needed. |
+| `Optimize panicked ... inverted/builder.rs` | The historical FTS merge defect is fixed in the shipped LanceDB 0.38.0 runtime. If it recurs on a current release, preserve the version and logs and report a regression; the rebuild guard remains a recovery tripwire. |
 | `disabling auto-rebuild until an optimize succeeds` | Transient, not a wedge. The next successful optimize clears it. Search stays available. |
 | `ANN: vector index not built` | Normal — exact search is the default. |
 | `cannot reach the daemon socket from this sandbox` (exit 2) | The shell is sandboxed. Add the two keys in [Running under the Claude Code sandbox](#running-under-the-claude-code-sandbox); `gmax doctor` warns about the same gap. |
-| `npm audit` reports advisories on install | Two transitive advisories (`sharp`, `adm-zip`) have no upstream fix yet; neither is on a code path gmax executes. |
+| `npm audit` reports advisories on install | v0.26.48 passed production and fresh packed-consumer audits. Audit findings can change: record the installed version and dependency path and report new findings; do not assume historical advisories still apply. |
 
 ## Contributing
 
@@ -484,7 +492,7 @@ See [CLAUDE.md](CLAUDE.md) for development setup, commands, and architecture det
 
 ### Benchmarks
 
-Two evaluation harnesses live in the repo. Both emit stable JSON via `:json` variants.
+Two retrieval evaluation harnesses emit JSON via `:json` variants. Additional token and experimental-orientation harnesses are available as `bench:tokens` and `bench:surprises`.
 
 ```bash
 pnpm bench:recall          # 97-case internal eval against gmax's own repo
@@ -494,7 +502,9 @@ pnpm bench:oss:json
 GMAX_EVAL_RERANK=1 pnpm bench:oss   # toggle ColBERT rerank
 ```
 
-The OSS bench requires the fixture repos to be indexed first — see [`docs/known-limitations.md`](docs/known-limitations.md) for the most recent rerank-on-vs-off comparison across 4 datasets / 131 cases.
+The OSS harness expects indexed express, lodash and platform fixtures at the paths defined in [src/eval-oss.ts](src/eval-oss.ts). The historical comparison in [known limitations](docs/known-limitations.md#colbert-rerank-is-opt-in-shape-sensitive-helps-monolithic-files-hurts-modular-repos) combines these with the internal fixture: four datasets / 131 cases. It is not a current release acceptance run.
+
+Both retrieval harnesses currently request 20 results and label reciprocal-rank aggregates `mrrAt10`, although ranks 11–20 also receive credit. Treat that field as MRR over the returned window until its accounting is corrected; Recall@10 is separately capped at ten. Also set `GMAX_CONCENTRATION_THRESHOLD=2` for a true rerank-off comparison: `GMAX_EVAL_RERANK=0` alone does not disable automatic concentration gating. Freeze fixtures and record source, embedding/index identity and ranking configuration before drawing conclusions.
 
 `pnpm bench:recall` also drives the model-tier comparison behind the 384d default — see [Model Tier](#model-tier) for why the larger 768d model is *not* the default.
 

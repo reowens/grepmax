@@ -2,7 +2,7 @@
 type: plan
 status: archived
 created: 2026-08-26T02:05:00Z
-updated: 2026-10-03T02:35:45Z
+updated: 2026-10-05T02:45:51Z
 surfaces:
   - store
   - release
@@ -16,12 +16,17 @@ parent_plan: lance-fts-merge-upstream.md
 related_docs:
   - ../2026-08-04-macos-kernel-zone-panic-incident.md
   - ../known-limitations.md
+  - docs/2026-08-25-release-triage-retrospective.md
 current_state: Shipped initially in v0.26.23 with a beta overlay, then replaced by the LanceDB 0.38.0 GA pin. The upstream FTS fix is included; the v0.26.27/0.26.28 canary ran September 7–16 with zero optimize failures, FTS rebuilds or panics. The drop-and-rebuild guard remains a recovery tripwire. The body below preserves the August prerelease investigation as historical evidence.
 next_step: None — the GA upgrade and canary are complete; remaining reliability work is tracked in the current docs index.
 summary: Upgrade LanceDB three lance majors to remove the FTS merge panic at the source, with a rollback-safe cutover.
 ---
 
 # LanceDB 0.31 → 0.38 Upgrade
+
+## Historical investigation — August 2026
+
+The prerelease facts, phases and rollback instructions below record the original investigation. The GA upgrade and live canary are complete; use the current release workflow for future changes.
 
 ## Problem
 
@@ -133,7 +138,11 @@ the soak harness's per-optimize RSS growth did not show on the first live cycle.
 - Close `docs/plans/lance-fts-merge-upstream.md` (its steps 2–3 become moot).
 - If the guard fired even once during canary: reopen lance#8310 with the new backtrace.
 
-## Rollback
+## Closeout
+
+The GA upgrade shipped in v0.26.27, and the September 7–16 v0.26.27/v0.26.28 canary recorded zero optimize failures, rebuilds or panics. No beta overlay remains. v0.26.44 subsequently moved the official pinned JS runtime into build-time consumer packaging with matching native dependencies and a fresh-consumer audit gate. The historical forced-soak and cutover steps below are complete; they are not ongoing maintenance instructions.
+
+## Historical rollback
 
 `npm install -g grepmax@<last-0.31-release>` + daemon restart, then either restore the
 clone, or let the guard drop the v2 FTS index and rebuild it under lance 8. Phase 0's read matrix

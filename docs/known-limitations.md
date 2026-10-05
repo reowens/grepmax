@@ -2,7 +2,7 @@
 type: doc
 status: reference
 created: 2026-04-09
-updated: 2026-10-04
+updated: 2026-10-05T02:45:51Z
 summary: Live catalog of open gmax limitations with detection + recovery steps.
 audience: internal
 related_plans:
@@ -10,11 +10,15 @@ related_plans:
   - docs/plans/2026-05-25-semantic-search-landscape.md
   - docs/archived/2026-06-23-index-versioning-and-daemon-refactor.md
   - docs/archived/2026-06-28-repo-audit-hardening.md
+  - docs/archived/daemon-read-path.md
+  - docs/archived/lancedb-0.38-upgrade.md
 related_docs:
   - archived/agent-ux-proposals.md
   - docs/agent-pov-suggestions.md
   - docs/2026-08-04-performance-review.md
   - docs/2026-07-09-repository-audit.md
+  - docs/2026-08-04-macos-kernel-zone-panic-incident.md
+  - docs/2026-08-25-release-triage-retrospective.md
 ---
 
 # Known Limitations
@@ -26,6 +30,12 @@ Last updated 2026-10-04.
 v0.26.48 fixes a result-window bug: requesting one or three matches used to discard candidates before structural scoring, so a ten-result request could reveal better matches missing from the short list. Search now ranks the already bounded candidate pool before applying the requested result count, while preserving the expensive rerank and final display-fetch bounds. Regression tests and six installed real-query comparisons verify consistent short-result prefixes within the same retrieval pool.
 
 This does not make every top match relevant. For example, a natural-language query about cancelled MCP requests still ranked daemon restart code first, and some search-pipeline queries ranked experiment/test scripts ahead of production code. Validate discovery results with extract/peek and record real misses across repos before changing weights, embeddings or retrieval mechanisms. Approximate vector search remains disabled by default after its earlier recall acceptance failure; an absent ANN index in doctor is expected.
+
+## Retrieval evaluation labels overstate the MRR cutoff
+
+As reviewed October 4, both `src/eval.ts` and `src/eval-oss.ts` request 20 results and credit reciprocal rank beyond ten while naming the aggregate `mrrAt10`. Recall@10 is independently capped at ten. Historical tables below preserve their originally reported figures; their MRR columns must not be treated as independently verified MRR@10 acceptance evidence.
+
+Correct or rename the MRR accounting before using it for a successor search-quality gate. For a true rerank-off baseline, also set `GMAX_CONCENTRATION_THRESHOLD=2`: disabling explicit rerank does not prevent concentration-triggered ColBERT. Record fixtures, source, embedding/index identity, scope and ranking configuration with new measurements.
 
 ## MCP cancellation has native-operation boundaries
 
@@ -103,9 +113,11 @@ Corpus-wide chunk-level density (eval-graph-totals reproduced fan-free over 121k
 
 The two in-scope class/enum targets go from an empty graph to real caller edges. The other two were mis-grouped in the original Phase-0 set: neither is an identifier-as-value class/enum reference.
 
-**Still open:** (1) no query-time consumer reads these `referenced_symbols` edges yet. The intended consumer (Phase 3 PPR/k-hop) is **deferred** — its design probe found the platform hard-miss defs are already in-pool, so there's nothing to recover (see the PageRank entry's "Next direction" below). The v0.17.9 symbol-definition promotion that fixed those cases reads `defined_symbols`, not the `referenced_symbols` graph edges, so it doesn't exercise this work. The edges still benefit `gmax dead`/`gmax trace --inbound`; (2) ~~other grammars still capture call-expressions only~~ — **resolved 2026-06-02**: the three identifier-as-value shapes now cover all 14 grammars (a `--reset` reindex of a non-TS repo is still required to make its edges live at query time); (3) type-position references (`: ClassName`, `<ClassName>`, `extends ClassName`, `as ClassName`, type aliases) — **captured across all statically-typed grammars 2026-06-22** into a separate `type_referenced_symbols` column (kept out of `referenced_symbols` so they never inflate the call-edge count that drives role/search ranking; navigation consumers union the two). Two capture paths: grammars that spell type names as `type_identifier` — TS/JS (Shapes 4/5, `class extends Base` heritage included), Go, Rust, Java, Kotlin, Scala, Swift — are covered by Shape 4's grammar-agnostic `type_identifier` capture; grammars with **no** `type_identifier` node — Python (`identifier`), C# (`identifier`/`generic_name`), PHP (`name` inside `named_type`) — get Shape 6, which reads each annotation's type field (parameter / return / variable / property positions + class bases / extends-implements) and harvests Capitalized leaves. Measured via `src/eval-graph-nav.ts`: TS/JS + Python type-position recall 100% on gmax-self, `dead` false-positives → 0, canonical Pydantic `: EmbedRequest` dead-FP closed (live `gmax dead EmbedRequest` → server.py:170); the 8 non-TS typed grammars are locked in by `tests/graph-edges.type-position.multigrammar.test.ts`; bench:oss byte-identical (express 0.889 / lodash 0.900). **Still uncaptured:** C++ return types (a pre-existing `getNodeName` bug names a C++ function after its return type, so the `name`-exclusion then drops it — orthogonal to type positions); Ruby (dynamically typed — no annotations to capture); Python string forward-refs (`-> "Foo"`) and module-level `TypeVar`s (declared outside chunk scope, so a handful of `T`/`K` self-edges may leak); C#/PHP namespace-qualified types over-capture PascalCase segments (`System.Collections.Foo` → all three — harmless dangling edges); and the bare-identifier-as-callback-value shape (`emitter.on('x', errorHandler)`), deferred because capturing bare lowercase-identifier values would flood the graph with every local. A `--reset` reindex (and a daemon on new code) is required to make a repo's edges live.
+**Remaining work:** PPR/k-hop candidate recovery is deferred until a frozen fixture demonstrates genuine outside-pool misses. Existing reference edges already support navigation, seed boosts and opt-in graph ranking; the earlier claim that no query-time consumer reads them is obsolete. Bare callback values and dynamic references remain limitations of the static graph.
 
-The chunker writes `referenced_symbols` per chunk to support `gmax trace`, `gmax dead`, and any graph-derived ranking signal. Today the extraction tracks **call-expression callees** — names that appear in a syntactic call position. It does **not** track identifier references that aren't calls: class names used as values (`new BeyondError(…)`, `instanceof BeyondError`, `throw new ValidationError(…)`), constants/enums referenced as values (`ErrorCodes.NOT_FOUND`, `ErrorCodes.VALIDATION`), or types referenced in expression position.
+Identifier-as-value and type-position extraction shipped in June and are included in the current chunker generation. Old instructions to manually stamp v3 registry entries or repeat the June corpus reindex do not apply. Inspect `gmax doctor` for the current project's chunker state before taking corrective action. June evidence about narrower language edge cases is historical, not a fresh cross-language acceptance run.
+
+**Historical baseline (May 2026, before the shipped extraction fixes above).** The chunker wrote `referenced_symbols` per chunk to support `gmax trace`, `gmax dead`, and graph-derived ranking signals. At that time the extraction tracked **call-expression callees** — names that appear in a syntactic call position. It did **not** track identifier references that weren't calls: class names used as values (`new BeyondError(…)`, `instanceof BeyondError`, `throw new ValidationError(…)`), constants/enums referenced as values (`ErrorCodes.NOT_FOUND`, `ErrorCodes.VALIDATION`), or types referenced in expression position.
 
 Evidence (platform monorepo, ~123k chunks, scoped via `pathPrefix`):
 
@@ -241,42 +253,15 @@ A query that is a single bare identifier (`BeyondError`, `requireAuth`, `map`) i
 
 **Measurement note.** The same investigation fixed the OSS bench instrument (`eval-oss.ts` `chunkMatches`, v0.17.8): it now credits a file + `defined_symbols`-includes-query match, not just a line-range hit. Stale hand-curated `expectedLine` values had been scoring surfaced definitions as misses (platform recall read 0.333 vs a true ~0.800). Keep this in mind when comparing pre-v0.17.8 bench numbers in older entries above — they understate recall on symbol-lookup cases.
 
-## FTS index optimize panics (upstream, recovers automatically)
+## Historical FTS merge panic is fixed; recurrence is a regression
 
-**What:** The daemon log shows a Rust panic during maintenance:
+The pre-upgrade LanceDB 0.30/0.31 runtime could panic in incremental FTS merge (`inverted/builder.rs`, index out of bounds). The investigation is preserved in [the closed upstream plan](archived/lance-fts-merge-upstream.md).
 
-```
-thread 'tokio-rt-worker' panicked at
-  lance-index-7.0.0/src/scalar/inverted/builder.rs:856:57:
-index out of bounds: the len is 762714 but the index is 762844
-[vectordb] Optimize panicked (likely corrupt FTS merge) — rebuilding FTS index from scratch
-```
+The upstream fix first shipped in gmax v0.26.23 using a beta overlay. The current runtime packages the pinned official LanceDB 0.38.0 GA JavaScript and matching native binaries at build time, including the fix. `scripts/postinstall.js` now only prints a plugin-update reminder; it no longer overlays LanceDB. The September 7–16 GA canary recorded zero optimize failures, FTS rebuilds or panics; see [the upgrade closeout](archived/lancedb-0.38-upgrade.md).
 
-**Cause:** An out-of-bounds slice index in Lance's incremental full-text-index merge, upstream of
-gmax. Filed as [lance-format/lance#8310](https://github.com/lance-format/lance/issues/8310). It
-fires when a table accumulates many small fragments and then optimizes; the index is computed
-against a newer generation of the token dictionary than the buffer was sized for.
+The drop-and-rebuild guard remains a recovery tripwire, with bounded optimize attempts and disk-headroom checks. `disabling auto-rebuild until an optimize succeeds` means repeated rebuilds are suppressed until a successful optimize. Failed FTS recovery can degrade retrieval to vector-only results; do not treat a fresh panic as harmless expected output.
 
-**Fixed upstream as of v0.26.23** (lance#8312, lance 11.0.0-beta.22, vendored via `scripts/postinstall.js` — see CLAUDE.md). Below is the pre-upgrade account. 0.30 and 0.31 bundle the identical `lance-index` crate, so
-the panicking code is the same in both. This was tested directly: 0.31 panicked six times in 32
-hours of production use.
-
-**Impact: none in practice.** gmax drops and rebuilds the FTS index from scratch, then retries.
-Full rebuild is unaffected — only incremental merge panics. Across one 32-hour window the guard
-absorbed 6 panics against 8 successful optimizes, reclaimed 39 GB, and produced no incorrect
-results or data loss.
-
-You may also see `disabling auto-rebuild until an optimize succeeds`. That state is **transient**,
-not a wedge — the next successful optimize re-enables it. Search stays available throughout; a
-failed FTS rebuild only degrades to vector-only retrieval until it recovers.
-
-**Detection:**
-```bash
-grep -c "Optimize panicked" ~/.gmax/logs/daemon.log
-```
-
-**Fix:** None needed. Do not disable the rebuild guard — it is the mitigation. Tracked in
-`docs/plans/lance-fts-merge-upstream.md`.
+If this recurs on a current release, preserve the installed version and daemon log, check `gmax status --json` and `gmax doctor`, and report a regression. Do not repeatedly force compaction or disable the recovery guard. Historical successful recovery is not a guarantee of availability or data integrity for a new failure.
 
 ## LanceDB manifest references a missing fragment file
 

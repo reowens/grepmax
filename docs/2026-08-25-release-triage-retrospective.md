@@ -2,7 +2,7 @@
 type: doc
 status: active
 created: 2026-08-26T02:20:00Z
-updated: 2026-08-26T02:20:00Z
+updated: 2026-10-05T02:45:51Z
 surfaces:
   - daemon
   - store

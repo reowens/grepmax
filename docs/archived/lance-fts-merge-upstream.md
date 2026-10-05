@@ -2,7 +2,7 @@
 type: plan
 status: archived
 created: 2026-08-05T22:15:40Z
-updated: 2026-09-17T00:41:38Z
+updated: 2026-10-05T02:45:51Z
 surfaces:
   - store
 modules:
@@ -14,14 +14,17 @@ related_plans:
   - stability-cycle-v0.26.2.md
 related_docs:
   - ../2026-08-04-macos-kernel-zone-panic-incident.md
+  - docs/2026-08-25-release-triage-retrospective.md
 current_state: Closed. lance-format/lance#8310 was fixed by lance#8312 (lance 11.0.0-beta.22); gmax pins @lancedb/lancedb 0.38.0 GA (lance 11.0.0). The 0.26.27/0.26.28 canary on the GA pin ran 2026-09-07 to 2026-09-16 with zero optimize failures, FTS rebuilds, or panics. The drop-and-rebuild guard stays as a tripwire.
 next_step: None. A future FTS panic is a regression to report upstream against the GA line.
-summary: Pursue the upstream fix for the FTS merge panic that no LanceDB version bump can address.
+summary: Closed FTS merge investigation; the upstream fix shipped through the LanceDB 0.38.0 GA runtime and passed its live canary.
 ---
 
 # Lance FTS Incremental-Merge Panic — Upstream Pursuit
 
-## Problem
+## Historical problem and workstream — August 2026
+
+The investigation below predates the shipped fix. See Outcome and Closeout for the final disposition; its triage and retry proposals are not outstanding work.
 
 `table.optimize()` panics inside Lance's incremental FTS merge with an out-of-bounds slice index.
 Both LanceDB 0.30 and 0.31 bundle `lance-index 7.0.0`, so the defect is version-invariant from
@@ -94,6 +97,10 @@ catchup should serialize FTS index creation.
   that catchup, and the canary saw no recurrence.
 - **Canary:** 2026-09-07 15:56 to 2026-09-16 on the GA pin, `Optimize failed|FTS rebuild failed|
   Periodic maintenance failed|Panic|Rebuilt FTS` = 0 in the daemon log.
+
+## Closeout
+
+Closed after the September 7–16 GA canary. The upstream fix is included in the pinned LanceDB 0.38.0 runtime; incremental merge remains enabled and the rebuild guard stays as a recovery tripwire. Periodic full rebuilds and a longer retry ladder were not adopted. A new panic on the current runtime is a regression to investigate, not a request to resume the historical workstream.
 
 ## Version History
 

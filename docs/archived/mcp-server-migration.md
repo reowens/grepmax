@@ -2,7 +2,7 @@
 type: plan
 status: archived
 created: 2026-06-28T07:05:38Z
-updated: 2026-08-04T11:08:10Z
+updated: 2026-10-05T02:45:51Z
 surfaces:
 modules:
 domain:
@@ -10,6 +10,7 @@ audience: internal
 parent_plan:
 related_plans:
   - 2026-06-28-repo-audit-hardening.md
+  - docs/archived/investigate-tool-calling-leak.md
 related_docs:
 current_state: >
   The Server-to-McpServer migration shipped in `e80daca`; the result-shape follow-up shipped

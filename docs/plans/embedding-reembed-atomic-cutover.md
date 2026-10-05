@@ -2,7 +2,7 @@
 type: plan
 status: planned
 created: 2026-06-23T09:46:05Z
-updated: 2026-08-04
+updated: 2026-10-05T02:45:51Z
 surfaces:
   - index
   - embeddings
@@ -48,6 +48,10 @@ whole-corpus destructive repair path for the current shared-table layout; it doe
 background per-project migration or zero-downtime atomic cutover and does not satisfy this plan's two
 product gates.
 
+## Review — 2026-10-04
+
+Reviewed against v0.26.48. Immutable embedding-generation handling and guarded whole-corpus repair are shipped; staged zero-downtime migration remains unimplemented and has no chosen superior model. The existing model, granularity and capacity gates remain mandatory. The CLI and architecture below are proposals, not available commands. Do not rebuild or start another MLX/LLM process to refresh this plan.
+
 ## Problem
 
 Embeddings have no graceful versioning. A model/dimension change is detected, but the shared
@@ -64,7 +68,7 @@ atomic cutover.
 ## Constraints / The Blocker
 
 - **Fixed-dim shared table.** `src/lib/store/vector-db.ts` stores `vector` as a
-  `FixedSizeList(this.vectorDim, Float32)` (`vector-db.ts:299-306`) in ONE shared `chunks`
+  `FixedSizeList(this.vectorDim, Float32)` (see `VectorDB` in `src/lib/store/vector-db.ts`) in ONE shared `chunks`
   table (`TABLE_NAME = "chunks"`, scoped by path prefix); the Arrow schema dim is immutable
   post-creation, and `evolveSchema()` only adds *list* columns — it cannot change the vector
   dim. A dim-changing swap (e.g. small 384 → standard 768) cannot coexist with existing
@@ -145,7 +149,7 @@ search and writes must never assemble those pieces from independently mutable fi
 - **Atomic cutover** must reuse `OperationCoordinator`, the interprocess store lease,
   rebuild journal/CAS stamping, and immutable resource-generation publication. Publish staged
   rows/table plus project identity as one guarded transition; never expose mixed generations.
-- **New CLI:** `gmax reembed <project> --to-model <tier> [--background]`; redirect
+- **Proposed CLI (not implemented):** `gmax reembed <project> --to-model <tier> [--background]`; redirect
   `doctor`'s recovery hint here instead of `gmax index --reset`.
 
 ## Execution Sequence

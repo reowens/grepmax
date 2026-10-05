@@ -2,7 +2,7 @@
 type: doc
 status: active
 created: 2026-08-04T20:50:29Z
-updated: 2026-09-08T17:10:00Z
+updated: 2026-10-05T02:45:50Z
 surfaces:
   - host
   - store
@@ -12,9 +12,13 @@ audience: internal
 summary: Investigation and remediation record for recurring data.kalloc.1024 kernel panics on macOS 26.5.2, the linear, unreclaimed zone drift measured across a full 10.9-day boot on macOS 26.6.2, the fresh-boot baseline taken after the 2026-09-03 restart, and the no-gmax window that attributes roughly 55-60 % of that drift to the host itself.
 related_plans:
   - archived/lancedb-fts-panic-remediation.md
+  - docs/archived/daemon-read-path.md
+  - docs/archived/lance-fts-merge-upstream.md
+  - docs/archived/lancedb-0.38-upgrade.md
 related_docs:
   - docs/2026-08-04-performance-review.md
   - docs/known-limitations.md
+  - docs/2026-08-25-release-triage-retrospective.md
 current_state: >
   Four panics on macOS 26.5.2 (25F84) exhausted data.kalloc.1024 at 19-20 GB. On macOS 26.6.2
   (25G83, booted 2026-08-23) the violent mode - multiple GiB/hour under sustained LanceDB

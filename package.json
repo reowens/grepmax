@@ -76,7 +76,7 @@
     "NOTICE"
   ],
   "license": "Apache-2.0",
-  "description": "Semantic code search for coding agents. Local embeddings, LLM summaries, call graph tracing.",
+  "description": "Semantic code search for coding agents. Local embeddings, call graph tracing, compact code context.",
   "dependencies": {
     "@clack/prompts": "^1.8.1",
     "@huggingface/transformers": "^4.3.0",

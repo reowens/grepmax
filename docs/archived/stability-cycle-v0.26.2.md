@@ -2,7 +2,7 @@
 type: plan
 status: archived
 created: 2026-07-13
-updated: 2026-08-04T11:07:43Z
+updated: 2026-10-05T02:45:51Z
 surfaces:
   - daemon
   - index
@@ -21,6 +21,7 @@ audience: internal
 related_plans:
   - 2026-07-09-repository-audit-fixes.md
   - lancedb-fts-panic-remediation.md
+  - docs/archived/lance-fts-merge-upstream.md
 related_docs:
   - ../2026-07-09-repository-audit.md
 current_state: >

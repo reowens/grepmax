@@ -56,7 +56,7 @@ It writes `docs/prompts/resume-<slug>.md`, which is gitignored and session-local
 `dotmd use`. Put the exact state in the draft: what is done and verified (with paths and numbers),
 what is staged, why anything was deliberately not run, the exact next commands, and rollback.
 Reference plan docs under `docs/plans/` from inside the draft rather than editing them. Plan mode
-(`dotmd baton @draft` with an owned plan) also releases the plan; see `dotmd baton --help`.
+(`runlist baton @/tmp/resume.md` with an owned plan) also releases the plan; see `dotmd baton --help`.
 
 ---
 
@@ -81,7 +81,7 @@ gmax-mcp (N instances, one per Claude Code session)
 | gmax-worker | Daemon's WorkerPool, lazy on first task | Reaped after 60s idle, min 1 kept alive | `src/lib/workers/pool.ts` |
 | gmax-embed | Daemon's `ensureMlxServer()` (startup + 5min heartbeat health check) or `gmax serve` | 30min idle timeout. Spawned with `HF_HOME=~/.gmax/hf` (pinned local model cache) | `src/lib/daemon/mlx-server-manager.ts` |
 | gmax-mcp | Claude Code (one per session) | Session lifetime | `src/commands/mcp.ts` |
-| llama-server (LLM) | Daemon's LlmServer, on first `llm-start` IPC or `reviewCommit` | 10min idle timeout | `src/lib/llm/server.ts` |
+| llama-server (LLM) | Daemon's LlmServer, on first `llm-start` IPC or `reviewCommit` | 30min idle timeout by default (`GMAX_LLM_IDLE_TIMEOUT`) | `src/lib/llm/config.ts`, `src/lib/llm/server.ts` |
 
 ### Local-only access
 
@@ -102,7 +102,7 @@ not exist, and it was a large part of the memory pressure that froze the host.
 
 | Holder | Taken by | Ends when |
 |---|---|---|
-| `mcp:<pid>` | each MCP server, renewed every 5 min (15 min TTL) via `launchWatcher(root, lease)` | that process exits, or the TTL lapses |
+| `mcp:<pid>` | first index-reading tool use on a primary project, renewed by one timer every 5 min (15 min TTL) via `launchWatcher(root, lease)` | that process exits, or the TTL lapses |
 | `session:<id>` | SessionStart / CwdChanged hooks (`plugins/grepmax/hooks/watch-lease.js`, 4h TTL) | SessionEnd releases it, CwdChanged releases the old root |
 | `cli` | `watch` IPC without a holder, and `add` / `ensure-project` / `index` (30 min TTL) | TTL |
 
