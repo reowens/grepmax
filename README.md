@@ -399,7 +399,7 @@ embedding paths, with and without ColBERT rerank:
 | `small` / 384d | **0.72** | **0.51** |
 | `standard` / 768d | 0.62 | 0.44 |
 
-<sub>Historical gmax-repo comparison: 97 cases, MLX GPU, rerank off. CPU/q4 and rerank-on comparisons showed a similar gap. These figures are not a v0.26.48 benchmark; see the evaluation caveats below.</sub>
+<sub>Historical gmax-repo comparison: 97 cases, MLX GPU, rerank off. CPU/q4 and rerank-on comparisons showed a similar gap. These figures are not a current-release benchmark; see the evaluation caveats below.</sub>
 
 The larger tier performed worse on that fixture and doubles dense-vector width; compute and memory costs depend on the backend.
 Unless you have a measured reason to switch (e.g. a recall complaint on a very
@@ -484,7 +484,7 @@ whether you need to act.
 | `disabling auto-rebuild until an optimize succeeds` | Transient, not a wedge. The next successful optimize clears it. Search stays available. |
 | `ANN: vector index not built` | Normal — exact search is the default. |
 | `cannot reach the daemon socket from this sandbox` (exit 2) | The shell is sandboxed. Add the two keys in [Running under the Claude Code sandbox](#running-under-the-claude-code-sandbox); `gmax doctor` warns about the same gap. |
-| `npm audit` reports advisories on install | v0.26.48 passed production and fresh packed-consumer audits. Audit findings can change: record the installed version and dependency path and report new findings; do not assume historical advisories still apply. |
+| `npm audit` reports advisories on install | v0.26.49 passed production and fresh packed-consumer audits. Audit findings can change: record the installed version and dependency path and report new findings; do not assume historical advisories still apply. |
 
 ## Contributing
 
@@ -504,7 +504,7 @@ GMAX_EVAL_RERANK=1 pnpm bench:oss   # toggle ColBERT rerank
 
 The OSS harness expects indexed express, lodash and platform fixtures at the paths defined in [src/eval-oss.ts](src/eval-oss.ts). The historical comparison in [known limitations](docs/known-limitations.md#colbert-rerank-is-opt-in-shape-sensitive-helps-monolithic-files-hurts-modular-repos) combines these with the internal fixture: four datasets / 131 cases. It is not a current release acceptance run.
 
-Both retrieval harnesses request 20 results for diagnostics, but `mrrAt10` and Recall@10 credit only ranks 1–10. Later matches retain their actual ranks and count as found/hits, with zero reciprocal-rank credit. This cutoff was corrected in source after v0.26.48; historical MRR figures recorded before the correction may include ranks 11–20 and require a new run or rescoring before comparison. Also set `GMAX_CONCENTRATION_THRESHOLD=2` for a true rerank-off comparison: `GMAX_EVAL_RERANK=0` alone does not disable automatic concentration gating. Freeze fixtures and record source, embedding/index identity and ranking configuration before drawing conclusions.
+Both retrieval harnesses request 20 results for diagnostics, but `mrrAt10` and Recall@10 credit only ranks 1–10. Later matches retain their actual ranks and count as found/hits, with zero reciprocal-rank credit. This cutoff correction shipped in v0.26.49; historical MRR figures recorded before the correction may include ranks 11–20 and require a new run or rescoring before comparison. Also set `GMAX_CONCENTRATION_THRESHOLD=2` for a true rerank-off comparison: `GMAX_EVAL_RERANK=0` alone does not disable automatic concentration gating. Freeze fixtures and record source, embedding/index identity and ranking configuration before drawing conclusions.
 
 `pnpm bench:recall` also drives the model-tier comparison behind the 384d default — see [Model Tier](#model-tier) for why the larger 768d model is *not* the default.
 
@@ -527,7 +527,7 @@ The report records source/index hashes, registry embedding identity, daemon snap
 
 Requests use `rerank: false`, but the daemon's concentration gate can still enable reranking. Client environment settings cannot change an existing daemon's settings, and `scoreBreakdown.rerank` also holds the fallback base score when reranking is off.
 
-Source now supports `--diagnostics`. This requires a ready daemon advertising `capabilities.searchDiagnostics: 1`; v0.26.48's installed release does not advertise it. The evaluator refuses incompatible daemons before measuring and excludes responses missing requested diagnostics. Each sample records FTS availability/failure, effective settings and allowlisted daemon ranking environment, concentration-gate evaluation/activation and whether reranking was actually invoked.
+v0.26.49 supports `--diagnostics`. This requires a ready daemon advertising `capabilities.searchDiagnostics: 1`; older daemons without that capability require an update. The evaluator refuses incompatible daemons before measuring and excludes responses missing requested diagnostics. Each sample records FTS availability/failure, effective settings and allowlisted daemon ranking environment, concentration-gate evaluation/activation and whether reranking was actually invoked.
 
 The candidate trace contains pointers and stage ranks for at most the first 200 post-seed fusion candidates, plus full stage counts and an explicit truncation flag. Ranks cover vector/FTS, RRF, seeded fusion, stage-one selection, pooled filtering, selected rerank batch, final scoring, overlap deduplication and final display. Rerank-batch membership does not imply execution; use `gate.rerankInvoked`. Zero at a later stage means a traced candidate was removed; a target missing from a truncated trace may lie outside the reported head. Diagnostics add no database reads and preserve ranking/results. The frozen October 4 artifacts retain their original unknowns. Review ground truth and collect new diagnostic artifacts before tuning.
 

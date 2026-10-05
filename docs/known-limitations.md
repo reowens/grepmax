@@ -23,7 +23,7 @@ related_docs:
 
 # Known Limitations
 
-Last updated 2026-10-04.
+Last updated 2026-10-05.
 
 ## Small result lists preserve ranks; relevance still needs validation
 
@@ -33,7 +33,7 @@ This does not make every top match relevant. For example, a natural-language que
 
 ## Historical retrieval MRR figures used a wider cutoff
 
-Resolved in source after v0.26.48 on October 4. Both `src/eval.ts` and `src/eval-oss.ts` still request 20 results for diagnostics, but per-case `rr` and the aggregate `mrrAt10` now credit only ranks 1–10. Late matches keep their actual ranks and found/hit counts; Recall@10 and matching rules are unchanged. Twenty-one synthetic tests cover ranks 1, 10, 11, 20, missing/empty responses, duplicate matches, internal avoid paths and OSS definition/line matching. Six cutoff/aggregate regressions failed before the fix.
+Resolved in v0.26.49, released October 5. Both `src/eval.ts` and `src/eval-oss.ts` still request 20 results for diagnostics, but per-case `rr` and the aggregate `mrrAt10` now credit only ranks 1–10. Late matches keep their actual ranks and found/hit counts; Recall@10 and matching rules are unchanged. Twenty-one synthetic tests cover ranks 1, 10, 11, 20, missing/empty responses, duplicate matches, internal avoid paths and OSS definition/line matching. Six cutoff/aggregate regressions failed before the fix.
 
 Historical tables below preserve their originally reported figures, which may include reciprocal-rank credit beyond ten. They are not corrected MRR@10 acceptance evidence; rerun or rescore original per-query results before comparing with the corrected harness.
 
@@ -41,7 +41,7 @@ For a true rerank-off baseline, set `GMAX_CONCENTRATION_THRESHOLD=2`: disabling 
 
 The October 4 multi-repository fixture measured 40 source-curated cases with frozen declaration targets: 57.5% target Recall@10 and 0.3275 corrected MRR@10. Four apparent misses returned useful bodies without declarations; other queries have plausible alternate answers. These figures are not general semantic answer quality or observed-session miss rates. Preserve v1 and review answer spans/alternatives in a successor fixture before tuning.
 
-The v0.26.48 baseline daemon did not expose fusion-pool membership or actual concentration-gate activation. Subsequent source adds opt-in, capability-gated diagnostics for up to 200 post-seed fusion candidates and their stage ranks, effective settings, FTS health and actual gate/rerank invocation. It preserves default responses/results and adds no database reads. A target missing from a truncated trace is not proof of full-pool absence. Old artifacts retain their unknowns; source support is not an installed diagnostic run.
+The v0.26.48 baseline daemon did not expose fusion-pool membership or actual concentration-gate activation. v0.26.49 ships opt-in, capability-gated diagnostics for up to 200 post-seed fusion candidates and their stage ranks, effective settings, FTS health and actual gate/rerank invocation. It preserves default responses/results and adds no database reads. A target missing from a truncated trace is not proof of full-pool absence. Three registry-installed live queries verified bounded diagnostic output and result/score equivalence. Old baseline artifacts retain their unknowns; this smoke is not a new relevance measurement.
 
 `scoreBreakdown.rerank` stores the fallback base score when reranking is off, so a nonzero value does not prove reranking occurred. Changing a benchmark client's environment does not change a running daemon's ranking settings. Use explicit invocation diagnostics with the [frozen baseline runner](../README.md#frozen-multi-repository-baseline), rather than asserting a fully disabled rerank comparison from score components or selected-batch membership.
 

@@ -1,8 +1,8 @@
 # Docs
 
-## Current release and follow-ups — reviewed October 4, 2026
+## Current release and follow-ups — reviewed October 5, 2026
 
-**v0.26.48 is released and installed.** It fixes short-result search requests trimming candidates before structural scoring and dedup. Source `6e030a6`, tag `996df70`; [release CI 37255086012](https://github.com/reowens/grepmax/actions/runs/37255086012) passed 1,512 tests / 164 files, both typechecks, formatting, build, production audit and fresh packed-consumer audit/native smoke. Six installed queries at limits 1/3/10 now have stable result prefixes. A subsequent multi-repository baseline is measured below; reviewed answer ground truth and pipeline diagnostics remain prerequisites for ranking acceptance.
+**v0.26.49 is released and installed.** It ships bounded opt-in retrieval diagnostics, the frozen multi-repository baseline runner and the MRR@10 cutoff correction. Source `e77266b`, tag `b908437`; [release CI 37372514413](https://github.com/reowens/grepmax/actions/runs/37372514413) passed 1,571 tests / 167 files, both typechecks, formatting, build, production audit and fresh packed-consumer audit/native smoke. Registry-installed diagnostics returned identical results and scores for three real queries. The previous .48 result-window fix remains shipped. Independent answer-ground-truth review and new diagnostic measurements remain prerequisites for ranking acceptance.
 
 The earlier reliability work remains shipped: native Session cache wiring, bounded query/row reads, reproducible consumer packaging, external-store request isolation and refusal of unsupported-daemon fallback readers. The historical FTS merge defect is fixed in the pinned LanceDB 0.38.0 GA runtime; a fresh panic should be investigated as a regression.
 
@@ -18,11 +18,11 @@ A passive check at 19:55 PDT October 4 found the same .48 daemon PID 89172 runni
 
 Use runlist to consume the latest local handoff and claim plan work. `docs/future-sessions.md` contains detailed local evidence; archived notes describe historical states rather than current operating instructions.
 
-## Retrieval diagnostics — source verified October 5, 2026
+## Retrieval diagnostics — released and installed October 5, 2026
 
 Opt-in production search diagnostics now record candidate-stage ranks and removal outcomes, actual concentration-gate activation and rerank invocation, effective settings/allowlisted daemon ranking environment and FTS health. Candidate output is bounded to the first 200 post-seed fusion candidates with total/truncation explicit. The default results and database-read counts are preserved. The evaluator's `--diagnostics` flag requires `searchDiagnostics: 1` in daemon ping and excludes missing diagnostic responses.
 
-All 1,571 tests / 167 files, both typechecks, build and fresh packed-consumer audit/native Session smoke pass. Repository Biome exits successfully with its existing optional-chain warnings and configuration notices. A live compatibility check confirmed the installed .48 daemon refuses diagnostic measurement before search or checkpoint creation; this source feature still needs deployment before a live diagnostic run. MCP transport remains local-only.
+All release gates pass; repository Biome retains its existing optional-chain warnings and configuration notices. The installed .49 daemon advertises `searchDiagnostics: 1`. Three live comparisons preserved results and scores, each with a bounded 200-candidate truncated trace, healthy FTS and explicit gate/rerank invocation fields. This deployment smoke does not replace the frozen relevance baseline or resolve its ground-truth caveats. Installed MCP passed v1, legacy v2, modern v2 and auto clients with every server listen call forbidden; transport remains local-only.
 
 The answer-range review proposes six source-grounded spans and two query clarifications. It specifically separates arbitrary search-method chunks from actual RRF merge code, and handoff preparation from atomic prompt/plan publication. This single-author proposal is local evidence for independent review; it is not a frozen successor, rescored baseline or fresh held-out set. Original October 4 artifacts and metrics are preserved. Local evidence: `docs/measurements/2026-10-05-relevance-review/`.
 
@@ -37,7 +37,7 @@ The source-only `pnpm bench:relevance` runner now measures frozen local fixtures
 | Python | 10 | 50% | 0.3600 |
 | Swift | 10 | 70% | 0.4250 |
 
-The frozen fixture used declaration targets. Four of its 17 top-ten misses demonstrably returned useful implementation body chunks without the declaration; others include callers or plausible alternative answers. Preserve the original scores and audit these cases before constructing a reviewed successor fixture. The cases are source-curated, not recorded user-session misses. Fusion-pool membership and actual concentration-gate decisions remain unobserved; explain's `rerank` component is not an activation flag. No ranking tuning, reindex, daemon restart or new model startup was performed. Both typechecks, targeted Biome checks, artifact-refusal checks and all 1,556 tests / 166 files pass. Local fixtures, raw output and the per-case audit remain in ignored `docs/measurements/2026-10-04-relevance/`; see the [README workflow](../README.md#frozen-multi-repository-baseline) for reproduction.
+The frozen fixture used declaration targets. Four of its 17 top-ten misses demonstrably returned useful implementation body chunks without the declaration; others include callers or plausible alternative answers. Preserve the original scores and audit these cases before constructing a reviewed successor fixture. The cases are source-curated, not recorded user-session misses. In these original baseline artifacts, fusion-pool membership and actual concentration-gate decisions remain unobserved; explain's `rerank` component is not an activation flag. No ranking tuning, reindex, daemon restart or new model startup was performed. Both typechecks, targeted Biome checks, artifact-refusal checks and all 1,556 tests / 166 files pass. Local fixtures, raw output and the per-case audit remain in ignored `docs/measurements/2026-10-04-relevance/`; see the [README workflow](../README.md#frozen-multi-repository-baseline) for reproduction.
 
 ## Deferred work
 
@@ -78,10 +78,11 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 90 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 92 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
+| [Release and install retrieval diagnostics](archived/diagnostic-release.md) | Archived: v0.26.49 published, registry-installed and live-verified; documentation updated. |
 | [Retrieval diagnostics and answer-range review](archived/retrieval-diagnostics.md) | Archived: Bounded opt-in production diagnostics and capability-gated evaluator are source-complete, with result/read equivalence regressions and packaging checks passing. Single-author answer-span proposals preserve the original frozen baseline. |
 | [Multi-repository relevance baseline](archived/multirepo-relevance-baseline.md) | Archived: Reusable daemon-path runner and frozen 40-case four-repository baseline complete; both repetitions valid with identical ranks. Declaration-target scores and post-measurement ground-truth limitations are documented. |
 | [Retrieval MRR@10 cutoff](archived/mrr-at-ten-cutoff.md) | Archived: Both harnesses now give reciprocal-rank credit only to ranks 1–10. Late-hit diagnostics and twenty-result retrieval remain; 21 synthetic tests and both typechecks pass. |
@@ -89,7 +90,6 @@ Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signa
 | [LanceDB 0.31 → 0.38 Upgrade](archived/lancedb-0.38-upgrade.md) | Archived: Shipped initially in v0.26.23 with a beta overlay, then replaced by the LanceDB 0.38.0 GA pin. The upstream FTS fix is included; the v0.26.27/0.26.28 canary ran September 7–16 with zero optimize failures, FTS rebuilds or panics. The drop-and-rebuild guard remains a recovery tripwire. The body below preserves the August prerelease investigation as historical evidence. |
 | [Mcp Server Migration](archived/mcp-server-migration.md) | Archived: The Server-to-McpServer migration shipped in `e80daca`; the result-shape follow-up shipped in `04a87a4`. The current server registers 27 tools with Zod schemas, explicit registered-project scoping, protocol coverage, and subsequent lifecycle/performance hardening. |
 | [v0.26.2 Stability Cycle](archived/stability-cycle-v0.26.2.md) | Archived: Historical v0.26.2-v0.26.5 stability cycle. SC-001 and SC-003 were fixed and live-verified; SC-002 recovery shipped and restored compaction, but FTS merge panics recurred repeatedly through 2026-08-03. The dated observation window and formal exit snapshot were never completed, and the 2026-08-04 watcher/index/store changes supersede this baseline. |
-| [Documentation refresh, October 2026](archived/docs-refresh-oct-2026.md) | Archived: README, docs index, limitations, contributor guidance and deferred plans now reflect v0.26.48. Historical rollout instructions and FTS closeouts are corrected; all runlist warnings are resolved. |
 
 - Use `runlist list` or `runlist json` for the full inventory.
 <!-- GENERATED:dotmd:end -->
