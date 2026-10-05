@@ -26,6 +26,14 @@ All release gates pass; repository Biome retains its existing optional-chain war
 
 The answer-range review proposes six source-grounded spans and two query clarifications. It specifically separates arbitrary search-method chunks from actual RRF merge code, and handoff preparation from atomic prompt/plan publication. This single-author proposal is local evidence for independent review; it is not a frozen successor, rescored baseline or fresh held-out set. Original October 4 artifacts and metrics are preserved. Local evidence: `docs/measurements/2026-10-05-relevance-review/`.
 
+## Reviewed diagnostic triage — October 5, 2026
+
+A separate successor was frozen before querying .49: six answer-span amendments, two scoped query variants and all 40 cases marked exposed/development. This fresh single-agent source pass is not independent adjudication. All 80 samples were valid with identical ranks across repetitions: target Recall@10 72.5%, MRR@10 0.42625, hits@1 27.5%. These are changed-fixture measurements, not an improvement over v1 or a ranking acceptance gate. The source evaluator adds explicit range-only target matching; 25 targeted tests and both typechecks pass. Original v1 evidence remains unchanged.
+
+The 11 targets outside ten comprise three confirmed per-file cuts, three pooled cuts, three late returns and two unknowns absent from truncated traces. FTS was healthy; automatic reranking actually ran in four samples. A complete offline final-selection replay reproduced every baseline result before testing caps four/six. Raising the cap recovers some targets but displaces others and reduces file diversity. Preserve the production default of three; the next focused correctness fix is to route the existing CLI `--per-file` control into request-scoped retrieval rather than only formatting. Pooled selection needs a separate experiment. Local evidence: `docs/measurements/2026-10-05-reviewed-diagnostics/`.
+
+The same daemon PID survived this ~25-minute check and completed one normal compaction in one attempt. Five maintenance samples reached 1,969 MB footprint then 1,947 MB; no idle-recovery or long-cycle conclusion follows. Doctor reported 15.4 GB logical / 16.7 GB disk, 55.5 GB free and zero pending reconciliation. Host free-space variation is not attributed solely to this index.
+
 ## Multi-repository baseline — October 4, 2026
 
 The source-only `pnpm bench:relevance` runner now measures frozen local fixtures through the existing production daemon. Forty curated cases (16 dev / 24 held-out) cover four repositories and languages, with two sequential, interleaved repetitions. All 80 samples were valid and each case's rank was identical across repetitions. Overall frozen-target Recall@10 was 57.5%, corrected MRR@10 0.3275 and hits@1 20%. Median IPC latency was 60.05 ms / p95 153.13 ms under ordinary activity; this is not a controlled latency gate.
@@ -78,10 +86,11 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 92 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 94 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
+| [Reviewed relevance diagnostic measurement](archived/reviewed-relevance-diagnostics.md) | Archived: Reviewed exposed successor frozen and measured through installed .49; all80 samples valid with stable ranks. Range-only evaluator support and diagnostics/cap/resource findings documented. |
 | [Release and install retrieval diagnostics](archived/diagnostic-release.md) | Archived: v0.26.49 published, registry-installed and live-verified; documentation updated. |
 | [Retrieval diagnostics and answer-range review](archived/retrieval-diagnostics.md) | Archived: Bounded opt-in production diagnostics and capability-gated evaluator are source-complete, with result/read equivalence regressions and packaging checks passing. Single-author answer-span proposals preserve the original frozen baseline. |
 | [Multi-repository relevance baseline](archived/multirepo-relevance-baseline.md) | Archived: Reusable daemon-path runner and frozen 40-case four-repository baseline complete; both repetitions valid with identical ranks. Declaration-target scores and post-measurement ground-truth limitations are documented. |
@@ -89,7 +98,6 @@ Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signa
 | [Lance FTS Incremental-Merge Panic — Upstream Pursuit](archived/lance-fts-merge-upstream.md) | Archived: Closed. lance-format/lance#8310 was fixed by lance#8312 (lance 11.0.0-beta.22); gmax pins @lancedb/lancedb 0.38.0 GA (lance 11.0.0). The 0.26.27/0.26.28 canary on the GA pin ran 2026-09-07 to 2026-09-16 with zero optimize failures, FTS rebuilds, or panics. The drop-and-rebuild guard stays as a tripwire. |
 | [LanceDB 0.31 → 0.38 Upgrade](archived/lancedb-0.38-upgrade.md) | Archived: Shipped initially in v0.26.23 with a beta overlay, then replaced by the LanceDB 0.38.0 GA pin. The upstream FTS fix is included; the v0.26.27/0.26.28 canary ran September 7–16 with zero optimize failures, FTS rebuilds or panics. The drop-and-rebuild guard remains a recovery tripwire. The body below preserves the August prerelease investigation as historical evidence. |
 | [Mcp Server Migration](archived/mcp-server-migration.md) | Archived: The Server-to-McpServer migration shipped in `e80daca`; the result-shape follow-up shipped in `04a87a4`. The current server registers 27 tools with Zod schemas, explicit registered-project scoping, protocol coverage, and subsequent lifecycle/performance hardening. |
-| [v0.26.2 Stability Cycle](archived/stability-cycle-v0.26.2.md) | Archived: Historical v0.26.2-v0.26.5 stability cycle. SC-001 and SC-003 were fixed and live-verified; SC-002 recovery shipped and restored compaction, but FTS merge panics recurred repeatedly through 2026-08-03. The dated observation window and formal exit snapshot were never completed, and the 2026-08-04 watcher/index/store changes supersede this baseline. |
 
 - Use `runlist list` or `runlist json` for the full inventory.
 <!-- GENERATED:dotmd:end -->

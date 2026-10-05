@@ -96,6 +96,50 @@ describe("strict target matching and cutoff", () => {
     expect(matchesTarget(chunk("src/my-target.ts"), root, target)).toBe(false);
     expect(matchesTarget(chunk(target.file, []), root, target)).toBe(false);
   });
+  it("does not let a declaration bypass a frozen answer span", () => {
+    const ranged = { ...target, match: "range" as const };
+    expect(matchesTarget(chunk(), root, ranged)).toBe(false);
+    expect(
+      matchesTarget(
+        {
+          ...chunk(),
+          generated_metadata: { start_line: 0, num_lines: 5 },
+        },
+        root,
+        ranged,
+      ),
+    ).toBe(false);
+    expect(
+      matchesTarget(
+        {
+          ...chunk(target.file, []),
+          generated_metadata: { start_line: 19, num_lines: 2 },
+        },
+        root,
+        ranged,
+      ),
+    ).toBe(true);
+  });
+  it("preserves legacy matching and validates explicit matching rules", () => {
+    expect(
+      matchesTarget(chunk(), root, { ...target, match: "symbol-or-range" }),
+    ).toBe(true);
+    const bytes = Buffer.from(
+      JSON.stringify({
+        ...fixture,
+        cases: [{ ...c, expected: [{ ...target, match: "range" }] }],
+      }),
+    );
+    expect(
+      parseFrozenFixture(bytes, sha256(bytes)).cases[0].expected[0].match,
+    ).toBe("range");
+    expect(
+      relevanceFixtureSchema.safeParse({
+        ...fixture,
+        cases: [{ ...c, expected: [{ ...target, match: "anything" }] }],
+      }).success,
+    ).toBe(false);
+  });
   it.each([
     { start: 18, count: 2, hit: true },
     { start: 17, count: 2, hit: false },

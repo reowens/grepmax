@@ -8,6 +8,7 @@ const targetSchema = z
   .object({
     file: z.string().min(1),
     symbol: z.string().min(1),
+    match: z.enum(["symbol-or-range", "range"]).optional(),
     startLine: z.number().int().positive(),
     endLine: z.number().int().positive(),
     sourceSha256: digest,
@@ -98,7 +99,7 @@ export function parseFrozenFixture(
   return relevanceFixtureSchema.parse(JSON.parse(bytes.toString("utf8")));
 }
 
-/** Exact file plus definition symbol OR overlap with a source-grounded line range. */
+/** Exact file plus the frozen matching rule; legacy fixtures allow symbol or range. */
 export function matchesTarget(
   chunk: ChunkType,
   root: string,
@@ -107,7 +108,11 @@ export function matchesTarget(
   if (typeof chunk.metadata?.path !== "string") return false;
   if (path.resolve(chunk.metadata.path) !== path.resolve(root, target.file))
     return false;
-  if (chunk.defined_symbols?.includes(target.symbol)) return true;
+  if (
+    target.match !== "range" &&
+    chunk.defined_symbols?.includes(target.symbol)
+  )
+    return true;
   const start = chunk.generated_metadata?.start_line;
   const count = chunk.generated_metadata?.num_lines;
   if (typeof start !== "number" || typeof count !== "number" || count <= 0)

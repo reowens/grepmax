@@ -45,6 +45,14 @@ The v0.26.48 baseline daemon did not expose fusion-pool membership or actual con
 
 `scoreBreakdown.rerank` stores the fallback base score when reranking is off, so a nonzero value does not prove reranking occurred. Changing a benchmark client's environment does not change a running daemon's ranking settings. Use explicit invocation diagnostics with the [frozen baseline runner](../README.md#frozen-multi-repository-baseline), rather than asserting a fully disabled rerank comparison from score components or selected-batch membership.
 
+## Per-file diversity can hide scored matches
+
+Installed .49 diagnostic triage confirmed three targets were retrieved and scored but removed by the default three-matches-per-file cap. Three other targets were cut by pooled selection; two more were outside the truncated trace and remain unknown. The reviewed successor is exposed development evidence, with changed answer criteria and two scoped queries; its 72.5% target Recall@10 is not a before/after improvement or independent quality acceptance.
+
+An offline replay reproduced every original final result and tested caps four/six without changing live settings. Larger caps recover some targets but also push another target beyond ten and reduce file diversity. Keep the default until independently reviewed evidence supports a policy change. The existing CLI `--per-file` option currently limits rendered output; it does not override the searcher's retrieval cap, so requesting more than three cannot recover already-suppressed chunks. A request-scoped retrieval override is the next focused correctness fix.
+
+Source `bench:relevance` now supports explicit target `match: "range"` to prevent same-symbol declarations from bypassing answer spans. The legacy matching default remains unchanged. Range overlap measures useful discovery context, not complete answer coverage; the full frozen v1 remains intact.
+
 ## MCP cancellation has native-operation boundaries
 
 v0.26.47 forwards each client's cancellation signal to daemon graph, row and search reads. Aborting closes only that request's Unix IPC connection, allowing daemon admission/worker cancellation to stop queued work. New tool operations and fallback admission check the signal; other requests and session watch renewal continue.
