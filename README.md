@@ -205,7 +205,7 @@ gmax "query" [options]
 | `--exclude-projects <list>` | With `--all-projects`, skip these projects. | — |
 | `--min-score <n>` | Minimum score relative to this query’s top match, not an absolute confidence threshold. | `0` |
 
-The source fix after v0.26.49 carries an explicit `--per-file` value into retrieval as well as formatting. Values must be positive safe integers. Omitted requests retain the searcher's configured `GMAX_MAX_PER_FILE` cap or three; larger explicit values still respect `-m` and the existing candidate/rerank bounds. Explicit overrides require a daemon advertising `capabilities.perFileSearch: 1`; older live daemons are refused with an update/restart hint, without opening a fallback reader. An incompatible optional local HTTP fast path is skipped. The installed v0.26.49 release does not yet support this retrieval override.
+v0.26.50 carries an explicit `--per-file` value into retrieval as well as formatting. Values must be positive safe integers. Omitted requests retain the searcher's configured `GMAX_MAX_PER_FILE` cap or three; larger explicit values still respect `-m` and the existing candidate/rerank bounds. Explicit overrides require a daemon advertising `capabilities.perFileSearch: 1`; older live daemons are refused with an update/restart hint, without opening a fallback reader. An incompatible optional local HTTP fast path is skipped. v0.26.49 and older releases do not support this retrieval override.
 
 ## Experimental Orientation
 
