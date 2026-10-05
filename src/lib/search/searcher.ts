@@ -843,11 +843,12 @@ export class Searcher {
     const MAX_PER_FILE =
       Number.isFinite(envMaxPerFile) && envMaxPerFile > 0 ? envMaxPerFile : 3;
 
-    const displayWindow = Math.min(
-      stage2Candidates.length,
-      Math.max(finalLimit * MAX_PER_FILE, finalLimit, RERANK_TOP),
-    );
-    const displayCandidates = stage2Candidates.slice(0, displayWindow);
+    // Rank the entire bounded candidate pool before trimming the result count.
+    // A limit-dependent cut here discarded contenders before structure boosts
+    // and dedup, so requesting three results could hide the top match returned
+    // by a ten-result request. Expensive reranking stays independently bounded;
+    // display columns are still fetched only for the final results below.
+    const displayCandidates = [...stage2Candidates];
     const rerankCandidates = stage2Candidates.slice(0, RERANK_TOP);
 
     // Symbol-definition promotion (1/2): membership. For a bare-symbol query,

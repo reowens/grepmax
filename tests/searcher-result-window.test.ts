@@ -104,8 +104,8 @@ describe("Searcher result window", () => {
     pool.rerank.mockClear();
   });
 
-  function makeSearcher(): Searcher {
-    const table = makeTable(records);
+  function makeSearcher(input = records): Searcher {
+    const table = makeTable(input);
     const db = {
       ensureTable: async () => table,
       createFTSIndex: async () => {},
@@ -119,6 +119,33 @@ describe("Searcher result window", () => {
     expect(result.data).toHaveLength(50);
     expect(pool.rerank).not.toHaveBeenCalled();
   });
+
+  it.each([1, 3])(
+    "keeps the same leading ranks when requesting %i instead of ten results",
+    async (limit) => {
+      const input = records.map((record) => ({ ...record }));
+      // At retrieval rank 25 this orchestrator is outside the old short-request
+      // scoring window. It still deserves to compete under the existing boosts.
+      input[24] = {
+        ...input[24],
+        is_anchor: false,
+        role: "ORCHESTRATION",
+        referenced_symbols: Array(16).fill("callee"),
+      };
+      const query = "cancel MCP requests and close daemon reads";
+      const longer = await makeSearcher(input).search(query, 10, {
+        rerank: false,
+      });
+      const shorter = await makeSearcher(input).search(query, limit, {
+        rerank: false,
+      });
+      expect(longer.data[0].metadata?.path).toBe(input[24].path);
+      expect(shorter.data.map((record) => record.metadata?.path)).toEqual(
+        longer.data.slice(0, limit).map((record) => record.metadata?.path),
+      );
+      expect(pool.rerank).not.toHaveBeenCalled();
+    },
+  );
 
   it("keeps expensive rerank bounded to RERANK_TOP", async () => {
     await makeSearcher().search("query", 50, { rerank: true });
