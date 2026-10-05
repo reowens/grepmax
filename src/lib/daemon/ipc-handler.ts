@@ -135,6 +135,7 @@ export async function handleCommand(
           capabilities: {
             exclusiveGenerationRebuild: EXCLUSIVE_GENERATION_REBUILD_PROTOCOL,
             readVerbs: READ_VERBS_PROTOCOL,
+            searchDiagnostics: 1,
             // `watch`/`unwatch` accept holder/pid/ttlMs. A daemon without this
             // treats `unwatch` as unwatch-for-everyone, so clients releasing a
             // single lease must check it first.
@@ -303,6 +304,7 @@ export async function handleCommand(
               pathPrefix,
               rerank: cmd.rerank === true,
               explain: cmd.explain === true,
+              diagnostics: cmd.diagnostics === true,
               seeds:
                 cmd.seeds &&
                 typeof cmd.seeds === "object" &&

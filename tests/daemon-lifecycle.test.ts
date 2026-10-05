@@ -118,6 +118,7 @@ describe("Daemon readiness gate (IPC)", () => {
     expect(resp?.capabilities).toEqual({
       exclusiveGenerationRebuild: 1,
       readVerbs: 1,
+      searchDiagnostics: 1,
       watchLeases: 1,
     });
   });

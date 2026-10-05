@@ -6,7 +6,11 @@ import {
 } from "../output/index-state-footer";
 import { Searcher } from "../search/searcher";
 import { getStoredSkeleton } from "../skeleton/retriever";
-import type { ChunkType, SearchFilter } from "../store/types";
+import type {
+  ChunkType,
+  SearchDiagnostics,
+  SearchFilter,
+} from "../store/types";
 import type { VectorDB } from "../store/vector-db";
 import { getProject } from "../utils/project-registry";
 import type { WorkerPool } from "../workers/pool";
@@ -19,6 +23,7 @@ export interface DaemonSearchPayload {
   pathPrefix?: string;
   rerank?: boolean;
   explain?: boolean;
+  diagnostics?: boolean;
   seeds?: { files?: string[]; symbols?: string[] };
   includeSkeletons?: boolean;
   skeletonLimit?: number;
@@ -31,6 +36,7 @@ export type DaemonSearchResult = {
   ok: boolean;
   data?: ChunkType[];
   warnings?: string[];
+  diagnostics?: SearchDiagnostics;
   skeletons?: Record<string, string>;
   graph?: unknown;
   indexState?: IndexState;
@@ -119,6 +125,7 @@ export async function handleDaemonSearch(
       {
         rerank: payload.rerank === true,
         explain: payload.explain === true,
+        diagnostics: payload.diagnostics === true,
         seeds: payload.seeds,
       },
       payload.filters,
@@ -138,11 +145,14 @@ export async function handleDaemonSearch(
     ok: boolean;
     data: ChunkType[];
     warnings?: string[];
+    diagnostics?: SearchDiagnostics;
     skeletons?: Record<string, string>;
     graph?: unknown;
     indexState?: IndexState;
   } = { ok: true, data: result.data };
   if (result.warnings?.length) response.warnings = result.warnings;
+  if (payload.diagnostics === true && result.diagnostics)
+    response.diagnostics = result.diagnostics;
 
   // Annotate partial results when the index is still catching up, so an
   // agent can caveat or retry. Settled failures remain visible too.

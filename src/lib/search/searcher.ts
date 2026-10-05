@@ -17,6 +17,7 @@ import {
 import { debug } from "../utils/logger";
 import { QUERY_EXECUTION_OPTIONS } from "../utils/query-timeout";
 import { getWorkerPool } from "../workers/pool";
+import { SearchDiagnosticCollector } from "./diagnostics";
 import { detectIntent, type SearchIntent } from "./intent";
 import { loadOrComputePageRank, pageRankBoostForSymbols } from "./pagerank";
 import {
@@ -456,6 +457,7 @@ export class Searcher {
     _search_options?: {
       rerank?: boolean;
       explain?: boolean;
+      diagnostics?: boolean;
       /**
        * Aider-style seeding (Phase 4): bias candidate generation toward the
        * agent's working context. `files` = paths the agent has open (chat
@@ -477,6 +479,14 @@ export class Searcher {
     // fused scores ~30:1 so blend tuning can't recover the loss.
     let doRerank = _search_options?.rerank ?? false;
     const explain = _search_options?.explain ?? false;
+    const diagnostics = _search_options?.diagnostics
+      ? new SearchDiagnosticCollector()
+      : undefined;
+    const requestedRerank = doRerank;
+    let gateEvaluated = false;
+    let gateShare: number | null = null;
+    let gateActivated = false;
+    let rerankInvoked = false;
     // Aider-style seeding (Phase 4): bias candidate generation toward the
     // agent's working context. Inert unless the caller supplied seed files or
     // symbols, so the default search path is unchanged.
@@ -680,6 +690,10 @@ export class Searcher {
       .map(([key]) => docMap.get(key))
       .filter(Boolean) as VectorRecord[];
 
+    diagnostics?.capture("vector", vectorResults);
+    diagnostics?.capture("fts", ftsResults);
+    diagnostics?.capture("rrf", fused);
+
     // Free raw search results — docMap holds the only needed references
     vectorResults.length = 0;
     ftsResults.length = 0;
@@ -745,19 +759,19 @@ export class Searcher {
     // pools (express, platform) it regresses. So detect the concentrated regime
     // here and *add* rerank-on for it. This only ever flips doRerank false→true:
     // an explicit GMAX_RERANK=1 (doRerank already true) is never overridden off.
+    const envConcThreshold = Number.parseFloat(
+      process.env.GMAX_CONCENTRATION_THRESHOLD ?? "",
+    );
+    // <= 0 (or NaN with the default) keeps the gate active at 0.7; a value > 1
+    // disables it (no possible share reaches it), giving a rerank-fully-off
+    // baseline for sweeps without touching the doRerank default. 0.7 is the
+    // sweep winner: highest threshold (least spurious firing) that still
+    // retains lodash's +0.15 MRR lift while leaving express/platform flat.
+    const CONCENTRATION_THRESHOLD =
+      Number.isFinite(envConcThreshold) && envConcThreshold > 0
+        ? envConcThreshold
+        : 0.7;
     if (!doRerank) {
-      const envConcThreshold = Number.parseFloat(
-        process.env.GMAX_CONCENTRATION_THRESHOLD ?? "",
-      );
-      // <= 0 (or NaN with the default) keeps the gate active at 0.7; a value > 1
-      // disables it (no possible share reaches it), giving a rerank-fully-off
-      // baseline for sweeps without touching the doRerank default. 0.7 is the
-      // sweep winner: highest threshold (least spurious firing) that still
-      // retains lodash's +0.15 MRR lift while leaving express/platform flat.
-      const CONCENTRATION_THRESHOLD =
-        Number.isFinite(envConcThreshold) && envConcThreshold > 0
-          ? envConcThreshold
-          : 0.7;
       // Histogram a fixed top-K window (not finalLimit) so the threshold stays
       // calibrated across callers regardless of the result window they request.
       const CONCENTRATION_K = 10;
@@ -772,11 +786,16 @@ export class Searcher {
           if (count > maxBucket) maxBucket = count;
         }
         const share = maxBucket / window.length;
+        gateEvaluated = true;
+        gateShare = share;
         if (share >= CONCENTRATION_THRESHOLD) {
           doRerank = true;
+          gateActivated = true;
         }
       }
     }
+
+    diagnostics?.capture("fusion", fused);
 
     // Item 8: Widen PRE_RERANK_K
     // Retrieve a wide set for Stage 1 filtering
@@ -784,6 +803,8 @@ export class Searcher {
     const STAGE1_K =
       Number.isFinite(envStage1) && envStage1 > 0 ? envStage1 : 200;
     const topCandidates = fused.slice(0, STAGE1_K);
+
+    diagnostics?.capture("stage1", topCandidates);
 
     // Free docMap — topCandidates already holds record references
     docMap.clear();
@@ -832,8 +853,38 @@ export class Searcher {
       stage2Candidates = withScore.slice(0, STAGE2_K).map((x) => x.doc);
     }
 
+    diagnostics?.capture("pooled", stage2Candidates);
+    const diagnosticDetails = () => ({
+      settings: {
+        finalLimit,
+        preK: PRE_RERANK_K,
+        rrfK: RRF_K,
+        stage1K: STAGE1_K,
+        stage2K: STAGE2_K,
+        rerankTop: RERANK_TOP,
+        fusedWeight: FUSED_WEIGHT,
+        pagerankEnabled,
+        seedsActive: seedCtx.active,
+        symbolQuery,
+        pooledFilterApplied: !!queryPooled && topCandidates.length > STAGE2_K,
+      },
+      gate: {
+        requestedRerank,
+        threshold: CONCENTRATION_THRESHOLD,
+        evaluated: gateEvaluated,
+        share: gateShare,
+        activated: gateActivated,
+        rerankInvoked,
+      },
+      fts: { available: this.ftsAvailable, searchFailed: ftsSearchFailed },
+    });
     if (stage2Candidates.length === 0) {
-      return { data: [] };
+      return {
+        data: [],
+        ...(diagnostics
+          ? { diagnostics: diagnostics.finish(diagnosticDetails()) }
+          : {}),
+      };
     }
 
     const envMaxPerFile = Number.parseInt(
@@ -887,6 +938,9 @@ export class Searcher {
       }
     }
 
+    // Selected rerank membership is separate from actual batch execution.
+    diagnostics?.capture("rerank", rerankCandidates);
+
     // Phase B: Lazy-load colbert data only for the ~20 rerank candidates
     if (doRerank && rerankCandidates.length > 0) {
       const rerankIds = rerankCandidates
@@ -914,6 +968,7 @@ export class Searcher {
 
     const rerankScoreByKey = new Map<string, number>();
     if (doRerank && rerankCandidates.length > 0) {
+      rerankInvoked = true;
       const scores = await pool.rerank(
         {
           query: queryMatrixRaw,
@@ -1028,8 +1083,18 @@ export class Searcher {
     // Note: "boosted" was not previously declared -- fix to use "scored"
     scored.sort((a: ScoredItem, b: ScoredItem) => b.score - a.score);
 
+    diagnostics?.capture(
+      "scored",
+      scored.map((item) => item.record),
+    );
+
     // Item 11: Intelligent Deduplication
     const uniqueScored = this.deduplicateResults(scored);
+
+    diagnostics?.capture(
+      "dedup",
+      uniqueScored.map((item) => item.record),
+    );
 
     // Item 10: Per-file diversification
     const seenFiles = new Map<string, number>();
@@ -1041,9 +1106,16 @@ export class Searcher {
       if (count < MAX_PER_FILE) {
         diversified.push(item);
         seenFiles.set(path, count + 1);
+      } else {
+        diagnostics?.noteFileLimit(item.record);
       }
       if (diversified.length >= finalLimit) break;
     }
+
+    diagnostics?.capture(
+      "final",
+      diversified.map((item) => item.record),
+    );
 
     // Phase C: Lazy-load display columns only for the final ~10 results
     const finalIds = diversified
@@ -1108,6 +1180,18 @@ export class Searcher {
         chunk.confidence = confidence;
         return chunk;
       }),
+      ...(diagnostics
+        ? {
+            diagnostics: diagnostics.finish({
+              ...diagnosticDetails(),
+              settings: {
+                ...diagnosticDetails().settings,
+                maxPerFile: MAX_PER_FILE,
+                definitionBoost: DEF_MATCH_BOOST,
+              },
+            }),
+          }
+        : {}),
       ...(!this.ftsAvailable || ftsSearchFailed
         ? {
             warnings: [

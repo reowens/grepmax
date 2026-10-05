@@ -93,6 +93,58 @@ export interface ScoreBreakdown {
 export interface SearchResponse {
   data: ChunkType[];
   warnings?: string[];
+  diagnostics?: SearchDiagnostics;
+}
+
+export type SearchStage =
+  | "vector"
+  | "fts"
+  | "rrf"
+  | "fusion"
+  | "stage1"
+  | "pooled"
+  | "rerank"
+  | "scored"
+  | "dedup"
+  | "final";
+
+export interface SearchDiagnostics {
+  schemaVersion: 1;
+  settings: Record<string, number | boolean | string | null>;
+  rankingEnvironment: Record<string, string | null>;
+  fts: { available: boolean; searchFailed: boolean };
+  gate: {
+    requestedRerank: boolean;
+    threshold: number;
+    evaluated: boolean;
+    share: number | null;
+    activated: boolean;
+    rerankInvoked: boolean;
+  };
+  stages: Record<SearchStage, number>;
+  trace: {
+    cohort: "post-seed-fusion-head";
+    limit: 200;
+    total: number;
+    truncated: boolean;
+    candidates: {
+      id: string;
+      path: string;
+      hash: string;
+      startLine: number;
+      endLine: number;
+      parentSymbol: string;
+      ranks: Record<SearchStage, number>;
+      outcome:
+        | "returned"
+        | "stage1-cut"
+        | "pooled-cut"
+        | "not-scored"
+        | "deduplicated"
+        | "per-file-limit"
+        | "display-limit";
+    }[];
+  };
 }
 
 export interface SearchFilter {

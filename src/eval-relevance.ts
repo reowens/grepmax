@@ -49,11 +49,12 @@ async function run() {
       output: { type: "string" },
       repeats: { type: "string", default: "2" },
       help: { type: "boolean" },
+      diagnostics: { type: "boolean", default: false },
     },
   });
   if (values.help) {
     console.log(
-      "pnpm bench:relevance --fixture <json> --sha256 <frozen-sha256> --output <new-json> [--repeats 2]",
+      "pnpm bench:relevance --fixture <json> --sha256 <frozen-sha256> --output <new-json> [--repeats 2] [--diagnostics]",
     );
     return;
   }
@@ -83,6 +84,14 @@ async function run() {
   if (!ping.ok || ping.ready !== true)
     throw new Error(
       "An already-ready daemon is required; no autostart/fallback",
+    );
+  if (
+    values.diagnostics &&
+    (ping.capabilities as Record<string, unknown> | undefined)
+      ?.searchDiagnostics !== 1
+  )
+    throw new Error(
+      "Daemon lacks searchDiagnostics v1; install/restart a compatible daemon before measuring diagnostics",
     );
   const before = await sendDaemonCommand({ cmd: "status" });
   if (!before.ok) throw new Error("Cannot capture daemon status");
@@ -187,11 +196,19 @@ async function run() {
                   pathPrefix: `${root}${path.sep}`,
                   rerank: false,
                   explain: true,
+                  diagnostics: values.diagnostics,
                 },
                 { timeoutMs: 60_000 },
               )
             : { ok: false, error: "preflight_excluded" };
         const elapsedMs = performance.now() - start;
+        if (
+          values.diagnostics &&
+          response.ok &&
+          (response.diagnostics as { schemaVersion?: number } | undefined)
+            ?.schemaVersion !== 1
+        )
+          exclusions.add("diagnostics_missing");
         if (!response.ok)
           exclusions.add(String(response.error ?? "search_failed"));
         const data = Array.isArray(response.data)
@@ -244,6 +261,7 @@ async function run() {
           warnings,
           indexState: state ?? null,
           error: response.ok ? null : response.error,
+          diagnostics: response.diagnostics ?? null,
           results: data.map((d) => ({
             path: path.relative(root, String(d.metadata?.path ?? "")),
             hash: d.metadata?.hash ?? null,
@@ -292,11 +310,15 @@ async function run() {
       searcherHash: sha256(
         fs.readFileSync(path.join(__dirname, "lib/search/searcher.ts")),
       ),
+      diagnosticsHash: sha256(
+        fs.readFileSync(path.join(__dirname, "lib/search/diagnostics.ts")),
+      ),
     },
     execution: {
       transport: "existing-daemon-ipc",
       requestedRerank: false,
       explain: true,
+      requestedDiagnostics: values.diagnostics,
       limit: 20,
       repeats,
       ping,
@@ -305,10 +327,18 @@ async function run() {
       after,
       preflight,
       diagnostics: {
-        fusionPool: "unobserved",
-        concentrationGate: "unobserved",
-        daemonRankingEnvironment: "unobserved",
-        ftsHealth: "warnings-and-score-breakdowns-only",
+        fusionPool: values.diagnostics
+          ? "bounded-post-seed-head-200"
+          : "unobserved",
+        concentrationGate: values.diagnostics
+          ? "per-sample-diagnostics"
+          : "unobserved",
+        daemonRankingEnvironment: values.diagnostics
+          ? "allowlisted-per-sample-diagnostics"
+          : "unobserved",
+        ftsHealth: values.diagnostics
+          ? "per-sample-diagnostics"
+          : "warnings-and-score-breakdowns-only",
         trueRerankOff: "not-asserted",
       },
     },
@@ -331,7 +361,9 @@ async function run() {
     researchGateReady: false,
     limitations: [
       "Curated source-grounded cases are not observed user-session misses",
-      "Daemon exposes no fusion pool or actual concentration-gate decision",
+      values.diagnostics
+        ? "Candidate trace is limited to the post-seed fusion head; absence from a truncated trace does not prove retrieval failure"
+        : "Pipeline diagnostics were not requested",
       "Client environment cannot change daemon ranking settings",
       "Latencies mix ordinary daemon activity and first/repeated queries",
     ],

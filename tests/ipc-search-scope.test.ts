@@ -23,7 +23,7 @@ class FakeSocket extends EventEmitter {
   end = vi.fn();
 }
 
-const search = vi.fn(async () => ({ ok: true, data: [] }));
+const search = vi.fn(async (_payload: unknown) => ({ ok: true, data: [] }));
 const daemon = {
   isReady: () => true,
   operationStatus: () => "open",
@@ -101,5 +101,34 @@ describe("daemon search IPC scoping", () => {
     expect(response?.ok).toBe(false);
     expect(String(response?.error)).toMatch(/outside project root/i);
     expect(search).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false, "true"])(
+    "forwards diagnostics only for an explicit boolean true (%s)",
+    async (diagnostics) => {
+      await handleCommand(
+        daemon,
+        { cmd: "search", projectRoot: "/work/api", query: "auth", diagnostics },
+        new FakeSocket() as never,
+      );
+      expect(search.mock.calls[0][0]).toMatchObject({
+        diagnostics: diagnostics === true,
+      });
+    },
+  );
+
+  it("advertises the diagnostics protocol in ping", async () => {
+    const pingDaemon = {
+      ...daemon,
+      uptime: () => 1,
+      resourceGenerationId: () => 1,
+      hasUnfinishedRebuild: () => false,
+    } as unknown as Daemon;
+    const response = await handleCommand(
+      pingDaemon,
+      { cmd: "ping" },
+      new FakeSocket() as never,
+    );
+    expect(response?.capabilities).toMatchObject({ searchDiagnostics: 1 });
   });
 });

@@ -41,7 +41,9 @@ For a true rerank-off baseline, set `GMAX_CONCENTRATION_THRESHOLD=2`: disabling 
 
 The October 4 multi-repository fixture measured 40 source-curated cases with frozen declaration targets: 57.5% target Recall@10 and 0.3275 corrected MRR@10. Four apparent misses returned useful bodies without declarations; other queries have plausible alternate answers. These figures are not general semantic answer quality or observed-session miss rates. Preserve v1 and review answer spans/alternatives in a successor fixture before tuning.
 
-The existing daemon does not expose fusion-pool membership or actual concentration-gate activation. `scoreBreakdown.rerank` stores the fallback base score when reranking is off, so a nonzero value does not prove reranking occurred. Changing a benchmark client's environment does not change a running daemon's ranking settings. The [frozen baseline runner](../README.md#frozen-multi-repository-baseline) records these unknowns rather than asserting a fully disabled rerank comparison.
+The v0.26.48 baseline daemon did not expose fusion-pool membership or actual concentration-gate activation. Subsequent source adds opt-in, capability-gated diagnostics for up to 200 post-seed fusion candidates and their stage ranks, effective settings, FTS health and actual gate/rerank invocation. It preserves default responses/results and adds no database reads. A target missing from a truncated trace is not proof of full-pool absence. Old artifacts retain their unknowns; source support is not an installed diagnostic run.
+
+`scoreBreakdown.rerank` stores the fallback base score when reranking is off, so a nonzero value does not prove reranking occurred. Changing a benchmark client's environment does not change a running daemon's ranking settings. Use explicit invocation diagnostics with the [frozen baseline runner](../README.md#frozen-multi-repository-baseline), rather than asserting a fully disabled rerank comparison from score components or selected-batch membership.
 
 ## MCP cancellation has native-operation boundaries
 

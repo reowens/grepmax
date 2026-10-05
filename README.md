@@ -525,7 +525,13 @@ A hit requires the exact file and either the definition symbol or overlap with t
 
 The report records source/index hashes, registry embedding identity, daemon snapshots, exclusions, per-case ranks, aggregate metrics and ordinary-session latency. A sibling `.samples.jsonl` checkpoints each completed request; the final JSON applies run-wide exclusions and is authoritative. Changed source/cache hashes, missing targets, unsettled indexes, search warnings and daemon replacement invalidate samples. The runner refuses to overwrite artifacts and exits 2 when any samples are excluded.
 
-Requests use `rerank: false`, but the daemon's concentration gate can still enable reranking. Client environment settings cannot change an existing daemon's settings, and `scoreBreakdown.rerank` also holds the fallback base score when reranking is off. Actual gate decisions and fusion candidates remain unobserved. Collect those diagnostics and review ground truth before using this baseline to justify ranking changes.
+Requests use `rerank: false`, but the daemon's concentration gate can still enable reranking. Client environment settings cannot change an existing daemon's settings, and `scoreBreakdown.rerank` also holds the fallback base score when reranking is off.
+
+Source now supports `--diagnostics`. This requires a ready daemon advertising `capabilities.searchDiagnostics: 1`; v0.26.48's installed release does not advertise it. The evaluator refuses incompatible daemons before measuring and excludes responses missing requested diagnostics. Each sample records FTS availability/failure, effective settings and allowlisted daemon ranking environment, concentration-gate evaluation/activation and whether reranking was actually invoked.
+
+The candidate trace contains pointers and stage ranks for at most the first 200 post-seed fusion candidates, plus full stage counts and an explicit truncation flag. Ranks cover vector/FTS, RRF, seeded fusion, stage-one selection, pooled filtering, selected rerank batch, final scoring, overlap deduplication and final display. Rerank-batch membership does not imply execution; use `gate.rerankInvoked`. Zero at a later stage means a traced candidate was removed; a target missing from a truncated trace may lie outside the reported head. Diagnostics add no database reads and preserve ranking/results. The frozen October 4 artifacts retain their original unknowns. Review ground truth and collect new diagnostic artifacts before tuning.
+
+Each traced candidate also has an `outcome`: returned, stage-one/pooled cut, deduplicated, per-file limit or display limit. Display limit means the production loop filled its result window before examining that candidate; it does not assert that the candidate would pass the per-file cap.
 
 ## Attribution
 
