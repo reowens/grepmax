@@ -508,6 +508,25 @@ Both retrieval harnesses request 20 results for diagnostics, but `mrrAt10` and R
 
 `pnpm bench:recall` also drives the model-tier comparison behind the 384d default — see [Model Tier](#model-tier) for why the larger 768d model is *not* the default.
 
+#### Frozen multi-repository baseline
+
+`bench:relevance` measures reviewed local fixtures through an already-ready daemon. It does not autostart a daemon or open a fallback search store. Keep private queries, source evidence and results under the ignored `docs/measurements/` directory. Review and freeze the fixture before seeing rankings; use a new fixture version when changing ground truth.
+
+```bash
+shasum -a 256 docs/measurements/relevance/fixture-v1.json
+pnpm bench:relevance --fixture docs/measurements/relevance/fixture-v1.json \
+  --sha256 <reviewed-fixture-digest> \
+  --output docs/measurements/relevance/baseline-v1.json --repeats 2
+```
+
+The fixture schema is in [relevance-baseline.ts](src/lib/eval/relevance-baseline.ts). Its JSON contains `schemaVersion: 1`, `createdAt`, `purpose`, `corpora` and `cases`. Each corpus has an `id`, `root` (absolute or relative to the fixture) and `language`. Each case declares an `id`, `corpus`, `split` (`dev` or `heldout`), `origin` (`curated-source` or `observed-session`), `intent`, `query` and one or more `expected` targets. Targets require an exact relative `file`, definition `symbol`, one-based `startLine`/`endLine` and the SHA-256 of the source file.
+
+A hit requires the exact file and either the definition symbol or overlap with the declared line range. Choose answer-bearing ranges and reviewed alternatives: a declaration-only target can miss a useful function-body chunk. The October 4 baseline intentionally preserves its frozen declaration targets, so its 57.5% Recall@10 / 0.3275 MRR@10 describes target retrieval, not general answer quality. It covers 40 curated cases across TypeScript, JavaScript, Python and Swift; both repetitions produced identical ranks. These are not observed user-session misses or a ranking acceptance gate.
+
+The report records source/index hashes, registry embedding identity, daemon snapshots, exclusions, per-case ranks, aggregate metrics and ordinary-session latency. A sibling `.samples.jsonl` checkpoints each completed request; the final JSON applies run-wide exclusions and is authoritative. Changed source/cache hashes, missing targets, unsettled indexes, search warnings and daemon replacement invalidate samples. The runner refuses to overwrite artifacts and exits 2 when any samples are excluded.
+
+Requests use `rerank: false`, but the daemon's concentration gate can still enable reranking. Client environment settings cannot change an existing daemon's settings, and `scoreBreakdown.rerank` also holds the fallback base score when reranking is off. Actual gate decisions and fusion candidates remain unobserved. Collect those diagnostics and review ground truth before using this baseline to justify ranking changes.
+
 ## Attribution
 
 grepmax is built upon the foundation of [mgrep](https://github.com/mixedbread-ai/mgrep) by MixedBread. See the [NOTICE](NOTICE) file for details.

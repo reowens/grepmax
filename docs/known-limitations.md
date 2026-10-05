@@ -39,6 +39,10 @@ Historical tables below preserve their originally reported figures, which may in
 
 For a true rerank-off baseline, set `GMAX_CONCENTRATION_THRESHOLD=2`: disabling explicit rerank does not prevent concentration-triggered ColBERT. Record fixtures, source, embedding/index identity, scope and ranking configuration with new measurements.
 
+The October 4 multi-repository fixture measured 40 source-curated cases with frozen declaration targets: 57.5% target Recall@10 and 0.3275 corrected MRR@10. Four apparent misses returned useful bodies without declarations; other queries have plausible alternate answers. These figures are not general semantic answer quality or observed-session miss rates. Preserve v1 and review answer spans/alternatives in a successor fixture before tuning.
+
+The existing daemon does not expose fusion-pool membership or actual concentration-gate activation. `scoreBreakdown.rerank` stores the fallback base score when reranking is off, so a nonzero value does not prove reranking occurred. Changing a benchmark client's environment does not change a running daemon's ranking settings. The [frozen baseline runner](../README.md#frozen-multi-repository-baseline) records these unknowns rather than asserting a fully disabled rerank comparison.
+
 ## MCP cancellation has native-operation boundaries
 
 v0.26.47 forwards each client's cancellation signal to daemon graph, row and search reads. Aborting closes only that request's Unix IPC connection, allowing daemon admission/worker cancellation to stop queued work. New tool operations and fallback admission check the signal; other requests and session watch renewal continue.

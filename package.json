@@ -29,6 +29,7 @@
     "bench:recall:json": "GMAX_EVAL_JSON=1 npx tsx src/eval.ts",
     "bench:oss": "npx tsx src/eval-oss.ts all",
     "bench:oss:json": "GMAX_EVAL_JSON=1 npx tsx src/eval-oss.ts all",
+    "bench:relevance": "tsx src/eval-relevance.ts",
     "bench:tokens": "npx tsx src/eval-tokens.ts",
     "bench:tokens:json": "GMAX_EVAL_JSON=1 npx tsx src/eval-tokens.ts",
     "bench:surprises": "npx tsx src/eval-surprising-connections.ts",

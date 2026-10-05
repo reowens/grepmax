@@ -3,6 +3,9 @@
 
 export const root = "docs";
 
+// Private benchmark evidence is not part of the plan/document queue.
+export const excludeDirs = ["measurements"];
+
 export const journal = true;
 
 export const index = {

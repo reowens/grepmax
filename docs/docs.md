@@ -2,7 +2,7 @@
 
 ## Current release and follow-ups — reviewed October 4, 2026
 
-**v0.26.48 is released and installed.** It fixes short-result search requests trimming candidates before structural scoring and dedup. Source `6e030a6`, tag `996df70`; [release CI 37255086012](https://github.com/reowens/grepmax/actions/runs/37255086012) passed 1,512 tests / 164 files, both typechecks, formatting, build, production audit and fresh packed-consumer audit/native smoke. Six installed queries at limits 1/3/10 now have stable result prefixes. General semantic relevance still needs held-out multi-repository validation.
+**v0.26.48 is released and installed.** It fixes short-result search requests trimming candidates before structural scoring and dedup. Source `6e030a6`, tag `996df70`; [release CI 37255086012](https://github.com/reowens/grepmax/actions/runs/37255086012) passed 1,512 tests / 164 files, both typechecks, formatting, build, production audit and fresh packed-consumer audit/native smoke. Six installed queries at limits 1/3/10 now have stable result prefixes. A subsequent multi-repository baseline is measured below; reviewed answer ground truth and pipeline diagnostics remain prerequisites for ranking acceptance.
 
 The earlier reliability work remains shipped: native Session cache wiring, bounded query/row reads, reproducible consumer packaging, external-store request isolation and refusal of unsupported-daemon fallback readers. The historical FTS merge defect is fixed in the pinned LanceDB 0.38.0 GA runtime; a fresh panic should be investigated as a regression.
 
@@ -17,6 +17,19 @@ The October 4 documentation audit corrected README defaults, explicit plugin upd
 A passive check at 19:55 PDT October 4 found the same .48 daemon PID 89172 running for ~29 minutes. One normal compaction completed in one attempt / 26.3 seconds; doctor reported 14.9 GB logical / 15.9 GB physical, 103.9 GB free and no orphan/stale temporary data. Five retained resource samples included maintenance footprint up to 1,950 MB and recovery to 749 MB at idle, with heap 59–70 MB, one worker and zero pending files. This short cycle supports continued observation; it does not establish long-cycle retention is resolved. No restart or forced maintenance was used.
 
 Use runlist to consume the latest local handoff and claim plan work. `docs/future-sessions.md` contains detailed local evidence; archived notes describe historical states rather than current operating instructions.
+
+## Multi-repository baseline — October 4, 2026
+
+The source-only `pnpm bench:relevance` runner now measures frozen local fixtures through the existing production daemon. Forty curated cases (16 dev / 24 held-out) cover four repositories and languages, with two sequential, interleaved repetitions. All 80 samples were valid and each case's rank was identical across repetitions. Overall frozen-target Recall@10 was 57.5%, corrected MRR@10 0.3275 and hits@1 20%. Median IPC latency was 60.05 ms / p95 153.13 ms under ordinary activity; this is not a controlled latency gate.
+
+| Corpus language | Cases | Target Recall@10 | MRR@10 |
+| --- | ---: | ---: | ---: |
+| TypeScript | 10 | 50% | 0.2083 |
+| JavaScript | 10 | 60% | 0.3167 |
+| Python | 10 | 50% | 0.3600 |
+| Swift | 10 | 70% | 0.4250 |
+
+The frozen fixture used declaration targets. Four of its 17 top-ten misses demonstrably returned useful implementation body chunks without the declaration; others include callers or plausible alternative answers. Preserve the original scores and audit these cases before constructing a reviewed successor fixture. The cases are source-curated, not recorded user-session misses. Fusion-pool membership and actual concentration-gate decisions remain unobserved; explain's `rerank` component is not an activation flag. No ranking tuning, reindex, daemon restart or new model startup was performed. Both typechecks, targeted Biome checks, artifact-refusal checks and all 1,556 tests / 166 files pass. Local fixtures, raw output and the per-case audit remain in ignored `docs/measurements/2026-10-04-relevance/`; see the [README workflow](../README.md#frozen-multi-repository-baseline) for reproduction.
 
 ## Deferred work
 
@@ -57,10 +70,11 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 86 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 88 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
+| [Multi-repository relevance baseline](archived/multirepo-relevance-baseline.md) | Archived: Reusable daemon-path runner and frozen 40-case four-repository baseline complete; both repetitions valid with identical ranks. Declaration-target scores and post-measurement ground-truth limitations are documented. |
 | [Retrieval MRR@10 cutoff](archived/mrr-at-ten-cutoff.md) | Archived: Both harnesses now give reciprocal-rank credit only to ranks 1–10. Late-hit diagnostics and twenty-result retrieval remain; 21 synthetic tests and both typechecks pass. |
 | [Lance FTS Incremental-Merge Panic — Upstream Pursuit](archived/lance-fts-merge-upstream.md) | Archived: Closed. lance-format/lance#8310 was fixed by lance#8312 (lance 11.0.0-beta.22); gmax pins @lancedb/lancedb 0.38.0 GA (lance 11.0.0). The 0.26.27/0.26.28 canary on the GA pin ran 2026-09-07 to 2026-09-16 with zero optimize failures, FTS rebuilds, or panics. The drop-and-rebuild guard stays as a tripwire. |
 | [LanceDB 0.31 → 0.38 Upgrade](archived/lancedb-0.38-upgrade.md) | Archived: Shipped initially in v0.26.23 with a beta overlay, then replaced by the LanceDB 0.38.0 GA pin. The upstream FTS fix is included; the v0.26.27/0.26.28 canary ran September 7–16 with zero optimize failures, FTS rebuilds or panics. The drop-and-rebuild guard remains a recovery tripwire. The body below preserves the August prerelease investigation as historical evidence. |
@@ -68,7 +82,6 @@ Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signa
 | [v0.26.2 Stability Cycle](archived/stability-cycle-v0.26.2.md) | Archived: Historical v0.26.2-v0.26.5 stability cycle. SC-001 and SC-003 were fixed and live-verified; SC-002 recovery shipped and restored compaction, but FTS merge panics recurred repeatedly through 2026-08-03. The dated observation window and formal exit snapshot were never completed, and the 2026-08-04 watcher/index/store changes supersede this baseline. |
 | [Documentation refresh, October 2026](archived/docs-refresh-oct-2026.md) | Archived: README, docs index, limitations, contributor guidance and deferred plans now reflect v0.26.48. Historical rollout instructions and FTS closeouts are corrected; all runlist warnings are resolved. |
 | [Ordered Reliability Follow-ups](archived/ordered-reliability-followups.md) | Archived: All five fixes and local-only security shipped in v0.26.44; CI, installed IPC, health, sandbox, native cache telemetry and scheduled compaction passed. |
-| [External stores](archived/external-stores.md) | Archived: Phase 3 shipped in v0.26.44, tag 825ccd6. Native protocol plus real eject/remount verification passed; CI 37094408479 passed and installed daemon reports the correct version. |
 
 - Use `runlist list` or `runlist json` for the full inventory.
 <!-- GENERATED:dotmd:end -->
