@@ -14,6 +14,8 @@ Longer resource cycles remain an observation task under ordinary sessions. Compa
 
 The October 4 documentation audit corrected README defaults, explicit plugin updates, disabled summary guidance and historical benchmark/audit claims. The subsequent source fix makes both retrieval harnesses credit only ranks 1–10 in `mrrAt10`, preserving twenty-result retrieval and late-hit diagnostic ranks. Twenty-one synthetic regressions cover the cutoff and existing matching rules; historical figures were not recomputed. The deferred plans below were reviewed and retain their existing measurement gates.
 
+A passive check at 19:55 PDT October 4 found the same .48 daemon PID 89172 running for ~29 minutes. One normal compaction completed in one attempt / 26.3 seconds; doctor reported 14.9 GB logical / 15.9 GB physical, 103.9 GB free and no orphan/stale temporary data. Five retained resource samples included maintenance footprint up to 1,950 MB and recovery to 749 MB at idle, with heap 59–70 MB, one worker and zero pending files. This short cycle supports continued observation; it does not establish long-cycle retention is resolved. No restart or forced maintenance was used.
+
 Use runlist to consume the latest local handoff and claim plan work. `docs/future-sessions.md` contains detailed local evidence; archived notes describe historical states rather than current operating instructions.
 
 ## Deferred work
@@ -55,7 +57,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 85 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 86 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
