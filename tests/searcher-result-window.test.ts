@@ -134,6 +134,46 @@ describe("Searcher result window", () => {
     expect(result.data).toHaveLength(50);
     expect(pool.rerank).not.toHaveBeenCalled();
   });
+  it("keeps concurrent per-file overrides local and preserves the configured default", async () => {
+    vi.stubEnv("GMAX_CONCENTRATION_THRESHOLD", "2");
+    vi.stubEnv("GMAX_MAX_PER_FILE", "5");
+    const input = records
+      .slice(0, 10)
+      .map((r) => ({ ...r, path: "/project/large.ts" }));
+    const searcher = makeSearcher(input);
+    const results = await Promise.all(
+      [2, 6, undefined].map((maxPerFile) =>
+        searcher.search("process incoming requests", 10, {
+          maxPerFile,
+          diagnostics: true,
+        }),
+      ),
+    );
+    expect(results.map((r) => r.data.length)).toEqual([2, 6, 5]);
+    expect(results.map((r) => r.diagnostics?.settings.maxPerFile)).toEqual([
+      2, 6, 5,
+    ]);
+    expect(process.env.GMAX_MAX_PER_FILE).toBe("5");
+    expect(pool.rerank).not.toHaveBeenCalled();
+    expect(
+      (await searcher.search("process incoming requests", 4, { maxPerFile: 6 }))
+        .data,
+    ).toHaveLength(4);
+  });
+
+  it.each([0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, "6", null])(
+    "rejects invalid per-file override %s before database or worker activity",
+    async (maxPerFile) => {
+      const ensureTable = vi.fn();
+      const searcher = new Searcher({ ensureTable } as any);
+      pool.encodeQuery.mockClear();
+      await expect(
+        searcher.search("query", 10, { maxPerFile: maxPerFile as number }),
+      ).rejects.toThrow("positive safe integer");
+      expect(ensureTable).not.toHaveBeenCalled();
+      expect(pool.encodeQuery).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([1, 3])(
     "keeps the same leading ranks when requesting %i instead of ten results",

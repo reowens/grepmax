@@ -30,7 +30,7 @@ The answer-range review proposes six source-grounded spans and two query clarifi
 
 A separate successor was frozen before querying .49: six answer-span amendments, two scoped query variants and all 40 cases marked exposed/development. This fresh single-agent source pass is not independent adjudication. All 80 samples were valid with identical ranks across repetitions: target Recall@10 72.5%, MRR@10 0.42625, hits@1 27.5%. These are changed-fixture measurements, not an improvement over v1 or a ranking acceptance gate. The source evaluator adds explicit range-only target matching; 25 targeted tests and both typechecks pass. Original v1 evidence remains unchanged.
 
-The 11 targets outside ten comprise three confirmed per-file cuts, three pooled cuts, three late returns and two unknowns absent from truncated traces. FTS was healthy; automatic reranking actually ran in four samples. A complete offline final-selection replay reproduced every baseline result before testing caps four/six. Raising the cap recovers some targets but displaces others and reduces file diversity. Preserve the production default of three; the next focused correctness fix is to route the existing CLI `--per-file` control into request-scoped retrieval rather than only formatting. Pooled selection needs a separate experiment. Local evidence: `docs/measurements/2026-10-05-reviewed-diagnostics/`.
+The 11 targets outside ten comprise three confirmed per-file cuts, three pooled cuts, three late returns and two unknowns absent from truncated traces. FTS was healthy; automatic reranking actually ran in four samples. A complete offline final-selection replay reproduced every baseline result before testing caps four/six. Raising the cap recovers some targets but displaces others and reduces file diversity. Preserve the production default of three. The subsequent source fix routes explicit CLI `--per-file` values into request-scoped retrieval; omitted requests retain configured defaults. CLI, Unix IPC, local fallback and optional loopback HTTP paths validate and propagate the value, with capability checks refusing unsupported live daemons. This fix is not yet released or installed. Pooled selection needs a separate experiment. Local evidence: `docs/measurements/2026-10-05-reviewed-diagnostics/`.
 
 The same daemon PID survived this ~25-minute check and completed one normal compaction in one attempt. Five maintenance samples reached 1,969 MB footprint then 1,947 MB; no idle-recovery or long-cycle conclusion follows. Doctor reported 15.4 GB logical / 16.7 GB disk, 55.5 GB free and zero pending reconciliation. Host free-space variation is not attributed solely to this index.
 
@@ -86,10 +86,11 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 94 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 96 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
+| [Request-scoped per-file retrieval control](archived/per-file-retrieval-control.md) | Archived: Explicit per-file request propagation and validation complete in source;1613tests/typechecks/format/build/consumer checks pass. Installed .49 correctly refuses unsupported overrides. |
 | [Reviewed relevance diagnostic measurement](archived/reviewed-relevance-diagnostics.md) | Archived: Reviewed exposed successor frozen and measured through installed .49; all80 samples valid with stable ranks. Range-only evaluator support and diagnostics/cap/resource findings documented. |
 | [Release and install retrieval diagnostics](archived/diagnostic-release.md) | Archived: v0.26.49 published, registry-installed and live-verified; documentation updated. |
 | [Retrieval diagnostics and answer-range review](archived/retrieval-diagnostics.md) | Archived: Bounded opt-in production diagnostics and capability-gated evaluator are source-complete, with result/read equivalence regressions and packaging checks passing. Single-author answer-span proposals preserve the original frozen baseline. |
@@ -97,7 +98,6 @@ Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signa
 | [Retrieval MRR@10 cutoff](archived/mrr-at-ten-cutoff.md) | Archived: Both harnesses now give reciprocal-rank credit only to ranks 1–10. Late-hit diagnostics and twenty-result retrieval remain; 21 synthetic tests and both typechecks pass. |
 | [Lance FTS Incremental-Merge Panic — Upstream Pursuit](archived/lance-fts-merge-upstream.md) | Archived: Closed. lance-format/lance#8310 was fixed by lance#8312 (lance 11.0.0-beta.22); gmax pins @lancedb/lancedb 0.38.0 GA (lance 11.0.0). The 0.26.27/0.26.28 canary on the GA pin ran 2026-09-07 to 2026-09-16 with zero optimize failures, FTS rebuilds, or panics. The drop-and-rebuild guard stays as a tripwire. |
 | [LanceDB 0.31 → 0.38 Upgrade](archived/lancedb-0.38-upgrade.md) | Archived: Shipped initially in v0.26.23 with a beta overlay, then replaced by the LanceDB 0.38.0 GA pin. The upstream FTS fix is included; the v0.26.27/0.26.28 canary ran September 7–16 with zero optimize failures, FTS rebuilds or panics. The drop-and-rebuild guard remains a recovery tripwire. The body below preserves the August prerelease investigation as historical evidence. |
-| [Mcp Server Migration](archived/mcp-server-migration.md) | Archived: The Server-to-McpServer migration shipped in `e80daca`; the result-shape follow-up shipped in `04a87a4`. The current server registers 27 tools with Zod schemas, explicit registered-project scoping, protocol coverage, and subsequent lifecycle/performance hardening. |
 
 - Use `runlist list` or `runlist json` for the full inventory.
 <!-- GENERATED:dotmd:end -->

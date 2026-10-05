@@ -43,6 +43,41 @@ describe("serve HTTP containment", () => {
     const address = runtime.server.address();
     expect(address).toMatchObject({ address: "127.0.0.1" });
   });
+  it("advertises and forwards per-file retrieval limits", async () => {
+    const health = await fetch(`${baseUrl}/health`);
+    expect(await health.json()).toMatchObject({
+      capabilities: { perFileSearch: 1 },
+    });
+    const response = await fetch(`${baseUrl}/search`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "auth", maxPerFile: 6 }),
+    });
+    expect(response.status).toBe(200);
+    expect(search).toHaveBeenCalledWith(
+      expect.objectContaining({ maxPerFile: 6 }),
+      expect.any(AbortSignal),
+    );
+  });
+  it("rejects invalid per-file HTTP inputs before retrieval", async () => {
+    for (const maxPerFile of [
+      0,
+      -1,
+      1.5,
+      "6",
+      null,
+      Number.MAX_SAFE_INTEGER + 1,
+    ]) {
+      const response = await fetch(`${baseUrl}/search`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: "auth", maxPerFile }),
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: "invalid_maxPerFile" });
+    }
+    expect(search).not.toHaveBeenCalled();
+  });
 
   it("forwards valid contained searches", async () => {
     const response = await fetch(`${baseUrl}/search`, {

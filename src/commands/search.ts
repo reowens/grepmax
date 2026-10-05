@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import type { Command } from "commander";
 import { Command as CommanderCommand } from "commander";
+import { parseCliPerFile } from "../lib/search/per-file";
 import { ensureSetup } from "../lib/setup/setup-helpers";
 import type { VectorDB } from "../lib/store/vector-db";
 import {
@@ -34,7 +35,10 @@ export const search: Command = new CommanderCommand("search")
     "5",
   )
   .option("-c, --content", "Show full chunk content instead of snippets", false)
-  .option("--per-file <n>", "Number of matches to show per file", "3")
+  .option(
+    "--per-file <n>",
+    "Maximum retrieved matches per file (default: configured cap or 3)",
+  )
   .option("--scores", "Show relevance scores", false)
   .option("--explain", "Show scoring breakdown per result", false)
   .option(
@@ -151,6 +155,13 @@ Examples:
   )
   .action(async (pattern, exec_path, _options, cmd) => {
     const options: SearchOptions = cmd.optsWithGlobals();
+    try {
+      parseCliPerFile(options.perFile);
+    } catch (error) {
+      console.error((error as Error).message);
+      process.exitCode = 1;
+      return;
+    }
 
     const root = process.cwd();
     const minScore = Number.isFinite(Number.parseFloat(options.minScore))

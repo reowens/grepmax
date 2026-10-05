@@ -4,6 +4,7 @@ import {
   formatIndexStateFooter,
   type IndexState,
 } from "../output/index-state-footer";
+import { validateMaxPerFile } from "../search/per-file";
 import { Searcher } from "../search/searcher";
 import { getStoredSkeleton } from "../skeleton/retriever";
 import type {
@@ -24,6 +25,7 @@ export interface DaemonSearchPayload {
   rerank?: boolean;
   explain?: boolean;
   diagnostics?: boolean;
+  maxPerFile?: number;
   seeds?: { files?: string[]; symbols?: string[] };
   includeSkeletons?: boolean;
   skeletonLimit?: number;
@@ -71,6 +73,12 @@ export async function handleDaemonSearch(
   payload: DaemonSearchPayload,
   signal: AbortSignal,
 ): Promise<DaemonSearchResult> {
+  let maxPerFile: number | undefined;
+  try {
+    maxPerFile = validateMaxPerFile(payload.maxPerFile);
+  } catch {
+    return { ok: false, error: "invalid maxPerFile" };
+  }
   const { vectorDb, workerPool } = deps;
   if (!vectorDb || !workerPool) {
     return { ok: false, error: "daemon not ready" };
@@ -126,6 +134,7 @@ export async function handleDaemonSearch(
         rerank: payload.rerank === true,
         explain: payload.explain === true,
         diagnostics: payload.diagnostics === true,
+        maxPerFile,
         seeds: payload.seeds,
       },
       payload.filters,

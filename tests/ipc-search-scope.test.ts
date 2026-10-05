@@ -32,6 +32,46 @@ const daemon = {
 
 describe("daemon search IPC scoping", () => {
   beforeEach(() => search.mockClear());
+  it.each(["search", "search-v2"])(
+    "forwards request-scoped limits over %s",
+    async (cmd) => {
+      const response = await handleCommand(
+        daemon,
+        {
+          cmd,
+          projectRoot: "/work/api",
+          query: "auth",
+          maxPerFile: 6,
+          ...(cmd === "search-v2"
+            ? { filters: { projectRoots: ["/work/api", "/work/web"] } }
+            : {}),
+        },
+        new FakeSocket() as never,
+      );
+      expect(response?.ok).toBe(true);
+      expect(search.mock.calls[0][0]).toMatchObject({ maxPerFile: 6 });
+    },
+  );
+  it.each([0, -1, 1.5, "6", null, Number.MAX_SAFE_INTEGER + 1])(
+    "rejects invalid per-file wire input %s",
+    async (maxPerFile) => {
+      const response = await handleCommand(
+        daemon,
+        {
+          cmd: "search",
+          projectRoot: "/work/api",
+          query: "auth",
+          maxPerFile,
+        },
+        new FakeSocket() as never,
+      );
+      expect(response).toMatchObject({
+        ok: false,
+        error: "invalid maxPerFile",
+      });
+      expect(search).not.toHaveBeenCalled();
+    },
+  );
 
   it("accepts search-v2 only with explicit eligible roots", async () => {
     const response = await handleCommand(
@@ -129,6 +169,9 @@ describe("daemon search IPC scoping", () => {
       { cmd: "ping" },
       new FakeSocket() as never,
     );
-    expect(response?.capabilities).toMatchObject({ searchDiagnostics: 1 });
+    expect(response?.capabilities).toMatchObject({
+      searchDiagnostics: 1,
+      perFileSearch: 1,
+    });
   });
 });

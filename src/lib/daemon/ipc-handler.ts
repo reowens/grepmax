@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import type * as net from "node:net";
 import * as path from "node:path";
 import { WORKER_THREADS_SETTING } from "../../config";
+import { validateMaxPerFile } from "../search/per-file";
 import type { SearchFilter } from "../store/types";
 import type { DaemonResponse } from "../utils/daemon-client";
 import { debug } from "../utils/logger";
@@ -136,6 +137,7 @@ export async function handleCommand(
             exclusiveGenerationRebuild: EXCLUSIVE_GENERATION_REBUILD_PROTOCOL,
             readVerbs: READ_VERBS_PROTOCOL,
             searchDiagnostics: 1,
+            perFileSearch: 1,
             // `watch`/`unwatch` accept holder/pid/ttlMs. A daemon without this
             // treats `unwatch` as unwatch-for-everyone, so clients releasing a
             // single lease must check it first.
@@ -222,6 +224,12 @@ export async function handleCommand(
         conn.on("close", onClose);
         try {
           const limitRaw = typeof cmd.limit === "number" ? cmd.limit : 10;
+          let maxPerFile: number | undefined;
+          try {
+            maxPerFile = validateMaxPerFile(cmd.maxPerFile);
+          } catch {
+            return { ok: false, error: "invalid maxPerFile" };
+          }
           if (!Number.isInteger(limitRaw) || limitRaw < 1 || limitRaw > 1000) {
             return { ok: false, error: "invalid limit" };
           }
@@ -300,6 +308,7 @@ export async function handleCommand(
               projectRoot,
               query,
               limit: limitRaw,
+              maxPerFile,
               filters,
               pathPrefix,
               rerank: cmd.rerank === true,

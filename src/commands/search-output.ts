@@ -10,6 +10,7 @@ import {
   formatIndexStateFooter,
   type IndexState,
 } from "../lib/output/index-state-footer";
+import { parseCliPerFile } from "../lib/search/per-file";
 import type {
   ChunkType,
   FileMetadata,
@@ -56,14 +57,24 @@ export async function executeServerSearch(params: {
     options,
     minScore,
   } = params;
+  const maxPerFile = parseCliPerFile(options.perFile);
 
   try {
+    if (maxPerFile !== undefined) {
+      const health = await fetch(`http://127.0.0.1:${server.port}/health`);
+      if (!health.ok) return false;
+      const info = (await health.json()) as {
+        capabilities?: { perFileSearch?: number };
+      };
+      if (info.capabilities?.perFileSearch !== 1) return false;
+    }
     const response = await fetch(`http://127.0.0.1:${server.port}/search`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         query: pattern,
         limit: parseInt(options.m, 10),
+        maxPerFile,
         path: exec_path
           ? path.relative(projectRootForServer, path.resolve(exec_path))
           : undefined,
@@ -172,7 +183,7 @@ export async function executeServerSearch(params: {
             isPlain: true,
             compact: options.compact,
             content: options.content,
-            perFile: parseInt(options.perFile, 10),
+            perFile: parseInt(options.perFile ?? "3", 10),
             showScores: options.scores,
           },
         );
@@ -346,7 +357,7 @@ export async function renderSearchOutput(
           isPlain: true,
           compact: options.compact,
           content: options.content,
-          perFile: parseInt(options.perFile, 10),
+          perFile: parseInt(options.perFile ?? "3", 10),
           showScores: options.scores,
         });
       } else {
@@ -561,7 +572,7 @@ export async function renderSearchOutput(
       isPlain: true,
       compact: options.compact,
       content: options.content,
-      perFile: parseInt(options.perFile, 10),
+      perFile: parseInt(options.perFile ?? "3", 10),
       showScores: options.scores,
     });
     console.log(output);

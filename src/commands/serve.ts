@@ -4,6 +4,7 @@ import * as http from "node:http";
 import * as path from "node:path";
 import { Command } from "commander";
 import { PATHS } from "../config";
+import { validateMaxPerFile } from "../lib/search/per-file";
 import type { SearchFilter } from "../lib/store/types";
 import {
   BLOCKED_ROOTS_DESCRIPTION,
@@ -15,6 +16,7 @@ import {
   sendDaemonCommand,
   sendStreamingCommand,
 } from "../lib/utils/daemon-client";
+import { sendSearchCommand } from "../lib/utils/daemon-search";
 import { gracefulExit } from "../lib/utils/exit";
 import { openRotatedLog } from "../lib/utils/log-rotate";
 import {
@@ -49,6 +51,7 @@ export interface ServeHttpDeps {
     input: {
       query: string;
       limit: number;
+      maxPerFile?: number;
       pathPrefix?: string;
       filters?: SearchFilter;
     },
@@ -190,7 +193,7 @@ export function createServeHttpServer(
     deps.onActivity?.();
 
     if (req.method === "GET" && req.url === "/health") {
-      writeJson(res, 200, { status: "ok" });
+      writeJson(res, 200, { status: "ok", capabilities: { perFileSearch: 1 } });
       return;
     }
 
@@ -220,6 +223,12 @@ export function createServeHttpServer(
         const body = await readJsonBody(req);
         const query = typeof body.query === "string" ? body.query.trim() : "";
         if (!query) throw new HttpRequestError(400, "invalid_query");
+        let maxPerFile: number | undefined;
+        try {
+          maxPerFile = validateMaxPerFile(body.maxPerFile);
+        } catch {
+          throw new HttpRequestError(400, "invalid_maxPerFile");
+        }
 
         const limit = body.limit === undefined ? 10 : body.limit;
         if (
@@ -265,6 +274,7 @@ export function createServeHttpServer(
           {
             query,
             limit,
+            ...(maxPerFile === undefined ? {} : { maxPerFile }),
             pathPrefix: scope.pathPrefix,
             filters: Object.keys(filters).length ? filters : undefined,
           },
@@ -477,12 +487,13 @@ export const serve = new Command("serve")
           lastActivity = Date.now();
         },
         search: (input, signal) =>
-          sendDaemonCommand(
+          sendSearchCommand(
             {
               cmd: "search",
               projectRoot,
               query: input.query,
               limit: input.limit,
+              maxPerFile: input.maxPerFile,
               pathPrefix: input.pathPrefix,
               filters: input.filters,
               rerank: true,

@@ -205,6 +205,8 @@ gmax "query" [options]
 | `--exclude-projects <list>` | With `--all-projects`, skip these projects. | — |
 | `--min-score <n>` | Minimum score relative to this query’s top match, not an absolute confidence threshold. | `0` |
 
+The source fix after v0.26.49 carries an explicit `--per-file` value into retrieval as well as formatting. Values must be positive safe integers. Omitted requests retain the searcher's configured `GMAX_MAX_PER_FILE` cap or three; larger explicit values still respect `-m` and the existing candidate/rerank bounds. Explicit overrides require a daemon advertising `capabilities.perFileSearch: 1`; older live daemons are refused with an update/restart hint, without opening a fallback reader. An incompatible optional local HTTP fast path is skipped. The installed v0.26.49 release does not yet support this retrieval override.
+
 ## Experimental Orientation
 
 `gmax surprises --experimental` finds file pairs that are semantically similar but not already connected by the indexed static graph. Use it for architecture orientation, duplicate-logic sweeps, and cross-package drift checks, not as proof that two files are unrelated.

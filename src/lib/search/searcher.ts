@@ -20,6 +20,7 @@ import { getWorkerPool } from "../workers/pool";
 import { SearchDiagnosticCollector } from "./diagnostics";
 import { detectIntent, type SearchIntent } from "./intent";
 import { loadOrComputePageRank, pageRankBoostForSymbols } from "./pagerank";
+import { validateMaxPerFile } from "./per-file";
 import {
   buildSeedContext,
   matchesSeedFile,
@@ -458,6 +459,7 @@ export class Searcher {
       rerank?: boolean;
       explain?: boolean;
       diagnostics?: boolean;
+      maxPerFile?: number;
       /**
        * Aider-style seeding (Phase 4): bias candidate generation toward the
        * agent's working context. `files` = paths the agent has open (chat
@@ -472,6 +474,7 @@ export class Searcher {
     intent?: SearchIntent,
     signal?: AbortSignal,
   ): Promise<SearchResponse> {
+    const requestedMaxPerFile = validateMaxPerFile(_search_options?.maxPerFile);
     const finalLimit = top_k ?? 10;
     // ColBERT rerank is opt-in as of v0.17.1. On the 97-case eval it
     // regresses MRR@10 by ~3% and doubles query latency; sweep across
@@ -892,7 +895,8 @@ export class Searcher {
       10,
     );
     const MAX_PER_FILE =
-      Number.isFinite(envMaxPerFile) && envMaxPerFile > 0 ? envMaxPerFile : 3;
+      requestedMaxPerFile ??
+      (Number.isFinite(envMaxPerFile) && envMaxPerFile > 0 ? envMaxPerFile : 3);
 
     // Rank the entire bounded candidate pool before trimming the result count.
     // A limit-dependent cut here discarded contenders before structure boosts

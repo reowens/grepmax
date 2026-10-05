@@ -45,6 +45,7 @@ describe("daemon search diagnostics", () => {
           query: "find request handler",
           limit: 10,
           diagnostics: requested,
+          maxPerFile: 6,
         },
         new AbortController().signal,
       );
@@ -52,7 +53,7 @@ describe("daemon search diagnostics", () => {
       expect(search).toHaveBeenCalledWith(
         "find request handler",
         10,
-        expect.objectContaining({ diagnostics: requested }),
+        expect.objectContaining({ diagnostics: requested, maxPerFile: 6 }),
         undefined,
         undefined,
         undefined,

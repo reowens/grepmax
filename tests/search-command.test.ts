@@ -144,9 +144,12 @@ vi.mock("../src/lib/utils/daemon-client", () => ({
 import { search } from "../src/commands/search";
 import { CONFIG } from "../src/config";
 import { initialSync } from "../src/lib/index/syncer";
+import { sendDaemonCommand } from "../src/lib/utils/daemon-client";
 import { stampProjectFullSync } from "../src/lib/utils/project-registry";
 import { findProjectRoot } from "../src/lib/utils/project-root";
 import { launchWatcher } from "../src/lib/utils/watcher-launcher";
+
+beforeEach(() => search.setOptionValue("perFile", undefined));
 
 describe("search command", () => {
   beforeEach(() => {
@@ -178,6 +181,58 @@ describe("search command", () => {
       expect.stringMatching(/\/$/), // absolute path prefix ending with /
     );
     expect(spinner.succeed).toHaveBeenCalled();
+  });
+  it("passes an explicit per-file override to the unavailable-daemon fallback", async () => {
+    await search.parseAsync(["query", "--per-file", "6"], { from: "user" });
+    expect(mockSearcher.search).toHaveBeenCalledWith(
+      "query",
+      expect.any(Number),
+      expect.objectContaining({ maxPerFile: 6 }),
+      undefined,
+      expect.any(String),
+    );
+  });
+  it("passes an explicit override through a compatible daemon", async () => {
+    vi.mocked(sendDaemonCommand)
+      .mockResolvedValueOnce({ ok: true, capabilities: { perFileSearch: 1 } })
+      .mockResolvedValueOnce({ ok: true, data: [] });
+    await search.parseAsync(["query", "--per-file", "6"], { from: "user" });
+    expect(sendDaemonCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ cmd: "search", maxPerFile: 6 }),
+      expect.any(Object),
+    );
+    expect(mockSearcher.search).not.toHaveBeenCalled();
+  });
+  it("does not open a fallback reader for an incompatible live daemon", async () => {
+    vi.mocked(sendDaemonCommand).mockResolvedValueOnce({
+      ok: true,
+      capabilities: {},
+    });
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await search.parseAsync(["query", "--per-file", "6"], { from: "user" });
+      expect(mockSearcher.search).not.toHaveBeenCalled();
+      expect(initialSync).not.toHaveBeenCalled();
+      expect(error.mock.calls.flat().join(" ")).toContain("restart");
+    } finally {
+      error.mockRestore();
+      process.exitCode = undefined;
+    }
+  });
+  it("rejects malformed per-file values before any search or sync", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await search.parseAsync(["query", "--per-file", "6junk"], {
+        from: "user",
+      });
+      expect(sendDaemonCommand).not.toHaveBeenCalled();
+      expect(mockSearcher.search).not.toHaveBeenCalled();
+      expect(initialSync).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+    } finally {
+      error.mockRestore();
+      process.exitCode = undefined;
+    }
   });
 });
 

@@ -9,6 +9,7 @@ import {
 } from "../lib/index/sync-helpers";
 import { initialSync } from "../lib/index/syncer";
 import type { IndexState } from "../lib/output/index-state-footer";
+import { parseCliPerFile } from "../lib/search/per-file";
 import { Searcher } from "../lib/search/searcher";
 import type { SearchFilter, SearchResponse } from "../lib/store/types";
 import { VectorDB } from "../lib/store/vector-db";
@@ -35,7 +36,7 @@ export const shouldFallbackFromDaemonError = classifiedFallback;
 export interface SearchOptions {
   m: string;
   content: boolean;
-  perFile: string;
+  perFile?: string;
   scores: boolean;
   minScore: string;
   compact: boolean;
@@ -110,6 +111,7 @@ export async function runSearch(
     pathFilter,
     seeds,
   } = params;
+  const maxPerFile = parseCliPerFile(options.perFile);
 
   // Tracks a DB opened by the in-process path so it can be (a) returned to the
   // caller for closing after render, or (b) closed here if indexing throws.
@@ -134,16 +136,17 @@ export async function runSearch(
     let indexState: IndexState | undefined;
     if (!options.sync && !options.dryRun) {
       try {
-        const { sendDaemonCommand } = await import(
-          "../lib/utils/daemon-client"
+        const { sendSearchCommand } = await import(
+          "../lib/utils/daemon-search"
         );
         const crossProject = Array.isArray(searchFilters.projectRoots);
-        const resp = await sendDaemonCommand(
+        const resp = await sendSearchCommand(
           {
             cmd: crossProject ? "search-v2" : "search",
             projectRoot: effectiveRoot,
             query: pattern,
             limit: parseInt(options.m, 10),
+            maxPerFile,
             filters:
               Object.keys(searchFilters).length > 0 ? searchFilters : undefined,
             pathPrefix: pathFilter,
@@ -332,6 +335,7 @@ export async function runSearch(
         parseInt(options.m, 10),
         {
           rerank: process.env.GMAX_RERANK === "1",
+          maxPerFile,
           explain: options.explain,
           seeds,
         },

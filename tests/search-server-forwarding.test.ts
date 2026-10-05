@@ -13,6 +13,42 @@ afterEach(() => {
 });
 
 describe("search HTTP fast path", () => {
+  it.each([true, false])(
+    "only submits explicit overrides to compatible HTTP servers (%s)",
+    async (compatible) => {
+      const fetchMock = vi.fn(
+        async (_url: unknown, _init?: RequestInit) =>
+          ({
+            ok: true,
+            json: async () =>
+              _init
+                ? { results: [] }
+                : { capabilities: compatible ? { perFileSearch: 1 } : {} },
+          }) as Response,
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      try {
+        const handled = await executeServerSearch({
+          server: { port: 4444 },
+          pattern: "handler",
+          exec_path: undefined,
+          projectRootForServer: "/repo",
+          options: { m: "20", perFile: "6" } as SearchOptions,
+          minScore: 0,
+        });
+        expect(handled).toBe(compatible);
+        expect(fetchMock).toHaveBeenCalledTimes(compatible ? 2 : 1);
+        if (compatible)
+          expect(
+            JSON.parse(String(fetchMock.mock.calls[1][1]?.body)),
+          ).toMatchObject({ maxPerFile: 6 });
+      } finally {
+        log.mockRestore();
+        process.exitCode = undefined;
+      }
+    },
+  );
   it("forwards every supported search scope and filter", async () => {
     const fetchMock = vi.fn(
       async (_input: string | URL | Request, _init?: RequestInit) =>
