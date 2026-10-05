@@ -2,7 +2,7 @@
 type: plan
 status: partial
 created: 2026-05-25
-updated: 2026-10-05T02:45:51Z
+updated: 2026-10-05T02:53:16Z
 surfaces:
   - search
   - graph
@@ -36,7 +36,7 @@ Core reliability, graph extraction and agent navigation work shipped. The remain
 
 v0.26.48 fixes short-result candidate selection before structural scoring. Two regressions and six installed queries at limits 1/3/10 verify stable result prefixes, but do not establish general relevance. Some natural-language queries still favor daemon restart or experiment/test code over the intended production implementation. Collect held-out, multi-repository misses before tuning weights or opening a successor experiment.
 
-No active build target remains here. The reopen gates below still apply. The existing MRR accounting prerequisite is confirmed in both retrieval harnesses: they request 20 results and credit ranks 11–20 in the field labelled `mrrAt10`. Fix or accurately rename that metric before using it for an acceptance gate.
+No active build target remains here. The reopen gates below still apply. The MRR accounting prerequisite was subsequently resolved in source: both harnesses retain twenty-result retrieval but give MRR@10 credit only within the top ten, with synthetic cutoff regressions. Historical MRR figures may include ranks 11–20; rescore or rerun a frozen baseline before using them for an acceptance gate.
 
 ## Historical chunker-v3 rollout — June 2026
 
@@ -59,7 +59,7 @@ Current `CONFIG.CHUNKER_VERSION` is 4. At the October 4 installed doctor check, 
 
 Before opening any successor plan:
 
-1. Fix MRR@10 accounting so ranks 11-20 do not receive reciprocal-rank credit.
+1. **Resolved in source, October 4:** MRR@10 excludes ranks 11–20 in both harnesses. Preserve the cutoff regressions and rerun or rescore historical baselines before comparison.
 2. Add shared pipeline diagnostics rather than copying a partial retrieval path into another probe.
 3. Record commit, chunker/index generation, embedding identity, FTS health, scope, ranking env,
    and actual concentration/rerank gate firing in stable JSON.

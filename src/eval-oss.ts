@@ -300,7 +300,7 @@ interface OssResult {
   expectedFile: string;
   expectedLine: number;
   rank: number; // 0 = miss; 1 = first hit
-  rr: number; // reciprocal rank (1/rank, 0 if missed)
+  rr: number; // reciprocal rank at ten (0 if missed or outside the top ten)
   recall10: number; // 1 if rank ≤ 10
   timeMs: number;
   note?: string;
@@ -348,7 +348,7 @@ function chunkMatches(
   return expectedLine - 1 >= start && expectedLine - 1 <= end;
 }
 
-function evaluateOss(
+export function evaluateOss(
   response: SearchResponse,
   c: OssCase,
   timeMs: number,
@@ -359,8 +359,8 @@ function evaluateOss(
     chunkMatches(chunk, c.expectedFile, c.expectedLine, c.query),
   );
   const rank = idx + 1; // 0 = miss
-  const rr = rank > 0 ? 1 / rank : 0;
   const recall10 = rank > 0 && rank <= 10 ? 1 : 0;
+  const rr = recall10 ? 1 / rank : 0;
   return {
     id: c.id,
     query: c.query,

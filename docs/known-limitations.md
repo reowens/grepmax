@@ -2,7 +2,7 @@
 type: doc
 status: reference
 created: 2026-04-09
-updated: 2026-10-05T02:45:51Z
+updated: 2026-10-05T02:53:16Z
 summary: Live catalog of open gmax limitations with detection + recovery steps.
 audience: internal
 related_plans:
@@ -31,11 +31,13 @@ v0.26.48 fixes a result-window bug: requesting one or three matches used to disc
 
 This does not make every top match relevant. For example, a natural-language query about cancelled MCP requests still ranked daemon restart code first, and some search-pipeline queries ranked experiment/test scripts ahead of production code. Validate discovery results with extract/peek and record real misses across repos before changing weights, embeddings or retrieval mechanisms. Approximate vector search remains disabled by default after its earlier recall acceptance failure; an absent ANN index in doctor is expected.
 
-## Retrieval evaluation labels overstate the MRR cutoff
+## Historical retrieval MRR figures used a wider cutoff
 
-As reviewed October 4, both `src/eval.ts` and `src/eval-oss.ts` request 20 results and credit reciprocal rank beyond ten while naming the aggregate `mrrAt10`. Recall@10 is independently capped at ten. Historical tables below preserve their originally reported figures; their MRR columns must not be treated as independently verified MRR@10 acceptance evidence.
+Resolved in source after v0.26.48 on October 4. Both `src/eval.ts` and `src/eval-oss.ts` still request 20 results for diagnostics, but per-case `rr` and the aggregate `mrrAt10` now credit only ranks 1–10. Late matches keep their actual ranks and found/hit counts; Recall@10 and matching rules are unchanged. Twenty-one synthetic tests cover ranks 1, 10, 11, 20, missing/empty responses, duplicate matches, internal avoid paths and OSS definition/line matching. Six cutoff/aggregate regressions failed before the fix.
 
-Correct or rename the MRR accounting before using it for a successor search-quality gate. For a true rerank-off baseline, also set `GMAX_CONCENTRATION_THRESHOLD=2`: disabling explicit rerank does not prevent concentration-triggered ColBERT. Record fixtures, source, embedding/index identity, scope and ranking configuration with new measurements.
+Historical tables below preserve their originally reported figures, which may include reciprocal-rank credit beyond ten. They are not corrected MRR@10 acceptance evidence; rerun or rescore original per-query results before comparing with the corrected harness.
+
+For a true rerank-off baseline, set `GMAX_CONCENTRATION_THRESHOLD=2`: disabling explicit rerank does not prevent concentration-triggered ColBERT. Record fixtures, source, embedding/index identity, scope and ranking configuration with new measurements.
 
 ## MCP cancellation has native-operation boundaries
 

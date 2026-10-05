@@ -15,6 +15,8 @@ export type EvalCase = {
 };
 
 export type EvalResult = {
+  rank: number; // 1-based expected-path position; 0 if absent
+  // Reciprocal rank at ten; rejected matches or hits outside the top ten are zero.
   rr: number;
   found: boolean;
   recall: number;
@@ -568,10 +570,11 @@ export function evaluateCase(
   const hitAvoid =
     evalCase.avoidPath && avoidRank >= 0 && (rank === -1 || avoidRank < rank);
   const found = rank >= 0 && !hitAvoid;
-  const rr = found ? 1 / (rank + 1) : 0;
   const recall = found && rank < 10 ? 1 : 0;
+  const rr = recall ? 1 / (rank + 1) : 0;
 
   return {
+    rank: rank + 1,
     rr,
     found,
     recall,
@@ -680,7 +683,7 @@ async function run() {
     console.log(`Eval results for store at: ${paths.lancedbDir}`);
     console.log("=".repeat(80));
     results.forEach((r) => {
-      const status = r.found ? `rank ${(1 / r.rr).toFixed(0)}` : "❌ missed";
+      const status = r.found ? `rank ${r.rank}` : "❌ missed";
       const emoji = r.found ? (r.rr === 1 ? "🎯" : "✓") : "❌";
       console.log(`${emoji} ${r.query}`);
       console.log(
@@ -691,7 +694,7 @@ async function run() {
       }
     });
     console.log("=".repeat(80));
-    console.log(`MRR: ${mrr.toFixed(3)}`);
+    console.log(`MRR@10: ${mrr.toFixed(3)}`);
     console.log(`Recall@10: ${recallAt10.toFixed(3)}`);
     console.log(`Avg query time: ${avgTime.toFixed(0)}ms`);
     console.log(`Total time: ${totalTime.toFixed(0)}ms`);
