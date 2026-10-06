@@ -17,7 +17,14 @@ import { generateSummaries, initialSync } from "../index/syncer";
 import { LlmServer } from "../llm/server";
 import type { IndexState } from "../output/index-state-footer";
 import type { Searcher } from "../search/searcher";
-import type { CompactionResult } from "../store/compaction-result";
+import {
+  type CompactionResult,
+  skippedCompaction,
+} from "../store/compaction-result";
+import {
+  FULL_TABLE_MAINTENANCE_DISABLED_REASON,
+  fullTableMaintenanceDisabled,
+} from "../store/maintenance-policy";
 import { MetaCache } from "../store/meta-cache";
 import { type StoreLease, StoreLeaseTimeoutError } from "../store/store-lease";
 import { VectorDB } from "../store/vector-db";
@@ -28,7 +35,12 @@ import {
   writeDrainingMarker,
 } from "../utils/daemon-client";
 import { spawnDaemon } from "../utils/daemon-launcher";
-import { formatZoneUsage, readKernelZoneUsage } from "../utils/kernel-zone";
+import {
+  formatPressureProbe,
+  formatZoneUsage,
+  probeKernelZoneUsage,
+  probeMemoryPressure,
+} from "../utils/kernel-zone";
 import { KeyedMutex } from "../utils/keyed-mutex";
 import { rotateLogFds } from "../utils/log-rotate";
 import { debug as dbg, log as dlog } from "../utils/logger";
@@ -77,7 +89,7 @@ import {
 } from "./ipc-handler";
 import { MlxServerManager } from "./mlx-server-manager";
 import { ProcessManager } from "./process-manager";
-import { getReadVerb, registerGraphVerbs } from "./read-verbs";
+import { getReadVerb, isHeavyReadVerb, registerGraphVerbs } from "./read-verbs";
 import { registerRowsVerbs, type StoreReadDeps } from "./rows-handler";
 import {
   type DaemonSearchPayload,
@@ -189,6 +201,8 @@ export class Daemon {
   });
   private readonly mlxServerManager = new MlxServerManager({
     getShuttingDown: () => this.shuttingDown,
+    assertExpansionAdmission: () =>
+      this.assertHeavyOperationAdmission("mlx-start"),
   });
   private readonly watcherManager = new WatcherManager({
     processors: this.processors,
@@ -287,14 +301,10 @@ export class Daemon {
     if (denied !== null)
       throw new Error(`gmax: ${denied}; preserving containment`);
     // Check before stale-process cleanup, store opening, workers or model setup.
-    if (process.platform === "darwin") {
-      const usage = readKernelZoneUsage();
-      if (!usage)
-        throw new Error("gmax: kernel pressure unavailable; startup refused");
-      if (usage.pressure !== "ok") {
-        latchSafetyStop(formatZoneUsage(usage));
-        throw new Error(`gmax: ${formatZoneUsage(usage)}; startup safety stop`);
-      }
+    const pressure = this.hostPressureDeniedReason();
+    if (pressure !== null) {
+      if (pressure.measured) latchSafetyStop(pressure.reason);
+      throw new Error(`gmax: ${pressure.reason}; startup safety stop`);
     }
     process.title = "gmax-daemon";
 
@@ -467,7 +477,7 @@ export class Daemon {
     const isAppleSilicon =
       process.arch === "arm64" && process.platform === "darwin";
     if (isAppleSilicon && globalConfig.embedMode === "gpu") {
-      await this.mlxServerManager.ensureMlxServer(globalConfig.mlxModel);
+      await this.ensureAdmittedMlxServer(globalConfig.mlxModel);
       this.assertStartupActive();
     }
     this.publishResourceGeneration(
@@ -581,6 +591,14 @@ export class Daemon {
     console.log(
       `[daemon] Started (PID: ${process.pid}, ${this.processors.size} projects)`,
     );
+
+    this.scheduleSearchWarmup();
+  }
+
+  private scheduleSearchWarmup(): void {
+    // Speculative encodes can spawn/load models even though existing FTS
+    // adoption is read-only. Containment schedules neither work nor admission.
+    if (fullTableMaintenanceDisabled()) return;
 
     // Pre-warm the search hot path so the first user-facing search doesn't
     // pay daemon-side cold costs:
@@ -729,12 +747,22 @@ export class Daemon {
     fn: (signal: AbortSignal) => Promise<T>,
   ): Promise<T> {
     const readOnly =
-      getReadVerb(name) !== undefined ||
-      ["search", "project-stats", "unwatch", "llm-stop"].includes(name);
+      (getReadVerb(name) !== undefined && !isHeavyReadVerb(name)) ||
+      ["project-stats", "unwatch", "llm-stop"].includes(name);
     return this.operations.runShared(name, signal, async (operationSignal) => {
+      if (name === "store-maintenance" && fullTableMaintenanceDisabled()) {
+        // Retain coordinator close/exclusive checks, but never admit a disabled
+        // callback as heavy work or probe the kernel for a known no-op.
+        return skippedCompaction(FULL_TABLE_MAINTENANCE_DISABLED_REASON) as T;
+      }
       if (!readOnly) this.assertHeavyOperationAdmission(name);
       return fn(operationSignal);
     });
+  }
+
+  private async ensureAdmittedMlxServer(model?: string): Promise<void> {
+    this.assertHeavyOperationAdmission("mlx-start");
+    await this.mlxServerManager.ensureMlxServer(model);
   }
 
   private assertHeavyOperationAdmission(name: string): void {
@@ -744,6 +772,10 @@ export class Daemon {
     if (!this.checkKernelZonePressure()) {
       throw new Error(`${name} refused: host pressure is unsafe or unknown`);
     }
+    // Another process can quarantine the machine while the probes run.
+    const finalDenied = daemonStartDeniedReason();
+    if (finalDenied !== null)
+      throw new Error(`${name} refused: ${finalDenied}`);
   }
 
   /**
@@ -1694,9 +1726,7 @@ export class Daemon {
             }
 
             if (targetConfig.embedMode === "gpu") {
-              await this.mlxServerManager.ensureMlxServer(
-                targetGeneration.mlxModel,
-              );
+              await this.ensureAdmittedMlxServer(targetGeneration.mlxModel);
             }
             const targetMlx = this.mlxMode(targetConfig);
             targetPool = this.createWorkerPool(
@@ -1839,7 +1869,7 @@ export class Daemon {
                     oldResources.config.embedMode === "gpu" &&
                     oldResources.mlx === "owned"
                   ) {
-                    await this.mlxServerManager.ensureMlxServer(
+                    await this.ensureAdmittedMlxServer(
                       oldResources.embedding.mlxModel,
                     );
                   }
@@ -2191,7 +2221,12 @@ export class Daemon {
     if (!this.checkKernelZonePressure()) return;
     this.maybeRecycle(sampleFootprint);
     if (this.shuttingDown || this.recycling || !sampleFootprint) return;
-    void this.mlxServerManager.checkMlxHealth();
+    void this.mlxServerManager.checkMlxHealth().catch((error) => {
+      console.error(
+        "[daemon] MLX health/restart refused:",
+        error instanceof Error ? error.message : "unknown failure",
+      );
+    });
     this.processManager.sweepOrphanWorkers();
   }
 
@@ -2321,15 +2356,58 @@ export class Daemon {
       this.stopForSafety(denied, false);
       return false;
     }
-    if (process.platform !== "darwin") return true;
-    const usage = readKernelZoneUsage();
-    if (usage?.pressure === "ok") return true;
-
-    const reason = usage
-      ? `${usage.pressure} kernel pressure: ${formatZoneUsage(usage)}`
-      : "kernel pressure unavailable; heavy work cannot be admitted";
-    this.stopForSafety(reason);
+    const pressure = this.hostPressureDeniedReason();
+    if (pressure === null) return true;
+    this.stopForSafety(pressure.reason);
     return false;
+  }
+
+  /** Both measurements must be known and normal before any resource expansion. */
+  private hostPressureDeniedReason(): {
+    reason: string;
+    measured: boolean;
+  } | null {
+    if (process.platform !== "darwin") return null;
+    // This inexpensive probe rejects OS warning before a worker/model starts,
+    // or before paying the bounded but relatively slow kernel-zone probe cost.
+    const memory = probeMemoryPressure();
+    if (memory.status !== "known") {
+      return {
+        reason: `OS memory pressure unavailable (${formatPressureProbe(memory)})`,
+        measured: false,
+      };
+    }
+    if (memory.pressure !== "normal") {
+      return {
+        reason: `${memory.pressure} OS memory pressure (${formatPressureProbe(memory)})`,
+        measured: true,
+      };
+    }
+    const kernel = probeKernelZoneUsage();
+    if (kernel.status !== "known") {
+      return {
+        reason: `kernel pressure unavailable (${formatPressureProbe(kernel)}); heavy work cannot be admitted`,
+        measured: false,
+      };
+    }
+    if (kernel.usage.pressure === "ok") {
+      // Kernel sampling can take seconds; use a new inexpensive OS observation
+      // at the actual admission boundary, rather than trusting its first sample.
+      const freshMemory = probeMemoryPressure();
+      if (freshMemory.status === "known" && freshMemory.pressure === "normal")
+        return null;
+      return {
+        reason:
+          freshMemory.status === "known"
+            ? `${freshMemory.pressure} OS memory pressure (${formatPressureProbe(freshMemory)})`
+            : `OS memory pressure unavailable (${formatPressureProbe(freshMemory)})`,
+        measured: freshMemory.status === "known",
+      };
+    }
+    return {
+      reason: `${kernel.usage.pressure} kernel pressure: ${formatZoneUsage(kernel.usage)} (${formatPressureProbe(kernel)})`,
+      measured: true,
+    };
   }
 
   private stopForSafety(reason: string, persist = true): void {

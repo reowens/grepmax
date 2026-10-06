@@ -11,7 +11,14 @@ import {
   resolveEmbeddingGeneration,
 } from "../index/embedding-generation";
 import { readGlobalConfig } from "../index/index-config";
+import { daemonStartDeniedReason } from "../utils/autostart";
+import {
+  formatPressureProbe,
+  probeKernelZoneUsage,
+  probeMemoryPressure,
+} from "../utils/kernel-zone";
 import { debug, log } from "../utils/logger";
+import { latchSafetyStop } from "../utils/safety-latch";
 import type { ProcessFileInput, ProcessFileResult, RerankDoc } from "./worker";
 
 type TaskMethod = "processFile" | "encodeQuery" | "rerank";
@@ -251,6 +258,7 @@ export class WorkerPool {
   private readonly embeddingEnvironment: Record<string, string>;
   private consecutiveRespawns = 0;
   private respawnLimitReached = false;
+  private spawnDeniedReason: string | null = null;
   private static readonly MAX_RESPAWNS = 10;
   private idleReapInterval: ReturnType<typeof setInterval> | null = null;
   // Re-runs dispatch once the oldest unassigned task reaches SCALE_UP_WAIT_MS.
@@ -276,7 +284,7 @@ export class WorkerPool {
     this.embeddingEnvironment = Object.freeze(generatedEmbeddingEnv);
 
     // Lazy spawn: start with 1 worker, scale up on demand
-    this.spawnWorker();
+    if (!this.spawnWorker()) throw this.spawnDeniedError();
 
     // Periodically reap idle workers back to MIN_KEEP, and force-kill any
     // worker wedged in busy=true (the leak backstop — see STUCK_BUSY_MS).
@@ -288,7 +296,9 @@ export class WorkerPool {
   }
 
   isHealthy(): boolean {
-    return !this.destroyed && this.workers.length > 0;
+    return (
+      !this.destroyed && !this.spawnDeniedReason && this.workers.length > 0
+    );
   }
 
   /** PIDs of workers the pool currently tracks. Used by the daemon's orphan
@@ -335,16 +345,17 @@ export class WorkerPool {
     return hasUnassigned(this.priorityQueue) || hasUnassigned(this.taskQueue);
   }
 
-  private rejectUnassignedTasks(message: string): void {
+  private rejectUnassignedTasks(message: string, code?: string): void {
     for (const task of Array.from(this.tasks.values())) {
       if (task.worker) continue;
-      task.reject(new Error(message));
+      task.reject(Object.assign(new Error(message), code ? { code } : {}));
       this.completeTask(task, null);
     }
   }
 
   private maybeRespawn(reason: string, hasPendingTasks: boolean): boolean {
-    if (this.destroyed || this.respawnLimitReached) return false;
+    if (this.destroyed || this.spawnDeniedReason || this.respawnLimitReached)
+      return false;
     this.consecutiveRespawns++;
     log(
       "pool",
@@ -357,8 +368,7 @@ export class WorkerPool {
       if (this.workers.length === 0) this.rejectUnassignedTasks(message);
       return false;
     }
-    this.spawnWorker();
-    return true;
+    return this.spawnWorker();
   }
 
   private completeTask<M extends TaskMethod>(
@@ -433,13 +443,82 @@ export class WorkerPool {
     }
   }
 
-  private spawnWorker() {
-    const worker = new ProcessWorker(
-      this.modulePath,
-      this.execArgv,
-      this.embeddingEnvironment,
-      MAX_WORKER_MEMORY_MB,
+  private spawnDeniedError(): Error {
+    return Object.assign(
+      new Error(this.spawnDeniedReason ?? "Worker spawn denied"),
+      { code: "HOST_SAFETY" },
     );
+  }
+
+  private denySpawn(reason: string, persist = true): false {
+    // A pool cannot automatically recover after a failed admission. In
+    // particular, timer/exit callbacks must not retry forks or strand queues.
+    this.spawnDeniedReason = `Worker spawn denied: ${reason}`;
+    this.clearScaleUpTimer();
+    if (persist) {
+      try {
+        latchSafetyStop(this.spawnDeniedReason);
+      } catch {
+        try {
+          log(
+            "pool",
+            "worker admission denied; safety latch persistence failed",
+          );
+        } catch {}
+      }
+    }
+    this.rejectUnassignedTasks(this.spawnDeniedReason, "HOST_SAFETY");
+    try {
+      log("pool", this.spawnDeniedReason);
+    } catch {}
+    return false;
+  }
+
+  private spawnWorker(): boolean {
+    if (this.destroyed || this.spawnDeniedReason) return false;
+    let worker: ProcessWorker;
+    try {
+      const quarantine = daemonStartDeniedReason();
+      if (quarantine) return this.denySpawn(quarantine, false);
+      if (process.platform === "darwin") {
+        const memory = probeMemoryPressure();
+        if (memory.status !== "known" || memory.pressure !== "normal") {
+          return this.denySpawn(
+            `OS memory pressure ${memory.status === "known" ? memory.pressure : memory.status}; ${formatPressureProbe(memory)}`,
+          );
+        }
+        const kernel = probeKernelZoneUsage();
+        if (kernel.status !== "known" || kernel.usage.pressure !== "ok") {
+          return this.denySpawn(
+            `kernel pressure ${kernel.status === "known" ? kernel.usage.pressure : kernel.status}; ${formatPressureProbe(kernel)}`,
+          );
+        }
+      }
+      if (process.platform === "darwin") {
+        // Refresh the cheap OS sample after the potentially slow kernel probe.
+        const freshMemory = probeMemoryPressure();
+        if (
+          freshMemory.status !== "known" ||
+          freshMemory.pressure !== "normal"
+        ) {
+          return this.denySpawn(
+            `OS memory pressure ${freshMemory.status === "known" ? freshMemory.pressure : freshMemory.status}; ${formatPressureProbe(freshMemory)}`,
+          );
+        }
+      }
+      // Probes are synchronous but another process can quarantine the host
+      // while they run. Recheck the shared markers immediately before fork.
+      const finalQuarantine = daemonStartDeniedReason();
+      if (finalQuarantine) return this.denySpawn(finalQuarantine, false);
+      worker = new ProcessWorker(
+        this.modulePath,
+        this.execArgv,
+        this.embeddingEnvironment,
+        MAX_WORKER_MEMORY_MB,
+      );
+    } catch {
+      return this.denySpawn("host admission or fork failed");
+    }
     log(
       "pool",
       `spawn PID:${worker.child.pid} (${this.workers.length + 1}/${Math.max(1, CONFIG.WORKER_THREADS)})`,
@@ -517,6 +596,7 @@ export class WorkerPool {
     worker.child.on("exit", onExit);
     worker.child.on("error", onError);
     this.workers.push(worker);
+    return true;
   }
 
   private enqueue<M extends TaskMethod>(
@@ -527,6 +607,7 @@ export class WorkerPool {
     if (this.destroyed) {
       return Promise.reject(new Error("Worker pool destroyed"));
     }
+    if (this.spawnDeniedReason) return Promise.reject(this.spawnDeniedError());
     if (signal?.aborted) {
       const err = new Error("Aborted");
       err.name = "AbortError";
@@ -632,6 +713,10 @@ export class WorkerPool {
 
   private dispatch() {
     if (this.destroyed) return;
+    if (this.spawnDeniedReason) {
+      this.rejectUnassignedTasks(this.spawnDeniedReason, "HOST_SAFETY");
+      return;
+    }
     let idle = this.workers.find((w) => !w.busy);
     // Drain priority queue first so search tasks never wait behind an
     // indexing batch.
@@ -664,7 +749,7 @@ export class WorkerPool {
         this.armScaleUpTimer(waitMs);
         return;
       }
-      this.spawnWorker();
+      if (!this.spawnWorker()) return;
       idle = this.workers[this.workers.length - 1];
     }
 
@@ -885,7 +970,7 @@ export class WorkerPool {
     }
     // Replace anything we dropped below the floor with fresh, lean workers.
     while (!this.destroyed && this.workers.length < MIN_KEEP_WORKERS) {
-      this.spawnWorker();
+      if (!this.spawnWorker()) break;
     }
   }
 

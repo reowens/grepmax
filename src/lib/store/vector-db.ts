@@ -288,6 +288,12 @@ export class VectorDB {
   startMaintenanceLoop(
     runOperation?: (fn: () => Promise<void>) => Promise<void>,
   ): void {
+    if (fullTableMaintenanceDisabled()) {
+      this.recordSkippedCompaction(
+        recordMaintenanceContainment(this.lancedbDir),
+      );
+      return;
+    }
     if (runOperation) this.maintenanceRunner = runOperation;
     if (this.maintenanceTimer) return;
     this.maintenanceTimer = setInterval(() => {

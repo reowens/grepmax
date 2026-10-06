@@ -23,6 +23,7 @@ function makeHarness() {
   const closeFd = vi.fn();
   const terminateGroup = vi.fn(async () => true);
   const sleep = vi.fn(async () => {});
+  const assertExpansionAdmission = vi.fn();
   const manager = new MlxServerManager({
     getShuttingDown: () => false,
     probeHealth,
@@ -33,6 +34,7 @@ function makeHarness() {
     terminateGroup,
     sleep,
     createOwnerToken: () => "owner-token",
+    assertExpansionAdmission,
   });
   return {
     manager,
@@ -43,6 +45,7 @@ function makeHarness() {
     closeFd,
     terminateGroup,
     sleep,
+    assertExpansionAdmission,
   };
 }
 
@@ -64,6 +67,79 @@ describe("MlxServerManager", () => {
   });
 
   afterEach(() => vi.restoreAllMocks());
+
+  it("rejects expansion after awaited health without opening logs or forking", async () => {
+    const h = makeHarness();
+    let denied = false;
+    h.probeHealth.mockImplementationOnce(async () => {
+      await Promise.resolve();
+      denied = true;
+      return unavailable;
+    });
+    h.assertExpansionAdmission.mockImplementation(() => {
+      if (denied) throw new Error("quarantine enabled during health probe");
+    });
+
+    await expect(h.manager.ensureMlxServer("model-a")).rejects.toThrow(
+      "quarantine enabled",
+    );
+    expect(h.assertExpansionAdmission).toHaveBeenCalledOnce();
+    expect(h.openLog).not.toHaveBeenCalled();
+    expect(h.spawn).not.toHaveBeenCalled();
+    expect(h.manager.getStatus()).toMatchObject({
+      enabled: false,
+      state: "failed",
+      error: expect.stringContaining("quarantine enabled"),
+    });
+
+    // A heartbeat cannot turn a refusal into an automatic restart loop.
+    await h.manager.checkMlxHealth();
+    expect(h.probeHealth).toHaveBeenCalledOnce();
+    expect(h.assertExpansionAdmission).toHaveBeenCalledOnce();
+  });
+
+  it("rechecks expansion after terminating an unhealthy owned server", async () => {
+    const h = makeHarness();
+    h.spawn.mockReturnValue(makeChild(1234));
+    h.probeHealth
+      .mockResolvedValueOnce(unavailable)
+      .mockResolvedValueOnce(ownedReady);
+    await h.manager.ensureMlxServer("model-a");
+    expect(h.spawn).toHaveBeenCalledOnce();
+
+    h.probeHealth.mockResolvedValueOnce(unavailable);
+    h.terminateGroup.mockImplementationOnce(async () => {
+      await Promise.resolve();
+      h.assertExpansionAdmission.mockImplementation(() => {
+        throw new Error("pressure changed during termination");
+      });
+      return true;
+    });
+    await expect(h.manager.checkMlxHealth()).rejects.toThrow(
+      "pressure changed during termination",
+    );
+    expect(h.terminateGroup).toHaveBeenCalledExactlyOnceWith(1234);
+    expect(h.assertExpansionAdmission).toHaveBeenCalledTimes(2);
+    expect(h.openLog).toHaveBeenCalledOnce();
+    expect(h.spawn).toHaveBeenCalledOnce();
+    expect(h.manager.getStatus()).toMatchObject({
+      enabled: false,
+      state: "failed",
+      pid: null,
+    });
+  });
+
+  it("does not require expansion admission to adopt an existing matching server", async () => {
+    const h = makeHarness();
+    h.probeHealth.mockResolvedValue({ kind: "healthy", model: "model-a" });
+    h.assertExpansionAdmission.mockImplementation(() => {
+      throw new Error("expansion denied");
+    });
+    await h.manager.ensureMlxServer("model-a");
+    expect(h.assertExpansionAdmission).not.toHaveBeenCalled();
+    expect(h.spawn).not.toHaveBeenCalled();
+    expect(h.manager.getStatus().state).toBe("adopted-ready");
+  });
 
   it("coalesces concurrent ensures into one owned spawn", async () => {
     const h = makeHarness();

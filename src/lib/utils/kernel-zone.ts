@@ -60,6 +60,230 @@ export interface KernelZoneUsage {
   pressure: ZonePressure;
 }
 
+export type MemoryPressure = "normal" | "warn" | "critical";
+export type ProbeFailureReason =
+  | "timeout"
+  | "output-limit"
+  | "exit"
+  | "execution"
+  | "parse";
+
+export interface ProbeObservation {
+  /** Wall-clock observation start; duration uses a monotonic clock. */
+  sampledAtMs: number;
+  durationMs: number;
+  /** Captured stdout size only. Raw stdout/stderr/error messages are not exposed. */
+  outputBytes: number;
+}
+type ProbeUnavailable =
+  | { status: "unsupported"; reason: "unsupported-platform" }
+  | {
+      status: "unknown";
+      reason: ProbeFailureReason;
+      errorCode: string | null;
+      exitCode: number | null;
+      signal: string | null;
+    };
+export type KernelZoneProbeResult = ProbeObservation &
+  ({ status: "known"; usage: KernelZoneUsage } | ProbeUnavailable);
+export type MemoryPressureProbeResult = ProbeObservation &
+  ({ status: "known"; pressure: MemoryPressure } | ProbeUnavailable);
+
+/** Compact diagnostic metadata; never serializes raw probe output or errors. */
+export function formatPressureProbe(
+  result: KernelZoneProbeResult | MemoryPressureProbeResult,
+): string {
+  return JSON.stringify({
+    status: result.status,
+    sampledAtMs: result.sampledAtMs,
+    durationMs: result.durationMs,
+    outputBytes: result.outputBytes,
+    ...(result.status !== "known" ? { reason: result.reason } : {}),
+    ...(result.status === "unknown"
+      ? {
+          errorCode: result.errorCode,
+          exitCode: result.exitCode,
+          signal: result.signal,
+        }
+      : {}),
+  });
+}
+
+interface ProbeOptions {
+  encoding: "utf-8";
+  timeout: number;
+  maxBuffer: number;
+  stdio: ["ignore", "pipe", "ignore"];
+}
+/** Injection seam for bounded tests; production budgets cannot be overridden. */
+export interface PressureProbeDeps {
+  platform: string;
+  wallNow: () => number;
+  monotonicNow: () => number;
+  run: (command: string, args: string[], options: ProbeOptions) => string;
+}
+
+const PROBE_ERROR_CODES = new Set([
+  "ETIMEDOUT",
+  "ENOBUFS",
+  "ERR_CHILD_PROCESS_STDIO_MAXBUFFER",
+  "ENOENT",
+  "EACCES",
+  "EPERM",
+]);
+const PROBE_SIGNALS = new Set(["SIGTERM", "SIGKILL", "SIGABRT", "SIGSEGV"]);
+
+function stdoutBytes(output: unknown): number {
+  return typeof output === "string"
+    ? Buffer.byteLength(output)
+    : Buffer.isBuffer(output)
+      ? output.length
+      : 0;
+}
+
+function boundedPressureProbe<T>(
+  command: string,
+  args: string[],
+  timeout: number,
+  parse: (output: string) => T | null,
+  overrides: Partial<PressureProbeDeps>,
+): ProbeObservation & ({ status: "known"; value: T } | ProbeUnavailable) {
+  const deps: PressureProbeDeps = {
+    platform: process.platform,
+    wallNow: Date.now,
+    monotonicNow: () => performance.now(),
+    run: (cmd, argv, options) => execFileSync(cmd, argv, options),
+    ...overrides,
+  };
+  const sampledAtMs = deps.wallNow();
+  const started = deps.monotonicNow();
+  let outputBytes = 0;
+  const observation = (): ProbeObservation => ({
+    sampledAtMs,
+    durationMs: Math.max(0, deps.monotonicNow() - started),
+    outputBytes,
+  });
+  if (deps.platform !== "darwin")
+    return {
+      ...observation(),
+      status: "unsupported",
+      reason: "unsupported-platform",
+    };
+  try {
+    const output = deps.run(command, args, {
+      encoding: "utf-8",
+      timeout,
+      maxBuffer: 64 * 1024,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    outputBytes = stdoutBytes(output);
+    const value = parse(output);
+    return value === null
+      ? {
+          ...observation(),
+          status: "unknown",
+          reason: "parse",
+          errorCode: null,
+          exitCode: null,
+          signal: null,
+        }
+      : { ...observation(), status: "known", value };
+  } catch (error) {
+    const details =
+      error && typeof error === "object"
+        ? (error as {
+            code?: unknown;
+            status?: unknown;
+            signal?: unknown;
+            stdout?: unknown;
+          })
+        : {};
+    outputBytes = stdoutBytes(details.stdout);
+    const errorCode =
+      typeof details.code === "string" && PROBE_ERROR_CODES.has(details.code)
+        ? details.code
+        : details.code == null
+          ? null
+          : "UNKNOWN";
+    const exitCode =
+      typeof details.status === "number" && Number.isInteger(details.status)
+        ? details.status
+        : null;
+    const signal =
+      typeof details.signal === "string" && PROBE_SIGNALS.has(details.signal)
+        ? details.signal
+        : null;
+    const reason: ProbeFailureReason =
+      errorCode === "ETIMEDOUT"
+        ? "timeout"
+        : errorCode === "ENOBUFS" ||
+            errorCode === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER"
+          ? "output-limit"
+          : exitCode !== null || signal !== null
+            ? "exit"
+            : "execution";
+    return {
+      ...observation(),
+      status: "unknown",
+      reason,
+      errorCode,
+      exitCode,
+      signal,
+    };
+  }
+}
+
+export function probeKernelZoneUsage(
+  zoneName = ZONE_NAME,
+  overrides: Partial<PressureProbeDeps> = {},
+): KernelZoneProbeResult {
+  const result = boundedPressureProbe(
+    "zprint",
+    [zoneName],
+    PROBE_TIMEOUT_MS,
+    (output) => {
+      const parsed = parseZprintOutput(output, zoneName);
+      if (!parsed) return null;
+      const bytes = parsed.elements * parsed.elementSize;
+      if (!Number.isSafeInteger(bytes)) return null;
+      return { ...parsed, bytes, pressure: classifyZonePressure(bytes) };
+    },
+    overrides,
+  );
+  if (result.status !== "known") return result;
+  const { value, ...observation } = result;
+  return { ...observation, usage: value };
+}
+
+/** XNU publishes dispatch flags NORMAL=1, WARN=2, CRITICAL=4 through this sysctl.
+ * https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_memorystatus_notify.c
+ * Other values are unknown, including the unrelated internal kernel enum. */
+export function probeMemoryPressure(
+  overrides: Partial<PressureProbeDeps> = {},
+): MemoryPressureProbeResult {
+  const result = boundedPressureProbe(
+    "sysctl",
+    ["-n", "kern.memorystatus_vm_pressure_level"],
+    1_000,
+    (output): MemoryPressure | null => {
+      switch (output.trim()) {
+        case "1":
+          return "normal";
+        case "2":
+          return "warn";
+        case "4":
+          return "critical";
+        default:
+          return null;
+      }
+    },
+    overrides,
+  );
+  if (result.status !== "known") return result;
+  const { value, ...observation } = result;
+  return { ...observation, pressure: value };
+}
+
 export function classifyZonePressure(bytes: number): ZonePressure {
   if (bytes >= CRITICAL_BYTES) return "critical";
   if (bytes >= WARN_BYTES) return "warn";
@@ -105,21 +329,8 @@ export function parseZprintOutput(
 export function readKernelZoneUsage(
   zoneName = ZONE_NAME,
 ): KernelZoneUsage | null {
-  if (process.platform !== "darwin") return null;
-  try {
-    const output = execFileSync("zprint", [zoneName], {
-      encoding: "utf-8",
-      timeout: PROBE_TIMEOUT_MS,
-      maxBuffer: 64 * 1024,
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    const parsed = parseZprintOutput(output, zoneName);
-    if (!parsed) return null;
-    const bytes = parsed.elements * parsed.elementSize;
-    return { ...parsed, bytes, pressure: classifyZonePressure(bytes) };
-  } catch {
-    return null;
-  }
+  const result = probeKernelZoneUsage(zoneName);
+  return result.status === "known" ? result.usage : null;
 }
 
 export function formatZoneUsage(usage: KernelZoneUsage): string {

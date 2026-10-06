@@ -5,8 +5,11 @@ vi.mock("node:child_process", () => ({ execFileSync: mocks.execFileSync }));
 
 import {
   classifyZonePressure,
+  formatPressureProbe,
   formatZoneUsage,
   parseZprintOutput,
+  probeKernelZoneUsage,
+  probeMemoryPressure,
   readKernelZoneUsage,
   ZONE_THRESHOLDS,
 } from "../src/lib/utils/kernel-zone";
@@ -65,6 +68,178 @@ describe("readKernelZoneUsage bounded probe", () => {
     });
     expect(readKernelZoneUsage()).toBeNull();
     expect(mocks.execFileSync).not.toHaveBeenCalled();
+  });
+});
+
+describe("typed pressure probe diagnostics", () => {
+  const injected = (run = vi.fn(() => REAL_OUTPUT)) => {
+    let elapsed = 10;
+    return {
+      platform: "darwin",
+      wallNow: () => 1_700_000_000_000,
+      monotonicNow: () => {
+        const now = elapsed;
+        elapsed += 1584;
+        return now;
+      },
+      run,
+    };
+  };
+
+  it("records successful kernel timing, output bytes and usage", () => {
+    const deps = injected();
+    expect(probeKernelZoneUsage(undefined, deps)).toMatchObject({
+      status: "known",
+      sampledAtMs: 1_700_000_000_000,
+      durationMs: 1584,
+      outputBytes: Buffer.byteLength(REAL_OUTPUT),
+      usage: { elements: 3416, elementSize: 1024, pressure: "ok" },
+    });
+    expect(deps.run).toHaveBeenCalledWith(
+      "zprint",
+      ["data.kalloc.1024"],
+      expect.objectContaining({ timeout: 5000, maxBuffer: 65536 }),
+    );
+  });
+
+  it.each([
+    ["ETIMEDOUT", "timeout"],
+    ["ENOBUFS", "output-limit"],
+    ["ERR_CHILD_PROCESS_STDIO_MAXBUFFER", "output-limit"],
+    ["EACCES", "execution"],
+  ])("distinguishes %s without retaining raw output/errors", (code, reason) => {
+    const run = vi.fn((): string => {
+      throw Object.assign(new Error("secret diagnostic"), {
+        code,
+        stdout: Buffer.from("secret-output"),
+        stderr: "secret-error",
+      });
+    });
+    const result = probeKernelZoneUsage(undefined, injected(run));
+    expect(result).toMatchObject({
+      status: "unknown",
+      reason,
+      errorCode: code,
+      outputBytes: 13,
+    });
+    expect(JSON.stringify(result)).not.toContain("secret");
+    expect(run).toHaveBeenCalledOnce();
+  });
+
+  it("records sanitized exits and excludes arbitrary code/signal strings", () => {
+    const run = vi.fn((): string => {
+      throw { code: "secret", status: 3, signal: "secret", stdout: "abc" };
+    });
+    expect(probeKernelZoneUsage(undefined, injected(run))).toMatchObject({
+      status: "unknown",
+      reason: "exit",
+      errorCode: "UNKNOWN",
+      exitCode: 3,
+      signal: null,
+      outputBytes: 3,
+    });
+  });
+
+  it("records known termination signals without interpreting them as healthy", () => {
+    const run = vi.fn((): string => {
+      throw { status: null, signal: "SIGTERM" };
+    });
+    expect(probeKernelZoneUsage(undefined, injected(run))).toMatchObject({
+      status: "unknown",
+      reason: "exit",
+      signal: "SIGTERM",
+    });
+  });
+
+  it.each([
+    "garbled",
+    "data.kalloc.1024 1024 0K 0K 0 0 99999999999999999 0K 0",
+  ])("records malformed/unsafe kernel reports as parse failures", (output) => {
+    expect(
+      probeKernelZoneUsage(undefined, injected(vi.fn(() => output))),
+    ).toMatchObject({
+      status: "unknown",
+      reason: "parse",
+      outputBytes: Buffer.byteLength(output),
+      errorCode: null,
+    });
+  });
+
+  it("does not execute either probe on unsupported hosts", () => {
+    const deps = { ...injected(), platform: "linux" };
+    expect(probeKernelZoneUsage(undefined, deps)).toMatchObject({
+      status: "unsupported",
+      reason: "unsupported-platform",
+      outputBytes: 0,
+    });
+    expect(probeMemoryPressure(deps)).toMatchObject({ status: "unsupported" });
+    expect(deps.run).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["1\n", "normal"],
+    ["2", "warn"],
+    ["4", "critical"],
+  ])("maps only documented dispatch flag %s to %s", (output, pressure) => {
+    const deps = injected(vi.fn(() => output));
+    expect(probeMemoryPressure(deps)).toMatchObject({
+      status: "known",
+      pressure,
+      outputBytes: Buffer.byteLength(output),
+    });
+    expect(deps.run).toHaveBeenCalledWith(
+      "sysctl",
+      ["-n", "kern.memorystatus_vm_pressure_level"],
+      expect.objectContaining({ timeout: 1000, maxBuffer: 65536 }),
+    );
+  });
+
+  it.each(["0", "3", "5", "normal", "1 extra", ""])(
+    "refuses unknown memory pressure %s",
+    (output) => {
+      expect(probeMemoryPressure(injected(vi.fn(() => output)))).toMatchObject({
+        status: "unknown",
+        reason: "parse",
+      });
+    },
+  );
+
+  it("reports a sysctl timeout instead of a normal pressure", () => {
+    const run = vi.fn((): string => {
+      throw { code: "ETIMEDOUT", signal: "SIGTERM" };
+    });
+    expect(probeMemoryPressure(injected(run))).toMatchObject({
+      status: "unknown",
+      reason: "timeout",
+      signal: "SIGTERM",
+    });
+  });
+
+  it("formats only bounded scalar diagnostic metadata", () => {
+    const run = vi.fn((): string => {
+      throw Object.assign(new Error("secret"), {
+        code: "ETIMEDOUT",
+        signal: "SIGTERM",
+        stdout: "secret",
+      });
+    });
+    const result = probeKernelZoneUsage(undefined, injected(run));
+    expect(JSON.parse(formatPressureProbe(result))).toEqual({
+      status: "unknown",
+      sampledAtMs: 1_700_000_000_000,
+      durationMs: 1584,
+      outputBytes: 6,
+      reason: "timeout",
+      errorCode: "ETIMEDOUT",
+      exitCode: null,
+      signal: "SIGTERM",
+    });
+    expect(formatPressureProbe(result)).not.toContain("secret");
+    expect(
+      JSON.parse(
+        formatPressureProbe(probeMemoryPressure(injected(vi.fn(() => "1")))),
+      ),
+    ).toMatchObject({ status: "known", durationMs: 1584, outputBytes: 1 });
   });
 });
 
