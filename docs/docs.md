@@ -4,7 +4,7 @@
 
 **v0.26.51 is released and registry-installed.** The Claude hook and installer repairs below now ship. Source `7de4c9c`, tag `cbaa6b9`; [release CI 37406418335](https://github.com/reowens/grepmax/actions/runs/37406418335) passed 1,648 tests / 172 files, both typechecks, formatting, build, production/packed-consumer audits and native/tarball checks. The daemon handed over from .50 to .51 and confirmed readiness over IPC (PID 40322). Claude user/project scopes refreshed without changing their source, enabled preferences, other plugins or user settings; Codex retained its complete configuration and the approved two-tool deny list. Installed hook quarantine, renewal, scoped release and native checks passed. MCP v1/legacy/modern/auto tools passed with listeners forbidden. Doctor reports 573,029 rows, 15.7 GB logical / 16.4 GB disk and 70.0 GB free. Restart existing clients to load refreshed integrations. Local evidence: `docs/measurements/2026-10-05-release-v0.26.51/`.
 
-The CI bootstrap warning is identified: the old release setup action embedded pnpm 11.7.0 before switching to pnpm 10.34.6. Fresh audit reproduces four high advisories in that one bootstrap package. Both workflows now pin pnpm/action-setup v6.1.0 (`ea17c68`), whose bundled pnpm and standalone bootstrap are 11.25.0. Exact source/dist versions and integrities agree; isolated audits for both variants and requested pnpm 10.34.6 report zero vulnerabilities. Main-branch CI validation is pending. This tooling change does not require a new gmax package release. Local evidence: `docs/measurements/2026-10-05-pnpm-bootstrap/`.
+The CI bootstrap warning is identified: the old release setup action embedded pnpm 11.7.0 before switching to pnpm 10.34.6. Fresh audit reproduces four high advisories in that one bootstrap package. Both workflows now pin pnpm/action-setup v6.1.0 (`ea17c68`), whose bundled pnpm and standalone bootstrap are 11.25.0. Exact source/dist versions and integrities agree; isolated audits for both variants and requested pnpm 10.34.6 report zero vulnerabilities. [Main-branch CI 37408026765](https://github.com/reowens/grepmax/actions/runs/37408026765) confirms zero bootstrap vulnerabilities, pnpm 11.25.0 → 10.34.6, all 1,648 tests / 172 files, both typechecks and build. The publishing workflow was not dispatched; its setup uses the same pinned action and inputs. This tooling change does not require a new gmax package release. Local evidence: `docs/measurements/2026-10-05-pnpm-bootstrap/`.
 
 ### Previous v0.26.50 release evidence
 
@@ -96,10 +96,11 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 104 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 105 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
+| [Fix pnpm setup bootstrap advisory](archived/pnpm-bootstrap-security.md) | Archived: Bootstrap warning identified and resolved at 92af4a6. Both workflows pin audited action v6.1.0; GitHub CI37408026765 passes all checks and confirms zero bootstrap vulnerabilities. Installed gmax remains0.26.51. |
 | [Repair Claude and Codex plugin lifecycle and installation](archived/plugin-lifecycle-installation.md) | Archived: Groups1/2 implemented and verified in source;1648 tests / 172 files,typechecks/build/consumer checks pass. Group 3 approved and applied to local Codex config; CLI verification passes. Release/install and client refresh complete at v0.26.51; installed smoke and setting preservation pass. |
 | [Release and install per-file retrieval control](archived/per-file-release.md) | Archived: v0.26.50 published, registry-installed and verified; documentation and evidence complete. |
 | [Request-scoped per-file retrieval control](archived/per-file-retrieval-control.md) | Archived: Explicit per-file request propagation and validation complete in source;1613tests/typechecks/format/build/consumer checks pass. Installed .49 correctly refuses unsupported overrides. |
@@ -107,7 +108,6 @@ Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signa
 | [Release and install retrieval diagnostics](archived/diagnostic-release.md) | Archived: v0.26.49 published, registry-installed and live-verified; documentation updated. |
 | [Retrieval diagnostics and answer-range review](archived/retrieval-diagnostics.md) | Archived: Bounded opt-in production diagnostics and capability-gated evaluator are source-complete, with result/read equivalence regressions and packaging checks passing. Single-author answer-span proposals preserve the original frozen baseline. |
 | [Multi-repository relevance baseline](archived/multirepo-relevance-baseline.md) | Archived: Reusable daemon-path runner and frozen 40-case four-repository baseline complete; both repetitions valid with identical ranks. Declaration-target scores and post-measurement ground-truth limitations are documented. |
-| [Retrieval MRR@10 cutoff](archived/mrr-at-ten-cutoff.md) | Archived: Both harnesses now give reciprocal-rank credit only to ranks 1–10. Late-hit diagnostics and twenty-result retrieval remain; 21 synthetic tests and both typechecks pass. |
 
 - Use `runlist list` or `runlist json` for the full inventory.
 <!-- GENERATED:dotmd:end -->
