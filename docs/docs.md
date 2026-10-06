@@ -6,7 +6,7 @@
 
 The final installed comparison preserved all three pre-install queries' result identities, order and scores. An earlier strict comparison caught one normalized-score difference during deployment; its failed log is retained, and its exact cause is unproven. The shared index continued changing, and lower FTS ranks varied in the final diagnostic comparison. The host memory guard also restarted the first .50 daemon with one worker; final checks used the new ready process. This is deployment evidence, not a frozen ranking acceptance run or proof that long-cycle memory retention is resolved. Local evidence: `docs/measurements/2026-10-05-release-v0.26.50/`.
 
-The subsequent plugin audit repairs are complete in source: shared Claude quarantine/singleton checks, turn/Bash activity lease renewal, quoted paths and bounded startup; consistent custom Codex home and preserved MCP options; non-destructive Claude source/scope updates. All 1,648 tests / 172 files and both typechecks pass. Claude remains a CLI plugin and Codex uses local STDIO MCP. Installed v0.26.50 has not received these repairs. Large-model tool restrictions remain unchanged pending the user's review; the audit does not authorize a new model or transport.
+The subsequent plugin audit repairs are complete in source: shared Claude quarantine/singleton checks, turn/Bash activity lease renewal, quoted paths and bounded startup; consistent custom Codex home and preserved MCP options; non-destructive Claude source/scope updates. All 1,648 tests / 172 files and both typechecks pass. Claude remains a CLI plugin and Codex uses local STDIO MCP. Installed v0.26.50 has not received these repairs. After the user's approval, the local Codex config disables `investigate` and `review_commit` through `mcp_servers.gmax.disabled_tools`; Codex's CLI confirms both entries and every other parsed setting is preserved. New sessions/restarted clients load this policy; the current session's catalog was not reloaded. This is a local tool-visibility policy, not a default imposed on every installation or a machine-wide CLI restriction.
 
 The earlier reliability work remains shipped: native Session cache wiring, bounded query/row reads, reproducible consumer packaging, external-store request isolation and refusal of unsupported-daemon fallback readers. The historical FTS merge defect is fixed in the pinned LanceDB 0.38.0 GA runtime; a fresh panic should be investigated as a regression.
 
@@ -90,7 +90,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 100 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 101 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
