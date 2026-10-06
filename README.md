@@ -488,7 +488,7 @@ whether you need to act.
 | `disabling auto-rebuild until an optimize succeeds` | Transient, not a wedge. The next successful optimize clears it. Search stays available. |
 | `ANN: vector index not built` | Normal — exact search is the default. |
 | `cannot reach the daemon socket from this sandbox` (exit 2) | The shell is sandboxed. Add the two keys in [Running under the Claude Code sandbox](#running-under-the-claude-code-sandbox); `gmax doctor` warns about the same gap. |
-| `npm audit` reports advisories on install | v0.26.50 passed production and fresh packed-consumer audits. Audit findings can change: record the installed version and dependency path and report new findings; do not assume historical advisories still apply. |
+| `npm audit` reports advisories on install | Record the installed version and dependency path and report new findings. JavaScript consumer audits do not cover the Python embedding environment; maintainers also audit its locked registry dependencies with `pnpm run audit:python` (Python 3.11+; no model load). |
 
 ## Contributing
 

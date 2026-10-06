@@ -41,10 +41,12 @@
     "typecheck": "tsc --noEmit",
     "test:typecheck": "tsc -p tsconfig.tests.json",
     "prepublishOnly": "pnpm run test:typecheck && pnpm build",
-    "preversion": "pnpm audit --prod && pnpm test && pnpm typecheck && pnpm run test:typecheck && pnpm run format:check && pnpm build && pnpm run audit:consumer",
+    "preversion": "pnpm audit && pnpm run audit:python && pnpm test && pnpm run test:python && pnpm typecheck && pnpm run test:typecheck && pnpm run format:check && pnpm build && pnpm run audit:consumer",
     "version": "bash scripts/sync-versions.sh && git add -A",
     "postversion": "bash scripts/postrelease.sh",
-    "audit:consumer": "node scripts/audit-consumer.cjs"
+    "audit:consumer": "node scripts/audit-consumer.cjs",
+    "audit:python": "python3 scripts/audit-python.py",
+    "test:python": "python3 -m unittest discover -s tests/python"
   },
   "keywords": [
     "grepmax",

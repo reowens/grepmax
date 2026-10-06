@@ -29,6 +29,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Audit JavaScript dependencies including development tools
+        run: pnpm audit
+
+      - name: Audit Python lockfile without loading models
+        run: pnpm run audit:python
+
+      - name: Test Python audit gate
+        run: pnpm run test:python
+
       - name: Check types
         run: pnpm run typecheck
 

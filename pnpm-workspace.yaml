@@ -5,6 +5,7 @@ overrides:
   mathjs: "15.2.0"
   # In-range advisory patches for transitive dependencies.
   fast-uri: "^3.1.8" # .>@modelcontextprotocol/client>ajv
+  source-map-js: "^1.2.2" # Vite/Vitest > PostCSS; GHSA-68fv-2mgg-jv7q
   # Legacy client fixture only: keep its unused HTTP dependencies patched in dev.
   qs: "^6.16.0"
   ip-address: "^10.7.1"

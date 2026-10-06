@@ -314,6 +314,14 @@ Resolved in v0.26.44: the release packages the unchanged pinned SDK JavaScript r
 
 Keep the packed-consumer gate when changing dependencies. Do not omit all optional dependencies: native LanceDB platform packages are optional too. Direct transformers/onnxruntime-node now resolve patched sharp/adm-zip versions; repository-only overrides must never be treated as consumer protection.
 
+Production npm audits also omit JavaScript development dependencies and the Python embedding
+environment. Local preversion, CI and release gates now run full `pnpm audit` plus
+`pnpm run audit:python`. The Python gate queries OSV for exact registry versions in `uv.lock`,
+without installing packages or loading models, and fails if the query cannot complete. It
+does not audit the local Python project or the pinned `mlx-embeddings` Git source, nor prove
+that every advisory path is reachable. Installed Python environments still need synchronization
+with the validated lock and a compatibility check after an upgrade.
+
 ## A recycled PID makes a reader lease immortal and hangs every exclusive operation
 
 Found 2026-08-25 while removing four git worktrees that had been indexed as separate projects.

@@ -60,8 +60,14 @@ jobs:
       - name: Check formatting
         run: pnpm run format:check
 
-      - name: Audit production dependencies
-        run: pnpm audit --prod
+      - name: Audit JavaScript dependencies including development tools
+        run: pnpm audit
+
+      - name: Audit Python lockfile without loading models
+        run: pnpm run audit:python
+
+      - name: Test Python audit gate
+        run: pnpm run test:python
 
       - name: Verify tag matches package.json version
         run: |

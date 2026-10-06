@@ -607,12 +607,21 @@ curl -s http://127.0.0.1:8100/health               # MLX embed server up?
   the release CI audit gate then blocked on.
 
 ### Release
-`npm version patch` runs the whole chain: `preversion` gates (`pnpm audit --prod`, tests, both typechecks, Biome) ->
+`npm version patch` runs the whole chain: `preversion` gates (full `pnpm audit`, `pnpm run audit:python`, JavaScript/Python tests, both typechecks, Biome) ->
 `sync-versions.sh` (plugin.json + marketplace.json) -> `postrelease.sh` (push, tag, wait for
 `release.yml` — which publishes to npm and only then cuts the GitHub release — global install,
 daemon restart). The audit runs locally first so a new advisory fails before a tag is burned; if CI
 fails anyway, `postrelease.sh` prints whether anything reached npm and the exact cleanup commands. CI re-runs every
-gate plus `pnpm audit --prod`, a packed-consumer audit/native temporary-store smoke test, a tag/version match check, and a tarball source-leak audit.
+gate plus full JavaScript and Python lockfile audits, a packed-consumer audit/native temporary-store smoke test, a tag/version match check, and a tarball source-leak audit.
+
+The Python audit uses Python 3.11+ standard-library TOML/HTTP support and OSV; it installs
+no packages and loads no models. Network failures or incomplete responses fail the gate.
+It checks registry packages in `mlx-embed-server/uv.lock`; the local project and explicitly
+pinned `mlx-embeddings` Git source are reported outside that audit. Preserve advisory floors
+in `pyproject.toml` when refreshing the lock. Opt-in HTTP compatibility tests run with
+`GMAX_TEST_MLX=1 <locked-venv>/bin/python -m unittest discover -s tests/python` and do not
+run the model-loading lifespan. Only the cached small embedding model may be used for
+the separate real embedding smoke; the large-model hard stop still applies.
 
 The daemon restart is the step that makes a release actually live. The global install only updates
 the binary on PATH; a daemon spawned from the old one keeps serving the socket, so every command

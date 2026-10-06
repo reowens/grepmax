@@ -6,7 +6,7 @@ requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn>=0.34.0",
-    "mlx-embeddings @ git+https://github.com/Blaizzy/mlx-embeddings.git",
+    "mlx-embeddings @ git+https://github.com/Blaizzy/mlx-embeddings.git@88522e288c0142170a5a44fd93c184d8ed777371",
     "mlx-lm>=0.22.0",
     "setproctitle>=1.3.0",
 ]
@@ -14,3 +14,23 @@ dependencies = [
 [project.scripts]
 mlx-embed-server = "server:main"
 mlx-summarizer = "summarizer:main"
+
+[tool.uv]
+# Advisory patch floors for the HTTP/TLS, model and utility dependency trees.
+# Constraints do not install otherwise-unused packages or change model weights.
+# Keep these floors when refreshing the lock; npm audits do not cover Python.
+constraint-dependencies = [
+    "aiohttp>=3.14.3",
+    "anyio>=4.14.2",
+    "click>=8.3.3",
+    "datasets>=5.0.1",
+    "fsspec>=2026.6.0",
+    "idna>=3.15",
+    "multidict>=6.9.1",
+    "pillow>=12.3.0",
+    "pygments>=2.20.0",
+    "requests>=2.33.0",
+    "starlette>=1.3.1",
+    "transformers>=5.10.1", # 5.10.0 was yanked by its maintainers.
+    "urllib3>=2.8.0",
+]
