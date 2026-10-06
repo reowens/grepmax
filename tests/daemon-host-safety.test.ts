@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
   denied: null as string | null,
+  memory: "normal" as "normal" | "warn" | "critical" | "unknown",
+  kernelProbe: vi.fn(),
   usage: null as {
     bytes: number;
     pressure: "ok" | "warn" | "critical";
@@ -15,18 +17,35 @@ vi.mock("../src/lib/utils/autostart", () => ({
 }));
 vi.mock("../src/lib/utils/safety-latch", () => ({ latchSafetyStop: h.latch }));
 vi.mock("../src/lib/utils/kernel-zone", () => ({
-  readKernelZoneUsage: () => h.usage,
+  probeKernelZoneUsage: () => {
+    h.kernelProbe();
+    return h.usage
+      ? { status: "known", usage: h.usage }
+      : { status: "unknown", reason: "timeout" };
+  },
+  probeMemoryPressure: () =>
+    h.memory === "unknown"
+      ? { status: "unknown", reason: "parse" }
+      : { status: "known", pressure: h.memory },
+  formatPressureProbe: () => "bounded probe diagnostic",
   formatZoneUsage: () => "kernel zone sample",
   ZONE_THRESHOLDS: { criticalBytes: 8 * 1024 ** 3 },
 }));
 
 import { Daemon } from "../src/lib/daemon/daemon";
+import {
+  clearReadVerbs,
+  HEAVY_READ_VERBS,
+  registerReadVerbs,
+} from "../src/lib/daemon/read-verbs";
 
 describe("daemon host protection before startup and recycling", () => {
   const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
   beforeEach(() => {
     Object.defineProperty(process, "platform", { value: "darwin" });
     h.denied = null;
+    h.memory = "normal";
+    h.kernelProbe.mockReset();
     h.usage = {
       bytes: 9 * 1024 ** 3,
       pressure: "critical",
@@ -41,6 +60,7 @@ describe("daemon host protection before startup and recycling", () => {
   afterEach(() => {
     Object.defineProperty(process, "platform", platform);
     vi.restoreAllMocks();
+    clearReadVerbs();
   });
   it("refuses quarantine before stale process handling or resource creation", async () => {
     const daemon: any = new Daemon();
@@ -66,6 +86,41 @@ describe("daemon host protection before startup and recycling", () => {
     const daemon: any = new Daemon();
     await expect(daemon.start()).rejects.toThrow("kernel pressure unavailable");
   });
+  it.each(["warn", "critical", "unknown"] as const)(
+    "refuses startup at OS pressure %s before kernel or resource work",
+    async (pressure) => {
+      h.memory = pressure;
+      h.usage = { ...h.usage!, pressure: "ok" };
+      const daemon: any = new Daemon();
+      const stale = vi
+        .spyOn(daemon.processManager, "killStaleProcesses")
+        .mockResolvedValue(undefined);
+      await expect(daemon.start()).rejects.toThrow("OS memory pressure");
+      expect(stale).not.toHaveBeenCalled();
+      expect(h.kernelProbe).not.toHaveBeenCalled();
+      expect(h.latch).toHaveBeenCalledTimes(pressure === "unknown" ? 0 : 1);
+    },
+  );
+  it.each(["warn", "critical", "unknown"] as const)(
+    "blocks semantic search callback at OS pressure %s",
+    async (pressure) => {
+      h.memory = pressure;
+      h.usage = { ...h.usage!, pressure: "ok" };
+      const daemon: any = new Daemon();
+      const shutdown = vi
+        .spyOn(daemon, "shutdown")
+        .mockResolvedValue(undefined);
+      const effect = vi.fn(async () => true);
+      await expect(
+        daemon.runSharedOperation("search", undefined, effect),
+      ).rejects.toThrow("unsafe or unknown");
+      expect(effect).not.toHaveBeenCalled();
+      expect(h.kernelProbe).not.toHaveBeenCalled();
+      expect(shutdown).toHaveBeenCalledWith();
+      await Promise.resolve();
+      await Promise.resolve();
+    },
+  );
   it.each(["warn", "critical", "unknown"])(
     "stops a young daemon at %s without relaunch",
     async (pressure) => {
@@ -141,8 +196,8 @@ describe("daemon host protection before startup and recycling", () => {
     "index-project",
     "add-project",
     "remove-project",
+    "search",
     "search-warmup",
-    "store-maintenance",
     "llm-start",
     "review",
     "summarize-project",
@@ -167,6 +222,71 @@ describe("daemon host protection before startup and recycling", () => {
       expect(effect).toHaveBeenCalledOnce();
     },
   );
+  it.each([...HEAVY_READ_VERBS])(
+    "guards registered heavy read %s",
+    async (name) => {
+      registerReadVerbs({ [name]: async () => ({ ok: true }) });
+      const daemon: any = new Daemon();
+      h.denied = "quarantine";
+      const effect = vi.fn(async () => true);
+      await expect(
+        daemon.runSharedOperation(name, undefined, effect),
+      ).rejects.toThrow("refused");
+      expect(effect).not.toHaveBeenCalled();
+    },
+  );
+  it("preserves registered cheap reads under quarantine", async () => {
+    registerReadVerbs({ "graph.resolve": async () => ({ ok: true }) });
+    const daemon: any = new Daemon();
+    h.denied = "quarantine";
+    const effect = vi.fn(async () => true);
+    await expect(
+      daemon.runSharedOperation("graph.resolve", undefined, effect),
+    ).resolves.toBe(true);
+  });
+  it("rejects OS pressure that changes while the kernel probe runs", async () => {
+    h.usage = { ...h.usage!, pressure: "ok" };
+    h.kernelProbe.mockImplementation(() => {
+      h.memory = "warn";
+    });
+    const daemon: any = new Daemon();
+    vi.spyOn(daemon, "shutdown").mockResolvedValue(undefined);
+    const effect = vi.fn(async () => true);
+    await expect(
+      daemon.runSharedOperation("search", undefined, effect),
+    ).rejects.toThrow("refused");
+    expect(effect).not.toHaveBeenCalled();
+    expect(h.latch).toHaveBeenCalledOnce();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  it("rejects quarantine created while admission probes run", async () => {
+    h.usage = { ...h.usage!, pressure: "ok" };
+    h.kernelProbe.mockImplementation(() => {
+      h.denied = "new quarantine";
+    });
+    const daemon: any = new Daemon();
+    const effect = vi.fn(async () => true);
+    await expect(
+      daemon.runSharedOperation("search", undefined, effect),
+    ).rejects.toThrow("new quarantine");
+    expect(effect).not.toHaveBeenCalled();
+    expect(h.latch).not.toHaveBeenCalled();
+  });
+  it("rechecks pressure immediately before MLX setup", async () => {
+    const daemon: any = new Daemon();
+    h.memory = "warn";
+    vi.spyOn(daemon, "shutdown").mockResolvedValue(undefined);
+    const start = vi
+      .spyOn(daemon.mlxServerManager, "ensureMlxServer")
+      .mockResolvedValue(undefined);
+    await expect(daemon.ensureAdmittedMlxServer("model")).rejects.toThrow(
+      "refused",
+    );
+    expect(start).not.toHaveBeenCalled();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
   it("does not load an LLM from an already running daemon under quarantine", async () => {
     const daemon: any = new Daemon();
     h.denied = "quarantine";

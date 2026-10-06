@@ -65,6 +65,8 @@ interface MlxServerManagerDeps {
   terminateGroup?: typeof terminateProcessGroup;
   sleep?: (ms: number) => Promise<void>;
   createOwnerToken?: () => string;
+  /** Recheck quarantine/host admission after awaits, at the actual fork boundary. */
+  assertExpansionAdmission?: () => void;
 }
 
 export class MlxServerManager {
@@ -277,6 +279,21 @@ export class MlxServerManager {
       );
       return;
     }
+
+    // A health/termination await may outlive the daemon's outer admission.
+    // Refusal must not leak a log descriptor or look like a successful startup.
+    // Disable automatic retries until an explicit admitted ensure occurs;
+    // fire-and-forget health callers must catch the propagated rejection.
+    try {
+      this.deps.assertExpansionAdmission?.();
+    } catch (error) {
+      this.enabled = false;
+      this.phase = "failed";
+      this.lastError = `MLX expansion admission refused: ${error instanceof Error ? error.message : "host admission unavailable"}`;
+      console.error(`[daemon] ${this.lastError}`);
+      throw new Error(this.lastError);
+    }
+    if (this.shouldStop()) return;
 
     const owner = this.deps.createOwnerToken?.() ?? randomUUID();
     const openLog = this.deps.openLog ?? openRotatedLog;

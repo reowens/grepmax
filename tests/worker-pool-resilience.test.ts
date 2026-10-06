@@ -12,6 +12,22 @@ const h = vi.hoisted(() => {
   };
 });
 
+// Never inspect host pressure or write a real containment marker in tests.
+vi.mock("../src/lib/utils/autostart", () => ({
+  daemonStartDeniedReason: () => null,
+}));
+vi.mock("../src/lib/utils/safety-latch", () => ({
+  latchSafetyStop: vi.fn(),
+}));
+vi.mock("../src/lib/utils/kernel-zone", () => ({
+  probeMemoryPressure: () => ({ status: "known", pressure: "normal" }),
+  probeKernelZoneUsage: () => ({
+    status: "known",
+    usage: { pressure: "ok" },
+  }),
+  formatPressureProbe: () => "{}",
+}));
+
 vi.mock("../src/lib/index/index-config", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("../src/lib/index/index-config")>();

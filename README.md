@@ -57,7 +57,7 @@ gmax doctor                   # Health check
 gmax doctor --fix             # Repair checks; full-table maintenance is disabled
 ```
 
-**Storage containment:** full-table compaction is disabled, including forced maintenance and doctor repair. Existing retained index copies are not reclaimed by this release. The verified prune-only recovery path is separate work; normal incremental indexing remains available when the host is healthy and not quarantined. A persistent host safety stop blocks mutation and daemon restart. Installing an update preserves existing quarantine.
+**Storage containment:** full-table compaction is disabled, including forced maintenance and doctor repair. Existing retained index copies are not reclaimed by this release. The verified prune-only recovery path is separate work; normal incremental indexing remains available when the host is healthy and not quarantined. A persistent host safety stop blocks mutation and daemon restart. Installing an update preserves existing quarantine. Speculative embedding warmup and maintenance timers are disabled. On macOS, startup, heavy queries, worker forks and MLX launches require known normal OS memory pressure and a healthy kernel-zone sample; unavailable probes report bounded diagnostic details and refuse work.
 
 ### Core Commands
 
