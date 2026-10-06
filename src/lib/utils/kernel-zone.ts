@@ -15,12 +15,17 @@ import { execFileSync } from "node:child_process";
  * docs/2026-08-04-macos-kernel-zone-panic-incident.md.
  *
  * gmax cannot fix the kernel defect, but it can decline to be the thing that
- * detonates it. Sampling the zone is cheap (~0.2 s), so the daemon watches its own
- * blast radius and stands down while there are still hours of headroom.
+ * detonates it. Sampling the zone has taken 1.584 s on the incident host, so the
+ * probe uses a bounded five-second budget. The daemon stands down while there
+ * are still hours of headroom.
  */
 
 /** The zone that leaks. Named explicitly so `zprint` returns a single line. */
 const ZONE_NAME = "data.kalloc.1024";
+
+// Two 500 ms probes timed out on the incident host; a subsequent probe completed
+// in 1,584 ms. Keep the previous five-second ceiling to allow scheduling margin.
+const PROBE_TIMEOUT_MS = 5_000;
 
 /**
  * Warn threshold.
@@ -94,8 +99,8 @@ export function parseZprintOutput(
 
 /**
  * Sample the zone. Returns null off macOS, or whenever the sample cannot be
- * trusted — an unparseable report must read as "unknown", never as "healthy" and
- * never as a reason to stop working.
+ * trusted. An unparseable or timed-out report reads as "unknown", never as
+ * "healthy". macOS startup and heavy-operation admission refuse unknown samples.
  */
 export function readKernelZoneUsage(
   zoneName = ZONE_NAME,
@@ -104,7 +109,8 @@ export function readKernelZoneUsage(
   try {
     const output = execFileSync("zprint", [zoneName], {
       encoding: "utf-8",
-      timeout: 500,
+      timeout: PROBE_TIMEOUT_MS,
+      maxBuffer: 64 * 1024,
       stdio: ["ignore", "pipe", "ignore"],
     });
     const parsed = parseZprintOutput(output, zoneName);
