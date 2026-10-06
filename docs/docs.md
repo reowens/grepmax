@@ -90,7 +90,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 101 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 102 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|

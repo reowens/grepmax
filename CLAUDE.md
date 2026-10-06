@@ -124,8 +124,7 @@ not exist, and it was a large part of the memory pressure that froze the host.
   never starts a second watcher. Hook startup polling is bounded, with later activity retrying
   ownership after cold startup. Hook-driven launches recheck quarantine in the child and
   leave a concurrently started daemon running, including when its version differs.
-  The hook/installer repairs currently await the next release;
-  installed v0.26.50 retains the earlier hooks.
+  These hook/installer repairs ship in v0.26.51 and require a plugin refresh after upgrading.
 
 ### Autostart kill switch
 
