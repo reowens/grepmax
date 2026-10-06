@@ -15,13 +15,21 @@ const SOCKET = path.join(GMAX_DIR, "daemon.sock");
 // Activity refreshes this TTL; idle sessions do not watch forever.
 const SESSION_LEASE_TTL_MS = 4 * 60 * 60 * 1000;
 
+function markerPresentOrUnknown(file) {
+  try {
+    fs.lstatSync(file);
+    return true;
+  } catch (error) {
+    return error.code !== "ENOENT";
+  }
+}
+
 function isAutostartDisabled() {
   if (process.env.GMAX_NO_AUTOSTART === "1") return true;
-  try {
-    return fs.existsSync(path.join(GMAX_DIR, "autostart-disabled"));
-  } catch {
-    return false;
-  }
+  return (
+    markerPresentOrUnknown(path.join(GMAX_DIR, "autostart-disabled")) ||
+    markerPresentOrUnknown(path.join(GMAX_DIR, "safety-stop.json"))
+  );
 }
 
 function readHookInput(timeoutMs = 1000) {

@@ -275,7 +275,7 @@ The pre-upgrade LanceDB 0.30/0.31 runtime could panic in incremental FTS merge (
 
 The upstream fix first shipped in gmax v0.26.23 using a beta overlay. The current runtime packages the pinned official LanceDB 0.39.0 GA JavaScript and matching native binaries at build time, including the fix. `scripts/postinstall.js` now only prints a plugin-update reminder; it no longer overlays LanceDB. The September 7–16 GA canary recorded zero optimize failures, FTS rebuilds or panics; see [the upgrade closeout](archived/lancedb-0.38-upgrade.md).
 
-The drop-and-rebuild guard remains a recovery tripwire, with bounded optimize attempts and disk-headroom checks. `disabling auto-rebuild until an optimize succeeds` means repeated rebuilds are suppressed until a successful optimize. Failed FTS recovery can degrade retrieval to vector-only results; do not treat a fresh panic as harmless expected output.
+The historical drop-and-rebuild guard remains regression coverage; containment disables live full-table optimization and new index builds. `disabling auto-rebuild until an optimize succeeds` means repeated rebuilds are suppressed; containment does not permit an optimize to clear this state. Failed FTS recovery can degrade retrieval to vector-only results; do not treat a fresh panic as harmless expected output.
 
 If this recurs on a current release, preserve the installed version and daemon log, check `gmax status --json` and `gmax doctor`, and report a regression. Do not repeatedly force compaction or disable the recovery guard. Historical successful recovery is not a guarantee of availability or data integrity for a new failure.
 
@@ -283,9 +283,11 @@ If this recurs on a current release, preserve the installed version and daemon l
 
 Reproduced October 6 in a temporary native store: one rewrite changed data bytes from 120,892 to 200,063 despite deleting old files. The surviving intermediate reserve-ID version referenced all three original fragments, while the final version referenced one new fragment. LanceDB 0.39 correctly preserves both because they were committed after the supplied start-time cutoff. A subsequent no-rewrite optimize removed the intermediate version and left 86,200 data bytes.
 
-The fix adds one bounded cleanup pass after a zero-retention rewrite, under the existing write gate. It verifies a single deletion-free fragment and an unchanged reopened version before using a real later cutoff. It preserves positive retention, checks fresh reserve headroom and never retries a cleanup failure or unexpected rewrite. Native regressions verify physical data bytes match the current manifest after three rewrites, with row/FTS integrity; guards cover queued writes, changed versions, deletion metadata, retention, clocks, space and failures.
+v0.26.54’s single-fragment cleanup guard did not cover ordinary multiple-fragment/index groups. A later observed compaction increased stored file bytes by approximately 15 GB; gross deleted bytes and a successful native call did not establish net recovery. Process-local cooldowns and forced startup maintenance could admit further rewrites.
 
-Cleanup is deferred when the table still has multiple fragments or the evidence is unavailable. The Node SDK does not expose a prune-only operation; do not bypass this guard with a future cutoff, manual file deletion or an unbounded sequence of rewrites. The existing maintenance bloat retry remains bounded. Net physical reclamation is now recorded separately from gross native bytes deleted, so a successful operation with net growth is visible.
+The containment release disables full-table optimization and scheduled maintenance before native setup, including force and doctor paths. It preserves persistent host quarantine across startup and recycling. This prevents the automatic rewrite loop but does not recover retained copies. Existing low-level compaction guards are retained only for regression coverage behind a test-only policy mock; there is no production override.
+
+A separate prune-only helper remains unshipped pending exclusive cross-process ownership, runtime lock/wheel validation, protected-version correctness, bounded resources and interruption tests. It must not delay containment. Disk recovery must measure allocated blocks and free space alongside file lengths; do not claim recovered space from gross native deletion alone. Preserve the store and do not force compaction, use future cutoffs or manually delete fragments.
 
 ## Fresh unreferenced fragments can survive an idle-store cleanup
 

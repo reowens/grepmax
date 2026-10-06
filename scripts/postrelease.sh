@@ -157,7 +157,25 @@ daemon_version() {
 # reason=version-mismatch), rather than signalling it mid-write. Only restart a
 # daemon that is already up — starting one that the user had deliberately
 # stopped would be a side effect of releasing, not part of it.
-if pgrep -x gmax-daemon >/dev/null 2>&1; then
+# A safety release must preserve host quarantine, including explicit handoff.
+# Probe marker metadata only: never load gmax or open its index here.
+daemon_start_denied() {
+  node <<'NODE'
+const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
+if (process.env.GMAX_NO_AUTOSTART === "1") process.exit(0);
+const shared = path.join(os.homedir(), ".gmax");
+const data = process.env.GMAX_HOME ? path.resolve(process.env.GMAX_HOME) : shared;
+for (const marker of [path.join(shared, "safety-stop.json"), path.join(shared, "autostart-disabled"), path.join(data, "autostart-disabled")]) {
+  try { fs.lstatSync(marker); process.exit(0); }
+  catch (error) { if (error.code !== "ENOENT") process.exit(0); }
+}
+process.exit(1);
+NODE
+}
+
+if daemon_start_denied; then
+  echo "==> Host quarantine is active — preserving it and skipping daemon restart"
+elif pgrep -x gmax-daemon >/dev/null 2>&1; then
   echo "==> Restarting daemon onto ${VERSION}"
   # Never fail the release here: the publish is already live and irreversible,
   # so a restart problem is a warning to act on, not a reason to exit non-zero.

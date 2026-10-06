@@ -54,8 +54,10 @@ gmax config                   # View current settings
 gmax config --embed-mode gpu  # Switch to GPU (Apple Silicon)
 gmax config --worker-threads 2  # Cap worker processes (auto = default); applies on daemon restart
 gmax doctor                   # Health check
-gmax doctor --fix             # Auto-repair (compact, prune, remove stale locks)
+gmax doctor --fix             # Repair checks; full-table maintenance is disabled
 ```
+
+**Storage containment:** full-table compaction is disabled, including forced maintenance and doctor repair. Existing retained index copies are not reclaimed by this release. The verified prune-only recovery path is separate work; normal incremental indexing remains available when the host is healthy and not quarantined. A persistent host safety stop blocks mutation and daemon restart. Installing an update preserves existing quarantine.
 
 ### Core Commands
 
@@ -234,7 +236,7 @@ gmax watch restart            # Stop it, wait for it to exit, start a fresh one 
 gmax status                   # See all projects + watcher status
 ```
 
-Adding or indexing a project can start the daemon automatically. MCP acquires primary-project watch leases lazily when an index-reading tool is used; discovery and catalog listing start no background work. It shuts down after 4 hours of inactivity, and hands off to a fresh daemon after 24 hours or once its memory footprint passes 2.5 GB. File-change batches are processed on up to four worker processes by default, added only when work backs up, with one kept free for searches; LanceDB compaction runs after writes rather than on every maintenance tick.
+Adding or indexing a project can start the daemon automatically. MCP acquires primary-project watch leases lazily when an index-reading tool is used; discovery and catalog listing start no background work. It shuts down after 4 hours of inactivity, and hands off to a fresh daemon after 24 hours or once its memory footprint passes 2.5 GB. File-change batches are processed on up to four worker processes by default, added only when work backs up, with one kept free for searches; full-table compaction and new FTS/ANN index builds are disabled by containment. Existing indexes remain readable. Host safety stops persist across restart and block heavy operations.
 
 `gmax watch status` reports failed files, native watcher recovery or polling, dropped-event counts, and the last complete filesystem reconciliation. Polling scans run every five minutes, so recent edits can lag. Search and MCP responses retain health warnings even after the file queue drains. A complete reconciliation means the filesystem scan completed; queued embedding work can still be pending.
 
@@ -461,7 +463,7 @@ fixtures/
 
 ```bash
 gmax doctor                   # Check health
-gmax doctor --fix             # Auto-repair (compact, prune, fix locks)
+gmax doctor --fix             # Repair checks; full-table maintenance is disabled
 gmax doctor --agent           # Machine-readable health output
 gmax index                    # Reindex (auto-detects and repairs cache/vector mismatches)
 gmax index --reset            # Full reindex from scratch
@@ -470,11 +472,11 @@ gmax watch restart            # Restart daemon
 
 `gmax doctor` reports ANN index state. `ANN: vector index not built` is normal with the default exact-search configuration.
 
-Compaction pauses index writes, waits for pending writes to commit, and opens a fresh table snapshot for each attempt. Each optimize call makes at most two attempts. Before each attempt it checks current free space against twice the table's logical size plus the critical-space reserve (5 GB by default). If there is insufficient headroom, it skips the rewrite and logs the required space; search remains available. A successful prune can reclaim fragment copies left by failed attempts.
+Full-table compaction and new FTS/ANN index builds are disabled in the containment release, including forced maintenance and doctor repair. Existing indexes remain readable; missing lexical indexes fall back to available retrieval. Retained copies are not recovered by this release. A separate exclusive prune-only path requires validation before deployment. Do not repeatedly force repair, use future cutoffs or manually remove index fragments.
 
-`~/.gmax/logs/daemon.log` records compaction attempts and outcomes, including duration, logical size, disk size before/after, free space, and bytes reclaimed. `gmax status --json` exposes the last outcome under `daemon.compaction`; its `at` timestamp identifies when it was recorded. Five-minute resource snapshots track footprint, RSS, heap, external/ArrayBuffer memory, Lance cache, workers and pending work for memory investigations. Reading status uses retained snapshots and does not scan the index directory. Logs rotate to `daemon.log.prev`.
+`~/.gmax/logs/daemon.log` records containment skips and retained historical compaction outcomes, including duration, logical size, disk size before/after, free space, and bytes reclaimed. `gmax status --json` exposes the last outcome under `daemon.compaction`; its `at` timestamp identifies when it was recorded. Five-minute resource snapshots track footprint, RSS, heap, external/ArrayBuffer memory, Lance cache, workers and pending work for memory investigations. Reading status uses retained snapshots and does not scan the index directory. Logs rotate to `daemon.log.prev`.
 
-`gmax doctor --fix` reports completed, skipped, failed, or unverified optimization. It exits nonzero when a requested optimization did not complete or an older daemon could not verify its outcome. A busy or failed daemon is never retried as a second writer in the CLI process.
+`gmax doctor --fix` refuses work under quarantine and otherwise reports optimization skipped by containment. It exits nonzero when a requested optimization did not complete or an older daemon could not verify its outcome. A busy or failed daemon is never retried as a second writer in the CLI process.
 
 ### Known issues
 
@@ -485,7 +487,7 @@ whether you need to act.
 | You see | What it means |
 |---|---|
 | `Optimize panicked ... inverted/builder.rs` | The historical FTS merge defect is fixed in the shipped LanceDB 0.39.0 runtime. If it recurs on a current release, preserve the version and logs and report a regression; the rebuild guard remains a recovery tripwire. |
-| `disabling auto-rebuild until an optimize succeeds` | Transient, not a wedge. The next successful optimize clears it. Search stays available. |
+| `disabling auto-rebuild until an optimize succeeds` | Recovery remains paused under containment. Preserve diagnostics; use existing indexes or vector retrieval rather than forcing optimize. |
 | `ANN: vector index not built` | Normal — exact search is the default. |
 | `cannot reach the daemon socket from this sandbox` (exit 2) | The shell is sandboxed. Add the two keys in [Running under the Claude Code sandbox](#running-under-the-claude-code-sandbox); `gmax doctor` warns about the same gap. |
 | `npm audit` reports advisories on install | Record the installed version and dependency path and report new findings. JavaScript consumer audits do not cover the Python embedding environment; maintainers also audit its locked registry dependencies with `pnpm run audit:python` (Python 3.11+; no model load). |

@@ -36,6 +36,16 @@ import {
 import { annMinRows, isAnnEnabled } from "./ann-config";
 import { type CompactionResult, skippedCompaction } from "./compaction-result";
 import * as lancedb from "./lance-sdk";
+import {
+  assertFreshDiskMutationAllowed,
+  assertStoreMutationAllowed,
+  availableStoreDiskBytes,
+  DiskPressureError,
+  FULL_TABLE_MAINTENANCE_DISABLED_REASON,
+  fullTableMaintenanceDisabled,
+  recordMaintenanceContainment,
+  storeMutationDeniedReason,
+} from "./maintenance-policy";
 import { StoreLease } from "./store-lease";
 import type { VectorRecord } from "./types";
 
@@ -115,12 +125,7 @@ export function sweepStaleLanceTempFiles(
   return { filesRemoved, bytesFreed };
 }
 
-export class DiskPressureError extends Error {
-  constructor(message = "Disk critically low — writes suspended") {
-    super(message);
-    this.name = "DiskPressureError";
-  }
-}
+export { DiskPressureError } from "./maintenance-policy";
 
 /**
  * Detects "Not found: <hash>.lance" errors from LanceDB — these indicate the
@@ -375,11 +380,20 @@ export class VectorDB {
     if (this.closed) {
       throw new Error("VectorDB connection is closed");
     }
+    const creatingStore = !fs.existsSync(this.lancedbDir);
+    if (creatingStore) {
+      assertStoreMutationAllowed();
+      assertFreshDiskMutationAllowed(this.lancedbDir);
+    }
     await this.getLease();
     if (this.closed) {
       throw new Error("VectorDB connection is closed");
     }
     if (!this.db) {
+      if (creatingStore || !fs.existsSync(this.lancedbDir)) {
+        assertStoreMutationAllowed();
+        assertFreshDiskMutationAllowed(this.lancedbDir);
+      }
       fs.mkdirSync(this.lancedbDir, { recursive: true });
       this.session = createLanceSession();
       // 0.38 accepts the legacy third argument in its types but drops it in
@@ -463,24 +477,22 @@ export class VectorDB {
   }
 
   getAvailableBytes(): number {
-    try {
-      const stats = fs.statfsSync(this.lancedbDir);
-      return stats.bavail * stats.bsize;
-    } catch {
-      return Number.MAX_SAFE_INTEGER; // fail-open
-    }
+    return availableStoreDiskBytes(this.lancedbDir);
   }
 
-  checkDiskPressure(): DiskPressureLevel {
+  checkDiskPressure(fresh = false): DiskPressureLevel {
     const now = Date.now();
-    if (now - this.lastDiskCheckMs < VectorDB.DISK_CHECK_INTERVAL_MS) {
+    if (
+      !fresh &&
+      now - this.lastDiskCheckMs < VectorDB.DISK_CHECK_INTERVAL_MS
+    ) {
       return this.diskPressure;
     }
     this.lastDiskCheckMs = now;
 
     const avail = this.getAvailableBytes();
     let level: DiskPressureLevel;
-    if (avail < DISK_CRITICAL_BYTES) {
+    if (!Number.isFinite(avail) || avail < 0 || avail < DISK_CRITICAL_BYTES) {
       level = "critical";
     } else if (avail < DISK_LOW_BYTES) {
       level = "low";
@@ -493,7 +505,7 @@ export class VectorDB {
       if (level === "critical") {
         log(
           "vectordb",
-          `CRITICAL: disk space critically low (${freeStr} free) — writes suspended`,
+          `CRITICAL: ${Number.isFinite(avail) ? `disk space critically low (${freeStr} free)` : "disk space unknown"} — writes suspended`,
         );
       } else if (level === "low") {
         log(
@@ -514,7 +526,7 @@ export class VectorDB {
   }
 
   private ensureDiskOk(): void {
-    if (this.checkDiskPressure() === "critical") {
+    if (this.checkDiskPressure(true) === "critical") {
       throw new DiskPressureError();
     }
   }
@@ -525,6 +537,8 @@ export class VectorDB {
    * but all writes pause when compaction wants exclusive access.
    */
   private async withWriteGate<T>(fn: () => Promise<T>): Promise<T> {
+    assertStoreMutationAllowed();
+    this.ensureDiskOk();
     while (this.exclusiveMutationPromise || this.compactingPromise) {
       if (this.closed) throw new Error("VectorDB connection is closed");
       await Promise.all(
@@ -534,6 +548,8 @@ export class VectorDB {
       );
     }
     if (this.closed) throw new Error("VectorDB connection is closed");
+    assertStoreMutationAllowed();
+    this.ensureDiskOk();
     this.activeWrites++;
     try {
       return await fn();
@@ -572,6 +588,8 @@ export class VectorDB {
   async withExclusiveTableMutation<T>(
     mutation: (db: lancedb.Connection) => Promise<T>,
   ): Promise<T> {
+    assertStoreMutationAllowed();
+    this.ensureDiskOk();
     if (this.closed) throw new Error("VectorDB connection is closed");
     if (this.exclusiveMutationPromise) {
       throw new Error("An exclusive table mutation is already in progress");
@@ -597,6 +615,8 @@ export class VectorDB {
             });
           }
           await Promise.all([this.drainWrites(), this.drainCompactions()]);
+          assertStoreMutationAllowed();
+          this.ensureDiskOk();
           const db = await this.getDb();
           const result = await mutation(db);
           this.markWriteCommitted();
@@ -803,6 +823,16 @@ export class VectorDB {
   }
 
   async ensureTable(): Promise<lancedb.Table> {
+    if (
+      storeMutationDeniedReason() !== null ||
+      this.checkDiskPressure(true) === "critical"
+    ) {
+      const existing = await this.openExistingTableUnsafe();
+      if (!existing)
+        throw new Error("gmax store is quarantined and has no existing table");
+      await this.validateSchema(existing);
+      return existing;
+    }
     return this.withWriteGate(() => this.ensureTableUnsafe());
   }
 
@@ -813,6 +843,7 @@ export class VectorDB {
       table = await db.openTable(TABLE_NAME);
     } catch (err) {
       if (!isMissingTableError(err)) throw err;
+      assertStoreMutationAllowed();
       log("db", `Creating table (${this.vectorDim}d)`);
       const schema = this.buildSchema();
       table = await db.createTable(TABLE_NAME, [this.seedRow()], {
@@ -824,6 +855,7 @@ export class VectorDB {
     }
 
     await this.validateSchema(table);
+    assertStoreMutationAllowed();
     await this.evolveSchema(table);
     return table;
   }
@@ -944,6 +976,11 @@ export class VectorDB {
   }
 
   async createFTSIndex(rebuild = false, retries = 5): Promise<void> {
+    if (fullTableMaintenanceDisabled()) {
+      if (rebuild) throw new Error(FULL_TABLE_MAINTENANCE_DISABLED_REASON);
+      // Existing indexes remain searchable; absence does not authorize a build.
+      return this.adoptFTSIndex();
+    }
     return this.withWriteGate(() =>
       this.createFTSIndexUnsafe(rebuild, retries),
     );
@@ -982,7 +1019,11 @@ export class VectorDB {
    */
   async adoptFTSIndex(): Promise<void> {
     if (this.ftsIndexEnsured) return;
-    const table = await this.ensureTable();
+    const table = await this.openExistingTableUnsafe();
+    if (!table)
+      throw new Error(
+        "[vector-db] No existing table or FTS index; index maintenance is disabled",
+      );
     const indices = await table.listIndices();
     const existing = indices.find(
       (index) =>
@@ -1001,6 +1042,13 @@ export class VectorDB {
     retries = 5,
     checkOnly = false,
   ): Promise<boolean> {
+    if (fullTableMaintenanceDisabled()) {
+      debug(
+        "vectordb",
+        "ANN/index maintenance disabled by host-safety containment",
+      );
+      return false;
+    }
     if (this.checkDiskPressure() !== "ok") {
       debug("vectordb", "ANN index skipped under disk pressure");
       return false;
@@ -1279,6 +1327,12 @@ export class VectorDB {
     retentionMs = 0,
     bypassExclusiveMutation = false,
   ): Promise<CompactionResult> {
+    if (fullTableMaintenanceDisabled()) {
+      this.lastOptimizeDidWork = false;
+      return this.recordSkippedCompaction(
+        recordMaintenanceContainment(this.lancedbDir),
+      );
+    }
     if (!bypassExclusiveMutation) {
       while (this.exclusiveMutationPromise) await this.exclusiveMutationPromise;
       if (this.closed) throw new Error("VectorDB connection is closed");
@@ -1507,11 +1561,17 @@ export class VectorDB {
   /**
    * Run FTS rebuild + optimize as a single serialized operation.
    * Safe to call from multiple project processors — only one runs at a time.
-   * Checks disk bloat ratio and retries optimize when bloat persists.
+   * Reports bloat without another whole-table rewrite.
    */
   async runMaintenance(
     options: { force?: boolean } = {},
   ): Promise<CompactionResult | undefined> {
+    if (fullTableMaintenanceDisabled()) {
+      this.lastOptimizeDidWork = false;
+      return this.recordSkippedCompaction(
+        recordMaintenanceContainment(this.lancedbDir),
+      );
+    }
     if (this.maintenanceRunning) {
       debug("vectordb", "Maintenance already running, skipping");
       return skippedCompaction("maintenance already running");
@@ -1579,7 +1639,7 @@ export class VectorDB {
         // Track across both passes: `lastOptimizeDidWork` is reset per optimize()
         // call, so a productive first pass followed by a barren bloat retry would
         // otherwise read as unproductive and trigger a spurious backoff.
-        let didWork = this.lastOptimizeDidWork;
+        const didWork = this.lastOptimizeDidWork;
 
         if (result.status === "completed" && this.lastOptimizeDidWork) {
           const table = await this.openExistingTableUnsafe();
@@ -1602,21 +1662,19 @@ export class VectorDB {
             const logicalSize = stats.totalBytes;
             const bloatRatio = logicalSize > 0 ? diskSize / logicalSize : 0;
 
-            // Only retry if disk is still ok after optimize (don't spiral)
-            if (bloatRatio > 2.0 && this.checkDiskPressure() === "ok") {
+            if (bloatRatio > 2.0) {
               log(
                 "vectordb",
-                `Bloat detected after optimize: ${(diskSize / 1024 / 1024).toFixed(0)}MB disk vs ${(logicalSize / 1024 / 1024).toFixed(0)}MB logical (${bloatRatio.toFixed(1)}x) — retrying`,
+                `Bloat remains after optimize: ${bloatRatio.toFixed(1)}x; additional rewrite disabled`,
               );
-              await new Promise((r) => setTimeout(r, 2000));
-              result = await this.optimize(5, 0, true);
-              didWork = didWork || this.lastOptimizeDidWork;
             }
           }
         }
         this.noteCompaction(didWork);
       }
 
+      if (result && result.status !== "completed") return result;
+      if (result?.cleanupReason) return result;
       const maintainedTable = await this.openExistingTableUnsafe();
       this.maintainedTableVersion =
         await this.readTableVersion(maintainedTable);
@@ -1679,6 +1737,13 @@ export class VectorDB {
   async compactIfNeeded(
     threshold = FRAGMENT_COMPACT_THRESHOLD,
   ): Promise<boolean> {
+    if (fullTableMaintenanceDisabled()) {
+      this.lastOptimizeDidWork = false;
+      this.recordSkippedCompaction(
+        recordMaintenanceContainment(this.lancedbDir),
+      );
+      return false;
+    }
     if (this.maintenanceRunning) return false;
     this.maintenanceRunning = true;
     try {

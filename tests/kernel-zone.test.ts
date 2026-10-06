@@ -1,8 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({ execFileSync: vi.fn() }));
+vi.mock("node:child_process", () => ({ execFileSync: mocks.execFileSync }));
+
 import {
   classifyZonePressure,
   formatZoneUsage,
   parseZprintOutput,
+  readKernelZoneUsage,
   ZONE_THRESHOLDS,
 } from "../src/lib/utils/kernel-zone";
 
@@ -13,6 +18,55 @@ const REAL_OUTPUT = [
   "-------------------------------------------------------------------------------------------------------------",
   "data.kalloc.1024            1024          0K          0K          0           0        3416     0K      0   ",
 ].join("\n");
+
+describe("readKernelZoneUsage bounded probe", () => {
+  const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+  beforeEach(() => {
+    Object.defineProperty(process, "platform", {
+      value: "darwin",
+      configurable: true,
+    });
+    mocks.execFileSync.mockReset();
+  });
+  afterEach(() => Object.defineProperty(process, "platform", platform));
+
+  it("bounds a successful probe with scheduling margin and capped output", () => {
+    mocks.execFileSync.mockReturnValue(REAL_OUTPUT);
+    expect(readKernelZoneUsage()).toMatchObject({
+      elements: 3416,
+      pressure: "ok",
+    });
+    expect(mocks.execFileSync).toHaveBeenCalledWith(
+      "zprint",
+      ["data.kalloc.1024"],
+      {
+        encoding: "utf-8",
+        timeout: 5000,
+        maxBuffer: 65536,
+        stdio: ["ignore", "pipe", "ignore"],
+      },
+    );
+  });
+  it("returns unknown on timeout without retrying or assuming healthy", () => {
+    mocks.execFileSync.mockImplementation(() => {
+      throw Object.assign(new Error("timeout"), { code: "ETIMEDOUT" });
+    });
+    expect(readKernelZoneUsage()).toBeNull();
+    expect(mocks.execFileSync).toHaveBeenCalledOnce();
+  });
+  it("returns unknown for an unparseable report", () => {
+    mocks.execFileSync.mockReturnValue("unrecognized output");
+    expect(readKernelZoneUsage()).toBeNull();
+  });
+  it("does not launch a probe on unsupported platforms", () => {
+    Object.defineProperty(process, "platform", {
+      value: "linux",
+      configurable: true,
+    });
+    expect(readKernelZoneUsage()).toBeNull();
+    expect(mocks.execFileSync).not.toHaveBeenCalled();
+  });
+});
 
 describe("parseZprintOutput", () => {
   it("reads element count and size from a real report", () => {

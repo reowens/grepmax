@@ -8,6 +8,7 @@ import { readGlobalConfig } from "../lib/index/index-config";
 import { createIndexingSpinner } from "../lib/index/sync-helpers";
 import { initialSync } from "../lib/index/syncer";
 import { ensureSetup } from "../lib/setup/setup-helpers";
+import { assertStoreMutationAllowed } from "../lib/store/maintenance-policy";
 import { VectorDB } from "../lib/store/vector-db";
 import { autostartDisabledNotice } from "../lib/utils/autostart";
 import {
@@ -75,6 +76,7 @@ Examples:
     let vectorDb: VectorDB | null = null;
 
     try {
+      assertStoreMutationAllowed();
       const targetDir = dir ? path.resolve(dir) : process.cwd();
       const projectRoot = findProjectRoot(targetDir) ?? targetDir;
       const projectName = path.basename(projectRoot);

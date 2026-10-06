@@ -1,6 +1,10 @@
 import type { Command } from "commander";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("../src/lib/store/maintenance-policy", () => ({
+  assertStoreMutationAllowed: vi.fn(),
+}));
+
 const mocks = vi.hoisted(() => ({
   vectorDb: vi.fn(),
   readGlobalConfig: vi.fn(),

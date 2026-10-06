@@ -21,6 +21,7 @@ import {
   projectEmbeddingStatus,
 } from "../lib/index/embedding-status";
 import { readGlobalConfig } from "../lib/index/index-config";
+import { storeMutationDeniedReason } from "../lib/store/maintenance-policy";
 import {
   formatDoctorOptimize,
   runDoctorOptimize,
@@ -417,6 +418,16 @@ export const doctor = new Command("doctor")
   )
   .option("--agent", "Compact output for AI agents", false)
   .action(async (opts) => {
+    if (opts.fix) {
+      const denied = storeMutationDeniedReason();
+      if (denied !== null) {
+        console.error(
+          `gmax doctor --fix refused: ${denied}; preserving containment`,
+        );
+        process.exitCode = 2;
+        return;
+      }
+    }
     if (!opts.agent) console.log("gmax Doctor\n");
 
     const root = PATHS.globalRoot;

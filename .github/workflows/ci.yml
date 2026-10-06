@@ -44,8 +44,14 @@ jobs:
       - name: Check test types
         run: pnpm run test:typecheck
 
+      - name: Check formatting
+        run: pnpm run format:check
+
       - name: Run tests
-        run: pnpm run test
+        run: pnpm exec vitest run --maxWorkers=2
 
       - name: Build
         run: pnpm run build
+
+      - name: Audit and smoke-test the packed npm consumer
+        run: pnpm run audit:consumer

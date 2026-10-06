@@ -5,6 +5,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DISK_CRITICAL_BYTES } from "../src/config";
 import { VectorDB } from "../src/lib/store/vector-db";
 
+// Historical native algorithm coverage only; production policy has no override.
+vi.mock("../src/lib/store/maintenance-policy", async (importOriginal) => {
+  const original =
+    await importOriginal<
+      typeof import("../src/lib/store/maintenance-policy")
+    >();
+  return {
+    ...original,
+    assertStoreMutationAllowed: () => {},
+    storeMutationDeniedReason: () => null,
+    fullTableMaintenanceDisabled: () => false,
+    recordMaintenanceContainment: () =>
+      "test-only historical algorithm fixture",
+  };
+});
+
 const GB = 1024 ** 3;
 const success = {
   compaction: { fragmentsRemoved: 2, fragmentsAdded: 1 },

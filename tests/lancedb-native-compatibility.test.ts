@@ -8,6 +8,22 @@ import type { VectorRecord } from "../src/lib/store/types";
 import { VectorDB } from "../src/lib/store/vector-db";
 import { pathStartsWith } from "../src/lib/utils/filter-builder";
 
+// Historical native algorithm coverage only; production policy has no override.
+vi.mock("../src/lib/store/maintenance-policy", async (importOriginal) => {
+  const original =
+    await importOriginal<
+      typeof import("../src/lib/store/maintenance-policy")
+    >();
+  return {
+    ...original,
+    assertStoreMutationAllowed: () => {},
+    storeMutationDeniedReason: () => null,
+    fullTableMaintenanceDisabled: () => false,
+    recordMaintenanceContainment: () =>
+      "test-only historical algorithm fixture",
+  };
+});
+
 function record(
   id: string,
   filePath: string,

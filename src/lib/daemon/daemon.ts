@@ -21,17 +21,14 @@ import type { CompactionResult } from "../store/compaction-result";
 import { MetaCache } from "../store/meta-cache";
 import { type StoreLease, StoreLeaseTimeoutError } from "../store/store-lease";
 import { VectorDB } from "../store/vector-db";
+import { daemonStartDeniedReason } from "../utils/autostart";
 import { isGitWorktreeRoot, WORKTREE_REFUSAL } from "../utils/blocked-roots";
 import {
   clearDrainingMarker,
   writeDrainingMarker,
 } from "../utils/daemon-client";
 import { spawnDaemon } from "../utils/daemon-launcher";
-import {
-  formatZoneUsage,
-  readKernelZoneUsage,
-  ZONE_THRESHOLDS,
-} from "../utils/kernel-zone";
+import { formatZoneUsage, readKernelZoneUsage } from "../utils/kernel-zone";
 import { KeyedMutex } from "../utils/keyed-mutex";
 import { rotateLogFds } from "../utils/log-rotate";
 import { debug as dbg, log as dlog } from "../utils/logger";
@@ -58,6 +55,7 @@ import {
   type ResourceSnapshot,
 } from "../utils/resource-snapshot";
 import { describeRoot } from "../utils/root-availability";
+import { latchSafetyStop } from "../utils/safety-latch";
 import {
   heartbeat,
   listWatchers,
@@ -79,7 +77,7 @@ import {
 } from "./ipc-handler";
 import { MlxServerManager } from "./mlx-server-manager";
 import { ProcessManager } from "./process-manager";
-import { registerGraphVerbs } from "./read-verbs";
+import { getReadVerb, registerGraphVerbs } from "./read-verbs";
 import { registerRowsVerbs, type StoreReadDeps } from "./rows-handler";
 import {
   type DaemonSearchPayload,
@@ -176,8 +174,6 @@ export class Daemon {
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private idleInterval: ReturnType<typeof setInterval> | null = null;
   private heartbeatTick = 0;
-  /** Rate-limits the kernel-zone warn log — see checkKernelZonePressure. */
-  private lastZoneWarnMs = 0;
   private shuttingDown = false;
   private recycling = false;
   private recycleDueSinceMs: number | null = null;
@@ -287,6 +283,19 @@ export class Daemon {
   }
 
   async start(): Promise<void> {
+    const denied = daemonStartDeniedReason();
+    if (denied !== null)
+      throw new Error(`gmax: ${denied}; preserving containment`);
+    // Check before stale-process cleanup, store opening, workers or model setup.
+    if (process.platform === "darwin") {
+      const usage = readKernelZoneUsage();
+      if (!usage)
+        throw new Error("gmax: kernel pressure unavailable; startup refused");
+      if (usage.pressure !== "ok") {
+        latchSafetyStop(formatZoneUsage(usage));
+        throw new Error(`gmax: ${formatZoneUsage(usage)}; startup safety stop`);
+      }
+    }
     process.title = "gmax-daemon";
 
     // Read verbs register here rather than at read-verbs.ts module scope: the
@@ -545,12 +554,9 @@ export class Daemon {
       // after a frozen MLX process kept the port bound (v0.17.0 bug #1).
       this.heartbeatTick++;
       if (this.heartbeatTick % 5 === 0) {
-        void this.mlxServerManager.checkMlxHealth();
-        this.processManager.sweepOrphanWorkers();
-        this.maybeRecycle();
-        this.checkKernelZonePressure();
+        this.runHeartbeatMaintenance(true);
       } else if (this.recycleDueSinceMs !== null) {
-        this.maybeRecycle(false);
+        this.runHeartbeatMaintenance(false);
       }
     }, HEARTBEAT_INTERVAL_MS);
 
@@ -722,7 +728,22 @@ export class Daemon {
     signal: AbortSignal | undefined,
     fn: (signal: AbortSignal) => Promise<T>,
   ): Promise<T> {
-    return this.operations.runShared(name, signal, fn);
+    const readOnly =
+      getReadVerb(name) !== undefined ||
+      ["search", "project-stats", "unwatch", "llm-stop"].includes(name);
+    return this.operations.runShared(name, signal, async (operationSignal) => {
+      if (!readOnly) this.assertHeavyOperationAdmission(name);
+      return fn(operationSignal);
+    });
+  }
+
+  private assertHeavyOperationAdmission(name: string): void {
+    const denied = daemonStartDeniedReason();
+    if (denied !== null) throw new Error(`${name} refused: ${denied}`);
+    // Probe at operation admission, before setup/cache/worker/model side effects.
+    if (!this.checkKernelZonePressure()) {
+      throw new Error(`${name} refused: host pressure is unsafe or unknown`);
+    }
   }
 
   /**
@@ -1506,6 +1527,18 @@ export class Daemon {
       writeDone(conn, { ok: false, error: "daemon resources not ready" });
       return;
     }
+    try {
+      this.assertHeavyOperationAdmission("repair");
+    } catch (error) {
+      writeDone(conn, {
+        ok: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "repair safety admission failed",
+      });
+      return;
+    }
 
     const targetConfig = readGlobalConfig();
     const targetGeneration = resolveEmbeddingGeneration(targetConfig);
@@ -1549,9 +1582,11 @@ export class Daemon {
       const result = await this.operations.runExclusive(
         "repair",
         async () => {
+          this.assertHeavyOperationAdmission("repair");
           desiredWatchRoots = await this.watcherManager.quiesceAll();
         },
         async (operationSignal) => {
+          this.assertHeavyOperationAdmission("repair");
           throwIfPreDropCancelled(operationSignal);
           oldResources.vectorDb.pauseMaintenanceLoop();
           this.searchers.clear();
@@ -2151,6 +2186,15 @@ export class Daemon {
     return this.lastResourceSnapshot;
   }
 
+  private runHeartbeatMaintenance(sampleFootprint: boolean): void {
+    // Both ordinary probes and deferred-recycle ticks check safety first.
+    if (!this.checkKernelZonePressure()) return;
+    this.maybeRecycle(sampleFootprint);
+    if (this.shuttingDown || this.recycling || !sampleFootprint) return;
+    void this.mlxServerManager.checkMlxHealth();
+    this.processManager.sweepOrphanWorkers();
+  }
+
   private logResourceSnapshot(
     reason: string,
     footprintMb: number | null,
@@ -2261,40 +2305,47 @@ export class Daemon {
    * This host lost three sessions that way before the compactor was identified as
    * the largest write source on it.
    *
-   * So the daemon watches the zone it is pressurizing. A warn-level reading is
-   * logged and left alone; a critical reading exits without relaunch, because
-   * relaunching would resume the writes that caused it. Nothing here can reclaim
-   * the leaked memory — only a reboot does that — so the only useful move is to
-   * stop adding to it while the user still has a working machine.
+   * Warning, critical or unknown macOS readings stop mutation before another
+   * heavy operation can begin. Persist the reason before shutdown, so hooks and
+   * memory guards cannot revive the writer. Nothing here reclaims kernel memory.
    *
-   * Deliberately does nothing when the sample is unavailable or unparseable
-   * (non-macOS, no `zprint`, changed output format): an unknown reading must never
-   * shut the daemon down.
+   * Non-macOS hosts have no such probe. On macOS an unavailable sample is
+   * explicitly unknown and cannot authorize further mutation.
    */
-  private checkKernelZonePressure(): void {
-    if (this.shuttingDown || this.recycling) return;
+  private checkKernelZonePressure(): boolean {
+    if (this.shuttingDown || this.recycling) return false;
+    const denied = daemonStartDeniedReason();
+    if (denied !== null) {
+      // The existing quarantine is already durable; preserve its ownership and
+      // do not replace it with a new marker that an operator must also clear.
+      this.stopForSafety(denied, false);
+      return false;
+    }
+    if (process.platform !== "darwin") return true;
     const usage = readKernelZoneUsage();
-    if (!usage || usage.pressure === "ok") return;
+    if (usage?.pressure === "ok") return true;
 
-    if (usage.pressure === "warn") {
-      // Rate-limited to once an hour: at the 5-minute heartbeat this would
-      // otherwise print 12 identical lines an hour for as long as the condition
-      // holds, which on a leaking host is until reboot.
-      const now = Date.now();
-      if (now - this.lastZoneWarnMs < 60 * 60 * 1000) return;
-      this.lastZoneWarnMs = now;
-      console.log(
-        `[daemon] WARNING: ${formatZoneUsage(usage)} — macOS kernel zone is leaking ` +
-          `under write pressure. The daemon will stop itself at ` +
-          `${(ZONE_THRESHOLDS.criticalBytes / 1024 ** 3).toFixed(0)}GiB. ` +
-          `Only a reboot reclaims this memory.`,
+    const reason = usage
+      ? `${usage.pressure} kernel pressure: ${formatZoneUsage(usage)}`
+      : "kernel pressure unavailable; heavy work cannot be admitted";
+    this.stopForSafety(reason);
+    return false;
+  }
+
+  private stopForSafety(reason: string, persist = true): void {
+    // Warning already pauses mutation: a stale index costs less than another
+    // host crash. Unknown readings are visible stops, never healthy samples.
+    try {
+      if (persist) latchSafetyStop(reason);
+    } catch (error) {
+      console.error(
+        "[daemon] Failed to persist safety stop; stopping anyway:",
+        error,
       );
-      return;
     }
 
     console.log(
-      `[daemon] CRITICAL: ${formatZoneUsage(usage)} — stopping to avoid a kernel panic. ` +
-        `Reboot to reclaim the zone; the index will catch up on next start.`,
+      `[daemon] SAFETY STOP: ${reason}. Containment stays in place across restart; review host health before resuming.`,
     );
     this.recycling = true;
     void this.shutdown().finally(() => process.exit(0));

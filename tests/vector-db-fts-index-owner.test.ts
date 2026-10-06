@@ -4,6 +4,22 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VectorDB } from "../src/lib/store/vector-db";
 
+// Historical native algorithm coverage only; production policy has no override.
+vi.mock("../src/lib/store/maintenance-policy", async (importOriginal) => {
+  const original =
+    await importOriginal<
+      typeof import("../src/lib/store/maintenance-policy")
+    >();
+  return {
+    ...original,
+    assertStoreMutationAllowed: () => {},
+    storeMutationDeniedReason: () => null,
+    fullTableMaintenanceDisabled: () => false,
+    recordMaintenanceContainment: () =>
+      "test-only historical algorithm fixture",
+  };
+});
+
 // Search runs in every process (daemon, each CLI fallback, each MCP session).
 // When the search path built the FTS index on a miss, N processes issued
 // CreateIndex against the same table version concurrently — Lance rejected the
@@ -35,7 +51,7 @@ describe("VectorDB FTS index ownership", () => {
 
   it("adoptFTSIndex never calls createIndex when the index is missing", async () => {
     const createIndex = vi.fn();
-    vi.spyOn(db, "ensureTable").mockResolvedValue({
+    vi.spyOn(db as any, "openExistingTableUnsafe").mockResolvedValue({
       listIndices: async () => [],
       createIndex,
     } as any);
@@ -46,7 +62,7 @@ describe("VectorDB FTS index ownership", () => {
 
   it("adoptFTSIndex succeeds without building when the index already exists", async () => {
     const createIndex = vi.fn();
-    vi.spyOn(db, "ensureTable").mockResolvedValue({
+    vi.spyOn(db as any, "openExistingTableUnsafe").mockResolvedValue({
       listIndices: async () => [{ name: "content_idx", columns: ["content"] }],
       createIndex,
     } as any);
@@ -56,7 +72,7 @@ describe("VectorDB FTS index ownership", () => {
   });
 
   it("matches an FTS index that covers content under a different name", async () => {
-    vi.spyOn(db, "ensureTable").mockResolvedValue({
+    vi.spyOn(db as any, "openExistingTableUnsafe").mockResolvedValue({
       listIndices: async () => [{ name: "legacy_fts", columns: ["content"] }],
       createIndex: vi.fn(),
     } as any);
@@ -68,7 +84,7 @@ describe("VectorDB FTS index ownership", () => {
     const listIndices = vi.fn(async () => [
       { name: "content_idx", columns: ["content"] },
     ]);
-    vi.spyOn(db, "ensureTable").mockResolvedValue({
+    vi.spyOn(db as any, "openExistingTableUnsafe").mockResolvedValue({
       listIndices,
       createIndex: vi.fn(),
     } as any);
@@ -81,7 +97,7 @@ describe("VectorDB FTS index ownership", () => {
   it("throwing on a missing index is load-bearing: callers must see failure", async () => {
     // ftsAvailable is only meaningful if adoption failure is visible, mirroring
     // the same contract createFTSIndexUnsafe has for terminal failures.
-    vi.spyOn(db, "ensureTable").mockResolvedValue({
+    vi.spyOn(db as any, "openExistingTableUnsafe").mockResolvedValue({
       listIndices: async () => [{ name: "path_idx", columns: ["path"] }],
       createIndex: vi.fn(),
     } as any);

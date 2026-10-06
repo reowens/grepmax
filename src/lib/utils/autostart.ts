@@ -1,5 +1,7 @@
 import * as fs from "node:fs";
+import * as path from "node:path";
 import { PATHS } from "../../config";
+import { safetyStopReason } from "./safety-latch";
 
 /**
  * Kill switch for *implicit* daemon auto-start. Create
@@ -8,24 +10,41 @@ import { PATHS } from "../../config";
  * reviving the daemon — needed when the host is quarantined and the daemon's
  * write volume is the thing under investigation.
  *
- * Explicit `gmax watch --daemon` is never gated: typing it is the user asking
- * for a daemon in that moment.
+ * Safety containment also gates explicit daemon launches. A launch is not
+ * authorization to remove an existing host quarantine.
  *
  * plugins/grepmax/hooks/watch-lease.js carries a plain-JS copy of these semantics
  * (env var checked first, then the file) because a SessionStart hook cannot
  * import from dist. Keep the two in sync.
  */
-export function autostartDisabledReason(): "env" | "file" | null {
+export function autostartDisabledReason(): "env" | "file" | "safety" | null {
   if (process.env.GMAX_NO_AUTOSTART === "1") return "env";
-  try {
-    return fs.existsSync(PATHS.autostartDisabledFile) ? "file" : null;
-  } catch {
-    return null;
+  if (safetyStopReason() !== null) return "safety";
+  const markers = new Set([
+    PATHS.autostartDisabledFile,
+    ...(PATHS.sharedRoot
+      ? [path.join(PATHS.sharedRoot, "autostart-disabled")]
+      : []),
+  ]);
+  for (const marker of markers) {
+    try {
+      fs.lstatSync(marker);
+      return "file";
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") return "file";
+    }
   }
+  return null;
 }
 
 export function isAutostartDisabled(): boolean {
   return autostartDisabledReason() !== null;
+}
+
+export function daemonStartDeniedReason(): string | null {
+  const safety = safetyStopReason();
+  if (safety !== null) return `host safety stop: ${safety}`;
+  return isAutostartDisabled() ? "daemon startup is quarantined" : null;
 }
 
 /**
@@ -37,12 +56,17 @@ export function isAutostartDisabled(): boolean {
 export function autostartDisabledUndo(): string | null {
   const reason = autostartDisabledReason();
   if (!reason) return null;
+  if (reason === "safety")
+    return "review the persistent host safety stop before resuming";
   return reason === "env"
     ? "unset GMAX_NO_AUTOSTART"
     : `rm ${PATHS.autostartDisabledFile}`;
 }
 
 export function autostartDisabledNotice(): string | null {
+  const safety = safetyStopReason();
+  if (safety !== null)
+    return `Gmax is paused by a persistent host safety stop: ${safety}. Mutations remain blocked until containment is reviewed.`;
   // A secondary store (src/bin.ts) runs in-process by design, not because the
   // kill switch is on, so say that instead of naming an undo step. Callers use
   // a non-null notice as the gate, so this must stay non-null.
