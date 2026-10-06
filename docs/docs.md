@@ -4,6 +4,8 @@
 
 **v0.26.51 is released and registry-installed.** The Claude hook and installer repairs below now ship. Source `7de4c9c`, tag `cbaa6b9`; [release CI 37406418335](https://github.com/reowens/grepmax/actions/runs/37406418335) passed 1,648 tests / 172 files, both typechecks, formatting, build, production/packed-consumer audits and native/tarball checks. The daemon handed over from .50 to .51 and confirmed readiness over IPC (PID 40322). Claude user/project scopes refreshed without changing their source, enabled preferences, other plugins or user settings; Codex retained its complete configuration and the approved two-tool deny list. Installed hook quarantine, renewal, scoped release and native checks passed. MCP v1/legacy/modern/auto tools passed with listeners forbidden. Doctor reports 573,029 rows, 15.7 GB logical / 16.4 GB disk and 70.0 GB free. Restart existing clients to load refreshed integrations. Local evidence: `docs/measurements/2026-10-05-release-v0.26.51/`.
 
+The CI bootstrap warning is identified: the old release setup action embedded pnpm 11.7.0 before switching to pnpm 10.34.6. Fresh audit reproduces four high advisories in that one bootstrap package. Both workflows now pin pnpm/action-setup v6.1.0 (`ea17c68`), whose bundled pnpm and standalone bootstrap are 11.25.0. Exact source/dist versions and integrities agree; isolated audits for both variants and requested pnpm 10.34.6 report zero vulnerabilities. Main-branch CI validation is pending. This tooling change does not require a new gmax package release. Local evidence: `docs/measurements/2026-10-05-pnpm-bootstrap/`.
+
 ### Previous v0.26.50 release evidence
 
 **v0.26.50 is released and installed.** Explicit CLI `--per-file` values now reach request-scoped retrieval, while omitted requests retain the configured cap or three. Source `7ba859c`, tag `353cdbf`; [release CI 37386229411](https://github.com/reowens/grepmax/actions/runs/37386229411) passed 1,613 tests / 169 files, both typechecks, formatting, build, production audit and fresh packed-consumer audit/native smoke. Registry installation and Claude/Codex integrations were refreshed. Installed concurrent caps six/one, default restoration, CLI expansion, native modules and all four MCP compatibility modes passed. Prior diagnostics, evaluation and result-window fixes remain shipped. Independent answer-ground-truth review and new diagnostic measurements remain prerequisites for ranking acceptance.
@@ -94,7 +96,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 103 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 104 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
