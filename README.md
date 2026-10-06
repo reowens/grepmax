@@ -484,7 +484,7 @@ whether you need to act.
 
 | You see | What it means |
 |---|---|
-| `Optimize panicked ... inverted/builder.rs` | The historical FTS merge defect is fixed in the shipped LanceDB 0.38.0 runtime. If it recurs on a current release, preserve the version and logs and report a regression; the rebuild guard remains a recovery tripwire. |
+| `Optimize panicked ... inverted/builder.rs` | The historical FTS merge defect is fixed in the shipped LanceDB 0.39.0 runtime. If it recurs on a current release, preserve the version and logs and report a regression; the rebuild guard remains a recovery tripwire. |
 | `disabling auto-rebuild until an optimize succeeds` | Transient, not a wedge. The next successful optimize clears it. Search stays available. |
 | `ANN: vector index not built` | Normal — exact search is the default. |
 | `cannot reach the daemon socket from this sandbox` (exit 2) | The shell is sandboxed. Add the two keys in [Running under the Claude Code sandbox](#running-under-the-claude-code-sandbox); `gmax doctor` warns about the same gap. |

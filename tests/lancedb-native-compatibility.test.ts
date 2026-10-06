@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -28,18 +29,119 @@ function record(
   };
 }
 
-describe("LanceDB 0.31 real-store compatibility", () => {
+describe("Pinned LanceDB native-store compatibility", () => {
   let dir: string;
   let db: VectorDB;
 
   beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), "gmax-lancedb-031-"));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "gmax-lancedb-native-"));
     db = new VectorDB(dir, 4);
   });
 
   afterEach(async () => {
     await db.close();
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("passes the exact cleanup cutoff to the native binding", async () => {
+    await db.insertBatch([
+      record("keep", "/repo/keep.ts", "keep service", [1, 0, 0, 0]),
+    ]);
+    const table = await db.ensureTable();
+    const optimize = vi
+      .spyOn((table as any).inner, "optimize")
+      .mockResolvedValue({
+        compaction: {
+          filesAdded: 0,
+          filesRemoved: 0,
+          fragmentsAdded: 0,
+          fragmentsRemoved: 0,
+        },
+        prune: { bytesRemoved: 0, oldVersionsRemoved: 0 },
+      });
+    const cutoff = new Date("2020-01-02T03:04:05.678Z");
+    try {
+      await table.optimize({
+        cleanupOlderThan: cutoff,
+        deleteUnverified: true,
+      });
+      expect(optimize).toHaveBeenCalledWith(cutoff.getTime(), true);
+    } finally {
+      optimize.mockRestore();
+    }
+  });
+
+  it("retains commits newer than the cutoff through native compaction", async () => {
+    await db.insertBatch([
+      record("first", "/repo/first.ts", "first service", [1, 0, 0, 0]),
+    ]);
+    const first = await (await db.ensureTable()).version();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const cutoff = new Date();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await db.insertBatch([
+      record("second", "/repo/second.ts", "second service", [0, 1, 0, 0]),
+    ]);
+    const retained = await (await db.ensureTable()).version();
+    await db.insertBatch([
+      record("third", "/repo/third.ts", "third service", [0, 0, 1, 0]),
+    ]);
+    const table = await db.ensureTable();
+    const stats = await table.optimize({
+      cleanupOlderThan: cutoff,
+      deleteUnverified: true,
+    });
+    expect(stats.compaction.fragmentsRemoved).toBeGreaterThan(0);
+    expect(stats.prune.oldVersionsRemoved).toBeGreaterThan(0);
+    const versions = (await table.listVersions()).map(
+      (version) => version.version,
+    );
+    expect(versions).not.toContain(first);
+    expect(versions).toContain(retained);
+    await table.checkout(retained);
+    expect(await table.countRows()).toBe(2);
+    await table.checkoutLatest();
+    expect(await table.countRows()).toBe(3);
+  });
+
+  it("removes five unreferenced fragment copies while preserving current rows and FTS", async () => {
+    await db.insertBatch([
+      record("keep", "/repo/keep.ts", "retained service", [1, 0, 0, 0]),
+    ]);
+    await db.insertBatch([
+      record("also-keep", "/repo/also.ts", "retained helper", [0, 1, 0, 0]),
+    ]);
+    await db.createFTSIndex();
+    const dataDir = path.join(dir, "chunks.lance", "data");
+    const fragment = fs
+      .readdirSync(dataDir)
+      .find((file) => file.endsWith(".lance"));
+    if (!fragment) throw new Error("Expected a native Lance fragment");
+    // Stage valid, unreferenced copies in this isolated store. This reproduces
+    // the cleanup input, without forcing failed rewrites of the live index.
+    const copies = Array.from({ length: 5 }, () =>
+      path.join(dataDir, `${randomUUID()}.lance`),
+    );
+    for (const copy of copies)
+      fs.copyFileSync(path.join(dataDir, fragment), copy);
+    const copyBytes = copies.reduce(
+      (sum, file) => sum + fs.statSync(file).size,
+      0,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const result = await db.optimize(1, 0, true);
+    expect(result.status).toBe("completed");
+    expect(result.bytesReclaimed).toBeGreaterThanOrEqual(copyBytes);
+    for (const copy of copies) expect(fs.existsSync(copy)).toBe(false);
+    await db.close();
+    db = new VectorDB(dir, 4);
+    const table = await db.ensureTable();
+    expect(await table.countRows()).toBe(2);
+    const rows = await table
+      .search("retained")
+      .select(["id", "_score"])
+      .toArray();
+    expect(rows.map((row) => row.id).sort()).toEqual(["also-keep", "keep"]);
   });
 
   it("compacts from the committed native snapshot after a pending delete", async () => {

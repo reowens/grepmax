@@ -23,7 +23,7 @@ related_docs:
 
 # Known Limitations
 
-Last updated 2026-10-05.
+Last updated 2026-10-06.
 
 ## Small result lists preserve ranks; relevance still needs validation
 
@@ -273,11 +273,19 @@ A query that is a single bare identifier (`BeyondError`, `requireAuth`, `map`) i
 
 The pre-upgrade LanceDB 0.30/0.31 runtime could panic in incremental FTS merge (`inverted/builder.rs`, index out of bounds). The investigation is preserved in [the closed upstream plan](archived/lance-fts-merge-upstream.md).
 
-The upstream fix first shipped in gmax v0.26.23 using a beta overlay. The current runtime packages the pinned official LanceDB 0.38.0 GA JavaScript and matching native binaries at build time, including the fix. `scripts/postinstall.js` now only prints a plugin-update reminder; it no longer overlays LanceDB. The September 7–16 GA canary recorded zero optimize failures, FTS rebuilds or panics; see [the upgrade closeout](archived/lancedb-0.38-upgrade.md).
+The upstream fix first shipped in gmax v0.26.23 using a beta overlay. The current runtime packages the pinned official LanceDB 0.39.0 GA JavaScript and matching native binaries at build time, including the fix. `scripts/postinstall.js` now only prints a plugin-update reminder; it no longer overlays LanceDB. The September 7–16 GA canary recorded zero optimize failures, FTS rebuilds or panics; see [the upgrade closeout](archived/lancedb-0.38-upgrade.md).
 
 The drop-and-rebuild guard remains a recovery tripwire, with bounded optimize attempts and disk-headroom checks. `disabling auto-rebuild until an optimize succeeds` means repeated rebuilds are suppressed until a successful optimize. Failed FTS recovery can degrade retrieval to vector-only results; do not treat a fresh panic as harmless expected output.
 
 If this recurs on a current release, preserve the installed version and daemon log, check `gmax status --json` and `gmax doctor`, and report a regression. Do not repeatedly force compaction or disable the recovery guard. Historical successful recovery is not a guarantee of availability or data integrity for a new failure.
+
+## Fresh unreferenced fragments can survive an idle-store cleanup
+
+Verified October 6 against both LanceDB 0.38.0 and 0.39.0 in synthetic temporary stores. A copied, unreferenced data fragment created after the latest manifest survived optimize when the single-fragment table needed no rewrite. After a normal row update committed a newer manifest, optimize removed the copy and preserved the row. Lance limits its data-file listing using the earliest retained manifest timestamp; `deleteUnverified: true` does not remove that listing boundary.
+
+This is an existing upstream cleanup limitation, not a 0.39 migration regression. Do not assume a successful optimize removed every orphan, repeatedly force maintenance, or mutate real rows solely to advance the manifest. Check physical size and read-only doctor diagnostics afterward; unresolved space remains an investigation item. The 0.39 native regression also verifies cleanup of five copies when compaction rewrites two fragments into one, along with FTS and reopen integrity.
+
+LanceDB 0.39 fixes the separate [absolute cleanup cutoff bug](https://github.com/lancedb/lancedb/pull/4160): compaction no longer advances the supplied cutoff. Versions committed after that timestamp, including versions created during optimize, remain eligible for retention. gmax retains its write gate, fresh snapshot per retry, two-attempt limit and fresh disk-reserve checks.
 
 ## LanceDB manifest references a missing fragment file
 

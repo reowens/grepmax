@@ -33,7 +33,7 @@ This software depends on various open-source libraries. See package.json for
 a complete list of dependencies and their respective licenses.
 
 The distribution includes the unmodified JavaScript runtime from
-@lancedb/lancedb 0.38.0 (https://github.com/lancedb/lancedb), licensed under
+@lancedb/lancedb 0.39.0 (https://github.com/lancedb/lancedb), licensed under
 Apache-2.0. Its license and build provenance are included in dist/vendor/lancedb/.
 Its optional provider dependency manifest is not distributed. Platform native
 binaries are installed as separately pinned @lancedb packages.
