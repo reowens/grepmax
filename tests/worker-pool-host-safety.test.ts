@@ -234,6 +234,38 @@ describe("WorkerPool host admission", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("rejects pre-existing queued work before dispatching to an idle worker after quarantine", async () => {
+    pool = new WorkerPool();
+    pool.maxWorkers = 1;
+    const assigned = pool.encodeQuery("first");
+    const queued = pool.encodeQuery("queued");
+    const denied = expect(queued).rejects.toMatchObject({
+      code: "HOST_SAFETY",
+    });
+    const worker = pool.workers[0];
+    const pressureCalls = [
+      h.memoryProbe.mock.calls.length,
+      h.kernelProbe.mock.calls.length,
+    ];
+    h.quarantine = "concurrent quarantine";
+    worker.child.emit("message", { id: worker.pendingTaskId, result: [] });
+    await assigned;
+    await denied;
+    expect(worker.child.send).toHaveBeenCalledTimes(1);
+    expect(pool.tasks.size).toBe(0);
+    expect(h.latch).not.toHaveBeenCalled();
+    expect([
+      h.memoryProbe.mock.calls.length,
+      h.kernelProbe.mock.calls.length,
+    ]).toEqual(pressureCalls);
+    h.quarantine = null;
+    await expect(pool.encodeQuery("later")).rejects.toMatchObject({
+      code: "HOST_SAFETY",
+    });
+    expect(worker.child.send).toHaveBeenCalledTimes(1);
+    expect(childProcess.fork).toHaveBeenCalledTimes(1);
+  });
+
   it("breaks replacement-floor loops after denied bloat recycling", () => {
     pool = new WorkerPool();
     h.memory = { status: "known", pressure: "warn" };

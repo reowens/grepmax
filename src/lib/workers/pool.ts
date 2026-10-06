@@ -717,6 +717,18 @@ export class WorkerPool {
       this.rejectUnassignedTasks(this.spawnDeniedReason, "HOST_SAFETY");
       return;
     }
+    // Work admitted before another process quarantines the host may still
+    // be queued. Do not send it to an existing worker after that stop.
+    try {
+      const quarantine = daemonStartDeniedReason();
+      if (quarantine) {
+        this.denySpawn(quarantine, false);
+        return;
+      }
+    } catch {
+      this.denySpawn("quarantine check failed");
+      return;
+    }
     let idle = this.workers.find((w) => !w.busy);
     // Drain priority queue first so search tasks never wait behind an
     // indexing batch.
