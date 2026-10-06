@@ -11,6 +11,7 @@ import {
 } from "../lib/output/index-state-footer";
 import { MetaCache } from "../lib/store/meta-cache";
 import { VectorDB } from "../lib/store/vector-db";
+import { isAutostartDisabled } from "../lib/utils/autostart";
 import {
   formatRestartResult,
   type RestartResult,
@@ -82,6 +83,10 @@ export const watch = new Command("watch")
         }
 
         if (options.background) {
+          const startOnly = process.env.GMAX_DAEMON_START_ONLY === "1";
+          // Plugin hooks are implicit starts. Recheck quarantine in this child
+          // and never use their launch as a version-upgrade restart.
+          if (startOnly && isAutostartDisabled()) return;
           // Skip spawn if daemon already running at the same version.
           // If version mismatches (e.g. after npm install -g), shut down the old
           // daemon so we can start a fresh one with the new code.
@@ -93,6 +98,7 @@ export const watch = new Command("watch")
             waitForProcessExit,
           } = await import("../lib/utils/daemon-client");
           if (await isDaemonRunning()) {
+            if (startOnly) return;
             const cliVersion = JSON.parse(
               fs.readFileSync(
                 path.join(__dirname, "../../package.json"),

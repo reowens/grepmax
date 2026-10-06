@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Command } from "commander";
+import { codexAgentsPath } from "../lib/utils/codex-home";
 import { gracefulExit } from "../lib/utils/exit";
 
 interface Client {
@@ -92,7 +93,7 @@ function getClients(): Client[] {
       id: "codex",
       detect: () => commandExists("codex"),
       isInstalled: () => {
-        const p = path.join(os.homedir(), ".codex", "AGENTS.md");
+        const p = codexAgentsPath();
         try {
           return (
             fs.existsSync(p) && fs.readFileSync(p, "utf-8").includes("gmax")

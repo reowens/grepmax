@@ -6,6 +6,8 @@
 
 The final installed comparison preserved all three pre-install queries' result identities, order and scores. An earlier strict comparison caught one normalized-score difference during deployment; its failed log is retained, and its exact cause is unproven. The shared index continued changing, and lower FTS ranks varied in the final diagnostic comparison. The host memory guard also restarted the first .50 daemon with one worker; final checks used the new ready process. This is deployment evidence, not a frozen ranking acceptance run or proof that long-cycle memory retention is resolved. Local evidence: `docs/measurements/2026-10-05-release-v0.26.50/`.
 
+The subsequent plugin audit repairs are complete in source: shared Claude quarantine/singleton checks, turn/Bash activity lease renewal, quoted paths and bounded startup; consistent custom Codex home and preserved MCP options; non-destructive Claude source/scope updates. All 1,648 tests / 172 files and both typechecks pass. Claude remains a CLI plugin and Codex uses local STDIO MCP. Installed v0.26.50 has not received these repairs. Large-model tool restrictions remain unchanged pending the user's review; the audit does not authorize a new model or transport.
+
 The earlier reliability work remains shipped: native Session cache wiring, bounded query/row reads, reproducible consumer packaging, external-store request isolation and refusal of unsupported-daemon fallback readers. The historical FTS merge defect is fixed in the pinned LanceDB 0.38.0 GA runtime; a fresh panic should be investigated as a regression.
 
 MCP uses the pinned SDK server 2.3.0 with legacy and modern STDIO compatibility. Installed CommonJS checks passed real v1, legacy v2, modern v2 and auto-discovering clients; the v1 fixture is development-only. Structured search/trace/dead/health results shipped in .45, the SDK migration in .46, and request cancellation/progress in .47. Cancellation closes only the affected read's IPC connection; active local native work waits for its deadline before store close. Optional LLM workflows and indexing writes are not interrupted. Tasks/subscriptions remain workflow-gated.
@@ -88,7 +90,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 98 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 100 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|

@@ -1,15 +1,14 @@
 import { exec } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { Command } from "commander";
+import { codexAgentsPath } from "../lib/utils/codex-home";
 
 const shell =
   process.env.SHELL || (process.platform === "win32" ? "cmd.exe" : "/bin/sh");
 const execAsync = promisify(exec);
 
-const AGENTS_PATH = path.join(os.homedir(), ".codex", "AGENTS.md");
 const SKILL_START = "<!-- gmax:start -->";
 const SKILL_END = "<!-- gmax:end -->";
 
@@ -49,6 +48,7 @@ function loadSkill(): string {
 }
 
 function writeSkillToAgents(skill: string): void {
+  const AGENTS_PATH = codexAgentsPath();
   fs.mkdirSync(path.dirname(AGENTS_PATH), { recursive: true });
 
   const block = `${SKILL_START}\n${skill.trim()}\n${SKILL_END}`;
@@ -82,20 +82,44 @@ function writeSkillToAgents(skill: string): void {
 
 async function installPlugin() {
   try {
+    const inventory = await execAsync("codex mcp list --json", {
+      shell,
+      env: process.env,
+    });
+    const servers: unknown = JSON.parse(inventory.stdout);
+    if (
+      !Array.isArray(servers) ||
+      servers.some((server) => !server || typeof server.name !== "string")
+    )
+      throw new Error(
+        "Unexpected Codex MCP inventory; configuration preserved",
+      );
+    const existing = servers.find((server) => server?.name === "gmax");
+    if (
+      existing &&
+      (existing.transport?.type !== "stdio" ||
+        path.basename(String(existing.transport.command)) !== "gmax" ||
+        JSON.stringify(existing.transport.args) !== JSON.stringify(["mcp"]))
+    )
+      throw new Error(
+        "Existing gmax MCP launch differs; review it before replacing",
+      );
     // 1. Register MCP tool. Codex requires the stdio command after `--`:
     //   codex mcp add [OPTIONS] <NAME> -- <COMMAND>...
     // Without the separator the launch command is misparsed. AGENTS.md is only
     // written after this resolves, so a failed registration leaves it untouched.
-    await execAsync("codex mcp add gmax -- gmax mcp", {
-      shell,
-      env: process.env,
-    });
-    console.log("✅ gmax MCP tool registered with Codex");
+    if (!existing) {
+      await execAsync("codex mcp add gmax -- gmax mcp", {
+        shell,
+        env: process.env,
+      });
+    }
+    console.log("✅ gmax MCP registration ready (existing options preserved)");
 
     // 2. Write SKILL to AGENTS.md (idempotent)
     const skill = loadSkill();
     writeSkillToAgents(skill);
-    console.log("✅ gmax skill instructions written to", AGENTS_PATH);
+    console.log("✅ gmax skill instructions written to", codexAgentsPath());
   } catch (error) {
     console.error(`❌ Error installing Codex plugin: ${error}`);
     process.exit(1);
@@ -103,6 +127,7 @@ async function installPlugin() {
 }
 
 async function uninstallPlugin() {
+  const AGENTS_PATH = codexAgentsPath();
   try {
     await execAsync("codex mcp remove gmax", { shell, env: process.env });
     console.log("✅ gmax MCP tool removed");

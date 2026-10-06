@@ -1,6 +1,5 @@
-const { execFileSync } = require("node:child_process");
 const {
-  acquireSessionLease,
+  ensureSessionLease,
   readHookInput,
   registeredRootFor,
   releaseSessionLeases,
@@ -20,19 +19,7 @@ async function main() {
     }
   }
 
-  if (!registeredRootFor(newCwd)) return;
-
-  try {
-    execFileSync("gmax", ["watch", "--daemon", "-b"], {
-      timeout: 5000,
-      stdio: "ignore",
-    });
-  } catch {
-    try {
-      execFileSync("gmax", ["watch", "-b"], { timeout: 5000, stdio: "ignore" });
-    } catch {}
-  }
-  await acquireSessionLease(input, newCwd);
+  await ensureSessionLease(input, newCwd, { allowStart: true });
 }
 
 main();

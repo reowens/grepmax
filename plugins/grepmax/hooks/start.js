@@ -2,7 +2,7 @@ const fs = require("node:fs");
 const _path = require("node:path");
 const { execFileSync } = require("node:child_process");
 const {
-  acquireSessionLease,
+  ensureSessionLease,
   readHookInput,
   registeredRootFor,
 } = require("./watch-lease");
@@ -70,43 +70,10 @@ function isProjectRegistered(dir) {
   return registeredRootFor(dir) !== null;
 }
 
-// A kill switch for the auto-start. Create ~/.gmax/autostart-disabled (or export
-// GMAX_NO_AUTOSTART=1) to keep sessions from reviving the daemon — needed when the
-// host is quarantined after a kernel-zone incident and the daemon's write volume is
-// the thing under investigation. Delete the file to restore normal behavior.
-//
-// The CLI honors the same switch via src/lib/utils/autostart.ts (PATHS.autostartDisabledFile).
-// This copy exists because a hook cannot import from dist — keep the two in sync.
-function isAutostartDisabled() {
-  if (process.env.GMAX_NO_AUTOSTART === "1") return true;
-  try {
-    return require("node:fs").existsSync(
-      _path.join(require("node:os").homedir(), ".gmax", "autostart-disabled"),
-    );
-  } catch {
-    return false;
-  }
-}
-
 async function startWatcher(input) {
-  if (isAutostartDisabled()) return;
   const dir = input.cwd || process.cwd();
   if (!isProjectRegistered(dir)) return;
-  try {
-    execFileSync("gmax", ["watch", "--daemon", "-b"], {
-      timeout: 5000,
-      stdio: "ignore",
-    });
-  } catch {
-    // Fallback to per-project mode (older gmax without --daemon)
-    try {
-      execFileSync("gmax", ["watch", "-b"], { timeout: 5000, stdio: "ignore" });
-    } catch {
-      // Watcher may already be running or gmax not in PATH — ignore
-    }
-  }
-  // The daemon only watches projects a session holds a lease on.
-  await acquireSessionLease(input, dir);
+  await ensureSessionLease(input, dir, { allowStart: true });
 }
 
 async function main() {

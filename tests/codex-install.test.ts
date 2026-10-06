@@ -1,8 +1,12 @@
 import type { Command } from "commander";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Capture the exact shell command and steer success/failure of `codex mcp add`.
-const h = vi.hoisted(() => ({ calls: [] as string[], shouldFail: false }));
+const h = vi.hoisted(() => ({
+  calls: [] as string[],
+  shouldFail: false,
+  inventory: [] as unknown[],
+}));
 
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
@@ -23,7 +27,12 @@ vi.mock("node:child_process", async (importOriginal) => {
       ) => void;
       h.calls.push(cmd);
       if (h.shouldFail) callback(new Error("registration failed"));
-      else callback(null, { stdout: "", stderr: "" });
+      else
+        callback(null, {
+          stdout:
+            cmd === "codex mcp list --json" ? JSON.stringify(h.inventory) : "",
+          stderr: "",
+        });
     },
   };
 });
@@ -40,11 +49,13 @@ const fsMock = vi.hoisted(() => ({
 
 vi.mock("node:fs", () => ({ default: fsMock, ...fsMock }));
 
-import { installCodex } from "../src/commands/codex";
+import { installCodex, uninstallCodex } from "../src/commands/codex";
 
 describe("codex install", () => {
   beforeEach(() => {
+    vi.unstubAllEnvs();
     h.calls = [];
+    h.inventory = [];
     h.shouldFail = false;
     fsMock.writeFileSync.mockClear();
     fsMock.existsSync.mockReturnValue(false);
@@ -54,10 +65,11 @@ describe("codex install", () => {
     });
     (installCodex as Command).exitOverride();
   });
+  afterEach(() => vi.unstubAllEnvs());
 
   it("registers the MCP server with the `--` stdio separator", async () => {
     await (installCodex as Command).parseAsync([], { from: "user" });
-    expect(h.calls[0]).toBe("codex mcp add gmax -- gmax mcp");
+    expect(h.calls[1]).toBe("codex mcp add gmax -- gmax mcp");
   });
 
   it("does not write AGENTS.md when MCP registration fails", async () => {
@@ -79,6 +91,65 @@ describe("codex install", () => {
       String(c[0]).endsWith("AGENTS.md"),
     );
     expect(wrote).toBe(true);
+  });
+  it("resolves custom Codex homes at call time for install and removal", async () => {
+    vi.stubEnv("CODEX_HOME", "/custom codex home");
+    existingAgents("# Keep me\n<!-- gmax:start -->\nold\n<!-- gmax:end -->\n");
+    await installCodex.parseAsync([], { from: "user" });
+    expect(fsMock.writeFileSync).toHaveBeenLastCalledWith(
+      "/custom codex home/AGENTS.md",
+      expect.stringContaining("# Keep me"),
+    );
+    await uninstallCodex.parseAsync([], { from: "user" });
+    expect(fsMock.writeFileSync).toHaveBeenLastCalledWith(
+      "/custom codex home/AGENTS.md",
+      "# Keep me\n\n",
+    );
+    expect(h.calls[h.calls.length - 1]).toBe("codex mcp remove gmax");
+  });
+  it("preserves an existing STDIO registration and its user tool policy", async () => {
+    h.inventory = [
+      {
+        name: "gmax",
+        enabled: false,
+        disabled_tools: ["investigate"],
+        transport: { type: "stdio", command: "/prefix/gmax", args: ["mcp"] },
+      },
+    ];
+    await installCodex.parseAsync([], { from: "user" });
+    expect(h.calls).toEqual(["codex mcp list --json"]);
+    expect(fsMock.writeFileSync).toHaveBeenCalled();
+    expect(h.inventory[0]).toMatchObject({
+      enabled: false,
+      disabled_tools: ["investigate"],
+    });
+  });
+  it("refuses replacing an existing different transport before writing instructions", async () => {
+    h.inventory = [
+      {
+        name: "gmax",
+        transport: { type: "streamable_http", url: "https://example.invalid" },
+      },
+    ];
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation((() => undefined) as never);
+    await installCodex.parseAsync([], { from: "user" });
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(h.calls).toEqual(["codex mcp list --json"]);
+    expect(fsMock.writeFileSync).not.toHaveBeenCalled();
+    exitSpy.mockRestore();
+  });
+  it("refuses malformed inventory entries before registering or writing", async () => {
+    h.inventory = [{ unexpected: "gmax" }];
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation((() => undefined) as never);
+    await installCodex.parseAsync([], { from: "user" });
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(h.calls).toEqual(["codex mcp list --json"]);
+    expect(fsMock.writeFileSync).not.toHaveBeenCalled();
+    exitSpy.mockRestore();
   });
   function existingAgents(content: string) {
     fsMock.existsSync.mockReturnValue(true);

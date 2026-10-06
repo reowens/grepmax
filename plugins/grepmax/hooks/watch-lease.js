@@ -1,10 +1,9 @@
 // Session watch leases for the hooks.
 //
-// The daemon only watches projects that some session holds a lease on (see
-// src/lib/daemon/watch-leases.ts). The MCP server holds the long-lived one; the
-// hooks take a session lease so a project is watched from the first moment of a
-// session, and drop it at SessionEnd. A hook cannot import from dist, so this
-// speaks the daemon's one-line JSON protocol directly.
+// Claude's CLI integration takes a lease at startup, renews it during activity,
+// and releases it at SessionEnd. Other MCP clients own separate leases. A hook
+// cannot import from dist, so this speaks the one-line Unix socket protocol.
+const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const net = require("node:net");
 const os = require("node:os");
@@ -13,9 +12,17 @@ const path = require("node:path");
 const GMAX_DIR = path.join(os.homedir(), ".gmax");
 const SOCKET = path.join(GMAX_DIR, "daemon.sock");
 
-// Long enough to cover a session without an MCP server; SessionEnd releases it
-// early, and the daemon caps any lease at 12h.
+// Activity refreshes this TTL; idle sessions do not watch forever.
 const SESSION_LEASE_TTL_MS = 4 * 60 * 60 * 1000;
+
+function isAutostartDisabled() {
+  if (process.env.GMAX_NO_AUTOSTART === "1") return true;
+  try {
+    return fs.existsSync(path.join(GMAX_DIR, "autostart-disabled"));
+  } catch {
+    return false;
+  }
+}
 
 function readHookInput(timeoutMs = 1000) {
   return new Promise((resolve) => {
@@ -102,6 +109,7 @@ function sendOnce(cmd, timeoutMs) {
     socket.on("error", (err) =>
       finish({
         ok: false,
+        absent: err.code === "ENOENT" || err.code === "ECONNREFUSED",
         retry: err.code === "ENOENT" || err.code === "ECONNREFUSED",
       }),
     );
@@ -143,6 +151,42 @@ async function acquireSessionLease(input, dir) {
   return resp !== null;
 }
 
+/** Reuse a lease-capable daemon; start one only after a definite absent socket. */
+async function ensureSessionLease(input, dir, { allowStart = false } = {}) {
+  if (isAutostartDisabled() || !sessionHolder(input) || !registeredRootFor(dir))
+    return false;
+  const ping = await sendOnce({ cmd: "ping" }, 500);
+  if (ping.ok) {
+    if (!ping.resp.capabilities?.watchLeases) return false;
+    return acquireSessionLease(input, dir);
+  }
+  // Busy, initializing, denied and timed-out sockets belong to an existing
+  // daemon. Never start a per-project writer or replace that process here.
+  if (!allowStart || !ping.absent) return false;
+  try {
+    const child = spawn("gmax", ["watch", "--daemon", "-b"], {
+      detached: true,
+      stdio: "ignore",
+      cwd: dir,
+      // Another session can win the race after the absent-socket probe. The
+      // launcher must reuse that peer, even if its package version differs.
+      env: { ...process.env, GMAX_DAEMON_START_ONLY: "1" },
+    });
+    await new Promise((resolve, reject) => {
+      child.once("spawn", resolve);
+      child.once("error", reject);
+    });
+    child.unref();
+  } catch {
+    return false;
+  }
+  // A cold daemon may take longer than a hook's budget to become ready. Later
+  // activity retries ownership instead of opening another watcher.
+  const ready = await sendDaemonLine({ cmd: "ping" }, 1500);
+  if (!ready?.capabilities?.watchLeases) return false;
+  return acquireSessionLease(input, dir);
+}
+
 async function releaseSessionLeases(input, dir) {
   const holder = sessionHolder(input);
   const root = registeredRootFor(dir);
@@ -157,6 +201,8 @@ async function releaseSessionLeases(input, dir) {
 
 module.exports = {
   acquireSessionLease,
+  ensureSessionLease,
+  isAutostartDisabled,
   readHookInput,
   registeredRootFor,
   releaseSessionLeases,

@@ -119,9 +119,11 @@ gmax plugin remove claude      # Remove specific plugin
 
 After upgrading with `npm install -g grepmax@latest`, run `gmax plugin update` (or `gmax plugin update <client>`) to refresh integrations. Package installation does not modify your agent configuration; its postinstall script only prints this reminder.
 
+The next release's installer refreshes an existing Claude marketplace from its configured source and updates each existing user/project/local installation in its original scope. It does not remove the marketplace, reset disabled preferences, or reinstall after a refresh failure. New installations use the local npm package. An existing source is retained; moving to another source is a separate migration. Codex instructions follow `CODEX_HOME` (default `~/.codex`), and a matching STDIO registration retains its existing options. A different existing launch configuration is reported for review instead of overwritten. These installer and hook repairs are complete in source; installed v0.26.50 still needs the next release and plugin refresh.
+
 ### How it works per client
 
-- **Claude Code:** Plugin with hooks (SessionStart, SessionEnd, CwdChanged, SubagentStart, PreToolUse). Model uses CLI via `Bash(gmax ... --agent)`.
+- **Claude Code:** Plugin with session/directory hooks, guidance hooks and activity renewal on UserPromptSubmit/PostToolUse for Bash. Model uses CLI via `Bash(gmax ... --agent)`; the plugin does not register an MCP server. Source hooks honor the autostart kill switch, start only after a definite absent socket and never fall back to a separate watcher beside a live daemon.
 - **OpenCode:** Tool shim with dynamic SKILL + session plugin for daemon startup. Model calls gmax tool directly.
 - **Codex:** MCP server registration + AGENTS.md skill instructions.
 - **Factory Droid:** Skills + SessionStart/SessionEnd hooks for daemon lifecycle.

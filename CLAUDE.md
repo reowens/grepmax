@@ -70,7 +70,7 @@ gmax-daemon (singleton via lockfile)
   |-- [gmax-embed] (MLX GPU server on port 8100; daemon heartbeat respawns it if zombie or dead)
   +-- Unix socket server (~/.gmax/daemon.sock)
 
-gmax-mcp (N instances, one per Claude Code session)
+gmax-mcp (N instances, one per MCP client session)
 ```
 
 ### Who starts what
@@ -80,7 +80,7 @@ gmax-mcp (N instances, one per Claude Code session)
 | gmax-daemon | `gmax watch --daemon -b` (SessionStart hook or manual); `gmax watch restart` | Singleton. 4h idle timeout; recycles at 24h age or 2.56 GB footprint. | `src/commands/watch.ts` |
 | gmax-worker | Daemon's WorkerPool, lazy on first task | Reaped after 60s idle, min 1 kept alive | `src/lib/workers/pool.ts` |
 | gmax-embed | Daemon's `ensureMlxServer()` (startup + 5min heartbeat health check) or `gmax serve` | 30min idle timeout. Spawned with `HF_HOME=~/.gmax/hf` (pinned local model cache) | `src/lib/daemon/mlx-server-manager.ts` |
-| gmax-mcp | Claude Code (one per session) | Session lifetime | `src/commands/mcp.ts` |
+| gmax-mcp | Codex and other clients with an explicit STDIO registration | Session lifetime | `src/commands/mcp.ts` |
 | llama-server (LLM) | Daemon's LlmServer, on first `llm-start` IPC or `reviewCommit` | 30min idle timeout by default (`GMAX_LLM_IDLE_TIMEOUT`) | `src/lib/llm/config.ts`, `src/lib/llm/server.ts` |
 
 ### Local-only access
@@ -103,7 +103,7 @@ not exist, and it was a large part of the memory pressure that froze the host.
 | Holder | Taken by | Ends when |
 |---|---|---|
 | `mcp:<pid>` | first index-reading tool use on a primary project, renewed by one timer every 5 min (15 min TTL) via `launchWatcher(root, lease)` | that process exits, or the TTL lapses |
-| `session:<id>` | SessionStart / CwdChanged hooks (`plugins/grepmax/hooks/watch-lease.js`, 4h TTL) | SessionEnd releases it, CwdChanged releases the old root |
+| `session:<id>` | Claude SessionStart / CwdChanged, renewed on UserPromptSubmit and Bash PostToolUse (`plugins/grepmax/hooks/watch-lease.js`, 4h TTL) | SessionEnd releases it, CwdChanged releases the old root; idle leases expire |
 | `cli` | `watch` IPC without a holder, and `add` / `ensure-project` / `index` (30 min TTL) | TTL |
 
 - The heartbeat sweeps leases every minute and unwatches roots nobody holds. Vectors stay; the
@@ -119,15 +119,22 @@ not exist, and it was a large part of the memory pressure that froze the host.
 - `launchWatcher` only falls back to a per-project `gmax watch --path` when no daemon exists and
   none could be started. A live daemon that refuses or is still starting is reported instead;
   otherwise a lease renewal every few minutes would spawn a second writer beside it.
+- Claude's CLI plugin has no bundled MCP server. Its shared hook helper reuses a lease-capable
+  daemon and starts one only after `ENOENT`/`ECONNREFUSED`; live timeout/refusal/initialization
+  never starts a second watcher. Hook startup polling is bounded, with later activity retrying
+  ownership after cold startup. Hook-driven launches recheck quarantine in the child and
+  leave a concurrently started daemon running, including when its version differs.
+  The hook/installer repairs currently await the next release;
+  installed v0.26.50 retains the earlier hooks.
 
 ### Autostart kill switch
 
 `~/.gmax/autostart-disabled` (or `GMAX_NO_AUTOSTART=1`) blocks every *implicit* daemon spawn — the
-SessionStart hook, `ensureDaemonRunning()`, and `launchWatcher()` — so a quarantined daemon stays
+session/directory/activity hooks, `ensureDaemonRunning()`, and `launchWatcher()` — so a quarantined daemon stays
 down instead of being revived by a plain `gmax add`. Gated callers degrade exactly as they already
 do when the daemon is unavailable (in-process index/search); `add` and `index` print a one-line
 notice naming the undo step. Explicit `gmax watch --daemon` is never gated. The semantics live in
-`src/lib/utils/autostart.ts` and are mirrored in `plugins/grepmax/hooks/start.js` (a hook cannot
+`src/lib/utils/autostart.ts` and are mirrored in `plugins/grepmax/hooks/watch-lease.js` (a hook cannot
 import from dist) — keep the two in sync.
 
 ### Singleton enforcement (daemon)

@@ -11,7 +11,7 @@ import { PATHS } from "../../config";
  * Explicit `gmax watch --daemon` is never gated: typing it is the user asking
  * for a daemon in that moment.
  *
- * plugins/grepmax/hooks/start.js carries a plain-JS copy of these semantics
+ * plugins/grepmax/hooks/watch-lease.js carries a plain-JS copy of these semantics
  * (env var checked first, then the file) because a SessionStart hook cannot
  * import from dist. Keep the two in sync.
  */
