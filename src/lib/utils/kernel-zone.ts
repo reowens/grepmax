@@ -104,7 +104,7 @@ export function readKernelZoneUsage(
   try {
     const output = execFileSync("zprint", [zoneName], {
       encoding: "utf-8",
-      timeout: 5000,
+      timeout: 500,
       stdio: ["ignore", "pipe", "ignore"],
     });
     const parsed = parseZprintOutput(output, zoneName);

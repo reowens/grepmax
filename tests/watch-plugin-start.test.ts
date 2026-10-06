@@ -19,6 +19,8 @@ vi.mock("../src/lib/utils/daemon-launcher", () => ({
 }));
 vi.mock("../src/lib/utils/autostart", () => ({
   isAutostartDisabled: () => h.disabled,
+  daemonStartDeniedReason: () =>
+    h.disabled ? "daemon startup is quarantined" : null,
 }));
 
 import { watch } from "../src/commands/watch";

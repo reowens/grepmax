@@ -5,6 +5,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StoreLease, storeLeasePaths } from "../src/lib/store/store-lease";
 import { VectorDB } from "../src/lib/store/vector-db";
 
+// Historical native algorithm coverage only; production policy has no override.
+vi.mock("../src/lib/store/maintenance-policy", async (importOriginal) => {
+  const original =
+    await importOriginal<
+      typeof import("../src/lib/store/maintenance-policy")
+    >();
+  return {
+    ...original,
+    assertStoreMutationAllowed: () => {},
+    storeMutationDeniedReason: () => null,
+    fullTableMaintenanceDisabled: () => false,
+    recordMaintenanceContainment: () =>
+      "test-only historical algorithm fixture",
+  };
+});
+
 describe("VectorDB exclusive table mutation", () => {
   let root: string;
   let storeDir: string;

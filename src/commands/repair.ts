@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { PATHS, REBUILD_COMMAND } from "../config";
 import { readGlobalConfig } from "../lib/index/index-config";
+import { assertStoreMutationAllowed } from "../lib/store/maintenance-policy";
 import { VectorDB } from "../lib/store/vector-db";
 import { autostartDisabledUndo } from "../lib/utils/autostart";
 import {
@@ -38,6 +39,7 @@ Examples:
   .action(async (opts: { rebuild: boolean }) => {
     try {
       if (opts.rebuild) {
+        assertStoreMutationAllowed();
         const running = await ensureDaemonRunning();
         if (!running) {
           const undo = autostartDisabledUndo();

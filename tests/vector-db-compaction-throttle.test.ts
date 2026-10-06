@@ -4,6 +4,22 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VectorDB } from "../src/lib/store/vector-db";
 
+// Historical native algorithm coverage only; production policy has no override.
+vi.mock("../src/lib/store/maintenance-policy", async (importOriginal) => {
+  const original =
+    await importOriginal<
+      typeof import("../src/lib/store/maintenance-policy")
+    >();
+  return {
+    ...original,
+    assertStoreMutationAllowed: () => {},
+    storeMutationDeniedReason: () => null,
+    fullTableMaintenanceDisabled: () => false,
+    recordMaintenanceContainment: () =>
+      "test-only historical algorithm fixture",
+  };
+});
+
 const MIN_INTERVAL_MS = 30 * 60 * 1000;
 const MAX_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const START = new Date("2026-08-17T00:00:00Z");
@@ -156,7 +172,7 @@ describe("VectorDB compaction throttle", () => {
     expect(db.getCompactionThrottleState().intervalMs).toBe(MIN_INTERVAL_MS);
   });
 
-  it("keeps the floor when only the bloat retry comes up empty", async () => {
+  it("does not launch another rewrite when physical bloat remains", async () => {
     // First pass reclaims, the bloat retry does not. The store is still
     // improvable, so this must not read as an unproductive cycle.
     let call = 0;
@@ -166,12 +182,12 @@ describe("VectorDB compaction throttle", () => {
     });
     vi.spyOn(db as any, "getDirectorySize").mockReturnValue(1024 * 10);
 
-    // The bloat retry sleeps 2s between passes; drive it under fake timers.
+    // Bloat reporting does not schedule another native rewrite.
     const pending = db.runMaintenance();
     await vi.advanceTimersByTimeAsync(3000);
     await pending;
 
-    expect(call).toBe(2);
+    expect(call).toBe(1);
     expect(db.getCompactionThrottleState().intervalMs).toBe(MIN_INTERVAL_MS);
   });
 

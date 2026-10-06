@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("../src/lib/store/maintenance-policy", () => ({
+  assertStoreMutationAllowed: vi.fn(),
+}));
+
 vi.mock("../src/lib/setup/setup-helpers", () => ({
   ensureSetup: vi.fn(async () => {}),
 }));

@@ -8,6 +8,7 @@ import {
 } from "../lib/index/sync-helpers";
 import { initialSync } from "../lib/index/syncer";
 import { ensureSetup } from "../lib/setup/setup-helpers";
+import { assertStoreMutationAllowed } from "../lib/store/maintenance-policy";
 import { VectorDB } from "../lib/store/vector-db";
 import { autostartDisabledNotice } from "../lib/utils/autostart";
 import { gracefulExit } from "../lib/utils/exit";
@@ -71,6 +72,7 @@ Examples:
     process.on("SIGTERM", onSignal);
 
     try {
+      assertStoreMutationAllowed();
       await ensureSetup();
       const indexRoot = options.path
         ? path.resolve(options.path)

@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import * as readline from "node:readline";
 import { Command } from "commander";
+import { assertStoreMutationAllowed } from "../lib/store/maintenance-policy";
 import { MetaCache } from "../lib/store/meta-cache";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
@@ -52,6 +53,7 @@ Examples:
     let metaCache: MetaCache | null = null;
 
     try {
+      assertStoreMutationAllowed();
       // Resolve name → registered root when arg has no path separator and
       // isn't a dir. Avoids the footgun where a typo'd name silently removed
       // the cwd project.

@@ -34,7 +34,7 @@ const live: Response = { ok: true, capabilities: { watchLeases: 1 } };
 
 function helper(
   options: {
-    disabled?: "env" | "file";
+    disabled?: "env" | "file" | "safety" | "unknown";
     replies?: Reply[];
     failSpawn?: boolean;
     watch?: (cmd: Record<string, unknown>) => void;
@@ -57,7 +57,21 @@ function helper(
     require(name: string) {
       if (name === "node:fs")
         return {
-          existsSync: () => options.disabled === "file",
+          lstatSync: (file: string) => {
+            if (options.disabled === "unknown")
+              throw Object.assign(Error("denied"), { code: "EACCES" });
+            if (
+              options.disabled === "file" &&
+              file.endsWith("autostart-disabled")
+            )
+              return {};
+            if (
+              options.disabled === "safety" &&
+              file.endsWith("safety-stop.json")
+            )
+              return {};
+            throw Object.assign(Error("absent"), { code: "ENOENT" });
+          },
           readFileSync: () =>
             JSON.stringify([{ root: "/project" }, { root: "/project/nested" }]),
         };

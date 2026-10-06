@@ -55,7 +55,7 @@ jobs:
         run: pnpm run test:typecheck
 
       - name: Run tests
-        run: pnpm run test
+        run: pnpm exec vitest run --maxWorkers=2
 
       - name: Check formatting
         run: pnpm run format:check

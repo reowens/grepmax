@@ -49,7 +49,10 @@ try {
         await db.insertBatch([{ ...db.seedRow(), id: 'fixture', path: '/fixture/a.ts', content: 'consumer fixture' }]);
         await db.createVectorIndex();
         if (!(await db.hasRowsForPath('/fixture/')) || db.cacheSizeBytes() <= 152) throw new Error('Native runtime/session smoke failed');
-        console.log('Packed consumer native runtime and Session: pass');
+        const containment = await db.optimize();
+        if (containment.status !== 'skipped' || !/disabled|containment/i.test(containment.reason ?? '')) throw new Error('Packed consumer allowed compaction: ' + JSON.stringify(containment));
+        if (!(await db.hasRowsForPath('/fixture/'))) throw new Error('Containment changed current rows');
+        console.log('Packed consumer native runtime, Session and compaction containment: pass');
       } finally { await db.close(); fs.rmSync(store, { recursive: true, force: true }); }
     })().catch((e) => { console.error(e); process.exitCode = 1; });
   `], { cwd: temp, encoding: "utf8", timeout: 30_000 });

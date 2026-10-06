@@ -11,7 +11,10 @@ import {
 } from "../lib/output/index-state-footer";
 import { MetaCache } from "../lib/store/meta-cache";
 import { VectorDB } from "../lib/store/vector-db";
-import { isAutostartDisabled } from "../lib/utils/autostart";
+import {
+  daemonStartDeniedReason,
+  isAutostartDisabled,
+} from "../lib/utils/autostart";
 import {
   formatRestartResult,
   type RestartResult,
@@ -61,6 +64,12 @@ export const watch = new Command("watch")
       path?: string;
       idleTimeout?: boolean;
     }) => {
+      const safetyDenied = daemonStartDeniedReason();
+      if (safetyDenied !== null) {
+        console.error(`gmax: ${safetyDenied}; preserving containment`);
+        process.exitCode = 2;
+        return;
+      }
       // A secondary store (src/bin.ts) never runs a daemon or a watcher: one
       // would hold the external drive open, and its startup sweep of stale
       // daemons judges liveness by its own home's lock and socket, so it takes
@@ -523,6 +532,13 @@ watch
         error,
       });
     };
+
+    const deniedStartup = daemonStartDeniedReason();
+    if (deniedStartup !== null) {
+      refuse(`${deniedStartup}; preserving containment`);
+      await gracefulExit(2);
+      return;
+    }
 
     // Refused before anything is stopped: a daemon that cannot be started
     // again from here must not be taken down.

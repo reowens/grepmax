@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { PATHS } from "../../config";
+import { daemonStartDeniedReason } from "./autostart";
 import { openRotatedLog } from "./log-rotate";
 
 /**
@@ -9,6 +10,7 @@ import { openRotatedLog } from "./log-rotate";
  * Returns the child PID, or null on failure.
  */
 export async function spawnDaemon(): Promise<number | null> {
+  if (daemonStartDeniedReason() !== null) return null;
   let out: number | null = null;
   try {
     const logFile = path.join(PATHS.logsDir, "daemon.log");
@@ -48,6 +50,8 @@ export async function spawnDaemonProcess(): Promise<{
   pid: number;
   logFile: string;
 }> {
+  const denied = daemonStartDeniedReason();
+  if (denied !== null) throw new Error(`gmax: ${denied}`);
   const logFile = path.join(PATHS.logsDir, "daemon.log");
   const out = openRotatedLog(logFile);
   try {

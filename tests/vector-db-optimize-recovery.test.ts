@@ -4,6 +4,22 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VectorDB } from "../src/lib/store/vector-db";
 
+// Historical native algorithm coverage only; production policy has no override.
+vi.mock("../src/lib/store/maintenance-policy", async (importOriginal) => {
+  const original =
+    await importOriginal<
+      typeof import("../src/lib/store/maintenance-policy")
+    >();
+  return {
+    ...original,
+    assertStoreMutationAllowed: () => {},
+    storeMutationDeniedReason: () => null,
+    fullTableMaintenanceDisabled: () => false,
+    recordMaintenanceContainment: () =>
+      "test-only historical algorithm fixture",
+  };
+});
+
 const okStats = {
   compaction: { fragmentsRemoved: 2, fragmentsAdded: 1 },
   prune: { oldVersionsRemoved: 3, bytesRemoved: 1024 },

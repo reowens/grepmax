@@ -2,6 +2,11 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { open, type RootDatabase } from "lmdb";
 import { registerCleanup } from "../utils/cleanup";
+import {
+  assertFreshDiskMutationAllowed,
+  assertStoreMutationAllowed,
+  storeMutationDeniedReason,
+} from "./maintenance-policy";
 
 export type MetaEntry = {
   hash: string;
@@ -15,13 +20,36 @@ export class MetaCache {
   private db: RootDatabase<MetaEntry>;
   private unregisterCleanup?: () => void;
   private closed = false;
+  private readonly readOnly: boolean;
 
-  constructor(lmdbPath: string) {
-    fs.mkdirSync(path.dirname(lmdbPath), { recursive: true });
+  constructor(private readonly lmdbPath: string) {
+    let diskAllowsWrites = false;
+    try {
+      assertFreshDiskMutationAllowed(lmdbPath);
+      diskAllowsWrites = true;
+    } catch {
+      /* Unknown/critical disk allows existing-cache reads only. */
+    }
+    this.readOnly = storeMutationDeniedReason() !== null || !diskAllowsWrites;
+    if (this.readOnly) {
+      // Quarantine permits reads of an existing cache, never creating one.
+      try {
+        fs.lstatSync(lmdbPath);
+      } catch {
+        throw new Error(
+          "gmax metadata cache is quarantined or disk-constrained and unavailable",
+        );
+      }
+    } else {
+      assertStoreMutationAllowed();
+      assertFreshDiskMutationAllowed(lmdbPath);
+      fs.mkdirSync(path.dirname(lmdbPath), { recursive: true });
+    }
     this.db = open<MetaEntry>({
       path: lmdbPath,
       compression: true,
       cache: true,
+      readOnly: this.readOnly,
     });
     this.unregisterCleanup = registerCleanup(() => this.close());
   }
@@ -49,11 +77,22 @@ export class MetaCache {
   }
 
   put(filePath: string, entry: MetaEntry): void {
+    this.assertWritable();
     this.db.put(filePath, entry);
   }
 
   delete(filePath: string): void {
+    this.assertWritable();
     this.db.remove(filePath);
+  }
+
+  private assertWritable(): void {
+    assertStoreMutationAllowed();
+    assertFreshDiskMutationAllowed(this.lmdbPath);
+    if (this.readOnly)
+      throw new Error(
+        "gmax metadata cache was opened read-only; reopen after reviewing containment",
+      );
   }
 
   async *entries(): AsyncGenerator<{ path: string; entry: MetaEntry }> {
