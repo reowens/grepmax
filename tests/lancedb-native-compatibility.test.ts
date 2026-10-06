@@ -43,6 +43,66 @@ describe("Pinned LanceDB native-store compatibility", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it("reclaims reservation snapshots after each rewrite without rewriting again", async () => {
+    const dataDir = path.join(dir, "chunks.lance", "data");
+    for (let batch = 0; batch < 3; batch++) {
+      await db.insertBatch(
+        Array.from({ length: 100 }, (_, offset) => {
+          const id = `${batch}-${offset}`;
+          return record(
+            id,
+            `/repo/${id}.ts`,
+            `retention fixture ${"abcdef ".repeat(1000)}`,
+            [1, 0, 0, 0],
+          );
+        }),
+      );
+    }
+    await db.createFTSIndex();
+    for (let pass = 0; pass < 3; pass++) {
+      if (pass > 0)
+        await db.insertBatch([
+          record(
+            `later-${pass}`,
+            `/repo/later-${pass}.ts`,
+            "retention fixture later",
+            [1, 0, 0, 0],
+          ),
+        ]);
+      // Keep every fragment covered by the same FTS index so each pass really
+      // rewrites to one fragment, rather than preserving distinct index groups.
+      if (pass > 0) await db.createFTSIndex(true);
+      const result = await db.optimize(1, 0, true);
+      expect(result.status).toBe("completed");
+      const table = await db.ensureTable();
+      const currentVersion = await table.version();
+      const current = (await table.listVersions()).find(
+        (version) => version.version === currentVersion,
+      );
+      if (!current)
+        throw new Error("Expected current native manifest metadata");
+      const files = fs
+        .readdirSync(dataDir)
+        .filter((file) => file.endsWith(".lance"));
+      expect(files).toHaveLength(Number(current.metadata.total_data_files));
+      expect(
+        files.reduce(
+          (sum, file) => sum + fs.statSync(path.join(dataDir, file)).size,
+          0,
+        ),
+      ).toBe(Number(current.metadata.total_files_size));
+      expect(await table.countRows()).toBe(300 + pass);
+      expect(
+        await table
+          .search("retention")
+          .select(["id", "_score"])
+          .limit(1000)
+          .toArray(),
+      ).toHaveLength(300 + pass);
+      if (pass === 0) expect(result.cleanupPasses).toBe(1);
+    }
+  });
+
   it("passes the exact cleanup cutoff to the native binding", async () => {
     await db.insertBatch([
       record("keep", "/repo/keep.ts", "keep service", [1, 0, 0, 0]),

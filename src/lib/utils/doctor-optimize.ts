@@ -76,6 +76,12 @@ export function formatDoctorOptimize(
       ...(typeof r?.bytesReclaimed === "number"
         ? [`bytes_reclaimed=${r.bytesReclaimed}`]
         : []),
+      ...(typeof r?.netBytesReclaimed === "number"
+        ? [`net_bytes_reclaimed=${r.netBytesReclaimed}`]
+        : []),
+      ...(typeof r?.cleanupPasses === "number"
+        ? [`cleanup_passes=${r.cleanupPasses}`]
+        : []),
       ...(reason ? [`reason=${reason}`] : []),
     ].join("\t");
   }

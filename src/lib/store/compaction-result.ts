@@ -9,7 +9,12 @@ export interface CompactionResult {
   diskBytesAfter?: number;
   freeBytesBefore?: number;
   freeBytesAfter?: number;
+  /** Gross native bytes deleted, including the cleanup pass. */
   bytesReclaimed?: number;
+  /** Physical bytes before minus after; negative means net growth. */
+  netBytesReclaimed?: number;
+  cleanupPasses?: number;
+  cleanupReason?: string;
 }
 
 export function skippedCompaction(reason: string): CompactionResult {

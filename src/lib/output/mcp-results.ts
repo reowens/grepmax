@@ -48,6 +48,9 @@ export const compactionSchema = z.object({
   freeBytesBefore: z.number().optional(),
   freeBytesAfter: z.number().optional(),
   bytesReclaimed: z.number().optional(),
+  netBytesReclaimed: z.number().optional(),
+  cleanupPasses: z.number().int().min(0).max(1).optional(),
+  cleanupReason: z.string().optional(),
 });
 const embedding = z.object({
   tier: z.string(),

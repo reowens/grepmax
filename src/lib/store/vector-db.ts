@@ -1187,6 +1187,93 @@ export class VectorDB {
     return { ...result };
   }
 
+  /** Prune the reserve-ID snapshot without another data rewrite. Caller holds
+   * compactingPromise and has drained writes; never use this for retention > 0.
+   * Lance 12 treats one deletion-free fragment as a compaction no-op. */
+  private async cleanupCompactionReservation(table: lancedb.Table): Promise<{
+    passes: number;
+    bytesRemoved: number;
+    reason?: string;
+    failed?: boolean;
+  }> {
+    let passes = 0;
+    const deferred = (reason: string) => ({
+      passes: 0,
+      bytesRemoved: 0,
+      reason,
+    });
+    try {
+      const stats = await table.stats();
+      if (stats.fragmentStats?.numFragments !== 1) {
+        return deferred("cleanup deferred: table is not a single fragment");
+      }
+      const version = await table.version();
+      const fresh = await this.openExistingTableUnsafe();
+      if (!fresh || (await fresh.version()) !== version) {
+        return deferred("cleanup deferred: table changed after compaction");
+      }
+      const latest = (await fresh.listVersions()).find(
+        (v) => v.version === version,
+      );
+      if (
+        latest?.metadata.total_fragments !== "1" ||
+        latest.metadata.total_deletion_files !== "0" ||
+        latest.metadata.total_deletion_file_rows !== "0"
+      ) {
+        return deferred(
+          "cleanup deferred: deletion-free fragment not verified",
+        );
+      }
+      // Manifest timestamps have sub-ms precision; wait for a real later tick,
+      // never invent a future cutoff. No gmax writes can enter while gated.
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      const cutoff = new Date();
+      if (
+        !Number.isFinite(latest.timestamp.getTime()) ||
+        cutoff.getTime() <= latest.timestamp.getTime()
+      ) {
+        return deferred("cleanup deferred: clock has not passed the commit");
+      }
+      const freeBytes = this.getAvailableBytes();
+      const requiredBytes = stats.totalBytes * 2 + DISK_CRITICAL_BYTES;
+      if (
+        !Number.isFinite(stats.totalBytes) ||
+        stats.totalBytes < 0 ||
+        freeBytes < requiredBytes
+      ) {
+        return deferred("cleanup deferred: insufficient rewrite headroom");
+      }
+      log(
+        "vectordb",
+        `Compaction cleanup attempt: ${JSON.stringify({ version, cutoff: cutoff.getTime(), freeBytes, requiredBytes })}`,
+      );
+      passes = 1;
+      const result = await fresh.optimize({
+        cleanupOlderThan: cutoff,
+        deleteUnverified: true,
+      });
+      if (
+        result.compaction.fragmentsRemoved !== 0 ||
+        result.compaction.fragmentsAdded !== 0
+      ) {
+        return {
+          passes,
+          bytesRemoved: result.prune.bytesRemoved,
+          failed: true,
+          reason: "cleanup unexpectedly rewrote data; no retry",
+        };
+      }
+      return { passes, bytesRemoved: result.prune.bytesRemoved };
+    } catch (error) {
+      return {
+        passes,
+        bytesRemoved: 0,
+        failed: true,
+        reason: `cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+  }
+
   async optimize(
     retries = COMPACTION_MAX_ATTEMPTS,
     retentionMs = 0,
@@ -1215,11 +1302,14 @@ export class VectorDB {
     let logicalBytes: number | undefined;
     let diskBytesBefore: number | undefined;
     let freeBytesBefore: number | undefined;
+    let cleanupPasses = 0;
+    let cleanupReason: string | undefined;
     const finish = (
       status: CompactionResult["status"],
       reason?: string,
       bytesReclaimed?: number,
     ): CompactionResult => {
+      const diskBytesAfter = this.getDirectorySize(this.lancedbDir);
       const result: CompactionResult = {
         status,
         at: Date.now(),
@@ -1229,9 +1319,15 @@ export class VectorDB {
         logicalBytes,
         diskBytesBefore,
         freeBytesBefore,
-        diskBytesAfter: this.getDirectorySize(this.lancedbDir),
+        diskBytesAfter,
         freeBytesAfter: this.getAvailableBytes(),
         bytesReclaimed,
+        netBytesReclaimed:
+          diskBytesBefore === undefined
+            ? undefined
+            : diskBytesBefore - diskBytesAfter,
+        cleanupPasses,
+        cleanupReason,
       };
       this.lastCompactionResult = result;
       log("vectordb", `Compaction result: ${JSON.stringify(result)}`);
@@ -1306,7 +1402,23 @@ export class VectorDB {
           } else {
             debug("vectordb", "Optimize: nothing to compact or prune");
           }
-          return finish("completed", undefined, prune.bytesRemoved);
+          let bytesReclaimed = prune.bytesRemoved;
+          if (retentionMs === 0 && compaction.fragmentsRemoved > 0) {
+            const cleanup = await this.cleanupCompactionReservation(table);
+            cleanupPasses = cleanup.passes;
+            cleanupReason = cleanup.reason
+              ?.replace(/[\r\n\t]/g, " ")
+              .slice(0, 512);
+            bytesReclaimed += cleanup.bytesRemoved;
+            this.lastOptimizeDidWork ||= cleanup.bytesRemoved > 0;
+            log(
+              "vectordb",
+              `Compaction cleanup result: ${JSON.stringify({ ...cleanup, reason: cleanupReason })}`,
+            );
+            if (cleanup.failed)
+              return finish("failed", cleanupReason, bytesReclaimed);
+          }
+          return finish("completed", undefined, bytesReclaimed);
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           if (msg.includes("Nothing to do")) {
@@ -1469,7 +1581,7 @@ export class VectorDB {
         // otherwise read as unproductive and trigger a spurious backoff.
         let didWork = this.lastOptimizeDidWork;
 
-        if (this.lastOptimizeDidWork) {
+        if (result.status === "completed" && this.lastOptimizeDidWork) {
           const table = await this.openExistingTableUnsafe();
           if (table) {
             // Collect abandoned scratch files before measuring. They are pure

@@ -279,6 +279,14 @@ The drop-and-rebuild guard remains a recovery tripwire, with bounded optimize at
 
 If this recurs on a current release, preserve the installed version and daemon log, check `gmax status --json` and `gmax doctor`, and report a regression. Do not repeatedly force compaction or disable the recovery guard. Historical successful recovery is not a guarantee of availability or data integrity for a new failure.
 
+## Compaction reservation versions can retain a full data copy
+
+Reproduced October 6 in a temporary native store: one rewrite changed data bytes from 120,892 to 200,063 despite deleting old files. The surviving intermediate reserve-ID version referenced all three original fragments, while the final version referenced one new fragment. LanceDB 0.39 correctly preserves both because they were committed after the supplied start-time cutoff. A subsequent no-rewrite optimize removed the intermediate version and left 86,200 data bytes.
+
+The fix adds one bounded cleanup pass after a zero-retention rewrite, under the existing write gate. It verifies a single deletion-free fragment and an unchanged reopened version before using a real later cutoff. It preserves positive retention, checks fresh reserve headroom and never retries a cleanup failure or unexpected rewrite. Native regressions verify physical data bytes match the current manifest after three rewrites, with row/FTS integrity; guards cover queued writes, changed versions, deletion metadata, retention, clocks, space and failures.
+
+Cleanup is deferred when the table still has multiple fragments or the evidence is unavailable. The Node SDK does not expose a prune-only operation; do not bypass this guard with a future cutoff, manual file deletion or an unbounded sequence of rewrites. The existing maintenance bloat retry remains bounded. Net physical reclamation is now recorded separately from gross native bytes deleted, so a successful operation with net growth is visible.
+
 ## Fresh unreferenced fragments can survive an idle-store cleanup
 
 Verified October 6 against both LanceDB 0.38.0 and 0.39.0 in synthetic temporary stores. A copied, unreferenced data fragment created after the latest manifest survived optimize when the single-fragment table needed no rewrite. After a normal row update committed a newer manifest, optimize removed the copy and preserved the row. Lance limits its data-file listing using the earliest retained manifest timestamp; `deleteUnverified: true` does not remove that listing boundary.

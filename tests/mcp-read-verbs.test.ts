@@ -586,6 +586,9 @@ describe("MCP read tools go through the daemon read verbs", () => {
       reason: "conflict",
       diskBytesBefore: 1024,
       diskBytesAfter: 2048,
+      netBytesReclaimed: -1024,
+      cleanupPasses: 1,
+      cleanupReason: "cleanup failed; no retry",
     };
     respond({
       "project-stats": { ok: true, chunks: 120, files: 8 },
