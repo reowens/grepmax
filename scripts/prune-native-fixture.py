@@ -5,8 +5,30 @@ import json
 import os
 from pathlib import Path
 import resource
+import sys
 import time
 import uuid
+
+
+def resource_use():
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    return {"peakRssBytes": int(usage.ru_maxrss * (1 if sys.platform == "darwin" else 1024)),
+            "cpuUserSeconds": usage.ru_utime, "cpuSystemSeconds": usage.ru_stime}
+
+
+def measure(root):
+    stats = [p.stat() for p in root.rglob("*") if p.is_file()]
+    space = os.statvfs(root)
+    return {"fileBytes": sum(s.st_size for s in stats),
+            "allocatedBytes": sum(s.st_blocks * 512 for s in stats),
+            "freeBytes": space.f_bavail * space.f_frsize}
+
+
+def snapshot(dataset):
+    state = {"fragments": [f.metadata.to_json() for f in dataset.get_fragments()],
+             "indices": dataset.list_indices(),
+             "schema": dataset.schema.serialize().to_pybytes().hex()}
+    return json.loads(json.dumps(state, default=lambda item: sorted(item) if isinstance(item, set) else str(item)))
 
 
 def hashes(root):
@@ -69,10 +91,12 @@ def prepare(root, rows):
         "tagged": tagged, "postCutoff": post_cutoff,
         "fragments": len(ds.get_fragments()), "hashes": hashes(root),
         "orphan": str(orphan.relative_to(root)),
-        "preparePeakRssKb": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+        "protectedState": {str(v): snapshot(lance.dataset(str(root), version=v))
+                           for v in (tagged, post_cutoff, ds.version)},
+        "measurements": measure(root), "resources": resource_use(),
     }
     (root.parent / "fixture.json").write_text(json.dumps(manifest))
-    print(json.dumps({k: v for k, v in manifest.items() if k != "hashes"}))
+    print(json.dumps({k: v for k, v in manifest.items() if k not in ("hashes", "protectedState")}))
 
 
 def verify(root):
@@ -85,11 +109,17 @@ def verify(root):
     protected = lance.dataset(str(root), version=manifest["tagged"])
     assert protected.count_rows() == 20000
     assert protected.head(1)["id"][0].as_py() == "protected-0"
+    post_cutoff = lance.dataset(str(root), version=manifest["postCutoff"])
+    assert post_cutoff.count_rows() == manifest["rows"] + 2
+    assert post_cutoff.head(1)["id"][0].as_py() == "current-0"
+    for version, expected in manifest["protectedState"].items():
+        assert snapshot(lance.dataset(str(root), version=int(version))) == expected, "Protected metadata changed"
     after = hashes(root)
     assert set(after).issubset(manifest["hashes"]), "Cleanup created files"
     assert all(manifest["hashes"][name] == digest for name, digest in after.items()), "Cleanup rewrote a retained file"
     assert manifest["orphan"] in after, "Unverified file was deleted"
-    print(json.dumps({"verifiedRows": ds.count_rows(), "retainedFiles": len(after), "versions": sorted(versions), "verifyPeakRssKb": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, "noRewrites": True}))
+    print(json.dumps({"verifiedRows": ds.count_rows(), "retainedFiles": len(after), "versions": sorted(versions),
+                      "measurements": measure(root), "resources": resource_use(), "noRewrites": True}))
 
 
 if __name__ == "__main__":
