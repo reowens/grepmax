@@ -7,6 +7,7 @@ import {
 import { prepareCleanupRuntime, pruneVersions } from "./lance-cleanup";
 import { readPruneState } from "./prune-state";
 import {
+  admitPrune,
   assertRecoveryAdmission,
   createRecoveryBudget,
 } from "./recovery-admission";
@@ -61,13 +62,21 @@ export async function recoverStore(request: RecoveryRequest) {
     );
   const budget = createRecoveryBudget();
   assertRecoveryAdmission(store, budget);
-  if (!request.prune)
-    return {
-      outcome: "admitted",
-      table,
-      state: previous,
-      fullTableRewriting: "disabled",
-    };
+  if (!request.prune) {
+    const admission = admitPrune(store, budget);
+    try {
+      return {
+        outcome: "preflight-passed",
+        table,
+        state: previous,
+        host: admission.snapshot,
+        helperReserveMb: HELPER_RESOURCE_RESERVE_MB,
+        fullTableRewriting: "disabled",
+      };
+    } finally {
+      admission.close();
+    }
+  }
 
   // Setup is admitted and monitored before acquiring store exclusion. No owner
   // is killed and no marker is created or cleared by recovery itself.

@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../src/lib/store/recovery-admission", () => ({
   assertRecoveryAdmission: mocks.admit,
   createRecoveryBudget: () => ({ reserve: mocks.reserve }),
+  admitPrune: () => ({ close: mocks.release }),
 }));
 vi.mock("../src/lib/store/lance-cleanup", () => ({
   prepareCleanupRuntime: mocks.prepare,
@@ -62,7 +63,7 @@ describe("explicit recovery orchestration", () => {
   });
   it("check does not prepare, acquire exclusion or prune", async () => {
     expect((await recoverStore({ table, check: true })).outcome).toBe(
-      "admitted",
+      "preflight-passed",
     );
     expect(mocks.prepare).not.toHaveBeenCalled();
     expect(mocks.prune).not.toHaveBeenCalled();

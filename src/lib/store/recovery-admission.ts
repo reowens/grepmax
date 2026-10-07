@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { HostResourceSnapshot } from "../utils/host-resource";
 import {
   HELPER_RESOURCE_RESERVE_MB,
   ResourceBudget,
@@ -48,9 +49,11 @@ export function assertRecoveryAdmission(
     snapshot.physicalFreeMb < HELPER_RESOURCE_RESERVE_MB
   )
     throw new Error("Insufficient measured physical headroom for prune helper");
+  return snapshot;
 }
 
 export interface PruneAdmission {
+  snapshot?: HostResourceSnapshot;
   start: (pid: number) => void;
   approve: () => void;
   check: () => void;
@@ -62,13 +65,15 @@ export function admitPrune(
 ): PruneAdmission {
   assertRecoveryAdmission(storeDir, budget);
   const reserve = budget.reserve(HELPER_RESOURCE_RESERVE_MB, "prune-helper");
+  let snapshot: HostResourceSnapshot;
   try {
-    assertRecoveryAdmission(storeDir, budget);
+    snapshot = assertRecoveryAdmission(storeDir, budget);
   } catch (error) {
     reserve.release();
     throw error;
   }
   return {
+    snapshot,
     start: (pid) => reserve.attach(pid),
     approve: () => assertRecoveryAdmission(storeDir, budget),
     check: () => assertRecoveryAdmission(storeDir, budget),

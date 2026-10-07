@@ -191,6 +191,21 @@ async function runCase(mode) {
     assert(prepared.fragments >= 50);
     assert(prepared.resources.peakRssBytes < 1536*1024**2, "Fixture RSS exceeded 1.5GiB CI budget");
     if (mode === "complete") await leaseCases(store);
+    if (mode === "complete") {
+      const marker = path.join(root,"autostart-disabled");
+      fs.writeFileSync(marker,"task-owned offline fixture");
+      const preflight = childProcess.spawnSync(process.execPath,["--max-old-space-size=256",path.resolve("dist/bin.js"),
+        "recover","--table",tablePath,"--check","--json"],{encoding:"utf8",timeout:60000});
+      assert(!preflight.error,`Real host preflight did not finish: ${preflight.error}`);
+      assert([0,1].includes(preflight.status));
+      const diagnostic = JSON.parse((preflight.status === 0 ? preflight.stdout : preflight.stderr).trim());
+      assert(["preflight-passed","refused","uncertain"].includes(diagnostic.outcome));
+      assert.equal(readPruneState(store),null,"Preflight must not launch a prune or write a receipt");
+      const beforePrune = JSON.parse(await runCleanupProcess(python,["-I",fixture,"verify",tablePath]));
+      assert.equal(beforePrune.verifiedRows,prepared.rows);
+      report({phase:"real-host-preflight",status:preflight.status,diagnostic,noPruneReceipt:true,currentProtectedStateUnchanged:true});
+      fs.unlinkSync(marker);
+    }
     if (mode === "parent") await parentExitCase(tablePath,prepared);
     lease = await StoreLease.acquireExclusive({storeDir:store,timeoutMs:5000,role:"isolated-prune-test"});
     const started = Date.now();
