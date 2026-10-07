@@ -66,7 +66,7 @@ class PruneTests(unittest.TestCase):
         self.assertGreater(result["freeBytesAfter"], 0)
         self.dataset.optimize.assert_not_called()
         self.dataset.compact.assert_not_called()
-        self.engine.dataset.assert_called_with(str(self.root.resolve()), index_cache_size_bytes=8 * 1024**2,
+        self.engine.dataset.assert_any_call(str(self.root.resolve()), index_cache_size_bytes=8 * 1024**2,
                                               metadata_cache_size_bytes=8 * 1024**2,
                                               read_params={"cache_repetition_index": False})
 
@@ -122,7 +122,8 @@ class PruneTests(unittest.TestCase):
         changed.version = changed.latest_version = 5
         changed.versions.side_effect = lambda: list(self.versions)
         changed.get_fragments.return_value = []
-        self.engine.dataset.side_effect = [self.dataset, changed]
+        opened = iter([self.dataset, changed])
+        self.engine.dataset.side_effect = lambda *args, **kwargs: self.dataset if "version" in kwargs else next(opened)
         with self.assertRaisesRegex(ValueError, "state.*changed"):
             self.prune()
         self.dataset.cleanup_old_versions.assert_called_once()
@@ -158,6 +159,18 @@ class PruneTests(unittest.TestCase):
         with self.assertRaisesRegex(OSError, "tagged"):
             self.prune()
         self.dataset.cleanup_old_versions.assert_called_once()
+
+    def test_deletion_admission_failure_does_not_launch_cleanup(self):
+        def refuse():
+            raise ValueError("host admission changed")
+        with self.assertRaisesRegex(ValueError, "admission changed"):
+            pruner.prune(str(self.root), 5, 2500, str(self.owner_file), "fixture-exclusive", refuse)
+        self.dataset.cleanup_old_versions.assert_not_called()
+
+    def test_protected_metadata_bound_refuses_before_deletion(self):
+        with patch.object(pruner, "MAX_PROTECTED_VERSIONS", 1), self.assertRaisesRegex(ValueError, "bounded"):
+            self.prune()
+        self.dataset.cleanup_old_versions.assert_not_called()
 
     def test_symlinks_refuse_before_native_open(self):
         (self.root / "unsafe").symlink_to(self.owner_file)

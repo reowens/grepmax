@@ -7,6 +7,7 @@ required before enabling it on a pressured host.
 
 import argparse
 import importlib.metadata
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -15,6 +16,7 @@ import time
 
 MAX_FILES = 100_000
 MAX_VERSIONS = 100_000
+MAX_PROTECTED_VERSIONS = 256
 CACHE_BYTES = 8 * 1024 * 1024
 
 
@@ -38,7 +40,9 @@ def verify_lease(root, owner_file, nonce):
     if expected.is_symlink() or expected.stat().st_size > 16 * 1024:
         raise ValueError("Exclusive lease owner is unverified or oversized")
     owner = json.loads(expected.read_text())
-    if not nonce or owner.get("nonce") != nonce or owner.get("pid") != os.getppid():
+    helper = owner.get("activeHelper")
+    expected_pid = os.getpid() if helper and helper.get("pid") == os.getpid() else os.getppid()
+    if not nonce or owner.get("nonce") != nonce or owner.get("pid") != expected_pid:
         raise ValueError("Exclusive lease ownership could not be verified")
     readers = expected.parent.parent / "readers"
     if not readers.is_dir() or any(readers.glob("*.json")):
@@ -91,7 +95,19 @@ def snapshot(dataset):
     )
 
 
-def prune(store, expected_version, cutoff_ms, owner_file, nonce):
+def protected_digest(dataset):
+    fragments, indices, schema, tags = snapshot(dataset)
+    value = [fragments, indices, schema.hex(), tags]
+    encoded = json.dumps(value, sort_keys=True, default=lambda item: sorted(item) if isinstance(item, set) else str(item))
+    return hashlib.sha256(encoded.encode()).hexdigest()
+
+
+def open_version(lance, root, version):
+    return lance.dataset(str(root), version=version, index_cache_size_bytes=CACHE_BYTES,
+                         metadata_cache_size_bytes=CACHE_BYTES)
+
+
+def prune(store, expected_version, cutoff_ms, owner_file, nonce, admission=None):
     root = Path(store).resolve(strict=True)
     if not root.is_dir() or root.suffix != ".lance":
         raise ValueError("Cleanup requires a local Lance table directory")
@@ -120,6 +136,13 @@ def prune(store, expected_version, cutoff_ms, owner_file, nonce):
             versions.append(version["version"])
     if dataset.latest_version != expected_version or verify_lease(root, owner_file, nonce) != owner:
         raise ValueError("Table or exclusive ownership changed during cleanup admission")
+    if len(protected) > MAX_PROTECTED_VERSIONS:
+        raise ValueError("Protected metadata exceeds bounded recovery version count")
+    protected_state = {version: protected_digest(open_version(lance, root, version)) for version in protected}
+    if admission is not None:
+        admission()
+    if dataset.latest_version != expected_version or verify_lease(root, owner_file, nonce) != owner:
+        raise ValueError("Table or exclusive ownership changed at deletion boundary")
     # Explicit versions preserve current/tagged/post-cutoff commits. Unverified
     # files stay protected. The native operation cannot rewrite data/index files.
     stats = dataset.cleanup_old_versions(
@@ -133,6 +156,9 @@ def prune(store, expected_version, cutoff_ms, owner_file, nonce):
             or set(versions).intersection(remaining)
             or verify_lease(root, owner_file, nonce) != owner):
         raise ValueError("Current/protected state or exclusive ownership changed; no retry")
+    if any(protected_digest(open_version(lance, root, version)) != digest
+           for version, digest in protected_state.items()):
+        raise ValueError("Protected state changed; no retry")
     after_bytes, after_allocated, after_free = measure(root)
     return {
         "engine": "12.0.0", "version": expected_version,
@@ -153,9 +179,21 @@ def main():
     parser.add_argument("--cutoff-ms", required=True, type=int)
     parser.add_argument("--lease-owner", required=True)
     parser.add_argument("--lease-nonce", required=True)
+    parser.add_argument("--require-admission", action="store_true")
     args = parser.parse_args()
+    if not args.require_admission:
+        parser.error("Prune helper requires guarded gmax recovery admission")
     apply_resource_limits()
-    print(json.dumps(prune(args.store, args.version, args.cutoff_ms, args.lease_owner, args.lease_nonce)))
+    if args.require_admission:
+        print(json.dumps({"admission": "launch"}), flush=True)
+        if sys.stdin.readline(256).strip() != args.lease_nonce:
+            raise ValueError("Launch admission unavailable; no cleanup")
+    def admission():
+        print(json.dumps({"admission": "ready"}), flush=True)
+        if sys.stdin.readline(256).strip() != args.lease_nonce:
+            raise ValueError("Deletion admission unavailable; no cleanup")
+    print(json.dumps(prune(args.store, args.version, args.cutoff_ms, args.lease_owner,
+                          args.lease_nonce, admission if args.require_admission else None)))
 
 
 if __name__ == "__main__":

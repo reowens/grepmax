@@ -8,6 +8,7 @@ import {
   readPruneState,
   writePruneState,
 } from "./prune-state";
+import { admitPrune, type PruneAdmission } from "./recovery-admission";
 import { StoreLease, storeLeasePaths } from "./store-lease";
 
 const project = path.resolve(__dirname, "../../../lance-maintenance");
@@ -34,6 +35,8 @@ export interface PruneResult {
 export interface PruneOptions {
   lease: StoreLease;
   signal?: AbortSignal;
+  admission?: PruneAdmission;
+  acknowledgeUncertain?: string;
 }
 
 /** No shell, inherited service credentials, Python path hooks or source builds.
@@ -76,6 +79,7 @@ export function runCleanupProcess(
     signal?: AbortSignal;
     timeoutMs?: number;
     env?: NodeJS.ProcessEnv;
+    admission?: PruneAdmission & { nonce: string };
   } = {},
 ): Promise<string> {
   if (options.signal?.aborted)
@@ -83,13 +87,17 @@ export function runCleanupProcess(
   return new Promise((resolve, reject) => {
     const child = spawn(executable, args, {
       env: { ...helperEnvironment(), ...options.env },
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [options.admission ? "pipe" : "ignore", "pipe", "pipe"],
       windowsHide: true,
     });
     let output = "";
     let diagnostics = "";
     let bytes = 0;
     let failure: Error | undefined;
+    let approved = false;
+    let launched = false;
+    let readyBuffer = "";
+    let monitor: ReturnType<typeof setInterval> | undefined;
     let forceKill: ReturnType<typeof setTimeout> | undefined;
     const stop = (reason: string): void => {
       failure ??= new Error(`${reason}; cleanup completion is uncertain`);
@@ -104,12 +112,36 @@ export function runCleanupProcess(
     options.signal?.addEventListener("abort", abort, { once: true });
     // stderr is deliberately not returned: child diagnostics may contain paths,
     // tokens or registry URLs. Retain a concrete bounded exit/signal/error code.
-    for (const stream of [child.stdout, child.stderr]) {
+    for (const stream of [child.stdout!, child.stderr!]) {
       stream.on("data", (chunk: Buffer) => {
         bytes += chunk.length;
         if (bytes > MAX_OUTPUT_BYTES) stop("Cleanup output exceeded limit");
-        else if (stream === child.stdout) output += chunk.toString("utf8");
-        else diagnostics += chunk.toString("utf8");
+        else if (stream === child.stdout) {
+          if (options.admission && !approved) {
+            readyBuffer += chunk.toString("utf8");
+            let end = readyBuffer.indexOf("\n");
+            while (end >= 0 && !approved && !failure) {
+              try {
+                const phase = JSON.parse(readyBuffer.slice(0, end)).admission;
+                readyBuffer = readyBuffer.slice(end + 1);
+                if (phase === "launch" && !launched) {
+                  if (!child.stdin) throw Error();
+                  child.stdin.write(`${options.admission.nonce}\n`);
+                  launched = true;
+                } else if (phase === "ready" && launched) {
+                  options.admission.approve();
+                  child.stdin!.end(`${options.admission.nonce}\n`);
+                  approved = true;
+                  output += readyBuffer;
+                  readyBuffer = "";
+                } else throw Error();
+              } catch {
+                stop("Prune deletion admission refused");
+              }
+              end = readyBuffer.indexOf("\n");
+            }
+          } else output += chunk.toString("utf8");
+        } else diagnostics += chunk.toString("utf8");
       });
     }
     child.on("error", (error: NodeJS.ErrnoException) => {
@@ -120,6 +152,18 @@ export function runCleanupProcess(
     child.once("close", (code, signal) => {
       clearTimeout(timeout);
       if (forceKill) clearTimeout(forceKill);
+      if (monitor) clearInterval(monitor);
+      try {
+        options.admission?.close();
+      } catch {
+        failure ??= new Error(
+          "Prune ownership/resource close failed; completion is uncertain",
+        );
+      }
+      if (options.admission && !approved)
+        failure ??= new Error(
+          "Prune deletion was not admitted; completion is uncertain",
+        );
       options.signal?.removeEventListener("abort", abort);
       if (failure) reject(failure);
       else if (code !== 0) {
@@ -156,6 +200,22 @@ export function runCleanupProcess(
         );
       } else resolve(output);
     });
+    child.stdin?.on("error", () => stop("Prune admission pipe failed"));
+    if (options.admission) {
+      try {
+        if (!child.pid) throw Error();
+        options.admission.start(child.pid);
+        monitor = setInterval(() => {
+          try {
+            options.admission!.check();
+          } catch {
+            stop("Prune host/resource admission changed");
+          }
+        }, 5000);
+      } catch {
+        stop("Prune helper launch admission refused");
+      }
+    }
     if (options.signal?.aborted) abort();
   });
 }
@@ -190,13 +250,46 @@ export async function prepareCleanupRuntime(
         .slice(0, 16);
       const root = path.join(PATHS.sharedRoot, "runtimes");
       fs.mkdirSync(root, { recursive: true, mode: 0o700 });
+      if (fs.lstatSync(root).isSymbolicLink())
+        throw new Error("Unverified cleanup runtime directory");
       fs.chmodSync(root, 0o700);
+      const environment = path.join(root, `lance-cleanup-${hash}`);
+      const python = path.join(
+        environment,
+        process.platform === "win32" ? "Scripts/python.exe" : "bin/python",
+      );
+      if (fs.existsSync(environment)) {
+        if (
+          !fs.lstatSync(environment).isDirectory() ||
+          fs.lstatSync(environment).isSymbolicLink()
+        )
+          throw new Error("Unverified cleanup environment");
+        await runCleanupProcess(
+          "uv",
+          [
+            "sync",
+            "--check",
+            "--locked",
+            "--offline",
+            "--project",
+            project,
+            "--no-dev",
+            "--no-python-downloads",
+            "--no-build",
+          ],
+          {
+            signal,
+            timeoutMs: 10_000,
+            env: { UV_PROJECT_ENVIRONMENT: environment },
+          },
+        );
+        return { python, script: path.join(project, "prune.py") };
+      }
       const available = fs.statfsSync(root);
       const freeBytes = available.bavail * available.bsize;
       if (!Number.isFinite(freeBytes) || freeBytes < 512 * 1024 ** 2) {
         throw new Error("Cleanup runtime setup refused: less than 512MiB free");
       }
-      const environment = path.join(root, `lance-cleanup-${hash}`);
       await runCleanupProcess(
         "uv",
         [
@@ -215,10 +308,7 @@ export async function prepareCleanupRuntime(
       );
       fs.chmodSync(environment, 0o700);
       return {
-        python: path.join(
-          environment,
-          process.platform === "win32" ? "Scripts/python.exe" : "bin/python",
-        ),
+        python,
         script: path.join(project, "prune.py"),
       };
     })().catch((error) => {
@@ -255,9 +345,18 @@ export async function pruneVersions(
   if (options.signal?.aborted)
     throw new Error("Cleanup cancelled before launch");
   let attempt: PruneState | undefined;
+  let admission: PruneAdmission | undefined;
   try {
     const result = await options.lease.withExclusiveUse(storeDir, async () => {
       const previous = readPruneState(storeDir);
+      if (
+        previous?.outcome === "uncertain" &&
+        options.acknowledgeUncertain !== previous.attemptId
+      )
+        throw new Error(
+          `Previous prune completion is uncertain; explicit acknowledgement required for attempt ${previous.attemptId}`,
+        );
+      admission = options.admission ?? admitPrune(storeDir);
       attempt = {
         schemaVersion: 1,
         storeIdentity: fs.realpathSync(storeDir),
@@ -272,6 +371,7 @@ export async function pruneVersions(
             : previous?.previousUncertainAttemptId,
       };
       writePruneState(attempt);
+      let unpin: (() => void) | undefined;
       const stdout = await runCleanupProcess(
         runtime.python,
         [
@@ -287,8 +387,28 @@ export async function pruneVersions(
           storeLeasePaths(storeDir).intentOwnerFile,
           "--lease-nonce",
           options.lease.owner.nonce,
+          "--require-admission",
         ],
-        { signal: options.signal },
+        {
+          signal: options.signal,
+          admission: {
+            nonce: options.lease.owner.nonce,
+            start: (pid) => {
+              unpin = options.lease.pinExclusiveHelper(pid);
+              admission!.start(pid);
+            },
+            approve: () => admission!.approve(),
+            check: () => admission!.check(),
+            close: () => {
+              try {
+                unpin?.();
+              } finally {
+                admission!.close();
+                admission = undefined;
+              }
+            },
+          },
+        },
       );
       const result: PruneResult = JSON.parse(stdout);
       if (
@@ -343,5 +463,7 @@ export async function pruneVersions(
       }
     }
     throw error;
+  } finally {
+    admission?.close();
   }
 }

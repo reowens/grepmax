@@ -28,6 +28,7 @@ import { peek } from "./commands/peek";
 import { plugin } from "./commands/plugin";
 import { project } from "./commands/project";
 import { recent } from "./commands/recent";
+import { recover } from "./commands/recover";
 import { related } from "./commands/related";
 import { remove } from "./commands/remove";
 import { repair } from "./commands/repair";
@@ -123,6 +124,7 @@ program.addCommand(setup);
 program.addCommand(config);
 program.addCommand(doctor);
 program.addCommand(repair);
+program.addCommand(recover);
 
 // Plugins
 program.addCommand(plugin);

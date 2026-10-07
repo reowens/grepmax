@@ -18,6 +18,50 @@ const throwErrno = (code: string) => (): never => {
   throw error;
 };
 
+describe("exclusive helper ownership after parent exit", () => {
+  const owner: StoreLeaseOwner = {
+    pid: 10,
+    processStart: "parent",
+    nonce: "fixture",
+    role: "recovery",
+    acquiredAt: 1,
+    activeHelper: { pid: 20, processStart: "child" },
+  };
+  it("retains exclusion for a live helper after a verified dead parent", () => {
+    const deps = {
+      signal: (pid: number) => {
+        if (pid === 10) throwErrno("ESRCH")();
+      },
+      processStartOf: () => "child",
+    };
+    expect(defaultProbeOwner(owner, deps)).toBe("same");
+  });
+  it("refuses an unknown helper and reclaims only confirmed dead/reused helpers", () => {
+    const deps = {
+      signal: (pid: number) => {
+        if (pid === 10) throwErrno("ESRCH")();
+      },
+      processStartOf: throwErrno("EACCES"),
+    };
+    expect(defaultProbeOwner(owner, deps)).toBe("unknown");
+    expect(
+      defaultProbeOwner(owner, { ...deps, signal: throwErrno("ESRCH") }),
+    ).toBe("dead");
+    expect(
+      defaultProbeOwner(owner, {
+        ...deps,
+        processStartOf: () => "other-child",
+      }),
+    ).toBe("dead");
+    expect(
+      defaultProbeOwner(
+        { ...owner, activeHelper: { pid: 20, processStart: "unverified" } },
+        { ...deps, processStartOf: () => "other-child" },
+      ),
+    ).toBe("unknown");
+  });
+});
+
 describe("StoreLease", () => {
   let root: string;
   let storeDir: string;

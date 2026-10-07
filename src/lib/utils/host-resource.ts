@@ -33,6 +33,8 @@ export interface ResourceSamplerDeps {
   monotonic: () => number;
   freeBytes: () => number;
   run: (command: string, args: string[], timeoutMs: number) => string;
+  sampleTimeoutMs: number;
+  kernelProbeTimeoutMs: number;
 }
 export const HOST_SAMPLE_TIMEOUT_MS = 3000;
 const MAX_PROCESSES = 64;
@@ -146,6 +148,8 @@ export function sampleHostResources(
     now: Date.now,
     monotonic: () => performance.now(),
     freeBytes: os.freemem,
+    sampleTimeoutMs: HOST_SAMPLE_TIMEOUT_MS,
+    kernelProbeTimeoutMs: 500,
     run: (command, args, timeoutMs) =>
       execFileSync(command, args, {
         encoding: "utf8",
@@ -169,7 +173,7 @@ export function sampleHostResources(
     incompleteReasons: [],
   };
   if (deps.platform !== "darwin") return snapshot;
-  const deadline = deps.monotonic() + HOST_SAMPLE_TIMEOUT_MS;
+  const deadline = deps.monotonic() + deps.sampleTimeoutMs;
   const run = (command: string, args: string[], maximumMs = 500): string => {
     const remaining = Math.floor(deadline - deps.monotonic());
     if (remaining <= 0) throw new Error("resource sample deadline exceeded");
@@ -181,7 +185,9 @@ export function sampleHostResources(
       snapshot.physicalFreeMb = bytes / 1048576;
   } catch {}
   try {
-    const zone = parseZprintOutput(run("zprint", ["-L", "data.kalloc.1024"]));
+    const zone = parseZprintOutput(
+      run("zprint", ["-L", "data.kalloc.1024"], deps.kernelProbeTimeoutMs),
+    );
     if (zone) {
       const bytes = zone.elements * zone.elementSize;
       if (Number.isSafeInteger(bytes)) {

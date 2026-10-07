@@ -12,6 +12,7 @@ import {
 } from "./host-guard-policy";
 import {
   type HostResourceSnapshot,
+  type ResourceSamplerDeps,
   sampleHostResources,
 } from "./host-resource";
 import { latchSafetyStop } from "./safety-latch";
@@ -63,6 +64,9 @@ interface BudgetDeps {
   processStart: () => string;
   policy: () => HostGuardPolicy;
   criticalSample: () => HostResourceSnapshot;
+  requireClientRegistration: boolean;
+  samplerOverrides: Partial<ResourceSamplerDeps>;
+  sampleMaxAgeMs: number;
 }
 
 export function resolveResourceBudgetMb(
@@ -81,6 +85,7 @@ export function assertResourceSnapshot(
   chargedMb: number,
   budgetMb: number,
   now = Date.now(),
+  sampleMaxAgeMs = 5000,
 ): void {
   if (
     snapshot.memoryPressure === "critical" ||
@@ -97,7 +102,7 @@ export function assertResourceSnapshot(
   if (snapshot.platform !== "darwin") return;
   if (
     now < snapshot.at ||
-    now - snapshot.at > 5000 ||
+    now - snapshot.at > sampleMaxAgeMs ||
     snapshot.completedAt < snapshot.at ||
     snapshot.completedAt > now
   )
@@ -140,12 +145,15 @@ export class ResourceBudget {
         const records = this.readRecords();
         return sampleHostResources(
           [...records.map((r) => r.pid), ...extraPids],
-          {},
+          this.deps.samplerOverrides,
           records.flatMap((r) => (r.groupPid ? [r.groupPid] : [])),
         );
       },
       signal: (pid) => process.kill(pid, 0),
       policy: hostGuardPolicy,
+      requireClientRegistration: true,
+      samplerOverrides: {},
+      sampleMaxAgeMs: 5000,
       criticalSample: sampleCriticalPressure,
       quarantine: daemonStartDeniedReason,
       latch: latchSafetyStop,
@@ -327,13 +335,14 @@ export class ResourceBudget {
         this.charge(snapshot, records),
         resolveResourceBudgetMb(),
         this.deps.now(),
+        this.deps.sampleMaxAgeMs,
       );
       const legacy = snapshot.processes.filter(
         (p) =>
           p.role === "mcp" &&
           !records.some((r) => r.pid === p.pid && r.kind === "client"),
       );
-      if (legacy.length)
+      if (legacy.length && this.deps.requireClientRegistration)
         throw new ResourceAdmissionError(
           `${legacy.length} MCP client(s) need to reconnect after upgrading; heavy work paused`,
         );

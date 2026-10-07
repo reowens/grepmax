@@ -1,7 +1,7 @@
 name: Isolated prune validation
 on:
   push:
-    branches: [test/gmax-prune-validation, fix/gmax-prune-integration]
+    branches: [test/gmax-prune-validation, fix/gmax-prune-integration, fix/gmax-recovery-admission]
   workflow_dispatch:
 permissions:
   contents: read
@@ -35,7 +35,7 @@ jobs:
       - name: Guard and lease regressions
         run: |
           python3 -m unittest discover -s tests/python -p test_lance_prune.py
-          pnpm exec vitest run tests/lance-cleanup.test.ts tests/store-lease.test.ts --maxWorkers=1
+          pnpm exec vitest run tests/lance-cleanup.test.ts tests/store-lease.test.ts tests/recovery-admission.test.ts tests/recovery.test.ts tests/resource-budget.test.ts --maxWorkers=1
       - name: Build and verify the installed npm package
         run: |
           pnpm run build
@@ -57,7 +57,12 @@ jobs:
           fi
           echo "GMAX_PRUNE_FIXTURE_BASE=$fixture_base" >> "$GITHUB_ENV"
           echo "GMAX_PRUNE_EVIDENCE=$RUNNER_TEMP/prune-evidence" >> "$GITHUB_ENV"
+      - name: Preserve exact released reader for mixed-version lease acceptance
+        run: |
+          git fetch --depth=1 --no-tags origin f65415fa639624a5eb2e62e0e8997b38bd3f7066
+          git show f65415fa639624a5eb2e62e0e8997b38bd3f7066:src/lib/store/store-lease.ts > scripts/.prune-legacy-store-lease.ts
       - name: Verify recovery, native interruption, lease recovery and resource use
+        # Mixed-version clients must honor helper ownership after parent death.
         shell: bash
         run: node --max-old-space-size=256 --import tsx scripts/test-prune-native.cjs | tee "$GMAX_PRUNE_EVIDENCE/native.jsonl"
         env:

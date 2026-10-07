@@ -16,6 +16,15 @@ import {
 } from "../src/lib/store/prune-state";
 import { StoreLease, storeLeasePaths } from "../src/lib/store/store-lease";
 
+vi.mock("../src/lib/store/recovery-admission", () => ({
+  admitPrune: () => ({
+    start: vi.fn(),
+    approve: vi.fn(),
+    check: vi.fn(),
+    close: vi.fn(),
+  }),
+}));
+
 vi.mock("node:child_process", async (original) => ({
   ...(await original<typeof import("node:child_process")>()),
   spawn: vi.fn(),
@@ -27,6 +36,8 @@ vi.mock("node:fs", async (original) => {
     mkdirSync: vi.fn(actual.mkdirSync),
     chmodSync: vi.fn(actual.chmodSync),
     statfsSync: vi.fn(actual.statfsSync),
+    lstatSync: vi.fn(actual.lstatSync),
+    existsSync: vi.fn(actual.existsSync),
   };
 });
 
@@ -34,6 +45,8 @@ function fakeChild() {
   return Object.assign(new EventEmitter(), {
     stdout: new PassThrough(),
     stderr: new PassThrough(),
+    stdin: new PassThrough(),
+    pid: 123,
     kill: vi.fn(() => true),
   });
 }
@@ -73,6 +86,76 @@ describe("prune helper subprocess bounds", () => {
       runCleanupProcess("fixture", [], { signal: controller.signal }),
     ).rejects.toThrow("before launch");
     expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it("holds deletion behind launch and final admission, closing resources only after child close", async () => {
+    const tokens: string[] = [];
+    child.stdin.on("data", (chunk) => tokens.push(chunk.toString()));
+    const admission = {
+      nonce: "fixture",
+      start: vi.fn(),
+      approve: vi.fn(),
+      check: vi.fn(),
+      close: vi.fn(),
+    };
+    const pending = runCleanupProcess("fixture", [], { admission });
+    expect(admission.start).toHaveBeenCalledWith(123);
+    expect(tokens).toEqual([]);
+    child.stdout.write('{"admission":"launch"}\n');
+    expect(tokens).toEqual(["fixture\n"]);
+    expect(admission.approve).not.toHaveBeenCalled();
+    child.stdout.write('{"admission":"ready"}\n');
+    expect(admission.approve).toHaveBeenCalledOnce();
+    expect(tokens).toEqual(["fixture\n", "fixture\n"]);
+    expect(admission.close).not.toHaveBeenCalled();
+    child.stdout.write('{"verified":true}');
+    child.emit("close", 0, null);
+    await expect(pending).resolves.toBe('{"verified":true}');
+    expect(admission.close).toHaveBeenCalledOnce();
+  });
+
+  it("refuses changed deletion admission without sending a deletion token", async () => {
+    const tokens: string[] = [];
+    child.stdin.on("data", (chunk) => tokens.push(chunk.toString()));
+    const admission = {
+      nonce: "fixture",
+      start: vi.fn(),
+      approve: () => {
+        throw Error("unknown resources");
+      },
+      check: vi.fn(),
+      close: vi.fn(),
+    };
+    const pending = runCleanupProcess("fixture", [], { admission });
+    const check = expect(pending).rejects.toThrow("deletion admission refused");
+    child.stdout.write('{"admission":"launch"}\n{"admission":"ready"}\n');
+    expect(tokens).toEqual(["fixture\n"]);
+    expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+    expect(admission.close).not.toHaveBeenCalled();
+    child.emit("close", null, "SIGTERM");
+    await check;
+    expect(admission.close).toHaveBeenCalledOnce();
+  });
+
+  it("cancels an admitted helper when heartbeat resources become unknown", async () => {
+    const admission = {
+      nonce: "fixture",
+      start: vi.fn(),
+      approve: vi.fn(),
+      check: () => {
+        throw Error("unknown resources");
+      },
+      close: vi.fn(),
+    };
+    const pending = runCleanupProcess("fixture", [], { admission });
+    const check = expect(pending).rejects.toThrow(
+      "host/resource admission changed",
+    );
+    child.stdout.write('{"admission":"launch"}\n{"admission":"ready"}\n');
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+    child.emit("close", null, "SIGTERM");
+    await check;
   });
 
   it("waits for child close after cancellation and escalates termination", async () => {
@@ -168,6 +251,9 @@ describe("exclusive prune admission and verification", () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), "gmax-prune-guard-"));
     store = fs.realpathSync(root);
     table = path.join(store, "chunks.lance");
+    vi.spyOn(StoreLease.prototype, "pinExclusiveHelper").mockReturnValue(
+      () => {},
+    );
     fs.mkdirSync(table);
     child = fakeChild();
     vi.mocked(spawn)
@@ -206,6 +292,7 @@ describe("exclusive prune admission and verification", () => {
       JSON.parse(fs.readFileSync(pruneStatePath(store), "utf8")).outcome,
     ).toBe("running");
     expect(readPruneState(store)?.outcome).toBe("uncertain");
+    child.stdout.write(' {"admission":"launch"}\n{"admission":"ready"}\n');
     child.stdout.write(JSON.stringify(output));
     child.emit("close", 0, null);
     await expect(pending).resolves.toEqual(output);
@@ -231,7 +318,11 @@ describe("exclusive prune admission and verification", () => {
     expect(interrupted.outcome).toBe("uncertain");
     child = fakeChild();
     vi.mocked(spawn).mockReturnValueOnce(child as any);
-    const retry = pruneVersions(runtime, table, 5, new Date(), { lease });
+    const retry = pruneVersions(runtime, table, 5, new Date(), {
+      lease,
+      acknowledgeUncertain: interrupted.attemptId,
+    });
+    child.stdout.write(' {"admission":"launch"}\n{"admission":"ready"}\n');
     child.stdout.write(JSON.stringify(output));
     child.emit("close", 0, null);
     await retry;
@@ -252,7 +343,11 @@ describe("exclusive prune admission and verification", () => {
       outcome: "running",
     });
     lease = await StoreLease.acquireExclusive({ storeDir: store });
-    const pending = pruneVersions(runtime, table, 5, new Date(), { lease });
+    const pending = pruneVersions(runtime, table, 5, new Date(), {
+      lease,
+      acknowledgeUncertain: "old-parent",
+    });
+    child.stdout.write(' {"admission":"launch"}\n{"admission":"ready"}\n');
     child.stdout.write(JSON.stringify(output));
     child.emit("close", 0, null);
     await pending;
@@ -300,6 +395,7 @@ describe("exclusive prune admission and verification", () => {
     const owner = storeLeasePaths(store).intentOwnerFile;
     const original = fs.readFileSync(owner, "utf8");
     fs.writeFileSync(owner, JSON.stringify({ ...lease.owner, nonce: "lost" }));
+    child.stdout.write(' {"admission":"launch"}\n{"admission":"ready"}\n');
     child.stdout.write(JSON.stringify(output));
     child.emit("close", 0, null);
     await check;
@@ -317,6 +413,7 @@ describe("exclusive prune admission and verification", () => {
     expect(spawn).not.toHaveBeenCalled();
     const pending = pruneVersions(runtime, table, 5, new Date(), { lease });
     const check = expect(pending).rejects.toThrow("completion is uncertain");
+    child.stdout.write(' {"admission":"launch"}\n{"admission":"ready"}\n');
     child.stdout.write(JSON.stringify({ ...output, allocatedBytesAfter: -1 }));
     child.emit("close", 0, null);
     await check;
@@ -334,6 +431,11 @@ describe("locked runtime setup without installing anything", () => {
       bavail: 1024 ** 2,
       bsize: 4096,
     } as any);
+    vi.mocked(fs.lstatSync).mockReturnValue({
+      isSymbolicLink: () => false,
+      isDirectory: () => true,
+    } as any);
+    vi.mocked(fs.existsSync).mockReturnValue(false);
   });
   afterEach(() => vi.restoreAllMocks());
 
@@ -380,6 +482,32 @@ describe("locked runtime setup without installing anything", () => {
     version.emit("close", 0, null);
     await check;
     expect(spawn).toHaveBeenCalledOnce();
+  });
+
+  it("verifies an existing locked runtime without requiring download headroom", async () => {
+    vi.mocked(fs.existsSync).mockImplementation((file) =>
+      String(file).includes("lance-cleanup-"),
+    );
+    vi.mocked(fs.statfsSync).mockClear();
+    const version = fakeChild();
+    const verify = fakeChild();
+    vi.mocked(spawn)
+      .mockReturnValueOnce(version as any)
+      .mockReturnValueOnce(verify as any);
+    const { prepareCleanupRuntime } = await import(
+      "../src/lib/store/lance-cleanup"
+    );
+    const pending = prepareCleanupRuntime();
+    version.stdout.write("uv 0.12.23\n");
+    version.emit("close", 0, null);
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(2));
+    const args = vi.mocked(spawn).mock.calls[1][1]!;
+    expect(args).toContain("--check");
+    expect(args).toContain("--locked");
+    expect(args).toContain("--offline");
+    verify.emit("close", 0, null);
+    await pending;
+    expect(fs.statfsSync).not.toHaveBeenCalled();
   });
 
   it("preserves a specific setup exit failure and permits an explicit retry", async () => {

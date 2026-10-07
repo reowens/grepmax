@@ -6,7 +6,7 @@ on:
 
   workflow_dispatch:
   push:
-    branches: [ main, fix/gmax-prune-integration ]
+    branches: [ main, fix/gmax-prune-integration, fix/gmax-recovery-admission ]
 
 jobs:
   ci:

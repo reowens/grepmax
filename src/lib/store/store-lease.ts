@@ -10,6 +10,7 @@ export interface StoreLeaseOwner {
   nonce: string;
   role: string;
   acquiredAt: number;
+  activeHelper?: { pid: number; processStart: string };
 }
 
 export type OwnerProbeResult = "same" | "dead" | "reused" | "unknown";
@@ -104,6 +105,25 @@ export function defaultProbeOwner(
   owner: StoreLeaseOwner,
   deps: OwnerProbeDeps = defaultProbeDeps,
 ): OwnerProbeResult {
+  const parent = probeProcessOwner(owner, deps);
+  if ((parent === "dead" || parent === "reused") && owner.activeHelper) {
+    const child = probeProcessOwner(
+      {
+        ...owner,
+        pid: owner.activeHelper.pid,
+        processStart: owner.activeHelper.processStart,
+      },
+      deps,
+    );
+    return child === "same" || child === "unknown" ? child : parent;
+  }
+  return parent;
+}
+
+function probeProcessOwner(
+  owner: StoreLeaseOwner,
+  deps: OwnerProbeDeps,
+): OwnerProbeResult {
   try {
     deps.signal(owner.pid);
   } catch (error) {
@@ -117,6 +137,7 @@ export function defaultProbeOwner(
     // exclusive operation for the life of the store.
     if (code !== "EPERM") return "unknown";
   }
+  if (owner.processStart === "unverified") return "unknown";
   if (owner.processStart.startsWith(`pid:${owner.pid}:started:`)) return "same";
   try {
     const start = deps.processStartOf(owner.pid);
@@ -137,7 +158,12 @@ function readOwner(filePath: string): StoreLeaseOwner | null {
       typeof owner.processStart === "string" &&
       typeof owner.nonce === "string" &&
       typeof owner.role === "string" &&
-      typeof owner.acquiredAt === "number"
+      typeof owner.acquiredAt === "number" &&
+      (owner.activeHelper === undefined ||
+        (Number.isSafeInteger(owner.activeHelper?.pid) &&
+          owner.activeHelper.pid > 0 &&
+          typeof owner.activeHelper.processStart === "string" &&
+          !!owner.activeHelper.processStart))
       ? owner
       : null;
   } catch {
@@ -145,10 +171,28 @@ function readOwner(filePath: string): StoreLeaseOwner | null {
   }
 }
 
-function writeOwnerAtomic(filePath: string, owner: StoreLeaseOwner): void {
+function writeOwnerAtomic(
+  filePath: string,
+  owner: StoreLeaseOwner,
+  durable = false,
+): void {
   const temp = `${filePath}.${owner.nonce}.tmp`;
-  fs.writeFileSync(temp, `${JSON.stringify(owner)}\n`, { flag: "wx" });
+  const fd = fs.openSync(temp, "wx", 0o600);
+  try {
+    fs.writeFileSync(fd, `${JSON.stringify(owner)}\n`);
+    if (durable) fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
   fs.renameSync(temp, filePath);
+  if (durable) {
+    const dir = fs.openSync(path.dirname(filePath), "r");
+    try {
+      fs.fsyncSync(dir);
+    } finally {
+      fs.closeSync(dir);
+    }
+  }
 }
 
 async function delay(ms: number, signal?: AbortSignal): Promise<void> {
@@ -390,6 +434,50 @@ export class StoreLease {
   }
 
   /** Atomically replace this shared lease with an exclusive lease. */
+  pinExclusiveHelper(pid: number): () => void {
+    if (
+      !this.exclusiveUseRunning ||
+      this.owner.activeHelper ||
+      !Number.isSafeInteger(pid) ||
+      pid < 1
+    )
+      throw new Error("Helper requires an active exclusive store operation");
+    const current = readOwner(this.paths.intentOwnerFile);
+    if (current?.nonce !== this.owner.nonce || current.activeHelper)
+      throw new Error("Exclusive store ownership changed before helper launch");
+    // Publish uncertainty first. A failed identity probe must retain exclusion
+    // until this child is confirmed dead, even if the parent is killed.
+    this.owner.activeHelper = { pid, processStart: "unverified" };
+    // The helper is the primary on-disk owner, so older readers also retain
+    // exclusion after parent death. It is blocked on stdin until this identity
+    // is durably verified; uncertainty here cannot admit native deletion.
+    writeOwnerAtomic(
+      this.paths.intentOwnerFile,
+      { ...this.owner, pid, processStart: "unverified" },
+      true,
+    );
+    const start = defaultProbeDeps.processStartOf(pid);
+    if (!start) throw new Error("Prune helper identity unavailable");
+    this.owner.activeHelper.processStart = start;
+    writeOwnerAtomic(
+      this.paths.intentOwnerFile,
+      { ...this.owner, pid, processStart: start },
+      true,
+    );
+    return () => {
+      const latest = readOwner(this.paths.intentOwnerFile);
+      if (
+        latest?.nonce !== this.owner.nonce ||
+        latest.activeHelper?.pid !== pid
+      )
+        throw new Error(
+          "Exclusive store ownership changed during helper close",
+        );
+      delete this.owner.activeHelper;
+      writeOwnerAtomic(this.paths.intentOwnerFile, this.owner, true);
+    };
+  }
+
   async upgrade(
     options: Omit<StoreLeaseOptions, "storeDir" | "ignoreNonces"> = {},
   ): Promise<StoreLease> {

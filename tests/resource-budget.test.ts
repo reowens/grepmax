@@ -76,6 +76,17 @@ describe("one persistent budget for all clients/stores", () => {
     vi.unstubAllEnvs();
   });
   const records = () => fs.readdirSync(root).filter((n) => n.endsWith(".json"));
+  it("recovery can account for legacy client footprints without requiring reconnects", () => {
+    s.processes[1].role = "mcp";
+    const budget = make(10, { requireClientRegistration: false });
+    const reservation = budget.reserve(512, "prune-helper");
+    expect(records()).toHaveLength(1);
+    reservation.release();
+    s.memoryPressure = "warn";
+    expect(() => budget.reserve(512, "prune-helper")).toThrow("warning");
+    s.memoryPressure = "unknown";
+    expect(() => budget.reserve(512, "prune-helper")).toThrow("unknown");
+  });
   it.each(["warn", "unknown"] as const)(
     "explicit critical-only allows %s without a ledger or client reconnect",
     (pressure) => {

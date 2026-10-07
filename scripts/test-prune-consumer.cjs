@@ -6,8 +6,10 @@ const crypto = require("node:crypto");
 const packageRoot = path.dirname(require.resolve("grepmax/package.json", {paths: [process.cwd()]}));
 assert(packageRoot.startsWith(path.join(process.cwd(), "node_modules") + path.sep));
 const {prepareCleanupRuntime, pruneVersions, runCleanupProcess} = require(path.join(packageRoot, "dist/lib/store/lance-cleanup.js"));
+const {spawnSync} = require("node:child_process");
 const {StoreLease} = require(path.join(packageRoot, "dist/lib/store/store-lease.js"));
 const {readPruneState} = require(path.join(packageRoot, "dist/lib/store/prune-state.js"));
+const fixtureAdmission = () => ({start() {}, approve() {}, check() {}, close() {}});
 const lance = require(path.join(packageRoot, "dist/lib/store/lance-sdk.js"));
 const sourceRoot = path.resolve(__dirname, "..");
 
@@ -50,10 +52,18 @@ print(json.dumps({"version": ds.version, "tagged": tagged, "rows": ds.count_rows
       const digest = root => crypto.createHash("sha256").update(fs.readFileSync(path.join(root, "lance-maintenance", file))).digest("hex");
       assert.equal(digest(packageRoot), digest(sourceRoot), `Packed ${file} changed`);
     }
+    const cacheCheck = await runCleanupProcess(process.execPath, ["-e", `require(${JSON.stringify(path.join(packageRoot,"dist/lib/store/lance-cleanup.js"))}).prepareCleanupRuntime().catch(e=>{console.error(e);process.exitCode=1})`]);
+    assert.equal(cacheCheck, "");
     const table = path.join(store, "chunks.lance");
     const prepared = JSON.parse(await runCleanupProcess(runtime.python, ["-I", "-c", prepare, table]));
+    const cliStatus = () => {
+      const run = spawnSync(process.execPath,[path.join(packageRoot,"dist/bin.js"),"recover","--table",table,"--json"],{encoding:"utf8",timeout:10000});
+      assert.equal(run.status,0,run.stderr);
+      return JSON.parse(run.stdout);
+    };
+    assert.equal(cliStatus().state,null);
     lease = await StoreLease.acquireExclusive({storeDir: store, timeoutMs: 5000, role: "packed-consumer-fixture"});
-    const result = await pruneVersions(runtime, table, prepared.version, new Date(prepared.cutoffMs), {lease});
+    const result = await pruneVersions(runtime, table, prepared.version, new Date(prepared.cutoffMs), {lease, admission: fixtureAdmission()});
     assert.equal(result.rewritten, false);
     assert(result.versionsRemoved > 0);
     assert(result.bytesRemoved > 0);
@@ -63,6 +73,7 @@ print(json.dumps({"version": ds.version, "tagged": tagged, "rows": ds.count_rows
     const state = readPruneState(store);
     assert.equal(state.outcome, "completed");
     assert.deepEqual(state.result, result);
+    assert.equal(cliStatus().state.outcome,"completed");
     await lease.release();
     lease = undefined;
     connection = await lance.connect(store, {session: new lance.Session(BigInt(16 * 1024**2), BigInt(8 * 1024**2))});

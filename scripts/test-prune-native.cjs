@@ -70,6 +70,7 @@ childProcess.spawn = (...args) => {
 const { StoreLease, storeLeasePaths } = require("../src/lib/store/store-lease.ts");
 const { pruneVersions, runCleanupProcess } = require("../src/lib/store/lance-cleanup.ts");
 const { readPruneState } = require("../src/lib/store/prune-state.ts");
+const fixtureAdmission = () => ({start() {}, approve() {}, check() {}, close() {}});
 const lance = require("../src/lib/store/lance-sdk.ts");
 const python = process.env.PRUNE_PYTHON;
 const evidenceDir = process.env.GMAX_PRUNE_EVIDENCE;
@@ -129,6 +130,53 @@ async function verifyNative(store, prepared) {
     return {nodeKeywordHits:hits.length, partialFtsPreserved:true};
   } finally { await connection.close(); }
 }
+async function parentExitCase(tablePath, prepared) {
+  const store = path.dirname(tablePath);
+  const manifest = JSON.parse(fs.readFileSync(path.join(store,"fixture.json"),"utf8"));
+  const data = Object.keys(manifest.hashes).filter(file => /(?:^|\/)(?:_?data)\//.test(file) && file.endsWith(".lance"));
+  const manager = childProcess.spawn(process.execPath, ["--max-old-space-size=256", "--import", "tsx",
+    path.join(__dirname,"prune-parent-fixture.cjs"), tablePath, String(prepared.version), String(prepared.cutoffMs), python],
+    {env: {...process.env}, stdio:["ignore","pipe","pipe","ipc"]});
+  let helper;
+  try {
+    helper = await new Promise((resolve,reject) => {
+      const timer = setTimeout(() => reject(new Error("Parent fixture helper did not start")),10000);
+      manager.once("message", message => {clearTimeout(timer); resolve(message.helperPid);});
+      manager.once("exit", code => {clearTimeout(timer); reject(new Error(`Parent fixture exited ${code}`));});
+    });
+    const deadline = Date.now()+30000;
+    while (!data.some(file => !fs.existsSync(path.join(tablePath,file)))) {
+      if (Date.now()>deadline) throw new Error("No real deletion observed before parent interruption");
+      await new Promise(resolve => setTimeout(resolve,25));
+    }
+    process.kill(helper,"SIGSTOP");
+    await stopOwned(manager);
+    assert.equal(readPruneState(store).outcome,"uncertain");
+    const owner = JSON.parse(fs.readFileSync(storeLeasePaths(store).intentOwnerFile,"utf8"));
+    assert.equal(owner.activeHelper.pid,helper);
+    assert.equal(owner.pid,helper,"Primary lease owner must protect older clients too");
+    const keepAlive = setInterval(() => {},1000);
+    try {
+      await assert.rejects(StoreLease.acquireShared({storeDir:store,timeoutMs:200,pollMs:20}),/Timed out/);
+      await assert.rejects(StoreLease.acquireExclusive({storeDir:store,timeoutMs:200,pollMs:20}),/Timed out/);
+      assert(fs.existsSync(storeLeasePaths(store).intentOwnerFile));
+      await runCleanupProcess(process.execPath,["--max-old-space-size=256","--import","tsx",
+        path.join(__dirname,"prune-legacy-reader.cjs"),store]);
+    } finally {clearInterval(keepAlive);}
+    process.kill(helper,"SIGKILL");
+    const ended = Date.now()+10000;
+    for (;;) {
+      try {process.kill(helper,0);} catch (error) {if (error.code === "ESRCH") break; throw error;}
+      if (Date.now()>ended) throw new Error("Interrupted helper death could not be verified");
+      await new Promise(resolve => setTimeout(resolve,50));
+    }
+    report({phase:"parent-exit",parentKilledAfterRealDeletion:true,liveHelperRetainedExclusion:true,
+      sharedAndExclusiveRefused:true,released064ReaderRefused:true,helperConfirmedDead:true,receiptUncertain:true});
+  } finally {
+    if (helper) {try {process.kill(helper,"SIGKILL");} catch {}}
+    await stopOwned(manager);
+  }
+}
 async function runCase(mode) {
   const root = fs.mkdtempSync(path.join(process.env.GMAX_PRUNE_FIXTURE_BASE, "gmax-prune-native-"));
   const store = path.join(root,"store");
@@ -143,9 +191,10 @@ async function runCase(mode) {
     assert(prepared.fragments >= 50);
     assert(prepared.resources.peakRssBytes < 1536*1024**2, "Fixture RSS exceeded 1.5GiB CI budget");
     if (mode === "complete") await leaseCases(store);
+    if (mode === "parent") await parentExitCase(tablePath,prepared);
     lease = await StoreLease.acquireExclusive({storeDir:store,timeoutMs:5000,role:"isolated-prune-test"});
     const started = Date.now();
-    if (mode !== "complete") {
+    if (mode !== "complete" && mode !== "parent") {
       const manifest = JSON.parse(fs.readFileSync(path.join(store,"fixture.json"),"utf8"));
       const action = {mode, controller:new AbortController(), paths:Object.keys(manifest.hashes)
         .filter(file => /(?:^|\/)(?:_?data)\//.test(file) && file.endsWith(".lance"))
@@ -153,7 +202,7 @@ async function runCase(mode) {
       assert(action.paths.length >= 50);
       interruption = action;
       await assert.rejects(pruneVersions(runtime,tablePath,prepared.version,new Date(prepared.cutoffMs),
-        {lease,signal:action.controller.signal}), /completion is uncertain/);
+        {lease,signal:action.controller.signal, admission: fixtureAdmission()}), /completion is uncertain/);
       assert(action.triggered, "Interruption must follow a real native deletion");
       assert(action.child.exitCode !== null || action.child.signalCode !== null, "Child must exit before lease release");
       assert.equal(readPruneState(store).outcome, "uncertain");
@@ -162,14 +211,14 @@ async function runCase(mode) {
       report({phase:"interrupted",mode,removedAtSignal:action.removedAtSignal,partial,...partialNative,completionUncertain:true});
       await lease.release();
       lease = await StoreLease.acquireExclusive({storeDir:store,timeoutMs:5000,role:"isolated-prune-retry"});
-    } else {
+    } else if (mode === "complete") {
       // A real timeout before deletion validates bounded shutdown and exclusion.
       await assert.rejects(lease.withExclusiveUse(store, () => runCleanupProcess(python,
         ["-I","-c","import time; time.sleep(60)"],{timeoutMs:100})), /timed out.*uncertain/);
       report({phase:"timeout-before-deletion",completionUncertain:true,childClosedBeforeRelease:true});
-      await assert.rejects(pruneVersions(runtime,tablePath,prepared.version+1,new Date(prepared.cutoffMs),{lease}), /uncertain/);
+      await assert.rejects(pruneVersions(runtime,tablePath,prepared.version+1,new Date(prepared.cutoffMs),{lease, admission: fixtureAdmission(), acknowledgeUncertain: readPruneState(store)?.attemptId}), /uncertain/);
     }
-    const result = await pruneVersions(runtime,tablePath,prepared.version,new Date(prepared.cutoffMs),{lease});
+    const result = await pruneVersions(runtime,tablePath,prepared.version,new Date(prepared.cutoffMs),{lease, admission: fixtureAdmission(), acknowledgeUncertain: readPruneState(store)?.attemptId});
     const receipt = readPruneState(store);
     assert.equal(receipt.outcome, "completed");
     assert.deepEqual(receipt.result, result);
@@ -199,13 +248,16 @@ async function runCase(mode) {
   assert(evidenceDir && process.env.GMAX_PRUNE_FIXTURE_BASE, "Task-owned evidence/fixture directories are required");
   const identities = Object.fromEntries(["package.json","pnpm-lock.yaml","lance-maintenance/prune.py","lance-maintenance/pyproject.toml",
     "lance-maintenance/uv.lock","src/lib/store/lance-cleanup.ts","src/lib/store/store-lease.ts",
-    "src/lib/store/lance-sdk.ts","src/lib/store/prune-state.ts","scripts/test-prune-native.cjs","scripts/prune-native-fixture.py",
+    "src/lib/store/lance-sdk.ts","src/lib/store/prune-state.ts","src/lib/store/recovery-admission.ts","src/lib/store/recovery.ts",
+    "src/lib/utils/resource-budget.ts","src/lib/utils/host-resource.ts","scripts/prune-parent-fixture.cjs",
+    "scripts/prune-legacy-reader.cjs","scripts/.prune-legacy-store-lease.ts","scripts/test-prune-native.cjs","scripts/prune-native-fixture.py",
     "scripts/prune-resource-wrapper.py"].map(file => [file,crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex")]));
   report({phase:"identity",source:process.env.GITHUB_SHA,platform:process.platform,arch:process.arch,
     osRelease:os.release(),node:process.version,identities,
     resourceLimits:{helperRssBytes:1024**3,fixtureRssBytes:1536*1024**2,sampledRssSumBytes:2*1024**3,helperThreadsSampled:64},
+    hostAdmissionScope:"Native fixtures inject healthy admission; real pressure/unknown probes and strict budget paths have separate acceptance tests",
     resourceLimitScope:"CI acceptance budgets; sampled RSS is not an enforced macOS footprint cap"});
-  for (const mode of ["complete","abort","kill"]) await runCase(mode);
+  for (const mode of ["complete","abort","kill","parent"]) await runCase(mode);
   assert(observations.every(item => item.peakRssSumSampledBytes < 2*1024**3));
   assert(observations.every(item => item.peakThreadsSampled <= 64));
   report({phase:"resources",observations,samplingIntervalMs:200,measurement:"RSS sum may double-count shared pages; not physical footprint; interrupted peaks are sampled"});
