@@ -431,19 +431,6 @@ export const doctor = new Command("doctor")
     }
     if (!opts.agent) console.log("gmax Doctor\n");
 
-    const startupBlockedReason = daemonStartDeniedReason();
-    if (startupBlockedReason !== null) {
-      const reason = startupBlockedReason.replace(/[\r\n\t]/g, " ");
-      console.log(
-        opts.agent
-          ? `daemon_startup\tblocked=true\treason=${reason}`
-          : `FAIL  Daemon startup blocked: ${reason}`,
-      );
-      // Inspect the retained index, but do not report a healthy installation
-      // while the persistent host stop or autostart quarantine prevents use.
-      process.exitCode = 2;
-    }
-
     // Metadata-only diagnostics while paused: never open a second native
     // reader or scan the retained corpus on a pressured host.
     const { sendDaemonCommand } = await import("../lib/utils/daemon-client");
@@ -467,6 +454,19 @@ export const doctor = new Command("doctor")
       );
       process.exitCode = 2;
       return;
+    }
+
+    const startupBlockedReason = daemonStartDeniedReason();
+    if (startupBlockedReason !== null) {
+      const reason = startupBlockedReason.replace(/[\r\n\t]/g, " ");
+      console.log(
+        opts.agent
+          ? `daemon_startup\tblocked=true\treason=${reason}`
+          : `FAIL  Daemon startup blocked: ${reason}`,
+      );
+      // Inspect the retained index, but do not report a healthy installation
+      // while the persistent host stop or autostart quarantine prevents use.
+      process.exitCode = 2;
     }
 
     const root = PATHS.globalRoot;

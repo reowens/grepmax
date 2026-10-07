@@ -11,6 +11,7 @@ import { initialSync } from "../lib/index/syncer";
 import type { IndexState } from "../lib/output/index-state-footer";
 import { parseCliPerFile } from "../lib/search/per-file";
 import { Searcher } from "../lib/search/searcher";
+import { ensureSetup } from "../lib/setup/setup-helpers";
 import type { SearchFilter, SearchResponse } from "../lib/store/types";
 import { VectorDB } from "../lib/store/vector-db";
 import { isLocked } from "../lib/utils/lock";
@@ -207,6 +208,8 @@ export async function runSearch(
     // In-process fallback: open VectorDB, ensure index, run Searcher.
     // Only entered when the daemon path didn't produce results.
     if (!searchResult) {
+      // A daemon read needs no client-side model download or loading.
+      await ensureSetup();
       const vectorDb = new VectorDB(paths.lancedbDir);
       openedDb = vectorDb;
 

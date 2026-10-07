@@ -144,6 +144,7 @@ vi.mock("../src/lib/utils/daemon-client", () => ({
 import { search } from "../src/commands/search";
 import { CONFIG } from "../src/config";
 import { initialSync } from "../src/lib/index/syncer";
+import { ensureSetup } from "../src/lib/setup/setup-helpers";
 import { sendDaemonCommand } from "../src/lib/utils/daemon-client";
 import { stampProjectFullSync } from "../src/lib/utils/project-registry";
 import { findProjectRoot } from "../src/lib/utils/project-root";
@@ -172,6 +173,7 @@ describe("search command", () => {
   it("auto-syncs when store is empty and performs search", async () => {
     await (search as Command).parseAsync(["query"], { from: "user" });
 
+    expect(ensureSetup).toHaveBeenCalled();
     expect(initialSync).toHaveBeenCalled();
     expect(mockSearcher.search).toHaveBeenCalledWith(
       "query",
@@ -182,6 +184,26 @@ describe("search command", () => {
     );
     expect(spinner.succeed).toHaveBeenCalled();
   });
+  it("labels paused keyword results in agent mode without loading client models", async () => {
+    vi.mocked(sendDaemonCommand).mockResolvedValueOnce({
+      ok: true,
+      data: [],
+      warnings: ["Keyword search only; embeddings and indexing are paused"],
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await search.parseAsync(["query", "--agent"], { from: "user" });
+      expect(warn).toHaveBeenCalledWith(
+        "warn\tKeyword search only; embeddings and indexing are paused",
+      );
+      expect(ensureSetup).not.toHaveBeenCalled();
+      expect(mockSearcher.search).not.toHaveBeenCalled();
+      expect(initialSync).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("passes an explicit per-file override to the unavailable-daemon fallback", async () => {
     await search.parseAsync(["query", "--per-file", "6"], { from: "user" });
     expect(mockSearcher.search).toHaveBeenCalledWith(

@@ -248,9 +248,13 @@ export async function renderSearchOutput(
     indexState,
   } = params;
 
-  if (!options.agent && searchResult.warnings?.length) {
+  if (searchResult.warnings?.length) {
     for (const w of searchResult.warnings) {
-      console.warn(`Warning: ${w}`);
+      console.warn(
+        options.agent
+          ? `warn\t${w.replace(/[\r\n\t]/g, " ")}`
+          : `Warning: ${w}`,
+      );
     }
   }
 

@@ -53,10 +53,14 @@ describe("doctor startup containment diagnostics", () => {
   });
 
   it("reports paused availability without opening or scanning the native store", async () => {
+    h.reason = "existing quarantine";
     h.status = { ok: true, service: { mode: "paused", reason: "OS warning" } };
     await doctor.parseAsync(["--agent"], { from: "user" });
     expect(console.log).toHaveBeenCalledWith(
       "daemon_service\tmode=paused\treads=bounded\treason=OS warning",
+    );
+    expect(console.log).not.toHaveBeenCalledWith(
+      expect.stringContaining("daemon_startup"),
     );
     expect(h.vectorDbCtor).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(2);

@@ -2,7 +2,6 @@ import * as path from "node:path";
 import type { Command } from "commander";
 import { Command as CommanderCommand } from "commander";
 import { parseCliPerFile } from "../lib/search/per-file";
-import { ensureSetup } from "../lib/setup/setup-helpers";
 import type { VectorDB } from "../lib/store/vector-db";
 import {
   type CrossProjectScope,
@@ -302,7 +301,6 @@ Examples:
     }
 
     try {
-      await ensureSetup();
       let checkRoot = cwdProjectRoot;
       if (options.root) {
         const resolved =
