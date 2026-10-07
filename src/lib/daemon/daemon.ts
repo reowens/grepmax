@@ -37,6 +37,10 @@ import {
 } from "../utils/daemon-client";
 import { spawnDaemon } from "../utils/daemon-launcher";
 import {
+  type HostResourceSnapshot,
+  sampleHostResources,
+} from "../utils/host-resource";
+import {
   formatPressureProbe,
   formatZoneUsage,
   probeKernelZoneUsage,
@@ -64,6 +68,10 @@ import {
   stampProjectFullSync,
 } from "../utils/project-registry";
 import { withQueryTimeout } from "../utils/query-timeout";
+import {
+  ResourceAdmissionError,
+  resourceBudget,
+} from "../utils/resource-budget";
 import {
   buildResourceSnapshot,
   type ResourceSnapshot,
@@ -205,6 +213,7 @@ export class Daemon {
   // resources must be gated on this to avoid hitting null stores mid-startup.
   private ready = false;
   private pausedReason: string | null = null;
+  private lastHostResources: HostResourceSnapshot | null = null;
   private pausePromise: Promise<void> | null = null;
   private readonly pausedReadGate = new AsyncSemaphore(1);
   private readonly processManager = new ProcessManager({
@@ -323,6 +332,18 @@ export class Daemon {
         denied ?? pressure?.reason ?? "read-only service requested";
     }
     process.title = "gmax-daemon";
+    if (this.pausedReason === null) {
+      try {
+        this.lastHostResources = resourceBudget.check();
+      } catch (error) {
+        if (error instanceof ResourceAdmissionError && error.critical)
+          throw error;
+        this.pausedReason =
+          error instanceof Error
+            ? error.message
+            : "aggregate resource admission unavailable";
+      }
+    }
 
     // Read verbs register here rather than at read-verbs.ts module scope: the
     // registry is asserted on exactly in tests/ipc-read-verbs.test.ts, and a
@@ -486,8 +507,14 @@ export class Daemon {
           );
         } catch (error) {
           const freshPressure = this.hostPressureDeniedReason();
-          if (freshPressure === null || freshPressure.critical) throw error;
-          this.pauseWork(freshPressure.reason);
+          if (freshPressure?.critical) throw error;
+          if (
+            freshPressure === null &&
+            !(error instanceof ResourceAdmissionError) &&
+            (error as { code?: string })?.code !== "HOST_SAFETY"
+          )
+            throw error;
+          this.pauseWork(freshPressure?.reason ?? (error as Error).message);
           await this.pausePromise;
         }
         if (this.pausedReason === null) {
@@ -618,6 +645,7 @@ export class Daemon {
           this.logResourceSnapshot("paused-heartbeat", null);
         return;
       }
+      if (!this.checkAggregateResources()) return;
       // Every 5 ticks (5 min), probe the MLX embed server and respawn if
       // it's gone zombie (port held but /health unresponsive). Closes the
       // 42h-degradation window where workers silently fell back to ONNX CPU
@@ -921,6 +949,10 @@ export class Daemon {
         `${name} refused: host pressure is unsafe or unknown${this.pausedReason ? `: ${this.pausedReason}` : ""}`,
       );
     }
+    if (!this.checkAggregateResources())
+      throw new Error(
+        `${name} refused: ${this.pausedReason ?? "aggregate resources unavailable"}`,
+      );
     // Another process can quarantine the machine while the probes run.
     const finalDenied = daemonStartDeniedReason();
     if (finalDenied !== null)
@@ -2396,6 +2428,7 @@ export class Daemon {
   private runHeartbeatMaintenance(sampleFootprint: boolean): void {
     // Both ordinary probes and deferred-recycle ticks check safety first.
     if (!this.checkKernelZonePressure()) return;
+    if (sampleFootprint && !this.checkAggregateResources()) return;
     this.maybeRecycle(sampleFootprint);
     if (this.shuttingDown || this.recycling || !sampleFootprint) return;
     void this.mlxServerManager.checkMlxHealth().catch((error) => {
@@ -2411,6 +2444,8 @@ export class Daemon {
     reason: string,
     footprintMb: number | null,
   ): void {
+    if (reason.startsWith("paused-"))
+      this.lastHostResources = sampleHostResources();
     let lanceCacheBytes: number | null = null;
     try {
       lanceCacheBytes = this.vectorDb?.cacheSizeBytes() ?? null;
@@ -2426,6 +2461,7 @@ export class Daemon {
       ),
       operations: this.operations.activeCount,
       maintenance: this.vectorDb?.isMaintenanceActive() ?? false,
+      host: this.lastHostResources,
     });
     console.log(
       `[daemon] Resource snapshot: ${JSON.stringify(this.lastResourceSnapshot)}`,
@@ -2537,6 +2573,24 @@ export class Daemon {
       return false;
     }
     return this.pausedReason === null;
+  }
+
+  private checkAggregateResources(): boolean {
+    if (this.shuttingDown || this.recycling || this.pausedReason !== null)
+      return false;
+    try {
+      this.lastHostResources = resourceBudget.check();
+      return true;
+    } catch (error) {
+      const reason =
+        error instanceof Error
+          ? error.message
+          : "aggregate resource admission unavailable";
+      if (error instanceof ResourceAdmissionError && error.critical)
+        this.stopForSafety(reason);
+      else this.pauseWork(reason);
+      return false;
+    }
   }
 
   /** Unknown/warning pauses resource expansion; only known critical shuts down. */

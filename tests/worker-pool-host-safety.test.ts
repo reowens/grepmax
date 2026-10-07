@@ -97,7 +97,9 @@ describe("WorkerPool host admission", () => {
     expect(() => new WorkerPool()).toThrow("OS memory pressure");
     expect(childProcess.fork).not.toHaveBeenCalled();
     expect(h.kernelProbe).not.toHaveBeenCalled();
-    expect(h.latch).toHaveBeenCalledTimes(1);
+    expect(h.latch).toHaveBeenCalledTimes(
+      result.status === "known" && result.pressure === "critical" ? 1 : 0,
+    );
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -110,7 +112,11 @@ describe("WorkerPool host admission", () => {
     h.kernel = result;
     expect(() => new WorkerPool()).toThrow("kernel pressure");
     expect(childProcess.fork).not.toHaveBeenCalled();
-    expect(h.latch).toHaveBeenCalledTimes(1);
+    expect(h.latch).toHaveBeenCalledTimes(
+      result.status === "known" && result.usage?.pressure === "critical"
+        ? 1
+        : 0,
+    );
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -165,7 +171,7 @@ describe("WorkerPool host admission", () => {
     });
     await vi.advanceTimersByTimeAsync(60000);
     expect(childProcess.fork).toHaveBeenCalledTimes(1);
-    expect(h.latch).toHaveBeenCalledTimes(1);
+    expect(h.latch).not.toHaveBeenCalled();
   });
 
   it("rejects search expansion immediately instead of assigning a busy worker", async () => {
@@ -222,14 +228,14 @@ describe("WorkerPool host admission", () => {
     await Promise.all([failed, denied]);
     expect(pool.tasks.size).toBe(0);
     expect(childProcess.fork).toHaveBeenCalledTimes(1);
-    expect(h.latch).toHaveBeenCalledTimes(1);
+    expect(h.latch).not.toHaveBeenCalled();
   });
 
   it("contains a thrown admission probe before constructor fork", () => {
     h.memoryProbe.mockImplementation(() => {
       throw new Error("probe failed");
     });
-    expect(() => new WorkerPool()).toThrow("host admission or fork failed");
+    expect(() => new WorkerPool()).toThrow("probe failed");
     expect(childProcess.fork).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
   });
@@ -272,13 +278,13 @@ describe("WorkerPool host admission", () => {
     expect(() => pool.recycleWorker(pool.workers[0], "test")).not.toThrow();
     expect(pool.workers).toHaveLength(0);
     expect(childProcess.fork).toHaveBeenCalledTimes(1);
-    expect(h.latch).toHaveBeenCalledTimes(1);
+    expect(h.latch).not.toHaveBeenCalled();
   });
 
   it("remains blocked when latch persistence fails", async () => {
     pool = new WorkerPool();
     pool.workers[0].busy = true;
-    h.memory = { status: "unknown", reason: "exit" };
+    h.memory = { status: "known", pressure: "critical" };
     h.latch.mockImplementation(() => {
       throw new Error("disk unavailable");
     });
@@ -295,7 +301,7 @@ describe("WorkerPool host admission", () => {
       throw new Error("ENOMEM");
     });
     expect(() => h.children[0].emit("exit", 1, null)).not.toThrow();
-    expect(pool.spawnDeniedReason).toContain("host admission or fork failed");
-    expect(h.latch).toHaveBeenCalledTimes(1);
+    expect(pool.spawnDeniedReason).toContain("ENOMEM");
+    expect(h.latch).not.toHaveBeenCalled();
   });
 });

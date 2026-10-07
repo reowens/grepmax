@@ -453,6 +453,7 @@ fixtures/
 | --- | --- | --- |
 | `GMAX_EMBED_MODE` | Force `cpu` or `gpu` | Auto-detect |
 | `GMAX_WORKER_THREADS` | Worker processes for embedding; overrides `gmax config --worker-threads` | `min(cores, 4, max(2, floor(cores/2)))` |
+| `GMAX_RESOURCE_BUDGET_MB` | macOS aggregate admission budget across clients, stores, workers and models; accepts 256–6144 MiB | `6144` |
 | `GMAX_WORKER_RSS_RECYCLE_MB` | Recycle workers that remain above this RSS; `0` disables the check | `1536` |
 | `GMAX_DEBUG` | Debug logging | Off |
 | `GMAX_RERANK` | Force ColBERT rerank (`1`); concentrated candidates can also enable it automatically ([why](docs/known-limitations.md)) | Off |
@@ -552,3 +553,7 @@ grepmax is built upon the foundation of [mgrep](https://github.com/mixedbread-ai
 ## License
 
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
+
+On macOS, heavy work uses a shared resource ledger and a bounded batch footprint probe covering every gmax process and its children. Native stores, workers and model launches reserve headroom before allocating it. Warning or unknown measurements pause heavy work; known critical pressure persists a stop. The 6 GiB admission budget is a conservative scheduling threshold, not an OS-enforced memory cap. It may be lowered with `GMAX_RESOURCE_BUDGET_MB`. Existing safety markers remain in place after upgrades.
+
+MCP sessions started before this resource policy must reconnect after upgrading before heavy work can resume. Keyword search through the bounded read service stays available while those sessions are running. Cached resource snapshots in `gmax status --json` distinguish aggregate physical footprint from daemon RSS.

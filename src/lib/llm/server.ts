@@ -1,10 +1,12 @@
-import { execSync, spawn } from "node:child_process";
+import { type ChildProcess, execSync, spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as http from "node:http";
 import * as path from "node:path";
 import { PATHS } from "../../config";
 import { readGlobalConfig } from "../index/index-config";
 import { openRotatedLog } from "../utils/log-rotate";
+import { terminateProcessGroup } from "../utils/process";
+import { resourceBudget } from "../utils/resource-budget";
 import { getLlmConfig, type LlmConfig } from "./config";
 
 // ⛔ HARD STOP FOR AI AGENTS: This starts llama-server with a multi-GB local
@@ -91,6 +93,7 @@ export class LlmServer {
     }
 
     if (await this.healthy()) {
+      resourceBudget.check(this.readPid());
       // Adopt an existing server (e.g. after daemon crash + restart)
       this.lastRequestTime = Date.now();
       this.startTime = Date.now();
@@ -124,7 +127,19 @@ export class LlmServer {
       );
     }
 
-    const logFd = openRotatedLog(PATHS.llmLogFile);
+    // Reserve the model's on-disk size plus runtime headroom before starting
+    // it. The default multi-GB model cannot fit the containment budget.
+    const reservation = resourceBudget.reserve(
+      Math.ceil(fs.statSync(this.config.model).size / 1048576) + 512,
+      "llm",
+    );
+    let logFd: number;
+    try {
+      logFd = openRotatedLog(PATHS.llmLogFile);
+    } catch (error) {
+      reservation.release();
+      throw error;
+    }
 
     const args = [
       "-m",
@@ -142,16 +157,32 @@ export class LlmServer {
       args.push("--reasoning-format", this.config.reasoningFormat);
     }
 
-    const child = spawn(binary, args, {
-      detached: true,
-      stdio: ["ignore", logFd, logFd],
-    });
+    let child: ChildProcess;
+    try {
+      child = spawn(binary, args, {
+        detached: true,
+        stdio: ["ignore", logFd, logFd],
+      });
+    } catch (error) {
+      reservation.release();
+      throw error;
+    } finally {
+      fs.closeSync(logFd);
+    }
     child.unref();
-    fs.closeSync(logFd);
 
     const pid = child.pid;
     if (!pid) {
+      reservation.release();
       throw new Error("Failed to spawn llama-server — no PID returned");
+    }
+    // Group reservations are reaped only after the whole detached group is
+    // confirmed dead. A launcher exit cannot make surviving children free.
+    try {
+      reservation.attach(pid, true);
+    } catch (error) {
+      if (await terminateProcessGroup(pid)) reservation.release();
+      throw error;
     }
 
     fs.writeFileSync(PATHS.llmPidFile, String(pid));
@@ -242,6 +273,7 @@ export class LlmServer {
       throw new Error("LLM is disabled. Run `gmax llm on` to enable.");
     }
     if (await this.healthy()) {
+      resourceBudget.check(this.readPid());
       this.touchIdle();
       return;
     }

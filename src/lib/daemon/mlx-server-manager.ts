@@ -10,6 +10,12 @@ import {
   resolveMlxHfHome,
 } from "../utils/mlx-hf-cache";
 import { terminateProcessGroup } from "../utils/process";
+import {
+  EMBEDDING_RESOURCE_RESERVE_MB,
+  ResourceAdmissionError,
+  type ResourceReservation,
+  resourceBudget,
+} from "../utils/resource-budget";
 
 const STARTUP_ATTEMPTS = 30;
 const STARTUP_POLL_MS = 1_000;
@@ -45,6 +51,7 @@ interface OwnedServer {
   model: string;
   owner: string;
   lastHealthyAt: number;
+  reservation?: ResourceReservation;
 }
 
 interface AdoptedServer {
@@ -181,6 +188,10 @@ export class MlxServerManager {
       console.error(
         `[daemon] Failed to fully stop owned MLX process group ${server.pid}`,
       );
+    } else {
+      try {
+        server.reservation?.release();
+      } catch {}
     }
     server.child.removeAllListeners("error");
     server.child.removeAllListeners("exit");
@@ -242,6 +253,7 @@ export class MlxServerManager {
         this.stable.lastHealthyAt = Date.now();
         return;
       }
+      resourceBudget.check(this.getPortPid(this.port));
       if (this.stable.kind === "owned") await this.terminateOwned(this.stable);
       this.stable = { kind: "adopted", model, lastHealthyAt: Date.now() };
       this.lastError = undefined;
@@ -307,16 +319,41 @@ export class MlxServerManager {
     };
 
     this.phase = "starting";
-    let child: ChildProcess;
+    let child: ChildProcess | null = null;
+    let reservation: ResourceReservation | undefined;
     try {
+      reservation = resourceBudget.reserve(
+        EMBEDDING_RESOURCE_RESERVE_MB,
+        "embedding",
+      );
       child = (this.deps.spawn ?? spawn)("uv", ["run", "python", "server.py"], {
         cwd: serverDir,
         detached: true,
         stdio: ["ignore", logFd, logFd],
         env,
       });
+      if (!child.pid) {
+        reservation.release();
+        throw new Error("spawned MLX process has no PID");
+      }
+      try {
+        reservation.attach(child.pid, true);
+      } catch (error) {
+        const stopped = await (
+          this.deps.terminateGroup ?? terminateProcessGroup
+        )(child.pid);
+        if (stopped) reservation.release();
+        throw error;
+      }
     } catch (error) {
+      // If no child was created, there is no native group to keep charged.
+      if (!child) {
+        try {
+          reservation?.release();
+        } catch {}
+      }
       this.lastError = error instanceof Error ? error.message : String(error);
+      if (error instanceof ResourceAdmissionError) this.enabled = false;
       this.phase = "failed";
       console.error(
         `[daemon] MLX embed server failed to spawn: ${this.lastError} — falling back to CPU embeddings`,
@@ -328,7 +365,7 @@ export class MlxServerManager {
       } catch {}
     }
 
-    if (!child.pid) {
+    if (!child?.pid) {
       this.lastError = "spawned MLX process has no PID";
       this.phase = "failed";
       return;
@@ -341,6 +378,7 @@ export class MlxServerManager {
       model,
       owner,
       lastHealthyAt: 0,
+      reservation,
     };
     const startup = { error: null as Error | null, exited: false };
     const onError = (error: Error) => {
@@ -366,6 +404,7 @@ export class MlxServerManager {
       child.off("exit", onExit);
       if (readiness.owner !== owner) {
         await this.terminateOwned(candidate);
+        resourceBudget.check(this.getPortPid(this.port));
         this.stable = {
           kind: "adopted",
           model,

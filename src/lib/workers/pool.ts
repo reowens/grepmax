@@ -18,6 +18,11 @@ import {
   probeMemoryPressure,
 } from "../utils/kernel-zone";
 import { debug, log } from "../utils/logger";
+import {
+  type ResourceReservation,
+  resourceBudget,
+  WORKER_RESOURCE_RESERVE_MB,
+} from "../utils/resource-budget";
 import { latchSafetyStop } from "../utils/safety-latch";
 import type { ProcessFileInput, ProcessFileResult, RerankDoc } from "./worker";
 
@@ -146,6 +151,7 @@ class ProcessWorker {
   // event). Guards against handleWorkerExit running twice when both events
   // fire for the same crash.
   cleanedUp = false;
+  private resourceReservation: ResourceReservation;
 
   constructor(
     public modulePath: string,
@@ -154,11 +160,35 @@ class ProcessWorker {
     maxMemoryMb?: number,
   ) {
     const memArgs = maxMemoryMb ? [`--max-old-space-size=${maxMemoryMb}`] : [];
-    this.child = childProcess.fork(modulePath, {
-      execArgv: [...memArgs, ...execArgv],
-      env: { ...process.env, ...embeddingEnvironment },
-      serialization: "advanced",
+    this.resourceReservation = resourceBudget.reserve(
+      WORKER_RESOURCE_RESERVE_MB,
+      "worker",
+    );
+    try {
+      const denied = daemonStartDeniedReason();
+      if (denied) throw new Error(denied);
+      this.child = childProcess.fork(modulePath, {
+        execArgv: [...memArgs, ...execArgv],
+        env: { ...process.env, ...embeddingEnvironment },
+        serialization: "advanced",
+      });
+    } catch (error) {
+      this.resourceReservation.release();
+      throw error;
+    }
+    // Keep the reservation until close, including SIGKILL/timeout paths.
+    this.child.once("close", () => {
+      try {
+        this.resourceReservation.release();
+      } catch {}
     });
+    try {
+      if (!this.child.pid) throw new Error("worker PID unavailable");
+      this.resourceReservation.attach(this.child.pid);
+    } catch (error) {
+      this.child.kill("SIGKILL");
+      throw error;
+    }
   }
 }
 
@@ -450,7 +480,7 @@ export class WorkerPool {
     );
   }
 
-  private denySpawn(reason: string, persist = true): false {
+  private denySpawn(reason: string, persist = false): false {
     // A pool cannot automatically recover after a failed admission. In
     // particular, timer/exit callbacks must not retry forks or strand queues.
     this.spawnDeniedReason = `Worker spawn denied: ${reason}`;
@@ -485,12 +515,14 @@ export class WorkerPool {
         if (memory.status !== "known" || memory.pressure !== "normal") {
           return this.denySpawn(
             `OS memory pressure ${memory.status === "known" ? memory.pressure : memory.status}; ${formatPressureProbe(memory)}`,
+            memory.status === "known" && memory.pressure === "critical",
           );
         }
         const kernel = probeKernelZoneUsage();
         if (kernel.status !== "known" || kernel.usage.pressure !== "ok") {
           return this.denySpawn(
             `kernel pressure ${kernel.status === "known" ? kernel.usage.pressure : kernel.status}; ${formatPressureProbe(kernel)}`,
+            kernel.status === "known" && kernel.usage.pressure === "critical",
           );
         }
       }
@@ -503,6 +535,8 @@ export class WorkerPool {
         ) {
           return this.denySpawn(
             `OS memory pressure ${freshMemory.status === "known" ? freshMemory.pressure : freshMemory.status}; ${formatPressureProbe(freshMemory)}`,
+            freshMemory.status === "known" &&
+              freshMemory.pressure === "critical",
           );
         }
       }
@@ -516,8 +550,12 @@ export class WorkerPool {
         this.embeddingEnvironment,
         MAX_WORKER_MEMORY_MB,
       );
-    } catch {
-      return this.denySpawn("host admission or fork failed");
+    } catch (error) {
+      return this.denySpawn(
+        error instanceof Error
+          ? error.message
+          : "host admission or fork failed",
+      );
     }
     log(
       "pool",
@@ -770,6 +808,16 @@ export class WorkerPool {
     if (!task) {
       this.removeFromQueue(nextTaskId);
       this.dispatch();
+      return;
+    }
+    try {
+      resourceBudget.check();
+    } catch (error) {
+      this.denySpawn(
+        error instanceof Error
+          ? error.message
+          : "aggregate resource admission unavailable",
+      );
       return;
     }
 

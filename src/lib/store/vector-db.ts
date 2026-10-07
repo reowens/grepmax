@@ -33,6 +33,10 @@ import {
   QUERY_EXECUTION_OPTIONS,
   streamQueryRows,
 } from "../utils/query-timeout";
+import {
+  type ResourceReservation,
+  resourceBudget,
+} from "../utils/resource-budget";
 import { annMinRows, isAnnEnabled } from "./ann-config";
 import { type CompactionResult, skippedCompaction } from "./compaction-result";
 import * as lancedb from "./lance-sdk";
@@ -259,6 +263,8 @@ export class VectorDB {
   private lastLoggedPressure: DiskPressureLevel = "ok";
   private static readonly DISK_CHECK_INTERVAL_MS = 30_000;
   private leasePromise: Promise<StoreLease> | null = null;
+  private resourceReservation: ResourceReservation | null = null;
+  private connecting: Promise<lancedb.Connection> | null = null;
   private readonly leaseAbort = new AbortController();
   private closePromise: Promise<void> | null = null;
   private releaseLeaseOnClose = true;
@@ -408,17 +414,38 @@ export class VectorDB {
       throw new Error("VectorDB connection is closed");
     }
     if (!this.db) {
+      if (this.connecting) return this.connecting;
       if (creatingStore || !fs.existsSync(this.lancedbDir)) {
         this.assertMutationAllowed();
         assertFreshDiskMutationAllowed(this.lancedbDir);
       }
       fs.mkdirSync(this.lancedbDir, { recursive: true });
+      // The explicit bounded reader remains available under warning/unknown
+      // pressure. All ordinary clients reserve their native cache capacity in
+      // one shared ledger before opening a connection, including offline MCP.
+      if (!this.options.readOnly) {
+        this.resourceReservation = resourceBudget.reserve(
+          (this.options.indexCacheMb ?? LANCE_INDEX_CACHE_MB) +
+            (this.options.metadataCacheMb ?? LANCE_METADATA_CACHE_MB),
+          "native-store",
+        );
+      }
       this.session = createLanceSession(this.options);
       // 0.38 accepts the legacy third argument in its types but drops it in
       // the JS wrapper. Put the session in native ConnectionOptions instead.
-      this.db = await lancedb.connect(this.lancedbDir, {
+      this.connecting = lancedb.connect(this.lancedbDir, {
         session: this.session,
       });
+      try {
+        this.db = await this.connecting;
+      } catch (error) {
+        this.resourceReservation?.release();
+        this.resourceReservation = null;
+        this.session = null;
+        throw error;
+      } finally {
+        this.connecting = null;
+      }
     }
     return this.db;
   }
@@ -2046,6 +2073,7 @@ export class VectorDB {
   }
 
   private async finishClose(): Promise<void> {
+    await this.connecting?.catch(() => {});
     if (this.maintenanceTimer) {
       clearInterval(this.maintenanceTimer);
       this.maintenanceTimer = null;
@@ -2066,9 +2094,20 @@ export class VectorDB {
     this.unregisterCleanup?.();
     this.unregisterCleanup = undefined;
     let closeError: unknown;
+    let nativeClosed = !this.db;
     if (this.db?.close) {
       try {
         const closing = this.db.close();
+        void Promise.resolve(closing).then(
+          () => {
+            nativeClosed = true;
+            try {
+              this.resourceReservation?.release();
+              this.resourceReservation = null;
+            } catch {}
+          },
+          () => {},
+        );
         if (this.requireClosedOnClose) await closing;
         else {
           await Promise.race([
@@ -2082,6 +2121,14 @@ export class VectorDB {
     }
     this.db = null;
     this.session = null;
+    if (nativeClosed && this.resourceReservation) {
+      try {
+        this.resourceReservation.release();
+        this.resourceReservation = null;
+      } catch (error) {
+        closeError ??= error;
+      }
+    }
     if (this.leasePromise) {
       let lease: StoreLease | null = null;
       try {

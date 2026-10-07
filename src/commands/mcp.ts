@@ -120,6 +120,7 @@ import {
 } from "../lib/utils/path-containment";
 import { listProjects, type ProjectEntry } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
+import { resourceBudget } from "../lib/utils/resource-budget";
 import type { ResolvedScope } from "../lib/utils/scope-filter";
 import { resolveScope } from "../lib/utils/scope-filter";
 import {
@@ -486,6 +487,18 @@ export const mcp = new Command("mcp")
   .description("Start MCP server (stdio, auto-started by plugins)")
   .action(async (_optsArg, _cmd) => {
     process.title = "gmax-mcp";
+    try {
+      const client = resourceBudget.registerClient();
+      process.once("exit", () => {
+        try {
+          client.release();
+        } catch {}
+      });
+    } catch (error) {
+      console.error(
+        `gmax: resource coordination unavailable; heavy work paused (${error instanceof Error ? error.message : "unknown"})`,
+      );
+    }
 
     // --- Lifecycle ---
 

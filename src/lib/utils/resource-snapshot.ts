@@ -1,4 +1,6 @@
-/** Lightweight counters; no process-table or store-directory scans. */
+import type { HostResourceSnapshot } from "./host-resource";
+
+/** Cached counters; collecting this response runs no probes or store scans. */
 export interface ResourceSnapshot {
   at: number;
   reason: string;
@@ -12,6 +14,7 @@ export interface ResourceSnapshot {
   pendingFiles: number;
   operations: number;
   maintenance: boolean;
+  host?: HostResourceSnapshot | null;
 }
 
 export function buildResourceSnapshot(
@@ -23,7 +26,7 @@ export function buildResourceSnapshot(
     | "pendingFiles"
     | "operations"
     | "maintenance"
-  > & { lanceCacheBytes: number | null },
+  > & { lanceCacheBytes: number | null; host?: HostResourceSnapshot | null },
   memory = process.memoryUsage(),
   at = Date.now(),
 ): ResourceSnapshot {
@@ -42,5 +45,6 @@ export function buildResourceSnapshot(
     pendingFiles: counters.pendingFiles,
     operations: counters.operations,
     maintenance: counters.maintenance,
+    ...(counters.host ? { host: counters.host } : {}),
   };
 }
