@@ -53,6 +53,7 @@ export interface StatusView {
     uptimeSec: number | null;
     workers: number | null;
     workerThreads: number | null;
+    service?: { mode: "active" | "paused"; reason?: string };
     resources?: ResourceSnapshot | null;
     compaction?: CompactionResult | null;
   };
@@ -91,6 +92,8 @@ async function loadStatusView(projects: ProjectEntry[]): Promise<StatusView> {
       // the in-process path does when the LanceDB query fails.
       const chunkCounts = new Map<string, number>();
       for (const project of projects) {
+        if ((resp.service as { mode?: string } | undefined)?.mode === "paused")
+          break;
         const stats = await sendDaemonCommand(
           { cmd: "project-stats", root: project.root },
           { timeoutMs: 30_000 },
@@ -105,6 +108,14 @@ async function loadStatusView(projects: ProjectEntry[]): Promise<StatusView> {
           : {}),
         ...(resp.resources !== undefined
           ? { resources: resp.resources as ResourceSnapshot | null }
+          : {}),
+        ...(resp.service
+          ? {
+              service: resp.service as {
+                mode: "active" | "paused";
+                reason?: string;
+              },
+            }
           : {}),
         pid: typeof resp.pid === "number" ? resp.pid : null,
         uptimeSec: typeof resp.uptime === "number" ? resp.uptime : null,
@@ -207,6 +218,7 @@ export interface StatusJson {
     pid: number | null;
     since: number | null;
     workerThreads: number | null;
+    service?: { mode: "active" | "paused"; reason?: string };
     resources?: ResourceSnapshot | null;
     compaction?: CompactionResult | null;
   };
@@ -263,6 +275,7 @@ export function buildStatusJson(input: {
       pid: d?.pid ?? null,
       since: d?.uptimeSec != null ? now - d.uptimeSec * 1000 : null,
       workerThreads: d?.workerThreads ?? null,
+      ...(d?.service ? { service: d.service } : {}),
       ...(d?.resources !== undefined ? { resources: d.resources } : {}),
       ...(d?.compaction !== undefined ? { compaction: d.compaction } : {}),
     },
@@ -386,7 +399,19 @@ Examples:
       );
     }
 
-    if (startupBlockedReason !== null) {
+    if (view.daemon?.service?.mode === "paused") {
+      const reason = (view.daemon.service.reason ?? "host pressure").replace(
+        /[\r\n\t]/g,
+        " ",
+      );
+      console.log(
+        opts.agent
+          ? `daemon_service\tmode=paused\treason=${reason}`
+          : style.yellow(
+              `Bounded reads available; indexing and embeddings paused: ${reason}`,
+            ),
+      );
+    } else if (startupBlockedReason !== null) {
       const reason = startupBlockedReason.replace(/[\r\n\t]/g, " ");
       console.log(
         opts.agent

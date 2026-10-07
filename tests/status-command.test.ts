@@ -128,6 +128,27 @@ describe("gmax status", () => {
     await runStatus();
     expect(out.join("\n")).toContain("Daemon startup blocked:");
   });
+  it("reports bounded service and cached counts without native statistics reads", async () => {
+    daemonStartDeniedReason.mockReturnValue("existing quarantine");
+    sendDaemonCommand.mockResolvedValue({
+      ok: true,
+      projects: [],
+      workers: 0,
+      service: { mode: "paused", reason: "OS warning" },
+    });
+    await runStatus(["--json"]);
+    expect(JSON.parse(out.join("\n")).daemon).toMatchObject({
+      running: true,
+      service: { mode: "paused", reason: "OS warning" },
+    });
+    expect(sendDaemonCommand).toHaveBeenCalledTimes(1);
+    expect(vectorDbCtor).not.toHaveBeenCalled();
+    out.length = 0;
+    await runStatus(["--agent"]);
+    expect(out.join("\n")).toContain("paused");
+    expect(out.join("\n")).not.toContain("daemon_startup\tblocked=true");
+  });
+
   it("reports mounted/offline store metadata without opening secondary databases", async () => {
     storeInventory.mockReturnValue([
       {

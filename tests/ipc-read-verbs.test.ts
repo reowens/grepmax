@@ -117,6 +117,52 @@ describe("ipc-handler read verb dispatch", () => {
     expect(seen?.aborted).toBe(true);
   });
 
+  it("validates paused limits after an active request waited for admission", async () => {
+    let paused = false;
+    const handler = vi.fn(async () => ({ ok: true }));
+    registerReadVerbs({ "rows.locate": handler });
+    const transitioning = {
+      ...daemon,
+      serviceStatus: () => ({ mode: paused ? "paused" : "active" }),
+      runSharedOperation: async (
+        _name: string,
+        signal: AbortSignal,
+        fn: (signal: AbortSignal) => Promise<unknown>,
+      ) => {
+        paused = true;
+        return fn(signal);
+      },
+    } as unknown as Daemon;
+    const response = await handleCommand(
+      transitioning,
+      {
+        cmd: "rows.locate",
+        limit: 5000,
+        matches: [{ kind: "definedSymbol", symbol: "start" }],
+      },
+      new FakeSocket() as never,
+    );
+    expect(response).toMatchObject({ ok: false, code: "DAEMON_PAUSED" });
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("refuses large paused responses without triggering MCP oversize fallback", async () => {
+    registerReadVerbs({
+      "rows.skeleton": async () => ({ ok: true, skeleton: "x".repeat(300000) }),
+    });
+    const paused = {
+      ...daemon,
+      serviceStatus: () => ({ mode: "paused" }),
+    } as unknown as Daemon;
+    const response = await handleCommand(
+      paused,
+      { cmd: "rows.skeleton", path: "/fixture/file.ts" },
+      new FakeSocket() as never,
+    );
+    expect(response).toMatchObject({ ok: false, code: "DAEMON_PAUSED" });
+    expect(response?.error).not.toContain("oversize");
+  });
+
   it("reports a verb throw as a normal error response", async () => {
     registerReadVerbs({
       "graph.dead": async () => {

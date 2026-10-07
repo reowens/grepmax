@@ -57,7 +57,7 @@ gmax doctor                   # Health check
 gmax doctor --fix             # Repair checks; full-table maintenance is disabled
 ```
 
-**Storage containment:** full-table compaction is disabled, including forced maintenance and doctor repair. Existing retained index copies are not reclaimed by this release. The verified prune-only recovery path is separate work; normal incremental indexing remains available when the host is healthy and not quarantined. A persistent host safety stop blocks mutation and daemon restart. Installing an update preserves existing quarantine. Speculative embedding warmup and maintenance timers are disabled. On macOS, startup, heavy queries, worker forks and MLX launches require known normal OS memory pressure and a healthy kernel-zone sample; unavailable probes report bounded diagnostic details and refuse work.
+**Storage containment:** full-table compaction is disabled, including forced maintenance and doctor repair. Existing retained index copies are not reclaimed by this release. The verified prune-only recovery path is separate work; normal incremental indexing remains available when the host is healthy and not quarantined. A persistent host safety stop blocks mutation and normal daemon restart; an explicit read-only start can serve the retained index. Installing an update preserves existing quarantine. Speculative embedding warmup and maintenance timers are disabled. On macOS, startup, heavy queries, worker forks and MLX launches require known normal OS memory pressure and a healthy kernel-zone sample; warning or unavailable probes pause heavy work while the daemon serves bounded reads. Known critical pressure still stops the daemon.
 
 ### Core Commands
 
@@ -473,6 +473,10 @@ gmax watch restart            # Restart daemon
 `gmax doctor` reports ANN index state. `ANN: vector index not built` is normal with the default exact-search configuration.
 
 `gmax doctor` and `gmax status` report persistent safety stops and daemon startup quarantine. `doctor` exits with code 2 when startup is blocked; `status --json` includes `daemon.startupBlockedReason`. Installing an update preserves these stops. macOS kernel-zone probes use `zprint -L` to omit the wired-memory report and kernel symbolication while retaining the same zone counters and pressure thresholds.
+
+When heavy work is paused, the daemon keeps metadata, bounded symbol/file lookups, stored skeletons by exact file path, and keyword search available. Search uses the existing FTS index and excludes unindexed rows, loads no embedding model, returns at most 20 results, and reports keyword-only scores and retained-index freshness. Native queries have a two-second deadline and run one at a time with 48 MiB of combined Lance cache capacity. Indexing, watchers, vector/graph scans, and model launches remain paused. Missing FTS indexes return an error; paused search never rebuilds an index or falls back to a corpus scan.
+
+To serve bounded reads under an existing startup quarantine, run `gmax watch --daemon --read-only -b`. This preserves the safety markers. `status --json` reports `daemon.service.mode` and its reason; `doctor` reports paused availability and skips native corpus diagnostics. Pausing is sticky for that daemon process. Full service requires a deliberate restart after host recovery and quarantine review. Known critical OS or kernel pressure still stops even the read-only service.
 
 Full-table compaction and new FTS/ANN index builds are disabled in the containment release, including forced maintenance and doctor repair. Existing indexes remain readable; missing lexical indexes fall back to available retrieval. Retained copies are not recovered by this release. A separate exclusive prune-only path requires validation before deployment. Do not repeatedly force repair, use future cutoffs or manually remove index fragments.
 

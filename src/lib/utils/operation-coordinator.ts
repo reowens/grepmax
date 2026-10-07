@@ -132,6 +132,12 @@ export class OperationCoordinator {
     return task;
   }
 
+  /** Cancel existing work without closing admission for subsequent bounded reads. */
+  abortAndDrain(reason: Error): Promise<void> {
+    for (const controller of this.controllers) controller.abort(reason);
+    return Promise.allSettled([...this.activeTasks]).then(() => {});
+  }
+
   close(reason = new OperationClosedError()): Promise<void> {
     if (this.closePromise) return this.closePromise;
     this.state = { kind: "closing" };

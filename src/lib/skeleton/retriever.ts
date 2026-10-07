@@ -5,6 +5,7 @@ import { QUERY_EXECUTION_OPTIONS } from "../utils/query-timeout";
 export async function getStoredSkeleton(
   db: VectorDB,
   filePath: string,
+  timeoutMs = QUERY_EXECUTION_OPTIONS.timeoutMs,
 ): Promise<string | null> {
   try {
     const table = await db.ensureTable();
@@ -14,7 +15,7 @@ export async function getStoredSkeleton(
       .select(["file_skeleton"])
       .where(`path = '${escapeSqlString(filePath)}' AND is_anchor = true`)
       .limit(1)
-      .toArray(QUERY_EXECUTION_OPTIONS);
+      .toArray({ timeoutMs });
 
     if (results.length > 0) {
       const skel = results[0].file_skeleton;

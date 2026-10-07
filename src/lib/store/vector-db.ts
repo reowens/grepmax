@@ -210,12 +210,18 @@ function envMb(name: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
-function createLanceSession(): lancedb.Session {
+function createLanceSession(options: VectorDbOptions = {}): lancedb.Session {
   const mb = (n: number) => BigInt(n * 1024 * 1024);
   return new lancedb.Session(
-    mb(LANCE_INDEX_CACHE_MB),
-    mb(LANCE_METADATA_CACHE_MB),
+    mb(options.indexCacheMb ?? LANCE_INDEX_CACHE_MB),
+    mb(options.metadataCacheMb ?? LANCE_METADATA_CACHE_MB),
   );
+}
+
+export interface VectorDbOptions {
+  readOnly?: boolean;
+  indexCacheMb?: number;
+  metadataCacheMb?: number;
 }
 
 export class VectorDB {
@@ -273,12 +279,18 @@ export class VectorDB {
     private lancedbDir: string,
     vectorDim?: number,
     private readonly suppliedLease?: StoreLease,
+    private readonly options: VectorDbOptions = {},
   ) {
     // Default to the configured tier's dim (not the hard-wired small-tier 384)
     // so a `standard`-tier index actually stores 768d vectors. An explicit
     // arg still wins (eval scripts, tests).
     this.vectorDim = vectorDim ?? readGlobalConfig().vectorDim;
     this.unregisterCleanup = registerCleanup(() => this.close());
+  }
+
+  private assertMutationAllowed(): void {
+    if (this.options.readOnly) throw new Error("gmax store is read-only");
+    assertStoreMutationAllowed();
   }
 
   /**
@@ -388,7 +400,7 @@ export class VectorDB {
     }
     const creatingStore = !fs.existsSync(this.lancedbDir);
     if (creatingStore) {
-      assertStoreMutationAllowed();
+      this.assertMutationAllowed();
       assertFreshDiskMutationAllowed(this.lancedbDir);
     }
     await this.getLease();
@@ -397,11 +409,11 @@ export class VectorDB {
     }
     if (!this.db) {
       if (creatingStore || !fs.existsSync(this.lancedbDir)) {
-        assertStoreMutationAllowed();
+        this.assertMutationAllowed();
         assertFreshDiskMutationAllowed(this.lancedbDir);
       }
       fs.mkdirSync(this.lancedbDir, { recursive: true });
-      this.session = createLanceSession();
+      this.session = createLanceSession(this.options);
       // 0.38 accepts the legacy third argument in its types but drops it in
       // the JS wrapper. Put the session in native ConnectionOptions instead.
       this.db = await lancedb.connect(this.lancedbDir, {
@@ -444,6 +456,7 @@ export class VectorDB {
 
   /** Upgrade and retain this instance's current lease for transfer to a new DB. */
   async upgradeStoreLease(signal?: AbortSignal): Promise<StoreLease> {
+    this.assertMutationAllowed();
     if (this.closed) throw new Error("VectorDB connection is closed");
     if (this.exclusiveMutationPromise) await this.exclusiveMutationPromise;
     return this.withLeaseTransition(async () => {
@@ -543,7 +556,7 @@ export class VectorDB {
    * but all writes pause when compaction wants exclusive access.
    */
   private async withWriteGate<T>(fn: () => Promise<T>): Promise<T> {
-    assertStoreMutationAllowed();
+    this.assertMutationAllowed();
     this.ensureDiskOk();
     while (this.exclusiveMutationPromise || this.compactingPromise) {
       if (this.closed) throw new Error("VectorDB connection is closed");
@@ -554,7 +567,7 @@ export class VectorDB {
       );
     }
     if (this.closed) throw new Error("VectorDB connection is closed");
-    assertStoreMutationAllowed();
+    this.assertMutationAllowed();
     this.ensureDiskOk();
     this.activeWrites++;
     try {
@@ -594,7 +607,7 @@ export class VectorDB {
   async withExclusiveTableMutation<T>(
     mutation: (db: lancedb.Connection) => Promise<T>,
   ): Promise<T> {
-    assertStoreMutationAllowed();
+    this.assertMutationAllowed();
     this.ensureDiskOk();
     if (this.closed) throw new Error("VectorDB connection is closed");
     if (this.exclusiveMutationPromise) {
@@ -621,7 +634,7 @@ export class VectorDB {
             });
           }
           await Promise.all([this.drainWrites(), this.drainCompactions()]);
-          assertStoreMutationAllowed();
+          this.assertMutationAllowed();
           this.ensureDiskOk();
           const db = await this.getDb();
           const result = await mutation(db);
@@ -830,6 +843,7 @@ export class VectorDB {
 
   async ensureTable(): Promise<lancedb.Table> {
     if (
+      this.options.readOnly ||
       storeMutationDeniedReason() !== null ||
       this.checkDiskPressure(true) === "critical"
     ) {
@@ -849,7 +863,7 @@ export class VectorDB {
       table = await db.openTable(TABLE_NAME);
     } catch (err) {
       if (!isMissingTableError(err)) throw err;
-      assertStoreMutationAllowed();
+      this.assertMutationAllowed();
       log("db", `Creating table (${this.vectorDim}d)`);
       const schema = this.buildSchema();
       table = await db.createTable(TABLE_NAME, [this.seedRow()], {
@@ -861,7 +875,7 @@ export class VectorDB {
     }
 
     await this.validateSchema(table);
-    assertStoreMutationAllowed();
+    this.assertMutationAllowed();
     await this.evolveSchema(table);
     return table;
   }
@@ -1003,7 +1017,7 @@ export class VectorDB {
 
   /** Whether this instance may create or rebuild shared indexes. */
   canBuildIndexes(): boolean {
-    return this.indexOwner;
+    return this.indexOwner && !this.options.readOnly;
   }
 
   /**

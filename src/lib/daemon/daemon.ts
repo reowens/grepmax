@@ -28,6 +28,7 @@ import {
 import { MetaCache } from "../store/meta-cache";
 import { type StoreLease, StoreLeaseTimeoutError } from "../store/store-lease";
 import { VectorDB } from "../store/vector-db";
+import { AsyncSemaphore } from "../utils/async-semaphore";
 import { daemonStartDeniedReason } from "../utils/autostart";
 import { isGitWorktreeRoot, WORKTREE_REFUSAL } from "../utils/blocked-roots";
 import {
@@ -62,6 +63,7 @@ import {
   restoreProjectsAfterRebuild,
   stampProjectFullSync,
 } from "../utils/project-registry";
+import { withQueryTimeout } from "../utils/query-timeout";
 import {
   buildResourceSnapshot,
   type ResourceSnapshot,
@@ -88,6 +90,13 @@ import {
   writeProgress,
 } from "./ipc-handler";
 import { MlxServerManager } from "./mlx-server-manager";
+import {
+  DaemonPausedError,
+  isPausedRead,
+  PAUSED_CACHE_OPTIONS,
+  PAUSED_QUERY_TIMEOUT_MS,
+  searchPausedIndex,
+} from "./paused-reads";
 import { ProcessManager } from "./process-manager";
 import { getReadVerb, isHeavyReadVerb, registerGraphVerbs } from "./read-verbs";
 import { registerRowsVerbs, type StoreReadDeps } from "./rows-handler";
@@ -195,6 +204,9 @@ export class Daemon {
   // (so liveness probes succeed during slow init), so commands that need those
   // resources must be gated on this to avoid hitting null stores mid-startup.
   private ready = false;
+  private pausedReason: string | null = null;
+  private pausePromise: Promise<void> | null = null;
+  private readonly pausedReadGate = new AsyncSemaphore(1);
   private readonly processManager = new ProcessManager({
     getShuttingDown: () => this.shuttingDown,
     getWorkerPids: () => this.workerPool?.getWorkerPids(),
@@ -296,15 +308,19 @@ export class Daemon {
     return resources;
   }
 
-  async start(): Promise<void> {
+  async start(options: { readOnly?: boolean } = {}): Promise<void> {
     const denied = daemonStartDeniedReason();
-    if (denied !== null)
+    if (denied !== null && !options.readOnly)
       throw new Error(`gmax: ${denied}; preserving containment`);
-    // Check before stale-process cleanup, store opening, workers or model setup.
+    // Explicit read-only startup preserves every marker and opens no models.
     const pressure = this.hostPressureDeniedReason();
-    if (pressure !== null) {
-      if (pressure.measured) latchSafetyStop(pressure.reason);
+    if (pressure?.critical) {
+      latchSafetyStop(pressure.reason);
       throw new Error(`gmax: ${pressure.reason}; startup safety stop`);
+    }
+    if (options.readOnly || pressure !== null) {
+      this.pausedReason =
+        denied ?? pressure?.reason ?? "read-only service requested";
     }
     process.title = "gmax-daemon";
 
@@ -319,7 +335,8 @@ export class Daemon {
     registerVectorVerbs();
 
     // 0. Singleton enforcement: find and kill ALL stale daemon/worker processes
-    await this.processManager.killStaleProcesses();
+    if (this.pausedReason === null)
+      await this.processManager.killStaleProcesses();
     this.assertStartupActive();
 
     // 1. Acquire exclusive lock — kernel-enforced, atomic, auto-released on death
@@ -430,7 +447,7 @@ export class Daemon {
     fs.writeFileSync(PATHS.daemonPidFile, String(process.pid));
 
     // 4. Kill existing per-project watchers
-    const existing = listWatchers();
+    const existing = this.pausedReason === null ? listWatchers() : [];
     for (const w of existing) {
       console.log(
         `[daemon] Taking over from per-project watcher (PID: ${w.pid}, ${path.basename(w.projectRoot)})`,
@@ -442,25 +459,45 @@ export class Daemon {
 
     // 5. Open shared resources
     try {
-      fs.mkdirSync(PATHS.cacheDir, { recursive: true });
-      fs.mkdirSync(PATHS.lancedbDir, { recursive: true });
-      console.log("[daemon] Opening LanceDB:", PATHS.lancedbDir);
+      if (this.pausedReason === null) {
+        fs.mkdirSync(PATHS.cacheDir, { recursive: true });
+        fs.mkdirSync(PATHS.lancedbDir, { recursive: true });
+      }
+      console.log(
+        this.pausedReason === null
+          ? "[daemon] Opening LanceDB:"
+          : "[daemon] Preparing bounded retained-index reader:",
+        PATHS.lancedbDir,
+      );
       this.activeConfig = readGlobalConfig();
       this.activeGeneration = resolveEmbeddingGeneration(this.activeConfig);
       this.vectorDb = new VectorDB(
         PATHS.lancedbDir,
         this.activeGeneration.vectorDim,
+        undefined,
+        this.pausedReason === null ? {} : PAUSED_CACHE_OPTIONS,
       );
-      this.vectorDb.markIndexOwner();
-      this.workerPool = this.createWorkerPool(
-        this.activeGeneration,
-        this.activeConfig.embedMode,
-      );
-      this.vectorDb.startMaintenanceLoop((fn) =>
-        this.runSharedOperation("store-maintenance", undefined, () => fn()),
-      );
-      console.log("[daemon] Opening MetaCache:", PATHS.lmdbPath);
-      this.metaCache = new MetaCache(PATHS.lmdbPath);
+      if (this.pausedReason === null) {
+        this.vectorDb.markIndexOwner();
+        try {
+          this.workerPool = this.createWorkerPool(
+            this.activeGeneration,
+            this.activeConfig.embedMode,
+          );
+        } catch (error) {
+          const freshPressure = this.hostPressureDeniedReason();
+          if (freshPressure === null || freshPressure.critical) throw error;
+          this.pauseWork(freshPressure.reason);
+          await this.pausePromise;
+        }
+        if (this.pausedReason === null) {
+          this.vectorDb!.startMaintenanceLoop((fn) =>
+            this.runSharedOperation("store-maintenance", undefined, () => fn()),
+          );
+          console.log("[daemon] Opening MetaCache:", PATHS.lmdbPath);
+          this.metaCache = new MetaCache(PATHS.lmdbPath);
+        }
+      }
       this.assertStartupActive();
       // Resources are open — only now may resource-dependent IPC commands run.
       this.ready = true;
@@ -476,17 +513,28 @@ export class Daemon {
     const globalConfig = this.activeConfig ?? readGlobalConfig();
     const isAppleSilicon =
       process.arch === "arm64" && process.platform === "darwin";
-    if (isAppleSilicon && globalConfig.embedMode === "gpu") {
-      await this.ensureAdmittedMlxServer(globalConfig.mlxModel);
+    if (
+      this.pausedReason === null &&
+      isAppleSilicon &&
+      globalConfig.embedMode === "gpu"
+    ) {
+      try {
+        await this.ensureAdmittedMlxServer(globalConfig.mlxModel);
+      } catch (error) {
+        if (this.pausedReason === null || this.shuttingDown || this.recycling)
+          throw error;
+        await this.pausePromise;
+      }
       this.assertStartupActive();
     }
-    this.publishResourceGeneration(
-      globalConfig,
-      this.activeGeneration!,
-      this.vectorDb!,
-      this.workerPool!,
-      this.mlxMode(globalConfig),
-    );
+    if (this.pausedReason === null)
+      this.publishResourceGeneration(
+        globalConfig,
+        this.activeGeneration!,
+        this.vectorDb!,
+        this.workerPool!,
+        this.mlxMode(globalConfig),
+      );
 
     // 7. Register daemon (only after resources are open)
     registerDaemon(process.pid);
@@ -495,9 +543,12 @@ export class Daemon {
     // on (skip missing directories). Everything else waits for a lease.
     const allProjects = listProjects();
     this.watchLeases.load();
-    const indexed = allProjects.filter(
-      (p) => p.status === "indexed" && this.shouldWatch(p.root),
-    );
+    const indexed =
+      this.pausedReason !== null
+        ? []
+        : allProjects.filter(
+            (p) => p.status === "indexed" && this.shouldWatch(p.root),
+          );
     console.log(
       `[daemon] Watching ${indexed.length} of ${allProjects.length} registered projects` +
         (WATCH_ALL ? " (GMAX_WATCH_ALL=1)" : " (leased by active sessions)"),
@@ -529,15 +580,18 @@ export class Daemon {
     // Re-check shuttingDown each iteration: shutdown's pendingLocks drain is a
     // snapshot, so a new project op kicked off after the snapshot would race
     // with vectorDb.close() and fail with "VectorDB connection is closed".
-    const pending = allProjects.filter(
-      (p) =>
-        (p.status === "pending" || p.status === "error") &&
-        !p.rebuildId &&
-        fs.existsSync(p.root),
-    );
+    const pending =
+      this.pausedReason !== null
+        ? []
+        : allProjects.filter(
+            (p) =>
+              (p.status === "pending" || p.status === "error") &&
+              !p.rebuildId &&
+              fs.existsSync(p.root),
+          );
     void (async () => {
       for (const p of pending) {
-        if (this.shuttingDown) return;
+        if (this.shuttingDown || this.pausedReason !== null) return;
         try {
           await this.indexPendingProject(p.root);
         } catch (err) {
@@ -558,6 +612,12 @@ export class Daemon {
       } catch {}
       rotateLogFds(path.join(PATHS.logsDir, "daemon.log"));
       this.sweepWatchLeases();
+      if (!this.checkKernelZonePressure()) {
+        this.heartbeatTick++;
+        if (this.pausedReason !== null && this.heartbeatTick % 5 === 0)
+          this.logResourceSnapshot("paused-heartbeat", null);
+        return;
+      }
       // Every 5 ticks (5 min), probe the MLX embed server and respawn if
       // it's gone zombie (port held but /health unresponsive). Closes the
       // 42h-degradation window where workers silently fell back to ONNX CPU
@@ -573,7 +633,11 @@ export class Daemon {
     // 10. Idle timeout (skip when disabled via env)
     if (IDLE_TIMEOUT_MS > 0) {
       this.idleInterval = setInterval(() => {
-        if (Date.now() - this.lastActivity <= IDLE_TIMEOUT_MS) return;
+        if (
+          this.pausedReason !== null ||
+          Date.now() - this.lastActivity <= IDLE_TIMEOUT_MS
+        )
+          return;
         // Don't kick off shutdown on top of a live maintenance pass — let it
         // finish and check again next tick. close() awaits this anyway, but
         // postponing keeps shutdown paths clean and timestamps coherent.
@@ -592,7 +656,13 @@ export class Daemon {
       `[daemon] Started (PID: ${process.pid}, ${this.processors.size} projects)`,
     );
 
-    this.scheduleSearchWarmup();
+    if (this.pausedReason === null) this.scheduleSearchWarmup();
+    else {
+      console.log(
+        `[daemon] Serving bounded reads; heavy work paused: ${this.pausedReason}`,
+      );
+      this.logResourceSnapshot("paused-startup", null);
+    }
   }
 
   private scheduleSearchWarmup(): void {
@@ -655,7 +725,8 @@ export class Daemon {
   private watchProjectWithinOperation(root: string): Promise<void> {
     // Every path that re-watches after an index/rebuild/remove goes through
     // here, so an unleased project stays unwatched after the operation too.
-    if (!this.shouldWatch(root)) return Promise.resolve();
+    if (this.pausedReason !== null || !this.shouldWatch(root))
+      return Promise.resolve();
     const project = getProject(root);
     if (
       project?.status === "indexed" &&
@@ -689,7 +760,8 @@ export class Daemon {
       pid: lease.pid,
       ttlMs: lease.ttlMs ?? DEFAULT_LEASE_TTL_MS,
     });
-    if (this.processors.has(root)) return Promise.resolve();
+    if (this.pausedReason !== null || this.processors.has(root))
+      return Promise.resolve();
     return this.watchProject(root, signal);
   }
 
@@ -755,6 +827,28 @@ export class Daemon {
         // callback as heavy work or probe the kernel for a known no-op.
         return skippedCompaction(FULL_TABLE_MAINTENANCE_DISABLED_REASON) as T;
       }
+      if (this.pausedReason !== null) {
+        if (!isPausedRead(name)) throw new DaemonPausedError(this.pausedReason);
+        if (this.pausedReadGate.waiting >= 16)
+          throw new DaemonPausedError(
+            "bounded read queue is full; retry shortly",
+          );
+        return this.pausedReadGate.run(operationSignal, async () => {
+          operationSignal.throwIfAborted();
+          if (this.pausePromise)
+            await withQueryTimeout(
+              this.pausePromise,
+              "pause transition",
+              PAUSED_QUERY_TIMEOUT_MS,
+            );
+          if (this.shuttingDown || this.recycling)
+            throw new OperationClosedError();
+          this.checkKernelZonePressure();
+          if (this.shuttingDown || this.recycling)
+            throw new OperationClosedError();
+          return fn(operationSignal);
+        });
+      }
       if (!readOnly) this.assertHeavyOperationAdmission(name);
       return fn(operationSignal);
     });
@@ -765,12 +859,67 @@ export class Daemon {
     await this.mlxServerManager.ensureMlxServer(model);
   }
 
+  serviceStatus(): { mode: "active" | "paused"; reason?: string } {
+    return this.pausedReason === null
+      ? { mode: "active" }
+      : { mode: "paused", reason: this.pausedReason };
+  }
+
+  pauseWork(reason: string): void {
+    if (this.pausedReason !== null || this.shuttingDown) return;
+    this.pausedReason = reason;
+    console.log(
+      `[daemon] Heavy work paused; service stays available: ${reason}`,
+    );
+    const error = new DaemonPausedError(reason);
+    for (const ac of this.shutdownAbortControllers) ac.abort(error);
+    for (const timer of this.pendingIndexRetryTimers.values())
+      clearTimeout(timer);
+    this.pendingIndexRetryTimers.clear();
+    this.vectorDb?.pauseMaintenanceLoop();
+    this.vectorDb?.abortLeaseWaits();
+    const drain = this.operations.abortAndDrain(error);
+    const pool = this.workerPool;
+    this.workerPool = null;
+    this.resources = null;
+    this.searchers.clear();
+    this.pausePromise = (async () => {
+      await Promise.all([
+        this.watcherManager.quiesceAll(),
+        pool?.destroy(),
+        drain,
+      ]);
+      await this.mlxServerManager.stopMlxServer();
+      await this.llmServer?.stop();
+      await this.metaCache?.close();
+      this.metaCache = null;
+      await this.vectorDb?.close();
+      this.vectorDb = null;
+      if (this.shuttingDown) return;
+      this.vectorDb = new VectorDB(
+        PATHS.lancedbDir,
+        this.activeGeneration?.vectorDim,
+        undefined,
+        PAUSED_CACHE_OPTIONS,
+      );
+      this.logResourceSnapshot("paused-transition", null);
+    })();
+    void this.pausePromise.catch((error) => {
+      console.error(
+        "[daemon] Paused reader transition failed; status remains available:",
+        error,
+      );
+    });
+  }
+
   private assertHeavyOperationAdmission(name: string): void {
     const denied = daemonStartDeniedReason();
     if (denied !== null) throw new Error(`${name} refused: ${denied}`);
     // Probe at operation admission, before setup/cache/worker/model side effects.
     if (!this.checkKernelZonePressure()) {
-      throw new Error(`${name} refused: host pressure is unsafe or unknown`);
+      throw new Error(
+        `${name} refused: host pressure is unsafe or unknown${this.pausedReason ? `: ${this.pausedReason}` : ""}`,
+      );
     }
     // Another process can quarantine the machine while the probes run.
     const finalDenied = daemonStartDeniedReason();
@@ -1022,6 +1171,30 @@ export class Daemon {
     // Search handling lives in search-handler.ts (Phase 12 split). The daemon
     // supplies its warm VectorDB + watcher/index bookkeeping; the handler runs
     // the query and assembles the response.
+    if (this.pausedReason === null) this.checkKernelZonePressure();
+    if (this.shuttingDown || this.recycling)
+      return { ok: false, error: "daemon stopping for critical pressure" };
+    if (this.pausedReason !== null) {
+      return this.runSharedOperation(
+        "keyword-search",
+        signal,
+        async (operationSignal) => {
+          if (!this.vectorDb)
+            return { ok: false, error: "paused reader unavailable" };
+          this.resetActivity();
+          const result = await searchPausedIndex(
+            this.vectorDb,
+            payload,
+            this.pausedReason!,
+            operationSignal,
+          );
+          return {
+            ...result,
+            indexState: this.indexState(payload.projectRoot),
+          };
+        },
+      );
+    }
     return this.runSharedOperation("search", signal, async (operationSignal) =>
       handleDaemonSearch(
         {
@@ -1054,6 +1227,8 @@ export class Daemon {
       touchActivity: () => {
         this.lastActivity = Date.now();
       },
+      queryTimeoutMs:
+        this.pausedReason === null ? 15_000 : PAUSED_QUERY_TIMEOUT_MS,
     };
   }
 
@@ -2340,74 +2515,84 @@ export class Daemon {
    * This host lost three sessions that way before the compactor was identified as
    * the largest write source on it.
    *
-   * Warning, critical or unknown macOS readings stop mutation before another
-   * heavy operation can begin. Persist the reason before shutdown, so hooks and
-   * memory guards cannot revive the writer. Nothing here reclaims kernel memory.
+   * Warning or unknown readings pause heavy work while bounded reads remain
+   * available. Critical readings persist a stop before shutting down so hooks
+   * cannot revive the writer. Nothing here reclaims kernel memory.
    *
    * Non-macOS hosts have no such probe. On macOS an unavailable sample is
    * explicitly unknown and cannot authorize further mutation.
    */
   private checkKernelZonePressure(): boolean {
     if (this.shuttingDown || this.recycling) return false;
-    const denied = daemonStartDeniedReason();
-    if (denied !== null) {
-      // The existing quarantine is already durable; preserve its ownership and
-      // do not replace it with a new marker that an operator must also clear.
-      this.stopForSafety(denied, false);
+    const pressure = this.hostPressureDeniedReason();
+    if (pressure?.critical) {
+      this.stopForSafety(pressure.reason);
       return false;
     }
-    const pressure = this.hostPressureDeniedReason();
-    if (pressure === null) return true;
-    this.stopForSafety(pressure.reason);
-    return false;
+    const denied = daemonStartDeniedReason();
+    if (denied !== null || pressure !== null) {
+      this.pauseWork(denied ?? pressure!.reason);
+      return false;
+    }
+    return this.pausedReason === null;
   }
 
-  /** Both measurements must be known and normal before any resource expansion. */
+  /** Unknown/warning pauses resource expansion; only known critical shuts down. */
   private hostPressureDeniedReason(): {
     reason: string;
     measured: boolean;
+    critical: boolean;
   } | null {
     if (process.platform !== "darwin") return null;
-    // This inexpensive probe rejects OS warning before a worker/model starts,
-    // or before paying the bounded but relatively slow kernel-zone probe cost.
     const memory = probeMemoryPressure();
-    if (memory.status !== "known") {
+    if (memory.status === "known" && memory.pressure === "critical")
       return {
-        reason: `OS memory pressure unavailable (${formatPressureProbe(memory)})`,
-        measured: false,
-      };
-    }
-    if (memory.pressure !== "normal") {
-      return {
-        reason: `${memory.pressure} OS memory pressure (${formatPressureProbe(memory)})`,
+        reason: `critical OS memory pressure (${formatPressureProbe(memory)})`,
         measured: true,
+        critical: true,
       };
-    }
+    // Paused reads still need the kernel-critical guard, even if OS pressure warns.
     const kernel = probeKernelZoneUsage();
-    if (kernel.status !== "known") {
+    if (kernel.status === "known" && kernel.usage.pressure === "critical")
       return {
-        reason: `kernel pressure unavailable (${formatPressureProbe(kernel)}); heavy work cannot be admitted`,
+        reason: `critical kernel pressure: ${formatZoneUsage(kernel.usage)} (${formatPressureProbe(kernel)})`,
+        measured: true,
+        critical: true,
+      };
+    const freshMemory = probeMemoryPressure();
+    if (freshMemory.status === "known" && freshMemory.pressure === "critical")
+      return {
+        reason: `critical OS memory pressure (${formatPressureProbe(freshMemory)})`,
+        measured: true,
+        critical: true,
+      };
+    for (const sample of [memory, freshMemory]) {
+      if (sample.status !== "known")
+        return {
+          reason: `OS memory pressure unavailable (${formatPressureProbe(sample)})`,
+          measured: false,
+          critical: false,
+        };
+      if (sample.pressure !== "normal")
+        return {
+          reason: `warn OS memory pressure (${formatPressureProbe(sample)})`,
+          measured: true,
+          critical: false,
+        };
+    }
+    if (kernel.status !== "known")
+      return {
+        reason: `kernel pressure unavailable (${formatPressureProbe(kernel)}); heavy work paused`,
         measured: false,
+        critical: false,
       };
-    }
-    if (kernel.usage.pressure === "ok") {
-      // Kernel sampling can take seconds; use a new inexpensive OS observation
-      // at the actual admission boundary, rather than trusting its first sample.
-      const freshMemory = probeMemoryPressure();
-      if (freshMemory.status === "known" && freshMemory.pressure === "normal")
-        return null;
+    if (kernel.usage.pressure !== "ok")
       return {
-        reason:
-          freshMemory.status === "known"
-            ? `${freshMemory.pressure} OS memory pressure (${formatPressureProbe(freshMemory)})`
-            : `OS memory pressure unavailable (${formatPressureProbe(freshMemory)})`,
-        measured: freshMemory.status === "known",
+        reason: `warn kernel pressure: ${formatZoneUsage(kernel.usage)} (${formatPressureProbe(kernel)})`,
+        measured: true,
+        critical: false,
       };
-    }
-    return {
-      reason: `${kernel.usage.pressure} kernel pressure: ${formatZoneUsage(kernel.usage)} (${formatPressureProbe(kernel)})`,
-      measured: true,
-    };
+    return null;
   }
 
   private stopForSafety(reason: string, persist = true): void {
@@ -2540,7 +2725,11 @@ export class Daemon {
 
     // Abort catchup/recovery and remove each processor before worker teardown.
     await this.watcherManager.quiesceAll();
-    await this.drainOperationsBounded(operationDrain, projectDrain);
+    await this.drainOperationsBounded(
+      operationDrain,
+      projectDrain,
+      ...(this.pausePromise ? [this.pausePromise.catch(() => {})] : []),
+    );
 
     // Stop LLM server if running
     try {

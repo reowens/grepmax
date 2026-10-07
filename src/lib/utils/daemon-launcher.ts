@@ -46,18 +46,25 @@ export async function spawnDaemon(): Promise<number | null> {
  * logging to daemon.log. Resolves to the daemon's own PID; throws when the
  * spawn fails.
  */
-export async function spawnDaemonProcess(): Promise<{
+export async function spawnDaemonProcess(
+  options: { readOnly?: boolean } = {},
+): Promise<{
   pid: number;
   logFile: string;
 }> {
   const denied = daemonStartDeniedReason();
-  if (denied !== null) throw new Error(`gmax: ${denied}`);
+  if (denied !== null && !options.readOnly) throw new Error(`gmax: ${denied}`);
   const logFile = path.join(PATHS.logsDir, "daemon.log");
   const out = openRotatedLog(logFile);
   try {
     const child = spawn(
       process.argv[0],
-      [process.argv[1], "watch", "--daemon"],
+      [
+        process.argv[1],
+        "watch",
+        "--daemon",
+        ...(options.readOnly ? ["--read-only"] : []),
+      ],
       {
         detached: true,
         stdio: ["ignore", out, out],

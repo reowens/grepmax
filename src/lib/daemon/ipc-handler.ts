@@ -13,6 +13,11 @@ import {
 import { resolveContainedPath } from "../utils/path-containment";
 import { listProjects } from "../utils/project-registry";
 import type { Daemon } from "./daemon";
+import {
+  DaemonPausedError,
+  PAUSED_RESULT_LIMIT,
+  validatePausedRead,
+} from "./paused-reads";
 import { getReadVerb, READ_VERBS_PROTOCOL, runReadVerb } from "./read-verbs";
 
 const DAEMON_VERSION = (() => {
@@ -52,6 +57,7 @@ export function writeDone(
 
 function errorResponse(err: unknown): DaemonResponse {
   if (
+    err instanceof DaemonPausedError ||
     err instanceof OperationBusyError ||
     err instanceof OperationClosedError
   ) {
@@ -131,6 +137,7 @@ export async function handleCommand(
           uptime: daemon.uptime(),
           version: DAEMON_VERSION,
           operationStatus: daemon.operationStatus(),
+          service: daemon.serviceStatus?.(),
           resourceGeneration: daemon.resourceGenerationId(),
           rebuildPending: daemon.hasUnfinishedRebuild(),
           capabilities: {
@@ -179,7 +186,12 @@ export async function handleCommand(
           resources: daemon.resourceSnapshot?.() ?? null,
           compaction: daemon.compactionStatus?.() ?? null,
           workerThreads: WORKER_THREADS_SETTING,
+          service: daemon.serviceStatus?.(),
         };
+
+      case "pause":
+        daemon.pauseWork(String(cmd.reason ?? "read-only service requested"));
+        return { ok: true, service: daemon.serviceStatus() };
 
       case "optimize":
         // Keeps compaction single-writer: see Daemon.runOptimize.
@@ -439,9 +451,24 @@ export async function handleCommand(
           // Heavy verbs queue on a global gate before admission; see
           // HEAVY_READ_VERBS in read-verbs.ts.
           return await runReadVerb(name, ac.signal, () =>
-            daemon.runSharedOperation(name, ac.signal, (signal) =>
-              verb(cmd, { daemon, conn, signal }),
-            ),
+            daemon.runSharedOperation(name, ac.signal, async (signal) => {
+              // Validate after admission: pressure can change while queued.
+              const paused = daemon.serviceStatus?.().mode === "paused";
+              if (paused) {
+                validatePausedRead(name, cmd);
+                if (name === "rows.locate" && cmd.limit === undefined)
+                  cmd = { ...cmd, limit: PAUSED_RESULT_LIMIT };
+              }
+              const response = await verb(cmd, { daemon, conn, signal });
+              if (
+                paused &&
+                Buffer.byteLength(JSON.stringify(response)) > 262144
+              )
+                throw new DaemonPausedError(
+                  "read response exceeds the paused service budget; narrow the request",
+                );
+              return response;
+            }),
           );
         } finally {
           conn.off("close", onClose);

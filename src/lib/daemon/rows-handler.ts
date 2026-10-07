@@ -60,6 +60,7 @@ import { registerReadVerbs } from "./read-verbs";
 export interface StoreReadDeps {
   vectorDb: VectorDB | null;
   touchActivity?: () => void;
+  queryTimeoutMs?: number;
 }
 
 /**
@@ -571,8 +572,11 @@ export async function runLocate(
       .where(scoped ? `${where} AND ${pathScope}` : where);
     query = query.limit(req.limit ?? MAX_LOCATE_ROWS);
     const rows = await withQueryTimeout(
-      query.toArray(QUERY_EXECUTION_OPTIONS),
+      query.toArray({
+        timeoutMs: deps.queryTimeoutMs ?? QUERY_EXECUTION_OPTIONS.timeoutMs,
+      }),
       label,
+      deps.queryTimeoutMs,
     );
     results.push(
       rows
@@ -676,10 +680,18 @@ export async function runSkeleton(
 
   let filePath = req.path ?? null;
   if (!filePath && req.symbol) {
-    filePath = await findFileBySymbol(db, req.symbol, req.projectRoot);
+    filePath = await findFileBySymbol(
+      db,
+      req.symbol,
+      req.projectRoot,
+      deps.queryTimeoutMs,
+    );
   }
   if (!filePath) return { path: null, skeleton: null };
-  return { path: filePath, skeleton: await getStoredSkeleton(db, filePath) };
+  return {
+    path: filePath,
+    skeleton: await getStoredSkeleton(db, filePath, deps.queryTimeoutMs),
+  };
 }
 
 /** FTS lookup for the file that defines `symbol`; null when nothing matches. */
@@ -687,14 +699,16 @@ export async function findFileBySymbol(
   db: VectorDB,
   symbol: string,
   projectRoot: string,
+  timeoutMs = QUERY_EXECUTION_OPTIONS.timeoutMs,
 ): Promise<string | null> {
   try {
     const table = await db.ensureTable();
     const results = await table
       .search(symbol)
+      .select(["path", "defined_symbols"])
       .where(pathStartsWith(`${projectRoot}/`))
       .limit(10)
-      .toArray(QUERY_EXECUTION_OPTIONS);
+      .toArray({ timeoutMs });
 
     for (const result of results) {
       const defined = (result as Record<string, unknown>).defined_symbols;

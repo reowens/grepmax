@@ -1,12 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const h = vi.hoisted(() => ({ reason: null as string | null }));
+const h = vi.hoisted(() => ({
+  reason: null as string | null,
+  status: { ok: false } as Record<string, unknown>,
+  vectorDbCtor: vi.fn(),
+}));
+vi.mock("../src/lib/utils/daemon-client", () => ({
+  sendDaemonCommand: async () => h.status,
+  isDaemonRunning: async () => h.status.ok,
+}));
 vi.mock("../src/lib/utils/autostart", () => ({
   daemonStartDeniedReason: () => h.reason,
 }));
 vi.mock("../src/lib/store/vector-db", () => ({
   VectorDB: class {
     constructor() {
+      h.vectorDbCtor();
       throw new Error("synthetic index unavailable");
     }
   },
@@ -22,6 +31,8 @@ describe("doctor startup containment diagnostics", () => {
   beforeEach(() => {
     process.exitCode = 0;
     h.reason = null;
+    h.status = { ok: false };
+    h.vectorDbCtor.mockClear();
     vi.spyOn(console, "log").mockImplementation(() => {});
   });
   afterEach(() => {
@@ -38,6 +49,16 @@ describe("doctor startup containment diagnostics", () => {
     expect(console.log).toHaveBeenCalledWith(
       `daemon_startup\tblocked=true\treason=${reason}`,
     );
+    expect(process.exitCode).toBe(2);
+  });
+
+  it("reports paused availability without opening or scanning the native store", async () => {
+    h.status = { ok: true, service: { mode: "paused", reason: "OS warning" } };
+    await doctor.parseAsync(["--agent"], { from: "user" });
+    expect(console.log).toHaveBeenCalledWith(
+      "daemon_service\tmode=paused\treads=bounded\treason=OS warning",
+    );
+    expect(h.vectorDbCtor).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(2);
   });
 

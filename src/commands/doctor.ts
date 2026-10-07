@@ -444,6 +444,31 @@ export const doctor = new Command("doctor")
       process.exitCode = 2;
     }
 
+    // Metadata-only diagnostics while paused: never open a second native
+    // reader or scan the retained corpus on a pressured host.
+    const { sendDaemonCommand } = await import("../lib/utils/daemon-client");
+    const daemonStatus = await sendDaemonCommand({ cmd: "status" });
+    const service = daemonStatus.service as
+      | { mode?: string; reason?: string }
+      | undefined;
+    if (daemonStatus.ok && service?.mode === "paused") {
+      const reason = String(
+        service.reason ?? "read-only service requested",
+      ).replace(/[\r\n\t]/g, " ");
+      console.log(
+        opts.agent
+          ? `daemon_service\tmode=paused\treads=bounded\treason=${reason}`
+          : `WARN  Daemon available for bounded reads; indexing and embeddings paused: ${reason}`,
+      );
+      console.log(
+        opts.agent
+          ? "index_diagnostics\tskipped=paused_service"
+          : "INFO  Native index diagnostics skipped while heavy work is paused",
+      );
+      process.exitCode = 2;
+      return;
+    }
+
     const root = PATHS.globalRoot;
     const models = PATHS.models;
     const grammars = PATHS.grammars;

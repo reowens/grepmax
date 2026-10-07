@@ -55,17 +55,27 @@ export const watch = new Command("watch")
     "-d, --daemon",
     "Run as centralized daemon watching projects that active sessions hold",
   )
+  .option(
+    "--read-only",
+    "Serve bounded reads without indexing, models, or clearing quarantine",
+  )
   .option("-p, --path <dir>", "Directory to watch (defaults to project root)")
   .option("--no-idle-timeout", "Disable the 30-minute idle shutdown")
   .action(
     async (options: {
       background?: boolean;
       daemon?: boolean;
+      readOnly?: boolean;
       path?: string;
       idleTimeout?: boolean;
     }) => {
+      if (options.readOnly && !options.daemon) {
+        console.error("gmax: --read-only requires --daemon");
+        process.exitCode = 2;
+        return;
+      }
       const safetyDenied = daemonStartDeniedReason();
-      if (safetyDenied !== null) {
+      if (safetyDenied !== null && !options.readOnly) {
         console.error(`gmax: ${safetyDenied}; preserving containment`);
         process.exitCode = 2;
         return;
@@ -116,6 +126,13 @@ export const watch = new Command("watch")
             ).version;
             const resp = await sendDaemonCommand({ cmd: "ping" });
             if (resp.version && resp.version === cliVersion) {
+              if (options.readOnly) {
+                const paused = await sendDaemonCommand({
+                  cmd: "pause",
+                  reason: "read-only service requested",
+                });
+                if (!paused.ok) throw new Error(String(paused.error));
+              }
               process.exit(0);
             }
             console.log(
@@ -158,7 +175,9 @@ export const watch = new Command("watch")
           );
           let started: { pid: number; logFile: string };
           try {
-            started = await spawnDaemonProcess();
+            started = options.readOnly
+              ? await spawnDaemonProcess({ readOnly: true })
+              : await spawnDaemonProcess();
           } catch (error) {
             const message =
               error instanceof Error ? error.message : String(error);
@@ -211,7 +230,8 @@ export const watch = new Command("watch")
         });
 
         try {
-          await daemon.start();
+          if (options.readOnly) await daemon.start({ readOnly: true });
+          else await daemon.start();
         } catch (err) {
           const code = (err as NodeJS.ErrnoException)?.code;
           if (code === "EADDRINUSE") {
