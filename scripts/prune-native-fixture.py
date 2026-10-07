@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import resource
 import time
+import uuid
 
 
 def hashes(root):
@@ -59,12 +60,15 @@ def prepare(root, rows):
     post_cutoff = ds.version
     ds.delete("id IN ('current-0', 'current-1')")
     # Protect a fresh unverified file; the helper must not aggressively delete it.
-    orphan = root / "_data" / "unverified-fixture.lance"
+    data_dir = next((root / name for name in ("data", "_data") if (root / name).is_dir()), None)
+    assert data_dir is not None, "Native writer did not create a data directory"
+    orphan = data_dir / f"{uuid.uuid4()}.lance"
     orphan.write_bytes(b"fresh unverified fixture; must survive")
     manifest = {
         "version": ds.version, "cutoffMs": cutoff, "rows": rows - 2,
         "tagged": tagged, "postCutoff": post_cutoff,
         "fragments": len(ds.get_fragments()), "hashes": hashes(root),
+        "orphan": str(orphan.relative_to(root)),
         "preparePeakRssKb": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
     }
     (root.parent / "fixture.json").write_text(json.dumps(manifest))
@@ -84,7 +88,7 @@ def verify(root):
     after = hashes(root)
     assert set(after).issubset(manifest["hashes"]), "Cleanup created files"
     assert all(manifest["hashes"][name] == digest for name, digest in after.items()), "Cleanup rewrote a retained file"
-    assert "_data/unverified-fixture.lance" in after, "Unverified file was deleted"
+    assert manifest["orphan"] in after, "Unverified file was deleted"
     print(json.dumps({"verifiedRows": ds.count_rows(), "retainedFiles": len(after), "versions": sorted(versions), "verifyPeakRssKb": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, "noRewrites": True}))
 
 
