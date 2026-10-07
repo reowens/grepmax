@@ -62,6 +62,18 @@ print(json.dumps({"version": ds.version, "tagged": tagged, "rows": ds.count_rows
       return JSON.parse(run.stdout);
     };
     assert.equal(cliStatus().state,null);
+    const packageVersion = JSON.parse(fs.readFileSync(path.join(packageRoot,"package.json"))).version;
+    const versionRun = spawnSync(process.execPath,[path.join(packageRoot,"dist/bin.js"),"--version"],{encoding:"utf8",timeout:10000});
+    assert.equal(versionRun.status,0,versionRun.stderr);
+    assert.equal(versionRun.stdout.trim(),packageVersion);
+    for (const versionArgs of [["--version",String(prepared.version)],[`--version=${prepared.version}`]]) {
+      const run = spawnSync(process.execPath,[path.join(packageRoot,"dist/bin.js"),"recover","--table",table,"--prune",...versionArgs,"--cutoff",new Date(prepared.cutoffMs).toISOString(),"--json"],{encoding:"utf8",timeout:10000});
+      assert.equal(run.status,1,`Recovery must reach admission, not print the package version: ${run.stdout}`);
+      const refusal = JSON.parse(run.stderr);
+      assert.equal(refusal.outcome,"refused");
+      assert.match(refusal.error,/autostart-disabled/);
+      assert.equal(readPruneState(store),null,"CLI dispatch must not write a prune receipt before admission");
+    }
     lease = await StoreLease.acquireExclusive({storeDir: store, timeoutMs: 5000, role: "packed-consumer-fixture"});
     const result = await pruneVersions(runtime, table, prepared.version, new Date(prepared.cutoffMs), {lease, admission: fixtureAdmission()});
     assert.equal(result.rewritten, false);
@@ -78,7 +90,7 @@ print(json.dumps({"version": ds.version, "tagged": tagged, "rows": ds.count_rows
     lease = undefined;
     connection = await lance.connect(store, {session: new lance.Session(BigInt(16 * 1024**2), BigInt(8 * 1024**2))});
     assert.equal(await (await connection.openTable("chunks")).countRows(), 2);
-    console.log("Packed prune runtime: locked setup, exact helper files, exclusive deletion, protected/current rows, durable receipt and Node reopen passed");
+    console.log("Packed prune runtime: locked setup, exact helper files, CLI version dispatch, exclusive deletion, protected/current rows, durable receipt and Node reopen passed");
   } finally {
     await connection?.close();
     await lease?.release();

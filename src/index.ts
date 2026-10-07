@@ -143,4 +143,8 @@ program.addCommand(installOpencode);
 (uninstallOpencode as any)._hidden = true;
 program.addCommand(uninstallOpencode);
 
+// Recovery owns --version as a required table-version value. Keep the root
+// package-version flag from consuming it; other commands retain global options.
+if (process.argv[2] === "recover") program.enablePositionalOptions();
+
 program.parse();
