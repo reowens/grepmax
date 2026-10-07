@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => {
     symbolRows,
     where,
     searchChain: {
+      select: vi.fn().mockReturnThis(),
       where,
       limit: vi.fn().mockReturnThis(),
       toArray: symbolRows,
