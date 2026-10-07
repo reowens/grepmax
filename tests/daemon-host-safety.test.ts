@@ -130,6 +130,10 @@ describe("daemon pressure pauses work without losing the service", () => {
       expect(h.latch).not.toHaveBeenCalled();
       expect(daemon.isReady()).toBe(true);
       expect(daemon.serviceStatus().mode).toBe("paused");
+      expect(daemon.indexState("/fixture")).toMatchObject({
+        indexing: false,
+        pendingFiles: 0,
+      });
       expect(h.kernelProbe).toHaveBeenCalled();
       expect(h.readers[0].options).toEqual({
         readOnly: true,

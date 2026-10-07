@@ -1123,6 +1123,7 @@ export class Daemon {
    * on every search to annotate partial-result responses (Phase 6).
    */
   indexState(root: string): IndexState {
+    if (this.pausedReason !== null) return { indexing: false, pendingFiles: 0 };
     const processor = this.processors.get(root);
     const batchPending = processor?.progress?.pendingFiles ?? 0;
     const processing = processor?.progress?.processing ?? false;
