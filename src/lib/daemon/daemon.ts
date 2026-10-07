@@ -1484,7 +1484,15 @@ export class Daemon {
     this.vectorDb.pauseMaintenanceLoop();
     const stopHeartbeat = startHeartbeat(conn);
     let lastProgressTime = 0;
+    const wasWatching = this.processors.has(root);
+    let watcherQuiesced = false;
     try {
+      // Re-adding a watched project is also a full sync. A catchup scan no
+      // longer holds the write lock, so explicitly drain it before syncing.
+      if (wasWatching) {
+        await this.unwatchProjectWithinOperation(root);
+        watcherQuiesced = true;
+      }
       const result = await initialSync({
         projectRoot: root,
         vectorDb: this.vectorDb,
@@ -1533,6 +1541,7 @@ export class Daemon {
         });
       }
       await this.watchProjectWithinOperation(root);
+      watcherQuiesced = false;
 
       writeDone(conn, {
         ok: true,
@@ -1562,6 +1571,13 @@ export class Daemon {
       }
     } finally {
       stopHeartbeat();
+      if (watcherQuiesced && !this.shuttingDown) {
+        try {
+          await this.watchProjectWithinOperation(root);
+        } catch (error) {
+          console.error("[daemon] Could not restore watcher after add:", error);
+        }
+      }
       this.vectorDb?.resumeMaintenanceLoop();
     }
   }
