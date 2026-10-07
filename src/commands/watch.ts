@@ -7,6 +7,7 @@ import { initialSync } from "../lib/index/syncer";
 import { startWatcher } from "../lib/index/watcher";
 import {
   formatIndexStateFooter,
+  formatWatchQueue,
   type IndexState,
 } from "../lib/output/index-state-footer";
 import { MetaCache } from "../lib/store/meta-cache";
@@ -495,6 +496,8 @@ watch
         console.log(`  - ${p.root} [${p.status}]`);
         const health = formatIndexStateFooter(p.indexState, { agent: true });
         if (health) console.log(`    ${health}`);
+        if (p.indexState?.queue)
+          console.log(`    queue: ${formatWatchQueue(p.indexState.queue)}`);
         if (p.indexState)
           console.log(
             `    watcher=${p.indexState.watcherMode ?? "unknown"} overflows=${p.indexState.overflowCount ?? 0} lastReconciled=${p.indexState.lastReconciledAt ? new Date(p.indexState.lastReconciledAt).toISOString() : "unknown"} catchupMs=${p.indexState.catchupMs ?? "unknown"}`,

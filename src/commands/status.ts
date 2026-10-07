@@ -14,6 +14,7 @@ import {
 import { type GlobalConfig, readGlobalConfig } from "../lib/index/index-config";
 import {
   formatIndexStateFooter,
+  formatWatchQueue,
   type IndexState,
 } from "../lib/output/index-state-footer";
 import type { CompactionResult } from "../lib/store/compaction-result";
@@ -459,8 +460,9 @@ Examples:
         const isCurrent = project.root === currentRoot;
         const count = chunkCounts.get(project.root) ?? project.chunkCount;
         const identity = projectEmbeddingStatus(project, globalConfig);
+        const queue = view.health?.get(project.root)?.queue;
         console.log(
-          `${project.name}\t${formatChunks(count)}\t${formatAge(project.lastIndexed)}\t${st}\tembedding=${identity.state}${isCurrent ? "\tcurrent" : ""}${view.health?.get(project.root) ? `\t${formatIndexStateFooter(view.health.get(project.root), { agent: true }) ?? ""}` : ""}`,
+          `${project.name}\t${formatChunks(count)}\t${formatAge(project.lastIndexed)}\t${st}\tembedding=${identity.state}${isCurrent ? "\tcurrent" : ""}${view.health?.get(project.root) ? `\t${formatIndexStateFooter(view.health.get(project.root), { agent: true }) ?? ""}` : ""}${queue ? `\t${formatWatchQueue(queue)}` : ""}`,
         );
       }
       const legacyNotice = formatLegacyEmbeddingNotice(
@@ -516,6 +518,8 @@ Examples:
         agent: false,
       });
       if (health) console.log(`    ${health}`);
+      const queue = view.health?.get(project.root)?.queue;
+      if (queue) console.log(`    queue: ${formatWatchQueue(queue)}`);
     }
 
     const legacyNotice = formatLegacyEmbeddingNotice(

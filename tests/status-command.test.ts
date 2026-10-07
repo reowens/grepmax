@@ -210,6 +210,13 @@ describe("gmax status", () => {
                 indexState: {
                   indexing: false,
                   pendingFiles: 0,
+                  queue: {
+                    live: 0,
+                    catchup: 4,
+                    cleanup: 100,
+                    activeFiles: 1,
+                    oldestLiveEditAgeMs: null,
+                  },
                   failedFiles: 3,
                   watcherMode: "polling",
                 },
@@ -229,6 +236,18 @@ describe("gmax status", () => {
       state: "degraded",
       health: { failedFiles: 3, watcherMode: "polling" },
     });
+    expect(result.projects[0].health.queue).toEqual({
+      live: 0,
+      catchup: 4,
+      cleanup: 100,
+      activeFiles: 1,
+      oldestLiveEditAgeMs: null,
+    });
+    out.length = 0;
+    await runStatus(["--agent"]);
+    expect(out.join("\n")).toContain(
+      "live=0 catchup=4 cleanup=100 active=1 oldestLiveEdit=none",
+    );
   });
   it("uses the daemon's project list and per-project stats, never LMDB or the store", async () => {
     sendDaemonCommand.mockImplementation(async (cmd: { cmd: string }) => {

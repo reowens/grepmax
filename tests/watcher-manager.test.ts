@@ -17,6 +17,7 @@ vi.mock("../src/lib/utils/project-registry", () => ({
 }));
 
 import { WatcherManager } from "../src/lib/daemon/watcher-manager";
+import { ProjectBatchProcessor } from "../src/lib/index/batch-processor";
 import { registerWatcher } from "../src/lib/utils/watcher-store";
 
 describe("WatcherManager.unwatchProject", () => {
@@ -29,6 +30,48 @@ describe("WatcherManager.unwatchProject", () => {
       evictSearcher: vi.fn(),
     } as any;
   }
+
+  it("tags reconciliation changes and retirements as background work", async () => {
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), "gmax-catchup-queue-"),
+    );
+    const source = path.join(root, "source.ts");
+    const removed = path.join(root, "removed.json");
+    await fs.writeFile(source, "export const source = 1;\n");
+    const metaCache = {
+      getKeysWithPrefix: vi.fn(async () => new Set([removed])),
+      get: vi.fn(),
+      put: vi.fn(),
+      delete: vi.fn(),
+    };
+    const vectorDb = {
+      getDistinctPathsForPrefix: vi.fn(async () => new Set([removed])),
+    };
+    const dependencies = {
+      ...deps(),
+      getMetaCache: () => metaCache,
+      getVectorDb: () => vectorDb,
+    } as any;
+    const processor = new ProjectBatchProcessor({
+      projectRoot: root,
+      metaCache: metaCache as any,
+      vectorDb: vectorDb as any,
+    });
+    dependencies.processors.set(root, processor);
+    const wm = new WatcherManager(dependencies) as any;
+    try {
+      await wm.catchupScan(root, processor, new AbortController().signal);
+      expect(processor.progress.queue).toMatchObject({
+        live: 0,
+        catchup: 1,
+        cleanup: 1,
+        oldestLiveEditAgeMs: null,
+      });
+    } finally {
+      await wm.unwatchProject(root);
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
 
   it("refreshes native exclusions on policy edits, including re-inclusions and deletion", async () => {
     const root = await fs.mkdtemp(

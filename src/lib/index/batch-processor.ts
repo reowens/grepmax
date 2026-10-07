@@ -1,5 +1,9 @@
 import * as path from "node:path";
 import { CONFIG } from "../../config";
+import type {
+  WatchQueueState,
+  WatchWorkKind,
+} from "../output/index-state-footer";
 import type { MetaCache, MetaEntry } from "../store/meta-cache";
 import type { VectorRecord } from "../store/types";
 import type { VectorDB } from "../store/vector-db";
@@ -41,6 +45,11 @@ export interface BatchProcessorOptions {
 const DEBOUNCE_MS = 2000;
 const MAX_RETRIES = 5;
 const MAX_BATCH_SIZE = 50;
+const MAX_CATCHUP_BATCH_SIZE = 4;
+const BACKGROUND_DISPATCH_WINDOW_MS = 2000;
+const MAX_CONSECUTIVE_LIVE_BATCHES = 3;
+type PendingWork = { kind: WatchWorkKind; queuedAt: number };
+const WORK_PRIORITY = { live: 0, catchup: 1, cleanup: 2 };
 // Pool priority cannot preempt an active processFile, so keep one worker free
 // for latency-sensitive encodeQuery/rerank work during indexing bursts.
 const DEFAULT_BATCH_CONCURRENCY = Math.max(1, CONFIG.WORKER_THREADS - 1);
@@ -68,6 +77,10 @@ export class ProjectBatchProcessor {
   private readonly concurrency: number;
 
   private readonly pending = new Map<string, "change" | "unlink">();
+  private readonly pendingWork = new Map<string, PendingWork>();
+  private activeWork = new Map<string, PendingWork>();
+  private liveBatches = 0;
+  private nextBackground: "catchup" | "cleanup" = "catchup";
   private readonly retryCount = new Map<string, number>();
   private readonly retryAt = new Map<string, number>();
   private readonly terminalFailures = new Set<string>();
@@ -120,7 +133,11 @@ export class ProjectBatchProcessor {
   handleFileEvent(
     event: "change" | "unlink",
     absPath: string,
-    options?: { forceReprocess?: boolean; forceDelete?: boolean },
+    options?: {
+      forceReprocess?: boolean;
+      forceDelete?: boolean;
+      workKind?: WatchWorkKind;
+    },
   ): void {
     if (this.closed) return;
     const normalize = (
@@ -170,9 +187,43 @@ export class ProjectBatchProcessor {
       this.forcedReprocess.set(normalized, ++this.forceGeneration);
     }
     this.retryAt.delete(normalized);
-    this.pending.set(normalized, event);
+    this.enqueueWork(normalized, event, {
+      kind: options?.workKind ?? "live",
+      queuedAt: Date.now(),
+    });
     this.onActivity?.();
     this.scheduleBatch();
+  }
+
+  private enqueueWork(
+    absPath: string,
+    event: "change" | "unlink",
+    work: PendingWork,
+  ): void {
+    const previous =
+      this.pendingWork.get(absPath) ?? this.activeWork.get(absPath);
+    this.pending.set(absPath, event);
+    this.pendingWork.set(
+      absPath,
+      !previous || WORK_PRIORITY[work.kind] < WORK_PRIORITY[previous.kind]
+        ? work
+        : {
+            kind: previous.kind,
+            queuedAt:
+              previous.kind === work.kind
+                ? Math.min(previous.queuedAt, work.queuedAt)
+                : previous.queuedAt,
+          },
+    );
+  }
+
+  private hasReadyLiveWork(): boolean {
+    const now = Date.now();
+    for (const [file, work] of this.pendingWork) {
+      if (work.kind === "live" && (this.retryAt.get(file) ?? 0) <= now)
+        return true;
+    }
+    return false;
   }
 
   /** Live (re)index progress: files queued + whether a batch is running.
@@ -189,6 +240,7 @@ export class ProjectBatchProcessor {
     failedFiles: number;
     recentFiles: number;
     recentReindexed: number;
+    queue: WatchQueueState;
   } {
     let recentFiles = 0;
     let recentReindexed = 0;
@@ -196,12 +248,31 @@ export class ProjectBatchProcessor {
       recentFiles += b.files;
       recentReindexed += b.reindexed;
     }
+    const queue: WatchQueueState = {
+      live: 0,
+      catchup: 0,
+      cleanup: 0,
+      activeFiles: this.activeWork.size,
+      oldestLiveEditAgeMs: null,
+    };
+    let oldest = Number.POSITIVE_INFINITY;
+    for (const file of this.pending.keys()) {
+      const work = this.pendingWork.get(file);
+      queue[work?.kind ?? "live"]++;
+      if (work?.kind === "live") oldest = Math.min(oldest, work.queuedAt);
+    }
+    for (const work of this.activeWork.values()) {
+      if (work.kind === "live") oldest = Math.min(oldest, work.queuedAt);
+    }
+    if (Number.isFinite(oldest))
+      queue.oldestLiveEditAgeMs = Math.max(0, Date.now() - oldest);
     return {
       pendingFiles: this.pending.size,
       processing: this.processing,
       failedFiles: this.terminalFailures.size,
       recentFiles,
       recentReindexed,
+      queue,
     };
   }
 
@@ -301,17 +372,45 @@ export class ProjectBatchProcessor {
 
     const batch = new Map<string, "change" | "unlink">();
     const batchForceGenerations = new Map<string, number>();
+    const batchWork = new Map<string, PendingWork>();
     const now = Date.now();
-    let taken = 0;
-    for (const [absPath, event] of this.pending) {
+    const ready: Record<WatchWorkKind, string[]> = {
+      live: [],
+      catchup: [],
+      cleanup: [],
+    };
+    for (const absPath of this.pending.keys()) {
       if ((this.retryAt.get(absPath) ?? 0) > now) continue;
+      const kind = this.pendingWork.get(absPath)?.kind ?? "live";
+      if (ready[kind].length < MAX_BATCH_SIZE) ready[kind].push(absPath);
+    }
+    const background = ready[this.nextBackground].length
+      ? this.nextBackground
+      : this.nextBackground === "catchup"
+        ? "cleanup"
+        : "catchup";
+    const fairBackground =
+      ready.live.length > 0 &&
+      ready[background].length > 0 &&
+      this.liveBatches >= MAX_CONSECUTIVE_LIVE_BATCHES;
+    const kind: WatchWorkKind =
+      ready.live.length > 0 && !fairBackground ? "live" : background;
+    const limit = fairBackground
+      ? 1
+      : kind === "catchup"
+        ? MAX_CATCHUP_BATCH_SIZE
+        : MAX_BATCH_SIZE;
+    for (const absPath of ready[kind].slice(0, limit)) {
+      const event = this.pending.get(absPath)!;
       batch.set(absPath, event);
+      batchWork.set(
+        absPath,
+        this.pendingWork.get(absPath) ?? { kind, queuedAt: now },
+      );
       const forceGeneration = this.forcedReprocess.get(absPath);
       if (forceGeneration !== undefined) {
         batchForceGenerations.set(absPath, forceGeneration);
       }
-      taken++;
-      if (taken >= MAX_BATCH_SIZE) break;
     }
     if (batch.size === 0) {
       this.schedulePendingBatch(30_000);
@@ -319,6 +418,12 @@ export class ProjectBatchProcessor {
     }
 
     this.processing = true;
+    this.activeWork = batchWork;
+    if (kind === "live") this.liveBatches++;
+    else {
+      this.liveBatches = 0;
+      this.nextBackground = kind === "catchup" ? "cleanup" : "catchup";
+    }
 
     const batchAc = new AbortController();
     const abortBatch = () => batchAc.abort(operationSignal.reason);
@@ -335,6 +440,7 @@ export class ProjectBatchProcessor {
 
     for (const key of batch.keys()) {
       this.pending.delete(key);
+      this.pendingWork.delete(key);
       this.retryAt.delete(key);
     }
     const filenames = [...batch.keys()].map((p) => path.basename(p));
@@ -384,7 +490,7 @@ export class ProjectBatchProcessor {
           this.retryCount.set(absPath, retry.failures);
           this.retryAt.set(absPath, Date.now() + retry.backoffMs);
         }
-        this.pending.set(absPath, event);
+        this.enqueueWork(absPath, event, batchWork.get(absPath)!);
       };
 
       let stopDispatch = false;
@@ -569,7 +675,7 @@ export class ProjectBatchProcessor {
       };
 
       const batchConcurrency = Math.min(
-        this.concurrency,
+        kind === "live" ? this.concurrency : 1,
         Math.max(1, Math.ceil(batch.size / FILES_PER_BATCH_SLOT)),
       );
       const activeTasks: Promise<void>[] = [];
@@ -588,6 +694,16 @@ export class ProjectBatchProcessor {
 
       for (const [absPath, event] of batch) {
         if (batchAc.signal.aborted || stopDispatch) break;
+        // Do not enqueue a whole background batch into the worker pool. Finish
+        // the current file, commit its results, then admit waiting live edits.
+        // A single fairness file still runs during continuous live traffic.
+        if (
+          kind !== "live" &&
+          settled > 0 &&
+          (Date.now() - start >= BACKGROUND_DISPATCH_WINDOW_MS ||
+            (!fairBackground && this.hasReadyLiveWork()))
+        )
+          break;
         await schedule(() => processOne(absPath, event));
       }
       await Promise.allSettled(activeTasks);
@@ -672,7 +788,7 @@ export class ProjectBatchProcessor {
       if (reindexed > 0) {
         this.onReindex?.(reindexed, duration);
       }
-      this.recentBatches.push({ files: batch.size, reindexed });
+      this.recentBatches.push({ files: settled, reindexed });
       if (
         this.recentBatches.length > ProjectBatchProcessor.RECENT_BATCH_WINDOW
       ) {
@@ -715,7 +831,7 @@ export class ProjectBatchProcessor {
         for (const [absPath, event] of batch) {
           if (this.terminalFailures.has(absPath)) continue;
           if (!this.pending.has(absPath)) {
-            this.pending.set(absPath, event);
+            this.enqueueWork(absPath, event, batchWork.get(absPath)!);
           }
         }
         log(this.wtag, "Disk pressure — requeued batch, will retry in 60s");
@@ -737,7 +853,8 @@ export class ProjectBatchProcessor {
         }
         for (const [absPath, event] of batch) {
           if (this.terminalFailures.has(absPath)) continue;
-          if (!this.pending.has(absPath)) this.pending.set(absPath, event);
+          if (!this.pending.has(absPath))
+            this.enqueueWork(absPath, event, batchWork.get(absPath)!);
         }
         backoffOverrideMs = 30 * 60 * 1000;
       } else {
@@ -763,7 +880,7 @@ export class ProjectBatchProcessor {
           }
           this.retryCount.set(absPath, retry.failures);
           this.retryAt.set(absPath, Date.now() + retry.backoffMs);
-          this.pending.set(absPath, event);
+          this.enqueueWork(absPath, event, batchWork.get(absPath)!);
         }
         if (dropped > 0) {
           log(
@@ -784,10 +901,11 @@ export class ProjectBatchProcessor {
           if (!this.pending.has(absPath)) {
             this.retryCount.delete(absPath);
             this.retryAt.delete(absPath);
-            this.pending.set(absPath, "change");
+            this.enqueueWork(absPath, "change", batchWork.get(absPath)!);
           }
         }
       }
+      this.activeWork = new Map();
       if (!this.closed && this.pending.size > 0) {
         if (backoffOverrideMs > 0) {
           if (this.debounceTimer) clearTimeout(this.debounceTimer);

@@ -694,6 +694,7 @@ export class WatcherManager {
         } else if (reconciliation.action === "reprocess") {
           processor.handleFileEvent("change", absPath, {
             forceReprocess: true,
+            workKind: "catchup",
           });
           queued++;
           if (queued % 500 === 0) {
@@ -716,7 +717,9 @@ export class WatcherManager {
               snapshot.size !== stats.size ||
               snapshot.mtimeMs !== stats.mtimeMs
             ) {
-              processor.handleFileEvent("change", absPath);
+              processor.handleFileEvent("change", absPath, {
+                workKind: "catchup",
+              });
               continue;
             }
             const hash = computeContentHash(snapshot.buffer, absPath);
@@ -737,7 +740,7 @@ export class WatcherManager {
             debugSamples++;
           }
           if (signal.aborted) return false;
-          processor.handleFileEvent("change", absPath);
+          processor.handleFileEvent("change", absPath, { workKind: "catchup" });
           queued++;
 
           // Throttle: pause periodically during large catchup scans to let the
@@ -770,7 +773,10 @@ export class WatcherManager {
         !seenPaths.has(cachedPath) &&
         !isPathProtectedByWalkState(cachedPath, walkState)
       ) {
-        processor.handleFileEvent("unlink", cachedPath, { forceDelete: true });
+        processor.handleFileEvent("unlink", cachedPath, {
+          forceDelete: true,
+          workKind: "cleanup",
+        });
         purged++;
       }
     }

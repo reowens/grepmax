@@ -1158,8 +1158,9 @@ export class Daemon {
    */
   indexState(root: string): IndexState {
     const processor = this.processors.get(root);
-    const batchPending = processor?.progress?.pendingFiles ?? 0;
-    const processing = processor?.progress?.processing ?? false;
+    const progress = processor?.progress;
+    const batchPending = progress?.pendingFiles ?? 0;
+    const processing = progress?.processing ?? false;
     // status === "pending" means the initial full index hasn't completed.
     const initialPending = getProject(root)?.status === "pending";
     // A full index (--reset / initial) bypasses the batch processor; its
@@ -1174,7 +1175,7 @@ export class Daemon {
     // index genuinely has work outstanding; a post-FSEvents-drop catchup mostly
     // re-verifies unchanged files. Only claim "verifying" with a real sample and
     // no initial-index work pending.
-    const { recentFiles, recentReindexed } = processor?.progress ?? {
+    const { recentFiles, recentReindexed } = progress ?? {
       recentFiles: 0,
       recentReindexed: 0,
     };
@@ -1193,8 +1194,11 @@ export class Daemon {
       pendingFiles: this.pausedReason == null ? pendingFiles : 0,
       verifying: this.pausedReason == null && verifying,
       ...health,
+      ...(this.pausedReason == null && progress?.queue
+        ? { queue: progress.queue }
+        : {}),
       failedFiles: Math.max(
-        processor?.progress?.failedFiles ?? 0,
+        progress?.failedFiles ?? 0,
         health.failedFiles ?? 0,
       ),
     };

@@ -80,6 +80,7 @@ import { generateSummaries } from "../lib/index/syncer";
 import { formatAgentSearchResults } from "../lib/output/agent-search-formatter";
 import {
   formatIndexStateFooter,
+  formatWatchQueue,
   type IndexState,
 } from "../lib/output/index-state-footer";
 import {
@@ -2461,6 +2462,8 @@ export const mcp = new Command("mcp")
             agent: true,
           });
           if (health) watcherLine += `\n${health}`;
+          if (daemonProject.indexState?.queue)
+            watcherLine += `\nQueue: ${formatWatchQueue(daemonProject.indexState.queue)}`;
         }
 
         // Health overview only. The per-project listing (names, roots,

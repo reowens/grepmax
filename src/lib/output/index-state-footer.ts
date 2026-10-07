@@ -5,11 +5,24 @@
 // historically did not. This formats a single machine-readable footer so an
 // agent can decide to caveat its answer or retry once indexing settles.
 
+export type WatchWorkKind = "live" | "catchup" | "cleanup";
+
+export interface WatchQueueState {
+  /** Waiting paths only; active files are reported separately. */
+  live: number;
+  catchup: number;
+  cleanup: number;
+  activeFiles: number;
+  /** Includes active live edits until their batch commits. */
+  oldestLiveEditAgeMs: number | null;
+}
+
 export interface IndexState {
   /** A batch is running, files are queued, or the initial index isn't done. */
   indexing: boolean;
   /** Files queued for (re)index. 0 when unknown (e.g. initial sync) or settled. */
   pendingFiles: number;
+  queue?: WatchQueueState;
   /**
    * Recent batches were cache hits. Pending files still need verification;
    * this sample cannot establish that the remaining queue is unchanged.
@@ -22,6 +35,14 @@ export interface IndexState {
   lastReconciledAt?: number;
   overflowCount?: number;
   catchupMs?: number;
+}
+
+export function formatWatchQueue(queue: WatchQueueState): string {
+  const age =
+    queue.oldestLiveEditAgeMs === null
+      ? "none"
+      : `${Math.ceil(queue.oldestLiveEditAgeMs / 1000)}s`;
+  return `live=${queue.live} catchup=${queue.catchup} cleanup=${queue.cleanup} active=${queue.activeFiles} oldestLiveEdit=${age}`;
 }
 
 /**

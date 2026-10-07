@@ -111,6 +111,11 @@ describe("standalone watcher health", () => {
 
     await vi.waitFor(() => expect(getKeysWithPrefix).toHaveBeenCalledOnce());
     await vi.waitFor(() => expect(handle.progress.pendingFiles).toBe(1));
+    expect(handle.progress.queue).toMatchObject({
+      live: 0,
+      catchup: 1,
+      cleanup: 0,
+    });
     expect(onHealthChange).not.toHaveBeenCalledWith(true, 0);
 
     await vi.advanceTimersByTimeAsync(2_000);

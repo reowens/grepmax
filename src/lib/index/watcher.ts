@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import * as watcher from "@parcel/watcher";
+import type { WatchQueueState } from "../output/index-state-footer";
 import type { MetaCache } from "../store/meta-cache";
 import type { VectorDB } from "../store/vector-db";
 import { ProjectBatchProcessor } from "./batch-processor";
@@ -15,6 +16,7 @@ export interface WatcherHandle {
     pendingFiles: number;
     processing: boolean;
     failedFiles: number;
+    queue: WatchQueueState;
   };
 }
 
@@ -187,6 +189,7 @@ export async function startWatcher(
           }
           processor.handleFileEvent("change", absolute, {
             forceReprocess: reconciliation.action === "reprocess",
+            workKind: "catchup",
           });
         }
         for (const cachedPath of knownPaths) {
@@ -197,6 +200,7 @@ export async function startWatcher(
           ) {
             processor.handleFileEvent("unlink", cachedPath, {
               forceDelete: true,
+              workKind: "cleanup",
             });
           }
         }

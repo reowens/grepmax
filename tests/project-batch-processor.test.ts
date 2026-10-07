@@ -84,6 +84,178 @@ describe("ProjectBatchProcessor", () => {
     return files;
   }
 
+  it("indexes a live edit ahead of a 11000-path catchup/cleanup backlog", async () => {
+    const processor = makeProcessor() as any;
+    for (let i = 0; i < 10000; i++)
+      processor.handleFileEvent(
+        "change",
+        path.join(tmpDir, `catchup-${i}.ts`),
+        { workKind: "catchup" },
+      );
+    for (let i = 0; i < 1000; i++)
+      processor.handleFileEvent(
+        "unlink",
+        path.join(tmpDir, `cleanup-${i}.json`),
+        { workKind: "cleanup", forceDelete: true },
+      );
+    processor.handleFileEvent("change", filePath);
+    expect(processor.progress.queue).toMatchObject({
+      live: 1,
+      catchup: 10000,
+      cleanup: 1000,
+      activeFiles: 0,
+    });
+    await processor.processBatch(new AbortController().signal);
+    expect(pool.processFile).toHaveBeenCalledOnce();
+    expect(pool.processFile.mock.calls[0][0].path).toBe(filePath);
+    expect(meta.has(filePath)).toBe(true);
+    expect(processor.progress.pendingFiles).toBe(11000);
+    expect(processor.progress.queue.oldestLiveEditAgeMs).toBeNull();
+  });
+
+  it("commits the current background file then yields to a newly arrived live edit", async () => {
+    const files = makeFiles(10);
+    const fresh = path.join(tmpDir, "fresh.ts");
+    fs.writeFileSync(fresh, "export const fresh = 1;\n");
+    let finish!: (result: ReturnType<typeof makeWorkerResult>) => void;
+    pool.processFile.mockImplementation(async (input: { path: string }) =>
+      makeWorkerResult(input.path),
+    );
+    pool.processFile.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const processor = makeProcessor({ concurrency: 3 }) as any;
+    for (const file of files)
+      processor.handleFileEvent("change", file, { workKind: "catchup" });
+    const background = processor.processBatch(new AbortController().signal);
+    await vi.waitFor(() => expect(pool.processFile).toHaveBeenCalledOnce());
+    processor.handleFileEvent("change", fresh);
+    finish(makeWorkerResult(files[0]));
+    await background;
+    expect(pool.processFile).toHaveBeenCalledOnce();
+    expect(meta.has(files[0])).toBe(true);
+    expect(processor.progress.queue).toMatchObject({
+      live: 1,
+      catchup: 9,
+      cleanup: 0,
+      activeFiles: 0,
+    });
+    expect(processor.retryCount.size).toBe(0);
+    await processor.processBatch(new AbortController().signal);
+    expect(pool.processFile.mock.calls[1][0].path).toBe(fresh);
+    expect(meta.has(fresh)).toBe(true);
+  });
+
+  it("bounds background dispatch between files without aborting or charging retries", async () => {
+    const files = makeFiles(8);
+    const now = vi.spyOn(Date, "now").mockReturnValue(1000);
+    try {
+      pool.processFile.mockImplementation(async (input: { path: string }) => {
+        now.mockReturnValue(4000);
+        return makeWorkerResult(input.path);
+      });
+      const processor = makeProcessor() as any;
+      for (const file of files)
+        processor.handleFileEvent("change", file, { workKind: "catchup" });
+      await processor.processBatch(new AbortController().signal);
+      expect(pool.processFile).toHaveBeenCalledOnce();
+      expect(processor.progress.queue.catchup).toBe(7);
+      expect(processor.progress.failedFiles).toBe(0);
+      expect(processor.retryCount.size).toBe(0);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("lets catchup and cleanup progress during continuous live traffic", async () => {
+    const files = makeFiles(12);
+    pool.processFile.mockImplementation(async (input: { path: string }) =>
+      makeWorkerResult(input.path),
+    );
+    const processor = makeProcessor() as any;
+    processor.handleFileEvent("change", files[0], { workKind: "catchup" });
+    const removed = path.join(tmpDir, "removed.json");
+    processor.handleFileEvent("unlink", removed, {
+      workKind: "cleanup",
+      forceDelete: true,
+    });
+    for (let round = 1; round <= 8; round++) {
+      processor.handleFileEvent("change", files[round]);
+      await processor.processBatch(new AbortController().signal);
+    }
+    expect(meta.has(files[0])).toBe(true);
+    expect(
+      vectorDb.deletePaths.mock.calls.some(([paths]: [string[]]) =>
+        paths.includes(removed),
+      ),
+    ).toBe(true);
+    expect(processor.progress.queue.cleanup).toBe(0);
+    expect(processor.progress.queue.catchup).toBe(0);
+  });
+
+  it("promotes a background path to live without aging it from the catchup, and preserves age through retry", async () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(1000);
+    try {
+      const processor = makeProcessor() as any;
+      processor.handleFileEvent("change", filePath, { workKind: "cleanup" });
+      now.mockReturnValue(6000);
+      processor.handleFileEvent("change", filePath);
+      now.mockReturnValue(8000);
+      processor.handleFileEvent("change", filePath, { workKind: "catchup" });
+      expect(processor.progress.queue).toMatchObject({
+        live: 1,
+        catchup: 0,
+        cleanup: 0,
+        oldestLiveEditAgeMs: 2000,
+      });
+      pool.processFile.mockRejectedValueOnce(
+        new EmbeddingBackendUnavailableError("offline"),
+      );
+      await processor.processBatch(new AbortController().signal);
+      now.mockReturnValue(10000);
+      expect(processor.progress.queue.oldestLiveEditAgeMs).toBe(4000);
+      expect(processor.progress.queue.live).toBe(1);
+      expect(processor.retryCount.size).toBe(0);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("reports active live edit age until its commit and clears it on completion", async () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(1000);
+    try {
+      const processor = makeProcessor() as any;
+      processor.handleFileEvent("change", filePath);
+      let finish!: (result: ReturnType<typeof makeWorkerResult>) => void;
+      pool.processFile.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const active = processor.processBatch(new AbortController().signal);
+      await vi.waitFor(() => expect(pool.processFile).toHaveBeenCalledOnce());
+      now.mockReturnValue(3500);
+      expect(processor.progress.queue).toMatchObject({
+        live: 0,
+        activeFiles: 1,
+        oldestLiveEditAgeMs: 2500,
+      });
+      finish(makeWorkerResult(filePath));
+      await active;
+      expect(processor.progress.queue).toMatchObject({
+        live: 0,
+        activeFiles: 0,
+        oldestLiveEditAgeMs: null,
+      });
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it("preserves retry budgets through a backend outage and recovers without a new file event", async () => {
     const processor = makeProcessor() as any;
     pool.processFile.mockRejectedValue(

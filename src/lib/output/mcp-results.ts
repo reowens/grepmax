@@ -117,6 +117,15 @@ export const MCP_READ_OUTPUT_SCHEMAS: Record<string, z.ZodRawShape> = {
         .object({
           indexing: z.boolean(),
           pendingFiles: z.number(),
+          queue: z
+            .object({
+              live: z.number().int().nonnegative(),
+              catchup: z.number().int().nonnegative(),
+              cleanup: z.number().int().nonnegative(),
+              activeFiles: z.number().int().nonnegative(),
+              oldestLiveEditAgeMs: z.number().nonnegative().nullable(),
+            })
+            .optional(),
           verifying: z.boolean().optional(),
           failedFiles: z.number().optional(),
           degraded: z.boolean().optional(),
