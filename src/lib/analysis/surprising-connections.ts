@@ -68,6 +68,7 @@ export type SurpriseAnalysisOptions = {
   maxRows: number;
   includeTests: boolean;
   includeEval: boolean;
+  includeGenerated?: boolean;
   in?: string | string[];
   exclude?: string | string[];
 };
@@ -87,6 +88,7 @@ export type SurpriseAnalysisSummary = {
     weakCode: number;
     tests: number;
     evalHarness: number;
+    generated?: number;
     sameDirBucket: number;
     graphEdge: number;
     belowThreshold: number;
@@ -112,6 +114,7 @@ export const DEFAULT_SURPRISE_OPTIONS: SurpriseAnalysisOptions = {
   maxRows: 50_000,
   includeTests: false,
   includeEval: false,
+  includeGenerated: false,
 };
 
 export const MAX_SURPRISE_ROWS = 100_000;
@@ -232,6 +235,7 @@ export function normalizeSurpriseOptions(
     ),
     includeTests: opts.includeTests ?? DEFAULT_SURPRISE_OPTIONS.includeTests,
     includeEval: opts.includeEval ?? DEFAULT_SURPRISE_OPTIONS.includeEval,
+    includeGenerated: opts.includeGenerated ?? false,
   };
 }
 
@@ -242,6 +246,12 @@ export function isTestPath(filePath: string): boolean {
     NATIVE_TEST_DIR_RE.test(filePath) ||
     NATIVE_TEST_FILE_RE.test(filePath)
   );
+}
+
+export function isGeneratedPath(filePath: string): boolean {
+  return /(^|\/)(?:generated|__generated__|bindings|fixtures|__fixtures__)(\/|$)/i.test(filePath)
+    || /\.generated\.[^.]+$/i.test(filePath)
+    || /\/[^/]*GraphQL\/Sources\/(?:Schema|Operations)\//i.test(filePath);
 }
 
 export function isEvalPath(filePath: string): boolean {
@@ -614,6 +624,7 @@ function filterableCodeMeta(
   if (!row.path || !isCodePath(row.path)) return false;
   if (!opts.includeTests && isTestPath(row.relPath)) return false;
   if (!opts.includeEval && isEvalPath(row.relPath)) return false;
+  if (!opts.includeGenerated && isGeneratedPath(row.relPath)) return false;
   return row.definedSymbols.length > 0;
 }
 
@@ -805,6 +816,7 @@ export async function analyzeSurprisingConnections(
     weakCode: 0,
     tests: 0,
     evalHarness: 0,
+    generated: 0,
     sameDirBucket: 0,
     graphEdge: 0,
     belowThreshold: 0,
@@ -847,6 +859,10 @@ export async function analyzeSurprisingConnections(
       }
       if (!opts.includeTests && isTestPath(target.relPath)) {
         filters.tests++;
+        continue;
+      }
+      if (!opts.includeGenerated && isGeneratedPath(target.relPath)) {
+        filters.generated++;
         continue;
       }
       if (!opts.includeEval && isEvalPath(target.relPath)) {
