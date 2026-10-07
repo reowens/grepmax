@@ -66,13 +66,15 @@ print(json.dumps({"version": ds.version, "tagged": tagged, "rows": ds.count_rows
     const versionRun = spawnSync(process.execPath,[path.join(packageRoot,"dist/bin.js"),"--version"],{encoding:"utf8",timeout:10000});
     assert.equal(versionRun.status,0,versionRun.stderr);
     assert.equal(versionRun.stdout.trim(),packageVersion);
+    for (const prefix of [[],["--store",store],[`--store=${store}`],["--store","recover"]]) {
     for (const versionArgs of [["--version",String(prepared.version)],[`--version=${prepared.version}`]]) {
-      const run = spawnSync(process.execPath,[path.join(packageRoot,"dist/bin.js"),"recover","--table",table,"--prune",...versionArgs,"--cutoff",new Date(prepared.cutoffMs).toISOString(),"--json"],{encoding:"utf8",timeout:10000});
+      const run = spawnSync(process.execPath,[path.join(packageRoot,"dist/bin.js"),...prefix,"recover","--table",table,"--prune",...versionArgs,"--cutoff",new Date(prepared.cutoffMs).toISOString(),"--json"],{encoding:"utf8",timeout:10000});
       assert.equal(run.status,1,`Recovery must reach admission, not print the package version: ${run.stdout}`);
       const refusal = JSON.parse(run.stderr);
       assert.equal(refusal.outcome,"refused");
       assert.match(refusal.error,/autostart-disabled/);
       assert.equal(readPruneState(store),null,"CLI dispatch must not write a prune receipt before admission");
+    }
     }
     lease = await StoreLease.acquireExclusive({storeDir: store, timeoutMs: 5000, role: "packed-consumer-fixture"});
     const result = await pruneVersions(runtime, table, prepared.version, new Date(prepared.cutoffMs), {lease, admission: fixtureAdmission()});

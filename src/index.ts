@@ -45,6 +45,7 @@ import { symbols } from "./commands/symbols";
 import { testFind } from "./commands/test-find";
 import { trace } from "./commands/trace";
 import { watch } from "./commands/watch";
+import { explicitCommand } from "./lib/utils/cli-command";
 
 program
   .name("gmax")
@@ -145,6 +146,7 @@ program.addCommand(uninstallOpencode);
 
 // Recovery owns --version as a required table-version value. Keep the root
 // package-version flag from consuming it; other commands retain global options.
-if (process.argv[2] === "recover") program.enablePositionalOptions();
+if (explicitCommand(process.argv.slice(2)) === "recover")
+  program.enablePositionalOptions();
 
 program.parse();

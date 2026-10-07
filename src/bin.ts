@@ -2,9 +2,10 @@
 // Entry point. Picks the gmax home before anything reads config.ts: a command
 // aimed at a project under a secondary store's prefix (src/lib/utils/stores.ts)
 // runs against that store, in-process, so the drive it lives on can always
-// eject. Only Node built-ins and stores.ts may be imported here.
+// eject. Only Node built-ins and dependency-free routing helpers may load here.
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { explicitCommand } from "./lib/utils/cli-command";
 import { matchStore } from "./lib/utils/stores";
 
 const DIR_ARG_COMMANDS = new Set(["add", "remove"]);
@@ -44,7 +45,11 @@ function selectHome(): void {
   const argv = process.argv.slice(2);
   // These enumerate/route stores per request rather than pinning the process
   // to its launch cwd's store. In particular an MCP session can serve both.
-  if (argv[0] === "mcp" || argv[0] === "status" || argv[0] === "recover")
+  if (
+    argv[0] === "mcp" ||
+    argv[0] === "status" ||
+    explicitCommand(argv) === "recover"
+  )
     return;
   const match = matchStore(commandTarget(argv, process.cwd()));
   if (match.kind === "primary") return;
