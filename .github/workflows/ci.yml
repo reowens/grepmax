@@ -2,9 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [ main, fix/gmax-aggregate-admission ]
+    branches: [ main ]
   push:
-    branches: [ main, fix/gmax-aggregate-admission ]
+    branches: [ main ]
 
 jobs:
   ci:
