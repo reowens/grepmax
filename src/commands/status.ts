@@ -17,6 +17,7 @@ import {
   type IndexState,
 } from "../lib/output/index-state-footer";
 import type { CompactionResult } from "../lib/store/compaction-result";
+import { daemonStartDeniedReason } from "../lib/utils/autostart";
 import { sendDaemonCommand } from "../lib/utils/daemon-client";
 import { gracefulExit } from "../lib/utils/exit";
 import { pathStartsWith } from "../lib/utils/filter-builder";
@@ -202,6 +203,7 @@ export interface StatusJson {
   stores?: StoreInventory[];
   daemon: {
     running: boolean;
+    startupBlockedReason?: string;
     pid: number | null;
     since: number | null;
     workerThreads: number | null;
@@ -235,6 +237,7 @@ export function buildStatusJson(input: {
   projects: ProjectEntry[];
   globalConfig: GlobalConfig;
   indexing: boolean;
+  startupBlockedReason?: string | null;
   workerThreads: { value: number; source: WorkerThreadsSource };
   now?: number;
   countWorkers?: (daemonPid: number) => number | null;
@@ -254,6 +257,9 @@ export function buildStatusJson(input: {
     ...(input.stores ? { stores: input.stores } : {}),
     daemon: {
       running: d !== undefined,
+      ...(input.startupBlockedReason != null
+        ? { startupBlockedReason: input.startupBlockedReason }
+        : {}),
       pid: d?.pid ?? null,
       since: d?.uptimeSec != null ? now - d.uptimeSec * 1000 : null,
       workerThreads: d?.workerThreads ?? null,
@@ -353,6 +359,7 @@ Examples:
       throw err;
     }
     const { watchers, chunkCounts } = view;
+    const startupBlockedReason = daemonStartDeniedReason();
 
     if (opts.json) {
       const json = buildStatusJson({
@@ -361,6 +368,7 @@ Examples:
         projects,
         globalConfig,
         indexing,
+        startupBlockedReason,
         workerThreads: resolveWorkerThreads({
           env: process.env.GMAX_WORKER_THREADS,
           configValue: globalConfig.workerThreads,
@@ -375,6 +383,15 @@ Examples:
       // Header
       console.log(
         `\n${style.bold("gmax")} · ${globalConfig.modelTier} (${globalConfig.vectorDim}d, ${globalConfig.embedMode})${indexing ? style.yellow(" · indexing...") : ""}`,
+      );
+    }
+
+    if (startupBlockedReason !== null) {
+      const reason = startupBlockedReason.replace(/[\r\n\t]/g, " ");
+      console.log(
+        opts.agent
+          ? `daemon_startup\tblocked=true\treason=${reason}`
+          : style.red(`Daemon startup blocked: ${reason}`),
       );
     }
 

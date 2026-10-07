@@ -41,7 +41,7 @@ describe("readKernelZoneUsage bounded probe", () => {
     });
     expect(mocks.execFileSync).toHaveBeenCalledWith(
       "zprint",
-      ["data.kalloc.1024"],
+      ["-L", "data.kalloc.1024"],
       {
         encoding: "utf-8",
         timeout: 5000,
@@ -97,7 +97,7 @@ describe("typed pressure probe diagnostics", () => {
     });
     expect(deps.run).toHaveBeenCalledWith(
       "zprint",
-      ["data.kalloc.1024"],
+      ["-L", "data.kalloc.1024"],
       expect.objectContaining({ timeout: 5000, maxBuffer: 65536 }),
     );
   });

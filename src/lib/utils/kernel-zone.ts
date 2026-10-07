@@ -239,7 +239,11 @@ export function probeKernelZoneUsage(
 ): KernelZoneProbeResult {
   const result = boundedPressureProbe(
     "zprint",
-    [zoneName],
+    // A name only filters printed rows; zprint still prepares the wired-memory
+    // report (including kernel symbolication) by default. -L skips that work.
+    // On the incident host this reduced 6–10 second probes to 23–85 ms without
+    // changing the zone counters, timeout, or fail-closed admission policy.
+    ["-L", zoneName],
     PROBE_TIMEOUT_MS,
     (output) => {
       const parsed = parseZprintOutput(output, zoneName);

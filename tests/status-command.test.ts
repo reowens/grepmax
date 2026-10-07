@@ -4,6 +4,11 @@ const sendDaemonCommand = vi.fn();
 const listWatchers = vi.fn();
 const getWatcherForProject = vi.fn();
 const storeInventory = vi.fn(() => [] as any[]);
+const daemonStartDeniedReason = vi.fn<() => string | null>(() => null);
+
+vi.mock("../src/lib/utils/autostart", () => ({
+  daemonStartDeniedReason: () => daemonStartDeniedReason(),
+}));
 
 vi.mock("../src/lib/utils/store-context", () => ({
   storeInventory: () => storeInventory(),
@@ -91,6 +96,7 @@ beforeEach(() => {
   getWatcherForProject.mockReset();
   vectorDbCtor.mockReset();
   storeInventory.mockReset().mockReturnValue([]);
+  daemonStartDeniedReason.mockReset().mockReturnValue(null);
 });
 
 afterEach(() => {
@@ -103,6 +109,25 @@ async function runStatus(args: string[] = []): Promise<void> {
 }
 
 describe("gmax status", () => {
+  it("reports a persistent startup blocker in JSON and both text modes", async () => {
+    daemonStartDeniedReason.mockReturnValue(
+      "host safety stop: kernel pressure unavailable",
+    );
+    sendDaemonCommand.mockResolvedValue({ ok: false, error: "ENOENT" });
+    await runStatus(["--json"]);
+    expect(JSON.parse(out.join("\n")).daemon).toMatchObject({
+      running: false,
+      startupBlockedReason: "host safety stop: kernel pressure unavailable",
+    });
+    out.length = 0;
+    await runStatus(["--agent"]);
+    expect(out.join("\n")).toContain(
+      "daemon_startup\tblocked=true\treason=host safety stop: kernel pressure unavailable",
+    );
+    out.length = 0;
+    await runStatus();
+    expect(out.join("\n")).toContain("Daemon startup blocked:");
+  });
   it("reports mounted/offline store metadata without opening secondary databases", async () => {
     storeInventory.mockReturnValue([
       {

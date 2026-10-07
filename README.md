@@ -472,6 +472,8 @@ gmax watch restart            # Restart daemon
 
 `gmax doctor` reports ANN index state. `ANN: vector index not built` is normal with the default exact-search configuration.
 
+`gmax doctor` and `gmax status` report persistent safety stops and daemon startup quarantine. `doctor` exits with code 2 when startup is blocked; `status --json` includes `daemon.startupBlockedReason`. Installing an update preserves these stops. macOS kernel-zone probes use `zprint -L` to omit the wired-memory report and kernel symbolication while retaining the same zone counters and pressure thresholds.
+
 Full-table compaction and new FTS/ANN index builds are disabled in the containment release, including forced maintenance and doctor repair. Existing indexes remain readable; missing lexical indexes fall back to available retrieval. Retained copies are not recovered by this release. A separate exclusive prune-only path requires validation before deployment. Do not repeatedly force repair, use future cutoffs or manually remove index fragments.
 
 `~/.gmax/logs/daemon.log` records containment skips and retained historical compaction outcomes, including duration, logical size, disk size before/after, free space, and bytes reclaimed. `gmax status --json` exposes the last outcome under `daemon.compaction`; its `at` timestamp identifies when it was recorded. Five-minute resource snapshots track footprint, RSS, heap, external/ArrayBuffer memory, Lance cache, workers and pending work for memory investigations. Reading status uses retained snapshots and does not scan the index directory. Logs rotate to `daemon.log.prev`.

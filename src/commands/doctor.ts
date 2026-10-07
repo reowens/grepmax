@@ -22,6 +22,7 @@ import {
 } from "../lib/index/embedding-status";
 import { readGlobalConfig } from "../lib/index/index-config";
 import { storeMutationDeniedReason } from "../lib/store/maintenance-policy";
+import { daemonStartDeniedReason } from "../lib/utils/autostart";
 import {
   formatDoctorOptimize,
   runDoctorOptimize,
@@ -429,6 +430,19 @@ export const doctor = new Command("doctor")
       }
     }
     if (!opts.agent) console.log("gmax Doctor\n");
+
+    const startupBlockedReason = daemonStartDeniedReason();
+    if (startupBlockedReason !== null) {
+      const reason = startupBlockedReason.replace(/[\r\n\t]/g, " ");
+      console.log(
+        opts.agent
+          ? `daemon_startup\tblocked=true\treason=${reason}`
+          : `FAIL  Daemon startup blocked: ${reason}`,
+      );
+      // Inspect the retained index, but do not report a healthy installation
+      // while the persistent host stop or autostart quarantine prevents use.
+      process.exitCode = 2;
+    }
 
     const root = PATHS.globalRoot;
     const models = PATHS.models;
