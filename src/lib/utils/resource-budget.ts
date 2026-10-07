@@ -329,8 +329,13 @@ export class ResourceBudget {
           `${legacy.length} MCP client(s) need to reconnect after upgrading; heavy work paused`,
         );
     } catch (error) {
-      if (error instanceof ResourceAdmissionError && error.critical)
-        this.deps.latch(error.message);
+      if (error instanceof ResourceAdmissionError && error.critical) {
+        try {
+          this.deps.latch(error.message);
+        } catch {
+          error.message += "; safety stop persistence failed";
+        }
+      }
       throw error;
     }
     const denied = this.deps.quarantine();

@@ -192,6 +192,21 @@ describe("one persistent budget for all clients/stores", () => {
     expect(latch).toHaveBeenCalledOnce();
     expect(records()).toHaveLength(0);
   });
+  it("retains the critical classification when latch persistence fails", () => {
+    s.memoryPressure = "critical";
+    latch.mockImplementation(() => {
+      throw Error("unwritable");
+    });
+    try {
+      make().reserve(512, "worker");
+      throw Error("admitted");
+    } catch (error) {
+      expect(error).toMatchObject({
+        critical: true,
+        message: expect.stringContaining("persistence failed"),
+      });
+    }
+  });
   it("checks quarantine again after slow probes", () => {
     let denied: string | null = null;
     const budget = make(10, {
