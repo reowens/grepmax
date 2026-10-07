@@ -10,6 +10,10 @@ import {
   walk,
 } from "../index/walker";
 import { WATCHER_IGNORE_GLOBS } from "../index/watcher";
+import {
+  FSEVENTS_GAP_SCAN_INTERVAL_MS,
+  isFSEventsGap,
+} from "../index/watcher-errors";
 import { readProjectWatcherIgnores } from "../index/watcher-ignore";
 import type { IndexState } from "../output/index-state-footer";
 import type { MetaCache } from "../store/meta-cache";
@@ -29,7 +33,7 @@ import type { WorkerPool } from "../workers/pool";
 // overflows has passed. Probe often; a failed probe just drops back to polling.
 const FSEVENTS_RECOVERY_INTERVAL_MS = 15 * 60 * 1000;
 const FSEVENTS_HEALTH_WINDOW_MS = 5 * 60 * 1000; // 5 min of quiet = "healthy"
-// Overflows arrive in bursts (a build, a checkout, a venv install). Every
+// Terminal subscription failures can arrive in bursts. Every
 // recovery inside this window folds into one deferred catchup scan instead of
 // each rescanning the project (~25s on a 26k-file tree) or skipping outright
 // and leaving its drop window uncovered.
@@ -100,12 +104,14 @@ export class WatcherManager {
     string,
     ReturnType<typeof setTimeout>
   >();
-  private readonly lastOverflowMs = new Map<string, number>();
+  private readonly lastWatcherFailureMs = new Map<string, number>();
   private readonly lastWatcherErrorLogMs = new Map<string, number>();
   private readonly overflowCounts = new Map<string, number>();
   private readonly reconciledAt = new Map<string, number>();
   private readonly catchupDurations = new Map<string, number>();
   private readonly lastCatchupEndMs = new Map<string, number>();
+  private readonly lastCatchupStartMs = new Map<string, number>();
+  private readonly overflowPendingRoots = new Set<string>();
   private readonly deferredCatchups = new Map<
     string,
     ReturnType<typeof setTimeout>
@@ -124,7 +130,8 @@ export class WatcherManager {
       watcherMode: this.pollIntervals.has(root)
         ? "polling"
         : this.pendingOps.has(`recover:${root}`) ||
-            this.deferredCatchups.has(root)
+            this.deferredCatchups.has(root) ||
+            this.overflowPendingRoots.has(root)
           ? "recovering"
           : "native",
       catchupRunning: this.catchups.has(root),
@@ -285,7 +292,7 @@ export class WatcherManager {
           `[daemon:${name}] Subscribe failed at startup (${err instanceof Error ? err.message : err}) — switching to poll mode`,
         );
         this.watcherFailCount.set(root, 1_000); // > MAX_WATCHER_RETRIES
-        this.lastOverflowMs.set(root, Date.now());
+        this.lastWatcherFailureMs.set(root, Date.now());
         this.recoverWatcher(root, processor);
       }
 
@@ -329,6 +336,7 @@ export class WatcherManager {
   }
 
   private readonly subscriptionUpdates = new Map<string, Promise<void>>();
+  private readonly watcherGenerations = new Map<string, symbol>();
 
   private async subscribeWatcher(
     root: string,
@@ -358,6 +366,8 @@ export class WatcherManager {
     )
       return;
 
+    const generation = Symbol(root);
+    this.watcherGenerations.set(root, generation);
     // Unsubscribe existing watcher if any (e.g. during recovery)
     const existingSub = this.deps.subscriptions.get(root);
     if (existingSub) {
@@ -370,7 +380,12 @@ export class WatcherManager {
     const sub = await watcher.subscribe(
       root,
       (err, events) => {
-        if (this.deps.processors.get(root) !== processor) return;
+        if (
+          this.deps.processors.get(root) !== processor ||
+          this.watcherGenerations.get(root) !== generation ||
+          this.deps.getShuttingDown?.()
+        )
+          return;
         if (err) {
           this.overflowCounts.set(
             root,
@@ -387,11 +402,16 @@ export class WatcherManager {
               err,
             );
           }
-          this.recoverWatcher(root, processor);
-          return;
+          if (isFSEventsGap(err)) {
+            this.overflowPendingRoots.add(root);
+            this.requestOverflowCatchup(root, processor);
+          } else {
+            this.recoverWatcher(root, processor);
+          }
         }
-        // Only reset fail counter after sustained health (5min since last overflow)
-        const lastOverflow = this.lastOverflowMs.get(root) ?? 0;
+        // Gaps do not kill Parcel's stream. Only a terminal failure should
+        // reset the subscription health window or prevent leaving poll mode.
+        const lastOverflow = this.lastWatcherFailureMs.get(root) ?? 0;
         if (Date.now() - lastOverflow > 5 * 60 * 1000) {
           this.watcherFailCount.delete(root);
         }
@@ -410,11 +430,42 @@ export class WatcherManager {
         ],
       },
     );
-    if (this.deps.processors.get(root) !== processor) {
+    if (
+      this.deps.processors.get(root) !== processor ||
+      this.watcherGenerations.get(root) !== generation
+    ) {
       await sub.unsubscribe();
       return;
     }
     this.deps.subscriptions.set(root, sub);
+  }
+
+  private requestOverflowCatchup(
+    root: string,
+    processor: ProjectBatchProcessor,
+  ): void {
+    const started = this.lastCatchupStartMs.get(root);
+    const remaining =
+      started === undefined
+        ? 0
+        : FSEVENTS_GAP_SCAN_INTERVAL_MS - (Date.now() - started);
+    // A gap during a scan may concern a path already visited. Keep one later
+    // scan rather than treating the current walk as coverage of that gap.
+    if (this.catchups.has(root) || remaining > 0) {
+      this.deferCatchup(
+        root,
+        processor,
+        Math.max(remaining, FSEVENTS_GAP_SCAN_INTERVAL_MS),
+      );
+      return;
+    }
+    this.cancelDeferredCatchup(root);
+    this.runCatchup(root, processor).catch((err) => {
+      console.error(
+        `[daemon:${path.basename(root)}] Overflow catchup failed:`,
+        err,
+      );
+    });
   }
 
   private recoverWatcher(root: string, processor: ProjectBatchProcessor): void {
@@ -432,13 +483,13 @@ export class WatcherManager {
 
     const fails = (this.watcherFailCount.get(root) ?? 0) + 1;
     this.watcherFailCount.set(root, fails);
-    this.lastOverflowMs.set(root, Date.now());
+    this.lastWatcherFailureMs.set(root, Date.now());
 
     const MAX_WATCHER_RETRIES = 3;
     const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
     if (fails > MAX_WATCHER_RETRIES) {
-      // FSEvents can't handle this project — degrade to periodic catchup scans
+      // Repeated terminal subscription failures require periodic catchup scans.
       // Always tear down the broken sub, even if poll mode is already active —
       // this can happen if a recovery attempt resubscribed successfully then
       // re-overflowed during the 5-min health window.
@@ -449,7 +500,7 @@ export class WatcherManager {
       }
       if (!this.pollIntervals.has(root)) {
         console.error(
-          `[daemon:${name}] FSEvents unreliable after ${fails} failures — switching to poll mode (${POLL_INTERVAL_MS / 60000}min interval)`,
+          `[daemon:${name}] Native watcher failed after ${fails} terminal errors — switching to poll mode (${POLL_INTERVAL_MS / 60000}min interval)`,
         );
         // Run an immediate catchup, then schedule periodic ones
         this.runCatchup(root, processor).catch((err) => {
@@ -486,7 +537,7 @@ export class WatcherManager {
     // Backoff: wait before re-subscribing (3s, 6s, 12s)
     const delayMs = 3000 * 2 ** (fails - 1);
     console.error(
-      `[daemon:${name}] Recovering watcher (attempt ${fails}/${MAX_WATCHER_RETRIES}, backoff ${delayMs}ms)...`,
+      `[daemon:${name}] Recovering failed watcher (attempt ${fails}/${MAX_WATCHER_RETRIES}, backoff ${delayMs}ms)...`,
     );
 
     const timeout = setTimeout(() => {
@@ -598,7 +649,7 @@ export class WatcherManager {
           if (this.deps.processors.get(root) !== processor) return;
 
           // Wait one health window — if the new subscription survives without
-          // another overflow, we consider it recovered and tear down poll mode.
+          // another terminal failure, we consider it recovered and tear down poll mode.
           await abortableDelay(FSEVENTS_HEALTH_WINDOW_MS, lifecycle.signal);
           if (
             this.deps.getShuttingDown() ||
@@ -606,10 +657,10 @@ export class WatcherManager {
           )
             return;
 
-          const lastOverflow = this.lastOverflowMs.get(root) ?? 0;
+          const lastOverflow = this.lastWatcherFailureMs.get(root) ?? 0;
           if (Date.now() - lastOverflow < FSEVENTS_HEALTH_WINDOW_MS) {
             console.log(
-              `[daemon:${name}] FSEvents recovery aborted — fresh overflow within health window, staying in poll mode`,
+              `[daemon:${name}] FSEvents recovery aborted — terminal failure within health window, staying in poll mode`,
             );
             return; // recoverWatcher will have re-armed poll mode if needed
           }
@@ -646,6 +697,7 @@ export class WatcherManager {
     signal: AbortSignal,
   ): Promise<boolean> {
     const scanStart = Date.now();
+    const overflowCountAtStart = this.overflowCounts.get(root) ?? 0;
     const { isFileCached } = await import("../utils/cache-check");
 
     const metaCache = this.deps.getMetaCache()!;
@@ -819,7 +871,12 @@ export class WatcherManager {
     const ended = Date.now();
     this.lastCatchupEndMs.set(root, ended);
     this.catchupDurations.set(root, ended - scanStart);
-    if (complete) this.reconciledAt.set(root, ended);
+    if (complete) {
+      this.reconciledAt.set(root, ended);
+      // A later gap still needs its deferred scan, even if this walk succeeded.
+      if ((this.overflowCounts.get(root) ?? 0) === overflowCountAtStart)
+        this.overflowPendingRoots.delete(root);
+    }
     return complete;
   }
 
@@ -841,6 +898,7 @@ export class WatcherManager {
       let incompleteRetries = 0;
       do {
         active.dirty = false;
+        this.lastCatchupStartMs.set(root, Date.now());
         const complete = await this.catchupScan(root, processor, signal);
         if (!complete && !signal.aborted && incompleteRetries < 3) {
           incompleteRetries++;
@@ -881,6 +939,7 @@ export class WatcherManager {
     // independently of the processor, so clear them even on the early return.
     this.watchLifecycles.get(root)?.abort();
     this.watchLifecycles.delete(root);
+    this.watcherGenerations.delete(root);
     const pollInterval = this.pollIntervals.get(root);
     if (pollInterval) {
       clearInterval(pollInterval);
@@ -915,8 +974,10 @@ export class WatcherManager {
     }
 
     this.deps.evictSearcher(root);
-    this.lastOverflowMs.delete(root);
+    this.lastWatcherFailureMs.delete(root);
     this.lastCatchupEndMs.delete(root);
+    this.lastCatchupStartMs.delete(root);
+    this.overflowPendingRoots.delete(root);
     this.degradedRoots.delete(root);
     this.terminalFailures.delete(root);
     unregisterWatcherByRoot(root);

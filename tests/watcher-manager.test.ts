@@ -28,6 +28,8 @@ describe("WatcherManager.unwatchProject", () => {
       processors: new Map(),
       subscriptions: new Map(),
       evictSearcher: vi.fn(),
+      touchActivity: vi.fn(),
+      getShuttingDown: () => false,
     } as any;
   }
 
@@ -177,6 +179,229 @@ describe("WatcherManager.unwatchProject", () => {
     notify(new Error("Events were dropped"), []);
     expect(wm.health(root).overflowCount).toBe(6);
     expect(logs).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    "Events were dropped by the FSEvents client. File system must be re-scanned.",
+    "Events were dropped by the kernel. File system must be re-scanned.",
+    "Too many events. File system must be re-scanned.",
+  ])(
+    "keeps native edits and reconciles a continuing FSEvents stream: %s",
+    async (message) => {
+      const watcher = await import("@parcel/watcher");
+      let notify!: SubscribeCallback;
+      const unsubscribe = vi.fn(async () => {});
+      vi.mocked(watcher.subscribe).mockClear();
+      vi.mocked(watcher.subscribe).mockImplementation(
+        async (_root, callback) => {
+          notify = callback;
+          return { unsubscribe };
+        },
+      );
+      const d = deps();
+      const root = "/p/app";
+      const processor = {
+        handleFileEvent: vi.fn(),
+        close: vi.fn(async () => {}),
+      };
+      d.processors.set(root, processor);
+      const wm = new WatcherManager(d) as any;
+      const recover = vi.spyOn(wm, "recoverWatcher");
+      const scan = vi.spyOn(wm, "runCatchup").mockResolvedValue(undefined);
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      await wm.subscribeWatcher(root, processor);
+      notify(new Error(message), [
+        { type: "update", path: `${root}/saved.ts` },
+      ]);
+      notify(null, [{ type: "delete", path: `${root}/removed.ts` }]);
+      expect(processor.handleFileEvent.mock.calls).toEqual([
+        ["change", `${root}/saved.ts`],
+        ["unlink", `${root}/removed.ts`],
+      ]);
+      expect(scan).toHaveBeenCalledOnce();
+      expect(recover).not.toHaveBeenCalled();
+      expect(unsubscribe).not.toHaveBeenCalled();
+      expect(watcher.subscribe).toHaveBeenCalledOnce();
+      expect(wm.health(root)).toMatchObject({
+        overflowCount: 1,
+        watcherMode: "recovering",
+      });
+      await wm.unwatchProject(root);
+    },
+  );
+
+  it("coalesces gaps during a scan and cancels the follow-up on unwatch", async () => {
+    vi.useFakeTimers();
+    try {
+      const watcher = await import("@parcel/watcher");
+      let notify!: SubscribeCallback;
+      vi.mocked(watcher.subscribe).mockClear();
+      vi.mocked(watcher.subscribe).mockImplementation(
+        async (_root, callback) => {
+          notify = callback;
+          return { unsubscribe: vi.fn(async () => {}) };
+        },
+      );
+      const d = deps();
+      const root = "/p/app";
+      const processor = {
+        handleFileEvent: vi.fn(),
+        close: vi.fn(async () => {}),
+      };
+      d.processors.set(root, processor);
+      const wm = new WatcherManager(d) as any;
+      const scan = vi.spyOn(wm, "catchupScan").mockImplementation(async () => {
+        (wm as any).overflowPendingRoots.delete(root);
+        return true;
+      });
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      await wm.subscribeWatcher(root, processor);
+      const gap = new Error(
+        "Events were dropped by the FSEvents client. File system must be re-scanned.",
+      );
+      notify(gap, []);
+      await Promise.resolve();
+      await Promise.resolve();
+      for (let i = 0; i < 50; i++) notify(gap, []);
+      expect(scan).toHaveBeenCalledOnce();
+      expect(wm.deferredCatchups.size).toBe(1);
+      expect(wm.health(root).overflowCount).toBe(51);
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(scan).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(scan).toHaveBeenCalledTimes(2);
+      expect(wm.health(root).watcherMode).toBe("native");
+      notify(gap, []);
+      await wm.unwatchProject(root);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(scan).toHaveBeenCalledTimes(2);
+      expect(watcher.subscribe).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a gap arriving during reconciliation visible until a later complete scan", async () => {
+    const watcher = await import("@parcel/watcher");
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "gmax-gap-scan-"));
+    let notify!: SubscribeCallback;
+    vi.mocked(watcher.subscribe).mockImplementation(async (_root, callback) => {
+      notify = callback;
+      return { unsubscribe: vi.fn(async () => {}) };
+    });
+    const metaCache = {
+      getKeysWithPrefix: vi.fn(async () => new Set<string>()),
+      get: vi.fn(),
+      put: vi.fn(),
+    };
+    const vectorDb = {
+      getDistinctPathsForPrefix: vi.fn(async () => new Set<string>()),
+    };
+    const d = {
+      ...deps(),
+      getMetaCache: () => metaCache,
+      getVectorDb: () => vectorDb,
+    };
+    const processor = new ProjectBatchProcessor({
+      projectRoot: root,
+      metaCache: metaCache as any,
+      vectorDb: vectorDb as any,
+    });
+    d.processors.set(root, processor);
+    const wm = new WatcherManager(d) as any;
+    vi.spyOn(wm, "requestOverflowCatchup").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await wm.subscribeWatcher(root, processor);
+      const gap = new Error("Too many events. File system must be re-scanned.");
+      notify(gap, []);
+      metaCache.getKeysWithPrefix.mockImplementationOnce(async () => {
+        notify(gap, []);
+        return new Set<string>();
+      });
+      await wm.catchupScan(root, processor, new AbortController().signal);
+      expect(wm.health(root)).toMatchObject({
+        overflowCount: 2,
+        watcherMode: "recovering",
+      });
+      await wm.catchupScan(root, processor, new AbortController().signal);
+      expect(wm.health(root).watcherMode).toBe("native");
+    } finally {
+      await wm.unwatchProject(root);
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("still retries terminal failures and falls back after repeated failed streams", async () => {
+    vi.useFakeTimers();
+    try {
+      const watcher = await import("@parcel/watcher");
+      let notify!: SubscribeCallback;
+      const unsubscribe = vi.fn(async () => {});
+      vi.mocked(watcher.subscribe).mockClear();
+      vi.mocked(watcher.subscribe).mockImplementation(
+        async (_root, callback) => {
+          notify = callback;
+          return { unsubscribe };
+        },
+      );
+      const d = deps();
+      const root = "/p/app";
+      const processor = {
+        handleFileEvent: vi.fn(),
+        close: vi.fn(async () => {}),
+      };
+      d.processors.set(root, processor);
+      const wm = new WatcherManager(d) as any;
+      vi.spyOn(wm, "runCatchup").mockResolvedValue(undefined);
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      await wm.subscribeWatcher(root, processor);
+      for (const delay of [3000, 6000, 12000]) {
+        notify(new Error("backend stopped"), []);
+        await vi.advanceTimersByTimeAsync(delay);
+      }
+      notify(new Error("backend stopped"), []);
+      expect(wm.health(root)).toMatchObject({
+        watcherMode: "polling",
+        overflowCount: 4,
+      });
+      expect(unsubscribe).toHaveBeenCalledTimes(4);
+      expect(watcher.subscribe).toHaveBeenCalledTimes(4);
+      await wm.unwatchProject(root);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ignores errors and events from an obsolete subscription generation", async () => {
+    const watcher = await import("@parcel/watcher");
+    const callbacks: SubscribeCallback[] = [];
+    vi.mocked(watcher.subscribe).mockImplementation(async (_root, callback) => {
+      callbacks.push(callback);
+      return { unsubscribe: vi.fn(async () => {}) };
+    });
+    const d = deps();
+    const root = "/p/app";
+    const processor = {
+      handleFileEvent: vi.fn(),
+      close: vi.fn(async () => {}),
+    };
+    d.processors.set(root, processor);
+    const wm = new WatcherManager(d) as any;
+    const recover = vi.spyOn(wm, "recoverWatcher");
+    await wm.subscribeWatcher(root, processor);
+    await wm.subscribeWatcher(root, processor);
+    callbacks[0](new Error("backend stopped"), [
+      { type: "update", path: `${root}/old.ts` },
+    ]);
+    callbacks[1](null, [{ type: "update", path: `${root}/new.ts` }]);
+    expect(recover).not.toHaveBeenCalled();
+    expect(wm.health(root).overflowCount).toBe(0);
+    expect(processor.handleFileEvent).toHaveBeenCalledExactlyOnceWith(
+      "change",
+      `${root}/new.ts`,
+    );
+    await wm.unwatchProject(root);
   });
 
   it("reports polling, recovery, failures, and successful reconciliation independently", async () => {

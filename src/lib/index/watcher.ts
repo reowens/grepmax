@@ -8,6 +8,7 @@ import { reconcileMetaEntry } from "./cache-coherence";
 import { ProjectFilePolicy } from "./file-policy";
 import { GENERATED_SOURCE_PATTERNS } from "./ignore-patterns";
 import { createWalkState, isPathProtectedByWalkState, walk } from "./walker";
+import { FSEVENTS_GAP_SCAN_INTERVAL_MS, isFSEventsGap } from "./watcher-errors";
 import { readProjectWatcherIgnores } from "./watcher-ignore";
 
 export interface WatcherHandle {
@@ -102,6 +103,11 @@ export async function startWatcher(
   let subscription: watcher.AsyncSubscription | null = null;
   let subscriptionUpdate: Promise<void> = Promise.resolve();
   let subscriptionPolicy = "";
+  let subscriptionFailed = false;
+  let subscriptionGeneration = 0;
+  let gapScanTimer: ReturnType<typeof setTimeout> | undefined;
+  let lastReconcileStart: number | undefined;
+  let gapGeneration = 0;
   const updateSubscription = (): Promise<void> => {
     const update = subscriptionUpdate
       .catch(() => {})
@@ -111,16 +117,31 @@ export async function startWatcher(
           ...(await readProjectWatcherIgnores(projectRoot)),
         ];
         const policy = JSON.stringify(ignores);
-        if (closing || (subscription && subscriptionPolicy === policy)) return;
+        if (
+          closing ||
+          (subscription && !subscriptionFailed && subscriptionPolicy === policy)
+        )
+          return;
+        const generation = ++subscriptionGeneration;
+        subscriptionFailed = false;
         await subscription?.unsubscribe();
         subscription = null;
         if (closing) return;
         const next = await watcher.subscribe(
           projectRoot,
           (err, events) => {
+            if (closing || generation !== subscriptionGeneration) return;
             if (err) {
               console.error(`[${wtag}] Watcher error:`, err);
-              return;
+              scanHealthy = false;
+              opts.onHealthChange?.(false, 1);
+              gapGeneration++;
+              if (isFSEventsGap(err)) requestGapScan();
+              else {
+                // Terminal backend errors can clear Parcel's callbacks.
+                subscriptionFailed = true;
+                reconcile();
+              }
             }
             for (const event of events)
               processor.handleFileEvent(
@@ -160,6 +181,8 @@ export async function startWatcher(
       let incompleteRetries = 0;
       do {
         reconcileRequested = false;
+        lastReconcileStart = Date.now();
+        const observedGapGeneration = gapGeneration;
         filePolicy.invalidateIgnoreCache();
         await updateSubscription();
         if (closing) return;
@@ -218,7 +241,7 @@ export async function startWatcher(
             );
           }
         } else {
-          scanHealthy = true;
+          scanHealthy = observedGapGeneration === gapGeneration;
           if (ingestionDegraded && processor.progress.pendingFiles > 0) {
             degradedRepairQueued = true;
           }
@@ -231,6 +254,24 @@ export async function startWatcher(
       .finally(() => {
         reconciliation = null;
       });
+  };
+  const requestGapScan = () => {
+    if (closing || gapScanTimer) return;
+    const remaining =
+      lastReconcileStart === undefined
+        ? 0
+        : FSEVENTS_GAP_SCAN_INTERVAL_MS - (Date.now() - lastReconcileStart);
+    if (reconciliation || remaining > 0) {
+      gapScanTimer = setTimeout(
+        () => {
+          gapScanTimer = undefined;
+          reconcile();
+        },
+        Math.max(remaining, FSEVENTS_GAP_SCAN_INTERVAL_MS),
+      );
+      return;
+    }
+    reconcile();
   };
   processor = new ProjectBatchProcessor({
     ...opts,
@@ -269,6 +310,8 @@ export async function startWatcher(
     },
     close: async () => {
       closing = true;
+      subscriptionGeneration++;
+      clearTimeout(gapScanTimer);
       await subscriptionUpdate.catch(() => {});
       await subscription?.unsubscribe();
       await reconciliation;

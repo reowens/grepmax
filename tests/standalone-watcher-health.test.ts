@@ -70,6 +70,88 @@ describe("standalone watcher health", () => {
     expect(watcher.subscribe).toHaveBeenCalledTimes(2);
   });
 
+  it("reconciles FSEvents gaps without detaching and keeps live event priority", async () => {
+    vi.useRealTimers();
+    vi.mocked(watcher.subscribe).mockClear();
+    const getKeysWithPrefix = vi.fn(async () => new Set<string>());
+    const onHealthChange = vi.fn();
+    const handle = await startWatcher({
+      projectRoot: root,
+      dataDir: path.join(root, ".gmax"),
+      onHealthChange,
+      metaCache: {
+        getKeysWithPrefix,
+        get: vi.fn(),
+        put: vi.fn(),
+        delete: vi.fn(),
+      } as any,
+      vectorDb: {
+        diskPressure: "ok",
+        checkDiskPressure: vi.fn(() => "ok"),
+        getDistinctPathsForPrefix: vi.fn(async () => new Set<string>()),
+      } as any,
+    });
+    handles.push(handle);
+    await vi.waitFor(() =>
+      expect(onHealthChange).toHaveBeenCalledWith(true, 0),
+    );
+    vi.useFakeTimers();
+    const callback = vi.mocked(watcher.subscribe).mock.calls[0][1];
+    const gap = new Error(
+      "Events were dropped by the FSEvents client. File system must be re-scanned.",
+    );
+    const file = path.join(root, "saved.ts");
+    fs.writeFileSync(file, "export const saved = 1;\n");
+    callback(gap, [{ type: "update", path: file }]);
+    for (let i = 0; i < 10; i++) callback(gap, []);
+    expect(onHealthChange).toHaveBeenLastCalledWith(false, 1);
+    expect(handle.progress.queue).toMatchObject({ live: 1, catchup: 0 });
+    expect(getKeysWithPrefix).toHaveBeenCalledOnce();
+    const sub = await vi.mocked(watcher.subscribe).mock.results[0].value;
+    expect(sub.unsubscribe).not.toHaveBeenCalled();
+    expect(watcher.subscribe).toHaveBeenCalledOnce();
+    // Closing cancels the gap timer, without waiting for it or resubscribing.
+    await handle.close();
+    handles.pop();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(getKeysWithPrefix).toHaveBeenCalledOnce();
+  });
+
+  it("replaces a terminally failed stream and ignores its queued callbacks", async () => {
+    vi.useRealTimers();
+    vi.mocked(watcher.subscribe).mockClear();
+    const onHealthChange = vi.fn();
+    const handle = await startWatcher({
+      projectRoot: root,
+      dataDir: path.join(root, ".gmax"),
+      onHealthChange,
+      metaCache: {
+        getKeysWithPrefix: vi.fn(async () => new Set<string>()),
+        get: vi.fn(),
+        put: vi.fn(),
+        delete: vi.fn(),
+      } as any,
+      vectorDb: {
+        diskPressure: "ok",
+        checkDiskPressure: vi.fn(() => "ok"),
+        getDistinctPathsForPrefix: vi.fn(async () => new Set<string>()),
+      } as any,
+    });
+    handles.push(handle);
+    await vi.waitFor(() =>
+      expect(onHealthChange).toHaveBeenCalledWith(true, 0),
+    );
+    const oldCallback = vi.mocked(watcher.subscribe).mock.calls[0][1];
+    oldCallback(new Error("backend stopped"), []);
+    await vi.waitFor(() => expect(watcher.subscribe).toHaveBeenCalledTimes(2));
+    const sub = await vi.mocked(watcher.subscribe).mock.results[0].value;
+    expect(sub.unsubscribe).toHaveBeenCalledOnce();
+    const healthCalls = onHealthChange.mock.calls.length;
+    oldCallback(new Error("backend stopped"), []);
+    expect(onHealthChange.mock.calls.length).toBe(healthCalls);
+    expect(watcher.subscribe).toHaveBeenCalledTimes(2);
+  });
+
   it("clears initial degradation only after queued repair work settles", async () => {
     const file = path.join(root, "source.ts");
     fs.writeFileSync(file, "export const value = 1;\n");
