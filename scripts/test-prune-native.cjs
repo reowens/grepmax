@@ -2,6 +2,21 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const assert = require("node:assert/strict");
+// Only this synthetic CI harness exposes bounded native stderr. Production
+// cleanup still keeps subprocess diagnostics private and sanitized.
+const childProcess = require("node:child_process");
+const spawn = childProcess.spawn;
+childProcess.spawn = (...args) => {
+  const child = spawn(...args);
+  let logged = 0;
+  child.stderr?.on("data", (chunk) => {
+    if (logged >= 8192) return;
+    const piece = chunk.subarray(0, 8192 - logged);
+    logged += piece.length;
+    process.stderr.write(piece);
+  });
+  return child;
+};
 const { StoreLease } = require("../src/lib/store/store-lease.ts");
 const { pruneVersions, runCleanupProcess } = require("../src/lib/store/lance-cleanup.ts");
 const lance = require("../src/lib/store/lance-sdk.ts");
@@ -18,10 +33,12 @@ const lance = require("../src/lib/store/lance-sdk.ts");
   try {
     const fixture = path.join(__dirname, "prune-native-fixture.py");
     const prepared = JSON.parse(await runCleanupProcess(python, ["-I", fixture, "prepare", tablePath]));
+    console.log(JSON.stringify({phase:"prepared",...prepared}));
     assert(prepared.fragments >= 50);
     lease = await StoreLease.acquireExclusive({ storeDir: store, timeoutMs: 5000, role: "isolated-prune-test" });
     const started = Date.now();
     const result = await pruneVersions({python,script:path.resolve("lance-maintenance/prune.py")}, tablePath, prepared.version, new Date(prepared.cutoffMs), {lease});
+    console.log(JSON.stringify({phase:"pruned",...result}));
     assert(result.versionsRemoved > 0);
     assert(result.fileBytesBefore - result.fileBytesAfter > 500 * 1024**2);
     assert(result.allocatedBytesBefore > result.allocatedBytesAfter);
