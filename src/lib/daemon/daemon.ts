@@ -1573,6 +1573,7 @@ export class Daemon {
       stopHeartbeat();
       if (watcherQuiesced && !this.shuttingDown) {
         try {
+          this.assertHeavyOperationAdmission("watch");
           await this.watchProjectWithinOperation(root);
         } catch (error) {
           console.error("[daemon] Could not restore watcher after add:", error);

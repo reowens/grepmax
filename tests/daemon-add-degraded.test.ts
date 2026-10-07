@@ -47,7 +47,7 @@ describe("daemon degraded first add", () => {
     vi.restoreAllMocks();
   });
 
-  it.each(["degraded", "failed"])(
+  it.each(["degraded", "failed", "denied"])(
     "drains an existing watcher before full sync and restores it after a %s add",
     async (outcome) => {
       const root = "/existing/watched-project";
@@ -65,6 +65,11 @@ describe("daemon degraded first add", () => {
         countRowsForPath: vi.fn(async () => 0),
       };
       daemon.processors.set(root, {});
+      vi.spyOn(daemon, "assertHeavyOperationAdmission").mockImplementation(
+        () => {
+          if (outcome === "denied") throw new Error("fixture admission denied");
+        },
+      );
       vi.spyOn(daemon, "schedulePendingIndexRetry").mockImplementation(
         () => {},
       );
@@ -83,7 +88,7 @@ describe("daemon degraded first add", () => {
       mocks.initialSync.mockImplementation(async () => {
         events.push("sync");
         expect(daemon.processors.has(root)).toBe(false);
-        if (outcome === "failed") throw new Error("fixture sync failure");
+        if (outcome !== "degraded") throw new Error("fixture sync failure");
         return {
           processed: 1,
           indexed: 0,
@@ -102,11 +107,18 @@ describe("daemon degraded first add", () => {
         new AbortController().signal,
         project,
       );
-      expect(events).toEqual(["drained", "sync", "restored"]);
-      expect(daemon.processors.has(root)).toBe(true);
-      expect(conn.writes.at(-1)).toMatchObject({
+      expect(events).toEqual(
+        outcome === "denied"
+          ? ["drained", "sync"]
+          : ["drained", "sync", "restored"],
+      );
+      expect(daemon.processors.has(root)).toBe(outcome !== "denied");
+      expect(daemon.assertHeavyOperationAdmission).toHaveBeenCalledTimes(
+        outcome === "degraded" ? 0 : 1,
+      );
+      expect(conn.writes[conn.writes.length - 1]).toMatchObject({
         type: "done",
-        ok: outcome !== "failed",
+        ok: outcome === "degraded",
       });
       expect(daemon.vectorDb.resumeMaintenanceLoop).toHaveBeenCalledOnce();
     },
