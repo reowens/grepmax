@@ -1123,7 +1123,6 @@ export class Daemon {
    * on every search to annotate partial-result responses (Phase 6).
    */
   indexState(root: string): IndexState {
-    if (this.pausedReason !== null) return { indexing: false, pendingFiles: 0 };
     const processor = this.processors.get(root);
     const batchPending = processor?.progress?.pendingFiles ?? 0;
     const processing = processor?.progress?.processing ?? false;
@@ -1154,9 +1153,11 @@ export class Daemon {
 
     const health = this.watcherManager.health(root);
     return {
-      indexing: !!fullIdx || processing || batchPending > 0 || initialPending,
-      pendingFiles,
-      verifying,
+      indexing:
+        this.pausedReason == null &&
+        (!!fullIdx || processing || batchPending > 0 || initialPending),
+      pendingFiles: this.pausedReason == null ? pendingFiles : 0,
+      verifying: this.pausedReason == null && verifying,
       ...health,
       failedFiles: Math.max(
         processor?.progress?.failedFiles ?? 0,
