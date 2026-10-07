@@ -359,6 +359,11 @@ describe("WatcherManager.unwatchProject", () => {
       for (const delay of [3000, 6000, 12000]) {
         notify(new Error("backend stopped"), []);
         await vi.advanceTimersByTimeAsync(delay);
+        // Native policy reads use real filesystem I/O even under fake timers.
+        // Wait for the new callback to attach before failing that generation.
+        await vi.waitFor(() =>
+          expect(wm.pendingOps.has(`recover:${root}`)).toBe(false),
+        );
       }
       notify(new Error("backend stopped"), []);
       expect(wm.health(root)).toMatchObject({
