@@ -6,6 +6,14 @@ vi.mock("../src/lib/utils/watcher-store", () => ({
 
 import { Daemon } from "../src/lib/daemon/daemon";
 
+type CatchupScanAccess = {
+  catchupScan: (
+    root: string,
+    processor: unknown,
+    signal: AbortSignal,
+  ) => Promise<boolean>;
+};
+
 describe("live work during a daemon catchup", () => {
   afterEach(() => vi.restoreAllMocks());
 
@@ -23,7 +31,7 @@ describe("live work during a daemon catchup", () => {
       began = resolve;
     });
     const scan = vi
-      .spyOn(manager, "catchupScan")
+      .spyOn(manager as CatchupScanAccess, "catchupScan")
       .mockImplementation(async (_root, _processor, signal: AbortSignal) => {
         began();
         await new Promise<void>((resolve) => {
