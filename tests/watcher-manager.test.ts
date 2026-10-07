@@ -1,3 +1,7 @@
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
+import type { AsyncSubscription, SubscribeCallback } from "@parcel/watcher";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@parcel/watcher", () => ({ subscribe: vi.fn() }));
@@ -25,6 +29,86 @@ describe("WatcherManager.unwatchProject", () => {
       evictSearcher: vi.fn(),
     } as any;
   }
+
+  it("refreshes native exclusions on policy edits, including re-inclusions and deletion", async () => {
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), "gmax-manager-ignore-"),
+    );
+    const policy = path.join(root, ".gmaxignore");
+    const watcher = await import("@parcel/watcher");
+    let notify!: SubscribeCallback;
+    const unsubscribe = vi.fn(async () => {});
+    vi.mocked(watcher.subscribe)
+      .mockClear()
+      .mockImplementation(async (_root, callback) => {
+        notify = callback;
+        return { unsubscribe };
+      });
+    const dependencies = {
+      ...deps(),
+      getVectorDb: () => ({ diskPressure: "ok" }),
+      getMetaCache: () => ({ get: vi.fn() }),
+      getShuttingDown: () => false,
+      touchActivity: vi.fn(),
+    } as any;
+    const wm = new WatcherManager(dependencies);
+    const catchup = vi
+      .spyOn(wm as any, "runCatchup")
+      .mockResolvedValue(undefined);
+    try {
+      await fs.writeFile(policy, "/artifacts/**/*.json\n");
+      await wm.watchProject(root, { catchup: false });
+      expect(vi.mocked(watcher.subscribe).mock.calls[0][2]?.ignore).toContain(
+        "artifacts/**/*.json",
+      );
+      await fs.writeFile(
+        policy,
+        "/artifacts/**/*.json\n!artifacts/source.json\n",
+      );
+      notify(null, [{ type: "update", path: policy }]);
+      await vi.waitFor(() => expect(catchup).toHaveBeenCalledTimes(1));
+      expect(
+        vi.mocked(watcher.subscribe).mock.calls[1][2]?.ignore,
+      ).not.toContain("artifacts/**/*.json");
+      expect(unsubscribe).toHaveBeenCalledOnce();
+      await fs.unlink(policy);
+      notify(null, [{ type: "delete", path: policy }]);
+      await vi.waitFor(() => expect(catchup).toHaveBeenCalledTimes(2));
+      expect(
+        vi.mocked(watcher.subscribe).mock.calls[2][2]?.ignore,
+      ).not.toContain("artifacts/**/*.json");
+    } finally {
+      await wm.unwatchProject(root);
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("disposes a subscription that finishes after unwatch begins", async () => {
+    const watcher = await import("@parcel/watcher");
+    let finish!: (value: AsyncSubscription) => void;
+    vi.mocked(watcher.subscribe)
+      .mockClear()
+      .mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+    const dependencies = deps();
+    const root = "/p/app";
+    const processor = { close: vi.fn(async () => {}) };
+    dependencies.processors.set(root, processor);
+    const wm = new WatcherManager(dependencies) as any;
+    const subscribing = wm.subscribeWatcher(root, processor);
+    await vi.waitFor(() => expect(watcher.subscribe).toHaveBeenCalledOnce());
+    const unwatching = wm.unwatchProject(root);
+    const unsubscribe = vi.fn(async () => {});
+    finish({ unsubscribe });
+    await Promise.all([subscribing, unwatching]);
+    expect(unsubscribe).toHaveBeenCalledOnce();
+    expect(dependencies.subscriptions.size).toBe(0);
+    expect(processor.close).toHaveBeenCalledOnce();
+  });
 
   it("counts every watcher drop and recovers while throttling repeated error logs", async () => {
     const watcher = await import("@parcel/watcher");

@@ -7,6 +7,7 @@ import { reconcileMetaEntry } from "./cache-coherence";
 import { ProjectFilePolicy } from "./file-policy";
 import { GENERATED_SOURCE_PATTERNS } from "./ignore-patterns";
 import { createWalkState, isPathProtectedByWalkState, walk } from "./walker";
+import { readProjectWatcherIgnores } from "./watcher-ignore";
 
 export interface WatcherHandle {
   close: () => Promise<void>;
@@ -96,6 +97,47 @@ export async function startWatcher(
   let degradedRepairQueued = false;
   const terminalFailures = new Set<string>();
   let processor!: ProjectBatchProcessor;
+  let subscription: watcher.AsyncSubscription | null = null;
+  let subscriptionUpdate: Promise<void> = Promise.resolve();
+  let subscriptionPolicy = "";
+  const updateSubscription = (): Promise<void> => {
+    const update = subscriptionUpdate
+      .catch(() => {})
+      .then(async () => {
+        const ignores = [
+          ...WATCHER_IGNORE_GLOBS,
+          ...(await readProjectWatcherIgnores(projectRoot)),
+        ];
+        const policy = JSON.stringify(ignores);
+        if (closing || (subscription && subscriptionPolicy === policy)) return;
+        await subscription?.unsubscribe();
+        subscription = null;
+        if (closing) return;
+        const next = await watcher.subscribe(
+          projectRoot,
+          (err, events) => {
+            if (err) {
+              console.error(`[${wtag}] Watcher error:`, err);
+              return;
+            }
+            for (const event of events)
+              processor.handleFileEvent(
+                event.type === "delete" ? "unlink" : "change",
+                event.path,
+              );
+          },
+          { ignore: ignores },
+        );
+        if (closing) {
+          await next.unsubscribe();
+          return;
+        }
+        subscription = next;
+        subscriptionPolicy = policy;
+      });
+    subscriptionUpdate = update;
+    return update;
+  };
   const reportHealthyIfSettled = () => {
     if (
       scanHealthy &&
@@ -117,6 +159,8 @@ export async function startWatcher(
       do {
         reconcileRequested = false;
         filePolicy.invalidateIgnoreCache();
+        await updateSubscription();
+        if (closing) return;
         const rootPrefix = projectRoot.endsWith("/")
           ? projectRoot
           : `${projectRoot}/`;
@@ -212,22 +256,7 @@ export async function startWatcher(
     },
   });
 
-  const subscription = await watcher.subscribe(
-    projectRoot,
-    (err, events) => {
-      if (err) {
-        console.error(`[${wtag}] Watcher error:`, err);
-        return;
-      }
-      for (const event of events) {
-        processor.handleFileEvent(
-          event.type === "delete" ? "unlink" : "change",
-          event.path,
-        );
-      }
-    },
-    { ignore: WATCHER_IGNORE_GLOBS },
-  );
+  await updateSubscription();
   reconcile();
 
   return {
@@ -236,7 +265,8 @@ export async function startWatcher(
     },
     close: async () => {
       closing = true;
-      await subscription.unsubscribe();
+      await subscriptionUpdate.catch(() => {});
+      await subscription?.unsubscribe();
       await reconciliation;
       await processor.close();
     },

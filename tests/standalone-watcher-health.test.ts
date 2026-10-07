@@ -7,6 +7,7 @@ vi.mock("@parcel/watcher", () => ({
   subscribe: vi.fn(async () => ({ unsubscribe: vi.fn(async () => {}) })),
 }));
 
+import * as watcher from "@parcel/watcher";
 import { startWatcher } from "../src/lib/index/watcher";
 import { getWorkerPool } from "../src/lib/workers/pool";
 
@@ -23,6 +24,50 @@ describe("standalone watcher health", () => {
     await Promise.allSettled(handles.splice(0).map((handle) => handle.close()));
     vi.useRealTimers();
     fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("replaces native subscriptions when root exclusions change and preserves re-inclusions", async () => {
+    vi.useRealTimers();
+    const policy = path.join(root, ".gmaxignore");
+    fs.writeFileSync(policy, "/artifacts/**/*.json\n");
+    vi.mocked(watcher.subscribe).mockClear();
+    const handle = await startWatcher({
+      projectRoot: root,
+      dataDir: path.join(root, ".gmax"),
+      metaCache: {
+        getKeysWithPrefix: vi.fn(async () => new Set<string>()),
+        get: vi.fn(),
+        put: vi.fn(),
+        delete: vi.fn(),
+      } as any,
+      vectorDb: {
+        diskPressure: "ok",
+        checkDiskPressure: vi.fn(() => "ok"),
+        getDistinctPathsForPrefix: vi.fn(async () => new Set<string>()),
+        deletePaths: vi.fn(async () => {}),
+      } as any,
+    });
+    handles.push(handle);
+    expect(vi.mocked(watcher.subscribe).mock.calls[0][2]?.ignore).toContain(
+      "artifacts/**/*.json",
+    );
+    const previous = await vi.mocked(watcher.subscribe).mock.results[0].value;
+    fs.writeFileSync(policy, "/artifacts/**/*.json\n!artifacts/source.json\n");
+    vi.mocked(watcher.subscribe).mock.calls[0][1](null, [
+      { type: "update", path: policy },
+    ]);
+    await vi.waitFor(() => expect(watcher.subscribe).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(watcher.subscribe).mock.calls[1][2]?.ignore).not.toContain(
+      "artifacts/**/*.json",
+    );
+    expect(previous.unsubscribe).toHaveBeenCalledOnce();
+    fs.unlinkSync(policy);
+    vi.mocked(watcher.subscribe).mock.calls[1][1](null, [
+      { type: "delete", path: policy },
+    ]);
+    await vi.waitFor(() => expect(handle.progress.pendingFiles).toBe(0));
+    // Removing an already empty native policy needs no subscription churn.
+    expect(watcher.subscribe).toHaveBeenCalledTimes(2);
   });
 
   it("clears initial degradation only after queued repair work settles", async () => {

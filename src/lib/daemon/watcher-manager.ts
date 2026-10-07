@@ -10,6 +10,7 @@ import {
   walk,
 } from "../index/walker";
 import { WATCHER_IGNORE_GLOBS } from "../index/watcher";
+import { readProjectWatcherIgnores } from "../index/watcher-ignore";
 import type { IndexState } from "../output/index-state-footer";
 import type { MetaCache } from "../store/meta-cache";
 import type { VectorDB } from "../store/vector-db";
@@ -162,12 +163,27 @@ export class WatcherManager {
         ...(workerPool ? { workerPool } : {}),
         filePolicy,
         onPolicyChange: () => {
-          void this.runCatchup(root, processor).catch((err) => {
-            console.error(
-              `[daemon:${path.basename(root)}] Policy reconciliation failed:`,
-              err,
-            );
-          });
+          void this.subscribeWatcher(root, processor)
+            .then(
+              () => {
+                if (
+                  this.deps.processors.get(root) === processor &&
+                  !this.deps.getShuttingDown()
+                )
+                  return this.runCatchup(root, processor);
+                return;
+              },
+              (error) => {
+                this.recoverWatcher(root, processor);
+                throw error;
+              },
+            )
+            .catch((err) => {
+              console.error(
+                `[daemon:${path.basename(root)}] Policy reconciliation failed:`,
+                err,
+              );
+            });
         },
         onReindex: async (files, ms) => {
           lastReindexAt = Date.now();
@@ -312,12 +328,35 @@ export class WatcherManager {
     );
   }
 
+  private readonly subscriptionUpdates = new Map<string, Promise<void>>();
+
   private async subscribeWatcher(
     root: string,
     processor: ProjectBatchProcessor,
   ): Promise<void> {
+    const previous = this.subscriptionUpdates.get(root) ?? Promise.resolve();
+    const update = previous
+      .catch(() => {})
+      .then(() => this.subscribeWatcherNow(root, processor));
+    this.subscriptionUpdates.set(root, update);
+    try {
+      await update;
+    } finally {
+      if (this.subscriptionUpdates.get(root) === update)
+        this.subscriptionUpdates.delete(root);
+    }
+  }
+
+  private async subscribeWatcherNow(
+    root: string,
+    processor: ProjectBatchProcessor,
+  ): Promise<void> {
     const name = path.basename(root);
-    if (this.deps.processors.get(root) !== processor) return;
+    if (
+      this.deps.processors.get(root) !== processor ||
+      this.deps.getShuttingDown?.()
+    )
+      return;
 
     // Unsubscribe existing watcher if any (e.g. during recovery)
     const existingSub = this.deps.subscriptions.get(root);
@@ -331,6 +370,7 @@ export class WatcherManager {
     const sub = await watcher.subscribe(
       root,
       (err, events) => {
+        if (this.deps.processors.get(root) !== processor) return;
         if (err) {
           this.overflowCounts.set(
             root,
@@ -363,7 +403,12 @@ export class WatcherManager {
         }
         this.deps.touchActivity();
       },
-      { ignore: WATCHER_IGNORE_GLOBS },
+      {
+        ignore: [
+          ...WATCHER_IGNORE_GLOBS,
+          ...(await readProjectWatcherIgnores(root)),
+        ],
+      },
     );
     if (this.deps.processors.get(root) !== processor) {
       await sub.unsubscribe();
@@ -850,6 +895,8 @@ export class WatcherManager {
 
     const processor = this.deps.processors.get(root);
     this.deps.processors.delete(root);
+
+    await this.subscriptionUpdates.get(root)?.catch(() => {});
 
     await this.stopCatchup(root);
 

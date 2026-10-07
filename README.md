@@ -570,3 +570,9 @@ worker limits remain. The default `strict` policy keeps aggregate admission.
 Restart the daemon after changing policy. An existing safety-stop marker requires
 explicit operator review and clearing; selecting a policy never clears it.
 Full-table compaction remains disabled in either policy.
+
+Root `.gmaxignore` exclusions also filter native filesystem events. Simple
+positive rules update both daemon and standalone subscriptions when the policy
+changes. Rules with negations, escapes or advanced pattern syntax remain in the
+indexing policy only, preserving re-included files. Source JSON outside an
+excluded path stays indexable.
