@@ -96,10 +96,11 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 105 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 131 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
+| [Gmax Checkout Reconciliation](archived/gmax-checkout-reconciliation.md) | Archived: Checkout reconciliation is complete. Shared main is clean at released/source origin/main 4531be7. All four unpublished output commits are preserved on work/gmax-output-fixes at f17aeee; document-search edits are integrated onto released source on work/gmax-document-search at 794aa87. All 32 original dirty/untracked files and the later generated-doc-index update are recoverable from Git snapshots, exact file backups and an additional stash. Original stashes and validated prune branch are intact. |
 | [Fix pnpm setup bootstrap advisory](archived/pnpm-bootstrap-security.md) | Archived: Bootstrap warning identified and resolved at 92af4a6. Both workflows pin audited action v6.1.0; GitHub CI37408026765 passes all checks and confirms zero bootstrap vulnerabilities. Installed gmax remains0.26.51. |
 | [Repair Claude and Codex plugin lifecycle and installation](archived/plugin-lifecycle-installation.md) | Archived: Groups1/2 implemented and verified in source;1648 tests / 172 files,typechecks/build/consumer checks pass. Group 3 approved and applied to local Codex config; CLI verification passes. Release/install and client refresh complete at v0.26.51; installed smoke and setting preservation pass. |
 | [Release and install per-file retrieval control](archived/per-file-release.md) | Archived: v0.26.50 published, registry-installed and verified; documentation and evidence complete. |
@@ -107,7 +108,6 @@ Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signa
 | [Reviewed relevance diagnostic measurement](archived/reviewed-relevance-diagnostics.md) | Archived: Reviewed exposed successor frozen and measured through installed .49; all80 samples valid with stable ranks. Range-only evaluator support and diagnostics/cap/resource findings documented. |
 | [Release and install retrieval diagnostics](archived/diagnostic-release.md) | Archived: v0.26.49 published, registry-installed and live-verified; documentation updated. |
 | [Retrieval diagnostics and answer-range review](archived/retrieval-diagnostics.md) | Archived: Bounded opt-in production diagnostics and capability-gated evaluator are source-complete, with result/read equivalence regressions and packaging checks passing. Single-author answer-span proposals preserve the original frozen baseline. |
-| [Multi-repository relevance baseline](archived/multirepo-relevance-baseline.md) | Archived: Reusable daemon-path runner and frozen 40-case four-repository baseline complete; both repetitions valid with identical ranks. Declaration-target scores and post-measurement ground-truth limitations are documented. |
 
 - Use `runlist list` or `runlist json` for the full inventory.
 <!-- GENERATED:dotmd:end -->
