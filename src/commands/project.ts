@@ -60,6 +60,8 @@ export const project = new Command("project")
         entryPoints,
       } = overview;
 
+      if (overview.sampled) console.log(`coverage\tpartial: ${overview.chunks} sampled chunks, ${overview.files} sampled files; ${overview.totalChunks} total chunks; all breakdowns below describe the sample`);
+
       if (opts.agent) {
         console.log(`name\t${projectName}`);
         console.log(`root\t${root}`);

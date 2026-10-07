@@ -2602,7 +2602,7 @@ export const mcp = new Command("mcp")
         const lines: string[] = [];
         lines.push(`Project: ${projectName} (${root})`);
         lines.push(
-          `Last indexed: ${proj.lastIndexed ?? "unknown"} • ${overview.chunks} chunks • ${overview.files} files`,
+          `Last indexed: ${proj.lastIndexed ?? "unknown"} • ${overview.chunks} ${overview.sampled ? "sampled " : ""}chunks • ${overview.files} ${overview.sampled ? "sampled " : ""}files${overview.sampled ? `; ${overview.totalChunks} total chunks; breakdowns describe the sample` : ""}`,
         );
         lines.push("");
 

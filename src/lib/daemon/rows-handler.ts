@@ -332,7 +332,11 @@ export async function handleRowsSymbols(
 
 // --- rows.project -----------------------------------------------------------
 
+export const MAX_PROJECT_ROWS = 200_000;
+
 export interface ProjectOverview {
+  totalChunks?: number;
+  sampled?: boolean;
   chunks: number;
   files: number;
   /** Top 8 extensions by chunk count. */
@@ -357,7 +361,7 @@ export async function runProject(
 ): Promise<ProjectOverview> {
   const table = await tableOf(deps);
   const prefix = projectRoot.endsWith("/") ? projectRoot : `${projectRoot}/`;
-  const rows = await table
+  const scanned = await table
     .query()
     .select([
       "path",
@@ -368,8 +372,11 @@ export async function runProject(
       "referenced_symbols",
     ])
     .where(pathStartsWith(prefix))
-    .limit(200000)
+    .limit(MAX_PROJECT_ROWS + 1)
     .toArray(QUERY_EXECUTION_OPTIONS);
+  const sampled = scanned.length > MAX_PROJECT_ROWS;
+  const rows = sampled ? scanned.slice(0, MAX_PROJECT_ROWS) : scanned;
+  const totalChunks = sampled ? await table.countRows(pathStartsWith(prefix)) : rows.length;
 
   const nodePath = await import("node:path");
   const files = new Set<string>();
@@ -430,6 +437,7 @@ export async function runProject(
   }
 
   return {
+    sampled, totalChunks,
     chunks: rows.length,
     files: files.size,
     extEntries: Array.from(extCounts.entries())

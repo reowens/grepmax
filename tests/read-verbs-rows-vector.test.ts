@@ -1,3 +1,4 @@
+import "./isolated-host-policy";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -9,6 +10,7 @@ import {
   readVerbNames,
 } from "../src/lib/daemon/read-verbs";
 import {
+  MAX_PROJECT_ROWS,
   clampInt,
   handleRowsLocate,
   handleRowsProject,
@@ -579,4 +581,17 @@ describe("ReadVerbError", () => {
     expect(resp.hint).toBe("run: gmax add /nope");
     expect(new ReadVerbError("x").hint).toBeUndefined();
   });
+});
+
+
+it("a project above the row cap exposes total inventory and sampled aggregates", async () => {
+  const rows = Array.from({length: MAX_PROJECT_ROWS + 1}, () => ({ path: "/repo/app/source.ts", role: "IMPLEMENTATION", defined_symbols: [], referenced_symbols: [] }));
+  const chain = { select: vi.fn().mockReturnThis(), where: vi.fn().mockReturnThis(), limit: vi.fn().mockReturnThis(), toArray: vi.fn().mockResolvedValue(rows) };
+  const table = { query: () => chain, countRows: vi.fn().mockResolvedValue(MAX_PROJECT_ROWS + 50) };
+  const fake = { vectorDb: { ensureTable: async () => table } } as unknown as StoreReadDeps;
+  const overview = await runProject(fake, PROJECT);
+  expect(overview.sampled).toBe(true);
+  expect(overview.chunks).toBe(MAX_PROJECT_ROWS);
+  expect(overview.totalChunks).toBe(MAX_PROJECT_ROWS + 50);
+  expect(overview.files).toBe(1);
 });
