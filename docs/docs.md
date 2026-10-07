@@ -8,6 +8,8 @@ Self acceptance followed implementation. [Source CI](https://github.com/reowens/
 
 Daemon 4578 handed over through graceful IPC shutdown to .68 PID 1920, one worker and small Granite GPU 2998; configuration and Claude/Codex settings stayed byte-identical. A semantic IPC query returned three hits in 2.1 seconds. Startup reconciliation completed in 17.3 seconds. A batch completed at 23:27:03 UTC while that scan was still running; one-second queue sampling missed the short batch, so this is correlated log/status evidence rather than a sampled active-live overlap. A later ordinary source edit reindexed in 17.9 seconds and drained. At 23:28:24 UTC, native watching had no waiting/active/failed/degraded paths and no accumulated drops. This bounded observation does not establish elimination of host FSEvents drops or a general indexing latency guarantee. Full-table maintenance remains disabled with attempts 0.
 
+At 23:30:36 UTC, one real FSEvents drop started a reconciliation scan with two live files queued. At 23:30:38, `Package.swift` reindexed and both live paths drained while the scan remained running through the end of the 23:30:44 sample. Correlated logs and queue transitions establish live processing during the actual recovery scan; the short active batch fell between one-second samples. Reconciliation completed in 15.4 seconds, and later ordinary edits reindexed in 3–4 seconds. At 23:32:00, the same .68 daemon/GPU was ready/active, native watching, drop count 1, all queues/active/failed paths zero and maintenance attempts 0. The underlying drops remain open. At 23:31:18, recovery still lacked admission: OS warning, kernel healthy and only 368.6 MiB physical free, below the 512 MiB helper requirement; no marker or receipt existed. Evidence: `/private/tmp/gmax-v02668-real-gap-acceptance.json` and `/private/tmp/gmax-v02668-closeout-service.json`.
+
 **Next: longer ordinary watcher observation and healthy production recovery admission.** Runtime preparation again refused OS warning at 23:27:40 UTC before setup. No third offline recovery window, marker, receipt or live prune was created; no reclaimed space is claimed. The 22:32 retention inventory is stale planning material. Once strict resource admission is healthy, prepare the pinned runtime under a real 512 MiB reservation, capture current daemon/owner identity, drain only identified gmax owners, refresh version/tags/cutoff inventory after drain and enforce the 256 protected-version bound. Require actual offline macOS admission and a true exclusive lease for one explicit prune, then verify retained state and signed allocated/free-space changes before restoring normal .68 service. Never reuse old wrappers, silently shift the cutoff or bypass guards.
 
 **Previous .67 delivery:**
@@ -153,7 +155,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 138 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 139 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
