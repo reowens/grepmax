@@ -61,6 +61,7 @@ describe("daemon pressure pauses work without losing the service", () => {
   const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
   beforeEach(() => {
     Object.defineProperty(process, "platform", { value: "darwin" });
+    vi.stubEnv("GMAX_HOST_GUARD_POLICY", "strict");
     h.denied = null;
     h.memory = "normal";
     h.kernelProbe.mockReset();
@@ -83,7 +84,37 @@ describe("daemon pressure pauses work without losing the service", () => {
     }
     Object.defineProperty(process, "platform", platform);
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
     clearReadVerbs();
+  });
+  it.each(["warn", "unknown"] as const)(
+    "critical-only keeps semantic operations active at %s",
+    async (pressure) => {
+      vi.stubEnv("GMAX_HOST_GUARD_POLICY", "critical-only");
+      h.memory = pressure;
+      h.usage = null;
+      const daemon = makeDaemon();
+      daemon.ready = true;
+      expect(daemon.hostPressureDeniedReason()).toBeNull();
+      expect(
+        await daemon.runSharedOperation(
+          "search",
+          undefined,
+          async () => "semantic result",
+        ),
+      ).toBe("semantic result");
+      expect(daemon.serviceStatus().mode).toBe("active");
+      expect(h.latch).not.toHaveBeenCalled();
+    },
+  );
+  it("critical-only retains known kernel-critical shutdown despite OS warning", async () => {
+    vi.stubEnv("GMAX_HOST_GUARD_POLICY", "critical-only");
+    h.memory = "warn";
+    h.usage = { ...h.usage!, pressure: "critical" };
+    const daemon = makeDaemon();
+    vi.spyOn(daemon, "shutdown").mockResolvedValue(undefined);
+    expect(daemon.checkKernelZonePressure()).toBe(false);
+    expect(h.latch).toHaveBeenCalledOnce();
   });
   it("normal launches still refuse quarantine before stale handling or resources", async () => {
     const daemon = makeDaemon();

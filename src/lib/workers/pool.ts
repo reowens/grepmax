@@ -12,6 +12,7 @@ import {
 } from "../index/embedding-generation";
 import { readGlobalConfig } from "../index/index-config";
 import { daemonStartDeniedReason } from "../utils/autostart";
+import { hostGuardPolicy } from "../utils/host-guard-policy";
 import {
   formatPressureProbe,
   probeKernelZoneUsage,
@@ -510,16 +511,25 @@ export class WorkerPool {
     try {
       const quarantine = daemonStartDeniedReason();
       if (quarantine) return this.denySpawn(quarantine, false);
+      const strictHostGuard = hostGuardPolicy() === "strict";
       if (process.platform === "darwin") {
         const memory = probeMemoryPressure();
-        if (memory.status !== "known" || memory.pressure !== "normal") {
+        if (
+          (memory.status === "known" && memory.pressure === "critical") ||
+          (strictHostGuard &&
+            (memory.status !== "known" || memory.pressure !== "normal"))
+        ) {
           return this.denySpawn(
             `OS memory pressure ${memory.status === "known" ? memory.pressure : memory.status}; ${formatPressureProbe(memory)}`,
             memory.status === "known" && memory.pressure === "critical",
           );
         }
         const kernel = probeKernelZoneUsage();
-        if (kernel.status !== "known" || kernel.usage.pressure !== "ok") {
+        if (
+          (kernel.status === "known" && kernel.usage.pressure === "critical") ||
+          (strictHostGuard &&
+            (kernel.status !== "known" || kernel.usage.pressure !== "ok"))
+        ) {
           return this.denySpawn(
             `kernel pressure ${kernel.status === "known" ? kernel.usage.pressure : kernel.status}; ${formatPressureProbe(kernel)}`,
             kernel.status === "known" && kernel.usage.pressure === "critical",
@@ -530,8 +540,11 @@ export class WorkerPool {
         // Refresh the cheap OS sample after the potentially slow kernel probe.
         const freshMemory = probeMemoryPressure();
         if (
-          freshMemory.status !== "known" ||
-          freshMemory.pressure !== "normal"
+          (freshMemory.status === "known" &&
+            freshMemory.pressure === "critical") ||
+          (strictHostGuard &&
+            (freshMemory.status !== "known" ||
+              freshMemory.pressure !== "normal"))
         ) {
           return this.denySpawn(
             `OS memory pressure ${freshMemory.status === "known" ? freshMemory.pressure : freshMemory.status}; ${formatPressureProbe(freshMemory)}`,

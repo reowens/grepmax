@@ -6,6 +6,11 @@ import lockfile from "proper-lockfile";
 import { PATHS } from "../../config";
 import { daemonStartDeniedReason } from "./autostart";
 import {
+  type HostGuardPolicy,
+  hostGuardPolicy,
+  sampleCriticalPressure,
+} from "./host-guard-policy";
+import {
   type HostResourceSnapshot,
   sampleHostResources,
 } from "./host-resource";
@@ -56,6 +61,8 @@ interface BudgetDeps {
   quarantine: () => string | null;
   latch: (reason: string) => void;
   processStart: () => string;
+  policy: () => HostGuardPolicy;
+  criticalSample: () => HostResourceSnapshot;
 }
 
 export function resolveResourceBudgetMb(
@@ -138,6 +145,8 @@ export class ResourceBudget {
         );
       },
       signal: (pid) => process.kill(pid, 0),
+      policy: hostGuardPolicy,
+      criticalSample: sampleCriticalPressure,
       quarantine: daemonStartDeniedReason,
       latch: latchSafetyStop,
       processStart: () =>
@@ -390,6 +399,32 @@ export class ResourceBudget {
       throw new ResourceAdmissionError(
         "adopted model process identity unavailable; heavy work paused",
       );
+    if (this.deps.policy() === "critical-only") {
+      const denied = this.deps.quarantine();
+      if (denied)
+        throw new ResourceAdmissionError(`heavy work refused: ${denied}`);
+      if (requiredPid) this.deps.signal(requiredPid);
+      const snapshot = this.deps.criticalSample();
+      if (
+        snapshot.memoryPressure === "critical" ||
+        snapshot.kernelPressure === "critical"
+      ) {
+        const error = new ResourceAdmissionError(
+          "critical host pressure; heavy work refused",
+          true,
+        );
+        try {
+          this.deps.latch(error.message);
+        } catch {
+          error.message += "; safety stop persistence failed";
+        }
+        throw error;
+      }
+      const after = this.deps.quarantine();
+      if (after)
+        throw new ResourceAdmissionError(`heavy work refused: ${after}`);
+      return snapshot;
+    }
     return this.withLock(() => {
       const snapshot = this.deps.sample(requiredPid ? [requiredPid] : []);
       if (requiredPid && !snapshot.processes.some((p) => p.pid === requiredPid))
@@ -406,6 +441,10 @@ export class ResourceBudget {
       throw new ResourceAdmissionError("invalid resource reservation");
     if (this.deps.platform !== "darwin")
       return { attach: () => {}, release: () => {} };
+    if (this.deps.policy() === "critical-only") {
+      this.check();
+      return { attach: () => {}, release: () => {} };
+    }
     let record = this.withLock(() => {
       const denied = this.deps.quarantine();
       if (denied)

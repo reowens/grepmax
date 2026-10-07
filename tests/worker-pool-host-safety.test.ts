@@ -57,6 +57,7 @@ import { WorkerPool } from "../src/lib/workers/pool";
 describe("WorkerPool host admission", () => {
   let pool: any;
   beforeEach(() => {
+    vi.stubEnv("GMAX_HOST_GUARD_POLICY", "strict");
     vi.useFakeTimers();
     vi.stubGlobal("process", { ...process, platform: "darwin" });
     h.quarantine = null;
@@ -74,9 +75,32 @@ describe("WorkerPool host admission", () => {
     vi.clearAllTimers();
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
     pool = undefined;
   });
 
+  it.each(["warn", "unknown"])(
+    "critical-only forks under %s pressure",
+    (pressure) => {
+      vi.stubEnv("GMAX_HOST_GUARD_POLICY", "critical-only");
+      h.memory =
+        pressure === "warn"
+          ? { status: "known", pressure: "warn" }
+          : { status: "unknown", reason: "timeout" };
+      h.kernel = { status: "unknown", reason: "timeout" };
+      pool = new WorkerPool();
+      expect(childProcess.fork).toHaveBeenCalled();
+      expect(h.latch).not.toHaveBeenCalled();
+    },
+  );
+  it("critical-only still refuses kernel-critical even with OS warning", () => {
+    vi.stubEnv("GMAX_HOST_GUARD_POLICY", "critical-only");
+    h.memory = { status: "known", pressure: "warn" };
+    h.kernel = { status: "known", usage: { pressure: "critical" } };
+    expect(() => new WorkerPool()).toThrow("kernel pressure critical");
+    expect(childProcess.fork).not.toHaveBeenCalled();
+    expect(h.latch).toHaveBeenCalledOnce();
+  });
   it("refuses a quarantined constructor before any probes, fork or timer", () => {
     h.quarantine = "existing quarantine";
     expect(() => new WorkerPool()).toThrow("existing quarantine");

@@ -557,3 +557,16 @@ Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
 On macOS, heavy work uses a shared resource ledger and a bounded batch footprint probe covering every gmax process and its children. Native stores, workers and model launches reserve headroom before allocating it. Warning or unknown measurements pause heavy work; known critical pressure persists a stop. The 6 GiB admission budget is a conservative scheduling threshold, not an OS-enforced memory cap. It may be lowered with `GMAX_RESOURCE_BUDGET_MB`. Existing safety markers remain in place after upgrades.
 
 MCP sessions started before this resource policy must reconnect after upgrading before heavy work can resume. Keyword search through the bounded read service stays available while those sessions are running. Cached resource snapshots in `gmax status --json` distinguish aggregate physical footprint from daemon RSS.
+
+### Host guard policy
+
+`hostGuardPolicy: "critical-only"` in `~/.gmax/config.json` (or
+`GMAX_HOST_GUARD_POLICY=critical-only`) selects an explicit availability policy.
+Warning and unavailable pressure probes remain diagnostic and do not pause
+semantic search or indexing. Confirmed critical OS or kernel pressure still
+persists a safety stop and shuts down. This mode disables aggregate memory
+admission and the requirement to reconnect older MCP clients; native cache and
+worker limits remain. The default `strict` policy keeps aggregate admission.
+Restart the daemon after changing policy. An existing safety-stop marker requires
+explicit operator review and clearing; selecting a policy never clears it.
+Full-table compaction remains disabled in either policy.

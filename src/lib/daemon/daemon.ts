@@ -36,6 +36,7 @@ import {
   writeDrainingMarker,
 } from "../utils/daemon-client";
 import { spawnDaemon } from "../utils/daemon-launcher";
+import { hostGuardPolicy } from "../utils/host-guard-policy";
 import {
   type HostResourceSnapshot,
   sampleHostResources,
@@ -332,6 +333,7 @@ export class Daemon {
         denied ?? pressure?.reason ?? "read-only service requested";
     }
     process.title = "gmax-daemon";
+    console.log(`[daemon] Host guard policy: ${hostGuardPolicy()}`);
     if (this.pausedReason === null) {
       try {
         this.lastHostResources = resourceBudget.check();
@@ -2622,6 +2624,7 @@ export class Daemon {
         measured: true,
         critical: true,
       };
+    if (hostGuardPolicy() === "critical-only") return null;
     for (const sample of [memory, freshMemory]) {
       if (sample.status !== "known")
         return {

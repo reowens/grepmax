@@ -54,6 +54,7 @@ describe("one persistent budget for all clients/stores", () => {
   const make = (pid = 10, extra = {}) =>
     new ResourceBudget({
       root,
+      policy: () => "strict",
       platform: "darwin",
       pid,
       now: () => 1000,
@@ -75,6 +76,54 @@ describe("one persistent budget for all clients/stores", () => {
     vi.unstubAllEnvs();
   });
   const records = () => fs.readdirSync(root).filter((n) => n.endsWith(".json"));
+  it.each(["warn", "unknown"] as const)(
+    "explicit critical-only allows %s without a ledger or client reconnect",
+    (pressure) => {
+      s.memoryPressure = pressure;
+      s.aggregateFootprintMb = null;
+      s.incompleteReasons = ["probe timeout"];
+      const sample = vi.fn(() => s);
+      const budget = make(10, {
+        policy: () => "critical-only",
+        criticalSample: sample,
+      });
+      const reservation = budget.reserve(1536, "worker");
+      reservation.attach(30, true);
+      reservation.release();
+      expect(budget.check()).toBe(s);
+      expect(records()).toHaveLength(0);
+      expect(latch).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["memoryPressure", "kernelPressure"] as const)(
+    "critical-only still latches %s",
+    (key) => {
+      s[key] = "critical";
+      const budget = make(10, {
+        policy: () => "critical-only",
+        criticalSample: () => s,
+      });
+      expect(() => budget.reserve(1536, "worker")).toThrow(
+        "critical host pressure",
+      );
+      expect(latch).toHaveBeenCalledOnce();
+    },
+  );
+  it("critical-only never clears an existing stop and verifies adopted PID liveness", () => {
+    const budget = make(10, {
+      policy: () => "critical-only",
+      criticalSample: () => s,
+    });
+    budget.check(123);
+    expect(signal).toHaveBeenCalledWith(123);
+    expect(() =>
+      make(10, {
+        policy: () => "critical-only",
+        criticalSample: () => s,
+        quarantine: () => "critical stop",
+      }).check(),
+    ).toThrow("critical stop");
+  });
   it("counts another session's pending reservation before it has allocated native memory", () => {
     vi.stubEnv("GMAX_RESOURCE_BUDGET_MB", "2048");
     const first = make().reserve(1536, "worker");
