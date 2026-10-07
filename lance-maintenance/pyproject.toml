@@ -1,0 +1,9 @@
+[project]
+name = "gmax-lance-maintenance"
+version = "0.1.0"
+description = "Prune-only maintenance for grepmax's pinned Lance 12 store"
+requires-python = ">=3.10"
+dependencies = ["pylance==12.0.0"]
+
+[tool.uv]
+package = false

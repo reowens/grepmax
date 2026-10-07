@@ -3,8 +3,10 @@ name: CI
 on:
   pull_request:
     branches: [ main ]
+
+  workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [ main, fix/gmax-prune-integration ]
 
 jobs:
   ci:
@@ -28,6 +30,11 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Setup locked prune runtime tooling
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+        with:
+          version: '0.12.18'
 
       - name: Audit JavaScript dependencies including development tools
         run: pnpm audit

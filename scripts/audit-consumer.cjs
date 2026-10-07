@@ -25,6 +25,13 @@ try {
   const packOutput = JSON.parse(npm(["pack", "--ignore-scripts", "--json", "--pack-destination", temp], root).stdout);
   const packed = (Array.isArray(packOutput) ? packOutput : Object.values(packOutput))[0];
   if (!packed?.filename) throw new Error("npm pack returned no tarball metadata");
+  const helperFiles = packed.files.filter(f => f.path.startsWith("lance-maintenance/")).map(f => f.path).sort();
+  if (JSON.stringify(helperFiles) !== JSON.stringify([
+    "lance-maintenance/prune.py", "lance-maintenance/pyproject.toml", "lance-maintenance/uv.lock",
+  ])) throw new Error("Packed prune runtime is missing files or contains unexpected files");
+  for (const file of helperFiles) {
+    if (!fs.existsSync(path.join(root, file))) throw new Error("Prune runtime source missing");
+  }
   fs.writeFileSync(path.join(temp, "package.json"), JSON.stringify({ name: "gmax-consumer-check", version: "1.0.0", private: true }));
   npm(["install", path.join(temp, packed.filename), "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-online"]);
   const auditResult = npm(["audit", "--omit=dev", "--json"], temp, true);
@@ -58,6 +65,14 @@ try {
   `], { cwd: temp, encoding: "utf8", timeout: 30_000 });
   if (smoke.error || smoke.status !== 0) throw new Error(`Consumer native smoke failed: ${smoke.error ?? smoke.stderr}`);
   process.stdout.write(smoke.stdout);
+  const home = path.join(temp, "prune-home");
+  fs.mkdirSync(home, {mode: 0o700});
+  const pruneSmoke = spawnSync(process.execPath, [path.join(root, "scripts/test-prune-consumer.cjs")], {
+    cwd: temp, env: {...npmEnv, HOME: home}, encoding: "utf8", timeout: 180_000,
+  });
+  if (pruneSmoke.error || pruneSmoke.status !== 0)
+    throw new Error(`Packed prune consumer smoke failed: ${pruneSmoke.error ?? pruneSmoke.stderr}`);
+  process.stdout.write(pruneSmoke.stdout);
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }

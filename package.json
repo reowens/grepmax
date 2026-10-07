@@ -45,7 +45,7 @@
     "version": "bash scripts/sync-versions.sh && git add -A",
     "postversion": "bash scripts/postrelease.sh",
     "audit:consumer": "node scripts/audit-consumer.cjs",
-    "audit:python": "python3 scripts/audit-python.py",
+    "audit:python": "python3 scripts/audit-python.py && python3 scripts/audit-python.py --lockfile lance-maintenance/uv.lock",
     "test:python": "python3 -m unittest discover -s tests/python"
   },
   "keywords": [
@@ -74,6 +74,9 @@
     "plugins",
     "scripts/postinstall.js",
     "mlx-embed-server",
+    "lance-maintenance/prune.py",
+    "lance-maintenance/pyproject.toml",
+    "lance-maintenance/uv.lock",
     "README.md",
     "LICENSE",
     "NOTICE"

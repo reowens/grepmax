@@ -172,6 +172,7 @@ async function delay(ms: number, signal?: AbortSignal): Promise<void> {
 export class StoreLease {
   private released = false;
   private claimedBy: object | null = null;
+  private exclusiveUseRunning = false;
 
   private constructor(
     readonly mode: "shared" | "exclusive",
@@ -288,6 +289,11 @@ export class StoreLease {
   async release(
     options: { timeoutMs?: number; pollMs?: number } = {},
   ): Promise<void> {
+    if (this.exclusiveUseRunning) {
+      throw new Error(
+        "Exclusive store operation must finish before releasing its lease",
+      );
+    }
     if (this.released) return;
     if (this.mode === "shared") {
       const current = readOwner(this.markerPath);
@@ -330,6 +336,59 @@ export class StoreLease {
     if (this.claimedBy === holder) this.claimedBy = null;
   }
 
+  /** Hold verified cross-process exclusion through a destructive helper and its
+   * verification. A local write gate is not a substitute for this ownership. */
+  async withExclusiveUse<T>(
+    storeDir: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    if (this.exclusiveUseRunning) {
+      throw new Error("An exclusive store operation is already running");
+    }
+    const verify = (): void => {
+      if (this.mode !== "exclusive" || this.released) {
+        throw new Error("Pruning requires an unreleased exclusive store lease");
+      }
+      if (fs.realpathSync(storeDir) !== fs.realpathSync(this.storeDir)) {
+        throw new Error("Exclusive store lease belongs to a different store");
+      }
+      const ownerStat = fs.lstatSync(this.paths.intentOwnerFile);
+      if (!ownerStat.isFile() || ownerStat.size > 16 * 1024) {
+        throw new Error(
+          "Exclusive store lease owner is unverified or oversized",
+        );
+      }
+      const current = readOwner(this.paths.intentOwnerFile);
+      if (
+        current?.nonce !== this.owner.nonce ||
+        current.pid !== this.owner.pid ||
+        current.processStart !== this.owner.processStart
+      ) {
+        throw new Error(
+          "Exclusive store lease ownership could not be verified",
+        );
+      }
+      // acquireExclusive has already removed verified stale readers. Refuse any
+      // remaining marker rather than assuming ignored/unknown readers are safe.
+      if (
+        fs
+          .readdirSync(this.paths.readersDir)
+          .some((name) => name.endsWith(".json"))
+      ) {
+        throw new Error("Pruning requires all shared store owners to close");
+      }
+    };
+    verify();
+    this.exclusiveUseRunning = true;
+    try {
+      const result = await operation();
+      verify();
+      return result;
+    } finally {
+      this.exclusiveUseRunning = false;
+    }
+  }
+
   /** Atomically replace this shared lease with an exclusive lease. */
   async upgrade(
     options: Omit<StoreLeaseOptions, "storeDir" | "ignoreNonces"> = {},
@@ -359,6 +418,11 @@ export class StoreLease {
   async downgrade(
     options: Omit<StoreLeaseOptions, "storeDir" | "ignoreNonces"> = {},
   ): Promise<StoreLease> {
+    if (this.exclusiveUseRunning) {
+      throw new Error(
+        "Exclusive store operation must finish before downgrading its lease",
+      );
+    }
     if (this.mode !== "exclusive") {
       throw new Error("Only an exclusive store lease can be downgraded");
     }

@@ -48,6 +48,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Setup locked prune runtime tooling
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+        with:
+          version: '0.12.18'
+
       - name: Check types
         run: pnpm run typecheck
 
@@ -109,7 +114,7 @@ jobs:
       # infrastructure were all publicly readable on the registry.
       #
       # Our "files" field in package.json whitelists: dist/, .claude-plugin/,
-      # plugins/, mlx-embed-server/, and scripts/postinstall.js. This step
+      # plugins/, mlx-embed-server/, the three prune runtime files, and scripts/postinstall.js. This step
       # verifies that ONLY those paths end up in the tarball. If something
       # unexpected appears — a src/ file, a .env, test fixtures, internal docs
       # — this fails the release before it reaches the registry.
@@ -123,7 +128,7 @@ jobs:
           const output = JSON.parse(fs.readFileSync('pack.json', 'utf8'));
           const pack = (Array.isArray(output) ? output : Object.values(output))[0];
           if (!pack?.files) throw new Error('npm pack returned no tarball metadata');
-          const allowed = /^(dist\/|\.claude-plugin\/|plugins\/|mlx-embed-server\/|scripts\/postinstall\.js$|package\.json$|README\.md$|LICENSE$|NOTICE$)/;
+          const allowed = /^(dist\/|\.claude-plugin\/|plugins\/|mlx-embed-server\/|lance-maintenance\/(prune\.py|pyproject\.toml|uv\.lock)$|scripts\/postinstall\.js$|package\.json$|README\.md$|LICENSE$|NOTICE$)/;
           const leaked = pack.files.map((f) => f.path).filter((p) => !allowed.test(p));
           if (leaked.length) {
             console.error('ERROR: Unexpected files in npm tarball:');
