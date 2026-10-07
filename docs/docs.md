@@ -6,11 +6,13 @@
 
 The latest read-only sample at 13:16:35 UTC found .64 active and ready, native watching after three real event drops, and zero queued, active or failed paths. After earlier drops, create/edit/delete each reached the index in about 2.5 seconds. This verifies recovery from observed gaps; longer observation remains open. Automatic full-table maintenance is disabled with zero attempts. The optional Hetchy Developer guard fix `1b26495` honors the user's `critical-only` policy. Configuration is restored to two maximum workers; the current pool has one until a future normal startup.
 
-**Next: integrate the validated prune-only helper into the current release in an isolated worktree.** Add package/consumer coverage and durable reporting for interrupted or uncertain cleanup, then complete independent retention, lease, resource and lifecycle acceptance before live recovery. Isolated Linux and macOS/APFS fixtures passed, but the helper is not shipped and no live prune has been performed. Full-table rewriting stays disabled.
+**Prune integration and packaging are complete in source `1cd4811`; the candidate is unpublished.** The package includes exactly the helper, project manifest and lockfile; explicit calls require an exclusive lease and persist a private attempt receipt before deletion. Interrupted or abandoned attempts remain uncertain, and verified retries retain the previous uncertain attempt identity. [Full CI](https://github.com/reowens/grepmax/actions/runs/37629589894) passed 1,907 tests plus typechecks, formatting, both Python lock audits and the installed-consumer check. [Linux/macOS validation](https://github.com/reowens/grepmax/actions/runs/37629589928) passed installed-package pruning and all 600,000-row completion/cancellation/SIGKILL fixtures. Both runners produced identical tarballs. Automatic callers remain absent and full-table rewriting stays disabled.
+
+**Next: finish production recovery admission and independent acceptance.** The recovery entry point still needs verified host/resource admission, operator-visible uncertainty and recovery verification before any live prune. The running official .64 package remains unchanged; no live cleanup or registry publication occurred during integration. At 13:36:46 UTC, the same daemon/model remained ready, native after nine accumulated drops, with zero queue/active/failed paths and zero maintenance attempts.
 
 | Remaining work | Order and scope |
 | --- | --- |
-| Prune helper integration and acceptance | Next implementation; use the tested helper from `test/gmax-prune-validation` (`831efaf`), without merging its older release base wholesale. |
+| Production prune admission and acceptance | Next implementation/review; helper integration and packaging are complete, live recovery remains open. |
 | Watcher observation | In parallel under ordinary development; record gaps, reconciliation, freshness and daemon identity without a synthetic flood. |
 | Output fixes (`work/gmax-output-fixes`, `f17aeee`) | Preserved, unshipped; review and run current-release checks before a separate release. |
 | Document search (`work/gmax-document-search`, `794aa87`) | Preserved, unshipped; review and run current-release checks before a separate release. |
@@ -115,7 +117,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 132 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 133 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
