@@ -708,8 +708,7 @@ export interface GodNode {
   inboundFiles: number;
   totalRefs: number;
   /** Files defining this name. >1 means the attribution (file:line) is a
-   * first-definition-wins guess and inbound counts merge all same-name
-   * symbols. */
+   * unresolved name collision. Architectural rankings omit these names. */
   defFiles: number;
 }
 
@@ -739,6 +738,7 @@ export interface AuditResult {
   fileCycles: FileCycle[];
   deadCandidates: DeadCandidate[];
   deadTotal: number;
+  ambiguousSymbols?: number;
 }
 
 /** Minimal row shape the aggregator needs (a subset of the chunk record). */
@@ -847,11 +847,12 @@ export function computeAudit(
   prefix: string,
   top: number,
 ): AuditResult {
-  // First definition of a symbol wins (matches GraphBuilder semantics).
+  // Only a uniquely defined name can establish an architectural edge.
   const defs = new Map<string, DefInfo>();
   // Distinct files defining each name — name-based edges can't tell same-name
   // symbols apart, so multi-file definitions get flagged in the output.
   const defFileCounts = new Map<string, Set<string>>();
+  const defLocations = new Map<string, Set<string>>();
   // Distinct files that reference a symbol (cross-file inbound edges).
   const inboundFiles = new Map<string, Set<string>>();
   const inboundTotal = new Map<string, number>();
@@ -874,6 +875,8 @@ export function computeAudit(
       }
       if (!defFileCounts.has(s)) defFileCounts.set(s, new Set());
       defFileCounts.get(s)!.add(file);
+      if (!defLocations.has(s)) defLocations.set(s, new Set());
+      defLocations.get(s)!.add(`${file}:${line}`);
       if (!fileDefs.has(file)) fileDefs.set(file, new Set());
       fileDefs.get(file)!.add(s);
     }
@@ -892,7 +895,7 @@ export function computeAudit(
     if (symbol.length < MIN_GOD_NAME_LEN) continue;
     // Builtin method names (get, set, push, …) leak in via prototype/member
     // definitions and their inbound counts are meaningless name collisions.
-    if (isBuiltinCallee(symbol)) continue;
+    if (isBuiltinCallee(symbol) || defLocations.get(symbol)?.size !== 1) continue;
     const refFiles = inboundFiles.get(symbol);
     if (!refFiles) continue;
     let external = 0;
@@ -917,6 +920,7 @@ export function computeAudit(
   for (const [file, syms] of fileDefs) {
     const dependents = new Set<string>();
     for (const s of syms) {
+      if (isBuiltinCallee(s) || defLocations.get(s)?.size !== 1) continue;
       const refFiles = inboundFiles.get(s);
       if (!refFiles) continue;
       for (const f of refFiles) if (f !== file) dependents.add(f);
@@ -925,7 +929,7 @@ export function computeAudit(
     // in-project (external-library calls don't count as coupling).
     let fanOut = 0;
     const out = fileOutRefs.get(file);
-    if (out) for (const s of out) if (defs.has(s)) fanOut++;
+    if (out) for (const s of out) if (defs.has(s) && !isBuiltinCallee(s) && defLocations.get(s)?.size === 1) fanOut++;
     hubFiles.push({
       file: rel(file, prefix),
       dependents: dependents.size,
@@ -938,7 +942,7 @@ export function computeAudit(
   const fileDeps = new Map<string, Set<string>>();
   for (const [file, refs] of fileOutRefs) {
     for (const s of refs) {
-      if (isBuiltinCallee(s)) continue;
+      if (isBuiltinCallee(s) || defLocations.get(s)?.size !== 1) continue;
       const defFiles = defFileCounts.get(s);
       if (!defFiles || defFiles.size !== 1) continue;
       const [depFile] = defFiles;
@@ -953,13 +957,14 @@ export function computeAudit(
   // references anywhere (including their own file).
   const deadAll: DeadCandidate[] = [];
   for (const [symbol, info] of defs) {
-    if (info.exported) continue;
+    if (info.exported || defLocations.get(symbol)?.size !== 1 || isBuiltinCallee(symbol)) continue;
     if ((inboundTotal.get(symbol) || 0) > 0) continue;
     deadAll.push({ symbol, file: rel(info.file, prefix), line: info.line });
   }
   deadAll.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
 
   return {
+    ambiguousSymbols: [...defLocations.values()].filter(locations => locations.size > 1).length,
     scannedChunks: rows.length,
     scannedFiles: files.size,
     godNodes: godNodes.slice(0, top),

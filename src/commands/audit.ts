@@ -114,6 +114,7 @@ function formatHuman(r: AuditResult): string {
 function formatAgent(r: AuditResult): string {
   const lines: string[] = [];
   lines.push(`scanned\t${r.scannedChunks}\t${r.scannedFiles}`);
+  lines.push(`ambiguous_symbols_omitted\t${r.ambiguousSymbols ?? 0}`);
   for (const g of r.godNodes) {
     const ambiguous = g.defFiles > 1 ? `\tdefs=${g.defFiles}` : "";
     lines.push(

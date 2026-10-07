@@ -154,3 +154,20 @@ describe("computeAudit", () => {
     expect(r.scannedFiles).toBe(2);
   });
 });
+
+
+it("omits unresolved cross-file and same-file definitions from rankings and dead claims", () => {
+  const rows = [
+    row("a.ts", 1, false, ["Execute"], []),
+    row("b.swift", 1, false, ["Execute"], []),
+    row("methods.ts", 1, false, ["Handle"], []),
+    row("methods.ts", 20, false, ["Handle"], []),
+    row("caller.ts", 1, true, ["Caller"], ["Handle"]),
+    row("unused.ts", 1, false, ["Unused"], []),
+  ];
+  const result = computeAudit(rows, PREFIX, 10);
+  expect(result.ambiguousSymbols).toBe(2);
+  expect(result.godNodes).toEqual([]);
+  expect(result.hubFiles).toEqual([]);
+  expect(result.deadCandidates.map(d => d.symbol)).toEqual(["Unused"]);
+});
