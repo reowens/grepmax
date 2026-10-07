@@ -1,3 +1,4 @@
+import { boundedAgentText } from "../lib/output/agent-budget";
 /**
  * gmax skeleton - Show code skeleton (signatures without implementation)
  *
@@ -483,7 +484,7 @@ Examples:
           console.log(JSON.stringify(results, null, 2));
         } else {
           for (const result of results) {
-            console.log(result.skeleton);
+            console.log(options.agent ? boundedAgentText(result.skeleton) : result.skeleton);
             console.log(""); // Blank line between files
           }
         }
@@ -526,6 +527,6 @@ function outputResult(
       ),
     );
   } else {
-    console.log(result.skeleton);
+    console.log(options.agent ? boundedAgentText(result.skeleton) : result.skeleton);
   }
 }

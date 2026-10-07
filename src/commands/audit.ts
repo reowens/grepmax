@@ -1,3 +1,4 @@
+import { boundedAgentText } from "../lib/output/agent-budget";
 import { Command } from "commander";
 import {
   type AuditResult,
@@ -111,7 +112,7 @@ function formatHuman(r: AuditResult): string {
   return out.join("\n");
 }
 
-function formatAgent(r: AuditResult): string {
+export function formatAgent(r: AuditResult): string {
   const lines: string[] = [];
   lines.push(`scanned\t${r.scannedChunks}\t${r.scannedFiles}`);
   lines.push(`ambiguous_symbols_omitted\t${r.ambiguousSymbols ?? 0}`);
@@ -126,7 +127,7 @@ function formatAgent(r: AuditResult): string {
   }
   for (const c of r.fileCycles) {
     lines.push(
-      `cycle\t${c.files.join(",")}\t${c.files.length}\t${c.edgeCount}`,
+      `cycle\t${boundedAgentText(c.files.slice(0, 8).join(","), 1000, 1).replace(/\n/g, " ")}\t${c.files.length}\t${c.edgeCount}\tomitted_files=${Math.max(0, c.files.length - 8)}`,
     );
   }
   for (const d of r.deadCandidates) {
