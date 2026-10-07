@@ -25,7 +25,7 @@ export function createRecoveryBudget(): ResourceBudget {
 export function assertRecoveryAdmission(
   storeDir: string,
   budget: ResourceBudget,
-): void {
+): HostResourceSnapshot {
   const marker = path.join(
     path.dirname(fs.realpathSync(storeDir)),
     "autostart-disabled",
