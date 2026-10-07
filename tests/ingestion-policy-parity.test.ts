@@ -178,6 +178,7 @@ describe("ingestion file-policy parity", () => {
 
     expect(handleFileEvent).toHaveBeenCalledWith("change", expected, {
       forceReprocess: true,
+      workKind: "catchup",
     });
   });
 });
