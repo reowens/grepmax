@@ -1,6 +1,5 @@
 import * as path from "node:path";
 import type { AsyncSubscription } from "@parcel/watcher";
-import * as watcher from "@parcel/watcher";
 import { ProjectBatchProcessor } from "../index/batch-processor";
 import { reconcileMetaEntry } from "../index/cache-coherence";
 import { ProjectFilePolicy } from "../index/file-policy";
@@ -14,7 +13,7 @@ import {
   FSEVENTS_GAP_SCAN_INTERVAL_MS,
   isFSEventsGap,
 } from "../index/watcher-errors";
-import { readProjectWatcherIgnores } from "../index/watcher-ignore";
+import { subscribeWithNativeExclusions } from "../index/watcher-ignore";
 import type { IndexState } from "../output/index-state-footer";
 import type { MetaCache } from "../store/meta-cache";
 import type { VectorDB } from "../store/vector-db";
@@ -377,7 +376,7 @@ export class WatcherManager {
       this.deps.subscriptions.delete(root);
     }
 
-    const sub = await watcher.subscribe(
+    const { subscription: sub } = await subscribeWithNativeExclusions(
       root,
       (err, events) => {
         if (
@@ -423,12 +422,7 @@ export class WatcherManager {
         }
         this.deps.touchActivity();
       },
-      {
-        ignore: [
-          ...WATCHER_IGNORE_GLOBS,
-          ...(await readProjectWatcherIgnores(root)),
-        ],
-      },
+      WATCHER_IGNORE_GLOBS,
     );
     if (
       this.deps.processors.get(root) !== processor ||

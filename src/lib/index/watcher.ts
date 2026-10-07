@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import * as watcher from "@parcel/watcher";
+import type * as watcher from "@parcel/watcher";
 import type { WatchQueueState } from "../output/index-state-footer";
 import type { MetaCache } from "../store/meta-cache";
 import type { VectorDB } from "../store/vector-db";
@@ -9,7 +9,11 @@ import { ProjectFilePolicy } from "./file-policy";
 import { GENERATED_SOURCE_PATTERNS } from "./ignore-patterns";
 import { createWalkState, isPathProtectedByWalkState, walk } from "./walker";
 import { FSEVENTS_GAP_SCAN_INTERVAL_MS, isFSEventsGap } from "./watcher-errors";
-import { readProjectWatcherIgnores } from "./watcher-ignore";
+import {
+  readNativeWatcherIgnores,
+  subscribeWithNativeExclusions,
+  watcherIgnoreIdentity,
+} from "./watcher-ignore";
 
 export interface WatcherHandle {
   close: () => Promise<void>;
@@ -112,11 +116,11 @@ export async function startWatcher(
     const update = subscriptionUpdate
       .catch(() => {})
       .then(async () => {
-        const ignores = [
-          ...WATCHER_IGNORE_GLOBS,
-          ...(await readProjectWatcherIgnores(projectRoot)),
-        ];
-        const policy = JSON.stringify(ignores);
+        const ignores = await readNativeWatcherIgnores(
+          projectRoot,
+          WATCHER_IGNORE_GLOBS,
+        );
+        const policy = watcherIgnoreIdentity(ignores);
         if (
           closing ||
           (subscription && !subscriptionFailed && subscriptionPolicy === policy)
@@ -127,36 +131,38 @@ export async function startWatcher(
         await subscription?.unsubscribe();
         subscription = null;
         if (closing) return;
-        const next = await watcher.subscribe(
-          projectRoot,
-          (err, events) => {
-            if (closing || generation !== subscriptionGeneration) return;
-            if (err) {
-              console.error(`[${wtag}] Watcher error:`, err);
-              scanHealthy = false;
-              opts.onHealthChange?.(false, 1);
-              gapGeneration++;
-              if (isFSEventsGap(err)) requestGapScan();
-              else {
-                // Terminal backend errors can clear Parcel's callbacks.
-                subscriptionFailed = true;
-                reconcile();
+        const { subscription: next, policy: attachedPolicy } =
+          await subscribeWithNativeExclusions(
+            projectRoot,
+            (err, events) => {
+              if (closing || generation !== subscriptionGeneration) return;
+              if (err) {
+                console.error(`[${wtag}] Watcher error:`, err);
+                scanHealthy = false;
+                opts.onHealthChange?.(false, 1);
+                gapGeneration++;
+                if (isFSEventsGap(err)) requestGapScan();
+                else {
+                  // Terminal backend errors can clear Parcel's callbacks.
+                  subscriptionFailed = true;
+                  reconcile();
+                }
               }
-            }
-            for (const event of events)
-              processor.handleFileEvent(
-                event.type === "delete" ? "unlink" : "change",
-                event.path,
-              );
-          },
-          { ignore: ignores },
-        );
+              for (const event of events)
+                processor.handleFileEvent(
+                  event.type === "delete" ? "unlink" : "change",
+                  event.path,
+                );
+            },
+            WATCHER_IGNORE_GLOBS,
+            ignores,
+          );
         if (closing) {
           await next.unsubscribe();
           return;
         }
         subscription = next;
-        subscriptionPolicy = policy;
+        subscriptionPolicy = attachedPolicy;
       });
     subscriptionUpdate = update;
     return update;
