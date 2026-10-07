@@ -2,7 +2,15 @@
 
 ## Current release and next work — October 7, 2026
 
-**[v0.26.65](https://github.com/reowens/grepmax/releases/tag/v0.26.65) is published and installed.** Source/tag `77e9726` releases the accepted recovery implementation `a795475`. [Release CI](https://github.com/reowens/grepmax/actions/runs/37684651445) passed 1,934 tests / 195 files, both typechecks, formatting, JavaScript/Python audits, installed-consumer pruning/native checks and the tarball allowlist. All 296 installed files match the registry tarball. Comparing that tarball with the Linux/APFS acceptance candidate found only the three package/plugin version fields changed.
+**[v0.26.66](https://github.com/reowens/grepmax/releases/tag/v0.26.66) is published, installed and serving.** Source/tag `6032467` fixes the recovery CLI's table-version argument: the root package-version flag had intercepted `recover --prune --version <number>` in .65. Actual CLI reproduction failed on .65 and passed with the fix; the packed-consumer gate now tests both version argument forms and preserves root `gmax --version`. [Release CI](https://github.com/reowens/grepmax/actions/runs/37692600969) passed 1,934 tests / 195 files and all gates. All 296 installed files match the registry package; only the CLI entry module and three version fields differ from .65. Helper, host admission, lease and retention code are unchanged.
+
+**Live recovery was admitted once, then stopped before any native pruning.** The first offline check at 21:50:06 UTC passed with 1,222.5 MiB measured free physical memory and a 512 MiB helper reservation, but the .65 CLI bug prevented prune dispatch; service was restored immediately, with no attempt receipt. After installing .66, the second offline check at 22:00:57 UTC refused actual OS memory warning. Independent `kern.memorystatus_vm_pressure_level` returned 2; kernel pressure was healthy. No runtime preparation, exclusive prune lease or deletion followed that refusal. Both task-owned autostart markers were cleared and normal service restored. No disk recovery is claimed.
+
+At 22:03:47 UTC .66 daemon 4578/small GPU 5235 was ready/active with one worker. Platform native watching/indexing continued, with catchup 2/active 4 and no failed or degraded files; full-table maintenance attempts remained 0. Configuration bytes (`critical-only`, small GPU model, maximum two workers) and Claude/Codex settings stayed unchanged. Both Claude user/project plugin caches match .66, with scopes, sources and enabled preferences preserved.
+
+**Next: wait for normal OS memory pressure, then retake the live version/retention inventory before another short offline admission.** The initial online inventory (version 351803, 534,398 rows, 1,423 versions, no tags; proposed 14:00 UTC cutoff preserving 121 versions) is stale because ordinary indexing resumed. Never reuse its version or cutoff without a fresh bounded inventory. Do not repeatedly stop development, bypass the recovery guard, shut down unrelated agents or re-enable rewriting.
+
+**Previous release: [v0.26.65](https://github.com/reowens/grepmax/releases/tag/v0.26.65), with the subsequent CLI dispatch correction above.** Source/tag `77e9726` releases the accepted recovery implementation `a795475`. [Release CI](https://github.com/reowens/grepmax/actions/runs/37684651445) passed 1,934 tests / 195 files, both typechecks, formatting, JavaScript/Python audits, installed-consumer pruning/native checks and the tarball allowlist. All 296 installed files match the registry tarball. Comparing that tarball with the Linux/APFS acceptance candidate found only the three package/plugin version fields changed.
 
 The daemon handed over gracefully from .64 to .65. At 20:56:32 UTC, PID 30626 was ready/active with small Granite GPU 31260, one worker and zero full-table maintenance attempts. Configuration bytes stayed unchanged (`critical-only`, small GPU model, maximum two workers); native imports passed. Recovery metadata status and online preflight refusal passed without a receipt or native deletion. A live semantic query returned a result; this is service verification, not ranking acceptance. No active watched projects appeared in the sampled status, so this sample does not establish watcher freshness across sessions.
 
@@ -20,7 +28,7 @@ The user requested review by the implementer after implementation; this was a se
 
 | Remaining work | Order and scope |
 | --- | --- |
-| Live recovery admission | v0.26.65 is delivered; require fresh offline host/resource and exclusive-owner admission before pruning, with measured recovery verification. |
+| Live recovery admission | .66 is delivered; last offline check refused actual OS memory warning. Wait for normal pressure and retake version/cutoff before another guarded window. |
 | Watcher observation | In parallel under ordinary development; record gaps, reconciliation, freshness and daemon identity without a synthetic flood. |
 | Output fixes (`work/gmax-output-fixes`, `f17aeee`) | Preserved, unshipped; review and run current-release checks before a separate release. |
 | Document search (`work/gmax-document-search`, `794aa87`) | Preserved, unshipped; review and run current-release checks before a separate release. |
@@ -125,7 +133,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 135 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 136 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
