@@ -1,6 +1,24 @@
 # Docs
 
-## Current release and follow-ups — reviewed October 5, 2026
+## Current release and next work — October 7, 2026
+
+**[v0.26.64](https://github.com/reowens/grepmax/releases/tag/v0.26.64) is released and installed.** Source/tag `f65415f`; all 288 installed package files match the published tarball. [Release CI](https://github.com/reowens/grepmax/actions/runs/37624275485) passed 1,888 tests and the release gates; [macOS watcher validation](https://github.com/reowens/grepmax/actions/runs/37623882747) passed 104 focused tests. Artifact filtering (.62), live-edit queue priority (.63), and native FSEvents gap recovery (.64) now ship.
+
+The latest read-only sample at 13:16:35 UTC found .64 active and ready, native watching after three real event drops, and zero queued, active or failed paths. After earlier drops, create/edit/delete each reached the index in about 2.5 seconds. This verifies recovery from observed gaps; longer observation remains open. Automatic full-table maintenance is disabled with zero attempts. The optional Hetchy Developer guard fix `1b26495` honors the user's `critical-only` policy. Configuration is restored to two maximum workers; the current pool has one until a future normal startup.
+
+**Next: integrate the validated prune-only helper into the current release in an isolated worktree.** Add package/consumer coverage and durable reporting for interrupted or uncertain cleanup, then complete independent retention, lease, resource and lifecycle acceptance before live recovery. Isolated Linux and macOS/APFS fixtures passed, but the helper is not shipped and no live prune has been performed. Full-table rewriting stays disabled.
+
+| Remaining work | Order and scope |
+| --- | --- |
+| Prune helper integration and acceptance | Next implementation; use the tested helper from `test/gmax-prune-validation` (`831efaf`), without merging its older release base wholesale. |
+| Watcher observation | In parallel under ordinary development; record gaps, reconciliation, freshness and daemon identity without a synthetic flood. |
+| Output fixes (`work/gmax-output-fixes`, `f17aeee`) | Preserved, unshipped; review and run current-release checks before a separate release. |
+| Document search (`work/gmax-document-search`, `794aa87`) | Preserved, unshipped; review and run current-release checks before a separate release. |
+| Embedding migration and a shared watcher package | Deferred; no extraction or model change is currently requested. |
+
+The filesystem watcher belongs to gmax in daemon and standalone modes. Hetchy Developer and its helper remain optional controllers, never runtime dependencies. A future shared watcher package must work independently of that app. See the [active incident plan](plans/gmax-host-safety-and-disk-recovery.md) and [session handoff notes](future-sessions.md) for evidence and acceptance requirements. The older release records below are historical.
+
+## Historical release and follow-ups — October 5, 2026
 
 **v0.26.51 is released and registry-installed.** The Claude hook and installer repairs below now ship. Source `7de4c9c`, tag `cbaa6b9`; [release CI 37406418335](https://github.com/reowens/grepmax/actions/runs/37406418335) passed 1,648 tests / 172 files, both typechecks, formatting, build, production/packed-consumer audits and native/tarball checks. The daemon handed over from .50 to .51 and confirmed readiness over IPC (PID 40322). Claude user/project scopes refreshed without changing their source, enabled preferences, other plugins or user settings; Codex retained its complete configuration and the approved two-tool deny list. Installed hook quarantine, renewal, scoped release and native checks passed. MCP v1/legacy/modern/auto tools passed with listeners forbidden. Doctor reports 573,029 rows, 15.7 GB logical / 16.4 GB disk and 70.0 GB free. Restart existing clients to load refreshed integrations. Local evidence: `docs/measurements/2026-10-05-release-v0.26.51/`.
 
@@ -80,6 +98,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 | [2026-08-25 Release Triage — Retrospective](2026-08-25-release-triage-retrospective.md) | Active |
 | [Embedding Layout Decision](embedding-layout-decision.md) | Active |
 | [Future Sessions](future-sessions.md) | Active |
+| [Gmax Host Safety and Disk Recovery](plans/gmax-host-safety-and-disk-recovery.md) | Active |
 
 ## Planned
 
@@ -96,7 +115,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 131 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 132 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
