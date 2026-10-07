@@ -14,10 +14,10 @@ overrides:
   protobufjs: "^7.6.5" # .>@huggingface/transformers>onnxruntime-web
   undici: "^8.10.2" # .>openai (peer >=5 <9)
   # These two force past the parent's range, so they need justifying:
-  # sharp — @huggingface/transformers declared ^0.34.5; patch needs >=0.35.4.
+  # sharp — @huggingface/transformers declares ^0.35.4; patch needs >=0.35.5.
   # Safe here because transformers is in ignoredOptionalDependencies and gmax
   # embeds via onnxruntime-node; sharp's image path is never entered.
-  sharp: "^0.35.4"
+  sharp: "^0.35.5"
   # adm-zip — onnxruntime-node declares ^0.6.0, patch needs >=0.6.1. Used only
   # by that package's install script, which allowBuilds suppresses.
   adm-zip: "^0.6.1"
