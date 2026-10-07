@@ -18,6 +18,7 @@ vi.mock("../src/lib/utils/project-registry", () => ({
 
 import { WatcherManager } from "../src/lib/daemon/watcher-manager";
 import { ProjectBatchProcessor } from "../src/lib/index/batch-processor";
+import * as fileUtils from "../src/lib/utils/file-utils";
 import { registerWatcher } from "../src/lib/utils/watcher-store";
 
 describe("WatcherManager.unwatchProject", () => {
@@ -32,6 +33,83 @@ describe("WatcherManager.unwatchProject", () => {
       getShuttingDown: () => false,
     } as any;
   }
+
+  it.each(["updated", "retimed", "deleted", "unchanged"])(
+    "does not restore old metadata when a live file is %s during hash verification",
+    async (change) => {
+      const root = await fs.mkdtemp(
+        path.join(os.tmpdir(), "gmax-catchup-meta-race-"),
+      );
+      const source = path.join(root, "source.ts");
+      const content = Buffer.from("export const value = 1;\n");
+      await fs.writeFile(source, content);
+      const stat = await fs.stat(source);
+      let current: any = {
+        hash: fileUtils.computeContentHash(content, source),
+        mtimeMs: stat.mtimeMs - 1000,
+        size: stat.size,
+        hashVersion: 1,
+        hasVectors: true,
+      };
+      const metaCache = {
+        getKeysWithPrefix: vi.fn(async () => new Set([source])),
+        get: vi.fn(() => current),
+        put: vi.fn((_path, entry) => {
+          current = entry;
+        }),
+      };
+      const read = fileUtils.readFileSnapshot;
+      vi.spyOn(fileUtils, "readFileSnapshot").mockImplementation(
+        async (...args) => {
+          const snapshot = await read(...args);
+          // A live batch commits its metadata while the background read yields.
+          if (change === "updated")
+            current = {
+              ...current,
+              hash: "new live hash",
+              mtimeMs: stat.mtimeMs + 1000,
+            };
+          else if (change === "retimed")
+            current = { ...current, mtimeMs: stat.mtimeMs + 1000 };
+          else if (change === "deleted") current = undefined;
+          return snapshot;
+        },
+      );
+      const vectorDb = {
+        getDistinctPathsForPrefix: vi.fn(async () => new Set([source])),
+      };
+      const manager = new WatcherManager({
+        ...deps(),
+        getMetaCache: () => metaCache,
+        getVectorDb: () => vectorDb,
+      } as any) as any;
+      const processor = new ProjectBatchProcessor({
+        projectRoot: root,
+        metaCache: metaCache as any,
+        vectorDb: vectorDb as any,
+      });
+      try {
+        await manager.catchupScan(
+          root,
+          processor,
+          new AbortController().signal,
+        );
+        if (change === "unchanged") {
+          expect(metaCache.put).toHaveBeenCalledOnce();
+          expect(current.mtimeMs).toBe(stat.mtimeMs);
+        } else {
+          expect(metaCache.put).not.toHaveBeenCalled();
+          if (change === "updated") expect(current.hash).toBe("new live hash");
+          else if (change === "retimed")
+            expect(current.mtimeMs).toBe(stat.mtimeMs + 1000);
+          else expect(current).toBeUndefined();
+        }
+      } finally {
+        await processor.close();
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("tags reconciliation changes and retirements as background work", async () => {
     const root = await fs.mkdtemp(

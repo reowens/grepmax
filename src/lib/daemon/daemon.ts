@@ -239,10 +239,16 @@ export class Daemon {
     evictSearcher: (root) => {
       this.searchers.delete(root);
     },
-    runProjectOperation: (root, name, signal, fn) =>
-      this.withProjectLock(root, signal, () =>
+    runProjectOperation: (root, name, signal, fn) => {
+      // A filesystem walk can take minutes. Keep it lifecycle-tracked and
+      // admitted, but let live batches hold the project's write lock while
+      // the scan yields. Project removal/reindex quiesces the watcher first.
+      if (name === "watch-catchup")
+        return this.runSharedOperation(name, signal, fn);
+      return this.withProjectLock(root, signal, () =>
         this.runSharedOperation(name, signal, fn),
-      ),
+      );
+    },
   });
   private readonly projectMutex = new KeyedMutex();
   // Tests construct daemons against the real HOME; keep their leases in memory.

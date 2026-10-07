@@ -762,6 +762,7 @@ export class WatcherManager {
           // Fast path: if only mtime changed but size is identical and we have a hash,
           // just verify the hash in-process instead of sending to a worker.
           if (cached?.hash && cached.size === stats.size) {
+            const observed = { ...cached };
             const snapshot = await readFileSnapshot(absPath, {
               projectRoot: root,
             });
@@ -775,10 +776,22 @@ export class WatcherManager {
               continue;
             }
             const hash = computeContentHash(snapshot.buffer, absPath);
-            if (hash === cached.hash) {
+            if (hash === observed.hash) {
               // Content unchanged — update mtime in cache and skip worker
               if (signal.aborted) return false;
-              metaCache.put(absPath, { ...cached, mtimeMs: stats.mtimeMs });
+              // A live batch can finish while this read yields. Never replace
+              // newer metadata or resurrect a cache entry it removed.
+              const current = metaCache.get(absPath);
+              if (
+                current &&
+                current.hash === observed.hash &&
+                current.mtimeMs === observed.mtimeMs &&
+                current.size === observed.size &&
+                current.hashVersion === observed.hashVersion &&
+                current.hasVectors === observed.hasVectors
+              ) {
+                metaCache.put(absPath, { ...observed, mtimeMs: stats.mtimeMs });
+              }
               skipped++;
               continue;
             }
