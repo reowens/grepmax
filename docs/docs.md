@@ -2,6 +2,20 @@
 
 ## Current release and next work — October 7, 2026
 
+**[v0.26.69](https://github.com/reowens/grepmax/releases/tag/v0.26.69) is published, installed and running**, source/tag `873a794`. This fixes native watcher traffic admission: Parcel applies glob filters in its callback, while macOS stream exclusions receive only literal paths. The previous live options had no literal exclusions. Gmax now selects up to eight existing directories already excluded by authoritative file policy, prioritizing development, dependency and nested build output. Selection is bounded and source ancestors, symlinks and re-inclusions remain observable. Policy edits refresh exclusions; attachment revalidates selected paths against fresh policy, and repeated churn falls back to immutable filters. The helper is used by daemon and standalone watching; Hetchy Developer remains optional and is not a runtime dependency. [Native backend behavior](https://github.com/parcel-bundler/watcher/blob/v2.6.0/src/macos/FSEventsBackend.cc).
+
+Simultaneous read-only FSEvents streams over the same two-minute development window measured **562 events without exclusions and 38 with them**, a 93.2% reduction. macOS accepted all eight paths; 524 matching control events were suppressed. A separate trace saw 37,040 Swift `.build` events, motivating discovery of nested package build roots before broad source trees exhaust the bounded scan. No synthetic platform flood was generated. These samples establish traffic filtering; longer observation is still needed to assess all native-drop causes.
+
+Self acceptance followed implementation. [Source CI](https://github.com/reowens/grepmax/actions/runs/37705597979) and [release CI](https://github.com/reowens/grepmax/actions/runs/37705841297) passed **1,960 tests / 199 files** and every gate. The 48 focused local tests include actual native source/control delivery, literal-path limits, nested policies, re-inclusions, symlinks, policy races and watcher lifecycle. All 297 installed files and 30 Claude cache files match the registry package. Only three watcher runtime modules, README and version metadata changed from .68; recovery, admission, lease, retention and embedding bytes are unchanged. Other sessions' work was preserved through an exact package.json merge, with 32 other file hashes unchanged at integration; backup/stash remain available.
+
+Daemon 1920 handed over through graceful IPC shutdown to .69 PID 11626, with small Granite GPU 12238. Configuration bytes (`critical-only`, small GPU, maximum two workers) and Claude/Codex settings are unchanged; the final sample has one worker. Semantic IPC returned three hits in 4.18 seconds. The four-minute observation (238 samples) recorded zero native drops and zero failed files. Startup reconciliation completed in 39.56 seconds with one sampled live batch while the scan was active; ordinary `wifi-device-enroll.test.ts` edits reindexed in 1.3 and 0.4 seconds. At 2026-10-08T00:17:14.646Z the daemon is ready/active with native watching, reconciliation complete and all waiting/active/failed paths zero. Full-table maintenance remains disabled with attempts 0. No live pruning or recovery window was taken.
+
+**Next:** continue ordinary development observation with the reduced event traffic. Live pruning remains unperformed. It still requires fresh strict host/resource admission, a prepared pinned runtime under a real 512 MiB reservation, reviewed current daemon/store ownership, draining only known gmax owners, a fresh version/tag/cutoff inventory within the 256-protected-version bound and an actual exclusive lease. Prior inventory and wrappers are stale; normal service stays available under `critical-only` and full-table maintenance stays disabled. Output fixes (`work/gmax-output-fixes`, `f17aeee`) and document search (`work/gmax-document-search`, `794aa87`) remain separate unshipped work. Embedding migration and watcher extraction remain deferred.
+
+Evidence: `/private/tmp/gmax-native-exclusions-paired-evidence.json`, `/private/tmp/gmax-native-exclusions-self-acceptance.json`, `/private/tmp/gmax-v02669-installed-evidence.json`, `/private/tmp/gmax-v02669-client-evidence.json`, `/private/tmp/gmax-v02669-installed-native-options.json`, `/private/tmp/gmax-v02669-live-observation.json` and `/private/tmp/gmax-v02669-final-live.json`.
+
+## Previous release — v0.26.68
+
 **[v0.26.68](https://github.com/reowens/grepmax/releases/tag/v0.26.68) is published, installed and running.** Source/tag `382c936` removes the project mutex from the reconciliation walk while retaining lifecycle admission and shutdown/exclusive draining. Live write batches remain serialized. Metadata stamps cannot overwrite a concurrent update or resurrect deleted cache entries. Full sync via re-add drains the watcher and checks admission before restoration after failure. Watching remains in gmax; there is no Hetchy app dependency.
 
 Self acceptance followed implementation. [Source CI](https://github.com/reowens/grepmax/actions/runs/37701414629) and [release CI](https://github.com/reowens/grepmax/actions/runs/37701648501) passed 1,949 tests / 197 files and all gates; 95 focused local cases cover concurrency, metadata, full sync, removal, rebuild, shutdown and batches. All 297 installed files and both Claude caches match the registry artifact. Only two runtime modules, README and three version files changed from .67; recovery helper/admission/lease/retention bytes are unchanged. Other sessions' source edits were preserved through an exact two-file merge, with 31 other dirty/untracked files unchanged at integration.
@@ -52,8 +66,8 @@ The user requested review by the implementer after implementation; this was a se
 
 | Remaining work | Order and scope |
 | --- | --- |
-| Live recovery admission | .68 is running; setup remains refused by OS warning. Refresh inventory after draining only when strict admission is healthy. |
-| Watcher observation | In parallel under ordinary development; record gaps, reconciliation, freshness and daemon identity without a synthetic flood. |
+| Live recovery admission | .69 remains online. Fresh strict admission and runtime preparation are required before draining or pruning. |
+| Watcher observation | .69 reduced native traffic by 93.2% in a paired sample; four deployed minutes had zero drops. Continue ordinary development observation before claiming all causes resolved. |
 | Output fixes (`work/gmax-output-fixes`, `f17aeee`) | Preserved, unshipped; review and run current-release checks before a separate release. |
 | Document search (`work/gmax-document-search`, `794aa87`) | Preserved, unshipped; review and run current-release checks before a separate release. |
 | Embedding migration and a shared watcher package | Deferred; no extraction or model change is currently requested. |
@@ -157,7 +171,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 140 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 141 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
