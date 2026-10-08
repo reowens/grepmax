@@ -128,7 +128,7 @@ jobs:
           const output = JSON.parse(fs.readFileSync('pack.json', 'utf8'));
           const pack = (Array.isArray(output) ? output : Object.values(output))[0];
           if (!pack?.files) throw new Error('npm pack returned no tarball metadata');
-          const allowed = /^(dist\/|\.claude-plugin\/|plugins\/|mlx-embed-server\/|lance-maintenance\/(prune\.py|pyproject\.toml|uv\.lock)$|scripts\/postinstall\.js$|package\.json$|README\.md$|LICENSE$|NOTICE$)/;
+          const allowed = /^(dist\/|\.claude-plugin\/|plugins\/|mlx-embed-server\/|lance-maintenance\/(prune\.py|pyproject\.toml|uv\.lock)$|scripts\/postinstall\.js$|package\.json$|README\.md$|DOCUMENT-SEARCH\.md$|LICENSE$|NOTICE$)/;
           const leaked = pack.files.map((f) => f.path).filter((p) => !allowed.test(p));
           if (leaked.length) {
             console.error('ERROR: Unexpected files in npm tarball:');
