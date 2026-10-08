@@ -10,6 +10,7 @@ import {
 import { createSerializedHandler } from "./serialized-handler";
 import processFile, {
   encodeQuery,
+  isExistingQueryReady,
   type ProcessFileInput,
   type ProcessFileResult,
   type RerankDoc,
@@ -22,7 +23,11 @@ if (process.env[LOG_TIMESTAMPS_ENV] === "1") installTimestampedOutput();
 
 type IncomingMessage =
   | { id: number; method: "processFile"; payload: ProcessFileInput }
-  | { id: number; method: "encodeQuery"; payload: { text: string } }
+  | {
+      id: number;
+      method: "encodeQuery";
+      payload: { text: string; existingOnly?: boolean; generation?: string };
+    }
   | {
       id: number;
       method: "rerank";
@@ -42,12 +47,19 @@ const send = (msg: OutgoingMessage) => {
   if (process.send) {
     // Attach current RSS so the pool can recycle workers whose native (ONNX)
     // memory has ballooned — the V8 --max-old-space-size cap can't see it.
-    process.send({ ...msg, rss: process.memoryUsage().rss });
+    process.send({
+      ...msg,
+      rss: process.memoryUsage().rss,
+      queryReady: isExistingQueryReady(),
+    });
   }
 };
 
+let restrictedInFlight = false;
 const handleMessage = async (msg: IncomingMessage) => {
   const { id, method, payload } = msg;
+  restrictedInFlight =
+    method === "encodeQuery" && payload.existingOnly === true;
   const start = performance.now();
   debug(
     "worker",
@@ -86,13 +98,29 @@ const handleMessage = async (msg: IncomingMessage) => {
     }
     send({ id, error: `Unknown method: ${method}` });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const rawCode = (err as { code?: unknown })?.code;
+    const safeCode =
+      typeof rawCode === "string" &&
+      ["host_pressure", "embedding_mismatch", "embedding_unavailable"].includes(
+        rawCode,
+      )
+        ? rawCode
+        : "embedding_unavailable";
+    const message = restrictedInFlight
+      ? safeCode
+      : err instanceof Error
+        ? err.message
+        : String(err);
     debug(
       "worker",
       `fail task=${id} method=${method} ${(performance.now() - start).toFixed(0)}ms: ${message}`,
     );
-    const code = (err as { code?: unknown })?.code;
+    const code = restrictedInFlight
+      ? safeCode
+      : (err as { code?: unknown })?.code;
     send({ id, error: message, ...(typeof code === "string" ? { code } : {}) });
+  } finally {
+    restrictedInFlight = false;
   }
 };
 
@@ -102,13 +130,19 @@ process.on("message", (msg: IncomingMessage) => {
 });
 
 process.on("uncaughtException", (err) => {
-  console.error("[process-worker] uncaughtException", err);
+  console.error(
+    "[process-worker] uncaughtException",
+    restrictedInFlight ? "restricted query failed" : err,
+  );
   process.exitCode = 1;
   process.exit();
 });
 
 process.on("unhandledRejection", (reason) => {
-  console.error("[process-worker] unhandledRejection", reason);
+  console.error(
+    "[process-worker] unhandledRejection",
+    restrictedInFlight ? "restricted query failed" : reason,
+  );
   process.exitCode = 1;
   process.exit();
 });

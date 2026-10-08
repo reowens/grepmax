@@ -33,9 +33,19 @@ export default async function processFile(
   return orchestrator.processFile(input, onProgress);
 }
 
-export async function encodeQuery(input: { text: string }) {
-  return orchestrator.encodeQuery(input.text);
+export async function encodeQuery(input: {
+  text: string;
+  existingOnly?: boolean;
+  generation?: string;
+}) {
+  return orchestrator.encodeQuery(
+    input.text,
+    input.existingOnly,
+    input.generation,
+  );
 }
+
+export const isExistingQueryReady = () => orchestrator.isExistingQueryReady();
 
 export async function rerank(input: {
   query: number[][];

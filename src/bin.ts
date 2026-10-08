@@ -127,6 +127,13 @@ function seedConfig(home: string): void {
 }
 
 if (require.main === module) {
-  selectHome();
-  require("./index");
+  if (process.argv.slice(2).join(" ") === "mcp --existing-index-only") {
+    require("./lib/mcp/document-search").runDocumentSearchBridge();
+  } else if (process.argv.includes("--existing-index-only")) {
+    process.stderr.write("gmax: use exactly mcp --existing-index-only\n");
+    process.exitCode = 2;
+  } else {
+    selectHome();
+    require("./index");
+  }
 }

@@ -17,6 +17,7 @@ import {
 import { embeddingReuseKey } from "../index/embedding-reuse";
 import { Skeletonizer } from "../skeleton";
 import type { PreparedChunk, VectorRecord } from "../store/types";
+import { daemonStartDeniedReason } from "../utils/autostart";
 import {
   computeContentHash,
   hasNullByte,
@@ -26,11 +27,16 @@ import {
 } from "../utils/file-utils";
 import { debug as dbg, debugTimer } from "../utils/logger";
 import { resolveContainedPath } from "../utils/path-containment";
+import { resourceBudget } from "../utils/resource-budget";
 import { maxSim } from "./colbert-math";
 import { EmbeddingBackendUnavailableError } from "./embedding-error";
 import { ColbertModel, type HybridResult } from "./embeddings/colbert";
 import { GraniteModel } from "./embeddings/granite";
-import { mlxEmbed } from "./embeddings/mlx-client";
+import {
+  isMlxExistingReady,
+  mlxEmbed,
+  mlxEmbedExisting,
+} from "./embeddings/mlx-client";
 
 let mlxFallbackWarned = false;
 
@@ -413,27 +419,64 @@ export class WorkerOrchestrator {
       : { vectors, hash, mtimeMs, size };
   }
 
-  async encodeQuery(text: string): Promise<{
+  isExistingQueryReady(): boolean {
+    return this.embedMode === "cpu"
+      ? this.granite.isReady()
+      : isMlxExistingReady(this.generation.mlxModel);
+  }
+
+  async encodeQuery(
+    text: string,
+    existingOnly = false,
+    expectedGeneration?: string,
+  ): Promise<{
     dense: number[];
     colbert: number[][];
     colbertDim: number;
     pooled_colbert_48d?: number[];
   }> {
-    await this.ensureReady();
+    if (existingOnly) {
+      if (expectedGeneration !== this.generation.fingerprint)
+        throw Object.assign(new Error("embedding_mismatch"), {
+          code: "embedding_mismatch",
+        });
+      try {
+        if (daemonStartDeniedReason()) throw new Error();
+        resourceBudget.checkExisting();
+        if (daemonStartDeniedReason()) throw new Error();
+      } catch {
+        throw Object.assign(new Error("host_pressure"), {
+          code: "host_pressure",
+        });
+      }
+      if (!this.isExistingQueryReady())
+        throw new Error("embedding_unavailable");
+    } else await this.ensureReady();
 
     // Try MLX GPU server first, fall back to ONNX CPU
-    const mlxResult = await mlxEmbed([text], {
-      mode: this.embedMode,
-      expectedModel: this.generation.mlxModel,
-      expectedDim: this.generation.vectorDim,
-    });
+    const mlxResult = existingOnly
+      ? this.embedMode === "gpu"
+        ? await mlxEmbedExisting([text], {
+            mode: this.embedMode,
+            expectedModel: this.generation.mlxModel,
+            expectedDim: this.generation.vectorDim,
+          })
+        : null
+      : await mlxEmbed([text], {
+          mode: this.embedMode,
+          expectedModel: this.generation.mlxModel,
+          expectedDim: this.generation.vectorDim,
+        });
     if (!mlxResult && !this.allowOnnxFallback) {
       throw new Error(
         `MLX embedding model ${this.generation.mlxModel} is unavailable; ONNX fallback is disabled for this custom embedding generation`,
       );
     }
     const denseVector =
-      mlxResult?.[0] ?? (await this.granite.runBatch([text]))[0];
+      mlxResult?.[0] ?? (await this.granite.runBatch([text], existingOnly))[0];
+
+    if (existingOnly)
+      return { dense: Array.from(denseVector), colbert: [], colbertDim: 0 };
 
     const encoded = await this.colbert.encodeQuery(text);
 

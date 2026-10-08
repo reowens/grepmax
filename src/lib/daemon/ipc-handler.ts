@@ -120,13 +120,17 @@ export async function handleCommand(
       (daemon.operationStatus() === "closing" ||
         daemon.operationStatus() === "closed")
     ) {
-      return errorResponse(new OperationClosedError());
+      return cmd.cmd === "documents.status" || cmd.cmd === "documents.search"
+        ? { ok: false, state: "busy" }
+        : errorResponse(new OperationClosedError());
     }
     // The socket listens before LanceDB/MetaCache are open so liveness probes
     // succeed during slow startup. Gate resource-dependent commands until those
     // stores exist; ping/shutdown must always work (probes + restart).
     if (cmd.cmd !== "ping" && cmd.cmd !== "shutdown" && !daemon.isReady()) {
-      return { ok: false, error: "daemon initializing" };
+      return cmd.cmd === "documents.status" || cmd.cmd === "documents.search"
+        ? { ok: false, state: "index_unavailable" }
+        : { ok: false, error: "daemon initializing" };
     }
     switch (cmd.cmd) {
       case "ping":
@@ -144,6 +148,7 @@ export async function handleCommand(
             exclusiveGenerationRebuild: EXCLUSIVE_GENERATION_REBUILD_PROTOCOL,
             readVerbs: READ_VERBS_PROTOCOL,
             searchDiagnostics: 1,
+            existingIndexOnlySearch: 1,
             perFileSearch: 1,
             // `watch`/`unwatch` accept holder/pid/ttlMs. A daemon without this
             // treats `unwatch` as unwatch-for-everyone, so clients releasing a
@@ -219,6 +224,27 @@ export async function handleCommand(
         );
         setImmediate(() => daemon.shutdown());
         return { ok: true };
+      }
+
+      case "documents.status":
+      case "documents.search": {
+        const ac = new AbortController();
+        const close = () => ac.abort();
+        conn.once("close", close);
+        try {
+          return await daemon.documentSearch(cmd, ac.signal);
+        } catch (error) {
+          return {
+            ok: false,
+            state: ac.signal.aborted
+              ? "cancelled"
+              : error instanceof OperationBusyError
+                ? "busy"
+                : "index_unavailable",
+          };
+        } finally {
+          conn.off("close", close);
+        }
       }
 
       case "search":

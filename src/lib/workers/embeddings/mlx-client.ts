@@ -286,3 +286,37 @@ export async function mlxEmbed(
 
   return data.vectors.map((v) => new Float32Array(v));
 }
+
+/** Cached positive identity permits one bounded call to the existing backend.
+ * Every response verifies model/dimensions again; no polling or startup follows
+ * from an idle cache. A failed call revokes eligibility until external work
+ * confirms readiness again.
+ */
+export function isMlxExistingReady(expectedModel: string): boolean {
+  return mlxAvailable === true && checkedModel === expectedModel;
+}
+export async function mlxEmbedExisting(
+  texts: string[],
+  options: MlxEmbeddingOptions,
+): Promise<Float32Array[]> {
+  if (!isMlxExistingReady(options.expectedModel))
+    throw new Error("embedding_unavailable");
+  const result = await requestMlxJSON("/embed", {
+    texts,
+    expected_model: options.expectedModel,
+  });
+  if (
+    !result.ok ||
+    !validateMlxEmbeddingResponse(
+      result.data,
+      texts.length,
+      options.expectedModel,
+      options.expectedDim,
+    )
+  ) {
+    mlxAvailable = false;
+    throw new Error("embedding_unavailable");
+  }
+  lastCheck = Date.now();
+  return result.data.vectors.map((v: number[]) => new Float32Array(v));
+}

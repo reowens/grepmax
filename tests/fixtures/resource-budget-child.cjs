@@ -5,6 +5,7 @@ process.on("message", (message) => {
     const budget = new ResourceBudget({
       root: message.root,
       platform: "darwin",
+      policy: () => "strict",
       pid: process.pid,
       now: Date.now,
       quarantine: () => null,

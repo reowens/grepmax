@@ -36,7 +36,7 @@ type RerankResult = Awaited<ReturnType<typeof import("./worker")["rerank"]>>;
 
 type TaskPayloads = {
   processFile: ProcessFileInput;
-  encodeQuery: { text: string };
+  encodeQuery: { text: string; existingOnly?: boolean; generation?: string };
   rerank: { query: number[][]; docs: RerankDoc[]; colbertDim: number };
 };
 
@@ -50,7 +50,7 @@ type WorkerMessage = (
   | { id: number; result: TaskResults[TaskMethod] }
   | { id: number; error: string; code?: string }
   | { id: number; heartbeat: true }
-) & { rss?: number };
+) & { rss?: number; queryReady?: boolean };
 
 type PendingTask<M extends TaskMethod = TaskMethod> = {
   id: number;
@@ -69,6 +69,7 @@ type PendingTask<M extends TaskMethod = TaskMethod> = {
   signal?: AbortSignal;
   abortListener?: () => void;
   callerAborted?: boolean;
+  existingOnly?: boolean;
 };
 
 const TASK_TIMEOUT_MS = (() => {
@@ -138,6 +139,8 @@ export function embeddingEnv(
 class ProcessWorker {
   child: childProcess.ChildProcess;
   busy = false;
+  queryReady = false;
+  suppressReplacement = false;
   pendingTaskId: number | null = null;
   lastBusyTime = Date.now();
   // Wall-clock at which this worker became busy with its current task; null
@@ -467,7 +470,10 @@ export class WorkerPool {
     if (!this.destroyed) {
       // Only respawn if we have no workers left or there are pending tasks
       const hasPendingTasks = this.hasUnassignedTasks();
-      if (this.workers.length === 0 || hasPendingTasks) {
+      if (
+        (!worker.suppressReplacement && this.workers.length === 0) ||
+        hasPendingTasks
+      ) {
         this.maybeRespawn(reason, hasPendingTasks);
       }
       this.dispatch();
@@ -576,11 +582,14 @@ export class WorkerPool {
     );
 
     const onMessage = (msg: WorkerMessage) => {
+      if (typeof msg.queryReady === "boolean")
+        worker.queryReady = msg.queryReady;
       if (typeof msg.rss === "number") worker.lastRssBytes = msg.rss;
       const task = this.tasks.get(msg.id);
       if (!task) return;
 
       if ("heartbeat" in msg) {
+        if (task.existingOnly) return;
         // Reset only the no-progress timeout. The hard deadline is left
         // untouched on purpose — heartbeats must not be able to extend a task
         // past its absolute ceiling.
@@ -834,6 +843,7 @@ export class WorkerPool {
       return;
     }
 
+    idle.suppressReplacement = false;
     idle.busy = true;
     idle.pendingTaskId = task.id;
     idle.busySince = Date.now();
@@ -919,6 +929,94 @@ export class WorkerPool {
 
   processFile(input: ProcessFileInput, signal?: AbortSignal) {
     return this.enqueue("processFile", input, signal);
+  }
+
+  /** No queue, scaling or initialization for an existing-index document query. */
+  existingQueryState():
+    | "ready"
+    | "busy"
+    | "embedding_unavailable"
+    | "host_pressure" {
+    if (this.destroyed || this.spawnDeniedReason || daemonStartDeniedReason())
+      return "host_pressure";
+    const warm = this.workers.filter(
+      (w) => w.queryReady && !w.cleanedUp && w.child.connected !== false,
+    );
+    return warm.some((w) => !w.busy)
+      ? "ready"
+      : warm.length
+        ? "busy"
+        : "embedding_unavailable";
+  }
+
+  encodeQueryExisting(
+    text: string,
+    signal?: AbortSignal,
+  ): Promise<EncodeQueryResult> {
+    const state = this.existingQueryState();
+    if (state !== "ready")
+      return Promise.reject(Object.assign(new Error(state), { code: state }));
+    if (signal?.aborted)
+      return Promise.reject(
+        Object.assign(new Error("Aborted"), { name: "AbortError" }),
+      );
+    try {
+      resourceBudget.checkExisting();
+    } catch {
+      return Promise.reject(
+        Object.assign(new Error("host_pressure"), { code: "host_pressure" }),
+      );
+    }
+    // Recheck after admission: quarantine or worker readiness may have changed.
+    const after = this.existingQueryState();
+    if (after !== "ready")
+      return Promise.reject(Object.assign(new Error(after), { code: after }));
+    const worker = this.workers.find(
+      (w) =>
+        w.queryReady && !w.busy && !w.cleanedUp && w.child.connected !== false,
+    )!;
+    return new Promise((resolve, reject) => {
+      const id = this.nextId++;
+      const task: PendingTask<"encodeQuery"> = {
+        id,
+        method: "encodeQuery",
+        payload: {
+          text,
+          existingOnly: true,
+          generation: this.generation.fingerprint,
+        },
+        resolve,
+        reject,
+        queuedAt: Date.now(),
+        signal,
+        existingOnly: true,
+        worker,
+      };
+      const cancel = () => {
+        task.callerAborted = true;
+        reject(Object.assign(new Error("Aborted"), { name: "AbortError" }));
+      };
+      task.abortListener = cancel;
+      signal?.addEventListener("abort", cancel, { once: true });
+      // Caller deadline does not kill or replace this shared worker. Its bounded
+      // inference settles lifecycle independently, just like normal cancellation.
+      task.timeout = setTimeout(() => {
+        task.callerAborted = true;
+        reject(new Error("timeout"));
+      }, 10000);
+      worker.busy = true;
+      worker.suppressReplacement = true;
+      worker.busySince = Date.now();
+      worker.pendingTaskId = id;
+      this.tasks.set(id, task as PendingTask);
+      try {
+        worker.child.send({ id, method: task.method, payload: task.payload });
+      } catch {
+        this.completeTask(task, worker);
+        worker.queryReady = false;
+        reject(new Error("embedding_unavailable"));
+      }
+    });
   }
 
   encodeQuery(text: string, signal?: AbortSignal) {
@@ -1013,7 +1111,7 @@ export class WorkerPool {
    * floor with a fresh, lean worker. Shared by the idle and post-task RSS paths.
    */
   private recycleWorker(w: ProcessWorker, reason: string) {
-    if (w.cleanedUp) return;
+    if (w.cleanedUp || w.busy) return;
     log(
       "pool",
       `recycle bloated worker PID:${w.child.pid} (${reason}, rss ${Math.round(w.lastRssBytes / 1048576)}MB > ${WORKER_RSS_RECYCLE_MB}MB)`,
@@ -1042,7 +1140,11 @@ export class WorkerPool {
       }, REAP_FORCE_KILL_GRACE_MS);
     }
     // Replace anything we dropped below the floor with fresh, lean workers.
-    while (!this.destroyed && this.workers.length < MIN_KEEP_WORKERS) {
+    while (
+      !w.suppressReplacement &&
+      !this.destroyed &&
+      this.workers.length < MIN_KEEP_WORKERS
+    ) {
       if (!this.spawnWorker()) break;
     }
   }

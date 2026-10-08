@@ -32,6 +32,9 @@ try {
   for (const file of helperFiles) {
     if (!fs.existsSync(path.join(root, file))) throw new Error("Prune runtime source missing");
   }
+  for (const file of ["DOCUMENT-SEARCH.md", "dist/lib/mcp/document-search.js", "dist/lib/mcp/document-contract.js", "dist/lib/daemon/document-search-handler.js"]) {
+    if (!packed.files.some(f => f.path === file)) throw new Error(`Packed document contract missing: ${file}`);
+  }
   fs.writeFileSync(path.join(temp, "package.json"), JSON.stringify({ name: "gmax-consumer-check", version: "1.0.0", private: true }));
   npm(["install", path.join(temp, packed.filename), "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-online"]);
   const auditResult = npm(["audit", "--omit=dev", "--json"], temp, true);
@@ -46,6 +49,9 @@ try {
   }
   console.log("Packed consumer audit: no vulnerabilities");
   npm(["ci", "--ignore-scripts", "--omit=dev", "--no-audit", "--no-fund"]);
+  const documentSmoke = spawnSync(process.execPath, [path.join(root, "scripts/audit-document-search.cjs"), path.join(temp, "node_modules/grepmax")], {cwd: temp, encoding: "utf8", timeout: 30_000});
+  if (documentSmoke.error || documentSmoke.status !== 0) throw new Error(`Packaged document contract failed: ${documentSmoke.error ?? documentSmoke.stderr}`);
+  process.stdout.write(documentSmoke.stdout);
   const smoke = spawnSync(process.execPath, ["-e", `
     const fs = require('node:fs'), path = require('node:path');
     const { VectorDB } = require('grepmax/dist/lib/store/vector-db.js');

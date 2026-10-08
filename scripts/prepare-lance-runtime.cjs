@@ -19,7 +19,8 @@ for (const [name, version] of Object.entries(sdk.optionalDependencies)) {
 for (const name of Object.keys(sdk.dependencies)) {
   if (!manifest.dependencies[name]) throw new Error(`Missing Lance runtime dependency: ${name}`);
 }
-const target = path.join(root, "dist", "vendor", "lancedb");
+// Isolated candidate builds use the same pin/dependency/provenance checks.
+const target = process.argv[2] ? path.resolve(process.argv[2]) : path.join(root, "dist", "vendor", "lancedb");
 fs.mkdirSync(target, { recursive: true });
 fs.cpSync(path.join(sdkDir, "dist"), target, { recursive: true });
 fs.copyFileSync(path.join(root, "licenses", "lancedb-LICENSE"), path.join(target, "LICENSE"));

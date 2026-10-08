@@ -11,6 +11,7 @@ vi.mock("../src/lib/utils/host-resource", () => ({
 vi.mock("../src/lib/utils/resource-budget", () => ({
   resourceBudget: {
     check: vi.fn(() => null),
+    checkExisting: vi.fn(() => null),
     reserve: vi.fn(() => ({ attach: vi.fn(), release: vi.fn() })),
     registerClient: vi.fn(() => ({ attach: vi.fn(), release: vi.fn() })),
   },
