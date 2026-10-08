@@ -1,5 +1,21 @@
 # Docs
 
+## Document-search review and isolated acceptance — October 8, 2026
+
+The newer shared document-search candidate was frozen against .70 into **`review/gmax-document-search-070`, `d88d36bdec1827e414d31a870d19e639e944651e`**, worktree `/private/tmp/gmax-document-search-review`. This supersedes `794aa87` as the qualification candidate. It is reviewed and packaged, **not integrated into main, installed or published**; the installed service remains .70. The private candidate retains .70 package metadata solely for qualification and must receive a new version before publication.
+
+Post-implementation self review corrected two reproduced defects: an absent resource ledger in a fresh `critical-only` home prevented existing-only admission from reaching its host sample; Markdown directories, including symlink aliases, could be authorized as coverage/source pointers. The ledger now stays absent while sampling proceeds, existing symlinked/corrupt ledgers still refuse, and pointers require regular files after canonical resolution. The new tests failed before correction and pass afterward. Full CI also exposed one stale startup capability expectation; it now includes `existingIndexOnlySearch: 1` while retaining the exact readiness assertion.
+
+**145 focused tests / 10 files**, test typecheck and formatting passed. [Full source CI](https://github.com/reowens/grepmax/actions/runs/37845547662) passed all gates with **2,055 tests / 207 files**, including the consumer audit after fresh npm dependency resolution, document contract/import boundary, native store smoke and prune acceptance. The initial CI run had only the missed capability fixture failure; it is superseded by this passing run. Local package qualification used checkout dependencies and is recorded separately from fresh consumer resolution.
+
+The **303-file candidate** adds only the document contract and three runtime modules; changes are the CLI entry, two daemon modules, existing-table read access, read-only resource admission, six worker/embedding modules, README and package manifest. Dependencies, native runtime, watcher, recovery and retention bytes are unchanged. An isolated two-row macOS Lance fixture verifies dense prefix filtering with quotes/SQL metacharacters and unchanged row count. The actual packaged provider passes Runlist stdio and desktop-helper interoperability, including readiness, scope, generation fencing, bounded frames, UTF-8, metadata sanitization and cancellation. Guards forbid watchers, normal CLI/native imports, runtime startup and non-fixture network access. Real models and the live corpus were not used for these acceptance cases.
+
+Reviewed fixes and documentation were copied back to the shared checkout only after checking exact original hashes; all 26 other frozen candidate files stayed unchanged. Eight copied paths (including the startup fixture) have backups at `/private/tmp/gmax-document-search-review-shared-fixes-backup`; source changes remain unstaged on main. At 21:14:05 UTC the same .70 daemon 75705/small GPU76356 is ready/active, native watching, empty queues/drop0/failure0 and maintenance attempts0. Normal `critical-only` policy and service were not changed or restarted.
+
+**Next:** integrate the accepted `d88d36b` candidate from its isolated branch and deliver it under a new version, preserving other sessions' edits and checking installed/live behavior separately. No PR exists. Existing-only document queries retain their documented stricter Darwin resource admission and can refuse warning/unknown aggregate resources without pausing normal .70 service; fixture acceptance does not prove live query eligibility or recall. Consumers still must reread/authorize source and verify pointer provenance. Live pruning needs fresh strict host/ownership/retention admission; no prune or disk recovery is claimed. Embedding migration and shared watcher extraction remain deferred, and Hetchy Developer cannot be a runtime dependency.
+
+Evidence: `/private/tmp/gmax-document-search-review-acceptance.json`, `/private/tmp/gmax-document-search-review-regressions-before.log`, `/private/tmp/gmax-document-search-review-tests-final.log`, `/private/tmp/gmax-document-search-review-capabilities-tests.log`, `/private/tmp/gmax-document-search-final-package-audit.log`, `/private/tmp/gmax-document-search-final-runlist-qualification.log`, `/private/tmp/gmax-document-search-review-ci-final.log`, `/private/tmp/gmax-document-search-final-package-comparison.json` and `/private/tmp/gmax-document-search-review-shared-fixes.json`. Candidate `/private/tmp/gmax-document-search-final-package/grepmax-0.26.70.tgz`, SHA256 `9030f377c7f3638bc53f4e1b96216bc0b7b5c83f7a8bc9273cb31b4b9d644632`; preserve prior branches, stashes and backups.
+
 ## Current release and next work — October 8, 2026
 
 **[v0.26.70](https://github.com/reowens/grepmax/releases/tag/v0.26.70) is published, installed and running**, source/tag `1030a736f90d4ca14504940f6d2352204b716f44`. The preserved output work (`work/gmax-output-fixes`, `f17aeee`) is now integrated with review corrections: project summaries label sampled counts and breakdowns, with total chunks counted separately through path-only streaming under native and wall-clock deadlines; audit rankings omit unresolved symbol-name collisions and report uncertainty; compact cycles keep complete names with exact omitted-file counts; compact CLI/MCP skeleton text reports its limits while JSON retains full structure. Similarity excludes generated and fixture families by default, with CLI `--include-generated` and MCP `include_generated` controls. Uncapped project labels remain compatible.
@@ -185,7 +201,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 142 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 143 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
