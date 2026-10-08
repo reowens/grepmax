@@ -1,8 +1,9 @@
+import { type Dir, promises as filesystem } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as watcher from "@parcel/watcher";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { WATCHER_IGNORE_GLOBS } from "../src/lib/index/watcher";
 import { readNativeWatcherIgnores } from "../src/lib/index/watcher-ignore";
 
@@ -69,6 +70,33 @@ describe("macOS stream exclusions", () => {
     const opts = await normalized(root);
     expect(opts.ignorePaths).toHaveLength(8);
     expect(opts.ignorePaths).toContain(path.join(root, ".dev"));
+  });
+  it("finds nested build roots before a broad source tree spends the entry budget", async () => {
+    const root = await fixture();
+    await fs.mkdir(path.join(root, "src"));
+    await fs.mkdir(path.join(root, "packages/ios/Core/.build"), {
+      recursive: true,
+    });
+    const open = filesystem.opendir.bind(filesystem);
+    const intercepted = vi
+      .spyOn(filesystem, "opendir")
+      .mockImplementation(async (...args) => {
+        if (String(args[0]) !== path.join(root, "src")) return open(...args);
+        return {
+          async *[Symbol.asyncIterator]() {
+            for (let i = 0; i < 20000; i++)
+              yield { name: `file${i}.ts`, isDirectory: () => false };
+          },
+        } as unknown as Dir;
+      });
+    try {
+      const opts = await normalized(root);
+      expect(opts.ignorePaths).toContain(
+        path.join(root, "packages/ios/Core/.build"),
+      );
+    } finally {
+      intercepted.mockRestore();
+    }
   });
   it("does not exclude a re-included directory and refreshes after policy edits/deletion", async () => {
     const root = await fixture();

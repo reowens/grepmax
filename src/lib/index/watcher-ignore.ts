@@ -57,9 +57,9 @@ export async function readProjectWatcherIgnores(
 
 const NATIVE_EXCLUSION_LIMIT = 8;
 const DISCOVERY_DIRECTORY_LIMIT = 512;
-const DISCOVERY_ENTRY_LIMIT = 4096;
+const DISCOVERY_ENTRY_LIMIT = 16384;
 const DISCOVERY_DEPTH_LIMIT = 4;
-const DISCOVERY_TIME_MS = 250;
+const DISCOVERY_TIME_MS = 1000;
 
 /** FSEvents only receives Parcel's literal paths, not its glob filters. Select
  * bounded, existing directories that file policy already excludes. Never hide
@@ -70,6 +70,20 @@ export async function readNativeWatcherIgnores(
 ): Promise<Array<string | RegExp>> {
   const policy = new ProjectFilePolicy(root);
   const candidates: Array<{ relative: string; score: number }> = [];
+  const discoveryPriority = (directory: string, depth: number) => {
+    const parts = path.relative(root, directory).split(path.sep);
+    // Package containers often hold nested build roots. Inspect those before
+    // descending authored source trees, which can exhaust the entry budget.
+    const container = parts.some((part) =>
+      ["packages", "apps", "services", "ios", "android", "macos"].includes(
+        part,
+      ),
+    );
+    const source = parts.some((part) =>
+      ["src", "source", "Sources", "tests", "test", "Tests"].includes(part),
+    );
+    return (container ? 1000 : 0) - (source ? 2000 : 0) - depth;
+  };
   const pending = [{ directory: root, depth: 0 }];
   const deadline = performance.now() + DISCOVERY_TIME_MS;
   let entries = 0;
@@ -77,6 +91,15 @@ export async function readNativeWatcherIgnores(
   for (let cursor = 0; cursor < pending.length; cursor++) {
     if (visited++ >= DISCOVERY_DIRECTORY_LIMIT || performance.now() > deadline)
       break;
+    let next = cursor;
+    for (let i = cursor + 1; i < pending.length; i++) {
+      if (
+        discoveryPriority(pending[i].directory, pending[i].depth) >
+        discoveryPriority(pending[next].directory, pending[next].depth)
+      )
+        next = i;
+    }
+    [pending[cursor], pending[next]] = [pending[next], pending[cursor]];
     const { directory, depth } = pending[cursor];
     try {
       const dir = await fs.opendir(directory);
@@ -106,7 +129,9 @@ export async function readNativeWatcherIgnores(
                 ? 1000
                 : 500
               : entry.name === ".dev"
-                ? 950
+                ? depth === 0
+                  ? 950
+                  : 550
                 : entry.name === ".build" || entry.name === "DerivedData"
                   ? 800
                   : entry.name === ".next"
@@ -135,15 +160,45 @@ export async function readNativeWatcherIgnores(
   const literalPaths = candidates
     .slice(0, NATIVE_EXCLUSION_LIMIT)
     .map((c) => c.relative);
+  return [...literalPaths, ...(await nativeWatcherFilters(root, baseGlobs))];
+}
+
+async function nativeWatcherFilters(
+  root: string,
+  baseGlobs: readonly string[],
+) {
   const projectGlobs = await readProjectWatcherIgnores(root);
-  const filters = [...baseGlobs, ...projectGlobs].map((pattern) => {
+  return [...baseGlobs, ...projectGlobs].map((pattern) => {
     if (pattern.includes("*")) return pattern;
     // Keep file exclusions and excess directory literals out of ignorePaths:
     // passing more than eight silently defeats macOS stream exclusion.
     const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     return new RegExp(`^${escaped}(?:/|$)`);
   });
-  return [...literalPaths, ...filters];
+}
+
+async function verifyNativeWatcherIgnores(
+  root: string,
+  baseGlobs: readonly string[],
+  ignores: Array<string | RegExp>,
+): Promise<Array<string | RegExp>> {
+  const policy = new ProjectFilePolicy(root);
+  const literals: string[] = [];
+  // Recheck the selected paths, rather than repeating timed discovery. A
+  // different partial scan must not cause subscription churn or disable the
+  // exclusions we already proved safe. New candidates can wait for refresh.
+  for (const pattern of ignores) {
+    if (typeof pattern !== "string" || pattern.includes("*")) continue;
+    const classified = await policy.classifyDirectory(path.join(root, pattern));
+    if (
+      classified.status === "excluded" &&
+      ["default ignore policy", "project ignore policy"].includes(
+        classified.reason,
+      )
+    )
+      literals.push(pattern);
+  }
+  return [...literals, ...(await nativeWatcherFilters(root, baseGlobs))];
 }
 
 export function watcherIgnoreIdentity(ignores: Array<string | RegExp>): string {
@@ -167,7 +222,7 @@ export async function subscribeWithNativeExclusions(
     });
     let verified: Array<string | RegExp>;
     try {
-      verified = await readNativeWatcherIgnores(root, baseGlobs);
+      verified = await verifyNativeWatcherIgnores(root, baseGlobs, ignores);
     } catch (error) {
       await subscription.unsubscribe();
       throw error;

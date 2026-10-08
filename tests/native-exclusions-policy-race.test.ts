@@ -52,16 +52,13 @@ describe("policy changes during native subscription", () => {
   });
   it("bounds repeated policy churn and falls back to immutable filtering", async () => {
     const root = await fixture();
-    const file = path.join(root, ".gitignore");
-    await fs.writeFile(file, "scratch/\n");
+    const file = path.join(root, ".gmaxignore");
+    await fs.writeFile(file, "scratch/**\n");
     const closed = vi.fn(async () => {});
     let calls = 0;
     vi.mocked(watcher.subscribe).mockImplementation(async () => {
       calls++;
-      await fs.writeFile(
-        file,
-        calls % 2 ? "scratch/\n!scratch/\n" : "scratch/\n",
-      );
+      await fs.writeFile(file, calls % 2 ? "other/**\n" : "scratch/**\n");
       return { unsubscribe: closed };
     });
     const base = ["**/node_modules/**"];
