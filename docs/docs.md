@@ -33,7 +33,7 @@ Different scoreable cohorts prevent aggregate quality/latency comparisons. The f
 
 The initial run has **five expected documents absent from all 50 candidates**, and one expected document at distinct-document rank 23. Returned chunks also concentrate: the QRC target-miss case has 25 of 50 candidates from one alternative document. This suggests an investigation of scope/candidate competition, not proof of a ranking defect or that alternatives are irrelevant. Ground truth is single-author, exposed development evidence and not exhaustive; section overlap is context discovery, not full-answer correctness.
 
-Post-implementation self review and **24 focused tests** passed, including real stdio handshake/CLI checkpoints, exact entry arguments, checksum and generation fences, multi-target recall/MRR cutoff, refusal handling, source edits, alias/scope/range limits, output privacy, overwrite refusal and bounded transport buffering. Test typecheck and formatting passed. The measured repeat runner is archived with its recorded checksum; the current runner adds tested buffer cleanup after frame rejection and prompt cleanup after spawn failure, without changing scoring. `baseline-1.json` is a superseded preflight experiment that issued zero queries because its global-indexing exclusion was too broad; it is not a relevance baseline.
+Post-implementation self review and **24 focused tests** passed, including real stdio handshake/CLI checkpoints, exact entry arguments, checksum and generation fences, multi-target recall/MRR cutoff, refusal handling, source edits, alias/scope/range limits, output privacy, overwrite refusal and bounded transport buffering. Test typecheck and formatting passed. [Full source CI](https://github.com/reowens/grepmax/actions/runs/37856175030) for final evaluator source `5a53288` passed all gates with **2,079 tests / 208 files**, build, audits and fresh packed-consumer/native/document/prune smoke. The measured repeat runner is archived with its recorded checksum; the current runner adds tested buffer cleanup after frame rejection and prompt cleanup after spawn failure, without changing scoring. `baseline-1.json` is a superseded preflight experiment that issued zero queries because its global-indexing exclusion was too broad; it is not a relevance baseline.
 
 At **2026-10-08T22:46:44.781Z**, a fresh read-only ping/status check confirms .71 daemon 54708 ready/active with normal `critical-only` policy and maximum two workers. No daemon restart, model initialization, index/store mutation, configuration change, consumer rollout or live pruning was performed. The strict existing-only path's busy/pressure refusals did not switch ordinary service off.
 
@@ -256,7 +256,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 147 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 148 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
