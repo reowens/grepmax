@@ -77,6 +77,7 @@ import {
 } from "../lib/index/embedding-status";
 import { readGlobalConfig } from "../lib/index/index-config";
 import { generateSummaries } from "../lib/index/syncer";
+import { boundedAgentList, boundedAgentText } from "../lib/output/agent-budget";
 import { formatAgentSearchResults } from "../lib/output/agent-search-formatter";
 import {
   formatIndexStateFooter,
@@ -89,6 +90,10 @@ import {
   MCP_READ_OUTPUT_SCHEMAS,
   traceResult,
 } from "../lib/output/mcp-results";
+import {
+  projectCounts,
+  projectCoverageNotice,
+} from "../lib/output/project-coverage";
 import { Searcher } from "../lib/search/searcher";
 import { annotateSkeletonLines } from "../lib/skeleton/annotator";
 import { Skeletonizer } from "../lib/skeleton/skeletonizer";
@@ -1540,7 +1545,9 @@ export const mcp = new Command("mcp")
           const annotated = sourceContent
             ? annotateSkeletonLines(skeleton, sourceContent)
             : skeleton;
-          parts.push(`// ${t} (~${tokenEstimate} tokens)\n\n${annotated}`);
+          parts.push(
+            `// ${t} (~${tokenEstimate} tokens)\n\n${boundedAgentText(annotated)}`,
+          );
         }
       }
 
@@ -2002,6 +2009,10 @@ export const mcp = new Command("mcp")
         lines.push(
           `Audit — ${audit.scannedChunks} chunks across ${audit.scannedFiles} files`,
         );
+        if (audit.ambiguousSymbols)
+          lines.push(
+            `Unresolved symbol names omitted: ${audit.ambiguousSymbols}`,
+          );
         lines.push("");
         lines.push("God nodes (most depended-upon symbols):");
         for (const g of audit.godNodes) {
@@ -2021,8 +2032,9 @@ export const mcp = new Command("mcp")
         lines.push("");
         lines.push("File dependency cycles (symbol-derived):");
         for (const c of audit.fileCycles) {
+          const shown = boundedAgentList(c.files);
           lines.push(
-            `  ${c.files.join(", ")} - ${c.files.length} files, ${c.edgeCount} internal edges`,
+            `  ${shown.text} - ${c.files.length} files, ${c.edgeCount} internal edges; omitted_files=${shown.omitted}`,
           );
         }
         if (audit.fileCycles.length === 0) lines.push("  none");
@@ -2097,6 +2109,7 @@ export const mcp = new Command("mcp")
         maxRows,
         includeTests: Boolean(args.include_tests),
         includeEval: Boolean(args.include_eval),
+        includeGenerated: Boolean(args.include_generated),
         in: typeof args.in === "string" ? [args.in] : undefined,
         exclude: typeof args.exclude === "string" ? [args.exclude] : undefined,
       };
@@ -2602,8 +2615,10 @@ export const mcp = new Command("mcp")
         const lines: string[] = [];
         lines.push(`Project: ${projectName} (${root})`);
         lines.push(
-          `Last indexed: ${proj.lastIndexed ?? "unknown"} • ${overview.chunks} ${overview.sampled ? "sampled " : ""}chunks • ${overview.files} ${overview.sampled ? "sampled " : ""}files${overview.sampled ? `; ${overview.totalChunks} total chunks; breakdowns describe the sample` : ""}`,
+          `Last indexed: ${proj.lastIndexed ?? "unknown"} • ${projectCounts(overview)}`,
         );
+        const coverage = projectCoverageNotice(overview);
+        if (coverage) lines.push(`Coverage: ${coverage}`);
         lines.push("");
 
         lines.push(
@@ -3818,6 +3833,10 @@ export const mcp = new Command("mcp")
             include_eval: z
               .boolean()
               .describe("Include eval/experiment/script files")
+              .optional(),
+            include_generated: z
+              .boolean()
+              .describe("Include generated code, bindings and fixtures")
               .optional(),
           },
         },

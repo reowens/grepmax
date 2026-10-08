@@ -872,6 +872,8 @@ export function computeAudit(
     for (const s of defSyms) {
       if (!defs.has(s)) {
         defs.set(s, { file, line, exported, complexity: 0 });
+      } else {
+        defs.get(s)!.exported ||= exported;
       }
       if (!defFileCounts.has(s)) defFileCounts.set(s, new Set());
       defFileCounts.get(s)!.add(file);
@@ -895,7 +897,8 @@ export function computeAudit(
     if (symbol.length < MIN_GOD_NAME_LEN) continue;
     // Builtin method names (get, set, push, …) leak in via prototype/member
     // definitions and their inbound counts are meaningless name collisions.
-    if (isBuiltinCallee(symbol) || defLocations.get(symbol)?.size !== 1) continue;
+    if (isBuiltinCallee(symbol) || defLocations.get(symbol)?.size !== 1)
+      continue;
     const refFiles = inboundFiles.get(symbol);
     if (!refFiles) continue;
     let external = 0;
@@ -929,7 +932,14 @@ export function computeAudit(
     // in-project (external-library calls don't count as coupling).
     let fanOut = 0;
     const out = fileOutRefs.get(file);
-    if (out) for (const s of out) if (defs.has(s) && !isBuiltinCallee(s) && defLocations.get(s)?.size === 1) fanOut++;
+    if (out)
+      for (const s of out)
+        if (
+          defs.has(s) &&
+          !isBuiltinCallee(s) &&
+          defLocations.get(s)?.size === 1
+        )
+          fanOut++;
     hubFiles.push({
       file: rel(file, prefix),
       dependents: dependents.size,
@@ -957,14 +967,21 @@ export function computeAudit(
   // references anywhere (including their own file).
   const deadAll: DeadCandidate[] = [];
   for (const [symbol, info] of defs) {
-    if (info.exported || defLocations.get(symbol)?.size !== 1 || isBuiltinCallee(symbol)) continue;
+    if (
+      info.exported ||
+      defLocations.get(symbol)?.size !== 1 ||
+      isBuiltinCallee(symbol)
+    )
+      continue;
     if ((inboundTotal.get(symbol) || 0) > 0) continue;
     deadAll.push({ symbol, file: rel(info.file, prefix), line: info.line });
   }
   deadAll.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
 
   return {
-    ambiguousSymbols: [...defLocations.values()].filter(locations => locations.size > 1).length,
+    ambiguousSymbols: [...defLocations.values()].filter(
+      (locations) => locations.size > 1,
+    ).length,
     scannedChunks: rows.length,
     scannedFiles: files.size,
     godNodes: godNodes.slice(0, top),

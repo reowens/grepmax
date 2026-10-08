@@ -10,13 +10,14 @@ import {
   readVerbNames,
 } from "../src/lib/daemon/read-verbs";
 import {
-  MAX_PROJECT_ROWS,
   clampInt,
+  countProjectRows,
   handleRowsLocate,
   handleRowsProject,
   handleRowsSkeleton,
   handleRowsSymbols,
   MAX_LOCATE_ROWS,
+  MAX_PROJECT_ROWS,
   ReadVerbError,
   registerRowsVerbs,
   resolveWireScope,
@@ -242,6 +243,17 @@ describe("rows.project", () => {
     const overview = await runProject(deps, PROJECT);
     expect(overview.chunks).toBe(3);
     expect(overview.files).toBe(3);
+    expect(overview.sampled).toBe(false);
+    expect(overview.totalChunks).toBe(3);
+    const table = await db.ensureTable();
+    expect(
+      await countProjectRows(
+        table
+          .query()
+          .select(["path"])
+          .where(`starts_with(path, '${PROJECT}/')`),
+      ),
+    ).toBe(3);
     expect(overview.extEntries).toEqual([[".ts", 3]]);
     expect(overview.roleEntries).toEqual([
       ["IMPLEMENTATION", 2],
@@ -583,15 +595,63 @@ describe("ReadVerbError", () => {
   });
 });
 
-
 it("a project above the row cap exposes total inventory and sampled aggregates", async () => {
-  const rows = Array.from({length: MAX_PROJECT_ROWS + 1}, () => ({ path: "/repo/app/source.ts", role: "IMPLEMENTATION", defined_symbols: [], referenced_symbols: [] }));
-  const chain = { select: vi.fn().mockReturnThis(), where: vi.fn().mockReturnThis(), limit: vi.fn().mockReturnThis(), toArray: vi.fn().mockResolvedValue(rows) };
-  const table = { query: () => chain, countRows: vi.fn().mockResolvedValue(MAX_PROJECT_ROWS + 50) };
-  const fake = { vectorDb: { ensureTable: async () => table } } as unknown as StoreReadDeps;
+  const rows = Array.from({ length: MAX_PROJECT_ROWS + 1 }, () => ({
+    path: "/repo/app/source.ts",
+    role: "IMPLEMENTATION",
+    defined_symbols: [],
+    referenced_symbols: [],
+  }));
+  const chain = {
+    select: vi.fn().mockReturnThis(),
+    where: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockReturnThis(),
+    toArray: vi.fn().mockResolvedValue(rows),
+  };
+  const countQuery = {
+    select: vi.fn().mockReturnThis(),
+    where: vi.fn().mockReturnThis(),
+    execute: vi.fn().mockImplementation(async function* () {
+      yield {
+        toArray: () =>
+          Array(MAX_PROJECT_ROWS + 50).fill({ path: "/repo/app/source.ts" }),
+      };
+    }),
+  };
+  const table = {
+    query: vi.fn().mockReturnValueOnce(chain).mockReturnValue(countQuery),
+    countRows: vi.fn(),
+  };
+  const fake = {
+    vectorDb: { ensureTable: async () => table },
+  } as unknown as StoreReadDeps;
   const overview = await runProject(fake, PROJECT);
   expect(overview.sampled).toBe(true);
   expect(overview.chunks).toBe(MAX_PROJECT_ROWS);
   expect(overview.totalChunks).toBe(MAX_PROJECT_ROWS + 50);
   expect(overview.files).toBe(1);
+  expect(table.countRows).not.toHaveBeenCalled();
+  expect(countQuery.select).toHaveBeenCalledWith(["path"]);
+  expect(countQuery.execute).toHaveBeenCalledWith({
+    timeoutMs: 15000,
+    maxBatchLength: 512,
+  });
+});
+
+it("bounds an inventory count that never yields a batch", async () => {
+  const closed = vi.fn().mockResolvedValue({ done: true });
+  const query = {
+    execute: vi.fn(() => ({
+      next: () => new Promise(() => {}),
+      return: closed,
+    })),
+  };
+  await expect(countProjectRows(query, 5)).rejects.toThrow(
+    "project inventory count",
+  );
+  expect(query.execute).toHaveBeenCalledWith({
+    timeoutMs: 5,
+    maxBatchLength: 512,
+  });
+  expect(closed).toHaveBeenCalledOnce();
 });

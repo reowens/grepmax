@@ -249,9 +249,13 @@ export function isTestPath(filePath: string): boolean {
 }
 
 export function isGeneratedPath(filePath: string): boolean {
-  return /(^|\/)(?:generated|__generated__|bindings|fixtures|__fixtures__)(\/|$)/i.test(filePath)
-    || /\.generated\.[^.]+$/i.test(filePath)
-    || /\/[^/]*GraphQL\/Sources\/(?:Schema|Operations)\//i.test(filePath);
+  return (
+    /(^|\/)(?:generated|__generated__|bindings|fixtures|__fixtures__)(\/|$)/i.test(
+      filePath,
+    ) ||
+    /\.generated\.[^.]+$/i.test(filePath) ||
+    /\/[^/]*GraphQL\/Sources\/(?:Schema|Operations)\//i.test(filePath)
+  );
 }
 
 export function isEvalPath(filePath: string): boolean {

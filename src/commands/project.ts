@@ -5,6 +5,10 @@ import {
   runProject,
   withLocalStore,
 } from "../lib/daemon/rows-handler";
+import {
+  projectCounts,
+  projectCoverageNotice,
+} from "../lib/output/project-coverage";
 import { sendDaemonCommand } from "../lib/utils/daemon-client";
 import { gracefulExit } from "../lib/utils/exit";
 import { listProjects, resolveRootOrExit } from "../lib/utils/project-registry";
@@ -60,11 +64,12 @@ export const project = new Command("project")
         entryPoints,
       } = overview;
 
-      if (overview.sampled) console.log(`coverage\tpartial: ${overview.chunks} sampled chunks, ${overview.files} sampled files; ${overview.totalChunks} total chunks; all breakdowns below describe the sample`);
+      const coverage = projectCoverageNotice(overview);
 
       if (opts.agent) {
         console.log(`name\t${projectName}`);
         console.log(`root\t${root}`);
+        if (coverage) console.log(`coverage\t${coverage}`);
         console.log(`chunks\t${chunks}`);
         console.log(`files\t${files}`);
         console.log(`last_indexed\t${proj?.lastIndexed ?? "unknown"}`);
@@ -86,8 +91,10 @@ export const project = new Command("project")
       } else {
         console.log(`Project: ${projectName} (${root})`);
         console.log(
-          `Last indexed: ${proj?.lastIndexed ?? "unknown"} • ${chunks} chunks • ${files} files\n`,
+          `Last indexed: ${proj?.lastIndexed ?? "unknown"} • ${projectCounts(overview)}\n`,
         );
+
+        if (coverage) console.log(`Coverage: ${coverage}\n`);
 
         console.log(
           `Languages: ${extEntries.map(([ext, count]) => `${ext} (${Math.round((count / chunks) * 100)}%)`).join(", ")}\n`,

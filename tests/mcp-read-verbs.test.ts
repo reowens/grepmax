@@ -627,6 +627,39 @@ describe("MCP read tools go through the daemon read verbs", () => {
     expect(vectorDbCtor).not.toHaveBeenCalled();
   });
 
+  it.each(["text", "json"])(
+    "code_skeleton bounds text while preserving complete JSON symbols (%s)",
+    async (format) => {
+      const skeleton = Array.from(
+        { length: 200 },
+        (_, i) => `export function fn${i}()`,
+      ).join("\n");
+      const previous = fs.readFileSync(sourceFile, "utf8");
+      fs.writeFileSync(sourceFile, `${skeleton}\n`);
+      try {
+        respond({ "rows.skeleton": { ok: true, path: sourceFile, skeleton } });
+        const text = await call("code_skeleton", {
+          target: "src/auth.ts",
+          format,
+        });
+        if (format === "text") {
+          expect(text).toContain("omitted 80 lines");
+          expect(text).not.toContain("fn199");
+        } else {
+          const result = JSON.parse(text);
+          expect(
+            result.symbols.some(
+              (symbol: { name: string }) => symbol.name === "fn199",
+            ),
+          ).toBe(true);
+          expect(result.symbols).toHaveLength(200);
+        }
+      } finally {
+        fs.writeFileSync(sourceFile, previous);
+      }
+    },
+  );
+
   it("trace_calls renders graph.trace", async () => {
     respond({
       "graph.trace": {
@@ -745,33 +778,68 @@ describe("MCP read tools go through the daemon read verbs", () => {
     expect(vectorDbCtor).not.toHaveBeenCalled();
   });
 
+  it("audit discloses uncertain definitions and bounds complete cycle paths", async () => {
+    respond({
+      "graph.audit": {
+        ok: true,
+        audit: {
+          scannedChunks: 200,
+          scannedFiles: 200,
+          ambiguousSymbols: 2,
+          godNodes: [],
+          hubFiles: [],
+          deadCandidates: [],
+          deadTotal: 0,
+          fileCycles: [
+            { files: ["first.ts", "x".repeat(1001), "third.ts"], edgeCount: 3 },
+          ],
+        },
+      },
+    });
+    const text = await call("audit", {});
+    expect(text).toContain("Unresolved symbol names omitted: 2");
+    expect(text).toContain(
+      "first.ts - 3 files, 3 internal edges; omitted_files=2",
+    );
+    expect(text).not.toContain("x".repeat(100));
+  });
+
   it("audit reports an empty scope from a null report", async () => {
     respond({ "graph.audit": { ok: true, audit: null } });
     const text = await call("audit", {});
     expect(text).toContain("No indexed data found for");
   });
 
-  it("surprising_connections renders vector.surprises", async () => {
-    respond({
-      "vector.surprises": {
-        ok: true,
-        summary: {
-          sampledAnchors: 3,
-          codeRows: 4,
-          acceptedPairs: 0,
-          acceptedFilePairs: 0,
-          actionabilityScore: { p90: 0 },
-          options: { dirDepth: 3 },
+  it.each([false, true])(
+    "surprising_connections forwards generated inclusion (%s)",
+    async (includeGenerated) => {
+      respond({
+        "vector.surprises": {
+          ok: true,
+          summary: {
+            sampledAnchors: 3,
+            codeRows: 4,
+            acceptedPairs: 0,
+            acceptedFilePairs: 0,
+            actionabilityScore: { p90: 0 },
+            options: { dirDepth: 3 },
+          },
+          findings: [],
         },
-        findings: [],
-      },
-    });
-    const text = await call("surprising_connections", { experimental: true });
-    expect(sendDaemonCommand.mock.calls[0][0].cmd).toBe("vector.surprises");
-    expect(text).toContain("sampled=3");
-    expect(text).toContain("none");
-    expect(vectorDbCtor).not.toHaveBeenCalled();
-  });
+      });
+      const text = await call("surprising_connections", {
+        experimental: true,
+        include_generated: includeGenerated,
+      });
+      expect(sendDaemonCommand.mock.calls[0][0].cmd).toBe("vector.surprises");
+      expect(sendDaemonCommand.mock.calls[0][0].options.includeGenerated).toBe(
+        includeGenerated,
+      );
+      expect(text).toContain("sampled=3");
+      expect(text).toContain("none");
+      expect(vectorDbCtor).not.toHaveBeenCalled();
+    },
+  );
 
   it("get_neighbors renders graph.neighbors", async () => {
     respond({
@@ -885,6 +953,34 @@ describe("MCP read tools go through the daemon read verbs", () => {
     const text = await call("summarize_project", {});
     expect(sendDaemonCommand.mock.calls[0][0].cmd).toBe("rows.project");
     expect(text).toContain("100 chunks • 20 files");
+    expect(text).toContain("Languages: .ts (100%)");
+    expect(text).toContain("Roles: 100% IMPLEMENTATION");
+    expect(text).toContain("handleAuth");
+    expect(vectorDbCtor).not.toHaveBeenCalled();
+  });
+
+  it("summarize_project discloses sampled totals", async () => {
+    respond({
+      "rows.project": {
+        ok: true,
+        overview: {
+          sampled: true,
+          totalChunks: 150,
+          chunks: 100,
+          files: 20,
+          extEntries: [[".ts", 100]],
+          dirEntries: [["src/", { files: 20, chunks: 100 }]],
+          roleEntries: [["IMPLEMENTATION", 100]],
+          topSymbols: [["handleAuth", 7]],
+          entryPoints: [{ symbol: "main", path: "src/index.ts" }],
+        },
+      },
+    });
+    const text = await call("summarize_project", {});
+    expect(sendDaemonCommand.mock.calls[0][0].cmd).toBe("rows.project");
+    expect(text).toContain("100 sampled chunks • 20 sampled files");
+    expect(text).toContain("150 total chunks");
+    expect(text).toContain("all breakdowns below describe the sample");
     expect(text).toContain("Languages: .ts (100%)");
     expect(text).toContain("Roles: 100% IMPLEMENTATION");
     expect(text).toContain("handleAuth");

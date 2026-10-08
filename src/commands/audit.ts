@@ -1,10 +1,10 @@
-import { boundedAgentText } from "../lib/output/agent-budget";
 import { Command } from "commander";
 import {
   type AuditResult,
   callGraphVerb,
   runGraphAudit,
 } from "../lib/daemon/graph-handler";
+import { boundedAgentList } from "../lib/output/agent-budget";
 import { VectorDB } from "../lib/store/vector-db";
 import { gracefulExit } from "../lib/utils/exit";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
@@ -28,12 +28,14 @@ function formatCycle(files: string[]): string {
   return shown.join(", ");
 }
 
-function formatHuman(r: AuditResult): string {
+export function formatHuman(r: AuditResult): string {
   const out: string[] = [];
   out.push(
     `${style.bold("Audit")} ${style.dim(`— ${r.scannedChunks} chunks across ${r.scannedFiles} files`)}`,
   );
 
+  if (r.ambiguousSymbols)
+    out.push(`Unresolved symbol names omitted: ${r.ambiguousSymbols}`);
   out.push("");
   out.push(
     style.bold("God nodes") + style.dim(" (most depended-upon symbols)"),
@@ -126,8 +128,9 @@ export function formatAgent(r: AuditResult): string {
     lines.push(`hub\t${h.file}\t${h.dependents}\t${h.defines}\t${h.fanOut}`);
   }
   for (const c of r.fileCycles) {
+    const shown = boundedAgentList(c.files);
     lines.push(
-      `cycle\t${boundedAgentText(c.files.slice(0, 8).join(","), 1000, 1).replace(/\n/g, " ")}\t${c.files.length}\t${c.edgeCount}\tomitted_files=${Math.max(0, c.files.length - 8)}`,
+      `cycle\t${shown.text}\t${c.files.length}\t${c.edgeCount}\tomitted_files=${shown.omitted}`,
     );
   }
   for (const d of r.deadCandidates) {

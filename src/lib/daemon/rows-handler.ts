@@ -1,4 +1,7 @@
-import { QUERY_EXECUTION_OPTIONS } from "../utils/query-timeout";
+import {
+  QUERY_EXECUTION_OPTIONS,
+  streamQueryRows,
+} from "../utils/query-timeout";
 /**
  * Daemon-side handlers for the `rows.*` read verbs.
  *
@@ -334,6 +337,22 @@ export async function handleRowsSymbols(
 
 export const MAX_PROJECT_ROWS = 200_000;
 
+/** Count a path-only stream in bounded Arrow batches with a native deadline.
+ * The SDK's countRows API has no execution timeout. */
+export async function countProjectRows(
+  query: unknown,
+  timeoutMs?: number,
+): Promise<number> {
+  let count = 0;
+  for await (const _row of streamQueryRows(
+    query,
+    "project inventory count",
+    timeoutMs,
+  ))
+    count++;
+  return count;
+}
+
 export interface ProjectOverview {
   totalChunks?: number;
   sampled?: boolean;
@@ -373,10 +392,17 @@ export async function runProject(
     ])
     .where(pathStartsWith(prefix))
     .limit(MAX_PROJECT_ROWS + 1)
-    .toArray(QUERY_EXECUTION_OPTIONS);
+    .toArray({
+      timeoutMs: deps.queryTimeoutMs ?? QUERY_EXECUTION_OPTIONS.timeoutMs,
+    });
   const sampled = scanned.length > MAX_PROJECT_ROWS;
   const rows = sampled ? scanned.slice(0, MAX_PROJECT_ROWS) : scanned;
-  const totalChunks = sampled ? await table.countRows(pathStartsWith(prefix)) : rows.length;
+  const totalChunks = sampled
+    ? await countProjectRows(
+        table.query().select(["path"]).where(pathStartsWith(prefix)),
+        deps.queryTimeoutMs,
+      )
+    : rows.length;
 
   const nodePath = await import("node:path");
   const files = new Set<string>();
@@ -437,7 +463,8 @@ export async function runProject(
   }
 
   return {
-    sampled, totalChunks,
+    sampled,
+    totalChunks,
     chunks: rows.length,
     files: files.size,
     extEntries: Array.from(extCounts.entries())

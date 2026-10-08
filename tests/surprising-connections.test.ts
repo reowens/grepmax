@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { surprises } from "../src/commands/surprises";
 import {
-  isGeneratedPath,
   analyzeSurprisingConnections,
   buildFindings,
   type ChunkRow,
+  isGeneratedPath,
   type SurprisePair,
   scorePair,
 } from "../src/lib/analysis/surprising-connections";
@@ -200,19 +200,53 @@ describe("surprises command", () => {
   });
 });
 
-
 it("recognizes generated and fixture families without excluding application sources", () => {
-  for (const p of ["src/generated/client.ts", "src/bindings/model.ts", "fixtures/sample.ts", "src/client.generated.ts", "packages/AppGraphQL/Sources/Schema/Enums/State.swift"]) expect(isGeneratedPath(p)).toBe(true);
+  for (const p of [
+    "src/generated/client.ts",
+    "src/bindings/model.ts",
+    "fixtures/sample.ts",
+    "src/client.generated.ts",
+    "packages/AppGraphQL/Sources/Schema/Enums/State.swift",
+  ])
+    expect(isGeneratedPath(p)).toBe(true);
   expect(isGeneratedPath("src/services/generator.ts")).toBe(false);
 });
 it("generated neighbors are excluded by default and can be explicitly included", async () => {
-  const rows=[rawChunk("src/feature/worker.ts","Worker")];
-  const targets=[rawChunk("src/generated/client.ts","Client")];
-  const {table}=fakeTable(rows, targets);
-  const filtered=await analyzeSurprisingConnections(table,"/repo",{sample:1,neighbors:1,dirDepth:2});
+  const rows = [rawChunk("src/feature/worker.ts", "Worker")];
+  const targets = [rawChunk("src/generated/client.ts", "Client")];
+  const { table } = fakeTable(rows, targets);
+  const filtered = await analyzeSurprisingConnections(table, "/repo", {
+    sample: 1,
+    neighbors: 1,
+    dirDepth: 2,
+  });
   expect(filtered.summary.filters.generated).toBe(1);
   expect(filtered.pairs).toHaveLength(0);
-  const included=await analyzeSurprisingConnections(table,"/repo",{sample:1,neighbors:1,dirDepth:2,includeGenerated:true});
+  const included = await analyzeSurprisingConnections(table, "/repo", {
+    sample: 1,
+    neighbors: 1,
+    dirDepth: 2,
+    includeGenerated: true,
+  });
   expect(included.summary.filters.generated).toBe(0);
   expect(included.pairs.length).toBeGreaterThan(0);
+});
+
+it("generated anchors are excluded from the sample unless explicitly included", async () => {
+  const rows = [
+    rawChunk("src/feature/worker.ts", "Worker"),
+    rawChunk("src/generated/client.ts", "Client"),
+  ];
+  const filtered = await analyzeSurprisingConnections(
+    fakeTable(rows).table,
+    "/repo",
+    { sample: 2, neighbors: 1 },
+  );
+  expect(filtered.summary.codeRows).toBe(1);
+  const included = await analyzeSurprisingConnections(
+    fakeTable(rows).table,
+    "/repo",
+    { sample: 2, neighbors: 1, includeGenerated: true },
+  );
+  expect(included.summary.codeRows).toBe(2);
 });

@@ -173,7 +173,11 @@ export const surprises = new Command("surprises")
     String(DEFAULT_SURPRISE_OPTIONS.maxRows),
   )
   .option("--include-tests", "Include test files", false)
-  .option("--include-generated", "Include generated code, bindings and fixtures", false)
+  .option(
+    "--include-generated",
+    "Include generated code, bindings and fixtures",
+    false,
+  )
   .option("--include-eval", "Include eval/experiment/script files", false)
   .option(
     "--in <subpath>",

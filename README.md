@@ -223,6 +223,16 @@ gmax surprises --experimental --exclude generated --top 10
 
 The CLI and MCP output include score, max similarity, pair count, representative symbols, directory buckets, top similarities, applied penalties, and `gmax skeleton` follow-up hints. On large monorepos, prefer `--in`/`--exclude`; the default scan is capped at 50,000 rows and user-provided `--max-rows` is capped at 100,000. If a narrow `--in` scope returns no findings, increase `--dir-depth` so subdirectories are compared inside the scope.
 
+Surprises excludes generated code, bindings, fixtures and GraphQL schema/operation output by default. Use CLI `--include-generated` or MCP `include_generated: true` to include these families; `--include-tests` / `include_tests` controls test files separately.
+
+### Analysis coverage and compact output
+
+Project overviews disclose when their language, directory, role and symbol breakdowns cover the first 200,000 chunks. CLI and MCP output label sampled chunk/file counts and show the full project chunk inventory separately. Inventory counting streams only paths in small batches with an execution deadline.
+
+Architecture audits omit unresolved same-name definitions from rankings, cycles and dead-code claims, and report the number omitted. Compact CLI audit and MCP cycle rows retain total file/edge counts and show up to eight complete paths within 1,000 characters, with an explicit omitted-file count.
+
+CLI `gmax skeleton --agent` and MCP `code_skeleton` text show at most 120 lines / 6,000 characters per file and report omitted lines and characters. CLI human output and JSON structure remain complete.
+
 ## Background Daemon
 
 A single daemon watches your projects via native OS file events (FSEvents/inotify). Changes are detected in sub-second and incrementally reindexed. All writes to LanceDB are routed through the daemon via IPC, eliminating lock contention.

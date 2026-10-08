@@ -484,7 +484,11 @@ Examples:
           console.log(JSON.stringify(results, null, 2));
         } else {
           for (const result of results) {
-            console.log(options.agent ? boundedAgentText(result.skeleton) : result.skeleton);
+            console.log(
+              options.agent
+                ? boundedAgentText(result.skeleton)
+                : result.skeleton,
+            );
             console.log(""); // Blank line between files
           }
         }
@@ -527,6 +531,8 @@ function outputResult(
       ),
     );
   } else {
-    console.log(options.agent ? boundedAgentText(result.skeleton) : result.skeleton);
+    console.log(
+      options.agent ? boundedAgentText(result.skeleton) : result.skeleton,
+    );
   }
 }

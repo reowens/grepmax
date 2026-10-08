@@ -155,7 +155,6 @@ describe("computeAudit", () => {
   });
 });
 
-
 it("omits unresolved cross-file and same-file definitions from rankings and dead claims", () => {
   const rows = [
     row("a.ts", 1, false, ["Execute"], []),
@@ -169,5 +168,18 @@ it("omits unresolved cross-file and same-file definitions from rankings and dead
   expect(result.ambiguousSymbols).toBe(2);
   expect(result.godNodes).toEqual([]);
   expect(result.hubFiles).toEqual([]);
-  expect(result.deadCandidates.map(d => d.symbol)).toEqual(["Unused"]);
+  expect(result.deadCandidates.map((d) => d.symbol)).toEqual(["Unused"]);
+});
+
+it("preserves any export evidence when duplicate chunks describe one definition", () => {
+  const result = computeAudit(
+    [
+      row("public.ts", 5, false, ["PublicSymbol"], []),
+      row("public.ts", 5, true, ["PublicSymbol"], []),
+    ],
+    PREFIX,
+    10,
+  );
+  expect(result.ambiguousSymbols).toBe(0);
+  expect(result.deadCandidates).toEqual([]);
 });

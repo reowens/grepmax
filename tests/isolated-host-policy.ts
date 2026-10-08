@@ -11,6 +11,10 @@ vi.mock("../src/config", async (importOriginal) => {
   afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
   return {
     ...actual,
-    PATHS: { ...actual.PATHS, sharedRoot: root, autostartDisabledFile: path.join(root, "autostart-disabled") },
+    PATHS: {
+      ...actual.PATHS,
+      sharedRoot: root,
+      autostartDisabledFile: path.join(root, "autostart-disabled"),
+    },
   };
 });
