@@ -594,6 +594,25 @@ The candidate trace contains pointers and stage ranks for at most the first 200 
 
 Each traced candidate also has an `outcome`: returned, stage-one/pooled cut, deduplicated, per-file limit or display limit. Display limit means the production loop filled its result window before examining that candidate; it does not assert that the candidate would pass the per-file cap.
 
+#### Existing-index document retrieval evaluation
+
+In a source checkout, [scripts/eval-documents.cjs](scripts/eval-documents.cjs) measures the released [document MCP contract](DOCUMENT-SEARCH.md) through an explicit installed entry point. It uses only Node built-ins and sequential `document_search_status` / `semantic_search` calls. It performs no model warmup, daemon startup, indexing, refusal retries or fallback to normal hybrid search.
+
+```bash
+node scripts/eval-documents.cjs \
+  --fixture docs/measurements/documents/fixture-v1.json \
+  --sha256 <reviewed-fixture-digest> \
+  --root /absolute/already-indexed/project \
+  --entry /absolute/installed/grepmax/dist/bin.js \
+  --output docs/measurements/documents/baseline-v1.json
+```
+
+Freeze the JSON fixture before retrieving results. It contains `schemaVersion: 1`, `purpose`, explicit project-relative `prefixes`, and 1–100 `cases`. Each case has a unique `id`, a `query` (maximum 500 characters), and one or more `expected` targets: `{file, startLine, endLine, sourceSha256}`. Files are contained relative Markdown paths; ranges are one-based and answer-bearing; hashes cover exact source bytes. Keep private fixtures and evidence in ignored `docs/measurements/`. Optional `--repeats 1-3` repeats the same frozen cases without retries or warmup.
+
+The report separates the rank of the expected document among distinct returned documents from the rank of an overlapping expected section among chunk pointers. Document Recall@10 credits the fraction of declared target documents retrieved; MRR@10 credits only ranks 1–10. Section overlap indicates source-context discovery, not complete answer coverage. Only the first 50 returned candidates are available; document deduplication cannot recover targets outside that window. Reviewed targets are not exhaustive judgments of all useful documents, so these metrics describe the frozen targets, not general recall.
+
+Source and indexed hashes must match the fixture before querying; generation and project/store identity must agree across coverage and retrieval. Returned source ranges require reread/hash verification. Refusals, changed targets and unverified expected pointers are excluded from relevance metrics and counted separately; `usableFraction` includes every planned sample. Background indexing and partial/degraded index context are recorded without excluding targets whose coverage and hashes remain current. No queries, source bodies or raw diagnostics are copied into result artifacts. Reads are bounded to 2 MiB per source; MCP frames to 1 MiB. The report and sibling `.samples.jsonl` checkpoint refuse overwrite and use owner-only permissions. Exit 0 means an evaluation with usable samples completed, not that a quality threshold passed; exit 2 means no usable samples; exit 1 means preflight or transport/contract failure. No consumer rollout is implied.
+
 ## Attribution
 
 grepmax is built upon the foundation of [mgrep](https://github.com/mixedbread-ai/mgrep) by MixedBread. See the [NOTICE](NOTICE) file for details.

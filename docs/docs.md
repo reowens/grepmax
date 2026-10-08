@@ -6,14 +6,38 @@
 
 | Work | Current state | Next action / completion evidence |
 | --- | --- | --- |
-| Document retrieval quality | Live transport, coverage and pointer contract accepted; relevance and recall not yet evaluated | Use representative authorized document questions with expected source references. Record coverage, ranking, latency and explicit refusal states; reread and verify source hashes before accepting pointers. Produce an evaluation report before deciding consumer rollout. |
+| Document retrieval quality | Twenty-case baseline complete: initial 19/20 scoreable, document top-10 target hits 13/19; indexing repeat 6/20 scoreable | Review missed-target alternatives/sections, freeze any successor judgments, and predefine a scope ablation before ranking changes or consumer rollout. |
 | Watcher stability | Artifact filtering and reconciliation concurrency fixes shipped; short observation passed | Observe ordinary development over a longer interval. Record native drops, failed files, queue drain and recovery behavior. The last four-minute sample does not close the broader FSEvents issue. |
 | Production disk recovery | Admission and recovery implementation released; live pruning has not run | Obtain fresh strict host/resource and ownership admission, prepare the pinned runtime under an actual 512 MiB reservation, drain known owners, refresh retention inventory and obtain the exclusive lease. Record retained-state verification and allocated/free-space changes after any authorized prune. |
 | Consumer rollout | Packaged Runlist interoperability passed; client settings remain unchanged | Decide rollout from retrieval evaluation evidence and explicitly configure the document entry point. Existing MCP sessions need reconnecting to load released runtime code. |
 
-**Start with document retrieval evaluation; continue watcher observation during ordinary development.** Preserve normal `critical-only` service, the small GPU model and maximum two workers. Watcher ownership remains in standalone gmax; Hetchy Developer is optional. Embedding migration and independently reusable watcher extraction remain deferred.
+**Next review the completed retrieval baseline; continue watcher observation during ordinary development.** Preserve normal `critical-only` service, the small GPU model and maximum two workers. Watcher ownership remains in standalone gmax; Hetchy Developer is optional. Embedding migration and independently reusable watcher extraction remain deferred.
 
-The release acceptance record is `/private/tmp/gmax-v02671-acceptance.json`. Last recorded live health was **2026-10-08T21:45:08.637Z**: .71 ready/active, native watching and all queues empty. This documentation update performs no new health check or runtime change. Historical PIDs, inventories and “next” instructions below are snapshots; refresh them before operational work. The working focus and .71 delivery record take precedence over those earlier instructions.
+The release acceptance record is `/private/tmp/gmax-v02671-acceptance.json`; the completed retrieval report is linked below. Fresh read-only health at **2026-10-08T22:46:44.781Z** confirms .71 ready/active; evaluation caused no runtime or configuration change. Historical PIDs, inventories and “next” instructions below are snapshots; refresh them before operational work. The working focus and .71 delivery record take precedence over those earlier instructions.
+
+## Document retrieval baseline completed — October 8, 2026
+
+A frozen **20-case / 15-document** source-curated fixture now measures .71 through the installed `gmax mcp --existing-index-only` entry. The reusable repo-only evaluator is documented in [README](../README.md#existing-index-document-retrieval-evaluation); private fixture, checkpoints, measured runner snapshot and [evaluation report](measurements/2026-10-08-document-retrieval/evaluation-report.json) remain under ignored `docs/measurements/2026-10-08-document-retrieval/`. Fixture SHA-256: `d69c259cd3e01c9d2e9ad03d2ac87420254d11842a699e735b2169e55cd7e5a4`.
+
+| Measurement | Initial scored run (22:40–22:41 UTC) | Repeat during active indexing (22:44 UTC) |
+| --- | --- | --- |
+| Scoreable cases / planned cases | 19 / 20 | 6 / 20 |
+| Explicit refusals | 1 host_pressure | 13 busy, 1 host_pressure |
+| Expected document in first 10 distinct documents | 13 / 19 (68.4%) | 3 / 6 (50.0%) |
+| Document MRR@10 | 0.399 | 0.271 |
+| Expected section overlap in first 10 chunks | 10 / 19 (52.6%) | 2 / 6 (33.3%) |
+| Accepted-query median / p95 | 2.725 / 8.415 seconds | 0.777 / 2.203 seconds |
+| Current digest/range-verified returned pointers | 950 / 950 | 300 / 300 |
+
+Different scoreable cohorts prevent aggregate quality/latency comparisons. The five cases scoreable in both runs retained identical document and section ranks. The bursts are descriptive availability observations, not long-term availability estimates. All target indexed hashes matched the frozen source; global indexing is recorded as context rather than invalidating unrelated current targets. Refusals, stale sources and unverified expected pointers stay separate from relevance misses. No query text/source bodies/raw diagnostics appear in result artifacts.
+
+The initial run has **five expected documents absent from all 50 candidates**, and one expected document at distinct-document rank 23. Returned chunks also concentrate: the QRC target-miss case has 25 of 50 candidates from one alternative document. This suggests an investigation of scope/candidate competition, not proof of a ranking defect or that alternatives are irrelevant. Ground truth is single-author, exposed development evidence and not exhaustive; section overlap is context discovery, not full-answer correctness.
+
+Post-implementation self review and **23 focused tests** passed, including real stdio handshake/CLI checkpoints, exact entry arguments, checksum and generation fences, multi-target recall/MRR cutoff, refusal handling, source edits, alias/scope/range limits, output privacy, overwrite refusal and bounded transport buffering. Test typecheck and formatting passed. The measured repeat runner is archived with its recorded checksum; the current runner adds tested buffer cleanup after frame rejection without changing scoring. `baseline-1.json` is a superseded preflight experiment that issued zero queries because its global-indexing exclusion was too broad; it is not a relevance baseline.
+
+At **2026-10-08T22:46:44.781Z**, a fresh read-only ping/status check confirms .71 daemon 54708 ready/active with normal `critical-only` policy and maximum two workers. No daemon restart, model initialization, index/store mutation, configuration change, consumer rollout or live pruning was performed. The strict existing-only path's busy/pressure refusals did not switch ordinary service off.
+
+**Next:** review useful alternatives and answer-bearing ranges for the misses before declaring defects or changing ground truth. Freeze any new judgments as fixture v2, then predefine a scope ablation to distinguish broad candidate competition from target-ranking gaps. Consumer pilot design must expose busy/pressure/freshness states clearly; it remains separate from this completed baseline. Longer watcher observation and fresh-admission live recovery remain pending. Embedding migration/shared watcher extraction stay deferred.
 
 ## Current release and next work — October 8, 2026: v0.26.71
 
@@ -27,7 +51,7 @@ Daemon 75705 handed over through graceful IPC shutdown to **.71 PID 54708**, sma
 
 The installed document-search MCP initializes as `gmax-document-search`, advertises exactly the two contract tools, and returns ready coverage for the actual indexed `room-privacy.md` path (1/1 covered), generation 1, query state `ready`. Its initial coverage was conservatively partial during startup; a metadata-only check after reconciliation returned complete coverage and non-degraded state. The live document query returned 50 scoped Markdown pointers. The sampled source changed after the reply, so its older digest/ranges were not accepted as current source; reread/hash verification is still required. The existing-only Darwin path retains stricter measured resource admission; its refusal never changes normal `critical-only` policy or shuts down ordinary service. Real model startup, store creation and synthetic live floods were not performed by this bridge. Existing MCP clients need a reconnect to load changed runtime code; document-search clients must explicitly choose the new entry point.
 
-**Next:** evaluate document retrieval with representative authorized consumer workflows and continue longer ordinary watcher observation. Runlist integration fixtures passed, but any consumer rollout/settings changes remain separate work. Live pruning remains unperformed and requires fresh known-healthy OS/kernel/physical memory admission, a prepared pinned runtime under an actual 512 MiB reservation, reviewed current daemon/store owners, drain, fresh version/tag/cutoff inventory within the 256-protected-version bound and an exclusive lease. Old inventories/wrappers are stale; no reclaimed space is claimed. Embedding migration and shared watcher extraction remain deferred. Watching stays in gmax including standalone mode; Hetchy Developer remains optional and cannot be a runtime dependency.
+**Next:** review the completed retrieval baseline and its target misses/availability limits, then decide a constrained consumer pilot; continue longer ordinary watcher observation. Runlist integration fixtures passed, but any consumer rollout/settings changes remain separate work. Live pruning remains unperformed and requires fresh known-healthy OS/kernel/physical memory admission, a prepared pinned runtime under an actual 512 MiB reservation, reviewed current daemon/store owners, drain, fresh version/tag/cutoff inventory within the 256-protected-version bound and an exclusive lease. Old inventories/wrappers are stale; no reclaimed space is claimed. Embedding migration and shared watcher extraction remain deferred. Watching stays in gmax including standalone mode; Hetchy Developer remains optional and cannot be a runtime dependency.
 
 Evidence: `/private/tmp/gmax-v02671-package-comparison.json`, `/private/tmp/gmax-v02671-installed-evidence.json`, `/private/tmp/gmax-v02671-client-evidence.json`, `/private/tmp/gmax-v02671-handover.json`, `/private/tmp/gmax-v02671-live-document-evidence.json`, `/private/tmp/gmax-v02671-live-search.json`, `/private/tmp/gmax-v02671-live-pointer-provenance.json`, `/private/tmp/gmax-v02671-post-reconciliation-coverage.json`, `/private/tmp/gmax-v02671-live-observation.json`, `/private/tmp/gmax-v02671-final-live.json` and `/private/tmp/gmax-v02671-integration-evidence.json`; accepted candidate review `/private/tmp/gmax-document-search-review-acceptance.json`. Release isolation `/private/tmp/gmax-document-search-release`, `release/gmax-document-search-071`; preserve its untracked node_modules symlink.
 
@@ -232,7 +256,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 145 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 146 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
