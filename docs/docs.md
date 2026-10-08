@@ -30,7 +30,9 @@ A scope comparison was predefined before querying the same frozen 20-case fixtur
 
 Narrowing brings QRC into document rank 7, scene-name contract into rank 1, kiosk from 23 to 1 and worker queue ownership from 18 to 1. No shared-cohort top-ten document hit regresses. Redis secret configuration moves from absent in 50 candidates to rank 12; People links remain absent. Each arm refused the same two cases as busy and three as host_pressure. The CDN replacement case is among those refusals, so its scope effect is unmeasured. Refusals are excluded from relevance scoring and were not retried. All 1,500 returned pointers passed current digest/range verification; frozen target bytes remained current, and shared pairs retained the same resource generation/project/store.
 
-This supports scope competition as a factor for these exposed cases. The narrower families were chosen from known target locations, and the corpus/background indexing continued changing; this is neither general recall nor an isolated causal experiment. Do not compare this 15-case aggregate with the earlier 19-case baseline. Query timing describes these observations only. The reusable repo-only paired runner stores both indexed/current digests and gates comparison on shared usable identities. Post-implementation self review, **31 focused tests / two files**, test typecheck and formatting passed. Full source CI is pending. The measured snapshots remain unchanged; a subsequent guard rejects missing project/store identity without changing any saved pair's score.
+This supports scope competition as a factor for these exposed cases. The narrower families were chosen from known target locations, and the corpus/background indexing continued changing; this is neither general recall nor an isolated causal experiment. Do not compare this 15-case aggregate with the earlier 19-case baseline. Query timing describes these observations only. The reusable repo-only paired runner stores both indexed/current digests and gates comparison on shared usable identities. Post-implementation self review, **31 focused tests / two files**, test typecheck and formatting passed. [Full source CI](https://github.com/reowens/grepmax/actions/runs/37858947515) for `3d59bd97bbbfedfd2f90575d3dd95e8b89f2e479` passed all gates with **2,086 tests / 209 files**, build, audits and packed-consumer/native/prune smoke. The measured snapshots remain unchanged; a subsequent guard rejects missing project/store identity without changing any saved pair's score.
+
+A fresh read-only ping/status at **2026-10-08T23:21:46.640Z** confirms .71 daemon 54708 ready/active, resource generation 1, one current worker and small Granite GPU 55539 owned-ready. This is a point-in-time health observation, not a watcher soak. Evidence: ignored `docs/measurements/2026-10-08-document-scope-review/health.json`.
 
 **Next:** diagnose the Redis/People residuals and predefine a bounded existing-only lexical-candidate evaluation before any production ranking change. Keep unavailable CDN and other cases unresolved until an ordinary admitted sample is available. Consumer rollout still needs explicit busy/pressure/freshness handling. Longer watcher observation and fresh-admission live recovery remain pending. This work changed evaluation tooling and documentation only; deployed .71, normal service policy, models, indexes and client settings were not changed.
 
@@ -275,7 +277,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 149 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 150 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
