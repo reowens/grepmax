@@ -347,6 +347,10 @@ function grade(root, prefixes, c, status, result) {
       startLine: row.startLine,
       endLine: row.endLine,
       score: row.score,
+      indexedSha256: digest(row.hash) ? row.hash : null,
+      currentSourceSha256: source?.sha256 ?? null,
+      hashAlgorithm:
+        row.hashAlgorithm === "sha256-bytes" ? "sha256-bytes" : null,
       accepted,
       reason: reason ?? (frozenCurrent ? null : "source_changed"),
     };
@@ -398,6 +402,7 @@ async function evaluateCase({ root, prefixes, c, client, repetition }) {
   }
   sample.generation = status.generation;
   sample.coverage = checkCoverage(root, status, c);
+  sample.project = { root: status.project.root, store: status.project.store };
   for (const row of sample.coverage) {
     if (!row.indexed) sample.exclusions.push("target_not_indexed");
     else if (!row.hashCurrent)

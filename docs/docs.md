@@ -6,14 +6,33 @@
 
 | Work | Current state | Next action / completion evidence |
 | --- | --- | --- |
-| Document retrieval quality | Twenty-case baseline complete: initial 19/20 scoreable, document top-10 target hits 13/19; indexing repeat 6/20 scoreable | Review missed-target alternatives/sections, freeze any successor judgments, and predefine a scope ablation before ranking changes or consumer rollout. |
+| Document retrieval quality | Baseline, five-miss source review and 20-pair scope comparison complete; shared 15 pairs: document top-10 hits 9 → 13, section hits 7 → 12 | Diagnose Redis rank 12 / People absent and predefine bounded lexical-candidate evaluation; CDN scope effect unavailable. No production ranking change or rollout yet. |
 | Watcher stability | Artifact filtering and reconciliation concurrency fixes shipped; short observation passed | Observe ordinary development over a longer interval. Record native drops, failed files, queue drain and recovery behavior. The last four-minute sample does not close the broader FSEvents issue. |
 | Production disk recovery | Admission and recovery implementation released; live pruning has not run | Obtain fresh strict host/resource and ownership admission, prepare the pinned runtime under an actual 512 MiB reservation, drain known owners, refresh retention inventory and obtain the exclusive lease. Record retained-state verification and allocated/free-space changes after any authorized prune. |
 | Consumer rollout | Packaged Runlist interoperability passed; client settings remain unchanged | Decide rollout from retrieval evaluation evidence and explicitly configure the document entry point. Existing MCP sessions need reconnecting to load released runtime code. |
 
-**Next review the completed retrieval baseline; continue watcher observation during ordinary development.** Preserve normal `critical-only` service, the small GPU model and maximum two workers. Watcher ownership remains in standalone gmax; Hetchy Developer is optional. Embedding migration and independently reusable watcher extraction remain deferred.
+**Next diagnose the remaining retrieval targets and define a bounded lexical-candidate experiment; continue watcher observation during ordinary development.** Preserve normal `critical-only` service, the small GPU model and maximum two workers. Watcher ownership remains in standalone gmax; Hetchy Developer is optional. Embedding migration and independently reusable watcher extraction remain deferred.
 
 The release acceptance record is `/private/tmp/gmax-v02671-acceptance.json`; the completed retrieval report is linked below. Fresh read-only health at **2026-10-08T22:46:44.781Z** confirms .71 ready/active; evaluation caused no runtime or configuration change. Historical PIDs, inventories and “next” instructions below are snapshots; refresh them before operational work. The working focus and .71 delivery record take precedence over those earlier instructions.
+
+## Document target review and paired scope comparison completed — October 8, 2026
+
+The five baseline target misses were reviewed against current source and returned alternatives. All canonical targets, answer ranges and questions remain unchanged. A Redis audit chunk provides useful partial evidence for the configuration-file mechanism, but contains outdated remediation claims; the other leading alternatives do not fully answer their canonical questions. These annotations are a post-baseline self review, not independent adjudication or new ground truth. Original alternatives lacked saved indexed digests; their current source snapshots are recorded separately without claiming historical byte identity.
+
+A scope comparison was predefined before querying the same frozen 20-case fixture through installed .71: broad `docs` versus `docs/services` + `docs/modules`, alternating arm order, adjacent arms, one-second gaps between pairs, and no retries. Both arms retain every target. [Review and comparison evidence](measurements/2026-10-08-document-scope-review/scope-review-report.json) includes the frozen study plan, source judgments, measured runner snapshots and all 40 checkpoints.
+
+| Shared usable cohort: 15 of 20 pairs | Broad docs | Services + modules |
+| --- | ---: | ---: |
+| Expected document in first 10 distinct documents | 9 / 15 (60.0%) | 13 / 15 (86.7%) |
+| Document MRR@10 | 0.388 | 0.743 |
+| Expected section overlap in first 10 chunks | 7 / 15 (46.7%) | 12 / 15 (80.0%) |
+| Accepted-query median / p95 | 1.676 / 4.208 seconds | 1.580 / 3.965 seconds |
+
+Narrowing brings QRC into document rank 7, scene-name contract into rank 1, kiosk from 23 to 1 and worker queue ownership from 18 to 1. No shared-cohort top-ten document hit regresses. Redis secret configuration moves from absent in 50 candidates to rank 12; People links remain absent. Each arm refused the same two cases as busy and three as host_pressure. The CDN replacement case is among those refusals, so its scope effect is unmeasured. Refusals are excluded from relevance scoring and were not retried. All 1,500 returned pointers passed current digest/range verification; frozen target bytes remained current, and shared pairs retained the same resource generation/project/store.
+
+This supports scope competition as a factor for these exposed cases. The narrower families were chosen from known target locations, and the corpus/background indexing continued changing; this is neither general recall nor an isolated causal experiment. Do not compare this 15-case aggregate with the earlier 19-case baseline. Query timing describes these observations only. The reusable repo-only paired runner stores both indexed/current digests and gates comparison on shared usable identities. Post-implementation self review, **31 focused tests / two files**, test typecheck and formatting passed. Full source CI is pending. The measured snapshots remain unchanged; a subsequent guard rejects missing project/store identity without changing any saved pair's score.
+
+**Next:** diagnose the Redis/People residuals and predefine a bounded existing-only lexical-candidate evaluation before any production ranking change. Keep unavailable CDN and other cases unresolved until an ordinary admitted sample is available. Consumer rollout still needs explicit busy/pressure/freshness handling. Longer watcher observation and fresh-admission live recovery remain pending. This work changed evaluation tooling and documentation only; deployed .71, normal service policy, models, indexes and client settings were not changed.
 
 ## Document retrieval baseline completed — October 8, 2026
 
@@ -37,7 +56,7 @@ Post-implementation self review and **24 focused tests** passed, including real 
 
 At **2026-10-08T22:46:44.781Z**, a fresh read-only ping/status check confirms .71 daemon 54708 ready/active with normal `critical-only` policy and maximum two workers. No daemon restart, model initialization, index/store mutation, configuration change, consumer rollout or live pruning was performed. The strict existing-only path's busy/pressure refusals did not switch ordinary service off.
 
-**Next:** review useful alternatives and answer-bearing ranges for the misses before declaring defects or changing ground truth. Freeze any new judgments as fixture v2, then predefine a scope ablation to distinguish broad candidate competition from target-ranking gaps. Consumer pilot design must expose busy/pressure/freshness states clearly; it remains separate from this completed baseline. Longer watcher observation and fresh-admission live recovery remain pending. Embedding migration/shared watcher extraction stay deferred.
+**Historical next, now completed above:** review useful alternatives and answer-bearing ranges for the misses before declaring defects or changing ground truth. Freeze any new judgments as fixture v2, then predefine a scope ablation to distinguish broad candidate competition from target-ranking gaps. Consumer pilot design must expose busy/pressure/freshness states clearly; it remains separate from this completed baseline. Longer watcher observation and fresh-admission live recovery remain pending. Embedding migration/shared watcher extraction stay deferred.
 
 ## Current release and next work — October 8, 2026: v0.26.71
 
@@ -256,7 +275,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 148 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 149 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|

@@ -611,7 +611,20 @@ Freeze the JSON fixture before retrieving results. It contains `schemaVersion: 1
 
 The report separates the rank of the expected document among distinct returned documents from the rank of an overlapping expected section among chunk pointers. Document Recall@10 credits the fraction of declared target documents retrieved; MRR@10 credits only ranks 1–10. Section overlap indicates source-context discovery, not complete answer coverage. Only the first 50 returned candidates are available; document deduplication cannot recover targets outside that window. Reviewed targets are not exhaustive judgments of all useful documents, so these metrics describe the frozen targets, not general recall.
 
-Source and indexed hashes must match the fixture before querying; generation and project/store identity must agree across coverage and retrieval. Returned source ranges require reread/hash verification. Refusals, changed targets and unverified expected pointers are excluded from relevance metrics and counted separately; `usableFraction` includes every planned sample. Background indexing and partial/degraded index context are recorded without excluding targets whose coverage and hashes remain current. No queries, source bodies or raw diagnostics are copied into result artifacts. Reads are bounded to 2 MiB per source; MCP frames to 1 MiB. The report and sibling `.samples.jsonl` checkpoint refuse overwrite and use owner-only permissions. Exit 0 means an evaluation with usable samples completed, not that a quality threshold passed; exit 2 means no usable samples; exit 1 means preflight or transport/contract failure. No consumer rollout is implied.
+Source and indexed hashes must match the fixture before querying; generation and project/store identity must agree across coverage and retrieval. Returned source ranges require reread/hash verification; new artifacts retain both the indexed pointer digest and current-source digest so later reviews can check provenance. Refusals, changed targets and unverified expected pointers are excluded from relevance metrics and counted separately; `usableFraction` includes every planned sample. Background indexing and partial/degraded index context are recorded without excluding targets whose coverage and hashes remain current. No queries, source bodies or raw diagnostics are copied into result artifacts. Reads are bounded to 2 MiB per source; MCP frames to 1 MiB. The report and sibling `.samples.jsonl` checkpoint refuse overwrite and use owner-only permissions. Exit 0 means an evaluation with usable samples completed, not that a quality threshold passed; exit 2 means no usable samples; exit 1 means preflight or transport/contract failure. No consumer rollout is implied.
+
+To investigate scope competition, [scripts/eval-document-scopes.cjs](scripts/eval-document-scopes.cjs) compares the original fixture prefixes against declared narrower directories without changing queries or targets:
+
+```bash
+node scripts/eval-document-scopes.cjs \
+  --fixture docs/measurements/documents/fixture-v1.json --sha256 <digest> \
+  --root /absolute/already-indexed/project \
+  --entry /absolute/installed/grepmax/dist/bin.js \
+  --output docs/measurements/documents/paired-scope-v1.json \
+  --narrow-prefix docs/services --narrow-prefix docs/modules
+```
+
+Declare and freeze the scope hypothesis before querying. Narrower prefixes must stay within the original scope and retain every target. Arm order alternates per case, with a one-second gap between pairs and no retries. Reports show each arm's standalone observations and separately compare only pairs where both arms are usable under the same resource generation, project and store. The live competing corpus can still change; this is a diagnostic comparison rather than an isolated causal test. Scopes chosen from known target families introduce a useful prior, so gains do not establish unscoped or held-out retrieval quality. Owner-only checkpoints, overwrite refusal and source/transport bounds are shared with the base evaluator. Exit 2 means no comparable pairs.
 
 ## Attribution
 
