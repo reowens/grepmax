@@ -1,5 +1,20 @@
 # Docs
 
+## Working focus after 0.26.71 — October 8, 2026
+
+**Release and integration are complete.** Output fixes shipped in .70; existing-index document search shipped in .71. Both source candidates are committed on main. Retained branches, stashes and backups preserve history; they are not an integration queue.
+
+| Work | Current state | Next action / completion evidence |
+| --- | --- | --- |
+| Document retrieval quality | Live transport, coverage and pointer contract accepted; relevance and recall not yet evaluated | Use representative authorized document questions with expected source references. Record coverage, ranking, latency and explicit refusal states; reread and verify source hashes before accepting pointers. Produce an evaluation report before deciding consumer rollout. |
+| Watcher stability | Artifact filtering and reconciliation concurrency fixes shipped; short observation passed | Observe ordinary development over a longer interval. Record native drops, failed files, queue drain and recovery behavior. The last four-minute sample does not close the broader FSEvents issue. |
+| Production disk recovery | Admission and recovery implementation released; live pruning has not run | Obtain fresh strict host/resource and ownership admission, prepare the pinned runtime under an actual 512 MiB reservation, drain known owners, refresh retention inventory and obtain the exclusive lease. Record retained-state verification and allocated/free-space changes after any authorized prune. |
+| Consumer rollout | Packaged Runlist interoperability passed; client settings remain unchanged | Decide rollout from retrieval evaluation evidence and explicitly configure the document entry point. Existing MCP sessions need reconnecting to load released runtime code. |
+
+**Start with document retrieval evaluation; continue watcher observation during ordinary development.** Preserve normal `critical-only` service, the small GPU model and maximum two workers. Watcher ownership remains in standalone gmax; Hetchy Developer is optional. Embedding migration and independently reusable watcher extraction remain deferred.
+
+The release acceptance record is `/private/tmp/gmax-v02671-acceptance.json`. Last recorded live health was **2026-10-08T21:45:08.637Z**: .71 ready/active, native watching and all queues empty. This documentation update performs no new health check or runtime change. Historical PIDs, inventories and “next” instructions below are snapshots; refresh them before operational work. The working focus and .71 delivery record take precedence over those earlier instructions.
+
 ## Current release and next work — October 8, 2026: v0.26.71
 
 **[v0.26.71](https://github.com/reowens/grepmax/releases/tag/v0.26.71) is published, installed and running**, source/tag `f06070cdbd2e9bcdcdbcd6c02cde6d039694d8fa`. The reviewed document-search work (`d88d36b`) is now integrated into main and delivered. `gmax mcp --existing-index-only` exposes the separate read-only stdio coverage/search contract for an existing primary Markdown index. It returns canonical source pointers and validated indexed hash provenance without cached source bodies. It cannot start a daemon, obtain watcher leases, initialize models, create indexes, fall back to another backend or log queries. Cold/busy/unavailable resources refuse explicitly. Contract and limits are in [DOCUMENT-SEARCH.md](../DOCUMENT-SEARCH.md).
@@ -16,9 +31,9 @@ The installed document-search MCP initializes as `gmax-document-search`, adverti
 
 Evidence: `/private/tmp/gmax-v02671-package-comparison.json`, `/private/tmp/gmax-v02671-installed-evidence.json`, `/private/tmp/gmax-v02671-client-evidence.json`, `/private/tmp/gmax-v02671-handover.json`, `/private/tmp/gmax-v02671-live-document-evidence.json`, `/private/tmp/gmax-v02671-live-search.json`, `/private/tmp/gmax-v02671-live-pointer-provenance.json`, `/private/tmp/gmax-v02671-post-reconciliation-coverage.json`, `/private/tmp/gmax-v02671-live-observation.json`, `/private/tmp/gmax-v02671-final-live.json` and `/private/tmp/gmax-v02671-integration-evidence.json`; accepted candidate review `/private/tmp/gmax-document-search-review-acceptance.json`. Release isolation `/private/tmp/gmax-document-search-release`, `release/gmax-document-search-071`; preserve its untracked node_modules symlink.
 
-## Previous qualification — document search, October 8, 2026
+## Historical qualification — document search before .71, October 8, 2026
 
-The newer shared document-search candidate was frozen against .70 into **`review/gmax-document-search-070`, `d88d36bdec1827e414d31a870d19e639e944651e`**, worktree `/private/tmp/gmax-document-search-review`. This supersedes `794aa87` as the qualification candidate. It is reviewed and packaged, **not integrated into main, installed or published**; the installed service remains .70. The private candidate retains .70 package metadata solely for qualification and must receive a new version before publication.
+The newer shared document-search candidate was frozen against .70 into **`review/gmax-document-search-070`, `d88d36bdec1827e414d31a870d19e639e944651e`**, worktree `/private/tmp/gmax-document-search-review`. This supersedes `794aa87` as the qualification candidate. At this qualification checkpoint it was reviewed and packaged but not yet integrated, installed or published; the installed service was .70. The private candidate retained .70 package metadata for qualification. Integration and .71 delivery subsequently completed, as recorded above.
 
 Post-implementation self review corrected two reproduced defects: an absent resource ledger in a fresh `critical-only` home prevented existing-only admission from reaching its host sample; Markdown directories, including symlink aliases, could be authorized as coverage/source pointers. The ledger now stays absent while sampling proceeds, existing symlinked/corrupt ledgers still refuse, and pointers require regular files after canonical resolution. The new tests failed before correction and pass afterward. Full CI also exposed one stale startup capability expectation; it now includes `existingIndexOnlySearch: 1` while retaining the exact readiness assertion.
 
@@ -32,7 +47,7 @@ Reviewed fixes and documentation were copied back to the shared checkout only af
 
 Evidence: `/private/tmp/gmax-document-search-review-acceptance.json`, `/private/tmp/gmax-document-search-review-regressions-before.log`, `/private/tmp/gmax-document-search-review-tests-final.log`, `/private/tmp/gmax-document-search-review-capabilities-tests.log`, `/private/tmp/gmax-document-search-final-package-audit.log`, `/private/tmp/gmax-document-search-final-runlist-qualification.log`, `/private/tmp/gmax-document-search-review-ci-final.log`, `/private/tmp/gmax-document-search-final-package-comparison.json` and `/private/tmp/gmax-document-search-review-shared-fixes.json`. Candidate `/private/tmp/gmax-document-search-final-package/grepmax-0.26.70.tgz`, SHA256 `9030f377c7f3638bc53f4e1b96216bc0b7b5c83f7a8bc9273cb31b4b9d644632`; preserve prior branches, stashes and backups.
 
-## Current release and next work — October 8, 2026
+## Historical delivery — v0.26.70, October 8, 2026
 
 **[v0.26.70](https://github.com/reowens/grepmax/releases/tag/v0.26.70) is published, installed and running**, source/tag `1030a736f90d4ca14504940f6d2352204b716f44`. The preserved output work (`work/gmax-output-fixes`, `f17aeee`) is now integrated with review corrections: project summaries label sampled counts and breakdowns, with total chunks counted separately through path-only streaming under native and wall-clock deadlines; audit rankings omit unresolved symbol-name collisions and report uncertainty; compact cycles keep complete names with exact omitted-file counts; compact CLI/MCP skeleton text reports its limits while JSON retains full structure. Similarity excludes generated and fixture families by default, with CLI `--include-generated` and MCP `include_generated` controls. Uncapped project labels remain compatible.
 
@@ -217,7 +232,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 144 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 145 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
