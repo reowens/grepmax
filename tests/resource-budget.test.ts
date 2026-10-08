@@ -328,4 +328,58 @@ describe("one persistent budget for all clients/stores", () => {
     expect(() => make().reserve(512, "worker")).not.toThrow();
     client.release();
   });
+  it("existing inference admission never seeds, locks, prunes or latches", () => {
+    expect(make().checkExisting()).toEqual(s);
+    expect(fs.readdirSync(root)).toEqual([]);
+    s.memoryPressure = "critical";
+    expect(() => make().checkExisting()).toThrow("critical");
+    expect(latch).not.toHaveBeenCalled();
+    expect(fs.readdirSync(root)).toEqual([]);
+    s.memoryPressure = "normal";
+    fs.writeFileSync(path.join(root, "interrupted.tmp"), "partial");
+    expect(() => make().checkExisting()).toThrow("interrupted");
+    expect(fs.readFileSync(path.join(root, "interrupted.tmp"), "utf8")).toBe(
+      "partial",
+    );
+  });
+  it("existing admission samples a fresh critical-only home without creating its absent ledger", () => {
+    fs.rmSync(root, { recursive: true });
+    const sample = vi.fn(() => s);
+    const budget = make(10, { policy: () => "critical-only", sample });
+    expect(budget.checkExisting()).toEqual(s);
+    expect(sample).toHaveBeenCalledTimes(1);
+    expect(fs.existsSync(root)).toBe(false);
+    s.memoryPressure = "warn";
+    expect(() => budget.checkExisting()).toThrow("warning");
+    expect(fs.existsSync(root)).toBe(false);
+    expect(latch).not.toHaveBeenCalled();
+  });
+  it("existing admission refuses a symlinked ledger without changing either directory", () => {
+    const target = path.join(root, "actual");
+    fs.mkdirSync(target);
+    const link = path.join(root, "link");
+    fs.symlinkSync(target, link);
+    expect(() => make(10, { root: link }).checkExisting()).toThrow(
+      "unverified resource budget directory",
+    );
+    expect(fs.readdirSync(target)).toEqual([]);
+    expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(latch).not.toHaveBeenCalled();
+  });
+  it("existing admission refuses unknown aggregate and concurrent quarantine", () => {
+    s.aggregateFootprintMb = null;
+    expect(() => make().checkExisting()).toThrow("unknown aggregate");
+    s = snapshot();
+    let denied: string | null = null;
+    const budget = make(10, {
+      quarantine: () => denied,
+      sample: () => {
+        denied = "concurrent hold";
+        return s;
+      },
+    });
+    expect(() => budget.checkExisting()).toThrow("containment");
+    expect(latch).not.toHaveBeenCalled();
+    expect(fs.readdirSync(root)).toEqual([]);
+  });
 });

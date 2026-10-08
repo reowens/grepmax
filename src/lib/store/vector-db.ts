@@ -907,6 +907,16 @@ export class VectorDB {
     return table;
   }
 
+  /** Restricted reads must use the daemon connection without creating/evolving a table. */
+  async existingTableForRead(): Promise<lancedb.Table> {
+    if (!this.db) throw new Error("store_unavailable");
+    try {
+      return await this.db.openTable(TABLE_NAME);
+    } catch {
+      throw new Error("store_unavailable");
+    }
+  }
+
   private async openExistingTableUnsafe(): Promise<lancedb.Table | null> {
     const db = await this.getDb();
     try {

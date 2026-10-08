@@ -142,7 +142,7 @@ export class ResourceBudget {
       pid: process.pid,
       now: Date.now,
       sample: (extraPids = []) => {
-        const records = this.readRecords();
+        const records = this.readExistingRecords();
         return sampleHostResources(
           [...records.map((r) => r.pid), ...extraPids],
           this.deps.samplerOverrides,
@@ -203,6 +203,20 @@ export class ResourceBudget {
     } finally {
       release();
     }
+  }
+
+  /** Existing-only reads may encounter a critical-only home with no ledger. */
+  private readExistingRecords(): ReservationRecord[] {
+    let stat: fs.Stats;
+    try {
+      stat = fs.lstatSync(this.deps.root);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    }
+    if (!stat.isDirectory() || stat.isSymbolicLink())
+      throw new ResourceAdmissionError("unverified resource budget directory");
+    return this.readRecords();
   }
 
   private readRecords(): ReservationRecord[] {
@@ -395,6 +409,25 @@ export class ResourceBudget {
         }
       },
     };
+  }
+
+  /** Read-only admission for existing inference. Never seed/lock/prune the ledger or latch. */
+  checkExisting(): HostResourceSnapshot | null {
+    if (this.deps.quarantine())
+      throw new ResourceAdmissionError("host containment");
+    if (this.deps.platform !== "darwin") return null;
+    const records = this.readExistingRecords();
+    const snapshot = this.deps.sample();
+    assertResourceSnapshot(
+      snapshot,
+      this.charge(snapshot, records),
+      resolveResourceBudgetMb(),
+      this.deps.now(),
+      this.deps.sampleMaxAgeMs,
+    );
+    if (this.deps.quarantine())
+      throw new ResourceAdmissionError("host containment");
+    return snapshot;
   }
 
   check(requiredPid?: number | null): HostResourceSnapshot | null {

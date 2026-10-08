@@ -130,11 +130,16 @@ export class GraniteModel {
     return vectors;
   }
 
-  async runBatch(texts: string[]): Promise<Float32Array[]> {
+  async runBatch(
+    texts: string[],
+    existingOnly = false,
+  ): Promise<Float32Array[]> {
     // Lazy-load: in the normal path MLX/GPU handles dense embedding and this
     // ONNX model is never used, so we avoid paying its resident cost in every
     // worker. load() is idempotent and only runs on the first fallback batch.
-    await this.load();
+    if (existingOnly) {
+      if (!this.isReady()) throw new Error("embedding_unavailable");
+    } else await this.load();
     if (!this.session || !this.tokenizer) return [];
 
     const encoded = await this.tokenizer(texts, {

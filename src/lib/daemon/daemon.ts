@@ -92,6 +92,7 @@ import {
   isWorkerPoolInitialized,
   WorkerPool,
 } from "../workers/pool";
+import { handleDocumentSearch } from "./document-search-handler";
 import {
   handleCommand,
   startHeartbeat,
@@ -1208,6 +1209,66 @@ export class Daemon {
         health.failedFiles ?? 0,
       ),
     };
+  }
+
+  /** Separate shared-operation path: never paused keyword fallback or runtime setup. */
+  async documentSearch(
+    cmd: Record<string, unknown>,
+    signal: AbortSignal,
+  ): Promise<{ ok: boolean; [key: string]: unknown }> {
+    const state = () =>
+      this.pausedReason !== null || daemonStartDeniedReason()
+        ? "host_pressure"
+        : this.shuttingDown || this.recycling
+          ? "busy"
+          : !this.vectorDb || !this.metaCache
+            ? "store_unavailable"
+            : this.activeConfigurationError()
+              ? "embedding_mismatch"
+              : "ready";
+    return this.operations.runShared("documents", signal, (operationSignal) =>
+      handleDocumentSearch(
+        {
+          home: PATHS.globalRoot,
+          state,
+          generation: () => this.resourceGenerationId(),
+          embeddingState: (root) => {
+            const project = getProject(root);
+            if (project?.status !== "indexed") return "no_index";
+            if (!this.activeGeneration) return "embedding_unavailable";
+            if (
+              this.workerPool &&
+              this.workerPool.generation.fingerprint !==
+                this.activeGeneration.fingerprint
+            )
+              return "embedding_mismatch";
+            try {
+              return compareEmbeddingGeneration(project, this.activeGeneration)
+                .state === "stale"
+                ? "embedding_mismatch"
+                : "ready";
+            } catch {
+              return "embedding_mismatch";
+            }
+          },
+          meta: (file) => this.metaCache?.get(file),
+          queryState: () =>
+            this.workerPool?.existingQueryState() ?? "embedding_unavailable",
+          encode: (query, requestSignal) =>
+            this.workerPool
+              ? this.workerPool.encodeQueryExisting(query, requestSignal)
+              : Promise.reject(new Error("embedding_unavailable")),
+          table: () =>
+            this.vectorDb
+              ? this.vectorDb.existingTableForRead()
+              : Promise.reject(new Error("store_unavailable")),
+          indexState: (root) => this.indexState(root),
+          lastIndexed: (root) => getProject(root)?.lastIndexed,
+        },
+        cmd,
+        operationSignal,
+      ),
+    );
   }
 
   async search(

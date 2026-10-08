@@ -46,7 +46,8 @@
     "postversion": "bash scripts/postrelease.sh",
     "audit:consumer": "node scripts/audit-consumer.cjs",
     "audit:python": "python3 scripts/audit-python.py && python3 scripts/audit-python.py --lockfile lance-maintenance/uv.lock",
-    "test:python": "python3 -m unittest discover -s tests/python"
+    "test:python": "python3 -m unittest discover -s tests/python",
+    "audit:document-search": "node scripts/audit-document-search.cjs"
   },
   "keywords": [
     "grepmax",
@@ -79,7 +80,8 @@
     "lance-maintenance/uv.lock",
     "README.md",
     "LICENSE",
-    "NOTICE"
+    "NOTICE",
+    "DOCUMENT-SEARCH.md"
   ],
   "license": "Apache-2.0",
   "description": "Semantic code search for coding agents. Local embeddings, call graph tracing, compact code context.",

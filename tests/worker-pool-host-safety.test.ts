@@ -52,6 +52,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 });
 vi.unmock("../src/lib/workers/pool");
 
+import { resourceBudget } from "../src/lib/utils/resource-budget";
 import { WorkerPool } from "../src/lib/workers/pool";
 
 describe("WorkerPool host admission", () => {
@@ -60,6 +61,7 @@ describe("WorkerPool host admission", () => {
     vi.stubEnv("GMAX_HOST_GUARD_POLICY", "strict");
     vi.useFakeTimers();
     vi.stubGlobal("process", { ...process, platform: "darwin" });
+    vi.mocked(resourceBudget.checkExisting).mockReset().mockReturnValue(null);
     h.quarantine = null;
     h.memory = { status: "known", pressure: "normal" };
     h.kernel = { status: "known", usage: { pressure: "ok" } };
@@ -327,5 +329,135 @@ describe("WorkerPool host admission", () => {
     expect(() => h.children[0].emit("exit", 1, null)).not.toThrow();
     expect(pool.spawnDeniedReason).toContain("ENOMEM");
     expect(h.latch).not.toHaveBeenCalled();
+  });
+  it("existing queries never spawn for cold or busy workers", async () => {
+    pool = new WorkerPool();
+    await expect(pool.encodeQueryExisting("cold")).rejects.toThrow(
+      "embedding_unavailable",
+    );
+    pool.workers[0].queryReady = true;
+    pool.workers[0].busy = true;
+    await expect(pool.encodeQueryExisting("busy")).rejects.toThrow("busy");
+    expect(childProcess.fork).toHaveBeenCalledTimes(1);
+    expect(pool.hasUnassignedTasks()).toBe(false);
+    expect(h.children[0].send).not.toHaveBeenCalled();
+  });
+  it.each(["normal", "abort", "deadline", "death"])(
+    "existing %s keeps shared lifecycle without replacement",
+    async (mode) => {
+      pool = new WorkerPool();
+      const worker = pool.workers[0];
+      worker.queryReady = true;
+      const controller = new AbortController();
+      const result = pool.encodeQueryExisting(
+        "PRIVATE_QUERY",
+        controller.signal,
+      );
+      const expected =
+        mode === "normal"
+          ? expect(result).resolves.toMatchObject({ dense: [1] })
+          : expect(result).rejects.toThrow();
+      expect(worker.child.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "encodeQuery",
+          payload: {
+            text: "PRIVATE_QUERY",
+            existingOnly: true,
+            generation: pool.generation.fingerprint,
+          },
+        }),
+      );
+      if (mode === "abort") controller.abort();
+      if (mode === "deadline") {
+        worker.child.emit("message", {
+          id: worker.pendingTaskId,
+          heartbeat: true,
+          queryReady: true,
+        });
+        await vi.advanceTimersByTimeAsync(10001);
+      }
+      if (mode === "death") worker.child.emit("exit", 1, null);
+      else {
+        if (mode !== "normal") expect(worker.busy).toBe(true);
+        worker.child.emit("message", {
+          id: worker.pendingTaskId,
+          result: { dense: [1] },
+          queryReady: true,
+          rss: 10 * 1024 * 1024 * 1024,
+        });
+      }
+      await expected;
+      pool.reapBloatedWorkers();
+      expect(childProcess.fork).toHaveBeenCalledTimes(1);
+      if (mode === "death") expect(worker.child.kill).not.toHaveBeenCalled();
+      else expect(worker.child.kill).toHaveBeenCalledWith("SIGTERM");
+      expect(pool.workers).toHaveLength(0);
+      await expect(
+        pool.encodeQueryExisting("after retirement"),
+      ).rejects.toThrow("embedding_unavailable");
+      expect(childProcess.fork).toHaveBeenCalledTimes(1);
+      expect(pool.tasks.size).toBe(0);
+    },
+  );
+  it("retires repeated oversized restricted completions without interrupting busy inference or spawning", async () => {
+    pool = new WorkerPool();
+    const worker = pool.workers[0];
+    worker.queryReady = true;
+    const reservations = vi.mocked(resourceBudget.reserve).mock.results;
+    const reservation = reservations[reservations.length - 1].value;
+    for (let i = 0; i < 2; i++) {
+      const result = pool.encodeQueryExisting("bounded query");
+      worker.lastRssBytes = 10 * 1024 * 1024 * 1024;
+      pool.reapBloatedWorkers();
+      expect(worker.child.kill).not.toHaveBeenCalled();
+      worker.child.emit("message", {
+        id: worker.pendingTaskId,
+        result: { dense: [1] },
+        queryReady: true,
+        rss: worker.lastRssBytes,
+      });
+      await result;
+    }
+    expect(worker.child.kill).toHaveBeenCalledWith("SIGTERM");
+    expect(pool.workers).toHaveLength(0);
+    expect(childProcess.fork).toHaveBeenCalledTimes(1);
+    expect(reservation.release).not.toHaveBeenCalled();
+    worker.child.emit("close", 0, "SIGTERM");
+    expect(reservation.release).toHaveBeenCalledTimes(1);
+    // Ordinary queued work may create a worker under ordinary admission.
+    void pool.encodeQuery("ordinary").catch(() => {});
+    expect(childProcess.fork).toHaveBeenCalledTimes(2);
+  });
+  it("existing admission refuses pressure and rechecks quarantine after sampling", async () => {
+    pool = new WorkerPool();
+    pool.workers[0].queryReady = true;
+    vi.mocked(resourceBudget.checkExisting).mockImplementationOnce(() => {
+      throw new Error("unknown host");
+    });
+    await expect(pool.encodeQueryExisting("pressure")).rejects.toThrow(
+      "host_pressure",
+    );
+    vi.mocked(resourceBudget.checkExisting).mockImplementationOnce(() => {
+      h.quarantine = "changed";
+      return null;
+    });
+    await expect(pool.encodeQueryExisting("race")).rejects.toThrow(
+      "host_pressure",
+    );
+    expect(h.children[0].send).not.toHaveBeenCalled();
+    expect(h.latch).not.toHaveBeenCalled();
+    expect(childProcess.fork).toHaveBeenCalledTimes(1);
+  });
+  it("existing readiness can disappear during admission without spawning", async () => {
+    pool = new WorkerPool();
+    pool.workers[0].queryReady = true;
+    vi.mocked(resourceBudget.checkExisting).mockImplementationOnce(() => {
+      pool.workers[0].queryReady = false;
+      return null;
+    });
+    await expect(pool.encodeQueryExisting("race")).rejects.toThrow(
+      "embedding_unavailable",
+    );
+    expect(childProcess.fork).toHaveBeenCalledTimes(1);
   });
 });

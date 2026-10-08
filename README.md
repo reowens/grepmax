@@ -233,6 +233,20 @@ Architecture audits omit unresolved same-name definitions from rankings, cycles 
 
 CLI `gmax skeleton --agent` and MCP `code_skeleton` text show at most 120 lines / 6,000 characters per file and report omitted lines and characters. CLI human output and JSON structure remain complete.
 
+## Existing-index document search
+
+`gmax mcp --existing-index-only` exposes a separate read-only stdio MCP contract
+for Markdown document coverage and semantic pointers. It uses an existing daemon,
+index and already-warm compatible query worker. It cannot start a daemon, watch a
+project, initialize a model, fall back to another backend or mutate the index.
+Cold, busy or unavailable resources return an explicit unavailable state.
+
+Results contain canonical paths and one-based source ranges, without cached source
+bodies. The first slice uses dense retrieval with explicit path scope and bounded
+deadlines. Consumers must reread and authorize current source before using a
+pointer. See [the document-search contract](DOCUMENT-SEARCH.md) for tool schemas,
+limits, hash provenance and isolated qualification.
+
 ## Background Daemon
 
 A single daemon watches your projects via native OS file events (FSEvents/inotify). Changes are detected in sub-second and incrementally reindexed. All writes to LanceDB are routed through the daemon via IPC, eliminating lock contention.
