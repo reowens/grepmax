@@ -470,3 +470,13 @@ it("bounds transport buffering after a frame-limit violation", async () => {
     await client.close();
   }
 }, 5000);
+
+it("closes promptly when bridge spawning failed before a child PID exists", async () => {
+  const client = new e.StdioClient(
+    path.join(root, "unused.cjs"),
+    path.join(root, "missing-directory"),
+  );
+  await expect(client.initialize()).rejects.toThrow("transport_error");
+  expect(client.child.pid).toBeUndefined();
+  await client.close();
+}, 1000);

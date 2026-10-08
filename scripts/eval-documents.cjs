@@ -618,7 +618,12 @@ class StdioClient {
   }
   async close() {
     this.fail("evaluation_complete");
-    if (this.child.exitCode !== null || this.child.signalCode !== null) return;
+    if (
+      !this.child.pid ||
+      this.child.exitCode !== null ||
+      this.child.signalCode !== null
+    )
+      return;
     await new Promise((resolve) => {
       const timer = setTimeout(() => {
         this.child.kill("SIGTERM");
