@@ -76,11 +76,35 @@ describe("production prune admission", () => {
   it.each([
     null,
     { platform: "linux", physicalFreeMb: 4096 },
-    { platform: "darwin", physicalFreeMb: 511 },
+    { platform: "darwin", physicalFreeMb: null },
+    { platform: "darwin", physicalFreeMb: -1 },
     { platform: "darwin", physicalFreeMb: NaN },
   ])("refuses unsupported/unknown physical admission", (sample) => {
     check.mockReturnValue(sample);
     expect(() => assertRecoveryAdmission(store, budget)).toThrow();
+  });
+  it.each([0, 64, 511])(
+    "admits healthy low-free-page hosts through strict checks and a shared reservation: %s MiB",
+    (physicalFreeMb) => {
+      check.mockReturnValue({ platform: "darwin", physicalFreeMb });
+      const admission = admitPrune(store, budget);
+      expect(budget.check).toHaveBeenCalledTimes(2);
+      expect(budget.reserve).toHaveBeenCalledWith(512, "prune-helper");
+      admission.close();
+      expect(release).toHaveBeenCalledOnce();
+    },
+  );
+  it.each([
+    "warning pressure",
+    "critical pressure",
+    "unknown resources",
+    "aggregate capacity exceeded",
+  ])("low free pages cannot bypass the strict budget refusing %s", (reason) => {
+    check.mockImplementation(() => {
+      throw new Error(reason);
+    });
+    expect(() => admitPrune(store, budget)).toThrow(reason);
+    expect(budget.reserve).not.toHaveBeenCalled();
   });
   it("reserves helper capacity and rechecks at launch, deletion and heartbeat", () => {
     const admission = admitPrune(store, budget);

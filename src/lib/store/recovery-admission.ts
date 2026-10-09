@@ -43,12 +43,17 @@ export function assertRecoveryAdmission(
     throw new Error(
       "Production recovery admission currently requires macOS host measurements",
     );
+  // os.freemem() reports immediately free pages, not all memory macOS can
+  // reclaim. Requiring an idle 512MiB here refused cleanup on a healthy host
+  // as the file cache changed. Strict pressure/aggregate checks above and the
+  // shared 512MiB reservation below govern helper admission; free pages remain
+  // measured diagnostics, never a substitute for those checks.
   if (
     snapshot.physicalFreeMb === null ||
     !Number.isFinite(snapshot.physicalFreeMb) ||
-    snapshot.physicalFreeMb < HELPER_RESOURCE_RESERVE_MB
+    snapshot.physicalFreeMb < 0
   )
-    throw new Error("Insufficient measured physical headroom for prune helper");
+    throw new Error("Measured physical free memory is unavailable");
   return snapshot;
 }
 
