@@ -63,8 +63,25 @@ confirmation of the existing configured MLX model. Idle time alone does not revo
 that identity: each bounded `/embed` response revalidates model and dimensions,
 and successful inference renews the normal health cache. Failure revokes restricted
 eligibility until external work confirms readiness. A worker rechecks before inference;
-no initialization, health polling, retry or backend fallback is allowed. Cold or
-busy workers refuse immediately without queueing, spawning or scaling.
+no initialization, health polling, retry or backend fallback is allowed. Cold
+workers refuse immediately. When compatible warm workers are occupied, at most
+four document queries may wait FIFO for up to two seconds for a warm worker.
+They get a turn between indexing files; after four consecutive document-query
+assignments, waiting ordinary work gets a turn. A full queue or expired worker
+wait returns `busy`. `queryState: ready` describes admission availability, including
+this bounded wait, and does not guarantee immediate execution or query success.
+Waiting requests live outside the ordinary worker queues and cannot trigger
+worker startup, replacement or scaling. Existing ordinary work retains its own
+admitted lifecycle, including independent expansion/replacement.
+
+Admission and warm readiness are rechecked when a worker becomes available.
+Queued cancellation/deadlines withdraw the request; cancellation after dispatch
+keeps the shared worker assigned until its actual terminal response or exit.
+The ten-second request bound includes waiting rather than restarting at dispatch.
+Synchronous admission has its own probe bound and is checked against the absolute
+request deadline before any query is sent. Native retrieval still uses the
+remaining overall deadline. An in-flight indexing file is never interrupted;
+long files or backend outages can still exceed the worker wait and return `busy`.
 
 Read-only admission honors the configured host guard policy without creating locks,
 reservations, pruning records or changing containment markers. Under the default

@@ -70,7 +70,12 @@ type PendingTask<M extends TaskMethod = TaskMethod> = {
   abortListener?: () => void;
   callerAborted?: boolean;
   existingOnly?: boolean;
+  waitTimeout?: NodeJS.Timeout;
 };
+
+export const EXISTING_QUERY_WAIT_MS = 2000;
+export const EXISTING_QUERY_QUEUE_LIMIT = 4;
+const EXISTING_QUERY_DEADLINE_MS = 10000;
 
 const TASK_TIMEOUT_MS = (() => {
   const fromEnv = Number.parseInt(
@@ -283,6 +288,9 @@ export class WorkerPool {
   private priorityQueue: number[] = [];
   private taskQueue: number[] = [];
   private tasks = new Map<number, PendingTask<TaskMethod>>();
+  // Separate from ordinary queues: these requests must never trigger expansion.
+  private existingWaiters = new Map<number, PendingTask<"encodeQuery">>();
+  private existingBurst = 0;
   private nextId = 1;
   private destroyed = false;
   private destroyPromise: Promise<void> | null = null;
@@ -353,6 +361,10 @@ export class WorkerPool {
   }
 
   private clearTaskTimeout<M extends TaskMethod>(task: PendingTask<M>) {
+    if (task.waitTimeout) {
+      clearTimeout(task.waitTimeout);
+      task.waitTimeout = undefined;
+    }
     if (task.timeout) {
       clearTimeout(task.timeout);
       task.timeout = undefined;
@@ -415,6 +427,7 @@ export class WorkerPool {
       task.abortListener = undefined;
     }
     this.tasks.delete(task.id);
+    this.existingWaiters.delete(task.id);
     this.removeFromQueue(task.id);
 
     if (worker) {
@@ -774,18 +787,23 @@ export class WorkerPool {
   private dispatch() {
     if (this.destroyed) return;
     if (this.spawnDeniedReason) {
+      this.rejectExistingWaiters("host_pressure");
       this.rejectUnassignedTasks(this.spawnDeniedReason, "HOST_SAFETY");
       return;
     }
     // Work admitted before another process quarantines the host may still
     // be queued. Do not send it to an existing worker after that stop.
     try {
+      this.dispatchExistingWaiters();
+      if (this.destroyed) return;
       const quarantine = daemonStartDeniedReason();
       if (quarantine) {
+        this.rejectExistingWaiters("host_pressure");
         this.denySpawn(quarantine, false);
         return;
       }
     } catch {
+      this.rejectExistingWaiters("host_pressure");
       this.denySpawn("quarantine check failed");
       return;
     }
@@ -844,6 +862,7 @@ export class WorkerPool {
     }
 
     idle.suppressReplacement = false;
+    this.existingBurst = 0;
     idle.busy = true;
     idle.pendingTaskId = task.id;
     idle.busySince = Date.now();
@@ -931,8 +950,7 @@ export class WorkerPool {
     return this.enqueue("processFile", input, signal);
   }
 
-  /** No queue, scaling or initialization for an existing-index document query. */
-  existingQueryState():
+  private existingWorkerState():
     | "ready"
     | "busy"
     | "embedding_unavailable"
@@ -949,6 +967,108 @@ export class WorkerPool {
         : "embedding_unavailable";
   }
 
+  /** Admission readiness includes a short bounded wait for an already-warm worker. */
+  existingQueryState() {
+    const state = this.existingWorkerState();
+    return state === "busy" &&
+      this.existingWaiters.size < EXISTING_QUERY_QUEUE_LIMIT
+      ? "ready"
+      : this.existingWaiters.size >= EXISTING_QUERY_QUEUE_LIMIT &&
+          state === "ready"
+        ? "busy"
+        : state;
+  }
+
+  private rejectExistingWaiters(state: string) {
+    for (const task of this.existingWaiters.values()) {
+      task.reject(Object.assign(new Error(state), { code: state }));
+      this.completeTask(task, null);
+    }
+  }
+
+  private dispatchExistingWaiters(): void {
+    while (this.existingWaiters.size) {
+      const state = this.existingWorkerState();
+      if (state === "host_pressure" || state === "embedding_unavailable") {
+        this.rejectExistingWaiters(state);
+        return;
+      }
+      // A continuous caller stream cannot keep indexing behind this queue.
+      if (
+        this.existingBurst >= EXISTING_QUERY_QUEUE_LIMIT &&
+        [...this.tasks.values()].some((t) => !t.worker && !t.existingOnly)
+      )
+        return;
+      if (state === "busy") return;
+      const task = this.existingWaiters.values().next().value!;
+      const age = Date.now() - task.queuedAt;
+      if (age < 0 || age >= EXISTING_QUERY_WAIT_MS) {
+        task.reject(Object.assign(new Error("busy"), { code: "busy" }));
+        this.completeTask(task, null);
+        continue;
+      }
+      // The worker wait ends here; synchronous admission has its own bound and
+      // the request's overall timer/signal still applies during inference.
+      if (task.waitTimeout) clearTimeout(task.waitTimeout);
+      task.waitTimeout = undefined;
+      try {
+        resourceBudget.checkExisting();
+      } catch {
+        this.rejectExistingWaiters("host_pressure");
+        // Ordinary work performs its own admission; a document refusal must
+        // not strand that queue. The dispatcher rechecks containment next.
+        return;
+      }
+      // Cancellation during admission may have removed this waiter.
+      if (!this.existingWaiters.has(task.id)) continue;
+      const admittedAge = Date.now() - task.queuedAt;
+      if (admittedAge < 0 || admittedAge >= EXISTING_QUERY_DEADLINE_MS) {
+        task.reject(new Error("timeout"));
+        this.completeTask(task, null);
+        continue;
+      }
+      const after = this.existingWorkerState();
+      if (after !== "ready") {
+        if (after === "busy") {
+          task.reject(Object.assign(new Error("busy"), { code: "busy" }));
+          this.completeTask(task, null);
+          continue;
+        }
+        this.rejectExistingWaiters(after);
+        return;
+      }
+      const worker = this.workers.find(
+        (w) =>
+          w.queryReady &&
+          !w.busy &&
+          !w.cleanedUp &&
+          w.child.connected !== false,
+      )!;
+      this.existingWaiters.delete(task.id);
+      if (task.waitTimeout) clearTimeout(task.waitTimeout);
+      task.waitTimeout = undefined;
+      task.worker = worker;
+      task.startTime = Date.now();
+      worker.busy = true;
+      worker.suppressReplacement = true;
+      worker.busySince = Date.now();
+      worker.pendingTaskId = task.id;
+      this.tasks.set(task.id, task as PendingTask);
+      this.existingBurst++;
+      try {
+        worker.child.send({
+          id: task.id,
+          method: task.method,
+          payload: task.payload,
+        });
+      } catch {
+        this.completeTask(task, worker);
+        worker.queryReady = false;
+        task.reject(new Error("embedding_unavailable"));
+      }
+    }
+  }
+
   encodeQueryExisting(
     text: string,
     signal?: AbortSignal,
@@ -960,21 +1080,6 @@ export class WorkerPool {
       return Promise.reject(
         Object.assign(new Error("Aborted"), { name: "AbortError" }),
       );
-    try {
-      resourceBudget.checkExisting();
-    } catch {
-      return Promise.reject(
-        Object.assign(new Error("host_pressure"), { code: "host_pressure" }),
-      );
-    }
-    // Recheck after admission: quarantine or worker readiness may have changed.
-    const after = this.existingQueryState();
-    if (after !== "ready")
-      return Promise.reject(Object.assign(new Error(after), { code: after }));
-    const worker = this.workers.find(
-      (w) =>
-        w.queryReady && !w.busy && !w.cleanedUp && w.child.connected !== false,
-    )!;
     return new Promise((resolve, reject) => {
       const id = this.nextId++;
       const task: PendingTask<"encodeQuery"> = {
@@ -990,11 +1095,14 @@ export class WorkerPool {
         queuedAt: Date.now(),
         signal,
         existingOnly: true,
-        worker,
       };
       const cancel = () => {
         task.callerAborted = true;
         reject(Object.assign(new Error("Aborted"), { name: "AbortError" }));
+        if (!task.worker) {
+          this.completeTask(task, null);
+          this.dispatch();
+        }
       };
       task.abortListener = cancel;
       signal?.addEventListener("abort", cancel, { once: true });
@@ -1003,19 +1111,15 @@ export class WorkerPool {
       task.timeout = setTimeout(() => {
         task.callerAborted = true;
         reject(new Error("timeout"));
-      }, 10000);
-      worker.busy = true;
-      worker.suppressReplacement = true;
-      worker.busySince = Date.now();
-      worker.pendingTaskId = id;
-      this.tasks.set(id, task as PendingTask);
-      try {
-        worker.child.send({ id, method: task.method, payload: task.payload });
-      } catch {
-        this.completeTask(task, worker);
-        worker.queryReady = false;
-        reject(new Error("embedding_unavailable"));
-      }
+        if (!task.worker) this.completeTask(task, null);
+      }, EXISTING_QUERY_DEADLINE_MS);
+      task.waitTimeout = setTimeout(() => {
+        reject(Object.assign(new Error("busy"), { code: "busy" }));
+        this.completeTask(task, null);
+        this.dispatch();
+      }, EXISTING_QUERY_WAIT_MS);
+      this.existingWaiters.set(id, task);
+      this.dispatch();
     });
   }
 
@@ -1215,6 +1319,8 @@ export class WorkerPool {
       this.idleReapInterval = null;
     }
     this.clearScaleUpTimer();
+
+    this.rejectExistingWaiters("embedding_unavailable");
 
     for (const task of this.tasks.values()) {
       task.reject(new Error("Worker pool destroyed"));

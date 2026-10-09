@@ -245,8 +245,14 @@ Document query admission follows the configured host guard policy. On macOS,
 default `strict` requires fresh aggregate resource admission; explicit
 `critical-only` checks OS/kernel critical pressure without an aggregate scan or
 ledger access. Warning or unavailable measurements stay diagnostic in that mode.
-Both policies preserve containment checks. A busy warm worker still refuses
-immediately; this entry point does not queue or start another worker.
+Both policies preserve containment checks. Up to four document queries can wait
+FIFO for an already-warm compatible worker for up to two seconds, taking a turn
+between indexing files. After four consecutive document queries, waiting ordinary
+work gets a turn. Saturation or wait expiry returns `busy`; cold workers still
+refuse. This wait cannot start, replace or scale workers, and it never interrupts
+an in-flight file. Admission/readiness are checked again before dispatch, and the
+overall ten-second deadline includes waiting. Readiness means a request can be
+admitted, including this bounded wait. Long indexing files can still return `busy`.
 
 Results contain canonical paths and one-based source ranges, without cached source
 bodies. The first slice uses dense retrieval with explicit path scope and bounded

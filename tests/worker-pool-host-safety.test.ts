@@ -53,7 +53,11 @@ vi.mock("node:child_process", async (importOriginal) => {
 vi.unmock("../src/lib/workers/pool");
 
 import { resourceBudget } from "../src/lib/utils/resource-budget";
-import { WorkerPool } from "../src/lib/workers/pool";
+import {
+  EXISTING_QUERY_QUEUE_LIMIT,
+  EXISTING_QUERY_WAIT_MS,
+  WorkerPool,
+} from "../src/lib/workers/pool";
 
 describe("WorkerPool host admission", () => {
   let pool: any;
@@ -330,17 +334,253 @@ describe("WorkerPool host admission", () => {
     expect(pool.spawnDeniedReason).toContain("ENOMEM");
     expect(h.latch).not.toHaveBeenCalled();
   });
-  it("existing queries never spawn for cold or busy workers", async () => {
+  it("cold queries refuse and busy warm queries expire without spawning or killing", async () => {
     pool = new WorkerPool();
     await expect(pool.encodeQueryExisting("cold")).rejects.toThrow(
       "embedding_unavailable",
     );
     pool.workers[0].queryReady = true;
     pool.workers[0].busy = true;
-    await expect(pool.encodeQueryExisting("busy")).rejects.toThrow("busy");
+    const result = pool.encodeQueryExisting("busy");
+    const rejected = expect(result).rejects.toThrow("busy");
+    expect(pool.existingWaiters.size).toBe(1);
+    expect(resourceBudget.checkExisting).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(EXISTING_QUERY_WAIT_MS);
+    await rejected;
+    expect(pool.existingWaiters.size).toBe(0);
     expect(childProcess.fork).toHaveBeenCalledTimes(1);
     expect(pool.hasUnassignedTasks()).toBe(false);
     expect(h.children[0].send).not.toHaveBeenCalled();
+    expect(h.children[0].kill).not.toHaveBeenCalled();
+  });
+  it("gives a waiting document query the next warm worker before another indexing file", async () => {
+    pool = new WorkerPool();
+    pool.maxWorkers = 1;
+    const worker = pool.workers[0];
+    worker.queryReady = true;
+    const first = pool.processFile({ path: "/first.ts" });
+    const firstId = worker.pendingTaskId;
+    const second = pool.processFile({ path: "/second.ts" });
+    const query = pool.encodeQueryExisting("PRIVATE_QUERY");
+    expect(pool.existingQueryState()).toBe("ready");
+    expect(pool.existingWaiters.size).toBe(1);
+    expect(worker.child.send).toHaveBeenCalledTimes(1);
+    worker.child.emit("message", { id: firstId, result: {}, queryReady: true });
+    await first;
+    expect(worker.child.send.mock.calls[1][0]).toMatchObject({
+      method: "encodeQuery",
+      payload: { existingOnly: true, text: "PRIVATE_QUERY" },
+    });
+    worker.child.emit("message", {
+      id: worker.pendingTaskId,
+      result: { dense: [1] },
+      queryReady: true,
+    });
+    await expect(query).resolves.toMatchObject({ dense: [1] });
+    expect(worker.child.send.mock.calls[2][0]).toMatchObject({
+      method: "processFile",
+      payload: { path: "/second.ts" },
+    });
+    worker.child.emit("message", { id: worker.pendingTaskId, result: {} });
+    await second;
+    expect(childProcess.fork).toHaveBeenCalledTimes(1);
+    expect(pool.tasks.size).toBe(0);
+    expect(pool.existingWaiters.size).toBe(0);
+  });
+  it("caps waiting queries and preserves FIFO without scaling for them", async () => {
+    pool = new WorkerPool();
+    const worker = pool.workers[0];
+    worker.queryReady = true;
+    worker.busy = true;
+    const queries = Array.from({ length: EXISTING_QUERY_QUEUE_LIMIT }, (_, i) =>
+      pool.encodeQueryExisting(`query-${i}`),
+    );
+    expect(pool.existingQueryState()).toBe("busy");
+    await expect(pool.encodeQueryExisting("overflow")).rejects.toThrow("busy");
+    worker.busy = false;
+    pool.dispatch();
+    for (let i = 0; i < queries.length; i++) {
+      expect(worker.child.send.mock.calls[i][0].payload.text).toBe(
+        `query-${i}`,
+      );
+      worker.child.emit("message", {
+        id: worker.pendingTaskId,
+        result: { dense: [i] },
+        queryReady: true,
+      });
+      await queries[i];
+    }
+    expect(childProcess.fork).toHaveBeenCalledTimes(1);
+    expect(pool.existingWaiters.size).toBe(0);
+  });
+  it("withdraws queued cancellation and cancellation during admission before sending", async () => {
+    pool = new WorkerPool();
+    const worker = pool.workers[0];
+    worker.queryReady = true;
+    worker.busy = true;
+    const controller = new AbortController();
+    const query = pool.encodeQueryExisting("cancelled", controller.signal);
+    controller.abort();
+    await expect(query).rejects.toThrow("Aborted");
+    expect(pool.existingWaiters.size).toBe(0);
+    worker.busy = false;
+    const during = new AbortController();
+    vi.mocked(resourceBudget.checkExisting).mockImplementationOnce(() => {
+      during.abort();
+      return null;
+    });
+    await expect(
+      pool.encodeQueryExisting("race", during.signal),
+    ).rejects.toThrow("Aborted");
+    expect(worker.child.send).not.toHaveBeenCalled();
+    expect(worker.child.kill).not.toHaveBeenCalled();
+    expect(pool.tasks.size).toBe(0);
+    expect(pool.existingWaiters.size).toBe(0);
+  });
+  it.each(["cold", "quarantine", "pressure", "destroy"])(
+    "queued queries fail safely when %s changes before dispatch",
+    async (mode) => {
+      pool = new WorkerPool();
+      const worker = pool.workers[0];
+      worker.queryReady = true;
+      worker.busy = true;
+      const query = pool.encodeQueryExisting("PRIVATE_QUERY");
+      const rejected = expect(query).rejects.toThrow();
+      worker.busy = false;
+      if (mode === "cold") worker.queryReady = false;
+      if (mode === "quarantine") h.quarantine = "concurrent stop";
+      if (mode === "pressure")
+        vi.mocked(resourceBudget.checkExisting).mockImplementationOnce(() => {
+          throw new Error("pressure changed");
+        });
+      if (mode === "destroy") {
+        const destroyed = pool.destroy();
+        worker.child.emit("exit", 0, null);
+        await destroyed;
+      } else pool.dispatch();
+      await rejected;
+      expect(pool.existingWaiters.size).toBe(0);
+      expect(worker.child.send).not.toHaveBeenCalled();
+      expect(childProcess.fork).toHaveBeenCalledTimes(1);
+    },
+  );
+  it("lets indexing resume after a bounded burst even while document queries remain queued", async () => {
+    pool = new WorkerPool();
+    pool.maxWorkers = 1;
+    const worker = pool.workers[0];
+    worker.queryReady = true;
+    const queries = [pool.encodeQueryExisting("query-0")];
+    const indexing = pool.processFile({ path: "/waiting.ts" });
+    for (let i = 1; i <= EXISTING_QUERY_QUEUE_LIMIT; i++)
+      queries.push(pool.encodeQueryExisting(`query-${i}`));
+    for (let i = 0; i < EXISTING_QUERY_QUEUE_LIMIT; i++) {
+      worker.child.emit("message", {
+        id: worker.pendingTaskId,
+        result: { dense: [i] },
+        queryReady: true,
+      });
+      await queries[i];
+    }
+    expect(worker.child.send.mock.calls.at(-1)[0]).toMatchObject({
+      method: "processFile",
+      payload: { path: "/waiting.ts" },
+    });
+    expect(pool.existingWaiters.size).toBe(1);
+    worker.child.emit("message", { id: worker.pendingTaskId, result: {} });
+    await indexing;
+    expect(worker.child.send.mock.calls.at(-1)[0].method).toBe("encodeQuery");
+    worker.child.emit("message", {
+      id: worker.pendingTaskId,
+      result: { dense: [4] },
+      queryReady: true,
+    });
+    await queries[queries.length - 1];
+    expect(childProcess.fork).toHaveBeenCalledTimes(1);
+  });
+  it("does not let a document admission refusal strand ordinarily admitted indexing", async () => {
+    pool = new WorkerPool();
+    pool.maxWorkers = 1;
+    const worker = pool.workers[0];
+    worker.queryReady = true;
+    const first = pool.processFile({ path: "/first.ts" });
+    const firstId = worker.pendingTaskId;
+    const second = pool.processFile({ path: "/second.ts" });
+    const query = pool.encodeQueryExisting("refused");
+    const rejected = expect(query).rejects.toThrow("host_pressure");
+    vi.mocked(resourceBudget.checkExisting).mockImplementationOnce(() => {
+      throw new Error("document admission unavailable");
+    });
+    worker.child.emit("message", { id: firstId, result: {}, queryReady: true });
+    await first;
+    await rejected;
+    expect(worker.child.send.mock.calls.at(-1)[0]).toMatchObject({
+      method: "processFile",
+      payload: { path: "/second.ts" },
+    });
+    worker.child.emit("message", { id: worker.pendingTaskId, result: {} });
+    await second;
+  });
+  it.each(["throw", "return"])(
+    "does not dispatch indexing when containment appears during admission (%s)",
+    async (mode) => {
+      pool = new WorkerPool();
+      pool.maxWorkers = 1;
+      const worker = pool.workers[0];
+      worker.queryReady = true;
+      const first = pool.processFile({ path: "/first.ts" });
+      const firstId = worker.pendingTaskId;
+      const second = pool.processFile({ path: "/second.ts" });
+      const rejectedIndex = expect(second).rejects.toThrow("concurrent stop");
+      const query = pool.encodeQueryExisting("refused");
+      const rejectedQuery = expect(query).rejects.toThrow("host_pressure");
+      vi.mocked(resourceBudget.checkExisting).mockImplementationOnce(() => {
+        h.quarantine = "concurrent stop";
+        if (mode === "throw") throw new Error("containment");
+        return null;
+      });
+      worker.child.emit("message", {
+        id: firstId,
+        result: {},
+        queryReady: true,
+      });
+      await first;
+      await rejectedQuery;
+      await rejectedIndex;
+      expect(worker.child.send).toHaveBeenCalledTimes(1);
+    },
+  );
+  it("does not send a query when admission consumes its absolute request deadline", async () => {
+    pool = new WorkerPool();
+    const worker = pool.workers[0];
+    worker.queryReady = true;
+    vi.mocked(resourceBudget.checkExisting).mockImplementationOnce(() => {
+      vi.setSystemTime(Date.now() + 10001);
+      return null;
+    });
+    await expect(pool.encodeQueryExisting("expired")).rejects.toThrow(
+      "timeout",
+    );
+    expect(worker.child.send).not.toHaveBeenCalled();
+    expect(worker.child.kill).not.toHaveBeenCalled();
+    expect(pool.existingWaiters.size).toBe(0);
+    expect(pool.tasks.size).toBe(0);
+  });
+  it("does not replace a lost restricted worker solely for waiting queries", async () => {
+    pool = new WorkerPool();
+    const worker = pool.workers[0];
+    worker.queryReady = true;
+    const running = pool.encodeQueryExisting("running");
+    const waiting = pool.encodeQueryExisting("waiting");
+    const rejectedRunning = expect(running).rejects.toThrow("exited");
+    const rejectedWaiting = expect(waiting).rejects.toThrow(
+      "embedding_unavailable",
+    );
+    worker.child.emit("exit", 1, null);
+    await rejectedRunning;
+    await rejectedWaiting;
+    expect(childProcess.fork).toHaveBeenCalledTimes(1);
+    expect(pool.tasks.size).toBe(0);
+    expect(pool.existingWaiters.size).toBe(0);
   });
   it.each(["normal", "abort", "deadline", "death"])(
     "existing %s keeps shared lifecycle without replacement",
