@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { HostResourceSnapshot } from "../utils/host-resource";
 import { hostGuardPolicy } from "../utils/host-guard-policy";
+import type { HostResourceSnapshot } from "../utils/host-resource";
 import {
   HELPER_RESOURCE_RESERVE_MB,
   ResourceBudget,
