@@ -2,6 +2,9 @@ dist/
 node_modules/
 *.tsbuildinfo
 *.tgz
+.bounded-target/
+lance-maintenance/artifacts/
+lance-maintenance/native/target/
 .DS_Store
 
 # Environment & credentials

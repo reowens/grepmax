@@ -1,5 +1,17 @@
 # Docs
 
+## Bounded deleted-row cleanup in progress — October 9, 2026
+
+Installed .82 already reclaims old versions independently. The current work adds small-fragment deleted-row cleanup without restoring full-table rewrites. A Rust helper against pinned Lance 12.0.0 meters submitted data, index, metadata and durable recovery-journal bytes through one cumulative allowance. Filesystem allocation and device journaling remain outside that payload counter and have a separate free-space margin.
+
+The three agents are working on native writes/recovery, daemon integration and independent acceptance. Candidate source includes a ten-minute maintenance cadence, checksum-verified bundled executables, retained reader snapshots, owned-file tracking and recovery before a fresh copy. An interrupted attempt may discard only files it durably recorded as new; corrupt or unverified ownership refuses deletion. Accepted finalization can finish after ordinary edits advance the current head. Qualified release artifacts must pass the shipping-binary suite and separate injected-failure suite on Linux and Apple Silicon, then the packed Node consumer.
+
+**Not released or installed yet.** The first actual native build compiled on Linux and macOS, but Linux fixtures found commit conflicts and version mismatches. Those failures remain recorded in [qualification run 37983704471](https://github.com/reowens/grepmax/actions/runs/37983704471). The next candidate is running dedicated qualification. Earlier safe-refusal tests are evidence for refusing unsafe work, not evidence that deleted-row cleanup executes correctly.
+
+Read-only filesystem metadata at 20:06 UTC showed two index directories totaling 331,499,780 bytes and 1,247 data objects totaling 17,156,021,473 bytes. This includes any retained historical objects and does not establish current-fragment eligibility. Lance remaps affected indexes as whole index objects: the 512 MiB total cap can still refuse a batch if index and fragment writes do not fit. Production eligibility and live behavior must be checked after source acceptance; fixture passes alone are insufficient.
+
+Next: fix the demonstrated native commit/version failure, finish actual recovery acceptance and packed-consumer checks, then publish, install and verify a normal maintenance pass with current reads and independent version reclamation still available.
+
 ## Working focus: independent automatic retention — October 9, 2026
 
 **0.26.82 is installed and serving with independent automatic retention and corrected read admission. Immediate disk recovery completed.** Recovery reduced allocated table size from 31.81 GB to 15.83 GB: version pruning reclaimed 8.13 GB without rewriting data, then separately admitted deleted-row compaction removed the remaining bloat. Every one of the 546,430 live baseline rows was compared by stable ID and full-field digest before old data was deleted. Manual recovery evidence is retained in `/private/tmp/gmax-live-cleanup-20261009/`.

@@ -38,6 +38,12 @@ import {
   resourceBudget,
 } from "../utils/resource-budget";
 import { annMinRows, isAnnEnabled } from "./ann-config";
+import {
+  type BoundedMaintenanceResult,
+  type BoundedMaintenanceRuntime,
+  type MaintenanceReaderProtection,
+  runBoundedMaintenance,
+} from "./bounded-maintenance";
 import { type CompactionResult, skippedCompaction } from "./compaction-result";
 import type { CleanupRuntime } from "./lance-cleanup";
 import * as lancedb from "./lance-sdk";
@@ -253,6 +259,10 @@ export class VectorDB {
   private lastCompactionResult: CompactionResult | null = null;
   private lastVersionCleanupResult: VersionCleanupResult | null = null;
   private versionCleanupActive = false;
+  private boundedMaintenanceActive = false;
+  private lastBoundedMaintenanceResult: BoundedMaintenanceResult | null = null;
+  private boundedMaintenancePromise: Promise<BoundedMaintenanceResult | null> | null =
+    null;
   private versionCleanupPromise: Promise<VersionCleanupResult | null> | null =
     null;
   /** Compaction rate limiter — see COMPACTION_MIN_INTERVAL_MS. */
@@ -381,7 +391,11 @@ export class VectorDB {
   }
 
   isMaintenanceActive(): boolean {
-    return this.maintenancePromise !== null || this.versionCleanupActive;
+    return (
+      this.maintenancePromise !== null ||
+      this.versionCleanupActive ||
+      this.boundedMaintenanceActive
+    );
   }
 
   private maintenanceDue(): boolean {
@@ -439,6 +453,8 @@ export class VectorDB {
     allowCurrentReads?: () => void,
   ): Promise<VersionCleanupResult | null> {
     this.assertMutationAllowed();
+    if (this.boundedMaintenanceActive)
+      throw new Error("deleted-row cleanup is active");
     this.versionCleanupActive = true;
     try {
       const lease = await this.upgradeStoreLease(signal, 750);
@@ -473,6 +489,129 @@ export class VectorDB {
         if (!this.closed) await this.downgradeStoreLease();
       } finally {
         this.versionCleanupActive = false;
+      }
+    }
+  }
+
+  /** Caller holds daemon exclusive writer admission and has drained old readers.
+   * A durable native before-head tag permits a separate protected read window;
+   * final tag release is acknowledged only after that window drains and all
+   * reopened native handles close. The helper owns uncertainty recovery. */
+  cleanupDeletedRows(
+    runtime: BoundedMaintenanceRuntime,
+    readers: {
+      open: (p: MaintenanceReaderProtection) => Promise<void> | void;
+      drain: () => Promise<void>;
+    },
+    signal?: AbortSignal,
+    action: "run" | "recover" | "auto" = "run",
+  ): Promise<BoundedMaintenanceResult | null> {
+    if (this.boundedMaintenancePromise) return this.boundedMaintenancePromise;
+    const run = this.performBoundedMaintenance(
+      runtime,
+      readers,
+      signal,
+      action,
+    );
+    const recorded = run.then((outcome) => {
+      if (outcome) this.lastBoundedMaintenanceResult = { ...outcome };
+      return outcome;
+    });
+    const tracked = recorded.finally(() => {
+      if (this.boundedMaintenancePromise === tracked)
+        this.boundedMaintenancePromise = null;
+    });
+    this.boundedMaintenancePromise = tracked;
+    return tracked;
+  }
+
+  boundedMaintenanceStatus(): BoundedMaintenanceResult | null {
+    return this.lastBoundedMaintenanceResult
+      ? { ...this.lastBoundedMaintenanceResult }
+      : null;
+  }
+
+  private async closeMaintenanceHandles(): Promise<void> {
+    await this.connecting?.catch(() => {});
+    await this.db?.close();
+    this.db = null;
+    this.session = null;
+    this.resourceReservation?.release();
+    this.resourceReservation = null;
+  }
+
+  private async performBoundedMaintenance(
+    runtime: BoundedMaintenanceRuntime,
+    readers: {
+      open: (p: MaintenanceReaderProtection) => Promise<void> | void;
+      drain: () => Promise<void>;
+    },
+    signal?: AbortSignal,
+    action: "run" | "recover" | "auto" = "run",
+  ): Promise<BoundedMaintenanceResult | null> {
+    this.assertMutationAllowed();
+    if (this.versionCleanupActive) throw new Error("version cleanup is active");
+    this.boundedMaintenanceActive = true;
+    let windowOpened = false;
+    let windowDrained = false;
+    try {
+      const lease = await this.upgradeStoreLease(signal, 750);
+      await Promise.all([this.drainWrites(), this.drainCompactions()]);
+      const table = await this.openExistingTableUnsafe();
+      if (!table) return null;
+      let version: number;
+      try {
+        version = await table.version();
+      } finally {
+        table.close();
+      }
+      await this.closeMaintenanceHandles();
+      const execute = (nativeAction: "run" | "recover") =>
+        runBoundedMaintenance(
+          this.lancedbDir,
+          lease,
+          version,
+          runtime,
+          {
+            open: async (p) => {
+              windowOpened = true;
+              await readers.open(p);
+            },
+            drain: async () => {
+              await readers.drain();
+              await this.closeMaintenanceHandles();
+              windowDrained = true;
+            },
+          },
+          signal,
+          nativeAction,
+        );
+      const result = await execute(action === "auto" ? "recover" : action);
+      // Recovery never becomes a fresh copy after an error or a recovered /
+      // safely aborted attempt. Only an explicit no-pending-receipt proof lets
+      // automatic maintenance start new work under the same exclusive lease.
+      if (
+        action === "auto" &&
+        result.status === "skipped" &&
+        result.recoveryPending === false
+      ) {
+        return await execute("run");
+      }
+      return result;
+    } finally {
+      try {
+        if (windowOpened && !windowDrained) {
+          // No finalize acknowledgement is sent on this failure path. Native
+          // before/after tags stay durable if any reader cannot be drained.
+          await readers.drain();
+          await this.closeMaintenanceHandles();
+        }
+      } finally {
+        try {
+          if (!this.closed) await this.downgradeStoreLease();
+        } finally {
+          this.boundedMaintenanceActive = false;
+        }
       }
     }
   }
@@ -663,7 +802,7 @@ export class VectorDB {
    * but all writes pause when compaction wants exclusive access.
    */
   private async withWriteGate<T>(fn: () => Promise<T>): Promise<T> {
-    if (this.versionCleanupActive)
+    if (this.versionCleanupActive || this.boundedMaintenanceActive)
       throw new Error("writes paused for version cleanup");
     this.assertMutationAllowed();
     this.ensureDiskOk();
@@ -953,6 +1092,7 @@ export class VectorDB {
   async ensureTable(): Promise<lancedb.Table> {
     if (
       this.versionCleanupActive ||
+      this.boundedMaintenanceActive ||
       this.options.readOnly ||
       storeMutationDeniedReason() !== null ||
       this.checkDiskPressure(true) === "critical"
@@ -2167,6 +2307,7 @@ export class VectorDB {
 
   private async finishClose(): Promise<void> {
     await this.versionCleanupPromise?.catch(() => {});
+    await this.boundedMaintenancePromise?.catch(() => {});
     await this.connecting?.catch(() => {});
     if (this.maintenanceTimer) {
       clearInterval(this.maintenanceTimer);

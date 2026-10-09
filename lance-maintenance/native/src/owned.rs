@@ -241,6 +241,17 @@ impl OwnedWrites {
         }
         Ok(())
     }
+    pub fn referenced_by(&self, references: &[Path]) -> Result<bool> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| refused("Ownership lock poisoned"))?;
+        Ok(state.targets.iter().any(|target| {
+            references
+                .iter()
+                .any(|reference| target == reference || target.prefix_match(reference).is_some())
+        }))
+    }
     /// Call only after proving no rewrite was committed and draining readers.
     /// Records were durable before target/staging creation, and each target was
     /// absent from all preceding heads; missing objects make restart idempotent.

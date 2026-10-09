@@ -1,4 +1,4 @@
-use gmax_bounded_maintenance::engine::{Request, emit, run};
+use gmax_bounded_maintenance::engine::{ReportedError, Request, emit, run};
 use serde_json::json;
 use std::io::{BufRead, Read};
 
@@ -34,7 +34,9 @@ fn main() {
         });
     if let Err(error) = result {
         eprintln!("Bounded maintenance refused: {error}");
-        let _ = emit(json!({"phase":"error","status":"blocked","reason":error.to_string()}));
+        if error.downcast_ref::<ReportedError>().is_none() {
+            let _ = emit(json!({"phase":"error","status":"blocked","reason":error.to_string()}));
+        }
         std::process::exit(3);
     }
 }

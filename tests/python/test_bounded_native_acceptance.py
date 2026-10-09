@@ -484,6 +484,57 @@ class BoundedNativeAcceptance(unittest.TestCase):
             finally:
                 session.close()
 
+    def test_recovery_uses_remaining_original_cap_after_its_own_space_consumption(self):
+        import lance
+        base = os.environ.get('GMAX_BOUNDED_FIXTURE_BASE')
+        if not base:
+            self.skipTest('CI-owned small volume unavailable; remaining-cap recovery NOT QUALIFIED')
+        base = Path(base).resolve(strict=True)
+        disk = os.statvfs(base)
+        self.assertLessEqual(disk.f_blocks * disk.f_frsize, 256 * 1024**2)
+        with tempfile.TemporaryDirectory(prefix='gmax-native-bounded-spent-cap-', dir=base) as home:
+            root, ds = self.prepare(home)
+            digest = fixture_support.row_digest(ds)
+            ds = None
+            disk = os.statvfs(root)
+            cap = 4 * 1024**2
+            margin = disk.f_bavail * disk.f_frsize - cap - 128 * 1024
+            self.assertGreater(margin, cap)
+            session = NativeSession(self.binary, root, cap=cap, margin=margin)
+            try:
+                paused = session.reach('reader-drain')
+                counts = struct.unpack('<6Q', next(root.glob('_gmax-maintenance-*.journal')).read_bytes()[-80:-32])
+                disk = os.statvfs(root)
+                free = disk.f_bavail * disk.f_frsize
+                self.assertLess(free, cap + margin,
+                                'fixture must actually cross the obsolete full-cap admission threshold')
+                self.assertGreaterEqual(free, cap - counts[1] + margin,
+                                        'remaining durable cap plus margin must still fit')
+                session.process.kill()
+                session.process.communicate(timeout=5)
+                recovery = NativeSession(self.binary, root, cap=cap, margin=margin, action='recover')
+                try:
+                    result = self.drive_to_exit(recovery)
+                    self.assertEqual(recovery.process.returncode, 0, self.failure_reason(recovery))
+                    self.assertEqual(result['status'], 'recovered')
+                    self.assertFalse(result['aborted'])
+                    self.assertFalse(result['recoveryPending'])
+                    self.assertEqual(result['dataBytesWritten'], counts[2])
+                    self.assertEqual(result['indexBytesWritten'], counts[3])
+                    self.assertGreaterEqual(result['totalBytesWritten'], counts[1])
+                    self.assertLessEqual(result['totalBytesWritten'], cap)
+                    current = lance.dataset(str(root))
+                    self.assertEqual(fixture_support.row_digest(current), digest)
+                    self.assertEqual(set(current.tags.list()), {'user-reader'})
+                finally:
+                    recovery.close()
+                print(json.dumps({'nativeAcceptance': 'remaining-original-cap-recovery',
+                                  'freeBytesAtInterruption': free, 'originalCapBytes': cap,
+                                  'durablySpentBytes': counts[1], 'marginBytes': margin,
+                                  'paused': paused, 'recovered': result}))
+            finally:
+                session.close()
+
     def test_interruption_at_protected_and_committed_reader_windows_preserves_head(self):
         import lance
         for phase in ('protected-read-ready', 'reader-drain'):
@@ -601,6 +652,70 @@ class BoundedNativeAcceptance(unittest.TestCase):
                 print(json.dumps({'nativeAcceptance': 'corrupt-recovery-refusal',
                                   'evidence': evidence, 'headReadable': True,
                                   'storeUnchanged': True, 'fallbackCopy': False}))
+
+    def test_verified_copy_recovery_preserves_subsequent_watched_edits(self):
+        import lance
+        import pyarrow as pa
+        with tempfile.TemporaryDirectory(prefix='gmax-native-bounded-verified-advance-') as home:
+            root, ds = self.prepare(home)
+            original_digest = fixture_support.row_digest(ds)
+            ds = None
+            interrupted = NativeSession(self.binary, root)
+            try:
+                paused = interrupted.reach('reader-drain')
+                interrupted.process.kill()
+                interrupted.process.communicate(timeout=5)
+            finally:
+                interrupted.close()
+            receipt = json.loads((root / '_gmax-bounded-receipt.json').read_text())
+            self.assertEqual(receipt['phase'], 'verified')
+            current = lance.dataset(str(root))
+            copied_version = current.version
+            self.assertEqual(fixture_support.row_digest(current), original_digest)
+            appended = current.to_table(filter='id = 11').to_pylist()[0]
+            appended.update(id=4096, content='ordinarywatcher unique4096',
+                            path='/fixture/advanced-copy-edit.ts')
+            current = lance.write_dataset(pa.Table.from_pylist([appended], schema=current.schema),
+                                          str(root), mode='append', max_rows_per_file=128)
+            current.delete('id = 13')
+            edited_digest = fixture_support.row_digest(current)
+            edited_version = current.version
+            self.assertGreater(edited_version, copied_version)
+            current = None
+            counts = struct.unpack('<6Q', next(root.glob('_gmax-maintenance-*.journal')).read_bytes()[-80:-32])
+            payloads = {name: state for name, state in fixture_support.file_state(root).items()
+                        if name.startswith(('data/', '_indices/'))}
+            recovery = NativeSession(self.binary, root, action='recover')
+            try:
+                result = self.drive_to_exit(recovery)
+                self.assertEqual(recovery.process.returncode, 0, self.failure_reason(recovery))
+                self.assertEqual(result['status'], 'recovered')
+                self.assertFalse(result['aborted'])
+                self.assertFalse(result['recoveryPending'])
+                self.assertTrue(result['acceptedFinalization'])
+                self.assertEqual(result['verifiedCopyVersion'], copied_version)
+                self.assertEqual(result['afterVersion'], edited_version)
+                self.assertEqual(result['rowsVerified'], 64)
+                self.assertEqual(result['dataBytesWritten'], counts[2])
+                self.assertEqual(result['indexBytesWritten'], counts[3])
+                self.assertGreaterEqual(result['totalBytesWritten'], counts[1])
+                self.assertLessEqual(result['totalBytesWritten'], recovery.request['totalWriteBudgetBytes'])
+                self.assertEqual({name: state for name, state in fixture_support.file_state(root).items()
+                                  if name.startswith(('data/', '_indices/'))}, payloads)
+                current = lance.dataset(str(root))
+                self.assertEqual(current.version, edited_version)
+                self.assertEqual(fixture_support.row_digest(current), edited_digest)
+                self.assertEqual(set(current.tags.list()), {'user-reader'})
+                self.assertEqual(current.to_table(full_text_query={
+                    'query': 'unique11', 'columns': ['content']})['id'].to_pylist(), [11])
+                self.assertEqual(current.to_table(full_text_query={
+                    'query': 'unique4096', 'columns': ['content']})['id'].to_pylist(), [4096])
+                print(json.dumps({'nativeAcceptance': 'verified-copy-after-watched-edits',
+                                  'paused': paused, 'copiedVersion': copied_version,
+                                  'editedVersion': edited_version, 'allEditedFieldsDigest': edited_digest[1],
+                                  'recovered': result}))
+            finally:
+                recovery.close()
 
     @staticmethod
     def drive_to_exit(session):

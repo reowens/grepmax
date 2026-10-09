@@ -82,6 +82,14 @@ try {
   if (pruneSmoke.error || pruneSmoke.status !== 0)
     throw new Error(`Packed prune consumer smoke failed: ${pruneSmoke.error ?? pruneSmoke.stderr}`);
   process.stdout.write(pruneSmoke.stdout);
+  if (packed.files.some(file => file.path === "dist/vendor/maintenance/manifest.json")) {
+    const boundedSmoke = spawnSync(process.execPath, ["--max-old-space-size=384", path.join(root, "scripts/test-bounded-consumer.cjs")], {
+      cwd: temp, env: {...npmEnv, HOME: home}, encoding: "utf8", timeout: 180_000,
+    });
+    if (boundedSmoke.error || boundedSmoke.status !== 0)
+      throw new Error(`Packed bounded cleanup consumer failed: ${boundedSmoke.error ?? boundedSmoke.stderr}\n${boundedSmoke.stdout}`);
+    process.stdout.write(boundedSmoke.stdout);
+  }
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }

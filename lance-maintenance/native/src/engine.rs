@@ -1,6 +1,6 @@
 //! Pinned Lance execution through a metered, durable local object store.
 //! Source and lifecycle qualification are implemented here, never in Python.
-use crate::meter::{Ledger, MeteredStore, free_bytes};
+use crate::meter::{Counts, Ledger, MeteredStore, free_bytes};
 use crate::owned::OwnedWrites;
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use arrow_row::{RowConverter, SortField};
@@ -38,6 +38,14 @@ const MAX_ROWS: usize = 32768;
 const MAX_FRAGMENTS: usize = 64;
 const RECEIPT: &str = "_gmax-bounded-receipt.json";
 const MAX_RECEIPT_BYTES: usize = 64 * 1024;
+#[derive(Debug)]
+pub struct ReportedError(pub String);
+impl std::fmt::Display for ReportedError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+impl std::error::Error for ReportedError {}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -90,6 +98,7 @@ struct Receipt {
     helper_pid: u32,
     helper_start: String,
     aborted: bool,
+    abort_proven: bool,
     finalization_reserve_bytes: u64,
     retired_metadata: Vec<String>,
 }
@@ -258,6 +267,37 @@ pub fn emit(value: Value) -> Result<()> {
     serde_json::to_writer(&mut handle, &value)?;
     handle.write_all(b"\n")?;
     handle.flush()?;
+    Ok(())
+}
+fn with_counts(mut value: Value, counts: Counts) -> Result<Value> {
+    let object = value
+        .as_object_mut()
+        .context("Protocol counter object required")?;
+    for (name, value) in serde_json::to_value(counts)?
+        .as_object()
+        .context("Counter fields required")?
+    {
+        object.insert(name.clone(), value.clone());
+    }
+    Ok(value)
+}
+fn remaining_space(
+    request: &Request,
+    root: &FsPath,
+    receipt: &Receipt,
+    counts: &Counts,
+) -> Result<()> {
+    let remaining = receipt
+        .total_write_budget_bytes
+        .checked_sub(counts.total_bytes_written)
+        .context("Restored budget overrun")?;
+    let needed = remaining
+        .checked_add(request.free_space_margin_bytes)
+        .context("Remaining reservation overflow")?;
+    ensure!(
+        free_bytes(root)? >= needed,
+        "Insufficient fresh free space for remaining durable writes plus margin"
+    );
     Ok(())
 }
 fn acknowledge(request: &Request) -> Result<()> {
@@ -865,12 +905,35 @@ pub async fn run(request: Request) -> Result<()> {
     emit(json!({"phase":"launch"}))?;
     acknowledge(&request)?;
     verify_owner(&request, &root, true)?;
-    check_space(&request, &root, 0)?;
     let previous = read_receipt(&root)?;
+    let mut restored_ledger = if request.action == "recover" {
+        if let Some(receipt) = previous
+            .as_ref()
+            .filter(|receipt| receipt.phase != "finalized")
+        {
+            ensure!(
+                receipt.total_write_budget_bytes <= request.total_write_budget_bytes,
+                "Recovery allowance exceeds configured cap"
+            );
+            let ledger = Ledger::restore(
+                receipt.total_write_budget_bytes,
+                &root.join(&receipt.journal),
+            )?;
+            remaining_space(&request, &root, receipt, &ledger.counts())?;
+            Some(ledger)
+        } else {
+            check_space(&request, &root, 0)?;
+            None
+        }
+    } else {
+        check_space(&request, &root, 0)?;
+        None
+    };
     let orphan_retirement = orphan_metadata(&root, previous.as_ref())?;
     let mut receipt;
     let mut recovering_finalization = false;
     let mut aborting = false;
+    let mut recovered_candidate = false;
     let preliminary = Arc::new(Ledger::new(request.total_write_budget_bytes)?);
     let mut dataset = open(&root, preliminary, vec![]).await?;
     let observed_latest = dataset.latest_version_id().await?;
@@ -908,7 +971,9 @@ pub async fn run(request: Request) -> Result<()> {
                     "beforeVersion":previous.before_version,"currentVersion":request.expected_version,
                     "reason":"Interrupted receipt exists; explicit recovery required before any new copy"}),
                 )?;
-                return Ok(());
+                return Err(anyhow!(ReportedError(
+                    "Interrupted receipt requires explicit recovery".into()
+                )));
             }
         }
         for fragment in dataset.get_fragments() {
@@ -957,17 +1022,20 @@ pub async fn run(request: Request) -> Result<()> {
             .collect();
         if selected.is_empty() {
             let no_work_plan = json!({"protocolVersion":2,"engine":"12.0.0","status":"no-work","action":request.action,
-                "expectedVersion":request.expected_version,"beforeVersion":request.expected_version,"planId":sha(b"no-work"),
+                "expectedVersion":request.expected_version,"beforeVersion":request.expected_version,"protectedVersion":request.expected_version,"planId":sha(b"no-work"),
                 "totalWriteBudgetBytes":request.total_write_budget_bytes,"sharedTotalWriteCapBytes":request.total_write_budget_bytes,
                 "freeSpaceMarginBytes":request.free_space_margin_bytes,"nativeTotalWriteBudgetEnforced":true,
                 "budgetKind":"cumulative-writes","effectiveStoreScheme":"file-object-store"});
-            emit(json!({"phase":"ready","plan":no_work_plan}))?;
+            emit(with_counts(
+                json!({"phase":"ready","plan":no_work_plan}),
+                Counts::default(),
+            )?)?;
             acknowledge(&request)?;
             let remaining = dataset.count_deleted_rows().await?;
             emit(
                 json!({"phase":"result","status":"no-work","beforeVersion":request.expected_version,"afterVersion":request.expected_version,
                 "planId":sha(b"no-work"),"receiptId":"","totalBytesWritten":0,"dataBytesWritten":0,"indexBytesWritten":0,"metadataBytesWritten":0,"verificationBytesWritten":0,"rowsVerified":0,
-                "remainingDeletedRows":remaining,"freeBytesBefore":free_before,"freeBytesAfter":free_bytes(&root)?,"allocatedBytesBefore":allocated_before,"allocatedBytesAfter":allocated_bytes(&root)?}),
+                "recoveryPending":false,"remainingDeletedRows":remaining,"freeBytesBefore":free_before,"freeBytesAfter":free_bytes(&root)?,"allocatedBytesBefore":allocated_before,"allocatedBytesAfter":allocated_bytes(&root)?}),
             )?;
             return Ok(());
         }
@@ -1049,6 +1117,7 @@ pub async fn run(request: Request) -> Result<()> {
             helper_pid: std::process::id(),
             helper_start: process_start(std::process::id())?,
             aborted: false,
+            abort_proven: false,
             finalization_reserve_bytes: (512 * 1024).min(request.total_write_budget_bytes / 2),
             retired_metadata: previous
                 .as_ref()
@@ -1064,12 +1133,13 @@ pub async fn run(request: Request) -> Result<()> {
             .is_none_or(|receipt| receipt.phase == "finalized")
         {
             let plan_id = sha(b"no-recovery");
-            emit(
+            emit(with_counts(
                 json!({"phase":"ready","plan":{"protocolVersion":2,"engine":"12.0.0","status":"no-work","action":"recover",
                 "expectedVersion":request.expected_version,"beforeVersion":request.expected_version,"protectedVersion":request.expected_version,
                 "planId":plan_id,"sharedTotalWriteCapBytes":request.total_write_budget_bytes,"totalWriteBudgetBytes":request.total_write_budget_bytes,
                 "freeSpaceMarginBytes":request.free_space_margin_bytes,"budgetKind":"cumulative-writes","nativeTotalWriteBudgetEnforced":true,"effectiveStoreScheme":"file-object-store"}}),
-            )?;
+                Counts::default(),
+            )?)?;
             acknowledge(&request)?;
             emit(
                 json!({"phase":"result","status":"no-work","beforeVersion":request.expected_version,"afterVersion":request.expected_version,
@@ -1141,14 +1211,25 @@ pub async fn run(request: Request) -> Result<()> {
             }
         } else {
             ensure!(
-                receipt.after_version == Some(request.expected_version),
-                "Candidate recovery head advanced; no blind retry"
+                receipt
+                    .after_version
+                    .is_some_and(|version| version <= request.expected_version),
+                "Candidate version invalid"
             );
             ensure!(
                 protected.get(&receipt.reader_tag) == Some(&receipt.before_version)
                     && protected.get(&receipt.after_tag) == receipt.after_version.as_ref(),
                 "Recovery protected heads changed"
             );
+            let copy_version = receipt
+                .after_version
+                .context("Copied candidate version missing")?;
+            let candidate = dataset.checkout_version(copy_version).await?;
+            let before = dataset.checkout_version(receipt.before_version).await?;
+            receipt.rows_verified = verify_candidate(&before, &candidate, &receipt).await?;
+            receipt.verified_copy_version = Some(copy_version);
+            receipt.after_version = Some(request.expected_version);
+            recovered_candidate = true;
         }
     }
     let protection_version = if request.action == "recover" {
@@ -1161,15 +1242,31 @@ pub async fn run(request: Request) -> Result<()> {
     } else {
         receipt.reader_tag.clone()
     };
-    let proof = json!({"protocolVersion":2,"engine":"12.0.0","status":"qualified","action":request.action,
+    let proof = with_counts(
+        json!({"protocolVersion":2,"engine":"12.0.0","status":"qualified","action":request.action,
         "expectedVersion":request.expected_version,"beforeVersion":receipt.before_version,"protectedVersion":protection_version,"planId":receipt.plan_id,
         "totalWriteBudgetBytes":receipt.total_write_budget_bytes,"sharedTotalWriteCapBytes":receipt.total_write_budget_bytes,
         "freeSpaceMarginBytes":request.free_space_margin_bytes,"nativeTotalWriteBudgetEnforced":true,
-        "budgetKind":"cumulative-writes","effectiveStoreScheme":"file-object-store"});
-    emit(json!({"phase":"ready","plan":proof}))?;
+        "budgetKind":"cumulative-writes","effectiveStoreScheme":"file-object-store"}),
+        restored_ledger
+            .as_ref()
+            .map(Ledger::counts)
+            .unwrap_or_default(),
+    )?;
+    emit(with_counts(
+        json!({"phase":"ready","plan":proof}),
+        restored_ledger
+            .as_ref()
+            .map(Ledger::counts)
+            .unwrap_or_default(),
+    )?)?;
     acknowledge(&request)?;
     verify_owner(&request, &root, true)?;
-    check_space(&request, &root, 0)?;
+    if let Some(ledger) = &restored_ledger {
+        remaining_space(&request, &root, &receipt, &ledger.counts())?;
+    } else {
+        check_space(&request, &root, 0)?;
+    }
     scan_tree(&root)?;
     ensure!(
         serde_json::to_vec(&receipt)?.len() <= MAX_RECEIPT_BYTES,
@@ -1196,10 +1293,9 @@ pub async fn run(request: Request) -> Result<()> {
                 request.free_space_margin_bytes,
             )?
         } else {
-            Ledger::restore(
-                receipt.total_write_budget_bytes,
-                &root.join(&receipt.journal),
-            )?
+            restored_ledger
+                .take()
+                .context("Restored attempt journal required")?
         }
         .with_space_guard(root.clone(), request.free_space_margin_bytes)
         .with_finalization_reserve(receipt.finalization_reserve_bytes)
@@ -1269,8 +1365,11 @@ pub async fn run(request: Request) -> Result<()> {
             }
             dataset.tags().create(&receipt.reader_tag, receipt.before_version).await?;
             receipt.phase = "protected".into(); save_receipt(&dataset, &root, &receipt).await?;
-        } else if recovering_finalization {
+        } else if recovering_finalization || recovered_candidate {
             ledger.enter_metadata_finalization()?;
+            receipt.helper_pid = std::process::id(); receipt.helper_start = process_start(std::process::id())?;
+            receipt.accepted_fingerprint = Some(fingerprint(&dataset).await?);
+            receipt.phase = "finalizing".into(); save_receipt(&dataset, &root, &receipt).await?;
             if let Some(version) = tags(&dataset).await?.get(&protection_tag) {
                 if *version != protection_version {
                     ensure!(Some(*version) == receipt.verified_copy_version, "Recovery tag is not owned accepted copy");
@@ -1292,7 +1391,7 @@ pub async fn run(request: Request) -> Result<()> {
             dataset.tags().create(&receipt.after_tag, request.expected_version).await?;
             receipt.phase = "copied".into(); save_receipt(&dataset, &root, &receipt).await?;
         }
-        emit(json!({"phase":"protected-read-ready","beforeVersion":receipt.before_version,"protectedVersion":protection_version,"planId":receipt.plan_id,"readerTag":protection_tag,"receiptId":receipt.receipt_id}))?;
+        emit(with_counts(json!({"phase":"protected-read-ready","beforeVersion":receipt.before_version,"protectedVersion":protection_version,"planId":receipt.plan_id,"readerTag":protection_tag,"receiptId":receipt.receipt_id}), ledger.counts())?)?;
         acknowledge(&request)?; verify_owner(&request, &root, false)?;
         if request.action == "run" {
             let selected: Vec<_> = dataset.manifest.fragments.iter().filter(|fragment| receipt.selected_fragment_ids.contains(&fragment.id)).cloned().collect();
@@ -1316,13 +1415,13 @@ pub async fn run(request: Request) -> Result<()> {
         if aborting {
             ensure!(fingerprint(&dataset).await? == receipt.before_fingerprint, "Uncommitted logical head changed before abort");
             receipt.rows_verified = 0;
-        } else if !recovering_finalization {
+        } else if !recovering_finalization && !recovered_candidate {
             let before = dataset.checkout_version(receipt.before_version).await?;
             receipt.rows_verified = verify_candidate(&before, &dataset, &receipt).await?;
             receipt.phase = "verified".into(); save_receipt(&dataset, &root, &receipt).await?;
         }
-        emit(json!({"phase":"reader-drain","beforeVersion":receipt.before_version,"protectedVersion":protection_version,"afterVersion":receipt.after_version,"planId":receipt.plan_id,
-            "readerTag":protection_tag,"receiptId":receipt.receipt_id}))?;
+        emit(with_counts(json!({"phase":"reader-drain","beforeVersion":receipt.before_version,"protectedVersion":protection_version,"afterVersion":receipt.after_version,"planId":receipt.plan_id,
+            "readerTag":protection_tag,"receiptId":receipt.receipt_id}), ledger.counts())?)?;
         acknowledge(&request)?; verify_owner(&request, &root, true)?;
         ensure!(dataset.latest_version_id().await? == receipt.after_version.context("Candidate version missing")?, "Head changed before finalization");
         ledger.enter_metadata_finalization()?;
@@ -1334,14 +1433,22 @@ pub async fn run(request: Request) -> Result<()> {
         // Durable accepted proof precedes the first deletion. A crash after
         // either deletion can resume from the current accepted head without
         // requiring a snapshot whose protection was already released.
-        if !recovering_finalization { receipt.accepted_fingerprint = Some(fingerprint(&dataset).await?); }
+        if aborting {
+            ensure!(fingerprint(&dataset).await? == receipt.before_fingerprint, "Logical abort proof changed after drain");
+            receipt.abort_proven = true;
+        }
+        receipt.accepted_fingerprint = Some(fingerprint(&dataset).await?);
         receipt.phase = "finalizing".into(); save_receipt(&dataset, &root, &receipt).await?;
         let mut cleanup_pending = ownership_error.is_some();
         let mut cleanup_failure = ownership_error.clone();
         if receipt.aborted {
-            ensure!(receipt.accepted_fingerprint.as_deref() == Some(receipt.before_fingerprint.as_str()), "Durable logical abort proof invalid before owned reclamation");
+            ensure!(receipt.abort_proven, "Durable logical abort proof invalid before owned reclamation");
             if let Some(owned) = &owned {
-                if let Err(error) = owned.cleanup_proven_abort() { cleanup_pending = true; cleanup_failure = Some(error.to_string()); }
+                let mut references: Vec<_> = dataset.manifest.fragments.iter().flat_map(|fragment| fragment.files.iter())
+                    .map(|file| object_root(&root).map(|root| root.child("data").child(&file.path))).collect::<Result<_>>()?;
+                references.extend(all_indices(&dataset).await?.iter().map(|index| object_root(&root).map(|root| root.child("_indices").child(index.uuid.to_string()))).collect::<Result<Vec<_>>>()?);
+                if owned.referenced_by(&references)? { cleanup_pending = true; cleanup_failure = Some("Owned target now referenced by current head".into()); }
+                else if let Err(error) = owned.cleanup_proven_abort() { cleanup_pending = true; cleanup_failure = Some(error.to_string()); }
             } else { cleanup_pending = true; }
         }
         if protected.contains_key(&receipt.reader_tag) { dataset.tags().delete(&receipt.reader_tag).await?; }
@@ -1372,7 +1479,7 @@ pub async fn run(request: Request) -> Result<()> {
         result["beforeVersion"] = json!(receipt.before_version); result["protectedVersion"] = json!(protection_version); result["afterVersion"] = json!(receipt.after_version);
         result["planId"] = json!(receipt.plan_id); result["receiptId"] = json!(receipt.receipt_id);
         result["rowsVerified"] = json!(receipt.rows_verified); result["aborted"] = json!(receipt.aborted);
-        result["acceptedFinalization"] = json!(recovering_finalization);
+        result["acceptedFinalization"] = json!(recovering_finalization || recovered_candidate);
         result["verifiedCopyVersion"] = json!(receipt.verified_copy_version);
         result["recoveryPending"] = json!(cleanup_pending);
         if let Some(reason) = &cleanup_failure { result["recoveryBlockReason"] = json!(reason); }
@@ -1389,7 +1496,7 @@ pub async fn run(request: Request) -> Result<()> {
         outcome["reason"] = json!(error.to_string());
         outcome["receiptId"] = json!(receipt.receipt_id);
         emit(outcome)?;
-        return Err(error);
+        return Err(anyhow!(ReportedError(error.to_string())));
     }
     Ok(())
 }

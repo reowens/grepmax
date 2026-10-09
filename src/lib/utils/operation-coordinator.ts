@@ -129,14 +129,18 @@ export class OperationCoordinator {
     options: {
       queueShared?: boolean;
       pendingReads?: (name: string) => boolean;
+      signal?: AbortSignal;
+      /** Refuse before mutation if an old reader does not settle promptly. */
+      readerDrainTimeoutMs?: number;
     } = {},
   ): Promise<T> {
     if (
       options.pendingReads &&
-      (name !== "version-cleanup" || !options.queueShared)
+      (!["version-cleanup", "bounded-maintenance"].includes(name) ||
+        !options.queueShared)
     )
       return Promise.reject(
-        new Error("pending reads require queued prune-only cleanup"),
+        new Error("pending reads require queued prune-only or bounded cleanup"),
       );
     if (this.state.kind === "closing" || this.state.kind === "closed") {
       return Promise.reject(new OperationClosedError());
@@ -150,6 +154,7 @@ export class OperationCoordinator {
     this.queueShared = options.queueShared ?? false;
     this.readWindow = options.pendingReads;
     const controller = new AbortController();
+    const unlink = this.linkSignal(options.signal, controller);
     this.controllers.add(controller);
 
     const task = (async () => {
@@ -159,7 +164,7 @@ export class OperationCoordinator {
         // taking the drain snapshot so every old native reader still settles
         // before retention closes handles and deletes history.
         this.readWindow = undefined;
-        await Promise.allSettled([...this.sharedTasks]);
+        await this.drainSharedTasks(options.readerDrainTimeoutMs);
         if (controller.signal.aborted) {
           throw abortError(controller.signal.reason);
         }
@@ -170,6 +175,7 @@ export class OperationCoordinator {
         return await fn(controller.signal);
       } finally {
         this.controllers.delete(controller);
+        unlink();
         if (
           this.state.kind === "exclusive" ||
           this.state.kind === "exclusive-pending"
@@ -205,6 +211,75 @@ export class OperationCoordinator {
     this.readWindow = allowed;
     for (const waiter of [...this.waiters])
       if (allowed(waiter.name)) waiter.resume();
+  }
+
+  /** A head-changing cleanup can admit readers only after its native helper has
+   * durably tagged the before-head. The native tag remains until this window
+   * closes, every admitted reader settles and the caller closes native handles. */
+  openProtectedMaintenanceReadWindow(
+    protection: {
+      beforeVersion: number;
+      protectedVersion?: number;
+      readerTag: string;
+      receiptId: string;
+    },
+    allowed: (name: string) => boolean,
+  ): void {
+    if (
+      this.state.kind !== "exclusive" ||
+      this.state.name !== "bounded-maintenance" ||
+      !this.queueShared
+    )
+      throw new Error("protected reads require exclusive bounded cleanup");
+    if (
+      !Number.isSafeInteger(protection.beforeVersion) ||
+      protection.beforeVersion < 1 ||
+      !Number.isSafeInteger(
+        protection.protectedVersion ?? protection.beforeVersion,
+      ) ||
+      (protection.protectedVersion ?? protection.beforeVersion) <
+        protection.beforeVersion ||
+      !protection.readerTag ||
+      !protection.receiptId
+    )
+      throw new Error("durable reader protection is unavailable");
+    this.readWindow = allowed;
+    for (const waiter of [...this.waiters])
+      if (allowed(waiter.name)) waiter.resume();
+  }
+
+  async closeProtectedMaintenanceReadWindow(timeoutMs = 5000): Promise<void> {
+    if (
+      this.state.kind !== "exclusive" ||
+      this.state.name !== "bounded-maintenance"
+    )
+      throw new Error("reader drain requires exclusive bounded cleanup");
+    this.readWindow = undefined;
+    await this.drainSharedTasks(timeoutMs);
+  }
+
+  private async drainSharedTasks(timeoutMs?: number): Promise<void> {
+    const drain = Promise.allSettled([...this.sharedTasks]);
+    if (timeoutMs === undefined) {
+      await drain;
+      return;
+    }
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0)
+      throw new Error("invalid reader drain deadline");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        drain,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error("bounded cleanup reader drain timed out")),
+            timeoutMs,
+          );
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   /** Cancel existing work without closing admission for subsequent bounded reads. */

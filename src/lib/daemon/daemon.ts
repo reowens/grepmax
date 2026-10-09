@@ -17,6 +17,8 @@ import { generateSummaries, initialSync } from "../index/syncer";
 import { LlmServer } from "../llm/server";
 import type { IndexState } from "../output/index-state-footer";
 import type { Searcher } from "../search/searcher";
+import { boundedMaintenanceUnavailable } from "../store/bounded-maintenance";
+import { prepareBoundedMaintenanceRuntime } from "../store/bounded-runtime";
 import {
   type CompactionResult,
   skippedCompaction,
@@ -216,6 +218,10 @@ export class Daemon {
   private idleInterval: ReturnType<typeof setInterval> | null = null;
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
   private cleanupPromise: Promise<CompactionResult> | null = null;
+  private boundedCleanupPromise: Promise<CompactionResult> | null = null;
+  private boundedCleanupInterval: ReturnType<typeof setInterval> | null = null;
+  private lastBoundedCleanupAttempt = 0;
+  private lastBoundedCleanupOutcome: CompactionResult | null = null;
   private lastCleanupAttempt = 0;
   private cleanupRetrySoon = false;
   private heartbeatTick = 0;
@@ -552,6 +558,7 @@ export class Daemon {
       // Resources are open — only now may resource-dependent IPC commands run.
       this.ready = true;
       this.startVersionCleanupLoop();
+      this.startBoundedCleanupLoop();
     } catch (err) {
       console.error("[daemon] Failed to open shared resources:", err);
       throw err;
@@ -1023,15 +1030,182 @@ export class Daemon {
     return this.vectorDb?.versionCleanupStatus() ?? null;
   }
 
+  boundedMaintenanceStatus(): CompactionResult | null {
+    return this.lastBoundedCleanupOutcome
+      ? { ...this.lastBoundedCleanupOutcome }
+      : (this.vectorDb?.boundedMaintenanceStatus?.() ?? null);
+  }
+
+  private versionCleanupIntervalMs(): number {
+    return !this.cleanupRetrySoon &&
+      this.versionCleanupStatus()?.eligibleVersionsRemaining === 0
+      ? 5 * 60_000
+      : 60_000;
+  }
+
+  /** A separate timer preserves retention priority. Missing/unqualified binary
+   * artifacts return quietly before watcher/read gates; packaging enables this
+   * only by shipping an independently accepted manifest and matching binary. */
+  private startBoundedCleanupLoop(): void {
+    if (this.boundedCleanupInterval) return;
+    this.lastBoundedCleanupAttempt = Date.now();
+    this.boundedCleanupInterval = setInterval(() => {
+      if (
+        !this.ready ||
+        this.shuttingDown ||
+        this.recycling ||
+        this.pausedReason !== null ||
+        this.boundedCleanupPromise ||
+        this.cleanupPromise ||
+        this.operations.status !== "open" ||
+        Date.now() - this.lastBoundedCleanupAttempt < 10 * 60_000 ||
+        Date.now() - this.lastCleanupAttempt >=
+          this.versionCleanupIntervalMs() ||
+        (this.versionCleanupStatus()?.eligibleVersionsRemaining ?? 1) > 0 ||
+        this.operations
+          .activeOperationNames()
+          .some((name) =>
+            [
+              "add-project",
+              "ensure-project",
+              "index-project",
+              "index-pending",
+            ].includes(name),
+          )
+      )
+        return;
+      // runBoundedMaintenance records outcomes. One invocation per cadence;
+      // an uncertain native receipt refuses a fresh copy rather than replaying.
+      void this.runBoundedMaintenance("auto").catch(() => {});
+    }, 60_000);
+    this.boundedCleanupInterval.unref();
+  }
+
+  /** Runtime preparation and bulk-index refusal happen before exclusive reader
+   * admission. An accepted bundled manifest is the sole native capability gate. */
+  runBoundedMaintenance(
+    action: "run" | "recover" | "auto" = "auto",
+  ): Promise<CompactionResult> {
+    if (this.boundedCleanupPromise) return this.boundedCleanupPromise;
+    this.lastBoundedCleanupAttempt = Date.now();
+    const started = Date.now();
+    const run = this.performBoundedMaintenance(action).then(
+      (result) => {
+        this.lastBoundedCleanupOutcome = { ...result };
+        return result;
+      },
+      (error: unknown) => {
+        this.lastBoundedCleanupOutcome = {
+          status: "failed",
+          at: Date.now(),
+          attempts: 1,
+          elapsedMs: Date.now() - started,
+          reason:
+            error instanceof Error
+              ? error.message.slice(0, 512)
+              : "deleted-row cleanup failed",
+        };
+        throw error;
+      },
+    );
+    const tracked = run.finally(() => {
+      if (this.boundedCleanupPromise === tracked)
+        this.boundedCleanupPromise = null;
+    });
+    this.boundedCleanupPromise = tracked;
+    return tracked;
+  }
+
+  private async performBoundedMaintenance(
+    action: "run" | "recover" | "auto",
+  ): Promise<CompactionResult> {
+    if (
+      !this.vectorDb ||
+      !this.ready ||
+      this.shuttingDown ||
+      this.recycling ||
+      this.pausedReason !== null
+    )
+      throw new Error("daemon resources not ready for deleted-row cleanup");
+    const bulkActive = () =>
+      this.operations
+        .activeOperationNames()
+        .some((name) =>
+          [
+            "add-project",
+            "ensure-project",
+            "index-project",
+            "index-pending",
+          ].includes(name),
+        );
+    const deferred = () =>
+      skippedCompaction(
+        "project indexing is active; deleted-row cleanup deferred without closing reads",
+      );
+    if (bulkActive()) return deferred();
+    const deadline = AbortSignal.timeout(90_000);
+    const runtime = await prepareBoundedMaintenanceRuntime(deadline);
+    if (!runtime) return boundedMaintenanceUnavailable();
+    if (bulkActive()) return deferred();
+    this.assertHeavyOperationAdmission("bounded-maintenance");
+    let roots: string[] = [];
+    const isRead = (name: string) =>
+      getReadVerb(name) !== undefined ||
+      ["search", "keyword-search", "documents", "project-stats"].includes(name);
+    try {
+      return await this.operations.runExclusive(
+        "bounded-maintenance",
+        async () => {
+          deadline.throwIfAborted();
+          this.assertHeavyOperationAdmission("bounded-maintenance");
+          roots = [
+            ...new Set([
+              ...this.processors.keys(),
+              ...this.subscriptions.keys(),
+            ]),
+          ];
+          await this.watcherManager.quiesceAll();
+        },
+        async (signal) => {
+          this.assertHeavyOperationAdmission("bounded-maintenance");
+          const outcome = await this.vectorDb!.cleanupDeletedRows(
+            runtime,
+            {
+              open: (p) =>
+                this.operations.openProtectedMaintenanceReadWindow(p, isRead),
+              drain: () =>
+                this.operations.closeProtectedMaintenanceReadWindow(5000),
+            },
+            AbortSignal.any([signal, deadline]),
+            action,
+          );
+          return outcome ?? skippedCompaction("no indexed table");
+        },
+        {
+          queueShared: true,
+          pendingReads: isRead,
+          signal: deadline,
+          readerDrainTimeoutMs: 5000,
+        },
+      );
+    } finally {
+      if (
+        !this.shuttingDown &&
+        this.ready &&
+        this.pausedReason === null &&
+        roots.length
+      ) {
+        await this.watcherManager.resumeAll(roots, { catchup: false });
+        await this.watcherManager.catchupAll(roots);
+      }
+    }
+  }
+
   /** Status polling and watched edits cannot starve independent reclamation. */
   private startVersionCleanupLoop(): void {
     if (this.cleanupInterval) return;
     this.cleanupInterval = setInterval(() => {
-      const interval =
-        !this.cleanupRetrySoon &&
-        this.versionCleanupStatus()?.eligibleVersionsRemaining === 0
-          ? 5 * 60_000
-          : 60_000;
+      const interval = this.versionCleanupIntervalMs();
       if (
         !this.ready ||
         this.shuttingDown ||
@@ -3023,6 +3197,7 @@ export class Daemon {
     if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
     if (this.idleInterval) clearInterval(this.idleInterval);
     if (this.cleanupInterval) clearInterval(this.cleanupInterval);
+    if (this.boundedCleanupInterval) clearInterval(this.boundedCleanupInterval);
     for (const timer of this.pendingIndexRetryTimers.values()) {
       clearTimeout(timer);
     }

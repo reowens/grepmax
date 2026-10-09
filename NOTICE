@@ -37,3 +37,9 @@ The distribution includes the unmodified JavaScript runtime from
 Apache-2.0. Its license and build provenance are included in dist/vendor/lancedb/.
 Its optional provider dependency manifest is not distributed. Platform native
 binaries are installed as separately pinned @lancedb packages.
+
+Qualified releases include gmax's native bounded maintenance executable,
+built against the unmodified Lance 12.0.0 storage engine. Exact locked
+dependency licenses and attributions are bundled in
+dist/vendor/maintenance/THIRD-PARTY-NOTICES.txt. Binary checksums, source
+digest and platform acceptance evidence accompany the executable.

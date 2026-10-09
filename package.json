@@ -21,7 +21,7 @@
     "postinstall": "node scripts/postinstall.js",
     "prebuild": "rm -rf dist tsconfig.tsbuildinfo && node scripts/prepare-lance-runtime.cjs",
     "build": "tsc",
-    "postbuild": "chmod +x dist/bin.js dist/index.js",
+    "postbuild": "chmod +x dist/bin.js dist/index.js && node scripts/prepare-bounded-runtime.cjs",
     "dev": "npx tsc && node dist/bin.js",
     "test": "vitest run",
     "test:watch": "vitest",
