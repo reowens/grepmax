@@ -33,7 +33,7 @@ function deps() {
     now: () => 1000,
     monotonic: () => 0,
     freeBytes: () => 4096 * 1048576,
-    run: vi.fn((command: string, args: string[]) => {
+    run: vi.fn((command: string, args: string[], _timeoutMs?: number) => {
       if (command === "ps") return inventory;
       if (command === "footprint")
         return [10, 20, 30, 40, 50]
@@ -94,9 +94,12 @@ describe("bounded aggregate footprint sampling", () => {
     expect(snapshot.incompleteReasons).toEqual([]);
     expect(d.run.mock.calls.filter(([c]) => c === "footprint")).toHaveLength(1);
   });
-  it("invalidates the total when a process disappears or changes identity", () => {
+  it("remeasures the full cohort once when a process disappears or changes identity", () => {
     for (const ps of [
-      inventory.replace(row(20, 1, "gmax-mcp"), ""),
+      inventory
+        .split("\n")
+        .filter((line) => line !== row(20, 1, "gmax-mcp"))
+        .join("\n"),
       inventory.replace(stamp, "Tue Oct  6 23:01:00 2026"),
     ]) {
       const d = deps();
@@ -106,10 +109,52 @@ describe("bounded aggregate footprint sampling", () => {
         c === "ps" && ++count > 1 ? ps.trim() : original(c, a),
       );
       const s = sampleHostResources([], d);
-      expect(s.aggregateFootprintMb).toBeNull();
-      expect(s.incompleteReasons.length).toBeGreaterThan(0);
+      expect(s.aggregateFootprintMb).not.toBeNull();
+      expect(s.incompleteReasons).toEqual([]);
+      expect(d.run.mock.calls.filter(([c]) => c === "ps")).toHaveLength(4);
     }
   });
+  it("refuses continuously changing cohorts rather than accepting a partial total", () => {
+    const d = deps();
+    const original = d.run.getMockImplementation()!;
+    let count = 0;
+    d.run.mockImplementation((c, a) =>
+      c === "ps" && ++count % 2 === 0
+        ? inventory
+            .split("\n")
+            .filter((line) => line !== row(20, 1, "gmax-mcp"))
+            .join("\n")
+        : original(c, a),
+    );
+    const s = sampleHostResources([], d);
+    expect(s.aggregateFootprintMb).toBeNull();
+    expect(s.incompleteReasons).toContain(
+      "process inventory changed during sample",
+    );
+    expect(d.run.mock.calls.filter(([c]) => c === "ps")).toHaveLength(4);
+  });
+  it.each(["2", "4"])(
+    "does not retry away observed pressure flag %s",
+    (flag) => {
+      const d = deps();
+      const original = d.run.getMockImplementation()!;
+      let count = 0;
+      d.run.mockImplementation((c, a) => {
+        if (c === "sysctl" && a[1] === "kern.memorystatus_vm_pressure_level")
+          return flag;
+        if (c === "ps" && ++count > 1)
+          return inventory
+            .split("\n")
+            .filter((line) => line !== row(20, 1, "gmax-mcp"))
+            .join("\n");
+        return original(c, a);
+      });
+      const s = sampleHostResources([], d);
+      expect(s.memoryPressure).toBe(flag === "2" ? "warn" : "critical");
+      expect(s.aggregateFootprintMb).toBeNull();
+      expect(d.run.mock.calls.filter(([c]) => c === "ps")).toHaveLength(2);
+    },
+  );
   it("does not report a partial total when one footprint is missing", () => {
     const d = deps();
     const original = d.run.getMockImplementation()!;
@@ -117,6 +162,23 @@ describe("bounded aggregate footprint sampling", () => {
       c === "footprint" ? "node [10]: Footprint: 100 MB" : original(c, a),
     );
     expect(sampleHostResources([], d).aggregateFootprintMb).toBeNull();
+  });
+  it("shares the original deadline across a cohort retry", () => {
+    const d = deps();
+    const original = d.run.getMockImplementation()!;
+    let elapsed = 0;
+    let count = 0;
+    d.monotonic = () => elapsed;
+    d.run.mockImplementation((c, a, timeoutMs) => {
+      elapsed += Math.min(350, timeoutMs ?? 350);
+      if (c === "ps" && ++count > 1)
+        return inventory.replace(stamp, "Tue Oct 6 23:01:00 2026");
+      return original(c, a);
+    });
+    const s = sampleHostResources([], d);
+    expect(elapsed).toBeLessThanOrEqual(3000);
+    expect(s.aggregateFootprintMb).toBeNull();
+    expect(s.incompleteReasons.length).toBeGreaterThan(0);
   });
   it("uses a single monotonic deadline even if the wall clock changes", () => {
     const d = deps();

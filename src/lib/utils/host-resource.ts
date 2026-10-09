@@ -143,6 +143,42 @@ export function sampleHostResources(
   overrides: Partial<ResourceSamplerDeps> = {},
   extraGroups: readonly number[] = [],
 ): HostResourceSnapshot {
+  const monotonic = overrides.monotonic ?? (() => performance.now());
+  const deadline =
+    monotonic() + (overrides.sampleTimeoutMs ?? HOST_SAMPLE_TIMEOUT_MS);
+  let snapshot: HostResourceSnapshot;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    snapshot = sampleHostResourcesOnce(
+      extraPids,
+      {
+        ...overrides,
+        monotonic,
+        sampleTimeoutMs: Math.max(0, deadline - monotonic()),
+      },
+      extraGroups,
+    );
+    // Short-lived client children routinely exit during footprint sampling.
+    // Re-measure the entire cohort once, within the original deadline. Never
+    // accept a partial total or retry away observed warning/critical pressure.
+    if (
+      attempt === 1 ||
+      snapshot.memoryPressure !== "normal" ||
+      snapshot.kernelPressure !== "ok" ||
+      snapshot.incompleteReasons.length !== 1 ||
+      snapshot.incompleteReasons[0] !==
+        "process inventory changed during sample" ||
+      monotonic() >= deadline
+    )
+      return snapshot;
+  }
+  return snapshot!;
+}
+
+function sampleHostResourcesOnce(
+  extraPids: readonly number[],
+  overrides: Partial<ResourceSamplerDeps>,
+  extraGroups: readonly number[],
+): HostResourceSnapshot {
   const deps: ResourceSamplerDeps = {
     platform: process.platform,
     pid: process.pid,

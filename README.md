@@ -532,6 +532,8 @@ Production recovery currently requires macOS, a persistent `autostart-disabled` 
 
 The child waits for launch and deletion admission tokens, with verified helper PID/start identity recorded as the primary exclusive owner. Existing readers retain exclusion if the parent dies while the helper is alive. Current/tagged/post-cutoff metadata is verified after pruning; recovery refuses more than 256 protected versions before deletion to bound verification. Interrupted attempts require verification and explicit acknowledgement before retry. Linux/APFS fixtures exercise native retention and interruption; supported production host admission is tested separately and still runs freshly for each operation.
 
+If a short-lived client child exits or a process identity changes during memory sampling, a normal-pressure sample may measure the complete process set once more within the original deadline. It never accepts a partial total. Continued changes, unavailable measurements, and observed warning or critical pressure still refuse admission.
+
 For an operator-coordinated recovery window:
 
 1. Check live host pressure and service availability first. Keep development online when recovery admission is already known to refuse. Preserve the configured normal-service policy and any pre-existing safety markers.
