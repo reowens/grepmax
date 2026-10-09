@@ -1,0 +1,56 @@
+name: Bounded cleanup native qualification
+on:
+  push:
+    branches: [test/gmax-bounded-validation]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux-x64
+          - runner: macos-15
+            platform: darwin-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: 2
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+      CARGO_TARGET_DIR: ${{ github.workspace }}/.bounded-target
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - name: Set up pinned native compiler
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal
+          rustup override set 1.98.0
+          if [ "$RUNNER_OS" = Linux ]; then
+            sudo apt-get update
+            sudo apt-get install -y protobuf-compiler clang
+          fi
+          if [ "$RUNNER_OS" = macOS ] && ! command -v protoc; then
+            brew install protobuf
+          fi
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .bounded-target
+          key: bounded-native-1-${{ matrix.platform }}-${{ hashFiles('lance-maintenance/native/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            bounded-native-1-${{ matrix.platform }}-${{ hashFiles('lance-maintenance/native/Cargo.lock') }}-
+      - name: Test cumulative write enforcement and native engine
+        run: cargo test --locked --manifest-path lance-maintenance/native/Cargo.toml --features engine --no-fail-fast
+      - name: Build qualification executable
+        run: cargo build --locked --manifest-path lance-maintenance/native/Cargo.toml --features engine
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: bounded-native-${{ matrix.platform }}
+          path: .bounded-target/debug/gmax-bounded-maintenance
+          if-no-files-found: error
