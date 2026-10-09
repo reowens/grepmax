@@ -17,7 +17,7 @@ The release acceptance record is `/private/tmp/gmax-v02671-acceptance.json`; the
 
 ## Three-agent follow-up: lexical experiment and recovery readiness — October 8, 2026
 
-The retrieval, passive watcher and read-only recovery assignments ran in parallel with separate file ownership. Root coordination reviewed the frozen study and source, verified snapshot digests and saved candidate contributions, and ran **39 focused tests / three files** plus test typecheck. This was a separate agent implementation review, not independent external relevance adjudication. Evaluation scripts/documentation are the only tracked changes; deployed .71, normal policy, models, native stores, client settings and service ownership remain unchanged.
+The retrieval, passive watcher and read-only recovery assignments ran in parallel with separate file ownership. Root coordination reviewed the frozen study and source, verified snapshot digests and saved candidate contributions, and ran **39 focused tests / three files** plus test typecheck. This was a separate agent implementation review, not independent external relevance adjudication. Evaluation scripts/documentation are the only tracked changes. The agents made no runtime, policy, model, client-setting or service-ownership change and opened no native store; ordinary development watching continued indexing independently.
 
 ### Lexical candidate recovery: useful evidence, hybrid gate failed
 
@@ -32,7 +32,7 @@ The [frozen experiment and negative result](measurements/2026-10-08-document-lex
 
 Redis moves from archived dense document rank 12 to lexical rank 1 / fused rank 4. People is absent from archived dense candidates, lexical rank 2, then fused rank 13. Ten documents supported by both arms gain summed contributions and outrank lexical-only People; two rank-one single-arm documents also precede it. This identifies a fusion ordering loss after successful lexical candidate recovery. All 13 previous dense top-ten hits survive, but the predefined requirement to recover **both** residual targets is **not met**. No algorithm was retuned after scoring. Preserve this negative result and do not integrate fixed RRF.
 
-Every archived competitor pointer must retain its indexed/current digest and range against the fixed snapshot; otherwise its whole case is excluded. All 20 frozen target cases remain current, but only 15 have usable archived dense observations. The original two busy / three host-pressure cases remain excluded from replay; offline CDN lexical rank 1 does not resolve deployed scope availability. Archived dense candidates were not re-encoded over the snapshot. Known target families and exposed source-curated questions limit inference; these are diagnostic candidate results, not general recall or production acceptance. Section overlap is reported separately because lexical window sizes and fused representatives differ from dense chunking. First-score runner/results and the exact source snapshot remain immutable; the current runner only adds completion/exit-2 semantics. [README](../README.md#offline-lexical-candidate-experiment) documents invocation, privacy and bounds. Full source CI is pending.
+Every archived competitor pointer must retain its indexed/current digest and range against the fixed snapshot; otherwise its whole case is excluded. All 20 frozen target cases remain current, but only 15 have usable archived dense observations. The original two busy / three host-pressure cases remain excluded from replay; offline CDN lexical rank 1 does not resolve deployed scope availability. Archived dense candidates were not re-encoded over the snapshot. Known target families and exposed source-curated questions limit inference; these are diagnostic candidate results, not general recall or production acceptance. Section overlap is reported separately because lexical window sizes and fused representatives differ from dense chunking. First-score runner/results and the exact source snapshot remain immutable; the current runner only adds completion/exit-2 semantics. [README](../README.md#offline-lexical-candidate-experiment) documents invocation, privacy and bounds. [Full exact-source CI](https://github.com/reowens/grepmax/actions/runs/37863469974) for `82b6c98422b30b19a2f6b9470577d4bf0f07d841` passed all gates with **2,094 tests / 210 files**, build, audits and packed-consumer/native/prune smoke. Final read-only health at **00:13:13.474 UTC October 9** confirms the same .71 daemon/GPU ready/active/native, counter 8 and empty queues/failures. Root review and final health are preserved under ignored `docs/measurements/2026-10-08-agent-spins/`.
 
 ### Watcher observation: current recovery healthy, broader stability open
 
@@ -310,7 +310,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 151 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 152 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
