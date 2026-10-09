@@ -67,7 +67,11 @@ function helper(overrides = {}, planOverrides = {}, phaseOverrides = {}) {
         if (stage === 0) { const request = JSON.parse(line); if(request.expectedVersion !== plan.expectedVersion || request.action !== plan.action) process.exit(10); send({ phase: "launch" }); }
         else if (line !== "fixture-nonce") process.exit(11);
         else if (stage === 1) send({ phase: "ready", plan, ...counters, ...phaseOverrides.ready });
-        else if (stage === 2 && plan.status === "no-work") { send(result); process.stdin.pause(); process.exit(0); }
+        else if (stage === 2 && plan.status === "no-work") {
+          const finish = () => { send(result); process.stdin.pause(); process.exit(0); };
+          if (phaseOverrides.terminalDelayMs) setTimeout(finish, phaseOverrides.terminalDelayMs);
+          else finish();
+        }
         else if (stage === 2) send({ phase: "protected-read-ready", ...protection, ...counters, ...phaseOverrides.protected });
         else if (stage === 3) send({ phase: "reader-drain", ...protection, ...counters, ...phaseOverrides.drain });
         else if (stage === 4) { send(result); process.stdin.pause(); process.exit(0); }
@@ -130,6 +134,7 @@ describe("metered native child lifecycle", () => {
         metadataBytesWritten: 0,
       },
       { status: "no-work" },
+      { terminalDelayMs: 1100 },
     );
     // Discovery, exclusive ownership, launch and ready remain admitted. A
     // completed receipt grants no additional work and need not probe its

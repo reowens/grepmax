@@ -473,12 +473,16 @@ export async function runBoundedMaintenance(
           90_000,
         );
         const monitor = setInterval(() => {
+          // Ready no-work plans and drained, verified copies have no payload
+          // writers left. Final metadata is already admitted under the native
+          // ledger; await its receipt/close without probing an exiting helper.
+          if (state === "result" || state === "done") return;
           try {
             // The native ledger admits every charge against the actual remaining
             // allowance. A stale full-cap check here counts our own writes twice.
             checkMeteredAdmission(storeDir, signal, 0);
-          } catch {
-            stop("Bounded cleanup resource/disk admission refused");
+          } catch (error) {
+            stop("Bounded cleanup resource/disk admission refused", error);
           }
         }, 1000);
         const acknowledge = () => {
