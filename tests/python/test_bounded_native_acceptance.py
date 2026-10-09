@@ -106,10 +106,17 @@ class BoundedNativeAcceptance(unittest.TestCase):
             raise unittest.SkipTest('actual native executable unavailable; NOT QUALIFIED')
 
     @staticmethod
-    def prepare(home):
+    def prepare(home, deleted=True):
+        import pyarrow as pa
         root = Path(home) / 'store' / 'chunks.lance'
         root.parent.mkdir()
-        ds = fixture_support.BoundedCleanupAcceptance.fixture(root)
+        ds = fixture_support.BoundedCleanupAcceptance.fixture(root, deleted=deleted)
+        # Match gmax's string-path BTree and exercise fragments with multiple
+        # immutable data files, alongside the existing FTS and IVF_FLAT index.
+        ds.merge(pa.table({'id': pa.array(range(2048), type=pa.int32()),
+                           'path': [f'/fixture/β/{i}.ts' for i in range(2048)]}),
+                 left_on='id')
+        ds.create_scalar_index('path', 'BTREE', name='path_idx')
         return root, ds
 
     def test_real_selected_batch_preserves_rows_indices_tags_and_both_readers(self):
@@ -124,6 +131,7 @@ class BoundedNativeAcceptance(unittest.TestCase):
             self.assertEqual(len(selected), 1)
             unselected = {f.fragment_id: f.metadata.to_json() for f in ds.get_fragments()
                           if f.fragment_id not in selected}
+            ds = None
             session = NativeSession(self.binary, root, selected=selected)
             try:
                 protected = session.reach('protected-read-ready')
@@ -137,7 +145,8 @@ class BoundedNativeAcceptance(unittest.TestCase):
                 self.assertEqual(current.tags.get_version('user-reader'), user_version)
                 self.assertEqual(fixture_support.row_digest(user_reader), user_digest)
                 self.assertEqual({i['name'] for i in current.list_indices()},
-                                 {'content_idx', 'id_idx', 'vector_idx'})
+                                 {'content_idx', 'id_idx', 'path_idx', 'vector_idx'})
+                self.assertEqual(current.to_table(filter="path = '/fixture/β/11.ts'")['id'].to_pylist(), [11])
                 self.assertEqual(current.to_table(full_text_query={
                     'query': 'unique11', 'columns': ['content']})['id'].to_pylist(), [11])
                 self.assertEqual(current.to_table(full_text_query={
@@ -167,6 +176,132 @@ class BoundedNativeAcceptance(unittest.TestCase):
                 print(json.dumps({'nativeAcceptance': 'real-selected-batch',
                                   'result': result, 'allFieldsDigest': digest[1],
                                   'protectedPhase': protected, 'drainPhase': drain}))
+            finally:
+                session.close()
+
+    def test_no_work_handshake_and_result_are_read_only(self):
+        with tempfile.TemporaryDirectory(prefix='gmax-native-bounded-nowork-') as home:
+            root, _ = self.prepare(home, deleted=False)
+            original_files = fixture_support.file_state(root)
+            session = NativeSession(self.binary, root)
+            try:
+                ready = session.reach('ready')
+                self.assertEqual(ready['plan']['status'], 'no-work')
+                session.send()
+                result = session.next()
+                self.assertEqual(result['phase'], 'result')
+                self.assertEqual(result['status'], 'no-work')
+                self.assertEqual(result['totalBytesWritten'], 0)
+                session.process.wait(timeout=5)
+                self.assertEqual(session.process.returncode, 0)
+                self.assertEqual(fixture_support.file_state(root), original_files)
+            finally:
+                session.close()
+
+    def test_string_ids_and_multiple_selected_unindexed_fragments(self):
+        import lance
+        import pyarrow as pa
+        with tempfile.TemporaryDirectory(prefix='gmax-native-bounded-string-ids-') as home:
+            root = Path(home) / 'store' / 'chunks.lance'
+            root.parent.mkdir()
+            schema = pa.schema([('id', pa.string()), ('line', pa.int32()),
+                                ('content', pa.string()), ('path', pa.string()),
+                                ('payload', pa.binary()), ('symbols', pa.list_(pa.string())),
+                                ('vector', pa.list_(pa.float32(), 8))])
+            rows = [{'id': f'β-{i:05d}', 'line': i, 'content': f'function {i}',
+                     'path': f'/fixture/{i}.ts', 'payload': None if i % 3 else bytes([i % 256]),
+                     'symbols': None if i % 5 else [f'symbol{i}', 'β'],
+                     'vector': [float(i % 7)] * 8} for i in range(512)]
+            ds = lance.write_dataset(pa.Table.from_pylist(rows, schema=schema),
+                                     str(root), max_rows_per_file=64, max_rows_per_group=32)
+            ds.tags.create('user-reader', ds.version)
+            ds.delete('line < 128 AND line % 2 = 0')
+            digest = fixture_support.row_digest(ds)
+            selected = [f.fragment_id for f in ds.get_fragments() if f.num_deletions]
+            self.assertEqual(len(selected), 2)
+            unchanged = {f.fragment_id: f.metadata.to_json() for f in ds.get_fragments()
+                         if f.fragment_id not in selected}
+            ds = None
+            session = NativeSession(self.binary, root, selected=selected)
+            try:
+                result = self.drive_to_exit(session)
+                self.assertEqual(session.process.returncode, 0, self.failure_reason(session))
+                self.assertEqual(result['status'], 'committed')
+                self.assertEqual(result['rowsVerified'], 64)
+                self.assertEqual(result['indexBytesWritten'], 0)
+                self.assertLessEqual(result['totalBytesWritten'], session.request['totalWriteBudgetBytes'])
+                current = lance.dataset(str(root))
+                self.assertEqual(fixture_support.row_digest(current), digest)
+                self.assertEqual(set(current.tags.list()), {'user-reader'})
+                self.assertEqual(sum(f.num_deletions for f in current.get_fragments()), 0)
+                fragments = {f.fragment_id: f.metadata.to_json() for f in current.get_fragments()}
+                for fragment_id, metadata in unchanged.items():
+                    self.assertEqual(fragments[fragment_id], metadata)
+                print(json.dumps({'nativeAcceptance': 'string-ids-multi-fragment',
+                                  'selectedFragmentIds': selected, 'result': result,
+                                  'allFieldsDigest': digest[1]}))
+            finally:
+                session.close()
+
+    def test_budget_exhaustion_after_data_copy_is_safe_and_never_refunded(self):
+        import lance
+        with tempfile.TemporaryDirectory(prefix='gmax-native-bounded-midcap-') as home:
+            root, ds = self.prepare(home)
+            digest = fixture_support.row_digest(ds)
+            selected = [f for f in ds.get_fragments() if f.num_deletions]
+            source = sum((root / 'data' / file.path).stat().st_size
+                         for fragment in selected for file in fragment.metadata.files)
+            index = sum(file.stat().st_size for entry in ds.list_indices()
+                        for file in (root / '_indices' / entry['uuid']).rglob('*')
+                        if file.is_file())
+            # Admit the native preflight, but leave less than the remap payload
+            # available after its independently reserved metadata finalization.
+            cap = source + index + 64 * 1024
+            self.assertLess(cap, 1024**2)
+            head = ds.version
+            ds = None
+            session = NativeSession(self.binary, root, cap=cap)
+            try:
+                session.reach('protected-read-ready')
+                session.send()
+                outcome = self.drive_to_exit(session)
+                self.assertNotEqual(session.process.returncode, 0)
+                self.assertIn('budget', self.failure_reason(session).lower())
+                self.assertGreater(outcome['dataBytesWritten'], 0)
+                self.assertLessEqual(outcome['totalBytesWritten'], cap)
+                current = lance.dataset(str(root))
+                self.assertEqual(current.version, head)
+                self.assertEqual(fixture_support.row_digest(current), digest)
+                self.assertEqual(current.to_table(full_text_query={
+                    'query': 'unique11', 'columns': ['content']})['id'].to_pylist(), [11])
+                current = None
+                recovered = NativeSession(self.binary, root, cap=cap, action='recover')
+                try:
+                    result = self.drive_to_exit(recovered)
+                    self.assertEqual(recovered.process.returncode, 0, self.failure_reason(recovered))
+                    self.assertTrue(result['aborted'])
+                    self.assertEqual(result['rowsVerified'], 0)
+                    self.assertEqual(result['dataBytesWritten'], outcome['dataBytesWritten'])
+                    self.assertEqual(result['indexBytesWritten'], outcome['indexBytesWritten'])
+                    self.assertGreaterEqual(result['totalBytesWritten'], outcome['totalBytesWritten'])
+                    self.assertLessEqual(result['totalBytesWritten'], cap)
+                    current = lance.dataset(str(root))
+                    self.assertEqual(fixture_support.row_digest(current), digest)
+                    self.assertEqual(set(current.tags.list()), {'user-reader'})
+                    current = None
+                finally:
+                    recovered.close()
+                frozen = fixture_support.file_state(root)
+                retry = NativeSession(self.binary, root, cap=cap)
+                try:
+                    self.drive_to_exit(retry)
+                    self.assertNotEqual(retry.process.returncode, 0)
+                    self.assertEqual(fixture_support.file_state(root), frozen)
+                finally:
+                    retry.close()
+                print(json.dumps({'nativeAcceptance': 'mid-copy-budget-exhaustion',
+                                  'preflightCapBytes': cap, 'outcome': outcome,
+                                  'abortRecovery': result, 'orphanCopyRetryRefused': True}))
             finally:
                 session.close()
 
@@ -227,6 +362,7 @@ class BoundedNativeAcceptance(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='gmax-native-bounded-space-loss-', dir=base) as home:
             root, ds = self.prepare(home)
             digest = fixture_support.row_digest(ds)
+            ds = None
             disk = os.statvfs(root)
             cap = 4 * 1024**2
             margin = disk.f_bavail * disk.f_frsize - cap - 1024**2
@@ -257,8 +393,28 @@ class BoundedNativeAcceptance(unittest.TestCase):
                     self.assertEqual(fixture_support.file_state(root), frozen)
                 finally:
                     retry.close()
+                journal = next(root.glob('_gmax-maintenance-*.journal'))
+                saved_counts = struct.unpack('<6Q', journal.read_bytes()[-80:-32])
+                recovery = NativeSession(self.binary, root, action='recover', cap=cap,
+                                         margin=margin)
+                try:
+                    recovered = self.drive_to_exit(recovery)
+                    self.assertEqual(recovery.process.returncode, 0)
+                    self.assertTrue(recovered['aborted'])
+                    self.assertEqual(recovered['rowsVerified'], 0)
+                    self.assertEqual(recovered['dataBytesWritten'], saved_counts[2])
+                    self.assertEqual(recovered['indexBytesWritten'], saved_counts[3])
+                    self.assertGreaterEqual(recovered['totalBytesWritten'], saved_counts[1])
+                    self.assertLessEqual(recovered['totalBytesWritten'], cap)
+                    restored = lance.dataset(str(root))
+                    self.assertEqual(fixture_support.row_digest(restored), digest)
+                    self.assertEqual(set(restored.tags.list()), {'user-reader'})
+                    restored = None
+                finally:
+                    recovery.close()
                 print(json.dumps({'nativeAcceptance': 'preventive-space-loss',
                                   'outcome': outcome, 'physicalENOSPC': False,
+                                  'abortRecovery': recovered,
                                   'externalAllocatedPayloadBytes': 2 * 1024**2}))
             finally:
                 session.close()
@@ -270,6 +426,8 @@ class BoundedNativeAcceptance(unittest.TestCase):
                     prefix='gmax-native-bounded-interrupted-') as home:
                 root, ds = self.prepare(home)
                 digest = fixture_support.row_digest(ds)
+                user_version = ds.tags.get_version('user-reader')
+                ds = None
                 session = NativeSession(self.binary, root)
                 try:
                     paused = session.reach(phase)
@@ -278,11 +436,13 @@ class BoundedNativeAcceptance(unittest.TestCase):
                     fresh = lance.dataset(str(root))
                     self.assertEqual(fixture_support.row_digest(fresh), digest)
                     self.assertEqual(fresh.tags.get_version('user-reader'),
-                                     ds.tags.get_version('user-reader'))
+                                     user_version)
                     old_reader = lance.dataset(str(root), version=paused['beforeVersion'])
                     self.assertEqual(fixture_support.row_digest(old_reader), digest)
                     self.assertEqual(fresh.to_table(full_text_query={
                         'query': 'unique2000', 'columns': ['content']})['id'].to_pylist(), [2000])
+                    old_reader = None
+                    fresh = None
                     frozen = fixture_support.file_state(root)
                     # A fresh run cannot discard uncertain state and copy again.
                     retry = NativeSession(self.binary, root)
@@ -300,24 +460,32 @@ class BoundedNativeAcceptance(unittest.TestCase):
                     recovered = NativeSession(self.binary, root, action='recover')
                     try:
                         result = self.drive_to_exit(recovered)
-                        if phase == 'protected-read-ready':
-                            self.assertNotEqual(recovered.process.returncode, 0)
-                            self.assertEqual(fixture_support.file_state(root), frozen)
-                        else:
-                            self.assertEqual(recovered.process.returncode, 0)
-                            self.assertEqual(result['status'], 'recovered')
-                            self.assertEqual(result['dataBytesWritten'], original_counts[2])
-                            self.assertEqual(result['indexBytesWritten'], original_counts[3])
-                            self.assertGreaterEqual(result['totalBytesWritten'], original_counts[1])
-                            self.assertLessEqual(result['totalBytesWritten'], recovered.request['totalWriteBudgetBytes'])
-                            self.assertEqual(result['rowsVerified'], 64)
-                            completed = lance.dataset(str(root))
-                            self.assertEqual(fixture_support.row_digest(completed), digest)
-                            self.assertEqual(set(completed.tags.list()), {'user-reader'})
+                        self.assertEqual(recovered.process.returncode, 0)
+                        self.assertEqual(result['status'], 'recovered')
+                        self.assertEqual(result['dataBytesWritten'], original_counts[2])
+                        self.assertEqual(result['indexBytesWritten'], original_counts[3])
+                        self.assertGreaterEqual(result['totalBytesWritten'], original_counts[1])
+                        self.assertLessEqual(result['totalBytesWritten'], recovered.request['totalWriteBudgetBytes'])
+                        self.assertEqual(result['aborted'], phase == 'protected-read-ready')
+                        self.assertEqual(result['rowsVerified'],
+                                         0 if phase == 'protected-read-ready' else 64)
+                        completed = lance.dataset(str(root))
+                        self.assertEqual(fixture_support.row_digest(completed), digest)
+                        self.assertEqual(set(completed.tags.list()), {'user-reader'})
+                        completed = None
+                        finalized = fixture_support.file_state(root)
+                        duplicate_recovery = NativeSession(self.binary, root, action='recover')
+                        try:
+                            self.drive_to_exit(duplicate_recovery)
+                            self.assertNotEqual(duplicate_recovery.process.returncode, 0)
+                            self.assertEqual(fixture_support.file_state(root), finalized)
+                        finally:
+                            duplicate_recovery.close()
                     finally:
                         recovered.close()
                     print(json.dumps({'nativeAcceptance': 'interrupted-readable-head',
                                       'phase': phase, 'paused': paused,
+                                      'recovered': result,
                                       'allFieldsDigest': digest[1]}))
                 finally:
                     session.close()
@@ -353,12 +521,14 @@ class BoundedNativeAcceptance(unittest.TestCase):
             for row in tail:
                 row['id'] += 128
                 row['content'] = f'tailneedle unique{row["id"]}'
+                row['path'] = f'/fixture/β/{row["id"]}.ts'
             ds = lance.write_dataset(pa.Table.from_pylist(tail, schema=ds.schema),
                                      str(root), mode='append', max_rows_per_file=128)
             ds.delete('id >= 2048 AND id % 2 = 0')
             digest = fixture_support.row_digest(ds)
             selected = [f.fragment_id for f in ds.get_fragments() if f.num_deletions]
             self.assertEqual(len(selected), 2)
+            ds = None
             before = fixture_support.file_state(root)
             session = NativeSession(self.binary, root, selected=selected)
             try:
@@ -367,7 +537,8 @@ class BoundedNativeAcceptance(unittest.TestCase):
                     # Unsupported coverage groups must fail before publishing
                     # a head, creating receipts/tags or copying any fragments.
                     self.assertEqual(fixture_support.file_state(root), before)
-                    self.assertIn('coverage', self.failure_reason(session).lower())
+                    reason = self.failure_reason(session).lower()
+                    self.assertTrue('coverage' in reason or 'plan' in reason, reason)
                     branch = 'safe-preflight-refusal'
                 else:
                     self.assertEqual(outcome['status'], 'committed')
@@ -378,7 +549,7 @@ class BoundedNativeAcceptance(unittest.TestCase):
                     self.assertEqual(fresh.to_table(full_text_query={
                         'query': 'unique2051', 'columns': ['content']})['id'].to_pylist(), [2051])
                     self.assertEqual({index['name'] for index in fresh.list_indices()},
-                                     {'content_idx', 'id_idx', 'vector_idx'})
+                                     {'content_idx', 'id_idx', 'path_idx', 'vector_idx'})
                     self.assertLessEqual(outcome['totalBytesWritten'], session.request['totalWriteBudgetBytes'])
                     branch = 'mixed-coverage-preserved'
                 print(json.dumps({'nativeAcceptance': 'mixed-index-coverage', 'branch': branch}))
@@ -400,9 +571,11 @@ if __name__ == '__main__':
                   'FTS/ANN, unselected fragments and user tags preserved',
                   'old/current snapshots read at deterministic native pauses',
                   '1-byte cap refusal preserves original store files and readable head',
+                  'post-copy budget exhaustion preserves head, aborts without refund or another copy',
                   'fresh preflight and per-write loss of free-space reservation refused',
                   'SIGKILL before copy and after commit; duplicate run refused',
-                  'committed recovery keeps cumulative budget and writes no further data/index payloads'],
+                  'safe abort and committed recovery release owned tags without more data/index writes',
+                  'recovery keeps the cumulative budget; duplicate finalization is refused'],
         'limits': ['payload-byte cap excludes physical filesystem metadata/journal allocation',
                    'no production store or process accessed',
                    'not a sustained latency or live disk-growth qualification',

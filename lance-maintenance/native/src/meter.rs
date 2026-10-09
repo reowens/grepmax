@@ -33,12 +33,15 @@ pub struct Ledger {
     cap: u64,
     state: Mutex<LedgerState>,
     space_guard: Option<(std::path::PathBuf, u64)>,
+    finalization_reserve: u64,
+    finalization_paths: Vec<Path>,
 }
 #[derive(Debug)]
 struct LedgerState {
     counts: Counts,
     journal: Option<File>,
     poisoned: bool,
+    finalizing: bool,
 }
 const RECORD_BYTES: u64 = 80;
 
@@ -60,8 +63,11 @@ impl Ledger {
                 counts: Counts::default(),
                 journal: None,
                 poisoned: false,
+                finalizing: false,
             }),
             space_guard: None,
+            finalization_reserve: 0,
+            finalization_paths: vec![],
         })
     }
     pub fn cap(&self) -> u64 {
@@ -78,11 +84,46 @@ impl Ledger {
         self.space_guard = Some((root, margin));
         self
     }
+    pub fn with_finalization_reserve(mut self, bytes: u64) -> Self {
+        self.finalization_reserve = bytes.min(self.cap);
+        self
+    }
+    pub fn with_finalization_paths(mut self, paths: Vec<Path>) -> Self {
+        self.finalization_paths = paths;
+        self
+    }
+    pub fn enter_metadata_finalization(&self) -> Result<()> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| refused("Write ledger poisoned"))?;
+        if state.poisoned {
+            return Err(refused("Uncertain journal cannot finalize"));
+        }
+        state.finalizing = true;
+        Ok(())
+    }
     pub fn with_journal(cap: u64, file: &std::path::Path) -> Result<Self> {
+        Self::create_journal(cap, file, None)
+    }
+    pub fn with_guarded_journal(
+        cap: u64,
+        file: &std::path::Path,
+        root: std::path::PathBuf,
+        margin: u64,
+    ) -> Result<Self> {
+        Self::create_journal(cap, file, Some((root, margin)))
+    }
+    fn create_journal(
+        cap: u64,
+        file: &std::path::Path,
+        guard: Option<(std::path::PathBuf, u64)>,
+    ) -> Result<Self> {
         if cap < RECORD_BYTES {
             return Err(refused("Budget cannot fit durable counter record"));
         }
         let mut ledger = Self::new(cap)?;
+        ledger.space_guard = guard;
         let journal = OpenOptions::new()
             .create_new(true)
             .write(true)
@@ -160,8 +201,11 @@ impl Ledger {
                 counts,
                 journal: Some(journal),
                 poisoned: false,
+                finalizing: false,
             }),
             space_guard: None,
+            finalization_reserve: 0,
+            finalization_paths: vec![],
         })
     }
     pub fn charge(&self, path: &Path, bytes: u64) -> Result<()> {
@@ -200,8 +244,18 @@ impl Ledger {
         if new_total > self.cap {
             return Err(refused("Cumulative total write budget exceeded"));
         }
-        let counts = &mut state.counts;
         let name = path.as_ref();
+        let owned_metadata =
+            self.finalization_paths.contains(path) || name == "_gmax-maintenance/journal";
+        if state.finalizing && !owned_metadata {
+            return Err(refused("Only owned metadata may write during finalization"));
+        }
+        if !state.finalizing && new_total > self.cap - self.finalization_reserve {
+            return Err(refused(
+                "Write would consume reserved finalization metadata budget",
+            ));
+        }
+        let counts = &mut state.counts;
         let category = if name.contains("/_indices/") || name.starts_with("_indices/") {
             &mut counts.index_bytes_written
         } else if name.contains("/data/") || name.starts_with("data/") {
@@ -339,15 +393,18 @@ impl ObjectStore for MeteredStore {
         // its own protective tag/receipt through explicitly metered overwrites.
         let inner = self.inner.clone();
         let paths = self.delete_paths.clone();
+        let ledger = self.ledger.clone();
         locations
             .then(move |location| {
                 let inner = inner.clone();
                 let paths = paths.clone();
+                let ledger = ledger.clone();
                 async move {
                     let location = location?;
                     if !paths.contains(&location) {
                         return Err(refused("Delete is outside bounded-copy protocol"));
                     }
+                    ledger.charge(&location, 0)?;
                     let mut results =
                         inner.delete_stream(futures::stream::iter(vec![Ok(location)]).boxed());
                     results
@@ -423,6 +480,7 @@ impl MultipartUpload for MeteredUpload {
         if self.failed {
             return Err(refused("Cannot publish budget-refused upload"));
         }
+        self.ledger.charge(&self.path, 0)?;
         self.inner.complete().await
     }
     async fn abort(&mut self) -> Result<()> {

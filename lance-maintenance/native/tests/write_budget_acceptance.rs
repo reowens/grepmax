@@ -238,3 +238,34 @@ async fn insufficient_fresh_space_refuses_before_charge_or_payload_creation() {
     assert_eq!(ledger.counts().total_bytes_written, 0);
     assert!(!home.path().join("table/data").exists());
 }
+
+#[test]
+fn ordinary_writes_cannot_spend_metadata_finalization_reserve() {
+    let home = tempfile::tempdir().unwrap();
+    let journal = home.path().join("attempt.journal");
+    let ledger = Ledger::with_journal(400, &journal)
+        .unwrap()
+        .with_finalization_reserve(100)
+        .with_finalization_paths(vec![Path::from("table/_gmax-bounded-receipt.json")]);
+    ledger.charge(&Path::from("table/data/file"), 140).unwrap();
+    assert_eq!(ledger.counts().total_bytes_written, 300);
+    assert!(ledger.charge(&Path::from("table/data/file"), 1).is_err());
+    ledger.enter_metadata_finalization().unwrap();
+    assert!(ledger.charge(&Path::from("table/data/file"), 1).is_err());
+    assert!(
+        ledger
+            .charge(&Path::from("table/_versions/manifest"), 1)
+            .is_err()
+    );
+    assert!(
+        ledger
+            .charge(&Path::from("table/data/_gmax-bounded-receipt.json"), 1)
+            .is_err()
+    );
+    ledger
+        .charge(&Path::from("table/_gmax-bounded-receipt.json"), 20)
+        .unwrap();
+    assert_eq!(ledger.counts().total_bytes_written, 400);
+    assert_eq!(ledger.counts().data_bytes_written, 140);
+    assert_eq!(ledger.counts().metadata_bytes_written, 260);
+}

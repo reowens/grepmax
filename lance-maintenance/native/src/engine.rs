@@ -3,6 +3,7 @@
 use crate::meter::{Ledger, MeteredStore, free_bytes};
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use arrow_row::{RowConverter, SortField};
+use arrow_schema::Schema as ArrowSchema;
 use futures::TryStreamExt;
 use lance::{
     Dataset,
@@ -15,7 +16,10 @@ use lance::{
 };
 use lance_index::{IndexType, metrics::NoOpMetricsCollector, scalar::inverted::InvertedIndex};
 use lance_io::object_store::{ObjectStoreParams, WrappingObjectStore};
-use lance_table::format::Fragment;
+use lance_table::{
+    format::{Fragment, IndexMetadata},
+    io::manifest::read_manifest_indexes,
+};
 use object_store::{ObjectStore, ObjectStoreExt, local::LocalFileSystem, path::Path};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -72,6 +76,12 @@ struct Receipt {
     source_bytes: u64,
     source_rows_digest: String,
     rows_verified: usize,
+    before_fingerprint: String,
+    accepted_fingerprint: Option<String>,
+    helper_pid: u32,
+    helper_start: String,
+    aborted: bool,
+    finalization_reserve_bytes: u64,
 }
 
 #[derive(Debug)]
@@ -257,11 +267,13 @@ async fn open(root: &FsPath, ledger: Arc<Ledger>, owned_tag_paths: Vec<Path>) ->
     };
     let dataset = DatasetBuilder::from_uri(&uri)
         .with_store_params(params)
+        .with_index_cache_size_bytes(8 * 1024 * 1024)
+        .with_metadata_cache_size_bytes(8 * 1024 * 1024)
         .load()
         .await?;
     let store = dataset.object_store(None).await?;
     ensure!(
-        store.scheme == "file-object-store" && !store.has_direct_local_paths(),
+        store.scheme() == "file-object-store" && !store.has_direct_local_paths(),
         "Direct local writer bypass refused"
     );
     ensure!(
@@ -272,7 +284,7 @@ async fn open(root: &FsPath, ledger: Arc<Ledger>, owned_tag_paths: Vec<Path>) ->
         dataset.manifest.fragments.len() <= 4096,
         "Too many fragments for bounded metadata"
     );
-    let schema = serde_json::to_value(dataset.schema().to_arrow_schema())?;
+    let schema = serde_json::to_value(ArrowSchema::from(dataset.schema()))?;
     ensure!(
         !schema.to_string().to_ascii_lowercase().contains("blob"),
         "Blob schema outside bounded writer"
@@ -314,7 +326,7 @@ async fn tags(dataset: &Dataset) -> Result<BTreeMap<String, u64>> {
 }
 
 async fn row_digest(dataset: &Dataset, fragments: Vec<Fragment>) -> Result<(usize, String)> {
-    let schema = dataset.schema().to_arrow_schema();
+    let schema = ArrowSchema::from(dataset.schema());
     let id_index = schema
         .index_of("id")
         .context("Stable application ID column required")?;
@@ -373,13 +385,71 @@ async fn row_digest(dataset: &Dataset, fragments: Vec<Fragment>) -> Result<(usiz
 
 async fn index_contract(dataset: &Dataset) -> Result<Vec<Value>> {
     let mut contract = vec![];
-    for index in dataset.load_indices().await?.iter() {
+    for index in all_indices(dataset).await?.iter() {
         ensure!(index.base_id.is_none(), "External index store refused");
         contract.push(json!({"name":index.name,"fields":index.fields,"coveringFields":index.covering_fields,
             "type":index.index_details.as_ref().map(|details| details.type_url.clone()),"version":index.index_version}));
     }
     contract.sort_by_key(Value::to_string);
     Ok(contract)
+}
+
+async fn all_indices(dataset: &Dataset) -> Result<Vec<IndexMetadata>> {
+    let store = dataset.object_store(None).await?;
+    Ok(read_manifest_indexes(
+        store.as_ref(),
+        dataset.manifest_location(),
+        dataset.manifest(),
+    )
+    .await?)
+}
+
+async fn fingerprint(dataset: &Dataset) -> Result<String> {
+    let indices: Vec<_> = all_indices(dataset).await?.iter().map(|index| json!({
+        "uuid":index.uuid.to_string(),"name":index.name,"fields":index.fields,"covering":index.covering_fields,
+        "version":index.index_version,"datasetVersion":index.dataset_version,
+        "coverage":index.fragment_bitmap.as_ref().map(|coverage| coverage.iter().collect::<Vec<_>>()),
+        "details":index.index_details.as_ref().map(|details| (&details.type_url,&details.value))
+    })).collect();
+    Ok(sha(&serde_json::to_vec(
+        &json!({"schema":ArrowSchema::from(dataset.schema()),
+        "fragments":dataset.manifest.fragments,"indices":indices}),
+    )?))
+}
+
+fn allocated_bytes(root: &FsPath) -> Result<u64> {
+    use std::os::unix::fs::MetadataExt;
+    let mut pending = vec![root.to_owned()];
+    let mut total = 0u64;
+    let mut count = 0usize;
+    while let Some(file) = pending.pop() {
+        count += 1;
+        ensure!(count <= 100_000, "Allocation metadata count bound");
+        let metadata = fs::symlink_metadata(&file)?;
+        ensure!(
+            !metadata.file_type().is_symlink(),
+            "Allocation scan refuses symlinks"
+        );
+        total = total
+            .checked_add(
+                metadata
+                    .blocks()
+                    .checked_mul(512)
+                    .context("Allocation overflow")?,
+            )
+            .context("Allocation overflow")?;
+        if metadata.is_dir() {
+            for entry in fs::read_dir(file)? {
+                pending.push(entry?.path());
+            }
+        } else {
+            ensure!(
+                metadata.is_file(),
+                "Allocation scan refuses nonregular files"
+            );
+        }
+    }
+    Ok(total)
 }
 
 async fn index_source_bytes(
@@ -391,7 +461,12 @@ async fn index_source_bytes(
         return Ok(0);
     }
     let mut total = 0u64;
-    for index in dataset.load_indices().await?.iter() {
+    let all = all_indices(dataset).await?;
+    ensure!(
+        all.len() == dataset.load_indices().await?.len(),
+        "Unreadable index declaration refused before copying"
+    );
+    for index in all.iter() {
         ensure!(index.base_id.is_none(), "External index store refused");
         let affected = index
             .fragment_bitmap
@@ -523,7 +598,7 @@ fn read_receipt(root: &FsPath) -> Result<Option<Receipt>> {
 
 async fn verify_candidate(before: &Dataset, after: &Dataset, receipt: &Receipt) -> Result<usize> {
     ensure!(
-        before.schema().to_arrow_schema() == after.schema().to_arrow_schema(),
+        ArrowSchema::from(before.schema()) == ArrowSchema::from(after.schema()),
         "Schema changed"
     );
     let old: BTreeMap<_, _> = before
@@ -653,12 +728,16 @@ pub async fn run(request: Request) -> Result<()> {
     );
     scan_tree(&root)?;
     verify_owner(&request, &root, true)?;
+    let allocated_before = allocated_bytes(&root)?;
+    let free_before = free_bytes(&root)?;
     emit(json!({"phase":"launch"}))?;
     acknowledge(&request)?;
     verify_owner(&request, &root, true)?;
     check_space(&request, &root, 0)?;
     let previous = read_receipt(&root)?;
     let mut receipt;
+    let mut recovering_finalization = false;
+    let mut aborting = false;
     let preliminary = Arc::new(Ledger::new(request.total_write_budget_bytes)?);
     let mut dataset = open(&root, preliminary, vec![]).await?;
     ensure!(
@@ -718,9 +797,11 @@ pub async fn run(request: Request) -> Result<()> {
                 "budgetKind":"cumulative-writes","effectiveStoreScheme":"file-object-store"});
             emit(json!({"phase":"ready","plan":no_work_plan}))?;
             acknowledge(&request)?;
+            let remaining = dataset.count_deleted_rows().await?;
             emit(
                 json!({"phase":"result","status":"no-work","beforeVersion":request.expected_version,"afterVersion":request.expected_version,
-                "planId":sha(b"no-work"),"receiptId":"","totalBytesWritten":0,"dataBytesWritten":0,"indexBytesWritten":0,"metadataBytesWritten":0,"verificationBytesWritten":0,"rowsVerified":0}),
+                "planId":sha(b"no-work"),"receiptId":"","totalBytesWritten":0,"dataBytesWritten":0,"indexBytesWritten":0,"metadataBytesWritten":0,"verificationBytesWritten":0,"rowsVerified":0,
+                "remainingDeletedRows":remaining,"freeBytesBefore":free_before,"freeBytesAfter":free_bytes(&root)?,"allocatedBytesBefore":allocated_before,"allocatedBytesAfter":allocated_bytes(&root)?}),
             )?;
             return Ok(());
         }
@@ -763,10 +844,17 @@ pub async fn run(request: Request) -> Result<()> {
         let (rows, digest) = row_digest(&dataset, selected).await?;
         let original_tags = tags(&dataset).await?;
         ensure!(original_tags.len() <= 254, "Tag metadata bound exceeded");
-        let receipt_id = request.lease_nonce.clone();
+        let receipt_id = sha(format!(
+            "{}:{}:{}:{:?}",
+            request.lease_nonce,
+            request.expected_version,
+            std::process::id(),
+            std::time::SystemTime::now()
+        )
+        .as_bytes());
         let plan_id = sha(&serde_json::to_vec(
             &json!({"version":request.expected_version,"selected":ids,"sourceBytes":source_bytes,
-            "rowsDigest":digest,"totalWriteBudgetBytes":request.total_write_budget_bytes,"schema":dataset.schema().to_arrow_schema(),
+            "rowsDigest":digest,"totalWriteBudgetBytes":request.total_write_budget_bytes,"schema":ArrowSchema::from(dataset.schema()),
             "fragments":dataset.manifest.fragments,"indices":index_contract(&dataset).await?}),
         )?);
         receipt = Receipt {
@@ -785,6 +873,12 @@ pub async fn run(request: Request) -> Result<()> {
             source_bytes,
             source_rows_digest: digest,
             rows_verified: rows,
+            before_fingerprint: fingerprint(&dataset).await?,
+            accepted_fingerprint: None,
+            helper_pid: std::process::id(),
+            helper_start: process_start(std::process::id())?,
+            aborted: false,
+            finalization_reserve_bytes: (512 * 1024).min(request.total_write_budget_bytes / 2),
         };
     } else {
         receipt = previous.context("No owned recovery receipt")?;
@@ -796,19 +890,65 @@ pub async fn run(request: Request) -> Result<()> {
             receipt.total_write_budget_bytes == request.total_write_budget_bytes,
             "Recovery cannot reset/change write budget"
         );
+        let prior_alive = process_start(receipt.helper_pid)
+            .ok()
+            .is_some_and(|start| start == receipt.helper_start);
         ensure!(
-            receipt.after_version == Some(request.expected_version),
-            "Uncertain/uncommitted or advanced recovery head; no copy retry"
+            !prior_alive,
+            "Prior native helper is still alive; cannot recover its attempt"
         );
         let protected = tags(&dataset).await?;
-        ensure!(
-            protected.get(&receipt.reader_tag) == Some(&receipt.before_version)
-                && protected.get(&receipt.after_tag) == receipt.after_version.as_ref(),
-            "Recovery protected heads changed"
-        );
+        recovering_finalization = receipt.phase == "finalizing";
+        if recovering_finalization {
+            ensure!(
+                receipt.after_version == Some(request.expected_version)
+                    && receipt.accepted_fingerprint.as_deref()
+                        == Some(fingerprint(&dataset).await?.as_str()),
+                "Durably accepted head changed; cannot release protection blindly"
+            );
+        } else if receipt.after_version.is_none() {
+            if fingerprint(&dataset).await? == receipt.before_fingerprint {
+                // The original logical head is unchanged, including all index
+                // identities and fragments. Abandoned uncommitted files are
+                // left for independent retention; never copy again or refund.
+                aborting = true;
+                receipt.aborted = true;
+                receipt.after_version = Some(request.expected_version);
+            } else {
+                ensure!(
+                    protected.get(&receipt.reader_tag) == Some(&receipt.before_version),
+                    "Original recovery head unprotected"
+                );
+                let before = dataset.checkout_version(receipt.before_version).await?;
+                verify_candidate(&before, &dataset, &receipt)
+                    .await
+                    .context("Uncertain copy/head changed; no retry or blind tag release")?;
+                receipt.after_version = Some(request.expected_version);
+            }
+        } else {
+            ensure!(
+                receipt.after_version == Some(request.expected_version),
+                "Candidate recovery head advanced; no blind retry"
+            );
+            ensure!(
+                protected.get(&receipt.reader_tag) == Some(&receipt.before_version)
+                    && protected.get(&receipt.after_tag) == receipt.after_version.as_ref(),
+                "Recovery protected heads changed"
+            );
+        }
     }
+    let protection_version = if recovering_finalization {
+        request.expected_version
+    } else {
+        receipt.before_version
+    };
+    let protection_tag = if recovering_finalization {
+        receipt.after_tag.clone()
+    } else {
+        receipt.reader_tag.clone()
+    };
     let proof = json!({"protocolVersion":2,"engine":"12.0.0","status":"qualified","action":request.action,
-        "expectedVersion":request.expected_version,"beforeVersion":receipt.before_version,"planId":receipt.plan_id,
+        "expectedVersion":request.expected_version,"beforeVersion":protection_version,"planId":receipt.plan_id,
         "totalWriteBudgetBytes":request.total_write_budget_bytes,"sharedTotalWriteCapBytes":request.total_write_budget_bytes,
         "freeSpaceMarginBytes":request.free_space_margin_bytes,"nativeTotalWriteBudgetEnforced":true,
         "budgetKind":"cumulative-writes","effectiveStoreScheme":"file-object-store"});
@@ -816,19 +956,10 @@ pub async fn run(request: Request) -> Result<()> {
     acknowledge(&request)?;
     verify_owner(&request, &root, true)?;
     check_space(&request, &root, 0)?;
-    let ledger = Arc::new(
-        if request.action == "run" {
-            Ledger::with_journal(
-                request.total_write_budget_bytes,
-                &root.join(&receipt.journal),
-            )?
-        } else {
-            Ledger::restore(
-                request.total_write_budget_bytes,
-                &root.join(&receipt.journal),
-            )?
-        }
-        .with_space_guard(root.clone(), request.free_space_margin_bytes),
+    scan_tree(&root)?;
+    ensure!(
+        serde_json::to_vec(&receipt)?.len() <= MAX_RECEIPT_BYTES,
+        "Receipt size exceeds preflight bound"
     );
     let tag_paths = vec![
         object_root(&root)?
@@ -840,6 +971,26 @@ pub async fn run(request: Request) -> Result<()> {
             .child("tags")
             .child(format!("{}.json", receipt.after_tag)),
     ];
+    let mut finalization_paths = tag_paths.clone();
+    finalization_paths.push(object_root(&root)?.child(RECEIPT));
+    let ledger = Arc::new(
+        if request.action == "run" {
+            Ledger::with_guarded_journal(
+                request.total_write_budget_bytes,
+                &root.join(&receipt.journal),
+                root.clone(),
+                request.free_space_margin_bytes,
+            )?
+        } else {
+            Ledger::restore(
+                request.total_write_budget_bytes,
+                &root.join(&receipt.journal),
+            )?
+        }
+        .with_space_guard(root.clone(), request.free_space_margin_bytes)
+        .with_finalization_reserve(receipt.finalization_reserve_bytes)
+        .with_finalization_paths(finalization_paths),
+    );
     dataset = open(&root, ledger.clone(), tag_paths).await?;
     let operation = async {
         ensure!(dataset.version_id() == request.expected_version && dataset.latest_version_id().await? == request.expected_version, "Head changed at write admission");
@@ -847,13 +998,32 @@ pub async fn run(request: Request) -> Result<()> {
             save_receipt(&dataset, &root, &receipt).await?;
             dataset.tags().create(&receipt.reader_tag, receipt.before_version).await?;
             receipt.phase = "protected".into(); save_receipt(&dataset, &root, &receipt).await?;
+        } else if recovering_finalization {
+            ledger.enter_metadata_finalization()?;
+            if !tags(&dataset).await?.contains_key(&protection_tag) {
+                dataset.tags().create(&protection_tag, protection_version).await?;
+            }
+        } else if aborting {
+            // Recover a proven uncommitted attempt without rewriting rows.
+            if !tags(&dataset).await?.contains_key(&receipt.reader_tag) {
+                dataset.tags().create(&receipt.reader_tag, receipt.before_version).await?;
+            }
+        } else if !tags(&dataset).await?.contains_key(&receipt.after_tag) {
+            // Commit succeeded before its after-tag/receipt update. The read-only
+            // preflight proved this exact candidate, so protect it without copying.
+            dataset.tags().create(&receipt.after_tag, request.expected_version).await?;
+            receipt.phase = "copied".into(); save_receipt(&dataset, &root, &receipt).await?;
         }
-        emit(json!({"phase":"protected-read-ready","beforeVersion":receipt.before_version,"planId":receipt.plan_id,"readerTag":receipt.reader_tag,"receiptId":receipt.receipt_id}))?;
+        emit(json!({"phase":"protected-read-ready","beforeVersion":protection_version,"planId":receipt.plan_id,"readerTag":protection_tag,"receiptId":receipt.receipt_id}))?;
         acknowledge(&request)?; verify_owner(&request, &root, false)?;
         if request.action == "run" {
             receipt.phase = "copying".into(); save_receipt(&dataset, &root, &receipt).await?;
             let mut copies = vec![];
             for task in &plan_tasks { copies.push(task.execute(&dataset).await?); }
+            let uncommitted: Vec<_> = copies.iter().flat_map(|copy| copy.new_fragments.iter().cloned()).collect();
+            let (rows, digest) = row_digest(&dataset, uncommitted).await?;
+            ensure!(rows == receipt.rows_verified && digest == receipt.source_rows_digest,
+                "Uncommitted row copy differs; original head remains protected");
             verify_owner(&request, &root, false)?;
             ensure!(dataset.latest_version_id().await? == receipt.before_version, "Head changed before compaction commit");
             commit_compaction(&mut dataset, copies, Arc::new(DatasetIndexRemapperOptions::default()), &options).await?;
@@ -861,26 +1031,47 @@ pub async fn run(request: Request) -> Result<()> {
             dataset.tags().create(&receipt.after_tag, dataset.version_id()).await?;
             receipt.phase = "copied".into(); save_receipt(&dataset, &root, &receipt).await?;
         }
-        let before = dataset.checkout_version(receipt.before_version).await?;
-        receipt.rows_verified = verify_candidate(&before, &dataset, &receipt).await?;
-        receipt.phase = "verified".into(); save_receipt(&dataset, &root, &receipt).await?;
-        emit(json!({"phase":"reader-drain","beforeVersion":receipt.before_version,"afterVersion":receipt.after_version,"planId":receipt.plan_id,
-            "readerTag":receipt.reader_tag,"receiptId":receipt.receipt_id}))?;
+        if aborting {
+            ensure!(fingerprint(&dataset).await? == receipt.before_fingerprint, "Uncommitted logical head changed before abort");
+            receipt.rows_verified = 0;
+        } else if !recovering_finalization {
+            let before = dataset.checkout_version(receipt.before_version).await?;
+            receipt.rows_verified = verify_candidate(&before, &dataset, &receipt).await?;
+            receipt.phase = "verified".into(); save_receipt(&dataset, &root, &receipt).await?;
+        }
+        emit(json!({"phase":"reader-drain","beforeVersion":protection_version,"afterVersion":receipt.after_version,"planId":receipt.plan_id,
+            "readerTag":protection_tag,"receiptId":receipt.receipt_id}))?;
         acknowledge(&request)?; verify_owner(&request, &root, true)?;
         ensure!(dataset.latest_version_id().await? == receipt.after_version.context("Candidate version missing")?, "Head changed before finalization");
+        ledger.enter_metadata_finalization()?;
         let protected = tags(&dataset).await?;
-        ensure!(protected.get(&receipt.reader_tag) == Some(&receipt.before_version) && protected.get(&receipt.after_tag) == receipt.after_version.as_ref(), "Owned protective tag changed");
-        let mut expected_tags = receipt.original_tags.clone(); expected_tags.insert(receipt.reader_tag.clone(), receipt.before_version);
-        expected_tags.insert(receipt.after_tag.clone(), receipt.after_version.unwrap());
-        ensure!(protected == expected_tags, "External protected tags changed");
-        dataset.tags().delete(&receipt.reader_tag).await?; dataset.tags().delete(&receipt.after_tag).await?;
+        let mut external = protected.clone();
+        if let Some(version) = external.remove(&receipt.reader_tag) { ensure!(version == receipt.before_version, "Owned before tag changed"); }
+        if let Some(version) = external.remove(&receipt.after_tag) { ensure!(Some(version) == receipt.after_version, "Owned after tag changed"); }
+        ensure!(external == receipt.original_tags, "External protected tags changed");
+        // Durable accepted proof precedes the first deletion. A crash after
+        // either deletion can resume from the current accepted head without
+        // requiring a snapshot whose protection was already released.
+        receipt.accepted_fingerprint = Some(fingerprint(&dataset).await?);
+        receipt.phase = "finalizing".into(); save_receipt(&dataset, &root, &receipt).await?;
+        if protected.contains_key(&receipt.reader_tag) { dataset.tags().delete(&receipt.reader_tag).await?; }
+        if protected.contains_key(&receipt.after_tag) { dataset.tags().delete(&receipt.after_tag).await?; }
         ensure!(tags(&dataset).await? == receipt.original_tags, "External tags changed during finalization");
-        receipt.phase = "finalized".into(); save_receipt(&dataset, &root, &receipt).await?;
+        let counts = ledger.counts();
+        // An interrupted copy can leave unreferenced native objects. Until
+        // their ownership/reclamation is qualified, block fresh copies instead
+        // of allowing another cap-sized orphan set on every retry.
+        receipt.phase = if receipt.aborted && (counts.data_bytes_written > 0 || counts.index_bytes_written > 0) { "aborted" } else { "finalized" }.into();
+        save_receipt(&dataset, &root, &receipt).await?;
         let mut result = serde_json::to_value(ledger.counts())?;
         result["phase"] = json!("result"); result["status"] = json!(if request.action == "run" {"committed"} else {"recovered"});
-        result["beforeVersion"] = json!(receipt.before_version); result["afterVersion"] = json!(receipt.after_version);
+        result["beforeVersion"] = json!(protection_version); result["afterVersion"] = json!(receipt.after_version);
         result["planId"] = json!(receipt.plan_id); result["receiptId"] = json!(receipt.receipt_id);
-        result["rowsVerified"] = json!(receipt.rows_verified); emit(result)?;
+        result["rowsVerified"] = json!(receipt.rows_verified); result["aborted"] = json!(receipt.aborted);
+        result["remainingDeletedRows"] = json!(dataset.count_deleted_rows().await?);
+        result["freeBytesBefore"] = json!(free_before); result["freeBytesAfter"] = json!(free_bytes(&root)?);
+        result["allocatedBytesBefore"] = json!(allocated_before); result["allocatedBytesAfter"] = json!(allocated_bytes(&root)?);
+        emit(result)?;
         Ok::<_, anyhow::Error>(())
     }.await;
     if let Err(error) = operation {
