@@ -675,3 +675,22 @@ positive rules update both daemon and standalone subscriptions when the policy
 changes. Rules with negations, escapes or advanced pattern syntax remain in the
 indexing policy only, preserving re-included files. Source JSON outside an
 excluded path stays indexable.
+
+
+### Protected document fusion qualification
+
+[scripts/eval-document-fusion.cjs](scripts/eval-document-fusion.cjs) qualifies a fixed candidate ordering in two modes: replay cached verified lexical/dense candidates, or collect one broader pass through the released existing-only MCP. It interleaves each arm's first three distinct documents (`lex1,dense1,lex2,dense2,lex3,dense3`), deduplicates while preserving the selected arm's pointer, then fills to 50 with the fixed RRF tail. This protects high-ranked lexical-only evidence; spending up to six slots can displace useful lower-ranked dense candidates. Expected targets never affect ranking.
+
+```bash
+NODE_OPTIONS=--max-old-space-size=384 node scripts/eval-document-fusion.cjs \
+  --mode live --design <frozen-design.json> --design-sha256 <digest> \
+  --fixture <frozen-fixture.json> --fixture-sha256 <digest> \
+  --entry /absolute/path/to/installed/grepmax/dist/bin.js --entry-sha256 <digest> \
+  --snapshot <new-private-snapshot-directory> --output <new-private-report.json>
+```
+
+For `--mode replay`, replace the entry arguments with `--input <prior-lexical-report.json> --input-sha256 <digest>` and point `--snapshot` at its immutable snapshot. Replay uses saved lexical candidates without rescoring queries. Live mode snapshots the complete predefined scope and builds the bounded filesystem index before MCP initialization; it permits one case-order pass with one-second gaps, without retries, warmup, runtime startup or native fallback. The existing-only entry must expose the expected restricted capabilities. Coverage, generation, project/store identity and every indexed/current competitor digest and range must verify. Refusals remain separate from relevance. A final full source-byte/file-set fence invalidates comparisons if the corpus changed; checkpoints are provisional and the final JSON is authoritative.
+
+The lexical CLI retains its one-million-token default. A frozen fusion design may explicitly allow 1,100,000 token occurrences; all other source/window limits and the 384 MiB Node heap setting remain unchanged. The heap setting is not an operating-system physical memory cap. Outputs and snapshots refuse overwrite and use private permissions; reports exclude question text and source bodies. The broader study requires at least 16 of 20 comparable cases, no dense top-ten target losses, and protected document recall at least as high as either arm on the same cohort. Other predefined positive cohort bounds are supported. Exit 0 means collection completed with some comparable cases, even if the gate fails; exit 2 means none, and exit 1 means interrupted/preflight failure.
+
+The October 8 experiment recovered both original residuals: Redis rank 1, People rank 3, 15/15 replay document hits with no dense top-ten target loss. Its broader 393-file, 20-case pass produced only two comparable cases (15 busy and three pressure refusals; one busy case also lacked indexed coverage), below the frozen 16-case minimum. Broader qualification is **insufficient**. Questions were source-curated after the rule freeze and held out from parameter selection, not independently adjudicated real-user questions. Representative/window differences prevent like-for-like section accuracy claims. This evaluation does not change production retrieval or authorize integration, release or rollout.

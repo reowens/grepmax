@@ -6,14 +6,35 @@
 
 | Work | Current state | Next action / completion evidence |
 | --- | --- | --- |
-| Document retrieval quality | Baseline, scope review and fixed lexical experiment complete: lexical 20/20; verified replay dense 13/15 → RRF 14/15; People fused rank 13 fails gate | Preserve negative result. Predefine fusion that retains lexical-only evidence and qualify on broader/held-out sources before production changes. |
-| Watcher stability | Fixes shipped; new 8-minute light observation: counter 8→8, no failures/new errors, ordinary edits drained | Continue longer/load-diverse ordinary observation. No recovery was exercised in this interval; broader stability remains open. |
+| Document retrieval quality | Protected fusion replay passes 15/15 (Redis 1, People 3); broader only 2/20 usable, below frozen 16-case gate | Qualify provider availability and document coverage; plan a fresh admitted unchanged-rule collection before production integration. |
+| Watcher stability | Earlier 8-minute light interval counter 8→8; current native sync active, counter 19 and embedding retry observed | Qualify under ordinary load; historical stable interval does not close current delivery/availability questions. |
 | Production disk recovery | Read-only readiness review complete; healthy point samples but runtime absent/live owner remains; live prune unperformed | Coordinate a separate recovery window with actual admission/reservation, pinned preparation, reviewed owner drain, fresh retention inventory and exclusive lease. No current reclaim estimate. |
 | Consumer rollout | Packaged Runlist interoperability passed; client settings remain unchanged | Decide rollout from retrieval evaluation evidence and explicitly configure the document entry point. Existing MCP sessions need reconnecting to load released runtime code. |
 
-**Next define and qualify fusion that preserves lexical-only evidence; continue watcher observation during ordinary development.** Preserve normal `critical-only` service, the small GPU model and maximum two workers. Watcher ownership remains in standalone gmax; Hetchy Developer is optional. Embedding migration and independently reusable watcher extraction remain deferred.
+**Next qualify existing-only availability and document coverage; broader fusion evidence is insufficient. Continue watcher observation under ordinary load.** Preserve normal `critical-only` service, the small GPU model and maximum two workers. Watcher ownership remains in standalone gmax; Hetchy Developer is optional. Embedding migration and independently reusable watcher extraction remain deferred.
 
 The release acceptance record is `/private/tmp/gmax-v02671-acceptance.json`; the completed retrieval report is linked below. Fresh read-only health at **2026-10-08T22:46:44.781Z** confirms .71 ready/active; evaluation caused no runtime or configuration change. Historical PIDs, inventories and “next” instructions below are snapshots; refresh them before operational work. The working focus and .71 delivery record take precedence over those earlier instructions.
+
+## Protected fusion qualification attempted — October 8, 2026
+
+The repo-only candidate freezes three distinct document anchors per arm, interleaved lexical-first, followed by the unchanged equal-weight RRF tail. It preserves each anchor's selected-arm pointer and never consults targets during ranking. Up to six protected slots can displace lower-ranked dense evidence; per-target regression checks remain required. [Invocation and limits](../README.md#protected-document-fusion-qualification) describe the reusable runner. Root completed implementation and post-implementation self review, including immutable evidence/hash checks, **49 focused tests / four files**, test typecheck and formatting. This is self review, not independent external acceptance.
+
+| Matched document hits@10 | Dense | Lexical | Fixed RRF | Protected fusion |
+| --- | ---: | ---: | ---: | ---: |
+| Original verified replay (15 cases) | 13/15 | 15/15 | 14/15 | **15/15** |
+| Broader usable cohort (2 of 20 cases) | 2/2 | 2/2 | 2/2 | 2/2 |
+
+Original replay recovers Redis at rank **1** and People at rank **3**, with no dense or lexical top-ten target loss. It reorders cached verified candidates without rerunning lexical queries; original exclusions and the previous negative fixed-RRF result remain preserved. This exposed-case development gate passes, but it does not establish broader quality.
+
+The rule/scope were frozen at **00:16:05 UTC October 9**, before creating 20 new questions/targets at **00:17:38**. All new canonical targets are outside the prior services/modules families. Questions were source-curated by the implementation agent and held out from parameter selection; they are not blind external judgments or recorded consumer queries. The complete eight-family snapshot contains **393 Markdown files, 9,196,090 bytes, 3,707 windows and 1,035,308 token occurrences**. Initial index construction refused the one-million-token cap before any MCP initialization or query. A prospective 10% token allowance was frozen at **00:26:36**, with identical ranking, questions, targets, full scope, source bounds and 384 MiB Node heap setting. The original lexical CLI default remains one million; no production resource guard changed.
+
+The single broader pass at **00:27:26–00:28:00 UTC** completed 20 cases but only **2 were comparable**: **15 busy and 3 host-pressure refusals**, with one busy case additionally lacking indexed coverage. All four methods ranked both usable targets first, without per-target losses. The frozen **16/20 minimum is not met: broader qualification is insufficient**. No queries were retried, no algorithm was tuned, and no offline 20/20 lexical result is claimed for this new cohort. Every comparable pointer and all target/snapshot digests/ranges verified; the complete source-byte/file-set fence remained current at collection end. Peak evaluator RSS was about **172 MiB**; the 384 MiB heap setting is not a physical-memory reservation.
+
+The missing `docs/core/secrets.md` target matches the existing default `secrets.*` file-policy exclusion. It needs a deliberate document coverage/security-policy decision, not an index override in this study. Private fixture, immutable measured runner/evaluator snapshots, reports and [self-review evidence](measurements/2026-10-08-document-fusion-qualification/acceptance-review.json) remain under ignored `docs/measurements/2026-10-08-document-fusion-qualification/`. Design-v2 SHA-256: `8af63e6afabdc7807c4bc1b04a3a94dea29312cfba3ca3505388433f5b19cb2b`; new fixture: `82acf50981f506a8d671c1b6caf9c1c201b29ef6131f4623840f4f96d725d682`; broader manifest: `2f809c2bf18f912f8401ce9939b1a83d7dff4b9aef59a6d19d1bb60da68a2a3e`.
+
+Read-only health at **00:32:41.573 UTC** confirms the same .71 daemon 54708 active/ready, generation 1 and small GPU 55539 owned-ready. Native watching was syncing (five pending, eight active files, zero failed), and the cumulative callback-error counter had risen from the earlier interval's 8 to **19**. Retained log tail shows ordinary reindex batches and a 17:32 PDT embedding transport reset with retries; a later periodic resource sample reports warning OS pressure. These observations do not attribute causation or prove complete delivery. The earlier eight-minute stable interval remains historical; busy admission and watcher behavior under load need further qualification. Evaluation made no direct store/policy/model/client-setting or service-ownership changes; normal watching continued independently. No release, restart, pruning or production fusion integration occurred.
+
+**Next:** qualify provider availability and expected document coverage during ordinary development, then predefine a fresh admitted collection opportunity for the unchanged rule. Preserve the exposed results; any ranking change requires separate fresh ground truth. Do not automatically retry refused cases or bypass guards. Consumer rollout, longer watcher stability and separately admitted disk recovery remain open.
 
 ## Three-agent follow-up: lexical experiment and recovery readiness — October 8, 2026
 
@@ -46,7 +67,7 @@ The [read-only readiness report](measurements/2026-10-08-recovery-agent-readines
 
 No owner drain, admission lock, runtime preparation, native table opening, lease change, marker change, pruning or receipt occurred. Normal development stayed available. Further recovery preparation requires a separately coordinated operational window, fresh strict resource admission and a real setup reservation, verified pinned tools, reviewed owner containment/drain, fresh bounded retention/current-tag-cutoff inventory and exclusive deletion admission. No reclaimed space is claimed and no shutdown is scheduled from these samples.
 
-**Next:** predefine a separate candidate/fusion design that preserves lexical-only evidence and qualify it on a broader/held-out source cohort before production integration. Continue ordinary watcher observation; live recovery and consumer rollout remain separate. Preserve critical-only/smallGPU/max2, standalone gmax watcher ownership and the original fixtures. Embedding migration and shared watcher extraction remain deferred.
+**Historical next, attempted by the qualification above:** preserve lexical-only evidence and qualify on broader sources. The replay passes; broader qualification remains insufficient. Continue ordinary watcher observation; live recovery and consumer rollout remain separate. Preserve critical-only/smallGPU/max2, standalone gmax watcher ownership and the original fixtures. Embedding migration and shared watcher extraction remain deferred.
 
 ## Document target review and paired scope comparison completed — October 8, 2026
 
@@ -310,7 +331,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 152 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 153 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|

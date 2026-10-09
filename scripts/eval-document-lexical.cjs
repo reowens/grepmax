@@ -158,7 +158,12 @@ function snapshot(root, prefixes, destination) {
     ),
   };
 }
-function buildIndex(sources) {
+function buildIndex(sources, tokenLimit = LIMITS.tokenOccurrences) {
+  // Explicit qualification allowance; ordinary evaluation keeps its frozen limit.
+  check(
+    tokenLimit === LIMITS.tokenOccurrences || tokenLimit === 1100000,
+    "invalid_token_limit",
+  );
   const chunks = [],
     postings = new Map();
   let tokenOccurrences = 0;
@@ -168,7 +173,7 @@ function buildIndex(sources) {
       const end = Math.min(start + 48, lines.length),
         words = tokens(lines.slice(start, end).join("\n"));
       tokenOccurrences += words.length;
-      check(tokenOccurrences <= LIMITS.tokenOccurrences, "token_limit");
+      check(tokenOccurrences <= tokenLimit, "token_limit");
       const counts = new Map();
       for (const word of words) counts.set(word, (counts.get(word) ?? 0) + 1);
       const id = chunks.length;
