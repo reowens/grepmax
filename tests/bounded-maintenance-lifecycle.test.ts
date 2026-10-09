@@ -313,14 +313,19 @@ describe("metered native child lifecycle", () => {
   it("withholds finalization and awaits child close when a protected reader cannot drain", async () => {
     const f = fixture();
     const opened = vi.fn();
+    const readerFailure = new Error("reader still active at /private/reader");
     await expect(
       runBoundedMaintenance("/fixture", f.lease, 7, f.runtime, {
         open: opened,
         drain: async () => {
-          throw new Error("reader still active");
+          throw readerFailure;
         },
       }),
-    ).rejects.toThrow("uncertain");
+    ).rejects.toMatchObject({
+      message:
+        "Bounded cleanup phase admission refused; bounded cleanup completion is uncertain",
+      cause: readerFailure,
+    });
     expect(opened).toHaveBeenCalledOnce();
     expect(f.release).toHaveBeenCalledOnce();
     expect(f.reservation.release).toHaveBeenCalledOnce();

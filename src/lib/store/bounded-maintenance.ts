@@ -456,10 +456,14 @@ export async function runBoundedMaintenance(
         let unpin: (() => void) | undefined;
         let killTimer: ReturnType<typeof setTimeout> | undefined;
         let phases = Promise.resolve();
-        const stop = (reason: string) => {
-          failure ??= new Error(
-            `${reason}; bounded cleanup completion is uncertain`,
-          );
+        const stop = (reason: string, cause?: unknown) => {
+          if (!failure) {
+            failure = new Error(
+              `${reason}; bounded cleanup completion is uncertain`,
+            );
+            if (cause !== undefined)
+              Object.defineProperty(failure, "cause", { value: cause });
+          }
           child.kill("SIGTERM");
           killTimer ??= setTimeout(() => child.kill("SIGKILL"), 1000);
         };
@@ -700,6 +704,7 @@ export async function runBoundedMaintenance(
                   error instanceof NativeMaintenanceRefusal
                     ? error.message
                     : "Bounded cleanup phase admission refused",
+                  error,
                 ),
               );
             end = buffer.indexOf("\n");
