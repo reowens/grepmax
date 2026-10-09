@@ -1,21 +1,32 @@
 # Docs
 
-## Working focus after 0.26.71 — October 8, 2026
+## Working focus after 0.26.72 — October 8, 2026
 
-**Release and integration are complete.** Output fixes shipped in .70; existing-index document search shipped in .71. Both source candidates are committed on main. Retained branches, stashes and backups preserve history; they are not an integration queue.
+**0.26.72 is published and globally installed. Runtime handover is blocked by a new safety stop.** The release contains the existing-inference policy correction and bounded fair warm-worker scheduling. Retained branches, stashes and backups preserve history; they are not an integration queue.
 
 | Work | Current state | Next action / completion evidence |
 | --- | --- | --- |
-| Document query availability / quality | Policy and capped fair warm-worker scheduling fixes accepted in full CI. Installed .71 unchanged. Fusion broader 2/20 insufficient | Deliver both accepted fixes; collect predefined live acceptance, review coverage and watcher gaps. |
-| Watcher stability | Latest .71 native/counter53, nine active files, no failed paths; document state busy | Prioritize ordinary-load availability/repeated-gap review; no caught-up or broad stability claim. |
-| Production disk recovery | Read-only readiness review complete; healthy point samples but runtime absent/live owner remains; live prune unperformed | Coordinate a separate recovery window with actual admission/reservation, pinned preparation, reviewed owner drain, fresh retention inventory and exclusive lease. No current reclaim estimate. |
-| Consumer rollout | Packaged Runlist interoperability passed; client settings remain unchanged | Decide rollout from retrieval evaluation evidence and explicitly configure the document entry point. Existing MCP sessions need reconnecting to load released runtime code. |
+| Release / runtime | .72 published; all 303 installed package files verified. Running .71 daemon is paused after a new critical-pressure latch | Review the latch and a separately admitted resume/handover, then execute the predefined live check. Publication is complete; active-runtime acceptance is pending. |
+| Document availability / quality | Policy/scheduling accepted in full CI; six-query live plan unexecuted. Broader fusion 2/20 insufficient | Restore an admitted running runtime before live acceptance; preserve original retrieval cohorts. Coverage and quality remain separate. |
+| Watcher stability | Last active .71 sample native/counter53; new pause stopped watching and GPU | Review the pressure event and repeated gaps. No sustained delivery or stability claim. |
+| Production disk recovery | Read-only readiness complete; live prune unperformed | Separate recovery window with fresh strict admission/reservation, pinned tools, reviewed owner drain, current retention inventory and exclusive lease. |
+| Consumer rollout | Client settings unchanged; existing client sessions preserved | Explicitly configure the document entry point when rollout is selected; reconnect clients separately when needed. |
 
-**Admission policy fix accepted on main; bounded worker scheduling fix passes full exact-source CI. Both remain unreleased. Broader fusion evidence is insufficient; watcher gaps and coverage remain open.** Preserve normal `critical-only` service, the small GPU model and maximum two workers. Watcher ownership remains in standalone gmax; Hetchy Developer is optional. Embedding migration and independently reusable watcher extraction remain deferred.
+Preserve normal `critical-only`, small GPU model, maximum two workers and the current safety marker. Watcher ownership remains in standalone gmax; Hetchy Developer is optional. Shared watcher extraction and embedding migration remain deferred. The current focus takes precedence over historical snapshots and next steps below.
 
-The release acceptance record is `/private/tmp/gmax-v02671-acceptance.json`; the completed retrieval report is linked below. Fresh read-only health at **2026-10-08T22:46:44.781Z** confirms .71 ready/active; evaluation caused no runtime or configuration change. Historical PIDs, inventories and “next” instructions below are snapshots; refresh them before operational work. The working focus and .71 delivery record take precedence over those earlier instructions.
+## 0.26.72 release delivered; runtime acceptance blocked — October 8, 2026
+
+[0.26.72](https://github.com/reowens/grepmax/releases/tag/v0.26.72) was published at **01:23:22 UTC October 9** from tag/source `4bb0d5329989d88c6cd57fd1a53ef72414259eee`. [Release CI](https://github.com/reowens/grepmax/actions/runs/37869346056) and [exact-source CI](https://github.com/reowens/grepmax/actions/runs/37869344266) passed; the release ran **2,122 tests / 211 files**, both typechecks, formatting, JavaScript/Python audits, build and packed-consumer/native/prune smoke. No PR was created.
+
+The npm manifest's gitHead matches the tag. Downloaded SHA-1 is `a0c768e3a769b73f295121f18687fc2283acbdb4`; SHA-512 integrity also verified. npm's unbusted version lookup initially lagged, so global installation used the exact verified published tarball with lifecycle scripts disabled. **All 303 installed package files match the artifact byte for byte.** Compared with .71, only the two runtime modules, README/DOCUMENT-SEARCH documentation and three version metadata files changed; no files were added or removed. Configuration/client-setting digests remained unchanged: critical-only, small GPU and max2 remain selected. Private proof is `/private/tmp/gmax-v02672-release/acceptance.json`.
+
+The old daemon independently recorded a critical-pressure latch at **01:24:03.076 UTC**, while ordinary indexing attempted worker admission, and completed its pause at **01:24:50–51**. It unwatched the project and stopped its owned GPU. Release code did not request shutdown, handover or marker removal. Preflight returned the persistent safety stop, so **no handover was attempted**. At **01:26:10**, IPC still reports .71 daemon54708 ready for service IPC but **paused**, zero workers, stopped GPU and no watched projects; ready IPC does not mean indexing or semantic search is available. The post-pause cached sample was warning OS pressure / healthy kernel; a fresh read-only critical-policy sample at **01:26:37** was normal OS pressure / healthy kernel. Neither establishes the exact trigger measurement or closes the latch review; that measurement was not retained in the marker.
+
+A new bounded six-query availability plan was frozen before any candidate query: one pass, no retries, three-second gaps, current pointer digest/range fences and at least four successful queries including one during indexing. It is **unexecuted: zero semantic queries**, because containment blocks runtime admission. No live improvement or quality acceptance is claimed. The frozen earlier retrieval studies remain unchanged; protected fusion broader qualification stays insufficient. No store maintenance, recovery/pruning, client restart or configuration change occurred. Publication/install are complete; review of the pressure latch, safe runtime activation and live acceptance are the immediate remaining work.
 
 ## Existing-only worker starvation fixed in source — October 8, 2026
+
+Historical source acceptance record; release/install status is superseded by the .72 record above.
 
 Existing-only document queries previously required an immediately idle warm worker and bypassed the ordinary search priority queues. Under continuous indexing, the normal dispatcher could claim a just-freed worker for the next file before a document query arrived, producing repeated `busy` refusals. This is scheduler admission behavior; it does not establish a stuck worker or attribute watcher gaps to guarding. Normal resource admission was fixed separately in the accepted source patch below.
 
@@ -32,6 +43,8 @@ Final metadata at **01:13:16.882 UTC October 9** shows the same installed .71 ac
 **Next:** deliver the accepted combined admission/scheduling fixes when requested, then predefine a bounded real-load acceptance sample. Review persistent watcher gaps and document coverage separately; the broader fusion gate remains insufficient. Keep critical-only/smallGPU/max2 and standalone watcher ownership.
 
 ## Existing-only admission policy mismatch fixed in source — October 8, 2026
+
+Historical source acceptance record; release/install status is superseded by the .72 record above.
 
 Installed .71 normal service selects `critical-only`, but `ResourceBudget.checkExisting()` always applied strict aggregate admission in both the query dispatcher and embedding child. Its tests and contract had explicitly retained that stricter behavior; this follow-up corrects the mismatch with the operator's selected availability policy. A bounded read-only check at **00:42:03–00:42:08 UTC October 9** reproduced a noncritical refusal under selected `critical-only`: process inventory/footprint and OS memory-pressure probes were unavailable after the resource sample deadline. This supports a policy mismatch, not a claim that unknown host measurements were healthy or that all earlier refusals share this cause.
 
@@ -365,7 +378,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 158 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 159 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
