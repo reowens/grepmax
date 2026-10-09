@@ -52,6 +52,9 @@ try {
   const documentSmoke = spawnSync(process.execPath, [path.join(root, "scripts/audit-document-search.cjs"), path.join(temp, "node_modules/grepmax")], {cwd: temp, encoding: "utf8", timeout: 30_000});
   if (documentSmoke.error || documentSmoke.status !== 0) throw new Error(`Packaged document contract failed: ${documentSmoke.error ?? documentSmoke.stderr}`);
   process.stdout.write(documentSmoke.stdout);
+  const watcherSmoke = spawnSync(process.execPath, ["--max-old-space-size=384", path.join(root, "scripts/test-watcher-consumer.cjs"), path.join(temp, "node_modules/grepmax")], {cwd: temp, encoding: "utf8", timeout: 210_000});
+  if (watcherSmoke.error || watcherSmoke.status !== 0) throw new Error(`Packaged watcher recovery failed: ${watcherSmoke.error ?? watcherSmoke.stderr}\n${watcherSmoke.stdout}`);
+  process.stdout.write(watcherSmoke.stdout);
   const smoke = spawnSync(process.execPath, ["-e", `
     const fs = require('node:fs'), path = require('node:path');
     const { VectorDB } = require('grepmax/dist/lib/store/vector-db.js');

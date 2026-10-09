@@ -382,6 +382,19 @@ updates on the existing 60-second heartbeat with a separate `indexStateAt`
 timestamp. Legacy entries and older runtimes can omit these optional fields.
 The source change must be deployed before relying on this evidence in live service.
 
+Recovery qualification checks committed rows and metadata against current file
+bytes, in addition to scan coverage and queue drainage. The focused recovery
+fixtures cover dropped creates/deletes, atomic saves, repeated and late gaps,
+terminal subscription replacement and refused admission. Packed-consumer CI runs
+`scripts/test-watcher-consumer.cjs` with real native watchers, LanceDB and LMDB;
+a separate macOS job exercises the FSEvents backend. Both use tiny temporary
+homes/stores and deterministic vectors, with subprocess startup forbidden.
+They also check native edits and exclusion re-inclusion/retirement. Gap callbacks
+are deliberately injected after muted delivery; this proves recovery convergence,
+not that the OS will never drop events or that production has recovered. Keep
+natural-gap live acceptance separate. Run these native fixtures in CI, not against
+the development machine's live store.
+
 ### Batch processor (`ProjectBatchProcessor`)
 
 ```
