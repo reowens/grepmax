@@ -54,6 +54,12 @@ import {
   OperationClosedError,
   OperationCoordinator,
 } from "../utils/operation-coordinator";
+import {
+  type PressureProbes,
+  probeStopDiagnostics,
+  type SafetyStopAction,
+  type SafetyStopDiagnostics,
+} from "../utils/pressure-diagnostics";
 import { killProcess } from "../utils/process";
 import { readFootprintMb } from "../utils/process-footprint";
 import {
@@ -330,9 +336,9 @@ export class Daemon {
     if (denied !== null && !options.readOnly)
       throw new Error(`gmax: ${denied}; preserving containment`);
     // Explicit read-only startup preserves every marker and opens no models.
-    const pressure = this.hostPressureDeniedReason();
+    const pressure = this.hostPressureDeniedReason("startup");
     if (pressure?.critical) {
-      latchSafetyStop(pressure.reason);
+      latchSafetyStop(pressure.reason, undefined, pressure.diagnostics);
       throw new Error(`gmax: ${pressure.reason}; startup safety stop`);
     }
     if (options.readOnly || pressure !== null) {
@@ -648,7 +654,7 @@ export class Daemon {
       } catch {}
       rotateLogFds(path.join(PATHS.logsDir, "daemon.log"));
       this.sweepWatchLeases();
-      if (!this.checkKernelZonePressure()) {
+      if (!this.checkKernelZonePressure("heartbeat")) {
         this.heartbeatTick++;
         if (this.pausedReason !== null && this.heartbeatTick % 5 === 0)
           this.logResourceSnapshot("paused-heartbeat", null);
@@ -880,7 +886,7 @@ export class Daemon {
             );
           if (this.shuttingDown || this.recycling)
             throw new OperationClosedError();
-          this.checkKernelZonePressure();
+          this.checkKernelZonePressure("operation");
           if (this.shuttingDown || this.recycling)
             throw new OperationClosedError();
           return fn(operationSignal);
@@ -953,7 +959,7 @@ export class Daemon {
     const denied = daemonStartDeniedReason();
     if (denied !== null) throw new Error(`${name} refused: ${denied}`);
     // Probe at operation admission, before setup/cache/worker/model side effects.
-    if (!this.checkKernelZonePressure()) {
+    if (!this.checkKernelZonePressure("operation")) {
       throw new Error(
         `${name} refused: host pressure is unsafe or unknown${this.pausedReason ? `: ${this.pausedReason}` : ""}`,
       );
@@ -2517,7 +2523,7 @@ export class Daemon {
 
   private runHeartbeatMaintenance(sampleFootprint: boolean): void {
     // Both ordinary probes and deferred-recycle ticks check safety first.
-    if (!this.checkKernelZonePressure()) return;
+    if (!this.checkKernelZonePressure("heartbeat")) return;
     if (sampleFootprint && !this.checkAggregateResources()) return;
     this.maybeRecycle(sampleFootprint);
     if (this.shuttingDown || this.recycling || !sampleFootprint) return;
@@ -2650,11 +2656,13 @@ export class Daemon {
    * Non-macOS hosts have no such probe. On macOS an unavailable sample is
    * explicitly unknown and cannot authorize further mutation.
    */
-  private checkKernelZonePressure(): boolean {
+  private checkKernelZonePressure(
+    action: SafetyStopAction = "pressure-check",
+  ): boolean {
     if (this.shuttingDown || this.recycling) return false;
-    const pressure = this.hostPressureDeniedReason();
+    const pressure = this.hostPressureDeniedReason(action);
     if (pressure?.critical) {
-      this.stopForSafety(pressure.reason);
+      this.stopForSafety(pressure.reason, true, pressure.diagnostics);
       return false;
     }
     const denied = daemonStartDeniedReason();
@@ -2677,54 +2685,69 @@ export class Daemon {
           ? error.message
           : "aggregate resource admission unavailable";
       if (error instanceof ResourceAdmissionError && error.critical)
-        this.stopForSafety(reason);
+        this.stopForSafety(reason, true, error.diagnostics);
       else this.pauseWork(reason);
       return false;
     }
   }
 
   /** Unknown/warning pauses resource expansion; only known critical shuts down. */
-  private hostPressureDeniedReason(): {
+  private hostPressureDeniedReason(
+    action: SafetyStopAction = "pressure-check",
+  ): {
     reason: string;
     measured: boolean;
     critical: boolean;
+    diagnostics: SafetyStopDiagnostics;
   } | null {
     if (process.platform !== "darwin") return null;
+    const policy = hostGuardPolicy();
+    const probes: PressureProbes = {};
+    const diagnostics = () =>
+      probeStopDiagnostics("daemon-pressure", action, policy, probes);
     const memory = probeMemoryPressure();
+    probes.memoryInitial = memory;
     if (memory.status === "known" && memory.pressure === "critical")
       return {
         reason: `critical OS memory pressure (${formatPressureProbe(memory)})`,
         measured: true,
         critical: true,
+        diagnostics: diagnostics(),
       };
     // Paused reads still need the kernel-critical guard, even if OS pressure warns.
     const kernel = probeKernelZoneUsage();
+    probes.kernel = kernel;
     if (kernel.status === "known" && kernel.usage.pressure === "critical")
       return {
         reason: `critical kernel pressure: ${formatZoneUsage(kernel.usage)} (${formatPressureProbe(kernel)})`,
         measured: true,
         critical: true,
+        diagnostics: diagnostics(),
       };
     const freshMemory = probeMemoryPressure();
+    probes.memoryFinal = freshMemory;
     if (freshMemory.status === "known" && freshMemory.pressure === "critical")
       return {
         reason: `critical OS memory pressure (${formatPressureProbe(freshMemory)})`,
         measured: true,
         critical: true,
+        diagnostics: diagnostics(),
       };
-    if (hostGuardPolicy() === "critical-only") return null;
+    if (policy === "critical-only") return null;
     for (const sample of [memory, freshMemory]) {
       if (sample.status !== "known")
         return {
           reason: `OS memory pressure unavailable (${formatPressureProbe(sample)})`,
           measured: false,
           critical: false,
+          diagnostics: diagnostics(),
         };
       if (sample.pressure !== "normal")
         return {
           reason: `warn OS memory pressure (${formatPressureProbe(sample)})`,
           measured: true,
           critical: false,
+          diagnostics: diagnostics(),
         };
     }
     if (kernel.status !== "known")
@@ -2732,21 +2755,27 @@ export class Daemon {
         reason: `kernel pressure unavailable (${formatPressureProbe(kernel)}); heavy work paused`,
         measured: false,
         critical: false,
+        diagnostics: diagnostics(),
       };
     if (kernel.usage.pressure !== "ok")
       return {
         reason: `warn kernel pressure: ${formatZoneUsage(kernel.usage)} (${formatPressureProbe(kernel)})`,
         measured: true,
         critical: false,
+        diagnostics: diagnostics(),
       };
     return null;
   }
 
-  private stopForSafety(reason: string, persist = true): void {
+  private stopForSafety(
+    reason: string,
+    persist = true,
+    diagnostics?: SafetyStopDiagnostics,
+  ): void {
     // Warning already pauses mutation: a stale index costs less than another
     // host crash. Unknown readings are visible stops, never healthy samples.
     try {
-      if (persist) latchSafetyStop(reason);
+      if (persist) latchSafetyStop(reason, undefined, diagnostics);
     } catch (error) {
       console.error(
         "[daemon] Failed to persist safety stop; stopping anyway:",

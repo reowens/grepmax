@@ -102,10 +102,68 @@ describe("WorkerPool host admission", () => {
   it("critical-only still refuses kernel-critical even with OS warning", () => {
     vi.stubEnv("GMAX_HOST_GUARD_POLICY", "critical-only");
     h.memory = { status: "known", pressure: "warn" };
-    h.kernel = { status: "known", usage: { pressure: "critical" } };
+    h.kernel = {
+      status: "known",
+      sampledAtMs: 100,
+      durationMs: 3,
+      outputBytes: 25,
+      usage: {
+        pressure: "critical",
+        bytes: 9 * 1024 ** 3,
+        elements: 9437184,
+        elementSize: 1024,
+      },
+    };
     expect(() => new WorkerPool()).toThrow("kernel pressure critical");
     expect(childProcess.fork).not.toHaveBeenCalled();
     expect(h.latch).toHaveBeenCalledOnce();
+    expect(h.latch).toHaveBeenCalledWith(
+      expect.any(String),
+      undefined,
+      expect.objectContaining({
+        source: "worker-spawn",
+        action: "worker-spawn",
+        policy: "critical-only",
+        probes: expect.objectContaining({
+          memoryInitial: expect.objectContaining({ memoryPressure: "warn" }),
+          kernel: expect.objectContaining({
+            kernelBytes: 9 * 1024 ** 3,
+            sampledAtMs: 100,
+            durationMs: 3,
+          }),
+        }),
+      }),
+    );
+  });
+  it("preserves the final critical OS probe and initial healthy sample without forking", () => {
+    vi.stubEnv("GMAX_HOST_GUARD_POLICY", "critical-only");
+    h.kernelProbe.mockImplementation(() => {
+      h.memory = {
+        status: "known",
+        pressure: "critical",
+        sampledAtMs: 200,
+        durationMs: 1,
+        outputBytes: 2,
+      };
+      return h.kernel;
+    });
+    expect(() => new WorkerPool()).toThrow("OS memory pressure critical");
+    expect(childProcess.fork).not.toHaveBeenCalled();
+    expect(h.memoryProbe).toHaveBeenCalledTimes(2);
+    expect(h.kernelProbe).toHaveBeenCalledOnce();
+    expect(h.latch).toHaveBeenCalledWith(
+      expect.any(String),
+      undefined,
+      expect.objectContaining({
+        probes: expect.objectContaining({
+          memoryInitial: expect.objectContaining({ memoryPressure: "normal" }),
+          memoryFinal: expect.objectContaining({
+            memoryPressure: "critical",
+            sampledAtMs: 200,
+          }),
+        }),
+      }),
+    );
   });
   it("refuses a quarantined constructor before any probes, fork or timer", () => {
     h.quarantine = "existing quarantine";

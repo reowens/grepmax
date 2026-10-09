@@ -87,7 +87,10 @@ type ProbeUnavailable =
 export type KernelZoneProbeResult = ProbeObservation &
   ({ status: "known"; usage: KernelZoneUsage } | ProbeUnavailable);
 export type MemoryPressureProbeResult = ProbeObservation &
-  ({ status: "known"; pressure: MemoryPressure } | ProbeUnavailable);
+  (
+    | { status: "known"; pressure: MemoryPressure; level?: 1 | 2 | 4 }
+    | ProbeUnavailable
+  );
 
 /** Compact diagnostic metadata; never serializes raw probe output or errors. */
 export function formatPressureProbe(
@@ -269,14 +272,14 @@ export function probeMemoryPressure(
     "sysctl",
     ["-n", "kern.memorystatus_vm_pressure_level"],
     1_000,
-    (output): MemoryPressure | null => {
+    (output): { pressure: MemoryPressure; level: 1 | 2 | 4 } | null => {
       switch (output.trim()) {
         case "1":
-          return "normal";
+          return { pressure: "normal", level: 1 };
         case "2":
-          return "warn";
+          return { pressure: "warn", level: 2 };
         case "4":
-          return "critical";
+          return { pressure: "critical", level: 4 };
         default:
           return null;
       }
@@ -285,7 +288,7 @@ export function probeMemoryPressure(
   );
   if (result.status !== "known") return result;
   const { value, ...observation } = result;
-  return { ...observation, pressure: value };
+  return { ...observation, ...value };
 }
 
 export function classifyZonePressure(bytes: number): ZonePressure {

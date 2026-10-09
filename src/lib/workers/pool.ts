@@ -20,6 +20,11 @@ import {
 } from "../utils/kernel-zone";
 import { debug, log } from "../utils/logger";
 import {
+  type PressureProbes,
+  probeStopDiagnostics,
+  type SafetyStopDiagnostics,
+} from "../utils/pressure-diagnostics";
+import {
   type ResourceReservation,
   resourceBudget,
   WORKER_RESOURCE_RESERVE_MB,
@@ -500,14 +505,18 @@ export class WorkerPool {
     );
   }
 
-  private denySpawn(reason: string, persist = false): false {
+  private denySpawn(
+    reason: string,
+    persist = false,
+    diagnostics?: SafetyStopDiagnostics,
+  ): false {
     // A pool cannot automatically recover after a failed admission. In
     // particular, timer/exit callbacks must not retry forks or strand queues.
     this.spawnDeniedReason = `Worker spawn denied: ${reason}`;
     this.clearScaleUpTimer();
     if (persist) {
       try {
-        latchSafetyStop(this.spawnDeniedReason);
+        latchSafetyStop(this.spawnDeniedReason, undefined, diagnostics);
       } catch {
         try {
           log(
@@ -530,9 +539,14 @@ export class WorkerPool {
     try {
       const quarantine = daemonStartDeniedReason();
       if (quarantine) return this.denySpawn(quarantine, false);
-      const strictHostGuard = hostGuardPolicy() === "strict";
+      const policy = hostGuardPolicy();
+      const strictHostGuard = policy === "strict";
+      const probes: PressureProbes = {};
+      const diagnostics = () =>
+        probeStopDiagnostics("worker-spawn", "worker-spawn", policy, probes);
       if (process.platform === "darwin") {
         const memory = probeMemoryPressure();
+        probes.memoryInitial = memory;
         if (
           (memory.status === "known" && memory.pressure === "critical") ||
           (strictHostGuard &&
@@ -541,9 +555,11 @@ export class WorkerPool {
           return this.denySpawn(
             `OS memory pressure ${memory.status === "known" ? memory.pressure : memory.status}; ${formatPressureProbe(memory)}`,
             memory.status === "known" && memory.pressure === "critical",
+            diagnostics(),
           );
         }
         const kernel = probeKernelZoneUsage();
+        probes.kernel = kernel;
         if (
           (kernel.status === "known" && kernel.usage.pressure === "critical") ||
           (strictHostGuard &&
@@ -552,12 +568,14 @@ export class WorkerPool {
           return this.denySpawn(
             `kernel pressure ${kernel.status === "known" ? kernel.usage.pressure : kernel.status}; ${formatPressureProbe(kernel)}`,
             kernel.status === "known" && kernel.usage.pressure === "critical",
+            diagnostics(),
           );
         }
       }
       if (process.platform === "darwin") {
         // Refresh the cheap OS sample after the potentially slow kernel probe.
         const freshMemory = probeMemoryPressure();
+        probes.memoryFinal = freshMemory;
         if (
           (freshMemory.status === "known" &&
             freshMemory.pressure === "critical") ||
@@ -569,6 +587,7 @@ export class WorkerPool {
             `OS memory pressure ${freshMemory.status === "known" ? freshMemory.pressure : freshMemory.status}; ${formatPressureProbe(freshMemory)}`,
             freshMemory.status === "known" &&
               freshMemory.pressure === "critical",
+            diagnostics(),
           );
         }
       }

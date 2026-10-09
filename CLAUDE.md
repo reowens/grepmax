@@ -189,6 +189,23 @@ Compaction must take its snapshot **after** `drainWrites()`, and reopen the tabl
 
 The containment release disables all full-table optimization and scheduled maintenance, including force/doctor/startup paths, before native setup. There is no production override. Existing retained copies remain until a separately verified exclusive prune-only recovery. Prune-only recovery and its pinned Python helper ship through the explicit `gmax recover` path; live cleanup still requires fresh admission and exclusive ownership. Persistent host safety stops and existing quarantine must survive hook launches, recycle, installation and explicit daemon startup; do not remove them as routine troubleshooting. Legacy compaction regressions use a test-only policy mock; that does not authorize live compaction.
 
+New pressure stops retain optional bounded `diagnostics` inside the existing
+`~/.gmax/safety-stop.json` schema-version-1 record. Review that original record
+before later health samples: it identifies the admission source/phase, selected
+policy, PID and requested reservation kind/size, together with triggering OS and
+kernel measurements. Initial and refreshed OS probes retain their separate times,
+durations, classifications and parsed sysctl flags (1 normal, 2 warning, 4 critical).
+Kernel probes retain bytes, element count/size and timing. An early stop omits
+probes that never ran; no extra probe is taken to manufacture an incident snapshot.
+Strict resource admission retains its original aggregate/headroom/swap sample;
+critical-only keeps these unavailable rather than introducing a footprint scan.
+Evidence uses an allowlist and excludes argv, query text, source paths, process
+inventories and raw probe output. Invalid optional evidence cannot prevent the
+stop; older reason-only records remain valid. The first stop's cause and evidence
+are preserved across later refusals. Guard thresholds, latch expiry/clear behavior
+and ownership rules are unchanged. This diagnostic change must be released and
+installed before it can explain new live incidents; old events cannot be backfilled.
+
 LanceDB 0.39 passes the absolute cleanup cutoff unchanged to native code; versions created during optimize can remain until later maintenance. Fresh unreferenced fragments newer than the latest retained manifest can also survive a no-rewrite optimize; see `docs/known-limitations.md`. Verify physical size/doctor rather than assuming success proves every copy was removed.
 
 Compaction attempts and final outcomes are logged as bounded JSON records in `daemon.log`: `Compaction attempt:`, `Compaction attempt failed:`, and `Compaction result:`. Results distinguish completed/skipped/failed and carry timestamps, attempt counts, duration, logical size, physical bytes before/after, free bytes before/after and reclaimed bytes where known. Status IPC and `gmax status --json` retain the latest outcome without directory scans. `doctor --fix` releases its diagnostic reader before requesting compaction; only exact socket absence errors permit a fresh local repair connection. Failed/skipped/unverified repairs are not counted as fixes and exit nonzero. The existing five-minute recycle probe also logs periodic resource baselines; one-minute intervening heartbeats add no sampling, and the 30-minute settling window still protects young daemons from recycling.

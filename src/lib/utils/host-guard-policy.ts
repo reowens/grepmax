@@ -49,6 +49,7 @@ export function sampleCriticalPressure(): HostResourceSnapshot {
     kernelPressure:
       kernel.status === "known" ? kernel.usage.pressure : "unknown",
     kernelBytes: kernel.status === "known" ? kernel.usage.bytes : null,
+    pressureProbes: { memoryInitial: memory, kernel, memoryFinal: freshMemory },
     incompleteReasons: [
       "aggregate admission disabled by explicit critical-only policy",
     ],

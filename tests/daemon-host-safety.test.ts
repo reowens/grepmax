@@ -115,6 +115,23 @@ describe("daemon pressure pauses work without losing the service", () => {
     vi.spyOn(daemon, "shutdown").mockResolvedValue(undefined);
     expect(daemon.checkKernelZonePressure()).toBe(false);
     expect(h.latch).toHaveBeenCalledOnce();
+    expect(h.latch).toHaveBeenCalledWith(
+      expect.any(String),
+      undefined,
+      expect.objectContaining({
+        source: "daemon-pressure",
+        action: "pressure-check",
+        policy: "critical-only",
+        pid: process.pid,
+        probes: expect.objectContaining({
+          memoryInitial: expect.objectContaining({ memoryPressure: "warn" }),
+          kernel: expect.objectContaining({
+            kernelPressure: "critical",
+            kernelBytes: h.usage.bytes,
+          }),
+        }),
+      }),
+    );
   });
   it("normal launches still refuse quarantine before stale handling or resources", async () => {
     const daemon = makeDaemon();
@@ -139,9 +156,42 @@ describe("daemon pressure pauses work without losing the service", () => {
       );
       expect(stale).not.toHaveBeenCalled();
       expect(h.latch).toHaveBeenCalledOnce();
+      expect(h.latch).toHaveBeenCalledWith(
+        expect.any(String),
+        undefined,
+        expect.objectContaining({
+          action: "startup",
+          probes: expect.objectContaining({
+            memoryInitial: expect.objectContaining({
+              memoryPressure: "critical",
+            }),
+          }),
+        }),
+      );
       expect(h.readers).toHaveLength(0);
     },
   );
+  it("retains initial and refreshed OS measurements at the heartbeat that triggers a stop", async () => {
+    const daemon = makeDaemon();
+    h.kernelProbe.mockImplementation(() => {
+      h.memory = "critical";
+    });
+    vi.spyOn(daemon, "shutdown").mockResolvedValue(undefined);
+    expect(daemon.checkKernelZonePressure("heartbeat")).toBe(false);
+    expect(h.latch).toHaveBeenCalledWith(
+      expect.any(String),
+      undefined,
+      expect.objectContaining({
+        action: "heartbeat",
+        probes: expect.objectContaining({
+          memoryInitial: expect.objectContaining({ memoryPressure: "normal" }),
+          memoryFinal: expect.objectContaining({ memoryPressure: "critical" }),
+          kernel: expect.objectContaining({ kernelBytes: h.usage!.bytes }),
+        }),
+      }),
+    );
+    expect(h.kernelProbe).toHaveBeenCalledOnce();
+  });
   it.each(["warn", "unknown"] as const)(
     "OS %s permits only a paused service, not heavy work",
     async (pressure) => {

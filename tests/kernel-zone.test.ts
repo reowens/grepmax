@@ -185,6 +185,7 @@ describe("typed pressure probe diagnostics", () => {
     expect(probeMemoryPressure(deps)).toMatchObject({
       status: "known",
       pressure,
+      level: Number(output.trim()),
       outputBytes: Buffer.byteLength(output),
     });
     expect(deps.run).toHaveBeenCalledWith(

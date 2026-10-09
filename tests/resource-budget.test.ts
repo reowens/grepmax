@@ -49,7 +49,14 @@ function snapshot(): HostResourceSnapshot {
 describe("one persistent budget for all clients/stores", () => {
   let root: string;
   let s: HostResourceSnapshot;
-  let latch: ReturnType<typeof vi.fn<(reason: string) => void>>;
+  let latch: ReturnType<
+    typeof vi.fn<
+      (
+        reason: string,
+        diagnostics?: import("../src/lib/utils/pressure-diagnostics").SafetyStopDiagnostics,
+      ) => void
+    >
+  >;
   let signal: ReturnType<typeof vi.fn<(pid: number) => void>>;
   const make = (pid = 10, extra = {}) =>
     new ResourceBudget({
@@ -118,6 +125,22 @@ describe("one persistent budget for all clients/stores", () => {
         "critical host pressure",
       );
       expect(latch).toHaveBeenCalledOnce();
+      expect(latch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          source: "resource-admission",
+          action: "reserve",
+          policy: "critical-only",
+          pid: 10,
+          reservationKind: "worker",
+          reservationMb: 1536,
+          snapshot: expect.objectContaining({
+            [key]: "critical",
+            at: s.at,
+            completedAt: s.completedAt,
+          }),
+        }),
+      );
     },
   );
   it("critical-only never clears an existing stop and verifies adopted PID liveness", () => {
@@ -250,6 +273,53 @@ describe("one persistent budget for all clients/stores", () => {
     s.kernelPressure = "critical";
     expect(() => make().reserve(512, "worker")).toThrow("critical");
     expect(latch).toHaveBeenCalledOnce();
+    expect(latch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        source: "resource-admission",
+        action: "reserve",
+        policy: "strict",
+        reservationKind: "worker",
+        reservationMb: 512,
+        snapshot: expect.objectContaining({
+          kernelPressure: "critical",
+          kernelBytes: s.kernelBytes,
+        }),
+      }),
+    );
+    expect(records()).toHaveLength(0);
+  });
+  it("retains the triggering critical-only sample and both probes without taking a later sample", () => {
+    s.memoryPressure = "critical";
+    s.pressureProbes = {
+      memoryInitial: {
+        status: "known",
+        pressure: "critical",
+        sampledAtMs: 900,
+        durationMs: 1,
+        outputBytes: 2,
+      },
+      memoryFinal: {
+        status: "known",
+        pressure: "normal",
+        sampledAtMs: 950,
+        durationMs: 1,
+        outputBytes: 2,
+      },
+    };
+    const sample = vi.fn(() => s);
+    const budget = make(10, {
+      policy: () => "critical-only",
+      criticalSample: sample,
+    });
+    expect(() => budget.reserve(1536, "worker")).toThrow("critical");
+    expect(sample).toHaveBeenCalledOnce();
+    const evidence = latch.mock.calls[0][1] as any;
+    expect(evidence.probes).toMatchObject({
+      memoryInitial: { memoryPressure: "critical", sampledAtMs: 900 },
+      memoryFinal: { memoryPressure: "normal", sampledAtMs: 950 },
+    });
+    expect(evidence.snapshot).not.toHaveProperty("processes");
     expect(records()).toHaveLength(0);
   });
   it("retains the critical classification when latch persistence fails", () => {

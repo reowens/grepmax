@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import * as os from "node:os";
 import * as path from "node:path";
 import { classifyZonePressure, parseZprintOutput } from "./kernel-zone";
+import type { PressureProbes } from "./pressure-diagnostics";
 import { parseFootprintMb } from "./process-footprint";
 
 export interface ResourceProcess {
@@ -24,6 +25,7 @@ export interface HostResourceSnapshot {
   kernelPressure: "ok" | "warn" | "critical" | "unknown" | "unsupported";
   kernelBytes: number | null;
   incompleteReasons: string[];
+  pressureProbes?: PressureProbes;
 }
 export interface ResourceSamplerDeps {
   platform: string;

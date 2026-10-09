@@ -15,6 +15,10 @@ import {
   type ResourceSamplerDeps,
   sampleHostResources,
 } from "./host-resource";
+import {
+  resourceStopDiagnostics,
+  type SafetyStopDiagnostics,
+} from "./pressure-diagnostics";
 import { latchSafetyStop } from "./safety-latch";
 
 /** Admission thresholds, not an OS-enforced memory cap. Keep enough room for
@@ -31,6 +35,7 @@ export class ResourceAdmissionError extends Error {
   constructor(
     message: string,
     readonly critical = false,
+    public diagnostics?: SafetyStopDiagnostics,
   ) {
     super(message);
     this.name = "ResourceAdmissionError";
@@ -60,7 +65,7 @@ interface BudgetDeps {
   sample: (extraPids?: readonly number[]) => HostResourceSnapshot;
   signal: (pid: number) => void;
   quarantine: () => string | null;
-  latch: (reason: string) => void;
+  latch: (reason: string, diagnostics?: SafetyStopDiagnostics) => void;
   processStart: () => string;
   policy: () => HostGuardPolicy;
   criticalSample: () => HostResourceSnapshot;
@@ -156,7 +161,8 @@ export class ResourceBudget {
       sampleMaxAgeMs: 5000,
       criticalSample: sampleCriticalPressure,
       quarantine: daemonStartDeniedReason,
-      latch: latchSafetyStop,
+      latch: (reason, diagnostics) =>
+        latchSafetyStop(reason, undefined, diagnostics),
       processStart: () =>
         execFileSync("ps", ["-p", String(process.pid), "-o", "lstart="], {
           encoding: "utf8",
@@ -342,6 +348,8 @@ export class ResourceBudget {
   private checked(
     snapshot: HostResourceSnapshot,
     records: ReservationRecord[],
+    kind?: string,
+    mb?: number,
   ): void {
     try {
       assertResourceSnapshot(
@@ -362,8 +370,16 @@ export class ResourceBudget {
         );
     } catch (error) {
       if (error instanceof ResourceAdmissionError && error.critical) {
+        error.diagnostics = resourceStopDiagnostics(
+          snapshot,
+          "strict",
+          kind ? "reserve" : "check",
+          this.deps.pid,
+          kind,
+          mb,
+        );
         try {
-          this.deps.latch(error.message);
+          this.deps.latch(error.message, error.diagnostics);
         } catch {
           error.message += "; safety stop persistence failed";
         }
@@ -445,7 +461,10 @@ export class ResourceBudget {
     return snapshot;
   }
 
-  check(requiredPid?: number | null): HostResourceSnapshot | null {
+  check(
+    requiredPid?: number | null,
+    reservation?: { kind: string; mb: number },
+  ): HostResourceSnapshot | null {
     if (this.deps.platform !== "darwin") return null;
     if (
       requiredPid !== undefined &&
@@ -469,9 +488,17 @@ export class ResourceBudget {
         const error = new ResourceAdmissionError(
           "critical host pressure; heavy work refused",
           true,
+          resourceStopDiagnostics(
+            snapshot,
+            "critical-only",
+            reservation ? "reserve" : "check",
+            this.deps.pid,
+            reservation?.kind,
+            reservation?.mb,
+          ),
         );
         try {
-          this.deps.latch(error.message);
+          this.deps.latch(error.message, error.diagnostics);
         } catch {
           error.message += "; safety stop persistence failed";
         }
@@ -499,7 +526,7 @@ export class ResourceBudget {
     if (this.deps.platform !== "darwin")
       return { attach: () => {}, release: () => {} };
     if (this.deps.policy() === "critical-only") {
-      this.check();
+      this.check(undefined, { kind, mb });
       return { attach: () => {}, release: () => {} };
     }
     let record = this.withLock(() => {
@@ -526,7 +553,7 @@ export class ResourceBudget {
         mb: charge,
         kind,
       };
-      this.checked(snapshot, [...records, next]);
+      this.checked(snapshot, [...records, next], kind, mb);
       this.persist(next);
       return next;
     });

@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { PATHS } from "../../config";
+import {
+  type SafetyStopDiagnostics,
+  sanitizeStopDiagnostics,
+} from "./pressure-diagnostics";
 
 /** Machine-wide stop: changing stores or installing a version cannot clear it. */
 export const SAFETY_LATCH_NAME = "safety-stop.json";
@@ -9,6 +13,7 @@ export interface SafetyLatch {
   schemaVersion: 1;
   at: number;
   reason: string;
+  diagnostics?: SafetyStopDiagnostics;
 }
 
 function safetyRoot(): string {
@@ -38,7 +43,11 @@ export function safetyStopReason(root = safetyRoot()): string | null {
 }
 
 /** Atomic durable latch; intentionally no automatic expiry or clear operation. */
-export function latchSafetyStop(reason: string, root = safetyRoot()): void {
+export function latchSafetyStop(
+  reason: string,
+  root = safetyRoot(),
+  diagnostics?: SafetyStopDiagnostics,
+): void {
   if (safetyStopReason(root) !== null) return;
   fs.mkdirSync(root, { recursive: true, mode: 0o700 });
   fs.chmodSync(root, 0o700);
@@ -52,6 +61,9 @@ export function latchSafetyStop(reason: string, root = safetyRoot()): void {
       at: Date.now(),
       reason:
         reason.replace(/[\r\n\t]/g, " ").slice(0, 512) || "host safety stop",
+      diagnostics: diagnostics
+        ? sanitizeStopDiagnostics(diagnostics)
+        : undefined,
     };
     fs.writeFileSync(fd, `${JSON.stringify(record)}\n`);
     fs.fsyncSync(fd);
