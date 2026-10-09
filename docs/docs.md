@@ -6,12 +6,12 @@
 
 | Work | Current state | Next action / completion evidence |
 | --- | --- | --- |
-| Document query availability / quality | Policy fix accepted; capped fair warm-worker wait passes focused checks, full CI pending. Installed .71 unchanged. Fusion broader 2/20 insufficient | Complete scheduling CI and deliver both fixes; collect predefined live acceptance, review coverage and watcher gaps. |
-| Watcher stability | Latest passive .71 sample native/counter53, ordinary indexing and no failed paths | Prioritize ordinary-load availability/repeated-gap review; no caught-up or broad stability claim. |
+| Document query availability / quality | Policy and capped fair warm-worker scheduling fixes accepted in full CI. Installed .71 unchanged. Fusion broader 2/20 insufficient | Deliver both accepted fixes; collect predefined live acceptance, review coverage and watcher gaps. |
+| Watcher stability | Latest .71 native/counter53, nine active files, no failed paths; document state busy | Prioritize ordinary-load availability/repeated-gap review; no caught-up or broad stability claim. |
 | Production disk recovery | Read-only readiness review complete; healthy point samples but runtime absent/live owner remains; live prune unperformed | Coordinate a separate recovery window with actual admission/reservation, pinned preparation, reviewed owner drain, fresh retention inventory and exclusive lease. No current reclaim estimate. |
 | Consumer rollout | Packaged Runlist interoperability passed; client settings remain unchanged | Decide rollout from retrieval evaluation evidence and explicitly configure the document entry point. Existing MCP sessions need reconnecting to load released runtime code. |
 
-**Admission policy fix accepted on main; bounded worker scheduling fix now passes focused checks and awaits full CI. Both remain unreleased. Broader fusion evidence is insufficient; watcher gaps and coverage remain open.** Preserve normal `critical-only` service, the small GPU model and maximum two workers. Watcher ownership remains in standalone gmax; Hetchy Developer is optional. Embedding migration and independently reusable watcher extraction remain deferred.
+**Admission policy fix accepted on main; bounded worker scheduling fix passes full exact-source CI. Both remain unreleased. Broader fusion evidence is insufficient; watcher gaps and coverage remain open.** Preserve normal `critical-only` service, the small GPU model and maximum two workers. Watcher ownership remains in standalone gmax; Hetchy Developer is optional. Embedding migration and independently reusable watcher extraction remain deferred.
 
 The release acceptance record is `/private/tmp/gmax-v02671-acceptance.json`; the completed retrieval report is linked below. Fresh read-only health at **2026-10-08T22:46:44.781Z** confirms .71 ready/active; evaluation caused no runtime or configuration change. Historical PIDs, inventories and “next” instructions below are snapshots; refresh them before operational work. The working focus and .71 delivery record take precedence over those earlier instructions.
 
@@ -23,11 +23,13 @@ The scheduler now admits at most **four waiting document queries**, FIFO, with a
 
 Admission and readiness are rechecked when a warm worker becomes free. Cold/lost/contained/pressure states refuse without inference. Queued cancellation/expiry withdraws the request, while cancellation after dispatch leaves shared work assigned until its terminal response/exit. The ten-second encoding request timer includes waiting, and an absolute deadline check prevents sending after slow synchronous admission. Native retrieval retains its remaining overall deadline and actual shared ownership. Document refusal cannot strand separately admitted indexing; containment is rechecked before ordinary dispatch. Neither an indexing file nor an executing query is interrupted to make room. Long files/backend outages can still exceed the wait and return `busy`.
 
-Root implementation/self review and **120 focused tests / five files**, both source/test typechecks and formatting passed. Fixtures exercise query priority over the next file, FIFO/cap/expiry, queued and running cancellation, admission races, lost warm workers without replacement, indexing resumption after a burst and after document refusal, containment, absolute deadlines and existing RSS/worker lifecycle behavior. [Private review and passive installed observations](measurements/2026-10-08-document-query-scheduling/review.json) preserve the checks; full exact-source CI is pending. This is self review and fixture acceptance, not a real-load latency comparison.
+Root implementation/self review and **120 focused tests / five files**, both source/test typechecks and formatting passed. Fixtures exercise query priority over the next file, FIFO/cap/expiry, queued and running cancellation, admission races, lost warm workers without replacement, indexing resumption after a burst and after document refusal, containment, absolute deadlines and existing RSS/worker lifecycle behavior. [Private review and passive installed observations](measurements/2026-10-08-document-query-scheduling/review.json) preserve the checks. [Full exact-source CI](https://github.com/reowens/grepmax/actions/runs/37868445846) for `db65400854372609dbacd83f45c4b0de4d6111f0` passed **2,122 tests / 211 files**, both typechecks, formatting, audits, build and packed-consumer/native/prune smoke. Source acceptance for the combined policy/scheduler fixes is complete; release/install and live acceptance are still pending. This is self review and fixture acceptance, not a real-load latency comparison.
 
 A passive metadata-only sample at **01:07:07–01:07:32 UTC October 9** took six ping/status/document-status observations and issued **zero semantic queries**. Installed .71 daemon54708/GPU55539 stayed active/ready, native/generation1, counter53, failed0; all six document readiness samples were `ready` during ordinary indexing. This differs from the earlier `busy` sample and confirms admission is intermittent under changing load; it does not prove search execution, production improvement or candidate deployment. Both source fixes remain **unreleased/uninstalled**. No daemon/model/config/worker-limit/client-setting/store/recovery change occurred, and no frozen retrieval case was retried or rescored.
 
-**Next:** complete full exact-source CI and deliver the combined admission/scheduling fixes when requested, then predefine a bounded real-load acceptance sample. Review persistent watcher gaps and document coverage separately; the broader fusion gate remains insufficient. Keep critical-only/smallGPU/max2 and standalone watcher ownership.
+Final metadata at **01:13:16.882 UTC October 9** shows the same installed .71 active/ready with one worker, native watching, no catchup or failed paths, counter53, nine active files and zero queued paths; document admission is **busy** again. The six earlier ready samples and this busy point show changing worker availability, not sustained search availability. No semantic query was issued. Private `final-health.json` and `ci-proof.json` preserve the context.
+
+**Next:** deliver the accepted combined admission/scheduling fixes when requested, then predefine a bounded real-load acceptance sample. Review persistent watcher gaps and document coverage separately; the broader fusion gate remains insufficient. Keep critical-only/smallGPU/max2 and standalone watcher ownership.
 
 ## Existing-only admission policy mismatch fixed in source — October 8, 2026
 
@@ -363,7 +365,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 157 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 158 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
