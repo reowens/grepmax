@@ -1445,7 +1445,7 @@ pub async fn run(request: Request) -> Result<()> {
             ensure!(receipt.abort_proven, "Durable logical abort proof invalid before owned reclamation");
             if let Some(owned) = &owned {
                 let mut references: Vec<_> = dataset.manifest.fragments.iter().flat_map(|fragment| fragment.files.iter())
-                    .map(|file| object_root(&root).map(|root| root.child("data").child(&file.path))).collect::<Result<_>>()?;
+                    .map(|file| object_root(&root).map(|root| root.child("data").child(file.path.as_str()))).collect::<Result<_>>()?;
                 references.extend(all_indices(&dataset).await?.iter().map(|index| object_root(&root).map(|root| root.child("_indices").child(index.uuid.to_string()))).collect::<Result<Vec<_>>>()?);
                 if owned.referenced_by(&references)? { cleanup_pending = true; cleanup_failure = Some("Owned target now referenced by current head".into()); }
                 else if let Err(error) = owned.cleanup_proven_abort() { cleanup_pending = true; cleanup_failure = Some(error.to_string()); }

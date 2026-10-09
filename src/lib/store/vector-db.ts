@@ -260,6 +260,7 @@ export class VectorDB {
   private lastVersionCleanupResult: VersionCleanupResult | null = null;
   private versionCleanupActive = false;
   private boundedMaintenanceActive = false;
+  private boundedProtectedVersion: number | null = null;
   private lastBoundedMaintenanceResult: BoundedMaintenanceResult | null = null;
   private boundedMaintenancePromise: Promise<BoundedMaintenanceResult | null> | null =
     null;
@@ -575,11 +576,19 @@ export class VectorDB {
           {
             open: async (p) => {
               windowOpened = true;
+              this.boundedProtectedVersion = p.protectedVersion;
+              // The restricted documents service uses an existing connection.
+              // Reopen and verify its pinned head before admitting any reads.
+              const protectedTable = await this.openExistingTableUnsafe();
+              if (!protectedTable)
+                throw new Error("protected maintenance table unavailable");
+              protectedTable.close();
               await readers.open(p);
             },
             drain: async () => {
               await readers.drain();
               await this.closeMaintenanceHandles();
+              this.boundedProtectedVersion = null;
               windowDrained = true;
             },
           },
@@ -611,6 +620,7 @@ export class VectorDB {
           if (!this.closed) await this.downgradeStoreLease();
         } finally {
           this.boundedMaintenanceActive = false;
+          this.boundedProtectedVersion = null;
         }
       }
     }
@@ -1133,18 +1143,28 @@ export class VectorDB {
   /** Restricted reads must use the daemon connection without creating/evolving a table. */
   async existingTableForRead(): Promise<lancedb.Table> {
     if (!this.db) throw new Error("store_unavailable");
+    let table: lancedb.Table | undefined;
     try {
-      return await this.db.openTable(TABLE_NAME);
+      table = await this.db.openTable(TABLE_NAME);
+      if (this.boundedProtectedVersion !== null)
+        await table.checkout(this.boundedProtectedVersion);
+      return table;
     } catch {
+      table?.close();
       throw new Error("store_unavailable");
     }
   }
 
   private async openExistingTableUnsafe(): Promise<lancedb.Table | null> {
     const db = await this.getDb();
+    let table: lancedb.Table | undefined;
     try {
-      return await db.openTable(TABLE_NAME);
+      table = await db.openTable(TABLE_NAME);
+      if (this.boundedProtectedVersion !== null)
+        await table.checkout(this.boundedProtectedVersion);
+      return table;
     } catch (err) {
+      table?.close();
       if (isMissingTableError(err)) return null;
       throw err;
     }

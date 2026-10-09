@@ -296,6 +296,31 @@ fn torn_corrupt_and_different_cap_journals_are_refused_without_recreation() {
     }
 }
 
+#[test]
+fn checksummed_component_rollbacks_are_refused_without_reset_or_mutation() {
+    use sha2::{Digest, Sha256};
+    let home = tempfile::tempdir().unwrap();
+    let journal = home.path().join("attempt.journal");
+    let cases = [
+        ([1024, 170, 10, 0, 160, 0], [1024, 250, 0, 0, 250, 0]),
+        ([1024, 170, 0, 10, 160, 0], [1024, 250, 0, 0, 250, 0]),
+        ([1024, 170, 10, 0, 160, 0], [1024, 250, 100, 0, 150, 0]),
+        ([1024, 190, 0, 0, 170, 20], [1024, 270, 0, 0, 270, 0]),
+    ];
+    for (prior, rolled_back) in cases {
+        let mut bytes = Vec::new();
+        for fields in [[1024u64, 80, 0, 0, 80, 0], prior, rolled_back] {
+            let mut record = Vec::new();
+            for field in fields { record.extend_from_slice(&field.to_le_bytes()); }
+            record.extend_from_slice(&Sha256::digest(&record));
+            bytes.extend_from_slice(&record);
+        }
+        std::fs::write(&journal, &bytes).unwrap();
+        assert!(Ledger::restore(1024, &journal).is_err());
+        assert_eq!(std::fs::read(&journal).unwrap(), bytes);
+    }
+}
+
 #[tokio::test]
 async fn insufficient_fresh_space_refuses_before_charge_or_payload_creation() {
     let home = tempfile::tempdir().unwrap();

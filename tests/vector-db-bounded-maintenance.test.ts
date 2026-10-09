@@ -190,4 +190,48 @@ describe("VectorDB head-changing maintenance handles", () => {
     expect(f.db.downgradeStoreLease).toHaveBeenCalledOnce();
     await f.db.close();
   });
+
+  it("pins newly opened reads to the native protected current head during recovery", async () => {
+    const f = fixture();
+    // Exercise the actual handle-opening methods after the mocked initial
+    // before-head discovery; the ordinary table head has already advanced.
+    const opened = { checkout: vi.fn(async () => {}), close: vi.fn() };
+    const connection = { openTable: vi.fn(async () => opened), close: vi.fn() };
+    const openExisting = (VectorDB.prototype as any).openExistingTableUnsafe;
+    vi.mocked(f.d.openExistingTableUnsafe)
+      .mockImplementationOnce(async () => f.table)
+      .mockImplementationOnce(async () => {
+        f.d.openExistingTableUnsafe.mockRestore();
+        vi.spyOn(f.d, "getDb").mockResolvedValue(connection);
+        f.d.db = connection;
+        return await openExisting.call(f.d);
+      });
+    vi.mocked(runBoundedMaintenance).mockImplementation(
+      async (_store, _lease, _version, _runtime, readers) => {
+        await readers.open({
+          beforeVersion: 6,
+          protectedVersion: 7,
+          planId: "a".repeat(64),
+          receiptId: "attempt-1",
+          readerTag: "gmax-current-1",
+        });
+        expect(connection.openTable).toHaveBeenCalledOnce();
+        expect(opened.checkout).toHaveBeenCalledWith(7);
+        expect(await f.db.ensureTable()).toBe(opened);
+        expect(await f.db.existingTableForRead()).toBe(opened);
+        expect(opened.checkout.mock.calls).toEqual([[7], [7], [7]]);
+        await readers.drain();
+        expect(f.d.boundedProtectedVersion).toBeNull();
+        return { status: "completed", rewritten: false } as any;
+      },
+    );
+    await f.db.cleanupDeletedRows(
+      { executable: "fixture" },
+      { open: vi.fn(), drain: vi.fn(async () => {}) },
+      undefined,
+      "recover",
+    );
+    expect(connection.close).toHaveBeenCalledOnce();
+    await f.db.close();
+  });
 });

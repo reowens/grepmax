@@ -490,6 +490,37 @@ describe("metered native child lifecycle", () => {
     ).toThrow();
   });
 
+  it("does not require any rewrite reserve for a proven empty recovery", async () => {
+    const f = fixture(
+      {
+        status: "no-work",
+        afterVersion: 7,
+        totalBytesWritten: 0,
+        dataBytesWritten: 0,
+        indexBytesWritten: 0,
+        metadataBytesWritten: 0,
+        rowsVerified: 0,
+        recoveryPending: false,
+      },
+      { status: "no-work", action: "recover" },
+    );
+    vi.mocked(availableStoreDiskBytes).mockReturnValue(
+      plan.freeSpaceMarginBytes,
+    );
+    const result = await runBoundedMaintenance(
+      "/fixture",
+      f.lease,
+      7,
+      f.runtime,
+      { open: vi.fn(), drain: vi.fn(async () => {}) },
+      undefined,
+      "recover",
+    );
+    expect(result.status).toBe("skipped");
+    expect(result.recoveryPending).toBe(false);
+    expect(result.totalBytesWritten).toBe(0);
+  });
+
   it.each([
     { totalBytesWritten: 151 },
     { indexBytesWritten: -1 },

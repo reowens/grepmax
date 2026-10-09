@@ -194,6 +194,10 @@ impl Ledger {
                 || values[1] > cap
                 || values[1] <= counts.total_bytes_written
                 || sum != Some(values[1])
+                || values[2] < counts.data_bytes_written
+                || values[3] < counts.index_bytes_written
+                || values[4] < counts.metadata_bytes_written
+                || values[5] < counts.verification_bytes_written
             {
                 return Err(refused(
                     "Invalid write journal counters; budget cannot reset",

@@ -415,6 +415,7 @@ export async function runBoundedMaintenance(
             !Number.isSafeInteger(total) ||
             (!missingNoWork && total !== phase.totalBytesWritten) ||
             total > plan.totalWriteBudgetBytes ||
+            (plan.status === "no-work" && total !== 0) ||
             counters.some((n, i) => (n as number) < spent[i])
           )
             throw new Error("native cumulative write counters are invalid");
@@ -422,7 +423,7 @@ export async function runBoundedMaintenance(
           checkMeteredAdmission(
             storeDir,
             signal,
-            plan.totalWriteBudgetBytes - total,
+            plan.status === "no-work" ? 0 : plan.totalWriteBudgetBytes - total,
             plan.freeSpaceMarginBytes,
           );
           return total;
