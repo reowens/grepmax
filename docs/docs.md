@@ -24,7 +24,11 @@ The accepted fixtures and one production batch do not establish eligibility for 
 
 The user confirmed Depot Developer at $20/month and rejected the $200 macOS tier. Use GitHub-hosted Macs and the incoming Linux build box; retain Depot for existing Linux/container work. Gmax's public standard GitHub runners are free. Hetchy's GitHub organization already exists on Free: authenticated September billing reports 236 Linux minutes in infra and $0 net runner charges; October currently reports no usage entries. Developer has no Actions workflows/runs yet, so its Mac cost needs measurement. The personally owned platform repository is outside that organization report and its six workflows remain deliberately disabled.
 
-Next CI work: cancel superseded branch checks, skip source/Mac watcher jobs for documentation-only changes, reuse native artifacts only with matching source/build/acceptance evidence, and report usage separately by repository/workflow. Native Rust qualification is already explicit or release-triggered, rather than running on ordinary documentation pushes. Measure one unsigned Developer build on GitHub macOS 26 with its pinned platform dependency; keep signing/notarization release-only and move portable preparation to Linux. Account conversion, repository transfer, paid Mac pilots and workflow reactivation are not part of this decision. Detailed rates, scope and raw evidence are in the existing host-safety/disk-recovery plan. [GitHub billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions), [Depot platform/plan requirements](https://depot.dev/docs/github-actions/overview).
+CI trimming is implemented on main (`809b2a7`): source checks run automatically for main pushes and pull requests, with explicit dispatch retained. A lightweight Git-diff job skips the Linux suite and Mac watcher job only for proven Markdown changes under docs or at repository root. Unknown/missing history, configuration, code and fixture changes run full checks. Manual dispatch always runs full checks. Nine task-owned Git regression fixtures and actionlint passed locally; GitHub source/docs-only verification is running.
+
+Superseded source revisions cancel older Linux/Mac jobs. A docs-only push has no heavy job and therefore does not cancel an unfinished source check; manual runs and release/native qualification remain independent. The separate automatic watcher workflow is now manual-only, and its six Mac watcher test files run alongside the real native consumer in CI's one Mac job. Full Linux tests, audits, typechecks, package checks and release-native/reader/recovery gates are preserved.
+
+Next CI work: report elapsed jobs/minutes by repository and workflow, then qualify reuse of native artifacts against matching source/build/acceptance evidence. Measure one unsigned Developer build on GitHub macOS 26 with its pinned platform dependency; keep signing/notarization release-only and move portable preparation to Linux. Account conversion, repository transfer, paid Mac pilots and workflow reactivation are outside this decision. Detailed rates, scope and raw evidence are in the existing host-safety/disk-recovery plan. [GitHub billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions), [Depot platform/plan requirements](https://depot.dev/docs/github-actions/overview).
 
 ## Historical .82 checkpoint: independent automatic retention — October 9, 2026
 
@@ -590,7 +594,6 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 | [2026-08-25 Release Triage — Retrospective](2026-08-25-release-triage-retrospective.md) | Active |
 | [Embedding Layout Decision](embedding-layout-decision.md) | Active |
 | [Future Sessions](future-sessions.md) | Active |
-| [Gmax Host Safety and Disk Recovery](plans/gmax-host-safety-and-disk-recovery.md) | Active |
 
 ## Planned
 
