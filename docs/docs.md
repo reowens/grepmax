@@ -9,11 +9,27 @@
 | Release / runtime | .73 active on daemon71531, small GPU72547 ready, gen1; all304 installed files verified | Delivery complete. Maintain ordinary operation and observe guard transitions. |
 | Pressure diagnostics | .73 deployed; CI passed 2,130 tests / 212 files; installed isolated fixture passed | Observe future triggers; older incidents cannot be backfilled. |
 | Document availability / quality | Fresh services-scope acceptance passed: 5/6 successful, all five during indexing; 250 pointers and final freshness verified. One busy refusal. Broader fusion remains insufficient | Preserve both cohorts. Broader availability, coverage and ranking quality remain separate qualifications. |
-| Watcher stability | 15-minute / 61-sample live window passed: 11 drains, no new callback errors, zero failed; counter 15 unchanged. Final pending 1 / active 1 | Fresh gap recovery remains unqualified; observe next natural gap through complete reconciliation and drainage. |
+| Watcher stability | 15-minute / 61-sample live window passed: 11 drains, no new callback errors, zero failed; counter 15 unchanged. Final pending 1 / active 1 | Plan stages: bounded gap/scan diagnostics, isolated recovery qualification, then fresh real-gap acceptance. |
 | Production disk recovery | Read-only readiness complete; live prune unperformed | Separate recovery window with fresh strict admission/reservation, pinned tools, owner drain, current retention and exclusive lease. |
 | Consumer rollout | Client settings unchanged; existing sessions preserved | Configure document entry point explicitly when rollout is selected; reconnect separately when needed. |
 
 Preserve normal `critical-only`, small GPU and maximum two workers. Watcher ownership remains in standalone gmax; Hetchy Developer is optional. Shared watcher extraction and embedding migration remain deferred. This focus supersedes the historical blocked-release status below.
+
+## Next work: qualify watcher gap recovery — October 8, 2026
+
+**Start with recovery diagnostics in gmax.** The .73 live window passed ordinary-work checks, but its counter had already reached 15 and no new gap occurred during sampling. A cumulative callback-error count and a last-scan timestamp cannot tie a particular drop to completed reconciliation. The next change should make that relationship reviewable before choosing an exclusion, scheduling or backend fix. This is a work plan; the changes below are not implemented or released.
+
+| Stage | Work | Completion evidence |
+| --- | --- | --- |
+| 1. Make gaps traceable | Review existing watcher health/log fields, then add only missing bounded recovery metadata: distinguish FSEvents gaps from terminal callback errors; track gap sequence/time, scan start/completion, which gap sequence a completed scan covers, outstanding reconciliation and queue state. Record a bounded summary/fingerprint of the exclusions actually attached to the subscription, without absolute paths or repeating timed discovery. Keep source bodies, queries and per-event paths out of diagnostic records. | Optional read-only health/IPC fields preserve existing consumers. A gap arriving during a scan remains outstanding until a later complete scan covers it. Failed, aborted or pressure-refused scans cannot appear reconciled. Gaps do not trigger terminal subscription restart/poll fallback. |
+| 2. Qualify recovery and fix demonstrated failures | Reuse existing manager/standalone/native-exclusion fixtures and add missing scenarios: gaps before/during/after reconciliation, repeated gaps, cancellation, terminal failure, policy refresh and edits inside/outside excluded directories. Use deterministic injected gaps and a bounded real-native temporary tree; run native/temp-store cases through admitted CI. Investigate event volume, active exclusions and scheduling against evidence, then implement the smallest demonstrated fix. | Authored create/change/delete and atomic-save events reach the intended final indexed state in isolated fixtures; repeated gaps coalesce without losing a later gap; queued work drains, limits hold and excluded artifacts remain excluded. Standalone gmax passes without Hetchy Developer. Focused tests, full CI and root self review pass. A suspected cause alone does not justify a patch. |
+| 3. Verify deployment under actual load | Package and deliver a reviewed source change after fixture and CI acceptance. Verify the published artifact, install and use normal IPC handover. Freeze a separate live acceptance plan before sampling: 30-minute maximum, 15-second metadata samples, at least one naturally occurring new gap, followed by a completed scan covering that gap and drained affected work. Preserve daemon/generation identity within the window, existing sessions/settings, original studies and prior results. | Each observed gap is either covered by a subsequent complete reconciliation or explicitly outstanding at the endpoint. No failed files, unintended containment, restart, permanent polling or unresolved recovery is accepted. No new gap means recovery remains unqualified; work still running at the endpoint is reported as incomplete. Bounded current-source/pointer verification must be predefined before any stronger freshness claim. |
+
+The 30-minute window is a collection limit, not an established recovery-time objective. Preserve gaps and incomplete outcomes; do not extend a window to manufacture a pass, reset counters, retry frozen retrieval cases or generate load in the production tree. If no natural gap occurs, retain that evidence and advance isolated qualification rather than repeatedly waiting. Add cases only where existing tests do not already establish the required behavior. Keep local checks focused with one worker and a 384 MiB heap; full lifecycle and native-store checks belong in CI.
+
+Recovery diagnostics belong to gmax and must work in standalone mode. Hetchy Developer may consume them but cannot be a dependency. Keep `critical-only`, small Granite GPU and maximum two workers; no automatic safety-stop clearing, threshold changes, production store scans, maintenance, pruning or large model loads are part of this work. Shared watcher extraction and embedding migration remain deferred.
+
+After watcher qualification, address broader document availability and explicit coverage policy, fresh fusion-quality evidence, then a selected consumer pilot. Production disk recovery remains a separate admission-controlled workstream with fresh strict host/resource checks, reserved pinned tools, reviewed owners/drain, current retention and an exclusive lease. It does not inherit authorization or readiness from watcher acceptance.
 
 ## Native watcher observation completed — October 8, 2026
 
@@ -475,7 +491,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 165 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 166 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
