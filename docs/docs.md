@@ -6,12 +6,12 @@
 
 | Work | Current state | Next action / completion evidence |
 | --- | --- | --- |
-| Document retrieval quality | Fusion replay passes 15/15; broader 2/20 insufficient. Source admission fix honors critical-only; .71 still has strict document gate | Complete CI/delivery for policy fix; review busy-worker availability and coverage before fresh qualification. |
-| Watcher stability | Current .71 recovering/catchup running, 23 pending and 26 active files, counter 43 | Prioritize ordinary-load availability/repeated-gap review; no caught-up or broad stability claim. |
+| Document retrieval quality | Fusion replay passes 15/15; broader 2/20 insufficient. Source admission fix passes CI and honors critical-only; .71 still has strict document gate | Deliver accepted policy fix; review busy-worker availability and coverage before fresh qualification. |
+| Watcher stability | Final .71 native/catchup finished, two pending and one active file, counter 53 | Prioritize ordinary-load availability/repeated-gap review; no caught-up or broad stability claim. |
 | Production disk recovery | Read-only readiness review complete; healthy point samples but runtime absent/live owner remains; live prune unperformed | Coordinate a separate recovery window with actual admission/reservation, pinned preparation, reviewed owner drain, fresh retention inventory and exclusive lease. No current reclaim estimate. |
 | Consumer rollout | Packaged Runlist interoperability passed; client settings remain unchanged | Decide rollout from retrieval evaluation evidence and explicitly configure the document entry point. Existing MCP sessions need reconnecting to load released runtime code. |
 
-**Existing-only admission policy mismatch fixed in source; CI/delivery pending. Busy-worker admission and watcher behavior under load remain separate. Broader fusion evidence is insufficient.** Preserve normal `critical-only` service, the small GPU model and maximum two workers. Watcher ownership remains in standalone gmax; Hetchy Developer is optional. Embedding migration and independently reusable watcher extraction remain deferred.
+**Existing-only admission policy mismatch fixed on main and full CI passed; delivery pending. Busy-worker admission and watcher behavior under load remain separate. Broader fusion evidence is insufficient.** Preserve normal `critical-only` service, the small GPU model and maximum two workers. Watcher ownership remains in standalone gmax; Hetchy Developer is optional. Embedding migration and independently reusable watcher extraction remain deferred.
 
 The release acceptance record is `/private/tmp/gmax-v02671-acceptance.json`; the completed retrieval report is linked below. Fresh read-only health at **2026-10-08T22:46:44.781Z** confirms .71 ready/active; evaluation caused no runtime or configuration change. Historical PIDs, inventories and “next” instructions below are snapshots; refresh them before operational work. The working focus and .71 delivery record take precedence over those earlier instructions.
 
@@ -21,11 +21,13 @@ Installed .71 normal service selects `critical-only`, but `ResourceBudget.checkE
 
 The patch makes existing inference use fresh critical-pressure sampling under explicit `critical-only`, with no aggregate scan or ledger access. Warning/unknown values stay diagnostic; confirmed critical OS or kernel pressure still refuses. Before/after containment checks remain, and this read-only path creates no latch, lock, reservation or ledger mutation. Default strict inference retains fresh aggregate admission, ledger integrity/budget checks and warning/unknown refusal. The recovery budget explicitly selects strict and is unchanged. No configured policy, threshold, worker limit or model was changed.
 
-The new regression tests failed against the original implementation, then passed with the fix. **123 focused tests / five files**, both source/test typechecks and formatting passed, including worker lifecycle/document contract and recovery admission checks. [Self review and installed reproduction](measurements/2026-10-08-document-admission-policy/review.json) are private evidence. Full exact-source CI is pending. The patch is not yet released or installed; installed .71 behavior remains unchanged.
+The new regression tests failed against the original implementation, then passed with the fix. **123 focused tests / five files**, both source/test typechecks and formatting passed, including worker lifecycle/document contract and recovery admission checks. [Self review and installed reproduction](measurements/2026-10-08-document-admission-policy/review.json) are private evidence. [Full exact-source CI](https://github.com/reowens/grepmax/actions/runs/37866241370) for `7a0ba92e6f69eb0568bfc9384ebb712dc3857311` passed **2,109 tests / 211 files**, both typechecks, formatting, audits, build and packed-consumer/native/prune smoke. Source acceptance is complete. The patch is not yet released or installed; installed .71 behavior remains unchanged.
 
 `busy` is a separate immediate refusal when every compatible warm worker is occupied. The existing-only entry still does not queue, spawn, scale or fall back. The broader fusion study's 15 busy and three pressure refusals are preserved; no refused query was retried or rescored, and broader retrieval qualification remains insufficient. Final read-only health at **00:42:23.882 UTC** shows .71 daemon 54708/GPU55539 active/ready, generation 1, watcher recovering/catchup running, 23 pending and 26 active files, zero failed, cumulative counter **43**. This is not a caught-up or load-stability claim.
 
-**Next:** complete exact-source CI and package the admission fix for delivery when requested; separately review bounded interactive availability during ordinary indexing and repeated watcher gaps. Keep fusion ordering and frozen results unchanged. Document coverage policy, consumer rollout and fresh-admission disk recovery remain separate.
+Final read-only health at **00:46:19.122 UTC October 9** confirms .71 daemon 54708 active/ready, GPU55539 owned-ready and generation1. Native watching has completed its latest catchup and resumed ordinary indexing (two pending, one active, zero failed), but the cumulative callback counter is **53**, up from43 at00:42:23. This point does not close the repeated-gap or latency investigation. Evidence: private `final-health.json` and `ci-proof.json` in the admission-policy directory.
+
+**Next:** deliver the accepted admission fix when requested; separately review bounded interactive availability during ordinary indexing and repeated watcher gaps. Keep fusion ordering and frozen results unchanged. Document coverage policy, consumer rollout and fresh-admission disk recovery remain separate.
 
 ## Protected fusion qualification attempted — October 8, 2026
 
@@ -347,7 +349,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 155 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 156 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
