@@ -7,7 +7,7 @@
 | Work | Current state | Next action / completion evidence |
 | --- | --- | --- |
 | Document retrieval quality | Protected fusion replay passes 15/15 (Redis 1, People 3); broader only 2/20 usable, below frozen 16-case gate | Qualify provider availability and document coverage; plan a fresh admitted unchanged-rule collection before production integration. |
-| Watcher stability | Earlier 8-minute light interval counter 8→8; current native sync active, counter 19 and embedding retry observed | Qualify under ordinary load; historical stable interval does not close current delivery/availability questions. |
+| Watcher stability | Earlier light interval counter 8→8; final sample recovering/catchup running, 25 active files, counter 34 | Prioritize ordinary-load availability/repeated-gap review; no caught-up or broad stability claim. |
 | Production disk recovery | Read-only readiness review complete; healthy point samples but runtime absent/live owner remains; live prune unperformed | Coordinate a separate recovery window with actual admission/reservation, pinned preparation, reviewed owner drain, fresh retention inventory and exclusive lease. No current reclaim estimate. |
 | Consumer rollout | Packaged Runlist interoperability passed; client settings remain unchanged | Decide rollout from retrieval evaluation evidence and explicitly configure the document entry point. Existing MCP sessions need reconnecting to load released runtime code. |
 
@@ -33,6 +33,10 @@ The single broader pass at **00:27:26–00:28:00 UTC** completed 20 cases but on
 The missing `docs/core/secrets.md` target matches the existing default `secrets.*` file-policy exclusion. It needs a deliberate document coverage/security-policy decision, not an index override in this study. Private fixture, immutable measured runner/evaluator snapshots, reports and [self-review evidence](measurements/2026-10-08-document-fusion-qualification/acceptance-review.json) remain under ignored `docs/measurements/2026-10-08-document-fusion-qualification/`. Design-v2 SHA-256: `8af63e6afabdc7807c4bc1b04a3a94dea29312cfba3ca3505388433f5b19cb2b`; new fixture: `82acf50981f506a8d671c1b6caf9c1c201b29ef6131f4623840f4f96d725d682`; broader manifest: `2f809c2bf18f912f8401ce9939b1a83d7dff4b9aef59a6d19d1bb60da68a2a3e`.
 
 Read-only health at **00:32:41.573 UTC** confirms the same .71 daemon 54708 active/ready, generation 1 and small GPU 55539 owned-ready. Native watching was syncing (five pending, eight active files, zero failed), and the cumulative callback-error counter had risen from the earlier interval's 8 to **19**. Retained log tail shows ordinary reindex batches and a 17:32 PDT embedding transport reset with retries; a later periodic resource sample reports warning OS pressure. These observations do not attribute causation or prove complete delivery. The earlier eight-minute stable interval remains historical; busy admission and watcher behavior under load need further qualification. Evaluation made no direct store/policy/model/client-setting or service-ownership changes; normal watching continued independently. No release, restart, pruning or production fusion integration occurred.
+
+[Exact-source CI](https://github.com/reowens/grepmax/actions/runs/37865559164) for `59c2a008bef2b1bc7922a2f101036c070b02e2dd` passed **2,104 tests / 211 files**, both typechecks, formatting, audits, build and packed-consumer/native/prune smoke. This validates the evaluation tooling; broader retrieval acceptance remains insufficient.
+
+Final read-only health at **00:37:25.187 UTC October 9** still shows .71 daemon 54708 active/ready, small GPU 55539 owned-ready and generation 1. The watcher is **recovering with catchup running**, 25 active files, zero queued/failed files and cumulative counter **34**, up from 19 at 00:32:41. Empty queue counters do not imply caught-up state while active work/recovery remains. Prioritize availability and watcher behavior under load before further matched retrieval collection. Private `final-health.json`, bounded `daemon-log-tail.json` and `ci-proof.json` preserve context.
 
 **Next:** qualify provider availability and expected document coverage during ordinary development, then predefine a fresh admitted collection opportunity for the unchanged rule. Preserve the exposed results; any ranking change requires separate fresh ground truth. Do not automatically retry refused cases or bypass guards. Consumer rollout, longer watcher stability and separately admitted disk recovery remain open.
 
@@ -331,7 +335,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 153 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 154 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
