@@ -1,20 +1,32 @@
 # Docs
 
-## Working focus after 0.26.72 — October 8, 2026
+## Working focus after 0.26.72 activation — October 8, 2026
 
-**0.26.72 is published and globally installed. Runtime handover is blocked by a new safety stop.** The release contains the existing-inference policy correction and bounded fair warm-worker scheduling. Retained branches, stashes and backups preserve history; they are not an integration queue.
+**0.26.72 is published, installed and actively serving.** The release corrects existing-inference policy admission and bounded fair warm-worker scheduling. The reviewed prior pressure latch was backed up and cleared under the user's activation instruction; the graceful IPC handover succeeded. Retained branches, stashes and backups preserve history; they are not an integration queue.
 
 | Work | Current state | Next action / completion evidence |
 | --- | --- | --- |
-| Release / runtime | .72 published; all 303 installed package files verified. Running .71 daemon is paused after a new critical-pressure latch | Review the latch and a separately admitted resume/handover, then execute the predefined live check. Publication is complete; active-runtime acceptance is pending. |
-| Document availability / quality | Policy/scheduling accepted in full CI; six-query live plan unexecuted. Broader fusion 2/20 insufficient | Restore an admitted running runtime before live acceptance; preserve original retrieval cohorts. Coverage and quality remain separate. |
-| Watcher stability | Last active .71 sample native/counter53; new pause stopped watching and GPU | Review the pressure event and repeated gaps. No sustained delivery or stability claim. |
-| Production disk recovery | Read-only readiness complete; live prune unperformed | Separate recovery window with fresh strict admission/reservation, pinned tools, reviewed owner drain, current retention inventory and exclusive lease. |
-| Consumer rollout | Client settings unchanged; existing client sessions preserved | Explicitly configure the document entry point when rollout is selected; reconnect clients separately when needed. |
+| Release / runtime | .72 active on daemon43395, small GPU44400 ready, gen1; all303 installed files verified | Delivery complete. Maintain ordinary operation and observe guard transitions. |
+| Document availability / quality | Five successful live searches, four during indexing; full predefined acceptance incomplete at source-read cap. Broader fusion2/20 insufficient | Review verification bounds before a separate fresh acceptance cohort; preserve first result and original studies. Coverage/ranking qualification remain separate. |
+| Watcher stability | Native watching/indexing restored; final counter0/failed0, four active and six catchup-queued files | Longer ordinary-load observation/repeated-gap review. Restart reset the counter; no historical delivery or sustained stability claim. |
+| Production disk recovery | Read-only readiness complete; live prune unperformed | Separate recovery window with fresh strict admission/reservation, pinned tools, owner drain, current retention and exclusive lease. |
+| Consumer rollout | Client settings unchanged; existing sessions preserved | Configure document entry point explicitly when rollout is selected; reconnect separately when needed. |
 
-Preserve normal `critical-only`, small GPU model, maximum two workers and the current safety marker. Watcher ownership remains in standalone gmax; Hetchy Developer is optional. Shared watcher extraction and embedding migration remain deferred. The current focus takes precedence over historical snapshots and next steps below.
+Preserve normal `critical-only`, small GPU and maximum two workers. Watcher ownership remains in standalone gmax; Hetchy Developer is optional. Shared watcher extraction and embedding migration remain deferred. This focus supersedes the historical blocked-release status below.
+
+## 0.26.72 activated and serving — October 8, 2026
+
+The user explicitly instructed completion of installation/activation. Review confirmed the original marker's timestamp/reason, configured critical-only policy and three fresh samples five seconds apart: **normal OS pressure / healthy kernel usage**, about3.614GB kernel zone. The old paused daemon's retained heartbeat had also reported normal OS pressure with about6.6GiB measured headroom. These current observations permit the reviewed resume; they do not establish the original trigger measurement or prove a probe bug. The original marker and review were preserved under `/private/tmp/gmax-v02672-release/activation/` before clearing that exact unchanged stop. No guard threshold, model, worker cap or client setting was changed.
+
+At **01:29:58 UTC October9**, normal `gmax watch --daemon -b` requested old .71 shutdown via IPC with reason version-mismatch. The old daemon completed shutdown and .72 started as **daemon43395**; its configured small Granite GPU became ready as **PID44400** at01:30:10. Native watching resumed for the existing leased project. Final IPC at **01:31:04.524** confirms version.72, active service, ready GPU, one worker/max2 and resource generation1. Native indexing had four active files, six catchup-queued files, zero failed, no running catchup scan and counter0. The latest scan completed, but queued processing remains; this is not fully caught-up state. Counter0 reflects a new daemon and does not resolve prior repeated gaps. All303 installed package files still match the published artifact; configuration/client-setting digests are unchanged.
+
+The original six-query availability plan was executed once. **Five searches returned ready**, each50 pointers; the first **four overlapped indexing**, with durations558/1781/1049/500ms, and the fifth completed idle in284ms. On the fifth query, bounded source verification reached **2,090,354bytes /87files** and refused the next file under the predefined2MiB cap. **241 of250 pointers** passed indexed/current digest and range checks at their read time; nine were unchecked, the sixth query was not issued, and the final full source fence was not performed. Therefore **full predefined acceptance is incomplete**, despite demonstrated live execution. No cap was raised, query retried or case rescored; preserve `/private/tmp/gmax-v02672-release/live.json` and the frozen plan. This is availability evidence, not broader ranking quality, sustained latency or proof all busy refusals are resolved. Protected fusion qualification remains insufficient.
+
+Activation proof: `/private/tmp/gmax-v02672-release/activation/acceptance.json`. Publication, installation and active runtime delivery are complete. No store maintenance/pruning, new large model, client restart or configuration change occurred. Remaining work is bounded fresh availability acceptance, guard-event diagnostics, longer watcher observation, coverage/consumer rollout and separately admitted recovery.
 
 ## 0.26.72 release delivered; runtime acceptance blocked — October 8, 2026
+
+Historical publication/install record; activation above supersedes the blocked runtime state.
 
 [0.26.72](https://github.com/reowens/grepmax/releases/tag/v0.26.72) was published at **01:23:22 UTC October 9** from tag/source `4bb0d5329989d88c6cd57fd1a53ef72414259eee`. [Release CI](https://github.com/reowens/grepmax/actions/runs/37869346056) and [exact-source CI](https://github.com/reowens/grepmax/actions/runs/37869344266) passed; the release ran **2,122 tests / 211 files**, both typechecks, formatting, JavaScript/Python audits, build and packed-consumer/native/prune smoke. No PR was created.
 
@@ -378,7 +390,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 159 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 160 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
