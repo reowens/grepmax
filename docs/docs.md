@@ -1,18 +1,33 @@
 # Docs
 
-## Working focus after 0.26.72 live acceptance — October 8, 2026
+## Working focus after pressure-trigger diagnostics — October 8, 2026
 
 **0.26.72 is published, installed and actively serving.** The release corrects existing-inference policy admission and bounded fair warm-worker scheduling. The reviewed prior pressure latch was backed up and cleared under the user's activation instruction; the graceful IPC handover succeeded. Retained branches, stashes and backups preserve history; they are not an integration queue.
 
 | Work | Current state | Next action / completion evidence |
 | --- | --- | --- |
 | Release / runtime | .72 active on daemon43395, small GPU44400 ready, gen1; all303 installed files verified | Delivery complete. Maintain ordinary operation and observe guard transitions. |
+| Pressure diagnostics | Triggering evidence accepted in source; full CI passed 2,130 tests / 212 files. Installed .72 unchanged | Deliver the accepted patch separately; older incidents cannot be backfilled. |
 | Document availability / quality | Fresh services-scope acceptance passed: 5/6 successful, all five during indexing; 250 pointers and final freshness verified. One busy refusal. Broader fusion remains insufficient | Preserve both cohorts. Broader availability, coverage and ranking quality remain separate qualifications. |
 | Watcher stability | At 01:39:03 UTC, native indexing active: nine pending/eight active, zero failed, no catchup scan, counter 0 | Longer ordinary-load observation and repeated-gap review. Prior idle checkpoint does not establish sustained delivery or stability. |
 | Production disk recovery | Read-only readiness complete; live prune unperformed | Separate recovery window with fresh strict admission/reservation, pinned tools, owner drain, current retention and exclusive lease. |
 | Consumer rollout | Client settings unchanged; existing sessions preserved | Configure document entry point explicitly when rollout is selected; reconnect separately when needed. |
 
 Preserve normal `critical-only`, small GPU and maximum two workers. Watcher ownership remains in standalone gmax; Hetchy Developer is optional. Shared watcher extraction and embedding migration remain deferred. This focus supersedes the historical blocked-release status below.
+
+## Pressure-trigger diagnostics implemented in source — October 8, 2026
+
+The .71 pressure incident's original marker retained only a timestamp and generic reason; later normal/warning readings could not recover the triggering measurement. Source `7334b30dbc8cb7f65867097bab4ab5b7d70085e8` adds optional bounded `diagnostics` to the existing schema-version-1 durable marker. Resource admission, daemon startup/heartbeat/operation checks and direct worker-spawn guards pass their original triggering evidence. Critical resource errors retain that evidence if persistence fails, allowing the daemon to use the same sample rather than a later health reading.
+
+The record contains source/phase, selected policy, PID and requested reservation kind/size where applicable. OS probes retain separate initial/refreshed timestamps, durations, classification and parsed dispatch flags **1 normal / 2 warning / 4 critical**; kernel probes retain their original bytes, element count/size and timing. Strict resource samples retain aggregate/headroom/swap numbers; critical-only does not introduce an aggregate scan. Early refusal omits probes that were not run. No extra probe is taken for diagnostics, and warning/unknown admission decisions remain unchanged.
+
+Persistence rebuilds a bounded field allowlist: no argv, query text, source paths, process inventories or raw command output. Invalid optional diagnostics cannot prevent the underlying stop from persisting. The first marker's original cause/evidence is retained; old reason-only records remain valid. Atomic/private publication, guard thresholds, quarantine checks and absence of automatic expiry/clear are unchanged. The existing-only inference path still does not create a latch. [Operations guide](../CLAUDE.md) describes inspection and limitations.
+
+Root implementation/self review, **229 focused tests / 12 files**, source/test typechecks and formatting pass, with an additional kernel regression check for the final parsed-flag assertion. Fixtures cover changed initial/final OS pressure, kernel critical despite warning/unknown OS readings, startup/heartbeat/worker/reservation context, private-data stripping, invalid optional evidence, first-cause retention, persistence failure, legacy markers, strict recovery and document contracts. [Full exact-source CI](https://github.com/reowens/grepmax/actions/runs/37872048964) passed **2,130 tests / 212 files**, both typechecks, formatting, JavaScript/Python audits, build and packed-consumer/native/prune smoke. Source acceptance is complete. Private review/logs are under `docs/measurements/2026-10-08-pressure-trigger-diagnostics/`.
+
+**This patch is not released or installed.** At **01:55:09.268 UTC October 9**, installed .72 daemon43395/GPU44400 remain active/ready, native/generation1, one worker/max2, counter0 and zero failed paths. There is one pending live edit and no active file at that sample; this is not a longer stability qualification. All303 installed package files still match the official .72 artifact, and configuration/client-setting digests are unchanged. No restart, marker/model/policy/client-setting change, native-store inspection or pruning occurred. Existing incidents cannot be backfilled; only a deployed patch can record future triggers.
+
+**Next:** release/install the accepted diagnostic patch when requested, then undertake longer varied-load watcher observation. Preserve the passed scoped acceptance, the earlier incomplete run and frozen retrieval studies; broader fusion remains insufficient.
 
 ## Fresh scoped live acceptance passed — October 8, 2026
 
@@ -50,7 +65,7 @@ Activation proof: `/private/tmp/gmax-v02672-release/activation/acceptance.json`.
 ## Next work after delivery
 
 1. **Completed for the services-docs scope:** fresh availability acceptance with current pointer and final source checks under the original read cap. Preserve the first incomplete run and this separate passing cohort. Broader/load-diverse availability is not yet qualified.
-2. Improve pressure-event evidence. Record the actual triggering OS/kernel measurements and admission context so a future stop can be reviewed from its cause, rather than only its generic reason and later healthy readings.
+2. **Implemented in source; pending release:** bounded original trigger measurements and admission context in the durable stop record. Full CI passed; release/install delivery remains before relying on it for live incidents.
 3. Observe native watching over longer, varied development load. Track queue drainage, gap/catchup events, failed files and resource state; a reset counter or idle checkpoint is insufficient.
 
 Document coverage (`secrets.*`), consumer rollout and separately admitted production recovery remain distinct follow-ups. Broader fusion remains unqualified and is not integrated into production ranking. The gmax watcher remains standalone; a future shared package may be independent of Hetchy Developer.
@@ -421,7 +436,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 162 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 163 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
