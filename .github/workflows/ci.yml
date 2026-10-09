@@ -6,10 +6,35 @@ on:
 
   workflow_dispatch:
   push:
-    branches: [ main, fix/gmax-prune-integration, fix/gmax-recovery-admission ]
+    branches: [ main ]
+
+# Superseded automatic checks can stop; explicit dispatches have their own group.
+# Release publication and native qualification use separate workflows.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event_name }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      run_checks: ${{ steps.scope.outputs.run_checks }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Verify change classification
+        run: node --test scripts/test-ci-changes.cjs
+      - name: Select checks from the complete diff
+        id: scope
+        run: node scripts/ci-changes.cjs
+
   ci:
+    needs: changes
+    if: needs.changes.outputs.run_checks == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -64,6 +89,8 @@ jobs:
         run: pnpm run audit:consumer
 
   watcher-macos:
+    needs: changes
+    if: needs.changes.outputs.run_checks == 'true'
     runs-on: macos-15
     timeout-minutes: 15
     steps:
@@ -78,6 +105,8 @@ jobs:
           cache: 'pnpm'
           cache-dependency-path: 'pnpm-lock.yaml'
       - run: pnpm install --frozen-lockfile
+      - name: Native FSEvents, gap recovery, ignore policies and queue priority
+        run: pnpm exec vitest run tests/watcher-manager.test.ts tests/standalone-watcher-health.test.ts tests/project-watcher-ignore.test.ts tests/watcher-ignore.test.ts tests/watcher-batch.test.ts tests/project-batch-processor.test.ts --maxWorkers=2
       - run: pnpm run build
       - name: Qualify native macOS watcher recovery without models
         run: node --max-old-space-size=384 scripts/test-watcher-consumer.cjs

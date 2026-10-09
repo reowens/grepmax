@@ -2,13 +2,8 @@ name: Native watcher validation
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main, fix/gmax-watcher-recovery]
-    paths:
-      - 'src/lib/daemon/watcher-manager.ts'
-      - 'src/lib/index/watcher*.ts'
-      - 'tests/*watcher*.test.ts'
-      - '.github/workflows/watcher-validation.yml'
+# Automatic coverage lives in CI's single watcher-macos job. Keep this targeted
+# workflow available for explicit diagnostics without launching a second Mac.
 
 jobs:
   watcher:
