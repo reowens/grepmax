@@ -8,12 +8,6 @@ on:
   push:
     branches: [ main ]
 
-# Superseded automatic checks can stop; explicit dispatches have their own group.
-# Release publication and native qualification use separate workflows.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event_name }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
-
 jobs:
   changes:
     runs-on: ubuntu-latest
@@ -35,6 +29,11 @@ jobs:
   ci:
     needs: changes
     if: needs.changes.outputs.run_checks == 'true'
+    # A docs-only push skips this job, so it cannot cancel unfinished source CI.
+    # New source checks supersede old ones; explicit dispatches stay independent.
+    concurrency:
+      group: ci-linux-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event_name }}
+      cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -91,6 +90,9 @@ jobs:
   watcher-macos:
     needs: changes
     if: needs.changes.outputs.run_checks == 'true'
+    concurrency:
+      group: ci-macos-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event_name }}
+      cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
     runs-on: macos-15
     timeout-minutes: 15
     steps:
