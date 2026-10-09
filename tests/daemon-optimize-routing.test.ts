@@ -70,8 +70,8 @@ describe("optimize IPC routing", () => {
         reason: "test reason",
       };
       const d = Object.create(Daemon.prototype);
-      d.vectorDb = { runMaintenance: vi.fn(async () => compaction) };
-      d.runSharedOperation = vi.fn(async (_name, _signal, fn) => fn());
+      d.vectorDb = {};
+      d.runVersionCleanup = vi.fn(async () => compaction);
       d.isReady = () => true;
       d.operationStatus = () => "idle";
       const response = await handleCommand(d, { cmd: "optimize" }, {} as any);

@@ -1,8 +1,8 @@
-"""Explicit, exclusively leased Lance 12 prune-only recovery candidate.
+"""Exclusively leased Lance 12 prune-only cleanup.
 
 Never compacts, writes rows, builds indexes or starts a server. This helper is
-not an automatic maintenance path. Native production resource validation is
-required before enabling it on a pressured host.
+used by recovery and bounded automatic retention. Native host admission and
+exclusive ownership are required before deleting files.
 """
 
 import argparse
@@ -107,7 +107,7 @@ def open_version(lance, root, version):
                          metadata_cache_size_bytes=CACHE_BYTES)
 
 
-def prune(store, expected_version, cutoff_ms, owner_file, nonce, admission=None):
+def prune(store, expected_version, cutoff_ms, owner_file, nonce, admission=None, max_versions=None):
     root = Path(store).resolve(strict=True)
     if not root.is_dir() or root.suffix != ".lance":
         raise ValueError("Cleanup requires a local Lance table directory")
@@ -116,6 +116,8 @@ def prune(store, expected_version, cutoff_ms, owner_file, nonce, admission=None)
         raise ValueError("Cleanup requires a positive current version")
     if cutoff_ms > time.time_ns() // 1_000_000:
         raise ValueError("Cleanup cutoff must not be in the future")
+    if max_versions is not None and (type(max_versions) is not int or not 1 <= max_versions <= 128):
+        raise ValueError("Invalid bounded prune version count")
     if importlib.metadata.version("pylance") != "12.0.0":
         raise ValueError("Cleanup requires pylance 12.0.0")
     before_bytes, before_allocated, before_free = measure(root)
@@ -134,6 +136,10 @@ def prune(store, expected_version, cutoff_ms, owner_file, nonce, admission=None)
             protected.add(version["version"])
         if version["version"] not in protected and version["timestamp"].timestamp() * 1000 < cutoff_ms:
             versions.append(version["version"])
+    eligible_count = len(versions)
+    if max_versions is not None:
+        versions = sorted(versions)[:max_versions]
+    retained = {version["version"] for version in all_versions} - set(versions)
     if dataset.latest_version != expected_version or verify_lease(root, owner_file, nonce) != owner:
         raise ValueError("Table or exclusive ownership changed during cleanup admission")
     if len(protected) > MAX_PROTECTED_VERSIONS:
@@ -152,7 +158,7 @@ def prune(store, expected_version, cutoff_ms, owner_file, nonce, admission=None)
     fresh = open_dataset(lance, root)
     remaining = {version["version"] for version in fresh.versions()}
     if (fresh.version != expected_version or fresh.latest_version != expected_version
-            or snapshot(fresh) != current or not protected.issubset(remaining)
+            or snapshot(fresh) != current or remaining != retained
             or set(versions).intersection(remaining)
             or verify_lease(root, owner_file, nonce) != owner):
         raise ValueError("Current/protected state or exclusive ownership changed; no retry")
@@ -166,6 +172,7 @@ def prune(store, expected_version, cutoff_ms, owner_file, nonce, admission=None)
         "bytesRemoved": stats.bytes_removed if stats else 0,
         "versionsRemoved": stats.old_versions if stats else 0,
         "rewritten": False,
+        "eligibleVersionsRemaining": eligible_count - len(versions),
         "fileBytesBefore": before_bytes, "fileBytesAfter": after_bytes,
         "allocatedBytesBefore": before_allocated, "allocatedBytesAfter": after_allocated,
         "freeBytesBefore": before_free, "freeBytesAfter": after_free,
@@ -180,6 +187,7 @@ def main():
     parser.add_argument("--lease-owner", required=True)
     parser.add_argument("--lease-nonce", required=True)
     parser.add_argument("--require-admission", action="store_true")
+    parser.add_argument("--max-versions", type=int)
     args = parser.parse_args()
     if not args.require_admission:
         parser.error("Prune helper requires guarded gmax recovery admission")
@@ -193,7 +201,8 @@ def main():
         if sys.stdin.readline(256).strip() != args.lease_nonce:
             raise ValueError("Deletion admission unavailable; no cleanup")
     print(json.dumps(prune(args.store, args.version, args.cutoff_ms, args.lease_owner,
-                          args.lease_nonce, admission if args.require_admission else None)))
+                          args.lease_nonce, admission if args.require_admission else None,
+                          args.max_versions)))
 
 
 if __name__ == "__main__":

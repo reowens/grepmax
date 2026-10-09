@@ -35,6 +35,13 @@ export class OperationCoordinator {
   private readonly sharedTasks = new Set<Promise<unknown>>();
   private readonly taskNames = new Map<Promise<unknown>, string>();
   private closePromise: Promise<void> | null = null;
+  private queueShared = false;
+  private readWindow: ((name: string) => boolean) | undefined;
+  private readonly waiters = new Set<{
+    name: string;
+    resume: () => void;
+    reject: (error: Error) => void;
+  }>();
 
   get status(): CoordinatorState["kind"] {
     return this.state.kind;
@@ -54,8 +61,40 @@ export class OperationCoordinator {
     signal: AbortSignal | undefined,
     fn: (signal: AbortSignal) => Promise<T>,
   ): Promise<T> {
+    if (
+      this.queueShared &&
+      (this.state.kind === "exclusive" ||
+        this.state.kind === "exclusive-pending") &&
+      !this.readWindow?.(name) &&
+      !name.startsWith("watch") &&
+      name !== "store-maintenance"
+    ) {
+      if (this.waiters.size >= 64)
+        return Promise.reject(new OperationBusyError(this.state.name));
+      if (signal?.aborted) return Promise.reject(abortError(signal.reason));
+      return new Promise<T>((resolve, reject) => {
+        const cleanup = () => {
+          this.waiters.delete(waiter);
+          signal?.removeEventListener("abort", abort);
+        };
+        const waiter = {
+          name,
+          resume: () => {
+            cleanup();
+            resolve(this.runShared(name, signal, fn));
+          },
+          reject: (error: Error) => {
+            cleanup();
+            reject(error);
+          },
+        };
+        const abort = () => waiter.reject(abortError(signal?.reason));
+        this.waiters.add(waiter);
+        signal?.addEventListener("abort", abort, { once: true });
+      });
+    }
     try {
-      this.assertSharedAdmission();
+      this.assertSharedAdmission(name);
     } catch (error) {
       return Promise.reject(error);
     }
@@ -87,6 +126,7 @@ export class OperationCoordinator {
     name: string,
     quiesce: () => Promise<void>,
     fn: (signal: AbortSignal) => Promise<T>,
+    options: { queueShared?: boolean } = {},
   ): Promise<T> {
     if (this.state.kind === "closing" || this.state.kind === "closed") {
       return Promise.reject(new OperationClosedError());
@@ -97,6 +137,7 @@ export class OperationCoordinator {
       return Promise.reject(new OperationBusyError(current));
     }
     this.state = { kind: "exclusive-pending", name };
+    this.queueShared = options.queueShared ?? false;
     const controller = new AbortController();
     this.controllers.add(controller);
 
@@ -120,6 +161,9 @@ export class OperationCoordinator {
         ) {
           this.state = { kind: "open" };
         }
+        this.queueShared = false;
+        this.readWindow = undefined;
+        for (const waiter of [...this.waiters]) waiter.resume();
       }
     })();
     this.activeTasks.add(task);
@@ -132,6 +176,22 @@ export class OperationCoordinator {
     return task;
   }
 
+  /** Only prune-only retention may reopen current-version reads after draining
+   * old readers and closing their native handles. Writers remain excluded. */
+  openVersionCleanupReadWindow(allowed: (name: string) => boolean): void {
+    if (
+      this.state.kind !== "exclusive" ||
+      this.state.name !== "version-cleanup" ||
+      !this.queueShared
+    )
+      throw new Error(
+        "current-version reads require exclusive prune-only cleanup",
+      );
+    this.readWindow = allowed;
+    for (const waiter of [...this.waiters])
+      if (allowed(waiter.name)) waiter.resume();
+  }
+
   /** Cancel existing work without closing admission for subsequent bounded reads. */
   abortAndDrain(reason: Error): Promise<void> {
     for (const controller of this.controllers) controller.abort(reason);
@@ -141,6 +201,7 @@ export class OperationCoordinator {
   close(reason = new OperationClosedError()): Promise<void> {
     if (this.closePromise) return this.closePromise;
     this.state = { kind: "closing" };
+    for (const waiter of [...this.waiters]) waiter.reject(reason);
     for (const controller of this.controllers) controller.abort(reason);
     const tasks = [...this.activeTasks];
     this.closePromise = Promise.allSettled(tasks).then(() => {
@@ -149,7 +210,7 @@ export class OperationCoordinator {
     return this.closePromise;
   }
 
-  private assertSharedAdmission(): void {
+  private assertSharedAdmission(name: string): void {
     if (this.state.kind === "closing" || this.state.kind === "closed") {
       throw new OperationClosedError();
     }
@@ -157,6 +218,7 @@ export class OperationCoordinator {
       this.state.kind === "exclusive" ||
       this.state.kind === "exclusive-pending"
     ) {
+      if (this.state.kind === "exclusive" && this.readWindow?.(name)) return;
       throw new OperationBusyError(this.state.name);
     }
   }

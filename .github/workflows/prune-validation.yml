@@ -34,10 +34,12 @@ jobs:
           UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/gmax-prune-python
       - name: Validate bounded deleted-row materialization
         run: ${{ runner.temp }}/gmax-prune-python/bin/python -I tests/python/test_compact_recovery.py
+      - name: Validate independent bounded retention with native Lance
+        run: ${{ runner.temp }}/gmax-prune-python/bin/python -I tests/python/test_version_cleanup_native.py
       - name: Guard and lease regressions
         run: |
           python3 -m unittest discover -s tests/python -p test_lance_prune.py
-          pnpm exec vitest run tests/lance-cleanup.test.ts tests/store-lease.test.ts tests/recovery-admission.test.ts tests/recovery.test.ts tests/resource-budget.test.ts --maxWorkers=1
+          pnpm exec vitest run tests/lance-cleanup.test.ts tests/store-lease.test.ts tests/recovery-admission.test.ts tests/recovery.test.ts tests/resource-budget.test.ts tests/version-cleanup.test.ts tests/daemon-version-cleanup.test.ts tests/operation-coordinator.test.ts --maxWorkers=1
       - name: Build and verify the installed npm package
         run: |
           pnpm run build

@@ -6,7 +6,7 @@ import { autostartDisabledReason } from "../utils/autostart";
 import { safetyStopReason } from "../utils/safety-latch";
 
 export const FULL_TABLE_MAINTENANCE_DISABLED_REASON =
-  "full-table maintenance disabled by host-safety containment; disk recovery is pending";
+  "full-table maintenance disabled by host-safety containment; version cleanup runs independently";
 
 /** This release has no production override: force, configuration and persisted
  * state cannot enable rewriting. Tests may mock this module to cover the old
@@ -74,7 +74,8 @@ export interface StoreMaintenancePolicy {
   reason: string;
   recordedAt: number;
   rewriteBudgetBytes: 0;
-  cleanupPending: true;
+  cleanupPending: boolean;
+  lastVersionCleanupAt?: number;
 }
 
 export function maintenancePolicyPath(storeDir: string): string {
@@ -99,7 +100,8 @@ export function recordMaintenanceContainment(storeDir: string): string {
         previous.storeIdentity === storeIdentity &&
         previous.mode === "disabled" &&
         previous.rewriteBudgetBytes === 0 &&
-        previous.cleanupPending === true
+        typeof previous.cleanupPending === "boolean" &&
+        previous.reason === FULL_TABLE_MAINTENANCE_DISABLED_REASON
       ) {
         fs.chmodSync(target, 0o600);
         return FULL_TABLE_MAINTENANCE_DISABLED_REASON;
@@ -144,5 +146,53 @@ export function recordMaintenanceContainment(storeDir: string): string {
         // Failed receipt cleanup cannot authorize maintenance.
       }
     }
+  }
+}
+
+/** A completed prune changes retention state, never enables table rewrites. */
+export function recordVersionCleanupCompleted(
+  storeDir: string,
+  at: number,
+): void {
+  recordMaintenanceContainment(storeDir);
+  const identity = fs.realpathSync(storeDir);
+  const target = maintenancePolicyPath(identity);
+  const stat = fs.lstatSync(target);
+  if (!stat.isFile() || stat.size > 16 * 1024)
+    throw new Error("maintenance receipt is unverified");
+  const policy: StoreMaintenancePolicy = JSON.parse(
+    fs.readFileSync(target, "utf8"),
+  );
+  if (
+    policy.storeIdentity !== identity ||
+    policy.mode !== "disabled" ||
+    policy.rewriteBudgetBytes !== 0 ||
+    !Number.isSafeInteger(at)
+  )
+    throw new Error("maintenance receipt is invalid");
+  const temporary = path.join(
+    identity,
+    `.gmax-maintenance-${randomUUID()}.tmp`,
+  );
+  try {
+    const descriptor = fs.openSync(temporary, "wx", 0o600);
+    try {
+      fs.writeFileSync(
+        descriptor,
+        `${JSON.stringify({ ...policy, cleanupPending: false, lastVersionCleanupAt: at })}\n`,
+      );
+      fs.fsyncSync(descriptor);
+    } finally {
+      fs.closeSync(descriptor);
+    }
+    fs.renameSync(temporary, target);
+    const directory = fs.openSync(identity, "r");
+    try {
+      fs.fsyncSync(directory);
+    } finally {
+      fs.closeSync(directory);
+    }
+  } finally {
+    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
   }
 }

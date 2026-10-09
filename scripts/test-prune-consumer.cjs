@@ -77,7 +77,25 @@ print(json.dumps({"version": ds.version, "tagged": tagged, "rows": ds.count_rows
     }
     }
     lease = await StoreLease.acquireExclusive({storeDir: store, timeoutMs: 5000, role: "packed-consumer-fixture"});
-    const result = await pruneVersions(runtime, table, prepared.version, new Date(prepared.cutoffMs), {lease, admission: fixtureAdmission()});
+    // A daemon may serve new reads of the protected current version while its
+    // prune-only child deletes history. Keep the actual Node table open and
+    // query throughout deletion; no writer or older reader is admitted.
+    connection = await lance.connect(store, {session: new lance.Session(BigInt(16 * 1024**2), BigInt(8 * 1024**2))});
+    const currentReader = await connection.openTable("chunks");
+    let finished = false;
+    const pending = pruneVersions(runtime, table, prepared.version, new Date(prepared.cutoffMs), {lease, admission: fixtureAdmission(), maxVersions: 128});
+    const checked = pending.finally(() => { finished = true; });
+    let concurrentReads = 0;
+    while (!finished) {
+      const rows = await currentReader.query().select(["id", "content"]).toArray();
+      assert.deepEqual(rows.map(r => r.id).sort(), ["current", "tail"]);
+      concurrentReads++;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    const result = await checked;
+    assert(concurrentReads > 1, "Native pruning must overlap current-version Node reads");
+    assert.equal(result.eligibleVersionsRemaining, 0);
+    currentReader.close(); await connection.close(); connection = undefined;
     assert.equal(result.rewritten, false);
     assert(result.versionsRemoved > 0);
     assert(result.bytesRemoved > 0);

@@ -1,20 +1,16 @@
 # Docs
 
-## Working focus: watcher recovery qualification — October 8, 2026
+## Working focus: independent automatic retention — October 9, 2026
 
-**0.26.74 is published, installed and actively serving.** It deploys bounded watcher recovery diagnostics on top of .73 pressure diagnostics and .72 admission/scheduling fixes. Normal IPC version handover completed; no safety marker was changed. Retained branches, stashes and backups preserve history; they are not an integration queue.
+**0.26.80 is installed and serving. Immediate disk recovery completed; automatic retention remains defective in that installed version.** Recovery reduced allocated table size from 31.81 GB to 15.83 GB: version pruning reclaimed 8.13 GB without rewriting data, then separately admitted deleted-row compaction removed the remaining bloat. Every one of the 546,430 live baseline rows was compared by stable ID and full-field digest before old data was deleted. Manual recovery evidence is retained in `/private/tmp/gmax-live-cleanup-20261009/`.
 
-| Work | Current state | Next action / completion evidence |
-| --- | --- | --- |
-| Release / runtime | .74 active on daemon84589, small GPU85827 ready, gen1; all305 installed files verified | Delivery complete. Preserve ordinary operation and current settings. |
-| Pressure diagnostics | .74 retains .73 diagnostics; original CI passed 2,130 tests / 212 files and installed isolated fixture passed | Observe future triggers; older incidents cannot be backfilled. |
-| Document availability / quality | Fresh services-scope acceptance passed: 5/6 successful, all five during indexing; 250 pointers and final freshness verified. One busy refusal. Broader fusion remains insufficient | Preserve both cohorts. Broader availability, coverage and ranking quality remain separate qualifications. |
-| Watcher recovery qualification | Steps 1 and 2 accepted; .74 diagnostics deployed. CI 2,152 tests / 215 files plus native Linux/macOS passed | Delivery complete; live window failed a client-settings fence and observed no natural gap. |
-| Watcher stability | .74 caught up at06:10:17 UTC: native, zero pending/active/failed, scan2 complete, gaps0 | Natural-gap recovery remains unqualified; preserve failed/no-gap window and observe the next natural event without repeated quiet-window claims. |
-| Production disk recovery | Read-only readiness complete; live prune unperformed | Separate recovery window with fresh strict admission/reservation, pinned tools, owner drain, current retention and exclusive lease. |
-| Consumer rollout | Release preserved clients; Claude settings changed later during collection and are left as found | Configure document entry point explicitly when rollout is selected; preserve concurrent settings changes. |
+At 01:51 PDT, ordinary editing had increased the table to 16.48 GB with 446 versions, and logs still incorrectly said disk recovery was pending. The root defect is that retention was coupled to disabled full-table maintenance. The one-time recovery did not fix recurrence.
 
-Preserve normal `critical-only`, small GPU and maximum two workers. Watcher ownership remains in standalone gmax; Hetchy Developer is optional. Shared watcher extraction and embedding migration remain deferred. This focus supersedes the historical blocked-release status below.
+The next release separates version reclamation from rewriting. The daemon prepares the pinned runtime before pausing writers, drains older readers and external store owners, closes old native handles, then deletes at most 128 old versions per pass. Current, tagged and two-minute recent history is retained. A new current-version read window allows queries while the helper deletes history; writes and schema evolution remain excluded. Backlog retries use one-minute scheduling, settled history five-minute scheduling; polling and watched activity cannot starve cleanup. Interrupted retention is retried only with fresh exclusive ownership and fresh retained-state verification, preserving the previous uncertain attempt ID without declaring it successful. Normal configured host policy is preserved.
+
+Full-table rewriting remains disabled. It is not a prerequisite for reclamation. The unfinished bounded-compaction draft is preserved separately at `/private/tmp/gmax-maintenance-draft-1791536650/`; it is not included in this release. The completed retention receipt clears the stale cleanup-pending state without enabling rewrites. Watcher ownership remains in standalone gmax, with no Hetchy Developer dependency. Existing client sessions and model/worker settings are preserved.
+
+Acceptance must cover protected native rows/indexes/tags, bounded passes, interruption, concurrent current-version Node reads, watcher restoration, shutdown and actual published-package installation. Sustained normal-editing disk growth is not yet qualified; do not describe short checkpoints as hours of stability. Shared/lazy MCP startup is separate and does not delay this repair.
 
 ## 0.26.74 released, installed and active — October 8, 2026
 
@@ -522,7 +518,6 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 | [2026-08-25 Release Triage — Retrospective](2026-08-25-release-triage-retrospective.md) | Active |
 | [Embedding Layout Decision](embedding-layout-decision.md) | Active |
 | [Future Sessions](future-sessions.md) | Active |
-| [Gmax Host Safety and Disk Recovery](plans/gmax-host-safety-and-disk-recovery.md) | Active |
 
 ## Planned
 
@@ -539,7 +534,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 169 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 170 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|

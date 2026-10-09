@@ -39,6 +39,7 @@ import {
 } from "../utils/resource-budget";
 import { annMinRows, isAnnEnabled } from "./ann-config";
 import { type CompactionResult, skippedCompaction } from "./compaction-result";
+import type { CleanupRuntime } from "./lance-cleanup";
 import * as lancedb from "./lance-sdk";
 import {
   assertFreshDiskMutationAllowed,
@@ -52,6 +53,10 @@ import {
 } from "./maintenance-policy";
 import { StoreLease } from "./store-lease";
 import type { VectorRecord } from "./types";
+import {
+  runVersionCleanup,
+  type VersionCleanupResult,
+} from "./version-cleanup";
 
 export type DiskPressureLevel = "ok" | "low" | "critical";
 
@@ -246,6 +251,10 @@ export class VectorDB {
   private indexOwner = false;
   private lastOptimizeDidWork = false;
   private lastCompactionResult: CompactionResult | null = null;
+  private lastVersionCleanupResult: VersionCleanupResult | null = null;
+  private versionCleanupActive = false;
+  private versionCleanupPromise: Promise<VersionCleanupResult | null> | null =
+    null;
   /** Compaction rate limiter — see COMPACTION_MIN_INTERVAL_MS. */
   private lastCompactionMs = 0;
   private compactionIntervalMs = COMPACTION_MIN_INTERVAL_MS;
@@ -372,7 +381,7 @@ export class VectorDB {
   }
 
   isMaintenanceActive(): boolean {
-    return this.maintenancePromise !== null;
+    return this.maintenancePromise !== null || this.versionCleanupActive;
   }
 
   private maintenanceDue(): boolean {
@@ -398,6 +407,74 @@ export class VectorDB {
   /** Resume the maintenance timer after a pause. */
   resumeMaintenanceLoop(): void {
     this.startMaintenanceLoop();
+  }
+
+  /** The daemon has drained operations and quiesced watchers before calling.
+   * Close native handles before the helper owns the store; keep this instance
+   * and worker/searcher references available after shared ownership resumes. */
+  versionCleanupStatus(): VersionCleanupResult | null {
+    return this.lastVersionCleanupResult
+      ? { ...this.lastVersionCleanupResult }
+      : null;
+  }
+
+  cleanupVersions(
+    runtime: CleanupRuntime,
+    signal?: AbortSignal,
+    allowCurrentReads?: () => void,
+  ): Promise<VersionCleanupResult | null> {
+    if (this.versionCleanupPromise) return this.versionCleanupPromise;
+    const run = this.performVersionCleanup(runtime, signal, allowCurrentReads);
+    const tracked = run.finally(() => {
+      if (this.versionCleanupPromise === tracked)
+        this.versionCleanupPromise = null;
+    });
+    this.versionCleanupPromise = tracked;
+    return tracked;
+  }
+
+  private async performVersionCleanup(
+    runtime: CleanupRuntime,
+    signal?: AbortSignal,
+    allowCurrentReads?: () => void,
+  ): Promise<VersionCleanupResult | null> {
+    this.assertMutationAllowed();
+    this.versionCleanupActive = true;
+    try {
+      const lease = await this.upgradeStoreLease(signal, 750);
+      await Promise.all([this.drainWrites(), this.drainCompactions()]);
+      const table = await this.openExistingTableUnsafe();
+      if (!table) return null;
+      let version: number;
+      try {
+        version = await table.version();
+      } finally {
+        table.close();
+      }
+      this.db?.close();
+      this.db = null;
+      this.session = null;
+      this.resourceReservation?.release();
+      this.resourceReservation = null;
+      // All older readers are drained. New queries can only open the protected
+      // latest version while writers stay excluded for this prune-only pass.
+      allowCurrentReads?.();
+      const result = await runVersionCleanup(
+        this.lancedbDir,
+        lease,
+        version,
+        runtime,
+        signal,
+      );
+      this.lastVersionCleanupResult = result;
+      return result;
+    } finally {
+      try {
+        if (!this.closed) await this.downgradeStoreLease();
+      } finally {
+        this.versionCleanupActive = false;
+      }
+    }
   }
 
   private async getDb(): Promise<lancedb.Connection> {
@@ -482,14 +559,17 @@ export class VectorDB {
   }
 
   /** Upgrade and retain this instance's current lease for transfer to a new DB. */
-  async upgradeStoreLease(signal?: AbortSignal): Promise<StoreLease> {
+  async upgradeStoreLease(
+    signal?: AbortSignal,
+    timeoutMs?: number,
+  ): Promise<StoreLease> {
     this.assertMutationAllowed();
     if (this.closed) throw new Error("VectorDB connection is closed");
     if (this.exclusiveMutationPromise) await this.exclusiveMutationPromise;
     return this.withLeaseTransition(async () => {
       const current = await this.getLease();
       if (current.mode === "exclusive") return current;
-      const upgrade = current.upgrade({ signal });
+      const upgrade = current.upgrade({ signal, timeoutMs });
       this.leasePromise = upgrade;
       try {
         const upgraded = await upgrade;
@@ -583,6 +663,8 @@ export class VectorDB {
    * but all writes pause when compaction wants exclusive access.
    */
   private async withWriteGate<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.versionCleanupActive)
+      throw new Error("writes paused for version cleanup");
     this.assertMutationAllowed();
     this.ensureDiskOk();
     while (this.exclusiveMutationPromise || this.compactingPromise) {
@@ -870,6 +952,7 @@ export class VectorDB {
 
   async ensureTable(): Promise<lancedb.Table> {
     if (
+      this.versionCleanupActive ||
       this.options.readOnly ||
       storeMutationDeniedReason() !== null ||
       this.checkDiskPressure(true) === "critical"
@@ -2083,6 +2166,7 @@ export class VectorDB {
   }
 
   private async finishClose(): Promise<void> {
+    await this.versionCleanupPromise?.catch(() => {});
     await this.connecting?.catch(() => {});
     if (this.maintenanceTimer) {
       clearInterval(this.maintenanceTimer);

@@ -14,6 +14,110 @@ function deferred<T = void>() {
 }
 
 describe("OperationCoordinator", () => {
+  it("admits current reads during prune-only deletion while keeping writes queued", async () => {
+    const coordinator = new OperationCoordinator();
+    const entered = deferred();
+    const release = deferred();
+    const cleanup = coordinator.runExclusive(
+      "version-cleanup",
+      async () => {},
+      async () => {
+        coordinator.openVersionCleanupReadWindow((name) => name === "search");
+        entered.resolve();
+        await release.promise;
+      },
+      { queueShared: true },
+    );
+    await entered.promise;
+    await expect(
+      coordinator.runShared("search", undefined, async () => "current rows"),
+    ).resolves.toBe("current rows");
+    const write = vi.fn(async () => {});
+    const queued = coordinator.runShared("write", undefined, write);
+    expect(write).not.toHaveBeenCalled();
+    release.resolve();
+    await Promise.all([cleanup, queued]);
+    expect(write).toHaveBeenCalledOnce();
+  });
+
+  it("cannot enable a retention read window for a rewrite or before reader drain", async () => {
+    const coordinator = new OperationCoordinator();
+    expect(() => coordinator.openVersionCleanupReadWindow(() => true)).toThrow(
+      "prune-only",
+    );
+    await coordinator.runExclusive(
+      "repair",
+      async () => {},
+      async () => {
+        expect(() =>
+          coordinator.openVersionCleanupReadWindow(() => true),
+        ).toThrow("prune-only");
+      },
+      { queueShared: true },
+    );
+  });
+  it("waits for automatic cleanup before admitting searches without a busy failure", async () => {
+    const coordinator = new OperationCoordinator();
+    const release = deferred();
+    const cleanup = coordinator.runExclusive(
+      "version-cleanup",
+      async () => {},
+      async () => release.promise,
+      { queueShared: true },
+    );
+    const search = vi.fn(async () => "found");
+    const pending = coordinator.runShared("search", undefined, search);
+    expect(search).not.toHaveBeenCalled();
+    await expect(
+      coordinator.runShared("watch-batch", undefined, async () => {}),
+    ).rejects.toBeInstanceOf(OperationBusyError);
+    release.resolve();
+    await cleanup;
+    await expect(pending).resolves.toBe("found");
+  });
+
+  it("cancels queued searches and never includes them in the drain it awaits", async () => {
+    const coordinator = new OperationCoordinator();
+    const release = deferred();
+    const cleanup = coordinator.runExclusive(
+      "version-cleanup",
+      async () => {},
+      async () => release.promise,
+      { queueShared: true },
+    );
+    const controller = new AbortController();
+    const search = vi.fn(async () => {});
+    const pending = coordinator.runShared("search", controller.signal, search);
+    const rejected = expect(pending).rejects.toThrow("cancelled");
+    controller.abort(new Error("cancelled"));
+    await rejected;
+    release.resolve();
+    await cleanup;
+    expect(search).not.toHaveBeenCalled();
+  });
+
+  it("shutdown rejects queued work instead of running it after cleanup", async () => {
+    const coordinator = new OperationCoordinator();
+    const release = deferred();
+    const cleanup = coordinator.runExclusive(
+      "version-cleanup",
+      async () => {},
+      async () => release.promise,
+      { queueShared: true },
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    const search = vi.fn(async () => {});
+    const pending = coordinator.runShared("search", undefined, search);
+    const rejected =
+      expect(pending).rejects.toBeInstanceOf(OperationClosedError);
+    const close = coordinator.close();
+    await rejected;
+    release.resolve();
+    await Promise.allSettled([cleanup, close]);
+    expect(search).not.toHaveBeenCalled();
+  });
+
   it("allows shared operations to overlap", async () => {
     const coordinator = new OperationCoordinator();
     const release = deferred();

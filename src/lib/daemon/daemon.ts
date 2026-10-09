@@ -28,6 +28,10 @@ import {
 import { MetaCache } from "../store/meta-cache";
 import { type StoreLease, StoreLeaseTimeoutError } from "../store/store-lease";
 import { VectorDB } from "../store/vector-db";
+import {
+  prepareVersionCleanup,
+  type VersionCleanupResult,
+} from "../store/version-cleanup";
 import { AsyncSemaphore } from "../utils/async-semaphore";
 import { daemonStartDeniedReason } from "../utils/autostart";
 import { isGitWorktreeRoot, WORKTREE_REFUSAL } from "../utils/blocked-roots";
@@ -210,6 +214,9 @@ export class Daemon {
   private readonly startTime = Date.now();
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private idleInterval: ReturnType<typeof setInterval> | null = null;
+  private cleanupInterval: ReturnType<typeof setInterval> | null = null;
+  private cleanupPromise: Promise<CompactionResult> | null = null;
+  private lastCleanupAttempt = 0;
   private heartbeatTick = 0;
   private shuttingDown = false;
   private recycling = false;
@@ -543,6 +550,7 @@ export class Daemon {
       this.assertStartupActive();
       // Resources are open — only now may resource-dependent IPC commands run.
       this.ready = true;
+      this.startVersionCleanupLoop();
     } catch (err) {
       console.error("[daemon] Failed to open shared resources:", err);
       throw err;
@@ -998,11 +1006,7 @@ export class Daemon {
   }> {
     const db = this.vectorDb;
     if (!db) throw new Error("daemon resources not ready");
-    const compaction = await this.runSharedOperation(
-      "store-maintenance",
-      undefined,
-      () => db.runMaintenance({ force: true }),
-    );
+    const compaction = await this.runVersionCleanup();
     if (!compaction)
       return { ok: false, error: "maintenance produced no compaction outcome" };
     return {
@@ -1012,6 +1016,115 @@ export class Daemon {
         ? {}
         : { error: compaction.reason ?? compaction.status }),
     };
+  }
+
+  versionCleanupStatus(): VersionCleanupResult | null {
+    return this.vectorDb?.versionCleanupStatus() ?? null;
+  }
+
+  /** Status polling and watched edits cannot starve independent reclamation. */
+  private startVersionCleanupLoop(): void {
+    if (this.cleanupInterval) return;
+    this.cleanupInterval = setInterval(() => {
+      const interval =
+        this.versionCleanupStatus()?.eligibleVersionsRemaining === 0
+          ? 5 * 60_000
+          : 60_000;
+      if (
+        !this.ready ||
+        this.shuttingDown ||
+        this.recycling ||
+        this.pausedReason !== null ||
+        this.cleanupPromise ||
+        this.operations.status !== "open" ||
+        Date.now() - this.lastCleanupAttempt < interval
+      )
+        return;
+      void this.runVersionCleanup().catch((error) => {
+        dlog(
+          "daemon",
+          `Version cleanup deferred: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+    }, 60_000);
+    this.cleanupInterval.unref();
+  }
+
+  runVersionCleanup(): Promise<CompactionResult> {
+    if (this.cleanupPromise) return this.cleanupPromise;
+    this.lastCleanupAttempt = Date.now();
+    const run = this.performVersionCleanup();
+    const tracked = run.finally(() => {
+      if (this.cleanupPromise === tracked) this.cleanupPromise = null;
+    });
+    this.cleanupPromise = tracked;
+    return tracked;
+  }
+
+  private async performVersionCleanup(): Promise<CompactionResult> {
+    if (
+      !this.vectorDb ||
+      !this.ready ||
+      this.shuttingDown ||
+      this.recycling ||
+      this.pausedReason !== null
+    )
+      throw new Error("daemon resources not ready for version cleanup");
+    this.assertHeavyOperationAdmission("version-cleanup");
+    const deadline = AbortSignal.timeout(60_000);
+    const runtime = await prepareVersionCleanup(PATHS.lancedbDir, deadline);
+    let roots: string[] = [];
+    try {
+      return await this.operations.runExclusive(
+        "version-cleanup",
+        async () => {
+          deadline.throwIfAborted();
+          this.assertHeavyOperationAdmission("version-cleanup");
+          roots = [
+            ...new Set([
+              ...this.processors.keys(),
+              ...this.subscriptions.keys(),
+            ]),
+          ];
+          await this.watcherManager.quiesceAll();
+        },
+        async (signal) => {
+          this.assertHeavyOperationAdmission("version-cleanup");
+          const result = await this.vectorDb!.cleanupVersions(
+            runtime,
+            AbortSignal.any([signal, deadline]),
+            () =>
+              this.operations.openVersionCleanupReadWindow(
+                (name) =>
+                  getReadVerb(name) !== undefined ||
+                  [
+                    "search",
+                    "keyword-search",
+                    "documents",
+                    "project-stats",
+                  ].includes(name),
+              ),
+          );
+          if (!result) return skippedCompaction("no indexed table");
+          dlog(
+            "daemon",
+            `Version cleanup completed: ${JSON.stringify(result)}`,
+          );
+          return result;
+        },
+        { queueShared: true },
+      );
+    } finally {
+      if (
+        !this.shuttingDown &&
+        this.ready &&
+        this.pausedReason === null &&
+        roots.length
+      ) {
+        await this.watcherManager.resumeAll(roots, { catchup: false });
+        await this.watcherManager.catchupAll(roots);
+      }
+    }
   }
 
   operationStatus(): string {
@@ -2879,6 +2992,7 @@ export class Daemon {
 
     if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
     if (this.idleInterval) clearInterval(this.idleInterval);
+    if (this.cleanupInterval) clearInterval(this.cleanupInterval);
     for (const timer of this.pendingIndexRetryTimers.values()) {
       clearTimeout(timer);
     }

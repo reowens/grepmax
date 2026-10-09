@@ -190,6 +190,7 @@ export async function handleCommand(
           workers: daemon.workerCount(),
           resources: daemon.resourceSnapshot?.() ?? null,
           compaction: daemon.compactionStatus?.() ?? null,
+          versionCleanup: daemon.versionCleanupStatus?.() ?? null,
           workerThreads: WORKER_THREADS_SETTING,
           service: daemon.serviceStatus?.(),
         };

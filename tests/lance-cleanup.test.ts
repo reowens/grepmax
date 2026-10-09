@@ -147,6 +147,27 @@ describe("prune helper subprocess bounds", () => {
     expect(admission.close).toHaveBeenCalledOnce();
   });
 
+  it("stops heartbeat checks at native exit while verified stdout drains", async () => {
+    const admission = {
+      nonce: "fixture",
+      start: vi.fn(),
+      approve: vi.fn(),
+      check: vi.fn(() => {
+        throw Error("already exited");
+      }),
+      close: vi.fn(),
+    };
+    const pending = runCleanupProcess("fixture", [], { admission });
+    child.stdout.write('{"admission":"launch"}\n{"admission":"ready"}\n');
+    child.emit("exit", 0, null);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(admission.check).not.toHaveBeenCalled();
+    expect(child.kill).not.toHaveBeenCalled();
+    child.stdout.write('{"verified":true}');
+    child.emit("close", 0, null);
+    await expect(pending).resolves.toBe('{"verified":true}');
+  });
+
   it("cancels an admitted helper when heartbeat resources become unknown", async () => {
     const admission = {
       nonce: "fixture",
@@ -364,6 +385,36 @@ describe("exclusive prune admission and verification", () => {
     expect(readPruneState(store)?.previousUncertainAttemptId).toBe(
       "old-parent",
     );
+  });
+
+  it("retries interrupted automatic retention under fresh exclusive ownership without declaring the previous attempt successful", async () => {
+    writePruneState({
+      schemaVersion: 1,
+      storeIdentity: store,
+      attemptId: "interrupted-auto",
+      version: 4,
+      cutoffMs: Date.now() - 1000,
+      startedAt: Date.now() - 1000,
+      outcome: "running",
+    });
+    lease = await StoreLease.acquireExclusive({ storeDir: store });
+    const pending = pruneVersions(runtime, table, 5, new Date(), {
+      lease,
+      retryUncertain: true,
+      maxVersions: 128,
+    });
+    expect(vi.mocked(spawn).mock.calls[0][1]).toContain("--max-versions");
+    child.stdout.write('{"admission":"launch"}\n{"admission":"ready"}\n');
+    child.stdout.write(
+      JSON.stringify({ ...output, eligibleVersionsRemaining: 3 }),
+    );
+    child.emit("close", 0, null);
+    await pending;
+    expect(readPruneState(store)).toMatchObject({
+      outcome: "completed",
+      version: 5,
+      previousUncertainAttemptId: "interrupted-auto",
+    });
   });
 
   it("refuses corrupt or symlinked state before launching deletion", async () => {

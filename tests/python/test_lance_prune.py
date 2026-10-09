@@ -83,6 +83,19 @@ class PruneTests(unittest.TestCase):
         self.dataset.cleanup_old_versions.assert_not_called()
         self.assertEqual(result["bytesRemoved"], 0)
 
+    def test_bounded_pass_preserves_unselected_history_and_reports_backlog(self):
+        self.versions.extend({"version": i, "timestamp": datetime.fromtimestamp(1)} for i in range(7, 11))
+        result = pruner.prune(str(self.root), 5, 2500, str(self.owner_file), "fixture-exclusive", max_versions=2)
+        self.assertEqual(self.dataset.cleanup_old_versions.call_args.kwargs["versions"], [3, 7])
+        self.assertEqual(result["eligibleVersionsRemaining"], 3)
+        self.assertEqual({v["version"] for v in self.versions}, {4, 5, 6, 8, 9, 10})
+
+    def test_bounded_pass_refuses_invalid_limits_before_native_open(self):
+        for limit in (0, -1, 129, 1.5, True):
+            with self.assertRaisesRegex(ValueError, "bounded prune"):
+                pruner.prune(str(self.root), 5, 2500, str(self.owner_file), "fixture-exclusive", max_versions=limit)
+        self.engine.dataset.assert_not_called()
+
     def test_wrong_or_missing_exclusive_owner_refuses_before_native_open(self):
         self.owner_file.write_text(json.dumps({**self.owner, "nonce": "other"}))
         with self.assertRaisesRegex(ValueError, "ownership"):

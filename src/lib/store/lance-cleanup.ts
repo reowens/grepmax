@@ -28,6 +28,7 @@ export interface PruneResult {
   bytesRemoved: number;
   versionsRemoved: number;
   rewritten: false;
+  eligibleVersionsRemaining?: number;
   fileBytesBefore: number;
   fileBytesAfter: number;
   allocatedBytesBefore: number;
@@ -40,6 +41,10 @@ export interface PruneOptions {
   signal?: AbortSignal;
   admission?: PruneAdmission;
   acknowledgeUncertain?: string;
+  /** A fresh prune-only pass under exclusive ownership. Never declares the
+   * previous attempt successful; records its identity and verifies retained state. */
+  retryUncertain?: boolean;
+  maxVersions?: number;
 }
 
 /** No shell, inherited service credentials, Python path hooks or source builds.
@@ -152,6 +157,12 @@ export function runCleanupProcess(
         `Cleanup process could not start (${error.code ?? "unknown"})`,
       );
     });
+    child.once("exit", () => {
+      // An exited helper no longer consumes host resources. Do not turn a
+      // verified result into an uncertain receipt while stdout is draining.
+      clearTimeout(timeout);
+      if (monitor) clearInterval(monitor);
+    });
     child.once("close", (code, signal) => {
       clearTimeout(timeout);
       if (forceKill) clearTimeout(forceKill);
@@ -224,7 +235,7 @@ export function runCleanupProcess(
 }
 
 let preparation: Promise<CleanupRuntime> | undefined;
-/** Explicit recovery only. Containment has no automatic caller of this setup. */
+/** Pinned runtime shared by explicit recovery and prune-only maintenance. */
 export async function prepareCleanupRuntime(
   signal?: AbortSignal,
 ): Promise<CleanupRuntime> {
@@ -322,7 +333,7 @@ export async function prepareCleanupRuntime(
   return preparation;
 }
 
-/** Explicit recovery only. Caller must have drained local work/readers before
+/** Caller must have drained local work/readers before
  * acquiring the exclusive lease. The lease cannot be released during this call. */
 export async function pruneVersions(
   runtime: CleanupRuntime,
@@ -341,6 +352,13 @@ export async function pruneVersions(
   ) {
     throw new Error("Invalid prune version or future cutoff");
   }
+  if (
+    options.maxVersions !== undefined &&
+    (!Number.isSafeInteger(options.maxVersions) ||
+      options.maxVersions < 1 ||
+      options.maxVersions > 128)
+  )
+    throw new Error("Invalid bounded prune version count");
   const table = fs.realpathSync(store);
   if (!table.endsWith(".lance") || !fs.statSync(table).isDirectory())
     throw new Error("Pruning requires a local Lance table");
@@ -354,7 +372,8 @@ export async function pruneVersions(
       const previous = readPruneState(storeDir);
       if (
         previous?.outcome === "uncertain" &&
-        options.acknowledgeUncertain !== previous.attemptId
+        options.acknowledgeUncertain !== previous.attemptId &&
+        !options.retryUncertain
       )
         throw new Error(
           `Previous prune completion is uncertain; explicit acknowledgement required for attempt ${previous.attemptId}`,
@@ -391,6 +410,9 @@ export async function pruneVersions(
           "--lease-nonce",
           options.lease.owner.nonce,
           "--require-admission",
+          ...(options.maxVersions === undefined
+            ? []
+            : ["--max-versions", String(options.maxVersions)]),
         ],
         {
           signal: options.signal,
@@ -419,6 +441,10 @@ export async function pruneVersions(
         result.engine !== "12.0.0" ||
         result.version !== version ||
         result.rewritten !== false ||
+        (options.maxVersions !== undefined &&
+          (!Number.isSafeInteger(result.eligibleVersionsRemaining) ||
+            result.eligibleVersionsRemaining! < 0 ||
+            result.versionsRemoved > options.maxVersions)) ||
         ![
           "fragments",
           "bytesRemoved",
