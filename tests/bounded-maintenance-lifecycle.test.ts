@@ -117,6 +117,50 @@ describe("metered native child lifecycle", () => {
     );
   });
 
+  it("accepts a verified terminal receipt when the exited helper can no longer be measured", async () => {
+    const f = fixture(
+      {
+        status: "no-work",
+        afterVersion: 7,
+        rowsVerified: 0,
+        remainingDeletedRows: 0,
+        totalBytesWritten: 0,
+        dataBytesWritten: 0,
+        indexBytesWritten: 0,
+        metadataBytesWritten: 0,
+      },
+      { status: "no-work" },
+    );
+    // Discovery, exclusive ownership, launch and ready remain admitted. A
+    // completed receipt grants no additional work and need not probe its
+    // now-exited child a fifth time.
+    vi.mocked(resourceBudget.check)
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce(null)
+      .mockImplementation(() => {
+        throw new Error("process footprint unavailable");
+      });
+    const open = vi.fn();
+    const result = await runBoundedMaintenance(
+      "/fixture",
+      f.lease,
+      7,
+      f.runtime,
+      { open, drain: vi.fn(async () => {}) },
+    );
+    expect(result).toMatchObject({
+      status: "skipped",
+      rewritten: false,
+      totalBytesWritten: 0,
+      afterVersion: 7,
+    });
+    expect(open).not.toHaveBeenCalled();
+    expect(f.release).toHaveBeenCalledOnce();
+    expect(f.reservation.release).toHaveBeenCalledOnce();
+  });
+
   it("recovers an earlier committed head using the original protection and cumulative ledger", async () => {
     const f = fixture(
       { status: "recovered" },

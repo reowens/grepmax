@@ -486,7 +486,10 @@ export async function runBoundedMaintenance(
             throw new Error("bounded cleanup cancelled before acknowledgement");
           child.stdin.write(`${lease.owner.nonce}\n`);
         };
-        const admitCounters = (phase: Record<string, unknown>) => {
+        const admitCounters = (
+          phase: Record<string, unknown>,
+          terminal = false,
+        ) => {
           if (!plan) throw new Error("native counters arrived without a plan");
           const fields = [
             "dataBytesWritten",
@@ -515,12 +518,19 @@ export async function runBoundedMaintenance(
           )
             throw new Error("native cumulative write counters are invalid");
           spent = counters as number[];
-          checkMeteredAdmission(
-            storeDir,
-            signal,
-            plan.status === "no-work" ? 0 : plan.totalWriteBudgetBytes - total,
-            plan.freeSpaceMarginBytes,
-          );
+          // A terminal receipt authorizes no further writes. Its helper may
+          // already have exited, so sampling its attached reservation here can
+          // turn a verified completion into an unknown-footprint refusal.
+          // Counter/provenance validation and actual child-close fencing remain.
+          if (!terminal)
+            checkMeteredAdmission(
+              storeDir,
+              signal,
+              plan.status === "no-work"
+                ? 0
+                : plan.totalWriteBudgetBytes - total,
+              plan.freeSpaceMarginBytes,
+            );
           return total;
         };
         const handle = async (line: string) => {
@@ -569,7 +579,7 @@ export async function runBoundedMaintenance(
             state = "result";
             acknowledge();
           } else if (state === "result" && phase.phase === "result" && plan) {
-            const total = admitCounters(phase);
+            const total = admitCounters(phase, true);
             const counters = [
               phase.dataBytesWritten,
               phase.indexBytesWritten,
