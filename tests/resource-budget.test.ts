@@ -342,17 +342,67 @@ describe("one persistent budget for all clients/stores", () => {
       "partial",
     );
   });
-  it("existing admission samples a fresh critical-only home without creating its absent ledger", () => {
-    fs.rmSync(root, { recursive: true });
-    const sample = vi.fn(() => s);
-    const budget = make(10, { policy: () => "critical-only", sample });
-    expect(budget.checkExisting()).toEqual(s);
-    expect(sample).toHaveBeenCalledTimes(1);
-    expect(fs.existsSync(root)).toBe(false);
-    s.memoryPressure = "warn";
-    expect(() => budget.checkExisting()).toThrow("warning");
-    expect(fs.existsSync(root)).toBe(false);
+  it.each(["warn", "unknown"] as const)(
+    "existing critical-only inference admits %s without aggregate sampling or ledger creation",
+    (pressure) => {
+      fs.rmSync(root, { recursive: true });
+      s.memoryPressure = pressure;
+      s.kernelPressure = pressure;
+      s.aggregateFootprintMb = null;
+      s.incompleteReasons = ["aggregate admission disabled"];
+      const sample = vi.fn(() => {
+        throw new Error("must not sample aggregate resources");
+      });
+      const criticalSample = vi.fn(() => s);
+      const budget = make(10, {
+        policy: () => "critical-only",
+        sample,
+        criticalSample,
+      });
+      expect(budget.checkExisting()).toBe(s);
+      expect(criticalSample).toHaveBeenCalledOnce();
+      expect(sample).not.toHaveBeenCalled();
+      expect(fs.existsSync(root)).toBe(false);
+      expect(latch).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["memoryPressure", "kernelPressure"] as const)(
+    "existing critical-only inference refuses critical %s without latching or ledger mutation",
+    (key) => {
+      s[key] = "critical";
+      const budget = make(10, {
+        policy: () => "critical-only",
+        criticalSample: () => s,
+      });
+      expect(() => budget.checkExisting()).toThrow("critical host pressure");
+      expect(latch).not.toHaveBeenCalled();
+      expect(fs.readdirSync(root)).toEqual([]);
+    },
+  );
+  it("existing critical-only inference checks containment before and after sampling", () => {
+    let denied: string | null = "existing stop";
+    const criticalSample = vi.fn(() => {
+      denied = "concurrent stop";
+      return s;
+    });
+    const budget = make(10, {
+      policy: () => "critical-only",
+      criticalSample,
+      quarantine: () => denied,
+    });
+    expect(() => budget.checkExisting()).toThrow("host containment");
+    expect(criticalSample).not.toHaveBeenCalled();
+    denied = null;
+    expect(() => budget.checkExisting()).toThrow("host containment");
+    expect(criticalSample).toHaveBeenCalledOnce();
     expect(latch).not.toHaveBeenCalled();
+    expect(fs.readdirSync(root)).toEqual([]);
+  });
+  it("existing strict inference still refuses warning pressure", () => {
+    s.memoryPressure = "warn";
+    expect(() => make().checkExisting()).toThrow("warning");
+    expect(latch).not.toHaveBeenCalled();
+    expect(fs.readdirSync(root)).toEqual([]);
   });
   it("existing admission refuses a symlinked ledger without changing either directory", () => {
     const target = path.join(root, "actual");

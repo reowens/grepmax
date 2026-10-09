@@ -241,6 +241,13 @@ index and already-warm compatible query worker. It cannot start a daemon, watch 
 project, initialize a model, fall back to another backend or mutate the index.
 Cold, busy or unavailable resources return an explicit unavailable state.
 
+Document query admission follows the configured host guard policy. On macOS,
+default `strict` requires fresh aggregate resource admission; explicit
+`critical-only` checks OS/kernel critical pressure without an aggregate scan or
+ledger access. Warning or unavailable measurements stay diagnostic in that mode.
+Both policies preserve containment checks. A busy warm worker still refuses
+immediately; this entry point does not queue or start another worker.
+
 Results contain canonical paths and one-based source ranges, without cached source
 bodies. The first slice uses dense retrieval with explicit path scope and bounded
 deadlines. Consumers must reread and authorize current source before using a

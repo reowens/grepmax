@@ -66,13 +66,17 @@ eligibility until external work confirms readiness. A worker rechecks before inf
 no initialization, health polling, retry or backend fallback is allowed. Cold or
 busy workers refuse immediately without queueing, spawning or scaling.
 
-Read-only admission samples existing host/ledger state without creating locks,
-reservations, pruning records or changing containment markers. Existing Darwin
-inference requires known-normal aggregate resources even if ordinary expansion
-uses a looser policy. Other platforms retain the existing no-footprint-probe
-policy; this is not a cross-platform native qualification claim.
-An absent ledger in a fresh `critical-only` home is sampled as empty without being
-created; existing corrupt or symlinked ledgers still refuse. Markdown coverage
+Read-only admission honors the configured host guard policy without creating locks,
+reservations, pruning records or changing containment markers. Under the default
+`strict` policy, existing Darwin inference requires fresh known-normal aggregate
+resources and reads the existing ledger; absent ledgers are treated as empty and
+corrupt or symlinked ledgers refuse. Explicit `critical-only` uses fresh OS/kernel
+pressure probes without aggregate sampling or ledger access: warning/unknown
+measurements remain diagnostic, while confirmed critical pressure refuses.
+Containment is checked before and after sampling in either policy. This read-only
+path never creates a safety latch; the daemon's safety machinery remains authoritative.
+Other platforms retain the existing no-footprint-probe policy; this is not a
+cross-platform native qualification claim. Markdown coverage
 and returned pointers require regular files, including after symlink resolution;
 a directory whose name ends in `.md` can be a prefix but never a source pointer.
 

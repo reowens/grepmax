@@ -411,11 +411,26 @@ export class ResourceBudget {
     };
   }
 
-  /** Read-only admission for existing inference. Never seed/lock/prune the ledger or latch. */
+  /** Read-only admission for existing inference, honoring the selected host policy.
+   * Never seed/lock/prune the ledger or latch. */
   checkExisting(): HostResourceSnapshot | null {
     if (this.deps.quarantine())
       throw new ResourceAdmissionError("host containment");
     if (this.deps.platform !== "darwin") return null;
+    if (this.deps.policy() === "critical-only") {
+      const snapshot = this.deps.criticalSample();
+      if (
+        snapshot.memoryPressure === "critical" ||
+        snapshot.kernelPressure === "critical"
+      )
+        throw new ResourceAdmissionError(
+          "critical host pressure; existing inference refused",
+          true,
+        );
+      if (this.deps.quarantine())
+        throw new ResourceAdmissionError("host containment");
+      return snapshot;
+    }
     const records = this.readExistingRecords();
     const snapshot = this.deps.sample();
     assertResourceSnapshot(
