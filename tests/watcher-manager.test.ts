@@ -401,14 +401,112 @@ describe("WatcherManager.unwatchProject", () => {
       expect(wm.health(root)).toMatchObject({
         overflowCount: 2,
         watcherMode: "recovering",
+        watcherRecovery: {
+          gapCount: 2,
+          terminalErrorCount: 0,
+          coveredGapCount: 1,
+          outstandingGapCount: 1,
+          reconciliationNeeded: true,
+          lastScan: { id: 1, outcome: "complete", gapCountAtStart: 1 },
+        },
       });
       await wm.catchupScan(root, processor, new AbortController().signal);
-      expect(wm.health(root).watcherMode).toBe("native");
+      expect(wm.health(root)).toMatchObject({
+        watcherMode: "native",
+        watcherRecovery: {
+          coveredGapCount: 2,
+          outstandingGapCount: 0,
+          reconciliationNeeded: false,
+          lastCompleteScan: { id: 2, gapCountAtStart: 2 },
+        },
+      });
     } finally {
       await wm.unwatchProject(root);
       await fs.rm(root, { recursive: true, force: true });
     }
   });
+
+  it.each(["refused", "failed", "aborted", "incomplete"])(
+    "does not cover a gap when recovery is %s",
+    async (outcome) => {
+      const root = await fs.mkdtemp(
+        path.join(os.tmpdir(), "gmax-gap-evidence-"),
+      );
+      const watcher = await import("@parcel/watcher");
+      let notify!: SubscribeCallback;
+      vi.mocked(watcher.subscribe).mockImplementation(
+        async (_root, callback) => {
+          notify = callback;
+          return { unsubscribe: vi.fn(async () => {}) };
+        },
+      );
+      const cache = {
+        getKeysWithPrefix: vi.fn(async () => new Set<string>()),
+        get: vi.fn(),
+        put: vi.fn(),
+      };
+      const db = {
+        getDistinctPathsForPrefix: vi.fn(async () => new Set<string>()),
+      };
+      const d = { ...deps(), getMetaCache: () => cache, getVectorDb: () => db };
+      const processor = new ProjectBatchProcessor({
+        projectRoot: root,
+        metaCache: cache as any,
+        vectorDb: db as any,
+      });
+      d.processors.set(root, processor);
+      const wm = new WatcherManager(d) as any;
+      vi.spyOn(wm, "requestOverflowCatchup").mockImplementation(() => {});
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        await wm.subscribeWatcher(root, processor);
+        await wm.catchupScan(root, processor, new AbortController().signal);
+        notify(
+          new Error("Too many events. File system must be re-scanned."),
+          [],
+        );
+        const controller = new AbortController();
+        if (outcome === "refused") {
+          d.runProjectOperation = vi.fn(async () => {
+            throw new Error("admission refused /private-path");
+          });
+          await expect(wm.runCatchup(root, processor)).rejects.toThrow(
+            "admission refused",
+          );
+        } else if (outcome === "failed") {
+          cache.getKeysWithPrefix.mockRejectedValueOnce(
+            new Error("private backend error"),
+          );
+          await expect(
+            wm.catchupScan(root, processor, controller.signal),
+          ).rejects.toThrow("private backend error");
+        } else {
+          if (outcome === "aborted") controller.abort();
+          else await fs.rm(root, { recursive: true, force: true });
+          expect(await wm.catchupScan(root, processor, controller.signal)).toBe(
+            false,
+          );
+        }
+        const recovery = wm.health(root).watcherRecovery;
+        expect(recovery).toMatchObject({
+          gapCount: 1,
+          coveredGapCount: 0,
+          outstandingGapCount: 1,
+          reconciliationNeeded: true,
+          lastCompleteScan: { id: 1, outcome: "complete" },
+        });
+        if (outcome === "refused")
+          expect(recovery.lastAttemptFailure).toMatchObject({
+            scanStarted: false,
+          });
+        else expect(recovery.lastScan.outcome).toBe(outcome);
+        expect(JSON.stringify(recovery)).not.toContain("private");
+      } finally {
+        await wm.unwatchProject(root);
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("still retries terminal failures and falls back after repeated failed streams", async () => {
     vi.useFakeTimers();

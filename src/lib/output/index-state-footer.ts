@@ -5,6 +5,8 @@
 // historically did not. This formats a single machine-readable footer so an
 // agent can decide to caveat its answer or retry once indexing settles.
 
+import type { WatcherRecoveryState } from "../index/watcher-recovery";
+
 export type WatchWorkKind = "live" | "catchup" | "cleanup";
 
 export interface WatchQueueState {
@@ -35,6 +37,8 @@ export interface IndexState {
   lastReconciledAt?: number;
   overflowCount?: number;
   catchupMs?: number;
+  /** Optional bounded evidence; scan coverage does not imply ingestion drained. */
+  watcherRecovery?: WatcherRecoveryState;
 }
 
 export function formatWatchQueue(queue: WatchQueueState): string {
@@ -43,6 +47,13 @@ export function formatWatchQueue(queue: WatchQueueState): string {
       ? "none"
       : `${Math.ceil(queue.oldestLiveEditAgeMs / 1000)}s`;
   return `live=${queue.live} catchup=${queue.catchup} cleanup=${queue.cleanup} active=${queue.activeFiles} oldestLiveEdit=${age}`;
+}
+
+export function formatWatcherRecovery(
+  state: WatcherRecoveryState | undefined,
+): string | null {
+  if (!state) return null;
+  return `gaps=${state.gapCount} covered=${state.coveredGapCount} outstanding=${state.outstandingGapCount} terminalErrors=${state.terminalErrorCount} reconciliationNeeded=${state.reconciliationNeeded} scan=${state.lastScan?.id ?? "none"}/${state.lastScan?.outcome ?? "none"} exclusions=${state.exclusions ? `${state.exclusions.attached ? "attached" : "detached"}:${state.exclusions.literalCount}+${state.exclusions.filterCount}:${state.exclusions.fingerprint}` : "unknown"}`;
 }
 
 /**

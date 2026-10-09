@@ -14,6 +14,7 @@ import {
   isFSEventsGap,
 } from "../index/watcher-errors";
 import { subscribeWithNativeExclusions } from "../index/watcher-ignore";
+import { WatcherRecoveryTracker } from "../index/watcher-recovery";
 import type { IndexState } from "../output/index-state-footer";
 import type { MetaCache } from "../store/meta-cache";
 import type { VectorDB } from "../store/vector-db";
@@ -120,6 +121,17 @@ export class WatcherManager {
   private readonly terminalFailures = new Map<string, Set<string>>();
   private readonly watchLifecycles = new Map<string, AbortController>();
 
+  private readonly recoveryStates = new Map<string, WatcherRecoveryTracker>();
+
+  private recovery(root: string): WatcherRecoveryTracker {
+    let tracker = this.recoveryStates.get(root);
+    if (!tracker) {
+      tracker = new WatcherRecoveryTracker();
+      this.recoveryStates.set(root, tracker);
+    }
+    return tracker;
+  }
+
   constructor(private readonly deps: WatcherManagerDeps) {}
 
   health(root: string): Partial<IndexState> {
@@ -137,6 +149,7 @@ export class WatcherManager {
       lastReconciledAt: this.reconciledAt.get(root),
       overflowCount: this.overflowCounts.get(root) ?? 0,
       catchupMs: this.catchupDurations.get(root),
+      watcherRecovery: this.recoveryStates.get(root)?.snapshot(),
     };
   }
 
@@ -374,9 +387,10 @@ export class WatcherManager {
         await existingSub.unsubscribe();
       } catch {}
       this.deps.subscriptions.delete(root);
+      this.recovery(root).detached();
     }
 
-    const { subscription: sub } = await subscribeWithNativeExclusions(
+    const { subscription: sub, policy } = await subscribeWithNativeExclusions(
       root,
       (err, events) => {
         if (
@@ -386,6 +400,7 @@ export class WatcherManager {
         )
           return;
         if (err) {
+          this.recovery(root).error(err);
           this.overflowCounts.set(
             root,
             (this.overflowCounts.get(root) ?? 0) + 1,
@@ -432,6 +447,7 @@ export class WatcherManager {
       return;
     }
     this.deps.subscriptions.set(root, sub);
+    this.recovery(root).attached(policy);
   }
 
   private requestOverflowCatchup(
@@ -491,6 +507,7 @@ export class WatcherManager {
       if (sub) {
         sub.unsubscribe().catch(() => {});
         this.deps.subscriptions.delete(root);
+        this.recovery(root).detached();
       }
       if (!this.pollIntervals.has(root)) {
         console.error(
@@ -690,201 +707,217 @@ export class WatcherManager {
     processor: ProjectBatchProcessor,
     signal: AbortSignal,
   ): Promise<boolean> {
-    const scanStart = Date.now();
-    const overflowCountAtStart = this.overflowCounts.get(root) ?? 0;
-    const { isFileCached } = await import("../utils/cache-check");
+    const tracker = this.recovery(root);
+    const scan = tracker.beginScan();
+    let outcome: "complete" | "incomplete" | "failed" = "failed";
+    try {
+      const scanStart = Date.now();
+      const overflowCountAtStart = this.overflowCounts.get(root) ?? 0;
+      const { isFileCached } = await import("../utils/cache-check");
 
-    const metaCache = this.deps.getMetaCache()!;
-    const vectorDb = this.deps.getVectorDb()!;
-    processor.filePolicy.invalidateIgnoreCache();
-    const rootPrefix = root.endsWith("/") ? root : `${root}/`;
-    const cachedPaths = await metaCache.getKeysWithPrefix(rootPrefix);
-    const vectorPaths = await vectorDb.getDistinctPathsForPrefix(rootPrefix);
-    const knownPaths = new Set([...cachedPaths, ...vectorPaths]);
-    if (signal.aborted) return false;
-    const seenPaths = new Set<string>();
-    const walkState = createWalkState();
-
-    let queued = 0;
-    let skipped = 0;
-    let debugSamples = 0;
-    for await (const relPath of walk(root, {
-      policy: processor.filePolicy,
-      state: walkState,
-    })) {
+      const metaCache = this.deps.getMetaCache()!;
+      const vectorDb = this.deps.getVectorDb()!;
+      processor.filePolicy.invalidateIgnoreCache();
+      const rootPrefix = root.endsWith("/") ? root : `${root}/`;
+      const cachedPaths = await metaCache.getKeysWithPrefix(rootPrefix);
+      const vectorPaths = await vectorDb.getDistinctPathsForPrefix(rootPrefix);
+      const knownPaths = new Set([...cachedPaths, ...vectorPaths]);
       if (signal.aborted) return false;
-      const absPath = path.join(root, relPath);
+      const seenPaths = new Set<string>();
+      const walkState = createWalkState();
 
-      try {
-        const classification = await processor.filePolicy.classifyFile(absPath);
-        if (classification.status === "error") {
-          walkState.protectedPaths.add(classification.protectedPath);
-          walkState.errors.push({
-            path: classification.protectedPath,
-            error: classification.error,
-          });
-          continue;
-        }
-        if (classification.status !== "indexable") continue;
-        const stats = classification.stat;
-        seenPaths.add(absPath);
-        let cached = metaCache.get(absPath);
-        const reconciliation = reconcileMetaEntry(
-          absPath,
-          cached,
-          vectorPaths.has(absPath),
-        );
-        if (reconciliation.action === "stamp") {
-          cached = reconciliation.entry;
-          metaCache.put(absPath, cached);
-        } else if (reconciliation.action === "reprocess") {
-          processor.handleFileEvent("change", absPath, {
-            forceReprocess: true,
-            workKind: "catchup",
-          });
-          queued++;
-          if (queued % 500 === 0) {
-            dbg(
-              "catchup",
-              `${path.basename(root)}: throttle pause at ${queued} queued`,
-            );
-            await abortableDelay(5_000, signal);
-          }
-          continue;
-        }
-        if (!isFileCached(cached, stats)) {
-          // Fast path: if only mtime changed but size is identical and we have a hash,
-          // just verify the hash in-process instead of sending to a worker.
-          if (cached?.hash && cached.size === stats.size) {
-            const observed = { ...cached };
-            const snapshot = await readFileSnapshot(absPath, {
-              projectRoot: root,
+      let queued = 0;
+      let skipped = 0;
+      let debugSamples = 0;
+      for await (const relPath of walk(root, {
+        policy: processor.filePolicy,
+        state: walkState,
+      })) {
+        if (signal.aborted) return false;
+        const absPath = path.join(root, relPath);
+
+        try {
+          const classification =
+            await processor.filePolicy.classifyFile(absPath);
+          if (classification.status === "error") {
+            walkState.protectedPaths.add(classification.protectedPath);
+            walkState.errors.push({
+              path: classification.protectedPath,
+              error: classification.error,
             });
-            if (
-              snapshot.size !== stats.size ||
-              snapshot.mtimeMs !== stats.mtimeMs
-            ) {
-              processor.handleFileEvent("change", absPath, {
-                workKind: "catchup",
+            continue;
+          }
+          if (classification.status !== "indexable") continue;
+          const stats = classification.stat;
+          seenPaths.add(absPath);
+          let cached = metaCache.get(absPath);
+          const reconciliation = reconcileMetaEntry(
+            absPath,
+            cached,
+            vectorPaths.has(absPath),
+          );
+          if (reconciliation.action === "stamp") {
+            cached = reconciliation.entry;
+            metaCache.put(absPath, cached);
+          } else if (reconciliation.action === "reprocess") {
+            processor.handleFileEvent("change", absPath, {
+              forceReprocess: true,
+              workKind: "catchup",
+            });
+            queued++;
+            if (queued % 500 === 0) {
+              dbg(
+                "catchup",
+                `${path.basename(root)}: throttle pause at ${queued} queued`,
+              );
+              await abortableDelay(5_000, signal);
+            }
+            continue;
+          }
+          if (!isFileCached(cached, stats)) {
+            // Fast path: if only mtime changed but size is identical and we have a hash,
+            // just verify the hash in-process instead of sending to a worker.
+            if (cached?.hash && cached.size === stats.size) {
+              const observed = { ...cached };
+              const snapshot = await readFileSnapshot(absPath, {
+                projectRoot: root,
               });
-              continue;
-            }
-            const hash = computeContentHash(snapshot.buffer, absPath);
-            if (hash === observed.hash) {
-              // Content unchanged — update mtime in cache and skip worker
-              if (signal.aborted) return false;
-              // A live batch can finish while this read yields. Never replace
-              // newer metadata or resurrect a cache entry it removed.
-              const current = metaCache.get(absPath);
               if (
-                current &&
-                current.hash === observed.hash &&
-                current.mtimeMs === observed.mtimeMs &&
-                current.size === observed.size &&
-                current.hashVersion === observed.hashVersion &&
-                current.hasVectors === observed.hasVectors
+                snapshot.size !== stats.size ||
+                snapshot.mtimeMs !== stats.mtimeMs
               ) {
-                metaCache.put(absPath, { ...observed, mtimeMs: stats.mtimeMs });
+                processor.handleFileEvent("change", absPath, {
+                  workKind: "catchup",
+                });
+                continue;
               }
-              skipped++;
-              continue;
+              const hash = computeContentHash(snapshot.buffer, absPath);
+              if (hash === observed.hash) {
+                // Content unchanged — update mtime in cache and skip worker
+                if (signal.aborted) return false;
+                // A live batch can finish while this read yields. Never replace
+                // newer metadata or resurrect a cache entry it removed.
+                const current = metaCache.get(absPath);
+                if (
+                  current &&
+                  current.hash === observed.hash &&
+                  current.mtimeMs === observed.mtimeMs &&
+                  current.size === observed.size &&
+                  current.hashVersion === observed.hashVersion &&
+                  current.hasVectors === observed.hasVectors
+                ) {
+                  metaCache.put(absPath, {
+                    ...observed,
+                    mtimeMs: stats.mtimeMs,
+                  });
+                }
+                skipped++;
+                continue;
+              }
             }
-          }
-          // Debug: log first few misses to diagnose re-queue loops
-          if (debugSamples < 5) {
-            dbg(
-              "catchup",
-              `miss ${relPath}: cached=${cached ? `mtime=${Math.trunc(cached.mtimeMs)} size=${cached.size}` : "null"} stat=mtime=${Math.trunc(stats.mtimeMs)} size=${stats.size}`,
-            );
-            debugSamples++;
-          }
-          if (signal.aborted) return false;
-          processor.handleFileEvent("change", absPath, { workKind: "catchup" });
-          queued++;
+            // Debug: log first few misses to diagnose re-queue loops
+            if (debugSamples < 5) {
+              dbg(
+                "catchup",
+                `miss ${relPath}: cached=${cached ? `mtime=${Math.trunc(cached.mtimeMs)} size=${cached.size}` : "null"} stat=mtime=${Math.trunc(stats.mtimeMs)} size=${stats.size}`,
+              );
+              debugSamples++;
+            }
+            if (signal.aborted) return false;
+            processor.handleFileEvent("change", absPath, {
+              workKind: "catchup",
+            });
+            queued++;
 
-          // Throttle: pause periodically during large catchup scans to let the
-          // batch processor drain and compaction run between bursts.
-          if (queued % 500 === 0) {
-            dbg(
-              "catchup",
-              `${path.basename(root)}: throttle pause at ${queued} queued`,
-            );
-            await abortableDelay(5_000, signal);
+            // Throttle: pause periodically during large catchup scans to let the
+            // batch processor drain and compaction run between bursts.
+            if (queued % 500 === 0) {
+              dbg(
+                "catchup",
+                `${path.basename(root)}: throttle pause at ${queued} queued`,
+              );
+              await abortableDelay(5_000, signal);
+            }
+          } else {
+            skipped++;
           }
-        } else {
-          skipped++;
+        } catch (error) {
+          walkState.protectedPaths.add(absPath);
+          walkState.errors.push({ path: absPath, error });
         }
-      } catch (error) {
-        walkState.protectedPaths.add(absPath);
-        walkState.errors.push({ path: absPath, error });
       }
-    }
-    dbg(
-      "catchup",
-      `${path.basename(root)}: ${queued} queued, ${skipped} skipped (cached ok), ${seenPaths.size} total`,
-    );
-
-    // Purge files deleted while daemon was offline
-    let purged = 0;
-    for (const cachedPath of knownPaths) {
-      if (signal.aborted) return false;
-      if (
-        !seenPaths.has(cachedPath) &&
-        !isPathProtectedByWalkState(cachedPath, walkState)
-      ) {
-        processor.handleFileEvent("unlink", cachedPath, {
-          forceDelete: true,
-          workKind: "cleanup",
-        });
-        purged++;
-      }
-    }
-
-    const complete = walkState.rootComplete && walkState.errors.length === 0;
-    if (!complete) {
-      this.degradedRoots.add(root);
-      registerWatcher({
-        pid: process.pid,
-        projectRoot: root,
-        startTime: Date.now(),
-        status: "degraded",
-        lastHeartbeat: Date.now(),
-        lastError: `${walkState.errors.length} scan path(s) incomplete`,
-      });
-    } else {
-      this.degradedRoots.delete(root);
-      const failedFiles = this.terminalFailures.get(root)?.size ?? 0;
-      registerWatcher({
-        pid: process.pid,
-        projectRoot: root,
-        startTime: Date.now(),
-        status: this.isRootDegraded(root) ? "degraded" : "watching",
-        lastHeartbeat: Date.now(),
-        ...(failedFiles > 0
-          ? { lastError: `${failedFiles} file(s) exhausted automatic retries` }
-          : {}),
-      });
-    }
-
-    if (queued > 0 || purged > 0) {
-      const parts: string[] = [];
-      if (queued > 0) parts.push(`${queued} changed`);
-      if (purged > 0) parts.push(`${purged} deleted`);
-      console.log(
-        `[daemon:${path.basename(root)}] Catchup: ${parts.join(", ")} file(s) while offline`,
+      dbg(
+        "catchup",
+        `${path.basename(root)}: ${queued} queued, ${skipped} skipped (cached ok), ${seenPaths.size} total`,
       );
-    }
 
-    const ended = Date.now();
-    this.lastCatchupEndMs.set(root, ended);
-    this.catchupDurations.set(root, ended - scanStart);
-    if (complete) {
-      this.reconciledAt.set(root, ended);
-      // A later gap still needs its deferred scan, even if this walk succeeded.
-      if ((this.overflowCounts.get(root) ?? 0) === overflowCountAtStart)
-        this.overflowPendingRoots.delete(root);
+      // Purge files deleted while daemon was offline
+      let purged = 0;
+      for (const cachedPath of knownPaths) {
+        if (signal.aborted) return false;
+        if (
+          !seenPaths.has(cachedPath) &&
+          !isPathProtectedByWalkState(cachedPath, walkState)
+        ) {
+          processor.handleFileEvent("unlink", cachedPath, {
+            forceDelete: true,
+            workKind: "cleanup",
+          });
+          purged++;
+        }
+      }
+
+      const complete = walkState.rootComplete && walkState.errors.length === 0;
+      if (!complete) {
+        this.degradedRoots.add(root);
+        registerWatcher({
+          pid: process.pid,
+          projectRoot: root,
+          startTime: Date.now(),
+          status: "degraded",
+          lastHeartbeat: Date.now(),
+          lastError: `${walkState.errors.length} scan path(s) incomplete`,
+        });
+      } else {
+        this.degradedRoots.delete(root);
+        const failedFiles = this.terminalFailures.get(root)?.size ?? 0;
+        registerWatcher({
+          pid: process.pid,
+          projectRoot: root,
+          startTime: Date.now(),
+          status: this.isRootDegraded(root) ? "degraded" : "watching",
+          lastHeartbeat: Date.now(),
+          ...(failedFiles > 0
+            ? {
+                lastError: `${failedFiles} file(s) exhausted automatic retries`,
+              }
+            : {}),
+        });
+      }
+
+      if (queued > 0 || purged > 0) {
+        const parts: string[] = [];
+        if (queued > 0) parts.push(`${queued} changed`);
+        if (purged > 0) parts.push(`${purged} deleted`);
+        console.log(
+          `[daemon:${path.basename(root)}] Catchup: ${parts.join(", ")} file(s) while offline`,
+        );
+      }
+
+      const ended = Date.now();
+      this.lastCatchupEndMs.set(root, ended);
+      this.catchupDurations.set(root, ended - scanStart);
+      if (complete) {
+        this.reconciledAt.set(root, ended);
+        // A later gap still needs its deferred scan, even if this walk succeeded.
+        if ((this.overflowCounts.get(root) ?? 0) === overflowCountAtStart)
+          this.overflowPendingRoots.delete(root);
+      }
+      outcome = complete ? "complete" : "incomplete";
+      return complete;
+    } finally {
+      tracker.finishScan(scan, signal.aborted ? "aborted" : outcome);
     }
-    return complete;
   }
 
   private runCatchup(
@@ -916,16 +949,26 @@ export class WatcherManager {
         }
       } while (active.dirty && !signal.aborted);
     };
-    const run = (
-      this.deps.runProjectOperation
-        ? this.deps.runProjectOperation(
-            root,
-            "watch-catchup",
-            active.controller.signal,
-            execute,
-          )
-        : execute(active.controller.signal)
-    ).finally(() => {
+    const tracker = this.recovery(root);
+    const scansBeforeAttempt = tracker.snapshot().scanCount;
+    const run = (async () => {
+      try {
+        return await (this.deps.runProjectOperation
+          ? this.deps.runProjectOperation(
+              root,
+              "watch-catchup",
+              active.controller.signal,
+              execute,
+            )
+          : execute(active.controller.signal));
+      } catch (error) {
+        tracker.attemptFailed(
+          tracker.snapshot().scanCount > scansBeforeAttempt,
+          active.controller.signal.aborted,
+        );
+        throw error;
+      }
+    })().finally(() => {
       if (this.catchups.get(root) === active) this.catchups.delete(root);
     });
     active.promise = run;
@@ -987,6 +1030,7 @@ export class WatcherManager {
     this.overflowPendingRoots.delete(root);
     this.degradedRoots.delete(root);
     this.terminalFailures.delete(root);
+    this.recoveryStates.delete(root);
     unregisterWatcherByRoot(root);
 
     console.log(`[daemon] Unwatched ${root}`);

@@ -52,6 +52,8 @@ describe("standalone watcher health", () => {
       "artifacts/**/*.json",
     );
     const previous = await vi.mocked(watcher.subscribe).mock.results[0].value;
+    const firstExclusions = handle.health.watcherRecovery!.exclusions!;
+    expect(firstExclusions.attached).toBe(true);
     fs.writeFileSync(policy, "/artifacts/**/*.json\n!artifacts/source.json\n");
     vi.mocked(watcher.subscribe).mock.calls[0][1](null, [
       { type: "update", path: policy },
@@ -61,6 +63,12 @@ describe("standalone watcher health", () => {
       "artifacts/**/*.json",
     );
     expect(previous.unsubscribe).toHaveBeenCalledOnce();
+    await vi.waitFor(() => {
+      const next = handle.health.watcherRecovery!.exclusions!;
+      expect(next.attached).toBe(true);
+      expect(next.fingerprint).not.toBe(firstExclusions.fingerprint);
+      expect(next.filterCount).toBeLessThan(firstExclusions.filterCount);
+    });
     fs.unlinkSync(policy);
     vi.mocked(watcher.subscribe).mock.calls[1][1](null, [
       { type: "delete", path: policy },
@@ -106,6 +114,15 @@ describe("standalone watcher health", () => {
     for (let i = 0; i < 10; i++) callback(gap, []);
     expect(onHealthChange).toHaveBeenLastCalledWith(false, 1);
     expect(handle.progress.queue).toMatchObject({ live: 1, catchup: 0 });
+    expect(handle.health.watcherRecovery).toMatchObject({
+      gapCount: 11,
+      terminalErrorCount: 0,
+      coveredGapCount: 0,
+      outstandingGapCount: 11,
+      reconciliationNeeded: true,
+      exclusions: { attached: true },
+    });
+    expect(handle.health.queue).toMatchObject({ live: 1 });
     expect(getKeysWithPrefix).toHaveBeenCalledOnce();
     const sub = await vi.mocked(watcher.subscribe).mock.results[0].value;
     expect(sub.unsubscribe).not.toHaveBeenCalled();
@@ -115,6 +132,64 @@ describe("standalone watcher health", () => {
     handles.pop();
     await vi.advanceTimersByTimeAsync(60_000);
     expect(getKeysWithPrefix).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a later standalone gap outstanding until the next complete scan", async () => {
+    vi.useRealTimers();
+    vi.mocked(watcher.subscribe).mockClear();
+    const getKeysWithPrefix = vi.fn(async () => new Set<string>());
+    const handle = await startWatcher({
+      projectRoot: root,
+      dataDir: path.join(root, ".gmax"),
+      metaCache: {
+        getKeysWithPrefix,
+        get: vi.fn(),
+        put: vi.fn(),
+        delete: vi.fn(),
+      } as any,
+      vectorDb: {
+        diskPressure: "ok",
+        checkDiskPressure: vi.fn(() => "ok"),
+        getDistinctPathsForPrefix: vi.fn(async () => new Set<string>()),
+      } as any,
+    });
+    handles.push(handle);
+    await vi.waitFor(() =>
+      expect(handle.health.watcherRecovery?.lastCompleteScan?.id).toBe(1),
+    );
+    const callback = vi.mocked(watcher.subscribe).mock.calls[0][1];
+    const gap = new Error(
+      "Events were dropped by the kernel. File system must be re-scanned.",
+    );
+    getKeysWithPrefix.mockImplementationOnce(async () => {
+      callback(gap, []);
+      return new Set<string>();
+    });
+    vi.useFakeTimers();
+    callback(gap, []);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.waitFor(() =>
+      expect(handle.health.watcherRecovery).toMatchObject({
+        gapCount: 2,
+        coveredGapCount: 1,
+        outstandingGapCount: 1,
+        reconciliationNeeded: true,
+        lastCompleteScan: { id: 2, gapCountAtStart: 1 },
+      }),
+    );
+    expect(handle.health.watcherMode).toBe("recovering");
+    // The timer was created under fake time during the second scan.
+    await vi.advanceTimersByTimeAsync(30_000);
+    vi.useRealTimers();
+    await vi.waitFor(() =>
+      expect(handle.health.watcherRecovery).toMatchObject({
+        coveredGapCount: 2,
+        outstandingGapCount: 0,
+        reconciliationNeeded: false,
+        lastCompleteScan: { id: 3, gapCountAtStart: 2 },
+      }),
+    );
+    expect(watcher.subscribe).toHaveBeenCalledOnce();
   });
 
   it("replaces a terminally failed stream and ignores its queued callbacks", async () => {
@@ -150,6 +225,10 @@ describe("standalone watcher health", () => {
     oldCallback(new Error("backend stopped"), []);
     expect(onHealthChange.mock.calls.length).toBe(healthCalls);
     expect(watcher.subscribe).toHaveBeenCalledTimes(2);
+    expect(handle.health.watcherRecovery).toMatchObject({
+      gapCount: 0,
+      terminalErrorCount: 1,
+    });
   });
 
   it("clears initial degradation only after queued repair work settles", async () => {

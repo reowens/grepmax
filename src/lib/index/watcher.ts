@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import type * as watcher from "@parcel/watcher";
-import type { WatchQueueState } from "../output/index-state-footer";
+import type { IndexState, WatchQueueState } from "../output/index-state-footer";
 import type { MetaCache } from "../store/meta-cache";
 import type { VectorDB } from "../store/vector-db";
 import { ProjectBatchProcessor } from "./batch-processor";
@@ -14,9 +14,11 @@ import {
   subscribeWithNativeExclusions,
   watcherIgnoreIdentity,
 } from "./watcher-ignore";
+import { WatcherRecoveryTracker } from "./watcher-recovery";
 
 export interface WatcherHandle {
   close: () => Promise<void>;
+  readonly health: IndexState;
   readonly progress: {
     pendingFiles: number;
     processing: boolean;
@@ -96,6 +98,7 @@ export async function startWatcher(
   const wtag = `watch:${projectRoot.split("/").pop()}`;
 
   const filePolicy = new ProjectFilePolicy(projectRoot);
+  const recovery = new WatcherRecoveryTracker();
   let reconciliation: Promise<void> | null = null;
   let reconcileRequested = false;
   let closing = false;
@@ -130,6 +133,7 @@ export async function startWatcher(
         subscriptionFailed = false;
         await subscription?.unsubscribe();
         subscription = null;
+        recovery.detached();
         if (closing) return;
         const { subscription: next, policy: attachedPolicy } =
           await subscribeWithNativeExclusions(
@@ -137,6 +141,7 @@ export async function startWatcher(
             (err, events) => {
               if (closing || generation !== subscriptionGeneration) return;
               if (err) {
+                recovery.error(err);
                 console.error(`[${wtag}] Watcher error:`, err);
                 scanHealthy = false;
                 opts.onHealthChange?.(false, 1);
@@ -163,6 +168,7 @@ export async function startWatcher(
         }
         subscription = next;
         subscriptionPolicy = attachedPolicy;
+        recovery.attached(attachedPolicy);
       });
     subscriptionUpdate = update;
     return update;
@@ -189,71 +195,80 @@ export async function startWatcher(
         reconcileRequested = false;
         lastReconcileStart = Date.now();
         const observedGapGeneration = gapGeneration;
-        filePolicy.invalidateIgnoreCache();
-        await updateSubscription();
-        if (closing) return;
-        const rootPrefix = projectRoot.endsWith("/")
-          ? projectRoot
-          : `${projectRoot}/`;
-        const cached = await opts.metaCache.getKeysWithPrefix(rootPrefix);
-        const vectorPaths =
-          await opts.vectorDb.getDistinctPathsForPrefix(rootPrefix);
-        const knownPaths = new Set([...cached, ...vectorPaths]);
-        const seen = new Set<string>();
-        const state = createWalkState();
-        for await (const relative of walk(projectRoot, {
-          policy: filePolicy,
-          state,
-        })) {
+        const scan = recovery.beginScan();
+        let outcome: "complete" | "incomplete" | "failed" = "failed";
+        let retryDelayMs = 0;
+        try {
+          filePolicy.invalidateIgnoreCache();
+          await updateSubscription();
           if (closing) return;
-          const absolute = path.join(projectRoot, relative);
-          seen.add(absolute);
-          const reconciliation = reconcileMetaEntry(
-            absolute,
-            opts.metaCache.get(absolute),
-            vectorPaths.has(absolute),
-          );
-          if (reconciliation.action === "stamp") {
-            opts.metaCache.put(absolute, reconciliation.entry);
-          }
-          processor.handleFileEvent("change", absolute, {
-            forceReprocess: reconciliation.action === "reprocess",
-            workKind: "catchup",
-          });
-        }
-        for (const cachedPath of knownPaths) {
-          if (closing) return;
-          if (
-            !seen.has(cachedPath) &&
-            !isPathProtectedByWalkState(cachedPath, state)
-          ) {
-            processor.handleFileEvent("unlink", cachedPath, {
-              forceDelete: true,
-              workKind: "cleanup",
+          const rootPrefix = projectRoot.endsWith("/")
+            ? projectRoot
+            : `${projectRoot}/`;
+          const cached = await opts.metaCache.getKeysWithPrefix(rootPrefix);
+          const vectorPaths =
+            await opts.vectorDb.getDistinctPathsForPrefix(rootPrefix);
+          const knownPaths = new Set([...cached, ...vectorPaths]);
+          const seen = new Set<string>();
+          const state = createWalkState();
+          for await (const relative of walk(projectRoot, {
+            policy: filePolicy,
+            state,
+          })) {
+            if (closing) return;
+            const absolute = path.join(projectRoot, relative);
+            seen.add(absolute);
+            const reconciliation = reconcileMetaEntry(
+              absolute,
+              opts.metaCache.get(absolute),
+              vectorPaths.has(absolute),
+            );
+            if (reconciliation.action === "stamp") {
+              opts.metaCache.put(absolute, reconciliation.entry);
+            }
+            processor.handleFileEvent("change", absolute, {
+              forceReprocess: reconciliation.action === "reprocess",
+              workKind: "catchup",
             });
           }
-        }
-        if (!state.rootComplete || state.errors.length > 0) {
-          scanHealthy = false;
-          opts.onHealthChange?.(false, state.errors.length);
-          console.error(
-            `[${wtag}] Reconciliation incomplete at ${state.errors.length} path(s)`,
-          );
-          if (incompleteRetries < 3) {
-            incompleteRetries++;
-            reconcileRequested = true;
-            await new Promise((resolve) =>
-              setTimeout(resolve, 1000 * 2 ** (incompleteRetries - 1)),
+          for (const cachedPath of knownPaths) {
+            if (closing) return;
+            if (
+              !seen.has(cachedPath) &&
+              !isPathProtectedByWalkState(cachedPath, state)
+            ) {
+              processor.handleFileEvent("unlink", cachedPath, {
+                forceDelete: true,
+                workKind: "cleanup",
+              });
+            }
+          }
+          if (!state.rootComplete || state.errors.length > 0) {
+            outcome = "incomplete";
+            scanHealthy = false;
+            opts.onHealthChange?.(false, state.errors.length);
+            console.error(
+              `[${wtag}] Reconciliation incomplete at ${state.errors.length} path(s)`,
             );
+            if (incompleteRetries < 3) {
+              incompleteRetries++;
+              reconcileRequested = true;
+              retryDelayMs = 1000 * 2 ** (incompleteRetries - 1);
+            }
+          } else {
+            outcome = "complete";
+            scanHealthy = observedGapGeneration === gapGeneration;
+            if (ingestionDegraded && processor.progress.pendingFiles > 0) {
+              degradedRepairQueued = true;
+            }
+            reportHealthyIfSettled();
+            incompleteRetries = 0;
           }
-        } else {
-          scanHealthy = observedGapGeneration === gapGeneration;
-          if (ingestionDegraded && processor.progress.pendingFiles > 0) {
-            degradedRepairQueued = true;
-          }
-          reportHealthyIfSettled();
-          incompleteRetries = 0;
+        } finally {
+          recovery.finishScan(scan, closing ? "aborted" : outcome);
         }
+        if (retryDelayMs > 0)
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
       } while (reconcileRequested && !closing);
     })()
       .catch((err) => console.error(`[${wtag}] Reconciliation failed:`, err))
@@ -311,6 +326,25 @@ export async function startWatcher(
   reconcile();
 
   return {
+    get health(): IndexState {
+      const progress = processor.progress;
+      const state = recovery.snapshot();
+      return {
+        indexing: progress.processing || progress.pendingFiles > 0,
+        pendingFiles: progress.pendingFiles,
+        queue: progress.queue,
+        failedFiles: Math.max(terminalFailures.size, progress.failedFiles),
+        degraded:
+          !scanHealthy || ingestionDegraded || terminalFailures.size > 0,
+        watcherMode: closing
+          ? undefined
+          : subscriptionFailed || gapScanTimer || state.reconciliationNeeded
+            ? "recovering"
+            : "native",
+        catchupRunning: reconciliation !== null,
+        watcherRecovery: state,
+      };
+    },
     get progress() {
       return processor.progress;
     },
@@ -320,6 +354,7 @@ export async function startWatcher(
       clearTimeout(gapScanTimer);
       await subscriptionUpdate.catch(() => {});
       await subscription?.unsubscribe();
+      recovery.detached();
       await reconciliation;
       await processor.close();
     },

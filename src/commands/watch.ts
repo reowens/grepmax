@@ -7,6 +7,7 @@ import { initialSync } from "../lib/index/syncer";
 import { startWatcher } from "../lib/index/watcher";
 import {
   formatIndexStateFooter,
+  formatWatcherRecovery,
   formatWatchQueue,
   type IndexState,
 } from "../lib/output/index-state-footer";
@@ -431,10 +432,11 @@ export const watch = new Command("watch")
       });
 
       console.log(`[watch:${projectName}] File watcher active`);
+      heartbeat(process.pid, watcher.health);
 
       // Heartbeat — update LMDB every 60s so other processes can detect liveliness
       const heartbeatInterval = setInterval(() => {
-        heartbeat(process.pid);
+        heartbeat(process.pid, watcher.health);
       }, IDLE_CHECK_INTERVAL_MS);
 
       // Idle timeout
@@ -502,6 +504,8 @@ watch
           console.log(
             `    watcher=${p.indexState.watcherMode ?? "unknown"} overflows=${p.indexState.overflowCount ?? 0} lastReconciled=${p.indexState.lastReconciledAt ? new Date(p.indexState.lastReconciledAt).toISOString() : "unknown"} catchupMs=${p.indexState.catchupMs ?? "unknown"}`,
           );
+        const recovery = formatWatcherRecovery(p.indexState?.watcherRecovery);
+        if (recovery) console.log(`    recovery: ${recovery}`);
       }
       if (projects.length === 0) {
         console.log("  (no projects)");
@@ -519,6 +523,15 @@ watch
         console.log(
           `  - PID: ${w.pid} | Root: ${w.projectRoot} | Running: ${age}m`,
         );
+        const recovery = formatWatcherRecovery(w.indexState?.watcherRecovery);
+        if (recovery) {
+          console.log(
+            `    health sample: ${w.indexStateAt ? new Date(w.indexStateAt).toISOString() : "unknown"}`,
+          );
+          console.log(`    recovery: ${recovery}`);
+          if (w.indexState?.queue)
+            console.log(`    queue: ${formatWatchQueue(w.indexState.queue)}`);
+        }
       }
     }
 

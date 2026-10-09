@@ -11,6 +11,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { open, type RootDatabase } from "lmdb";
 import { PATHS } from "../../config";
+import type { IndexState } from "../output/index-state-footer";
 
 export interface WatcherInfo {
   pid: number;
@@ -20,6 +21,9 @@ export interface WatcherInfo {
   lastError?: string;
   lastReindex?: number;
   lastHeartbeat?: number;
+  /** Standalone watcher heartbeat snapshot, explicitly timestamped. */
+  indexState?: IndexState;
+  indexStateAt?: number;
 }
 
 const STORE_PATH = path.join(PATHS.cacheDir, "watchers.lmdb");
@@ -91,11 +95,16 @@ export function updateWatcherStatus(
   }
 }
 
-export function heartbeat(pid: number): void {
+export function heartbeat(pid: number, indexState?: IndexState): void {
   const db = getDb();
   for (const { key, value } of db.getRange()) {
     if (value && value.pid === pid) {
-      db.put(String(key), { ...value, lastHeartbeat: Date.now() });
+      const now = Date.now();
+      db.put(String(key), {
+        ...value,
+        lastHeartbeat: now,
+        ...(indexState ? { indexState, indexStateAt: now } : {}),
+      });
     }
   }
 }

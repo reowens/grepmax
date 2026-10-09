@@ -363,6 +363,25 @@ verify embedding queues and failed files separately before claiming catchup.
 Historical overflow measurements are snapshots, not current guarantees. Watching
 remains owned by standalone gmax; Hetchy Developer is optional.
 
+The optional `watcherRecovery` health record separates FSEvents `gapCount` from
+`terminalErrorCount`. A scan captures both counts when it starts; only a complete
+scan advances `coveredGapCount`. A later gap stays in `outstandingGapCount` until
+a subsequent complete scan covers it. `lastScan` retains its ID, start/end times
+and outcome; `lastCompleteScan` survives failed, incomplete or aborted attempts.
+Admission failure before scan execution is recorded without inventing a scan.
+`reconciliationNeeded` includes incomplete scans and outstanding errors; scan
+coverage still does not establish that queued ingestion has drained.
+
+Attached exclusions are summarized with literal/filter counts and a SHA-256
+fingerprint of the accepted subscription policy, including fallback. Health reads
+do not repeat directory discovery or disclose excluded paths. This is bounded,
+process-local evidence, reset when a watch lifecycle is removed; historical
+callback errors cannot be backfilled. `gmax watch status` displays it when present.
+Standalone `WatcherHandle.health` exposes the same record; its registry snapshot
+updates on the existing 60-second heartbeat with a separate `indexStateAt`
+timestamp. Legacy entries and older runtimes can omit these optional fields.
+The source change must be deployed before relying on this evidence in live service.
+
 ### Batch processor (`ProjectBatchProcessor`)
 
 ```
