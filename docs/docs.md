@@ -6,14 +6,47 @@
 
 | Work | Current state | Next action / completion evidence |
 | --- | --- | --- |
-| Document retrieval quality | Baseline, five-miss source review and 20-pair scope comparison complete; shared 15 pairs: document top-10 hits 9 → 13, section hits 7 → 12 | Diagnose Redis rank 12 / People absent and predefine bounded lexical-candidate evaluation; CDN scope effect unavailable. No production ranking change or rollout yet. |
-| Watcher stability | Artifact filtering and reconciliation concurrency fixes shipped; short observation passed | Observe ordinary development over a longer interval. Record native drops, failed files, queue drain and recovery behavior. The last four-minute sample does not close the broader FSEvents issue. |
-| Production disk recovery | Admission and recovery implementation released; live pruning has not run | Obtain fresh strict host/resource and ownership admission, prepare the pinned runtime under an actual 512 MiB reservation, drain known owners, refresh retention inventory and obtain the exclusive lease. Record retained-state verification and allocated/free-space changes after any authorized prune. |
+| Document retrieval quality | Baseline, scope review and fixed lexical experiment complete: lexical 20/20; verified replay dense 13/15 → RRF 14/15; People fused rank 13 fails gate | Preserve negative result. Predefine fusion that retains lexical-only evidence and qualify on broader/held-out sources before production changes. |
+| Watcher stability | Fixes shipped; new 8-minute light observation: counter 8→8, no failures/new errors, ordinary edits drained | Continue longer/load-diverse ordinary observation. No recovery was exercised in this interval; broader stability remains open. |
+| Production disk recovery | Read-only readiness review complete; healthy point samples but runtime absent/live owner remains; live prune unperformed | Coordinate a separate recovery window with actual admission/reservation, pinned preparation, reviewed owner drain, fresh retention inventory and exclusive lease. No current reclaim estimate. |
 | Consumer rollout | Packaged Runlist interoperability passed; client settings remain unchanged | Decide rollout from retrieval evaluation evidence and explicitly configure the document entry point. Existing MCP sessions need reconnecting to load released runtime code. |
 
-**Next diagnose the remaining retrieval targets and define a bounded lexical-candidate experiment; continue watcher observation during ordinary development.** Preserve normal `critical-only` service, the small GPU model and maximum two workers. Watcher ownership remains in standalone gmax; Hetchy Developer is optional. Embedding migration and independently reusable watcher extraction remain deferred.
+**Next define and qualify fusion that preserves lexical-only evidence; continue watcher observation during ordinary development.** Preserve normal `critical-only` service, the small GPU model and maximum two workers. Watcher ownership remains in standalone gmax; Hetchy Developer is optional. Embedding migration and independently reusable watcher extraction remain deferred.
 
 The release acceptance record is `/private/tmp/gmax-v02671-acceptance.json`; the completed retrieval report is linked below. Fresh read-only health at **2026-10-08T22:46:44.781Z** confirms .71 ready/active; evaluation caused no runtime or configuration change. Historical PIDs, inventories and “next” instructions below are snapshots; refresh them before operational work. The working focus and .71 delivery record take precedence over those earlier instructions.
+
+## Three-agent follow-up: lexical experiment and recovery readiness — October 8, 2026
+
+The retrieval, passive watcher and read-only recovery assignments ran in parallel with separate file ownership. Root coordination reviewed the frozen study and source, verified snapshot digests and saved candidate contributions, and ran **39 focused tests / three files** plus test typecheck. This was a separate agent implementation review, not independent external relevance adjudication. Evaluation scripts/documentation are the only tracked changes; deployed .71, normal policy, models, native stores, client settings and service ownership remain unchanged.
+
+### Lexical candidate recovery: useful evidence, hybrid gate failed
+
+The [frozen experiment and negative result](measurements/2026-10-08-document-lexical/result-review.json) retain the original 20-case fixture checksum and queries/targets. The complete known-family snapshot contains **180 services/modules Markdown files, 3,336,289 bytes, 1,540 windows and 348,194 token occurrences**. It excludes the broad docs corpus by design; bounds were frozen before scoring. The repo-only runner uses fixed BM25 and equal-weight document RRF, no per-case tuning, and no live calls. Peak process RSS was about **121 MiB** under a 384 MiB Node heap setting; offline timing is not comparable with native live latency.
+
+| Document hits@10 | Cases | Hits |
+| --- | ---: | ---: |
+| Offline lexical, unchanged frozen targets | 20 | 20 |
+| Verified archived narrow dense candidates | 15 | 13 |
+| Lexical on the same verified replay cohort | 15 | 15 |
+| Fixed dense + lexical document RRF replay | 15 | 14 |
+
+Redis moves from archived dense document rank 12 to lexical rank 1 / fused rank 4. People is absent from archived dense candidates, lexical rank 2, then fused rank 13. Ten documents supported by both arms gain summed contributions and outrank lexical-only People; two rank-one single-arm documents also precede it. This identifies a fusion ordering loss after successful lexical candidate recovery. All 13 previous dense top-ten hits survive, but the predefined requirement to recover **both** residual targets is **not met**. No algorithm was retuned after scoring. Preserve this negative result and do not integrate fixed RRF.
+
+Every archived competitor pointer must retain its indexed/current digest and range against the fixed snapshot; otherwise its whole case is excluded. All 20 frozen target cases remain current, but only 15 have usable archived dense observations. The original two busy / three host-pressure cases remain excluded from replay; offline CDN lexical rank 1 does not resolve deployed scope availability. Archived dense candidates were not re-encoded over the snapshot. Known target families and exposed source-curated questions limit inference; these are diagnostic candidate results, not general recall or production acceptance. Section overlap is reported separately because lexical window sizes and fused representatives differ from dense chunking. First-score runner/results and the exact source snapshot remain immutable; the current runner only adds completion/exit-2 semantics. [README](../README.md#offline-lexical-candidate-experiment) documents invocation, privacy and bounds. Full source CI is pending.
+
+### Watcher observation: current recovery healthy, broader stability open
+
+The [passive observation report](measurements/2026-10-08-watcher-agent-observation/observation-report.json) covers **00:01:16–00:09:16 UTC October 9** (October 8 PDT): **25 paired samples / 50 successful IPC commands over 480 seconds**. The same .71 daemon 54708, GPU 55539 and resource generation 1 remained ready/active/native. The cumulative watcher callback-error counter stayed **8 → 8**, with no new errors, failed files, degradation or catchup. One sample held two live pending edits (oldest 280 ms); the next poll 20 seconds later was drained. Four ordinary batches logged six reindexed file events, durations 0.6–9.8 seconds, and final queues were empty. These are file events, not a unique-file count or exhaustive delivery audit.
+
+The eight-minute interval was light and exercised no gap recovery. Before it, five retained .71 log notices identify native FSEvents client gaps, at cumulative totals 1, 2, 3, 7 and 8; the intermediate errors were throttled and cannot be individually classified. The latest logged gap at 23:50:50 UTC preceded completed reconciliation at 23:51:02.438 UTC. That scan timestamp and current empty queues support caught-up state, not proof of end-to-end historical delivery. Status resource snapshots are cached at five-minute cadence and do not establish memory-leak resolution. Longer/load-diverse observation remains open; no watcher rewrite is justified by this sample. `CLAUDE.md` now documents native literal exclusions, attached-stream gap reconciliation, terminal polling fallback, counter/log limits and scan-versus-queue verification.
+
+### Recovery readiness: plausible resources, no admitted operation
+
+The [read-only readiness report](measurements/2026-10-08-recovery-agent-readiness/readiness-report.json) records two pure installed host samples at **00:01:48 and 00:03:02 UTC October 9** (October 8 PDT): normal OS pressure, healthy kernel pressure, **1,833–2,223 MiB measured physical headroom**, **2,733–2,906 MiB aggregate gmax footprint**, and **87.71 GB filesystem availability** at the metadata snapshot. These are healthy point samples, not sustained eligibility or a real reservation. The pinned cleanup environment is absent, .71 daemon 54708 still holds the shared store lease, and no containment marker/exclusive lease/actual 512 MiB helper reservation exists. Current retention inventory and whole-table allocation/reclaimable space remain unknown; historical totals and cutoffs are stale. Only bounded nonrecursive file stats were taken.
+
+No owner drain, admission lock, runtime preparation, native table opening, lease change, marker change, pruning or receipt occurred. Normal development stayed available. Further recovery preparation requires a separately coordinated operational window, fresh strict resource admission and a real setup reservation, verified pinned tools, reviewed owner containment/drain, fresh bounded retention/current-tag-cutoff inventory and exclusive deletion admission. No reclaimed space is claimed and no shutdown is scheduled from these samples.
+
+**Next:** predefine a separate candidate/fusion design that preserves lexical-only evidence and qualify it on a broader/held-out source cohort before production integration. Continue ordinary watcher observation; live recovery and consumer rollout remain separate. Preserve critical-only/smallGPU/max2, standalone gmax watcher ownership and the original fixtures. Embedding migration and shared watcher extraction remain deferred.
 
 ## Document target review and paired scope comparison completed — October 8, 2026
 
@@ -34,7 +67,7 @@ This supports scope competition as a factor for these exposed cases. The narrowe
 
 A fresh read-only ping/status at **2026-10-08T23:21:46.640Z** confirms .71 daemon 54708 ready/active, resource generation 1, one current worker and small Granite GPU 55539 owned-ready. This is a point-in-time health observation, not a watcher soak. Evidence: ignored `docs/measurements/2026-10-08-document-scope-review/health.json`.
 
-**Next:** diagnose the Redis/People residuals and predefine a bounded existing-only lexical-candidate evaluation before any production ranking change. Keep unavailable CDN and other cases unresolved until an ordinary admitted sample is available. Consumer rollout still needs explicit busy/pressure/freshness handling. Longer watcher observation and fresh-admission live recovery remain pending. This work changed evaluation tooling and documentation only; deployed .71, normal service policy, models, indexes and client settings were not changed.
+**Historical next, completed by the lexical experiment above:** diagnose the Redis/People residuals and predefine a bounded existing-only lexical-candidate evaluation before any production ranking change. Keep unavailable CDN and other cases unresolved until an ordinary admitted sample is available. Consumer rollout still needs explicit busy/pressure/freshness handling. Longer watcher observation and fresh-admission live recovery remain pending. This work changed evaluation tooling and documentation only; deployed .71, normal service policy, models, indexes and client settings were not changed.
 
 ## Document retrieval baseline completed — October 8, 2026
 
@@ -277,7 +310,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 150 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 151 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|

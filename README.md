@@ -626,6 +626,25 @@ node scripts/eval-document-scopes.cjs \
 
 Declare and freeze the scope hypothesis before querying. Narrower prefixes must stay within the original scope and retain every target. Arm order alternates per case, with a one-second gap between pairs and no retries. Reports show each arm's standalone observations and separately compare only pairs where both arms are usable under the same resource generation, project and store. The live competing corpus can still change; this is a diagnostic comparison rather than an isolated causal test. Scopes chosen from known target families introduce a useful prior, so gains do not establish unscoped or held-out retrieval quality. Owner-only checkpoints, overwrite refusal and source/transport bounds are shared with the base evaluator. Exit 2 means no comparable pairs.
 
+### Offline lexical candidate experiment
+
+[scripts/eval-document-lexical.cjs](scripts/eval-document-lexical.cjs) tests lexical candidates and fixed document reciprocal-rank fusion against a prior paired scope report. It uses Node built-ins and filesystem Markdown only; it never contacts a daemon, opens a native store, loads a model or changes production retrieval.
+
+Freeze an owner-only study plan before scoring, including the original fixture checksum, archived report checksum, canonical root, narrower relative prefixes, fixed algorithm parameters and resource limits. The selected scope must retain every target and match the archived narrow arm. Pass that plan's checksum explicitly:
+
+```bash
+NODE_OPTIONS=--max-old-space-size=384 node scripts/eval-document-lexical.cjs \
+  --fixture docs/measurements/documents/fixture-v1.json \
+  --plan docs/measurements/documents/lexical-plan.json --plan-sha256 <digest> \
+  --archive docs/measurements/documents/paired-scope-v1.json \
+  --snapshot docs/measurements/documents/new-private-snapshot \
+  --output docs/measurements/documents/new-lexical-report.json
+```
+
+The prototype uses fixed 48-line windows with eight-line overlap, BM25 `k1=1.2` / `b=0.75`, 50 positive-score lexical candidates and equal-weight document RRF with constant 60. Targets are used for grading only. Stable path/line ties, no per-case overrides and no zero-score padding keep the experiment reproducible. Bounds are 512 files, 16 MiB total source, 2 MiB per file, 10,000 windows, one million token occurrences and 20,000 directory entries. Missing, aliased, changed or oversized source fails snapshot creation rather than silently dropping competing documents. A private snapshot preserves exact source bytes and a digest manifest; the report stores pointers, digests, IDs and scores without questions or source bodies. Existing output/snapshot paths are refused.
+
+Lexical metrics cover cases whose frozen targets match the snapshot. Archive replay additionally requires original ready state/resource identity and every competitor pointer's indexed/current digest and range to match the snapshot; an invalid competitor excludes the entire case. Refused archive cases stay separate. Offline lexical availability does not exercise deployed busy/pressure admission. Archived dense candidates are not re-encoded over this snapshot, and narrower families chosen from known target locations introduce a prior. Report document gains/losses on the verified shared replay cohort; section overlap is diagnostic because window sizes and hybrid representatives differ from production chunks. A passing exploratory gate only supports proposing further matched qualification. No production integration or rollout follows automatically. Exit 0 means scoring completed with usable lexical cases, even when the gate fails; exit 2 means no usable lexical cases, and exit 1 means preflight or evaluation failure.
+
 ## Attribution
 
 grepmax is built upon the foundation of [mgrep](https://github.com/mixedbread-ai/mgrep) by MixedBread. See the [NOTICE](NOTICE) file for details.

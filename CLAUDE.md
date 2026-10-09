@@ -187,7 +187,7 @@ One table (`chunks`), all projects share it, scoped by path prefix (`/absolute/p
 
 Compaction must take its snapshot **after** `drainWrites()`, and reopen the table on each retry. In the October 2 disk incident, opening before the drain let an outstanding delete invalidate the snapshot; all five retries reused it and stranded about 70 GB of full fragment copies. `optimize()` now caps calls at two attempts, updates the prune cutoff each time to include earlier failed copies, and checks fresh available space (not the cached pressure level) against twice the logical table size plus `DISK_CRITICAL_BYTES`. This is an estimate with overhead margin, not a reservation against other applications writing to disk. Regression coverage includes a native Lance delete/compact/reopen test in a temporary store. Do not reproduce the incident by rewriting the live store.
 
-The containment release disables all full-table optimization and scheduled maintenance, including force/doctor/startup paths, before native setup. There is no production override. Existing retained copies remain until a separately verified exclusive prune-only recovery. The unshipped Python helper is not a deployed repair and must not hold up containment. Persistent host safety stops and existing quarantine must survive hook launches, recycle, installation and explicit daemon startup; do not remove them as routine troubleshooting. Legacy compaction regressions use a test-only policy mock; that does not authorize live compaction.
+The containment release disables all full-table optimization and scheduled maintenance, including force/doctor/startup paths, before native setup. There is no production override. Existing retained copies remain until a separately verified exclusive prune-only recovery. Prune-only recovery and its pinned Python helper ship through the explicit `gmax recover` path; live cleanup still requires fresh admission and exclusive ownership. Persistent host safety stops and existing quarantine must survive hook launches, recycle, installation and explicit daemon startup; do not remove them as routine troubleshooting. Legacy compaction regressions use a test-only policy mock; that does not authorize live compaction.
 
 LanceDB 0.39 passes the absolute cleanup cutoff unchanged to native code; versions created during optimize can remain until later maintenance. Fresh unreferenced fragments newer than the latest retained manifest can also survive a no-rewrite optimize; see `docs/known-limitations.md`. Verify physical size/doctor rather than assuming success proves every copy was removed.
 
@@ -315,29 +315,36 @@ watchProject(root)
         +-- Purge deleted files from MetaCache
 ```
 
-#### FSEvents overflows: what the watcher can and cannot control
+#### FSEvents gaps and subscription failures
 
-"Events were dropped by the FSEvents client" means the kernel/FSEvents queue overflowed. The
-watcher's ignore globs (`WATCHER_IGNORE_GLOBS`) filter events *after* delivery, so they cannot
-prevent the overflow — a SwiftPM build writing 12k files into `.build/` or a venv install under
-`site-packages/` will overflow the queue no matter what gmax ignores. On platform this produced
-~340 overflows in 2.5 days. What gmax controls is the cost per overflow, and three things keep it
-bounded:
+FSEvents client/kernel drop notices mean events were lost and the filesystem must
+be reconciled. Globs alone filter after delivery, but current gmax also passes a
+bounded set of existing, policy-excluded literal directories to Parcel's native
+subscription through `subscribeWithNativeExclusions`. This reduces generated-artifact
+traffic before delivery; it does not guarantee that the host never drops events.
+Unsupported project rules remain in file policy rather than being translated
+into exclusions that could hide source.
 
-- **Recoveries inside `CATCHUP_COOLDOWN_MS` (5 min) coalesce into one deferred catchup scan**
-  (`deferCatchup` in `watcher-manager.ts`). A catchup of platform's 26k tracked files takes ~25s
-  (p50) to ~150s; before coalescing, an overflow burst ran one per recovery, or skipped the scan
-  outright and left that drop window uncovered until the next overflow. The deferred scan walks
-  the whole project, so one scan covers every overflow in the window.
-- **Poll mode probes FSEvents every 15 min** (`FSEVENTS_RECOVERY_INTERVAL_MS`), not hourly. Poll
-  mode is the expensive state (a full catchup every 5 min); every observed episode reattached on
-  its first probe, so a shorter probe interval ends it sooner and a failed probe just falls back.
-- **`handleFileEvent` drops never-indexed paths that loaded policy already ignores**
-  (`ProjectFilePolicy.isIgnoredByLoadedPolicy`, synchronous, no filesystem access). Transient
-  lock files under a gitignored dir (dotmd's `.runlist/locks/**/owner.json` — 11k events in 2.5
-  days on platform) used to ride through the debounce, a batch slot, and an lstat only to be
-  classified `missing`. Paths with a meta entry still flow through so a policy change can retire
-  their vectors; forced repairs and deletes bypass the check.
+- Known gap errors (`isFSEventsGap`) keep the native stream attached. The daemon
+  marks the root recovering and requests reconciliation, coalescing scans with
+  `FSEVENTS_GAP_SCAN_INTERVAL_MS` (30 seconds). A gap during a scan retains a later
+  scan because already-visited paths could have changed. The interval controls
+  scan scheduling, not a guarantee that scans or embedding finish within 30 seconds.
+- Terminal subscription errors use resubscription backoff; more than three failures
+  enter five-minute polling. Native recovery probes run every 15 minutes. This
+  fallback is separate from the attached-stream gap path.
+- `handleFileEvent` drops never-indexed paths that loaded policy already ignores.
+  Paths with metadata still flow through so changed policy can retire their
+  vectors; forced repairs and deletes bypass the early check.
+
+Status exposes cumulative `overflowCount`, watcher mode, catchup/reconciliation
+state and queues. The counter includes watcher callback errors; inspect the error
+kind before calling every increment an FSEvents drop. Per-root error logs are
+throttled to one per minute, so missing intermediate totals do not mean missing
+counter increments. Completed reconciliation timestamps indicate scan completion;
+verify embedding queues and failed files separately before claiming catchup.
+Historical overflow measurements are snapshots, not current guarantees. Watching
+remains owned by standalone gmax; Hetchy Developer is optional.
 
 ### Batch processor (`ProjectBatchProcessor`)
 
