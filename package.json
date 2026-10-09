@@ -1,6 +1,6 @@
 {
   "name": "grepmax",
-  "version": "0.26.82",
+  "version": "0.26.83",
   "author": "Robert Owens <78518764+reowens@users.noreply.github.com>",
   "homepage": "https://github.com/reowens/grepmax",
   "bugs": {
@@ -21,7 +21,7 @@
     "postinstall": "node scripts/postinstall.js",
     "prebuild": "rm -rf dist tsconfig.tsbuildinfo && node scripts/prepare-lance-runtime.cjs",
     "build": "tsc",
-    "postbuild": "chmod +x dist/bin.js dist/index.js",
+    "postbuild": "chmod +x dist/bin.js dist/index.js && node scripts/prepare-bounded-runtime.cjs",
     "dev": "npx tsc && node dist/bin.js",
     "test": "vitest run",
     "test:watch": "vitest",

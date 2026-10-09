@@ -7,7 +7,16 @@ on:
   workflow_dispatch:
 
 jobs:
+  bounded-native:
+    uses: ./.github/workflows/bounded-validation.yml
+  bounded-consumer:
+    needs: bounded-native
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/bounded-consumer.yml
   publish-npm:
+    needs: [bounded-native, bounded-consumer]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -99,8 +108,20 @@ jobs:
             exit 1
           fi
 
+      - name: Download this release's qualified native cleanup artifacts
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          pattern: bounded-native-*
+          path: ${{ runner.temp }}/bounded-artifacts
+
+      - name: Assemble exact-source accepted native cleanup
+        run: node scripts/assemble-bounded-runtime.cjs "$RUNNER_TEMP/bounded-artifacts" lance-maintenance/artifacts
+
       - name: Build
         run: pnpm build
+
+      - name: Require accepted native cleanup in the release package
+        run: node scripts/prepare-bounded-runtime.cjs --required
 
       - name: Audit and smoke-test the packed npm consumer
         run: pnpm run audit:consumer
