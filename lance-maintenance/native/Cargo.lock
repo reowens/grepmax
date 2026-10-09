@@ -263,6 +263,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "21ca356ad6425cecb6eb7b28e4f659f1ee7880fbb1a16127de7dd62901efee9e"
 dependencies = [
  "bitflags 2.13.2",
+ "serde",
  "serde_core",
  "serde_json",
 ]
@@ -1879,11 +1880,15 @@ dependencies = [
  "anyhow",
  "arrow-array",
  "arrow-ipc",
+ "arrow-row",
+ "arrow-schema",
  "async-trait",
  "bytes",
  "futures",
  "lance",
+ "lance-index",
  "lance-io",
+ "lance-table",
  "libc",
  "object_store 0.14.1",
  "serde",

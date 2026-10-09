@@ -49,8 +49,61 @@ jobs:
         run: cargo test --locked --manifest-path lance-maintenance/native/Cargo.toml --features engine --no-fail-fast
       - name: Build qualification executable
         run: cargo build --locked --manifest-path lance-maintenance/native/Cargo.toml --features engine
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '22'
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+        with:
+          version: '0.12.18'
+      - name: Prepare pinned independent fixture runtime
+        run: uv sync --locked --project lance-maintenance --no-dev --no-build --no-python-downloads --python "$(command -v python3)"
+        env:
+          UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/gmax-bounded-python
+      - name: Create small task-owned filesystem for space-loss acceptance
+        shell: bash
+        run: |
+          fixture_base="$RUNNER_TEMP/gmax-bounded-fixtures"
+          mkdir "$fixture_base"
+          if [ "$RUNNER_OS" = macOS ]; then
+            test "$(uname -m)" = arm64
+            hdiutil create -size 192m -type SPARSE -fs APFS -volname GmaxBoundedFixture "$RUNNER_TEMP/gmax-bounded-fixture.sparseimage"
+            hdiutil attach -nobrowse -mountpoint "$fixture_base" "$RUNNER_TEMP/gmax-bounded-fixture.sparseimage"
+          else
+            truncate -s 192M "$RUNNER_TEMP/gmax-bounded-fixture.img"
+            mkfs.ext4 -q "$RUNNER_TEMP/gmax-bounded-fixture.img"
+            sudo mount -o loop "$RUNNER_TEMP/gmax-bounded-fixture.img" "$fixture_base"
+            sudo chown "$(id -u):$(id -g)" "$fixture_base"
+          fi
+          echo "GMAX_BOUNDED_FIXTURE_BASE=$fixture_base" >> "$GITHUB_ENV"
+      - name: Qualify actual writes, readers and interruption recovery
+        run: |
+          mkdir -p "$RUNNER_TEMP/bounded-artifact"
+          "$RUNNER_TEMP/gmax-bounded-python/bin/python" -I tests/python/test_bounded_native_acceptance.py
+          cp .bounded-target/debug/gmax-bounded-maintenance "$RUNNER_TEMP/bounded-artifact/"
+          .bounded-target/debug/gmax-bounded-maintenance --capabilities > "$RUNNER_TEMP/bounded-artifact/capabilities.json"
+          node scripts/bounded-source-digest.cjs lance-maintenance/native > "$RUNNER_TEMP/bounded-artifact/source.sha256"
+        env:
+          GMAX_BOUNDED_NATIVE_EXECUTABLE: ${{ github.workspace }}/.bounded-target/debug/gmax-bounded-maintenance
+          GMAX_BOUNDED_EVIDENCE: ${{ runner.temp }}/bounded-artifact/acceptance.json
+      - name: Audit locked native dependency advisories
+        if: runner.os == 'Linux'
+        run: |
+          cargo install cargo-audit --locked --version 0.22.2
+          cargo audit --file lance-maintenance/native/Cargo.lock
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: bounded-native-${{ matrix.platform }}
-          path: .bounded-target/debug/gmax-bounded-maintenance
+          path: ${{ runner.temp }}/bounded-artifact
           if-no-files-found: error
+      - name: Unmount task-owned fixture filesystem
+        if: always()
+        shell: bash
+        run: |
+          fixture_base="$RUNNER_TEMP/gmax-bounded-fixtures"
+          if mount | grep -F "$fixture_base"; then
+            if [ "$RUNNER_OS" = macOS ]; then
+              hdiutil detach "$fixture_base"
+            else
+              sudo umount "$fixture_base"
+            fi
+          fi
