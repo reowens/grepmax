@@ -87,6 +87,16 @@ describe("prune helper subprocess bounds", () => {
     ).rejects.toThrow("before launch");
     expect(spawn).not.toHaveBeenCalled();
   });
+  it("allows slow prune deletion while capping requested time at ten minutes", async () => {
+    const pending = runCleanupProcess("fixture", [], { timeoutMs: 3_600_000 });
+    const rejected = expect(pending).rejects.toThrow("timed out");
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(child.kill).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(480_000);
+    expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+    child.emit("close", null, "SIGTERM");
+    await rejected;
+  });
 
   it("holds deletion behind launch and final admission, closing resources only after child close", async () => {
     const tokens: string[] = [];

@@ -38,6 +38,8 @@ export interface ResourceSamplerDeps {
   run: (command: string, args: string[], timeoutMs: number) => string;
   sampleTimeoutMs: number;
   kernelProbeTimeoutMs: number;
+  commandProbeTimeoutMs: number;
+  footprintProbeTimeoutMs: number;
 }
 export const HOST_SAMPLE_TIMEOUT_MS = 3000;
 const MAX_PROCESSES = 64;
@@ -198,6 +200,8 @@ function sampleHostResourcesOnce(
     },
     sampleTimeoutMs: HOST_SAMPLE_TIMEOUT_MS,
     kernelProbeTimeoutMs: 500,
+    commandProbeTimeoutMs: 500,
+    footprintProbeTimeoutMs: 1500,
     run: (command, args, timeoutMs) =>
       execFileSync(command, args, {
         encoding: "utf8",
@@ -222,7 +226,11 @@ function sampleHostResourcesOnce(
   };
   if (deps.platform !== "darwin") return snapshot;
   const deadline = deps.monotonic() + deps.sampleTimeoutMs;
-  const run = (command: string, args: string[], maximumMs = 500): string => {
+  const run = (
+    command: string,
+    args: string[],
+    maximumMs = deps.commandProbeTimeoutMs,
+  ): string => {
     const remaining = Math.floor(deadline - deps.monotonic());
     if (remaining <= 0) throw new Error("resource sample deadline exceeded");
     return deps.run(command, args, Math.min(maximumMs, remaining));
@@ -268,7 +276,7 @@ function sampleHostResourcesOnce(
           "--noCategories",
           ...snapshot.processes.flatMap((p) => ["-p", String(p.pid)]),
         ],
-        1500,
+        deps.footprintProbeTimeoutMs,
       ),
     );
     for (const p of snapshot.processes)

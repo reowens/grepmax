@@ -22,7 +22,12 @@ export function createRecoveryBudget(): ResourceBudget {
     allowMemoryWarning: () => hostGuardPolicy() === "critical-only",
     quarantine: safetyStopReason,
     requireClientRegistration: false,
-    samplerOverrides: { sampleTimeoutMs: 8000, kernelProbeTimeoutMs: 5000 },
+    samplerOverrides: {
+      sampleTimeoutMs: 8000,
+      kernelProbeTimeoutMs: 5000,
+      commandProbeTimeoutMs: 1500,
+      footprintProbeTimeoutMs: 3000,
+    },
     sampleMaxAgeMs: 10000,
   });
 }

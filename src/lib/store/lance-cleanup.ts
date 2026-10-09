@@ -14,6 +14,9 @@ import { StoreLease, storeLeasePaths } from "./store-lease";
 const project = path.resolve(__dirname, "../../../lance-maintenance");
 const MAX_OUTPUT_BYTES = 128 * 1024;
 const MAX_HELPER_MS = 120_000;
+// Pruning deletes at 32 files/second. Thousands of retained manifests and
+// transactions cannot fit a two-minute window even with an idle host.
+const MAX_PRUNE_MS = 600_000;
 export interface CleanupRuntime {
   python: string;
   script: string;
@@ -107,7 +110,7 @@ export function runCleanupProcess(
     const abort = (): void => stop("Cleanup cancelled");
     const timeout = setTimeout(
       () => stop("Cleanup timed out"),
-      Math.min(options.timeoutMs ?? MAX_HELPER_MS, MAX_HELPER_MS),
+      Math.min(options.timeoutMs ?? MAX_HELPER_MS, MAX_PRUNE_MS),
     );
     options.signal?.addEventListener("abort", abort, { once: true });
     // stderr is deliberately not returned: child diagnostics may contain paths,
@@ -391,6 +394,7 @@ export async function pruneVersions(
         ],
         {
           signal: options.signal,
+          timeoutMs: MAX_PRUNE_MS,
           admission: {
             nonce: options.lease.owner.nonce,
             start: (pid) => {

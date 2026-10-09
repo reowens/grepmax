@@ -48,6 +48,47 @@ function deps() {
   };
 }
 describe("bounded aggregate footprint sampling", () => {
+  it("allows recovery probes longer than 500ms without extending the total deadline", () => {
+    const d = deps();
+    const original = d.run.getMockImplementation()!;
+    let elapsed = 0;
+    d.monotonic = () => elapsed;
+    d.run.mockImplementation((command, args, timeout = 0) => {
+      if (command === "ps") {
+        elapsed += Math.min(600, timeout);
+        if (timeout < 600)
+          throw Object.assign(new Error("timed out"), { code: "ETIMEDOUT" });
+      }
+      return original(command, args, timeout);
+    });
+    expect(sampleHostResources([], d).aggregateFootprintMb).toBeNull();
+    elapsed = 0;
+    d.run.mockClear();
+    expect(
+      sampleHostResources([], {
+        ...d,
+        sampleTimeoutMs: 8000,
+        commandProbeTimeoutMs: 1500,
+        footprintProbeTimeoutMs: 3000,
+      }).aggregateFootprintMb,
+    ).toBe(500);
+    expect(
+      d.run.mock.calls.filter(([c]) => c === "ps").map((call) => call[2]),
+    ).toEqual([1500, 1500]);
+    elapsed = 0;
+    d.run.mockClear();
+    expect(
+      sampleHostResources([], {
+        ...d,
+        sampleTimeoutMs: 700,
+        commandProbeTimeoutMs: 1500,
+      }).aggregateFootprintMb,
+    ).toBeNull();
+    expect(
+      d.run.mock.calls.filter(([c]) => c === "ps").map((call) => call[2]),
+    ).toEqual([700, 100]);
+    expect(elapsed).toBe(700);
+  });
   it("includes all clients and recursive children, excluding unrelated/other-user processes", () => {
     expect(
       parseResourceProcesses(inventory, 501, 10).map((p) => [p.pid, p.role]),
