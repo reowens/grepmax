@@ -61,7 +61,7 @@ importers:
         specifier: 1.30.0
         version: 1.30.0
       openai:
-        specifier: ^7.15.0
+        specifier: 7.15.0
         version: 7.15.0(undici@8.11.2)(zod@4.6.5)
       ora:
         specifier: ^9.4.1
