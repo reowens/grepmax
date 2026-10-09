@@ -20,7 +20,9 @@ let delivery = true, callback, subscriptions = 0;
 parcel.subscribe = async (root, cb, options) => {
   subscriptions++;
   callback = cb;
-  return nativeSubscribe(root, (error, events) => { if (delivery) cb(error, events); }, options);
+  return nativeSubscribe(root, (error, events) => { if (delivery) cb(error, events); }, {
+    ...options, backend: process.platform === "darwin" ? "fs-events" : "inotify",
+  });
 };
 let pool;
 load("lib/workers/pool.js").getWorkerPool = () => pool;
@@ -118,8 +120,10 @@ async function qualify(mode) {
     write(".!456!atomic.ts", "export const atomic = 70000;\n");
     fs.renameSync(absolute(".!456!atomic.ts"), absolute("atomic.ts"));
     await sleep(500);
-    assert.equal(await db.countRowsForPath(absolute("lost.ts")), 0);
-    assert.equal(await db.countRowsForPath(absolute("created.ts")), 1);
+    const staleRows = await (await db.ensureTable()).query().select(["path", "content"]).toArray();
+    assert(!staleRows.some(row => row.path === absolute("lost.ts")));
+    assert(staleRows.some(row => row.path === absolute("created.ts")));
+    assert.equal(staleRows.find(row => row.path === absolute("changed.ts")).content, "export const changed = 200;\n");
     callback(new Error("Events were dropped by the FSEvents client. File system must be re-scanned."), []);
     delivery = true;
     await waitFor(async () => {
