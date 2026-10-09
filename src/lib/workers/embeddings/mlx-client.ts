@@ -93,6 +93,10 @@ export function requestMlxJSON(
         hostname: MLX_HOST,
         port: MLX_PORT,
         path: reqPath,
+        // A local connection is cheap. Avoid reusing a socket that uvicorn
+        // closed at its keep-alive boundary: that reset can incorrectly mark
+        // the healthy embedding backend unavailable and force CPU fallback.
+        agent: false,
         method: payload === undefined ? "GET" : "POST",
         headers:
           payload === undefined

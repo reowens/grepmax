@@ -217,6 +217,7 @@ export class Daemon {
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
   private cleanupPromise: Promise<CompactionResult> | null = null;
   private lastCleanupAttempt = 0;
+  private cleanupRetrySoon = false;
   private heartbeatTick = 0;
   private shuttingDown = false;
   private recycling = false;
@@ -1027,6 +1028,7 @@ export class Daemon {
     if (this.cleanupInterval) return;
     this.cleanupInterval = setInterval(() => {
       const interval =
+        !this.cleanupRetrySoon &&
         this.versionCleanupStatus()?.eligibleVersionsRemaining === 0
           ? 5 * 60_000
           : 60_000;
@@ -1053,6 +1055,7 @@ export class Daemon {
   runVersionCleanup(): Promise<CompactionResult> {
     if (this.cleanupPromise) return this.cleanupPromise;
     this.lastCleanupAttempt = Date.now();
+    this.cleanupRetrySoon = false;
     const run = this.performVersionCleanup();
     const tracked = run.finally(() => {
       if (this.cleanupPromise === tracked) this.cleanupPromise = null;
@@ -1070,9 +1073,29 @@ export class Daemon {
       this.pausedReason !== null
     )
       throw new Error("daemon resources not ready for version cleanup");
+    const bulkIndexingActive = () =>
+      this.operations
+        .activeOperationNames()
+        .some((name) =>
+          [
+            "add-project",
+            "ensure-project",
+            "index-project",
+            "index-pending",
+          ].includes(name),
+        );
+    const deferForIndexing = () => {
+      this.cleanupRetrySoon = true;
+      return skippedCompaction(
+        "project indexing is active; version cleanup deferred without closing reads",
+      );
+    };
+    if (bulkIndexingActive()) return deferForIndexing();
     this.assertHeavyOperationAdmission("version-cleanup");
     const deadline = AbortSignal.timeout(60_000);
     const runtime = await prepareVersionCleanup(PATHS.lancedbDir, deadline);
+    // Runtime setup yields: a bulk index can start before exclusive intent.
+    if (bulkIndexingActive()) return deferForIndexing();
     let roots: string[] = [];
     try {
       return await this.operations.runExclusive(
@@ -1112,7 +1135,14 @@ export class Daemon {
           );
           return result;
         },
-        { queueShared: true },
+        {
+          queueShared: true,
+          pendingReads: (name) =>
+            getReadVerb(name) !== undefined ||
+            ["search", "keyword-search", "documents", "project-stats"].includes(
+              name,
+            ),
+        },
       );
     } finally {
       if (

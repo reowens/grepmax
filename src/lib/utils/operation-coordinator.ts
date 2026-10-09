@@ -126,8 +126,18 @@ export class OperationCoordinator {
     name: string,
     quiesce: () => Promise<void>,
     fn: (signal: AbortSignal) => Promise<T>,
-    options: { queueShared?: boolean } = {},
+    options: {
+      queueShared?: boolean;
+      pendingReads?: (name: string) => boolean;
+    } = {},
   ): Promise<T> {
+    if (
+      options.pendingReads &&
+      (name !== "version-cleanup" || !options.queueShared)
+    )
+      return Promise.reject(
+        new Error("pending reads require queued prune-only cleanup"),
+      );
     if (this.state.kind === "closing" || this.state.kind === "closed") {
       return Promise.reject(new OperationClosedError());
     }
@@ -138,12 +148,17 @@ export class OperationCoordinator {
     }
     this.state = { kind: "exclusive-pending", name };
     this.queueShared = options.queueShared ?? false;
+    this.readWindow = options.pendingReads;
     const controller = new AbortController();
     this.controllers.add(controller);
 
     const task = (async () => {
       try {
         await quiesce();
+        // Reads remain available while writers quiesce. Close admission before
+        // taking the drain snapshot so every old native reader still settles
+        // before retention closes handles and deletes history.
+        this.readWindow = undefined;
         await Promise.allSettled([...this.sharedTasks]);
         if (controller.signal.aborted) {
           throw abortError(controller.signal.reason);
@@ -218,7 +233,7 @@ export class OperationCoordinator {
       this.state.kind === "exclusive" ||
       this.state.kind === "exclusive-pending"
     ) {
-      if (this.state.kind === "exclusive" && this.readWindow?.(name)) return;
+      if (this.readWindow?.(name)) return;
       throw new OperationBusyError(this.state.name);
     }
   }

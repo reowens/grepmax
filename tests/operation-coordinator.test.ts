@@ -14,6 +14,56 @@ function deferred<T = void>() {
 }
 
 describe("OperationCoordinator", () => {
+  it("serves reads during slow watcher quiescence, then drains every old reader before pruning", async () => {
+    const coordinator = new OperationCoordinator();
+    const quiesce = deferred();
+    const oldReader = deferred();
+    const started = deferred();
+    const prune = vi.fn(async () => {});
+    const cleanup = coordinator.runExclusive(
+      "version-cleanup",
+      () => quiesce.promise,
+      prune,
+      { queueShared: true, pendingReads: (name) => name === "search" },
+    );
+    await expect(
+      coordinator.runShared("search", undefined, async () => "available"),
+    ).resolves.toBe("available");
+    const read = coordinator.runShared("search", undefined, async () => {
+      started.resolve();
+      await oldReader.promise;
+    });
+    await started.promise;
+    const writer = vi.fn(async () => {});
+    const write = coordinator.runShared("write", undefined, writer);
+    quiesce.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(prune).not.toHaveBeenCalled();
+    expect(writer).not.toHaveBeenCalled();
+    const lateReader = vi.fn(async () => "after cleanup");
+    const late = coordinator.runShared("search", undefined, lateReader);
+    expect(lateReader).not.toHaveBeenCalled();
+    oldReader.resolve();
+    await Promise.all([cleanup, read, write, late]);
+    expect(prune).toHaveBeenCalledOnce();
+    expect(writer).toHaveBeenCalledOnce();
+    expect(lateReader).toHaveBeenCalledOnce();
+  });
+
+  it("refuses pending read admission for rewrites", async () => {
+    const coordinator = new OperationCoordinator();
+    const quiesce = vi.fn(async () => {});
+    await expect(
+      coordinator.runExclusive("repair", quiesce, async () => {}, {
+        queueShared: true,
+        pendingReads: () => true,
+      }),
+    ).rejects.toThrow("prune-only");
+    expect(quiesce).not.toHaveBeenCalled();
+    expect(coordinator.status).toBe("open");
+  });
+
   it("admits current reads during prune-only deletion while keeping writes queued", async () => {
     const coordinator = new OperationCoordinator();
     const entered = deferred();
