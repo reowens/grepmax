@@ -1,18 +1,39 @@
 # Docs
 
-## Working focus after 0.26.72 activation — October 8, 2026
+## Working focus after 0.26.72 live acceptance — October 8, 2026
 
 **0.26.72 is published, installed and actively serving.** The release corrects existing-inference policy admission and bounded fair warm-worker scheduling. The reviewed prior pressure latch was backed up and cleared under the user's activation instruction; the graceful IPC handover succeeded. Retained branches, stashes and backups preserve history; they are not an integration queue.
 
 | Work | Current state | Next action / completion evidence |
 | --- | --- | --- |
 | Release / runtime | .72 active on daemon43395, small GPU44400 ready, gen1; all303 installed files verified | Delivery complete. Maintain ordinary operation and observe guard transitions. |
-| Document availability / quality | Five successful live searches, four during indexing; full predefined acceptance incomplete at source-read cap. Broader fusion2/20 insufficient | Review verification bounds before a separate fresh acceptance cohort; preserve first result and original studies. Coverage/ranking qualification remain separate. |
-| Watcher stability | At 01:32:39 UTC, native watcher caught up: no active, pending, failed or catchup work; counter 0 | Longer ordinary-load observation and repeated-gap review. Restart reset the counter; this point does not prove sustained delivery or stability. |
+| Document availability / quality | Fresh services-scope acceptance passed: 5/6 successful, all five during indexing; 250 pointers and final freshness verified. One busy refusal. Broader fusion remains insufficient | Preserve both cohorts. Broader availability, coverage and ranking quality remain separate qualifications. |
+| Watcher stability | At 01:39:03 UTC, native indexing active: nine pending/eight active, zero failed, no catchup scan, counter 0 | Longer ordinary-load observation and repeated-gap review. Prior idle checkpoint does not establish sustained delivery or stability. |
 | Production disk recovery | Read-only readiness complete; live prune unperformed | Separate recovery window with fresh strict admission/reservation, pinned tools, owner drain, current retention and exclusive lease. |
 | Consumer rollout | Client settings unchanged; existing sessions preserved | Configure document entry point explicitly when rollout is selected; reconnect separately when needed. |
 
 Preserve normal `critical-only`, small GPU and maximum two workers. Watcher ownership remains in standalone gmax; Hetchy Developer is optional. Shared watcher extraction and embedding migration remain deferred. This focus supersedes the historical blocked-release status below.
+
+## Fresh scoped live acceptance passed — October 8, 2026
+
+Item 1 is complete for the predefined services-docs scope. The new plan froze six fresh diagnostic queries, one pass/no retries, a three-second gap, a minimum of four successful queries including at least one during indexing, same daemon/generation/project/store identity, current returned-pointer checks and a final complete source byte/file-set fence. The complete family contains **13 Markdown files / 105,056 bytes**, all indexed. Reserving eight possible source phases at 256 KiB each fits the unchanged **2 MiB total read cap** before querying. This is a separate prospective cohort; the earlier incomplete run and frozen retrieval studies remain unchanged.
+
+| Result, 01:38:14–01:39:03 UTC October 9 | Observation |
+| --- | --- |
+| Queries issued once | 6 |
+| Successful queries / overlap with indexing | **5 / 5** |
+| Refusals | **1 busy**, 2.081 seconds; no retry |
+| Accepted-query durations | 3.798–7.041 seconds |
+| Returned pointers with verified indexed/current digest and range | **250 / 250** |
+| Final complete source bytes and file set | Unchanged |
+| Source reads | **708,014 bytes / 7 phases**, below 2 MiB |
+| Identity/configuration/prior-result fences | Passed |
+
+Implementation/self review verified the result counts, plan/runner/result hashes, read-budget accounting and unchanged settings/prior results. This was self review, not independent external relevance adjudication. The bounded availability gate **passes for this scope**. The busy case demonstrates that the two-second warm-worker wait can still expire. Observed successful latency is not a sustained performance guarantee or a before/after comparison. This does not establish broader document quality, coverage or fusion acceptance; protected fusion remains insufficient.
+
+The same .72 daemon43395, small GPU44400 and generation1 remained active, with one worker/max2. Fresh pressure samples before/after were warning OS pressure / healthy kernel, which the selected critical-only policy permits; no pressure refusal occurred. Final status shows ordinary native indexing, nine pending and eight active files, zero failed, no running catchup scan and counter0. This is active processing rather than caught-up state; the earlier idle checkpoint remains historical. No runtime restart, guard/model/client-setting change, index override, direct native-store inspection, maintenance or pruning was performed. Private immutable evidence is `docs/measurements/2026-10-08-document-live-acceptance/` (plan, measured runner, result, configuration/prior-result digests and self-review). No source bodies are retained in the reports.
+
+**Next:** pressure-event diagnostics, then longer varied-load watcher observation.
 
 ## 0.26.72 activated and serving — October 8, 2026
 
@@ -28,7 +49,7 @@ Activation proof: `/private/tmp/gmax-v02672-release/activation/acceptance.json`.
 
 ## Next work after delivery
 
-1. Complete a separate fresh availability check. Predefine a source-verification strategy that fits its byte/file limits, including the final freshness check. Preserve the incomplete first run and use new cases; do not raise its cap or rerun its exposed questions.
+1. **Completed for the services-docs scope:** fresh availability acceptance with current pointer and final source checks under the original read cap. Preserve the first incomplete run and this separate passing cohort. Broader/load-diverse availability is not yet qualified.
 2. Improve pressure-event evidence. Record the actual triggering OS/kernel measurements and admission context so a future stop can be reviewed from its cause, rather than only its generic reason and later healthy readings.
 3. Observe native watching over longer, varied development load. Track queue drainage, gap/catchup events, failed files and resource state; a reset counter or idle checkpoint is insufficient.
 
@@ -400,7 +421,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 161 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 162 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
