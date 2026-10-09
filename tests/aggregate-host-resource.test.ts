@@ -33,6 +33,7 @@ function deps() {
     now: () => 1000,
     monotonic: () => 0,
     freeBytes: () => 4096 * 1048576,
+    processAlive: () => true,
     run: vi.fn((command: string, args: string[], _timeoutMs?: number) => {
       if (command === "ps") return inventory;
       if (command === "footprint")
@@ -132,6 +133,49 @@ describe("bounded aggregate footprint sampling", () => {
       "process inventory changed during sample",
     );
     expect(d.run.mock.calls.filter(([c]) => c === "ps")).toHaveLength(4);
+  });
+  it("accepts measured survivors when a vanished child is verified dead", () => {
+    const d = deps();
+    const original = d.run.getMockImplementation()!;
+    let count = 0;
+    d.processAlive = vi.fn(() => false);
+    d.run.mockImplementation((c, a) => {
+      if (c === "ps" && ++count > 1)
+        return inventory
+          .split("\n")
+          .filter((line) => line !== row(40, 30, "/usr/bin/python3"))
+          .join("\n");
+      if (c === "footprint")
+        return [10, 20, 30, 50]
+          .map((pid) => `node [${pid}]: Footprint: 100 MB`)
+          .join("\n");
+      return original(c, a);
+    });
+    const s = sampleHostResources([], d);
+    expect(s.aggregateFootprintMb).toBe(400);
+    expect(s.processes.map((p) => p.pid)).not.toContain(40);
+    expect(s.incompleteReasons).toEqual([]);
+    expect(d.processAlive).toHaveBeenCalledWith(40);
+    expect(d.run.mock.calls.filter(([c]) => c === "ps")).toHaveLength(2);
+  });
+  it("refuses to discount an exit whose liveness check is unavailable", () => {
+    const d = deps();
+    const original = d.run.getMockImplementation()!;
+    let count = 0;
+    d.processAlive = () => {
+      throw Error("process liveness unavailable");
+    };
+    d.run.mockImplementation((c, a) =>
+      c === "ps" && ++count > 1
+        ? inventory
+            .split("\n")
+            .filter((line) => line !== row(40, 30, "/usr/bin/python3"))
+            .join("\n")
+        : original(c, a),
+    );
+    const s = sampleHostResources([], d);
+    expect(s.aggregateFootprintMb).toBeNull();
+    expect(s.incompleteReasons).toContain("process liveness unavailable");
   });
   it.each(["2", "4"])(
     "does not retry away observed pressure flag %s",

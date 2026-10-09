@@ -34,6 +34,7 @@ export interface ResourceSamplerDeps {
   now: () => number;
   monotonic: () => number;
   freeBytes: () => number;
+  processAlive: (pid: number) => boolean;
   run: (command: string, args: string[], timeoutMs: number) => string;
   sampleTimeoutMs: number;
   kernelProbeTimeoutMs: number;
@@ -186,6 +187,15 @@ function sampleHostResourcesOnce(
     now: Date.now,
     monotonic: () => performance.now(),
     freeBytes: os.freemem,
+    processAlive: (pid) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+        throw new Error("process liveness unavailable");
+      }
+    },
     sampleTimeoutMs: HOST_SAMPLE_TIMEOUT_MS,
     kernelProbeTimeoutMs: 500,
     run: (command, args, timeoutMs) =>
@@ -280,8 +290,30 @@ function sampleHostResourcesOnce(
     if (
       JSON.stringify(after.map(identity)) !==
       JSON.stringify(snapshot.processes.map(identity))
-    )
-      throw new Error("process inventory changed during sample");
+    ) {
+      // A verified exit releases memory. It need not invalidate measured
+      // survivors, even when the exiting child's footprint is unavailable.
+      // Additions, reuse, reparenting and uncertain liveness still require a
+      // complete fresh measurement; never treat them as zero-memory exits.
+      const previous = new Map(snapshot.processes.map((p) => [p.pid, p]));
+      if (
+        after.some(
+          (p) =>
+            !previous.has(p.pid) ||
+            JSON.stringify(identity(p)) !==
+              JSON.stringify(identity(previous.get(p.pid)!)),
+        ) ||
+        snapshot.processes.some(
+          (p) =>
+            !after.some((q) => q.pid === p.pid) && deps.processAlive(p.pid),
+        )
+      )
+        throw new Error("process inventory changed during sample");
+      snapshot.processes = after.map((p) => ({
+        ...p,
+        footprintMb: footprints.get(p.pid) ?? null,
+      }));
+    }
     if (snapshot.processes.some((p) => p.footprintMb === null))
       throw new Error("process footprint unavailable");
     snapshot.aggregateFootprintMb = snapshot.processes.reduce(
