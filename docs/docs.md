@@ -2,20 +2,36 @@
 
 ## Working focus after pressure-trigger diagnostics — October 8, 2026
 
-**0.26.72 is published, installed and actively serving.** The release corrects existing-inference policy admission and bounded fair warm-worker scheduling. The reviewed prior pressure latch was backed up and cleared under the user's activation instruction; the graceful IPC handover succeeded. Retained branches, stashes and backups preserve history; they are not an integration queue.
+**0.26.73 is published, installed and actively serving.** It deploys bounded original pressure-trigger diagnostics on top of .72 admission and scheduling fixes. Normal IPC version handover completed; no safety marker was changed for .73. Retained branches, stashes and backups preserve history; they are not an integration queue.
 
 | Work | Current state | Next action / completion evidence |
 | --- | --- | --- |
-| Release / runtime | .72 active on daemon43395, small GPU44400 ready, gen1; all303 installed files verified | Delivery complete. Maintain ordinary operation and observe guard transitions. |
-| Pressure diagnostics | Triggering evidence accepted in source; full CI passed 2,130 tests / 212 files. Installed .72 unchanged | Deliver the accepted patch separately; older incidents cannot be backfilled. |
+| Release / runtime | .73 active on daemon71531, small GPU72547 ready, gen1; all304 installed files verified | Delivery complete. Maintain ordinary operation and observe guard transitions. |
+| Pressure diagnostics | .73 deployed; CI passed 2,130 tests / 212 files; installed isolated fixture passed | Observe future triggers; older incidents cannot be backfilled. |
 | Document availability / quality | Fresh services-scope acceptance passed: 5/6 successful, all five during indexing; 250 pointers and final freshness verified. One busy refusal. Broader fusion remains insufficient | Preserve both cohorts. Broader availability, coverage and ranking quality remain separate qualifications. |
-| Watcher stability | At 01:39:03 UTC, native indexing active: nine pending/eight active, zero failed, no catchup scan, counter 0 | Longer ordinary-load observation and repeated-gap review. Prior idle checkpoint does not establish sustained delivery or stability. |
+| Watcher stability | At 02:09:41 UTC, native indexing/catchup active: zero pending/failed, two active. .72 counter4 before handover; .73 counter0 after reset | Longer ordinary-load observation and repeated-gap review. Prior idle checkpoint does not establish sustained delivery or stability. |
 | Production disk recovery | Read-only readiness complete; live prune unperformed | Separate recovery window with fresh strict admission/reservation, pinned tools, owner drain, current retention and exclusive lease. |
 | Consumer rollout | Client settings unchanged; existing sessions preserved | Configure document entry point explicitly when rollout is selected; reconnect separately when needed. |
 
 Preserve normal `critical-only`, small GPU and maximum two workers. Watcher ownership remains in standalone gmax; Hetchy Developer is optional. Shared watcher extraction and embedding migration remain deferred. This focus supersedes the historical blocked-release status below.
 
+## 0.26.73 released, installed and active — October 8, 2026
+
+[0.26.73](https://github.com/reowens/grepmax/releases/tag/v0.26.73) was published at **02:04:54 UTC October 9** from `17fc81ce72c0d9cc6742d04265e2cfe328e798ee`. [Release CI](https://github.com/reowens/grepmax/actions/runs/37872676837) and [exact-source CI](https://github.com/reowens/grepmax/actions/runs/37872675175) passed **2,130 tests / 212 files**, both typechecks, formatting, JavaScript/Python audits, build and packed-consumer/native/prune smoke. No PR was created.
+
+Registry gitHead and both tarball integrity digests verified. Global installation used that exact published tarball with lifecycle scripts disabled; **all 304 installed files match byte for byte**. The only added package file is the pressure-diagnostics module; the remaining changes are the six pressure/latch/admission runtime modules and three version metadata files. Configuration and client-setting digests remain unchanged: `critical-only`, small Granite GPU and maximum two workers.
+
+Normal version-mismatch IPC handover drained .72 and completed its shutdown at **02:08:09 UTC**. Concurrent normal startup peers converged on singleton **daemon 71531**; launcher 71969 is not the serving PID. Built-in startup handling swept the old unresponsive PID after shutdown completed; no manual process signal was used. At **02:09:41.658 UTC**, fresh IPC confirms .73 active/ready, generation 1, owned-ready small GPU 72547 and one worker/maximum two. Native indexing and catchup are running, with zero pending/failed and two active files. This is active processing, not caught-up state. The old .72 counter reached 4 before handover; new counter 0 reflects process reset, not resolution of watcher gaps. Startup also logged embedding transport retries and ordinary worker CPU fallback; this release does not establish that those lifecycle issues are resolved.
+
+An installed-code **isolated synthetic** diagnostic fixture passed: one triggering sample, original critical flags retained despite later normal values, first cause preserved, private payload omitted, private permissions and an 845-byte compatible marker. Production markers were untouched; no real critical pressure was induced. Newly deployed code records future triggers; older incidents cannot be backfilled and preserved older clients may still emit reason-only markers.
+
+One separate fresh, predefined live MCP query passed during indexing: **1,145 ms**, **50/50 pointers** verified against current digests/ranges, with the complete 13-file source byte/file-set fence unchanged. It consumed **313,207 bytes / three phases** under the original 2 MiB cap. Daemon/generation/project/store identity, settings and prior-result digests were preserved. No query was retried or frozen cohort rescored. This is a release smoke, not broader availability, relevance or sustained performance acceptance.
+
+Private release proof: `/private/tmp/gmax-v02673-release/acceptance.json`, installed artifact proof, isolated fixture, handover logs, live-smoke plan/runner/result and fresh IPC health. No client restart, policy/model-size/worker-cap change, production store scan, maintenance or pruning occurred. **Delivery is complete. Next: longer varied-load watcher observation.** Preserve earlier incomplete/passing cohorts and frozen retrieval studies; coverage, fusion quality, consumer rollout and production recovery remain separate.
+
 ## Pressure-trigger diagnostics implemented in source — October 8, 2026
+
+Historical source acceptance record; the release/install/activation record above supersedes its deployment status.
 
 The .71 pressure incident's original marker retained only a timestamp and generic reason; later normal/warning readings could not recover the triggering measurement. Source `7334b30dbc8cb7f65867097bab4ab5b7d70085e8` adds optional bounded `diagnostics` to the existing schema-version-1 durable marker. Resource admission, daemon startup/heartbeat/operation checks and direct worker-spawn guards pass their original triggering evidence. Critical resource errors retain that evidence if persistence fails, allowing the daemon to use the same sample rather than a later health reading.
 
@@ -25,9 +41,9 @@ Persistence rebuilds a bounded field allowlist: no argv, query text, source path
 
 Root implementation/self review, **229 focused tests / 12 files**, source/test typechecks and formatting pass, with an additional kernel regression check for the final parsed-flag assertion. Fixtures cover changed initial/final OS pressure, kernel critical despite warning/unknown OS readings, startup/heartbeat/worker/reservation context, private-data stripping, invalid optional evidence, first-cause retention, persistence failure, legacy markers, strict recovery and document contracts. [Full exact-source CI](https://github.com/reowens/grepmax/actions/runs/37872048964) passed **2,130 tests / 212 files**, both typechecks, formatting, JavaScript/Python audits, build and packed-consumer/native/prune smoke. Source acceptance is complete. Private review/logs are under `docs/measurements/2026-10-08-pressure-trigger-diagnostics/`.
 
-**This patch is not released or installed.** At **01:55:09.268 UTC October 9**, installed .72 daemon43395/GPU44400 remain active/ready, native/generation1, one worker/max2, counter0 and zero failed paths. There is one pending live edit and no active file at that sample; this is not a longer stability qualification. All303 installed package files still match the official .72 artifact, and configuration/client-setting digests are unchanged. No restart, marker/model/policy/client-setting change, native-store inspection or pruning occurred. Existing incidents cannot be backfilled; only a deployed patch can record future triggers.
+**At this source-acceptance checkpoint, the patch was not yet released or installed.** At **01:55:09.268 UTC October 9**, installed .72 daemon43395/GPU44400 remain active/ready, native/generation1, one worker/max2, counter0 and zero failed paths. There is one pending live edit and no active file at that sample; this is not a longer stability qualification. All303 installed package files still match the official .72 artifact, and configuration/client-setting digests are unchanged. No restart, marker/model/policy/client-setting change, native-store inspection or pruning occurred. Existing incidents cannot be backfilled; only a deployed patch can record future triggers.
 
-**Next:** release/install the accepted diagnostic patch when requested, then undertake longer varied-load watcher observation. Preserve the passed scoped acceptance, the earlier incomplete run and frozen retrieval studies; broader fusion remains insufficient.
+**At source acceptance, next:** release/install the diagnostic patch. Delivery is now complete above; undertake longer varied-load watcher observation. Preserve the passed scoped acceptance, the earlier incomplete run and frozen retrieval studies; broader fusion remains insufficient.
 
 ## Fresh scoped live acceptance passed — October 8, 2026
 
@@ -65,7 +81,7 @@ Activation proof: `/private/tmp/gmax-v02672-release/activation/acceptance.json`.
 ## Next work after delivery
 
 1. **Completed for the services-docs scope:** fresh availability acceptance with current pointer and final source checks under the original read cap. Preserve the first incomplete run and this separate passing cohort. Broader/load-diverse availability is not yet qualified.
-2. **Implemented in source; pending release:** bounded original trigger measurements and admission context in the durable stop record. Full CI passed; release/install delivery remains before relying on it for live incidents.
+2. **Delivered in .73:** bounded original trigger measurements and admission context in the durable stop record. Full CI and installed isolated fixture passed; observe future incidents with deployed code.
 3. Observe native watching over longer, varied development load. Track queue drainage, gap/catchup events, failed files and resource state; a reset counter or idle checkpoint is insufficient.
 
 Document coverage (`secrets.*`), consumer rollout and separately admitted production recovery remain distinct follow-ups. Broader fusion remains unqualified and is not integrated into production ranking. The gmax watcher remains standalone; a future shared package may be independent of Hetchy Developer.
@@ -436,7 +452,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 163 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 164 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
