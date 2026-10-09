@@ -25,7 +25,7 @@ export function createRecoveryBudget(): ResourceBudget {
     samplerOverrides: {
       sampleTimeoutMs: 8000,
       kernelProbeTimeoutMs: 5000,
-      commandProbeTimeoutMs: 1500,
+      commandProbeTimeoutMs: 3000,
       footprintProbeTimeoutMs: 3000,
     },
     sampleMaxAgeMs: 10000,

@@ -68,20 +68,20 @@ describe("bounded aggregate footprint sampling", () => {
       sampleHostResources([], {
         ...d,
         sampleTimeoutMs: 8000,
-        commandProbeTimeoutMs: 1500,
+        commandProbeTimeoutMs: 3000,
         footprintProbeTimeoutMs: 3000,
       }).aggregateFootprintMb,
     ).toBe(500);
     expect(
       d.run.mock.calls.filter(([c]) => c === "ps").map((call) => call[2]),
-    ).toEqual([1500, 1500]);
+    ).toEqual([3000, 3000]);
     elapsed = 0;
     d.run.mockClear();
     expect(
       sampleHostResources([], {
         ...d,
         sampleTimeoutMs: 700,
-        commandProbeTimeoutMs: 1500,
+        commandProbeTimeoutMs: 3000,
       }).aggregateFootprintMb,
     ).toBeNull();
     expect(
