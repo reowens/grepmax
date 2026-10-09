@@ -94,6 +94,47 @@ describe("one persistent budget for all clients/stores", () => {
     s.memoryPressure = "unknown";
     expect(() => budget.reserve(512, "prune-helper")).toThrow("unknown");
   });
+  it("an opted-in OS warning still requires measured resources and reserves shared capacity", () => {
+    s.memoryPressure = "warn";
+    const budget = make(10, { allowMemoryWarning: () => true });
+    const reservation = budget.reserve(512, "prune-helper");
+    expect(records()).toHaveLength(1);
+    expect(budget.check()?.memoryPressure).toBe("warn");
+    reservation.release();
+    s.aggregateFootprintMb = null;
+    expect(() => budget.reserve(512, "prune-helper")).toThrow("unknown");
+  });
+  it.each(["unknown", "warn", "critical"] as const)(
+    "OS-warning allowance never bypasses %s kernel pressure",
+    (kernelPressure) => {
+      s.memoryPressure = "warn";
+      s.kernelPressure = kernelPressure;
+      expect(() =>
+        make(10, { allowMemoryWarning: () => true }).reserve(
+          512,
+          "prune-helper",
+        ),
+      ).toThrow();
+      expect(records()).toHaveLength(0);
+    },
+  );
+  it("OS-warning allowance preserves aggregate limits, critical stops and fresh policy changes", () => {
+    let allowed = true;
+    s.memoryPressure = "warn";
+    const budget = make(10, { allowMemoryWarning: () => allowed });
+    expect(() => budget.check()).not.toThrow();
+    allowed = false;
+    expect(() => budget.check()).toThrow("warning");
+    allowed = true;
+    s.processes[1].footprintMb = 6144;
+    s.aggregateFootprintMb = 6244;
+    expect(() => budget.reserve(512, "prune-helper")).toThrow(
+      "budget exceeded",
+    );
+    s.memoryPressure = "critical";
+    expect(() => budget.check()).toThrow("critical");
+    expect(latch).toHaveBeenCalled();
+  });
   it.each(["warn", "unknown"] as const)(
     "explicit critical-only allows %s without a ledger or client reconnect",
     (pressure) => {

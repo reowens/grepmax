@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { HostResourceSnapshot } from "../utils/host-resource";
+import { hostGuardPolicy } from "../utils/host-guard-policy";
 import {
   HELPER_RESOURCE_RESERVE_MB,
   ResourceBudget,
@@ -15,6 +16,10 @@ export const PRUNE_METADATA_HEADROOM_BYTES = 1024 * 1024;
 export function createRecoveryBudget(): ResourceBudget {
   return new ResourceBudget({
     policy: () => "strict",
+    // Keep measured aggregate accounting in both policies. The user's
+    // critical-only selection permits known OS warning, not missing samples,
+    // unknown/kernel pressure or an overcommitted aggregate reservation.
+    allowMemoryWarning: () => hostGuardPolicy() === "critical-only",
     quarantine: safetyStopReason,
     requireClientRegistration: false,
     samplerOverrides: { sampleTimeoutMs: 8000, kernelProbeTimeoutMs: 5000 },

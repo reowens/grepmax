@@ -70,6 +70,7 @@ interface BudgetDeps {
   policy: () => HostGuardPolicy;
   criticalSample: () => HostResourceSnapshot;
   requireClientRegistration: boolean;
+  allowMemoryWarning: () => boolean;
   samplerOverrides: Partial<ResourceSamplerDeps>;
   sampleMaxAgeMs: number;
 }
@@ -91,6 +92,7 @@ export function assertResourceSnapshot(
   budgetMb: number,
   now = Date.now(),
   sampleMaxAgeMs = 5000,
+  allowMemoryWarning = false,
 ): void {
   if (
     snapshot.memoryPressure === "critical" ||
@@ -100,7 +102,10 @@ export function assertResourceSnapshot(
       "critical host pressure; heavy work refused",
       true,
     );
-  if (snapshot.memoryPressure === "warn" || snapshot.kernelPressure === "warn")
+  if (
+    (snapshot.memoryPressure === "warn" && !allowMemoryWarning) ||
+    snapshot.kernelPressure === "warn"
+  )
     throw new ResourceAdmissionError(
       "warning host pressure; heavy work paused",
     );
@@ -117,7 +122,8 @@ export function assertResourceSnapshot(
   if (
     snapshot.incompleteReasons.length ||
     snapshot.aggregateFootprintMb === null ||
-    snapshot.memoryPressure !== "normal" ||
+    (snapshot.memoryPressure !== "normal" &&
+      !(allowMemoryWarning && snapshot.memoryPressure === "warn")) ||
     snapshot.kernelPressure !== "ok"
   )
     throw new ResourceAdmissionError(
@@ -157,6 +163,7 @@ export class ResourceBudget {
       signal: (pid) => process.kill(pid, 0),
       policy: hostGuardPolicy,
       requireClientRegistration: true,
+      allowMemoryWarning: () => false,
       samplerOverrides: {},
       sampleMaxAgeMs: 5000,
       criticalSample: sampleCriticalPressure,
@@ -358,6 +365,7 @@ export class ResourceBudget {
         resolveResourceBudgetMb(),
         this.deps.now(),
         this.deps.sampleMaxAgeMs,
+        this.deps.allowMemoryWarning(),
       );
       const legacy = snapshot.processes.filter(
         (p) =>
@@ -455,6 +463,7 @@ export class ResourceBudget {
       resolveResourceBudgetMb(),
       this.deps.now(),
       this.deps.sampleMaxAgeMs,
+      this.deps.allowMemoryWarning(),
     );
     if (this.deps.quarantine())
       throw new ResourceAdmissionError("host containment");

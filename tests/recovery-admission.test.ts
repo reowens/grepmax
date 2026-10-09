@@ -42,6 +42,7 @@ describe("production prune admission", () => {
     budget = { check, reserve: vi.fn(() => ({ attach, release })) } as any;
   });
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.restoreAllMocks();
     fs.rmSync(root, { recursive: true, force: true });
   });
@@ -130,5 +131,15 @@ describe("production prune admission", () => {
     const real = createRecoveryBudget() as any;
     expect(real.deps.policy()).toBe("strict");
     expect(real.deps.requireClientRegistration).toBe(false);
+  });
+  it("honors the selected OS warning policy without disabling aggregate accounting", () => {
+    vi.stubEnv("GMAX_HOST_GUARD_POLICY", "critical-only");
+    const real = createRecoveryBudget() as any;
+    expect(real.deps.policy()).toBe("strict");
+    expect(real.deps.allowMemoryWarning()).toBe(true);
+    vi.stubEnv("GMAX_HOST_GUARD_POLICY", "strict");
+    expect(real.deps.allowMemoryWarning()).toBe(false);
+    vi.stubEnv("GMAX_HOST_GUARD_POLICY", "unknown");
+    expect(real.deps.allowMemoryWarning()).toBe(false);
   });
 });
