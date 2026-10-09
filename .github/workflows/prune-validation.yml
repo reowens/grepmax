@@ -32,6 +32,8 @@ jobs:
         run: uv sync --locked --project lance-maintenance --no-dev --no-build --no-python-downloads --python "$(command -v python3)"
         env:
           UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/gmax-prune-python
+      - name: Validate bounded deleted-row materialization
+        run: ${{ runner.temp }}/gmax-prune-python/bin/python -I tests/python/test_compact_recovery.py
       - name: Guard and lease regressions
         run: |
           python3 -m unittest discover -s tests/python -p test_lance_prune.py
