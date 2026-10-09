@@ -27,6 +27,10 @@ def notices(metadata_path, output):
     sections = ['gmax bounded maintenance third-party notices\n'
                 'Lance engine 12.0.0; exact locked build dependencies.\n'
                 'Build-only dependencies may be included conservatively.\n']
+    for supplement in sources['rust-standard-library@1.98.0']:
+        sections.append('\n--- Rust standard library 1.98.0: '
+                        + supplement['source'] + ' ---\n'
+                        + (supplements / supplement['file']).read_text(encoding='utf8'))
     packages = sorted((pkg for pkg in metadata['packages']
                        if pkg['id'] in reached and pkg['source'] is not None),
                       key=lambda pkg: (pkg['name'], pkg['version']))

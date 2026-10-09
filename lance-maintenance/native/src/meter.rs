@@ -15,7 +15,10 @@ use std::{
     fmt,
     fs::{File, OpenOptions},
     io::{Read, Write},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 #[derive(Debug, Default, Clone, Serialize)]
@@ -438,7 +441,7 @@ impl ObjectStore for MeteredStore {
             inner: upload,
             ledger: self.ledger.clone(),
             path: path.clone(),
-            failed: false,
+            failed: Arc::new(AtomicBool::new(false)),
             injected_fault: fault,
         }))
     }
@@ -529,31 +532,40 @@ struct MeteredUpload {
     inner: Box<dyn MultipartUpload>,
     ledger: Arc<Ledger>,
     path: Path,
-    failed: bool,
+    failed: Arc<AtomicBool>,
     injected_fault: Option<String>,
 }
 #[async_trait]
 impl MultipartUpload for MeteredUpload {
     fn put_part(&mut self, payload: PutPayload) -> UploadPart {
-        if self.failed {
+        if self.failed.load(Ordering::Acquire) {
             return async { Err(refused("Multipart budget already refused")) }.boxed();
         }
         if let Err(error) = self
             .ledger
             .charge(&self.path, payload.content_length() as u64)
         {
-            self.failed = true;
+            self.failed.store(true, Ordering::Release);
             return async { Err(error) }.boxed();
         }
         if let Some(reason) = &self.injected_fault {
-            self.failed = true;
+            self.failed.store(true, Ordering::Release);
             let error = refused(reason.clone());
             return async { Err(error) }.boxed();
         }
-        self.inner.put_part(payload)
+        let part = self.inner.put_part(payload);
+        let failed = self.failed.clone();
+        async move {
+            let result = part.await;
+            if result.is_err() {
+                failed.store(true, Ordering::Release);
+            }
+            result
+        }
+        .boxed()
     }
     async fn complete(&mut self) -> Result<PutResult> {
-        if self.failed {
+        if self.failed.load(Ordering::Acquire) {
             return Err(refused("Cannot publish budget-refused upload"));
         }
         self.ledger.charge(&self.path, 0)?;

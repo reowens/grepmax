@@ -147,5 +147,19 @@
       "source": "https://raw.githubusercontent.com/spdx/license-list-data/c4a7237ec8f4654e867546f9f409749300f1bf4c/text/MIT.txt",
       "attribution": "Arthur Silva <arthurprs@gmail.com>; MIT declaration from published Cargo.toml and README.md"
     }
+  ],
+  "rust-standard-library@1.98.0": [
+    {
+      "file": "rust-1.98.0--COPYRIGHT",
+      "source": "https://raw.githubusercontent.com/rust-lang/rust/88d9e12ae178fab0fb5cc050a94da85685d449ea/COPYRIGHT"
+    },
+    {
+      "file": "rust-1.98.0--LICENSE-APACHE",
+      "source": "https://raw.githubusercontent.com/rust-lang/rust/88d9e12ae178fab0fb5cc050a94da85685d449ea/LICENSE-APACHE"
+    },
+    {
+      "file": "rust-1.98.0--LICENSE-MIT",
+      "source": "https://raw.githubusercontent.com/rust-lang/rust/88d9e12ae178fab0fb5cc050a94da85685d449ea/LICENSE-MIT"
+    }
   ]
 }

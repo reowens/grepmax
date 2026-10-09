@@ -1,10 +1,9 @@
 //! Local head resolution is an explicit bounded metadata read. Mutations still
 //! use the pinned conditional-create handler through the metered object store.
 use futures::{StreamExt, stream::BoxStream};
-use lance::dataset::transaction::Transaction;
 use lance_io::object_store::ObjectStore;
 use lance_table::{
-    format::{IndexMetadata, Manifest},
+    format::{IndexMetadata, Manifest, Transaction},
     io::commit::{
         CommitError, CommitHandler, ConditionalPutCommitHandler, ManifestLocation,
         ManifestNamingScheme, ManifestWriter,

@@ -218,6 +218,35 @@ class BoundedNativeAcceptance(unittest.TestCase):
                     finally:
                         session.close()
 
+    def test_pre_receipt_zero_payload_journal_is_safely_retired_on_admitted_attempt(self):
+        import lance
+        with tempfile.TemporaryDirectory(prefix='gmax-native-bounded-admission-orphan-') as home:
+            root, ds = self.prepare(home)
+            digest = fixture_support.row_digest(ds)
+            ds = None
+            identity = 'a' * 64
+            journal = root / f'_gmax-maintenance-{identity}.journal'
+            log = root / f'_gmax-owned-{identity}.jsonl'
+            # Exact durable initial record produced before the fixed receipt
+            # exists. It records its own 80 bytes and no attempted payload.
+            counters = struct.pack('<6Q', 4 * 1024**2, 80, 0, 0, 80, 0)
+            journal.write_bytes(counters + hashlib.sha256(counters).digest())
+            log.write_bytes(b'')
+            session = NativeSession(self.binary, root)
+            try:
+                result = self.drive_to_exit(session)
+                self.assertEqual(session.process.returncode, 0, self.failure_reason(session))
+                self.assertEqual(result['status'], 'committed')
+                self.assertFalse(journal.exists())
+                self.assertFalse(log.exists())
+                self.assertEqual(len(list(root.glob('_gmax-maintenance-*.journal'))), 1)
+                self.assertEqual(len(list(root.glob('_gmax-owned-*.jsonl'))), 1)
+                self.assertEqual(fixture_support.row_digest(lance.dataset(str(root))), digest)
+                print(json.dumps({'nativeAcceptance': 'pre-receipt-metadata-retirement',
+                                  'zeroPayloadOrphanRetired': True, 'result': result}))
+            finally:
+                session.close()
+
     def test_string_ids_and_multiple_selected_unindexed_fragments(self):
         import lance
         import pyarrow as pa

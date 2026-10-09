@@ -15,7 +15,7 @@ use std::{
 
 const MAX_LOG_BYTES: u64 = 512 * 1024;
 const MAX_TARGETS: usize = 256;
-const MAX_CLEANUP_FILES: usize = 2048;
+const MAX_CLEANUP_FILES: usize = 1024;
 
 fn refused(reason: impl Into<String>) -> object_store::Error {
     object_store::Error::Generic {
@@ -195,7 +195,11 @@ impl OwnedWrites {
             return Err(refused("Pre-existing payload staging object"));
         }
         let name = path.to_string();
-        if name.len() > 1024 {
+        if name.len() > 1024
+            || path
+                .prefix_match(&self.root)
+                .is_none_or(|parts| parts.count() > 8)
+        {
             return Err(refused("Owned target path too long"));
         }
         let record = Record {
@@ -221,7 +225,11 @@ impl OwnedWrites {
         Ok(())
     }
     pub fn check_rename_source(&self, path: &Path) -> Result<()> {
-        if Self::payload(&self.root, path)
+        let payload_directory = path
+            .prefix_match(&self.root)
+            .and_then(|mut parts| parts.next())
+            .is_some_and(|part| part.as_ref() == "data" || part.as_ref() == "_indices");
+        if payload_directory
             && !self
                 .state
                 .lock()
@@ -286,6 +294,8 @@ impl OwnedWrites {
                 {
                     break;
                 }
+                self.ledger
+                    .charge(&Path::from("_gmax-maintenance/journal"), 0)?;
                 match fs::remove_dir(directory) {
                     Ok(_) => {
                         File::open(directory.parent().unwrap())

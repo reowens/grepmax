@@ -896,7 +896,7 @@ pub async fn run(request: Request) -> Result<()> {
         compaction_mode: Some(CompactionMode::Reencode),
         max_source_fragments: Some(MAX_FRAGMENTS),
         max_source_rows: Some(MAX_ROWS),
-        max_source_bytes: Some(request.source_limit_bytes),
+        max_source_bytes: Some(request.source_limit_bytes.min(32 * 1024 * 1024)),
         ..Default::default()
     };
     if request.action == "run" {
@@ -924,11 +924,35 @@ pub async fn run(request: Request) -> Result<()> {
         let plan = plan_compaction(&dataset, &options).await?;
         // One task keeps index coverage uniform and avoids including every
         // newly written replacement in indexes covering only a different task.
-        plan_tasks = plan.compaction_tasks().take(1).collect();
+        let smallest = plan
+            .tasks
+            .iter()
+            .enumerate()
+            .map(|(number, task)| {
+                let bytes = task
+                    .fragments
+                    .iter()
+                    .flat_map(|fragment| fragment.files.iter())
+                    .try_fold(0u64, |sum, file| {
+                        sum.checked_add(fs::metadata(root.join("data").join(&file.path))?.len())
+                            .context("Source byte overflow")
+                    })?;
+                Ok::<_, anyhow::Error>((bytes, number))
+            })
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .min();
+        let chosen = smallest.map(|(_, number)| number);
+        plan_tasks = plan
+            .compaction_tasks()
+            .enumerate()
+            .filter_map(|(number, task)| (Some(number) == chosen).then_some(task))
+            .collect();
         let selected: Vec<Fragment> = plan
             .tasks
             .iter()
-            .take(1)
+            .enumerate()
+            .filter_map(|(number, task)| (Some(number) == chosen).then_some(task))
             .flat_map(|task| task.fragments.iter().cloned())
             .collect();
         if selected.is_empty() {
@@ -1029,7 +1053,10 @@ pub async fn run(request: Request) -> Result<()> {
             retired_metadata: previous
                 .as_ref()
                 .map(|old| vec![old.journal.clone(), old.owned_writes.clone()])
-                .unwrap_or_default().into_iter().chain(orphan_retirement).collect(),
+                .unwrap_or_default()
+                .into_iter()
+                .chain(orphan_retirement)
+                .collect(),
         };
     } else {
         if previous
@@ -1310,9 +1337,12 @@ pub async fn run(request: Request) -> Result<()> {
         if !recovering_finalization { receipt.accepted_fingerprint = Some(fingerprint(&dataset).await?); }
         receipt.phase = "finalizing".into(); save_receipt(&dataset, &root, &receipt).await?;
         let mut cleanup_pending = ownership_error.is_some();
+        let mut cleanup_failure = ownership_error.clone();
         if receipt.aborted {
             ensure!(receipt.accepted_fingerprint.as_deref() == Some(receipt.before_fingerprint.as_str()), "Durable logical abort proof invalid before owned reclamation");
-            if let Some(owned) = &owned { owned.cleanup_proven_abort()?; } else { cleanup_pending = true; }
+            if let Some(owned) = &owned {
+                if let Err(error) = owned.cleanup_proven_abort() { cleanup_pending = true; cleanup_failure = Some(error.to_string()); }
+            } else { cleanup_pending = true; }
         }
         if protected.contains_key(&receipt.reader_tag) { dataset.tags().delete(&receipt.reader_tag).await?; }
         #[cfg(feature = "qualification")]
@@ -1345,7 +1375,7 @@ pub async fn run(request: Request) -> Result<()> {
         result["acceptedFinalization"] = json!(recovering_finalization);
         result["verifiedCopyVersion"] = json!(receipt.verified_copy_version);
         result["recoveryPending"] = json!(cleanup_pending);
-        if let Some(reason) = &ownership_error { result["recoveryBlockReason"] = json!(reason); }
+        if let Some(reason) = &cleanup_failure { result["recoveryBlockReason"] = json!(reason); }
         result["remainingDeletedRows"] = json!(dataset.count_deleted_rows().await?);
         result["freeBytesBefore"] = json!(free_before); result["freeBytesAfter"] = json!(free_bytes(&root)?);
         result["allocatedBytesBefore"] = json!(allocated_before); result["allocatedBytesAfter"] = json!(allocated_bytes(&root)?);
