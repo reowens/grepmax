@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Daemon } from "../src/lib/daemon/daemon";
+import { boundedMaintenanceReceiptState } from "../src/lib/store/bounded-maintenance";
 import { prepareBoundedMaintenanceRuntime } from "../src/lib/store/bounded-runtime";
+import { resourceBudget } from "../src/lib/utils/resource-budget";
+
+vi.mock("../src/lib/store/bounded-maintenance", async (original) => ({
+  ...(await original<typeof import("../src/lib/store/bounded-maintenance")>()),
+  boundedMaintenanceReceiptState: vi.fn(() => "missing"),
+}));
 
 vi.mock("../src/lib/store/bounded-runtime", () => ({
   prepareBoundedMaintenanceRuntime: vi.fn(async () => ({
@@ -30,6 +37,7 @@ function fixture() {
       ...completed,
       eligibleVersionsRemaining: 0,
     }),
+    close: vi.fn(async () => {}),
   };
   d.processors.set("/fixture", {});
   d.watcherManager = {
@@ -38,6 +46,7 @@ function fixture() {
     catchupAll: vi.fn(async () => {}),
   };
   vi.spyOn(d, "assertHeavyOperationAdmission").mockImplementation(() => {});
+  vi.spyOn(resourceBudget, "check").mockImplementation(() => null);
   return { daemon, d };
 }
 
@@ -46,7 +55,80 @@ describe("daemon bounded deleted-row cleanup lifecycle", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.clearAllMocks();
+    vi.mocked(boundedMaintenanceReceiptState).mockReturnValue("missing");
   });
+
+  it("recovers a pending startup receipt before any writers or watcher work", async () => {
+    const { d } = fixture();
+    d.ready = false;
+    vi.mocked(boundedMaintenanceReceiptState).mockReturnValue("pending");
+    d.vectorDb.cleanupDeletedRows.mockResolvedValue({
+      ...completed,
+      recoveryPending: false,
+      aborted: true,
+      remainingDeletedRows: 64,
+    });
+    await d.recoverBoundedMaintenanceBeforeWriters("/fixture");
+    expect(d.vectorDb.cleanupDeletedRows.mock.calls[0][3]).toBe("recover");
+    expect(d.pausedReason).toBeNull();
+    expect(d.ready).toBe(false);
+    expect(d.workerPool).toBeNull();
+    expect(d.watcherManager.quiesceAll).not.toHaveBeenCalled();
+    expect(d.lastBoundedCleanupOutcome).toMatchObject({
+      aborted: true,
+      remainingDeletedRows: 64,
+    });
+  });
+
+  it.each(["missing", "finalized"] as const)(
+    "does not require a helper for %s historical startup state",
+    async (state) => {
+      const { d } = fixture();
+      d.ready = false;
+      vi.mocked(boundedMaintenanceReceiptState).mockReturnValue(state);
+      vi.mocked(prepareBoundedMaintenanceRuntime).mockResolvedValueOnce(null);
+      await d.recoverBoundedMaintenanceBeforeWriters("/fixture");
+      expect(prepareBoundedMaintenanceRuntime).not.toHaveBeenCalled();
+      expect(d.vectorDb.cleanupDeletedRows).not.toHaveBeenCalled();
+      expect(d.pausedReason).toBeNull();
+      // This path never consumes the one-shot absent-helper setup.
+      vi.mocked(prepareBoundedMaintenanceRuntime)
+        .mockReset()
+        .mockResolvedValue({ executable: "fixture" });
+    },
+  );
+
+  it.each(["corrupt", "missing helper", "recover error", "pending result"])(
+    "keeps bounded startup reads and exposes pending state after %s",
+    async (failure) => {
+      const { d } = fixture();
+      d.ready = false;
+      const before = d.vectorDb;
+      vi.mocked(boundedMaintenanceReceiptState).mockReturnValue(
+        failure === "corrupt" ? "unknown" : "pending",
+      );
+      if (failure === "missing helper")
+        vi.mocked(prepareBoundedMaintenanceRuntime).mockResolvedValueOnce(null);
+      else if (failure === "pending result")
+        before.cleanupDeletedRows.mockResolvedValue({
+          ...completed,
+          recoveryPending: true,
+        });
+      else before.cleanupDeletedRows.mockRejectedValue(new Error(failure));
+      await d.recoverBoundedMaintenanceBeforeWriters("/fixture");
+      expect(d.pausedReason).toMatch(/requires native recovery/);
+      expect(before.close).toHaveBeenCalledOnce();
+      expect(d.vectorDb).not.toBe(before);
+      expect(d.lastBoundedCleanupOutcome).toMatchObject({
+        status: "failed",
+        recoveryPending: true,
+        reason: expect.stringContaining("startup deleted-row recovery pending"),
+      });
+      expect(d.workerPool).toBeNull();
+      expect(d.watcherManager.quiesceAll).not.toHaveBeenCalled();
+      await d.vectorDb.close();
+    },
+  );
 
   it("runs bounded work after ten minutes while preserving independent history cadence", async () => {
     vi.useFakeTimers();

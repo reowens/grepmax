@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import * as fs from "node:fs";
 import * as path from "node:path";
 import { resourceBudget } from "../utils/resource-budget";
 import { type CompactionResult, skippedCompaction } from "./compaction-result";
@@ -34,6 +35,96 @@ export interface BoundedMaintenancePlan {
 
 function bytes(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+/** Advisory startup routing only. Pending or unrecognized state always goes
+ * to the native recovery verifier; this never authorizes mutation or cleanup.
+ * A historical, complete finalized receipt needs no helper to start writers. */
+export function boundedMaintenanceReceiptState(
+  storeDir: string,
+): "missing" | "finalized" | "pending" | "unknown" {
+  const file = path.join(
+    storeDir,
+    "chunks.lance",
+    "_gmax-bounded-receipt.json",
+  );
+  let fd: number | undefined;
+  try {
+    const stat = fs.lstatSync(file);
+    if (!stat.isFile() || stat.nlink !== 1 || stat.size > 64 * 1024)
+      return "unknown";
+    fd = fs.openSync(
+      file,
+      fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0),
+    );
+    const opened = fs.fstatSync(fd);
+    if (
+      !opened.isFile() ||
+      opened.dev !== stat.dev ||
+      opened.ino !== stat.ino ||
+      opened.nlink !== 1
+    )
+      return "unknown";
+    const buffer = Buffer.alloc(64 * 1024 + 1);
+    const count = fs.readSync(fd, buffer, 0, buffer.length, 0);
+    if (count > 64 * 1024) return "unknown";
+    const r = JSON.parse(buffer.subarray(0, count).toString("utf8"));
+    if (r.protocolVersion !== 2) return "unknown";
+    if (r.phase !== "finalized") return "pending";
+    const hash = (value: unknown) =>
+      typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+    const identity =
+      typeof r.receiptId === "string" &&
+      /^[a-zA-Z0-9-]{1,128}$/.test(r.receiptId);
+    if (
+      !identity ||
+      !hash(r.planId) ||
+      !bytes(r.beforeVersion) ||
+      r.beforeVersion < 1 ||
+      !bytes(r.afterVersion) ||
+      r.afterVersion < r.beforeVersion ||
+      !bytes(r.totalWriteBudgetBytes) ||
+      r.totalWriteBudgetBytes < 1 ||
+      r.totalWriteBudgetBytes > MAX_BOUNDED_TOTAL_WRITE_BYTES ||
+      r.journal !== `_gmax-maintenance-${r.receiptId}.journal` ||
+      r.ownedWrites !== `_gmax-owned-${r.receiptId}.jsonl` ||
+      !hash(r.beforeFingerprint) ||
+      !hash(r.acceptedFingerprint) ||
+      (!hash(r.sourceRowsDigest) &&
+        !(
+          r.sourceRowsDigest === "" &&
+          r.aborted === true &&
+          r.abortProven === true &&
+          r.rowsVerified === 0
+        )) ||
+      !bytes(r.sourceBytes) ||
+      r.sourceBytes > MAX_BOUNDED_TOTAL_WRITE_BYTES ||
+      !bytes(r.rowsVerified) ||
+      typeof r.aborted !== "boolean" ||
+      typeof r.abortProven !== "boolean" ||
+      (r.aborted && !r.abortProven) ||
+      !Array.isArray(r.retiredMetadata) ||
+      r.retiredMetadata.length !== 0 ||
+      !Array.isArray(r.selectedFragmentIds) ||
+      !r.selectedFragmentIds.every(bytes) ||
+      typeof r.readerTag !== "string" ||
+      typeof r.afterTag !== "string" ||
+      !r.originalTags ||
+      typeof r.originalTags !== "object" ||
+      Array.isArray(r.originalTags) ||
+      !Object.values(r.originalTags).every(
+        (version) => bytes(version) && version > 0,
+      )
+    )
+      return "unknown";
+    return "finalized";
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT"
+      ? "missing"
+      : "unknown";
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
 }
 
 /** Validate the read-only qualification protocol, never treat a helper's claimed

@@ -17,7 +17,10 @@ import { generateSummaries, initialSync } from "../index/syncer";
 import { LlmServer } from "../llm/server";
 import type { IndexState } from "../output/index-state-footer";
 import type { Searcher } from "../search/searcher";
-import { boundedMaintenanceUnavailable } from "../store/bounded-maintenance";
+import {
+  boundedMaintenanceReceiptState,
+  boundedMaintenanceUnavailable,
+} from "../store/bounded-maintenance";
 import { prepareBoundedMaintenanceRuntime } from "../store/bounded-runtime";
 import {
   type CompactionResult,
@@ -221,7 +224,9 @@ export class Daemon {
   private boundedCleanupPromise: Promise<CompactionResult> | null = null;
   private boundedCleanupInterval: ReturnType<typeof setInterval> | null = null;
   private lastBoundedCleanupAttempt = 0;
-  private lastBoundedCleanupOutcome: CompactionResult | null = null;
+  private lastBoundedCleanupOutcome:
+    | (CompactionResult & { recoveryPending?: boolean })
+    | null = null;
   private lastCleanupAttempt = 0;
   private cleanupRetrySoon = false;
   private heartbeatTick = 0;
@@ -527,6 +532,7 @@ export class Daemon {
         undefined,
         this.pausedReason === null ? {} : PAUSED_CACHE_OPTIONS,
       );
+      await this.recoverBoundedMaintenanceBeforeWriters();
       if (this.pausedReason === null) {
         this.vectorDb.markIndexOwner();
         try {
@@ -1041,6 +1047,56 @@ export class Daemon {
       this.versionCleanupStatus()?.eligibleVersionsRemaining === 0
       ? 5 * 60_000
       : 60_000;
+  }
+
+  /** Startup has no admitted store readers/writers yet. Recover any unfinished
+   * native receipt before worker, watcher or ordinary maintenance creation. */
+  private async recoverBoundedMaintenanceBeforeWriters(
+    storeDir = PATHS.lancedbDir,
+  ): Promise<void> {
+    if (this.pausedReason !== null || !this.vectorDb) return;
+    const state = boundedMaintenanceReceiptState(storeDir);
+    if (state === "missing" || state === "finalized") return;
+    const started = Date.now();
+    try {
+      resourceBudget.check();
+      const signal = AbortSignal.timeout(15_000);
+      const runtime = await prepareBoundedMaintenanceRuntime(signal);
+      if (!runtime) throw new Error("qualified recovery helper unavailable");
+      const result = await this.vectorDb.cleanupDeletedRows(
+        runtime,
+        { open() {}, async drain() {} },
+        signal,
+        "recover",
+      );
+      if (result) this.lastBoundedCleanupOutcome = { ...result };
+      if (
+        result?.recoveryPending !== false ||
+        !["completed", "skipped"].includes(result.status)
+      )
+        throw new Error("native startup recovery remains pending");
+    } catch (error) {
+      this.lastBoundedCleanupOutcome = {
+        ...this.lastBoundedCleanupOutcome,
+        status: "failed",
+        at: Date.now(),
+        attempts: 1,
+        elapsedMs: Date.now() - started,
+        recoveryPending: true,
+        reason: `startup deleted-row recovery pending: ${error instanceof Error ? error.message.slice(0, 384) : "native proof unavailable"}`,
+      };
+      // Use the existing bounded read-only startup mode. No global containment
+      // marker is changed and an ordinary finalized receipt never enters here.
+      this.pausedReason =
+        "unfinished deleted-row cleanup requires native recovery";
+      await this.vectorDb.close();
+      this.vectorDb = new VectorDB(
+        storeDir,
+        this.activeGeneration?.vectorDim,
+        undefined,
+        PAUSED_CACHE_OPTIONS,
+      );
+    }
   }
 
   /** A separate timer preserves retention priority. Missing/unqualified binary

@@ -123,6 +123,10 @@ print(json.dumps({'version': ds.version, 'rows': len(rows), 'deletedRows': sum(f
       assert.equal(verified.deletedRows, interrupted ? pythonBaseline.deletedRows : 0);
       connection = await lance.connect(store, { session: new lance.Session(BigInt(16 * 1024 ** 2), BigInt(8 * 1024 ** 2)) });
       reader = await connection.openTable("chunks");
+      const outcome = evidence[evidence.length - 1].result;
+      assert.equal(await reader.version(), outcome.afterVersion, "Reopened Node reader must read the native current manifest");
+      assert.equal(verified.version, outcome.afterVersion);
+      if (!interrupted) assert((await reader.version()) > prepared.version);
       const after = await verifyNodeBoundedFixture(reader, prepared);
       evidence[evidence.length - 1].after = after;
       evidence[evidence.length - 1].verified = verified;
