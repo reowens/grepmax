@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | Release / runtime | .72 active on daemon43395, small GPU44400 ready, gen1; all303 installed files verified | Delivery complete. Maintain ordinary operation and observe guard transitions. |
 | Document availability / quality | Five successful live searches, four during indexing; full predefined acceptance incomplete at source-read cap. Broader fusion2/20 insufficient | Review verification bounds before a separate fresh acceptance cohort; preserve first result and original studies. Coverage/ranking qualification remain separate. |
-| Watcher stability | Native watching/indexing restored; final counter0/failed0, four active and six catchup-queued files | Longer ordinary-load observation/repeated-gap review. Restart reset the counter; no historical delivery or sustained stability claim. |
+| Watcher stability | At 01:32:39 UTC, native watcher caught up: no active, pending, failed or catchup work; counter 0 | Longer ordinary-load observation and repeated-gap review. Restart reset the counter; this point does not prove sustained delivery or stability. |
 | Production disk recovery | Read-only readiness complete; live prune unperformed | Separate recovery window with fresh strict admission/reservation, pinned tools, owner drain, current retention and exclusive lease. |
 | Consumer rollout | Client settings unchanged; existing sessions preserved | Configure document entry point explicitly when rollout is selected; reconnect separately when needed. |
 
@@ -20,9 +20,19 @@ The user explicitly instructed completion of installation/activation. Review con
 
 At **01:29:58 UTC October9**, normal `gmax watch --daemon -b` requested old .71 shutdown via IPC with reason version-mismatch. The old daemon completed shutdown and .72 started as **daemon43395**; its configured small Granite GPU became ready as **PID44400** at01:30:10. Native watching resumed for the existing leased project. Final IPC at **01:31:04.524** confirms version.72, active service, ready GPU, one worker/max2 and resource generation1. Native indexing had four active files, six catchup-queued files, zero failed, no running catchup scan and counter0. The latest scan completed, but queued processing remains; this is not fully caught-up state. Counter0 reflects a new daemon and does not resolve prior repeated gaps. All303 installed package files still match the published artifact; configuration/client-setting digests are unchanged.
 
+Final confirmation at **01:32:39.558 UTC October 9** shows the same .72 daemon 43395 active, GPU 44400 ready and generation 1. Native watching has drained: indexing, verification and catchup are false; pending, active and failed files are zero; callback counter remains zero. **The project is caught up at this checkpoint.** This supersedes the earlier 01:31:04 processing snapshot, while longer stability and historical delivery remain unqualified. Evidence: `/private/tmp/gmax-v02672-release/activation/final-confirmation.json`.
+
 The original six-query availability plan was executed once. **Five searches returned ready**, each50 pointers; the first **four overlapped indexing**, with durations558/1781/1049/500ms, and the fifth completed idle in284ms. On the fifth query, bounded source verification reached **2,090,354bytes /87files** and refused the next file under the predefined2MiB cap. **241 of250 pointers** passed indexed/current digest and range checks at their read time; nine were unchecked, the sixth query was not issued, and the final full source fence was not performed. Therefore **full predefined acceptance is incomplete**, despite demonstrated live execution. No cap was raised, query retried or case rescored; preserve `/private/tmp/gmax-v02672-release/live.json` and the frozen plan. This is availability evidence, not broader ranking quality, sustained latency or proof all busy refusals are resolved. Protected fusion qualification remains insufficient.
 
 Activation proof: `/private/tmp/gmax-v02672-release/activation/acceptance.json`. Publication, installation and active runtime delivery are complete. No store maintenance/pruning, new large model, client restart or configuration change occurred. Remaining work is bounded fresh availability acceptance, guard-event diagnostics, longer watcher observation, coverage/consumer rollout and separately admitted recovery.
+
+## Next work after delivery
+
+1. Complete a separate fresh availability check. Predefine a source-verification strategy that fits its byte/file limits, including the final freshness check. Preserve the incomplete first run and use new cases; do not raise its cap or rerun its exposed questions.
+2. Improve pressure-event evidence. Record the actual triggering OS/kernel measurements and admission context so a future stop can be reviewed from its cause, rather than only its generic reason and later healthy readings.
+3. Observe native watching over longer, varied development load. Track queue drainage, gap/catchup events, failed files and resource state; a reset counter or idle checkpoint is insufficient.
+
+Document coverage (`secrets.*`), consumer rollout and separately admitted production recovery remain distinct follow-ups. Broader fusion remains unqualified and is not integrated into production ranking. The gmax watcher remains standalone; a future shared package may be independent of Hetchy Developer.
 
 ## 0.26.72 release delivered; runtime acceptance blocked — October 8, 2026
 
@@ -390,7 +400,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 160 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 161 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
