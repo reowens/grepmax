@@ -1,6 +1,7 @@
 //! Pinned Lance execution through a metered, durable local object store.
 //! Source and lifecycle qualification are implemented here, never in Python.
 use crate::meter::{Ledger, MeteredStore, free_bytes};
+use crate::owned::OwnedWrites;
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use arrow_row::{RowConverter, SortField};
 use arrow_schema::Schema as ArrowSchema;
@@ -36,7 +37,7 @@ const MAX_SOURCE: u64 = 512 * 1024 * 1024;
 const MAX_ROWS: usize = 32768;
 const MAX_FRAGMENTS: usize = 64;
 const RECEIPT: &str = "_gmax-bounded-receipt.json";
-const MAX_RECEIPT_BYTES: usize = 128 * 1024;
+const MAX_RECEIPT_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -53,6 +54,12 @@ pub struct Request {
     pub source_limit_bytes: u64,
     #[serde(default)]
     pub selected_fragment_ids: Option<Vec<u64>>,
+    #[cfg(feature = "qualification")]
+    #[serde(default)]
+    pub qualification_fail_path_prefix: Option<String>,
+    #[cfg(feature = "qualification")]
+    #[serde(default)]
+    pub qualification_pause_after_first_tag_delete: bool,
 }
 fn source_default() -> u64 {
     MAX_SOURCE
@@ -67,11 +74,13 @@ struct Receipt {
     plan_id: String,
     before_version: u64,
     after_version: Option<u64>,
+    verified_copy_version: Option<u64>,
     selected_fragment_ids: Vec<u64>,
     reader_tag: String,
     after_tag: String,
     original_tags: BTreeMap<String, u64>,
     journal: String,
+    owned_writes: String,
     total_write_budget_bytes: u64,
     source_bytes: u64,
     source_rows_digest: String,
@@ -82,6 +91,7 @@ struct Receipt {
     helper_start: String,
     aborted: bool,
     finalization_reserve_bytes: u64,
+    retired_metadata: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -89,16 +99,25 @@ struct Wrapper {
     ledger: Arc<Ledger>,
     root: Path,
     delete_paths: Vec<Path>,
+    owned: Option<Arc<OwnedWrites>>,
+    #[cfg(feature = "qualification")]
+    failure_prefix: Option<String>,
 }
 impl WrappingObjectStore for Wrapper {
     fn wrap(&self, prefix: &str, original: Arc<dyn ObjectStore>) -> Arc<dyn ObjectStore> {
         // Reject unexpected stores, instead of accidentally permitting direct
         // local-writer routes or an external blob/index store.
         assert_eq!(prefix, "file-object-store", "Unexpected store provider");
-        Arc::new(
-            MeteredStore::new(original, self.ledger.clone(), self.root.clone())
-                .with_owned_tag_deletes(self.delete_paths.clone()),
-        )
+        let mut wrapped = MeteredStore::new(original, self.ledger.clone(), self.root.clone())
+            .with_owned_tag_deletes(self.delete_paths.clone());
+        if let Some(owned) = &self.owned {
+            wrapped = wrapped.with_owned_writes(owned.clone());
+        }
+        #[cfg(feature = "qualification")]
+        {
+            wrapped = wrapped.with_qualification_failure_prefix(self.failure_prefix.clone());
+        }
+        Arc::new(wrapped)
     }
     fn wrap_paginated(
         &self,
@@ -252,6 +271,15 @@ fn acknowledge(request: &Request) -> Result<()> {
 }
 
 async fn open(root: &FsPath, ledger: Arc<Ledger>, owned_tag_paths: Vec<Path>) -> Result<Dataset> {
+    open_owned(root, ledger, owned_tag_paths, None, None).await
+}
+async fn open_owned(
+    root: &FsPath,
+    ledger: Arc<Ledger>,
+    owned_tag_paths: Vec<Path>,
+    owned: Option<Arc<OwnedWrites>>,
+    _failure_prefix: Option<String>,
+) -> Result<Dataset> {
     let url = url::Url::from_file_path(root).map_err(|_| anyhow!("Invalid local URI"))?;
     let uri = url.as_str().replacen("file:", "file-object-store:", 1);
     let url = url::Url::parse(&uri)?;
@@ -262,6 +290,9 @@ async fn open(root: &FsPath, ledger: Arc<Ledger>, owned_tag_paths: Vec<Path>) ->
             ledger,
             root: object_root(root)?,
             delete_paths: owned_tag_paths,
+            owned,
+            #[cfg(feature = "qualification")]
+            failure_prefix: _failure_prefix,
         })),
         ..Default::default()
     };
@@ -509,12 +540,7 @@ async fn index_source_bytes(
                     );
                 }
             }
-            IndexType::IvfFlat
-            | IndexType::IvfPq
-            | IndexType::IvfSq
-            | IndexType::IvfHnswPq
-            | IndexType::IvfHnswSq
-            | IndexType::IvfHnswFlat => {}
+            IndexType::IvfFlat => {}
             _ => bail!("Affected index type has no qualified remapping path"),
         }
         let directory = root.join("_indices").join(index.uuid.to_string());
@@ -587,6 +613,24 @@ fn read_receipt(root: &FsPath) -> Result<Option<Receipt>> {
     ensure!(
         receipt.journal == format!("_gmax-maintenance-{}.journal", receipt.receipt_id),
         "Unverified journal identity"
+    );
+    ensure!(
+        receipt.owned_writes == format!("_gmax-owned-{}.jsonl", receipt.receipt_id),
+        "Unverified ownership identity"
+    );
+    ensure!(
+        receipt.retired_metadata.len() <= 2
+            && receipt.retired_metadata.iter().all(|name| {
+                let id = name
+                    .strip_prefix("_gmax-maintenance-")
+                    .and_then(|name| name.strip_suffix(".journal"))
+                    .or_else(|| {
+                        name.strip_prefix("_gmax-owned-")
+                            .and_then(|name| name.strip_suffix(".jsonl"))
+                    });
+                id.is_some_and(|id| id.len() == 64 && id.bytes().all(|b| b.is_ascii_hexdigit()))
+            }),
+        "Unverified retired metadata identity"
     );
     ensure!(
         receipt.reader_tag == format!("gmax-native-{}-before", receipt.receipt_id)
@@ -764,10 +808,15 @@ pub async fn run(request: Request) -> Result<()> {
     };
     if request.action == "run" {
         if let Some(previous) = &previous {
-            ensure!(
-                previous.phase == "finalized",
-                "Interrupted receipt exists; explicit recovery required before any new copy"
-            );
+            if previous.phase != "finalized" {
+                emit(
+                    json!({"phase":"error","status":"recover-required","code":"recover-required",
+                    "receiptId":previous.receipt_id,"totalWriteBudgetBytes":previous.total_write_budget_bytes,
+                    "beforeVersion":previous.before_version,"currentVersion":request.expected_version,
+                    "reason":"Interrupted receipt exists; explicit recovery required before any new copy"}),
+                )?;
+                return Ok(());
+            }
         }
         for fragment in dataset.get_fragments() {
             let excluded = fragment.count_deletions().await? == 0
@@ -841,7 +890,10 @@ pub async fn run(request: Request) -> Result<()> {
                 .is_some_and(|bytes| bytes <= request.total_write_budget_bytes),
             "Current affected index/source footprint exceeds total write budget before copying"
         );
-        let (rows, digest) = row_digest(&dataset, selected).await?;
+        // Decode selected rows after durable protection/read readiness, so
+        // bounded verification does not prolong the initial reader pause.
+        let rows = 0;
+        let digest = String::new();
         let original_tags = tags(&dataset).await?;
         ensure!(original_tags.len() <= 254, "Tag metadata bound exceeded");
         let receipt_id = sha(format!(
@@ -864,11 +916,13 @@ pub async fn run(request: Request) -> Result<()> {
             plan_id,
             before_version: request.expected_version,
             after_version: None,
+            verified_copy_version: None,
             selected_fragment_ids: ids,
             reader_tag: format!("gmax-native-{receipt_id}-before"),
             after_tag: format!("gmax-native-{receipt_id}-after"),
             original_tags,
             journal: format!("_gmax-maintenance-{receipt_id}.journal"),
+            owned_writes: format!("_gmax-owned-{receipt_id}.jsonl"),
             total_write_budget_bytes: request.total_write_budget_bytes,
             source_bytes,
             source_rows_digest: digest,
@@ -879,15 +933,38 @@ pub async fn run(request: Request) -> Result<()> {
             helper_start: process_start(std::process::id())?,
             aborted: false,
             finalization_reserve_bytes: (512 * 1024).min(request.total_write_budget_bytes / 2),
+            retired_metadata: previous
+                .as_ref()
+                .map(|old| vec![old.journal.clone(), old.owned_writes.clone()])
+                .unwrap_or_default(),
         };
     } else {
-        receipt = previous.context("No owned recovery receipt")?;
+        if previous
+            .as_ref()
+            .is_none_or(|receipt| receipt.phase == "finalized")
+        {
+            let plan_id = sha(b"no-recovery");
+            emit(
+                json!({"phase":"ready","plan":{"protocolVersion":2,"engine":"12.0.0","status":"no-work","action":"recover",
+                "expectedVersion":request.expected_version,"beforeVersion":request.expected_version,"protectedVersion":request.expected_version,
+                "planId":plan_id,"sharedTotalWriteCapBytes":request.total_write_budget_bytes,"totalWriteBudgetBytes":request.total_write_budget_bytes,
+                "freeSpaceMarginBytes":request.free_space_margin_bytes,"budgetKind":"cumulative-writes","nativeTotalWriteBudgetEnforced":true,"effectiveStoreScheme":"file-object-store"}}),
+            )?;
+            acknowledge(&request)?;
+            emit(
+                json!({"phase":"result","status":"no-work","beforeVersion":request.expected_version,"afterVersion":request.expected_version,
+                "planId":plan_id,"receiptId":"","totalBytesWritten":0,"dataBytesWritten":0,"indexBytesWritten":0,"metadataBytesWritten":0,"verificationBytesWritten":0,
+                "rowsVerified":0,"recoveryPending":false,"remainingDeletedRows":dataset.count_deleted_rows().await?}),
+            )?;
+            return Ok(());
+        }
+        receipt = previous.clone().context("No owned recovery receipt")?;
         ensure!(
             receipt.phase != "finalized",
             "Recovery already finalized; no duplicate operation"
         );
         ensure!(
-            receipt.total_write_budget_bytes == request.total_write_budget_bytes,
+            receipt.total_write_budget_bytes <= request.total_write_budget_bytes,
             "Recovery cannot reset/change write budget"
         );
         let prior_alive = process_start(receipt.helper_pid)
@@ -898,14 +975,30 @@ pub async fn run(request: Request) -> Result<()> {
             "Prior native helper is still alive; cannot recover its attempt"
         );
         let protected = tags(&dataset).await?;
-        recovering_finalization = receipt.phase == "finalizing";
+        recovering_finalization = receipt.phase == "finalizing" || receipt.phase == "aborted";
         if recovering_finalization {
             ensure!(
-                receipt.after_version == Some(request.expected_version)
-                    && receipt.accepted_fingerprint.as_deref()
-                        == Some(fingerprint(&dataset).await?.as_str()),
-                "Durably accepted head changed; cannot release protection blindly"
+                receipt
+                    .after_version
+                    .is_some_and(|version| version <= request.expected_version)
+                    && receipt
+                        .accepted_fingerprint
+                        .as_ref()
+                        .is_some_and(|digest| digest.len() == 64),
+                "Durably accepted proof invalid; cannot release protection blindly"
             );
+            // Finalizing was persisted only after exact verification and a
+            // reader drain. Ordinary subsequent edits may advance the head;
+            // finalize the already accepted attempt without copying again.
+            receipt.verified_copy_version = receipt.verified_copy_version.or(receipt.after_version);
+            if receipt.after_version == Some(request.expected_version) {
+                ensure!(
+                    receipt.accepted_fingerprint.as_deref()
+                        == Some(fingerprint(&dataset).await?.as_str()),
+                    "Accepted head identity changed"
+                );
+            }
+            receipt.after_version = Some(request.expected_version);
         } else if receipt.after_version.is_none() {
             if fingerprint(&dataset).await? == receipt.before_fingerprint {
                 // The original logical head is unchanged, including all index
@@ -914,6 +1007,7 @@ pub async fn run(request: Request) -> Result<()> {
                 aborting = true;
                 receipt.aborted = true;
                 receipt.after_version = Some(request.expected_version);
+                receipt.verified_copy_version = Some(request.expected_version);
             } else {
                 ensure!(
                     protected.get(&receipt.reader_tag) == Some(&receipt.before_version),
@@ -937,19 +1031,19 @@ pub async fn run(request: Request) -> Result<()> {
             );
         }
     }
-    let protection_version = if recovering_finalization {
+    let protection_version = if request.action == "recover" {
         request.expected_version
     } else {
         receipt.before_version
     };
-    let protection_tag = if recovering_finalization {
+    let protection_tag = if request.action == "recover" {
         receipt.after_tag.clone()
     } else {
         receipt.reader_tag.clone()
     };
     let proof = json!({"protocolVersion":2,"engine":"12.0.0","status":"qualified","action":request.action,
-        "expectedVersion":request.expected_version,"beforeVersion":protection_version,"planId":receipt.plan_id,
-        "totalWriteBudgetBytes":request.total_write_budget_bytes,"sharedTotalWriteCapBytes":request.total_write_budget_bytes,
+        "expectedVersion":request.expected_version,"beforeVersion":receipt.before_version,"protectedVersion":protection_version,"planId":receipt.plan_id,
+        "totalWriteBudgetBytes":receipt.total_write_budget_bytes,"sharedTotalWriteCapBytes":receipt.total_write_budget_bytes,
         "freeSpaceMarginBytes":request.free_space_margin_bytes,"nativeTotalWriteBudgetEnforced":true,
         "budgetKind":"cumulative-writes","effectiveStoreScheme":"file-object-store"});
     emit(json!({"phase":"ready","plan":proof}))?;
@@ -976,14 +1070,14 @@ pub async fn run(request: Request) -> Result<()> {
     let ledger = Arc::new(
         if request.action == "run" {
             Ledger::with_guarded_journal(
-                request.total_write_budget_bytes,
+                receipt.total_write_budget_bytes,
                 &root.join(&receipt.journal),
                 root.clone(),
                 request.free_space_margin_bytes,
             )?
         } else {
             Ledger::restore(
-                request.total_write_budget_bytes,
+                receipt.total_write_budget_bytes,
                 &root.join(&receipt.journal),
             )?
         }
@@ -991,22 +1085,86 @@ pub async fn run(request: Request) -> Result<()> {
         .with_finalization_reserve(receipt.finalization_reserve_bytes)
         .with_finalization_paths(finalization_paths),
     );
-    dataset = open(&root, ledger.clone(), tag_paths).await?;
+    // Persist initial receipt before creating any payload ownership state. A
+    // crash in this admission window is recoverable without copying.
+    if request.action == "run" {
+        dataset = open(&root, ledger.clone(), tag_paths.clone()).await?;
+        save_receipt(&dataset, &root, &receipt).await?;
+    }
+    let owned_result = if request.action == "run"
+        || (!root.join(&receipt.owned_writes).exists()
+            && ledger.counts().data_bytes_written == 0
+            && ledger.counts().index_bytes_written == 0)
+    {
+        OwnedWrites::create(ledger.clone(), root.clone(), &receipt.owned_writes)
+    } else {
+        OwnedWrites::restore(ledger.clone(), root.clone(), &receipt.owned_writes)
+    };
+    let ownership_error = owned_result.as_ref().err().map(ToString::to_string);
+    let owned = owned_result.ok().map(Arc::new);
+    if request.action == "run" {
+        ensure!(
+            owned.is_some(),
+            "Ownership persistence failed: {ownership_error:?}"
+        );
+    }
+    let failure_prefix = {
+        #[cfg(feature = "qualification")]
+        {
+            request.qualification_fail_path_prefix.clone()
+        }
+        #[cfg(not(feature = "qualification"))]
+        {
+            None
+        }
+    };
+    dataset = open_owned(
+        &root,
+        ledger.clone(),
+        tag_paths,
+        owned.clone(),
+        failure_prefix,
+    )
+    .await?;
     let operation = async {
         ensure!(dataset.version_id() == request.expected_version && dataset.latest_version_id().await? == request.expected_version, "Head changed at write admission");
         if request.action == "run" {
             save_receipt(&dataset, &root, &receipt).await?;
+            if !receipt.retired_metadata.is_empty() {
+                // Retire only the last finalized attempt's custom metadata.
+                // Its fixed receipt has now been atomically superseded.
+                for basename in &receipt.retired_metadata {
+                    let path = root.join(basename);
+                    match fs::symlink_metadata(&path) {
+                        Ok(meta) if meta.is_file() => {
+                            ledger.charge(&Path::from("_gmax-maintenance/journal"), 0)?;
+                            fs::remove_file(path)?; fs::File::open(&root)?.sync_all()?;
+                        },
+                        Ok(_) => bail!("Retired attempt metadata is unsafe"),
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+                        Err(error) => return Err(error.into()),
+                    }
+                }
+                receipt.retired_metadata.clear(); save_receipt(&dataset, &root, &receipt).await?;
+            }
             dataset.tags().create(&receipt.reader_tag, receipt.before_version).await?;
             receipt.phase = "protected".into(); save_receipt(&dataset, &root, &receipt).await?;
         } else if recovering_finalization {
             ledger.enter_metadata_finalization()?;
-            if !tags(&dataset).await?.contains_key(&protection_tag) {
+            if let Some(version) = tags(&dataset).await?.get(&protection_tag) {
+                if *version != protection_version {
+                    ensure!(Some(*version) == receipt.verified_copy_version, "Recovery tag is not owned accepted copy");
+                    dataset.tags().delete(&protection_tag).await?;
+                }
+            }
+            if tags(&dataset).await?.get(&protection_tag) != Some(&protection_version) {
                 dataset.tags().create(&protection_tag, protection_version).await?;
             }
         } else if aborting {
             // Recover a proven uncommitted attempt without rewriting rows.
-            if !tags(&dataset).await?.contains_key(&receipt.reader_tag) {
-                dataset.tags().create(&receipt.reader_tag, receipt.before_version).await?;
+            ledger.enter_metadata_finalization()?;
+            if !tags(&dataset).await?.contains_key(&protection_tag) {
+                dataset.tags().create(&protection_tag, protection_version).await?;
             }
         } else if !tags(&dataset).await?.contains_key(&receipt.after_tag) {
             // Commit succeeded before its after-tag/receipt update. The read-only
@@ -1014,9 +1172,12 @@ pub async fn run(request: Request) -> Result<()> {
             dataset.tags().create(&receipt.after_tag, request.expected_version).await?;
             receipt.phase = "copied".into(); save_receipt(&dataset, &root, &receipt).await?;
         }
-        emit(json!({"phase":"protected-read-ready","beforeVersion":protection_version,"planId":receipt.plan_id,"readerTag":protection_tag,"receiptId":receipt.receipt_id}))?;
+        emit(json!({"phase":"protected-read-ready","beforeVersion":receipt.before_version,"protectedVersion":protection_version,"planId":receipt.plan_id,"readerTag":protection_tag,"receiptId":receipt.receipt_id}))?;
         acknowledge(&request)?; verify_owner(&request, &root, false)?;
         if request.action == "run" {
+            let selected: Vec<_> = dataset.manifest.fragments.iter().filter(|fragment| receipt.selected_fragment_ids.contains(&fragment.id)).cloned().collect();
+            let (rows, digest) = row_digest(&dataset, selected).await?;
+            receipt.rows_verified = rows; receipt.source_rows_digest = digest;
             receipt.phase = "copying".into(); save_receipt(&dataset, &root, &receipt).await?;
             let mut copies = vec![];
             for task in &plan_tasks { copies.push(task.execute(&dataset).await?); }
@@ -1028,6 +1189,7 @@ pub async fn run(request: Request) -> Result<()> {
             ensure!(dataset.latest_version_id().await? == receipt.before_version, "Head changed before compaction commit");
             commit_compaction(&mut dataset, copies, Arc::new(DatasetIndexRemapperOptions::default()), &options).await?;
             receipt.after_version = Some(dataset.version_id());
+            receipt.verified_copy_version = receipt.after_version;
             dataset.tags().create(&receipt.after_tag, dataset.version_id()).await?;
             receipt.phase = "copied".into(); save_receipt(&dataset, &root, &receipt).await?;
         }
@@ -1039,7 +1201,7 @@ pub async fn run(request: Request) -> Result<()> {
             receipt.rows_verified = verify_candidate(&before, &dataset, &receipt).await?;
             receipt.phase = "verified".into(); save_receipt(&dataset, &root, &receipt).await?;
         }
-        emit(json!({"phase":"reader-drain","beforeVersion":protection_version,"afterVersion":receipt.after_version,"planId":receipt.plan_id,
+        emit(json!({"phase":"reader-drain","beforeVersion":receipt.before_version,"protectedVersion":protection_version,"afterVersion":receipt.after_version,"planId":receipt.plan_id,
             "readerTag":protection_tag,"receiptId":receipt.receipt_id}))?;
         acknowledge(&request)?; verify_owner(&request, &root, true)?;
         ensure!(dataset.latest_version_id().await? == receipt.after_version.context("Candidate version missing")?, "Head changed before finalization");
@@ -1052,22 +1214,45 @@ pub async fn run(request: Request) -> Result<()> {
         // Durable accepted proof precedes the first deletion. A crash after
         // either deletion can resume from the current accepted head without
         // requiring a snapshot whose protection was already released.
-        receipt.accepted_fingerprint = Some(fingerprint(&dataset).await?);
+        if !recovering_finalization { receipt.accepted_fingerprint = Some(fingerprint(&dataset).await?); }
         receipt.phase = "finalizing".into(); save_receipt(&dataset, &root, &receipt).await?;
+        let mut cleanup_pending = ownership_error.is_some();
+        if receipt.aborted {
+            ensure!(receipt.accepted_fingerprint.as_deref() == Some(receipt.before_fingerprint.as_str()), "Durable logical abort proof invalid before owned reclamation");
+            if let Some(owned) = &owned { owned.cleanup_proven_abort()?; } else { cleanup_pending = true; }
+        }
         if protected.contains_key(&receipt.reader_tag) { dataset.tags().delete(&receipt.reader_tag).await?; }
+        #[cfg(feature = "qualification")]
+        if request.qualification_pause_after_first_tag_delete {
+            emit(json!({"phase":"qualification-after-first-tag-delete","receiptId":receipt.receipt_id}))?;
+            acknowledge(&request)?;
+        }
         if protected.contains_key(&receipt.after_tag) { dataset.tags().delete(&receipt.after_tag).await?; }
         ensure!(tags(&dataset).await? == receipt.original_tags, "External tags changed during finalization");
-        let counts = ledger.counts();
-        // An interrupted copy can leave unreferenced native objects. Until
-        // their ownership/reclamation is qualified, block fresh copies instead
-        // of allowing another cap-sized orphan set on every retry.
-        receipt.phase = if receipt.aborted && (counts.data_bytes_written > 0 || counts.index_bytes_written > 0) { "aborted" } else { "finalized" }.into();
+        for basename in &receipt.retired_metadata {
+            let path = root.join(basename);
+            match fs::symlink_metadata(&path) {
+                Ok(meta) if meta.is_file() => {
+                    ledger.charge(&Path::from("_gmax-maintenance/journal"), 0)?;
+                    fs::remove_file(path)?; fs::File::open(&root)?.sync_all()?;
+                },
+                Ok(_) => bail!("Retired metadata is unsafe"),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+                Err(e) => return Err(e.into()),
+            }
+        }
+        receipt.retired_metadata.clear();
+        receipt.phase = if cleanup_pending { "aborted" } else { "finalized" }.into();
         save_receipt(&dataset, &root, &receipt).await?;
         let mut result = serde_json::to_value(ledger.counts())?;
         result["phase"] = json!("result"); result["status"] = json!(if request.action == "run" {"committed"} else {"recovered"});
-        result["beforeVersion"] = json!(protection_version); result["afterVersion"] = json!(receipt.after_version);
+        result["beforeVersion"] = json!(receipt.before_version); result["protectedVersion"] = json!(protection_version); result["afterVersion"] = json!(receipt.after_version);
         result["planId"] = json!(receipt.plan_id); result["receiptId"] = json!(receipt.receipt_id);
         result["rowsVerified"] = json!(receipt.rows_verified); result["aborted"] = json!(receipt.aborted);
+        result["acceptedFinalization"] = json!(recovering_finalization);
+        result["verifiedCopyVersion"] = json!(receipt.verified_copy_version);
+        result["recoveryPending"] = json!(cleanup_pending);
+        if let Some(reason) = &ownership_error { result["recoveryBlockReason"] = json!(reason); }
         result["remainingDeletedRows"] = json!(dataset.count_deleted_rows().await?);
         result["freeBytesBefore"] = json!(free_before); result["freeBytesAfter"] = json!(free_bytes(&root)?);
         result["allocatedBytesBefore"] = json!(allocated_before); result["allocatedBytesAfter"] = json!(allocated_bytes(&root)?);

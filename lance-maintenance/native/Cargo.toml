@@ -28,6 +28,7 @@ libc = "0.2"
 [features]
 default = []
 engine = ["dep:lance", "dep:lance-io", "dep:lance-table", "dep:lance-index", "dep:arrow-array", "dep:arrow-ipc", "dep:arrow-schema", "dep:arrow-row"]
+qualification = []
 
 [[bin]]
 name = "gmax-bounded-maintenance"

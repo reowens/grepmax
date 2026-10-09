@@ -53,6 +53,11 @@ fn refused(reason: impl Into<String>) -> object_store::Error {
 }
 
 impl Ledger {
+    pub fn poison(&self) {
+        if let Ok(mut state) = self.state.lock() {
+            state.poisoned = true;
+        }
+    }
     pub fn new(cap: u64) -> Result<Self> {
         if cap == 0 || cap > 512 * 1024 * 1024 {
             return Err(refused("Total write budget must be 1..512 MiB"));
@@ -325,6 +330,9 @@ pub struct MeteredStore {
     ledger: Arc<Ledger>,
     root: Path,
     delete_paths: Vec<Path>,
+    owned: Option<Arc<crate::owned::OwnedWrites>>,
+    #[cfg(feature = "qualification")]
+    failure_prefix: Option<String>,
 }
 
 impl MeteredStore {
@@ -334,11 +342,43 @@ impl MeteredStore {
             ledger,
             root,
             delete_paths: vec![],
+            owned: None,
+            #[cfg(feature = "qualification")]
+            failure_prefix: None,
         }
     }
     pub fn with_owned_tag_deletes(mut self, paths: Vec<Path>) -> Self {
         self.delete_paths = paths;
         self
+    }
+    pub fn with_owned_writes(mut self, owned: Arc<crate::owned::OwnedWrites>) -> Self {
+        self.owned = Some(owned);
+        self
+    }
+    #[cfg(feature = "qualification")]
+    pub fn with_qualification_failure_prefix(mut self, prefix: Option<String>) -> Self {
+        self.failure_prefix = prefix;
+        self
+    }
+    fn backend_fault(&self, path: &Path) -> Result<()> {
+        #[cfg(feature = "qualification")]
+        if self.failure_prefix.as_ref().is_some_and(|prefix| {
+            path.prefix_match(&self.root)
+                .map(|parts| {
+                    parts
+                        .map(|part| part.as_ref().to_string())
+                        .collect::<Vec<_>>()
+                        .join("/")
+                })
+                .is_some_and(|name| name.starts_with(prefix))
+        }) {
+            return Err(object_store::Error::Generic {
+                store: "gmax-qualification-injected-enospc",
+                source: std::io::Error::from_raw_os_error(28).into(),
+            });
+        }
+        let _ = path;
+        Ok(())
     }
     fn allow(&self, path: &Path) -> Result<()> {
         if path.prefix_match(&self.root).is_none() {
@@ -363,7 +403,11 @@ impl ObjectStore for MeteredStore {
         options: PutOptions,
     ) -> Result<PutResult> {
         self.allow(path)?;
+        if let Some(owned) = &self.owned {
+            owned.register(path)?;
+        }
         self.ledger.charge(path, payload.content_length() as u64)?;
+        self.backend_fault(path)?;
         // Failed conditional puts and failed writes stay charged. No refunds.
         self.inner.put_opts(path, payload, options).await
     }
@@ -373,12 +417,20 @@ impl ObjectStore for MeteredStore {
         options: PutMultipartOptions,
     ) -> Result<Box<dyn MultipartUpload>> {
         self.allow(path)?;
+        if let Some(owned) = &self.owned {
+            owned.register(path)?;
+        }
         let upload = self.inner.put_multipart_opts(path, options).await?;
+        let fault = self
+            .backend_fault(path)
+            .err()
+            .map(|error| error.to_string());
         Ok(Box::new(MeteredUpload {
             inner: upload,
             ledger: self.ledger.clone(),
             path: path.clone(),
             failed: false,
+            injected_fault: fault,
         }))
     }
     async fn get_opts(&self, path: &Path, options: GetOptions) -> Result<GetResult> {
@@ -430,6 +482,9 @@ impl ObjectStore for MeteredStore {
     async fn copy_opts(&self, from: &Path, to: &Path, options: CopyOptions) -> Result<()> {
         self.allow(from)?;
         self.allow(to)?;
+        if let Some(owned) = &self.owned {
+            owned.register(to)?;
+        }
         let source_size = self
             .inner
             .get_opts(from, GetOptions::default().with_head(true))
@@ -437,11 +492,16 @@ impl ObjectStore for MeteredStore {
             .meta
             .size;
         self.ledger.charge(to, source_size)?;
+        self.backend_fault(to)?;
         self.inner.copy_opts(from, to, options).await
     }
     async fn rename_opts(&self, from: &Path, to: &Path, options: RenameOptions) -> Result<()> {
         self.allow(from)?;
         self.allow(to)?;
+        if let Some(owned) = &self.owned {
+            owned.check_rename_source(from)?;
+            owned.register(to)?;
+        }
         let source_size = self
             .inner
             .get_opts(from, GetOptions::default().with_head(true))
@@ -450,6 +510,7 @@ impl ObjectStore for MeteredStore {
             .size;
         // Conservative even though pinned local rename writes no payload.
         self.ledger.charge(to, source_size)?;
+        self.backend_fault(to)?;
         self.inner.rename_opts(from, to, options).await
     }
 }
@@ -460,6 +521,7 @@ struct MeteredUpload {
     ledger: Arc<Ledger>,
     path: Path,
     failed: bool,
+    injected_fault: Option<String>,
 }
 #[async_trait]
 impl MultipartUpload for MeteredUpload {
@@ -472,6 +534,11 @@ impl MultipartUpload for MeteredUpload {
             .charge(&self.path, payload.content_length() as u64)
         {
             self.failed = true;
+            return async { Err(error) }.boxed();
+        }
+        if let Some(reason) = &self.injected_fault {
+            self.failed = true;
+            let error = refused(reason.clone());
             return async { Err(error) }.boxed();
         }
         self.inner.put_part(payload)

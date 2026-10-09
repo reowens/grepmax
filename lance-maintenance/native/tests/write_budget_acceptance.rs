@@ -193,6 +193,85 @@ fn durable_charge_counts_its_own_records_and_never_resets_after_restore() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn deterministic_journal_short_write_poison() {
+    // Change RLIMIT_FSIZE only in our own child test process. The ordinary
+    // runner and neighboring fixture tests never inherit this fault.
+    const CHILD: &str = "GMAX_ACCEPTANCE_SHORT_JOURNAL_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "deterministic_journal_short_write_poison",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .status()
+            .unwrap();
+        assert!(status.success());
+        return;
+    }
+    let home = tempfile::tempdir().unwrap();
+    std::fs::create_dir(home.path().join("table")).unwrap();
+    let journal = home.path().join("attempt.journal");
+    let ledger = Arc::new(Ledger::with_journal(1024, &journal).unwrap());
+    let inner = Arc::new(LocalFileSystem::new_with_prefix(home.path()).unwrap());
+    let store = MeteredStore::new(inner, ledger.clone(), Path::from("table"));
+    let mut original = std::mem::MaybeUninit::<libc::rlimit>::uninit();
+    unsafe {
+        assert_eq!(
+            libc::getrlimit(libc::RLIMIT_FSIZE, original.as_mut_ptr()),
+            0
+        );
+        assert_ne!(libc::signal(libc::SIGXFSZ, libc::SIG_IGN), libc::SIG_ERR);
+        assert_eq!(
+            libc::setrlimit(
+                libc::RLIMIT_FSIZE,
+                &libc::rlimit {
+                    rlim_cur: 100,
+                    rlim_max: original.assume_init_ref().rlim_max,
+                }
+            ),
+            0
+        );
+    }
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    let refused = runtime.block_on(store.put(&Path::from("table/data/first"), "abc".into()));
+    let counts = ledger.counts();
+    let second = ledger.charge(&Path::from("table/data/second"), 1);
+    let finalization = ledger.enter_metadata_finalization();
+    unsafe {
+        assert_eq!(
+            libc::setrlimit(libc::RLIMIT_FSIZE, original.assume_init_ref()),
+            0
+        );
+    }
+    assert!(
+        refused
+            .unwrap_err()
+            .to_string()
+            .contains("Persist write charge")
+    );
+    assert_eq!(counts.total_bytes_written, 163);
+    assert_eq!(
+        ledger.counts().total_bytes_written,
+        counts.total_bytes_written
+    );
+    assert!(
+        second
+            .unwrap_err()
+            .to_string()
+            .contains("all further writes refused")
+    );
+    assert!(finalization.is_err());
+    assert!(!home.path().join("table/data/first").exists());
+    assert_eq!(std::fs::metadata(&journal).unwrap().len(), 100);
+    assert!(Ledger::restore(1024, &journal).is_err());
+}
+
 #[test]
 fn torn_corrupt_and_different_cap_journals_are_refused_without_recreation() {
     let home = tempfile::tempdir().unwrap();

@@ -6,6 +6,7 @@ qualification on any skipped test. Every store and owner marker is private
 to a small temporary fixture; no production process or store is accessed.
 """
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -30,7 +31,7 @@ def process_start(pid):
 
 class NativeSession:
     def __init__(self, binary, root, cap=4 * 1024**2, action='run', selected=None,
-                 margin=1024**3):
+                 margin=1024**3, qualification=None):
         import lance
         self.root = root
         self.nonce = 'independent-native-acceptance'
@@ -49,6 +50,8 @@ class NativeSession:
                         'sourceLimitBytes': 1024**2}
         if selected is not None:
             self.request['selectedFragmentIds'] = selected
+        if qualification:
+            self.request.update(qualification)
         self.stderr = tempfile.TemporaryFile(mode='w+t')
         self.process = subprocess.Popen([binary], stdin=subprocess.PIPE,
                                         stdout=subprocess.PIPE, stderr=self.stderr,
@@ -260,6 +263,8 @@ class BoundedNativeAcceptance(unittest.TestCase):
             self.assertLess(cap, 1024**2)
             head = ds.version
             ds = None
+            original_payload_files = {name: state for name, state in fixture_support.file_state(root).items()
+                                      if name.startswith(('data/', '_indices/'))}
             session = NativeSession(self.binary, root, cap=cap)
             try:
                 session.reach('protected-read-ready')
@@ -280,6 +285,7 @@ class BoundedNativeAcceptance(unittest.TestCase):
                     result = self.drive_to_exit(recovered)
                     self.assertEqual(recovered.process.returncode, 0, self.failure_reason(recovered))
                     self.assertTrue(result['aborted'])
+                    self.assertFalse(result['recoveryPending'])
                     self.assertEqual(result['rowsVerified'], 0)
                     self.assertEqual(result['dataBytesWritten'], outcome['dataBytesWritten'])
                     self.assertEqual(result['indexBytesWritten'], outcome['indexBytesWritten'])
@@ -289,19 +295,27 @@ class BoundedNativeAcceptance(unittest.TestCase):
                     self.assertEqual(fixture_support.row_digest(current), digest)
                     self.assertEqual(set(current.tags.list()), {'user-reader'})
                     current = None
+                    restored_payload_files = {name: state for name, state in fixture_support.file_state(root).items()
+                                              if name.startswith(('data/', '_indices/'))}
+                    self.assertEqual(restored_payload_files, original_payload_files)
                 finally:
                     recovered.close()
                 frozen = fixture_support.file_state(root)
                 retry = NativeSession(self.binary, root, cap=cap)
                 try:
-                    self.drive_to_exit(retry)
-                    self.assertNotEqual(retry.process.returncode, 0)
+                    ready = retry.reach('ready')
+                    self.assertEqual(ready['plan']['status'], 'qualified')
+                    # Planning the next batch is allowed after exact orphan
+                    # reclamation. Kill before its ready acknowledgement, so
+                    # this test never performs another copy.
+                    retry.process.kill()
+                    retry.process.communicate(timeout=5)
                     self.assertEqual(fixture_support.file_state(root), frozen)
                 finally:
                     retry.close()
                 print(json.dumps({'nativeAcceptance': 'mid-copy-budget-exhaustion',
                                   'preflightCapBytes': cap, 'outcome': outcome,
-                                  'abortRecovery': result, 'orphanCopyRetryRefused': True}))
+                                  'abortRecovery': result, 'freshPlanAfterReclamation': True}))
             finally:
                 session.close()
 
@@ -476,8 +490,12 @@ class BoundedNativeAcceptance(unittest.TestCase):
                         finalized = fixture_support.file_state(root)
                         duplicate_recovery = NativeSession(self.binary, root, action='recover')
                         try:
-                            self.drive_to_exit(duplicate_recovery)
-                            self.assertNotEqual(duplicate_recovery.process.returncode, 0)
+                            duplicate_result = self.drive_to_exit(duplicate_recovery)
+                            self.assertEqual(duplicate_recovery.process.returncode, 0)
+                            self.assertEqual(duplicate_result['status'], 'no-work')
+                            self.assertEqual(duplicate_result['totalBytesWritten'], 0)
+                            self.assertEqual(duplicate_result['dataBytesWritten'], 0)
+                            self.assertEqual(duplicate_result['indexBytesWritten'], 0)
                             self.assertEqual(fixture_support.file_state(root), finalized)
                         finally:
                             duplicate_recovery.close()
@@ -489,6 +507,49 @@ class BoundedNativeAcceptance(unittest.TestCase):
                                       'allFieldsDigest': digest[1]}))
                 finally:
                     session.close()
+
+    def test_corrupt_receipt_or_counter_refuses_without_fallback_copy(self):
+        import lance
+        for evidence in ('receipt', 'counter'):
+            with self.subTest(evidence=evidence), tempfile.TemporaryDirectory(
+                    prefix='gmax-native-bounded-corrupt-') as home:
+                root, ds = self.prepare(home)
+                digest = fixture_support.row_digest(ds)
+                ds = None
+                interrupted = NativeSession(self.binary, root)
+                try:
+                    interrupted.reach('protected-read-ready')
+                    interrupted.process.kill()
+                    interrupted.process.communicate(timeout=5)
+                finally:
+                    interrupted.close()
+                if evidence == 'receipt':
+                    target = root / '_gmax-bounded-receipt.json'
+                    target.write_bytes(target.read_bytes()[:-1])
+                else:
+                    target = next(root.glob('_gmax-maintenance-*.journal'))
+                    damaged = bytearray(target.read_bytes())
+                    damaged[-1] ^= 1
+                    target.write_bytes(damaged)
+                frozen = fixture_support.file_state(root)
+                recovery = NativeSession(self.binary, root, action='recover')
+                try:
+                    self.drive_to_exit(recovery)
+                    self.assertNotEqual(recovery.process.returncode, 0)
+                    self.assertEqual(fixture_support.file_state(root), frozen)
+                    self.assertEqual(fixture_support.row_digest(lance.dataset(str(root))), digest)
+                finally:
+                    recovery.close()
+                fresh_run = NativeSession(self.binary, root)
+                try:
+                    self.drive_to_exit(fresh_run)
+                    self.assertNotEqual(fresh_run.process.returncode, 0)
+                    self.assertEqual(fixture_support.file_state(root), frozen)
+                finally:
+                    fresh_run.close()
+                print(json.dumps({'nativeAcceptance': 'corrupt-recovery-refusal',
+                                  'evidence': evidence, 'headReadable': True,
+                                  'storeUnchanged': True, 'fallbackCopy': False}))
 
     @staticmethod
     def drive_to_exit(session):
@@ -558,11 +619,52 @@ class BoundedNativeAcceptance(unittest.TestCase):
 
 
 if __name__ == '__main__':
+    class TrackingResult(unittest.TextTestResult):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.executed_cases = []
+
+        def startTest(self, test):
+            self.executed_cases.append(test._testMethodName)
+            super().startTest(test)
+
+    def binary_digest():
+        binary = (os.environ.get('GMAX_BOUNDED_NATIVE_EXECUTABLE') or
+                  os.environ.get('GMAX_BOUNDED_NATIVE'))
+        if not binary or not Path(binary).is_file():
+            return None
+        digest = hashlib.sha256()
+        with open(binary, 'rb') as handle:
+            for block in iter(lambda: handle.read(1024**2), b''):
+                digest.update(block)
+        return digest.hexdigest()
+
+    def native_source_digest():
+        root = REPO / 'lance-maintenance' / 'native'
+        files = [root / 'Cargo.toml', root / 'Cargo.lock', *root.joinpath('src').rglob('*.rs')]
+        digest = hashlib.sha256()
+        for path in sorted(files, key=lambda file: file.relative_to(root).as_posix()):
+            relative = path.relative_to(root).as_posix()
+            payload = path.read_bytes()
+            digest.update(f'{len(relative.encode())}:{relative}:{len(payload)}:'.encode())
+            digest.update(payload)
+        return digest.hexdigest()
+
+    binary_sha256 = binary_digest()
+    source_digest = native_source_digest()
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(BoundedNativeAcceptance)
-    result = unittest.TextTestRunner(verbosity=2).run(suite)
+    result = unittest.TextTestRunner(verbosity=2, resultclass=TrackingResult).run(suite)
+    provenance_unchanged = (binary_sha256 is not None and binary_digest() == binary_sha256
+                            and native_source_digest() == source_digest)
     evidence = {
+        'schemaVersion': 1,
+        'binarySha256': binary_sha256,
+        'sourceDigest': source_digest,
+        'provenanceUnchanged': provenance_unchanged,
+        'testCases': result.executed_cases,
         'verdict': ('PASS_BOUNDED_NATIVE_ACCEPTANCE' if result.wasSuccessful()
-                    and result.testsRun > 0 and not result.skipped else 'FAIL_BOUNDED_NATIVE_ACCEPTANCE'),
+                    and result.testsRun > 0 and not result.skipped and provenance_unchanged
+                    else 'FAIL_BOUNDED_NATIVE_ACCEPTANCE'),
         'engine': '12.0.0',
         'tests': {'executed': result.testsRun,
                   'passed': max(0, result.testsRun - len(result.failures) - len(result.errors) - len(result.skipped)),
@@ -571,11 +673,11 @@ if __name__ == '__main__':
                   'FTS/ANN, unselected fragments and user tags preserved',
                   'old/current snapshots read at deterministic native pauses',
                   '1-byte cap refusal preserves original store files and readable head',
-                  'post-copy budget exhaustion preserves head, aborts without refund or another copy',
+                  'post-copy budget exhaustion preserves head; abort never refunds or recopies',
                   'fresh preflight and per-write loss of free-space reservation refused',
                   'SIGKILL before copy and after commit; duplicate run refused',
                   'safe abort and committed recovery release owned tags without more data/index writes',
-                  'recovery keeps the cumulative budget; duplicate finalization is refused'],
+                  'recovery keeps cumulative budget; finalized recovery is read-only no-work'],
         'limits': ['payload-byte cap excludes physical filesystem metadata/journal allocation',
                    'no production store or process accessed',
                    'not a sustained latency or live disk-growth qualification',
