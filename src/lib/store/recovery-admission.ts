@@ -27,6 +27,9 @@ export function createRecoveryBudget(): ResourceBudget {
       kernelProbeTimeoutMs: 5000,
       commandProbeTimeoutMs: 3000,
       footprintProbeTimeoutMs: 3000,
+      // Re-measure a changing cohort while retaining warning severity. The
+      // fresh policy check above still decides whether that warning is allowed.
+      retryWarningPressure: true,
     },
     sampleMaxAgeMs: 10000,
   });

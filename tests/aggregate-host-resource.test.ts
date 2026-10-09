@@ -48,6 +48,29 @@ function deps() {
   };
 }
 describe("bounded aggregate footprint sampling", () => {
+  it("recovery remeasures warning cohorts without erasing observed pressure", () => {
+    const d = deps();
+    const original = d.run.getMockImplementation()!;
+    let ps = 0;
+    let pressure = 0;
+    d.run.mockImplementation((command, args, timeout) => {
+      if (command === "ps")
+        return ++ps === 1 ? inventory : `${inventory}\n${row(80, 10, "node")}`;
+      if (command === "footprint")
+        return `${original(command, args, timeout)}\nnode [80]: 64-bit Footprint: 10 MB`;
+      if (args[1] === "kern.memorystatus_vm_pressure_level")
+        return ++pressure === 1 ? "2" : "1";
+      return original(command, args, timeout);
+    });
+    const sample = sampleHostResources([], {
+      ...d,
+      retryWarningPressure: true,
+    });
+    expect(sample.aggregateFootprintMb).toBe(510);
+    expect(sample.incompleteReasons).toEqual([]);
+    expect(sample.memoryPressure).toBe("warn");
+    expect(ps).toBe(4);
+  });
   it("allows recovery probes longer than 500ms without extending the total deadline", () => {
     const d = deps();
     const original = d.run.getMockImplementation()!;

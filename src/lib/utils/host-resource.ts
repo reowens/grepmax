@@ -40,6 +40,7 @@ export interface ResourceSamplerDeps {
   kernelProbeTimeoutMs: number;
   commandProbeTimeoutMs: number;
   footprintProbeTimeoutMs: number;
+  retryWarningPressure: boolean;
 }
 export const HOST_SAMPLE_TIMEOUT_MS = 3000;
 const MAX_PROCESSES = 64;
@@ -150,6 +151,7 @@ export function sampleHostResources(
   const deadline =
     monotonic() + (overrides.sampleTimeoutMs ?? HOST_SAMPLE_TIMEOUT_MS);
   let snapshot: HostResourceSnapshot;
+  let observedWarning = false;
   for (let attempt = 0; attempt < 2; attempt++) {
     snapshot = sampleHostResourcesOnce(
       extraPids,
@@ -160,12 +162,20 @@ export function sampleHostResources(
       },
       extraGroups,
     );
+    observedWarning ||= snapshot.memoryPressure === "warn";
+    // A fresh complete cohort may retain an observed warning; retrying must
+    // never downgrade it to normal or weaken the caller's final policy check.
+    if (observedWarning && snapshot.memoryPressure === "normal")
+      snapshot.memoryPressure = "warn";
     // Short-lived client children routinely exit during footprint sampling.
     // Re-measure the entire cohort once, within the original deadline. Never
-    // accept a partial total or retry away observed warning/critical pressure.
+    // accept a partial total or downgrade observed warning/critical pressure.
     if (
       attempt === 1 ||
-      snapshot.memoryPressure !== "normal" ||
+      (snapshot.memoryPressure !== "normal" &&
+        !(
+          overrides.retryWarningPressure && snapshot.memoryPressure === "warn"
+        )) ||
       snapshot.kernelPressure !== "ok" ||
       snapshot.incompleteReasons.length !== 1 ||
       snapshot.incompleteReasons[0] !==
@@ -202,6 +212,7 @@ function sampleHostResourcesOnce(
     kernelProbeTimeoutMs: 500,
     commandProbeTimeoutMs: 500,
     footprintProbeTimeoutMs: 1500,
+    retryWarningPressure: false,
     run: (command, args, timeoutMs) =>
       execFileSync(command, args, {
         encoding: "utf8",

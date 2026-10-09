@@ -54,6 +54,16 @@ class CompactRecoveryTests(unittest.TestCase):
             self.assertEqual({x['name'] for x in fresh.list_indices()}, {'content_idx', 'id_idx'})
             self.assertEqual(fresh.to_table(filter='id = 11').num_rows, 1)
             self.assertGreater(fresh.to_table(full_text_query={'query':'retainedneedle','columns':['content']}).num_rows, 0)
+            reordered_root = Path(home)/'reordered.lance'
+            reordered = lance.write_dataset(pa.Table.from_pylist(list(reversed(expected)), schema=schema), str(reordered_root))
+            compared = module.compare_versions(fresh, reordered, str(Path(home)/'comparison.sqlite'))
+            self.assertEqual(compared['rows'], len(expected))
+            self.assertTrue(compared['allLiveFieldsEqual'])
+            changed = list(reversed(expected))
+            changed[0] = dict(changed[0], payload=b'changed bytes')
+            changed_ds = lance.write_dataset(pa.Table.from_pylist(changed, schema=schema), str(Path(home)/'changed.lance'))
+            with self.assertRaisesRegex(ValueError, 'content or stable ID changed'):
+                module.compare_versions(fresh, changed_ds, str(Path(home)/'changed.sqlite'))
             original = module.support.open_version(lance, root, tagged)
             self.assertEqual(original.count_rows(), 512)
 
