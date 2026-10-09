@@ -9,11 +9,34 @@
 | Release / runtime | .73 active on daemon71531, small GPU72547 ready, gen1; all304 installed files verified | Delivery complete. Maintain ordinary operation and observe guard transitions. |
 | Pressure diagnostics | .73 deployed; CI passed 2,130 tests / 212 files; installed isolated fixture passed | Observe future triggers; older incidents cannot be backfilled. |
 | Document availability / quality | Fresh services-scope acceptance passed: 5/6 successful, all five during indexing; 250 pointers and final freshness verified. One busy refusal. Broader fusion remains insufficient | Preserve both cohorts. Broader availability, coverage and ranking quality remain separate qualifications. |
-| Watcher stability | At 02:09:41 UTC, native indexing/catchup active: zero pending/failed, two active. .72 counter4 before handover; .73 counter0 after reset | Longer ordinary-load observation and repeated-gap review. Prior idle checkpoint does not establish sustained delivery or stability. |
+| Watcher stability | 15-minute / 61-sample live window passed: 11 drains, no new callback errors, zero failed; counter 15 unchanged. Final pending 1 / active 1 | Fresh gap recovery remains unqualified; observe next natural gap through complete reconciliation and drainage. |
 | Production disk recovery | Read-only readiness complete; live prune unperformed | Separate recovery window with fresh strict admission/reservation, pinned tools, owner drain, current retention and exclusive lease. |
 | Consumer rollout | Client settings unchanged; existing sessions preserved | Configure document entry point explicitly when rollout is selected; reconnect separately when needed. |
 
 Preserve normal `critical-only`, small GPU and maximum two workers. Watcher ownership remains in standalone gmax; Hetchy Developer is optional. Shared watcher extraction and embedding migration remain deferred. This focus supersedes the historical blocked-release status below.
+
+## Native watcher observation completed — October 8, 2026
+
+A prospective, read-only **15-minute window, 02:44:01–02:59:01 UTC October 9**, sampled installed .73 every 15 seconds: **61 IPC samples** and **16 current pressure samples**. The window included ordinary development traffic; no artificial writes, model/runtime startup, source/store scan, observer semantic query, configuration change or maintenance was performed. A bounded incremental daemon-log check read 30,660 bytes without rotation, truncation or budget exhaustion. The plan and runner were frozen before sampling; self review verified their hashes, sample ordering/counts and configuration fences. Private evidence: `docs/measurements/2026-10-08-watcher-live-observation/` (plan, observer, samples, result, review and baseline-only log context).
+
+| Observation | Result |
+| --- | --- |
+| Runtime identity | Same .73 daemon 71531 / owned-ready small GPU 72547 / generation 1 throughout |
+| Service / watcher | Active / native in all 61 samples; zero IPC errors or safety stops |
+| Natural workload | Maximum 4 pending and 4 active files; workers varied up to configured maximum two |
+| Queue drainage | 27 fully drained samples; **11 sampled busy-to-drained transitions** |
+| Oldest live edit | Maximum sampled age **66.042 seconds**; not per-file latency attribution |
+| Failed files | **0 throughout** |
+| Watcher callback-error counter | **15 → 15**, no reset or new callback errors |
+| Pressure | OS normal 5 / warning 11; kernel healthy 16/16, about 3.66 GB zone |
+| Final state | One pending, one active; oldest live edit 13.949 seconds; no catchup/degradation |
+| Configuration / clients / maintenance | Digests unchanged and match release baseline; maximum two preserved; maintenance attempts 0 |
+
+The predefined bounded window **passes**. It demonstrates repeated drainage under intermittent live work and normal/warning pressure. **No new gap occurred**, so it does not qualify recovery from a fresh drop or establish lossless per-path delivery. The earlier .73 counter had already reached 15 before sampling; baseline log context includes FSEvents client-drop errors. Last reconciliation stayed at 02:37:51.494 UTC, with its prior 70.237-second scan duration; neither is a new recovery result. Final work is still in progress, not caught-up state.
+
+Sixteen targeted process samples show daemon RSS about 155–844 MiB and sampled CPU 0–203.7%; these are listed-PID values, not aggregate process-tree footprint or GPU memory measurements. No sustained-resource or latency guarantee is inferred. File-policy exclusions, guard thresholds and frozen retrieval cohorts remain unchanged. Dropped-event reconciliation uses a **30-second** scan interval; five-minute cooldown/fallback applies to terminal subscription recovery. This distinction follows current installed-source behavior.
+
+**Next:** capture the next naturally occurring FSEvents gap through subsequent complete reconciliation and queue drainage, without resetting the counter or generating production load. Correlate the gap with actual load and the active native exclusions before selecting a fix; use a separate temporary-store/native fixture for any proposed change. Broader availability, coverage, ranking, consumer rollout and strictly admitted disk recovery remain separate.
 
 ## 0.26.73 released, installed and active — October 8, 2026
 
@@ -82,7 +105,7 @@ Activation proof: `/private/tmp/gmax-v02672-release/activation/acceptance.json`.
 
 1. **Completed for the services-docs scope:** fresh availability acceptance with current pointer and final source checks under the original read cap. Preserve the first incomplete run and this separate passing cohort. Broader/load-diverse availability is not yet qualified.
 2. **Delivered in .73:** bounded original trigger measurements and admission context in the durable stop record. Full CI and installed isolated fixture passed; observe future incidents with deployed code.
-3. Observe native watching over longer, varied development load. Track queue drainage, gap/catchup events, failed files and resource state; a reset counter or idle checkpoint is insufficient.
+3. **Bounded live window passed:** 15 minutes/61 samples, 11 queue drains, zero new callback errors or failed files. Fresh-gap recovery and longer-term stability remain open; capture the next natural gap through complete reconciliation and drainage.
 
 Document coverage (`secrets.*`), consumer rollout and separately admitted production recovery remain distinct follow-ups. Broader fusion remains unqualified and is not integrated into production ranking. The gmax watcher remains standalone; a future shared package may be independent of Hetchy Developer.
 
@@ -452,7 +475,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 164 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 165 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
