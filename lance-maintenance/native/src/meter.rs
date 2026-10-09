@@ -17,7 +17,7 @@ use std::{
     io::{Read, Write},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };
 
@@ -38,6 +38,7 @@ pub struct Ledger {
     space_guard: Option<(std::path::PathBuf, u64)>,
     finalization_reserve: u64,
     finalization_paths: Vec<Path>,
+    unfinished_commits: AtomicUsize,
 }
 #[derive(Debug)]
 struct LedgerState {
@@ -45,8 +46,11 @@ struct LedgerState {
     journal: Option<File>,
     poisoned: bool,
     finalizing: bool,
+    journal_records: u64,
 }
 const RECORD_BYTES: u64 = 80;
+pub const MAX_JOURNAL_RECORDS: u64 = 65536;
+pub const FINALIZATION_RECORD_RESERVE: u64 = 4096;
 
 fn refused(reason: impl Into<String>) -> object_store::Error {
     object_store::Error::Generic {
@@ -79,14 +83,25 @@ impl Ledger {
                 journal: None,
                 poisoned: false,
                 finalizing: false,
+                journal_records: 0,
             }),
             space_guard: None,
             finalization_reserve: 0,
             finalization_paths: vec![],
+            unfinished_commits: AtomicUsize::new(0),
         })
     }
     pub fn cap(&self) -> u64 {
         self.cap
+    }
+    pub fn begin_commit(&self) {
+        self.unfinished_commits.fetch_add(1, Ordering::SeqCst);
+    }
+    pub fn finish_commit(&self) {
+        self.unfinished_commits.fetch_sub(1, Ordering::SeqCst);
+    }
+    pub fn has_unfinished_commit(&self) -> bool {
+        self.unfinished_commits.load(Ordering::SeqCst) != 0
     }
     pub fn counts(&self) -> Counts {
         self.state
@@ -165,7 +180,7 @@ impl Ledger {
         if !size.is_file()
             || size.len() == 0
             || size.len() % RECORD_BYTES != 0
-            || size.len() > 80 * 65536
+            || size.len() > RECORD_BYTES * MAX_JOURNAL_RECORDS
         {
             return Err(refused(
                 "Uncertain/truncated write journal; budget cannot reset",
@@ -223,10 +238,12 @@ impl Ledger {
                 journal: Some(journal),
                 poisoned: false,
                 finalizing: false,
+                journal_records: size.len() / RECORD_BYTES,
             }),
             space_guard: None,
             finalization_reserve: 0,
             finalization_paths: vec![],
+            unfinished_commits: AtomicUsize::new(0),
         })
     }
     pub fn charge(&self, path: &Path, bytes: u64) -> Result<()> {
@@ -238,6 +255,18 @@ impl Ledger {
             return Err(refused(
                 "Journal persistence failed; all further writes refused",
             ));
+        }
+        if state.journal.is_some() {
+            let limit = if state.finalizing || self.finalization_reserve == 0 {
+                MAX_JOURNAL_RECORDS
+            } else {
+                MAX_JOURNAL_RECORDS - FINALIZATION_RECORD_RESERVE
+            };
+            if state.journal_records >= limit {
+                return Err(refused(
+                    "Durable journal record allowance exhausted; finalization reserve preserved",
+                ));
+            }
         }
         if let Some((root, margin)) = &self.space_guard {
             let required = self
@@ -316,6 +345,7 @@ impl Ledger {
                 state.poisoned = true;
                 return Err(refused(format!("Persist write charge: {error}")));
             }
+            state.journal_records += 1;
         }
         Ok(())
     }

@@ -40,6 +40,7 @@ class BoundedNativeFaultAcceptance(unittest.TestCase):
 
     def test_injected_backend_enospc_recovers_exact_owned_payloads_without_refund(self):
         import lance
+        import pyarrow as pa
         with tempfile.TemporaryDirectory(prefix='gmax-native-fault-enospc-') as home:
             root, ds = self.prepare(home)
             digest = core.fixture_support.row_digest(ds)
@@ -63,6 +64,19 @@ class BoundedNativeFaultAcceptance(unittest.TestCase):
                 self.assertEqual({f.fragment_id: f.metadata.to_json() for f in current.get_fragments()},
                                  original_fragments)
                 self.assertEqual(core.fixture_support.row_digest(current), digest)
+                failed_payloads = self.payload_files(root)
+                appended = current.to_table(filter='id = 11').to_pylist()[0]
+                appended.update(id=4096, content='postfailurewatcher unique4096',
+                                path='/fixture/post-failure-edit.ts')
+                current = lance.write_dataset(pa.Table.from_pylist([appended], schema=current.schema),
+                                              str(root), mode='append', max_rows_per_file=128)
+                current.delete('id = 13')
+                digest = core.fixture_support.row_digest(current)
+                edited_version = current.version
+                after_edits = self.payload_files(root)
+                expected_payloads = {**original_payloads,
+                                     **{name: value for name, value in after_edits.items()
+                                        if name not in failed_payloads}}
                 current = None
                 recovery = core.NativeSession(self.binary, root, action='recover')
                 try:
@@ -71,11 +85,12 @@ class BoundedNativeFaultAcceptance(unittest.TestCase):
                     self.assertTrue(restored['aborted'])
                     self.assertFalse(restored['recoveryPending'])
                     self.assertEqual(restored['rowsVerified'], 0)
+                    self.assertEqual(restored['afterVersion'], edited_version)
                     self.assertEqual(restored['dataBytesWritten'], outcome['dataBytesWritten'])
                     self.assertEqual(restored['indexBytesWritten'], outcome['indexBytesWritten'])
                     self.assertGreaterEqual(restored['totalBytesWritten'], outcome['totalBytesWritten'])
                     self.assertLessEqual(restored['totalBytesWritten'], recovery.request['totalWriteBudgetBytes'])
-                    self.assertEqual(self.payload_files(root), original_payloads)
+                    self.assertEqual(self.payload_files(root), expected_payloads)
                     current = lance.dataset(str(root))
                     self.assertEqual(core.fixture_support.row_digest(current), digest)
                     self.assertEqual(set(current.tags.list()), {'user-reader'})
@@ -97,6 +112,7 @@ class BoundedNativeFaultAcceptance(unittest.TestCase):
                 print(json.dumps({'nativeFaultAcceptance': 'injected-backend-ENOSPC',
                                   'physicalENOSPC': False, 'outcome': outcome,
                                   'abortRecovery': restored, 'nextCommittedAttempt': completed,
+                                  'watchedEditsBeforeRecovery': True, 'editedHead': edited_version,
                                   'exactOwnedPayloadsReclaimed': True}))
             finally:
                 session.close()
@@ -221,7 +237,8 @@ if __name__ == '__main__':
                           'skipped': len(result.skipped), 'failures': len(result.failures), 'errors': len(result.errors)},
                 'physicalENOSPC': False,
                 'scope': ['durably charged injected index-write ENOSPC before backend mutation',
-                          'unchanged readable head, exact owned orphan reclamation, no refund',
+                          'unchanged failure head; later watched edits preserved during owned orphan reclamation',
+                          'durable proven-abort recovery keeps original charged bytes without refund',
                           'next attempt admission and bounded custom journal/log retention',
                           'SIGKILL after first owned-tag deletion; same-ledger finalization recovery'],
                 'limits': ['qualification binary is not a production artifact',

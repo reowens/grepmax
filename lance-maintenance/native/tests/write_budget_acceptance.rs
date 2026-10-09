@@ -311,7 +311,9 @@ fn checksummed_component_rollbacks_are_refused_without_reset_or_mutation() {
         let mut bytes = Vec::new();
         for fields in [[1024u64, 80, 0, 0, 80, 0], prior, rolled_back] {
             let mut record = Vec::new();
-            for field in fields { record.extend_from_slice(&field.to_le_bytes()); }
+            for field in fields {
+                record.extend_from_slice(&field.to_le_bytes());
+            }
             record.extend_from_slice(&Sha256::digest(&record));
             bytes.extend_from_slice(&record);
         }

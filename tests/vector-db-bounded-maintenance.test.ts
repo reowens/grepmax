@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runBoundedMaintenance } from "../src/lib/store/bounded-maintenance";
 import { VectorDB } from "../src/lib/store/vector-db";
+import { resourceBudget } from "../src/lib/utils/resource-budget";
 
 vi.mock("../src/lib/store/bounded-maintenance", () => ({
   runBoundedMaintenance: vi.fn(),
@@ -31,12 +32,15 @@ describe("VectorDB head-changing maintenance handles", () => {
     const d = db as any;
     vi.spyOn(db, "upgradeStoreLease").mockResolvedValue({} as any);
     vi.spyOn(db, "downgradeStoreLease").mockResolvedValue({} as any);
-    const table = { version: async () => 7, close: vi.fn() };
+    const admission = vi
+      .spyOn(resourceBudget, "check")
+      .mockImplementation(() => null);
+    const table = { version: vi.fn(async () => 7), close: vi.fn() };
     vi.spyOn(d, "openExistingTableUnsafe").mockResolvedValue(table);
     vi.spyOn(d, "validateSchema").mockResolvedValue(undefined);
     const old = { close: vi.fn() };
     d.db = old;
-    return { db, d, old, table };
+    return { db, d, old, table, admission };
   }
 
   it("automatically checks recovery before a new copy under the same exclusive lease", async () => {
@@ -190,6 +194,122 @@ describe("VectorDB head-changing maintenance handles", () => {
     expect(f.db.downgradeStoreLease).toHaveBeenCalledOnce();
     await f.db.close();
   });
+
+  it("recovers one dead-child attempt under the same writer exclusion before resuming writes", async () => {
+    const f = fixture();
+    const interruptedHandles = { close: vi.fn() };
+    const events: string[] = [];
+    const controller = new AbortController();
+    f.table.version.mockResolvedValueOnce(7).mockResolvedValue(8);
+    vi.mocked(runBoundedMaintenance)
+      .mockImplementationOnce(
+        async (_store, _lease, _version, _runtime, readers) => {
+          await readers.open({
+            beforeVersion: 7,
+            protectedVersion: 7,
+            planId: "a".repeat(64),
+            receiptId: "attempt-1",
+            readerTag: "gmax-before-1",
+          });
+          f.d.db = interruptedHandles;
+          controller.abort();
+          events.push("child-dead");
+          throw new Error("bounded cleanup completion is uncertain");
+        },
+      )
+      .mockImplementationOnce(
+        async (_store, lease, version, _runtime, readers, signal, action) => {
+          expect(action).toBe("recover");
+          expect(version).toBe(8);
+          expect(lease).toBe(vi.mocked(runBoundedMaintenance).mock.calls[0][1]);
+          expect(signal?.aborted).toBe(false);
+          expect(f.db.downgradeStoreLease).not.toHaveBeenCalled();
+          expect(interruptedHandles.close).toHaveBeenCalledOnce();
+          expect(f.d.boundedProtectedVersion).toBeNull();
+          events.push("recover");
+          await readers.open({
+            beforeVersion: 7,
+            protectedVersion: 8,
+            planId: "a".repeat(64),
+            receiptId: "attempt-1",
+            readerTag: "gmax-current-1",
+          });
+          await readers.drain();
+          return {
+            status: "completed",
+            recoveryPending: false,
+            aborted: true,
+            rewritten: false,
+            rowsVerified: 0,
+            remainingDeletedRows: 64,
+            totalBytesWritten: 128,
+            reason: "unfinished copy discarded",
+          } as any;
+        },
+      );
+    const result = await f.db.cleanupDeletedRows(
+      { executable: "fixture" },
+      {
+        open: () => {
+          events.push("read-window");
+        },
+        drain: async () => {
+          events.push("drain");
+        },
+      },
+      controller.signal,
+      "run",
+    );
+    expect(events).toEqual([
+      "read-window",
+      "child-dead",
+      "drain",
+      "recover",
+      "read-window",
+      "drain",
+    ]);
+    expect(result).toMatchObject({
+      aborted: true,
+      rewritten: false,
+      totalBytesWritten: 128,
+    });
+    expect(result?.reason).toBe("copy interrupted; unfinished copy discarded");
+    expect(
+      vi.mocked(runBoundedMaintenance).mock.calls.map((call) => call[6]),
+    ).toEqual(["run", "recover"]);
+    expect(f.db.downgradeStoreLease).toHaveBeenCalledOnce();
+    await f.db.close();
+  });
+
+  it.each(["corrupt recovery ledger", "host critical"])(
+    "preserves the original uncertainty after %s without repeating any copy",
+    async (failure) => {
+      const f = fixture();
+      const original = new Error("original child completion is uncertain");
+      vi.mocked(runBoundedMaintenance).mockRejectedValueOnce(original);
+      if (failure === "host critical")
+        f.admission.mockImplementation(() => {
+          throw new Error(failure);
+        });
+      else
+        vi.mocked(runBoundedMaintenance).mockRejectedValueOnce(
+          new Error(failure),
+        );
+      await expect(
+        f.db.cleanupDeletedRows(
+          { executable: "fixture" },
+          { open: vi.fn(), drain: vi.fn(async () => {}) },
+          undefined,
+          "run",
+        ),
+      ).rejects.toBe(original);
+      expect(
+        vi.mocked(runBoundedMaintenance).mock.calls.map((call) => call[6]),
+      ).toEqual(failure === "host critical" ? ["run"] : ["run", "recover"]);
+      expect(f.db.downgradeStoreLease).toHaveBeenCalledOnce();
+      await f.db.close();
+    },
+  );
 
   it("pins newly opened reads to the native protected current head during recovery", async () => {
     const f = fixture();

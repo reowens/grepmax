@@ -56,8 +56,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .bounded-target
-          key: bounded-native-1-${{ matrix.platform }}-${{ hashFiles('lance-maintenance/native/Cargo.lock') }}-${{ github.sha }}
+          key: bounded-native-1-${{ matrix.platform }}-${{ hashFiles('lance-maintenance/native/Cargo.lock') }}-${{ env.GMAX_NATIVE_PROFILE }}-${{ github.sha }}
           restore-keys: |
+            bounded-native-1-${{ matrix.platform }}-${{ hashFiles('lance-maintenance/native/Cargo.lock') }}-${{ env.GMAX_NATIVE_PROFILE }}-
             bounded-native-1-${{ matrix.platform }}-${{ hashFiles('lance-maintenance/native/Cargo.lock') }}-
             bounded-native-1-${{ matrix.platform }}-
       - name: Test cumulative write enforcement and native engine
@@ -146,4 +147,4 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .bounded-target
-          key: bounded-native-1-${{ matrix.platform }}-${{ hashFiles('lance-maintenance/native/Cargo.lock') }}-${{ github.sha }}
+          key: bounded-native-1-${{ matrix.platform }}-${{ hashFiles('lance-maintenance/native/Cargo.lock') }}-${{ env.GMAX_NATIVE_PROFILE }}-${{ github.sha }}

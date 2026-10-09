@@ -13,6 +13,8 @@ CASES = [
     'test_interruption_at_protected_and_committed_reader_windows_preserves_head',
     'test_pre_receipt_zero_payload_journal_is_safely_retired_on_admitted_attempt',
     'test_production_executable_rejects_qualification_fault_fields',
+    'test_recovery_uses_remaining_original_cap_after_its_own_space_consumption',
+    'test_verified_copy_recovery_preserves_subsequent_watched_edits',
 ] + ['fixture_case_' + str(i) for i in range(7)]
 
 
@@ -42,7 +44,7 @@ class BoundedArtifactPackaging(unittest.TestCase):
                      'verdict': 'PASS_BOUNDED_NATIVE_ACCEPTANCE',
                      'binarySha256': hashlib.sha256(payload).hexdigest(),
                      'sourceDigest': self.digest, 'provenanceUnchanged': True,
-                     'tests': {'executed': 12, 'passed': 12, 'skipped': 0,
+                     'tests': {'executed': 14, 'passed': 14, 'skipped': 0,
                                'failures': 0, 'errors': 0},
                      'testCases': ['fixture.' + name for name in CASES]}
             self.write(directory / 'acceptance.json', proof)

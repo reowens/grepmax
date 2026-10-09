@@ -567,7 +567,10 @@ export class VectorDB {
         table.close();
       }
       await this.closeMaintenanceHandles();
-      const execute = (nativeAction: "run" | "recover") =>
+      const execute = (
+        nativeAction: "run" | "recover",
+        nativeSignal = signal,
+      ) =>
         runBoundedMaintenance(
           this.lancedbDir,
           lease,
@@ -576,6 +579,7 @@ export class VectorDB {
           {
             open: async (p) => {
               windowOpened = true;
+              windowDrained = false;
               this.boundedProtectedVersion = p.protectedVersion;
               // The restricted documents service uses an existing connection.
               // Reopen and verify its pinned head before admitting any reads.
@@ -592,10 +596,57 @@ export class VectorDB {
               windowDrained = true;
             },
           },
-          signal,
+          nativeSignal,
           nativeAction,
         );
-      const result = await execute(action === "auto" ? "recover" : action);
+      const freshCopy = async () => {
+        try {
+          return await execute("run");
+        } catch (error) {
+          // The child driver has killed and awaited the original helper before
+          // rejecting. Finish one metadata/owned-file recovery while the same
+          // writer exclusion is still held; never retry the failed copy.
+          if (
+            this.closed ||
+            !(error instanceof Error) ||
+            !error.message.includes("completion is uncertain")
+          )
+            throw error;
+          try {
+            if (windowOpened && !windowDrained) await readers.drain();
+            await this.closeMaintenanceHandles();
+            this.boundedProtectedVersion = null;
+            windowDrained = true;
+            this.assertMutationAllowed();
+            resourceBudget.check();
+            const recoverySignal = AbortSignal.timeout(15_000);
+            const current = await this.openExistingTableUnsafe();
+            if (!current) throw new Error("recovery table unavailable");
+            try {
+              version = await current.version();
+            } finally {
+              current.close();
+            }
+            await this.closeMaintenanceHandles();
+            recoverySignal.throwIfAborted();
+            const recovered = await execute("recover", recoverySignal);
+            if (
+              recovered.status === "completed" &&
+              recovered.recoveryPending === false
+            )
+              return {
+                ...recovered,
+                reason: `copy interrupted; ${recovered.reason}`,
+              };
+          } catch {
+            // Corrupt counters, unproven head changes and fresh host pressure
+            // keep the durable receipt pending and preserve the original error.
+          }
+          throw error;
+        }
+      };
+      const result =
+        action === "run" ? await freshCopy() : await execute("recover");
       // Recovery never becomes a fresh copy after an error or a recovered /
       // safely aborted attempt. Only an explicit no-pending-receipt proof lets
       // automatic maintenance start new work under the same exclusive lease.
@@ -604,7 +655,7 @@ export class VectorDB {
         result.status === "skipped" &&
         result.recoveryPending === false
       ) {
-        return await execute("run");
+        return await freshCopy();
       }
       return result;
     } finally {

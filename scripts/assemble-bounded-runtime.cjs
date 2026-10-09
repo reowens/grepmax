@@ -32,7 +32,7 @@ for (const platform of ["darwin-arm64", "linux-x64"]) {
   const proof = JSON.parse(read(path.join(directory, "acceptance.json"), 64 * 1024));
   if (proof.schemaVersion !== 1 || proof.verdict !== "PASS_BOUNDED_NATIVE_ACCEPTANCE" ||
       proof.engine !== "12.0.0" || proof.binarySha256 !== sha256 || !Number.isSafeInteger(proof.tests?.executed) ||
-      proof.tests.executed < 12 || proof.tests.passed !== proof.tests.executed || proof.tests.skipped !== 0 ||
+      proof.tests.executed < 14 || proof.tests.passed !== proof.tests.executed || proof.tests.skipped !== 0 ||
       proof.tests.failures !== 0 || proof.tests.errors !== 0 ||
       !Array.isArray(proof.testCases) || proof.testCases.length !== proof.tests.executed ||
       new Set(proof.testCases).size !== proof.testCases.length) throw new Error(`Incomplete native acceptance: ${platform}`);
@@ -43,6 +43,8 @@ for (const platform of ["darwin-arm64", "linux-x64"]) {
     "test_interruption_at_protected_and_committed_reader_windows_preserves_head",
     "test_pre_receipt_zero_payload_journal_is_safely_retired_on_admitted_attempt",
     "test_production_executable_rejects_qualification_fault_fields",
+    "test_recovery_uses_remaining_original_cap_after_its_own_space_consumption",
+    "test_verified_copy_recovery_preserves_subsequent_watched_edits",
   ]) {
     if (!proof.testCases.some(name => typeof name === "string" && (name === test || name.endsWith(`.${test}`)))) throw new Error(`Required native acceptance case absent: ${test}`);
   }

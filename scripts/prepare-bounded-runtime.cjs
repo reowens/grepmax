@@ -50,7 +50,7 @@ if (proof.schemaVersion !== 1 || proof.sourceSha256 !== manifest.sourceSha256) t
 for (const platform of platforms) {
   const result = proof.platforms?.[platform];
   if (result?.verdict !== "PASS_BOUNDED_NATIVE_ACCEPTANCE" || !Number.isSafeInteger(result.tests?.executed) ||
-      result.tests.executed < 12 || result.tests.passed !== result.tests.executed || result.tests.skipped !== 0 ||
+      result.tests.executed < 14 || result.tests.passed !== result.tests.executed || result.tests.skipped !== 0 ||
       result.binarySha256 !== manifest.binaries[platform].sha256 || result.sourceDigest !== manifest.sourceSha256 ||
       result.provenanceUnchanged !== true || result.faultRecovery?.verdict !== "PASS_BOUNDED_NATIVE_FAULT_ACCEPTANCE" ||
       result.faultRecovery?.sourceDigest !== manifest.sourceSha256 || result.faultRecovery?.provenanceUnchanged !== true ||

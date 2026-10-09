@@ -9,8 +9,14 @@ on:
 jobs:
   bounded-native:
     uses: ./.github/workflows/bounded-validation.yml
-  publish-npm:
+  bounded-consumer:
     needs: bounded-native
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/bounded-consumer.yml
+  publish-npm:
+    needs: [bounded-native, bounded-consumer]
     runs-on: ubuntu-latest
     permissions:
       contents: write

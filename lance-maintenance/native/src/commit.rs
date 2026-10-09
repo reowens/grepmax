@@ -16,6 +16,7 @@ use std::{fs, path::PathBuf};
 pub struct LocalHeadCommit {
     pub root: PathBuf,
     pub object_root: Path,
+    pub ledger: std::sync::Arc<crate::meter::Ledger>,
 }
 impl LocalHeadCommit {
     fn locations(&self, base: &Path) -> lance::Result<Vec<ManifestLocation>> {
@@ -119,8 +120,13 @@ impl CommitHandler for LocalHeadCommit {
         naming: ManifestNamingScheme,
         transaction: Option<Transaction>,
     ) -> std::result::Result<ManifestLocation, CommitError> {
-        ConditionalPutCommitHandler
+        self.ledger.begin_commit();
+        let result = ConditionalPutCommitHandler
             .commit(manifest, indices, base, store, writer, naming, transaction)
-            .await
+            .await;
+        // Intentionally not a drop guard: cancellation leaves the attempt
+        // uncertain because a local blocking publish could still finish.
+        self.ledger.finish_commit();
+        result
     }
 }

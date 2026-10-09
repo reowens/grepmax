@@ -327,7 +327,7 @@ async fn open_owned(
         #[allow(deprecated)]
         object_store: Some((Arc::new(LocalFileSystem::new().with_fsync(true)), url)),
         object_store_wrapper: Some(Arc::new(Wrapper {
-            ledger,
+            ledger: ledger.clone(),
             root: object_root(root)?,
             delete_paths: owned_tag_paths,
             owned,
@@ -342,6 +342,7 @@ async fn open_owned(
         .with_commit_handler(Arc::new(crate::commit::LocalHeadCommit {
             root: root.to_owned(),
             object_root: object_root(root)?,
+            ledger,
         }))
         .with_index_cache_size_bytes(8 * 1024 * 1024)
         .with_metadata_cache_size_bytes(8 * 1024 * 1024)
@@ -1165,7 +1166,10 @@ pub async fn run(request: Request) -> Result<()> {
             "Prior native helper is still alive; cannot recover its attempt"
         );
         let protected = tags(&dataset).await?;
-        recovering_finalization = receipt.phase == "finalizing" || receipt.phase == "aborted";
+        recovering_finalization = matches!(
+            receipt.phase.as_str(),
+            "finalizing" | "aborted" | "abort-proven"
+        );
         if recovering_finalization {
             ensure!(
                 receipt
@@ -1409,6 +1413,9 @@ pub async fn run(request: Request) -> Result<()> {
             commit_compaction(&mut dataset, copies, Arc::new(DatasetIndexRemapperOptions::default()), &options).await?;
             receipt.after_version = Some(dataset.version_id());
             receipt.verified_copy_version = receipt.after_version;
+            // All payload writers completed. The remaining after-tag, proofs
+            // and final receipts must be able to consume their reserved budget.
+            ledger.enter_metadata_finalization()?;
             dataset.tags().create(&receipt.after_tag, dataset.version_id()).await?;
             receipt.phase = "copied".into(); save_receipt(&dataset, &root, &receipt).await?;
         }
@@ -1490,11 +1497,39 @@ pub async fn run(request: Request) -> Result<()> {
         Ok::<_, anyhow::Error>(())
     }.await;
     if let Err(error) = operation {
+        // A completed ordinary failure can be proven uncommitted before the
+        // watcher resumes. Preserve that proof durably so later unrelated edits
+        // do not turn an owned orphan cleanup into an indefinitely pinned head.
+        // A canceled publish future is deliberately not eligible for this proof.
+        let abort_proof = async {
+            if receipt.after_version.is_some() || ledger.has_unfinished_commit() {
+                return Ok::<_, anyhow::Error>(());
+            }
+            verify_owner(&request, &root, false)?;
+            let fresh = open(&root, ledger.clone(), vec![]).await?;
+            if fingerprint(&fresh).await? != receipt.before_fingerprint {
+                return Ok(());
+            }
+            ledger.enter_metadata_finalization()?;
+            receipt.aborted = true;
+            receipt.abort_proven = true;
+            receipt.rows_verified = 0;
+            receipt.after_version = Some(fresh.version_id());
+            receipt.accepted_fingerprint = Some(receipt.before_fingerprint.clone());
+            receipt.phase = "abort-proven".into();
+            save_receipt(&fresh, &root, &receipt).await?;
+            Ok(())
+        }
+        .await;
         let mut outcome = serde_json::to_value(ledger.counts())?;
         outcome["phase"] = json!("error");
         outcome["status"] = json!("uncertain");
         outcome["reason"] = json!(error.to_string());
         outcome["receiptId"] = json!(receipt.receipt_id);
+        outcome["abortProven"] = json!(receipt.phase == "abort-proven" && abort_proof.is_ok());
+        if let Err(proof_error) = abort_proof {
+            outcome["proofFailure"] = json!(proof_error.to_string());
+        }
         emit(outcome)?;
         return Err(anyhow!(ReportedError(error.to_string())));
     }
