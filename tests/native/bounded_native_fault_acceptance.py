@@ -43,7 +43,9 @@ class BoundedNativeFaultAcceptance(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='gmax-native-fault-enospc-') as home:
             root, ds = self.prepare(home)
             digest = core.fixture_support.row_digest(ds)
-            head = ds.version
+            original_fragments = {f.fragment_id: f.metadata.to_json() for f in ds.get_fragments()}
+            original_indices = ds.list_indices()
+            original_schema = ds.schema
             ds = None
             original_payloads = self.payload_files(root)
             session = core.NativeSession(self.binary, root, qualification={
@@ -56,7 +58,10 @@ class BoundedNativeFaultAcceptance(unittest.TestCase):
                 self.assertGreater(outcome['indexBytesWritten'], 0)
                 self.assertLessEqual(outcome['totalBytesWritten'], session.request['totalWriteBudgetBytes'])
                 current = lance.dataset(str(root))
-                self.assertEqual(current.version, head)
+                self.assertEqual(current.schema, original_schema)
+                self.assertEqual(current.list_indices(), original_indices)
+                self.assertEqual({f.fragment_id: f.metadata.to_json() for f in current.get_fragments()},
+                                 original_fragments)
                 self.assertEqual(core.fixture_support.row_digest(current), digest)
                 current = None
                 recovery = core.NativeSession(self.binary, root, action='recover')
@@ -98,6 +103,7 @@ class BoundedNativeFaultAcceptance(unittest.TestCase):
 
     def test_sigkill_after_first_owned_tag_delete_resumes_durable_finalization(self):
         import lance
+        import pyarrow as pa
         with tempfile.TemporaryDirectory(prefix='gmax-native-fault-tag-gap-') as home:
             root, ds = self.prepare(home)
             digest = core.fixture_support.row_digest(ds)
@@ -116,6 +122,18 @@ class BoundedNativeFaultAcceptance(unittest.TestCase):
                 self.assertEqual(core.fixture_support.row_digest(current), digest)
                 owned_tags = set(current.tags.list()) - {'user-reader'}
                 self.assertEqual(len(owned_tags), 1)
+                # Normal watched edits can advance the head after the first
+                # tag was released. Recovery must finalize the accepted copy
+                # while preserving this newer application state.
+                appended = current.to_table(filter='id = 11').to_pylist()[0]
+                appended.update(id=4096, content='ordinarywatcher unique4096',
+                                path='/fixture/new-watch-edit.ts')
+                current = lance.write_dataset(pa.Table.from_pylist([appended], schema=current.schema),
+                                              str(root), mode='append', max_rows_per_file=128)
+                current.delete('id = 13')
+                edited_digest = core.fixture_support.row_digest(current)
+                edited_head = current.version
+                self.assertGreater(edited_head, committed_head)
                 current = None
                 journal = next(root.glob('_gmax-maintenance-*.journal'))
                 original_counts = struct.unpack('<6Q', journal.read_bytes()[-80:-32])
@@ -127,6 +145,9 @@ class BoundedNativeFaultAcceptance(unittest.TestCase):
                     self.assertEqual(recovered['status'], 'recovered')
                     self.assertFalse(recovered['aborted'])
                     self.assertFalse(recovered['recoveryPending'])
+                    self.assertTrue(recovered['acceptedFinalization'])
+                    self.assertEqual(recovered['verifiedCopyVersion'], committed_head)
+                    self.assertEqual(recovered['afterVersion'], edited_head)
                     self.assertEqual(recovered['rowsVerified'], 64)
                     self.assertEqual(recovered['dataBytesWritten'], original_counts[2])
                     self.assertEqual(recovered['indexBytesWritten'], original_counts[3])
@@ -134,15 +155,18 @@ class BoundedNativeFaultAcceptance(unittest.TestCase):
                     self.assertLessEqual(recovered['totalBytesWritten'], recovery.request['totalWriteBudgetBytes'])
                     self.assertEqual(self.payload_files(root), original_payloads)
                     current = lance.dataset(str(root))
-                    self.assertEqual(current.version, committed_head)
-                    self.assertEqual(core.fixture_support.row_digest(current), digest)
+                    self.assertEqual(current.version, edited_head)
+                    self.assertEqual(core.fixture_support.row_digest(current), edited_digest)
                     self.assertEqual(set(current.tags.list()), {'user-reader'})
                     self.assertEqual(current.to_table(full_text_query={
                         'query': 'unique11', 'columns': ['content']})['id'].to_pylist(), [11])
+                    self.assertEqual(current.to_table(full_text_query={
+                        'query': 'unique4096', 'columns': ['content']})['id'].to_pylist(), [4096])
                 finally:
                     recovery.close()
                 print(json.dumps({'nativeFaultAcceptance': 'partial-tag-finalization',
                                   'paused': paused, 'recovered': recovered,
+                                  'editedHead': edited_head, 'allEditedFieldsDigest': edited_digest[1],
                                   'noFurtherDataOrIndexWrites': True}))
             finally:
                 session.close()

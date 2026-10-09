@@ -51,6 +51,13 @@ fn refused(reason: impl Into<String>) -> object_store::Error {
         source: std::io::Error::other(reason.into()).into(),
     }
 }
+fn lock_journal(file: &File) -> Result<()> {
+    use std::os::fd::AsRawFd;
+    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        return Err(refused("Write journal is held by a live helper"));
+    }
+    Ok(())
+}
 
 impl Ledger {
     pub fn poison(&self) {
@@ -134,6 +141,7 @@ impl Ledger {
             .write(true)
             .open(file)
             .map_err(|error| refused(format!("Create write journal: {error}")))?;
+        lock_journal(&journal)?;
         ledger
             .state
             .get_mut()
@@ -200,6 +208,7 @@ impl Ledger {
             .append(true)
             .open(file)
             .map_err(|error| refused(error.to_string()))?;
+        lock_journal(&journal)?;
         Ok(Self {
             cap,
             state: Mutex::new(LedgerState {

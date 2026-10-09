@@ -3,7 +3,17 @@ on:
   push:
     branches: [test/gmax-bounded-validation]
   workflow_dispatch:
+    inputs:
+      build-profile:
+        description: Native compiler profile
+        type: choice
+        options: [release, dev]
+        default: release
   workflow_call:
+    inputs:
+      build-profile:
+        type: string
+        default: release
 permissions:
   contents: read
 jobs:
@@ -25,6 +35,8 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: 0
       CARGO_PROFILE_RELEASE_DEBUG: 0
       CARGO_TARGET_DIR: ${{ github.workspace }}/.bounded-target
+      GMAX_NATIVE_PROFILE: ${{ inputs.build-profile || 'dev' }}
+      GMAX_NATIVE_OUTPUT: ${{ inputs.build-profile == 'release' && 'release' || 'debug' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
       - name: Set up pinned native compiler
@@ -49,9 +61,9 @@ jobs:
             bounded-native-1-${{ matrix.platform }}-${{ hashFiles('lance-maintenance/native/Cargo.lock') }}-
             bounded-native-1-${{ matrix.platform }}-
       - name: Test cumulative write enforcement and native engine
-        run: cargo test --release --locked --manifest-path lance-maintenance/native/Cargo.toml --features engine,qualification --no-fail-fast
+        run: cargo test --profile "$GMAX_NATIVE_PROFILE" --locked --manifest-path lance-maintenance/native/Cargo.toml --features engine,qualification --no-fail-fast
       - name: Build qualification executable
-        run: cargo build --release --locked --manifest-path lance-maintenance/native/Cargo.toml --features engine,qualification
+        run: cargo build --profile "$GMAX_NATIVE_PROFILE" --locked --manifest-path lance-maintenance/native/Cargo.toml --features engine,qualification
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: '22'
@@ -83,19 +95,20 @@ jobs:
           mkdir -p "$RUNNER_TEMP/bounded-artifact"
           "$RUNNER_TEMP/gmax-bounded-python/bin/python" -I tests/native/bounded_native_fault_acceptance.py
         env:
-          GMAX_BOUNDED_NATIVE_EXECUTABLE: ${{ github.workspace }}/.bounded-target/release/gmax-bounded-maintenance
+          GMAX_BOUNDED_NATIVE_EXECUTABLE: ${{ github.workspace }}/.bounded-target/${{ env.GMAX_NATIVE_OUTPUT }}/gmax-bounded-maintenance
           GMAX_BOUNDED_FAULT_EVIDENCE: ${{ runner.temp }}/bounded-artifact/fault-acceptance.json
       - name: Build shipping executable without fault hooks
-        run: cargo build --release --locked --manifest-path lance-maintenance/native/Cargo.toml --features engine
+        run: cargo build --profile "$GMAX_NATIVE_PROFILE" --locked --manifest-path lance-maintenance/native/Cargo.toml --features engine
       - name: Qualify shipping writes, readers and interruption recovery
         run: |
           mkdir -p "$RUNNER_TEMP/bounded-artifact"
-          cp .bounded-target/release/gmax-bounded-maintenance "$RUNNER_TEMP/bounded-artifact/"
-          .bounded-target/release/gmax-bounded-maintenance --capabilities > "$RUNNER_TEMP/bounded-artifact/capabilities.json"
+          cp ".bounded-target/$GMAX_NATIVE_OUTPUT/gmax-bounded-maintenance" "$RUNNER_TEMP/bounded-artifact/"
+          ".bounded-target/$GMAX_NATIVE_OUTPUT/gmax-bounded-maintenance" --capabilities > "$RUNNER_TEMP/bounded-artifact/capabilities.json"
+          echo "$GMAX_NATIVE_PROFILE" > "$RUNNER_TEMP/bounded-artifact/build-profile.txt"
           node scripts/bounded-source-digest.cjs lance-maintenance/native > "$RUNNER_TEMP/bounded-artifact/source.sha256"
           "$RUNNER_TEMP/gmax-bounded-python/bin/python" -I tests/python/test_bounded_native_acceptance.py
         env:
-          GMAX_BOUNDED_NATIVE_EXECUTABLE: ${{ github.workspace }}/.bounded-target/release/gmax-bounded-maintenance
+          GMAX_BOUNDED_NATIVE_EXECUTABLE: ${{ github.workspace }}/.bounded-target/${{ env.GMAX_NATIVE_OUTPUT }}/gmax-bounded-maintenance
           GMAX_BOUNDED_EVIDENCE: ${{ runner.temp }}/bounded-artifact/acceptance.json
       - name: Bundle locked native dependency notices
         run: |

@@ -294,10 +294,15 @@ async fn open_owned(
             #[cfg(feature = "qualification")]
             failure_prefix: _failure_prefix,
         })),
+        list_is_lexically_ordered: Some(false),
         ..Default::default()
     };
     let dataset = DatasetBuilder::from_uri(&uri)
         .with_store_params(params)
+        .with_commit_handler(Arc::new(crate::commit::LocalHeadCommit {
+            root: root.to_owned(),
+            object_root: object_root(root)?,
+        }))
         .with_index_cache_size_bytes(8 * 1024 * 1024)
         .with_metadata_cache_size_bytes(8 * 1024 * 1024)
         .load()
@@ -619,7 +624,7 @@ fn read_receipt(root: &FsPath) -> Result<Option<Receipt>> {
         "Unverified ownership identity"
     );
     ensure!(
-        receipt.retired_metadata.len() <= 2
+        receipt.retired_metadata.len() <= 128
             && receipt.retired_metadata.iter().all(|name| {
                 let id = name
                     .strip_prefix("_gmax-maintenance-")
@@ -638,6 +643,89 @@ fn read_receipt(root: &FsPath) -> Result<Option<Receipt>> {
         "Unverified protective tag identity"
     );
     Ok(Some(receipt))
+}
+
+fn orphan_metadata(root: &FsPath, receipt: Option<&Receipt>) -> Result<Vec<String>> {
+    let mut referenced = BTreeSet::new();
+    if let Some(receipt) = receipt {
+        referenced.insert(receipt.journal.clone());
+        referenced.insert(receipt.owned_writes.clone());
+        referenced.extend(receipt.retired_metadata.iter().cloned());
+    }
+    let mut journals = BTreeMap::new();
+    let mut logs = BTreeMap::new();
+    for entry in fs::read_dir(root)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if referenced.contains(name) {
+            continue;
+        }
+        let journal = name
+            .strip_prefix("_gmax-maintenance-")
+            .and_then(|name| name.strip_suffix(".journal"));
+        let log = name
+            .strip_prefix("_gmax-owned-")
+            .and_then(|name| name.strip_suffix(".jsonl"));
+        let Some(id) = journal.or(log) else {
+            continue;
+        };
+        ensure!(
+            id.len() == 64 && id.bytes().all(|b| b.is_ascii_hexdigit()),
+            "Unknown custom metadata file"
+        );
+        ensure!(
+            fs::symlink_metadata(entry.path())?.is_file(),
+            "Unsafe orphan metadata"
+        );
+        if journal.is_some() {
+            journals.insert(id.to_owned(), name.to_owned());
+        } else {
+            logs.insert(id.to_owned(), name.to_owned());
+        }
+        ensure!(
+            journals.len() + logs.len() <= 126,
+            "Orphan custom metadata count bound exceeded"
+        );
+    }
+    let mut retired = vec![];
+    for (id, name) in &journals {
+        let mut first = [0u8; 8];
+        fs::File::open(root.join(name))?.read_exact(&mut first)?;
+        let cap = u64::from_le_bytes(first);
+        // Restoration checks every checksum and keeps an advisory lock. A
+        // still-running creator cannot be mistaken for abandoned metadata.
+        let journal = Ledger::restore(cap, &root.join(name))?;
+        let counts = journal.counts();
+        ensure!(
+            counts.data_bytes_written == 0
+                && counts.index_bytes_written == 0
+                && counts.verification_bytes_written == 0,
+            "Unreferenced payload attempt requires operator review"
+        );
+        let before = format!("gmax-native-{id}-before.json");
+        let after = format!("gmax-native-{id}-after.json");
+        ensure!(
+            !root.join("_refs/tags").join(before).exists()
+                && !root.join("_refs/tags").join(after).exists(),
+            "Unreferenced protected attempt requires operator review"
+        );
+        if let Some(log) = logs.remove(id) {
+            ensure!(
+                fs::metadata(root.join(&log))?.len() == 0,
+                "Unreferenced nonempty ownership log requires operator review"
+            );
+            retired.push(log);
+        }
+        retired.push(name.clone());
+    }
+    ensure!(
+        logs.is_empty(),
+        "Unreferenced ownership log has no verifiable journal"
+    );
+    Ok(retired)
 }
 
 async fn verify_candidate(before: &Dataset, after: &Dataset, receipt: &Receipt) -> Result<usize> {
@@ -779,15 +867,20 @@ pub async fn run(request: Request) -> Result<()> {
     verify_owner(&request, &root, true)?;
     check_space(&request, &root, 0)?;
     let previous = read_receipt(&root)?;
+    let orphan_retirement = orphan_metadata(&root, previous.as_ref())?;
     let mut receipt;
     let mut recovering_finalization = false;
     let mut aborting = false;
     let preliminary = Arc::new(Ledger::new(request.total_write_budget_bytes)?);
     let mut dataset = open(&root, preliminary, vec![]).await?;
+    let observed_latest = dataset.latest_version_id().await?;
     ensure!(
         dataset.version_id() == request.expected_version
-            && dataset.latest_version_id().await? == request.expected_version,
-        "Table changed before planning"
+            && observed_latest == request.expected_version,
+        "Table changed before planning: requested {}, opened {}, latest {}",
+        request.expected_version,
+        dataset.version_id(),
+        observed_latest
     );
     let mut plan_tasks = vec![];
     let mut options = CompactionOptions {
@@ -936,7 +1029,7 @@ pub async fn run(request: Request) -> Result<()> {
             retired_metadata: previous
                 .as_ref()
                 .map(|old| vec![old.journal.clone(), old.owned_writes.clone()])
-                .unwrap_or_default(),
+                .unwrap_or_default().into_iter().chain(orphan_retirement).collect(),
         };
     } else {
         if previous

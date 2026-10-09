@@ -201,6 +201,23 @@ class BoundedNativeAcceptance(unittest.TestCase):
             finally:
                 session.close()
 
+    def test_production_executable_rejects_qualification_fault_fields(self):
+        with tempfile.TemporaryDirectory(prefix='gmax-native-bounded-no-fault-hooks-') as home:
+            root, ds = self.prepare(home)
+            ds = None
+            original_files = fixture_support.file_state(root)
+            for fields in ({'qualificationFailPathPrefix': '_indices/'},
+                           {'qualificationPauseAfterFirstTagDelete': True}):
+                with self.subTest(fields=fields):
+                    session = NativeSession(self.binary, root, qualification=fields)
+                    try:
+                        self.drive_to_exit(session)
+                        self.assertNotEqual(session.process.returncode, 0)
+                        self.assertIn('unknown field', self.failure_reason(session).lower())
+                        self.assertEqual(fixture_support.file_state(root), original_files)
+                    finally:
+                        session.close()
+
     def test_string_ids_and_multiple_selected_unindexed_fragments(self):
         import lance
         import pyarrow as pa
@@ -261,7 +278,9 @@ class BoundedNativeAcceptance(unittest.TestCase):
             # available after its independently reserved metadata finalization.
             cap = source + index + 64 * 1024
             self.assertLess(cap, 1024**2)
-            head = ds.version
+            original_fragments = {f.fragment_id: f.metadata.to_json() for f in ds.get_fragments()}
+            original_indices = ds.list_indices()
+            original_schema = ds.schema
             ds = None
             original_payload_files = {name: state for name, state in fixture_support.file_state(root).items()
                                       if name.startswith(('data/', '_indices/'))}
@@ -275,7 +294,10 @@ class BoundedNativeAcceptance(unittest.TestCase):
                 self.assertGreater(outcome['dataBytesWritten'], 0)
                 self.assertLessEqual(outcome['totalBytesWritten'], cap)
                 current = lance.dataset(str(root))
-                self.assertEqual(current.version, head)
+                self.assertEqual(current.schema, original_schema)
+                self.assertEqual(current.list_indices(), original_indices)
+                self.assertEqual({f.fragment_id: f.metadata.to_json() for f in current.get_fragments()},
+                                 original_fragments)
                 self.assertEqual(fixture_support.row_digest(current), digest)
                 self.assertEqual(current.to_table(full_text_query={
                     'query': 'unique11', 'columns': ['content']})['id'].to_pylist(), [11])
