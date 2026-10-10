@@ -49,6 +49,40 @@ struct LedgerState {
     journal_records: u64,
 }
 const RECORD_BYTES: u64 = 80;
+
+/// Charges submitted ranges, including failed/repeated reads, before backend I/O.
+/// Kept separate from the write ledger: reading a large file is not permission
+/// to consume the entire file just because the output fits the write allowance.
+#[derive(Debug)]
+pub struct SourceReads {
+    cap: u64,
+    used: Mutex<u64>,
+}
+impl SourceReads {
+    pub fn new(cap: u64) -> Self {
+        Self {
+            cap,
+            used: Mutex::new(0),
+        }
+    }
+    pub fn charge(&self, bytes: u64) -> Result<()> {
+        let mut used = self
+            .used
+            .lock()
+            .map_err(|_| refused("Source read meter poisoned"))?;
+        let next = used
+            .checked_add(bytes)
+            .ok_or_else(|| refused("Source read overflow"))?;
+        if next > self.cap {
+            return Err(refused("Submitted source ranges exceed read allowance"));
+        }
+        *used = next;
+        Ok(())
+    }
+    pub fn used(&self) -> u64 {
+        *self.used.lock().expect("Source read meter poisoned")
+    }
+}
 pub const MAX_JOURNAL_RECORDS: u64 = 65536;
 pub const FINALIZATION_RECORD_RESERVE: u64 = 4096;
 
@@ -377,6 +411,7 @@ pub struct MeteredStore {
     root: Path,
     delete_paths: Vec<Path>,
     owned: Option<Arc<crate::owned::OwnedWrites>>,
+    source_reads: Option<Arc<SourceReads>>,
     #[cfg(feature = "qualification")]
     failure_prefix: Option<String>,
 }
@@ -389,6 +424,7 @@ impl MeteredStore {
             root,
             delete_paths: vec![],
             owned: None,
+            source_reads: None,
             #[cfg(feature = "qualification")]
             failure_prefix: None,
         }
@@ -399,6 +435,10 @@ impl MeteredStore {
     }
     pub fn with_owned_writes(mut self, owned: Arc<crate::owned::OwnedWrites>) -> Self {
         self.owned = Some(owned);
+        self
+    }
+    pub fn with_source_reads(mut self, reads: Arc<SourceReads>) -> Self {
+        self.source_reads = Some(reads);
         self
     }
     #[cfg(feature = "qualification")]
@@ -481,6 +521,28 @@ impl ObjectStore for MeteredStore {
     }
     async fn get_opts(&self, path: &Path, options: GetOptions) -> Result<GetResult> {
         self.allow(path)?;
+        if !options.head
+            && let Some(reads) = &self.source_reads
+        {
+            let relative = path
+                .as_ref()
+                .strip_prefix(self.root.as_ref())
+                .unwrap_or("")
+                .trim_start_matches('/');
+            if relative.starts_with("data/") || relative.starts_with("_deletions/") {
+                let size = self.inner.head(path).await?.size;
+                let bytes = match &options.range {
+                    Some(range) => {
+                        let range = range
+                            .as_range(size)
+                            .map_err(|error| refused(error.to_string()))?;
+                        range.end - range.start
+                    }
+                    None => size,
+                };
+                reads.charge(bytes)?;
+            }
+        }
         self.inner.get_opts(path, options).await
     }
     fn delete_stream(

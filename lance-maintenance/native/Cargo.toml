@@ -24,10 +24,12 @@ arrow-row = { version = "58", optional = true }
 lance-table = { version = "=12.0.0", default-features = false, optional = true }
 lance-index = { version = "=12.0.0", default-features = false, optional = true }
 libc = "0.2"
+uuid = { version = "=1.27.0", features = ["v4"], optional = true }
+prost = { version = "=0.14.4", optional = true }
 
 [features]
 default = []
-engine = ["dep:lance", "dep:lance-io", "dep:lance-table", "dep:lance-index", "dep:arrow-array", "dep:arrow-ipc", "dep:arrow-schema", "dep:arrow-row"]
+engine = ["dep:lance", "dep:lance-io", "dep:lance-table", "dep:lance-index", "dep:arrow-array", "dep:arrow-ipc", "dep:arrow-schema", "dep:arrow-row", "dep:prost", "dep:uuid"]
 qualification = []
 
 [[bin]]

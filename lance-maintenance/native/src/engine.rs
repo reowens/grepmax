@@ -1,6 +1,6 @@
 //! Pinned Lance execution through a metered, durable local object store.
 //! Source and lifecycle qualification are implemented here, never in Python.
-use crate::meter::{Counts, Ledger, MeteredStore, free_bytes};
+use crate::meter::{Counts, Ledger, MeteredStore, SourceReads, free_bytes};
 use crate::owned::OwnedWrites;
 use crate::selection::{AUTOMATIC_SOURCE_BYTES, Candidate, select_batch};
 use anyhow::{Context, Result, anyhow, bail, ensure};
@@ -63,6 +63,8 @@ pub struct Request {
     pub source_limit_bytes: u64,
     #[serde(default)]
     pub selected_fragment_ids: Option<Vec<u64>>,
+    #[serde(default)]
+    pub operation: Option<String>,
     #[cfg(feature = "qualification")]
     #[serde(default)]
     pub qualification_fail_path_prefix: Option<String>,
@@ -76,32 +78,34 @@ fn source_default() -> u64 {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct Receipt {
-    protocol_version: u32,
-    phase: String,
-    receipt_id: String,
-    plan_id: String,
-    before_version: u64,
-    after_version: Option<u64>,
-    verified_copy_version: Option<u64>,
-    selected_fragment_ids: Vec<u64>,
-    reader_tag: String,
-    after_tag: String,
-    original_tags: BTreeMap<String, u64>,
-    journal: String,
-    owned_writes: String,
-    total_write_budget_bytes: u64,
-    source_bytes: u64,
-    source_rows_digest: String,
-    rows_verified: usize,
-    before_fingerprint: String,
-    accepted_fingerprint: Option<String>,
-    helper_pid: u32,
-    helper_start: String,
-    aborted: bool,
-    abort_proven: bool,
-    finalization_reserve_bytes: u64,
-    retired_metadata: Vec<String>,
+pub(crate) struct Receipt {
+    pub(crate) protocol_version: u32,
+    pub(crate) phase: String,
+    pub(crate) receipt_id: String,
+    pub(crate) plan_id: String,
+    pub(crate) before_version: u64,
+    pub(crate) after_version: Option<u64>,
+    pub(crate) verified_copy_version: Option<u64>,
+    pub(crate) selected_fragment_ids: Vec<u64>,
+    pub(crate) reader_tag: String,
+    pub(crate) after_tag: String,
+    pub(crate) original_tags: BTreeMap<String, u64>,
+    pub(crate) journal: String,
+    pub(crate) owned_writes: String,
+    pub(crate) total_write_budget_bytes: u64,
+    pub(crate) source_bytes: u64,
+    pub(crate) source_rows_digest: String,
+    pub(crate) rows_verified: usize,
+    pub(crate) before_fingerprint: String,
+    pub(crate) accepted_fingerprint: Option<String>,
+    pub(crate) helper_pid: u32,
+    pub(crate) helper_start: String,
+    pub(crate) aborted: bool,
+    pub(crate) abort_proven: bool,
+    pub(crate) finalization_reserve_bytes: u64,
+    pub(crate) retired_metadata: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) repair: Option<crate::repair::Proof>,
 }
 
 #[derive(Debug)]
@@ -110,6 +114,7 @@ struct Wrapper {
     root: Path,
     delete_paths: Vec<Path>,
     owned: Option<Arc<OwnedWrites>>,
+    source_reads: Option<Arc<SourceReads>>,
     #[cfg(feature = "qualification")]
     failure_prefix: Option<String>,
 }
@@ -122,6 +127,9 @@ impl WrappingObjectStore for Wrapper {
             .with_owned_tag_deletes(self.delete_paths.clone());
         if let Some(owned) = &self.owned {
             wrapped = wrapped.with_owned_writes(owned.clone());
+        }
+        if let Some(reads) = &self.source_reads {
+            wrapped = wrapped.with_source_reads(reads.clone());
         }
         #[cfg(feature = "qualification")]
         {
@@ -138,10 +146,10 @@ impl WrappingObjectStore for Wrapper {
     }
 }
 
-fn sha(value: &[u8]) -> String {
+pub(crate) fn sha(value: &[u8]) -> String {
     format!("{:x}", Sha256::digest(value))
 }
-fn object_root(root: &FsPath) -> Result<Path> {
+pub(crate) fn object_root(root: &FsPath) -> Result<Path> {
     Ok(Path::from_absolute_path(root)?)
 }
 
@@ -168,7 +176,11 @@ fn scan_tree(root: &FsPath) -> Result<()> {
     Ok(())
 }
 
-fn verify_owner(request: &Request, root: &FsPath, require_no_readers: bool) -> Result<()> {
+pub(crate) fn verify_owner(
+    request: &Request,
+    root: &FsPath,
+    require_no_readers: bool,
+) -> Result<()> {
     let store = root.parent().context("Table parent missing")?;
     let lease = PathBuf::from(format!("{}.lease", store.display()));
     let expected = lease.join("exclusive-intent/owner.json");
@@ -321,6 +333,16 @@ async fn open_owned(
     owned: Option<Arc<OwnedWrites>>,
     _failure_prefix: Option<String>,
 ) -> Result<Dataset> {
+    open_metered(root, ledger, owned_tag_paths, owned, _failure_prefix, None).await
+}
+async fn open_metered(
+    root: &FsPath,
+    ledger: Arc<Ledger>,
+    owned_tag_paths: Vec<Path>,
+    owned: Option<Arc<OwnedWrites>>,
+    _failure_prefix: Option<String>,
+    source_reads: Option<Arc<SourceReads>>,
+) -> Result<Dataset> {
     let url = url::Url::from_file_path(root).map_err(|_| anyhow!("Invalid local URI"))?;
     let uri = url.as_str().replacen("file:", "file-object-store:", 1);
     let url = url::Url::parse(&uri)?;
@@ -332,6 +354,7 @@ async fn open_owned(
             root: object_root(root)?,
             delete_paths: owned_tag_paths,
             owned,
+            source_reads,
             #[cfg(feature = "qualification")]
             failure_prefix: _failure_prefix,
         })),
@@ -403,7 +426,10 @@ async fn tags(dataset: &Dataset) -> Result<BTreeMap<String, u64>> {
         .collect())
 }
 
-async fn row_digest(dataset: &Dataset, fragments: Vec<Fragment>) -> Result<(usize, String)> {
+pub(crate) async fn row_digest(
+    dataset: &Dataset,
+    fragments: Vec<Fragment>,
+) -> Result<(usize, String)> {
     let schema = ArrowSchema::from(dataset.schema());
     let id_index = schema
         .index_of("id")
@@ -472,7 +498,7 @@ async fn index_contract(dataset: &Dataset) -> Result<Vec<Value>> {
     Ok(contract)
 }
 
-async fn all_indices(dataset: &Dataset) -> Result<Vec<IndexMetadata>> {
+pub(crate) async fn all_indices(dataset: &Dataset) -> Result<Vec<IndexMetadata>> {
     let store = dataset.object_store(None).await?;
     Ok(read_manifest_indexes(
         store.as_ref(),
@@ -482,7 +508,7 @@ async fn all_indices(dataset: &Dataset) -> Result<Vec<IndexMetadata>> {
     .await?)
 }
 
-async fn fingerprint(dataset: &Dataset) -> Result<String> {
+pub(crate) async fn fingerprint(dataset: &Dataset) -> Result<String> {
     let indices: Vec<_> = all_indices(dataset).await?.iter().map(|index| json!({
         "uuid":index.uuid.to_string(),"name":index.name,"fields":index.fields,"covering":index.covering_fields,
         "version":index.index_version,"datasetVersion":index.dataset_version,
@@ -615,7 +641,11 @@ async fn index_source_bytes(
     Ok(total)
 }
 
-async fn save_receipt(dataset: &Dataset, root: &FsPath, receipt: &Receipt) -> Result<()> {
+pub(crate) async fn save_receipt(
+    dataset: &Dataset,
+    root: &FsPath,
+    receipt: &Receipt,
+) -> Result<()> {
     let bytes = serde_json::to_vec(receipt)?;
     ensure!(
         bytes.len() <= MAX_RECEIPT_BYTES,
@@ -645,7 +675,12 @@ fn read_receipt(root: &FsPath) -> Result<Option<Receipt>> {
     );
     let receipt: Receipt = serde_json::from_slice(&fs::read(file)?)?;
     ensure!(
-        receipt.protocol_version == 2
+        (receipt.protocol_version == 2 && receipt.repair.is_none()
+            || receipt.protocol_version == 3
+                && receipt
+                    .repair
+                    .as_ref()
+                    .is_some_and(crate::repair::Proof::valid))
             && receipt.total_write_budget_bytes > 0
             && receipt.total_write_budget_bytes <= MAX_SOURCE,
         "Unverified receipt protocol/budget"
@@ -771,6 +806,9 @@ fn orphan_metadata(root: &FsPath, receipt: Option<&Receipt>) -> Result<Vec<Strin
 }
 
 async fn verify_candidate(before: &Dataset, after: &Dataset, receipt: &Receipt) -> Result<usize> {
+    if let Some(proof) = &receipt.repair {
+        return crate::repair::verify(before, after, receipt, proof).await;
+    }
     ensure!(
         ArrowSchema::from(before.schema()) == ArrowSchema::from(after.schema()),
         "Schema changed"
@@ -948,6 +986,7 @@ pub async fn run(request: Request) -> Result<()> {
         observed_latest
     );
     let mut plan_tasks = vec![];
+    let mut repair_plan = None;
     let mut options = CompactionOptions {
         target_rows_per_fragment: 8192,
         max_rows_per_group: 64,
@@ -978,152 +1017,171 @@ pub async fn run(request: Request) -> Result<()> {
                 )));
             }
         }
-        // Plan metadata without Lance's ordered prefix quotas. The first
-        // oversized task otherwise hides every later eligible batch. Source,
-        // row and fragment limits are enforced on each task before any copy.
-        // Keep explicit selections on the original exact-source protocol.
-        if request.selected_fragment_ids.is_none() {
-            options.max_source_fragments = None;
-            options.max_source_rows = None;
-            options.max_source_bytes = None;
+        if let Some(operation) = &request.operation {
+            ensure!(operation == "repair", "Unknown repair operation");
+            repair_plan = crate::repair::plan(&dataset, &root, &request).await?;
         }
-        let mut fragment_counts = BTreeMap::new();
-        let mut fragment_candidates = Vec::new();
-        for fragment in dataset.get_fragments() {
-            let deleted = fragment.count_deletions().await?;
-            let excluded = deleted == 0
-                || request
-                    .selected_fragment_ids
-                    .as_ref()
-                    .is_some_and(|ids| !ids.contains(&(fragment.id() as u64)));
-            if excluded {
-                options.excluded_fragment_ids.push(fragment.id() as u32);
-            } else {
-                let live = fragment
-                    .physical_rows()
-                    .await?
-                    .checked_sub(deleted)
-                    .context("Deleted rows exceed physical rows")?;
-                let source_bytes =
-                    fragment
-                        .metadata()
-                        .files
+        let selected: Vec<Fragment> = if let Some(proof) = &repair_plan {
+            dataset
+                .manifest
+                .fragments
+                .iter()
+                .filter(|fragment| proof.fragments.contains(&fragment.id))
+                .cloned()
+                .collect()
+        } else if request.operation.is_some() {
+            vec![]
+        } else {
+            // Plan metadata without Lance's ordered prefix quotas. The first
+            // oversized task otherwise hides every later eligible batch. Source,
+            // row and fragment limits are enforced on each task before any copy.
+            // Keep explicit selections on the original exact-source protocol.
+            if request.selected_fragment_ids.is_none() {
+                options.max_source_fragments = None;
+                options.max_source_rows = None;
+                options.max_source_bytes = None;
+            }
+            let mut fragment_counts = BTreeMap::new();
+            let mut fragment_candidates = Vec::new();
+            for fragment in dataset.get_fragments() {
+                let deleted = fragment.count_deletions().await?;
+                let excluded = deleted == 0
+                    || request
+                        .selected_fragment_ids
+                        .as_ref()
+                        .is_some_and(|ids| !ids.contains(&(fragment.id() as u64)));
+                if excluded {
+                    options.excluded_fragment_ids.push(fragment.id() as u32);
+                } else {
+                    let live = fragment
+                        .physical_rows()
+                        .await?
+                        .checked_sub(deleted)
+                        .context("Deleted rows exceed physical rows")?;
+                    let source_bytes =
+                        fragment
+                            .metadata()
+                            .files
+                            .iter()
+                            .try_fold(0u64, |sum, file| {
+                                sum.checked_add(
+                                    fs::metadata(root.join("data").join(&file.path))?.len(),
+                                )
+                                .context("Source byte overflow")
+                            })?;
+                    if request.selected_fragment_ids.is_none()
+                        && (source_bytes > request.source_limit_bytes.min(AUTOMATIC_SOURCE_BYTES)
+                            || live > MAX_ROWS)
+                    {
+                        // Oversized individual fragments must not absorb later
+                        // small fragments into an oversized adjacency bin either.
+                        options.excluded_fragment_ids.push(fragment.id() as u32);
+                        continue;
+                    }
+                    fragment_counts.insert(fragment.id() as u64, (live, deleted));
+                    fragment_candidates.push(Candidate {
+                        id: fragment.id() as u64,
+                        source_bytes,
+                        live_rows: live,
+                        deleted_rows: deleted,
+                        fragments: 1,
+                    });
+                }
+            }
+            let mut plan = plan_compaction(&dataset, &options).await?;
+            ensure!(
+                plan.tasks.len() <= 4096,
+                "Too many tasks for bounded metadata"
+            );
+            let candidates = plan
+                .tasks
+                .iter()
+                .enumerate()
+                .map(|(number, task)| {
+                    let source_bytes = task
+                        .fragments
                         .iter()
+                        .flat_map(|fragment| fragment.files.iter())
                         .try_fold(0u64, |sum, file| {
                             sum.checked_add(fs::metadata(root.join("data").join(&file.path))?.len())
                                 .context("Source byte overflow")
                         })?;
-                if request.selected_fragment_ids.is_none()
-                    && (source_bytes > request.source_limit_bytes.min(AUTOMATIC_SOURCE_BYTES)
-                        || live > MAX_ROWS)
-                {
-                    // Oversized individual fragments must not absorb later
-                    // small fragments into an oversized adjacency bin either.
-                    options.excluded_fragment_ids.push(fragment.id() as u32);
-                    continue;
-                }
-                fragment_counts.insert(fragment.id() as u64, (live, deleted));
-                fragment_candidates.push(Candidate {
-                    id: fragment.id() as u64,
-                    source_bytes,
-                    live_rows: live,
-                    deleted_rows: deleted,
-                    fragments: 1,
-                });
-            }
-        }
-        let mut plan = plan_compaction(&dataset, &options).await?;
-        ensure!(
-            plan.tasks.len() <= 4096,
-            "Too many tasks for bounded metadata"
-        );
-        let candidates = plan
-            .tasks
-            .iter()
-            .enumerate()
-            .map(|(number, task)| {
-                let source_bytes = task
-                    .fragments
-                    .iter()
-                    .flat_map(|fragment| fragment.files.iter())
-                    .try_fold(0u64, |sum, file| {
-                        sum.checked_add(fs::metadata(root.join("data").join(&file.path))?.len())
-                            .context("Source byte overflow")
-                    })?;
-                let (live_rows, deleted_rows) = task.fragments.iter().try_fold(
-                    (0usize, 0usize),
-                    |(live, deleted), fragment| {
-                        let counts = fragment_counts
-                            .get(&fragment.id)
-                            .context("Unclassified planned fragment")?;
-                        Ok::<_, anyhow::Error>((
-                            live.checked_add(counts.0).context("Source row overflow")?,
-                            deleted
-                                .checked_add(counts.1)
-                                .context("Deletion count overflow")?,
-                        ))
-                    },
-                )?;
-                Ok::<_, anyhow::Error>(Candidate {
-                    id: number as u64,
-                    source_bytes,
-                    live_rows,
-                    deleted_rows,
-                    fragments: task.fragments.len(),
+                    let (live_rows, deleted_rows) = task.fragments.iter().try_fold(
+                        (0usize, 0usize),
+                        |(live, deleted), fragment| {
+                            let counts = fragment_counts
+                                .get(&fragment.id)
+                                .context("Unclassified planned fragment")?;
+                            Ok::<_, anyhow::Error>((
+                                live.checked_add(counts.0).context("Source row overflow")?,
+                                deleted
+                                    .checked_add(counts.1)
+                                    .context("Deletion count overflow")?,
+                            ))
+                        },
+                    )?;
+                    Ok::<_, anyhow::Error>(Candidate {
+                        id: number as u64,
+                        source_bytes,
+                        live_rows,
+                        deleted_rows,
+                        fragments: task.fragments.len(),
+                    })
                 })
-            })
-            .collect::<Result<Vec<_>>>()?;
-        // One task preserves the planner's uniform index-coverage groups. Pick
-        // the most deleted rows that fit, with smaller source bytes as a tie
-        // breaker; all total-write/index/recovery checks still precede copying.
-        let mut chosen = select_batch(
-            &candidates,
-            request.source_limit_bytes.min(AUTOMATIC_SOURCE_BYTES),
-            MAX_ROWS,
-            MAX_FRAGMENTS,
-        )
-        .map(|number| number as usize);
-        if chosen.is_none() && request.selected_fragment_ids.is_none() {
-            // A group of individually small fragments can still exceed the
-            // source cap. Re-plan one eligible fragment rather than letting
-            // adjacency grouping stall reclamation indefinitely.
-            if let Some(id) = select_batch(
-                &fragment_candidates,
+                .collect::<Result<Vec<_>>>()?;
+            // One task preserves the planner's uniform index-coverage groups. Pick
+            // the most deleted rows that fit, with smaller source bytes as a tie
+            // breaker; all total-write/index/recovery checks still precede copying.
+            let mut chosen = select_batch(
+                &candidates,
                 request.source_limit_bytes.min(AUTOMATIC_SOURCE_BYTES),
                 MAX_ROWS,
                 MAX_FRAGMENTS,
-            ) {
-                options.excluded_fragment_ids = dataset
-                    .manifest
-                    .fragments
-                    .iter()
-                    .filter(|fragment| fragment.id != id)
-                    .map(|fragment| fragment.id as u32)
-                    .collect();
-                options.max_source_fragments = Some(MAX_FRAGMENTS);
-                options.max_source_rows = Some(MAX_ROWS);
-                options.max_source_bytes =
-                    Some(request.source_limit_bytes.min(AUTOMATIC_SOURCE_BYTES));
-                plan = plan_compaction(&dataset, &options).await?;
-                ensure!(
-                    plan.tasks.len() <= 1,
-                    "Single-fragment fallback produced multiple tasks"
-                );
-                chosen = (!plan.tasks.is_empty()).then_some(0);
+            )
+            .map(|number| number as usize);
+            if chosen.is_none() && request.selected_fragment_ids.is_none() {
+                // A group of individually small fragments can still exceed the
+                // source cap. Re-plan one eligible fragment rather than letting
+                // adjacency grouping stall reclamation indefinitely.
+                if let Some(id) = select_batch(
+                    &fragment_candidates,
+                    request.source_limit_bytes.min(AUTOMATIC_SOURCE_BYTES),
+                    MAX_ROWS,
+                    MAX_FRAGMENTS,
+                ) {
+                    options.excluded_fragment_ids = dataset
+                        .manifest
+                        .fragments
+                        .iter()
+                        .filter(|fragment| fragment.id != id)
+                        .map(|fragment| fragment.id as u32)
+                        .collect();
+                    options.max_source_fragments = Some(MAX_FRAGMENTS);
+                    options.max_source_rows = Some(MAX_ROWS);
+                    options.max_source_bytes =
+                        Some(request.source_limit_bytes.min(AUTOMATIC_SOURCE_BYTES));
+                    plan = plan_compaction(&dataset, &options).await?;
+                    ensure!(
+                        plan.tasks.len() <= 1,
+                        "Single-fragment fallback produced multiple tasks"
+                    );
+                    chosen = (!plan.tasks.is_empty()).then_some(0);
+                }
             }
-        }
-        plan_tasks = plan
-            .compaction_tasks()
-            .enumerate()
-            .filter_map(|(number, task)| (Some(number) == chosen).then_some(task))
-            .collect();
-        let selected: Vec<Fragment> = plan
-            .tasks
-            .iter()
-            .enumerate()
-            .filter_map(|(number, task)| (Some(number) == chosen).then_some(task))
-            .flat_map(|task| task.fragments.iter().cloned())
-            .collect();
+            plan_tasks = plan
+                .compaction_tasks()
+                .enumerate()
+                .filter_map(|(number, task)| (Some(number) == chosen).then_some(task))
+                .collect();
+            let selected: Vec<Fragment> = plan
+                .tasks
+                .iter()
+                .enumerate()
+                .filter_map(|(number, task)| (Some(number) == chosen).then_some(task))
+                .flat_map(|task| task.fragments.iter().cloned())
+                .collect();
+            selected
+        };
         if selected.is_empty() {
             let no_work_plan = json!({"protocolVersion":2,"engine":"12.0.0","status":"no-work","action":request.action,
                 "expectedVersion":request.expected_version,"beforeVersion":request.expected_version,"protectedVersion":request.expected_version,"planId":sha(b"no-work"),
@@ -1144,7 +1202,12 @@ pub async fn run(request: Request) -> Result<()> {
             return Ok(());
         }
         ensure!(
-            selected.len() <= MAX_FRAGMENTS,
+            selected.len()
+                <= if repair_plan.as_ref().is_some_and(|p| !p.merge.is_empty()) {
+                    4096
+                } else {
+                    MAX_FRAGMENTS
+                },
             "Selected fragment bound exceeded"
         );
         let ids: Vec<u64> = selected.iter().map(|fragment| fragment.id).collect();
@@ -1159,7 +1222,10 @@ pub async fn run(request: Request) -> Result<()> {
             );
         }
         let mut source_bytes = 0u64;
-        for fragment in &selected {
+        for fragment in selected
+            .iter()
+            .filter(|_| !repair_plan.as_ref().is_some_and(|p| !p.merge.is_empty()))
+        {
             for file in &fragment.files {
                 source_bytes = source_bytes
                     .checked_add(fs::metadata(root.join("data").join(&file.path))?.len())
@@ -1170,8 +1236,11 @@ pub async fn run(request: Request) -> Result<()> {
             source_bytes <= request.source_limit_bytes.min(AUTOMATIC_SOURCE_BYTES),
             "Actual source bytes exceed source cap"
         );
-        let index_bytes =
-            index_source_bytes(&dataset, &root, &ids.iter().copied().collect()).await?;
+        let index_bytes = if repair_plan.is_some() {
+            0
+        } else {
+            index_source_bytes(&dataset, &root, &ids.iter().copied().collect()).await?
+        };
         ensure!(
             source_bytes
                 .checked_add(index_bytes)
@@ -1199,7 +1268,8 @@ pub async fn run(request: Request) -> Result<()> {
             "fragments":dataset.manifest.fragments,"indices":index_contract(&dataset).await?}),
         )?);
         receipt = Receipt {
-            protocol_version: 2,
+            protocol_version: if repair_plan.is_some() { 3 } else { 2 },
+            repair: repair_plan,
             phase: "protecting".into(),
             receipt_id: receipt_id.clone(),
             plan_id,
@@ -1296,6 +1366,18 @@ pub async fn run(request: Request) -> Result<()> {
                 );
             }
             receipt.after_version = Some(request.expected_version);
+        } else if receipt.repair.is_some()
+            && fingerprint(&dataset).await? != receipt.before_fingerprint
+        {
+            ensure!(
+                protected.get(&receipt.reader_tag) == Some(&receipt.before_version),
+                "Repair recovery head unprotected"
+            );
+            let before = dataset.checkout_version(receipt.before_version).await?;
+            receipt.rows_verified = verify_candidate(&before, &dataset, &receipt).await?;
+            receipt.verified_copy_version = Some(request.expected_version);
+            receipt.after_version = Some(request.expected_version);
+            recovered_candidate = true;
         } else if receipt.after_version.is_none() {
             if fingerprint(&dataset).await? == receipt.before_fingerprint {
                 // The original logical head is unchanged, including all index
@@ -1501,6 +1583,9 @@ pub async fn run(request: Request) -> Result<()> {
         emit(with_counts(json!({"phase":"protected-read-ready","beforeVersion":receipt.before_version,"protectedVersion":protection_version,"planId":receipt.plan_id,"readerTag":protection_tag,"receiptId":receipt.receipt_id}), ledger.counts())?)?;
         acknowledge(&request)?; verify_owner(&request, &root, false)?;
         if request.action == "run" {
+            if receipt.repair.is_some() {
+                crate::repair::execute(&mut dataset, &root, &mut receipt, &request).await?;
+            } else {
             let selected: Vec<_> = dataset.manifest.fragments.iter().filter(|fragment| receipt.selected_fragment_ids.contains(&fragment.id)).cloned().collect();
             let (rows, digest) = row_digest(&dataset, selected).await?;
             receipt.rows_verified = rows; receipt.source_rows_digest = digest;
@@ -1514,6 +1599,7 @@ pub async fn run(request: Request) -> Result<()> {
             verify_owner(&request, &root, false)?;
             ensure!(dataset.latest_version_id().await? == receipt.before_version, "Head changed before compaction commit");
             commit_compaction(&mut dataset, copies, Arc::new(DatasetIndexRemapperOptions::default()), &options).await?;
+            }
             receipt.after_version = Some(dataset.version_id());
             receipt.verified_copy_version = receipt.after_version;
             // All payload writers completed. The remaining after-tag, proofs
@@ -1588,6 +1674,7 @@ pub async fn run(request: Request) -> Result<()> {
         result["phase"] = json!("result"); result["status"] = json!(if request.action == "run" {"committed"} else {"recovered"});
         result["beforeVersion"] = json!(receipt.before_version); result["protectedVersion"] = json!(protection_version); result["afterVersion"] = json!(receipt.after_version);
         result["planId"] = json!(receipt.plan_id); result["receiptId"] = json!(receipt.receipt_id);
+        result["operation"] = json!(if receipt.repair.is_some() { "index-refresh" } else { "cleanup" });
         result["rowsVerified"] = json!(receipt.rows_verified); result["aborted"] = json!(receipt.aborted);
         result["acceptedFinalization"] = json!(recovering_finalization || recovered_candidate);
         result["verifiedCopyVersion"] = json!(receipt.verified_copy_version);

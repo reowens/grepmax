@@ -1891,12 +1891,14 @@ dependencies = [
  "lance-table",
  "libc",
  "object_store 0.14.1",
+ "prost",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "tempfile",
  "tokio",
  "url",
+ "uuid",
 ]
 
 [[package]]

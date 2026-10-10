@@ -122,6 +122,43 @@ class BoundedNativeAcceptance(unittest.TestCase):
         ds.create_scalar_index('path', 'BTREE', name='path_idx')
         return root, ds
 
+    def test_fragment_selected_index_refresh_and_interruption(self):
+        import lance
+        import pyarrow as pa
+        with tempfile.TemporaryDirectory(prefix='gmax-native-index-refresh-') as home:
+            root, ds = self.prepare(home, deleted=False)
+            row = ds.to_table(filter='id = 11').to_pylist()[0]
+            row.update(id=9000, path='/fixture/uncovered.ts', content='uncovered9000 lexical')
+            lance.write_dataset(pa.Table.from_pylist([row], schema=ds.schema), str(root), mode='append')
+            before = lance.dataset(str(root))
+            expected = fixture_support.row_digest(before)
+            original = fixture_support.file_state(root)
+            for interrupted in (False, True):
+                session = NativeSession(self.binary, root, qualification={'operation': 'repair'})
+                try:
+                    event = session.reach('reader-drain' if interrupted else 'result')
+                    if interrupted:
+                        session.close()
+                        session = NativeSession(self.binary, root, action='recover')
+                        event = session.reach('result')
+                    self.assertEqual(event['dataBytesWritten'], 0)
+                    self.assertFalse(event['recoveryPending'])
+                    self.assertGreater(event['indexBytesWritten'], 0)
+                    self.assertLessEqual(event['totalBytesWritten'], 4 * 1024**2)
+                finally:
+                    session.close()
+                current = lance.dataset(str(root))
+                self.assertEqual(fixture_support.row_digest(current), expected)
+                self.assertEqual(current.to_table(filter="path = '/fixture/uncovered.ts'")['id'].to_pylist(), [9000])
+                self.assertEqual(current.to_table(full_text_query={'query': 'uncovered9000', 'columns': ['content']})['id'].to_pylist(), [9000])
+            after = fixture_support.file_state(root)
+            for name, state in original.items():
+                if name.startswith(('data/', '_indices/')):
+                    self.assertEqual(after[name], state, name)
+            for name in ('content_idx', 'path_idx'):
+                index = next(i for i in current.list_indices() if i['name'] == name)
+                self.assertEqual(set(index['fragment_ids']), {f.fragment_id for f in current.get_fragments()})
+
     def test_real_selected_batch_preserves_rows_indices_tags_and_both_readers(self):
         import lance
         with tempfile.TemporaryDirectory(prefix='gmax-native-bounded-success-') as home:

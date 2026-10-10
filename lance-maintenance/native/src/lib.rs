@@ -5,3 +5,6 @@ pub mod engine;
 pub mod meter;
 pub mod owned;
 pub mod selection;
+
+#[cfg(feature = "engine")]
+pub mod repair;
