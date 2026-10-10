@@ -1,123 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Runs as npm `postversion`: push the just-tagged release, wait for the
-# release.yml CI run (which publishes to npm and then cuts the GitHub release),
-# then install the freshly-published version globally.
-#
-# The GitHub release is deliberately left to CI. Creating it here, before CI
-# had run, left an orphaned release behind whenever CI failed (v0.26.38: the
-# audit gate blocked the publish, but the release already existed).
-#
-# Why a poll loop instead of `sleep 5 && gh run watch $(gh run list ...)`:
-# the tag push triggers release.yml, but the run can take several seconds to
-# register with the API. A flat sleep races that registration and loses — when
-# `gh run list` returns empty, `gh run watch` gets no run id and the whole
-# chain aborts *before* the global install (observed on v0.17.10 and v0.17.11).
-# Polling for the run id makes the wait robust to that registration latency.
-
+# The version hook pushes the release and returns immediately. Publication runs
+# separately; do not keep the developer waiting on CI or registry propagation.
+# Once the package exists, use --install for one install and normal handover.
 VERSION="${npm_package_version:-$(node -p "require('./package.json').version")}"
 TAG="v${VERSION}"
 
-echo "==> Pushing main + ${TAG}"
-git push origin main
-git push origin "${TAG}"
-
-echo "==> Waiting for release.yml run on ${TAG}"
-RUN_ID=""
-for i in $(seq 1 30); do
-  RUN_ID="$(gh run list --workflow=release.yml --branch "${TAG}" --limit 1 \
-    --json databaseId --jq '.[0].databaseId // empty' 2>/dev/null || true)"
-  if [ -n "${RUN_ID}" ]; then
-    echo "    found run ${RUN_ID} (after ${i} poll(s))"
-    break
-  fi
-  sleep 3
-done
-
-if [ -z "${RUN_ID}" ]; then
-  echo "ERROR: no release.yml run appeared for ${TAG} after ~90s." >&2
-  echo "       Inspect with: gh run list --workflow=release.yml" >&2
-  echo "       Then finish manually once CI is green:" >&2
-  echo "         npm install -g --prefer-online grepmax@${VERSION}" >&2
-  exit 1
-fi
-
-echo "==> Watching run ${RUN_ID}"
-if ! gh run watch "${RUN_ID}" --exit-status; then
-  echo "ERROR: release.yml failed for ${TAG}." >&2
-  echo "       Failed step log: gh run view ${RUN_ID} --log-failed" >&2
-  if npm view "grepmax@${VERSION}" version >/dev/null 2>&1; then
-    echo "       grepmax@${VERSION} IS on npm — do not delete the tag; fix forward." >&2
-  else
-    echo "       Nothing was published. Fix the cause, then drop this tag and re-release:" >&2
-    echo "         git push origin :refs/tags/${TAG} && git tag -d ${TAG}" >&2
-    echo "         gh release delete ${TAG} --yes   # only if one exists" >&2
-    echo "         npm version patch" >&2
-  fi
-  exit 1
-fi
-
-# `gh run watch` returns the instant CI marks the publish job done, but npm's
-# registry CDN takes a while longer to serve the new version to a fresh install.
-# Installing immediately races that propagation and loses with
-# `ETARGET No matching version found` (v0.17.14, v0.26.32, v0.26.33).
-#
-# Poll the document `npm install` actually reads: the abbreviated packument
-# (Accept: application/vnd.npm.install-v1+json). `npm view` reads the full
-# packument, a separate CDN object that can go live first, so passing that poll
-# never proved an install would resolve — on v0.26.32 and v0.26.33 all five
-# installs (~25s) still failed after it. The query string defeats CDN caching
-# of the poll itself.
-install_doc_has_version() {
-  curl -fsS --max-time 10 -H 'Accept: application/vnd.npm.install-v1+json' \
-    "https://registry.npmjs.org/grepmax?t=$(date +%s)" 2>/dev/null |
-    node -e '
-      let s = "";
-      process.stdin.on("data", (d) => (s += d)).on("end", () => {
-        try { process.exit(JSON.parse(s).versions[process.argv[1]] ? 0 : 1); }
-        catch { process.exit(1); }
-      });
-    ' "${VERSION}"
-}
-
-echo "==> Waiting for grepmax@${VERSION} to propagate to the npm registry"
-VISIBLE=""
-for i in $(seq 1 60); do
-  if install_doc_has_version; then
-    echo "    visible to npm install (after ${i} poll(s))"
-    VISIBLE=1
-    break
-  fi
-  sleep 5
-done
-if [ -z "${VISIBLE}" ]; then
-  echo "    not visible after ~5 min — trying the install anyway" >&2
-fi
-
-# --prefer-online revalidates every cached packument, so an attempt that ran
-# before propagation cannot leave a stale document for the next one to reuse.
-echo "==> Installing grepmax@${VERSION} globally"
-npm cache clean --force
-INSTALLED=""
-for i in $(seq 1 6); do
-  if npm install -g --prefer-online "grepmax@${VERSION}"; then
-    INSTALLED=1
-    break
-  fi
-  echo "    install attempt ${i} failed (registry propagation lag?) — retrying in 20s" >&2
-  sleep 20
-done
-
-if [ -z "${INSTALLED}" ]; then
-  echo "ERROR: global install of grepmax@${VERSION} failed after 6 attempts." >&2
-  echo "       The release itself is live (pushed, npm published, GH release cut by CI)." >&2
-  echo "       Finish manually once propagated:" >&2
-  echo "         npm install -g --prefer-online grepmax@${VERSION}" >&2
-  echo "       Then hand the daemon over (graceful, version-mismatch path):" >&2
-  echo "         gmax watch --daemon -b" >&2
-  exit 1
-fi
+case "${1:-}" in
+  "")
+    echo "==> Pushing main + ${TAG}"
+    git push origin main
+    git push origin "${TAG}"
+    echo "==> ${TAG} pushed; publication runs separately."
+    echo "    After publication: bash scripts/postrelease.sh --install"
+    exit 0
+    ;;
+  --install)
+    echo "==> Installing published grepmax@${VERSION}"
+    # A missing version or failed install is an actionable failure, not a poll loop.
+    # Revalidate cached metadata without clearing unrelated npm cache entries.
+    npm install -g --prefer-online "grepmax@${VERSION}"
+    ;;
+  *)
+    echo "Usage: bash scripts/postrelease.sh [--install]" >&2
+    exit 2
+    ;;
+esac
 
 # Ask the running daemon what version it is serving, via the same `ping` IPC the
 # CLI uses. Prints nothing and returns non-zero if no daemon answers.
@@ -204,4 +113,4 @@ else
   echo "==> No daemon running — skipping restart"
 fi
 
-echo "==> Release ${TAG} complete"
+echo "==> Global package installation for ${TAG} complete"

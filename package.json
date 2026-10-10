@@ -41,13 +41,14 @@
     "typecheck": "tsc --noEmit",
     "test:typecheck": "tsc -p tsconfig.tests.json",
     "prepublishOnly": "pnpm run test:typecheck && pnpm build",
-    "preversion": "pnpm audit && pnpm run audit:python && pnpm test && pnpm run test:python && pnpm typecheck && pnpm run test:typecheck && pnpm run format:check && pnpm build && pnpm run audit:consumer",
-    "version": "bash scripts/sync-versions.sh && git add -A",
+    "preversion": "git diff --quiet && git diff --cached --quiet",
+    "version": "bash scripts/sync-versions.sh && git add -- package.json plugins/grepmax/.claude-plugin/plugin.json .claude-plugin/marketplace.json",
     "postversion": "bash scripts/postrelease.sh",
     "audit:consumer": "node scripts/audit-consumer.cjs",
     "audit:python": "python3 scripts/audit-python.py && python3 scripts/audit-python.py --lockfile lance-maintenance/uv.lock",
     "test:python": "python3 -m unittest discover -s tests/python",
-    "audit:document-search": "node scripts/audit-document-search.cjs"
+    "audit:document-search": "node scripts/audit-document-search.cjs",
+    "release:check": "pnpm audit && pnpm run audit:python && pnpm test && pnpm run test:python && pnpm typecheck && pnpm run test:typecheck && pnpm run format:check && pnpm build && pnpm run audit:consumer"
   },
   "keywords": [
     "grepmax",
