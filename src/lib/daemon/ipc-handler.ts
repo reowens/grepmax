@@ -475,29 +475,70 @@ export async function handleCommand(
         const onClose = () => ac.abort();
         conn.on("close", onClose);
         const name = String(cmd.cmd);
+        const timed = name === "rows.locate" && cmd.diagnostics === true;
+        const locateTimings = timed
+          ? { tableMs: 0, queryMs: 0, normalizeMs: 0 }
+          : undefined;
+        const started = timed ? performance.now() : 0;
+        let gateEntered: number | undefined;
+        let admitted: number | undefined;
+        const finish = (response: DaemonResponse): DaemonResponse => {
+          if (!timed) return response;
+          const finished = performance.now();
+          return {
+            ...response,
+            readTimings: {
+              ...locateTimings,
+              ...(response.readTimings as Record<string, unknown> | undefined),
+              schemaVersion: 1,
+              gateWaitMs: (gateEntered ?? finished) - started,
+              admissionWaitMs:
+                gateEntered === undefined
+                  ? 0
+                  : (admitted ?? finished) - gateEntered,
+              handlerMs: admitted === undefined ? 0 : finished - admitted,
+              totalMs: finished - started,
+            },
+          };
+        };
         try {
           // Heavy verbs queue on a global gate before admission; see
           // HEAVY_READ_VERBS in read-verbs.ts.
-          return await runReadVerb(name, ac.signal, () =>
-            daemon.runSharedOperation(name, ac.signal, async (signal) => {
-              // Validate after admission: pressure can change while queued.
-              const paused = daemon.serviceStatus?.().mode === "paused";
-              if (paused) {
-                validatePausedRead(name, cmd);
-                if (name === "rows.locate" && cmd.limit === undefined)
-                  cmd = { ...cmd, limit: PAUSED_RESULT_LIMIT };
-              }
-              const response = await verb(cmd, { daemon, conn, signal });
-              if (
-                paused &&
-                Buffer.byteLength(JSON.stringify(response)) > 262144
-              )
-                throw new DaemonPausedError(
-                  "read response exceeds the paused service budget; narrow the request",
-                );
-              return response;
-            }),
-          );
+          const response = await runReadVerb(name, ac.signal, () => {
+            if (timed) gateEntered = performance.now();
+            return daemon.runSharedOperation(
+              name,
+              ac.signal,
+              async (signal) => {
+                if (timed) admitted = performance.now();
+                // Validate after admission: pressure can change while queued.
+                const paused = daemon.serviceStatus?.().mode === "paused";
+                if (paused) {
+                  validatePausedRead(name, cmd);
+                  if (name === "rows.locate" && cmd.limit === undefined)
+                    cmd = { ...cmd, limit: PAUSED_RESULT_LIMIT };
+                }
+                const response = await verb(cmd, {
+                  daemon,
+                  conn,
+                  signal,
+                  locateTimings,
+                });
+                if (
+                  paused &&
+                  Buffer.byteLength(JSON.stringify(response)) > 262144
+                )
+                  throw new DaemonPausedError(
+                    "read response exceeds the paused service budget; narrow the request",
+                  );
+                return response;
+              },
+            );
+          });
+          return finish(response);
+        } catch (error) {
+          if (!timed) throw error;
+          return finish(errorResponse(error));
         } finally {
           conn.off("close", onClose);
         }

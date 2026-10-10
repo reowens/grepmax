@@ -542,6 +542,14 @@ export interface LocateRequest {
   limit?: number;
   /** AND the resolved scope onto each matcher. Default true. */
   scoped?: boolean;
+  /** Opt-in numeric diagnostics; never contains query text or paths. */
+  timings?: LocateTimings;
+}
+
+export interface LocateTimings {
+  tableMs: number;
+  queryMs: number;
+  normalizeMs: number;
 }
 
 function matchCondition(match: RowMatch): { where: string; label: string } {
@@ -594,7 +602,13 @@ export async function runLocate(
   deps: StoreReadDeps,
   req: LocateRequest,
 ): Promise<LocatedRow[][]> {
-  const table = await tableOf(deps);
+  const started = req.timings ? performance.now() : 0;
+  let table: Table;
+  try {
+    table = await tableOf(deps);
+  } finally {
+    if (req.timings) req.timings.tableMs += performance.now() - started;
+  }
   const scoped = req.scoped !== false;
   const pathScope = buildScopeWhere(req.scope);
   const results: LocatedRow[][] = [];
@@ -606,18 +620,27 @@ export async function runLocate(
       .select(req.select)
       .where(scoped ? `${where} AND ${pathScope}` : where);
     query = query.limit(req.limit ?? MAX_LOCATE_ROWS);
-    const rows = await withQueryTimeout(
-      query.toArray({
-        timeoutMs: deps.queryTimeoutMs ?? QUERY_EXECUTION_OPTIONS.timeoutMs,
-      }),
-      label,
-      deps.queryTimeoutMs,
-    );
+    const queryStarted = req.timings ? performance.now() : 0;
+    let rows: Awaited<ReturnType<typeof query.toArray>>;
+    try {
+      rows = await withQueryTimeout(
+        query.toArray({
+          timeoutMs: deps.queryTimeoutMs ?? QUERY_EXECUTION_OPTIONS.timeoutMs,
+        }),
+        label,
+        deps.queryTimeoutMs,
+      );
+    } finally {
+      if (req.timings) req.timings.queryMs += performance.now() - queryStarted;
+    }
+    const normalizeStarted = req.timings ? performance.now() : 0;
     results.push(
       rows
         .slice(0, req.limit ?? MAX_LOCATE_ROWS)
         .map((row) => normalizeRow(row, req.select)),
     );
+    if (req.timings)
+      req.timings.normalizeMs += performance.now() - normalizeStarted;
   }
   return results;
 }
@@ -625,7 +648,12 @@ export async function runLocate(
 export async function handleRowsLocate(
   deps: StoreReadDeps,
   payload: Record<string, unknown>,
+  suppliedTimings?: LocateTimings,
 ): Promise<DaemonResponse> {
+  const timings: LocateTimings | undefined =
+    payload.diagnostics === true
+      ? (suppliedTimings ?? { tableMs: 0, queryMs: 0, normalizeMs: 0 })
+      : undefined;
   return asReadVerbResponse(async () => {
     const projectRoot = assertReadableProject(payload.projectRoot);
     const scope = resolveWireScope(projectRoot, payload.scope);
@@ -679,8 +707,11 @@ export async function handleRowsLocate(
           ? undefined
           : clampInt(payload.limit, 10, 1, MAX_LOCATE_ROWS),
       scoped: payload.scoped !== false,
+      timings,
     });
-    return { ok: true, rows };
+    return timings
+      ? { ok: true, rows, readTimings: timings }
+      : { ok: true, rows };
   });
 }
 
@@ -866,7 +897,7 @@ export function registerRowsVerbs(): void {
     "rows.project": (payload, ctx) =>
       handleRowsProject(ctx.daemon.storeReadDeps(), payload),
     "rows.locate": (payload, ctx) =>
-      handleRowsLocate(ctx.daemon.storeReadDeps(), payload),
+      handleRowsLocate(ctx.daemon.storeReadDeps(), payload, ctx.locateTimings),
     "rows.skeleton": (payload, ctx) =>
       handleRowsSkeleton(ctx.daemon.storeReadDeps(), payload),
   });

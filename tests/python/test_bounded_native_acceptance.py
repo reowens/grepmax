@@ -201,6 +201,109 @@ class BoundedNativeAcceptance(unittest.TestCase):
             finally:
                 session.close()
 
+    def test_automatic_small_batch_is_not_starved_by_oversized_first_fragment(self):
+        import lance
+        import pyarrow as pa
+        from lance.optimize import Compaction
+        with tempfile.TemporaryDirectory(prefix='gmax-native-ordered-source-budget-') as home:
+            root = Path(home) / 'store' / 'chunks.lance'
+            root.parent.mkdir()
+            schema = pa.schema([('id', pa.int32()), ('content', pa.string()),
+                                ('payload', pa.binary())])
+            large = [{'id': i, 'content': f'large unique{i}',
+                      'payload': os.urandom(600 * 1024)} for i in range(2)]
+            ds = lance.write_dataset(pa.Table.from_pylist(large, schema=schema),
+                                     str(root), max_rows_per_file=2)
+            small = [{'id': i, 'content': f'small unique{i}', 'payload': b'x' * 32}
+                     for i in range(2, 10)]
+            ds = lance.write_dataset(pa.Table.from_pylist(small, schema=schema),
+                                     str(root), mode='append', max_rows_per_file=4)
+            ds.create_scalar_index('id', 'BTREE', name='id_idx')
+            ds.create_scalar_index('content', 'INVERTED', name='content_idx')
+            ds.delete('id IN (0, 2, 3)')
+            fragments = ds.get_fragments()
+            large_fragment = fragments[0]
+            selected = fragments[1]
+            self.assertGreater(sum((root / 'data' / f.path).stat().st_size
+                                   for f in large_fragment.metadata.files), 1024**2)
+            self.assertLess(sum((root / 'data' / f.path).stat().st_size
+                                for f in selected.metadata.files), 1024**2)
+            before = fixture_support.row_digest(ds)
+            untouched = {f.fragment_id: f.metadata.to_json() for f in fragments
+                         if f.fragment_id != selected.fragment_id}
+            options = {'target_rows_per_fragment': 8192, 'materialize_deletions': True,
+                       'materialize_deletions_threshold': 0.0, 'max_source_bytes': 1024**2,
+                       'max_source_rows': 32768, 'max_source_fragments': 64,
+                       'excluded_fragment_ids': [f.fragment_id for f in fragments if not f.num_deletions]}
+            # Exact pinned planner control: the old automatic selection returns
+            # no tasks even though the later deleted fragment fits the limit.
+            self.assertEqual(len(Compaction.plan(ds, options).tasks), 0)
+            ds = None
+            session = NativeSession(self.binary, root)
+            try:
+                result = self.drive_to_exit(session)
+                self.assertEqual(session.process.returncode, 0, self.failure_reason(session))
+                self.assertEqual(result['status'], 'committed')
+                self.assertEqual(result['rowsVerified'], 2)
+                self.assertEqual(result['remainingDeletedRows'], 1)
+                self.assertLessEqual(result['totalBytesWritten'], session.request['totalWriteBudgetBytes'])
+                fresh = lance.dataset(str(root))
+                self.assertEqual(fixture_support.row_digest(fresh), before)
+                actual = {f.fragment_id: f.metadata.to_json() for f in fresh.get_fragments()}
+                for fragment_id, metadata in untouched.items():
+                    self.assertEqual(actual[fragment_id], metadata)
+                self.assertEqual({i['name'] for i in fresh.list_indices()}, {'id_idx', 'content_idx'})
+                self.assertEqual(fresh.to_table(filter='id = 4')['id'].to_pylist(), [4])
+                self.assertEqual(fresh.to_table(full_text_query={'query': 'unique4', 'columns': ['content']})['id'].to_pylist(), [4])
+            finally:
+                session.close()
+
+    def test_automatic_fallback_when_individually_small_fragments_form_large_task(self):
+        import lance
+        import pyarrow as pa
+        from lance.optimize import Compaction
+        with tempfile.TemporaryDirectory(prefix='gmax-native-group-source-budget-') as home:
+            root = Path(home) / 'store' / 'chunks.lance'
+            root.parent.mkdir()
+            schema = pa.schema([('id', pa.int32()), ('payload', pa.binary())])
+            for group in range(2):
+                rows = [{'id': i, 'payload': os.urandom(300 * 1024)}
+                        for i in range(group * 2, group * 2 + 2)]
+                ds = lance.write_dataset(pa.Table.from_pylist(rows, schema=schema),
+                                         str(root), mode='create' if group == 0 else 'append',
+                                         max_rows_per_file=2)
+            ds.create_scalar_index('id', 'BTREE', name='id_idx')
+            ds.delete('id IN (0, 2)')
+            fragments = ds.get_fragments()
+            self.assertEqual(len(fragments), 2)
+            sizes = [sum((root / 'data' / f.path).stat().st_size
+                         for f in fragment.metadata.files) for fragment in fragments]
+            self.assertTrue(all(size < 1024**2 for size in sizes))
+            self.assertGreater(sum(sizes), 1024**2)
+            options = {'target_rows_per_fragment': 8192, 'materialize_deletions': True,
+                       'materialize_deletions_threshold': 0.0, 'defer_index_remap': False}
+            self.assertEqual(len(Compaction.plan(ds, options).tasks), 1)
+            self.assertEqual(len(Compaction.plan(ds, {**options, 'max_source_bytes': 1024**2}).tasks), 0)
+            before = fixture_support.row_digest(ds)
+            original = {f.fragment_id: f.metadata.to_json() for f in fragments}
+            ds = None
+            session = NativeSession(self.binary, root)
+            try:
+                result = self.drive_to_exit(session)
+                self.assertEqual(session.process.returncode, 0, self.failure_reason(session))
+                self.assertEqual(result['status'], 'committed')
+                self.assertEqual(result['rowsVerified'], 1)
+                self.assertEqual(result['remainingDeletedRows'], 1)
+                self.assertLessEqual(result['totalBytesWritten'], session.request['totalWriteBudgetBytes'])
+                fresh = lance.dataset(str(root))
+                self.assertEqual(fixture_support.row_digest(fresh), before)
+                actual = {f.fragment_id: f.metadata.to_json() for f in fresh.get_fragments()}
+                unchanged = [id for id, metadata in original.items() if actual.get(id) == metadata]
+                self.assertEqual(len(unchanged), 1)
+                self.assertEqual(fresh.to_table(filter='id = 3')['id'].to_pylist(), [3])
+            finally:
+                session.close()
+
     def test_production_executable_rejects_qualification_fault_fields(self):
         with tempfile.TemporaryDirectory(prefix='gmax-native-bounded-no-fault-hooks-') as home:
             root, ds = self.prepare(home)

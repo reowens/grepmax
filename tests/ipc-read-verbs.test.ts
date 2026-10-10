@@ -53,6 +53,130 @@ describe("read verb registry", () => {
 });
 
 describe("ipc-handler read verb dispatch", () => {
+  it("preserves measured query time on a handler failure", async () => {
+    let clock = 100;
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
+    registerReadVerbs({
+      "rows.locate": async (_payload, ctx) => {
+        clock += 17;
+        Object.assign(ctx.locateTimings!, { tableMs: 2, queryMs: 15 });
+        throw new Error("query execution timed out");
+      },
+    });
+    try {
+      const response = await handleCommand(
+        daemon,
+        { cmd: "rows.locate", diagnostics: true },
+        new FakeSocket() as never,
+      );
+      expect(response).toMatchObject({
+        ok: false,
+        error: "query execution timed out",
+        readTimings: {
+          tableMs: 2,
+          queryMs: 15,
+          normalizeMs: 0,
+          admissionWaitMs: 0,
+          handlerMs: 17,
+          totalMs: 17,
+        },
+      });
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("retains admission failure timing without reporting negative or handler durations", async () => {
+    let clock = 100;
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
+    registerReadVerbs({
+      "rows.locate": async () => ({ ok: true, rows: [[]] }),
+    });
+    const refusing = {
+      ...daemon,
+      runSharedOperation: async () => {
+        clock += 25;
+        throw new Error("admission refused");
+      },
+    } as unknown as Daemon;
+    try {
+      const response = await handleCommand(
+        refusing,
+        { cmd: "rows.locate", diagnostics: true },
+        new FakeSocket() as never,
+      );
+      expect(response).toMatchObject({
+        ok: false,
+        error: "admission refused",
+        readTimings: {
+          schemaVersion: 1,
+          gateWaitMs: 0,
+          admissionWaitMs: 25,
+          handlerMs: 0,
+          totalMs: 25,
+        },
+      });
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("separates admission and handler time only when locate diagnostics are explicitly enabled", async () => {
+    let clock = 100;
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
+    registerReadVerbs({
+      "rows.locate": async () => {
+        clock += 30;
+        return {
+          ok: true,
+          rows: [[]],
+          readTimings: { tableMs: 10, queryMs: 20, normalizeMs: 0 },
+        };
+      },
+    });
+    const waiting = {
+      ...daemon,
+      runSharedOperation: async (
+        _name: string,
+        signal: AbortSignal,
+        fn: (signal: AbortSignal) => Promise<unknown>,
+      ) => {
+        clock += 20;
+        return fn(signal);
+      },
+    } as unknown as Daemon;
+    try {
+      const response = await handleCommand(
+        waiting,
+        { cmd: "rows.locate", diagnostics: true },
+        new FakeSocket() as never,
+      );
+      expect(response?.readTimings).toEqual({
+        schemaVersion: 1,
+        tableMs: 10,
+        queryMs: 20,
+        normalizeMs: 0,
+        gateWaitMs: 0,
+        admissionWaitMs: 20,
+        handlerMs: 30,
+        totalMs: 50,
+      });
+      registerReadVerbs({
+        "rows.locate": async () => ({ ok: true, rows: [[]] }),
+      });
+      for (const diagnostics of [undefined, false, "true", 1]) {
+        const plain = await handleCommand(
+          waiting,
+          { cmd: "rows.locate", diagnostics },
+          new FakeSocket() as never,
+        );
+        expect(plain).toEqual({ ok: true, rows: [[]] });
+      }
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it("still reports unknown command for an unregistered verb", async () => {
     const response = await handleCommand(
       daemon,

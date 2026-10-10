@@ -653,7 +653,9 @@ export async function runBoundedMaintenance(
                 plan.status === "no-work"
                   ? action === "recover"
                     ? "no native recovery is pending"
-                    : "no deleted-row cleanup work"
+                    : phase.remainingDeletedRows === 0
+                      ? "no deleted rows remain"
+                      : "deleted rows remain; no batch selected within source limits and index constraints"
                   : phase.aborted === true
                     ? phase.recoveryPending === true
                       ? "copy abandoned; owned-file cleanup remains pending and deleted rows remain"

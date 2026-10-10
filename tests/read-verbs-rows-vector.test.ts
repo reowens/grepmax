@@ -279,6 +279,55 @@ describe("rows.project", () => {
 describe("rows.locate", () => {
   const scope = () => resolveWireScope(PROJECT, { pathPrefix: `${PROJECT}/` });
 
+  it("separates table access and query execution without adding query text to diagnostics", async () => {
+    let clock = 100;
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
+    const query = {
+      select: () => query,
+      where: () => query,
+      limit: () => query,
+      toArray: async () => {
+        clock += 17;
+        return [{ path: `${PROJECT}/src/auth.ts` }];
+      },
+    };
+    const timedDeps = {
+      vectorDb: {
+        ensureTable: async () => {
+          clock += 11;
+          return { query: () => query };
+        },
+      },
+    } as unknown as StoreReadDeps;
+    try {
+      const payload = {
+        projectRoot: PROJECT,
+        select: ["path"],
+        matches: [{ kind: "path", path: `${PROJECT}/src/auth.ts` }],
+        limit: 1,
+      };
+      const result = await handleRowsLocate(timedDeps, {
+        ...payload,
+        diagnostics: true,
+      });
+      expect(result.readTimings).toEqual({
+        tableMs: 11,
+        queryMs: 17,
+        normalizeMs: 0,
+      });
+      expect(result.rows).toEqual([[{ path: `${PROJECT}/src/auth.ts` }]]);
+      for (const diagnostics of [undefined, false, "true", 1]) {
+        const plain = await handleRowsLocate(timedDeps, {
+          ...payload,
+          diagnostics,
+        });
+        expect(plain).toEqual({ ok: true, rows: result.rows });
+      }
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it("returns one result array per matcher, in order", async () => {
     const rows = await runLocate(deps, {
       projectRoot: PROJECT,

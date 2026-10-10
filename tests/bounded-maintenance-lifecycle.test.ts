@@ -121,6 +121,35 @@ describe("metered native child lifecycle", () => {
     );
   });
 
+  it("reports a nonempty backlog when no source batch is selected", async () => {
+    const f = fixture(
+      {
+        status: "no-work",
+        afterVersion: 7,
+        rowsVerified: 0,
+        remainingDeletedRows: 97000,
+        totalBytesWritten: 0,
+        dataBytesWritten: 0,
+        indexBytesWritten: 0,
+        metadataBytesWritten: 0,
+      },
+      { status: "no-work" },
+    );
+    const result = await runBoundedMaintenance(
+      "/fixture",
+      f.lease,
+      7,
+      f.runtime,
+      { open: vi.fn(), drain: vi.fn(async () => {}) },
+    );
+    expect(result).toMatchObject({
+      status: "skipped",
+      remainingDeletedRows: 97000,
+      reason:
+        "deleted rows remain; no batch selected within source limits and index constraints",
+    });
+  });
+
   it("accepts a verified terminal receipt when the exited helper can no longer be measured", async () => {
     const f = fixture(
       {

@@ -24,6 +24,7 @@ import { AsyncSemaphore } from "../utils/async-semaphore";
 import type { DaemonResponse } from "../utils/daemon-client";
 import type { Daemon } from "./daemon";
 import { createGraphVerbs } from "./graph-handler";
+import type { LocateTimings } from "./rows-handler";
 
 /** Bumped when the verb wire shapes change incompatibly. */
 export const READ_VERBS_PROTOCOL = 1;
@@ -34,6 +35,8 @@ export interface ReadVerbContext {
   conn: net.Socket;
   /** Aborted when the client disconnects. */
   signal: AbortSignal;
+  /** Internal collector survives a timed locate handler throwing. */
+  locateTimings?: LocateTimings;
 }
 
 /** `payload` is the raw parsed command object, including `cmd`. */

@@ -2,6 +2,7 @@
 //! Source and lifecycle qualification are implemented here, never in Python.
 use crate::meter::{Counts, Ledger, MeteredStore, free_bytes};
 use crate::owned::OwnedWrites;
+use crate::selection::{AUTOMATIC_SOURCE_BYTES, Candidate, select_batch};
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use arrow_row::{RowConverter, SortField};
 use arrow_schema::Schema as ArrowSchema;
@@ -960,7 +961,7 @@ pub async fn run(request: Request) -> Result<()> {
         compaction_mode: Some(CompactionMode::Reencode),
         max_source_fragments: Some(MAX_FRAGMENTS),
         max_source_rows: Some(MAX_ROWS),
-        max_source_bytes: Some(request.source_limit_bytes.min(32 * 1024 * 1024)),
+        max_source_bytes: Some(request.source_limit_bytes.min(AUTOMATIC_SOURCE_BYTES)),
         ..Default::default()
     };
     if request.action == "run" {
@@ -977,25 +978,66 @@ pub async fn run(request: Request) -> Result<()> {
                 )));
             }
         }
+        // Plan metadata without Lance's ordered prefix quotas. The first
+        // oversized task otherwise hides every later eligible batch. Source,
+        // row and fragment limits are enforced on each task before any copy.
+        // Keep explicit selections on the original exact-source protocol.
+        if request.selected_fragment_ids.is_none() {
+            options.max_source_fragments = None;
+            options.max_source_rows = None;
+            options.max_source_bytes = None;
+        }
+        let mut fragment_counts = BTreeMap::new();
+        let mut fragment_candidates = Vec::new();
         for fragment in dataset.get_fragments() {
-            let excluded = fragment.count_deletions().await? == 0
+            let deleted = fragment.count_deletions().await?;
+            let excluded = deleted == 0
                 || request
                     .selected_fragment_ids
                     .as_ref()
                     .is_some_and(|ids| !ids.contains(&(fragment.id() as u64)));
             if excluded {
                 options.excluded_fragment_ids.push(fragment.id() as u32);
+            } else {
+                let live = fragment
+                    .physical_rows()
+                    .await?
+                    .checked_sub(deleted)
+                    .context("Deleted rows exceed physical rows")?;
+                let source_bytes = fragment.metadata.files.iter().try_fold(0u64, |sum, file| {
+                    sum.checked_add(fs::metadata(root.join("data").join(&file.path))?.len())
+                        .context("Source byte overflow")
+                })?;
+                if request.selected_fragment_ids.is_none()
+                    && (source_bytes > request.source_limit_bytes.min(AUTOMATIC_SOURCE_BYTES)
+                        || live > MAX_ROWS)
+                {
+                    // Oversized individual fragments must not absorb later
+                    // small fragments into an oversized adjacency bin either.
+                    options.excluded_fragment_ids.push(fragment.id() as u32);
+                    continue;
+                }
+                fragment_counts.insert(fragment.id() as u64, (live, deleted));
+                fragment_candidates.push(Candidate {
+                    id: fragment.id() as u64,
+                    source_bytes,
+                    live_rows: live,
+                    deleted_rows: deleted,
+                    fragments: 1,
+                });
             }
         }
-        let plan = plan_compaction(&dataset, &options).await?;
-        // One task keeps index coverage uniform and avoids including every
-        // newly written replacement in indexes covering only a different task.
-        let smallest = plan
+        let mut plan = plan_compaction(&dataset, &options).await?;
+        ensure!(
+            plan.tasks.len() <= 4096,
+            "Too many tasks for bounded metadata"
+        );
+        let candidates = plan
             .tasks
             .iter()
             .enumerate()
             .map(|(number, task)| {
-                let bytes = task
+                let source_bytes = task
                     .fragments
                     .iter()
                     .flat_map(|fragment| fragment.files.iter())
@@ -1003,12 +1045,68 @@ pub async fn run(request: Request) -> Result<()> {
                         sum.checked_add(fs::metadata(root.join("data").join(&file.path))?.len())
                             .context("Source byte overflow")
                     })?;
-                Ok::<_, anyhow::Error>((bytes, number))
+                let (live_rows, deleted_rows) = task.fragments.iter().try_fold(
+                    (0usize, 0usize),
+                    |(live, deleted), fragment| {
+                        let counts = fragment_counts
+                            .get(&fragment.id)
+                            .context("Unclassified planned fragment")?;
+                        Ok::<_, anyhow::Error>((
+                            live.checked_add(counts.0).context("Source row overflow")?,
+                            deleted
+                                .checked_add(counts.1)
+                                .context("Deletion count overflow")?,
+                        ))
+                    },
+                )?;
+                Ok::<_, anyhow::Error>(Candidate {
+                    id: number as u64,
+                    source_bytes,
+                    live_rows,
+                    deleted_rows,
+                    fragments: task.fragments.len(),
+                })
             })
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .min();
-        let chosen = smallest.map(|(_, number)| number);
+            .collect::<Result<Vec<_>>>()?;
+        // One task preserves the planner's uniform index-coverage groups. Pick
+        // the most deleted rows that fit, with smaller source bytes as a tie
+        // breaker; all total-write/index/recovery checks still precede copying.
+        let mut chosen = select_batch(
+            &candidates,
+            request.source_limit_bytes.min(AUTOMATIC_SOURCE_BYTES),
+            MAX_ROWS,
+            MAX_FRAGMENTS,
+        )
+        .map(|number| number as usize);
+        if chosen.is_none() && request.selected_fragment_ids.is_none() {
+            // A group of individually small fragments can still exceed the
+            // source cap. Re-plan one eligible fragment rather than letting
+            // adjacency grouping stall reclamation indefinitely.
+            if let Some(id) = select_batch(
+                &fragment_candidates,
+                request.source_limit_bytes.min(AUTOMATIC_SOURCE_BYTES),
+                MAX_ROWS,
+                MAX_FRAGMENTS,
+            ) {
+                options.excluded_fragment_ids = dataset
+                    .manifest
+                    .fragments
+                    .iter()
+                    .filter(|fragment| fragment.id != id)
+                    .map(|fragment| fragment.id as u32)
+                    .collect();
+                options.max_source_fragments = Some(MAX_FRAGMENTS);
+                options.max_source_rows = Some(MAX_ROWS);
+                options.max_source_bytes =
+                    Some(request.source_limit_bytes.min(AUTOMATIC_SOURCE_BYTES));
+                plan = plan_compaction(&dataset, &options).await?;
+                ensure!(
+                    plan.tasks.len() <= 1,
+                    "Single-fragment fallback produced multiple tasks"
+                );
+                chosen = (!plan.tasks.is_empty()).then_some(0);
+            }
+        }
         plan_tasks = plan
             .compaction_tasks()
             .enumerate()
@@ -1064,7 +1162,7 @@ pub async fn run(request: Request) -> Result<()> {
             }
         }
         ensure!(
-            source_bytes <= request.source_limit_bytes,
+            source_bytes <= request.source_limit_bytes.min(AUTOMATIC_SOURCE_BYTES),
             "Actual source bytes exceed source cap"
         );
         let index_bytes =
