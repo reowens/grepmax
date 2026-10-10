@@ -1114,7 +1114,10 @@ export class Daemon {
         this.boundedCleanupPromise ||
         this.cleanupPromise ||
         this.operations.status !== "open" ||
-        Date.now() - this.lastBoundedCleanupAttempt < 10 * 60_000 ||
+        Date.now() - this.lastBoundedCleanupAttempt <
+          (this.lastBoundedCleanupOutcome?.status === "completed"
+            ? 60_000
+            : 10 * 60_000) ||
         Date.now() - this.lastCleanupAttempt >=
           this.versionCleanupIntervalMs() ||
         (this.versionCleanupStatus()?.eligibleVersionsRemaining ?? 1) > 0 ||

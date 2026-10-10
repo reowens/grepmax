@@ -8,7 +8,7 @@ fn main() {
         // native acceptance and verify the executable checksum before use.
         emit(
             json!({"protocolVersion":1,"engine":"12.0.0","nativeTotalWriteBudgetEnforced":true,
-            "budgetKind":"cumulative-writes","protectedReaderProtocol":1}),
+            "budgetKind":"cumulative-writes","protectedReaderProtocol":1,"incrementalRepairProtocol":1}),
         )
         .unwrap();
         return;

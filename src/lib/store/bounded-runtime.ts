@@ -5,6 +5,7 @@ import * as path from "node:path";
 
 export interface BoundedMaintenanceRuntime {
   executable: string;
+  incrementalRepairProtocol?: 1;
 }
 
 interface NativeManifest {
@@ -79,14 +80,20 @@ export async function verifyBoundedRuntimeAt(
   if (hash.digest("hex") !== entry.sha256)
     throw new Error("Bounded maintenance binary checksum mismatch");
   signal?.throwIfAborted();
-  await verifyCapabilities(executable, signal);
-  return Object.freeze({ executable });
+  const incrementalRepairProtocol = await verifyCapabilities(
+    executable,
+    signal,
+  );
+  return Object.freeze({
+    executable,
+    ...(incrementalRepairProtocol ? { incrementalRepairProtocol } : {}),
+  });
 }
 
 function verifyCapabilities(
   executable: string,
   signal?: AbortSignal,
-): Promise<void> {
+): Promise<1 | undefined> {
   return new Promise((resolve, reject) => {
     const child = spawn(executable, ["--capabilities"], {
       stdio: ["ignore", "pipe", "ignore"],
@@ -131,7 +138,12 @@ function verifyCapabilities(
           report.protectedReaderProtocol !== 1
         )
           throw new Error();
-        resolve();
+        if (
+          report.incrementalRepairProtocol !== undefined &&
+          report.incrementalRepairProtocol !== 1
+        )
+          throw new Error();
+        resolve(report.incrementalRepairProtocol);
       } catch {
         reject(new Error("Native bounded maintenance capabilities unverified"));
       }

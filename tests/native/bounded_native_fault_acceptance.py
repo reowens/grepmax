@@ -38,6 +38,29 @@ class BoundedNativeFaultAcceptance(unittest.TestCase):
         return {name: value for name, value in core.fixture_support.file_state(root).items()
                 if name.startswith(('data/', '_indices/'))}
 
+    def test_relocation_interruptions_preserve_each_valid_intermediate_head(self):
+        import lance
+        for phase in ('after-relocation-stage', 'after-data-commit', 'after-path-commit', 'after-content-commit'):
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory(prefix='gmax-native-relocation-fault-') as home:
+                root, ds = self.prepare(home)
+                baseline = core.fixture_support.row_digest(ds)
+                session = core.NativeSession(self.binary, root, qualification={
+                    'operation': 'repair-relocate', 'qualificationPauseAt': phase})
+                try:
+                    event = session.reach('qualification-' + phase)
+                    receipt = json.loads((root / '_gmax-bounded-receipt.json').read_text())
+                    session.close()
+                    session = core.NativeSession(self.binary, root, action='recover')
+                    result = session.reach('result')
+                    self.assertFalse(result['recoveryPending'])
+                    self.assertLessEqual(result['sourceBytesRead'], 32 * 1024**2)
+                    self.assertLessEqual(result['totalBytesWritten'], session.request['totalWriteBudgetBytes'])
+                    self.assertEqual(result['receiptId'], receipt['receiptId'])
+                finally:
+                    session.close()
+                self.assertEqual(core.fixture_support.row_digest(lance.dataset(str(root))), baseline)
+                self.assertEqual(lance.dataset(str(root)).to_table(full_text_query={'query': 'unique11', 'columns': ['content']})['id'].to_pylist(), [11])
+
     def test_injected_backend_enospc_recovers_exact_owned_payloads_without_refund(self):
         import lance
         import pyarrow as pa

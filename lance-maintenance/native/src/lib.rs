@@ -8,3 +8,9 @@ pub mod selection;
 
 #[cfg(feature = "engine")]
 pub mod repair;
+
+#[cfg(feature = "engine")]
+pub mod relocation;
+
+#[cfg(feature = "engine")]
+pub mod orphans;

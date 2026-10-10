@@ -134,7 +134,7 @@ class BoundedNativeAcceptance(unittest.TestCase):
             expected = fixture_support.row_digest(before)
             original = fixture_support.file_state(root)
             for interrupted in (False, True):
-                session = NativeSession(self.binary, root, qualification={'operation': 'repair'})
+                session = NativeSession(self.binary, root, qualification={'operation': 'repair-indexes'})
                 try:
                     event = session.reach('reader-drain' if interrupted else 'result')
                     if interrupted:
@@ -158,6 +158,103 @@ class BoundedNativeAcceptance(unittest.TestCase):
             for name in ('content_idx', 'path_idx'):
                 index = next(i for i in current.list_indices() if i['name'] == name)
                 self.assertEqual(set(index['fragment_ids']), {f.fragment_id for f in current.get_fragments()})
+
+    def test_partial_relocation_preserves_values_and_protected_reader(self):
+        import lance
+        with tempfile.TemporaryDirectory(prefix='gmax-native-relocate-') as home:
+            root, ds = self.prepare(home)
+            before = fixture_support.row_digest(ds)
+            reader = lance.dataset(str(root), version=ds.version)
+            session = NativeSession(self.binary, root, qualification={'operation': 'repair-relocate'})
+            try:
+                result = session.reach('result')
+                self.assertEqual(result['operation'], 'row-relocation')
+                self.assertEqual(result['rowsVerified'], 64)
+                self.assertGreater(result['dataBytesWritten'], 0)
+                self.assertLessEqual(result['sourceBytesRead'], 32 * 1024**2)
+                self.assertFalse(result['recoveryPending'])
+            finally:
+                session.close()
+            current = lance.dataset(str(root))
+            self.assertEqual(fixture_support.row_digest(current), before)
+            self.assertEqual(fixture_support.row_digest(reader), before)
+            self.assertEqual(current.to_table(filter="path = '/fixture/β/11.ts'")['id'].to_pylist(), [11])
+            self.assertEqual(current.to_table(full_text_query={'query': 'unique11', 'columns': ['content']})['id'].to_pylist(), [11])
+            self.assertEqual(current.to_table(full_text_query={'query': 'unique10', 'columns': ['content']}).num_rows, 0)
+            self.assertEqual(current.to_table(nearest={'column': 'vector', 'q': [0.] * 8, 'k': 5}).num_rows, 5)
+
+    def test_newer_orphan_requires_complete_references_and_age(self):
+        import lance
+        with tempfile.TemporaryDirectory(prefix='gmax-native-newer-orphan-') as home:
+            root, ds = self.prepare(home, deleted=False)
+            baseline = fixture_support.row_digest(ds)
+            referenced = next((root / 'data').glob('*.lance'))
+            orphan = root / 'data' / 'unowned-newer.lance'
+            orphan.write_bytes(b'abandoned output')
+            recent = root / 'data' / 'recent-unowned.lance'
+            recent.write_bytes(b'recent output')
+            timestamp = time.time() - 121
+            os.utime(orphan, (timestamp, timestamp))
+            os.utime(referenced, (timestamp, timestamp))
+            session = NativeSession(self.binary, root, qualification={'operation': 'repair-orphans'})
+            try:
+                result = session.reach('result')
+                self.assertEqual(result['operation'], 'orphan-reclamation')
+                self.assertTrue(result['inventoryComplete'])
+                self.assertGreaterEqual(result['orphansReclaimed'], 1)
+                self.assertEqual(result['dataBytesWritten'], 0)
+            finally:
+                session.close()
+            self.assertFalse(orphan.exists())
+            self.assertTrue(recent.exists())
+            self.assertTrue(referenced.exists())
+            self.assertEqual(fixture_support.row_digest(lance.dataset(str(root))), baseline)
+
+    def test_oversized_fragment_makes_finite_bounded_progress(self):
+        import lance
+        import pyarrow as pa
+        import random
+        with tempfile.TemporaryDirectory(prefix='gmax-native-large-relocate-') as home:
+            root = Path(home) / 'store' / 'chunks.lance'
+            root.parent.mkdir()
+            rng = random.Random(37)
+            count = 60000
+            rows = [{'id': n, 'path': f'/large/{n}.ts', 'content': f'large unique{n}',
+                     'payload': rng.randbytes(640), 'vector': [float(n % 13)] * 8}
+                    for n in range(count)]
+            schema = pa.schema([('id', pa.int32()), ('path', pa.string()), ('content', pa.string()),
+                                ('payload', pa.binary()), ('vector', pa.list_(pa.float32(), 8))])
+            ds = lance.write_dataset(pa.Table.from_pylist(rows, schema=schema), str(root), max_rows_per_file=count, max_rows_per_group=64)
+            del rows
+            ds.create_scalar_index('path', 'BTREE', name='path_idx')
+            ds.create_scalar_index('content', 'INVERTED', name='content_idx')
+            ds.tags.create('large-reader', ds.version)
+            ds.delete('id < 56000')
+            source = ds.get_fragments()[0]
+            source_id = source.fragment_id
+            self.assertGreater(sum((root / 'data' / f.path).stat().st_size for f in source.metadata.files), 32 * 1024**2)
+            baseline = fixture_support.row_digest(ds)
+            original_files = fixture_support.file_state(root)
+            units = 0
+            while source_id in {f.fragment_id for f in lance.dataset(str(root)).get_fragments()}:
+                self.assertLess(units, 8, 'finite oversized fixture did not converge')
+                session = NativeSession(self.binary, root, cap=32 * 1024**2, selected=[source_id], qualification={'operation': 'repair-relocate'})
+                try:
+                    result = session.reach('result')
+                    self.assertGreater(result['rowsVerified'], 0)
+                    self.assertLessEqual(result['sourceBytesRead'], 32 * 1024**2)
+                    self.assertLessEqual(result['totalBytesWritten'], session.request['totalWriteBudgetBytes'])
+                    self.assertFalse(result['recoveryPending'])
+                finally:
+                    session.close()
+                self.assertEqual(fixture_support.row_digest(lance.dataset(str(root))), baseline)
+                units += 1
+            for name, value in original_files.items():
+                if name.startswith(('data/', '_indices/')):
+                    self.assertEqual(fixture_support.file_state(root)[name], value)
+            current = lance.dataset(str(root))
+            self.assertEqual(current.to_table(full_text_query={'query': 'unique59999', 'columns': ['content']})['id'].to_pylist(), [59999])
+            self.assertEqual(current.to_table(filter="path = '/large/59999.ts'")['id'].to_pylist(), [59999])
 
     def test_real_selected_batch_preserves_rows_indices_tags_and_both_readers(self):
         import lance

@@ -114,7 +114,7 @@ impl OwnedWrites {
     fn payload(root: &Path, path: &Path) -> bool {
         path.prefix_match(root)
             .and_then(|mut parts| parts.next())
-            .is_some_and(|part| part.as_ref() == "data" || part.as_ref() == "_indices")
+            .is_some_and(|part| matches!(part.as_ref(), "data" | "_indices" | "_deletions"))
             && path.filename().is_some_and(|name| !name.contains('#'))
     }
     fn physical(&self, path: &Path) -> Result<PathBuf> {
@@ -228,7 +228,7 @@ impl OwnedWrites {
         let payload_directory = path
             .prefix_match(&self.root)
             .and_then(|mut parts| parts.next())
-            .is_some_and(|part| part.as_ref() == "data" || part.as_ref() == "_indices");
+            .is_some_and(|part| matches!(part.as_ref(), "data" | "_indices" | "_deletions"));
         if payload_directory
             && !self
                 .state

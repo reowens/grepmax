@@ -1,10 +1,7 @@
 //! Fragment-selected scalar repair. Existing disjoint segments are immutable.
 use crate::engine::{Receipt, Request, all_indices, save_receipt, verify_owner};
 use anyhow::{Context, Result, ensure};
-use lance::{
-    Dataset,
-    index::{DatasetIndexExt, create::CreateIndexBuilder},
-};
+use lance::{Dataset, index::DatasetIndexExt};
 use lance_index::{
     IndexType,
     scalar::{BuiltinIndexType, ScalarIndexParams, inverted::tokenizer::InvertedIndexParams},
@@ -18,7 +15,7 @@ use std::{
     path::Path,
 };
 
-const SOURCE: u64 = 8 * 1024 * 1024;
+pub(crate) const SOURCE: u64 = 8 * 1024 * 1024;
 const MERGE_SOURCE: u64 = 128 * 1024 * 1024;
 const SEGMENTS: usize = 64;
 
@@ -30,9 +27,30 @@ pub struct Proof {
     pub field: String,
     pub merge: Vec<String>,
     pub output: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relocation: Option<crate::relocation::Proof>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub orphans: Option<crate::orphans::Proof>,
 }
 impl Proof {
     pub fn valid(&self) -> bool {
+        if let Some(orphan) = &self.orphans {
+            return self.fragments.is_empty()
+                && self.name.is_empty()
+                && self.field.is_empty()
+                && self.merge.is_empty()
+                && self.output.is_none()
+                && self.relocation.is_none()
+                && orphan.valid();
+        }
+        if let Some(relocation) = &self.relocation {
+            return self.fragments.len() == 1
+                && self.name.is_empty()
+                && self.field.is_empty()
+                && self.merge.is_empty()
+                && self.output.is_none()
+                && relocation.valid(self.fragments[0]);
+        }
         !self.fragments.is_empty()
             && self.fragments.len() <= if self.merge.is_empty() { 64 } else { 4096 }
             && self.fragments.iter().all(|id| *id <= u32::MAX as u64)
@@ -68,7 +86,7 @@ fn bytes(root: &Path, index: &IndexMetadata) -> Result<u64> {
     }
     Ok(total)
 }
-fn params(index: &IndexMetadata, field: &str) -> Result<(IndexType, ScalarIndexParams)> {
+pub(crate) fn params(index: &IndexMetadata, field: &str) -> Result<(IndexType, ScalarIndexParams)> {
     ensure!(
         index.base_id.is_none() && index.fields.len() == 1 && index.covering_fields.is_empty(),
         "Unsupported scalar declaration"
@@ -102,6 +120,26 @@ fn params(index: &IndexMetadata, field: &str) -> Result<(IndexType, ScalarIndexP
     }
 }
 pub async fn plan(dataset: &Dataset, root: &Path, request: &Request) -> Result<Option<Proof>> {
+    let operation = request.operation.as_deref().unwrap_or("repair");
+    if operation == "repair-orphans" {
+        return crate::orphans::plan(root);
+    }
+    if operation == "repair" {
+        if let Some(proof) = crate::orphans::plan(root)? {
+            return Ok(Some(proof));
+        }
+        if previous
+            .and_then(|p| p.repair.as_ref())
+            .is_some_and(|p| !p.field.is_empty())
+        {
+            if let Some(proof) = crate::relocation::plan(dataset, root, request).await? {
+                return Ok(Some(proof));
+            }
+        }
+    }
+    if operation == "repair-relocate" {
+        return crate::relocation::plan(dataset, root, request).await;
+    }
     let all = all_indices(dataset).await?;
     ensure!(all.len() <= 512, "Index segment metadata bound");
     let mut groups: BTreeMap<String, Vec<IndexMetadata>> = BTreeMap::new();
@@ -114,6 +152,25 @@ pub async fn plan(dataset: &Dataset, root: &Path, request: &Request) -> Result<O
             groups.entry(index.name.clone()).or_default().push(index);
         }
     }
+    let mut groups: Vec<_> = groups.into_iter().collect();
+    groups.sort_by_key(|(name, indices)| {
+        let covered: BTreeSet<_> = indices
+            .iter()
+            .filter_map(|i| i.fragment_bitmap.as_ref())
+            .flat_map(|b| b.iter())
+            .collect();
+        (
+            dataset
+                .manifest
+                .fragments
+                .iter()
+                .filter(|f| !covered.contains(&(f.id as u32)))
+                .map(|f| f.id)
+                .min()
+                .unwrap_or(u64::MAX),
+            name.clone(),
+        )
+    });
     for (name, mut indices) in groups {
         let field = dataset.schema().field_path(indices[0].fields[0])?;
         params(&indices[0], &field)?;
@@ -181,6 +238,8 @@ pub async fn plan(dataset: &Dataset, root: &Path, request: &Request) -> Result<O
                     field,
                     merge: picked.iter().map(|i| i.uuid.to_string()).collect(),
                     output: None,
+                    relocation: None,
+                    orphans: None,
                 }));
             }
             ensure!(
@@ -244,10 +303,16 @@ pub async fn plan(dataset: &Dataset, root: &Path, request: &Request) -> Result<O
                 field,
                 merge: vec![],
                 output: None,
+                relocation: None,
+                orphans: None,
             }));
         }
     }
-    Ok(None)
+    if operation == "repair-indexes" {
+        Ok(None)
+    } else {
+        crate::relocation::plan(dataset, root, request).await
+    }
 }
 pub async fn execute(
     dataset: &mut Dataset,
@@ -255,6 +320,13 @@ pub async fn execute(
     receipt: &mut Receipt,
     request: &Request,
 ) -> Result<()> {
+    if receipt
+        .repair
+        .as_ref()
+        .is_some_and(|p| p.relocation.is_some())
+    {
+        return crate::relocation::execute(dataset, root, receipt, request).await;
+    }
     let proof = receipt.repair.clone().context("Missing index proof")?;
     let all = all_indices(dataset).await?;
     let example = all
@@ -265,7 +337,8 @@ pub async fn execute(
     receipt.phase = "copying".into();
     save_receipt(dataset, root, receipt).await?;
     let segment = if proof.merge.is_empty() {
-        CreateIndexBuilder::new(dataset, &[&proof.field], kind, &settings)
+        dataset
+            .create_index_builder(&[&proof.field], kind, &settings)
             .name(proof.name.clone())
             .replace(true)
             .fragments(proof.fragments.iter().map(|id| *id as u32).collect())
@@ -282,6 +355,7 @@ pub async fn execute(
     receipt.repair.as_mut().unwrap().output = Some(segment.uuid.to_string());
     // The complete output identity is durable before its manifest publication.
     save_receipt(dataset, root, receipt).await?;
+    crate::engine::qualification_checkpoint(request, "after-index-stage")?;
     verify_owner(request, root, false)?;
     ensure!(
         dataset.latest_version_id().await? == receipt.before_version,
@@ -290,6 +364,7 @@ pub async fn execute(
     dataset
         .commit_existing_index_segments(&proof.name, &proof.field, vec![segment])
         .await?;
+    Ok(())
 }
 pub async fn verify(
     before: &Dataset,
@@ -298,6 +373,12 @@ pub async fn verify(
     proof: &Proof,
 ) -> Result<usize> {
     ensure!(proof.valid(), "Invalid repair discriminator/proof");
+    if proof.orphans.is_some() {
+        return crate::orphans::verify(before, after, receipt).await;
+    }
+    if let Some(relocation) = &proof.relocation {
+        return crate::relocation::verify(before, after, receipt, relocation).await;
+    }
     ensure!(
         before.schema() == after.schema() && before.manifest.fragments == after.manifest.fragments,
         "Index repair changed data/schema"
@@ -356,4 +437,43 @@ pub async fn verify(
         "Repair before identity changed"
     );
     Ok(0)
+}
+
+/// Metadata counts are an explicit backlog, not a query/throughput claim.
+pub async fn backlog(dataset: &Dataset) -> Result<(usize, usize)> {
+    let all = all_indices(dataset).await?;
+    let mut fragments = BTreeSet::new();
+    let mut rows = 0;
+    for field in ["path", "content"] {
+        let covered: BTreeSet<_> = all
+            .iter()
+            .filter(|i| {
+                i.fields.len() == 1
+                    && dataset
+                        .schema()
+                        .field_path(i.fields[0])
+                        .is_ok_and(|f| f == field)
+            })
+            .filter_map(|i| i.fragment_bitmap.as_ref())
+            .flat_map(|b| b.iter())
+            .collect();
+        for f in dataset
+            .manifest
+            .fragments
+            .iter()
+            .filter(|f| !covered.contains(&(f.id as u32)))
+        {
+            fragments.insert(f.id);
+            rows += f
+                .physical_rows
+                .context("Unknown backlog row count")?
+                .saturating_sub(
+                    f.deletion_file
+                        .as_ref()
+                        .and_then(|d| d.num_deleted_rows)
+                        .unwrap_or(0),
+                );
+        }
+    }
+    Ok((fragments.len(), rows))
 }

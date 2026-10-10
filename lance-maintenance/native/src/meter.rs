@@ -56,31 +56,117 @@ const RECORD_BYTES: u64 = 80;
 #[derive(Debug)]
 pub struct SourceReads {
     cap: u64,
-    used: Mutex<u64>,
+    used: Mutex<ReadState>,
+    ledger: Option<Arc<Ledger>>,
+}
+#[derive(Debug)]
+struct ReadState {
+    used: u64,
+    journal: Option<File>,
+    poisoned: bool,
 }
 impl SourceReads {
     pub fn new(cap: u64) -> Self {
         Self {
             cap,
-            used: Mutex::new(0),
+            used: Mutex::new(ReadState {
+                used: 0,
+                journal: None,
+                poisoned: false,
+            }),
+            ledger: None,
         }
+    }
+    pub fn journal(
+        cap: u64,
+        file: &std::path::Path,
+        ledger: Arc<Ledger>,
+        restore: bool,
+    ) -> Result<Self> {
+        let mut used = 0;
+        if restore {
+            let meta = std::fs::symlink_metadata(file).map_err(|e| refused(e.to_string()))?;
+            if !meta.is_file() || meta.len() % 40 != 0 || meta.len() > 4 * 1024 * 1024 {
+                return Err(refused(
+                    "Uncertain source journal; read allowance cannot reset",
+                ));
+            }
+            let mut reader = File::open(file).map_err(|e| refused(e.to_string()))?;
+            lock_journal(&reader)?;
+            for _ in 0..meta.len() / 40 {
+                let mut record = [0u8; 40];
+                reader
+                    .read_exact(&mut record)
+                    .map_err(|e| refused(e.to_string()))?;
+                let count = u64::from_le_bytes(record[..8].try_into().unwrap());
+                if count < used
+                    || count > cap
+                    || Sha256::digest(&record[..8]).as_slice() != &record[8..]
+                {
+                    return Err(refused(
+                        "Invalid source journal; read allowance cannot reset",
+                    ));
+                }
+                used = count;
+            }
+        }
+        ledger.charge(&Path::from("_gmax-maintenance/journal"), 0)?;
+        let mut options = OpenOptions::new();
+        options.write(true).append(true);
+        if !restore {
+            options.create_new(true);
+        }
+        let journal = options.open(file).map_err(|e| refused(e.to_string()))?;
+        lock_journal(&journal)?;
+        journal
+            .sync_all()
+            .and_then(|_| File::open(file.parent().unwrap())?.sync_all())
+            .map_err(|e| refused(e.to_string()))?;
+        Ok(Self {
+            cap,
+            used: Mutex::new(ReadState {
+                used,
+                journal: Some(journal),
+                poisoned: false,
+            }),
+            ledger: Some(ledger),
+        })
     }
     pub fn charge(&self, bytes: u64) -> Result<()> {
         let mut used = self
             .used
             .lock()
             .map_err(|_| refused("Source read meter poisoned"))?;
+        if used.poisoned {
+            return Err(refused("Source journal persistence failed"));
+        }
         let next = used
+            .used
             .checked_add(bytes)
             .ok_or_else(|| refused("Source read overflow"))?;
         if next > self.cap {
             return Err(refused("Submitted source ranges exceed read allowance"));
         }
-        *used = next;
+        if let Some(ledger) = &self.ledger {
+            ledger.charge(&Path::from("_gmax-maintenance/journal"), 40)?;
+            let mut record = next.to_le_bytes().to_vec();
+            record.extend_from_slice(&Sha256::digest(&record));
+            if let Err(error) = used
+                .journal
+                .as_mut()
+                .unwrap()
+                .write_all(&record)
+                .and_then(|_| used.journal.as_mut().unwrap().sync_all())
+            {
+                used.poisoned = true;
+                return Err(refused(error.to_string()));
+            }
+        }
+        used.used = next;
         Ok(())
     }
     pub fn used(&self) -> u64 {
-        *self.used.lock().expect("Source read meter poisoned")
+        self.used.lock().expect("Source read meter poisoned").used
     }
 }
 pub const MAX_JOURNAL_RECORDS: u64 = 65536;
@@ -530,7 +616,12 @@ impl ObjectStore for MeteredStore {
                 .unwrap_or("")
                 .trim_start_matches('/');
             if relative.starts_with("data/") || relative.starts_with("_deletions/") {
-                let size = self.inner.head(path).await?.size;
+                let size = self
+                    .inner
+                    .get_opts(path, GetOptions::default().with_head(true))
+                    .await?
+                    .meta
+                    .size;
                 let bytes = match &options.range {
                     Some(range) => {
                         let range = range

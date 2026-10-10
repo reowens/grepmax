@@ -37,6 +37,76 @@ function bytes(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 0;
 }
 
+const repairOperations = new Set([
+  "cleanup",
+  "index-refresh",
+  "row-relocation",
+  "orphan-reclamation",
+]);
+function validRepairReceipt(r: any): boolean {
+  if (
+    !r ||
+    typeof r !== "object" ||
+    !Array.isArray(r.fragments) ||
+    r.fragments.length > 4096 ||
+    !r.fragments.every(
+      (id: unknown) => bytes(id) && (id as number) <= 0xffffffff,
+    ) ||
+    typeof r.name !== "string" ||
+    typeof r.field !== "string" ||
+    !Array.isArray(r.merge) ||
+    r.merge.length > 64
+  )
+    return false;
+  const uuid = (v: unknown) =>
+    typeof v === "string" &&
+    /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(v);
+  if (!r.merge.every(uuid) || (r.output !== null && !uuid(r.output)))
+    return false;
+  if (r.orphans)
+    return (
+      r.fragments.length === 0 &&
+      !r.relocation &&
+      r.name === "" &&
+      r.field === "" &&
+      r.merge.length === 0 &&
+      r.output === null &&
+      typeof r.orphans.complete === "boolean" &&
+      bytes(r.orphans.versionsScanned) &&
+      bytes(r.orphans.versionsRemaining) &&
+      Array.isArray(r.orphans.candidates) &&
+      r.orphans.candidates.length <= 64 &&
+      bytes(r.orphans.reclaimed) &&
+      r.orphans.reclaimed <= r.orphans.candidates.length &&
+      (r.orphans.complete || r.orphans.candidates.length === 0)
+    );
+  if (r.relocation)
+    return (
+      r.fragments.length === 1 &&
+      r.name === "" &&
+      r.field === "" &&
+      r.merge.length === 0 &&
+      r.output === null &&
+      Array.isArray(r.relocation.addresses) &&
+      r.relocation.addresses.length <= 1024 &&
+      r.relocation.addresses.every(bytes) &&
+      typeof r.relocation.digest === "string" &&
+      Array.isArray(r.relocation.staged) &&
+      r.relocation.staged.length <= 8 &&
+      Array.isArray(r.relocation.publications) &&
+      r.relocation.publications.length <= 2 &&
+      r.relocation.publications.every(
+        (p: any) => uuid(p.uuid) && ["path", "content"].includes(p.field),
+      )
+    );
+  return (
+    r.fragments.length > 0 &&
+    r.name.length > 0 &&
+    r.name.length <= 256 &&
+    ["path", "content"].includes(r.field)
+  );
+}
+
 /** Advisory startup routing only. Pending or unrecognized state always goes
  * to the native recovery verifier; this never authorizes mutation or cleanup.
  * A historical, complete finalized receipt needs no helper to start writers. */
@@ -69,7 +139,9 @@ export function boundedMaintenanceReceiptState(
     const count = fs.readSync(fd, buffer, 0, buffer.length, 0);
     if (count > 64 * 1024) return "unknown";
     const r = JSON.parse(buffer.subarray(0, count).toString("utf8"));
-    if (r.protocolVersion !== 2) return "unknown";
+    const repair = r.protocolVersion === 3 && validRepairReceipt(r.repair);
+    if (!((r.protocolVersion === 2 && r.repair == null) || repair))
+      return "unknown";
     if (r.phase !== "finalized") return "pending";
     const hash = (value: unknown) =>
       typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
@@ -93,9 +165,9 @@ export function boundedMaintenanceReceiptState(
       (!hash(r.sourceRowsDigest) &&
         !(
           r.sourceRowsDigest === "" &&
-          r.aborted === true &&
-          r.abortProven === true &&
-          r.rowsVerified === 0
+          r.rowsVerified === 0 &&
+          ((repair && !r.repair.relocation) ||
+            (r.aborted === true && r.abortProven === true))
         )) ||
       !bytes(r.sourceBytes) ||
       r.sourceBytes > MAX_BOUNDED_TOTAL_WRITE_BYTES ||
@@ -238,6 +310,7 @@ export function boundedMaintenanceUnavailable(): CompactionResult {
 
 export interface BoundedMaintenanceRuntime {
   executable: string;
+  incrementalRepairProtocol?: 1;
   args?: string[];
 }
 
@@ -250,6 +323,7 @@ export interface MaintenanceReaderProtection {
 }
 
 export interface MeteredMaintenancePlan {
+  operation?: BoundedMaintenanceResult["operation"];
   protocolVersion: 2;
   engine: "12.0.0";
   status: "qualified" | "no-work";
@@ -268,6 +342,17 @@ export interface MeteredMaintenancePlan {
 
 export interface BoundedMaintenanceResult extends CompactionResult {
   rewritten: boolean;
+  operation?:
+    | "cleanup"
+    | "index-refresh"
+    | "row-relocation"
+    | "orphan-reclamation";
+  sourceBytesRead?: number;
+  remainingIndexFragments?: number;
+  remainingIndexRows?: number;
+  orphansReclaimed?: number;
+  inventoryComplete?: boolean;
+  inventoryVersionsRemaining?: number;
   beforeVersion: number;
   protectedVersion: number;
   afterVersion: number;
@@ -306,6 +391,7 @@ export function parseMeteredMaintenancePlan(
         : input.protectedVersion,
   };
   if (
+    (p.operation !== undefined && !repairOperations.has(p.operation)) ||
     p.protocolVersion !== 2 ||
     p.engine !== "12.0.0" ||
     !["qualified", "no-work"].includes(p.status) ||
@@ -602,6 +688,13 @@ export async function runBoundedMaintenance(
               (action === "recover" &&
                 phase.afterVersion !== expectedVersion) ||
               phase.planId !== plan.planId ||
+              (phase.operation !== undefined &&
+                !repairOperations.has(phase.operation as string)) ||
+              (plan.operation !== undefined &&
+                phase.operation !== plan.operation) ||
+              (phase.sourceBytesRead !== undefined &&
+                (!bytes(phase.sourceBytesRead) ||
+                  phase.sourceBytesRead > 32 * 1024 ** 2)) ||
               !bytes(phase.rowsVerified) ||
               !bytes(phase.remainingDeletedRows) ||
               (phase.recoveryPending !== undefined &&
@@ -662,8 +755,49 @@ export async function runBoundedMaintenance(
                       : "unfinished copy discarded; deleted rows remain in the current table"
                     : action === "recover"
                       ? "previously verified copy finalized under its original write ledger"
-                      : "deleted rows reclaimed within shared native write cap",
-              rewritten: action === "run" && plan.status !== "no-work",
+                      : phase.operation === "index-refresh"
+                        ? "selected search index coverage repaired"
+                        : phase.operation === "row-relocation"
+                          ? "selected live rows moved; old fragment reclamation remains subject to retention"
+                          : phase.operation === "orphan-reclamation"
+                            ? phase.inventoryComplete
+                              ? "reference inventory completed; proven orphan objects reclaimed"
+                              : "reference inventory advanced; deletion awaits complete proof"
+                            : "deleted rows reclaimed within shared native write cap",
+              rewritten:
+                action === "run" &&
+                plan.status !== "no-work" &&
+                (phase.operation === undefined ||
+                  ["cleanup", "row-relocation"].includes(
+                    phase.operation as string,
+                  )),
+              ...(phase.operation !== undefined
+                ? {
+                    operation:
+                      phase.operation as BoundedMaintenanceResult["operation"],
+                  }
+                : {}),
+              ...(bytes(phase.sourceBytesRead)
+                ? { sourceBytesRead: phase.sourceBytesRead }
+                : {}),
+              ...(bytes(phase.remainingIndexFragments)
+                ? { remainingIndexFragments: phase.remainingIndexFragments }
+                : {}),
+              ...(bytes(phase.remainingIndexRows)
+                ? { remainingIndexRows: phase.remainingIndexRows }
+                : {}),
+              ...(bytes(phase.orphansReclaimed)
+                ? { orphansReclaimed: phase.orphansReclaimed }
+                : {}),
+              ...(typeof phase.inventoryComplete === "boolean"
+                ? { inventoryComplete: phase.inventoryComplete }
+                : {}),
+              ...(bytes(phase.inventoryVersionsRemaining)
+                ? {
+                    inventoryVersionsRemaining:
+                      phase.inventoryVersionsRemaining,
+                  }
+                : {}),
               beforeVersion: plan.beforeVersion,
               protectedVersion: plan.protectedVersion,
               afterVersion: phase.afterVersion as number,
@@ -780,6 +914,9 @@ export async function runBoundedMaintenance(
             `${JSON.stringify({
               protocolVersion: 2,
               action,
+              ...(action === "run" && runtime.incrementalRepairProtocol === 1
+                ? { operation: "repair" }
+                : {}),
               store: path.join(storeDir, "chunks.lance"),
               expectedVersion,
               totalWriteBudgetBytes: MAX_BOUNDED_TOTAL_WRITE_BYTES,

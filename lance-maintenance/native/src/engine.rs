@@ -71,6 +71,9 @@ pub struct Request {
     #[cfg(feature = "qualification")]
     #[serde(default)]
     pub qualification_pause_after_first_tag_delete: bool,
+    #[cfg(feature = "qualification")]
+    #[serde(default)]
+    pub qualification_pause_at: Option<String>,
 }
 fn source_default() -> u64 {
     MAX_SOURCE
@@ -106,6 +109,25 @@ pub(crate) struct Receipt {
     pub(crate) retired_metadata: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) repair: Option<crate::repair::Proof>,
+}
+
+pub(crate) fn qualification_checkpoint(request: &Request, phase: &str) -> Result<()> {
+    #[cfg(feature = "qualification")]
+    if request.qualification_pause_at.as_deref() == Some(phase) {
+        emit(json!({ "phase": format!("qualification-{phase}") }))?;
+        acknowledge(request)?;
+    }
+    let _ = (request, phase);
+    Ok(())
+}
+
+fn operation_kind(receipt: &Receipt) -> &str {
+    match &receipt.repair {
+        Some(proof) if proof.orphans.is_some() => "orphan-reclamation",
+        Some(proof) if proof.relocation.is_some() => "row-relocation",
+        Some(_) => "index-refresh",
+        None => "cleanup",
+    }
 }
 
 #[derive(Debug)]
@@ -707,6 +729,10 @@ fn read_receipt(root: &FsPath) -> Result<Option<Receipt>> {
                     .strip_prefix("_gmax-maintenance-")
                     .and_then(|name| name.strip_suffix(".journal"))
                     .or_else(|| {
+                        name.strip_prefix("_gmax-reads-")
+                            .and_then(|name| name.strip_suffix(".journal"))
+                    })
+                    .or_else(|| {
                         name.strip_prefix("_gmax-owned-")
                             .and_then(|name| name.strip_suffix(".jsonl"))
                     });
@@ -960,7 +986,24 @@ pub async fn run(request: Request) -> Result<()> {
                 &root.join(&receipt.journal),
             )?;
             remaining_space(&request, &root, receipt, &ledger.counts())?;
-            Some(ledger)
+            let mut paths = vec![object_root(&root)?.child(RECEIPT)];
+            paths.extend(
+                [&receipt.reader_tag, &receipt.after_tag]
+                    .iter()
+                    .map(|name| {
+                        object_root(&root)
+                            .unwrap()
+                            .child("_refs")
+                            .child("tags")
+                            .child(format!("{name}.json"))
+                    }),
+            );
+            Some(Arc::new(
+                ledger
+                    .with_space_guard(root.clone(), request.free_space_margin_bytes)
+                    .with_finalization_reserve(receipt.finalization_reserve_bytes)
+                    .with_finalization_paths(paths),
+            ))
         } else {
             check_space(&request, &root, 0)?;
             None
@@ -975,7 +1018,44 @@ pub async fn run(request: Request) -> Result<()> {
     let mut aborting = false;
     let mut recovered_candidate = false;
     let preliminary = Arc::new(Ledger::new(request.total_write_budget_bytes)?);
-    let mut dataset = open(&root, preliminary, vec![]).await?;
+    let mut reads = if request.action == "recover"
+        && previous
+            .as_ref()
+            .is_some_and(|r| r.repair.is_some() && r.phase != "finalized")
+    {
+        let old = previous.as_ref().unwrap();
+        let file = root.join(format!("_gmax-reads-{}.journal", old.receipt_id));
+        // No source was read before this log existed. An interrupted admission
+        // may create it during recovery; a nonempty write attempt cannot reset it.
+        let ledger = restored_ledger
+            .as_ref()
+            .context("Missing recovery ledger")?
+            .clone();
+        let restore = file.exists();
+        ensure!(
+            restore
+                || ledger.counts().data_bytes_written == 0
+                    && ledger.counts().index_bytes_written == 0,
+            "Lost source journal"
+        );
+        Some(Arc::new(SourceReads::journal(
+            32 * 1024 * 1024,
+            &file,
+            ledger,
+            restore,
+        )?))
+    } else {
+        None
+    };
+    let mut dataset = open_metered(
+        &root,
+        restored_ledger.clone().unwrap_or(preliminary),
+        vec![],
+        None,
+        None,
+        reads.clone(),
+    )
+    .await?;
     let observed_latest = dataset.latest_version_id().await?;
     ensure!(
         dataset.version_id() == request.expected_version
@@ -1018,8 +1098,14 @@ pub async fn run(request: Request) -> Result<()> {
             }
         }
         if let Some(operation) = &request.operation {
-            ensure!(operation == "repair", "Unknown repair operation");
-            repair_plan = crate::repair::plan(&dataset, &root, &request).await?;
+            ensure!(
+                matches!(
+                    operation.as_str(),
+                    "repair" | "repair-indexes" | "repair-relocate" | "repair-orphans"
+                ),
+                "Unknown repair operation"
+            );
+            repair_plan = crate::repair::plan(&dataset, &root, &request, previous.as_ref()).await?;
         }
         let selected: Vec<Fragment> = if let Some(proof) = &repair_plan {
             dataset
@@ -1029,7 +1115,11 @@ pub async fn run(request: Request) -> Result<()> {
                 .filter(|fragment| proof.fragments.contains(&fragment.id))
                 .cloned()
                 .collect()
-        } else if request.operation.is_some() {
+        } else if request
+            .operation
+            .as_deref()
+            .is_some_and(|op| op != "repair")
+        {
             vec![]
         } else {
             // Plan metadata without Lance's ordered prefix quotas. The first
@@ -1182,7 +1272,7 @@ pub async fn run(request: Request) -> Result<()> {
                 .collect();
             selected
         };
-        if selected.is_empty() {
+        if selected.is_empty() && !repair_plan.as_ref().is_some_and(|p| p.orphans.is_some()) {
             let no_work_plan = json!({"protocolVersion":2,"engine":"12.0.0","status":"no-work","action":request.action,
                 "expectedVersion":request.expected_version,"beforeVersion":request.expected_version,"protectedVersion":request.expected_version,"planId":sha(b"no-work"),
                 "totalWriteBudgetBytes":request.total_write_budget_bytes,"sharedTotalWriteCapBytes":request.total_write_budget_bytes,
@@ -1222,10 +1312,11 @@ pub async fn run(request: Request) -> Result<()> {
             );
         }
         let mut source_bytes = 0u64;
-        for fragment in selected
-            .iter()
-            .filter(|_| !repair_plan.as_ref().is_some_and(|p| !p.merge.is_empty()))
-        {
+        for fragment in selected.iter().filter(|_| {
+            !repair_plan
+                .as_ref()
+                .is_some_and(|p| !p.merge.is_empty() || p.relocation.is_some())
+        }) {
             for file in &fragment.files {
                 source_bytes = source_bytes
                     .checked_add(fs::metadata(root.join("data").join(&file.path))?.len())
@@ -1295,7 +1386,13 @@ pub async fn run(request: Request) -> Result<()> {
             finalization_reserve_bytes: (512 * 1024).min(request.total_write_budget_bytes / 2),
             retired_metadata: previous
                 .as_ref()
-                .map(|old| vec![old.journal.clone(), old.owned_writes.clone()])
+                .map(|old| {
+                    let mut files = vec![old.journal.clone(), old.owned_writes.clone()];
+                    if old.repair.is_some() {
+                        files.push(format!("_gmax-reads-{}.journal", old.receipt_id));
+                    }
+                    files
+                })
                 .unwrap_or_default()
                 .into_iter()
                 .chain(orphan_retirement)
@@ -1432,21 +1529,21 @@ pub async fn run(request: Request) -> Result<()> {
         receipt.reader_tag.clone()
     };
     let proof = with_counts(
-        json!({"protocolVersion":2,"engine":"12.0.0","status":"qualified","action":request.action,
+        json!({"protocolVersion":2,"engine":"12.0.0","status":"qualified","action":request.action,"operation":operation_kind(&receipt),
         "expectedVersion":request.expected_version,"beforeVersion":receipt.before_version,"protectedVersion":protection_version,"planId":receipt.plan_id,
         "totalWriteBudgetBytes":receipt.total_write_budget_bytes,"sharedTotalWriteCapBytes":receipt.total_write_budget_bytes,
         "freeSpaceMarginBytes":request.free_space_margin_bytes,"nativeTotalWriteBudgetEnforced":true,
         "budgetKind":"cumulative-writes","effectiveStoreScheme":"file-object-store"}),
         restored_ledger
             .as_ref()
-            .map(Ledger::counts)
+            .map(|ledger| ledger.counts())
             .unwrap_or_default(),
     )?;
     emit(with_counts(
         json!({"phase":"ready","plan":proof}),
         restored_ledger
             .as_ref()
-            .map(Ledger::counts)
+            .map(|ledger| ledger.counts())
             .unwrap_or_default(),
     )?)?;
     acknowledge(&request)?;
@@ -1473,23 +1570,22 @@ pub async fn run(request: Request) -> Result<()> {
     ];
     let mut finalization_paths = tag_paths.clone();
     finalization_paths.push(object_root(&root)?.child(RECEIPT));
-    let ledger = Arc::new(
-        if request.action == "run" {
+    let ledger = if request.action == "run" {
+        Arc::new(
             Ledger::with_guarded_journal(
                 receipt.total_write_budget_bytes,
                 &root.join(&receipt.journal),
                 root.clone(),
                 request.free_space_margin_bytes,
             )?
-        } else {
-            restored_ledger
-                .take()
-                .context("Restored attempt journal required")?
-        }
-        .with_space_guard(root.clone(), request.free_space_margin_bytes)
-        .with_finalization_reserve(receipt.finalization_reserve_bytes)
-        .with_finalization_paths(finalization_paths),
-    );
+            .with_finalization_reserve(receipt.finalization_reserve_bytes)
+            .with_finalization_paths(finalization_paths),
+        )
+    } else {
+        restored_ledger
+            .take()
+            .context("Restored attempt journal required")?
+    };
     // Persist initial receipt before creating any payload ownership state. A
     // crash in this admission window is recoverable without copying.
     if request.action == "run" {
@@ -1523,12 +1619,21 @@ pub async fn run(request: Request) -> Result<()> {
             None
         }
     };
-    dataset = open_owned(
+    if request.action == "run" && receipt.repair.is_some() {
+        reads = Some(Arc::new(SourceReads::journal(
+            16 * 1024 * 1024,
+            &root.join(format!("_gmax-reads-{}.journal", receipt.receipt_id)),
+            ledger.clone(),
+            false,
+        )?));
+    }
+    dataset = open_metered(
         &root,
         ledger.clone(),
         tag_paths,
         owned.clone(),
         failure_prefix,
+        reads.clone(),
     )
     .await?;
     let operation = async {
@@ -1584,7 +1689,9 @@ pub async fn run(request: Request) -> Result<()> {
         acknowledge(&request)?; verify_owner(&request, &root, false)?;
         if request.action == "run" {
             if receipt.repair.is_some() {
-                crate::repair::execute(&mut dataset, &root, &mut receipt, &request).await?;
+                if receipt.repair.as_ref().is_some_and(|p| p.orphans.is_some()) {
+                    crate::orphans::execute(&dataset, &root, &mut receipt, &request, &ledger).await?;
+                } else { crate::repair::execute(&mut dataset, &root, &mut receipt, &request).await?; }
             } else {
             let selected: Vec<_> = dataset.manifest.fragments.iter().filter(|fragment| receipt.selected_fragment_ids.contains(&fragment.id)).cloned().collect();
             let (rows, digest) = row_digest(&dataset, selected).await?;
@@ -1674,13 +1781,21 @@ pub async fn run(request: Request) -> Result<()> {
         result["phase"] = json!("result"); result["status"] = json!(if request.action == "run" {"committed"} else {"recovered"});
         result["beforeVersion"] = json!(receipt.before_version); result["protectedVersion"] = json!(protection_version); result["afterVersion"] = json!(receipt.after_version);
         result["planId"] = json!(receipt.plan_id); result["receiptId"] = json!(receipt.receipt_id);
-        result["operation"] = json!(if receipt.repair.is_some() { "index-refresh" } else { "cleanup" });
+        if let Some(orphan) = receipt.repair.as_ref().and_then(|p| p.orphans.as_ref()) {
+            result["orphansReclaimed"] = json!(orphan.reclaimed);
+            result["inventoryComplete"] = json!(orphan.complete);
+            result["inventoryVersionsRemaining"] = json!(orphan.versions_remaining);
+        }
+        result["sourceBytesRead"] = json!(reads.as_ref().map(|reads| reads.used()).unwrap_or(0));
+        result["operation"] = json!(operation_kind(&receipt));
         result["rowsVerified"] = json!(receipt.rows_verified); result["aborted"] = json!(receipt.aborted);
         result["acceptedFinalization"] = json!(recovering_finalization || recovered_candidate);
         result["verifiedCopyVersion"] = json!(receipt.verified_copy_version);
         result["recoveryPending"] = json!(cleanup_pending);
         if let Some(reason) = &cleanup_failure { result["recoveryBlockReason"] = json!(reason); }
         result["remainingDeletedRows"] = json!(dataset.count_deleted_rows().await?);
+        let (fragments, rows) = crate::repair::backlog(&dataset).await?;
+        result["remainingIndexFragments"] = json!(fragments); result["remainingIndexRows"] = json!(rows);
         result["freeBytesBefore"] = json!(free_before); result["freeBytesAfter"] = json!(free_bytes(&root)?);
         result["allocatedBytesBefore"] = json!(allocated_before); result["allocatedBytesAfter"] = json!(allocated_bytes(&root)?);
         emit(result)?;
