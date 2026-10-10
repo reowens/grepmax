@@ -1288,10 +1288,11 @@ pub async fn run(request: Request) -> Result<()> {
             )?)?;
             acknowledge(&request)?;
             let remaining = dataset.count_deleted_rows().await?;
+            let (index_fragments, index_rows) = crate::repair::backlog(&dataset).await?;
             emit(
                 json!({"phase":"result","status":"no-work","beforeVersion":request.expected_version,"afterVersion":request.expected_version,
                 "planId":sha(b"no-work"),"receiptId":"","totalBytesWritten":0,"dataBytesWritten":0,"indexBytesWritten":0,"metadataBytesWritten":0,"verificationBytesWritten":0,"rowsVerified":0,
-                "recoveryPending":false,"remainingDeletedRows":remaining,"freeBytesBefore":free_before,"freeBytesAfter":free_bytes(&root)?,"allocatedBytesBefore":allocated_before,"allocatedBytesAfter":allocated_bytes(&root)?}),
+                "recoveryPending":false,"remainingDeletedRows":remaining,"remainingIndexFragments":index_fragments,"remainingIndexRows":index_rows,"freeBytesBefore":free_before,"freeBytesAfter":free_bytes(&root)?,"allocatedBytesBefore":allocated_before,"allocatedBytesAfter":allocated_bytes(&root)?}),
             )?;
             return Ok(());
         }

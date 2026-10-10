@@ -19,8 +19,8 @@ audience: internal
 parent_plan:
 related_plans:
 related_docs:
-current_state: "0.26.84 is released, installed and serving. Milestone 1 preplanning is complete: pinned APIs, bounded index segments, partial row relocation, ownership-proven orphan reclamation, daemon integration and finite acceptance are specified. These new operations remain unimplemented and unqualified; later milestones stay queued in this single plan."
-next_step: "Start milestone 1 work unit 1: implement fragment-selected path/content index refresh in the existing metered native helper, preserve disjoint existing segments, and add mixed-coverage query/interrupt regressions. Then complete row relocation, orphan reclamation and daemon integration before one reviewed release/install. Do not reopen preplanning or unchanged observation loops."
+current_state: "0.26.84 is released, installed and serving. Milestone 1 preplanning is complete: pinned APIs, bounded index segments, partial row relocation, ownership-proven orphan reclamation, daemon integration and finite acceptance are specified. The new index repair, partial relocation, reference inventory, durable read meter and daemon scheduling are implemented on work/gmax-milestone-1; final qualification and delivery are pending; later milestones stay queued in this single plan."
+next_step: "Complete the finite native and packaged-consumer acceptance for milestone 1, resolve failures, then integrate the reviewed change and release/install it. Do not reopen preplanning or unchanged observation loops."
 summary: One execution plan with three ordered deliverables. Historical incidents and untriggered research are not an execution queue.
 ---
 
@@ -95,6 +95,24 @@ keep A open and resolve it before advancing to B; documenting it is not completi
 Close delivered subitems immediately; do not reopen them without a new failure or
 contract change. Report limits without claiming permanently flat disk size or
 universal query latency.
+
+#### Milestone 1 implementation progress — October 10
+
+The isolated implementation now contains selected path/content index segments,
+small compatible segment merging, partial physical-row relocation, resumable
+complete-reference orphan inventory, a durable cumulative source-read journal,
+protocol-3 receipts with protocol-2 recovery, capability-gated daemon admission and
+one-minute follow-up admission after a completed unit. Existing safety budgets and
+independent version retention remain in place.
+
+Root review corrected physical-row verification after deletions, effective coverage
+for retired fragment bits, logical coverage across segments, immutable FTS merge
+inputs and explicit bounded-backlog refusal. All four fault cases passed on macOS
+and Linux in run 38036305806; its evidence verdict incorrectly retained the old
+expected case count and was corrected. That failed run is not shipping acceptance.
+The expanded shipping fixtures and packaged full-schema consumer remain pending.
+Production remains on the installed 0.26.84; milestone A is open until accepted
+artifacts are released, installed and serving. B/C stay queued.
 
 #### Milestone 1 implementation contract — preplanning complete
 

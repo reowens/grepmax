@@ -637,6 +637,14 @@ export async function runBoundedMaintenance(
               expectedVersion,
               action,
             );
+            if (
+              plan.operation !== undefined &&
+              plan.operation !== "cleanup" &&
+              runtime.incrementalRepairProtocol !== 1
+            )
+              throw new Error(
+                "Native repair operation lacks accepted capability",
+              );
             admitCounters(phase);
             state = plan.status === "no-work" ? "result" : "protect";
             acknowledge();

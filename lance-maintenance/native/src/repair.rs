@@ -176,6 +176,7 @@ pub async fn plan(
             name.clone(),
         )
     });
+    let mut bounded_backlog = false;
     for (name, mut indices) in groups {
         let field = dataset.schema().field_path(indices[0].fields[0])?;
         params(&indices[0], &field)?;
@@ -259,10 +260,6 @@ pub async fn plan(
                     orphans: None,
                 }));
             }
-            ensure!(
-                covered.len() < 4096,
-                "Scalar merge cannot make bounded progress"
-            );
         }
         // A single unit builds one logical index. The next unit repairs the
         // other field, avoiding duplicate full-row scans within a tight cap.
@@ -304,16 +301,17 @@ pub async fn plan(
             }
         }
         if !fragments.is_empty() {
-            ensure!(
-                dataset
-                    .load_indices()
-                    .await?
-                    .iter()
-                    .filter(|i| i.name == name)
-                    .count()
-                    < SEGMENTS,
-                "Logical index segment bound reached"
-            );
+            if dataset
+                .load_indices()
+                .await?
+                .iter()
+                .filter(|i| i.name == name)
+                .count()
+                >= SEGMENTS
+            {
+                bounded_backlog = true;
+                continue;
+            }
             return Ok(Some(Proof {
                 fragments,
                 name,
@@ -325,11 +323,23 @@ pub async fn plan(
             }));
         }
     }
-    if operation == "repair-indexes" {
-        Ok(None)
-    } else {
-        crate::relocation::plan(dataset, root, request).await
+    if operation != "repair-indexes" {
+        if let Some(proof) = crate::relocation::plan(dataset, root, request).await? {
+            return Ok(Some(proof));
+        }
     }
+    ensure!(
+        !bounded_backlog,
+        "Logical index segment bound reached; uncovered coverage remains"
+    );
+    if operation == "repair-indexes" {
+        let (fragments, _) = backlog(dataset).await?;
+        ensure!(
+            fragments == 0,
+            "Uncovered fragments exceed bounded index input; partial relocation required"
+        );
+    }
+    Ok(None)
 }
 pub async fn execute(
     dataset: &mut Dataset,

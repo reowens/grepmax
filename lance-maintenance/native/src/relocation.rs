@@ -78,6 +78,21 @@ pub async fn plan(
             .all(|i| i.base_id.is_none() && i.fragment_bitmap.is_some()),
         "Unknown/external relocation index coverage"
     );
+    // Coverage belongs to a logical index, not to each physical segment.
+    // A fragment covered by any segment must not be moved again merely because
+    // another segment covers a different cohort.
+    let mut coverage: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
+    for index in &all {
+        if index.fields.len() == 1 {
+            let field = dataset.schema().field_path(index.fields[0])?;
+            if field == "path" || field == "content" {
+                coverage
+                    .entry(index.name.clone())
+                    .or_default()
+                    .extend(index.fragment_bitmap.as_ref().unwrap().iter());
+            }
+        }
+    }
     let mut candidates = vec![];
     for f in dataset.manifest.fragments.iter() {
         if request
@@ -98,16 +113,9 @@ pub async fn plan(
                     .context("Source overflow")?,
             )
         })?;
-        let uncovered = all.iter().any(|i| {
-            i.fields.len() == 1
-                && dataset
-                    .schema()
-                    .field_path(i.fields[0])
-                    .is_ok_and(|field| field == "path" || field == "content")
-                && i.fragment_bitmap
-                    .as_ref()
-                    .is_some_and(|b| !b.contains(f.id as u32))
-        });
+        let uncovered = coverage
+            .values()
+            .any(|covered| !covered.contains(&(f.id as u32)));
         // Any deletion is eligible here. It also handles uncovered oversized
         // fragments that cannot train a bounded scalar segment directly.
         if deleted > 0

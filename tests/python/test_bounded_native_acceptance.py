@@ -188,6 +188,13 @@ class BoundedNativeAcceptance(unittest.TestCase):
                 self.assertEqual(current.to_table(full_text_query={'query': f'catchup{n}', 'columns': ['content']})['id'].to_pylist(), [9000 + n])
                 self.assertEqual(current.to_table(filter=f"path = '/merge/{n}.ts'")['id'].to_pylist(), [9000 + n])
             self.assertTrue(merged, 'small segments must merge rather than accumulate indefinitely')
+            # Physical segments cover different cohorts of the same logical
+            # index. Their union must not manufacture relocation backlog.
+            session = NativeSession(self.binary, root, qualification={'operation': 'repair-relocate'})
+            try:
+                self.assertEqual(session.reach('result')['status'], 'no-work')
+            finally:
+                session.close()
 
     def test_partial_relocation_preserves_values_and_protected_reader(self):
         import lance
