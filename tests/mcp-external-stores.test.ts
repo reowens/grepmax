@@ -98,7 +98,13 @@ it.each(["legacy", "modern"])(
             HOME: dir,
             NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --require ${JSON.stringify(listenGuard)}`,
             GMAX_HOME: primary,
-            GMAX_NO_AUTOSTART: "1",
+            // MCP itself must remain pipe-only with startup enabled. The
+            // quarantine switch also refuses native reads on macOS, so it
+            // cannot stand in for the listener guard in this routing fixture.
+            GMAX_NO_AUTOSTART: "0",
+            // This tests routing, not native footprint probe availability in
+            // spawned test processes. Keep actual critical-pressure refusal.
+            GMAX_HOST_GUARD_POLICY: "critical-only",
             GMAX_NO_STALE_HINT: "1",
           },
           stdio: ["pipe", "pipe", "pipe"],
