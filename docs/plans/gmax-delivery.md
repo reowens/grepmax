@@ -19,8 +19,8 @@ audience: internal
 parent_plan:
 related_plans:
 related_docs:
-current_state: "0.26.84 is released, installed and serving. Milestone 1 preplanning is complete: pinned APIs, bounded index segments, partial row relocation, ownership-proven orphan reclamation, daemon integration and finite acceptance are specified. The new index repair, partial relocation, reference inventory, durable read meter and daemon scheduling are implemented on work/gmax-milestone-1; final qualification and delivery are pending; later milestones stay queued in this single plan."
-next_step: "Complete the finite native and packaged-consumer acceptance for milestone 1, resolve failures, then integrate the reviewed change and release/install it. Do not reopen preplanning or unchanged observation loops."
+current_state: "0.26.84 is released, installed and serving. Milestone 1 preplanning is complete: pinned APIs, bounded index segments, partial row relocation, ownership-proven orphan reclamation, daemon integration and finite acceptance are specified. The new index repair, partial relocation, reference inventory, durable read meter and daemon scheduling are implemented on work/gmax-milestone-1; native and packaged-consumer acceptance passed on macOS/Linux; release and installation are pending; later milestones stay queued in this single plan."
+next_step: "Integrate the reviewed and accepted milestone 1 change, release it, install both existing Node runtimes and plugin scopes, and hand over the serving daemon. Close A only after installed verification. Do not reopen preplanning or unchanged observation loops."
 summary: One execution plan with three ordered deliverables. Historical incidents and untriggered research are not an execution queue.
 ---
 
@@ -107,12 +107,19 @@ independent version retention remain in place.
 
 Root review corrected physical-row verification after deletions, effective coverage
 for retired fragment bits, logical coverage across segments, immutable FTS merge
-inputs and explicit bounded-backlog refusal. All four fault cases passed on macOS
-and Linux in run 38036305806; its evidence verdict incorrectly retained the old
-expected case count and was corrected. That failed run is not shipping acceptance.
-The expanded shipping fixtures and packaged full-schema consumer remain pending.
-Production remains on the installed 0.26.84; milestone A is open until accepted
-artifacts are released, installed and serving. B/C stay queued.
+inputs and explicit bounded-backlog refusal. Optimized native run 38036901011 passed
+21 shipping and four fault cases on each of macOS/Linux. Packaged-consumer run
+38037232882 passed on both platforms with concurrent Node protected readers and
+independent Python verification of all 29 production-schema fields. Source CI
+38037047911 passed; the final status/capability regressions, typechecks and formatting
+also passed locally. The full local source suite passed 2,302 tests before those two
+additional status regressions (26 lifecycle cases now pass). Earlier failed runs
+remain failed historical evidence, not qualification.
+
+Release/install is the remaining milestone A delivery step. Production remains on
+installed 0.26.84 until accepted registry installation and normal daemon handover;
+B/C stay queued. No production manual pruning or repeated timing/storage observer
+has been run for this change.
 
 #### Milestone 1 implementation contract — preplanning complete
 

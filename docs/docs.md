@@ -9,7 +9,7 @@ Historical audits, incident reports and agent proposals are reference records, n
 
 | Order | Deliverable | State |
 | --- | --- | --- |
-| A | Complete bounded storage and path/content query repair | Implementation and root review underway; finite acceptance and release/install pending |
+| A | Complete bounded storage and path/content query repair | Implemented and reviewed; native/package acceptance passed on both platforms; release/install pending |
 | B | Reduce session resource overhead | Selected after A |
 | C | Complete one document-search consumer rollout | Selected after B |
 
