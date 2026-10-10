@@ -3,14 +3,16 @@
 ## Current execution — October 10, 2026
 
 The [Gmax Delivery Plan](plans/gmax-delivery.md) is the sole execution plan.
-0.26.85 is released, installed in both runtimes/plugin scopes, and serving; milestone A is complete.
+Milestone A is complete in published 0.26.85. The accepted local 0.26.86 MCP
+startup package is now installed in both runtimes/plugin scopes and serving; npm
+publication awaits fresh authentication.
 Four former open plans are archived as superseded/deferred, with explicit transfers.
 Historical audits, incident reports and agent proposals are reference records, not queues.
 
 | Order | Deliverable | State |
 | --- | --- | --- |
 | A | Complete bounded storage and path/content query repair | Complete: local checks, publication, both installations/plugin scopes, daemon handover and installed repair verification |
-| B | Reduce session resource overhead | Next; isolated lazy-startup patch is paused and unintegrated |
+| B | Reduce session resource overhead | Implemented, locally accepted and installed in both roots/plugin scopes; npm publication needs fresh MFA |
 | C | Complete one document-search consumer rollout | Selected after B |
 
 The plan defines implementation, root review, local checks, release/install and closeout
@@ -33,7 +35,6 @@ records and Git history; archiving is not a claim that every proposal shipped.
 | Doc | Status |
 |-----|--------|
 | [Future Sessions](future-sessions.md) | Active |
-| [Gmax Delivery Plan](plans/gmax-delivery.md) | Active |
 
 ## Reference
 

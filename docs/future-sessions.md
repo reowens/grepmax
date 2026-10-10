@@ -12,18 +12,26 @@ summary: Short orientation to the sole execution plan; historical follow-ups are
 ## Current focus
 
 Read [Gmax Delivery Plan](plans/gmax-delivery.md), the sole execution plan.
-0.26.85 is published, installed in both existing Node runtimes and both plugin
-scopes, and serving from a ready/active daemon. Registry integrity/source and all
-313 installed package files plus 15 plugin files match. Settings, sessions and
-unrelated Depot edits were preserved. Milestone A is complete.
+Milestone A is complete in published 0.26.85. The accepted local 0.26.86 MCP
+startup package is now installed in both existing Node runtimes and both plugin
+scopes, with a ready/active daemon. All 314 package files and 15 plugin files match
+the accepted local tarball. Settings and unrelated Depot edits were preserved.
+Existing clients adopt the startup change on reconnect; no sessions were forcibly
+killed. npm publication of 0.26.86 awaits fresh authentication/MFA.
 
 1. **A, complete:** bounded index segments/merging, partial row relocation,
    reference-proven orphan reclamation, durable read accounting and daemon
    admission. Local full release-source tests and packed-consumer checks passed;
    installed temporary-store acceptance preserved all 29 fields. Do not reopen
    preplanning or repeat unchanged cleanup/timing observations.
-2. **B, next:** review and complete the paused MCP lazy-startup patch in
-   `/private/tmp/gmax-session-overhead`. It is not integrated or released.
+2. **B, delivering:** 0.26.86 lazy MCP startup is reviewed, integrated and locally
+   accepted (2,311 source tests; three-session RSS down 32.7%). Both installations,
+   plugin scopes, daemon and installed startup checks passed.
+   npm publication is deferred: the user cannot authenticate now and prohibited
+   preview use. Do not retry authentication or use the preview without new steering.
+   Do not claim
+   a published release or close B until it succeeds. Evidence and installation
+   scripts are in `/private/tmp/gmax-mcp-startup-evidence/`.
 3. **C, queued:** finish one explicitly selected document-search consumer rollout.
 
 ## Work discipline

@@ -1,8 +1,8 @@
 ---
 type: plan
-status: active
+status: awaiting
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-10T09:33:04Z
+updated: 2026-10-10T10:01:00Z
 surfaces:
   - store
   - daemon
@@ -19,8 +19,8 @@ audience: internal
 parent_plan:
 related_plans:
 related_docs:
-current_state: "Milestone A is delivered in 0.26.85: registry integrity/source, both Node installations, both plugin scopes, active serving daemon and installed 29-field repair checks are verified. Full release-source tests ran locally. GitHub Actions is disabled and all six workflows are preserved outside its active directory. B has an isolated, unintegrated lazy-startup patch; its agents are stopped. C stays queued."
-next_step: "Milestone B is the next selected work: review and finish the paused MCP lazy-startup change, using local checks only. Do not start new CI, restore GitHub workflows, repeat unchanged storage observations or reopen delivered A without a concrete new failure."
+current_state: "Milestone A is delivered in 0.26.85: registry integrity/source, both Node installations, both plugin scopes, active serving daemon and installed 29-field repair checks are verified. Full release-source tests ran locally. GitHub Actions is disabled and all six workflows are preserved outside its active directory. B is implemented and integrated at bcd5eb9 as 0.26.86; local acceptance passed. Both runtimes/plugin scopes and the ready active daemon are verified on the accepted local package; npm publication requires fresh MFA. C stays queued."
+next_step: "npm publication is deferred because the user cannot authenticate now. Do not use the preview or retry authentication without new steering; later publish the accepted 0.26.86 and verify registry identity. B stays open until publication finishes; C remains queued. Do not start new CI, restore GitHub workflows, repeat unchanged storage observations or reopen delivered A without a concrete new failure."
 summary: One execution plan with three ordered deliverables. Historical incidents and untriggered research are not an execution queue.
 ---
 
@@ -55,8 +55,9 @@ search/daemon module extraction already shipped; do not recreate them.
 
 ## Ordered deliverables
 
-Milestone A is complete. B is the next selected deliverable; its isolated partial
-implementation remains unintegrated and agents are stopped. C stays queued.
+Milestone A is complete. B is implemented and integrated; local acceptance passed.
+Both installations and their MCP startup checks passed; npm publication awaits fresh
+authentication. C stays queued.
 Root owns review, integration and delivery. The user's current rule is zero GitHub
 CI. Run checks in the repository; any future Depot execution must be independent
 of GitHub Actions. Do not create additional plans or start agents without renewed
@@ -141,8 +142,9 @@ deleted. The release hook no longer watches CI or polls the registry. The full l
 release suite is explicit `release:check`, and version staging names only the three
 version files. Twelve focused hook/quarantine checks passed. There is no automatic
 GitHub publication job. Publication and installation are explicit local operations;
-future Depot work must not use GitHub Actions. The abandoned CI-reuse patch and
-partial MCP startup patch remain isolated and unintegrated.
+future Depot work must not use GitHub Actions. The abandoned CI-reuse patch remains
+isolated and unintegrated. The MCP startup
+patch was subsequently reviewed and integrated under milestone B.
 
 Private delivery proof is in `/private/tmp/gmax-milestone-1-evidence/`:
 `local-release-checks.json`, `artifact-proof.json`, `final-proof.json` and
@@ -242,8 +244,8 @@ confirm deferred remapping and source/buffer controls. The Cargo source provenan
 this planning commit. The shared main checkout contains two unrelated Depot edits;
 preserve them byte for byte and keep them outside commits and package staging.
 Before integration, compare against the then-current main and reconcile only actual
-conflicts. The version hook stages all changes, so release only from a clean,
-explicitly reviewed checkout. Do not create a PR. The user superseded the repeated-release-CI requirement on October 10: routine
+conflicts. The version hook now stages only the three version files. Release
+from an explicitly reviewed checkout without including unrelated edits. Do not create a PR. The user superseded the repeated-release-CI requirement on October 10: routine
 pushes must return promptly, qualification runs explicitly, and publication may
 reuse accepted native artifacts for the same source and acceptance contract. Keep
 artifact identity and packaging validation; do not rebuild unchanged qualified
@@ -262,7 +264,8 @@ binaries merely because a release tag was pushed.
 - Qualification/package: extend the existing native shipping/fault acceptance,
   Node-created full-schema consumer fixture and lifecycle/receipt tests. Update
   source digests/capability manifests through the existing packaging scripts.
-  Preserve the existing Linux and macOS workflow split and duplicate-CI trimming.
+  The historical Linux and macOS workflows are preserved outside the active
+  GitHub directory; execute checks locally under the zero-GitHub-CI rule.
 
 **Finite acceptance for the new change:**
 
@@ -305,6 +308,43 @@ cache and queue budgets explicit; do not add a permanently resident extra worker
 incremental resident state and preserved search/cancellation/lease behavior; root
 review, local checks, release and installation are complete. Host kernel drift that
 is not attributed to Gmax is a recorded limitation, not an endless Gmax task.
+
+#### October 10: MCP startup implementation and acceptance
+
+0.26.86 source `bcd5eb9` contains the reviewed lazy-startup change. The ordinary
+`gmax mcp` entry avoids loading the full CLI command registry. Local search/cache,
+worker, watcher registry and parser dependencies load only when required; concurrent
+parser requests share one initialization. Disabled summaries stay disabled and no
+local model starts. Existing daemon routing and per-session watch leases remain.
+Explicit global CLI options retain the compatible registry path.
+
+The finite three-session comparison on Node 22 measured aggregate RSS decreasing
+from 390.9 MiB to 263.1 MiB (32.7%). The candidate loaded zero database/parser/native
+modules during discovery and daemon-routed searches. This is temporary-fixture
+process residency, not a guarantee about total physical host memory. New sessions
+use the change; existing sessions adopt it on reconnect and are not forcibly killed.
+
+Root review and all local checks passed: 2,311 tests in 227 source files, 41 script
+cases, 23 Rust cases, all 64 Python cases including four separately exercised MLX
+HTTP checks without model loads, both typechecks, formatting and registry dependency
+audits. The packed consumer passed watcher, pruning, protected-reader and repair
+contracts. Native source/binaries are unchanged and qualified artifacts were reused.
+Regression cases preserve search, progress, cancellation, distinct renewable leases,
+local fallback and clean session teardown. No GitHub CI ran.
+
+Main and `v0.26.86` are pushed. npm rejected publication with EOTP and requires
+fresh authentication; the registry release is not complete. The user cannot
+authenticate now and directed no preview use, so the pending publisher was stopped.
+Do not retry authentication or use the preview without renewed steering. The audited local
+0.26.86 tarball is installed in both existing Node roots. All 314 package files
+and 15 plugin files match, both plugin scopes are updated, and the daemon is
+ready/active on 0.26.86. Both installed entries passed the three-session startup
+checks with zero heavy modules. Settings and unrelated Depot files are unchanged.
+Existing clients reconnect to adopt the startup change. This is a locally accepted
+installation, not a published npm release. B remains open for npm authentication,
+publication and registry identity verification.
+Private evidence is `/private/tmp/gmax-mcp-startup-evidence/`, including
+`qualification-summary.json`, the paired session reports and accepted tarball.
 
 ### C. Complete one document-search consumer rollout
 
@@ -365,6 +405,8 @@ parallel omnibus plan.
 
 ## Version History
 
+- **2026-10-10T10:01:00Z** Status: in-session → awaiting — B implemented and locally installed/verified in 0.26.86; npm publication requires fresh authentication/MFA. C remains queued. No GitHub CI.
+- **2026-10-10T09:35:23Z** Started (active → in-session).
 - **2026-10-10T09:33:04Z** Status: in-session → active — Milestone A delivered in 0.26.85: both runtimes/plugin scopes, ready active daemon and installed repair verified. Zero GitHub CI: workflows moved intact, Actions disabled. B is next; agents and isolated patches remain stopped.
 - **2026-10-10T08:19:42Z** Started (active → in-session).
 - **2026-10-10T06:58:33Z** Status: in-session → active — Milestone 1 preplanning complete; implementation order, pinned APIs, bounds, recovery, acceptance and isolated-checkout delivery fixed. Ready for work unit 1; no implementation yet.
