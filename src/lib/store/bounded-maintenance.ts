@@ -754,22 +754,27 @@ export async function runBoundedMaintenance(
                 plan.status === "no-work"
                   ? action === "recover"
                     ? "no native recovery is pending"
-                    : phase.remainingDeletedRows === 0
-                      ? "no deleted rows remain"
-                      : "deleted rows remain; no batch selected within source limits and index constraints"
+                    : typeof phase.remainingIndexFragments === "number" &&
+                        phase.remainingIndexFragments > 0
+                      ? "search index coverage remains; no eligible repair unit selected"
+                      : phase.remainingDeletedRows === 0
+                        ? "no deleted rows remain"
+                        : "deleted rows remain; no batch selected within source limits and index constraints"
                   : phase.aborted === true
                     ? phase.recoveryPending === true
                       ? "copy abandoned; owned-file cleanup remains pending and deleted rows remain"
                       : "unfinished copy discarded; deleted rows remain in the current table"
                     : action === "recover"
-                      ? "previously verified copy finalized under its original write ledger"
+                      ? "interrupted maintenance finalized under its original write ledger"
                       : phase.operation === "index-refresh"
                         ? "selected search index coverage repaired"
                         : phase.operation === "row-relocation"
                           ? "selected live rows moved; old fragment reclamation remains subject to retention"
                           : phase.operation === "orphan-reclamation"
                             ? phase.inventoryComplete
-                              ? "reference inventory completed; proven orphan objects reclaimed"
+                              ? phase.orphansReclaimed === 0
+                                ? "reference inventory completed; no eligible orphan objects"
+                                : "reference inventory completed; proven orphan objects reclaimed"
                               : "reference inventory advanced; deletion awaits complete proof"
                             : "deleted rows reclaimed within shared native write cap",
               rewritten:

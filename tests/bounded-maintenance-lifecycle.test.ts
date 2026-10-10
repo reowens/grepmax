@@ -150,6 +150,52 @@ describe("metered native child lifecycle", () => {
     });
   });
 
+  it("keeps uncovered search coverage explicit when no deletion remains", async () => {
+    const f = fixture(
+      {
+        status: "no-work",
+        afterVersion: 7,
+        rowsVerified: 0,
+        remainingDeletedRows: 0,
+        remainingIndexFragments: 9,
+        remainingIndexRows: 42,
+        totalBytesWritten: 0,
+        dataBytesWritten: 0,
+        indexBytesWritten: 0,
+        metadataBytesWritten: 0,
+      },
+      { status: "no-work" },
+    );
+    const result = await runBoundedMaintenance(
+      "/fixture",
+      f.lease,
+      7,
+      f.runtime,
+      { open: vi.fn(), drain: vi.fn(async () => {}) },
+    );
+    expect(result).toMatchObject({
+      status: "skipped",
+      remainingIndexFragments: 9,
+      remainingIndexRows: 42,
+      reason: "search index coverage remains; no eligible repair unit selected",
+    });
+  });
+
+  it("refuses an incremental operation without accepted runtime capability", async () => {
+    const f = fixture(
+      { operation: "index-refresh" },
+      { operation: "index-refresh" },
+    );
+    const open = vi.fn();
+    await expect(
+      runBoundedMaintenance("/fixture", f.lease, 7, f.runtime, {
+        open,
+        drain: vi.fn(async () => {}),
+      }),
+    ).rejects.toThrow(/phase admission refused/);
+    expect(open).not.toHaveBeenCalled();
+  });
+
   it("accepts a verified terminal receipt when the exited helper can no longer be measured", async () => {
     const f = fixture(
       {
