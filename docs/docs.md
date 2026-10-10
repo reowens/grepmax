@@ -1,20 +1,21 @@
 # Docs
 
-## Current execution — October 9, 2026
+## Current execution — October 10, 2026
 
 The [Gmax Delivery Plan](plans/gmax-delivery.md) is the sole execution plan.
-0.26.84 is released, installed and serving; publication and installation are complete.
+0.26.85 is released, installed in both runtimes/plugin scopes, and serving; milestone A is complete.
 Four former open plans are archived as superseded/deferred, with explicit transfers.
 Historical audits, incident reports and agent proposals are reference records, not queues.
 
 | Order | Deliverable | State |
 | --- | --- | --- |
-| A | Complete bounded storage and path/content query repair | Implemented and reviewed; native/package acceptance passed on both platforms; release/install pending |
-| B | Reduce session resource overhead | Selected after A |
+| A | Complete bounded storage and path/content query repair | Complete: local checks, publication, both installations/plugin scopes, daemon handover and installed repair verification |
+| B | Reduce session resource overhead | Next; isolated lazy-startup patch is paused and unintegrated |
 | C | Complete one document-search consumer rollout | Selected after B |
 
-The plan defines implementation, root review, required CI, release/install and closeout
-for each deliverable. Repeated unchanged cleanup/timing observations are cancelled.
+The plan defines implementation, root review, local checks, release/install and closeout
+for each deliverable. GitHub Actions is disabled; all six workflow files are preserved
+outside its active directory. No GitHub CI or CI waiting is authorized. Repeated unchanged cleanup/timing observations are cancelled.
 Research, optional polish, watcher extraction and embedding migration are outside the
 execution queue. Depot account/provider integration is handed off to platform.
 

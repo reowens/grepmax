@@ -2,7 +2,7 @@
 type: plan
 status: active
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-10T06:58:33Z
+updated: 2026-10-10T09:33:04Z
 surfaces:
   - store
   - daemon
@@ -19,8 +19,8 @@ audience: internal
 parent_plan:
 related_plans:
 related_docs:
-current_state: "0.26.84 is released, installed and serving. Milestone 1 preplanning is complete: pinned APIs, bounded index segments, partial row relocation, ownership-proven orphan reclamation, daemon integration and finite acceptance are specified. The new index repair, partial relocation, reference inventory, durable read meter and daemon scheduling are implemented on work/gmax-milestone-1; native and packaged-consumer acceptance passed on macOS/Linux; release and installation are pending; later milestones stay queued in this single plan."
-next_step: "Integrate the reviewed and accepted milestone 1 change, release it, install both existing Node runtimes and plugin scopes, and hand over the serving daemon. Close A only after installed verification. Do not reopen preplanning or unchanged observation loops."
+current_state: "Milestone A is delivered in 0.26.85: registry integrity/source, both Node installations, both plugin scopes, active serving daemon and installed 29-field repair checks are verified. Full release-source tests ran locally. GitHub Actions is disabled and all six workflows are preserved outside its active directory. B has an isolated, unintegrated lazy-startup patch; its agents are stopped. C stays queued."
+next_step: "Milestone B is the next selected work: review and finish the paused MCP lazy-startup change, using local checks only. Do not start new CI, restore GitHub workflows, repeat unchanged storage observations or reopen delivered A without a concrete new failure."
 summary: One execution plan with three ordered deliverables. Historical incidents and untriggered research are not an execution queue.
 ---
 
@@ -55,9 +55,12 @@ search/daemon module extraction already shipped; do not recreate them.
 
 ## Ordered deliverables
 
-Only milestone A is current. B and C are the selected later sequence, not additional
-active plans. Root owns implementation, post-implementation review and delivery.
-Do not create child plans or spin agents without a new explicit delegation request.
+Milestone A is complete. B is the next selected deliverable; its isolated partial
+implementation remains unintegrated and agents are stopped. C stays queued.
+Root owns review, integration and delivery. The user's current rule is zero GitHub
+CI. Run checks in the repository; any future Depot execution must be independent
+of GitHub Actions. Do not create additional plans or start agents without renewed
+steering after the stop instruction.
 
 ### A. Complete storage and query repair
 
@@ -83,7 +86,7 @@ small cleanup must not stand in for handling the known remaining eligibility cas
    for changed contracts. Verify mixed indexed/unindexed fragments, edit/delete
    transitions, indexed-query equivalence, preserved current rows, protected
    readers, cumulative writes and interruption recovery in temporary stores.
-4. Run the required source/native/package gates for the final change, then complete
+4. Run the source/native/package checks locally for the final change, then complete
    one release/install/handover sequence using the accepted artifact. Preserve
    settings and sessions. Verify installed version and the changed operation;
    another unchanged timed production observation is not a release prerequisite.
@@ -98,7 +101,7 @@ universal query latency.
 
 #### Milestone 1 implementation progress — October 10
 
-The isolated implementation now contains selected path/content index segments,
+Delivered 0.26.85 contains selected path/content index segments,
 small compatible segment merging, partial physical-row relocation, resumable
 complete-reference orphan inventory, a durable cumulative source-read journal,
 protocol-3 receipts with protocol-2 recovery, capability-gated daemon admission and
@@ -110,21 +113,47 @@ for retired fragment bits, logical coverage across segments, immutable FTS merge
 inputs and explicit bounded-backlog refusal. Optimized native run 38036901011 passed
 21 shipping and four fault cases on each of macOS/Linux. Packaged-consumer run
 38037232882 passed on both platforms with concurrent Node protected readers and
-independent Python verification of all 29 production-schema fields. Source CI
-38037047911 passed; the final status/capability regressions, typechecks and formatting
-also passed locally. The full local source suite passed 2,302 tests before those two
-additional status regressions (26 lifecycle cases now pass). Earlier failed runs
-remain failed historical evidence, not qualification.
+independent Python verification of all 29 production-schema fields. Historical source CI passed before the user stopped GitHub CI; earlier failed runs
+remain failed evidence. Final release-source checks then ran locally: 2,304 source
+tests, 41 script tests, 23 Rust cases (plus a nested subprocess check), typechecks,
+formatting and dependency audits passed. Python discovery passed 60 of 64 tests;
+the four opt-in MLX HTTP cases then passed in the locked environment without model
+loads. The 21 native shipping cases ran against the accepted binary in a temporary
+store, including the task-owned small-volume cases. The packed npm consumer passed
+watcher, prune, concurrent reader and new repair checks.
 
-Release/install is the remaining milestone A delivery step. Production remains on
-installed 0.26.84 until accepted registry installation and normal daemon handover;
-B/C stay queued. No production manual pruning or repeated timing/storage observer
-has been run for this change.
+0.26.85 is published at source `6d1ff59`. A local publish attempt refused an
+overwrite because the existing release had completed; the registry source and
+SHA-512 integrity were verified before installation. Both existing Node roots
+match all 313 registry package files, both plugin scopes match all 15 plugin files,
+and the serving daemon is ready/active on 0.26.85 with five watch leases. Settings
+and the two unrelated Depot edits remain unchanged. The installed temporary-store
+check preserved all 29 fields and completed orphan reclamation and row relocation
+within the existing read/write caps. No production manual prune/rebuild or unchanged
+storage/timing observation was performed. Milestone A is closed.
+
+#### October 10: zero GitHub CI
+
+The user explicitly prohibited all GitHub CI and directed that workflows be moved
+and preserved. GitHub Actions is disabled for this repository. All six workflow
+files were moved byte for byte to `automation/legacy-github-workflows/`; none was
+deleted. The release hook no longer watches CI or polls the registry. The full local
+release suite is explicit `release:check`, and version staging names only the three
+version files. Twelve focused hook/quarantine checks passed. There is no automatic
+GitHub publication job. Publication and installation are explicit local operations;
+future Depot work must not use GitHub Actions. The abandoned CI-reuse patch and
+partial MCP startup patch remain isolated and unintegrated.
+
+Private delivery proof is in `/private/tmp/gmax-milestone-1-evidence/`:
+`local-release-checks.json`, `artifact-proof.json`, `final-proof.json` and
+`installed-smoke.json`. It establishes the delivered selected cases, not permanent
+flat disk size or universal query latency. B is next; C remains queued.
 
 #### Milestone 1 implementation contract — preplanning complete
 
 Milestone 1 is A above. This section fixes its scope and sequence; it does not create
-another plan or claim that the new operations have passed qualification. The pinned
+another plan. The implementation and qualification above are now delivered;
+this retained contract records the design that guided them. The pinned
 implementation is Lance 12.0.0 / LanceDB 0.39.0, as recorded in the maintenance and
 package locks. No SDK upgrade is required by this plan.
 
@@ -214,8 +243,11 @@ this planning commit. The shared main checkout contains two unrelated Depot edit
 preserve them byte for byte and keep them outside commits and package staging.
 Before integration, compare against the then-current main and reconcile only actual
 conflicts. The version hook stages all changes, so release only from a clean,
-explicitly reviewed checkout. Do not create a PR. Required release-native rebuilds
-remain required; skip only duplicate discretionary checks, not shipping gates.
+explicitly reviewed checkout. Do not create a PR. The user superseded the repeated-release-CI requirement on October 10: routine
+pushes must return promptly, qualification runs explicitly, and publication may
+reuse accepted native artifacts for the same source and acceptance contract. Keep
+artifact identity and packaging validation; do not rebuild unchanged qualified
+binaries merely because a release tag was pushed.
 
 **Change map:**
 
@@ -245,17 +277,18 @@ remain required; skip only duplicate discretionary checks, not shipping gates.
 
 Use new temporary fixtures and existing relevant regressions, not another unchanged
 15-minute observer or a new multi-hour storage study. Root performs review after
-implementation. Required CI runs against the final source; reruns are justified by
-a source change or failed gate. No PR, new agent spin, live manual recovery or
-publication occurs during preplanning. Do not reserve a release version before the
+implementation. Source checks and native qualification are explicit operations, not automatic
+work that blocks every push. Reuse accepted evidence for unchanged contracts;
+reruns are justified by a relevant source change or failed gate. No PR, new agent spin, live manual recovery or
+publication occurs during preplanning. This historical preplanning phase is closed. Do not reserve a release version before the
 final source is ready; account for concurrent sessions before tagging.
 
 **Preplanning exit:** scope, chosen APIs, bounds, change locations, failure behavior,
 acceptance and delivery order are recorded. The remaining uncertainty is whether
 this proposed API composition passes its new implementation regressions; that is
 implementation work, not a reason to repeat planning or historic observations.
-Milestone 1 stays open until its selected cases and delivery are complete. B/C remain
-queued inside this same plan.
+Milestone 1 is complete as recorded above. B/C remain
+inside this same plan.
 
 ### B. Reduce session resource overhead
 
@@ -270,7 +303,7 @@ cache and queue budgets explicit; do not add a permanently resident extra worker
 
 **Completion:** a defined multi-session temporary scenario demonstrates lower
 incremental resident state and preserved search/cancellation/lease behavior; root
-review, required CI, release and installation are complete. Host kernel drift that
+review, local checks, release and installation are complete. Host kernel drift that
 is not attributed to Gmax is a recorded limitation, not an endless Gmax task.
 
 ### C. Complete one document-search consumer rollout
@@ -320,7 +353,8 @@ parallel omnibus plan.
   work. Source-only progress is not delivery. Record blocked portions explicitly.
 - Run checks once for a final change. Repeat only for a new change, failure or
   unresolved concern. Unchanged automatic-cleanup/timing observations are cancelled.
-- Fix a new CI failure before adding unrelated scope. Documentation-only replanning
+- Fix a shipping failure before publication; CI does not monopolize execution or
+  block independent implementation work authorized by the user. Documentation-only replanning
   does not require native builds, runtime probes, storage operations or model loads.
 - Preserve critical-only host policy, the small GPU model, maximum two workers,
   client settings and live sessions. No manual production prune/rebuild or full-table
@@ -331,6 +365,8 @@ parallel omnibus plan.
 
 ## Version History
 
+- **2026-10-10T09:33:04Z** Status: in-session → active — Milestone A delivered in 0.26.85: both runtimes/plugin scopes, ready active daemon and installed repair verified. Zero GitHub CI: workflows moved intact, Actions disabled. B is next; agents and isolated patches remain stopped.
+- **2026-10-10T08:19:42Z** Started (active → in-session).
 - **2026-10-10T06:58:33Z** Status: in-session → active — Milestone 1 preplanning complete; implementation order, pinned APIs, bounds, recovery, acceptance and isolated-checkout delivery fixed. Ready for work unit 1; no implementation yet.
 - **2026-10-10T06:50:16Z** Started (active → in-session).
 - 2026-10-09: Recentered the repository at the user's direction. Consolidated four
