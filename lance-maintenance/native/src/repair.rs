@@ -211,6 +211,18 @@ pub async fn plan(
                     .as_ref()
                     .is_some_and(|b| b.iter().all(|id| current.contains(&id)))
                 {
+                    // The pinned FTS merger finalizes legacy partition layouts
+                    // in-place. Such inputs are not immutable bounded merge
+                    // sources; keep them intact and build a new segment instead.
+                    if field == "content"
+                        && !root
+                            .join("_indices")
+                            .join(index.uuid.to_string())
+                            .join("metadata.lance")
+                            .is_file()
+                    {
+                        continue;
+                    }
                     let size = bytes(root, &index)?;
                     if size <= MERGE_SOURCE {
                         eligible.push((size, index));

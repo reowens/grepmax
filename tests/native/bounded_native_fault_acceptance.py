@@ -285,7 +285,7 @@ if __name__ == '__main__':
     result = unittest.TextTestRunner(verbosity=2, resultclass=TrackingResult).run(suite)
     unchanged = (binary_sha256 is not None and binary_digest(binary) == binary_sha256
                  and source_digest() == source)
-    passed = result.wasSuccessful() and result.testsRun == 2 and not result.skipped and unchanged
+    passed = result.wasSuccessful() and result.testsRun == 4 and not result.skipped and unchanged
     evidence = {'schemaVersion': 1,
                 'verdict': 'PASS_BOUNDED_NATIVE_FAULT_ACCEPTANCE' if passed else 'FAIL_BOUNDED_NATIVE_FAULT_ACCEPTANCE',
                 'binarySha256': binary_sha256, 'sourceDigest': source,
