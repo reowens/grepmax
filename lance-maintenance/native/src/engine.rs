@@ -1004,10 +1004,15 @@ pub async fn run(request: Request) -> Result<()> {
                     .await?
                     .checked_sub(deleted)
                     .context("Deleted rows exceed physical rows")?;
-                let source_bytes = fragment.metadata.files.iter().try_fold(0u64, |sum, file| {
-                    sum.checked_add(fs::metadata(root.join("data").join(&file.path))?.len())
-                        .context("Source byte overflow")
-                })?;
+                let source_bytes =
+                    fragment
+                        .metadata()
+                        .files
+                        .iter()
+                        .try_fold(0u64, |sum, file| {
+                            sum.checked_add(fs::metadata(root.join("data").join(&file.path))?.len())
+                                .context("Source byte overflow")
+                        })?;
                 if request.selected_fragment_ids.is_none()
                     && (source_bytes > request.source_limit_bytes.min(AUTOMATIC_SOURCE_BYTES)
                         || live > MAX_ROWS)
