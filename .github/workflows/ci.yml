@@ -78,6 +78,9 @@ jobs:
       - name: Check formatting
         run: pnpm run format:check
 
+      - name: Verify read-only CI usage reporting
+        run: node --test scripts/test-ci-usage.cjs
+
       - name: Run tests
         run: pnpm exec vitest run --maxWorkers=2
 
