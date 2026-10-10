@@ -24,4 +24,28 @@ Organization and product groups can overlap. They are alternative views; adding 
 
 Verify offline with `node --test scripts/test-ci-usage.cjs`. Normal source CI runs these fixtures without authenticated API calls.
 
+## Billing reconciliation
+
+Collect complete billing months separately from the run-created cohort:
+
+```sh
+node scripts/ci-billing.cjs \
+  --user PERSONAL_OWNER --org ORGANIZATION \
+  --month 2026-09 --month 2026-10 \
+  --usage-dir /private/tmp/ci-usage \
+  --output /private/tmp/ci-billing \
+  --depot-org DEPOT_ORGANIZATION_ID --depot-base-usd 20
+```
+
+The billing collector preserves raw GitHub responses and Actions quantities, units, rates, gross amounts, discounts and net amounts in private `billing.json`. `billing.md` shows repository allocations, unmatched account records and independent detail-versus-summary comparisons by SKU/unit. A failed request, an empty response and records with a reconciled zero net amount are separate states. Months and owners are deduplicated. No estimates are calculated from elapsed job time, and non-Actions products remain in raw responses.
+
+Existing authenticated `gh` access must include the billing endpoint's permissions. An access error stays visible; this script does not broaden token scopes or log in. Optional Depot CLI probes verify the selected/current organization and preserve project/recent-build inventory. They do not switch organizations. Recent build durations are creation-to-finish wall seconds, including waiting; recent history is incomplete and does not establish billable runner minutes or overage. The supplied base amount is a user-confirmed account budget, appears once, and is not an invoice or per-repository allocation.
+
+Authenticated browser observations can supplement unavailable billing APIs with `--browser-evidence PRIVATE_JSON`. The file is an array of records with `provider: "GitHub"`, `repository`, `month`, the filtered dashboard `url`, its `chartLabels` and optional expanded billing `detailText`. Capture these from the actual displayed view. The import retains rounded display values separately from exact API data; it does not treat N/A as zero or claim an owner-level reconciliation. Keep that file private too.
+
+Exit status 2 means a report was written with unavailable/unreconciled billing. Billing can arrive after collection; a current-month empty response does not prove zero spend. Standard GitHub-hosted public-repository and Dependabot compute is free under GitHub's billing rules; larger runners and storage require separate evidence.
+
+Verify both collectors offline with `node --test scripts/test-ci-usage.cjs scripts/test-ci-billing.cjs`.
+
 Collection semantics: [GitHub workflow runs](https://docs.github.com/en/rest/actions/workflow-runs), [per-attempt jobs](https://docs.github.com/en/rest/actions/workflow-jobs).
+Billing semantics: [GitHub billing usage](https://docs.github.com/en/rest/billing/usage), [GitHub Actions billing rules](https://docs.github.com/en/billing/concepts/product-billing/github-actions), [Depot analytics](https://depot.dev/docs/github-actions/observability/github-actions-metrics), [Depot CLI build duration](https://github.com/depot/cli/blob/main/pkg/helpers/buildlist.go).

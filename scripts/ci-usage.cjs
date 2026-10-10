@@ -350,4 +350,4 @@ if (require.main === module) {
   })().catch(error => { console.error(error.message); process.exitCode = 1; });
 }
 
-module.exports = { pages, runsInWindow, runner, normalize, totals, report, collect, argumentsFor, privateOutput };
+module.exports = { pages, runsInWindow, runner, normalize, totals, report, collect, argumentsFor, privateOutput, github, writePrivate };

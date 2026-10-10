@@ -79,7 +79,7 @@ jobs:
         run: pnpm run format:check
 
       - name: Verify read-only CI usage reporting
-        run: node --test scripts/test-ci-usage.cjs
+        run: node --test scripts/test-ci-usage.cjs scripts/test-ci-billing.cjs
 
       - name: Run tests
         run: pnpm exec vitest run --maxWorkers=2
