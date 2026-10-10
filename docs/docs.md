@@ -28,7 +28,9 @@ CI trimming is implemented on main (`809b2a7`): source checks run automatically 
 
 Superseded source revisions cancel older Linux/Mac jobs. A docs-only push has no heavy job and therefore does not cancel an unfinished source check; manual runs and release/native qualification remain independent. The separate automatic watcher workflow is now manual-only, and its six Mac watcher test files run alongside the real native consumer in CI's one Mac job. Full Linux tests, audits, typechecks, package checks and release-native/reader/recovery gates are preserved. The docs-only sample used **eight Linux seconds / zero Mac seconds**, versus **256 Linux + 131 Mac seconds** on the preceding docs commit. These are elapsed job durations for two observed runs, not billed minutes or a monthly forecast.
 
-Next CI work: report elapsed jobs/minutes by repository and workflow, then qualify reuse of native artifacts against matching source/build/acceptance evidence. Measure one unsigned Developer build on GitHub macOS 26 with its pinned platform dependency; keep signing/notarization release-only and move portable preparation to Linux. Account conversion, repository transfer, paid Mac pilots and workflow reactivation are outside this decision. Detailed rates, scope and raw evidence are in the existing host-safety/disk-recovery plan. [GitHub billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions), [Depot platform/plan requirements](https://depot.dev/docs/github-actions/overview).
+The next CI work is planned in `docs/plans/ci-usage-and-runner-budget.md` (local runlist plan). First build an on-demand run/job collector and separate 30-day reports for gmax, Developer, platform, infra and the Hetchy organization. Keep elapsed job time separate from actual GitHub/Depot charges, and keep private exports outside this public repository. Then reconcile billing, measure a small unsigned Developer Mac build baseline, and use the measured Linux jobs to choose the first build-box migration after its hardware is known. Keep Depot at $20 and Mac jobs on GitHub. The first implementation stops at the collector/report and returns its coverage gaps; platform workflows remain disabled. Native artifact reuse is a separate qualification task.
+
+Sources and the earlier cost research are in the existing host-safety/disk-recovery plan. [GitHub workflow/job collection](https://docs.github.com/en/rest/actions/workflow-runs), [GitHub billing usage](https://docs.github.com/en/rest/billing/usage), [Depot metrics](https://depot.dev/docs/github-actions/observability/github-actions-metrics).
 
 ## Historical .82 checkpoint: independent automatic retention — October 9, 2026
 
@@ -600,6 +602,7 @@ Never start a summarizer or multi-GB LLM without current explicit user authoriza
 
 | Doc | Status |
 |-----|--------|
+| [CI Usage and Runner Budget](plans/ci-usage-and-runner-budget.md) | Planned |
 | [Embedding Reembed Atomic Cutover](plans/embedding-reembed-atomic-cutover.md) | Planned |
 
 ## Reference
