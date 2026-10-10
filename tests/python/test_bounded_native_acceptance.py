@@ -156,8 +156,9 @@ class BoundedNativeAcceptance(unittest.TestCase):
                 if name.startswith(('data/', '_indices/')):
                     self.assertEqual(after[name], state, name)
             for name in ('content_idx', 'path_idx'):
-                index = next(i for i in current.list_indices() if i['name'] == name)
-                self.assertEqual(set(index['fragment_ids']), {f.fragment_id for f in current.get_fragments()})
+                covered = {fragment for index in current.list_indices() if index['name'] == name
+                           for fragment in index['fragment_ids']}
+                self.assertEqual(covered, {f.fragment_id for f in current.get_fragments()})
 
     def test_repeated_index_catchup_merges_small_segments(self):
         import lance
