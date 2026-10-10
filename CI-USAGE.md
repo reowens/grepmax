@@ -34,7 +34,7 @@ node scripts/ci-billing.cjs \
   --month 2026-09 --month 2026-10 \
   --usage-dir /private/tmp/ci-usage \
   --output /private/tmp/ci-billing \
-  --depot-org DEPOT_ORGANIZATION_ID --depot-base-usd 20
+  --depot-org DEPOT_ORGANIZATION_ID --depot-base-usd BASE_AMOUNT_USD
 ```
 
 The billing collector preserves raw GitHub responses and Actions quantities, units, rates, gross amounts, discounts and net amounts in private `billing.json`. `billing.md` shows repository allocations, unmatched account records and independent detail-versus-summary comparisons by SKU/unit. A failed request, an empty response and records with a reconciled zero net amount are separate states. Months and owners are deduplicated. No estimates are calculated from elapsed job time, and non-Actions products remain in raw responses.
