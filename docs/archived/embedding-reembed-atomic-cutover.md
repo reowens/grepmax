@@ -1,8 +1,8 @@
 ---
 type: plan
-status: planned
+status: archived
 created: 2026-06-23T09:46:05Z
-updated: 2026-10-05T02:45:51Z
+updated: 2026-10-10T06:46:18Z
 surfaces:
   - index
   - embeddings
@@ -15,24 +15,17 @@ modules:
   - src/config.ts
 domain: embedding-model migration (background re-embed + atomic cutover)
 audience: internal
-parent_plan: docs/archived/2026-06-23-index-versioning-and-daemon-refactor.md
+parent_plan: 2026-06-23-index-versioning-and-daemon-refactor.md
 related_plans:
-  - docs/plans/2026-05-25-semantic-search-landscape.md
-  - docs/archived/2026-07-08-health-backlog.md
-  - docs/archived/2026-07-09-repository-audit-fixes.md
+  - 2026-05-25-semantic-search-landscape.md
+  - 2026-07-08-health-backlog.md
+  - 2026-07-09-repository-audit-fixes.md
 related_docs:
-  - ../archived/agent-ux-proposals.md
-  - docs/embedding-layout-decision.md
-  - docs/2026-07-09-repository-audit.md
-current_state: >
-  Safe coordination prerequisites and immutable embedding-generation handling are complete,
-  and a guarded destructive whole-corpus rebuild exists. Zero-downtime staging, concurrent
-  target-model MLX service, query routing, and atomic publication remain unimplemented. The
-  available 768d tier is not a trigger because it benchmarked materially worse than 384d.
-next_step: >
-  Do not implement yet. First select and benchmark a concretely superior model, then decide
-  per-project versus whole-corpus migration. Default to a whole-corpus staged-table cutover
-  unless product requirements justify permanent multi-generation routing.
+  - agent-ux-proposals.md
+  - ../embedding-layout-decision.md
+  - ../2026-07-09-repository-audit.md
+current_state: "Deferred without an execution commitment. No superior model/layout/capacity decision exists; background staging and cutover remain unimplemented."
+next_step: "Follow docs/plans/gmax-delivery.md. This record is historical and must not be reopened as a separate execution queue."
 ---
 
 # Embedding Reembed Atomic Cutover
@@ -206,6 +199,7 @@ model has beaten the 384d baseline and no migration granularity/layout has been 
 
 ## Version History
 
+- **2026-10-10T06:46:18Z** Archived — Deferred proposal, not shipped; model/layout/capacity gates retained outside the sole execution queue.
 - **2026-08-04** Refreshed for full embedding-generation fingerprints, immutable target
   worker configuration, existing coordinator/lease/journal primitives, and the requirement
   to stage even same-dimension replacements.

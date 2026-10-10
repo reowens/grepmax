@@ -39,7 +39,7 @@ domain: repository audit remediation (containment, lifecycle, and index integrit
 audience: internal
 summary: Implementation plan and closeout record for the 2026-07-09 repository audit findings.
 related_plans:
-  - ../plans/embedding-reembed-atomic-cutover.md
+  - embedding-reembed-atomic-cutover.md
 related_docs:
   - ../2026-07-09-repository-audit.md
   - ../embedding-layout-decision.md

@@ -7,7 +7,7 @@ summary: Live catalog of open gmax limitations with detection + recovery steps.
 audience: internal
 related_plans:
   - archived/2026-07-09-repository-audit-fixes.md
-  - docs/plans/2026-05-25-semantic-search-landscape.md
+  - archived/2026-05-25-semantic-search-landscape.md
   - docs/archived/2026-06-23-index-versioning-and-daemon-refactor.md
   - docs/archived/2026-06-28-repo-audit-hardening.md
   - docs/archived/daemon-read-path.md
@@ -149,7 +149,7 @@ Despite 14.0% of platform chunks having non-empty `referenced_symbols` (avg 82 r
 **Impact:**
 - `gmax dead <ClassName>` will under-count callers — any usage that's purely `new ClassName(…)`/`instanceof ClassName`/`ClassName.MEMBER` is invisible to the graph. The current `gmax dead` output already disclaims dynamic dispatch and string-built call sites (see entry below); the class-as-value blind spot is in the same family.
 - `gmax trace --inbound <ClassName>` will look sparse for the same reason.
-- Any graph-derived ranking signal (PageRank, k-hop recall recovery, PPR) inherits the same blind spot. Bundle B's G1' was aborted at Phase 0 for exactly this reason — see [the plan doc](plans/2026-05-25-semantic-search-landscape.md) Bundle B section.
+- Any graph-derived ranking signal (PageRank, k-hop recall recovery, PPR) inherits the same blind spot. Bundle B's G1' was aborted at Phase 0 for exactly this reason — see [the plan doc](archived/2026-05-25-semantic-search-landscape.md) Bundle B section.
 
 **Scope of fix.** Revisit tree-sitter capture queries per-language (TS/JS, Python, Go, Rust, Java, C#, Ruby, Kotlin, Swift, Bash, Scala — 11+ grammars) to also capture identifier references in expression position, while keeping the existing call-expression coverage. This is the upstream lever for `gmax dead <ClassName>` accuracy, `gmax trace --inbound <ClassName>` density, and any future graph-derived ranking signal (PageRank, PPR, k-hop recovery — all blocked on this). Measurement target: does the new edge density help downstream consumers enough to justify the chunk-size growth? Track via the eval harness once edges land.
 
@@ -257,7 +257,7 @@ GMAX_PAGERANK=1 GMAX_PR_WEIGHT=0.1 gmax search "query"
 
 Reproduce the table: `GMAX_PAGERANK=1 pnpm bench:oss:json` (express/lodash/platform); for gmax-self scoping use `GMAX_PAGERANK=1 GMAX_EVAL_PATH_PREFIX=/abs/path/to/gmax/ pnpm bench:recall:json`. Cache lives under `~/.gmax/pagerank/<sha1-of-pathPrefix>.json`, 1h TTL (tunable via `GMAX_PAGERANK_TTL_MS`).
 
-**Next direction — personalized PageRank / k-hop candidate-recovery (DEFERRED 2026-06-02, premise invalidated).** Tiebreaker is the wrong abstraction; the IR literature backs **PPR or k-hop expansion seeded on first-stage hits** (candidate-recovery, not within-pool reordering). Steps (1) extend chunker and (2) verify graph edges are **done** (TS/JS edges live post-reindex; `BeyondError`/`ErrorCodes` recoverable). But before implementing (3), a design probe (`src/eval-graph-recovery-probe.ts`) showed all 10 platform "hard-miss" definition chunks are **already inside the top-200 fusion pool** (pool#1–#106) — there is nothing *outside* the pool to recover, so PPR/k-hop has no validatable target on the current fixtures. The in-pool ranking gaps it was meant to fix turned out to be a stale-instrument artifact plus a ranking issue, both since resolved (see the symbol-definition promotion entry below). PPR/k-hop is deferred until a fixture set with genuine outside-pool misses exists. See [2026-05-25-semantic-search-landscape.md](plans/2026-05-25-semantic-search-landscape.md) — Phase 3 section.
+**Next direction — personalized PageRank / k-hop candidate-recovery (DEFERRED 2026-06-02, premise invalidated).** Tiebreaker is the wrong abstraction; the IR literature backs **PPR or k-hop expansion seeded on first-stage hits** (candidate-recovery, not within-pool reordering). Steps (1) extend chunker and (2) verify graph edges are **done** (TS/JS edges live post-reindex; `BeyondError`/`ErrorCodes` recoverable). But before implementing (3), a design probe (`src/eval-graph-recovery-probe.ts`) showed all 10 platform "hard-miss" definition chunks are **already inside the top-200 fusion pool** (pool#1–#106) — there is nothing *outside* the pool to recover, so PPR/k-hop has no validatable target on the current fixtures. The in-pool ranking gaps it was meant to fix turned out to be a stale-instrument artifact plus a ranking issue, both since resolved (see the symbol-definition promotion entry below). PPR/k-hop is deferred until a fixture set with genuine outside-pool misses exists. See [2026-05-25-semantic-search-landscape.md](archived/2026-05-25-semantic-search-landscape.md) — Phase 3 section.
 
 ## Bare-symbol queries promote the symbol's definition over its usages
 

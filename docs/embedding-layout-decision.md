@@ -1,8 +1,8 @@
 ---
 type: doc
-status: active
+status: reference
 created: 2026-06-23T10:00:03Z
-updated: 2026-08-04
+updated: 2026-10-10T06:47:21Z
 modules:
   - src/lib/store/vector-db.ts
   - src/config.ts
@@ -14,14 +14,20 @@ surfaces:
 domain: embedding-model migration — LanceDB table-layout decision (Phase 1B Gate 2)
 audience: internal
 related_plans:
-  - docs/plans/embedding-reembed-atomic-cutover.md
+  - archived/embedding-reembed-atomic-cutover.md
   - docs/archived/2026-07-09-repository-audit-fixes.md
 related_docs:
   - docs/archived/2026-06-23-index-versioning-and-daemon-refactor.md
   - docs/2026-07-09-repository-audit.md
+
+current_state: "Historical reference, not an execution queue. Current delivery and selected remaining work are recorded in docs/plans/gmax-delivery.md. Unresolved findings and original evidence remain preserved below."
+
+next_step: "None in this record. Follow the sole Gmax Delivery Plan; reopen a finding only for a concrete new failure or selected deliverable."
 ---
 
 # Embedding Layout Decision
+
+> Recentered October 9, 2026: historical reference, not an active task list. Follow the [Gmax Delivery Plan](plans/gmax-delivery.md). Original unresolved findings remain unresolved; older next-step instructions below do not authorize new work.
 
 > One-line summary of what this doc covers.
 
@@ -138,6 +144,7 @@ migration justifies permanent multi-generation routing. Do not choose (b).
 
 ## Version History
 
+- **2026-10-10T06:47:21Z** Status: active → reference — Historical evidence retained; execution ownership and selected remaining work consolidated in Gmax Delivery Plan.
 - **2026-06-23T10:00:03Z** Created.
 - **2026-08-04** Updated for full generation fingerprints and ColBERT state; recommendation
   changed from a second vector column to whole-corpus staged tables by default.

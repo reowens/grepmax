@@ -1,8 +1,8 @@
 ---
 type: doc
-status: active
+status: reference
 created: 2026-08-04T20:50:29Z
-updated: 2026-10-05T02:45:50Z
+updated: 2026-10-10T06:47:20Z
 surfaces:
   - host
   - store
@@ -19,26 +19,13 @@ related_docs:
   - docs/2026-08-04-performance-review.md
   - docs/known-limitations.md
   - docs/2026-08-25-release-triage-retrospective.md
-current_state: >
-  Four panics on macOS 26.5.2 (25F84) exhausted data.kalloc.1024 at 19-20 GB. On macOS 26.6.2
-  (25G83, booted 2026-08-23) the violent mode - multiple GiB/hour under sustained LanceDB
-  compaction - has not reproduced. But a third privileged sample at 255.6 h uptime (2026-09-03:
-  1,369,375 inuse, 1.31 GiB) shows the ~5-8 MiB/h drift is linear and never reclaimed, same slope
-  as at 45.5 h. "Bounded" described the rate, not the total: 25F84 sat at 1.37 GiB eight hours
-  before it went violent. That boot ended 2026-09-03 17:57 -0700 by clean operator restart at
-  262.0 h, without a panic; its four jetsam reports (174-227 h) all name data.kalloc.1024 as the
-  largest zone again, on the same 5.1-5.5 MiB/h line. The host is still on 25G83, and a
-  privileged zprint 7 min into the new boot reads 1,094 inuse / 1.3 MiB - the t=0 point for the
-  next series.
-next_step: >
-  Keep the daily daemon-up series on this boot: `zprint data.kalloc.1024` inuse (unprivileged) and
-  kernel-running hours from `pmset -g log` (Sleep to next wake is asleep; running is wall minus
-  asleep). Sample 1 (17.87 running hours, heavy indexing load) read 2.98 MiB/h, equal to the
-  no-gmax rate, so the previous boot's extra 2 MiB/h is unattributed. A rate that climbs with
-  uptime while the daemon log stays quiet points at the host. FTS canary through 2026-09-14.
+current_state: "Historical reference, not an execution queue. Current delivery and selected remaining work are recorded in docs/plans/gmax-delivery.md. Unresolved findings and original evidence remain preserved below."
+next_step: "None in this record. Follow the sole Gmax Delivery Plan; reopen a finding only for a concrete new failure or selected deliverable."
 ---
 
 # macOS Kernel-Zone Panic Incident - 2026-08-04
+
+> Recentered October 9, 2026: historical reference, not an active task list. Follow the [Gmax Delivery Plan](plans/gmax-delivery.md). Original unresolved findings remain unresolved; older next-step instructions below do not authorize new work.
 
 > **Status 2026-09-03.** Four panics, all on `25F84`. The host is now on macOS 26.6.2 (`25G83`),
 > where the violent failure mode has not reproduced - but a 255-hour sample shows the slow drift is
@@ -1022,6 +1009,7 @@ plain-JS copy of the same semantics. Explicit `gmax watch --daemon` stays ungate
 
 ## Version History
 
+- **2026-10-10T06:47:20Z** Status: active → reference — Historical evidence retained; execution ownership and selected remaining work consolidated in Gmax Delivery Plan.
 - **2026-09-08T17:10:00Z** First daemon-up sample on the 25G83 second boot: 80,208 to 134,781
   inuse over 17.87 kernel-running hours (17.95 wall; asleep 0.08 h, dark-wake 4.45 h) = 2.98 MiB/h,
   equal to the no-gmax 2.9, during a heavy indexing window. The "daemon adds ~2 MiB/h" half of
@@ -1076,3 +1064,27 @@ plain-JS copy of the same semantics. Explicit `gmax watch --daemon` stays ungate
 - **2026-08-05T22:40:00Z** Retracted the "0.31 behaved better" conclusion after live exposure
   falsified it; unblocked the 0.31 deployment note. Kernel findings unchanged.
 - **2026-08-04T21:01:30Z** Incident report created from the two panic reports and jetsam history.
+
+## Previous orientation (historical, superseded October 9)
+
+The former frontmatter is retained here as evidence, not current instructions.
+
+```yaml
+current_state: >
+  Four panics on macOS 26.5.2 (25F84) exhausted data.kalloc.1024 at 19-20 GB. On macOS 26.6.2
+  (25G83, booted 2026-08-23) the violent mode - multiple GiB/hour under sustained LanceDB
+  compaction - has not reproduced. But a third privileged sample at 255.6 h uptime (2026-09-03:
+  1,369,375 inuse, 1.31 GiB) shows the ~5-8 MiB/h drift is linear and never reclaimed, same slope
+  as at 45.5 h. "Bounded" described the rate, not the total: 25F84 sat at 1.37 GiB eight hours
+  before it went violent. That boot ended 2026-09-03 17:57 -0700 by clean operator restart at
+  262.0 h, without a panic; its four jetsam reports (174-227 h) all name data.kalloc.1024 as the
+  largest zone again, on the same 5.1-5.5 MiB/h line. The host is still on 25G83, and a
+  privileged zprint 7 min into the new boot reads 1,094 inuse / 1.3 MiB - the t=0 point for the
+  next series.
+next_step: >
+  Keep the daily daemon-up series on this boot: `zprint data.kalloc.1024` inuse (unprivileged) and
+  kernel-running hours from `pmset -g log` (Sleep to next wake is asleep; running is wall minus
+  asleep). Sample 1 (17.87 running hours, heavy indexing load) read 2.98 MiB/h, equal to the
+  no-gmax rate, so the previous boot's extra 2 MiB/h is unattributed. A rate that climbs with
+  uptime while the daemon log stays quiet points at the host. FTS canary through 2026-09-14.
+```

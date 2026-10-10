@@ -30,7 +30,7 @@ domain: repository audit (security, correctness, lifecycle, and data integrity)
 audience: internal
 summary: Audit findings and remediation status for gmax security, lifecycle, scope, and index integrity.
 related_plans:
-  - docs/plans/embedding-reembed-atomic-cutover.md
+  - archived/embedding-reembed-atomic-cutover.md
   - archived/2026-07-09-repository-audit-fixes.md
 related_docs:
   - docs/embedding-layout-decision.md

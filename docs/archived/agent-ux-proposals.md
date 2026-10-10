@@ -12,9 +12,9 @@ related_docs:
   - ../known-limitations.md
   - ../agent-pov-suggestions.md
 related_plans:
-  - ../plans/2026-05-25-semantic-search-landscape.md
+  - 2026-05-25-semantic-search-landscape.md
   - graphify-derived-improvements.md
-  - ../plans/embedding-reembed-atomic-cutover.md
+  - embedding-reembed-atomic-cutover.md
   - 2026-06-23-index-versioning-and-daemon-refactor.md
   - 2026-06-28-repo-audit-hardening.md
 current_state: >
@@ -321,7 +321,7 @@ Items that don't justify a phase right now but might later:
 ## Open Questions
 
 - **SessionStart hint length budget.** Current ~600 chars; the v0.16.5 restructure landed ~900 chars. Acceptable for context cost on every session? Could trim by removing the per-command one-liners — verb names carry most of the info.
-- **Phase 1 (HyDE) measurement set.** What's the held-out fixture set? The 4-fixture instrument has known coverage holes (4 platform hard-miss cases that can't currently be recovered — see [the landscape plan's Bundle B background](../plans/2026-05-25-semantic-search-landscape.md#background)). HyDE might help on those, or might not.
+- **Phase 1 (HyDE) measurement set.** What's the held-out fixture set? The 4-fixture instrument has known coverage holes (4 platform hard-miss cases that can't currently be recovered — see [the landscape plan's Bundle B background](2026-05-25-semantic-search-landscape.md#background)). HyDE might help on those, or might not.
 - **Phase 7 (`impact <file>`) design constraints.** Big SDL exports and 127-importer UI primitives are the two extremes — does one rollup format serve both, or does the command need different presentation modes?
 
 ---

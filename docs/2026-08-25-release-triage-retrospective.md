@@ -1,8 +1,8 @@
 ---
 type: doc
-status: active
+status: reference
 created: 2026-08-26T02:20:00Z
-updated: 2026-10-05T02:45:51Z
+updated: 2026-10-10T06:47:21Z
 surfaces:
   - daemon
   - store
@@ -15,9 +15,15 @@ related_docs:
   - archived/lancedb-0.38-upgrade.md
   - archived/lance-fts-merge-upstream.md
 summary: What was found on entry, what shipped in v0.26.19–v0.26.22, the evidence behind each fix, and what is left.
+
+current_state: "Historical reference, not an execution queue. Current delivery and selected remaining work are recorded in docs/plans/gmax-delivery.md. Unresolved findings and original evidence remain preserved below."
+
+next_step: "None in this record. Follow the sole Gmax Delivery Plan; reopen a finding only for a concrete new failure or selected deliverable."
 ---
 
 # 2026-08-25 Release Triage — Retrospective
+
+> Recentered October 9, 2026: historical reference, not an active task list. Follow the [Gmax Delivery Plan](plans/gmax-delivery.md). Original unresolved findings remain unresolved; older next-step instructions below do not authorize new work.
 
 ## State on entry
 
@@ -110,4 +116,5 @@ stable 0.38.0, 7-day live canary, FTS-v2 format identified as the rollback const
 
 ## Version History
 
+- **2026-10-10T06:47:21Z** Status: active → reference — Historical evidence retained; execution ownership and selected remaining work consolidated in Gmax Delivery Plan.
 - **2026-08-26T02:20:00Z** Written at the end of the session.

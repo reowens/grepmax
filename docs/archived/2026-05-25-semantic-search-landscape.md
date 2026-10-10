@@ -1,30 +1,22 @@
 ---
 type: plan
-status: partial
+status: archived
 created: 2026-05-25
-updated: 2026-10-05T02:53:16Z
+updated: 2026-10-10T06:46:17Z
 surfaces:
   - search
   - graph
   - index
 audience: internal
 related_docs:
-  - docs/known-limitations.md
-  - ../archived/agent-ux-proposals.md
-  - docs/agent-pov-suggestions.md
+  - ../known-limitations.md
+  - agent-ux-proposals.md
+  - ../agent-pov-suggestions.md
 related_plans:
-  - docs/archived/2026-06-23-index-versioning-and-daemon-refactor.md
-  - docs/plans/embedding-reembed-atomic-cutover.md
-current_state: >
-  Core reliability, graph extraction, generated-code exclusion, partial-index signaling,
-  MCP graph tools, review risk, audit, seeding, concentration gating, definition promotion,
-  and chunker-v4 staleness handling are shipped; v0.26.48 also fixes short-result selection.
-  General relevance and long-cycle resource behavior still need measurement. PPR has no frozen
-  outside-pool miss fixture to recover. The remaining tail is measurement-gated, so this plan is partial rather than active.
-next_step: >
-  No active build target. Reopen PPR only for a correct chunk outside the top-200 fusion pool;
-  reopen HyDE/query expansion for held-out real recall gaps; reopen semantic cache for measured
-  repeat-query latency; reopen seeded indexing for observed monorepo cold-start pain.
+  - 2026-06-23-index-versioning-and-daemon-refactor.md
+  - embedding-reembed-atomic-cutover.md
+current_state: "Retired as an execution plan. Shipped semantic work remains shipped; untriggered mechanisms remain deferred reference decisions."
+next_step: "Follow docs/plans/gmax-delivery.md. This record is historical and must not be reopened as a separate execution queue."
 summary: Measure-first decision record for shipped semantic-search work and explicitly gated successor experiments.
 ---
 
@@ -370,7 +362,7 @@ Source: `gh api repos/Ryandonofrio3/osgrep/commits` and tree-walks of `src/`, `t
 
 ### Part 2 — Competitive landscape (May 2026)
 
-The field has consolidated since the P4 list in [agent-ux-proposals.md](../archived/agent-ux-proposals.md). Three tools matter now:
+The field has consolidated since the P4 list in [agent-ux-proposals.md](agent-ux-proposals.md). Three tools matter now:
 
 - **sverklo** — local-first code-intel MCP, 37 tools, 1.1k+ stars, published F1 benchmark vs naive-grep / smart-grep, bi-temporal git-pinned memory. Closest competitor in spirit.
 - **Claude Context (Zilliz)** — open-source MCP, 6.2k+ stars, multi-client (Claude Code / Cursor / Codex / Cline / Windsurf / 8 more), pluggable embeddings. Most-installed.
@@ -485,6 +477,7 @@ npx tsx src/eval-graph-spotcheck.ts  # raw referenced_symbols on known caller fi
 
 ## Version History
 
+- **2026-10-10T06:46:17Z** Archived — No active build target; retire execution record and preserve research gates as deferred reference.
 - **2026-10-04** Reviewed against v0.26.48; retired completed v3 handover instructions, retained research gates, and confirmed the MRR accounting prerequisite.
 
 - **2026-05-25** Created as research-findings doc after osgrep-upstream + competitive-landscape research. Bundle A scoped and shipped (v0.17.0).

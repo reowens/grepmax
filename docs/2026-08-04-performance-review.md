@@ -1,8 +1,8 @@
 ---
 type: doc
-status: active
+status: reference
 created: 2026-08-04T08:22:27Z
-updated: 2026-10-05T02:45:51Z
+updated: 2026-10-10T06:47:20Z
 modules:
   - src/lib/index/chunker.ts
   - src/lib/index/syncer.ts
@@ -39,17 +39,13 @@ related_docs:
   - docs/2026-07-09-repository-audit.md
   - docs/known-limitations.md
   - docs/2026-08-04-macos-kernel-zone-panic-incident.md
-current_state: >
-  Full performance review completed 2026-08-04 across the indexing pipeline, worker/embedding
-  path, storage, daemon, search, and graph tools. Findings ranked and verified; the watcher
-  ignore-glob fix shipped in fd11906 and the primary remediation plan shipped in 7b6349c.
-  IVF_FLAT was rejected by its recall gate; exact search retained the path btree improvement.
-next_step: >
-  Keep the remaining lower-priority findings measure-first. Nested-definition duplicate
-  chunking is the next candidate only after a recall benchmark establishes a safe target.
+current_state: "Historical reference, not an execution queue. Current delivery and selected remaining work are recorded in docs/plans/gmax-delivery.md. Unresolved findings and original evidence remain preserved below."
+next_step: "None in this record. Follow the sole Gmax Delivery Plan; reopen a finding only for a concrete new failure or selected deliverable."
 ---
 
 # Performance Review — 2026-08-04
+
+> Recentered October 9, 2026: historical reference, not an active task list. Follow the [Gmax Delivery Plan](plans/gmax-delivery.md). Original unresolved findings remain unresolved; older next-step instructions below do not authorize new work.
 
 > Ranked performance findings across gmax: worker memory, indexing throughput, search
 > latency. Trigger: sustained high memory (gmax-worker observed at 886MB RSS).
@@ -131,6 +127,7 @@ busy process; the watcher-glob fix reduces that share. Recurrence check:
 
 ## Version History
 
+- **2026-10-10T06:47:20Z** Status: active → reference — Historical evidence retained; execution ownership and selected remaining work consolidated in Gmax Delivery Plan.
 - **2026-08-04T08:22:27Z** Created.
 - **2026-08-04** Full findings from three-subsystem Opus review + manual graph pass;
   watcher-glob fix shipped (fd11906) and verified live; kernel-panic investigation
@@ -142,3 +139,18 @@ busy process; the watcher-glob fix reduces that share. Recurrence check:
 
 - docs/archived/performance-backlog-fixes.md — remediation implementation and closeout
 - docs/2026-07-09-repository-audit.md — prior audit (security/correctness focus)
+
+## Previous orientation (historical, superseded October 9)
+
+The former frontmatter is retained here as evidence, not current instructions.
+
+```yaml
+current_state: >
+  Full performance review completed 2026-08-04 across the indexing pipeline, worker/embedding
+  path, storage, daemon, search, and graph tools. Findings ranked and verified; the watcher
+  ignore-glob fix shipped in fd11906 and the primary remediation plan shipped in 7b6349c.
+  IVF_FLAT was rejected by its recall gate; exact search retained the path btree improvement.
+next_step: >
+  Keep the remaining lower-priority findings measure-first. Nested-definition duplicate
+  chunking is the next candidate only after a recall benchmark establishes a safe target.
+```
