@@ -10,7 +10,7 @@ use lance::{
     Dataset,
     dataset::{
         WriteMode, WriteParams,
-        write::{commit::CommitBuilder, write_fragments},
+        write::{CommitBuilder, write_fragments},
     },
     index::DatasetIndexExt,
 };
@@ -73,6 +73,11 @@ pub async fn plan(
     request: &Request,
 ) -> Result<Option<crate::repair::Proof>> {
     let all = all_indices(dataset).await?;
+    ensure!(
+        all.iter()
+            .all(|i| i.base_id.is_none() && i.fragment_bitmap.is_some()),
+        "Unknown/external relocation index coverage"
+    );
     let mut candidates = vec![];
     for f in dataset.manifest.fragments.iter() {
         if request

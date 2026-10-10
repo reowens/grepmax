@@ -119,7 +119,12 @@ pub(crate) fn params(index: &IndexMetadata, field: &str) -> Result<(IndexType, S
         ))
     }
 }
-pub async fn plan(dataset: &Dataset, root: &Path, request: &Request) -> Result<Option<Proof>> {
+pub async fn plan(
+    dataset: &Dataset,
+    root: &Path,
+    request: &Request,
+    previous: Option<&Receipt>,
+) -> Result<Option<Proof>> {
     let operation = request.operation.as_deref().unwrap_or("repair");
     if operation == "repair-orphans" {
         return crate::orphans::plan(root);

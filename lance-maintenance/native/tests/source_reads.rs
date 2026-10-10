@@ -1,5 +1,5 @@
 use gmax_bounded_maintenance::meter::{Ledger, MeteredStore, SourceReads};
-use object_store::{ObjectStoreExt, local::LocalFileSystem, path::Path};
+use object_store::{ObjectStore, ObjectStoreExt, local::LocalFileSystem, path::Path};
 use std::sync::Arc;
 #[tokio::test]
 async fn submitted_ranges_and_recovery_share_a_non_refunding_allowance() {

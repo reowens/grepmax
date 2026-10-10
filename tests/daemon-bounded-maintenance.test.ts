@@ -140,6 +140,8 @@ describe("daemon bounded deleted-row cleanup lifecycle", () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(d.vectorDb.cleanupDeletedRows).toHaveBeenCalledOnce();
     expect(d.vectorDb.cleanupVersions).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(d.vectorDb.cleanupDeletedRows).toHaveBeenCalledTimes(2);
     clearInterval(d.cleanupInterval);
     clearInterval(d.boundedCleanupInterval);
   });

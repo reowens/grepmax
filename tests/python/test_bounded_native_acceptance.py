@@ -159,6 +159,36 @@ class BoundedNativeAcceptance(unittest.TestCase):
                 index = next(i for i in current.list_indices() if i['name'] == name)
                 self.assertEqual(set(index['fragment_ids']), {f.fragment_id for f in current.get_fragments()})
 
+    def test_repeated_index_catchup_merges_small_segments(self):
+        import lance
+        import pyarrow as pa
+        with tempfile.TemporaryDirectory(prefix='gmax-native-index-merge-') as home:
+            root, ds = self.prepare(home, deleted=False)
+            seed = ds.to_table(filter='id = 11').to_pylist()[0]
+            merged = False
+            for n in range(9):
+                current = lance.dataset(str(root))
+                row = {**seed, 'id': 9000 + n, 'path': f'/merge/{n}.ts', 'content': f'catchup{n} lexical'}
+                lance.write_dataset(pa.Table.from_pylist([row], schema=current.schema), str(root), mode='append')
+                for unit in range(4):
+                    session = NativeSession(self.binary, root, qualification={'operation': 'repair-indexes'})
+                    try:
+                        result = session.reach('result')
+                        self.assertEqual(result['dataBytesWritten'], 0)
+                        self.assertLessEqual(result['sourceBytesRead'], 32 * 1024**2)
+                        if result['status'] != 'no-work':
+                            receipt = json.loads((root / '_gmax-bounded-receipt.json').read_text())
+                            merged |= len(receipt['repair']['merge']) >= 2
+                        if result.get('remainingIndexFragments') == 0:
+                            break
+                    finally:
+                        session.close()
+                current = lance.dataset(str(root))
+                self.assertEqual(current.count_rows(), 2048 + n + 1)
+                self.assertEqual(current.to_table(full_text_query={'query': f'catchup{n}', 'columns': ['content']})['id'].to_pylist(), [9000 + n])
+                self.assertEqual(current.to_table(filter=f"path = '/merge/{n}.ts'")['id'].to_pylist(), [9000 + n])
+            self.assertTrue(merged, 'small segments must merge rather than accumulate indefinitely')
+
     def test_partial_relocation_preserves_values_and_protected_reader(self):
         import lance
         with tempfile.TemporaryDirectory(prefix='gmax-native-relocate-') as home:
@@ -219,11 +249,12 @@ class BoundedNativeAcceptance(unittest.TestCase):
             root.parent.mkdir()
             rng = random.Random(37)
             count = 60000
-            rows = [{'id': n, 'path': f'/large/{n}.ts', 'content': f'large unique{n}',
+            rows = [{'id': n, 'path': f'/large/{n}/{rng.randbytes(192).hex()}.ts', 'content': f'large unique{n}',
                      'payload': rng.randbytes(640), 'vector': [float(n % 13)] * 8}
                     for n in range(count)]
             schema = pa.schema([('id', pa.int32()), ('path', pa.string()), ('content', pa.string()),
                                 ('payload', pa.binary()), ('vector', pa.list_(pa.float32(), 8))])
+            last_path = rows[-1]["path"]
             ds = lance.write_dataset(pa.Table.from_pylist(rows, schema=schema), str(root), max_rows_per_file=count, max_rows_per_group=64)
             del rows
             ds.create_scalar_index('path', 'BTREE', name='path_idx')
@@ -235,10 +266,11 @@ class BoundedNativeAcceptance(unittest.TestCase):
             self.assertGreater(sum((root / 'data' / f.path).stat().st_size for f in source.metadata.files), 32 * 1024**2)
             baseline = fixture_support.row_digest(ds)
             original_files = fixture_support.file_state(root)
+            self.assertGreater(sum(v[0] for name, v in original_files.items() if name.startswith('_indices/')), 8 * 1024**2)
             units = 0
             while source_id in {f.fragment_id for f in lance.dataset(str(root)).get_fragments()}:
                 self.assertLess(units, 8, 'finite oversized fixture did not converge')
-                session = NativeSession(self.binary, root, cap=32 * 1024**2, selected=[source_id], qualification={'operation': 'repair-relocate'})
+                session = NativeSession(self.binary, root, cap=8 * 1024**2, selected=[source_id], qualification={'operation': 'repair-relocate'})
                 try:
                     result = session.reach('result')
                     self.assertGreater(result['rowsVerified'], 0)
@@ -249,12 +281,13 @@ class BoundedNativeAcceptance(unittest.TestCase):
                     session.close()
                 self.assertEqual(fixture_support.row_digest(lance.dataset(str(root))), baseline)
                 units += 1
+            final_files = fixture_support.file_state(root)
             for name, value in original_files.items():
                 if name.startswith(('data/', '_indices/')):
-                    self.assertEqual(fixture_support.file_state(root)[name], value)
+                    self.assertEqual(final_files[name], value)
             current = lance.dataset(str(root))
             self.assertEqual(current.to_table(full_text_query={'query': 'unique59999', 'columns': ['content']})['id'].to_pylist(), [59999])
-            self.assertEqual(current.to_table(filter="path = '/large/59999.ts'")['id'].to_pylist(), [59999])
+            self.assertEqual(current.to_table(filter=f"path = '{last_path}'")['id'].to_pylist(), [59999])
 
     def test_real_selected_batch_preserves_rows_indices_tags_and_both_readers(self):
         import lance

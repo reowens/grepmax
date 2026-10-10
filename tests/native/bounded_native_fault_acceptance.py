@@ -12,6 +12,7 @@ from pathlib import Path
 import struct
 import tempfile
 import unittest
+import time
 
 REPO = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('native_core_acceptance',
@@ -37,6 +38,41 @@ class BoundedNativeFaultAcceptance(unittest.TestCase):
     def payload_files(root):
         return {name: value for name, value in core.fixture_support.file_state(root).items()
                 if name.startswith(('data/', '_indices/'))}
+
+    def test_newer_orphan_and_partial_inventory_never_use_a_timestamp_cutoff(self):
+        import lance
+        import pyarrow as pa
+        with tempfile.TemporaryDirectory(prefix='gmax-native-reference-cursor-') as home:
+            root, ds = self.prepare(home, deleted=False)
+            oldest = min(v['timestamp'].timestamp() for v in ds.versions())
+            orphan = root / 'data' / 'newer-than-retained.lance'
+            orphan.write_bytes(b'unreferenced')
+            timestamp = max(time.time(), oldest) + 1
+            os.utime(orphan, (timestamp, timestamp))
+            self.assertGreater(orphan.stat().st_mtime, oldest)
+            seed = ds.to_table(filter='id = 11').to_pylist()[0]
+            for n in range(35):
+                row = {**seed, 'id': 9000 + n}
+                ds = lance.write_dataset(pa.Table.from_pylist([row], schema=ds.schema), str(root), mode='append')
+            baseline = core.fixture_support.row_digest(ds)
+            options = {'operation': 'repair-orphans', 'qualificationTimeSeconds': int(timestamp + 180)}
+            session = core.NativeSession(self.binary, root, qualification=options)
+            try:
+                result = session.reach('result')
+                self.assertFalse(result['inventoryComplete'])
+                self.assertEqual(result['orphansReclaimed'], 0)
+                self.assertTrue(orphan.exists(), 'partial inventory cannot authorize deletion')
+            finally:
+                session.close()
+            session = core.NativeSession(self.binary, root, qualification=options)
+            try:
+                result = session.reach('result')
+                self.assertTrue(result['inventoryComplete'])
+                self.assertGreater(result['orphansReclaimed'], 0)
+                self.assertFalse(orphan.exists())
+            finally:
+                session.close()
+            self.assertEqual(core.fixture_support.row_digest(lance.dataset(str(root))), baseline)
 
     def test_relocation_interruptions_preserve_each_valid_intermediate_head(self):
         import lance

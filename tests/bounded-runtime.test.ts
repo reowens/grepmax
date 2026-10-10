@@ -44,6 +44,21 @@ describe("bundled bounded cleanup runtime verification", () => {
     return { executable, manifest };
   }
 
+  it("requires an explicit qualified capability before enabling incremental repair", async () => {
+    const { executable } = fixture({
+      ...capabilities,
+      incrementalRepairProtocol: 1,
+    });
+    expect(await verifyBoundedRuntimeAt(root, platform)).toEqual({
+      executable,
+      incrementalRepairProtocol: 1,
+    });
+    fixture({ ...capabilities, incrementalRepairProtocol: 2 });
+    await expect(verifyBoundedRuntimeAt(root, platform)).rejects.toThrow(
+      /capabilities unverified/,
+    );
+  });
+
   it("leaves unsupported or absent runtimes unavailable", async () => {
     expect(await verifyBoundedRuntimeAt(root, platform)).toBeNull();
     fixture();

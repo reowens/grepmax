@@ -59,6 +59,40 @@ describe("bounded native receipt startup advisory", () => {
     expect(boundedMaintenanceReceiptState(f.store)).toBe("finalized");
   });
 
+  it("routes versioned repair receipts and refuses unknown operation shapes", () => {
+    const f = fixture();
+    const receipt = {
+      ...finalized(),
+      protocolVersion: 3,
+      rowsVerified: 0,
+      sourceRowsDigest: "",
+      repair: {
+        fragments: [1],
+        name: "path_idx",
+        field: "path",
+        merge: [],
+        output: "00000000-0000-4000-8000-000000000000",
+      },
+    };
+    fs.writeFileSync(f.file, JSON.stringify(receipt));
+    expect(boundedMaintenanceReceiptState(f.store)).toBe("finalized");
+    fs.writeFileSync(f.file, JSON.stringify({ ...receipt, phase: "copying" }));
+    expect(boundedMaintenanceReceiptState(f.store)).toBe("pending");
+    fs.writeFileSync(
+      f.file,
+      JSON.stringify({
+        ...receipt,
+        repair: { ...receipt.repair, field: "vector" },
+      }),
+    );
+    expect(boundedMaintenanceReceiptState(f.store)).toBe("unknown");
+    fs.writeFileSync(
+      f.file,
+      JSON.stringify({ ...receipt, protocolVersion: 2 }),
+    );
+    expect(boundedMaintenanceReceiptState(f.store)).toBe("unknown");
+  });
+
   it("accepts the actual finalized abort before selected rows were decoded", () => {
     const f = fixture();
     const receipt = {

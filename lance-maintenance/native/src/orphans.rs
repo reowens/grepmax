@@ -144,6 +144,10 @@ pub async fn execute(
             && dataset.list_detached_manifests().await?.is_empty(),
         "External/detached ownership prevents orphan reclamation"
     );
+    #[cfg(feature = "qualification")]
+    let current_time = request.qualification_time_seconds.unwrap_or(now()?);
+    #[cfg(not(feature = "qualification"))]
+    let current_time = now()?;
     let mut state = load(root)?.filter(|s| !s.complete).unwrap_or(Inventory {
         schema_version: 1,
         ..Default::default()
@@ -202,7 +206,7 @@ pub async fn execute(
     let remaining = versions.difference(&state.scanned).count();
     state.complete = remaining == 0;
     if state.complete {
-        state.completed_at = now()?;
+        state.completed_at = current_time;
     }
     state.checksum = hash(&state);
     let bytes = serde_json::to_vec(&state)?;
@@ -265,7 +269,7 @@ pub async fn execute(
         {
             continue;
         }
-        if now()?.saturating_sub(meta.mtime().max(0) as u64) < 120 {
+        if current_time.saturating_sub(meta.mtime().max(0) as u64) < 120 {
             continue;
         }
         // Candidate selection is bounded, but the enumeration must complete:

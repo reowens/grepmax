@@ -74,6 +74,9 @@ pub struct Request {
     #[cfg(feature = "qualification")]
     #[serde(default)]
     pub qualification_pause_at: Option<String>,
+    #[cfg(feature = "qualification")]
+    #[serde(default)]
+    pub qualification_time_seconds: Option<u64>,
 }
 fn source_default() -> u64 {
     MAX_SOURCE
@@ -1034,7 +1037,8 @@ pub async fn run(request: Request) -> Result<()> {
         let restore = file.exists();
         ensure!(
             restore
-                || ledger.counts().data_bytes_written == 0
+                || old.phase == "protecting"
+                    && ledger.counts().data_bytes_written == 0
                     && ledger.counts().index_bytes_written == 0,
             "Lost source journal"
         );

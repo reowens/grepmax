@@ -41,7 +41,10 @@ print(json.dumps({'version': ds.version, 'rows': len(rows), 'deletedRows': sum(f
   assert(native, "Accepted bundled native maintenance artifact is required; this is not a skip qualification");
   const python = await prepareCleanupRuntime();
   const evidence = [];
-  for (const interrupted of [false, true]) {
+  assert.equal(native.incrementalRepairProtocol, 1, "Packaged new repair capability is required");
+  for (const mode of ["legacy", "interrupted", "repair"]) {
+    const interrupted = mode === "interrupted";
+    const effectiveRuntime = mode === "repair" ? native : { executable: native.executable };
     const store = fs.mkdtempSync(path.join(process.cwd(), "bounded-consumer-"));
     stores.push(store);
     const table = path.join(store, "chunks.lance");
@@ -58,6 +61,7 @@ print(json.dumps({'version': ds.version, 'rows': len(rows), 'deletedRows': sum(f
     let stopReads = false;
     let pendingReads;
     let reads = 0;
+    let protectedVersion = prepared.version;
     const controller = new AbortController();
     const readOnce = async () => {
       const rows = await reader.query().select(["id", "path", "content"]).toArray();
@@ -67,7 +71,7 @@ print(json.dumps({'version': ds.version, 'rows': len(rows), 'deletedRows': sum(f
     };
     const callbacks = {
       async open(protection) {
-        assert.equal(protection.protectedVersion, prepared.version);
+        assert.equal(protection.protectedVersion, protectedVersion);
         if (interrupted) { controller.abort(new Error("fixture interruption before copy")); return; }
         connection = await lance.connect(store, { session: new lance.Session(BigInt(16 * 1024 ** 2), BigInt(8 * 1024 ** 2)) });
         reader = await connection.openTable("chunks");
@@ -91,13 +95,13 @@ print(json.dumps({'version': ds.version, 'rows': len(rows), 'deletedRows': sum(f
       const before = await verifyNodeBoundedFixture(reader, prepared);
       reader.close(); reader = undefined;
       await connection.close(); connection = undefined;
-      const noRecovery = await runBoundedMaintenance(store, lease, prepared.version, native, { open() { assert.fail("Empty recovery must not open a tag window"); }, async drain() {} }, undefined, "recover");
+      const noRecovery = await runBoundedMaintenance(store, lease, prepared.version, effectiveRuntime, { open() { assert.fail("Empty recovery must not open a tag window"); }, async drain() {} }, undefined, "recover");
       assert.equal(noRecovery.status, "skipped");
       assert.equal(noRecovery.recoveryPending, false);
       assert.equal(noRecovery.totalBytesWritten, 0);
       if (interrupted) {
-        await assert.rejects(runBoundedMaintenance(store, lease, prepared.version, native, callbacks, controller.signal, "run"), /uncertain/);
-        const recovered = await runBoundedMaintenance(store, lease, prepared.version, native, { open(p) { assert.equal(p.protectedVersion, prepared.version); }, async drain() {} }, undefined, "recover");
+        await assert.rejects(runBoundedMaintenance(store, lease, prepared.version, effectiveRuntime, callbacks, controller.signal, "run"), /uncertain/);
+        const recovered = await runBoundedMaintenance(store, lease, prepared.version, effectiveRuntime, { open(p) { assert.equal(p.protectedVersion, prepared.version); }, async drain() {} }, undefined, "recover");
         assert.equal(recovered.aborted, true);
         assert.equal(recovered.rewritten, false);
         assert.equal(recovered.rowsVerified, 0);
@@ -108,15 +112,24 @@ print(json.dumps({'version': ds.version, 'rows': len(rows), 'deletedRows': sum(f
         assert.match(recovered.reason, /unfinished copy discarded/);
         evidence.push({ kind: "interrupted-before-copy", before, seed: prepared, result: recovered });
       } else {
-        const result = await runBoundedMaintenance(store, lease, prepared.version, native, callbacks, undefined, "run");
+        const units = [];
+        let result;
+        do {
+          stopReads = false;
+          result = await runBoundedMaintenance(store, lease, protectedVersion, effectiveRuntime, callbacks, undefined, "run");
+          units.push(result);
+          protectedVersion = result.afterVersion;
+          assert(units.length <= 8, "Production-schema fixture must finish in bounded admitted units");
+        } while (mode === "repair" && (result.remainingDeletedRows > 0 || result.inventoryComplete === false));
         assert.equal(result.status, "completed");
         assert.equal(result.aborted, false);
         assert(result.afterVersion > prepared.version);
         assert(result.totalBytesWritten <= 512 * 1024 ** 2);
-        assert(result.indexBytesWritten > 0);
+        assert(units.some(unit => unit.indexBytesWritten > 0));
+        if (mode === "repair") { assert(units.some(unit => unit.operation === "row-relocation")); assert(units.every(unit => unit.sourceBytesRead <= 32 * 1024 ** 2)); }
         assert.equal(result.remainingDeletedRows, 0);
         assert(reads > 1, "Actual native copying must overlap Node reads of the tagged head");
-        evidence.push({ kind: "actual-copy-with-node-readers", reads, before, seed: prepared, result });
+        evidence.push({ kind: mode === "repair" ? "incremental-repair-with-node-readers" : "actual-copy-with-node-readers", units, reads, before, seed: prepared, result });
       }
       const verified = JSON.parse(await runCleanupProcess(python.python, ["-I", "-c", verify, table, pythonBaseline.digest, String(prepared.userVersion)]));
       assert.equal(verified.receiptPhase, "finalized");
