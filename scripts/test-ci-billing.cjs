@@ -84,7 +84,7 @@ test("Depot inventory never converts elapsed duration into billable quantity or 
   const data = { collected_at: "2026-10-10", periods: [], months: [], repository_metadata: [], depot };
   const rendered = report(data, usage);
   assert.equal(rendered.split("$20/month").length - 1, 1);
-  assert.match(rendered, /Billable usage, overage and invoiced net: unavailable/);
+  assert.match(rendered, /Invoice charges and overage: unavailable/);
 });
 
 test("Depot mismatch does not switch organizations or query another account's projects", async () => {
@@ -146,4 +146,25 @@ test("authenticated browser evidence keeps rounded billed values and N/A distinc
   assert.equal(empty.displayed_billed_sum, null);
   assert.throws(() => browserEvidence([{ ...observation, repository: "other/repo" }]), /scope/);
   assert.throws(() => browserEvidence([{ ...observation, url: observation.url.replace("github.com", "example.com") }]), /source/);
+});
+
+test("integrated API collection preserves access failures without a browser or zero billing claim", async t => {
+  const output = await fs.mkdtemp(path.join(os.tmpdir(), "ci-billing-api-test-"));
+  t.after(() => fs.rm(output, { recursive: true, force: true }));
+  const api = async endpoint => endpoint.startsWith("repos/") ? { private: true }
+    : endpoint.includes("/summary?") ? { timePeriod: { year: 2026, month: 9 }, usageItems: [summaryItem] } : { usageItems: [item] };
+  const data = await collect({ owners: [owner], months: ["2026-09"], usage, output, api, depotOrg: "org-id",
+    depotProbe: async () => ({ status: "unavailable", error: "CLI inventory unavailable" }),
+    depotApi: async (org, months) => {
+      assert.equal(org, "org-id"); assert.deepEqual(months, ["2026-09"]);
+      return { status: "unavailable", source: "https://depot.dev/docs/api/sdk-reference#usage-service", charge_status: "unknown",
+        charge_reason: "Usage quantities are not invoice charges", periods: [{ month: "2026-09", status: "unavailable",
+          request: { startAt: "2026-09-01", endAt: "2026-10-01" }, usage: { status: "unavailable", http_status: 401, error: "HTTP 401: Invalid token" } }] };
+    } });
+  assert.equal(data.depot.api_usage.periods[0].usage.http_status, 401);
+  const rendered = await fs.readFile(path.join(output, "billing.md"), "utf8");
+  assert.match(rendered, /Direct usage API: unavailable/);
+  assert.match(rendered, /HTTP 401: Invalid token/);
+  assert.match(rendered, /No browser login is required/);
+  assert.equal(data.browser_evidence.length, 0);
 });

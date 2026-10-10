@@ -4,6 +4,7 @@ const path = require("node:path");
 const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 const { github, privateOutput, writePrivate, totals } = require("./ci-usage.cjs");
+const { depotUsage } = require("./depot-usage.cjs");
 const execute = promisify(execFile);
 const key = value => String(value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
 const escape = value => String(value ?? "unknown").replace(/[|\r\n]/g, " ");
@@ -89,7 +90,7 @@ async function depotInventory(org, base, run = probe) {
   const result = { organization_id: org, base_plan_usd: base ?? null,
     base_source: "User-confirmed monthly plan; not an invoice", base_allocated_to_repositories: false,
     organizations: organization, projects: null, builds: [],
-    billing_status: "unavailable", billing_reason: "CLI inventory is not a billable-usage export; dashboard invoice/usage required" };
+    billing_status: "unavailable", billing_reason: "CLI inventory does not establish billed quantities or invoice charges; direct usage API is collected separately" };
   if (organization.status !== "available" || !Array.isArray(organization.data) || !organization.data.some(item => (item.OrgId ?? item.id) === org)) {
     result.billing_reason = "Requested Depot organization was not verified by existing CLI authentication";
     return result;
@@ -186,7 +187,28 @@ function report(data, usage) {
   else {
     const depot = data.depot;
     lines.push(`Organization: ${escape(depot.organization_id)}. **Base plan ${depot.base_plan_usd === null ? "unknown" : "$" + depot.base_plan_usd + "/month"}**, source: ${depot.base_source}. It appears once at account level and is not allocated per repository.`, "",
-      `**Billable usage, overage and invoiced net: ${depot.billing_status}.** ${escape(depot.billing_reason)}.`, "");
+      `**Invoice charges and overage: ${depot.billing_status}.** ${escape(depot.billing_reason)}.`, "");
+    if (depot.api_usage) {
+      const apiUsage = depot.api_usage;
+      lines.push(`**Direct usage API: ${apiUsage.status}.** Credential source: ${escape(apiUsage.credential_source)}. [API definition](${apiUsage.source}).`, "",
+        `**Invoice net, credits and remaining allowance: ${apiUsage.charge_status}.** ${apiUsage.charge_reason}.`, "");
+      if (apiUsage.error) lines.push(`API access: ${escape(apiUsage.error)}`, "");
+      for (const period of apiUsage.periods) {
+        lines.push(`### Depot API ${period.month}`, "", `Coverage: ${period.status}. Requested ${period.request?.startAt ?? "unknown"} through ${period.request?.endAt ?? "unknown"}.`, "");
+        if (period.usage?.error || period.error) lines.push(escape(period.usage?.error ?? period.error), "");
+        if (period.usage?.status !== "available" || period.status === "unverified") continue;
+        const raw = period.usage.raw;
+        lines.push(`Provider period: ${escape(raw.periodStart)} through ${escape(raw.periodEnd)}. These are returned quantities, not an invoice or a repository allocation.`, "",
+          "| Product | Provider identity | Count | Elapsed minutes | Billed minutes | Storage GB |",
+          "| --- | --- | ---: | ---: | ---: | ---: |");
+        for (const row of raw.containerBuild ?? []) lines.push(`| Container builds | ${escape(row.projectName)} (name only) | ${row.buildCount ?? "omitted"} | unknown | ${row.minutesBilled ?? "omitted"} | — |`);
+        for (const row of raw.githubActionsJobs ?? []) lines.push(`| GitHub Actions | ${escape(row.repo)} | ${row.total?.jobCount ?? "omitted"} | ${row.total?.minutesElapsed ?? "omitted"} | ${row.total?.minutesBilled ?? "omitted"} | — |`);
+        for (const row of raw.storage ?? []) lines.push(`| Storage | ${escape(row.storageType)} | — | — | — | ${row.totalGb ?? "omitted"} |`);
+        for (const row of raw.agentSandbox ?? []) lines.push(`| Agent sandbox | ${escape(row.agentType)} | ${row.sandboxesCount ?? "omitted"} | ${row.minutesElapsed ?? "omitted"} | ${row.minutesBilled ?? "omitted"} | — |`);
+        if (!["containerBuild", "githubActionsJobs", "storage", "agentSandbox"].some(name => raw[name]?.length)) lines.push("", "Provider returned no usage entries; this does not establish zero invoice charges.");
+        if (period.projects) lines.push("", `Project-ID usage: ${period.projects.status}; ${period.projects.records.length} records across ${period.projects.pages.length} pages. Build duration seconds remain separate from billed minutes. Raw fields and all pages are retained privately. ${escape(period.projects.error ?? "")}`, "");
+      }
+    }
     for (const item of depot.builds) {
       const builds = Array.isArray(item.recent_builds.data) ? item.recent_builds.data : [];
       const dates = builds.map(build => build.startTime).filter(Boolean).sort();
@@ -199,12 +221,12 @@ function report(data, usage) {
   lines.push("", "## Coverage and next action", "",
     `Source job cohort: ${usage.from} ≤ run creation < ${usage.to}. It is not compared numerically to whole-month billed quantities. Billing storage/cache and other SKUs keep their provider units and rates.`, "",
     "GitHub and Depot remain separate provider views. Depot-backed jobs in the execution report are not added as a second elapsed-minute total; no Depot project is assigned to a repository merely by matching its name. The confirmed base plan is a budget commitment, not evidence of a paid invoice or zero overage.", "",
-    "Next: resolve personal GitHub billing access and Depot usage/invoice access, rerun this report, and retain any summary mismatch or unmatched charge before choosing a runner migration.", "",
+    "Next: supply an existing credential accepted by the billing/usage APIs when access is unavailable, then rerun this report. No browser login is required by the tooling. Invoice gaps remain separate from completed CI improvements.", "",
     "Sources: [GitHub billing API](https://docs.github.com/en/rest/billing/usage), [GitHub Actions billing rules](https://docs.github.com/en/billing/concepts/product-billing/github-actions), [Depot usage/analytics](https://depot.dev/docs/github-actions/observability/github-actions-metrics).", "");
   return lines.join("\n");
 }
 
-async function collect({ owners, months, usage, output, api = github, depotOrg, depotBase, depotProbe = probe, browserObservations = [], now = new Date() }) {
+async function collect({ owners, months, usage, output, api = github, depotOrg, depotBase, depotProbe = probe, depotApi = depotUsage, browserObservations = [], now = new Date() }) {
   const periods = [];
   for (const owner of owners) for (const month of months) {
     const endpoint = owner.type === "organization" ? `organizations/${owner.name}` : `users/${owner.name}`;
@@ -233,6 +255,7 @@ async function collect({ owners, months, usage, output, api = github, depotOrg, 
     repository_metadata: repositoryMetadata,
     browser_evidence: browserEvidence(browserObservations),
     depot: depotOrg ? await depotInventory(depotOrg, depotBase, depotProbe) : null };
+  if (data.depot) data.depot.api_usage = await depotApi(depotOrg, months, { now });
   await writePrivate(path.join(output, "billing.json"), data);
   await writePrivate(path.join(output, "billing.md"), report(data, usage), false);
   return data;
@@ -268,7 +291,10 @@ if (require.main === module) {
     if (options.browserEvidenceFile) options.browserObservations = JSON.parse(await fs.readFile(options.browserEvidenceFile, "utf8"));
     const data = await collect({ ...options, usage });
     console.log(JSON.stringify({ output: options.output, periods: data.periods.map(period => ({ owner: period.owner.name,
-      month: period.month, detail: period.detail.status, reconciliation: period.reconciliation.status })), depot_billing: data.depot?.billing_status }, null, 2));
+      month: period.month, detail: period.detail.status, reconciliation: period.reconciliation.status })), depot_billing: data.depot?.billing_status,
+      depot_usage: data.depot?.api_usage && { status: data.depot.api_usage.status, error: data.depot.api_usage.error,
+        periods: data.depot.api_usage.periods.map(period => ({ month: period.month, status: period.status,
+          http_status: period.usage?.http_status, error: period.error ?? period.usage?.error })) } }, null, 2));
     if (data.periods.some(period => !["matched", "empty"].includes(period.reconciliation.status)) || data.depot?.billing_status === "unavailable") process.exitCode = 2;
   })().catch(error => { console.error(error.message); process.exitCode = 1; });
 }
