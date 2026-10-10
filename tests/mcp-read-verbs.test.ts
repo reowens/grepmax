@@ -39,6 +39,10 @@ const tools = new Map<string, ToolHandler>();
 const configs = new Map<string, { outputSchema?: z.ZodObject }>();
 const sendDaemonCommand = vi.fn();
 const vectorDbCtor = vi.fn();
+const parserStarts = vi.hoisted(() => ({
+  constructors: 0,
+  initializations: 0,
+}));
 
 let projectRoot: string;
 let sourceFile: string;
@@ -154,7 +158,13 @@ vi.mock("../src/lib/index/embedding-status", () => ({
 
 vi.mock("../src/lib/skeleton/skeletonizer", () => ({
   Skeletonizer: class {
-    async init() {}
+    constructor() {
+      parserStarts.constructors++;
+    }
+    async init() {
+      parserStarts.initializations++;
+      await new Promise((resolve) => setImmediate(resolve));
+    }
     async skeletonizeFile() {
       return {
         success: true,
@@ -610,6 +620,23 @@ describe("MCP read tools go through the daemon read verbs", () => {
       embedding: { state: "current", built: null },
     });
     expect(result.content[0].text).toContain("Last compaction: failed");
+    expect(vectorDbCtor).not.toHaveBeenCalled();
+  });
+
+  it("concurrent skeleton requests share one lazy parser initialization", async () => {
+    respond({
+      "rows.skeleton": {
+        ok: true,
+        path: sourceFile,
+        skeleton: "export function handleAuth()",
+      },
+    });
+    await Promise.all([
+      call("code_skeleton", { target: "src/auth.ts" }),
+      call("code_skeleton", { target: "src/auth.ts" }),
+    ]);
+    expect(parserStarts.constructors).toBe(1);
+    expect(parserStarts.initializations).toBe(1);
     expect(vectorDbCtor).not.toHaveBeenCalled();
   });
 

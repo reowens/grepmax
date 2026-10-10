@@ -76,7 +76,6 @@ import {
   projectEmbeddingStatus,
 } from "../lib/index/embedding-status";
 import { readGlobalConfig } from "../lib/index/index-config";
-import { generateSummaries } from "../lib/index/syncer";
 import { boundedAgentList, boundedAgentText } from "../lib/output/agent-budget";
 import { formatAgentSearchResults } from "../lib/output/agent-search-formatter";
 import {
@@ -94,12 +93,10 @@ import {
   projectCounts,
   projectCoverageNotice,
 } from "../lib/output/project-coverage";
-import { Searcher } from "../lib/search/searcher";
 import { annotateSkeletonLines } from "../lib/skeleton/annotator";
-import { Skeletonizer } from "../lib/skeleton/skeletonizer";
+import type { Skeletonizer } from "../lib/skeleton/skeletonizer";
 import { extractSymbolsFromSkeleton } from "../lib/skeleton/symbol-extractor";
 import { formatCompactionStatus } from "../lib/store/compaction-result";
-import { MetaCache } from "../lib/store/meta-cache";
 import type {
   ChunkType,
   FileMetadata,
@@ -142,8 +139,6 @@ import {
 } from "../lib/utils/store-context";
 import { matchStore } from "../lib/utils/stores";
 import { launchWatcher } from "../lib/utils/watcher-launcher";
-import { getWatcherCoveringPath } from "../lib/utils/watcher-store";
-import { WorkerPool } from "../lib/workers/pool";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -513,7 +508,7 @@ export const mcp = new Command("mcp")
     // `withLocalStore` opens and closes inside a `withStoreRead` fallback — so
     // an MCP session holds no reader marker under ~/.gmax/lancedb.lease/readers/
     // while a daemon serving the verbs is up.
-    let _skeletonizer: Skeletonizer | null = null;
+    let _skeletonizer: Promise<Skeletonizer> | undefined;
     let stdio: StdioServerHandle | undefined;
     let watchTimer: ReturnType<typeof setInterval> | undefined;
     const watchedRoots = new Set<string>();
@@ -701,6 +696,8 @@ export const mcp = new Command("mcp")
         },
         inProcess: () =>
           localStore(async (deps) => {
+            const { Searcher } = await import("../lib/search/searcher");
+            const { WorkerPool } = await import("../lib/workers/pool");
             const pool = secondary()
               ? new WorkerPool(
                   resolveEmbeddingGeneration(storeConfig()),
@@ -908,11 +905,18 @@ export const mcp = new Command("mcp")
       });
     }
 
-    async function getSkeletonizer(): Promise<Skeletonizer> {
-      if (!_skeletonizer) {
-        _skeletonizer = new Skeletonizer();
-        await _skeletonizer.init();
-      }
+    function getSkeletonizer(): Promise<Skeletonizer> {
+      // Share the import and initialization across concurrent tool calls.
+      _skeletonizer ??= import("../lib/skeleton/skeletonizer")
+        .then(async ({ Skeletonizer }) => {
+          const skeletonizer = new Skeletonizer();
+          await skeletonizer.init();
+          return skeletonizer;
+        })
+        .catch((error) => {
+          _skeletonizer = undefined;
+          throw error;
+        });
       return _skeletonizer;
     }
 
@@ -2455,7 +2459,9 @@ export const mcp = new Command("mcp")
         // Only use the registry when no daemon answered; sandboxed reads stay IPC-only.
         const watcher = daemonStatus.ok
           ? undefined
-          : getWatcherCoveringPath(currentRoot());
+          : (await import("../lib/utils/watcher-store")).getWatcherCoveringPath(
+              currentRoot(),
+            );
         let watcherLine = "Watcher: not running";
         if (watcher) {
           const status = watcher.status ?? "unknown";
@@ -2553,6 +2559,7 @@ export const mcp = new Command("mcp")
         // reach a function that returns {0, 0}, which is precisely the
         // per-session reader this tool set no longer holds. It is still called
         // rather than inlined so the stub stays the single source of truth.
+        const { generateSummaries } = await import("../lib/index/summaries");
         const noStoreNeeded = null as unknown as Parameters<
           typeof generateSummaries
         >[0];
@@ -2796,6 +2803,7 @@ export const mcp = new Command("mcp")
       const prefix = root.endsWith("/") ? root : `${root}/`;
 
       try {
+        const { MetaCache } = await import("../lib/store/meta-cache");
         const metaCache = new MetaCache(
           currentStoreContext()?.lmdbPath ?? PATHS.lmdbPath,
         );

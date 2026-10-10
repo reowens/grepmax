@@ -13,11 +13,6 @@ import {
   storeWriteDeniedNotice,
   warnStoreWriteDeniedOnce,
 } from "./store-access";
-import {
-  getWatcherCoveringPath,
-  getWatcherForProject,
-  isProcessRunning,
-} from "./watcher-store";
 
 export type LaunchResult =
   | { ok: true; pid: number; reused: boolean }
@@ -58,12 +53,16 @@ export async function launchWatcher(
 
   // 2. Check if watcher already running (daemon registers per-project entries).
   // A lease holder must reach the daemon every time: the renewal is the point.
-  const existing = lease
-    ? undefined
-    : (getWatcherForProject(projectRoot) ??
-      getWatcherCoveringPath(projectRoot));
-  if (existing && isProcessRunning(existing.pid)) {
-    return { ok: true, pid: existing.pid, reused: true };
+  if (!lease) {
+    // MCP leases must always reach IPC. They need neither the local registry
+    // nor its native LMDB module while the daemon owns watching.
+    const { getWatcherCoveringPath, getWatcherForProject, isProcessRunning } =
+      await import("./watcher-store");
+    const existing =
+      getWatcherForProject(projectRoot) ?? getWatcherCoveringPath(projectRoot);
+    if (existing && isProcessRunning(existing.pid)) {
+      return { ok: true, pid: existing.pid, reused: true };
+    }
   }
   const watchCmd = { cmd: "watch", root: projectRoot, ...lease };
 

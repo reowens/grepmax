@@ -134,6 +134,23 @@ if (require.main === module) {
     process.exitCode = 2;
   } else {
     selectHome();
-    require("./index");
+    // Editor sessions need only the MCP command. Loading the CLI registry also
+    // loads indexing/native-store modules in every session, even when all reads
+    // use the daemon. Keep root options on the existing full-registry path.
+    const argv = process.argv.slice(2);
+    if (
+      argv[0] === "mcp" &&
+      !argv.some(
+        (arg) =>
+          ["--store", "--version", "-V"].includes(arg) ||
+          arg.startsWith("--store="),
+      )
+    ) {
+      void require("./commands/mcp").mcp.parseAsync(argv.slice(1), {
+        from: "user",
+      });
+    } else {
+      require("./index");
+    }
   }
 }
