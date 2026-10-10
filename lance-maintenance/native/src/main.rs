@@ -50,6 +50,8 @@ fn resource_limits() -> anyhow::Result<()> {
         ("LANCE_IO_THREADS", "2"),
         ("LANCE_DEFAULT_IO_BUFFER_SIZE", "33554432"),
         ("RAYON_NUM_THREADS", "1"),
+        ("LANCE_FTS_NUM_SHARDS", "1"),
+        ("LANCE_FTS_PARTITION_SIZE", "64"),
         ("OMP_NUM_THREADS", "1"),
         ("OPENBLAS_NUM_THREADS", "1"),
         ("MKL_NUM_THREADS", "1"),

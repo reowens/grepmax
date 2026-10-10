@@ -548,20 +548,29 @@ pub async fn verify(
                 && found.index_details == old_index.index_details,
             "Original index contract changed"
         );
-        let expected: BTreeSet<_> = old_index
+        let original: BTreeSet<_> = old_index
             .fragment_bitmap
+            .as_ref()
             .context("Unknown original coverage")?
             .iter()
-            .filter(|id| new.contains_key(&(*id as u64)))
             .collect();
+        let actual: BTreeSet<_> = found
+            .fragment_bitmap
+            .as_ref()
+            .context("Original index coverage lost")?
+            .iter()
+            .collect();
+        // Update may retain bits naming a retired source. Only their effective
+        // intersection contributes coverage; no old segment may claim a new
+        // replacement address, or lose coverage for a surviving fragment.
         ensure!(
-            found
-                .fragment_bitmap
-                .as_ref()
-                .context("Original index coverage lost")?
-                .iter()
-                .collect::<BTreeSet<_>>()
-                == expected,
+            actual.is_subset(&original)
+                && actual
+                    .iter()
+                    .copied()
+                    .filter(|id| new.contains_key(&(*id as u64)))
+                    .collect::<BTreeSet<_>>()
+                    == expected,
             "Original coverage changed outside removed source"
         );
     }
