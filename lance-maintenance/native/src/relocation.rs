@@ -2,7 +2,7 @@
 //! addresses in one Update. Existing address-based indexes are never remapped.
 use crate::engine::{Receipt, Request, all_indices, row_digest, save_receipt, verify_owner};
 use anyhow::{Context, Result, ensure};
-use arrow_array::{RecordBatch, RecordBatchIterator, UInt64Array};
+use arrow_array::{RecordBatch, RecordBatchIterator, UInt32Array, UInt64Array};
 use arrow_row::{RowConverter, SortField};
 use arrow_schema::Schema;
 use futures::TryStreamExt;
@@ -204,24 +204,52 @@ pub async fn execute(
     let mut addresses = vec![];
     let mut memory = 0;
     while let Some(batch) = stream.try_next().await? {
-        let payload = batch.project(&columns)?;
-        let next = payload.get_array_memory_size();
-        if memory + next > PAYLOAD {
+        let projected = batch.project(&columns)?;
+        ensure!(
+            projected.get_array_memory_size() <= 64 * 1024 * 1024,
+            "Decoded scan batch exceeds memory bound"
+        );
+        // Scanner slices can retain a whole page's buffers. Materialize only
+        // the selected prefix, and shrink a dense batch before refusing it.
+        let mut chosen = projected.num_rows();
+        let payload = loop {
+            let offsets = UInt32Array::from_iter_values(0..chosen as u32);
+            let copied = RecordBatch::try_new(
+                projected.schema(),
+                projected
+                    .columns()
+                    .iter()
+                    .map(|column| arrow_select::take::take(column, &offsets, None))
+                    .collect::<std::result::Result<Vec<_>, _>>()?,
+            )?;
+            if memory + copied.get_array_memory_size() <= PAYLOAD {
+                break Some(copied);
+            }
+            if chosen == 1 {
+                break None;
+            }
+            chosen = (chosen / 2).max(1);
+        };
+        let Some(payload) = payload else {
             ensure!(
                 !batches.is_empty(),
-                "One scan batch exceeds relocation payload bound"
+                "One row exceeds relocation payload bound"
             );
             break;
-        }
+        };
+        let next = payload.get_array_memory_size();
         let rowaddr = batch
             .column_by_name("_rowaddr")
             .context("Physical row address absent")?
             .as_any()
             .downcast_ref::<UInt64Array>()
             .context("Physical address type changed")?;
-        addresses.extend(rowaddr.values().iter().copied());
+        addresses.extend(rowaddr.values().iter().take(chosen).copied());
         memory += next;
         batches.push(payload);
+        if chosen < projected.num_rows() {
+            break;
+        }
     }
     drop(stream);
     if addresses.is_empty() {
@@ -478,19 +506,15 @@ pub async fn verify(
     );
     // Check the saved row identities against the protected source, in bounded
     // batches. This also prevents a forged address list from authorizing loss.
-    let fragment = before
-        .get_fragment(source as usize)
-        .context("Protected source missing")?;
+    ensure!(
+        before.get_fragment(source as usize).is_some(),
+        "Protected source missing"
+    );
     let mut original = vec![];
     for addresses in proof.addresses.chunks(64) {
-        original.push(
-            fragment
-                .take(
-                    &addresses.iter().map(|a| *a as u32).collect::<Vec<_>>(),
-                    before.schema(),
-                )
-                .await?,
-        );
+        // FileFragment.take uses *logical* positions after deletion filtering.
+        // Dataset.take_rows resolves physical row IDs for this non-stable table.
+        original.push(before.take_rows(addresses, before.schema().clone()).await?);
     }
     if !original.is_empty() {
         ensure!(

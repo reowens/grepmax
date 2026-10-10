@@ -15,7 +15,12 @@ CASES = [
     'test_production_executable_rejects_qualification_fault_fields',
     'test_recovery_uses_remaining_original_cap_after_its_own_space_consumption',
     'test_verified_copy_recovery_preserves_subsequent_watched_edits',
-] + ['fixture_case_' + str(i) for i in range(7)]
+    'test_fragment_selected_index_refresh_and_interruption',
+    'test_partial_relocation_preserves_values_and_protected_reader',
+    'test_newer_orphan_requires_complete_references_and_age',
+    'test_oversized_fragment_makes_finite_bounded_progress',
+    'test_repeated_index_catchup_merges_small_segments',
+] + ['fixture_case_' + str(i) for i in range(9)]
 
 
 class BoundedArtifactPackaging(unittest.TestCase):
@@ -39,22 +44,24 @@ class BoundedArtifactPackaging(unittest.TestCase):
             self.write(directory / 'capabilities.json', {
                 'protocolVersion': 1, 'engine': '12.0.0',
                 'nativeTotalWriteBudgetEnforced': True,
-                'budgetKind': 'cumulative-writes', 'protectedReaderProtocol': 1})
+                'budgetKind': 'cumulative-writes', 'protectedReaderProtocol': 1, 'incrementalRepairProtocol': 1})
             proof = {'schemaVersion': 1, 'engine': '12.0.0',
                      'verdict': 'PASS_BOUNDED_NATIVE_ACCEPTANCE',
                      'binarySha256': hashlib.sha256(payload).hexdigest(),
                      'sourceDigest': self.digest, 'provenanceUnchanged': True,
-                     'tests': {'executed': 14, 'passed': 14, 'skipped': 0,
+                     'tests': {'executed': len(CASES), 'passed': len(CASES), 'skipped': 0,
                                'failures': 0, 'errors': 0},
                      'testCases': ['fixture.' + name for name in CASES]}
             self.write(directory / 'acceptance.json', proof)
             fault = dict(proof)
             fault['verdict'] = 'PASS_BOUNDED_NATIVE_FAULT_ACCEPTANCE'
-            fault['tests'] = {'executed': 2, 'passed': 2, 'skipped': 0,
+            fault['tests'] = {'executed': 4, 'passed': 4, 'skipped': 0,
                               'failures': 0, 'errors': 0}
             fault['testCases'] = [
                 'test_injected_backend_enospc_recovers_exact_owned_payloads_without_refund',
-                'test_sigkill_after_first_owned_tag_delete_resumes_durable_finalization']
+                'test_sigkill_after_first_owned_tag_delete_resumes_durable_finalization',
+                'test_relocation_interruptions_preserve_each_valid_intermediate_head',
+                'test_newer_orphan_and_partial_inventory_never_use_a_timestamp_cutoff']
             self.write(directory / 'fault-acceptance.json', fault)
 
     @staticmethod

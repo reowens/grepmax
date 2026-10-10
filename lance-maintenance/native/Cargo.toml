@@ -17,6 +17,7 @@ serde_json = "1"
 url = "2"
 sha2 = "0.10"
 anyhow = "1"
+arrow-select = { version = "58", optional = true }
 arrow-array = { version = "58", optional = true }
 arrow-ipc = { version = "58", optional = true }
 arrow-schema = { version = "58", features = ["serde"], optional = true }
@@ -29,7 +30,7 @@ prost = { version = "=0.14.4", optional = true }
 
 [features]
 default = []
-engine = ["dep:lance", "dep:lance-io", "dep:lance-table", "dep:lance-index", "dep:arrow-array", "dep:arrow-ipc", "dep:arrow-schema", "dep:arrow-row", "dep:prost", "dep:uuid"]
+engine = ["dep:lance", "dep:lance-io", "dep:lance-table", "dep:lance-index", "dep:arrow-array", "dep:arrow-select", "dep:arrow-ipc", "dep:arrow-schema", "dep:arrow-row", "dep:prost", "dep:uuid"]
 qualification = []
 
 [[bin]]

@@ -26,13 +26,13 @@ for (const platform of ["darwin-arm64", "linux-x64"]) {
   const capability = JSON.parse(read(path.join(directory, "capabilities.json"), 4096));
   if (capability.protocolVersion !== 1 || capability.engine !== "12.0.0" ||
       capability.nativeTotalWriteBudgetEnforced !== true || capability.budgetKind !== "cumulative-writes" ||
-      capability.protectedReaderProtocol !== 1) throw new Error(`Incomplete native capabilities: ${platform}`);
+      capability.protectedReaderProtocol !== 1 || capability.incrementalRepairProtocol !== 1) throw new Error(`Incomplete native capabilities: ${platform}`);
   const binary = read(path.join(directory, "gmax-bounded-maintenance"), 256 * 1024**2);
   const sha256 = crypto.createHash("sha256").update(binary).digest("hex");
   const proof = JSON.parse(read(path.join(directory, "acceptance.json"), 64 * 1024));
   if (proof.schemaVersion !== 1 || proof.verdict !== "PASS_BOUNDED_NATIVE_ACCEPTANCE" ||
       proof.engine !== "12.0.0" || proof.binarySha256 !== sha256 || !Number.isSafeInteger(proof.tests?.executed) ||
-      proof.tests.executed < 14 || proof.tests.passed !== proof.tests.executed || proof.tests.skipped !== 0 ||
+      proof.tests.executed < 21 || proof.tests.passed !== proof.tests.executed || proof.tests.skipped !== 0 ||
       proof.tests.failures !== 0 || proof.tests.errors !== 0 ||
       !Array.isArray(proof.testCases) || proof.testCases.length !== proof.tests.executed ||
       new Set(proof.testCases).size !== proof.testCases.length) throw new Error(`Incomplete native acceptance: ${platform}`);
@@ -45,16 +45,24 @@ for (const platform of ["darwin-arm64", "linux-x64"]) {
     "test_production_executable_rejects_qualification_fault_fields",
     "test_recovery_uses_remaining_original_cap_after_its_own_space_consumption",
     "test_verified_copy_recovery_preserves_subsequent_watched_edits",
+    "test_fragment_selected_index_refresh_and_interruption",
+    "test_partial_relocation_preserves_values_and_protected_reader",
+    "test_newer_orphan_requires_complete_references_and_age",
+    "test_oversized_fragment_makes_finite_bounded_progress",
+    "test_repeated_index_catchup_merges_small_segments",
+
   ]) {
     if (!proof.testCases.some(name => typeof name === "string" && (name === test || name.endsWith(`.${test}`)))) throw new Error(`Required native acceptance case absent: ${test}`);
   }
   const fault = JSON.parse(read(path.join(directory, "fault-acceptance.json"), 64 * 1024));
   if (fault.verdict !== "PASS_BOUNDED_NATIVE_FAULT_ACCEPTANCE" || fault.sourceDigest !== sourceSha256 ||
-      fault.provenanceUnchanged !== true || !Number.isSafeInteger(fault.tests?.executed) || fault.tests.executed < 2 ||
+      fault.provenanceUnchanged !== true || !Number.isSafeInteger(fault.tests?.executed) || fault.tests.executed < 4 ||
       fault.tests?.passed !== fault.tests?.executed || fault.tests?.skipped !== 0 ||
       fault.tests?.failures !== 0 || fault.tests?.errors !== 0) throw new Error(`Native fault recovery acceptance incomplete: ${platform}`);
   for (const test of ["test_injected_backend_enospc_recovers_exact_owned_payloads_without_refund",
-    "test_sigkill_after_first_owned_tag_delete_resumes_durable_finalization"]) {
+    "test_sigkill_after_first_owned_tag_delete_resumes_durable_finalization",
+    "test_relocation_interruptions_preserve_each_valid_intermediate_head",
+    "test_newer_orphan_and_partial_inventory_never_use_a_timestamp_cutoff"]) {
     if (!fault.testCases?.some(name => typeof name === "string" && (name === test || name.endsWith(`.${test}`)))) throw new Error(`Required native fault case absent: ${test}`);
   }
   const file = `gmax-bounded-maintenance-${platform}`;

@@ -1882,6 +1882,7 @@ dependencies = [
  "arrow-ipc",
  "arrow-row",
  "arrow-schema",
+ "arrow-select",
  "async-trait",
  "bytes",
  "futures",
