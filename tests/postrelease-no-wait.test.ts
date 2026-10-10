@@ -50,7 +50,7 @@ describe("release hook does not wait on publication", () => {
     const { result, commands } = run();
     expect(result.status).toBe(0);
     expect(commands).toEqual(["git", "git"]);
-    expect(result.stdout).toContain("publication runs separately");
+    expect(result.stdout).toContain("publication is an explicit local operation");
   });
 
   it("surfaces a push failure immediately", () => {

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# The version hook pushes the release and returns immediately. Publication runs
-# separately; do not keep the developer waiting on CI or registry propagation.
+# The version hook pushes the release and returns immediately. There is no
+# GitHub CI publication job. Checks and publication are explicit local operations.
 # Once the package exists, use --install for one install and normal handover.
 VERSION="${npm_package_version:-$(node -p "require('./package.json').version")}"
 TAG="v${VERSION}"
@@ -12,7 +12,9 @@ case "${1:-}" in
     echo "==> Pushing main + ${TAG}"
     git push origin main
     git push origin "${TAG}"
-    echo "==> ${TAG} pushed; publication runs separately."
+    echo "==> ${TAG} pushed; publication is an explicit local operation."
+    echo "    Check locally: pnpm run release:check"
+    echo "    Publish locally: npm publish --ignore-scripts --access public"
     echo "    After publication: bash scripts/postrelease.sh --install"
     exit 0
     ;;
