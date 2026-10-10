@@ -3,21 +3,25 @@
 ## Current execution — October 10, 2026
 
 The [Gmax Delivery Plan](plans/gmax-delivery.md) is the sole execution plan.
-Milestone A is complete in published 0.26.85. The accepted local 0.26.86 MCP
-startup package is now installed in both runtimes/plugin scopes and serving; npm
-publication awaits fresh authentication.
+Milestones A and B are complete. 0.26.86 is published, registry integrity and exact
+artifact identity verified, installed in both runtimes/plugin scopes and serving
+from a ready/active daemon.
 Four former open plans are archived as superseded/deferred, with explicit transfers.
 Historical audits, incident reports and agent proposals are reference records, not queues.
 
 | Order | Deliverable | State |
 | --- | --- | --- |
 | A | Complete bounded storage and path/content query repair | Complete: local checks, publication, both installations/plugin scopes, daemon handover and installed repair verification |
-| B | Reduce session resource overhead | Implemented, locally accepted and installed in both roots/plugin scopes; npm publication needs fresh MFA |
-| C | Complete one document-search consumer rollout | Selected after B |
+| B | Reduce session resource overhead | Complete: local acceptance, registry-verified publication, both installations/plugin scopes and active daemon |
+| C | Complete one document-search consumer rollout | Queued after the requested CI/release review |
 
 The plan defines implementation, root review, local checks, release/install and closeout
 for each deliverable. GitHub Actions is disabled; all six workflow files are preserved
-outside its active directory. No GitHub CI or CI waiting is authorized. Repeated unchanged cleanup/timing observations are cancelled.
+outside its active directory. The user requested a full CI/release requirements
+review next session, including
+release-only CI and trusted publishing; future policy is not locked. Do not restore
+automation during this review without a selected change. Repeated unchanged
+cleanup/timing observations are cancelled.
 Research, optional polish, watcher extraction and embedding migration are outside the
 execution queue. Depot account/provider integration is handed off to platform.
 

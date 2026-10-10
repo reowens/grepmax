@@ -1,8 +1,8 @@
 ---
 type: plan
-status: awaiting
+status: active
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-10T10:01:00Z
+updated: 2026-10-10T10:13:41Z
 surfaces:
   - store
   - daemon
@@ -19,8 +19,8 @@ audience: internal
 parent_plan:
 related_plans:
 related_docs:
-current_state: "Milestone A is delivered in 0.26.85: registry integrity/source, both Node installations, both plugin scopes, active serving daemon and installed 29-field repair checks are verified. Full release-source tests ran locally. GitHub Actions is disabled and all six workflows are preserved outside its active directory. B is implemented and integrated at bcd5eb9 as 0.26.86; local acceptance passed. Both runtimes/plugin scopes and the ready active daemon are verified on the accepted local package; npm publication requires fresh MFA. C stays queued."
-next_step: "npm publication is deferred because the user cannot authenticate now. Do not use the preview or retry authentication without new steering; later publish the accepted 0.26.86 and verify registry identity. B stays open until publication finishes; C remains queued. Do not start new CI, restore GitHub workflows, repeat unchanged storage observations or reopen delivered A without a concrete new failure."
+current_state: "Milestones A and B are delivered: 0.26.86 is published, registry integrity and byte identity with the source-qualified accepted artifact verified, both Node runtimes/plugin scopes and the ready active daemon verified. Local acceptance passed; no GitHub CI ran. All six workflows remain preserved and Actions remains disabled. Next session is a full CI/release requirements review, including release-only CI and trusted publishing; future policy is not locked. C stays queued."
+next_step: "Review all CI/release requirements with the user before milestone C. Inventory triggers, runner/providers, local/Depot checks, duplicate work/minutes, Linux/macOS/build-box needs, npm trusted publishing, source/provenance and installation. Propose concrete options without restoring automation or treating the future policy as settled. Do not repeat unchanged acceptance tests."
 summary: One execution plan with three ordered deliverables. Historical incidents and untriggered research are not an execution queue.
 ---
 
@@ -55,13 +55,15 @@ search/daemon module extraction already shipped; do not recreate them.
 
 ## Ordered deliverables
 
-Milestone A is complete. B is implemented and integrated; local acceptance passed.
-Both installations and their MCP startup checks passed; npm publication awaits fresh
-authentication. C stays queued.
-Root owns review, integration and delivery. The user's current rule is zero GitHub
-CI. Run checks in the repository; any future Depot execution must be independent
-of GitHub Actions. Do not create additional plans or start agents without renewed
-steering after the stop instruction.
+Milestones A and B are complete. 0.26.86 is published, registry-verified and installed
+in both runtimes/plugin scopes; the serving daemon is ready/active. Local checks
+and installed startup acceptance passed. C stays queued behind the requested CI review.
+Root owns review, integration and delivery. GitHub Actions is currently disabled
+and release checks run locally. The user's latest direction is a full review of CI
+and release requirements next session, including release-only CI and trusted
+publishing. Future policy is not settled. Do not restore automation or treat earlier
+zero-CI instructions as an approved final architecture; review requirements and
+propose concrete changes first. Do not start agents without renewed steering.
 
 ### A. Complete storage and query repair
 
@@ -332,19 +334,43 @@ contracts. Native source/binaries are unchanged and qualified artifacts were reu
 Regression cases preserve search, progress, cancellation, distinct renewable leases,
 local fallback and clean session teardown. No GitHub CI ran.
 
-Main and `v0.26.86` are pushed. npm rejected publication with EOTP and requires
-fresh authentication; the registry release is not complete. The user cannot
-authenticate now and directed no preview use, so the pending publisher was stopped.
-Do not retry authentication or use the preview without renewed steering. The audited local
-0.26.86 tarball is installed in both existing Node roots. All 314 package files
-and 15 plugin files match, both plugin scopes are updated, and the daemon is
-ready/active on 0.26.86. Both installed entries passed the three-session startup
-checks with zero heavy modules. Settings and unrelated Depot files are unchanged.
-Existing clients reconnect to adopt the startup change. This is a locally accepted
-installation, not a published npm release. B remains open for npm authentication,
-publication and registry identity verification.
+Main and `v0.26.86` are pushed, npm publication completed after user MFA, and the
+GitHub release is published. The successful publication used the CLI and user MFA
+without the preview or GitHub CI. Registry SHA-512
+integrity and byte-for-byte equality with the accepted tarball were verified. The
+registry omits `gitHead`; source identity is tied to the recorded clean release
+checkout `bcd5eb9` through the exact source-qualified tarball, not a registry source
+attestation. Review source/provenance guarantees with trusted publishing next session.
+The identical registry artifact is already installed in both Node roots. All 314
+package files and 15 plugin files match, both plugin scopes are
+updated, and the daemon is ready/active on 0.26.86. Both installed entries passed
+the three-session startup checks with zero heavy modules. Settings and unrelated
+Depot files are unchanged. Existing clients reconnect to adopt the startup change.
+No reinstall or repeated startup/native acceptance was needed because the artifacts
+are identical. Milestone B is complete.
 Private evidence is `/private/tmp/gmax-mcp-startup-evidence/`, including
 `qualification-summary.json`, the paired session reports and accepted tarball.
+
+### Next session: review all CI and release requirements
+
+The user remains dissatisfied with the CI setup and requested a full review before
+further execution. This review takes precedence over starting C. The earlier zero
+GitHub CI direction explains the current disabled configuration; the latest direction
+reopens future policy. Release-only CI is a possibility, not a selected solution.
+Trusted publishing must be included rather than assumed permanently replaced.
+
+Inventory all triggers, checks, runner/provider choices, artifact builds, publication
+and installation steps. Reconcile push speed/no routine waiting, tests in repo or
+Depot, duplicate work/minutes, Linux/macOS coverage and the incoming local Linux
+build box. Review npm OIDC trusted publisher configuration and its required workflow
+identity. The preserved `release.yml` has `id-token: write` and npm OIDC publishing;
+its move plus repository Actions disablement stopped that path from running.
+Do not change credentials or publisher settings to make the review easier.
+
+Present one coherent set of options and concrete workflow/hook changes for the user
+to review. Do not restore old automation, delete preserved YAML, add push/PR jobs,
+rerun unchanged tests or wait on CI while reviewing. No final future CI architecture
+has been approved. Keep C queued until this requested review and steering finish.
 
 ### C. Complete one document-search consumer rollout
 
@@ -405,6 +431,9 @@ parallel omnibus plan.
 
 ## Version History
 
+- **2026-10-10T10:13:41Z** Status: in-session → active — Milestone B delivered in published, registry-verified and installed 0.26.86. Next session: full CI/release requirements review, including release-only CI and trusted publishing; future policy is not locked. C queued.
+- **2026-10-10T10:04:27Z** Started (active → in-session).
+- **2026-10-10T10:04:24Z** Status: awaiting → active — User reports npm login complete; resume direct CLI publication and registry verification. No preview or GitHub CI.
 - **2026-10-10T10:01:00Z** Status: in-session → awaiting — B implemented and locally installed/verified in 0.26.86; npm publication requires fresh authentication/MFA. C remains queued. No GitHub CI.
 - **2026-10-10T09:35:23Z** Started (active → in-session).
 - **2026-10-10T09:33:04Z** Status: in-session → active — Milestone A delivered in 0.26.85: both runtimes/plugin scopes, ready active daemon and installed repair verified. Zero GitHub CI: workflows moved intact, Actions disabled. B is next; agents and isolated patches remain stopped.
