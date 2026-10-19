@@ -20,7 +20,7 @@ mlx-summarizer = "summarizer:main"
 # Constraints do not install otherwise-unused packages or change model weights.
 # Keep these floors when refreshing the lock; npm audits do not cover Python.
 constraint-dependencies = [
-    "aiohttp>=3.14.3",
+    "aiohttp>=3.14.4",
     "anyio>=4.14.2",
     "click>=8.3.3",
     "datasets>=5.0.1",
