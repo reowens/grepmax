@@ -29,6 +29,8 @@ import {
 } from "vitest";
 import type { z } from "zod";
 
+import { GraphWorkBudget } from "../src/lib/graph/work-budget";
+
 type ToolHandler = (args: Record<string, unknown>) => Promise<{
   content: Array<{ text: string }>;
   isError?: boolean;
@@ -979,6 +981,23 @@ describe("MCP read tools go through the daemon read verbs", () => {
     respond({ "graph.paths": { ok: true, path: null } });
     expect(await call("find_paths", { from: "a", to: "z" })).toContain(
       "No callees path from 'a' to 'z'",
+    );
+    expect(vectorDbCtor).not.toHaveBeenCalled();
+  });
+
+  it("keeps budget-limited empty path/neighbor answers explicitly partial", async () => {
+    const budget = new GraphWorkBudget();
+    budget.partial("queries_limit");
+    const work = budget.snapshot();
+    respond({
+      "graph.paths": { ok: true, path: null, work },
+      "graph.neighbors": { ok: true, hits: [], work },
+    });
+    expect(await call("find_paths", { from: "a", to: "z" })).toContain(
+      "Traversal partial: budget_limit (queries_limit)",
+    );
+    expect(await call("get_neighbors", { symbol: "a" })).toContain(
+      "Traversal partial: budget_limit (queries_limit)",
     );
     expect(vectorDbCtor).not.toHaveBeenCalled();
   });

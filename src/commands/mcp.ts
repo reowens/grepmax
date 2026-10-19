@@ -70,6 +70,11 @@ import type {
 } from "../lib/graph/impact";
 import { hopLabelAgent } from "../lib/graph/test-hits";
 import { traceEvidenceNote } from "../lib/graph/trace-evidence";
+import {
+  GraphWorkBudget,
+  type GraphWorkSummary,
+  graphWorkNote,
+} from "../lib/graph/work-budget";
 import { resolveEmbeddingGeneration } from "../lib/index/embedding-generation";
 import {
   assertEmbeddingSearchCompatible,
@@ -1928,6 +1933,7 @@ export const mcp = new Command("mcp")
           parts.push("No known callees.");
         }
 
+        if (depth > 1) parts.push(`Caller ${graphWorkNote(peek.callerWork)}`);
         return ok(parts.join("\n"));
       } catch (e) {
         return toolError("Peek failed", e);
@@ -2172,24 +2178,33 @@ export const mcp = new Command("mcp")
         const { proj, root } = resolveRegisteredProject(args.root);
         if (!proj) return err("Project not added to gmax yet.");
         const scope = projectScope(root);
-        const hits = await graphVerb<GraphNeighborHit[]>("graph.neighbors", {
+        const { hits, work } = await graphVerb<{
+          hits: GraphNeighborHit[];
+          work?: GraphWorkSummary;
+        }>("graph.neighbors", {
           projectRoot: root,
           scope,
           payload: { symbol, direction, maxHops },
-          render: (resp) => (resp.hits as GraphNeighborHit[]) ?? [],
+          render: (resp) => ({
+            hits: (resp.hits as GraphNeighborHit[]) ?? [],
+            work: resp.work as GraphWorkSummary | undefined,
+          }),
           inProcess: () =>
-            localStore((deps) =>
-              runGraphNeighbors(deps.vectorDb!, {
+            localStore(async (deps) => {
+              const work = new GraphWorkBudget();
+              const hits = await runGraphNeighbors(deps.vectorDb!, {
                 symbol,
                 direction,
                 maxHops,
                 scope,
-              }),
-            ),
+                work,
+              });
+              return { hits, work: work.snapshot() };
+            }),
         });
         if (hits.length === 0) {
           return ok(
-            `No ${direction} found for '${symbol}' within ${maxHops} hop(s). Check it is indexed (\`gmax status\`) or try the \`dead\` tool.`,
+            `No ${direction} returned for '${symbol}' within ${maxHops} hop(s). ${graphWorkNote(work)}`,
           );
         }
         const rel = (p: string) =>
@@ -2198,10 +2213,13 @@ export const mcp = new Command("mcp")
           `${direction} of ${symbol} (≤${maxHops} hops, ${hits.length} found):`,
         ];
         for (const h of hits.slice(0, 100)) {
-          const loc = h.file ? ` ${rel(h.file)}:${h.line + 1}` : " (external)";
+          const loc = h.file
+            ? ` ${rel(h.file)}:${h.line + 1}`
+            : " (location unavailable)";
           lines.push(`  [${h.hops}h] ${h.symbol}${loc}`);
         }
         if (hits.length > 100) lines.push(`  … and ${hits.length - 100} more`);
+        lines.push(graphWorkNote(work));
         return ok(lines.join("\n"));
       } catch (e) {
         return toolError("get_neighbors failed", e);
@@ -2223,31 +2241,40 @@ export const mcp = new Command("mcp")
         const { proj, root } = resolveRegisteredProject(args.root);
         if (!proj) return err("Project not added to gmax yet.");
         const scope = projectScope(root);
-        const pathSyms = await graphVerb<string[] | null>("graph.paths", {
+        const { path: pathSyms, work } = await graphVerb<{
+          path: string[] | null;
+          work?: GraphWorkSummary;
+        }>("graph.paths", {
           projectRoot: root,
           scope,
           payload: { from, to, direction, maxHops },
-          render: (resp) => (resp.path as string[] | null) ?? null,
+          render: (resp) => ({
+            path: (resp.path as string[] | null) ?? null,
+            work: resp.work as GraphWorkSummary | undefined,
+          }),
           inProcess: () =>
-            localStore((deps) =>
-              runGraphPaths(deps.vectorDb!, {
+            localStore(async (deps) => {
+              const work = GraphWorkBudget.path();
+              const path = await runGraphPaths(deps.vectorDb!, {
                 from,
                 to,
                 direction,
                 maxHops,
                 scope,
-              }),
-            ),
+                work,
+              });
+              return { path, work: work.snapshot() };
+            }),
         });
         if (!pathSyms) {
           return ok(
-            `No ${direction} path from '${from}' to '${to}' within ${maxHops} hops.`,
+            `No ${direction} path from '${from}' to '${to}' was returned within ${maxHops} hops. ${graphWorkNote(work)}`,
           );
         }
         const arrow = direction === "callees" ? " → " : " ← ";
         const hops = pathSyms.length - 1;
         return ok(
-          `Path (${hops} hop${hops === 1 ? "" : "s"}): ${pathSyms.join(arrow)}`,
+          `Path (${hops} hop${hops === 1 ? "" : "s"}): ${pathSyms.join(arrow)}\n${graphWorkNote(work)}`,
         );
       } catch (e) {
         return toolError("find_paths failed", e);
@@ -3894,7 +3921,7 @@ export const mcp = new Command("mcp")
         "find_paths",
         {
           description:
-            "Graph primitive: shortest call-graph path between two symbols, as a symbol sequence. direction 'callees' searches outward from `from` (does `from` transitively call `to`?), 'callers' searches inward. Returns 'no path' if unreachable within max_hops.",
+            "Graph primitive: shortest call-graph path between two symbols, as a symbol sequence. direction 'callees' searches outward from `from` (does `from` transitively call `to`?), 'callers' searches inward. Reports traversal coverage and partial stop reasons; a limited search does not prove no path exists.",
           inputSchema: {
             from: z.string().describe("Start symbol"),
             to: z.string().describe("Target symbol"),

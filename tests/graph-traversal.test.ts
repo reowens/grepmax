@@ -48,9 +48,8 @@ describe("bfsNeighbors", () => {
   it("respects the maxNodes budget", async () => {
     const wide = adj({ root: Array.from({ length: 50 }, (_, i) => `n${i}`) });
     const hits = await bfsNeighbors("root", wide, 1, 10);
-    // start counts toward the visited budget; expansion stops once exceeded.
-    expect(hits.length).toBeLessThanOrEqual(50);
-    expect(hits.length).toBeGreaterThan(0);
+    // Seed counts toward the hard visited ceiling, including within one batch.
+    expect(hits).toHaveLength(9);
   });
 
   it("handles cycles without looping forever", async () => {

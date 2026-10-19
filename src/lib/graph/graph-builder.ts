@@ -9,7 +9,9 @@ import {
 } from "../utils/filter-builder";
 import {
   QUERY_EXECUTION_OPTIONS,
+  QueryTimeoutError,
   streamQueryRows,
+  withQueryTimeout,
 } from "../utils/query-timeout";
 import { isBuiltinCallee } from "./callsites";
 import {
@@ -29,6 +31,8 @@ import {
   type TraceMetadata,
   type TraceReferenceColumn,
 } from "./trace-evidence";
+
+import { GraphWorkBudget, type GraphWorkSummary } from "./work-budget";
 
 export type EdgeDirection = "callers" | "callees";
 
@@ -154,6 +158,85 @@ export class GraphBuilder {
     return result;
   }
 
+  /** Every traversal query reserves its row/query allowance before native work.
+   * A saturated adjacency window means unknown remaining rows, never exhaustion. */
+  private async queryRows(
+    query: {
+      limit(n: number): {
+        toArray(options: { timeoutMs: number }): Promise<any[]>;
+      };
+    },
+    limit: number,
+    work?: GraphWorkBudget,
+    adjacency = false,
+  ): Promise<any[]> {
+    if (!work) return query.limit(limit).toArray(QUERY_EXECUTION_OPTIONS);
+    if (work.stopped()) return [];
+    const rowLimit = Math.min(limit, work.remaining("fetchedRows"));
+    if (rowLimit === 0) {
+      work.partial("fetchedRows_limit");
+      return [];
+    }
+    if (!work.take("queries")) return [];
+    const ms = Math.max(
+      1,
+      Math.min(QUERY_EXECUTION_OPTIONS.timeoutMs, work.remainingMs()),
+    );
+    let rows: any[];
+    try {
+      rows = await withQueryTimeout(
+        query.limit(rowLimit).toArray({ timeoutMs: ms }),
+        "graph traversal",
+        ms,
+      );
+    } catch (error) {
+      if (
+        !(error instanceof QueryTimeoutError) &&
+        !(error instanceof Error && /timed out|timeout/i.test(error.message))
+      )
+        throw error;
+      work.partial(ms < work.remainingMs() ? "query_timeout" : "deadline");
+      return [];
+    }
+    // Count all returned rows, including rows later rejected by language/policy.
+    work.counts.fetchedRows += rows.length;
+    if (adjacency && rows.length >= rowLimit)
+      work.partial("adjacency_row_limit");
+    if (rowLimit < limit && rows.length >= rowLimit)
+      work.partial("fetchedRows_limit");
+    if (!work.active()) return [];
+    const admitted: any[] = [];
+    for (const row of rows) {
+      const bounded = this.budgetRow(row, work);
+      // Incomplete columns cannot establish identity, edge kind or checked absence.
+      if (!bounded) break;
+      admitted.push(bounded);
+    }
+    return admitted;
+  }
+
+  /** Bound symbol-array copies even for a single very wide chunk. Native row
+   * decoding/bytes are outside this work contract; no full-store counting probes. */
+  private budgetRow(row: any, work: GraphWorkBudget): any {
+    const bounded = { ...row };
+    for (const column of [
+      "defined_symbols",
+      "referenced_symbols",
+      "member_referenced_symbols",
+      "type_referenced_symbols",
+    ]) {
+      const values = row[column];
+      if (values == null) continue;
+      const out: string[] = [];
+      for (let i = 0; i < (values.length ?? 0); i++) {
+        if (!work.take("symbolItems")) return null;
+        out.push(typeof values.get === "function" ? values.get(i) : values[i]);
+      }
+      bounded[column] = out;
+    }
+    return bounded;
+  }
+
   /**
    * Find all chunks that call the given symbol.
    *
@@ -166,6 +249,7 @@ export class GraphBuilder {
     symbol: string,
     anchorFamily?: string | null,
     trace?: CallerTraceContext,
+    work?: GraphWorkBudget,
   ): Promise<GraphNode[]> {
     const table = await this.db.ensureTable();
     const escaped = escapeSqlString(symbol);
@@ -174,29 +258,32 @@ export class GraphBuilder {
     // (referenced_symbols) OR a type position (type_referenced_symbols). The
     // two are stored separately so type edges never inflate the call-edge count
     // used for ranking; navigation unions them.
-    const rows = await table
-      .query()
-      .select([
-        "path",
-        "start_line",
-        ...(trace ? ["end_line"] : []),
-        "defined_symbols",
-        "referenced_symbols",
-        // member_/type_ are needed so each caller edge can be tagged free vs
-        // member vs type (the confidence tier + builtin-member suppression).
-        "member_referenced_symbols",
-        "type_referenced_symbols",
-        "role",
-        "parent_symbol",
-        "complexity",
-      ])
-      .where(
-        this.scopeWhere(
-          `(array_contains(referenced_symbols, '${escaped}') OR array_contains(type_referenced_symbols, '${escaped}'))`,
+    const rows = await this.queryRows(
+      table
+        .query()
+        .select([
+          "path",
+          "start_line",
+          ...(trace ? ["end_line"] : []),
+          "defined_symbols",
+          "referenced_symbols",
+          // member_/type_ are needed so each caller edge can be tagged free vs
+          // member vs type (the confidence tier + builtin-member suppression).
+          "member_referenced_symbols",
+          "type_referenced_symbols",
+          "role",
+          "parent_symbol",
+          "complexity",
+        ])
+        .where(
+          this.scopeWhere(
+            `(array_contains(referenced_symbols, '${escaped}') OR array_contains(type_referenced_symbols, '${escaped}'))`,
+          ),
         ),
-      )
-      .limit(100)
-      .toArray(QUERY_EXECUTION_OPTIONS);
+      100,
+      work,
+      true,
+    );
 
     // Cross-language phantom-edge guard. When the anchor family is known, drop
     // callers from a *different known* family; callers we can't classify (unknown
@@ -261,22 +348,26 @@ export class GraphBuilder {
    * Find what the given symbol calls.
    * First finds the definition of the symbol, then returns its referenced_symbols.
    */
-  async getCallees(symbol: string): Promise<string[]> {
+  async getCallees(symbol: string, work?: GraphWorkBudget): Promise<string[]> {
     const table = await this.db.ensureTable();
     const escaped = escapeSqlString(symbol);
 
     // Find the definition of the symbol
-    const rows = await table
-      .query()
-      .select([
-        "path",
-        "referenced_symbols",
-        "member_referenced_symbols",
-        "content",
-      ])
-      .where(this.scopeWhere(`array_contains(defined_symbols, '${escaped}')`))
-      .limit(1)
-      .toArray(QUERY_EXECUTION_OPTIONS);
+    const rows = await this.queryRows(
+      table
+        .query()
+        .select([
+          "path",
+          "referenced_symbols",
+          "member_referenced_symbols",
+          "content",
+        ])
+        .where(
+          this.scopeWhere(`array_contains(defined_symbols, '${escaped}')`),
+        ),
+      1,
+      work,
+    );
 
     if (rows.length === 0) return [];
 
@@ -284,28 +375,44 @@ export class GraphBuilder {
     const memberNames = toArr(record.member_referenced_symbols);
     const content = String(record.content ?? "");
     let localDefinitions: string[] = [];
+    let localUnknown = false;
     if (record.path && memberNames.some(isBuiltinCallee)) {
-      const localRows = await table
+      const query = table
         .query()
         .select(["defined_symbols"])
         .where(
           this.scopeWhere(`path = '${escapeSqlString(String(record.path))}'`),
-        )
-        .toArray(QUERY_EXECUTION_OPTIONS);
+        );
+      const localRows = work
+        ? await this.queryRows(query, 100, work, true)
+        : await query.toArray(QUERY_EXECUTION_OPTIONS);
+      localUnknown =
+        !!work &&
+        (localRows.length >= Math.min(100, work.limits.fetchedRows) ||
+          work.stopped());
       localDefinitions = localRows.flatMap((row) =>
         toArr((row as any).defined_symbols),
       );
     }
-    return toArr(record.referenced_symbols).filter((name) => {
+    const members = new Set(memberNames);
+    const local = new Set(localDefinitions);
+    const out: string[] = [];
+    for (const name of toArr(record.referenced_symbols)) {
+      if (work && !work.active()) break;
       if (
+        localUnknown ||
         !isBuiltinCallee(name) ||
-        !memberNames.includes(name) ||
-        localDefinitions.includes(name)
-      )
-        return true;
+        !members.has(name) ||
+        local.has(name)
+      ) {
+        out.push(name);
+        continue;
+      }
       const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      return new RegExp(`(?<![\\w.$])${escapedName}\\s*\\(`).test(content);
-    });
+      if (new RegExp(`(?<![\\w.$])${escapedName}\\s*\\(`).test(content))
+        out.push(name);
+    }
+    return out;
   }
 
   /**
@@ -314,6 +421,7 @@ export class GraphBuilder {
   async buildGraph(
     symbol: string,
     trace?: TraceCollector,
+    work?: GraphWorkBudget,
   ): Promise<{
     center: GraphNode | null;
     callers: GraphNode[];
@@ -323,23 +431,27 @@ export class GraphBuilder {
     const escaped = escapeSqlString(symbol);
 
     // 1. Get Center (Definition)
-    const centerRows = await table
-      .query()
-      .select([
-        "path",
-        "start_line",
-        ...(trace ? ["end_line", "type_referenced_symbols"] : []),
-        "defined_symbols",
-        "referenced_symbols",
-        "member_referenced_symbols",
-        "content",
-        "role",
-        "parent_symbol",
-        "complexity",
-      ])
-      .where(this.scopeWhere(`array_contains(defined_symbols, '${escaped}')`))
-      .limit(1)
-      .toArray(QUERY_EXECUTION_OPTIONS);
+    const centerRows = await this.queryRows(
+      table
+        .query()
+        .select([
+          "path",
+          "start_line",
+          ...(trace ? ["end_line", "type_referenced_symbols"] : []),
+          "defined_symbols",
+          "referenced_symbols",
+          "member_referenced_symbols",
+          "content",
+          "role",
+          "parent_symbol",
+          "complexity",
+        ])
+        .where(
+          this.scopeWhere(`array_contains(defined_symbols, '${escaped}')`),
+        ),
+      1,
+      work,
+    );
 
     const center =
       centerRows.length > 0
@@ -355,7 +467,11 @@ export class GraphBuilder {
       trace.centerSelection = {
         referenceSpelling: symbol,
         targetCandidate: centerRecord ? chunkSpan(centerRecord) : null,
-        selectionBasis: center ? "first_definition_match" : "no_candidate",
+        selectionBasis: center
+          ? "first_definition_match"
+          : work?.stopped()
+            ? "unknown"
+            : "no_candidate",
       };
       recordTraceCoverage(trace, "center_candidates", {
         observed: centerRows.length,
@@ -379,6 +495,7 @@ export class GraphBuilder {
             targetCandidate: centerRecord ? chunkSpan(centerRecord) : null,
           }
         : undefined,
+      work,
     );
 
     // 3. Get Callees — resolve each to a GraphNode with file:line
@@ -391,21 +508,25 @@ export class GraphBuilder {
       // than one file can prefer the center's OWN file instead of an arbitrary
       // same-named definition in an unrelated module — the cheapest correct
       // disambiguation, and strictly better than the old first-row guess.
-      const rows = await table
-        .query()
-        .where(this.scopeWhere(`array_contains(defined_symbols, '${esc}')`))
-        .select([
-          "path",
-          "start_line",
-          ...(trace ? ["end_line"] : []),
-          "defined_symbols",
-          "referenced_symbols",
-          "role",
-          "parent_symbol",
-          "complexity",
-        ])
-        .limit(25)
-        .toArray(QUERY_EXECUTION_OPTIONS);
+      if (work?.stopped()) break;
+      const rows = await this.queryRows(
+        table
+          .query()
+          .where(this.scopeWhere(`array_contains(defined_symbols, '${esc}')`))
+          .select([
+            "path",
+            "start_line",
+            ...(trace ? ["end_line"] : []),
+            "defined_symbols",
+            "referenced_symbols",
+            "role",
+            "parent_symbol",
+            "complexity",
+          ]),
+        25,
+        work,
+      );
+      if (work?.stopped()) break;
       const memberNames = toArr(
         (centerRows[0] as any)?.member_referenced_symbols,
       );
@@ -541,23 +662,27 @@ export class GraphBuilder {
   async getImporters(
     symbol: string,
     trace?: TraceCollector,
+    work?: GraphWorkBudget,
   ): Promise<string[]> {
     const table = await this.db.ensureTable();
     const escaped = escapeSqlString(symbol);
-    const rows = streamQueryRows(
-      table
-        .query()
-        .select(["path"])
-        .where(this.scopeWhere(`content LIKE '%import%${escaped}%'`)),
-      `content LIKE %import%${symbol}% (importers)`,
-    );
+    const query = table
+      .query()
+      .select(["path"])
+      .where(this.scopeWhere(`content LIKE '%import%${escaped}%'`));
+    const rows = work
+      ? await this.queryRows(query, 1000, work, true)
+      : streamQueryRows(query, `content LIKE %import%${symbol}% (importers)`);
 
     const files = new Set<string>();
     let observed = 0;
     for await (const row of rows) {
       observed++;
       files.add(String((row as any).path || ""));
-      if (files.size >= 100) break;
+      if (files.size >= 100) {
+        work?.partial("adjacency_row_limit");
+        break;
+      }
     }
     recordTraceCoverage(trace, "importer_files", {
       observed: files.size,
@@ -578,128 +703,188 @@ export class GraphBuilder {
   async buildGraphMultiHop(
     symbol: string,
     depth: number,
-    traceOptions?: { requestedDepth?: number | null },
+    traceOptions?: { requestedDepth?: number | null; work?: GraphWorkBudget },
   ): Promise<
     {
       center: GraphNode | null;
       callerTree: CallerTree[];
       callees: GraphNode[];
       importers: string[];
+      work: GraphWorkSummary;
     } & Partial<TraceMetadata>
   > {
+    const work = traceOptions?.work ?? new GraphWorkBudget();
     const trace = traceOptions
       ? createTraceCollector(traceOptions.requestedDepth ?? null, depth)
       : undefined;
-    const [graph, importers] = await Promise.all([
-      this.buildGraph(symbol, trace),
-      this.getImporters(symbol, trace),
-    ]);
-    const metadata = (): Partial<TraceMetadata> =>
-      trace
+    const visited = new Set<string>();
+    if (work.take("visitedNodes")) visited.add(symbol);
+    work.take("expansions");
+    // Sequential admission keeps one request's query/row ledger deterministic.
+    const graph = await this.buildGraph(symbol, trace, work);
+    const importers = await this.getImporters(symbol, trace, work);
+    const center =
+      graph.center && work.take("resultNodes") ? graph.center : null;
+    const callees = graph.callees.filter(() => work.take("resultNodes"));
+    const initialCallers = graph.callers.slice(0, work.limits.queuedNodes);
+    if (initialCallers.length < graph.callers.length) {
+      work.partial("queuedNodes_limit");
+      const dropped = graph.callers.length - initialCallers.length;
+      recordTraceCoverage(trace, "caller_expansion", {
+        observed: dropped,
+        retained: 0,
+        limit: work.limits.queuedNodes,
+        limited: true,
+        status: "partial",
+        reasons: ["queuedNodes_limit"],
+        omitted: { exact: null, lowerBound: dropped },
+      });
+    }
+    work.queue(initialCallers.length);
+    const callerTree = await this.expandCallers(
+      initialCallers,
+      center ? Math.max(0, depth - 1) : 0,
+      visited,
+      work,
+      trace,
+    );
+    if (trace) {
+      trace.coverage.work = work.snapshot();
+      if (work.stopped()) {
+        for (const stage of [
+          "center_candidates",
+          "caller_rows",
+          "callee_spellings",
+          "callee_candidates",
+          "importer_files",
+        ] as const) {
+          recordTraceCoverage(trace, stage, {
+            observed: 0,
+            retained: 0,
+            status: "unknown",
+            limited: true,
+            reasons: work.snapshot().reasons,
+            omitted: { exact: null, lowerBound: 0 },
+          });
+        }
+      }
+    }
+    return {
+      center,
+      callerTree,
+      callees,
+      importers,
+      work: work.snapshot(),
+      ...(trace
         ? {
-            evidenceVersion: 1,
+            evidenceVersion: 1 as const,
             centerSelection: trace.centerSelection ?? {
               referenceSpelling: symbol,
               targetCandidate: null,
-              selectionBasis: "unknown",
+              selectionBasis: "unknown" as const,
             },
             coverage: trace.coverage,
           }
-        : {};
-
-    if (depth <= 1 || !graph.center) {
-      return {
-        center: graph.center,
-        callerTree: graph.callers.map((c) => ({ node: c, callers: [] })),
-        callees: graph.callees,
-        importers,
-        ...metadata(),
-      };
-    }
-
-    const visited = new Set<string>([symbol]);
-    const callerTree = await this.expandCallers(
-      graph.callers,
-      depth - 1,
-      visited,
-      trace,
-    );
-
-    return {
-      center: graph.center,
-      callerTree,
-      callees: graph.callees,
-      importers,
-      ...metadata(),
+        : {}),
     };
   }
-
-  private static readonly MAX_VISITED = 500;
 
   private async expandCallers(
     callers: GraphNode[],
     remainingDepth: number,
     visited: Set<string>,
+    work: GraphWorkBudget,
     trace?: TraceCollector,
+    pending = 0,
+    expanded = new Set(visited),
   ): Promise<CallerTree[]> {
-    if (remainingDepth <= 0 || visited.size > GraphBuilder.MAX_VISITED) {
-      const advisoryStop =
-        remainingDepth > 0 && visited.size > GraphBuilder.MAX_VISITED;
-      recordTraceCoverage(trace, "caller_expansion", {
-        observed: callers.length,
-        retained: 0,
-        limit: GraphBuilder.MAX_VISITED,
-        limited: advisoryStop,
-        filteredByPolicy: advisoryStop ? 0 : callers.length,
-        status: advisoryStop ? "unknown" : "complete",
-        reasons: [
-          advisoryStop ? "advisory_expansion_stop" : "requested_depth_boundary",
-        ],
-        omitted: { exact: advisoryStop ? null : 0, lowerBound: 0 },
-      });
-      return callers.map((c) => ({ node: c, callers: [] }));
-    }
-
     const trees: CallerTree[] = [];
-    for (const caller of callers) {
-      if (visited.has(caller.symbol)) {
+    for (let i = 0; i < callers.length; i++) {
+      const caller = callers[i];
+      // Output occurrences and unique expanded spellings have distinct ceilings.
+      if (!work.take("examinedEdges")) break;
+      if (!visited.has(caller.symbol)) {
+        if (!work.take("visitedNodes")) break;
+        visited.add(caller.symbol);
+      }
+      if (!work.take("resultNodes")) break;
+      const tree: CallerTree = { node: caller, callers: [] };
+      trees.push(tree);
+      if (expanded.has(caller.symbol)) {
         recordTraceCoverage(trace, "caller_expansion", {
           observed: 1,
           retained: 0,
           filteredByPolicy: 1,
-          limit: GraphBuilder.MAX_VISITED,
           reasons: ["name_visited"],
         });
-        trees.push({ node: caller, callers: [] });
         continue;
       }
-      visited.add(caller.symbol);
+      if (remainingDepth <= 0) {
+        work.partial("hop_limit");
+        recordTraceCoverage(trace, "caller_expansion", {
+          observed: 1,
+          retained: 0,
+          filteredByPolicy: 1,
+          reasons: ["requested_depth_boundary"],
+        });
+        continue;
+      }
+      if (work.stopped() || !work.take("expansions")) continue;
+      expanded.add(caller.symbol);
       recordTraceCoverage(trace, "caller_expansion", {
         observed: 1,
         retained: 1,
-        limit: GraphBuilder.MAX_VISITED,
+        limit: work.limits.visitedNodes,
       });
-
-      let subCallers: CallerTree[] = [];
-      if (remainingDepth > 0) {
-        const upstreamCallers = await this.getCallers(
-          caller.symbol,
-          languageFamilyForPath(caller.file),
-          trace
-            ? {
-                collector: trace,
-                targetCandidate: caller.evidence?.sourceChunk ?? null,
-              }
-            : undefined,
-        );
-        subCallers = await this.expandCallers(
-          upstreamCallers,
-          remainingDepth - 1,
-          visited,
-          trace,
-        );
+      const upstream = await this.getCallers(
+        caller.symbol,
+        languageFamilyForPath(caller.file),
+        trace
+          ? {
+              collector: trace,
+              targetCandidate: caller.evidence?.sourceChunk ?? null,
+            }
+          : undefined,
+        work,
+      );
+      const pendingSiblings = pending + callers.length - i - 1;
+      const available = Math.max(0, work.limits.queuedNodes - pendingSiblings);
+      const admitted = upstream.slice(0, available);
+      if (admitted.length < upstream.length) {
+        work.partial("queuedNodes_limit");
+        const dropped = upstream.length - admitted.length;
+        recordTraceCoverage(trace, "caller_expansion", {
+          observed: dropped,
+          retained: 0,
+          limit: work.limits.queuedNodes,
+          limited: true,
+          status: "partial",
+          reasons: ["queuedNodes_limit"],
+          omitted: { exact: null, lowerBound: dropped },
+        });
       }
-      trees.push({ node: caller, callers: subCallers });
+      work.queue(pendingSiblings + admitted.length);
+      tree.callers = await this.expandCallers(
+        admitted,
+        remainingDepth - 1,
+        visited,
+        work,
+        trace,
+        pendingSiblings,
+        expanded,
+      );
+    }
+    const summary = work.snapshot();
+    if (summary.status === "partial" && summary.outcome === "budget_limit") {
+      recordTraceCoverage(trace, "caller_expansion", {
+        observed: callers.length - trees.length,
+        retained: 0,
+        limit: work.limits.resultNodes,
+        limited: true,
+        status: "partial",
+        reasons: summary.reasons,
+        omitted: { exact: null, lowerBound: callers.length - trees.length },
+      });
     }
     return trees;
   }
@@ -707,13 +892,13 @@ export class GraphBuilder {
   // --- MCP graph primitives (Phase 7) -----------------------------------
 
   /** Symbols the given symbol references (outbound edges). */
-  async calleesOf(symbol: string): Promise<string[]> {
-    return this.getCallees(symbol);
+  async calleesOf(symbol: string, work?: GraphWorkBudget): Promise<string[]> {
+    return this.getCallees(symbol, work);
   }
 
   /** Distinct symbols that reference the given symbol (inbound edges). */
-  async callersOf(symbol: string): Promise<string[]> {
-    const nodes = await this.getAnchoredCallers(symbol);
+  async callersOf(symbol: string, work?: GraphWorkBudget): Promise<string[]> {
+    const nodes = await this.getAnchoredCallers(symbol, work);
     const out: string[] = [];
     for (const n of nodes) {
       if (n.symbol && n.symbol !== "unknown" && !out.includes(n.symbol)) {
@@ -725,10 +910,11 @@ export class GraphBuilder {
 
   private neighborFn(
     direction: EdgeDirection,
+    work: GraphWorkBudget,
   ): (s: string) => Promise<string[]> {
     return direction === "callers"
-      ? (s) => this.callersOf(s)
-      : (s) => this.calleesOf(s);
+      ? (s) => this.callersOf(s, work)
+      : (s) => this.calleesOf(s, work);
   }
 
   /**
@@ -740,19 +926,22 @@ export class GraphBuilder {
     symbol: string,
     direction: EdgeDirection,
     maxHops: number,
+    work = new GraphWorkBudget(),
   ): Promise<Array<NeighborHit & { file: string; line: number }>> {
     const hits = await bfsNeighbors(
       symbol,
-      this.neighborFn(direction),
+      this.neighborFn(direction, work),
       maxHops,
+      work.limits.visitedNodes,
+      work,
     );
     // Resolve the origin once to anchor every neighbor's location lookup to the
     // same language family, so a shared name doesn't resolve to a foreign file.
-    const origin = await this.resolveLocation(symbol);
+    const origin = await this.resolveLocation(symbol, undefined, work);
     const anchorFamily = origin ? languageFamilyForPath(origin.file) : null;
     const out: Array<NeighborHit & { file: string; line: number }> = [];
     for (const h of hits) {
-      const loc = await this.resolveLocation(h.symbol, anchorFamily);
+      const loc = await this.resolveLocation(h.symbol, anchorFamily, work);
       // Drop unresolved builtins (.map/.get/forEach) reached via callee edges —
       // same resolution-aware rule as buildGraph/peek. A neighbor that resolves
       // to an indexed definition is kept even if it shadows a builtin name.
@@ -768,8 +957,16 @@ export class GraphBuilder {
     to: string,
     direction: EdgeDirection,
     maxHops = 6,
+    work = GraphWorkBudget.path(),
   ): Promise<string[] | null> {
-    return findPath(from, to, this.neighborFn(direction), maxHops);
+    return findPath(
+      from,
+      to,
+      this.neighborFn(direction, work),
+      maxHops,
+      work.limits.visitedNodes,
+      work,
+    );
   }
 
   /**
@@ -781,8 +978,9 @@ export class GraphBuilder {
   async resolveLocation(
     symbol: string,
     anchorFamily?: string | null,
+    work?: GraphWorkBudget,
   ): Promise<{ file: string; line: number } | null> {
-    const def = await this.resolveDefinition(symbol, anchorFamily);
+    const def = await this.resolveDefinition(symbol, anchorFamily, work);
     return def ? { file: def.file, line: def.line } : null;
   }
 
@@ -790,17 +988,22 @@ export class GraphBuilder {
   async resolveDefinition(
     symbol: string,
     anchorFamily?: string | null,
+    work?: GraphWorkBudget,
   ): Promise<GraphDefinition | null> {
     const table = await this.db.ensureTable();
     const escaped = escapeSqlString(symbol);
-    const rows = await table
-      .query()
-      .select(["path", "start_line", "is_exported"])
-      .where(this.scopeWhere(`array_contains(defined_symbols, '${escaped}')`))
+    const rows = await this.queryRows(
+      table
+        .query()
+        .select(["path", "start_line", "is_exported"])
+        .where(
+          this.scopeWhere(`array_contains(defined_symbols, '${escaped}')`),
+        ),
       // No anchor → keep the cheap single-row fetch. With one, pull a few
       // candidates so we can pick the same-family definition instead of guessing.
-      .limit(anchorFamily ? 25 : 1)
-      .toArray(QUERY_EXECUTION_OPTIONS);
+      anchorFamily ? 25 : 1,
+      work,
+    );
     if (rows.length === 0) return null;
     let r = rows[0] as any;
     if (anchorFamily) {
@@ -820,9 +1023,12 @@ export class GraphBuilder {
     };
   }
 
-  async getAnchoredCallers(symbol: string): Promise<GraphNode[]> {
-    const def = await this.resolveDefinition(symbol);
-    return this.getCallers(symbol, def?.family ?? null);
+  async getAnchoredCallers(
+    symbol: string,
+    work?: GraphWorkBudget,
+  ): Promise<GraphNode[]> {
+    const def = await this.resolveDefinition(symbol, undefined, work);
+    return this.getCallers(symbol, def?.family ?? null, undefined, work);
   }
 
   /**

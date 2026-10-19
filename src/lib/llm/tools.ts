@@ -7,6 +7,7 @@ import {
   findTests,
   resolveTargetSymbols,
 } from "../graph/impact";
+import { graphWorkNote } from "../graph/work-budget";
 import type { Searcher } from "../search/searcher";
 import type { SearchFilter } from "../store/types";
 import type { VectorDB } from "../store/vector-db";
@@ -196,7 +197,7 @@ async function executeTrace(
   const depth = clampDepth(args.depth);
   const graph = await ctx.graphBuilder.buildGraphMultiHop(symbol, depth);
 
-  if (!graph.center) return "(not found)";
+  if (!graph.center) return `(not returned)\n${graphWorkNote(graph.work)}`;
 
   const lines: string[] = [];
   lines.push(
@@ -221,6 +222,7 @@ async function executeTrace(
     }
   }
 
+  lines.push(graphWorkNote(graph.work));
   return lines.join("\n");
 }
 

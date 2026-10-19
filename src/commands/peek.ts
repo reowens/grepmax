@@ -6,6 +6,7 @@ import {
   runGraphPeek,
 } from "../lib/daemon/graph-handler";
 import { isBuiltinCallee, resolveCallSites } from "../lib/graph/callsites";
+import { graphWorkNote } from "../lib/graph/work-budget";
 import { VectorDB } from "../lib/store/vector-db";
 import { symbolNotFoundLines } from "../lib/utils/agent-errors";
 import { gracefulExit } from "../lib/utils/exit";
@@ -454,6 +455,10 @@ export const peek = new Command("peek")
           }
         }
       }
+      if (depth > 1)
+        console.log(
+          `${opts.agent ? "# " : ""}Caller ${graphWorkNote(store.callerWork)}`,
+        );
     } catch (error) {
       // A sandbox refusal is already one actionable line; a "Peek failed:"
       // prefix would bury the settings key that fixes it.

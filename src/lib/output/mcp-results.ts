@@ -64,7 +64,26 @@ const coverageSummary = z.object({
     lowerBound: z.number().int().nonnegative(),
   }),
 });
+const workCounters = z.object({
+  visitedNodes: z.number().int().nonnegative(),
+  queuedNodes: z.number().int().nonnegative(),
+  resultNodes: z.number().int().nonnegative(),
+  expansions: z.number().int().nonnegative(),
+  examinedEdges: z.number().int().nonnegative(),
+  symbolItems: z.number().int().nonnegative(),
+  fetchedRows: z.number().int().nonnegative(),
+  queries: z.number().int().nonnegative(),
+});
+const graphWork = z.object({
+  version: z.literal(1),
+  status: z.enum(["complete", "partial"]),
+  outcome: z.enum(["exhausted", "hop_limit", "target_found", "budget_limit"]),
+  reasons: z.array(z.string()),
+  counts: workCounters,
+  limits: workCounters.extend({ deadlineMs: z.number().int().nonnegative() }),
+});
 const traceCoverage = z.object({
+  work: graphWork.optional(),
   version: z.literal(1),
   requestedDepth: z.number().positive().nullable(),
   effectiveDepth: z.number().int().positive(),

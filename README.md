@@ -144,6 +144,9 @@ Clients requesting progress receive operation-stage messages with increasing sta
 
 Trace adds `evidenceVersion: 1`, reference evidence, center-selection evidence and coverage summaries. Evidence identifies indexed spellings, source chunks and candidate targets; `bindingResolved: false` and a null callsite preserve what the index cannot establish. Legacy `EXTRACTED`/`INFERRED` and `free`/`member`/`type` labels do not prove a call or target binding. Coverage separates producer limits from display limits, reports unknown totals as null, and treats missing metadata from older daemons as unknown. The existing `omittedCallees`/`omittedImporters` fields count display omissions only. Public evidence spans are one-based. CLI `trace --agent` keeps its data rows and appends a reserved `# evidence` summary line; parsers should skip that comment line.
 
+Trace, neighbor and path traversals enforce request-local work budgets during consumption. Trace/neighbors admit at most 500 visited nodes; paths retain their 1,000-node ceiling. Pending queues, retained node occurrences and expansions have separate ceilings, alongside 10,000 examined edges, 20,000 copied symbol items, 10,000 fetched rows, 1,500 queries and a shared 15-second deadline. Existing smaller per-query windows still apply. Trace exposes optional `coverage.work`; neighbor/path daemon responses include `work`, and text output reports exhausted, hop-limited, budget-limited or target-found outcomes. A limited or legacy-unknown empty result does not prove absence. Counts cover admitted traversal work, including rejected fetched rows; they do not bound native scan bytes, row width or event-loop scheduling latency. File-subgraph aggregation and other graph tools retain their existing contracts.
+
+
 | Tool | Description |
 | --- | --- |
 | `semantic_search` | Search by meaning. Pointer mode matches CLI `--agent` output; `detail=code/full` returns snippets. |

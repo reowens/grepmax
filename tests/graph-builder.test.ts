@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GraphBuilder } from "../src/lib/graph/graph-builder";
-import { createTraceCollector } from "../src/lib/graph/trace-evidence";
+import { GraphWorkBudget } from "../src/lib/graph/work-budget";
 
 function createMockDb(data: Record<string, any[]>) {
   const mockTable = {
@@ -721,7 +721,7 @@ describe("G1 trace producer evidence", () => {
       });
       expect(
         queries.map(({ limit }) => limit).sort((a, b) => (a ?? 0) - (b ?? 0)),
-      ).toEqual([null, 1, 25, 100]);
+      ).toEqual([1, 25, 100, 1000]);
     },
   );
 
@@ -967,32 +967,77 @@ describe("G1 trace producer evidence", () => {
     expect(queryShape(enriched.queries)).toEqual(queryShape(legacy.queries));
   });
 
-  it("records the existing advisory expansion stop without claiming a hard traversal bound", async () => {
-    const { db, queries } = createBoundedDb({});
-    const collector = createTraceCollector(3, 3);
-    const node = {
-      symbol: "caller",
-      file: "/caller.ts",
-      line: 0,
-      role: "function",
-      calls: [],
-      calledBy: [],
-    };
-    const visited = new Set(Array.from({ length: 501 }, (_, i) => `seen${i}`));
-    const tree = await (new GraphBuilder(db) as any).expandCallers(
-      [node],
-      1,
-      visited,
-      collector,
+  it("enforces the caller tree occurrence limit inside high-fanout recursion", async () => {
+    const parents = Array.from({ length: 100 }, (_, i) =>
+      makeRow(`parent${i}`, `/p${i}.ts`, 0, ["target"]),
     );
-    expect(tree).toEqual([{ node, callers: [] }]);
-    expect(queries).toHaveLength(0);
-    expect(collector.coverage.stages.caller_expansion).toMatchObject({
+    const data: Record<string, any[]> = {
+      "defined_symbols, 'target'": [makeRow("target", "/target.ts", 0)],
+      "referenced_symbols, 'target'": parents,
+    };
+    for (let i = 0; i < 100; i++) {
+      data[`referenced_symbols, 'parent${i}'`] = Array.from(
+        { length: 100 },
+        (_, j) =>
+          makeRow(`ancestor${i}_${j}`, `/a${i}_${j}.ts`, 0, [`parent${i}`]),
+      );
+    }
+    const { db, queries } = createBoundedDb(data);
+    const graph = await new GraphBuilder(db).buildGraphMultiHop("target", 2, {
+      requestedDepth: 2,
+    });
+    const count = (tree: typeof graph.callerTree): number =>
+      tree.reduce((sum, t) => sum + 1 + count(t.callers), 0);
+    expect(count(graph.callerTree) + (graph.center ? 1 : 0)).toBe(500);
+    expect(graph.work.counts.resultNodes).toBe(500);
+    expect(graph.work.counts.visitedNodes).toBeLessThanOrEqual(500);
+    expect(graph.work.counts.queuedNodes).toBeLessThanOrEqual(500);
+    expect(graph.work.reasons).toContain("visitedNodes_limit");
+    // No sibling/ancestor queries continue after admission fails.
+    expect(queries.length).toBeLessThan(12);
+    expect(graph.coverage?.stages.caller_expansion.status).toBe("partial");
+  });
+
+  it("bounds output occurrences even when every upstream row repeats one name", async () => {
+    const data = {
+      "defined_symbols, 'target'": [makeRow("target", "/target.ts", 0)],
+      "referenced_symbols, 'target'": Array.from({ length: 100 }, (_, i) =>
+        makeRow(`parent${i}`, `/p${i}.ts`, 0, ["target"]),
+      ),
+      ...Object.fromEntries(
+        Array.from({ length: 100 }, (_, i) => [
+          `referenced_symbols, 'parent${i}'`,
+          Array.from({ length: 100 }, (_, j) =>
+            makeRow("duplicate", `/d${j}.ts`, 0, [`parent${i}`]),
+          ),
+        ]),
+      ),
+    };
+    const graph = await new GraphBuilder(
+      createBoundedDb(data).db,
+    ).buildGraphMultiHop("target", 2);
+    const count = (tree: typeof graph.callerTree): number =>
+      tree.reduce((n, t) => n + 1 + count(t.callers), 0);
+    expect(count(graph.callerTree)).toBe(499);
+    expect(graph.work.reasons).toContain("resultNodes_limit");
+    expect(graph.work.counts.visitedNodes).toBeLessThan(20);
+  });
+
+  it("stops on a request query budget without inventing a callee candidate absence", async () => {
+    const { db, queries } = createBoundedDb({
+      "defined_symbols, 'root'": [makeRow("root", "/root.ts", 0, ["callee"])],
+      "referenced_symbols, 'root'": [],
+    });
+    const work = new GraphWorkBudget({ queries: 2 });
+    const graph = await new GraphBuilder(db).buildGraphMultiHop("root", 2, {
+      work,
+    });
+    expect(queries).toHaveLength(2);
+    expect(graph.callees).toEqual([]);
+    expect(graph.work.reasons).toContain("queries_limit");
+    expect(graph.coverage?.stages.callee_candidates).toMatchObject({
       status: "unknown",
-      limit: 500,
-      limitedOperations: 1,
-      reasons: ["advisory_expansion_stop"],
-      omitted: { exact: null, lowerBound: 0 },
+      omitted: { exact: null },
     });
   });
 });

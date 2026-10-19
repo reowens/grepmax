@@ -1,3 +1,5 @@
+import { type GraphWorkSummary, graphWorkNote } from "./work-budget";
+
 /** Indexed chunk spans are zero-based internally; only public serializers add one. */
 export interface TraceChunkSpan {
   file: string;
@@ -74,6 +76,8 @@ export interface TraceCoverage {
   scope: "indexed";
   depthSemantics: "requested_boundary";
   stages: Record<TraceCoverageStage, TraceCoverageSummary>;
+  /** Optional for compatibility with G1 and older producers. */
+  work?: GraphWorkSummary;
 }
 
 export interface TraceMetadata {
@@ -86,6 +90,7 @@ export interface TraceMetadataInput {
   evidenceVersion?: 1 | null;
   centerSelection?: TraceCenterSelection | null;
   coverage?: TraceCoverage | null;
+  work?: GraphWorkSummary;
 }
 
 /** Request-local only: never stored on the shared GraphBuilder instance. */
@@ -323,6 +328,7 @@ export function traceEvidenceNote(coverage: TraceCoverage): string {
     );
   }
   if (legacyUnknown) details.unshift("legacy producer coverage unknown");
+  details.push(graphWorkNote(coverage.work));
   return `Indexed references and candidate chunks; importers are text-match candidates; legacy kinds/confidence do not prove calls or target bindings. Coverage within indexed scope and depth ${coverage.effectiveDepth}: ${details.join("; ") || "complete for observed operations"}.`;
 }
 

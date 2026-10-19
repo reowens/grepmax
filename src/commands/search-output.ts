@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { graphWorkNote } from "../lib/graph/work-budget";
 import { formatAgentSearchResults } from "../lib/output/agent-search-formatter";
 import {
   formatCompactTable,
@@ -423,6 +424,7 @@ export async function renderSearchOutput(
             }
           }
         }
+        console.log(`# ${graphWorkNote(graph?.work)}`);
       } catch {}
     }
 
@@ -653,6 +655,7 @@ export async function renderSearchOutput(
         }
         console.log(lines.join("\n"));
       }
+      console.log(graphWorkNote(graph?.work));
     } catch {
       // Trace failed — skip silently
     }

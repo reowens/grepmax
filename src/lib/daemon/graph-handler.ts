@@ -99,6 +99,8 @@ export interface GraphDeadFacts {
   topCallers: Array<{ file: string; line: number }>;
 }
 
+import { GraphWorkBudget, type GraphWorkSummary } from "../graph/work-budget";
+
 export interface GraphTraceResult extends TraceMetadataInput {
   center: GraphNode | null;
   callerTree: CallerTree[];
@@ -107,6 +109,7 @@ export interface GraphTraceResult extends TraceMetadataInput {
 }
 
 export interface GraphPeekResult {
+  callerWork?: GraphWorkSummary;
   /** Defining chunks (path + start line), pre-dedupe, as `peek` reads them for
    *  its multi-language guard and its "also defined in" note. */
   defChunks: Array<{ path: string; startLine: number }>;
@@ -513,10 +516,9 @@ export async function runGraphPeek(
       }
     : null;
 
-  const callerTree =
-    depth > 1
-      ? (await builder.buildGraphMultiHop(args.symbol, depth)).callerTree
-      : null;
+  const callerGraph =
+    depth > 1 ? await builder.buildGraphMultiHop(args.symbol, depth) : null;
+  const callerTree = callerGraph?.callerTree ?? null;
 
   const footerTests = args.includeTests
     ? await fetchTestsForFooter(
@@ -527,7 +529,14 @@ export async function runGraphPeek(
       )
     : null;
 
-  return { defChunks, graph, meta, callerTree, footerTests };
+  return {
+    defChunks,
+    graph,
+    meta,
+    callerTree,
+    footerTests,
+    ...(callerGraph ? { callerWork: callerGraph.work } : {}),
+  };
 }
 
 export async function runGraphDead(
@@ -604,6 +613,7 @@ export async function runGraphNeighbors(
     direction: EdgeDirection;
     maxHops: number;
     scope: ResolvedScope;
+    work?: GraphWorkBudget;
   },
 ): Promise<GraphNeighborHit[]> {
   const builder = new GraphBuilder(
@@ -615,6 +625,7 @@ export async function runGraphNeighbors(
     args.symbol,
     args.direction,
     clampInt(args.maxHops, 1, MAX_NEIGHBOR_HOPS, 2),
+    args.work,
   );
 }
 
@@ -627,6 +638,7 @@ export async function runGraphPaths(
     direction: EdgeDirection;
     maxHops: number;
     scope: ResolvedScope;
+    work?: GraphWorkBudget;
   },
 ): Promise<string[] | null> {
   const builder = new GraphBuilder(
@@ -639,6 +651,7 @@ export async function runGraphPaths(
     args.to,
     args.direction,
     clampInt(args.maxHops, 1, MAX_PATH_HOPS, 6),
+    args.work,
   );
 }
 
@@ -1144,26 +1157,30 @@ export function createGraphVerbs(
 
     "graph.neighbors": async (payload, db) => {
       const decoded = decodeScopePayload(payload);
+      const work = new GraphWorkBudget();
       const hits = await runGraphNeighbors(db, {
         symbol: requireString(payload, "symbol"),
         direction: requireDirection(payload),
         maxHops: clampInt(payload.maxHops, 1, MAX_NEIGHBOR_HOPS, 2),
         scope: decoded.scope,
+        work,
       });
-      return { ok: true, hits };
+      return { ok: true, hits, work: work.snapshot() };
     },
 
     "graph.paths": async (payload, db) => {
       const decoded = decodeScopePayload(payload);
+      const work = GraphWorkBudget.path();
       const path = await runGraphPaths(db, {
         from: requireString(payload, "from"),
         to: requireString(payload, "to"),
         direction: requireDirection(payload),
         maxHops: clampInt(payload.maxHops, 1, MAX_PATH_HOPS, 6),
         scope: decoded.scope,
+        work,
       });
       // `null` (no path) is an answer, not an error — send it as one.
-      return { ok: true, path };
+      return { ok: true, path, work: work.snapshot() };
     },
 
     "graph.subgraph": async (payload, db) => {

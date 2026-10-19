@@ -249,6 +249,11 @@ describe("graph verbs over handleCommand", () => {
       maxHops: 2,
     });
     expect(neighbors.ok).toBe(true);
+    expect(neighbors.work).toMatchObject({
+      version: 1,
+      status: "complete",
+      outcome: "exhausted",
+    });
     expect(
       (neighbors.hits as Array<{ symbol: string }>).map((h) => h.symbol),
     ).toContain("testLogin");
@@ -263,6 +268,7 @@ describe("graph verbs over handleCommand", () => {
     expect(paths).toMatchObject({
       ok: true,
       path: ["testLogin", "handleAuth"],
+      work: { version: 1, outcome: "target_found" },
     });
   });
 
@@ -274,7 +280,11 @@ describe("graph verbs over handleCommand", () => {
       to: "testLogin",
       direction: "callees",
     });
-    expect(response).toMatchObject({ ok: true, path: null });
+    expect(response).toMatchObject({
+      ok: true,
+      path: null,
+      work: { version: 1, status: "complete", outcome: "exhausted" },
+    });
   });
 
   it("rejects a subgraph file that escapes the project root", async () => {
