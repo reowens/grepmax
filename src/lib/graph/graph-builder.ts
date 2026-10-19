@@ -20,6 +20,16 @@ import {
   type NeighborHit,
 } from "./graph-traversal";
 
+import {
+  createTraceCollector,
+  recordTraceCoverage,
+  type TraceChunkSpan,
+  type TraceCollector,
+  type TraceEdgeEvidence,
+  type TraceMetadata,
+  type TraceReferenceColumn,
+} from "./trace-evidence";
+
 export type EdgeDirection = "callers" | "callees";
 
 export interface GraphNode {
@@ -33,14 +43,14 @@ export interface GraphNode {
   resolution?: "ambiguous-member";
   /**
    * Edge provenance for a caller node (how this chunk references the target):
-   * `free` = a free call `T()` (call position, high confidence) ·
-   * `member` = a member call `x.T()` (receiver unknown, low confidence) ·
-   * `type` = a type-position reference `: T` (not a call at all, lowest).
+   * Legacy tiers: `free` = referenced column, `member` = member column,
+   * `type` = type column. These do not prove a call occurrence or target binding.
    * Undefined for center/callee nodes. Drives the confidence sort + tag.
    */
   edgeKind?: "free" | "member" | "type";
-  /** EXTRACTED = a direct free call (trustworthy); INFERRED = member/type edge. */
+  /** Legacy confidence tier; neither value establishes a call or target binding. */
   confidence?: "EXTRACTED" | "INFERRED";
+  evidence?: TraceEdgeEvidence | null;
 }
 
 export interface GraphDefinition {
@@ -67,6 +77,50 @@ function edgeRank(node: GraphNode): number {
     default:
       return 3;
   }
+}
+
+interface CallerTraceContext {
+  collector: TraceCollector;
+  targetCandidate: TraceChunkSpan | null;
+}
+
+function chunkSpan(row: VectorRecord): TraceChunkSpan | null {
+  if (!row.path || typeof row.start_line !== "number") return null;
+  return {
+    file: row.path,
+    startLine: row.start_line,
+    endLine: typeof row.end_line === "number" ? row.end_line : null,
+  };
+}
+
+function referenceColumns(
+  row: VectorRecord,
+  symbol: string,
+): TraceReferenceColumn[] | null {
+  const columns: TraceReferenceColumn[] = [
+    "referenced_symbols",
+    "member_referenced_symbols",
+    "type_referenced_symbols",
+  ];
+  if (columns.some((column) => row[column] == null)) return null;
+  return columns.filter((column) => toArr(row[column]).includes(symbol));
+}
+
+function edgeEvidence(
+  row: VectorRecord | null,
+  spelling: string,
+  targetCandidate: TraceChunkSpan | null,
+  selectionBasis: TraceEdgeEvidence["selectionBasis"],
+): TraceEdgeEvidence {
+  return {
+    referenceSpelling: spelling,
+    referenceColumns: row ? referenceColumns(row, spelling) : null,
+    sourceChunk: row ? chunkSpan(row) : null,
+    targetCandidate,
+    selectionBasis,
+    callsite: null,
+    bindingResolved: false,
+  };
 }
 
 export class GraphBuilder {
@@ -111,6 +165,7 @@ export class GraphBuilder {
   async getCallers(
     symbol: string,
     anchorFamily?: string | null,
+    trace?: CallerTraceContext,
   ): Promise<GraphNode[]> {
     const table = await this.db.ensureTable();
     const escaped = escapeSqlString(symbol);
@@ -124,6 +179,7 @@ export class GraphBuilder {
       .select([
         "path",
         "start_line",
+        ...(trace ? ["end_line"] : []),
         "defined_symbols",
         "referenced_symbols",
         // member_/type_ are needed so each caller edge can be tagged free vs
@@ -153,9 +209,18 @@ export class GraphBuilder {
             return fam == null || fam === anchorFamily;
           });
 
-    const nodes = guarded.map((row) =>
-      this.mapRowToNode(row as unknown as VectorRecord, symbol, "caller"),
-    );
+    const nodes = guarded.map((row) => {
+      const record = row as unknown as VectorRecord;
+      const node = this.mapRowToNode(record, symbol, "caller");
+      if (trace)
+        node.evidence = edgeEvidence(
+          record,
+          symbol,
+          trace.targetCandidate,
+          "caller_chunk_attribution",
+        );
+      return node;
+    });
 
     // Caller-side builtin-member suppression. A member call `x.T()` to a builtin
     // name T (`.get`/`.map`/`.forEach`) is almost always an unrelated stdlib
@@ -165,6 +230,22 @@ export class GraphBuilder {
     const filtered = isBuiltinCallee(symbol)
       ? nodes.filter((n) => n.edgeKind !== "member")
       : nodes;
+
+    recordTraceCoverage(trace?.collector, "caller_rows", {
+      observed: rows.length,
+      retained: filtered.length,
+      filteredByPolicy: rows.length - filtered.length,
+      limit: 100,
+      limited: rows.length >= 100,
+      reasons: [
+        ...(rows.length >= 100 ? ["query_limit_exhaustion_unknown"] : []),
+        ...(guarded.length < rows.length ? ["language_family_filter"] : []),
+        ...(filtered.length < nodes.length
+          ? ["builtin_member_suppression"]
+          : []),
+      ],
+      omitted: { exact: rows.length >= 100 ? null : 0, lowerBound: 0 },
+    });
 
     // Confidence sort: free calls (EXTRACTED) first, then member, then type,
     // preserving scan order within a tier (Array.sort is stable). Keeps the
@@ -230,7 +311,10 @@ export class GraphBuilder {
   /**
    * Build a 1-hop graph around a symbol.
    */
-  async buildGraph(symbol: string): Promise<{
+  async buildGraph(
+    symbol: string,
+    trace?: TraceCollector,
+  ): Promise<{
     center: GraphNode | null;
     callers: GraphNode[];
     callees: GraphNode[];
@@ -244,6 +328,7 @@ export class GraphBuilder {
       .select([
         "path",
         "start_line",
+        ...(trace ? ["end_line", "type_referenced_symbols"] : []),
         "defined_symbols",
         "referenced_symbols",
         "member_referenced_symbols",
@@ -265,10 +350,36 @@ export class GraphBuilder {
           )
         : null;
 
+    const centerRecord = centerRows[0] as unknown as VectorRecord | undefined;
+    if (trace) {
+      trace.centerSelection = {
+        referenceSpelling: symbol,
+        targetCandidate: centerRecord ? chunkSpan(centerRecord) : null,
+        selectionBasis: center ? "first_definition_match" : "no_candidate",
+      };
+      recordTraceCoverage(trace, "center_candidates", {
+        observed: centerRows.length,
+        retained: center ? 1 : 0,
+        limit: 1,
+        limited: centerRows.length >= 1,
+        reasons: center ? ["first_match_exhaustion_unknown"] : [],
+        omitted: { exact: center ? null : 0, lowerBound: 0 },
+      });
+    }
+
     // 2. Get Callers — anchored to the center definition's language family so a
     // bare name shared across languages doesn't pull in cross-language callers.
     const centerFamily = center ? languageFamilyForPath(center.file) : null;
-    const callers = await this.getCallers(symbol, centerFamily);
+    const callers = await this.getCallers(
+      symbol,
+      centerFamily,
+      trace
+        ? {
+            collector: trace,
+            targetCandidate: centerRecord ? chunkSpan(centerRecord) : null,
+          }
+        : undefined,
+    );
 
     // 3. Get Callees — resolve each to a GraphNode with file:line
     const calleeNames = center ? center.calls.slice(0, 15) : [];
@@ -286,6 +397,7 @@ export class GraphBuilder {
         .select([
           "path",
           "start_line",
+          ...(trace ? ["end_line"] : []),
           "defined_symbols",
           "referenced_symbols",
           "role",
@@ -304,12 +416,31 @@ export class GraphBuilder {
       const selfDefinition = rows.find(
         (r) => String((r as any).path ?? "") === centerFile,
       );
-      if (
+      const receiverUnresolved =
         isBuiltinCallee(name) &&
         memberNames.includes(name) &&
         !bareCall &&
-        !selfDefinition
-      ) {
+        !selfDefinition;
+      const retainedCandidate = rows.length > 0 && !receiverUnresolved ? 1 : 0;
+      recordTraceCoverage(trace, "callee_candidates", {
+        observed: rows.length,
+        retained: retainedCandidate,
+        filteredByPolicy: rows.length - retainedCandidate,
+        limit: 25,
+        limited: rows.length >= 25,
+        reasons: [
+          ...(rows.length >= 25 ? ["query_limit_exhaustion_unknown"] : []),
+          ...(rows.length > retainedCandidate
+            ? [
+                receiverUnresolved
+                  ? "receiver_unresolved_policy"
+                  : "candidate_selection_policy",
+              ]
+            : []),
+        ],
+        omitted: { exact: rows.length >= 25 ? null : 0, lowerBound: 0 },
+      });
+      if (receiverUnresolved) {
         calleeNodes.push({
           symbol: name,
           file: "",
@@ -319,6 +450,16 @@ export class GraphBuilder {
           calledBy: [],
           resolution: "ambiguous-member",
           confidence: "INFERRED",
+          ...(trace
+            ? {
+                evidence: edgeEvidence(
+                  centerRecord ?? null,
+                  name,
+                  null,
+                  "receiver_unresolved",
+                ),
+              }
+            : {}),
         });
         continue;
       }
@@ -335,13 +476,22 @@ export class GraphBuilder {
                 centerFamily,
             )
           : undefined;
-        calleeNodes.push(
-          this.mapRowToNode(
-            (selfRow ?? familyRow ?? rows[0]) as unknown as VectorRecord,
+        const selected = (selfRow ??
+          familyRow ??
+          rows[0]) as unknown as VectorRecord;
+        const node = this.mapRowToNode(selected, name, "center");
+        if (trace)
+          node.evidence = edgeEvidence(
+            centerRecord ?? null,
             name,
-            "center",
-          ),
-        );
+            chunkSpan(selected),
+            selfRow
+              ? "same_file"
+              : familyRow
+                ? "same_language_family"
+                : "first_candidate",
+          );
+        calleeNodes.push(node);
       } else if (!isBuiltinCallee(name)) {
         // Unresolved + a known builtin (.map/.get/forEach) → suppress the
         // phantom callee edge instead of emitting a "(not indexed)" stub.
@@ -355,14 +505,43 @@ export class GraphBuilder {
           role: "",
           calls: [],
           calledBy: [],
+          ...(trace
+            ? {
+                evidence: edgeEvidence(
+                  centerRecord ?? null,
+                  name,
+                  null,
+                  "no_candidate",
+                ),
+              }
+            : {}),
         });
       }
     }
 
+    const omittedSpellings = (center?.calls.length ?? 0) - calleeNames.length;
+    recordTraceCoverage(trace, "callee_spellings", {
+      observed: center?.calls.length ?? 0,
+      retained: calleeNodes.length,
+      filteredByPolicy: calleeNames.length - calleeNodes.length,
+      limit: 15,
+      limited: omittedSpellings > 0,
+      reasons: [
+        ...(omittedSpellings > 0 ? ["spelling_limit"] : []),
+        ...(calleeNames.length > calleeNodes.length
+          ? ["builtin_suppression"]
+          : []),
+      ],
+      omitted: { exact: omittedSpellings, lowerBound: omittedSpellings },
+    });
+
     return { center, callers, callees: calleeNodes };
   }
 
-  async getImporters(symbol: string): Promise<string[]> {
+  async getImporters(
+    symbol: string,
+    trace?: TraceCollector,
+  ): Promise<string[]> {
     const table = await this.db.ensureTable();
     const escaped = escapeSqlString(symbol);
     const rows = streamQueryRows(
@@ -374,26 +553,59 @@ export class GraphBuilder {
     );
 
     const files = new Set<string>();
+    let observed = 0;
     for await (const row of rows) {
+      observed++;
       files.add(String((row as any).path || ""));
       if (files.size >= 100) break;
     }
+    recordTraceCoverage(trace, "importer_files", {
+      observed: files.size,
+      retained: files.size,
+      filteredByPolicy: 0,
+      duplicateRows: observed - files.size,
+      limit: 100,
+      limited: files.size >= 100,
+      reasons: [
+        ...(files.size >= 100 ? ["stream_limit_exhaustion_unknown"] : []),
+        ...(observed > files.size ? ["duplicate_file_policy"] : []),
+      ],
+      omitted: { exact: files.size >= 100 ? null : 0, lowerBound: 0 },
+    });
     return Array.from(files);
   }
 
   async buildGraphMultiHop(
     symbol: string,
     depth: number,
-  ): Promise<{
-    center: GraphNode | null;
-    callerTree: CallerTree[];
-    callees: GraphNode[];
-    importers: string[];
-  }> {
+    traceOptions?: { requestedDepth?: number | null },
+  ): Promise<
+    {
+      center: GraphNode | null;
+      callerTree: CallerTree[];
+      callees: GraphNode[];
+      importers: string[];
+    } & Partial<TraceMetadata>
+  > {
+    const trace = traceOptions
+      ? createTraceCollector(traceOptions.requestedDepth ?? null, depth)
+      : undefined;
     const [graph, importers] = await Promise.all([
-      this.buildGraph(symbol),
-      this.getImporters(symbol),
+      this.buildGraph(symbol, trace),
+      this.getImporters(symbol, trace),
     ]);
+    const metadata = (): Partial<TraceMetadata> =>
+      trace
+        ? {
+            evidenceVersion: 1,
+            centerSelection: trace.centerSelection ?? {
+              referenceSpelling: symbol,
+              targetCandidate: null,
+              selectionBasis: "unknown",
+            },
+            coverage: trace.coverage,
+          }
+        : {};
 
     if (depth <= 1 || !graph.center) {
       return {
@@ -401,6 +613,7 @@ export class GraphBuilder {
         callerTree: graph.callers.map((c) => ({ node: c, callers: [] })),
         callees: graph.callees,
         importers,
+        ...metadata(),
       };
     }
 
@@ -409,6 +622,7 @@ export class GraphBuilder {
       graph.callers,
       depth - 1,
       visited,
+      trace,
     );
 
     return {
@@ -416,6 +630,7 @@ export class GraphBuilder {
       callerTree,
       callees: graph.callees,
       importers,
+      ...metadata(),
     };
   }
 
@@ -425,29 +640,63 @@ export class GraphBuilder {
     callers: GraphNode[],
     remainingDepth: number,
     visited: Set<string>,
+    trace?: TraceCollector,
   ): Promise<CallerTree[]> {
     if (remainingDepth <= 0 || visited.size > GraphBuilder.MAX_VISITED) {
+      const advisoryStop =
+        remainingDepth > 0 && visited.size > GraphBuilder.MAX_VISITED;
+      recordTraceCoverage(trace, "caller_expansion", {
+        observed: callers.length,
+        retained: 0,
+        limit: GraphBuilder.MAX_VISITED,
+        limited: advisoryStop,
+        filteredByPolicy: advisoryStop ? 0 : callers.length,
+        status: advisoryStop ? "unknown" : "complete",
+        reasons: [
+          advisoryStop ? "advisory_expansion_stop" : "requested_depth_boundary",
+        ],
+        omitted: { exact: advisoryStop ? null : 0, lowerBound: 0 },
+      });
       return callers.map((c) => ({ node: c, callers: [] }));
     }
 
     const trees: CallerTree[] = [];
     for (const caller of callers) {
       if (visited.has(caller.symbol)) {
+        recordTraceCoverage(trace, "caller_expansion", {
+          observed: 1,
+          retained: 0,
+          filteredByPolicy: 1,
+          limit: GraphBuilder.MAX_VISITED,
+          reasons: ["name_visited"],
+        });
         trees.push({ node: caller, callers: [] });
         continue;
       }
       visited.add(caller.symbol);
+      recordTraceCoverage(trace, "caller_expansion", {
+        observed: 1,
+        retained: 1,
+        limit: GraphBuilder.MAX_VISITED,
+      });
 
       let subCallers: CallerTree[] = [];
       if (remainingDepth > 0) {
         const upstreamCallers = await this.getCallers(
           caller.symbol,
           languageFamilyForPath(caller.file),
+          trace
+            ? {
+                collector: trace,
+                targetCandidate: caller.evidence?.sourceChunk ?? null,
+              }
+            : undefined,
         );
         subCallers = await this.expandCallers(
           upstreamCallers,
           remainingDepth - 1,
           visited,
+          trace,
         );
       }
       trees.push({ node: caller, callers: subCallers });

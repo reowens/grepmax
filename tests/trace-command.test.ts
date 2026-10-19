@@ -12,6 +12,11 @@ import {
   vi,
 } from "vitest";
 
+vi.mock("node:fs", async () => {
+  const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+  return { ...actual, readFileSync: vi.fn(actual.readFileSync) };
+});
+
 // Real project root with a temp dir + real source file so the snippet
 // reader (sync fs.readFileSync) finds something believable. Mocks the
 // graph builder so we control the call topology exactly.
@@ -76,6 +81,10 @@ vi.mock("../src/lib/graph/graph-builder", () => ({
 }));
 
 import { trace } from "../src/commands/trace";
+import {
+  createTraceCollector,
+  recordTraceCoverage,
+} from "../src/lib/graph/trace-evidence";
 
 // File-scope cleanup: the snippet reader needs the temp source file for every
 // describe below, so it outlives the first one.
@@ -479,6 +488,93 @@ describe("trace store access", () => {
       hops: 1,
     });
     expect(buildGraphMultiHop).not.toHaveBeenCalled();
+  });
+
+  it("marks old-daemon evidence unknown while preserving agent data columns and avoiding retry", async () => {
+    sendDaemonCommand.mockResolvedValue({ ok: true, graph: GRAPH });
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await (trace as Command).parseAsync(["doWork", "--agent"], {
+      from: "user",
+    });
+    const out = spy.mock.calls.map((c) => String(c[0])).join("\n");
+    spy.mockRestore();
+    expect(
+      out.split("\n").filter((line) => !line.startsWith("# evidence")),
+    ).toEqual([
+      "doWork\tsrc/lib.ts:0\tDEFINITION",
+      "<- helper\tsrc/caller.ts:0",
+    ]);
+    expect(out).toMatch(/# evidence .*legacy producer coverage unknown/);
+    expect(out).toContain("do not prove calls or target bindings");
+    expect(sendDaemonCommand).toHaveBeenCalledOnce();
+    expect(buildGraphMultiHop).not.toHaveBeenCalled();
+  });
+
+  it("shows producer cap stages in the agent evidence summary", async () => {
+    const collector = createTraceCollector(1, 1);
+    recordTraceCoverage(collector, "caller_rows", {
+      observed: 100,
+      retained: 100,
+      limit: 100,
+      limited: true,
+      reasons: ["query_limit_exhaustion_unknown"],
+      omitted: { exact: null, lowerBound: 0 },
+    });
+    sendDaemonCommand.mockResolvedValue({
+      ok: true,
+      graph: { ...GRAPH, evidenceVersion: 1, coverage: collector.coverage },
+    });
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await (trace as Command).parseAsync(["doWork", "--agent"], {
+      from: "user",
+    });
+    const summary = spy.mock.calls
+      .map((c) => String(c[0]))
+      .join("\n")
+      .split("\n")
+      .find((line) => line.startsWith("# evidence"));
+    spy.mockRestore();
+    expect(summary).toContain("caller_rows");
+    expect(summary).toContain("query_limit_exhaustion_unknown");
+    expect(summary).toContain("100");
+  });
+
+  it("stops inbound source reads at the existing cap and reports dedupe uncertainty", async () => {
+    const unreadFile = path.join(tmpRoot, "src/unread.ts");
+    fs.writeFileSync(unreadFile, "function skipped() { doWork(); }");
+    sendDaemonCommand.mockResolvedValue({
+      ok: true,
+      graph: {
+        ...GRAPH,
+        callerTree: [
+          ...GRAPH.callerTree,
+          {
+            node: {
+              symbol: "skipped",
+              file: unreadFile,
+              line: 0,
+              role: "function",
+            },
+            callers: [],
+          },
+        ],
+      },
+    });
+    const readSpy = vi.mocked(fs.readFileSync);
+    readSpy.mockClear();
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await (trace as Command).parseAsync(
+      ["doWork", "--inbound", "--agent", "--limit", "1"],
+      { from: "user" },
+    );
+    const out = spy.mock.calls.map((c) => String(c[0])).join("\n");
+    const readPaths = readSpy.mock.calls.map(([file]) => String(file));
+    spy.mockRestore();
+    expect(readPaths).not.toContain(unreadFile);
+    expect(out).toContain("helper");
+    expect(out).not.toContain("skipped");
+    expect(out).toContain("display_limit_dedupe_unknown");
+    expect(out).toMatch(/# evidence .*legacy producer coverage unknown/);
   });
 
   it("still reads call-site snippets locally under --inbound", async () => {

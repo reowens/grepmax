@@ -5,6 +5,14 @@ import {
   runGraphTrace,
 } from "../lib/daemon/graph-handler";
 import { findCallSiteSnippet } from "../lib/graph/callsites";
+import {
+  addTraceCoverageObservation,
+  normalizeTraceMetadata,
+  type TraceCoverage,
+  traceEvidenceNote,
+  traceEvidenceSummary,
+  withTraceDisplayCoverage,
+} from "../lib/graph/trace-evidence";
 import { formatTrace } from "../lib/output/formatter";
 import { VectorDB } from "../lib/store/vector-db";
 import { symbolNotFoundLines } from "../lib/utils/agent-errors";
@@ -22,34 +30,31 @@ const dim = (s: string) => (useColors ? `\x1b[2m${s}\x1b[22m` : s);
 const bold = (s: string) => (useColors ? `\x1b[1m${s}\x1b[22m` : s);
 
 // Inferred-edge marker for caller rows: `member` = receiver-unverified `x.T()`,
-// `type` = a type-position reference (not a call). Free calls stay unmarked —
-// the trustworthy default — so only guesses carry a tag.
+// `type` = a type-position reference. Legacy free rows stay unmarked; the shared
+// trace note explains that none of these classifications establishes binding.
 const kindTag = (k?: "free" | "member" | "type") =>
   k === "member" || k === "type" ? ` (${k})` : "";
 
 function formatTraceAgent(
-  graph: {
-    center: { symbol: string; file: string; line: number; role: string } | null;
-    callerTree: Array<{
-      node: { symbol: string; file: string; line: number };
-      callers: any[];
-    }>;
-    callees: Array<{
-      symbol: string;
-      file: string;
-      line: number;
-      resolution?: "ambiguous-member";
-    }>;
-    importers: string[];
-  },
+  graph: GraphTraceResult,
   projectRoot: string,
   raw = false,
 ): string {
-  if (!graph.center) return "(not found)";
+  let coverage = normalizeTraceMetadata(graph, 1).coverage;
+  if (!graph.center) return `(not found)\n${traceEvidenceSummary(coverage)}`;
   const center = graph.center;
   const rel = (p: string) =>
     p.startsWith(projectRoot) ? p.slice(projectRoot.length + 1) : p;
   const lines: string[] = [];
+  let callerRows = 0;
+  let displayedCallers = 0;
+  const countRows = (tree: GraphTraceResult["callerTree"]): void => {
+    for (const t of tree) {
+      callerRows++;
+      countRows(t.callers);
+    }
+  };
+  countRows(graph.callerTree);
   lines.push(
     `${center.symbol}\t${rel(center.file)}:${center.line}\t${center.role}`,
   );
@@ -63,6 +68,7 @@ function formatTraceAgent(
   function walkCallers(tree: any[], depth: number) {
     if (raw) {
       for (const t of tree) {
+        displayedCallers++;
         lines.push(
           `${"  ".repeat(depth)}<- ${t.node.symbol}\t${rel(t.node.file)}:${t.node.line}${kindTag(t.node.edgeKind)}`,
         );
@@ -105,6 +111,7 @@ function formatTraceAgent(
       g.sub.push(...t.callers);
     }
     for (const key of order) {
+      displayedCallers++;
       const g = groups.get(key)!;
       const locs = [...g.lineSet].sort((a, b) => a - b).join(",");
       const loc = g.file ? `${rel(g.file)}:${locs}` : "(not indexed)";
@@ -124,6 +131,29 @@ function formatTraceAgent(
       );
     }
   }
+  coverage = withTraceDisplayCoverage(
+    coverage,
+    "display_callers",
+    callerRows,
+    displayedCallers,
+    null,
+    callerRows - displayedCallers,
+  );
+  coverage = withTraceDisplayCoverage(
+    coverage,
+    "display_callees",
+    graph.callees.length,
+    graph.callees.length,
+  );
+  coverage = withTraceDisplayCoverage(
+    coverage,
+    "display_importers",
+    graph.importers.length,
+    0,
+    null,
+    graph.importers.length,
+  );
+  lines.push(traceEvidenceSummary(coverage));
   return lines.join("\n");
 }
 
@@ -151,13 +181,17 @@ function buildInboundTree(
   fileCache: Map<string, string[]>,
   withSnippets: boolean,
   limit: number,
+  display: { coverage: TraceCoverage },
 ): InboundCaller[] {
   const out: InboundCaller[] = [];
-  // Dedupe by call-site location: when getCallers returns multiple chunks of
+  // Dedupe by live snippet location: when getCallers returns multiple chunks of
   // the same file (e.g. several methods of a class) that all reference the
   // target on the same line, collapse them into one row.
   const seen = new Set<string>();
+  let processed = 0;
+  let stoppedEarly = false;
   for (const t of callerTree) {
+    processed++;
     const snippet = withSnippets
       ? findCallSiteSnippet(fileCache, t.node.file, t.node.line, targetSymbol)
       : null;
@@ -177,10 +211,35 @@ function buildInboundTree(
         fileCache,
         withSnippets,
         limit,
+        display,
       ),
     });
-    if (out.length >= limit) break;
+    if (out.length >= limit) {
+      stoppedEarly = processed < callerTree.length;
+      break;
+    }
   }
+  // Preserve the existing content-read boundary. Unread siblings may dedupe to
+  // the displayed prefix, so the cap cannot establish an exact omitted count.
+  display.coverage = stoppedEarly
+    ? addTraceCoverageObservation(display.coverage, "display_callers", {
+        observed: processed,
+        retained: out.length,
+        filteredByPolicy: processed - seen.size,
+        limit,
+        limited: true,
+        status: "unknown",
+        reasons: ["display_limit_dedupe_unknown"],
+        omitted: { exact: null, lowerBound: 0 },
+      })
+    : withTraceDisplayCoverage(
+        display.coverage,
+        "display_callers",
+        processed,
+        out.length,
+        limit,
+        processed - seen.size,
+      );
   return out;
 }
 
@@ -293,6 +352,9 @@ export const trace = new Command("trace")
     false,
   )
   .action(async (symbol, opts) => {
+    const parsedDepth = Number.parseInt(opts.depth || "1", 10);
+    const requestedDepth =
+      Number.isFinite(parsedDepth) && parsedDepth > 0 ? parsedDepth : null;
     const depth = Math.min(
       Math.max(Number.parseInt(opts.depth || "1", 10), 1),
       3,
@@ -323,37 +385,69 @@ export const trace = new Command("trace")
       const graph = await callGraphVerb<GraphTraceResult>("graph.trace", {
         projectRoot,
         scope,
-        payload: { target: symbol, hops: depth },
+        payload: { target: symbol, hops: depth, requestedDepth },
         render: (resp) => resp.graph as GraphTraceResult,
         inProcess: () => {
           local.db ??= new VectorDB(ensureProjectPaths(projectRoot).lancedbDir);
-          return runGraphTrace(local.db, { symbol, hops: depth, scope });
+          return runGraphTrace(local.db, {
+            symbol,
+            hops: depth,
+            scope,
+            requestedDepth,
+          });
         },
       });
+      Object.assign(
+        graph,
+        normalizeTraceMetadata(graph, Number.isFinite(depth) ? depth : 1),
+      );
 
       if (opts.inbound) {
         if (!graph.center) {
           console.log(
-            symbolNotFoundLines(symbol, { agent: opts.agent }).join("\n"),
+            [
+              ...symbolNotFoundLines(symbol, { agent: opts.agent }),
+              opts.agent
+                ? traceEvidenceSummary(graph.coverage!)
+                : traceEvidenceNote(graph.coverage!),
+            ].join("\n"),
           );
           process.exitCode = 1;
         } else {
           const fileCache = new Map<string, string[]>();
           const withSnippets = opts.snippets !== false;
+          const display = { coverage: graph.coverage! };
           const tree = buildInboundTree(
             graph.callerTree,
             symbol,
             fileCache,
             withSnippets,
             inboundLimit,
+            display,
+          );
+          display.coverage = withTraceDisplayCoverage(
+            display.coverage,
+            "display_callees",
+            graph.callees.length,
+            0,
+            null,
+            graph.callees.length,
+          );
+          display.coverage = withTraceDisplayCoverage(
+            display.coverage,
+            "display_importers",
+            graph.importers.length,
+            0,
+            null,
+            graph.importers.length,
           );
           if (opts.agent) {
             console.log(
-              formatInboundAgent(graph.center, tree, projectRoot, withSnippets),
+              `${formatInboundAgent(graph.center, tree, projectRoot, withSnippets)}\n${traceEvidenceSummary(display.coverage)}`,
             );
           } else {
             console.log(
-              formatInboundHuman(graph.center, tree, projectRoot, withSnippets),
+              `${formatInboundHuman(graph.center, tree, projectRoot, withSnippets)}\n${traceEvidenceNote(display.coverage)}`,
             );
           }
         }

@@ -266,6 +266,46 @@ describe("graph.trace", () => {
     );
   });
 
+  it("keeps requested depth distinct from the effective bounded trace depth", async () => {
+    const graph = await runGraphTrace(db, {
+      symbol: "handleAuth",
+      hops: 99,
+      requestedDepth: 99,
+      scope: wholeProject(),
+    });
+    expect(graph.evidenceVersion).toBe(1);
+    expect(graph.coverage).toMatchObject({
+      requestedDepth: 99,
+      effectiveDepth: 3,
+      scope: "indexed",
+      depthSemantics: "requested_boundary",
+    });
+    expect(graph.centerSelection).toMatchObject({
+      selectionBasis: "first_definition_match",
+      targetCandidate: {
+        file: `${PROJECT}/src/auth.ts`,
+        startLine: 10,
+        endLine: 40,
+      },
+    });
+    const caller = graph.callerTree.find(
+      ({ node }) => node.symbol === "startServer",
+    )?.node;
+    expect(caller?.evidence).toMatchObject({
+      referenceSpelling: "handleAuth",
+      referenceColumns: ["referenced_symbols"],
+      targetCandidate: {
+        file: `${PROJECT}/src/auth.ts`,
+        startLine: 10,
+        endLine: 40,
+      },
+      sourceChunk: { file: `${PROJECT}/src/server.ts`, startLine: 7 },
+      bindingResolved: false,
+      callsite: null,
+    });
+    expect(JSON.parse(JSON.stringify(graph))).toEqual(graph);
+  });
+
   it("reports a missing symbol as a null center, not an error", async () => {
     const graph = await runGraphTrace(db, {
       symbol: "noSuchSymbol",

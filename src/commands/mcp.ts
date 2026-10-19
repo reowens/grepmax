@@ -69,6 +69,7 @@ import type {
   TestHit,
 } from "../lib/graph/impact";
 import { hopLabelAgent } from "../lib/graph/test-hits";
+import { traceEvidenceNote } from "../lib/graph/trace-evidence";
 import { resolveEmbeddingGeneration } from "../lib/index/embedding-generation";
 import {
   assertEmbeddingSearchCompatible,
@@ -1578,23 +1579,36 @@ export const mcp = new Command("mcp")
       void ensureWatcher(root);
 
       try {
+        const rawDepth = Number(args.depth);
+        const requestedDepth =
+          Number.isFinite(rawDepth) && rawDepth > 0
+            ? rawDepth
+            : args.depth === undefined
+              ? 1
+              : null;
         const depth = Math.min(Math.max(Number(args.depth) || 1, 1), 3);
         const scope = projectScope(root);
         const graph = await graphVerb<GraphTraceResult>("graph.trace", {
           projectRoot: root,
           scope,
-          payload: { target: symbol, hops: depth },
+          payload: { target: symbol, hops: depth, requestedDepth },
           render: (resp) => resp.graph as GraphTraceResult,
           inProcess: () =>
             localStore((deps) =>
-              runGraphTrace(deps.vectorDb!, { symbol, hops: depth, scope }),
+              runGraphTrace(deps.vectorDb!, {
+                symbol,
+                hops: depth,
+                scope,
+                requestedDepth,
+              }),
             ),
         });
 
-        const structured = traceResult(symbol, root, graph);
+        const structured = traceResult(symbol, root, graph, Math.trunc(depth));
+        const note = traceEvidenceNote(structured.coverage);
         if (!graph.center) {
           return ok(
-            `Symbol '${symbol}' not found in the index. Check \`gmax status\` to see which projects are indexed, or try \`gmax search ${symbol}\` to find similar symbols.`,
+            `Symbol '${symbol}' not found in the index. Check \`gmax status\` to see which projects are indexed, or try \`gmax search ${symbol}\` to find similar symbols.\n${note}`,
             structured,
           );
         }
@@ -1665,6 +1679,7 @@ export const mcp = new Command("mcp")
           lines.push("Calls: none");
         }
 
+        lines.push(note);
         return ok(lines.join("\n"), structured);
       } catch (e) {
         return toolError("Trace failed", e);

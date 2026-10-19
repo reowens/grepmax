@@ -1,3 +1,4 @@
+import "./isolated-host-policy";
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -15,6 +16,7 @@ vi.mock("../src/lib/utils/project-registry", () => ({
 }));
 
 import type { Daemon } from "../src/lib/daemon/daemon";
+import { runGraphTrace } from "../src/lib/daemon/graph-handler";
 import { handleCommand } from "../src/lib/daemon/ipc-handler";
 import {
   clearReadVerbs,
@@ -22,6 +24,7 @@ import {
 } from "../src/lib/daemon/read-verbs";
 import type { VectorRecord } from "../src/lib/store/types";
 import { VectorDB } from "../src/lib/store/vector-db";
+import { resolveScope } from "../src/lib/utils/scope-filter";
 
 class FakeSocket extends EventEmitter {
   writable = true;
@@ -133,6 +136,34 @@ describe("graph verbs over handleCommand", () => {
     // Same shared-operation route as `search`, named after the verb.
     expect(runSharedOperation.mock.calls[0][0]).toBe("graph.tests");
     expect(touched).toBe(1);
+  });
+
+  it("preserves trace evidence across IPC JSON exactly as the local handler", async () => {
+    const response = await send({
+      cmd: "graph.trace",
+      projectRoot: PROJECT,
+      target: "handleAuth",
+      hops: 1,
+      requestedDepth: 7,
+    });
+    const local = await runGraphTrace(db, {
+      symbol: "handleAuth",
+      hops: 1,
+      requestedDepth: 7,
+      scope: resolveScope({ projectRoot: PROJECT }),
+    });
+    expect(response.ok).toBe(true);
+    expect(JSON.parse(JSON.stringify(response.graph))).toEqual(
+      JSON.parse(JSON.stringify(local)),
+    );
+    expect((response.graph as any).coverage).toMatchObject({
+      requestedDepth: 7,
+      effectiveDepth: 1,
+    });
+    expect((response.graph as any).callerTree[0].node.evidence).toMatchObject({
+      callsite: null,
+      bindingResolved: false,
+    });
   });
 
   it("serves every registered graph verb", async () => {

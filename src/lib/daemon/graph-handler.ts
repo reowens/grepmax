@@ -47,6 +47,7 @@ import {
   findTests,
   resolveTargetSymbols,
 } from "../graph/impact";
+import type { TraceMetadataInput } from "../graph/trace-evidence";
 import type { VectorDB } from "../store/vector-db";
 import { toArr } from "../utils/arrow";
 import { mapWithConcurrency } from "../utils/async-semaphore";
@@ -98,7 +99,7 @@ export interface GraphDeadFacts {
   topCallers: Array<{ file: string; line: number }>;
 }
 
-export interface GraphTraceResult {
+export interface GraphTraceResult extends TraceMetadataInput {
   center: GraphNode | null;
   callerTree: CallerTree[];
   callees: GraphNode[];
@@ -442,7 +443,12 @@ export async function runGraphDependents(
 
 export async function runGraphTrace(
   db: VectorDB,
-  args: { symbol: string; hops: number; scope: ResolvedScope },
+  args: {
+    symbol: string;
+    hops: number;
+    scope: ResolvedScope;
+    requestedDepth?: number | null;
+  },
 ): Promise<GraphTraceResult> {
   const builder = new GraphBuilder(
     db,
@@ -452,6 +458,7 @@ export async function runGraphTrace(
   return builder.buildGraphMultiHop(
     args.symbol,
     clampInt(args.hops, 1, MAX_DEPTH, 1),
+    { requestedDepth: args.requestedDepth ?? null },
   );
 }
 
@@ -1104,6 +1111,12 @@ export function createGraphVerbs(
       const graph = await runGraphTrace(db, {
         symbol: requireString(payload, "target"),
         hops: clampInt(payload.hops, 1, MAX_DEPTH, 1),
+        requestedDepth:
+          typeof payload.requestedDepth === "number" &&
+          Number.isFinite(payload.requestedDepth) &&
+          payload.requestedDepth > 0
+            ? payload.requestedDepth
+            : null,
         scope: decoded.scope,
       });
       return { ok: true, graph };

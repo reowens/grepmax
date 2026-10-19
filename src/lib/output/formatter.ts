@@ -125,9 +125,15 @@ export function formatResults(
 }
 
 import type { CallerTree, GraphNode } from "../graph/graph-builder";
+import {
+  normalizeTraceMetadata,
+  type TraceMetadataInput,
+  traceEvidenceNote,
+  withTraceDisplayCoverage,
+} from "../graph/trace-evidence";
 
 export function formatTrace(
-  graph: {
+  graph: TraceMetadataInput & {
     center: GraphNode | null;
     callerTree: CallerTree[];
     callees: GraphNode[];
@@ -135,6 +141,7 @@ export function formatTrace(
   },
   options?: { symbol?: string },
 ): string {
+  let coverage = normalizeTraceMetadata(graph, 1).coverage;
   if (!graph.center) {
     const name = options?.symbol ?? "unknown";
     const lines = [
@@ -148,11 +155,22 @@ export function formatTrace(
       style.dim("Try:"),
       style.dim("  gmax status          — see which projects are indexed"),
       style.dim("  gmax search <name>   — fuzzy search for similar symbols"),
+      style.dim(traceEvidenceNote(coverage)),
     ];
     return lines.join("\n");
   }
 
   const lines: string[] = [];
+  const importers = graph.importers.filter((p) => p !== graph.center!.file);
+  coverage = withTraceDisplayCoverage(
+    coverage,
+    "display_importers",
+    graph.importers.length,
+    Math.min(importers.length, 10),
+    10,
+    graph.importers.length - importers.length,
+  );
+  let callerRows = 0;
 
   // 1. Importers
   if (graph.importers.length > 0) {
@@ -169,6 +187,7 @@ export function formatTrace(
   // 2. Callers (Upstream, recursive tree)
   function renderCallerTree(trees: CallerTree[], depth: number): void {
     for (const t of trees) {
+      callerRows++;
       const pad = "  ".repeat(depth);
       lines.push(
         `${pad}${style.blue("↑")} ${style.green(t.node.symbol)} ${style.dim(`(${t.node.file}:${t.node.line})`)}`,
@@ -211,6 +230,19 @@ export function formatTrace(
   } else {
     lines.push(style.dim("No known callees."));
   }
+  coverage = withTraceDisplayCoverage(
+    coverage,
+    "display_callers",
+    callerRows,
+    callerRows,
+  );
+  coverage = withTraceDisplayCoverage(
+    coverage,
+    "display_callees",
+    graph.callees.length,
+    graph.callees.length,
+  );
+  lines.push(style.dim(traceEvidenceNote(coverage)));
 
   return lines.join("\n");
 }

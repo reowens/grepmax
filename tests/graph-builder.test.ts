@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GraphBuilder } from "../src/lib/graph/graph-builder";
+import { createTraceCollector } from "../src/lib/graph/trace-evidence";
 
 function createMockDb(data: Record<string, any[]>) {
   const mockTable = {
@@ -55,7 +56,7 @@ function makeRow(
     referenced_symbols: refs,
     // member names are additive — they also appear in referenced_symbols.
     member_referenced_symbols: memberRefs,
-    type_referenced_symbols: [],
+    type_referenced_symbols: [] as string[],
     role: "ORCHESTRATION",
     parent_symbol: null,
     complexity: 5,
@@ -454,5 +455,544 @@ describe("GraphBuilder", () => {
     const names = hits.map((h) => h.symbol);
     expect(names).toContain("helper");
     expect(names).not.toContain("map");
+  });
+});
+
+/** A bounded store double: projection and limits are part of the contract. */
+function createBoundedDb(data: Record<string, any[]>) {
+  const queries: Array<{
+    where: string;
+    select: string[] | null;
+    limit: number | null;
+  }> = [];
+  const table = {
+    query: () => {
+      let where = "";
+      let select: string[] | null = null;
+      let limit: number | null = null;
+      const chain = {
+        where: (value: string) => {
+          where = value;
+          return chain;
+        },
+        select: (value: string[]) => {
+          select = value;
+          return chain;
+        },
+        limit: (value: number) => {
+          limit = value;
+          return chain;
+        },
+        toArray: async () => {
+          queries.push({ where, select, limit });
+          const rows =
+            Object.entries(data).find(([pattern]) =>
+              where.includes(pattern),
+            )?.[1] ?? [];
+          return rows
+            .slice(0, limit ?? rows.length)
+            .map((row) =>
+              select
+                ? Object.fromEntries(
+                    select
+                      .filter((key) => key in row)
+                      .map((key) => [key, row[key]]),
+                  )
+                : { ...row },
+            );
+        },
+        execute: async function* (): AsyncGenerator<{ toArray: () => any[] }> {
+          const rows = await chain.toArray();
+          yield { toArray: () => rows };
+        },
+      };
+      return chain;
+    },
+  };
+  return { db: { ensureTable: async () => table } as any, queries };
+}
+
+describe("G1 legacy query characterization", () => {
+  it("freezes selected candidates, reference order, and bounded query sequence", async () => {
+    const root = makeRow(
+      "root",
+      "/src/main.py",
+      3,
+      ["self", "family", "fallback", "get"],
+      ["get"],
+    );
+    root.content = "cache.get(key)";
+    const { db, queries } = createBoundedDb({
+      "defined_symbols, 'root'": [root, makeRow("root", "/src/second.py", 99)],
+      "referenced_symbols, 'root'": [],
+      "defined_symbols, 'self'": [
+        makeRow("self", "/src/other.py", 1),
+        makeRow("self", "/src/main.py", 4),
+      ],
+      "defined_symbols, 'family'": [
+        makeRow("family", "/src/first.ts", 1),
+        makeRow("family", "/src/second.py", 5),
+      ],
+      "defined_symbols, 'fallback'": [
+        makeRow("fallback", "/src/first.ts", 6),
+        makeRow("fallback", "/src/second.rb", 7),
+      ],
+      "defined_symbols, 'get'": [makeRow("get", "/src/unrelated.ts", 8)],
+    });
+    const graph = await new GraphBuilder(db).buildGraph("root");
+    expect(graph.center?.file).toBe("/src/main.py");
+    expect(
+      graph.callees.map(({ symbol, file, line, resolution }) => ({
+        symbol,
+        file,
+        line,
+        resolution,
+      })),
+    ).toEqual([
+      { symbol: "self", file: "/src/main.py", line: 4, resolution: undefined },
+      {
+        symbol: "family",
+        file: "/src/second.py",
+        line: 5,
+        resolution: undefined,
+      },
+      {
+        symbol: "fallback",
+        file: "/src/first.ts",
+        line: 6,
+        resolution: undefined,
+      },
+      { symbol: "get", file: "", line: 0, resolution: "ambiguous-member" },
+    ]);
+    expect(queries.map(({ limit }) => limit)).toEqual([1, 100, 25, 25, 25, 25]);
+    expect(
+      queries.map(
+        ({ where }) =>
+          where.match(/(?:defined_symbols|referenced_symbols), '([^']+)'/)?.[1],
+      ),
+    ).toEqual(["root", "root", "self", "family", "fallback", "get"]);
+  });
+
+  it("freezes caller cap before language filtering and stable confidence ordering", async () => {
+    const rows = [
+      makeRow("foreign", "/foreign.py", 0, ["target"]),
+      makeRow("member", "/member.ts", 1, ["target"], ["target"]),
+      ...Array.from({ length: 98 }, (_, i) =>
+        makeRow(`free${i}`, `/free${i}.ts`, i + 2, ["target"]),
+      ),
+      makeRow("outsideCap", "/outside.ts", 101, ["target"]),
+    ];
+    const { db, queries } = createBoundedDb({
+      "referenced_symbols, 'target'": rows,
+    });
+    const callers = await new GraphBuilder(db).getCallers("target", "js_ts");
+    expect(callers.map(({ symbol }) => symbol)).toEqual([
+      ...Array.from({ length: 98 }, (_, i) => `free${i}`),
+      "member",
+    ]);
+    expect(queries).toHaveLength(1);
+    expect(queries[0].limit).toBe(100);
+    expect(queries[0].select).toContain("member_referenced_symbols");
+    expect(queries[0].select).toContain("type_referenced_symbols");
+  });
+
+  it("freezes fifteen spellings and twenty-five candidates before preference", async () => {
+    const names = Array.from({ length: 16 }, (_, i) => `callee${i}`);
+    const data: Record<string, any[]> = {
+      "defined_symbols, 'entry'": [makeRow("entry", "/entry.ts", 1, names)],
+      "referenced_symbols, 'entry'": [],
+    };
+    for (const name of names)
+      data[`defined_symbols, '${name}'`] = [
+        ...Array.from({ length: 25 }, (_, i) =>
+          makeRow(name, `/candidate${i}.ts`, i),
+        ),
+        makeRow(name, "/entry.ts", 999),
+      ];
+    const { db, queries } = createBoundedDb(data);
+    const graph = await new GraphBuilder(db).buildGraph("entry");
+    expect(graph.callees.map(({ symbol, file }) => [symbol, file])).toEqual(
+      names.slice(0, 15).map((name) => [name, "/candidate0.ts"]),
+    );
+    expect(queries.map(({ limit }) => limit)).toEqual([
+      1,
+      100,
+      ...Array(15).fill(25),
+    ]);
+    expect(queries).toHaveLength(17);
+  });
+});
+
+describe("G1 trace producer evidence", () => {
+  it.each([99, 100, 101])(
+    "reports caller query uncertainty at %i supplied rows",
+    async (count) => {
+      const { db, queries } = createBoundedDb({
+        "defined_symbols, 'target'": [makeRow("target", "/target.ts", 2)],
+        "referenced_symbols, 'target'": Array.from({ length: count }, (_, i) =>
+          makeRow(`caller${i}`, `/caller${i}.ts`, i, ["target"]),
+        ),
+      });
+      const graph = await new GraphBuilder(db).buildGraphMultiHop("target", 1, {
+        requestedDepth: 1,
+      });
+      expect(graph.callerTree).toHaveLength(Math.min(count, 100));
+      expect(graph.coverage?.stages.caller_rows).toMatchObject({
+        observed: Math.min(count, 100),
+        retained: Math.min(count, 100),
+        limit: 100,
+        status: count < 100 ? "complete" : "unknown",
+        omitted: { exact: count < 100 ? 0 : null, lowerBound: 0 },
+      });
+      expect(queries).toHaveLength(3); // center, caller rows, importer stream; no N+1 probe.
+      expect(queries.filter(({ limit }) => limit === 100)).toHaveLength(1);
+      expect(graph.coverage?.stages.center_candidates.status).toBe("unknown");
+      expect(
+        graph.callerTree.every(
+          ({ node }) =>
+            node.evidence?.bindingResolved === false &&
+            node.evidence?.callsite === null,
+        ),
+      ).toBe(true);
+    },
+  );
+
+  it.each([14, 15, 16])(
+    "reports exact callee spelling omission at %i indexed spellings",
+    async (count) => {
+      const names = Array.from({ length: count }, (_, i) => `callee${i}`);
+      const { db, queries } = createBoundedDb({
+        "defined_symbols, 'entry'": [makeRow("entry", "/entry.ts", 0, names)],
+      });
+      const graph = await new GraphBuilder(db).buildGraphMultiHop("entry", 1, {
+        requestedDepth: 1,
+      });
+      expect(graph.callees.map(({ symbol }) => symbol)).toEqual(
+        names.slice(0, 15),
+      );
+      expect(graph.coverage?.stages.callee_spellings).toMatchObject({
+        observed: count,
+        retained: Math.min(count, 15),
+        limit: 15,
+        status: count > 15 ? "partial" : "complete",
+        omitted: {
+          exact: Math.max(0, count - 15),
+          lowerBound: Math.max(0, count - 15),
+        },
+      });
+      expect(queries).toHaveLength(3 + Math.min(count, 15));
+      expect(
+        graph.callees.every(
+          ({ evidence }) =>
+            evidence?.selectionBasis === "no_candidate" &&
+            evidence.targetCandidate === null &&
+            evidence.bindingResolved === false,
+        ),
+      ).toBe(true);
+    },
+  );
+
+  it.each([24, 25, 26])(
+    "keeps candidate selection bounded and uncertainty honest at %i rows",
+    async (count) => {
+      const { db, queries } = createBoundedDb({
+        "defined_symbols, 'entry'": [
+          makeRow("entry", "/entry.py", 0, ["worker"]),
+        ],
+        "defined_symbols, 'worker'": Array.from({ length: count }, (_, i) =>
+          makeRow("worker", `/candidate${i}.ts`, i),
+        ),
+      });
+      const graph = await new GraphBuilder(db).buildGraphMultiHop("entry", 1, {
+        requestedDepth: 1,
+      });
+      expect(graph.callees[0].file).toBe("/candidate0.ts");
+      expect(graph.callees[0].evidence).toMatchObject({
+        selectionBasis: "first_candidate",
+        bindingResolved: false,
+        callsite: null,
+      });
+      expect(graph.coverage?.stages.callee_candidates).toMatchObject({
+        observed: Math.min(count, 25),
+        retained: 1,
+        limit: 25,
+        status: count < 25 ? "complete" : "unknown",
+        omitted: { exact: count < 25 ? 0 : null, lowerBound: 0 },
+      });
+      expect(
+        queries.map(({ limit }) => limit).sort((a, b) => (a ?? 0) - (b ?? 0)),
+      ).toEqual([null, 1, 25, 100]);
+    },
+  );
+
+  it.each([99, 100, 101])(
+    "keeps importer stop uncertainty at %i unique files despite duplicate rows",
+    async (count) => {
+      const files = Array.from({ length: count }, (_, i) => ({
+        path: `/importer${i}.ts`,
+      }));
+      const { db, queries } = createBoundedDb({
+        "content LIKE": [files[0], files[0], ...files.slice(1)],
+      });
+      const graph = await new GraphBuilder(db).buildGraphMultiHop(
+        "missing",
+        1,
+        { requestedDepth: 1 },
+      );
+      expect(graph.importers).toEqual(
+        files.slice(0, 100).map(({ path }) => path),
+      );
+      expect(graph.coverage?.stages.importer_files).toMatchObject({
+        observed: Math.min(count, 100),
+        retained: Math.min(count, 100),
+        duplicateRows: 1,
+        filteredByPolicy: 0,
+        status: count < 100 ? "complete" : "unknown",
+        omitted: { exact: count < 100 ? 0 : null, lowerBound: 0 },
+      });
+      expect(queries).toHaveLength(3);
+      expect(graph.coverage?.stages.callee_candidates.operations).toBe(0);
+      expect(graph.coverage?.scope).toBe("indexed");
+    },
+  );
+
+  it("counts language and builtin suppression as policy while retaining mixed-column classification", async () => {
+    const mixed = makeRow("mixed", "/mixed.ts", 3, ["get"], ["get"]);
+    mixed.type_referenced_symbols = ["get"];
+    const typeOnly = makeRow("typeOnly", "/type.ts", 4);
+    typeOnly.type_referenced_symbols = ["get"];
+    const { db } = createBoundedDb({
+      "defined_symbols, 'get'": [makeRow("get", "/get.ts", 1)],
+      "referenced_symbols, 'get'": [
+        mixed,
+        makeRow("foreign", "/foreign.py", 0, ["get"]),
+        typeOnly,
+        makeRow("free", "/free.ts", 5, ["get"]),
+      ],
+    });
+    const graph = await new GraphBuilder(db).buildGraphMultiHop("get", 1, {
+      requestedDepth: 1,
+    });
+    expect(
+      graph.callerTree.map(({ node }) => [node.symbol, node.edgeKind]),
+    ).toEqual([
+      ["free", "free"],
+      ["typeOnly", "type"],
+    ]);
+    expect(graph.coverage?.stages.caller_rows).toMatchObject({
+      observed: 4,
+      retained: 2,
+      filteredByPolicy: 2,
+      status: "complete",
+      omitted: { exact: 0, lowerBound: 0 },
+    });
+    expect(graph.callerTree[1].node.evidence?.referenceColumns).toEqual([
+      "type_referenced_symbols",
+    ]);
+  });
+
+  it.each(["ts", "py"])(
+    "retains %s homonyms, aliases, shadowing and value references as unbound spelling evidence",
+    async (extension) => {
+      const center = makeRow(
+        "entry",
+        `/entry.${extension}`,
+        2,
+        ["worker", "alias", "shadow", "member", "value"],
+        ["member"],
+      );
+      center.type_referenced_symbols = ["value"];
+      center.content =
+        "const alias = worker; function nested(worker) { return worker; } receiver.member();";
+      const { db } = createBoundedDb({
+        "defined_symbols, 'entry'": [center],
+        "defined_symbols, 'worker'": [
+          makeRow("worker", "/foreign.rb", 0),
+          makeRow("worker", `/homonym.${extension}`, 5),
+        ],
+        "defined_symbols, 'shadow'": [
+          makeRow("shadow", `/unrelated.${extension}`, 8),
+        ],
+        "defined_symbols, 'member'": [
+          makeRow("member", `/unrelated.${extension}`, 12),
+        ],
+        "defined_symbols, 'value'": [
+          makeRow("value", `/entry.${extension}`, 18),
+        ],
+      });
+      const graph = await new GraphBuilder(db).buildGraphMultiHop("entry", 1, {
+        requestedDepth: 1,
+      });
+      expect(graph.callees.map(({ symbol, file }) => [symbol, file])).toEqual([
+        ["worker", `/homonym.${extension}`],
+        ["alias", ""],
+        ["shadow", `/unrelated.${extension}`],
+        ["member", `/unrelated.${extension}`],
+        ["value", `/entry.${extension}`],
+      ]);
+      expect(
+        graph.callees.map(({ evidence }) => evidence?.selectionBasis),
+      ).toEqual([
+        "same_language_family",
+        "no_candidate",
+        "same_language_family",
+        "same_language_family",
+        "same_file",
+      ]);
+      expect(graph.callees[3].evidence?.referenceColumns).toEqual([
+        "referenced_symbols",
+        "member_referenced_symbols",
+      ]);
+      expect(graph.callees[4].evidence?.referenceColumns).toEqual([
+        "referenced_symbols",
+        "type_referenced_symbols",
+      ]);
+      expect(
+        graph.callees.every(
+          ({ evidence }) =>
+            evidence?.bindingResolved === false && evidence.callsite === null,
+        ),
+      ).toBe(true);
+    },
+  );
+
+  it("threads nested caller parent candidates and records name-visited pruning", async () => {
+    const { db } = createBoundedDb({
+      "defined_symbols, 'target'": [makeRow("target", "/target.ts", 2)],
+      "referenced_symbols, 'target'": [
+        makeRow("parent", "/parent.ts", 8, ["target"]),
+        makeRow("parent", "/homonym.ts", 14, ["target"]),
+      ],
+      "referenced_symbols, 'parent'": [
+        makeRow("ancestor", "/ancestor.ts", 20, ["parent"]),
+      ],
+    });
+    const graph = await new GraphBuilder(db).buildGraphMultiHop("target", 3, {
+      requestedDepth: 7,
+    });
+    expect(graph.coverage).toMatchObject({
+      requestedDepth: 7,
+      effectiveDepth: 3,
+    });
+    expect(
+      graph.callerTree[0].callers[0].node.evidence?.targetCandidate,
+    ).toMatchObject({ file: "/parent.ts", startLine: 8 });
+    expect(graph.callerTree[1].callers).toEqual([]);
+    expect(graph.coverage?.stages.caller_expansion.reasons).toContain(
+      "name_visited",
+    );
+    expect(graph.callerTree[0].node.evidence?.targetCandidate).toMatchObject({
+      file: "/target.ts",
+      startLine: 2,
+    });
+  });
+  it("retains caller prefilter cap uncertainty when the first hundred rows are foreign", async () => {
+    const { db } = createBoundedDb({
+      "defined_symbols, 'target'": [makeRow("target", "/target.ts", 0)],
+      "referenced_symbols, 'target'": [
+        ...Array.from({ length: 100 }, (_, i) =>
+          makeRow(`foreign${i}`, `/foreign${i}.py`, i, ["target"]),
+        ),
+        makeRow("beyondCap", "/caller.ts", 101, ["target"]),
+      ],
+    });
+    const graph = await new GraphBuilder(db).buildGraphMultiHop("target", 1, {
+      requestedDepth: 1,
+    });
+    expect(graph.callerTree).toEqual([]);
+    expect(graph.coverage?.stages.caller_rows).toMatchObject({
+      observed: 100,
+      retained: 0,
+      filteredByPolicy: 100,
+      status: "unknown",
+      omitted: { exact: null, lowerBound: 0 },
+    });
+  });
+
+  it("reports unavailable column evidence as null instead of checked absence", async () => {
+    const caller: Record<string, any> = makeRow("caller", "/caller.ts", 0, [
+      "target",
+    ]);
+    delete caller.type_referenced_symbols;
+    const { db } = createBoundedDb({
+      "defined_symbols, 'target'": [makeRow("target", "/target.ts", 0)],
+      "referenced_symbols, 'target'": [caller],
+    });
+    const graph = await new GraphBuilder(db).buildGraphMultiHop("target", 1, {
+      requestedDepth: 1,
+    });
+    expect(graph.callerTree[0].node.evidence).toMatchObject({
+      referenceColumns: null,
+      callsite: null,
+      bindingResolved: false,
+    });
+  });
+
+  it("adds evidence without changing legacy graph membership, ordering or queries", async () => {
+    const data = {
+      "defined_symbols, 'target'": [
+        makeRow("target", "/target.ts", 0, ["callee"]),
+      ],
+      "defined_symbols, 'callee'": [makeRow("callee", "/callee.ts", 4)],
+      "referenced_symbols, 'target'": [
+        makeRow("parent", "/parent.ts", 8, ["target"]),
+      ],
+      "referenced_symbols, 'parent'": [
+        makeRow("ancestor", "/ancestor.ts", 12, ["parent"]),
+      ],
+    };
+    const legacy = createBoundedDb(data);
+    const enriched = createBoundedDb(data);
+    const oldGraph = await new GraphBuilder(legacy.db).buildGraphMultiHop(
+      "target",
+      2,
+    );
+    const newGraph = await new GraphBuilder(enriched.db).buildGraphMultiHop(
+      "target",
+      2,
+      { requestedDepth: 2 },
+    );
+    const oldFields = JSON.parse(
+      JSON.stringify(newGraph, (key, value) =>
+        ["evidence", "evidenceVersion", "centerSelection", "coverage"].includes(
+          key,
+        )
+          ? undefined
+          : value,
+      ),
+    );
+    expect(oldFields).toEqual(oldGraph);
+    const queryShape = (queries: typeof legacy.queries) =>
+      queries.map(({ where, limit }) => ({ where, limit }));
+    expect(queryShape(enriched.queries)).toEqual(queryShape(legacy.queries));
+  });
+
+  it("records the existing advisory expansion stop without claiming a hard traversal bound", async () => {
+    const { db, queries } = createBoundedDb({});
+    const collector = createTraceCollector(3, 3);
+    const node = {
+      symbol: "caller",
+      file: "/caller.ts",
+      line: 0,
+      role: "function",
+      calls: [],
+      calledBy: [],
+    };
+    const visited = new Set(Array.from({ length: 501 }, (_, i) => `seen${i}`));
+    const tree = await (new GraphBuilder(db) as any).expandCallers(
+      [node],
+      1,
+      visited,
+      collector,
+    );
+    expect(tree).toEqual([{ node, callers: [] }]);
+    expect(queries).toHaveLength(0);
+    expect(collector.coverage.stages.caller_expansion).toMatchObject({
+      status: "unknown",
+      limit: 500,
+      limitedOperations: 1,
+      reasons: ["advisory_expansion_stop"],
+      omitted: { exact: null, lowerBound: 0 },
+    });
   });
 });

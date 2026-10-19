@@ -1,18 +1,105 @@
 import { z } from "zod";
 import type { GraphDeadFacts, GraphTraceResult } from "../daemon/graph-handler";
 import type { CallerTree, GraphNode } from "../graph/graph-builder";
+import {
+  normalizeTraceMetadata,
+  toPublicTraceCenterSelection,
+  toPublicTraceEdgeEvidence,
+  withTraceDisplayCoverage,
+} from "../graph/trace-evidence";
 
 const location = z.object({
   path: z.string(),
   line: z.number().int().positive().describe("One-based source line"),
+});
+const chunkSpan = z.object({
+  file: z.string(),
+  startLine: z.number().int().positive(),
+  endLine: z.number().int().positive().nullable(),
+});
+const selectionBasis = z.enum([
+  "first_definition_match",
+  "same_file",
+  "same_language_family",
+  "first_candidate",
+  "caller_chunk_attribution",
+  "receiver_unresolved",
+  "no_candidate",
+  "unknown",
+]);
+const edgeEvidence = z.object({
+  referenceSpelling: z.string(),
+  referenceColumns: z
+    .array(
+      z.enum([
+        "referenced_symbols",
+        "member_referenced_symbols",
+        "type_referenced_symbols",
+      ]),
+    )
+    .nullable(),
+  sourceChunk: chunkSpan.nullable(),
+  targetCandidate: chunkSpan.nullable(),
+  selectionBasis,
+  callsite: z.null(),
+  bindingResolved: z.literal(false),
+});
+const centerSelection = z.object({
+  referenceSpelling: z.string(),
+  targetCandidate: chunkSpan.nullable(),
+  selectionBasis: z.enum(["first_definition_match", "no_candidate", "unknown"]),
+});
+const coverageSummary = z.object({
+  status: z.enum(["complete", "partial", "unknown"]),
+  operations: z.number().int().nonnegative(),
+  observed: z.number().int().nonnegative(),
+  retained: z.number().int().nonnegative(),
+  filteredByPolicy: z.number().int().nonnegative(),
+  duplicateRows: z.number().int().nonnegative().optional(),
+  limit: z.number().int().nonnegative().nullable(),
+  limitedOperations: z.number().int().nonnegative(),
+  reasons: z.array(z.string()),
+  omitted: z.object({
+    exact: z.number().int().nonnegative().nullable(),
+    lowerBound: z.number().int().nonnegative(),
+  }),
+});
+const traceCoverage = z.object({
+  version: z.literal(1),
+  requestedDepth: z.number().positive().nullable(),
+  effectiveDepth: z.number().int().positive(),
+  scope: z.literal("indexed"),
+  depthSemantics: z.literal("requested_boundary"),
+  stages: z.object({
+    center_candidates: coverageSummary,
+    caller_rows: coverageSummary,
+    callee_spellings: coverageSummary,
+    callee_candidates: coverageSummary,
+    importer_files: coverageSummary,
+    caller_expansion: coverageSummary,
+    display_callees: coverageSummary,
+    display_importers: coverageSummary,
+    display_callers: coverageSummary,
+  }),
 });
 const graphNode = z.object({
   symbol: z.string(),
   location: location.nullable(),
   role: z.string(),
   resolution: z.enum(["indexed", "not_indexed", "ambiguous_member"]),
-  edgeKind: z.enum(["free", "member", "type"]).optional(),
-  confidence: z.enum(["EXTRACTED", "INFERRED"]).optional(),
+  edgeKind: z
+    .enum(["free", "member", "type"])
+    .optional()
+    .describe(
+      "Legacy indexed reference classification; does not prove a call occurrence or target binding",
+    ),
+  confidence: z
+    .enum(["EXTRACTED", "INFERRED"])
+    .optional()
+    .describe(
+      "Legacy extraction classification; does not establish execution or target binding",
+    ),
+  evidence: edgeEvidence.nullable().optional(),
 });
 const search = {
   schemaVersion: z.literal(1),
@@ -86,6 +173,9 @@ export const MCP_READ_OUTPUT_SCHEMAS: Record<string, z.ZodRawShape> = {
     omittedCallees: z.number().int().nonnegative(),
     omittedImporters: z.number().int().nonnegative(),
     approximate: z.literal(true),
+    evidenceVersion: z.literal(1).optional(),
+    centerSelection: centerSelection.nullable().optional(),
+    coverage: traceCoverage.optional(),
   },
   dead: {
     schemaVersion: z.literal(1),
@@ -153,6 +243,7 @@ function nodeResult(node: GraphNode) {
         : "not_indexed",
     ...(node.edgeKind ? { edgeKind: node.edgeKind } : {}),
     ...(node.confidence ? { confidence: node.confidence } : {}),
+    evidence: node.evidence ? toPublicTraceEdgeEvidence(node.evidence) : null,
   };
 }
 
@@ -160,7 +251,9 @@ export function traceResult(
   symbol: string,
   root: string,
   graph: GraphTraceResult,
+  effectiveDepth = 1,
 ) {
+  const metadata = normalizeTraceMetadata(graph, effectiveDepth);
   const callers: Array<{
     node: ReturnType<typeof nodeResult>;
     depth: number;
@@ -179,6 +272,27 @@ export function traceResult(
   }
   visit(graph.callerTree, 1, null);
   const importers = graph.importers.filter((p) => p !== graph.center?.file);
+  let coverage = withTraceDisplayCoverage(
+    metadata.coverage,
+    "display_callees",
+    graph.callees.length,
+    Math.min(graph.callees.length, 15),
+    15,
+  );
+  coverage = withTraceDisplayCoverage(
+    coverage,
+    "display_importers",
+    graph.importers.length,
+    Math.min(importers.length, 10),
+    10,
+    graph.importers.length - importers.length,
+  );
+  coverage = withTraceDisplayCoverage(
+    coverage,
+    "display_callers",
+    callers.length,
+    callers.length,
+  );
   return {
     schemaVersion: 1,
     symbol,
@@ -191,6 +305,9 @@ export function traceResult(
     omittedCallees: Math.max(0, graph.callees.length - 15),
     omittedImporters: Math.max(0, importers.length - 10),
     approximate: true,
+    evidenceVersion: metadata.evidenceVersion,
+    centerSelection: toPublicTraceCenterSelection(metadata.centerSelection),
+    coverage,
   };
 }
 

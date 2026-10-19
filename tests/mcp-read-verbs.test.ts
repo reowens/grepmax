@@ -519,6 +519,87 @@ describe("MCP read tools go through the daemon read verbs", () => {
     });
   });
 
+  it("normalizes old-daemon trace metadata to unknown without retry or local store", async () => {
+    respond({
+      "graph.trace": {
+        ok: true,
+        graph: { center: CENTER, callerTree: [], callees: [], importers: [] },
+      },
+    });
+    const result = await callRaw("trace_calls", {
+      symbol: "handleAuth",
+      depth: 2,
+    });
+    expect(result.structuredContent).toMatchObject({
+      schemaVersion: 1,
+      evidenceVersion: 1,
+      centerSelection: { selectionBasis: "unknown", targetCandidate: null },
+      coverage: {
+        requestedDepth: null,
+        stages: {
+          caller_rows: {
+            status: "unknown",
+            omitted: { exact: null, lowerBound: 0 },
+          },
+          display_importers: {
+            status: "complete",
+            omitted: { exact: 0, lowerBound: 0 },
+          },
+        },
+      },
+    });
+    expect(sendDaemonCommand).toHaveBeenCalledOnce();
+    expect(vectorDbCtor).not.toHaveBeenCalled();
+    expect(result.content.map((block) => block.text).join("\n")).toContain(
+      "do not prove calls or target bindings",
+    );
+  });
+
+  it.each([9, 10, 11])(
+    "counts display importers independently at %i candidates",
+    async (count) => {
+      respond({
+        "graph.trace": {
+          ok: true,
+          graph: {
+            center: CENTER,
+            callerTree: [],
+            callees: [],
+            importers: [
+              sourceFile,
+              ...Array.from({ length: count }, (_, i) =>
+                path.join(projectRoot, `import${i}.ts`),
+              ),
+            ],
+          },
+        },
+      });
+      const result = await callRaw("trace_calls", { symbol: "handleAuth" });
+      expect(result.structuredContent?.importers).toHaveLength(
+        Math.min(count, 10),
+      );
+      expect(result.structuredContent?.omittedImporters).toBe(
+        Math.max(0, count - 10),
+      );
+      expect(
+        (result.structuredContent?.coverage as any)?.stages.display_importers,
+      ).toMatchObject({
+        observed: count + 1,
+        retained: Math.min(count, 10),
+        filteredByPolicy: 1,
+        status: count > 10 ? "partial" : "complete",
+        omitted: {
+          exact: Math.max(0, count - 10),
+          lowerBound: Math.max(0, count - 10),
+        },
+      });
+      expect(
+        (result.structuredContent?.coverage as any)?.stages.importer_files
+          .status,
+      ).toBe("unknown");
+    },
+  );
+
   it("trace and dead not-found responses still fulfill their success schemas", async () => {
     respond({
       "graph.trace": {
