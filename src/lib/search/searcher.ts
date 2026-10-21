@@ -17,6 +17,10 @@ import {
 import { debug } from "../utils/logger";
 import { QUERY_EXECUTION_OPTIONS } from "../utils/query-timeout";
 import { getWorkerPool } from "../workers/pool";
+import {
+  type ArtifactPreference,
+  artifactPreference,
+} from "./artifact-preference";
 import { SearchDiagnosticCollector } from "./diagnostics";
 import { detectIntent, type SearchIntent } from "./intent";
 import { loadOrComputePageRank, pageRankBoostForSymbols } from "./pagerank";
@@ -302,6 +306,7 @@ export class Searcher {
     record: Partial<VectorRecord>,
     score: number,
     intent?: SearchIntent,
+    preference?: ArtifactPreference,
   ): number {
     let adjusted = score;
 
@@ -372,7 +377,7 @@ export class Searcher {
       /(^|\/)(__tests__|tests?|specs?|benchmark)(\/|$)/i.test(pathStr) ||
       /\.(test|spec)\.[cm]?[jt]sx?$/i.test(pathStr);
 
-    if (isTestPath) {
+    if (isTestPath && !preference?.tests) {
       const testPenalty =
         Number.parseFloat(process.env.GMAX_TEST_PENALTY ?? "") || 0.5;
       adjusted *= testPenalty;
@@ -391,7 +396,7 @@ export class Searcher {
       pathStr.endsWith(".json") ||
       pathStr.endsWith(".lock") ||
       pathStr.includes("/docs/");
-    if (isDocOrData) {
+    if (isDocOrData && !preference?.documentation) {
       const docPenalty =
         Number.parseFloat(process.env.GMAX_DOC_PENALTY ?? "") || 0.6;
       adjusted *= docPenalty;
@@ -495,6 +500,7 @@ export class Searcher {
     // symbols, so the default search path is unchanged.
     const seedCtx = buildSeedContext(_search_options?.seeds);
     const searchIntent = intent || detectIntent(query);
+    const preference = artifactPreference(query);
     // Bare-identifier queries get symbol-definition promotion (see below).
     const symbolQuery = asSymbolQuery(query);
 
@@ -870,6 +876,8 @@ export class Searcher {
         seedsActive: seedCtx.active,
         symbolQuery,
         pooledFilterApplied: !!queryPooled && topCandidates.length > STAGE2_K,
+        testArtifactRequested: preference.tests,
+        documentationRequested: preference.documentation,
       },
       gate: {
         requestedRerank,
@@ -1021,7 +1029,12 @@ export class Searcher {
       const fusedScore = candidateScores.get(key) ?? 0;
       const base = rerankScoreByKey.get(key) ?? (fusedScore || 1 / (idx + 1));
       const blended = base + FUSED_WEIGHT * fusedScore;
-      let boosted = this.applyStructureBoost(doc, blended, searchIntent);
+      let boosted = this.applyStructureBoost(
+        doc,
+        blended,
+        searchIntent,
+        preference,
+      );
       if (
         symbolQuery &&
         readSymbolArray(

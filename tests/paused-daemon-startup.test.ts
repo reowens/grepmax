@@ -82,9 +82,20 @@ it.each(["quarantine", "warning", "unknown"])(
       guard,
       `
     const cp = require('node:child_process');
-    cp.spawn = () => { throw new Error('worker/model spawn forbidden in paused fixture'); };
+    cp.spawn = cp.fork = () => { throw new Error('worker/model spawn forbidden in paused fixture'); };
+    const signal = process.kill.bind(process);
+    process.kill = (pid, sig) => {
+      if (pid !== process.pid && sig !== 0) throw new Error('paused fixture attempted to signal another process');
+      return signal(pid, sig);
+    };
     const run = cp.execFileSync;
+    const shell = cp.execSync;
+    cp.execSync = (command, options) => {
+      if (String(command).includes('pgrep')) return '';
+      return shell(command, options);
+    };
     cp.execFileSync = (cmd, args, options) => {
+      if (cmd === 'pgrep') return '';
       if (cmd === 'sysctl' && args.includes('kern.memorystatus_vm_pressure_level')) return ${JSON.stringify(mode === "unknown" ? "unavailable\n" : "2\n")};
       if (cmd === 'zprint') return ${JSON.stringify(
         [
@@ -121,6 +132,7 @@ it.each(["quarantine", "warning", "unknown"])(
           GMAX_HOME: home,
           GMAX_NO_AUTOSTART: "0",
           GMAX_NO_STALE_HINT: "1",
+          GMAX_HOST_GUARD_POLICY: "strict",
         },
         stdio: ["ignore", "pipe", "pipe"],
       },

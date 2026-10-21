@@ -1,6 +1,6 @@
 {
   "name": "grepmax",
-  "version": "0.26.88",
+  "version": "0.26.89",
   "author": "Robert Owens <78518764+reowens@users.noreply.github.com>",
   "homepage": "https://github.com/reowens/grepmax",
   "bugs": {
@@ -114,11 +114,11 @@
     "@modelcontextprotocol/client": "2.3.0",
     "@types/node": "^26.6.1",
     "@types/proper-lockfile": "^4.1.4",
-    "mcp-sdk-v1-fixture": "npm:@modelcontextprotocol/sdk@1.31.0",
+    "mcp-sdk-v1-fixture": "npm:@modelcontextprotocol/sdk@1.32.0",
     "node-gyp": "^13.0.2",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2",
-    "vite": "^8.3.0",
+    "vite": "^8.3.4",
     "vitest": "^5.0.1"
   },
   "optionalDependencies": {
