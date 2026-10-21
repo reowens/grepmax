@@ -1,6 +1,6 @@
 {
   "name": "grepmax",
-  "version": "0.26.90",
+  "version": "0.26.92",
   "author": "Robert Owens <78518764+reowens@users.noreply.github.com>",
   "homepage": "https://github.com/reowens/grepmax",
   "bugs": {
@@ -119,7 +119,7 @@
     "tsx": "^4.23.13",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.5"
   },
   "optionalDependencies": {
     "@lancedb/lancedb-darwin-arm64": "0.39.0",
