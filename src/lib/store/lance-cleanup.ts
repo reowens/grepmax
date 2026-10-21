@@ -109,6 +109,10 @@ export function runCleanupProcess(
     let forceKill: ReturnType<typeof setTimeout> | undefined;
     const stop = (reason: string): void => {
       failure ??= new Error(`${reason}; cleanup completion is uncertain`);
+      // A failed spawn has no owned process. On Darwin, signalling its
+      // PID-less handle can target the caller's process group instead.
+      const pid = child.pid;
+      if (pid === undefined || !Number.isSafeInteger(pid) || pid < 1) return;
       child.kill("SIGTERM");
       forceKill ??= setTimeout(() => child.kill("SIGKILL"), 1000);
     };

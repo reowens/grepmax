@@ -87,6 +87,34 @@ describe("prune helper subprocess bounds", () => {
     ).rejects.toThrow("before launch");
     expect(spawn).not.toHaveBeenCalled();
   });
+  it.each([undefined, 0])(
+    "never signals a failed spawn with PID %s and settles ownership on close",
+    async (pid) => {
+      (child as any).pid = pid;
+      const admission = {
+        nonce: "fixture",
+        start: vi.fn(),
+        approve: vi.fn(),
+        check: vi.fn(),
+        close: vi.fn(),
+      };
+      const pending = runCleanupProcess("missing-helper", [], { admission });
+      const rejected = expect(pending).rejects.toThrow(
+        "launch admission refused",
+      );
+      child.emit(
+        "error",
+        Object.assign(new Error("missing"), { code: "ENOENT" }),
+      );
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(child.kill).not.toHaveBeenCalled();
+      expect(admission.start).not.toHaveBeenCalled();
+      expect(admission.close).not.toHaveBeenCalled();
+      child.emit("close", -2, null);
+      await rejected;
+      expect(admission.close).toHaveBeenCalledOnce();
+    },
+  );
   it("allows slow prune deletion while capping requested time at ten minutes", async () => {
     const pending = runCleanupProcess("fixture", [], { timeoutMs: 3_600_000 });
     const rejected = expect(pending).rejects.toThrow("timed out");
