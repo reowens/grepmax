@@ -51,6 +51,20 @@ class GemmaArtifactTests(unittest.TestCase):
                     self.contract['files'][name]=backend.file_digest(self.directory/name)
                 with self.assertRaises(ValueError): backend.validate_artifact(self.directory)
 
+    def test_rejects_unbound_loader_inputs_before_model_imports(self):
+        for relative in ["extra/model.safetensors", "1_Dense/config.json", "special_tokens_map.json", "added_tokens.json"]:
+            with self.subTest(relative=relative):
+                extra = self.directory / relative
+                extra.parent.mkdir(parents=True, exist_ok=True)
+                extra.write_text("{}")
+                try:
+                    with self.assertRaisesRegex(ValueError, "Unexpected Gemma artifact entry"):
+                        backend.validate_artifact(self.directory)
+                finally:
+                    extra.unlink()
+                    if extra.parent != self.directory:
+                        extra.parent.rmdir()
+
     def test_refuses_aliases(self):
         link=self.directory/'alias';link.symlink_to(self.directory, target_is_directory=True)
         with self.assertRaises(ValueError): backend.validate_artifact(link)

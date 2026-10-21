@@ -22,7 +22,13 @@
     "config.json": "e090bf087c627155c55b481fca9d216461bdaf44d5a980e018ed3deb92fc7664",
     "tokenizer.json": "4d777ef5bdc1aa36227abdfb77c3e49e7b9c892d16e1b6bda41c393504828be4",
     "tokenizer_config.json": "17bd5d6e9364ca49a534e1502076593317c298d4a663623091ed45388f004874",
-    "model.safetensors.index.json": "d10b72727236e491419aacc847aa2564b5cacb70d5c5a97bb8d2e8eea30c9828"
+    "model.safetensors.index.json": "d10b72727236e491419aacc847aa2564b5cacb70d5c5a97bb8d2e8eea30c9828",
+    "1_Pooling/config.json": "8759bdf7c77efc7df7723f64856a593c8943b71ee38baf2a88771fbaf78438f9",
+    "2_Normalize/config.json": "cdb09dfca347a56aa2d691744e38d5ad3c7cbc2834e7181272b9a15328b82524",
+    "artifact.json": "0464a1ebf7a78d72f64a77ab6f8d20656e99bdd634a5f5ee78f4073fcfd33f6f",
+    "config_sentence_transformers.json": "031e56a498d33c349ab489a21885bcfe25b4fcba841149dc99e1e90d4a7c28f5",
+    "modules.json": "3d02572a0455b832de67fb8e63a54981bc7e8b46e337c95e917bd8122a533bfd",
+    "sentence_bert_config.json": "b1bcd9f2dce3ae863b359e87d0710b5dbc3314a59ecb4e2f97c7778fc8e4b228"
   },
   "queryTestsPattern": "\\b(?:tests|specs|fixtures)\\b|\\b(?:unit|integration|regression|smoke|snapshot|acceptance)\\s+(?:tests?|checks?)\\b|\\b(?:which|what)\\s+test\\b|\\btest\\s+(?:files?|cases?|suites?)\\b",
   "queryDocumentationPattern": "\\b(?:documentation|docs?|readme)\\b|\\b(?:guides?|manuals?)(?=\\s*(?:[?.!,;:]|$))|\\b(?:guides?|manuals?)\\s+(?:for|on|about|that|which|describes?|explains?|covers?|should)\\b"

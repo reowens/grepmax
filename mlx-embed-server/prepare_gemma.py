@@ -109,10 +109,8 @@ def build_text_artifact(root, source, destination):
     config["audio_config"] = None
     config["vision_config"] = None
     (staging / "config.json").write_text(json.dumps(config, indent=2) + "\n")
-    for relative in ["tokenizer.json", "tokenizer_config.json", "special_tokens_map.json", "tokenizer.model",
-                     "config_sentence_transformers.json", "sentence_bert_config.json", "modules.json",
-                     "processor_config.json", "preprocessor_config.json", "video_preprocessor_config.json", "chat_template.jinja",
-                     "1_Pooling/config.json", "2_Normalize/config.json"]:
+    for relative in ["tokenizer.json", "tokenizer_config.json", "config_sentence_transformers.json",
+                     "sentence_bert_config.json", "modules.json", "1_Pooling/config.json", "2_Normalize/config.json"]:
         file = source / relative
         if file.exists():
             file = contained(root, file)

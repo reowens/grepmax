@@ -29,7 +29,7 @@ python3 "$GMAX_PACKAGE/mlx-embed-server/prepare_gemma.py" \
 ```
 
 An already prepared artifact can be reused if it matches every digest in
-`mlx-embed-server/gemma-contract.json`. Startup verifies the weights, configuration,
+`mlx-embed-server/gemma-contract.json` and contains exactly those files and their parent directories. Extra weights, dense-head files and tokenizer overrides are rejected. Startup verifies the weights, configuration,
 tokenizer and tensor inventory before constructing the text model. It refuses an
 unverified artifact and never downloads a substitute.
 
@@ -40,6 +40,7 @@ repository-required model-load approval first. Choose a free loopback port other
 than 8100, 8101 or 8079. Keep the command in its own terminal; Ctrl-C stops it.
 
 ```sh
+export MLX_EMBED_MODEL=mlx-community/embeddinggemma-2-bf16
 export GMAX_GEMMA_MODEL_PATH=/absolute/model-workspace/text-bf16
 export MLX_EMBED_PORT=18100
 GMAX_PACKAGE="$(npm root -g)/grepmax"
@@ -82,7 +83,7 @@ closed rather than returning vectors from another model.
 Stop the separate embedding service with Ctrl-C, then leave the Gemma shell or run:
 
 ```sh
-unset GMAX_GEMMA_PROFILE GMAX_HOME MLX_EMBED_PORT GMAX_GEMMA_MODEL_PATH
+unset GMAX_GEMMA_PROFILE GMAX_HOME MLX_EMBED_PORT GMAX_GEMMA_MODEL_PATH MLX_EMBED_MODEL
 gmax config
 gmax "where is the request handler?" --agent
 ```

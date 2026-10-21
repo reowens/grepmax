@@ -21,6 +21,27 @@ def validate_artifact(directory):
     # No aliased directory can redirect a checked path before framework loading.
     if any(parent.is_symlink() for parent in directory.parents):
         raise ValueError("symlink in Gemma artifact path")
+    # Loaders inspect more than model/config/tokenizer: encoder subdirectories
+    # and legacy tokenizer files can otherwise override a verified identity.
+    allowed_files = set(CONTRACT["files"])
+    allowed_dirs = {str(parent) for name in allowed_files for parent in Path(name).parents if str(parent) != "."}
+    pending, seen, entries = [directory], set(), 0
+    while pending:
+        for entry in pending.pop().iterdir():
+            entries += 1
+            relative = entry.relative_to(directory).as_posix()
+            if entries > 64 or entry.is_symlink():
+                raise ValueError("Unexpected Gemma artifact entry: " + relative)
+            if entry.is_dir():
+                if relative not in allowed_dirs:
+                    raise ValueError("Unexpected Gemma artifact entry: " + relative)
+                pending.append(entry)
+            elif entry.is_file() and relative in allowed_files:
+                seen.add(relative)
+            else:
+                raise ValueError("Unexpected Gemma artifact entry: " + relative)
+    if seen != allowed_files:
+        raise ValueError("Gemma artifact file set mismatch")
     for name, expected in CONTRACT["files"].items():
         file = directory / name
         if file.is_symlink() or not file.is_file() or file.stat().st_size > 600 * 1024**2:
