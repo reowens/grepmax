@@ -3,6 +3,7 @@ import { Command } from "commander";
 import {
   defaultWorkerThreads,
   MODEL_TIERS,
+  PATHS,
   parseWorkerThreads,
   resolveWorkerThreads,
 } from "../config";
@@ -19,13 +20,14 @@ import {
 import { gracefulExit } from "../lib/utils/exit";
 import { getProject } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
+import { assertGemma2Profile } from "../lib/workers/embeddings/gemma2";
 
 export const config = new Command("config")
   .description("View or update gmax configuration")
   .option("--embed-mode <mode>", "Set embedding mode: cpu or gpu")
   .option(
     "--model-tier <tier>",
-    "Set model tier: small (384d) or standard (768d)",
+    "Set model tier: small (384d), standard (768d), or isolated Mac gemma2 (768d)",
   )
   .option(
     "--query-log <on|off>",
@@ -68,7 +70,7 @@ Examples:
     if (!hasUpdates) {
       // Show current config
       const tier = MODEL_TIERS[globalConfig.modelTier] ?? MODEL_TIERS.small;
-      console.log("gmax configuration (~/.gmax/config.json)\n");
+      console.log(`gmax configuration (${PATHS.globalRoot}/config.json)\n`);
       console.log(
         `  Model tier:  ${globalConfig.modelTier} (${tier.vectorDim}d, ${tier.params})`,
       );
@@ -101,7 +103,7 @@ Examples:
         console.log(`  Last indexed: ${project.lastIndexed}`);
       }
       console.log(
-        `\nTo change: gmax config --embed-mode <cpu|gpu> --model-tier <small|standard> --query-log <on|off> --worker-threads <n|auto>`,
+        `\nTo change: gmax config --embed-mode <cpu|gpu> --model-tier <small|standard|gemma2> --query-log <on|off> --worker-threads <n|auto>`,
       );
       await gracefulExit();
       return;
@@ -119,6 +121,17 @@ Examples:
       console.error(
         `Invalid model tier: ${options.modelTier} (use ${Object.keys(MODEL_TIERS).join(" or ")})`,
       );
+      await gracefulExit(1);
+      return;
+    }
+
+    try {
+      assertGemma2Profile({
+        modelTier: options.modelTier ?? globalConfig.modelTier,
+        embedMode: options.embedMode ?? globalConfig.embedMode,
+      });
+    } catch (error) {
+      console.error((error as Error).message);
       await gracefulExit(1);
       return;
     }
@@ -152,7 +165,9 @@ Examples:
         );
       }
       console.log(
-        "Takes effect when the gmax daemon restarts: gmax watch stop, then gmax watch --daemon -b.",
+        (options.modelTier ?? globalConfig.modelTier) === "gemma2"
+          ? "Takes effect on the next in-process Gemma command."
+          : "Takes effect when the gmax daemon restarts: gmax watch stop, then gmax watch --daemon -b.",
       );
       if (
         options.queryLog === undefined &&
@@ -213,11 +228,16 @@ Examples:
       `Updated: embed-mode=${newMode}, model-tier=${newTier} (${tier.vectorDim}d)`,
     );
 
-    if (tierChanged) {
+    if (tierChanged && (newTier !== "gemma2" || project?.lastIndexed)) {
       console.log(
         `Model tier changed (${globalConfig.vectorDim}d → ${tier.vectorDim}d). Existing indexes are preserved and search is blocked until you run 'gmax repair --rebuild'.`,
       );
     }
+
+    if (newTier === "gemma2")
+      console.log(
+        "Gemma profile runs in-process. Start its separate embedding service, then run gmax add . to build the separate index.",
+      );
 
     await gracefulExit();
   });

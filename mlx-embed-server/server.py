@@ -12,6 +12,7 @@ GPU operations.
 
 import asyncio
 import logging
+import math
 import os
 import re
 import signal
@@ -19,6 +20,8 @@ import socket
 import time
 import warnings
 from contextlib import asynccontextmanager
+
+from gemma_backend import CONTRACT, CONTRACT_DIGEST, MODEL_ID as GEMMA_MODEL_ID, load_text_model
 
 # Suppress all HF/transformers/tqdm noise before any imports touch them
 os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
@@ -44,7 +47,7 @@ def _hf_cache_has_model(model_id: str) -> bool:
 _model_id_for_cache_check = os.environ.get(
     "MLX_EMBED_MODEL", "ibm-granite/granite-embedding-small-english-r2"
 )
-if os.environ.get("GMAX_HF_OFFLINE") == "1" or (
+if _model_id_for_cache_check == GEMMA_MODEL_ID or os.environ.get("GMAX_HF_OFFLINE") == "1" or (
     os.environ.get("GMAX_HF_ONLINE") != "1"
     and _hf_cache_has_model(_model_id_for_cache_check)
 ):
@@ -65,16 +68,18 @@ logger = logging.getLogger("mlx-embed")
 import mlx.core as mx
 import uvicorn
 from fastapi import FastAPI, HTTPException
-from mlx_embeddings import load
 from pydantic import BaseModel
 from transformers import AutoTokenizer
 
 MODEL_ID = os.environ.get(
     "MLX_EMBED_MODEL", "ibm-granite/granite-embedding-small-english-r2"
 )
+IS_GEMMA = MODEL_ID == GEMMA_MODEL_ID
 OWNER_TOKEN = os.environ.get("GMAX_EMBED_OWNER_TOKEN")
 PORT = int(os.environ.get("MLX_EMBED_PORT", "8100"))
 MAX_BATCH = int(os.environ.get("MLX_EMBED_MAX_BATCH", "64"))
+if IS_GEMMA:
+    MAX_BATCH = min(MAX_BATCH, CONTRACT["maxBatch"])
 IDLE_TIMEOUT_S = int(os.environ.get("MLX_EMBED_IDLE_TIMEOUT", "1800"))  # 30 min
 DEBUG = os.environ.get("GMAX_DEBUG") == "1"
 
@@ -108,7 +113,7 @@ def embed_texts(texts: list[str]) -> mx.array:
         for t in texts
     ]
     encoded = tokenizer(
-        texts, padding=True, truncation=True, max_length=256, return_tensors="np"
+        texts, padding=True, truncation=True, max_length=CONTRACT["maxTokens"] if IS_GEMMA else 256, return_tensors="np"
     )
     input_ids = mx.array(encoded["input_ids"])
     attention_mask = mx.array(encoded["attention_mask"])
@@ -122,9 +127,13 @@ def embed_texts(texts: list[str]) -> mx.array:
         pooled = outputs.last_hidden_state
 
     # L2 normalize
-    norms = mx.sqrt(mx.sum(pooled * pooled, axis=-1, keepdims=True))
-    norms = mx.maximum(norms, 1e-12)
-    normalized = pooled / norms
+    if IS_GEMMA:
+        normalized = pooled
+        norms = None
+    else:
+        norms = mx.sqrt(mx.sum(pooled * pooled, axis=-1, keepdims=True))
+        norms = mx.maximum(norms, 1e-12)
+        normalized = pooled / norms
     mx.eval(normalized)
 
     # Free intermediate tensors and clear Metal GPU cache to prevent memory leak
@@ -137,8 +146,12 @@ def embed_texts(texts: list[str]) -> mx.array:
 def load_model():
     global model, tokenizer
     logger.info(f"[mlx-embed] Loading {MODEL_ID}...")
-    model, _ = load(MODEL_ID)
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+    if IS_GEMMA:
+        model, tokenizer = load_text_model()
+    else:
+        from mlx_embeddings import load
+        model, _ = load(MODEL_ID)
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
     _ = embed_texts(["warm up"])
     logger.info("[mlx-embed] Model ready on Metal GPU.")
 
@@ -172,15 +185,17 @@ app = FastAPI(lifespan=lifespan)
 class EmbedRequest(BaseModel):
     texts: list[str]
     expected_model: str | None = None
+    expected_contract: str | None = None
 
 
 class EmbedResponse(BaseModel):
     vectors: list[list[float]]
     dim: int
     model: str
+    contract: str | None = None
 
 
-@app.post("/embed")
+@app.post("/embed", response_model_exclude_none=True)
 async def embed(request: EmbedRequest) -> EmbedResponse:
     global last_activity
     last_activity = time.time()
@@ -196,13 +211,19 @@ async def embed(request: EmbedRequest) -> EmbedResponse:
             detail=f"Requested model {request.expected_model} is not loaded",
         )
 
+    if IS_GEMMA and request.expected_contract != CONTRACT_DIGEST:
+        raise HTTPException(status_code=409, detail="Gemma embedding contract mismatch")
+
     texts = request.texts
     start = time.monotonic()
 
     async with _mlx_lock:
         vectors = embed_texts(texts)
-        vectors_list = vectors.tolist()
+        vectors_list = vectors.astype(mx.float32).tolist() if IS_GEMMA else vectors.tolist()
         del vectors
+
+    if IS_GEMMA and any(len(v) != CONTRACT["dimensions"] or any(not math.isfinite(x) for x in v) or abs(math.sqrt(sum(x*x for x in v))-1) > 0.01 for v in vectors_list):
+        raise HTTPException(status_code=500, detail="Invalid Gemma output")
 
     elapsed_ms = (time.monotonic() - start) * 1000
     if DEBUG:
@@ -217,6 +238,7 @@ async def embed(request: EmbedRequest) -> EmbedResponse:
         vectors=vectors_list,
         dim=len(vectors_list[0]) if vectors_list else 0,
         model=MODEL_ID,
+        contract=CONTRACT_DIGEST if IS_GEMMA else None,
     )
 
 
@@ -225,6 +247,8 @@ async def health():
     global last_activity
     last_activity = time.time()
     response = {"status": "ok", "model": MODEL_ID}
+    if IS_GEMMA:
+        response["contract"] = CONTRACT_DIGEST
     if OWNER_TOKEN:
         response["owner"] = OWNER_TOKEN
     return response

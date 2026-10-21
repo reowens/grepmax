@@ -49,6 +49,26 @@ class MlxHttpCompatibilityTests(unittest.TestCase):
             self.assertEqual(response.json(), {"vectors": [[0.6, 0.8]], "dim": 2, "model": self.server.MODEL_ID})
             embed.assert_called_once_with(["sample"])
 
+    def test_gemma_contract_rejection_and_normalized_output_without_a_model(self):
+        class SyntheticVectors:
+            def __init__(self, values): self.values = values
+            def astype(self, _dtype): return self
+            def tolist(self): return self.values
+        server = self.server
+        with patch.object(server, "IS_GEMMA", True), patch.object(server, "MODEL_ID", server.GEMMA_MODEL_ID), patch.object(server, "MAX_BATCH", 16):
+            base = {"texts": ["query"], "expected_model": server.GEMMA_MODEL_ID}
+            for contract in [None, "wrong"]:
+                response = self.client.post("/embed", json={**base, "expected_contract": contract})
+                self.assertEqual(response.status_code, 409)
+            self.assertEqual(self.client.post("/embed", json={**base, "texts": ["query"]*17, "expected_contract": server.CONTRACT_DIGEST}).status_code, 413)
+            with patch.object(server, "embed_texts", return_value=SyntheticVectors([[1.0]+[0.0]*767])):
+                response = self.client.post("/embed", json={**base, "expected_contract": server.CONTRACT_DIGEST})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["contract"], server.CONTRACT_DIGEST)
+                self.assertEqual(response.json()["dim"], 768)
+            with patch.object(server, "embed_texts", return_value=SyntheticVectors([[0.0]*768])):
+                self.assertEqual(self.client.post("/embed", json={**base, "expected_contract": server.CONTRACT_DIGEST}).status_code, 500)
+
     def test_does_not_load_a_model_for_contract_checks(self):
         self.assertIsNone(self.server.model)
         self.assertIsNone(self.server.tokenizer)

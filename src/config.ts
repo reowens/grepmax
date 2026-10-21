@@ -21,6 +21,14 @@ export const MODEL_TIERS: Record<
     vectorDim: 384,
     params: "47M",
   },
+  gemma2: {
+    id: "gemma2",
+    label: "embeddinggemma-2 (768d, text-only BF16, isolated Mac GPU profile)",
+    onnxModel: "disabled:embeddinggemma-2-mlx-only",
+    mlxModel: "mlx-community/embeddinggemma-2-bf16",
+    vectorDim: 768,
+    params: "271M text",
+  },
   standard: {
     id: "standard",
     label: "granite-r2 (768d, 149M params, better quality)",

@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
 import { MODEL_IDS, MODEL_TIERS } from "../../config";
+import {
+  GEMMA2_CONTRACT_DIGEST,
+  GEMMA2_MODEL,
+} from "../workers/embeddings/gemma2";
 
 export interface EmbeddingGenerationIdentity {
   tier: string;
@@ -45,6 +49,8 @@ export function computeEmbeddingFingerprint(
   if (!Number.isInteger(identity.vectorDim) || identity.vectorDim <= 0) {
     throw new Error("Embedding vector dimension must be a positive integer");
   }
+  if (identity.mlxModel === GEMMA2_MODEL && identity.tier !== "gemma2")
+    throw new Error("The pinned Gemma model requires the gemma2 tier");
   const canonical = [
     "gmax-embedding-generation-v1",
     requireModelId("Model tier", identity.tier),
@@ -53,6 +59,15 @@ export function computeEmbeddingFingerprint(
     requireModelId("MLX model", identity.mlxModel),
     requireModelId("ColBERT model", identity.colbertModel),
   ];
+  if (identity.tier === "gemma2") {
+    if (
+      identity.mlxModel !== GEMMA2_MODEL ||
+      identity.onnxModel !== MODEL_TIERS.gemma2.onnxModel ||
+      identity.vectorDim !== 768
+    )
+      throw new Error("Gemma requires its pinned text-only MLX identity");
+    canonical.push(GEMMA2_CONTRACT_DIGEST);
+  }
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }
 
@@ -115,6 +130,7 @@ export function isOnnxFallbackCompatible(
 ): boolean {
   const tier = MODEL_TIERS[generation.tier];
   return (
+    generation.tier !== "gemma2" &&
     tier?.id === generation.tier &&
     tier.vectorDim === generation.vectorDim &&
     tier.onnxModel === generation.onnxModel &&

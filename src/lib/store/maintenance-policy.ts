@@ -56,7 +56,8 @@ export function assertFreshDiskMutationAllowed(storeDir: string): number {
 export function storeMutationDeniedReason(): string | null {
   const safety = safetyStopReason();
   if (safety !== null) return `host safety stop: ${safety}`;
-  return autostartDisabledReason() !== null
+  const autostart = autostartDisabledReason();
+  return autostart !== null && autostart !== "profile"
     ? "store mutations are quarantined while daemon autostart is disabled"
     : null;
 }

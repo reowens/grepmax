@@ -6,6 +6,7 @@
 
 import * as http from "node:http";
 import { debug } from "../../utils/logger";
+import { GEMMA2_CONTRACT_DIGEST, GEMMA2_MODEL } from "./gemma2";
 
 const MLX_PORT = parseInt(process.env.MLX_EMBED_PORT || "8100", 10);
 const MLX_HOST = "127.0.0.1";
@@ -30,6 +31,7 @@ interface MlxEmbeddingResponse {
   vectors: number[][];
   dim: number;
   model: string;
+  contract?: string;
 }
 
 export function validateMlxEmbeddingResponse(
@@ -43,6 +45,8 @@ export function validateMlxEmbeddingResponse(
   return (
     typeof response.model === "string" &&
     (!expectedModel || response.model === expectedModel) &&
+    (expectedModel !== GEMMA2_MODEL ||
+      response.contract === GEMMA2_CONTRACT_DIGEST) &&
     typeof response.dim === "number" &&
     Number.isInteger(response.dim) &&
     (expectedDim === undefined || response.dim === expectedDim) &&
@@ -58,7 +62,13 @@ export function validateMlxEmbeddingResponse(
             typeof element === "number" &&
             Number.isFinite(element) &&
             Math.abs(element) <= FLOAT32_MAX,
-        ),
+        ) &&
+        (expectedModel !== GEMMA2_MODEL ||
+          Math.abs(
+            Math.sqrt(
+              vector.reduce((sum: number, v: number) => sum + v * v, 0),
+            ) - 1,
+          ) <= 0.01),
     )
   );
 }
@@ -186,7 +196,10 @@ export function requestMlxJSON(
 async function checkHealth(expectedModel?: string): Promise<boolean> {
   const result = await requestMlxJSON("/health");
   const ok =
-    result.ok && (!expectedModel || result.data?.model === expectedModel);
+    result.ok &&
+    (!expectedModel || result.data?.model === expectedModel) &&
+    (expectedModel !== GEMMA2_MODEL ||
+      result.data?.contract === GEMMA2_CONTRACT_DIGEST);
   debug(
     "mlx",
     `health ok=${ok} category=${result.category ?? "none"} status=${result.status ?? "none"} ms=${result.ms}`,
@@ -243,6 +256,10 @@ export async function mlxEmbed(
     postResult = await requestMlxJSON("/embed", {
       texts,
       expected_model: options?.expectedModel,
+      expected_contract:
+        options?.expectedModel === GEMMA2_MODEL
+          ? GEMMA2_CONTRACT_DIGEST
+          : undefined,
     });
   } catch (error: any) {
     mlxAvailable = false;
@@ -308,6 +325,10 @@ export async function mlxEmbedExisting(
   const result = await requestMlxJSON("/embed", {
     texts,
     expected_model: options.expectedModel,
+    expected_contract:
+      options.expectedModel === GEMMA2_MODEL
+        ? GEMMA2_CONTRACT_DIGEST
+        : undefined,
   });
   if (
     !result.ok ||

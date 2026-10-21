@@ -31,6 +31,11 @@ import { resourceBudget } from "../utils/resource-budget";
 import { maxSim } from "./colbert-math";
 import { EmbeddingBackendUnavailableError } from "./embedding-error";
 import { ColbertModel, type HybridResult } from "./embeddings/colbert";
+import {
+  assertGemma2Profile,
+  gemma2Document,
+  gemma2Query,
+} from "./embeddings/gemma2";
 import { GraniteModel } from "./embeddings/granite";
 import {
   isMlxExistingReady,
@@ -116,6 +121,7 @@ export class WorkerOrchestrator {
     private readonly generation: Readonly<EmbeddingGenerationConfig>,
     private readonly embedMode: "cpu" | "gpu",
   ) {
+    assertGemma2Profile({ modelTier: generation.tier, embedMode });
     this.vectorDimensions = generation.vectorDim;
     this.allowOnnxFallback = isOnnxFallbackCompatible(generation);
     this.granite = new GraniteModel(generation.vectorDim, generation.onnxModel);
@@ -150,6 +156,7 @@ export class WorkerOrchestrator {
   private async computeHybrid(
     texts: string[],
     onProgress?: () => void,
+    denseTexts: string[] = texts,
   ): Promise<HybridResult[]> {
     if (!texts.length) return [];
     await this.ensureReady();
@@ -172,7 +179,7 @@ export class WorkerOrchestrator {
       const mlxResult: Float32Array[] | null =
         denseBackend === "onnx"
           ? null
-          : await mlxEmbed(batchTexts, {
+          : await mlxEmbed(denseTexts.slice(i, i + BATCH_SIZE), {
               mode: this.embedMode,
               expectedModel: this.generation.mlxModel,
               expectedDim: this.generation.vectorDim,
@@ -363,9 +370,12 @@ export class WorkerOrchestrator {
       skeletonResult.success ? skeletonResult.skeleton : undefined,
     );
 
-    const reusableKeys = input.reusableKeys?.length
-      ? new Set(input.reusableKeys)
-      : null;
+    // Gemma dense inputs contain the file title; content-only reuse keys from
+    // Granite cannot establish that identity. Re-embed until reuse is title-aware.
+    const reusableKeys =
+      this.generation.tier !== "gemma2" && input.reusableKeys?.length
+        ? new Set(input.reusableKeys)
+        : null;
     const reused: { index: number; key: string }[] = [];
     const toEmbed: number[] = [];
     preparedChunks.forEach((chunk, idx) => {
@@ -383,6 +393,15 @@ export class WorkerOrchestrator {
     const embedded = await this.computeHybrid(
       toEmbed.map((idx) => preparedChunks[idx].content),
       onProgress,
+      this.generation.tier === "gemma2"
+        ? toEmbed.map((idx) =>
+            gemma2Document(
+              preparedChunks[idx].content,
+              input.projectRoot,
+              input.path,
+            ),
+          )
+        : undefined,
     );
     const hybrids = new Map<number, HybridResult>();
     toEmbed.forEach((chunkIdx, i) => {
@@ -453,16 +472,19 @@ export class WorkerOrchestrator {
         throw new Error("embedding_unavailable");
     } else await this.ensureReady();
 
+    const denseText =
+      this.generation.tier === "gemma2" ? gemma2Query(text) : text;
+
     // Try MLX GPU server first, fall back to ONNX CPU
     const mlxResult = existingOnly
       ? this.embedMode === "gpu"
-        ? await mlxEmbedExisting([text], {
+        ? await mlxEmbedExisting([denseText], {
             mode: this.embedMode,
             expectedModel: this.generation.mlxModel,
             expectedDim: this.generation.vectorDim,
           })
         : null
-      : await mlxEmbed([text], {
+      : await mlxEmbed([denseText], {
           mode: this.embedMode,
           expectedModel: this.generation.mlxModel,
           expectedDim: this.generation.vectorDim,

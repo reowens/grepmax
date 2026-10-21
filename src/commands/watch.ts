@@ -42,6 +42,7 @@ import {
   unregisterWatcher,
   updateWatcherStatus,
 } from "../lib/utils/watcher-store";
+import { isGemma2Profile } from "../lib/workers/embeddings/gemma2";
 
 // Hard ceiling on signal-driven shutdown; comfortably above the daemon's own
 // 30s operation-drain grace so the orderly path normally wins.
@@ -71,6 +72,13 @@ export const watch = new Command("watch")
       path?: string;
       idleTimeout?: boolean;
     }) => {
+      if (isGemma2Profile(PATHS.globalRoot)) {
+        console.error(
+          "Gemma profiles run in-process; daemon and watcher startup are disabled. Run gmax index explicitly.",
+        );
+        process.exitCode = 2;
+        return;
+      }
       if (options.readOnly && !options.daemon) {
         console.error("gmax: --read-only requires --daemon");
         process.exitCode = 2;
@@ -568,6 +576,12 @@ watch
         error,
       });
     };
+
+    if (isGemma2Profile(PATHS.globalRoot)) {
+      refuse("Gemma profiles run in-process; daemon restart is disabled");
+      await gracefulExit(2);
+      return;
+    }
 
     const deniedStartup = daemonStartDeniedReason();
     if (deniedStartup !== null) {

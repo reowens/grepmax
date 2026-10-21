@@ -72,13 +72,18 @@ export const setup = new Command("setup")
     // Step 4: Model tier selection
     const modelTier = await p.select({
       message: "Model size",
-      options: Object.values(MODEL_TIERS).map((tier) => ({
-        value: tier.id,
-        label: tier.label,
-        hint: tier.id === "standard" ? "32GB+ RAM recommended" : "recommended",
-      })),
+      options: Object.values(MODEL_TIERS)
+        .filter((tier) => tier.id !== "gemma2")
+        .map((tier) => ({
+          value: tier.id,
+          label: tier.label,
+          hint:
+            tier.id === "standard" ? "32GB+ RAM recommended" : "recommended",
+        })),
       initialValue:
-        existingConfig?.modelTier ?? globalConfig.modelTier ?? "small",
+        (existingConfig?.modelTier ?? globalConfig.modelTier) === "gemma2"
+          ? "small"
+          : (existingConfig?.modelTier ?? globalConfig.modelTier ?? "small"),
     });
 
     if (p.isCancel(modelTier)) {

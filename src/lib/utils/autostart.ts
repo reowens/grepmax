@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { PATHS } from "../../config";
+import { isGemma2Profile } from "../workers/embeddings/gemma2";
 import { safetyStopReason } from "./safety-latch";
 
 /**
@@ -17,7 +18,12 @@ import { safetyStopReason } from "./safety-latch";
  * (env var checked first, then the file) because a SessionStart hook cannot
  * import from dist. Keep the two in sync.
  */
-export function autostartDisabledReason(): "env" | "file" | "safety" | null {
+export function autostartDisabledReason():
+  | "env"
+  | "file"
+  | "safety"
+  | "profile"
+  | null {
   if (process.env.GMAX_NO_AUTOSTART === "1") return "env";
   if (safetyStopReason() !== null) return "safety";
   const markers = new Set([
@@ -34,7 +40,7 @@ export function autostartDisabledReason(): "env" | "file" | "safety" | null {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") return "file";
     }
   }
-  return null;
+  return isGemma2Profile(PATHS.globalRoot) ? "profile" : null;
 }
 
 export function isAutostartDisabled(): boolean {
@@ -44,7 +50,12 @@ export function isAutostartDisabled(): boolean {
 export function daemonStartDeniedReason(): string | null {
   const safety = safetyStopReason();
   if (safety !== null) return `host safety stop: ${safety}`;
-  return isAutostartDisabled() ? "daemon startup is quarantined" : null;
+  const reason = autostartDisabledReason();
+  // A standalone profile disables implicit daemons, not admitted in-process
+  // work. Explicit env/file quarantines and safety stops still block both.
+  return reason && reason !== "profile"
+    ? "daemon startup is quarantined"
+    : null;
 }
 
 /**
@@ -56,6 +67,7 @@ export function daemonStartDeniedReason(): string | null {
 export function autostartDisabledUndo(): string | null {
   const reason = autostartDisabledReason();
   if (!reason) return null;
+  if (reason === "profile") return "return to the original Small profile";
   if (reason === "safety")
     return "review the persistent host safety stop before resuming";
   return reason === "env"
@@ -67,6 +79,8 @@ export function autostartDisabledNotice(): string | null {
   const safety = safetyStopReason();
   if (safety !== null)
     return `Gmax is paused by a persistent host safety stop: ${safety}. Mutations remain blocked until containment is reviewed.`;
+  if (autostartDisabledReason() === "profile")
+    return "Gemma profile: running in-process, without a daemon or watcher. Run gmax index after source changes.";
   // A secondary store (src/bin.ts) runs in-process by design, not because the
   // kill switch is on, so say that instead of naming an undo step. Callers use
   // a non-null notice as the gate, so this must stay non-null.

@@ -25,7 +25,24 @@ function markerPresentOrUnknown(file) {
 }
 
 function isAutostartDisabled() {
-  if (process.env.GMAX_NO_AUTOSTART === "1") return true;
+  if (
+    process.env.GMAX_NO_AUTOSTART === "1" ||
+    process.env.GMAX_GEMMA_PROFILE === "1"
+  )
+    return true;
+  if (process.env.GMAX_HOME) {
+    try {
+      if (
+        JSON.parse(
+          fs.readFileSync(
+            path.join(process.env.GMAX_HOME, "config.json"),
+            "utf8",
+          ),
+        ).modelTier === "gemma2"
+      )
+        return true;
+    } catch {}
+  }
   return (
     markerPresentOrUnknown(path.join(GMAX_DIR, "autostart-disabled")) ||
     markerPresentOrUnknown(path.join(GMAX_DIR, "safety-stop.json"))

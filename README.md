@@ -59,6 +59,10 @@ gmax doctor --fix             # Repair checks; full-table maintenance is disable
 
 **Storage containment:** full-table compaction is disabled, including forced maintenance and doctor repair. Existing retained index copies are not reclaimed by this release. The verified prune-only recovery path is separate work; normal incremental indexing remains available when the host is healthy and not quarantined. A persistent host safety stop blocks mutation and normal daemon restart; an explicit read-only start can serve the retained index. Installing an update preserves existing quarantine. Speculative embedding warmup and maintenance timers are disabled. Under the default `strict` host policy on macOS, startup, heavy queries, worker forks and MLX launches require known normal OS memory pressure and a healthy kernel-zone sample; warning or unavailable probes pause heavy work while the daemon serves bounded reads. The explicit `critical-only` policy keeps semantic search and indexing available under warning or unavailable probes. Known critical pressure still stops the daemon.
 
+### Optional EmbeddingGemma 2 on Apple Silicon
+
+Granite Small remains the default. The experimental `gemma2` tier uses the qualified text-only BF16 MLX backend, a separate index and port, and explicit in-process indexing. It has no CPU fallback and does not run a watcher or daemon. See [setup and return to Small](mlx-embed-server/gemma/README.md).
+
 ### Core Commands
 
 ```bash

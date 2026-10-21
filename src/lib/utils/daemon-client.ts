@@ -253,6 +253,8 @@ export function isDaemonDraining(pid: number): boolean {
  * daemon.log while this function burns the full readiness timeout.
  */
 export async function ensureDaemonRunning(): Promise<boolean> {
+  const { isGemma2Profile } = await import("../workers/embeddings/gemma2");
+  if (isGemma2Profile(PATHS.globalRoot)) return false;
   if (await isDaemonReady()) return true;
 
   if (!(await isDaemonRunning())) {
