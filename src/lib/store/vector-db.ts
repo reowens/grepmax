@@ -468,11 +468,20 @@ export class VectorDB {
       } finally {
         table.close();
       }
-      this.db?.close();
-      this.db = null;
-      this.session = null;
-      this.resourceReservation?.release();
-      this.resourceReservation = null;
+      await this.closeMaintenanceHandles();
+      signal?.throwIfAborted();
+      this.assertMutationAllowed();
+      // Prepare the current read connection as maintenance-owned work. The
+      // restricted document path cannot reopen it, including after cleanup.
+      const current = await this.openExistingTableUnsafe();
+      if (!current) throw new Error("version cleanup table unavailable");
+      try {
+        if ((await current.version()) !== version)
+          throw new Error("version cleanup head changed before read window");
+      } finally {
+        current.close();
+      }
+      signal?.throwIfAborted();
       // All older readers are drained. New queries can only open the protected
       // latest version while writers stay excluded for this prune-only pass.
       allowCurrentReads?.();
