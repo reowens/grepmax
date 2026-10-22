@@ -1,19 +1,19 @@
 # Docs
 
-## Current state — necessity audit, October 21, 2026
+## Current state — October 22, 2026
 
 **Gmax supports document search for indexed Markdown in registered projects.**
-Public 0.26.92 is registry-verified. Reviewed 0.26.93 is now installed locally in
-both existing Node roots and Claude scopes and serves the live daemon; its public
-npm publication awaits authentication. Storage/session/graph/ranking/optional Gemma and document-readiness
-work is delivered. Small remains the default; settings and protection are preserved.
+Reviewed 0.26.93 is public through GitHub trusted publishing, with exact registry
+bytes and signed provenance verified. It is installed in both existing Node roots
+and Claude scopes, with accepted live handover. Storage, session, graph, ranking,
+optional Gemma and document readiness work is delivered. Small remains the default; settings and protection are preserved.
 
 The [necessity audit](plans/gmax-delivery.md#necessity-audit--october-21-2026)
 replaces the previous expanding queue:
 
 | Item | Disposition |
 | --- | --- |
-| Startup can stop another Gmax instance's daemon/workers without ownership proof | Repaired locally: reviewed 56c7806/0.26.93 installed and serving; full source/archive/native/installed checks pass. Public npm publication alone awaits authentication |
+| Startup can stop another Gmax instance's daemon/workers without ownership proof | Delivered: reviewed 56c7806 / 0.26.93 is public, byte/provenance verified and installed; source/archive/native/installed checks pass. Trusted publisher recovery passes. |
 | CPU/memory/disk history | User-requested, open/deferred; unresolved overhead regression, not shipped |
 | Linux P3 setup | User-requested deployment, pending actual machine/access and selection; independent of document search |
 | Three-file docs exercise, new search helper and required external consumer rollout | Withdrawn; no demonstrated need |
@@ -22,8 +22,12 @@ replaces the previous expanding queue:
 The audit covers the sole live plan, reference/suggestion/limitation records,
 archived metadata, root docs and source TODO markers. Earlier findings/evidence
 remain intact; historical instructions do not restart work. Existing release and
-security gates still apply to any actual change. GitHub Actions remains disabled.
-The user authorized the [repair and delivery plan](plans/gmax-delivery.md#process-ownership-repair--ready-plan). The repair is installed and serving 0.26.93. Only public npm publication remains, pending authentication; the exact command and evidence are in the plan.
+security gates still apply to any actual change. Only the manually dispatched
+release workflow is enabled; push/PR CI remains absent. The user-authorized
+[repair](plans/gmax-delivery.md#process-ownership-repair--ready-plan) is complete.
+Trusted publication succeeded in run39717358032; reviewed cache recovery 52ea74e
+passes [verification-only run39718868523](https://github.com/reowens/grepmax/actions/runs/39718868523).
+The manual MFA path is withdrawn. No further repair work is selected.
 
 ## Document index
 

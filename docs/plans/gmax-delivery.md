@@ -1,8 +1,8 @@
 ---
 type: plan
-status: awaiting
+status: partial
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-22T01:55:44Z
+updated: 2026-10-22T03:50:54Z
 surfaces:
   - store
   - daemon
@@ -20,9 +20,9 @@ parent_plan:
 related_plans:
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Reviewed56c7806/0.26.93 installed from the qualified exact archive in both existing prefixes and Claude scopes; live71965 ready/active/open after cooperative19843 exit. All2457tests/types/security/archive/native/installed gates pass. Publicnpm remains0.26.92: two MFA requests expired without approval. Local repair delivered; publication pending only."
-next_step: "When the user is ready to authenticate, publish the already reviewed v4 archive from their terminal or issue one fresh requested MFA link. Then verify registry bytes match SHA256f1d119..., create the GitHub release with existing source/archive receipts and close publication. No rebuild, reinstall, new handover or resource-history experiment is needed."
-summary: "Process-ownership repair is installed and serving0.26.93 on this Mac; settings and unrelated work preserved. Publicnpm publication alone awaits authentication. Resource history remains deferred."
+current_state: "Process-ownership repair 56c7806 / 0.26.93 is published, exact-byte/provenance verified and installed. Trusted publication succeeded in run 39717358032; reviewed publisher 52ea74e passes verification-only run 39718868523. Only manual release dispatch is active. Resource history open/deferred; Linux pending machine/access."
+next_step: "No further repair work is selected. Keep resource history open/deferred with its unresolved regression; Linux execution awaits the actual machine/access and user selection. Do not restart document rollout, manual npm MFA, model experiments or repeated handover."
+summary: "0.26.93 ownership repair and trusted-publishing restoration are delivered and verified; documentation is reconciled. Resource history remains open/deferred and Linux awaits machine/access."
 ---
 
 # Gmax Delivery Plan
@@ -55,7 +55,7 @@ was implemented. Those proposals lacked a demonstrated user need.
 
 | Item | Evidence and necessity | Disposition |
 | --- | --- | --- |
-| Daemon startup can stop another Gmax instance's processes | Current 0.26.92 `ProcessManager.killStaleProcesses` finds all same-name daemons/workers, but checks this home's heartbeat/socket and never establishes each target's ownership. With no local daemon, a healthy other-home daemon can be called stale; workers are signalled unconditionally. A prior test incident is recorded in this plan. Exact installed-module simulation reproduces both cases with fake PIDs and zero real signals. This can interrupt indexing or another session. | **Repaired locally in reviewed 0.26.93 / 56c7806.** Both installations and the live daemon are updated; public npm publication awaits authentication. |
+| Daemon startup can stop another Gmax instance's processes | Current 0.26.92 `ProcessManager.killStaleProcesses` finds all same-name daemons/workers, but checks this home's heartbeat/socket and never establishes each target's ownership. With no local daemon, a healthy other-home daemon can be called stale; workers are signalled unconditionally. A prior test incident is recorded in this plan. Exact installed-module simulation reproduces both cases with fake PIDs and zero real signals. This can interrupt indexing or another session. | **Delivered in reviewed 0.26.93 / 56c7806.** Public npm bytes, signed provenance, GitHub release, both installations and live handover are accepted. |
 | CPU/memory/disk history | Explicit user request, implemented in an isolated candidate; source approval exists but the original +41.935 ms p95 regression and control-precision problem remain unresolved. It is absent from the installed release. | **Keep open/deferred as the user directed.** No experiment or release selected. |
 | Linux P3 setup | Explicit user-requested deployment/design work. It requires the actual machine and access. CPU installation/baseline is useful for that deployment, not required to complete the Mac product. | **Pending deployment when the machine is available and the user selects execution.** No dependency on document-search work; GPU purchase/CUDA remain optional. |
 
@@ -236,23 +236,100 @@ Private acceptance records: `installation-proof.json`, `installed-live.json`,
 `plugin-proof.json`, `native-nvm.json`, `native-homebrew.json` and `handover.log` in
 the final archive directory above.
 
-**Public publication is still pending.** Two npm web-MFA attempts each polled pending
-approval (97 HTTP202 responses) before HTTP404 after about six minutes. Neither
-received approval; registry version0.26.93 remains absent and public latest is0.26.92.
-No further expiring links should be generated until the user is ready. The repaired
-Mac does not wait for publication. The exact terminal command is:
+**Public delivery is complete.** GitHub trusted publication of the exact v4 archive
+succeeded in run `39717358032` using publisher source `911a267`. npm latest is
+0.26.93. A full registry download matches the approved raw SHA256 and integrity;
+Sigstore verification passes for its package subject, GitHub issuer, workflow,
+main ref, publisher commit and run. The signed publisher commit contains the
+unchanged reviewed product source. The [GitHub release](https://github.com/reowens/grepmax/releases/tag/v0.26.93)
+is public. Existing local installations already contain those exact qualified bytes.
 
-```sh
-/opt/homebrew/Cellar/node/26.12.0/bin/node /opt/homebrew/lib/node_modules/npm/bin/npm-cli.js publish \
-  /private/tmp/gmax-process-release-0.26.93-v4-20261022/grepmax-0.26.93.tgz \
-  --ignore-scripts --access=public --registry=https://registry.npmjs.org --auth-type=web --browser=false
-```
+The two earlier manual web-MFA attempts each expired after about six minutes.
+The user canceled that replacement path and reaffirmed trusted publishing.
+**The manual-publication replacement is withdrawn. Do not restart its MFA flow.**
 
-After authentication, verify the registry tarball against the recorded hash and
-create the GitHub release with the prepared source/archive receipts. Do not rebuild,
-reinstall, rerun unchanged source/native qualification or repeat the live handover.
-Resource history stays deferred; its checkout/archive and failure evidence remain
-untouched. Linux deployment remains pending actual machine/access and user selection.
+### Trusted-publication repair — October 22 UTC
+
+The original Release run38037539347 completed its `publish-npm` job successfully on
+October10 using `release.yml` with `id-token: write`. Commit `eb1f433` moved that
+workflow out of `.github/workflows/`, and repository Actions disablement stopped
+the working trusted-publisher path. The repeated manual requests were not a suitable
+replacement. Latest user steering selects repair of publication, not broad CI work.
+
+Isolated candidate **4331ed5d2cc8e2e67d26310b62662e2d2f5cf3c6** adds only an explicit
+`workflow_dispatch` release publisher at the existing trusted workflow identity.
+There are no push/PR triggers. All six legacy YAML files remain inactive and unchanged.
+The job validates reviewed source/tag/receipt and archive hash, uses accepted native
+payloads, builds on the hosted runner for truthful npm provenance, and requires the
+resulting archive to match the approved bytes exactly before trusted publication.
+It verifies registry bytes before publishing the prepared GitHub release. Step names,
+registry progress and the run summary provide visible feedback. No credentials or
+npm trusted-publisher settings change. Routine checks and native qualification are
+not rerun in GitHub.
+
+Actionlint1.7.12 passes; 15 focused gate checks (10 negative cases) and five hook tests
+pass. Executing the exact build step locally from the clean publication checkout
+reproduces SHA256 **f1d119dba343ff4ace1f8c5875640243aa91465914816f1c1843e8c8a9e58088**.
+Parent-model review approved publisher `4331ed5` and diagnostic update `86217c6`.
+The reports are `/private/tmp/gmax-trusted-publication-review-v1-20261022.md` and
+`/private/tmp/gmax-trusted-publication-review-v2-20261022.md`. Actions is enabled
+for the single manually dispatched publisher. The draft release holds the reviewed
+archive and sanitized source/hash receipts.
+
+Hosted runs [39715686389](https://github.com/reowens/grepmax/actions/runs/39715686389)
+and [39716730756](https://github.com/reowens/grepmax/actions/runs/39716730756)
+passed setup and source/archive validation, then failed compressed archive equality
+before npm publication. Both produced SHA256
+`2b77f2c41c709c108c9b2e79d63405050dc2d93476959828b925b5eaab9f0263`.
+The diagnostic run found no differences in the 324 regular entries' names, types,
+permissions, owners, timestamps or content hashes; entry order also matched.
+A fresh Mac compilation matches every approved compiled module.
+
+Approved publisher `911a267` streams both complete uncompressed tar archives through
+SHA256. Only matching tar digests allow it to retain the approved gzip bytes. The
+final compressed archive must still match the qualified raw SHA256. Hosted run
+[39717358032](https://github.com/reowens/grepmax/actions/runs/39717358032) passed:
+its complete tar SHA256 is
+`d5c922d7d184cc15bc35674d5737c464729703318c6d73ea7231c05b67ec2f1f`, matching the
+approved archive. Trusted npm publication succeeded at 03:34:06 UTC. The parent-model
+review is `/private/tmp/gmax-trusted-publication-review-v3-20261022.md`; all 25
+fixtures and lint/syntax/diff checks pass. The gzip representation, rather than
+package contents or tar metadata, caused the earlier raw hash difference.
+
+The final registry step then exhausted its eight-minute limit on a cached404 from
+the canonical tarball URL. A query-bypassed download returns all 129,265,877 approved
+bytes with matching SHA256/SHA512; signed provenance independently verifies.
+After those proofs, the owner published the prepared GitHub release at 03:41:20 UTC.
+The failed overall run does not mean npm publication failed; never republish this
+immutable version. Private final evidence is `registry-proof.json`,
+`registry-dist-tags.json`, `provenance-proof.json`, `provenance-statement.json`
+and `registry-attestations.json` beside the qualified archive.
+
+Cache-recovery candidate `52ea74e` adds a fresh verification query on each metadata
+and tarball retry while retaining the canonical metadata URL check and raw hash.
+An optional boolean `verify_only` skips only npm publication; all source, archive,
+hosted build, full tar, final raw, registry and release checks remain mandatory.
+It defaults to false. This allows publication verification without trying
+to publish an accepted immutable version again. Actionlint, 15 original gate
+fixtures, 10 compression fixtures and focused cache/dispatch assertions pass.
+Independent parent-model review approved exact
+`52ea74ef8b42ede9ba8ac7a1ec63136e3d6b7e69`; report
+`/private/tmp/gmax-trusted-publication-review-v4-20261022.md`.
+[Verification-only run39718868523](https://github.com/reowens/grepmax/actions/runs/39718868523)
+**passes** on that exact source: npm publication is skipped, complete hosted tar
+and final archive identity pass, registry bytes match, and the release step
+succeeds. GitHub's registry check completes in three seconds. The original
+provenance remains bound to actual publication source `911a267` / run39717358032;
+the recovery run does not issue new provenance or republish the package.
+
+**Repair closed.** Only the explicit release workflow is active; push/PR CI stays
+absent. Both installed copies and the accepted live handover remain the previously
+qualified package. No second installation, service handover, model run or index
+operation was needed. Resource history and Linux retain their held dispositions.
+
+The installed package and live daemon need no rebuild, reinstall, repeated handover
+or model experiment. Resource history stays deferred; its checkout/archive and
+failure evidence remain untouched. Linux remains pending actual machine/access.
 
 ### Full disposition of previously remaining work
 
@@ -277,7 +354,7 @@ untouched. Linux deployment remains pending actual machine/access and user selec
 | Reader PID-reuse lease wedge and shutdown hang | Fixed | Known-limitations record and current lease code contain the fix; do not recreate it. |
 | Sandboxed-client access | Supported configuration requirement | Missing Unix-socket/write permissions explain refusal; no new product feature or automatic permission widening required. |
 | Consumer/source/Python security checks | Required for an actual release | Preserve existing gates; not a new scheduled audit, upgrade project or release trigger. |
-| Release automation/trusted publishing and MCP protocol additions | Optional | Explicit local release works; no selected automation or client requirement. |
+| Trusted release publication | Selected repair | Restore the existing trusted publisher after the failed manual replacement; explicit releases only, no push/PR CI. Additional automation and MCP protocol features remain optional. |
 | Shared watcher extraction | Optional | Standalone Gmax already owns watching; no external runtime dependency is needed. |
 | Depot/account reporting and preserved dirty checkout files | Outside current product queue | Platform owns account/provider work. Preserve unrelated evaluation/collector edits; no unsolicited cleanup/integration. |
 | Pending older handoff | Historical context only | Read through runlist without consuming; describes completed G2 activation and must not revive old work. |
@@ -2302,6 +2379,9 @@ parallel omnibus plan.
 
 ## Version History
 
+- **2026-10-22T03:50:54Z** Status: in-session → partial — 0.26.93 ownership repair published, byte/provenance verified and installed; trusted publishing and verification-only run 39718868523 pass. Repair closed. Resource history stays open/deferred; Linux pending actual machine/access.
+- **2026-10-22T02:58:58Z** Started (active → in-session).
+- **2026-10-22T02:58:58Z** Status: awaiting → active — Repairing the disabled trusted-publication path after the user rejected the stalled manual publishing flow; release-only, no push/PR CI.
 - **2026-10-22T01:55:44Z** Status: in-session → awaiting — Reviewed0.26.93 installed and serving; both native/plugin/runtime acceptance gates pass. Publicnpm publication alone waits for user authentication; no active publication request.
 - **2026-10-22T01:51:26Z** Started (active → in-session).
 - **2026-10-22T01:51:26Z** Status: awaiting → active — Public publication waits for npm authentication; proceeding with the already reviewed local installation and live verification.

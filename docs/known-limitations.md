@@ -2,7 +2,7 @@
 type: doc
 status: reference
 created: 2026-04-09
-updated: 2026-10-21T23:59:04Z
+updated: 2026-10-22T03:51:24Z
 summary: Live catalog of open gmax limitations with detection + recovery steps.
 audience: internal
 related_plans:
@@ -30,14 +30,14 @@ current obligations. Document search, bounded pruning/orphan reclamation, PID-re
 lease handling and shutdown fixes have shipped. Static graph limitations and
 optional ranking tradeoffs do not automatically require more implementation.
 
-**Startup process ownership is repaired locally in reviewed 0.26.93 / 56c7806.**
+**Startup process ownership is repaired in delivered 0.26.93 / 56c7806.**
 The prior name-based startup termination could stop another instance's daemon or
 workers. The repair removes that termination and the raw-PID restart fallback,
 rechecks ownership after startup waits, and preserves predecessor evidence when
 startup refuses. It is installed in both existing prefixes and serves the live Mac
-daemon. Public npm publication remains pending authentication; public0.26.92 still
-contains the old defect. The [delivery checkpoint](plans/gmax-delivery.md#repair-implementation-checkpoint--october-22-utc)
-records source/archive/install verification and the remaining publication step.
+daemon. Public npm bytes and signed GitHub provenance are verified; the GitHub
+release is public. Earlier releases through 0.26.92 contain the old defect. The [delivery checkpoint](plans/gmax-delivery.md#repair-implementation-checkpoint--october-22-utc)
+records source/archive/publication/install verification.
 Unknown or unresponsive owners now cause refusal and may require an explicit stop;
 startup does not guess ownership or kill by process name.
 

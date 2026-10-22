@@ -2,9 +2,9 @@
 type: doc
 status: active
 created: 2026-10-03T02:39:56Z
-updated: 2026-10-22T01:35:31Z
+updated: 2026-10-22T03:51:24Z
 audience: internal
-summary: Process-ownership repair56c7806/0.26.93 is installed and serving on this Mac; publicnpm publication alone awaits authentication. Document search delivered. Resource statistics deferred; Linux pending machine/access.
+summary: Process-ownership repair 56c7806 / 0.26.93 is public, byte/provenance verified and installed on this Mac; trusted-publishing restoration is complete. Document search delivered. Resource statistics deferred; Linux pending machine/access.
 ---
 
 # Future Sessions
@@ -25,7 +25,7 @@ installed readiness accepted. Small/GPU, two workers, critical-only policy and
 settings are preserved. Optional Gemma remains stopped. Old daemon PID/readiness
 statements are dated evidence, not a continuing liveness assertion.
 
-## Process-ownership repair — installed; public publication pending
+## Process-ownership repair — delivered
 
 Reviewed **56c7806 / 0.26.93** removes startup's global name-based termination and
 raw-PID restart fallback. Same-home upgrades request socket shutdown and wait for
@@ -42,12 +42,21 @@ files, 26 unrelated root files, other plugins, Small/GPU, two worker threads,
 critical-only policy and index/store identity are preserved. Optional Gemma stays
 stopped. PID/readiness statements are dated evidence.
 
-**Public npm still serves 0.26.92.** Two approval requests expired without approval.
-Do not generate another link until the user is ready. Use the exact publication
-command in the [repair checkpoint](plans/gmax-delivery.md#repair-implementation-checkpoint--october-22-utc),
-then verify registry bytes and create the GitHub release. Source/tag are already
-pushed. No rebuild, reinstall, repeated live handover or new experiment is needed.
-The first three rejected archives must never be published; use only the v4 archive.
+**Public npm latest is 0.26.93.** GitHub trusted publication succeeded in run
+`39717358032` from approved publisher `911a267`; the complete hosted tar matches
+the reviewed package, and the final registry archive matches its raw SHA256/SHA512.
+Sigstore verification binds the artifact to the real GitHub workflow/main/source/run.
+The GitHub release is public. Reports and durable source/hash records are in the
+[publication repair](plans/gmax-delivery.md#trusted-publication-repair--october-22-utc).
+
+The publication run's final registry check hit a cached404. Reviewed publisher
+`52ea74e` fixes that cache handling and adds a verification-only dispatch.
+[Recovery run39718868523](https://github.com/reowens/grepmax/actions/runs/39718868523)
+passes all source/archive/build/registry/release gates with npm publication skipped.
+The existing package's signed provenance still identifies its actual publication
+commit/run. This repair is closed. Do not republish 0.26.93, request manual MFA,
+reinstall the accepted package, repeat handover or run a model experiment.
+Only the manually dispatched release workflow is active; no push/PR CI was restored.
 
 ## Explicit requests still held
 
@@ -55,7 +64,7 @@ The first three rejected archives must never be published; use only the v4 archi
   leave it open and move forward. Preserve approved `477779b`, isolated `479eb23`,
   frozen unreleased 0.26.91 and all failed/control evidence. Original +41.935 ms
   p95 regression remains unresolved. No new experiment is selected; new history
-  is absent from 0.26.92 and remains default-off in the retained design.
+  is absent from the installed release and remains default-off in the retained design.
 - **Linux P3 deployment:** requested, pending the actual machine/access and user
   selection. CPU installation/baseline first. GPU purchase/CUDA are conditional.
   The [design](linux-gpu-p3-design.md) is reference material, not an active queue or
