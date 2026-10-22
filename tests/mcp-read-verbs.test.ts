@@ -1244,6 +1244,154 @@ describe("MCP read tools go through the daemon read verbs", () => {
     expect(vectorDbCtor).not.toHaveBeenCalled();
   });
 
+  it("build_context skips an oversized first body and keeps later fitting bodies in relevance order", async () => {
+    const big = path.join(projectRoot, "src/oversized.ts");
+    const small = path.join(projectRoot, "src/fitting.ts");
+    fs.writeFileSync(
+      big,
+      "export function oversized() { /* " + "x".repeat(4000) + " */ }",
+    );
+    fs.writeFileSync(
+      small,
+      "// preamble\nexport function later() { return 2; }\nexport function last() { return 3; }",
+    );
+    respond({
+      search: {
+        ok: true,
+        data: [
+          {
+            metadata: { path: big },
+            generated_metadata: { start_line: 0, end_line: 0 },
+            defined_symbols: ["oversized"],
+          },
+          {
+            metadata: { path: small },
+            generated_metadata: { start_line: 1, end_line: 1 },
+            defined_symbols: ["later"],
+          },
+          {
+            path: small,
+            start_line: 2,
+            end_line: 2,
+            defined_symbols: ["last"],
+          },
+        ],
+      },
+    });
+    const text = await call("build_context", {
+      topic: "example functions",
+      budget: 500,
+    });
+    expect(text).not.toContain("export function oversized");
+    expect(text).toContain(
+      "--- src/fitting.ts:2 later ---\nexport function later()",
+    );
+    expect(text).toContain(
+      "--- src/fitting.ts:3 last ---\nexport function last()",
+    );
+    expect(text.indexOf("export function later")).toBeLessThan(
+      text.indexOf("export function last"),
+    );
+    expect(Math.ceil(text.length / 4)).toBeLessThanOrEqual(500);
+    expect(
+      sendDaemonCommand.mock.calls.filter(
+        ([request]) => request.cmd === "search",
+      ),
+    ).toHaveLength(1);
+    expect(vectorDbCtor).not.toHaveBeenCalled();
+  });
+
+  it("build_context includes entry points and footer in its size limit", async () => {
+    fs.writeFileSync(
+      path.join(projectRoot, "src/boundary.ts"),
+      "b".repeat(1900),
+    );
+    respond({
+      search: {
+        ok: true,
+        data: [
+          {
+            path: path.join(projectRoot, "src/boundary.ts"),
+            start_line: 0,
+            end_line: 0,
+            defined_symbols: ["symbol".repeat(400)],
+          },
+          {
+            metadata: { path: sourceFile },
+            generated_metadata: { start_line: 0, end_line: 2 },
+            defined_symbols: ["handleAuth"],
+          },
+        ],
+      },
+    });
+    const text = await call("build_context", {
+      topic: "budget boundary",
+      budget: 500,
+    });
+    expect(Math.ceil(text.length / 4)).toBeLessThanOrEqual(500);
+    expect(text).toContain("src/auth.ts:1 handleAuth");
+    expect(text).toContain("export function handleAuth");
+    expect(text).toContain("/500 tokens)");
+  });
+
+  it("build_context reserves its footer when a body nearly fills the budget", async () => {
+    const file = path.join(projectRoot, "src/footer-budget.ts");
+    const entry = "## Entry Points\nsrc/footer-budget.ts:1 nearLimit [IMPL]";
+    const prefix = "\n--- src/footer-budget.ts:1 nearLimit ---\n";
+    const body = "x".repeat(
+      (500 - Math.ceil(entry.length / 4)) * 4 - prefix.length,
+    );
+    fs.writeFileSync(file, body);
+    respond({
+      search: {
+        ok: true,
+        data: [
+          {
+            path: file,
+            start_line: 0,
+            end_line: 0,
+            defined_symbols: ["nearLimit"],
+          },
+        ],
+      },
+    });
+    const text = await call("build_context", {
+      topic: "near limit",
+      budget: 500,
+    });
+    expect(Math.ceil(text.length / 4)).toBeLessThanOrEqual(500);
+    expect(text).toContain("/500 tokens)");
+    expect(text).not.toContain(body);
+  });
+
+  it("build_context does not force an oversized body into the response", async () => {
+    const big = path.join(projectRoot, "src/all-large.ts");
+    fs.writeFileSync(
+      big,
+      "export function oversizedOnly() { /* " + "x".repeat(4000) + " */ }",
+    );
+    respond({
+      search: {
+        ok: true,
+        data: [
+          {
+            path: big,
+            start_line: 0,
+            end_line: 0,
+            defined_symbols: ["oversizedOnly"],
+          },
+        ],
+      },
+    });
+    const text = await call("build_context", {
+      topic: "large function",
+      budget: 500,
+    });
+    expect(text).toContain("src/all-large.ts:1 oversizedOnly");
+    expect(text).not.toContain("export function oversizedOnly");
+    expect(Math.ceil(text.length / 4)).toBeLessThanOrEqual(500);
+  });
+
   it("diff_changes lists changed-file symbols over rows.locate", async () => {
     respond({
       "rows.locate": {

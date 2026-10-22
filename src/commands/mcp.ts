@@ -109,6 +109,7 @@ import type {
   SearchFilter,
   SearchResponse,
 } from "../lib/store/types";
+import { packByBudget } from "../lib/utils/budget-pack";
 import { resolveCrossProjectScope } from "../lib/utils/cross-project";
 import type { DaemonResponse } from "../lib/utils/daemon-client";
 import { sendDaemonCommand } from "../lib/utils/daemon-client";
@@ -3250,12 +3251,20 @@ export const mcp = new Command("mcp")
           const sym = toStringArray(r.defined_symbols)?.[0] ?? "";
           return `${rel(searchResultPath(r))}:${searchResultStartLine(r) + 1} ${sym} [${r.role || "IMPL"}]`;
         });
-        const epSection = `## Entry Points\n${epLines.join("\n")}`;
+        // Reserve the footer and its separator before packing any content.
+        const contentBudget =
+          budget - estTokens(`\n\n(~${budget}/${budget} tokens)`);
+        let epSection = "## Entry Points";
+        for (const line of epLines) {
+          const candidate = `${epSection}\n${line}`;
+          if (estTokens(candidate) <= contentBudget) epSection = candidate;
+        }
         sections.push(epSection);
         tokensUsed += estTokens(epSection);
 
-        // Key function bodies
-        for (const r of response.data.slice(0, 3)) {
+        // Use the CLI's packing rule: skip oversized bodies, then keep trying
+        // later results. Include each section separator in its estimated cost.
+        const bodyBlobs = response.data.slice(0, 3).map((r) => {
           const absP = searchResultPath(r);
           const startLine = searchResultStartLine(r);
           const endLine = searchResultEndLine(r, startLine);
@@ -3267,14 +3276,21 @@ export const mcp = new Command("mcp")
               .split("\n")
               .slice(startLine, endLine + 1)
               .join("\n");
-            const blob = `\n--- ${rel(absP)}:${startLine + 1} ${sym} ---\n${body}`;
-            if (tokensUsed + estTokens(blob) > budget) break;
-            sections.push(blob);
-            tokensUsed += estTokens(blob);
+            return `\n--- ${rel(absP)}:${startLine + 1} ${sym} ---\n${body}`;
           } catch {
-            /* skip unreadable */
+            return null;
           }
-        }
+        });
+        const packed = packByBudget(
+          bodyBlobs.map((blob, index) => ({
+            tokens: blob ? estTokens(`\n${blob}`) : Number.POSITIVE_INFINITY,
+            score: bodyBlobs.length - index,
+          })),
+          contentBudget - tokensUsed,
+          { atLeastOne: false },
+        );
+        for (const index of packed.selected) sections.push(bodyBlobs[index]!);
+        tokensUsed += packed.tokensUsed;
 
         sections.push(`\n(~${tokensUsed}/${budget} tokens)`);
         return ok(sections.join("\n"));
