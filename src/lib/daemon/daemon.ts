@@ -1513,6 +1513,15 @@ export class Daemon {
               );
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
+              // A shutdown or version handover stops the sync on purpose. It is
+              // not a failure: leave the status alone so the next daemon resumes
+              // it and searches keep including the rows already written.
+              if (operationSignal.aborted || this.shuttingDown) {
+                console.log(
+                  `[daemon] indexPendingProject stopped for ${name} after ${Date.now() - start}ms; status left ${getProject(root)?.status ?? "unregistered"}`,
+                );
+                return;
+              }
               console.error(
                 `[daemon] indexPendingProject failed for ${name} after ${Date.now() - start}ms: ${msg}`,
               );
