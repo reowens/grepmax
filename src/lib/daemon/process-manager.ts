@@ -1,16 +1,10 @@
 import { execSync } from "node:child_process";
-import {
-  isDaemonDraining,
-  isDaemonHeartbeatFresh,
-  isDaemonRunning,
-  waitForDaemonDrain,
-} from "../utils/daemon-client";
-import { log as dlog } from "../utils/logger";
-import { killProcess } from "../utils/process";
+import * as fs from "node:fs";
+import { PATHS } from "../../config";
+import { isDaemonDraining, waitForDaemonDrain } from "../utils/daemon-client";
 
 /**
- * OS-level process hygiene for the daemon: discovering processes by title,
- * sweeping orphaned workers, and killing stale daemons/workers at startup.
+ * Home-local startup arbitration and cleanup of this daemon's own child workers.
  *
  * Extracted from daemon.ts (Phase 2). Holds no daemon state beyond its own
  * orphan-suspicion set and a shutting-down getter — the lowest-coupling of the
@@ -80,86 +74,41 @@ export class ProcessManager {
     }
   }
 
-  /**
-   * Find and kill all stale gmax-daemon and gmax-worker processes.
-   * Uses pgrep to scan by process title rather than relying solely on
-   * the PID file, which becomes stale when a daemon is orphaned through
-   * the lock-compromise path.
-   */
-  async killStaleProcesses(): Promise<void> {
-    // 1. Check for other daemon processes
-    const daemonPids = this.findProcessesByTitle("gmax-daemon").filter(
-      (pid) => pid !== process.pid,
-    );
-    let workerPids = this.findProcessesByTitle("gmax-worker");
-
-    if (daemonPids.length === 0 && workerPids.length === 0) {
-      dlog("daemon", "No stale processes found");
-      return;
-    }
-
-    // A peer that's gracefully shutting down has already dropped its
-    // socket/PID/lock (so the liveness probes below read "stale") yet is still
-    // mid-cleanup — destroying workers, closing LanceDB. Killing it now corrupts
-    // that teardown. Defer to its draining marker until the process exits; only
-    // after the marker grace elapses do we treat it like any other stale daemon.
-    for (const pid of daemonPids) {
-      dlog("daemon", `found daemon PID:${pid}, checking liveness...`);
-
-      if (isDaemonDraining(pid)) {
-        dlog(
-          "daemon",
-          `daemon PID:${pid} is gracefully draining — waiting for it to exit`,
-        );
-        const exited = await waitForDaemonDrain(pid);
-        if (exited) {
-          dlog("daemon", `daemon PID:${pid} finished draining`);
-          // The peer may have reaped its workers while we waited. Rescan before
-          // sweeping so we don't act on a stale process snapshot.
-          workerPids = this.findProcessesByTitle("gmax-worker");
-          continue;
-        }
-        dlog(
-          "daemon",
-          `daemon PID:${pid} still exists after drain grace — checking stale probes`,
-        );
+  /** Home-local arbitration only. Neither a PID nor a title permits termination. */
+  async assertStartupAvailable(): Promise<void> {
+    for (const [file, json] of [
+      [PATHS.daemonPidFile, false],
+      [PATHS.daemonDrainingFile, true],
+    ] as const) {
+      let pid: number;
+      try {
+        const stat = fs.lstatSync(file);
+        if (!stat.isFile() || stat.isSymbolicLink())
+          throw new Error("not a regular marker");
+        const text = fs.readFileSync(file, "utf8").trim();
+        pid = json
+          ? JSON.parse(text).pid
+          : /^\d+$/.test(text)
+            ? Number(text)
+            : NaN;
+        if (!Number.isSafeInteger(pid) || pid <= 0)
+          throw new Error("invalid PID");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw new Error(`Cannot verify daemon marker ${file}; startup refused`);
       }
-
-      // A busy daemon (mid-index, compaction, big LMDB write) can block the
-      // event loop long enough to miss a ping. Two independent liveness
-      // probes — if either says "alive", defer to the running peer instead
-      // of killing its workers mid-flight.
-      //   1. daemon.lock mtime (refreshed by heartbeat every 60s)
-      //   2. socket ping with a generous 10s timeout
-      const heartbeatFresh = isDaemonHeartbeatFresh();
-      const responsive = await isDaemonRunning({ timeoutMs: 10_000 });
-
-      if (heartbeatFresh || responsive) {
-        dlog(
-          "daemon",
-          `existing daemon PID:${pid} is alive (heartbeat=${heartbeatFresh} ping=${responsive}) — exiting`,
-        );
-        process.exit(0);
+      if (pid === process.pid) continue;
+      try {
+        process.kill(pid, 0);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ESRCH") continue;
+        throw new Error(`Cannot verify daemon PID ${pid}; startup refused`);
       }
-      dlog(
-        "daemon",
-        `stale daemon PID:${pid} unresponsive and heartbeat stale — killing`,
+      if (isDaemonDraining(pid) && (await waitForDaemonDrain(pid))) continue;
+      throw new Error(
+        `Daemon PID ${pid} still exists for this Gmax home; startup refused. Request shutdown through its socket and wait for exit.`,
       );
-      await killProcess(pid);
-      dlog("daemon", `killed stale daemon PID:${pid}`);
     }
-
-    // 2. Kill orphaned workers from previous daemon instances.
-    // Safe because this runs before the new daemon's worker pool is initialized.
-    for (const pid of workerPids) {
-      dlog("daemon", `killing orphaned worker PID:${pid}`);
-      await killProcess(pid);
-    }
-
-    dlog(
-      "daemon",
-      `Cleaned up ${daemonPids.length} stale daemon(s), ${workerPids.length} orphaned worker(s)`,
-    );
   }
 
   findProcessesByTitle(title: string): number[] {

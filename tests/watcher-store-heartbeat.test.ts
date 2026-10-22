@@ -4,15 +4,35 @@ import type { IndexState } from "../src/lib/output/index-state-footer";
 const db = vi.hoisted(() => ({
   getRange: vi.fn(),
   put: vi.fn(),
+  remove: vi.fn(),
 }));
 vi.mock("lmdb", () => ({ open: vi.fn(() => db) }));
 vi.mock("node:fs", () => ({ mkdirSync: vi.fn() }));
 
-import { heartbeat } from "../src/lib/utils/watcher-store";
+import { heartbeat, listWatchers } from "../src/lib/utils/watcher-store";
 
 describe("standalone watcher diagnostic heartbeat", () => {
   beforeEach(() => vi.clearAllMocks());
   afterEach(() => vi.restoreAllMocks());
+
+  it("startup inspection retains stale registry evidence without probing or pruning", () => {
+    const stale = {
+      pid: 910002,
+      projectRoot: "/stale",
+      startTime: 10,
+      lastHeartbeat: 1,
+    };
+    db.getRange.mockReturnValue([
+      { key: "/stale", value: stale },
+      { key: "__daemon__", value: { pid: 910001 } },
+    ]);
+    const probe = vi.spyOn(process, "kill").mockImplementation(() => {
+      throw new Error("host probe forbidden");
+    });
+    expect(listWatchers({ includeStale: true })).toEqual([stale]);
+    expect(db.remove).not.toHaveBeenCalled();
+    expect(probe).not.toHaveBeenCalled();
+  });
 
   it("timestamps supplied health independently of later ordinary heartbeats", () => {
     const health: IndexState = {

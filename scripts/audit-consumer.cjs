@@ -49,6 +49,9 @@ try {
   }
   console.log("Packed consumer audit: no vulnerabilities");
   npm(["ci", "--ignore-scripts", "--omit=dev", "--no-audit", "--no-fund"]);
+  const processSmoke = spawnSync(process.execPath, [path.join(root, "scripts/audit-process-ownership.cjs"), path.join(temp, "node_modules/grepmax")], { cwd: temp, encoding: "utf8", timeout: 10_000 });
+  if (processSmoke.error || processSmoke.status !== 0) throw new Error(`Packaged process-ownership checks failed: ${processSmoke.error ?? processSmoke.stderr ?? processSmoke.stdout}`);
+  console.log(processSmoke.stdout.trim());
   const documentSmoke = spawnSync(process.execPath, [path.join(root, "scripts/audit-document-search.cjs"), path.join(temp, "node_modules/grepmax")], {cwd: temp, encoding: "utf8", timeout: 30_000});
   if (documentSmoke.error || documentSmoke.status !== 0) throw new Error(`Packaged document contract failed: ${documentSmoke.error ?? documentSmoke.stderr}`);
   process.stdout.write(documentSmoke.stdout);

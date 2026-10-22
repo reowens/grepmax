@@ -271,6 +271,15 @@ limits, hash provenance and isolated qualification.
 
 ## Background Daemon
 
+Startup never kills other daemons or workers by process name. Upgrades request
+shutdown through the current Gmax home's socket and wait up to 90 seconds for exit;
+failed shutdown or a still-running predecessor refuses replacement. A live or
+unverifiable PID in this home's daemon/drain markers also blocks direct startup.
+Registered standalone watchers are not killed automatically: stop their owned
+sessions before starting the daemon. Unknown ownership requires explicit recovery;
+startup does not guess from a stale heartbeat or PID. Read-only startup leaves
+standalone watchers running.
+
 A single daemon watches your projects via native OS file events (FSEvents/inotify). Changes are detected in sub-second and incrementally reindexed. All writes to LanceDB are routed through the daemon via IPC, eliminating lock contention.
 
 Filesystem watching belongs to gmax, in both daemon and standalone watch modes. Hetchy Developer is an optional monitor/controller that reads gmax status and invokes gmax commands. Watching, indexing and search must work with the dev app and its helper absent or stopped. Any future shared watcher extraction must be an independent component or package with an interface and lifecycle usable without Hetchy Developer; the dev app cannot become a gmax runtime dependency.

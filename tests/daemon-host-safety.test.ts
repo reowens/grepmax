@@ -136,7 +136,7 @@ describe("daemon pressure pauses work without losing the service", () => {
   it("normal launches still refuse quarantine before stale handling or resources", async () => {
     const daemon = makeDaemon();
     const stale = vi
-      .spyOn(daemon.processManager, "killStaleProcesses")
+      .spyOn(daemon.processManager, "assertStartupAvailable")
       .mockResolvedValue(undefined);
     h.denied = "existing quarantine";
     await expect(daemon.start()).rejects.toThrow("preserving containment");
@@ -149,7 +149,7 @@ describe("daemon pressure pauses work without losing the service", () => {
       const daemon = makeDaemon();
       h.memory = "critical";
       const stale = vi
-        .spyOn(daemon.processManager, "killStaleProcesses")
+        .spyOn(daemon.processManager, "assertStartupAvailable")
         .mockResolvedValue(undefined);
       await expect(daemon.start({ readOnly })).rejects.toThrow(
         "startup safety stop",

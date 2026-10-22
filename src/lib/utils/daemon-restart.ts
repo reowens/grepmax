@@ -19,7 +19,6 @@ export interface RestartDeps {
   /** PID from daemon.pid, only when its heartbeat is fresh and it is alive. */
   liveDaemonPidFromFiles(): number | null;
   isAlive(pid: number): boolean;
-  terminate(pid: number): void;
   /** Spawn `watch --daemon` detached; resolves to its PID, or null. */
   spawn(): Promise<number | null>;
   sleep(ms: number): Promise<void>;
@@ -37,7 +36,7 @@ export interface RestartResult {
   /** The daemon that was stopped, or null when none was running. */
   previousPid: number | null;
   /** How the old daemon was asked to stop. */
-  stoppedVia: "ipc" | "sigterm" | null;
+  stoppedVia: "ipc" | null;
   pid: number | null;
   version: string | null;
   /** Worker processes running under the new daemon right now. */
@@ -57,7 +56,9 @@ const DEFAULT_READY_TIMEOUT_MS = 60_000;
 const DEFAULT_POLL_MS = 200;
 
 function pidOf(resp: DaemonResponse): number | null {
-  return typeof resp.pid === "number" && resp.pid > 0 ? resp.pid : null;
+  return Number.isSafeInteger(resp.pid) && (resp.pid as number) > 0
+    ? (resp.pid as number)
+    : null;
 }
 
 export async function restartDaemon(
@@ -95,15 +96,11 @@ export async function restartDaemon(
 
   if (previousPid !== null) {
     const shutdown = await deps.requestShutdown();
-    if (shutdown.ok) {
-      result.stoppedVia = "ipc";
-    } else if (deps.isAlive(previousPid)) {
-      // SIGTERM runs the same graceful shutdown as the IPC verb.
-      try {
-        deps.terminate(previousPid);
-        result.stoppedVia = "sigterm";
-      } catch {}
+    if (!shutdown.ok) {
+      result.error = `the daemon (PID ${previousPid}) did not acknowledge shutdown; no process was signalled and no replacement was started`;
+      return result;
     }
+    result.stoppedVia = "ipc";
 
     const deadline = deps.now() + exitTimeoutMs;
     while (deps.isAlive(previousPid)) {
@@ -170,7 +167,7 @@ export async function restartDaemon(
 
 export function formatRestartResult(r: RestartResult): string {
   const lines: string[] = [];
-  if (r.previousPid !== null) {
+  if (r.previousPid !== null && r.ok) {
     lines.push(`Stopped daemon (PID ${r.previousPid}).`);
   } else if (r.ok || r.pid !== null) {
     lines.push("No daemon was running.");

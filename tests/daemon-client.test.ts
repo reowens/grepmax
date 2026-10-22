@@ -294,6 +294,17 @@ describe("waitForProcessExit", () => {
     expect(await waitForProcessExit(123456, 1000)).toBe(true);
   });
 
+  it.each(["EPERM", "EACCES", "UNKNOWN"])(
+    "does not treat %s as process exit",
+    async (code) => {
+      vi.spyOn(process, "kill").mockImplementation(() => {
+        throw Object.assign(new Error("probe unavailable"), { code });
+      });
+      expect(await waitForProcessExit(910001, 1)).toBe(false);
+      expect(process.kill).toHaveBeenCalledWith(910001, 0);
+    },
+  );
+
   it("resolves false on timeout while the process stays alive", async () => {
     vi.spyOn(process, "kill").mockImplementation(() => true);
     expect(await waitForProcessExit(process.pid, 250)).toBe(false);

@@ -155,6 +155,17 @@ export function readDaemonPid(): number | null {
   }
 }
 
+/** Only ESRCH proves absence; permission/probe failures must block replacement. */
+export function daemonProcessMayExist(pid: number): boolean {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return true;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== "ESRCH";
+  }
+}
+
 /**
  * Poll until a process has fully exited, or the timeout elapses. Used before
  * spawning a successor daemon: shutdown() drops the socket/lock immediately but
@@ -168,11 +179,7 @@ export async function waitForProcessExit(
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    try {
-      process.kill(pid, 0);
-    } catch {
-      return true; // ESRCH — process is gone
-    }
+    if (!daemonProcessMayExist(pid)) return true;
     await new Promise((r) => setTimeout(r, 100));
   }
   return false;

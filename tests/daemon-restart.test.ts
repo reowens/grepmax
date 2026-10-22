@@ -108,10 +108,6 @@ function world(opts: {
       tick();
       return alive.has(pid);
     },
-    terminate(pid) {
-      calls.push(`sigterm:${pid}`);
-      beginExit(pid);
-    },
     async spawn() {
       calls.push("spawn");
       if (opts.spawnPid === null) return null;
@@ -175,21 +171,23 @@ describe("restartDaemon", () => {
     expect(w.alive().has(100)).toBe(true);
   });
 
-  it("falls back to SIGTERM when the busy daemon cannot answer the shutdown", async () => {
-    const w = world({
-      daemon: null,
-      heartbeatPid: 100,
-      exitsAfterMs: 300,
-    });
-    const r = await restartDaemon(w.deps, { pollMs: 100 });
-    expect(r.ok).toBe(true);
-    expect(r.previousPid).toBe(100);
-    expect(r.stoppedVia).toBe("sigterm");
-    expect(w.calls).toContain("sigterm:100");
-    expect(w.calls.indexOf("spawn")).toBeGreaterThan(
-      w.calls.indexOf("sigterm:100"),
-    );
-  });
+  it.each([true, false])(
+    "refuses failed shutdown with a %s responsive peer instead of signalling its PID",
+    async (responsive) => {
+      const w = world({
+        daemon: responsive ? { pid: 100 } : null,
+        heartbeatPid: 100,
+        shutdownAnswers: false,
+      });
+      const r = await restartDaemon(w.deps, { pollMs: 100 });
+      expect(r.ok).toBe(false);
+      expect(r.error).toMatch(/did not acknowledge shutdown/);
+      expect(r.stoppedVia).toBeNull();
+      expect(w.spawns).toEqual([]);
+      expect(w.alive().has(100)).toBe(true);
+      expect(formatRestartResult(r)).not.toMatch(/Stopped daemon/);
+    },
+  );
 
   it("uses a daemon another caller started in the gap instead of spawning", async () => {
     const w = world({

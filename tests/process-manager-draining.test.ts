@@ -1,100 +1,107 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../src/lib/utils/daemon-client", () => ({
-  isDaemonDraining: vi.fn(() => false),
-  isDaemonHeartbeatFresh: vi.fn(() => false),
-  isDaemonRunning: vi.fn(async () => false),
-  waitForDaemonDrain: vi.fn(async () => true),
+const h = vi.hoisted(() => ({
+  pid: null as string | null,
+  draining: null as string | null,
+  malformedFile: false,
+  readError: null as string | null,
+  waits: vi.fn(async () => true),
+  isDraining: vi.fn(() => false),
 }));
-
-vi.mock("../src/lib/utils/process", () => ({
-  killProcess: vi.fn(async () => {}),
+vi.mock("node:fs", async (original) => ({
+  ...(await original<typeof import("node:fs")>()),
+  lstatSync: (file: string) => {
+    const value = file.endsWith("daemon.pid") ? h.pid : h.draining;
+    if (h.readError || value === null)
+      throw Object.assign(new Error("marker read"), {
+        code: h.readError ?? "ENOENT",
+      });
+    return {
+      isFile: () => !h.malformedFile,
+      isSymbolicLink: () => h.malformedFile,
+    };
+  },
+  readFileSync: (file: string) =>
+    file.endsWith("daemon.pid") ? h.pid : h.draining,
+}));
+vi.mock("../src/lib/utils/daemon-client", () => ({
+  isDaemonDraining: h.isDraining,
+  waitForDaemonDrain: h.waits,
 }));
 
 import { ProcessManager } from "../src/lib/daemon/process-manager";
-import {
-  isDaemonDraining,
-  isDaemonHeartbeatFresh,
-  isDaemonRunning,
-  waitForDaemonDrain,
-} from "../src/lib/utils/daemon-client";
-import { killProcess } from "../src/lib/utils/process";
 
-const OLD_DAEMON_PID = 12345;
-const OLD_WORKER_PID = 999;
-
-function makeManager(workerPids = [OLD_WORKER_PID]): ProcessManager {
-  const pm = new ProcessManager({ getShuttingDown: () => false });
-  // Pretend the OS reports one other daemon and one worker.
-  vi.spyOn(pm, "findProcessesByTitle").mockImplementation((title: string) =>
-    title === "gmax-daemon" ? [OLD_DAEMON_PID] : workerPids,
-  );
-  return pm;
-}
-
-// process.exit must halt; a no-op mock would let code run past it. Throw a
-// sentinel instead so the caller stops exactly where the real exit would.
-class ExitSignal extends Error {
-  constructor(public code: number | undefined) {
-    super(`exit:${code}`);
-  }
-}
-
-describe("killStaleProcesses draining handoff", () => {
-  let exitSpy: ReturnType<typeof vi.spyOn>;
-
+describe("home-local startup arbitration", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    vi.mocked(isDaemonHeartbeatFresh).mockReturnValue(false);
-    vi.mocked(isDaemonRunning).mockResolvedValue(false);
-    vi.mocked(waitForDaemonDrain).mockResolvedValue(true);
-    exitSpy = vi.spyOn(process, "exit").mockImplementation(((code?: number) => {
-      throw new ExitSignal(code);
-    }) as never);
+    h.pid = null;
+    h.draining = null;
+    h.malformedFile = false;
+    h.readError = null;
+    h.waits.mockReset().mockResolvedValue(true);
+    h.isDraining.mockReset().mockReturnValue(false);
+    vi.spyOn(process, "kill").mockImplementation((_pid, signal) => {
+      if (signal !== 0) throw new Error("Host signal forbidden");
+      return true;
+    });
   });
-
-  it("waits for a gracefully draining peer to exit without killing it", async () => {
-    vi.mocked(isDaemonDraining).mockReturnValue(true);
-
-    await makeManager([]).killStaleProcesses();
-
-    expect(waitForDaemonDrain).toHaveBeenCalledWith(OLD_DAEMON_PID);
-    expect(killProcess).not.toHaveBeenCalled();
-    expect(exitSpy).not.toHaveBeenCalled();
+  afterEach(() => vi.restoreAllMocks());
+  const check = () =>
+    new ProcessManager({
+      getShuttingDown: () => false,
+    }).assertStartupAvailable();
+  it("needs no global process discovery when this home has no markers", async () => {
+    await expect(check()).resolves.toBeUndefined();
+    expect(process.kill).not.toHaveBeenCalled();
   });
-
-  it("kills a draining peer only after drain grace and stale probes fail", async () => {
-    vi.mocked(isDaemonDraining).mockReturnValue(true);
-    vi.mocked(waitForDaemonDrain).mockResolvedValue(false);
-
-    await makeManager().killStaleProcesses();
-
-    expect(waitForDaemonDrain).toHaveBeenCalledWith(OLD_DAEMON_PID);
-    expect(killProcess).toHaveBeenCalledWith(OLD_DAEMON_PID);
-    expect(killProcess).toHaveBeenCalledWith(OLD_WORKER_PID);
-    expect(exitSpy).not.toHaveBeenCalled();
+  it.each(["910001", " 910001\n"])(
+    "refuses live local PID %s without signalling",
+    async (pid) => {
+      h.pid = pid;
+      await expect(check()).rejects.toThrow(/still exists/);
+      expect(process.kill).toHaveBeenCalledExactlyOnceWith(910001, 0);
+    },
+  );
+  it("allows a definitively dead local PID without deleting markers", async () => {
+    h.pid = "910001";
+    vi.mocked(process.kill).mockImplementation(() => {
+      throw Object.assign(new Error("gone"), { code: "ESRCH" });
+    });
+    await expect(check()).resolves.toBeUndefined();
+    expect(h.pid).toBe("910001");
   });
-
-  it("still kills a truly-stale (non-draining, unresponsive) peer and its workers", async () => {
-    vi.mocked(isDaemonDraining).mockReturnValue(false);
-
-    await makeManager().killStaleProcesses();
-
-    expect(killProcess).toHaveBeenCalledWith(OLD_DAEMON_PID);
-    expect(killProcess).toHaveBeenCalledWith(OLD_WORKER_PID);
-    expect(exitSpy).not.toHaveBeenCalled();
+  it("refuses unknown/EPERM ownership", async () => {
+    h.pid = "910001";
+    vi.mocked(process.kill).mockImplementation(() => {
+      throw Object.assign(new Error("unknown"), { code: "EPERM" });
+    });
+    await expect(check()).rejects.toThrow(/Cannot verify daemon PID/);
+    expect(h.waits).not.toHaveBeenCalled();
   });
-
-  it("defers (exits) to a healthy, responsive peer without killing it", async () => {
-    vi.mocked(isDaemonDraining).mockReturnValue(false);
-    vi.mocked(isDaemonRunning).mockResolvedValue(true);
-
-    await expect(makeManager().killStaleProcesses()).rejects.toBeInstanceOf(
-      ExitSignal,
-    );
-
-    // exit(0) halts before any kill — the live peer is untouched.
-    expect(killProcess).not.toHaveBeenCalled();
-    expect(exitSpy).toHaveBeenCalledWith(0);
+  it.each(["910001junk", "-1", "0", "1.5", "9007199254740993"])(
+    "refuses malformed PID %s",
+    async (pid) => {
+      h.pid = pid;
+      await expect(check()).rejects.toThrow(/Cannot verify daemon marker/);
+      expect(process.kill).not.toHaveBeenCalled();
+    },
+  );
+  it.each([true, false])(
+    "waits for local drain success=%s with no signal fallback",
+    async (exited) => {
+      h.draining = JSON.stringify({ pid: 910001, ts: Date.now() });
+      h.isDraining.mockReturnValue(true);
+      h.waits.mockResolvedValue(exited);
+      if (exited) await expect(check()).resolves.toBeUndefined();
+      else await expect(check()).rejects.toThrow(/still exists/);
+      expect(h.waits).toHaveBeenCalledExactlyOnceWith(910001);
+      expect(process.kill).toHaveBeenCalledExactlyOnceWith(910001, 0);
+    },
+  );
+  it.each(["symlink", "unreadable"])("refuses %s markers", async (mode) => {
+    h.pid = "910001";
+    h.malformedFile = mode === "symlink";
+    h.readError = mode === "unreadable" ? "EACCES" : null;
+    await expect(check()).rejects.toThrow(/Cannot verify daemon marker/);
+    expect(process.kill).not.toHaveBeenCalled();
   });
 });

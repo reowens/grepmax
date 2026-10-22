@@ -145,7 +145,10 @@ export function getWatcherCoveringPath(dir: string): WatcherInfo | undefined {
   return undefined;
 }
 
-export function listWatchers(): WatcherInfo[] {
+/** Startup can inspect all registered PIDs without guessing liveness or pruning. */
+export function listWatchers(
+  options: { includeStale?: boolean } = {},
+): WatcherInfo[] {
   const db = getDb();
   const alive: WatcherInfo[] = [];
   const dead: string[] = [];
@@ -153,7 +156,7 @@ export function listWatchers(): WatcherInfo[] {
   for (const { key, value } of db.getRange()) {
     if (!value) continue;
     if (String(key) === DAEMON_KEY) continue;
-    if (isAlive(value)) {
+    if (options.includeStale || isAlive(value)) {
       alive.push(value);
     } else {
       dead.push(String(key));

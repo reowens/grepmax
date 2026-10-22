@@ -69,7 +69,6 @@ import {
   type SafetyStopAction,
   type SafetyStopDiagnostics,
 } from "../utils/pressure-diagnostics";
-import { killProcess } from "../utils/process";
 import { readFootprintMb } from "../utils/process-footprint";
 import {
   completeProjectRebuild,
@@ -99,7 +98,6 @@ import {
   listWatchers,
   registerDaemon,
   unregisterDaemon,
-  unregisterWatcher,
   unregisterWatcherByRoot,
 } from "../utils/watcher-store";
 import {
@@ -389,9 +387,31 @@ export class Daemon {
     registerRowsVerbs();
     registerVectorVerbs();
 
-    // 0. Singleton enforcement: find and kill ALL stale daemon/worker processes
-    if (this.pausedReason === null)
-      await this.processManager.killStaleProcesses();
+    // Preflight before publishing a socket/PID or opening shared resources.
+    // Process names and registry PIDs never authorize automatic termination.
+    await this.processManager.assertStartupAvailable();
+    if (this.pausedReason === null) {
+      const existing = listWatchers({ includeStale: true }).filter(
+        (watcher) => {
+          if (!Number.isSafeInteger(watcher.pid) || watcher.pid <= 0)
+            return true;
+          try {
+            process.kill(watcher.pid, 0);
+            return true;
+          } catch (error) {
+            // A stale heartbeat cannot establish process death. Unknown owners
+            // and recycled PIDs block takeover; only ESRCH establishes absence.
+            return (error as NodeJS.ErrnoException).code !== "ESRCH";
+          }
+        },
+      );
+      if (existing.length > 0) {
+        const pids = existing.map((watcher) => watcher.pid).join(", ");
+        throw new Error(
+          `Standalone watchers are still registered (PIDs: ${pids}); startup refused. Stop the owned watchers explicitly before starting the daemon.`,
+        );
+      }
+    }
     this.assertStartupActive();
 
     // 1. Acquire exclusive lock — kernel-enforced, atomic, auto-released on death
@@ -500,17 +520,6 @@ export class Daemon {
     // 3. Write PID file AFTER socket is listening — ensures any process that
     // reads the PID can immediately ping this daemon and get a response.
     fs.writeFileSync(PATHS.daemonPidFile, String(process.pid));
-
-    // 4. Kill existing per-project watchers
-    const existing = this.pausedReason === null ? listWatchers() : [];
-    for (const w of existing) {
-      console.log(
-        `[daemon] Taking over from per-project watcher (PID: ${w.pid}, ${path.basename(w.projectRoot)})`,
-      );
-      await killProcess(w.pid);
-      this.assertStartupActive();
-      unregisterWatcher(w.pid);
-    }
 
     // 5. Open shared resources
     try {

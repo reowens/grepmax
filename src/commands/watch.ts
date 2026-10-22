@@ -121,10 +121,10 @@ export const watch = new Command("watch")
           // daemon so we can start a fresh one with the new code.
           const {
             isDaemonRunning,
+            daemonProcessMayExist,
             isDaemonHeartbeatFresh,
             sendDaemonCommand,
             readDaemonPid,
-            waitForProcessExit,
           } = await import("../lib/utils/daemon-client");
           if (await isDaemonRunning()) {
             if (startOnly) return;
@@ -148,35 +148,49 @@ export const watch = new Command("watch")
             console.log(
               `Daemon version mismatch (${resp.version} → ${cliVersion}), restarting...`,
             );
-            // Capture the old PID before shutdown removes the PID file, so we
-            // can wait for the process to fully EXIT rather than guessing with a
-            // fixed sleep. Spawning the successor while the old daemon is still
-            // draining lets the successor's killStaleProcesses() classify it as
-            // stale and SIGKILL it mid-cleanup.
-            const oldPid = readDaemonPid();
-            await sendDaemonCommand({
-              cmd: "shutdown",
-              reason: "version-mismatch",
-              from_pid: process.pid,
-              from_ppid: process.ppid,
-              from_version: cliVersion,
-              from_argv: process.argv.slice(0, 4),
-            });
-            if (oldPid) {
-              const exited = await waitForProcessExit(oldPid, 20_000);
-              if (!exited) {
-                console.log(
-                  `Old daemon (PID ${oldPid}) still draining after 20s — starting anyway ` +
-                    `(its draining marker keeps the successor from killing it mid-cleanup)`,
+            const result = await restartDaemon({
+              ping: (timeoutMs) =>
+                sendDaemonCommand({ cmd: "ping" }, { timeoutMs }),
+              status: () => sendDaemonCommand({ cmd: "status" }),
+              requestShutdown: () =>
+                sendDaemonCommand(
+                  {
+                    cmd: "shutdown",
+                    reason: "version-mismatch",
+                    from_pid: process.pid,
+                    from_ppid: process.ppid,
+                    from_version: cliVersion,
+                    from_argv: process.argv.slice(0, 4),
+                  },
+                  { timeoutMs: 10_000 },
+                ),
+              liveDaemonPidFromFiles: () =>
+                isDaemonHeartbeatFresh() ? readDaemonPid() : null,
+              isAlive: daemonProcessMayExist,
+              spawn: async () => {
+                const { spawnDaemonProcess } = await import(
+                  "../lib/utils/daemon-launcher"
                 );
-              }
-            } else {
-              await new Promise((r) => setTimeout(r, 2000));
-            }
+                try {
+                  return (
+                    await spawnDaemonProcess(
+                      options.readOnly ? { readOnly: true } : {},
+                    )
+                  ).pid;
+                } catch {
+                  return null;
+                }
+              },
+              sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+              now: () => Date.now(),
+            });
+            console.log(formatRestartResult(result));
+            process.exitCode = result.ok ? 0 : 1;
+            return;
           } else if (isDaemonHeartbeatFresh()) {
             // Ping failed but daemon.lock mtime is fresh — another daemon is
             // alive but too busy to answer (e.g. mid-index). Don't spawn a
-            // competitor; the startup code would only kill the busy peer.
+            // competitor while the existing daemon is busy.
             process.exit(0);
           }
 
@@ -637,8 +651,7 @@ watch
         ),
       liveDaemonPidFromFiles: () =>
         client.isDaemonHeartbeatFresh() ? client.readDaemonPid() : null,
-      isAlive: isProcessRunning,
-      terminate: (pid) => process.kill(pid, "SIGTERM"),
+      isAlive: client.daemonProcessMayExist,
       spawn: async () => {
         try {
           return (await spawnDaemonProcess()).pid;
