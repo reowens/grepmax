@@ -220,27 +220,30 @@ describe("daemon bounded deleted-row cleanup lifecycle", () => {
     clearInterval(d.boundedCleanupInterval);
   });
 
-  it.each(["add-project", "ensure-project", "index-project", "index-pending"])(
-    "defers active %s before runtime/watcher/read admission",
-    async (name) => {
-      const { daemon, d } = fixture();
-      let release!: () => void;
-      const bulk = d.operations.runShared(
-        name,
-        undefined,
-        () => new Promise<void>((resolve) => (release = resolve)),
-      );
-      await expect(daemon.runBoundedMaintenance()).resolves.toMatchObject({
-        status: "skipped",
-        reason: expect.stringContaining("indexing is active"),
-      });
-      expect(prepareBoundedMaintenanceRuntime).not.toHaveBeenCalled();
-      expect(d.watcherManager.quiesceAll).not.toHaveBeenCalled();
-      expect(daemon.operationStatus()).toBe("open");
-      release();
-      await bulk;
-    },
-  );
+  it.each([
+    "add-project",
+    "ensure-project",
+    "index-project",
+    "index-pending",
+    "fts-build",
+  ])("defers active %s before runtime/watcher/read admission", async (name) => {
+    const { daemon, d } = fixture();
+    let release!: () => void;
+    const bulk = d.operations.runShared(
+      name,
+      undefined,
+      () => new Promise<void>((resolve) => (release = resolve)),
+    );
+    await expect(daemon.runBoundedMaintenance()).resolves.toMatchObject({
+      status: "skipped",
+      reason: expect.stringContaining("indexing is active"),
+    });
+    expect(prepareBoundedMaintenanceRuntime).not.toHaveBeenCalled();
+    expect(d.watcherManager.quiesceAll).not.toHaveBeenCalled();
+    expect(daemon.operationStatus()).toBe("open");
+    release();
+    await bulk;
+  });
 
   it("rechecks indexing after runtime preparation yields", async () => {
     const { daemon, d } = fixture();

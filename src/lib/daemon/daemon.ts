@@ -198,6 +198,19 @@ interface DaemonResourceGeneration {
   readonly mlx: "owned" | "adopted" | "cpu";
 }
 
+const BULK_INDEX_OPERATIONS = [
+  "add-project",
+  "ensure-project",
+  "index-project",
+  "index-pending",
+];
+// Maintenance also waits out a one-time FTS build: it can run for minutes, and
+// entering an exclusive window behind it would hold every watcher paused.
+const MAINTENANCE_DEFERRING_OPERATIONS = [
+  ...BULK_INDEX_OPERATIONS,
+  "fts-build",
+];
+
 export class Daemon {
   private readonly processors = new Map<string, ProjectBatchProcessor>();
   private lastResourceSnapshot: ResourceSnapshot | null = null;
@@ -1062,6 +1075,36 @@ export class Daemon {
     };
   }
 
+  /**
+   * Explicit one-time FTS build for a store that has none (`gmax repair
+   * --fts`); see VectorDB.buildMissingFTSIndex. Refused until every project
+   * has finished indexing, so the index covers the whole corpus it was asked
+   * for and never races a bulk sync.
+   */
+  async buildMissingFTSIndex(): Promise<{
+    ok: boolean;
+    status?: "built" | "exists";
+    elapsedMs?: number;
+    error?: string;
+  }> {
+    const db = this.vectorDb;
+    if (!db || !this.ready || this.pausedReason !== null)
+      return { ok: false, error: "daemon resources not ready" };
+    const indexing = this.operations
+      .activeOperationNames()
+      .filter((name) => BULK_INDEX_OPERATIONS.includes(name));
+    const pending = listProjects().filter((p) => p.status === "pending");
+    if (indexing.length > 0 || pending.length > 0)
+      return {
+        ok: false,
+        error: `projects are still being indexed (${pending.length} pending); retry when they finish`,
+      };
+    return this.runSharedOperation("fts-build", undefined, async () => ({
+      ok: true,
+      ...(await db.buildMissingFTSIndex()),
+    }));
+  }
+
   versionCleanupStatus(): VersionCleanupResult | null {
     return this.vectorDb?.versionCleanupStatus() ?? null;
   }
@@ -1153,14 +1196,7 @@ export class Daemon {
         (this.versionCleanupStatus()?.eligibleVersionsRemaining ?? 1) > 0 ||
         this.operations
           .activeOperationNames()
-          .some((name) =>
-            [
-              "add-project",
-              "ensure-project",
-              "index-project",
-              "index-pending",
-            ].includes(name),
-          )
+          .some((name) => MAINTENANCE_DEFERRING_OPERATIONS.includes(name))
       )
         return;
       // runBoundedMaintenance records outcomes. One invocation per cadence;
@@ -1219,17 +1255,10 @@ export class Daemon {
     const bulkActive = () =>
       this.operations
         .activeOperationNames()
-        .some((name) =>
-          [
-            "add-project",
-            "ensure-project",
-            "index-project",
-            "index-pending",
-          ].includes(name),
-        );
+        .some((name) => MAINTENANCE_DEFERRING_OPERATIONS.includes(name));
     const deferred = () =>
       skippedCompaction(
-        "project indexing is active; deleted-row cleanup deferred without closing reads",
+        "project or full-text indexing is active; deleted-row cleanup deferred without closing reads",
       );
     if (bulkActive()) return deferred();
     const deadline = AbortSignal.timeout(90_000);
@@ -1339,18 +1368,11 @@ export class Daemon {
     const bulkIndexingActive = () =>
       this.operations
         .activeOperationNames()
-        .some((name) =>
-          [
-            "add-project",
-            "ensure-project",
-            "index-project",
-            "index-pending",
-          ].includes(name),
-        );
+        .some((name) => MAINTENANCE_DEFERRING_OPERATIONS.includes(name));
     const deferForIndexing = () => {
       this.cleanupRetrySoon = true;
       return skippedCompaction(
-        "project indexing is active; version cleanup deferred without closing reads",
+        "project or full-text indexing is active; version cleanup deferred without closing reads",
       );
     };
     if (bulkIndexingActive()) return deferForIndexing();

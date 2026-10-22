@@ -150,6 +150,7 @@ export async function handleCommand(
             searchDiagnostics: 1,
             existingIndexOnlySearch: 1,
             perFileSearch: 1,
+            ftsBuild: 1,
             // `watch`/`unwatch` accept holder/pid/ttlMs. A daemon without this
             // treats `unwatch` as unwatch-for-everyone, so clients releasing a
             // single lease must check it first.
@@ -203,6 +204,10 @@ export async function handleCommand(
       case "optimize":
         // Keeps compaction single-writer: see Daemon.runOptimize.
         return await daemon.runOptimize();
+
+      case "fts-build":
+        // Builds only a missing FTS index; see Daemon.buildMissingFTSIndex.
+        return await daemon.buildMissingFTSIndex();
 
       case "project-stats": {
         const root = String(cmd.root || "");

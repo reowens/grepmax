@@ -121,6 +121,7 @@ describe("Daemon readiness gate (IPC)", () => {
       searchDiagnostics: 1,
       existingIndexOnlySearch: 1,
       perFileSearch: 1,
+      ftsBuild: 1,
       watchLeases: 1,
     });
   });

@@ -13,12 +13,37 @@ import { gracefulExit } from "../lib/utils/exit";
 import { listProjects } from "../lib/utils/project-registry";
 
 const REBUILD_PROTOCOL = 1;
+const FTS_BUILD_PROTOCOL = 1;
+
+async function daemonCapabilities(
+  flag: string,
+): Promise<Record<string, unknown> | null> {
+  const running = await ensureDaemonRunning();
+  if (!running) {
+    const undo = autostartDisabledUndo();
+    throw new Error(
+      undo
+        ? `daemon autostart is disabled and ${flag} needs the daemon; re-enable with: ${undo}`
+        : "failed to start the gmax daemon",
+    );
+  }
+  const ping = await sendDaemonCommand({ cmd: "ping" }, { timeoutMs: 10_000 });
+  if (!ping.ok) return null;
+  return ping.capabilities && typeof ping.capabilities === "object"
+    ? (ping.capabilities as Record<string, unknown>)
+    : null;
+}
 
 export const repair = new Command("repair")
   .description("Repair the centralized index (recover from a schema mismatch)")
   .option(
     "--rebuild",
     "Run the guarded exclusive whole-corpus generation rebuild",
+    false,
+  )
+  .option(
+    "--fts",
+    "Build the full-text index once, only if the store has none (daemon only)",
     false,
   )
   .addHelpText(
@@ -34,33 +59,38 @@ store access.
 Examples:
   gmax repair             Show schema status
   gmax repair --rebuild   Rebuild every registered project at configured width
+  gmax repair --fts       Build a missing full-text index (never replaces one)
 `,
   )
-  .action(async (opts: { rebuild: boolean }) => {
+  .action(async (opts: { rebuild: boolean; fts: boolean }) => {
     try {
-      if (opts.rebuild) {
+      if (opts.fts) {
+        if (opts.rebuild)
+          throw new Error("--fts cannot be combined with --rebuild");
         assertStoreMutationAllowed();
-        const running = await ensureDaemonRunning();
-        if (!running) {
-          const undo = autostartDisabledUndo();
+        const capabilities = await daemonCapabilities("--fts");
+        if (capabilities?.ftsBuild !== FTS_BUILD_PROTOCOL) {
           throw new Error(
-            undo
-              ? `daemon autostart is disabled and --rebuild needs the daemon; re-enable with: ${undo}`
-              : "failed to start the gmax daemon",
+            "running daemon does not support the FTS build; restart the gmax daemon and retry",
           );
         }
-        const ping = await sendDaemonCommand(
-          { cmd: "ping" },
-          { timeoutMs: 10_000 },
+        // The daemon finishes the build even if this client stops waiting.
+        const done = await sendDaemonCommand(
+          { cmd: "fts-build" },
+          { timeoutMs: 30 * 60 * 1000 },
         );
-        const capabilities =
-          ping.capabilities && typeof ping.capabilities === "object"
-            ? (ping.capabilities as Record<string, unknown>)
-            : null;
-        if (
-          !ping.ok ||
-          capabilities?.exclusiveGenerationRebuild !== REBUILD_PROTOCOL
-        ) {
+        if (!done.ok) throw new Error(String(done.error ?? "FTS build failed"));
+        console.log(
+          done.status === "exists"
+            ? "Full-text index already present; nothing built."
+            : `Full-text index built in ${(Number(done.elapsedMs ?? 0) / 1000).toFixed(1)}s.`,
+        );
+        return;
+      }
+      if (opts.rebuild) {
+        assertStoreMutationAllowed();
+        const capabilities = await daemonCapabilities("--rebuild");
+        if (capabilities?.exclusiveGenerationRebuild !== REBUILD_PROTOCOL) {
           throw new Error(
             "running daemon does not support guarded rebuild protocol v1; restart the gmax daemon and retry",
           );

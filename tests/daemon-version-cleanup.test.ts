@@ -49,32 +49,35 @@ describe("daemon automatic version cleanup", () => {
     vi.spyOn(d, "assertHeavyOperationAdmission").mockImplementation(() => {});
     return { daemon, d };
   }
-  it.each(["add-project", "ensure-project", "index-project", "index-pending"])(
-    "defers behind %s without closing reads or watchers",
-    async (name) => {
-      const { daemon, d } = fixture();
-      let release!: () => void;
-      const bulk = d.operations.runShared(
-        name,
-        undefined,
-        () => new Promise<void>((resolve) => (release = resolve)),
-      );
-      await expect(daemon.runVersionCleanup()).resolves.toMatchObject({
-        status: "skipped",
-        reason: expect.stringContaining("indexing is active"),
-      });
-      expect(prepareVersionCleanup).not.toHaveBeenCalled();
-      expect(d.watcherManager.pauseAll).not.toHaveBeenCalled();
-      await expect(
-        d.operations.runShared("search", undefined, async () => "found"),
-      ).resolves.toBe("found");
-      expect(daemon.operationStatus()).toBe("open");
-      release();
-      await bulk;
-      await daemon.runVersionCleanup();
-      expect(d.vectorDb.cleanupVersions).toHaveBeenCalledOnce();
-    },
-  );
+  it.each([
+    "add-project",
+    "ensure-project",
+    "index-project",
+    "index-pending",
+    "fts-build",
+  ])("defers behind %s without closing reads or watchers", async (name) => {
+    const { daemon, d } = fixture();
+    let release!: () => void;
+    const bulk = d.operations.runShared(
+      name,
+      undefined,
+      () => new Promise<void>((resolve) => (release = resolve)),
+    );
+    await expect(daemon.runVersionCleanup()).resolves.toMatchObject({
+      status: "skipped",
+      reason: expect.stringContaining("indexing is active"),
+    });
+    expect(prepareVersionCleanup).not.toHaveBeenCalled();
+    expect(d.watcherManager.pauseAll).not.toHaveBeenCalled();
+    await expect(
+      d.operations.runShared("search", undefined, async () => "found"),
+    ).resolves.toBe("found");
+    expect(daemon.operationStatus()).toBe("open");
+    release();
+    await bulk;
+    await daemon.runVersionCleanup();
+    expect(d.vectorDb.cleanupVersions).toHaveBeenCalledOnce();
+  });
   it("rechecks bulk admission after runtime preparation yields", async () => {
     const { daemon, d } = fixture();
     let prepared!: (runtime: { python: string; script: string }) => void;

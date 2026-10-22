@@ -253,6 +253,7 @@ export class VectorDB {
   private maintainedTableVersion: number | null = null;
   private lastMaintenanceMs = 0;
   private ftsIndexEnsured = false;
+  private ftsBuildPromise: Promise<unknown> | null = null;
   /** Only an index owner may create/rebuild shared indexes — see markIndexOwner. */
   private indexOwner = false;
   private lastOptimizeDidWork = false;
@@ -1395,6 +1396,61 @@ export class VectorDB {
       );
     }
     this.ftsIndexEnsured = true;
+  }
+
+  /**
+   * Build the shared FTS index only when none exists — the one index build
+   * allowed under host-safety containment, for a store recreated after the
+   * containment release (where `createFTSIndex` can only adopt). It adds an
+   * index without rewriting data, never drops or replaces one, and makes a
+   * single attempt, so it cannot accumulate the duplicate copies that filled
+   * `_indices`. Only the index owner may call it, and only on request.
+   */
+  async buildMissingFTSIndex(): Promise<{
+    status: "built" | "exists";
+    elapsedMs: number;
+  }> {
+    if (!this.canBuildIndexes())
+      throw new Error("only the index owner may build the FTS index");
+    if (this.ftsBuildPromise)
+      throw new Error("an FTS index build is already running");
+    const run = this.withWriteGate(async () => {
+      const start = Date.now();
+      const table = await this.openExistingTableUnsafe();
+      if (!table) throw new Error("no indexed table to build an FTS index on");
+      const hasFts = async () =>
+        (await table.listIndices()).some(
+          (index) =>
+            index.name === "content_idx" || index.columns.includes("content"),
+        );
+      if (await hasFts()) {
+        this.ftsIndexEnsured = true;
+        return { status: "exists" as const, elapsedMs: Date.now() - start };
+      }
+      if (this.checkDiskPressure(true) !== "ok")
+        throw new Error(
+          "FTS index build needs disk pressure ok (at least the low-disk threshold free)",
+        );
+      try {
+        await table.createIndex("content", {
+          config: lancedb.Index.fts({ withPosition: true }),
+          replace: false,
+        });
+      } catch (error) {
+        // A concurrent owner can only have produced the same single index.
+        if (!(await hasFts())) throw error;
+      }
+      this.ftsIndexEnsured = true;
+      const elapsedMs = Date.now() - start;
+      log("vectordb", `FTS index built once: ${JSON.stringify({ elapsedMs })}`);
+      return { status: "built" as const, elapsedMs };
+    });
+    this.ftsBuildPromise = run;
+    try {
+      return await run;
+    } finally {
+      this.ftsBuildPromise = null;
+    }
   }
 
   async createVectorIndex(
