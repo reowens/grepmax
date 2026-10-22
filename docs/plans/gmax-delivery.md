@@ -1,8 +1,8 @@
 ---
 type: plan
-status: partial
+status: paused
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-22T05:55:47Z
+updated: 2026-10-22T05:58:26Z
 surfaces:
   - store
   - daemon
@@ -20,9 +20,9 @@ parent_plan:
 related_plans:
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "0.26.93 and trusted publishing are delivered. Isolated reduced sampler0d5282c is source-approved; exact-source smoke and six-case diagnostic completed. Sampling/capture work, but off/off p95 differs40.7%, so performance remains unqualified. Original regression open; installed service/settings unchanged."
-next_step: "Before resource-statistics release work, resolve collection-off timing variability using the retained raw worker-stage evidence; do not repeat the same noisy comparison or claim overhead acceptance. No current0.26.93 integration, release, installed enablement or Linux deployment is selected. Preserve the original regression."
-summary: "Reduced resource sampler source and functional diagnostic complete in isolation; performance remains unqualified because controls vary40.7%. Published0.26.93 stays installed. Original regression unresolved; Linux waits for access."
+current_state: "Resource statistics is on hold at the user's request, including further performance investigation, integration and release. Preserve source-approved0d5282c and all inconclusive/original failure evidence. Published0.26.93 remains unchanged. Linux P3 setup is the only other pending requested deliverable, awaiting machine/access and selection."
+next_step: "Do not resume resource-statistics work without user direction. Linux setup remains pending the actual machine/access and user selection: install, verify indexing/search/watch/restart and establish a CPU baseline; GPU/CUDA is optional. Other research is outside the required queue."
+summary: "Resource statistics on hold by user direction. Linux P3 deployment pending machine/access; other enhancements optional. Mac document search, startup repair and trusted publishing delivered."
 ---
 
 # Gmax Delivery Plan
@@ -56,7 +56,7 @@ was implemented. Those proposals lacked a demonstrated user need.
 | Item | Evidence and necessity | Disposition |
 | --- | --- | --- |
 | Daemon startup can stop another Gmax instance's processes | Current 0.26.92 `ProcessManager.killStaleProcesses` finds all same-name daemons/workers, but checks this home's heartbeat/socket and never establishes each target's ownership. With no local daemon, a healthy other-home daemon can be called stale; workers are signalled unconditionally. A prior test incident is recorded in this plan. Exact installed-module simulation reproduces both cases with fake PIDs and zero real signals. This can interrupt indexing or another session. | **Delivered in reviewed 0.26.93 / 56c7806.** Public npm bytes, signed provenance, GitHub release, both installations and live handover are accepted. |
-| CPU/memory/disk history | Explicit user request, implemented in an isolated candidate; source approval exists but the original +41.935 ms p95 regression and control-precision problem remain unresolved. It is absent from the installed release. | **Reduced sampling-only prototype selected October22.** Original regression stays open; no release or installed enablement selected. |
+| CPU/memory/disk history | Explicit user request, implemented in an isolated candidate; source approval exists but the original +41.935 ms p95 regression and control-precision problem remain unresolved. It is absent from the installed release. | **On hold by user direction.** Preserve source-approved0d5282c and inconclusive diagnostic; original regression stays open. No further investigation, integration or release selected. |
 | Linux P3 setup | Explicit user-requested deployment/design work. It requires the actual machine and access. CPU installation/baseline is useful for that deployment, not required to complete the Mac product. | **Pending deployment when the machine is available and the user selects execution.** No dependency on document-search work; GPU purchase/CUDA remain optional. |
 
 The necessary ownership repair must identify the target instance/home and process
@@ -66,7 +66,12 @@ unrelated daemon, an unrelated standalone watcher worker, recycled PID and norma
 same-home handover using simulated discovery/signals or owned isolated processes.
 This audit selects no live process signalling or service restart.
 
-### Reduced resource sampler — October 22, selected
+### Reduced resource sampler — October 22, on hold
+
+**Latest user direction: put this work on hold.** Preserve the isolated prototype
+and all source/review/measurement evidence. Do not resume performance testing,
+integration or release without new direction. The unresolved regression remains
+recorded; it does not block the separately requested Linux deployment.
 
 The user agreed to owning a small recorder that reuses built-in counters and the
 reviewed bounded writer. Telegraf remains an optional independent development
@@ -172,8 +177,8 @@ Raw-stage inspection locates part of the off/off variation inside the worker RPC
 wall spans: processFile p95 is23.660→35.410ms and encodeQuery19.693→29.422ms.
 Native query p95 is3.097→5.640ms. These composite spans do not distinguish host
 probes, scheduling, IPC or worker work; they are observations, not cause attribution.
-Do not rerun the same comparison and hope for a pass. Reproducible collection-off
-controls are the next prerequisite before any overhead claim or release work.
+Do not rerun the same comparison and hope for a pass. If this work is resumed, reproducible collection-off controls are a prerequisite
+before any overhead claim or release work. This is not an active next step.
 
 Smoke evidence:
 `/var/folders/n2/c5kbh3vj7_s4t9_q0xc42z0m0000gn/T/gmax-sampling-measure-EsB8OP`.
@@ -2495,6 +2500,7 @@ parallel omnibus plan.
 
 ## Version History
 
+- **2026-10-22T05:58:26Z** Status: partial → paused — User put resource statistics on hold. Preserve approved0d5282c and all timing/regression evidence; no further investigation or release. Linux deployment separately awaits machine/access; other enhancements optional.
 - **2026-10-22T05:55:47Z** Status: in-session → partial — Reduced sampler0d5282c source-approved; exact smoke and six-case diagnostic complete. Functional cadence/capture pass; off/off p95 varies40.7%, overhead remains unqualified. Original regression open; no release/integration selected.
 - **2026-10-22T05:06:11Z** Started (active → in-session).
 - **2026-10-22T05:06:11Z** Status: partial → active — User agreed to a smaller first resource-history version: reuse reviewed pieces, periodic CPU/memory sampling, bounded local history and timed capture; omit detailed operation tracking and measure overhead in isolation.

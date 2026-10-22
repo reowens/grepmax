@@ -4,7 +4,7 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-22T03:51:24Z
 audience: internal
-summary: Process-ownership repair 56c7806 / 0.26.93 is public, byte/provenance verified and installed on this Mac; trusted-publishing restoration is complete. Document search delivered. Reduced resource sampler0d5282c is source-approved and functionally tested; noisy controls leave overhead unqualified; original regression remains open. Linux pending machine/access.
+summary: Process-ownership repair 56c7806 / 0.26.93 is public, byte/provenance verified and installed on this Mac; trusted-publishing restoration is complete. Document search delivered. Resource statistics is on hold by user direction; preserve approved0d5282c and inconclusive evidence. Linux pending machine/access.
 ---
 
 # Future Sessions
@@ -60,7 +60,9 @@ Only the manually dispatched release workflow is active; no push/PR CI was resto
 
 ## Remaining work
 
-- **Resource statistics:** the user agreed to a thin recorder using existing
+- **Resource statistics — ON HOLD at the user's request:** do not resume
+  investigation, timing, integration or release without new direction. Preserve
+  the prototype and evidence. The user previously agreed to a thin recorder using existing
   counters/writer, with per-operation tracking removed. Isolated prototype
   `0d5282c` fixes both round1 blockers and passes168JS/3Python tests and
   types/build. Retained pools now save periodic worker samples and observe
@@ -70,8 +72,8 @@ Only the manually dispatched release workflow is active; no push/PR CI was resto
   minute sampling and five-second capture work, zero errors/drops, protected
   settings/source unchanged. Off/off p95 differed40.7%, so overhead remains
   unqualified. Raw worker RPC spans also vary; their composite timings do not
-  identify the cause. Resolve reproducibility of collection-off controls before
-  release work; do not rerun the identical comparison hoping for a pass. Evidence
+  identify the cause. If resumed, reproducible collection-off controls are needed
+  before release work. That investigation is also on hold. Evidence
   is recorded in the sole plan. This is not current0.26.93 integration or a
   released collector. Preserve approved477779b, retained479eb23,
   frozen unreleased0.26.91 and failed/control evidence. The original+41.935ms p95
