@@ -51,7 +51,7 @@ describe("release hook does not wait on publication", () => {
     expect(result.status).toBe(0);
     expect(commands).toEqual(["git", "git"]);
     expect(result.stdout).toContain(
-      "publication is an explicit local operation",
+      "publication uses GitHub trusted publishing",
     );
   });
 

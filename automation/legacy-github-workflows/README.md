@@ -32,3 +32,13 @@ that publication path from running. The direct CLI publication of 0.26.86 is the
 current delivery path, not a decision to permanently replace trusted publishing.
 Next session must review the entire setup and user requirements before proposing
 changes; do not assume either zero future CI or reinstatement of the old workflows.
+
+## October 22: restore trusted publication only
+
+The stalled manual npm authentication flow exposed that archiving the release
+workflow had also removed the existing trusted publisher. The selected repair
+adds a new `.github/workflows/release.yml` with an explicit dispatch only. Push/PR
+CI and these six legacy workflow files stay inactive and unchanged. The publisher
+uses the same repository/workflow identity, builds on the hosted runner, and
+requires byte identity with the already qualified archive before npm publication.
+This supersedes the manual-publication instructions above.
