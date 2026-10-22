@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectBatchProcessor } from "../src/lib/index/batch-processor";
+import { KeyedMutex } from "../src/lib/utils/keyed-mutex";
 import { EmbeddingBackendUnavailableError } from "../src/lib/workers/embedding-error";
 import { getWorkerPool } from "../src/lib/workers/pool";
 
@@ -277,6 +278,57 @@ describe("ProjectBatchProcessor", () => {
     expect(processor.pending.size).toBe(0);
     expect(processor.backendRetryAt).toBe(0);
     expect(metaCache.put).toHaveBeenCalled();
+  });
+
+  function queueBehindHeldLock() {
+    const mutex = new KeyedMutex();
+    let releaseHolder!: () => void;
+    const holder = mutex.run(
+      tmpDir,
+      undefined,
+      () => new Promise<void>((resolve) => (releaseHolder = resolve)),
+    );
+    const admitted = vi.fn();
+    const processor = makeProcessor({
+      runOperation: (execute, signal) =>
+        mutex.run(tmpDir, signal, () => {
+          admitted();
+          return execute(signal);
+        }),
+    }) as any;
+    return { processor, admitted, holder, release: () => releaseHolder() };
+  }
+
+  // indexPendingProject holds the project lock while it unwatches; a batch
+  // queued behind that lock must not keep close() waiting for it.
+  it("close cancels a batch still queued behind the project lock", async () => {
+    const q = queueBehindHeldLock();
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    q.processor.handleFileEvent("change", filePath);
+    q.processor.startBatch();
+    await expect(q.processor.close()).resolves.toBeUndefined();
+    expect(q.admitted).not.toHaveBeenCalled();
+    expect(spy).not.toHaveBeenCalled();
+    q.release();
+    await q.holder;
+    expect(q.admitted).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("pause cancels a queued batch and keeps its files for resume", async () => {
+    const q = queueBehindHeldLock();
+    q.processor.handleFileEvent("change", filePath);
+    q.processor.startBatch();
+    await expect(q.processor.pause()).resolves.toBeUndefined();
+    expect(q.admitted).not.toHaveBeenCalled();
+    expect(q.processor.pending.has(filePath)).toBe(true);
+    q.release();
+    await q.holder;
+    q.processor.resume();
+    q.processor.startBatch();
+    await q.processor.activeBatch;
+    expect(q.admitted).toHaveBeenCalledOnce();
+    expect(q.processor.pending.size).toBe(0);
   });
 
   it("logs shutdown admission cancellation without a failure stack", async () => {

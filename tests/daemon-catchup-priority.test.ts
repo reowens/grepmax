@@ -95,6 +95,38 @@ describe("live work during a daemon catchup", () => {
     }
   });
 
+  it("lets a live batch queued behind the project lock be cancelled", async () => {
+    const f = fixture();
+    let holder: Promise<unknown> | undefined;
+    let batch: Promise<unknown> | undefined;
+    try {
+      await f.started;
+      let release!: () => void;
+      holder = f.daemon.withProjectLock(
+        f.root,
+        undefined,
+        () => new Promise<void>((resolve) => (release = resolve)),
+      );
+      const ac = new AbortController();
+      const apply = vi.fn(async () => {});
+      batch = f.manager.deps.runProjectOperation(
+        f.root,
+        "watch-batch",
+        ac.signal,
+        apply,
+      );
+      ac.abort();
+      await expect(batch).rejects.toMatchObject({ name: "AbortError" });
+      release();
+      await holder;
+      expect(apply).not.toHaveBeenCalled();
+    } finally {
+      await f.cleanup();
+      await holder;
+      await batch?.catch(() => {});
+    }
+  });
+
   it("still tracks and drains catchup before lifecycle closure", async () => {
     const f = fixture();
     try {

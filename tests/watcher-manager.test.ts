@@ -19,6 +19,7 @@ vi.mock("../src/lib/utils/project-registry", () => ({
 import { WatcherManager } from "../src/lib/daemon/watcher-manager";
 import { ProjectBatchProcessor } from "../src/lib/index/batch-processor";
 import * as fileUtils from "../src/lib/utils/file-utils";
+import { KeyedMutex } from "../src/lib/utils/keyed-mutex";
 import { registerWatcher } from "../src/lib/utils/watcher-store";
 
 describe("WatcherManager.unwatchProject", () => {
@@ -147,6 +148,53 @@ describe("WatcherManager.unwatchProject", () => {
         cleanup: 1,
         oldestLiveEditAgeMs: null,
       });
+    } finally {
+      await wm.unwatchProject(root);
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  // indexPendingProject unwatches while it holds the project lock. A live
+  // batch already queued for that lock must be cancelled, not awaited.
+  it("unwatches under the project lock while a live batch waits for it", async () => {
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), "gmax-manager-queued-batch-"),
+    );
+    const source = path.join(root, "source.ts");
+    await fs.writeFile(source, "export const value = 1;\n");
+    const watcher = await import("@parcel/watcher");
+    vi.mocked(watcher.subscribe)
+      .mockClear()
+      .mockImplementation(async () => ({ unsubscribe: vi.fn(async () => {}) }));
+    const mutex = new KeyedMutex();
+    const admitted = vi.fn();
+    const dependencies = {
+      ...deps(),
+      getVectorDb: () => ({ diskPressure: "ok" }),
+      getMetaCache: () => ({ get: vi.fn() }),
+      runProjectOperation: (
+        projectRoot: string,
+        _name: string,
+        signal: AbortSignal | undefined,
+        fn: (signal: AbortSignal) => Promise<unknown>,
+      ) =>
+        mutex.run(projectRoot, signal, () => {
+          admitted();
+          return fn(signal ?? new AbortController().signal);
+        }),
+    } as any;
+    const wm = new WatcherManager(dependencies);
+    vi.spyOn(wm as any, "runCatchup").mockResolvedValue(undefined);
+    try {
+      await wm.watchProject(root, { catchup: false });
+      const processor = dependencies.processors.get(root) as any;
+      await mutex.run(root, undefined, async () => {
+        processor.handleFileEvent("change", source);
+        processor.startBatch();
+        await wm.unwatchProject(root);
+      });
+      expect(admitted).not.toHaveBeenCalled();
+      expect(dependencies.processors.has(root)).toBe(false);
     } finally {
       await wm.unwatchProject(root);
       await fs.rm(root, { recursive: true, force: true });

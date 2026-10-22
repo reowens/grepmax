@@ -281,10 +281,10 @@ export class WatcherManager {
             lastHeartbeat: Date.now(),
           });
         },
-        runOperation: (fn) =>
+        runOperation: (fn, signal) =>
           this.deps.runProjectOperation
-            ? this.deps.runProjectOperation(root, "watch-batch", undefined, fn)
-            : fn(new AbortController().signal),
+            ? this.deps.runProjectOperation(root, "watch-batch", signal, fn)
+            : fn(signal),
       });
 
       if (!ownsLifecycle()) {

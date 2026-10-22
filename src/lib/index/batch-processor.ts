@@ -38,7 +38,11 @@ export interface BatchProcessorOptions {
   onPolicyChange?: () => void;
   onTerminalFailure?: (absPath: string) => void;
   onPathSuccess?: (absPath: string) => void;
-  runOperation?: (fn: (signal: AbortSignal) => Promise<void>) => Promise<void>;
+  /** `signal` aborts on close/pause, including while waiting for admission. */
+  runOperation?: (
+    fn: (signal: AbortSignal) => Promise<void>,
+    signal: AbortSignal,
+  ) => Promise<void>;
   concurrency?: number;
 }
 
@@ -93,6 +97,9 @@ export class ProjectBatchProcessor {
   private closed = false;
   private paused = false;
   private currentBatchAc: AbortController | null = null;
+  // Lets close/pause cancel a batch still queued behind the project lock;
+  // a caller holding that lock while it closes would otherwise wait forever.
+  private batchStartAc: AbortController | null = null;
   private lastCorruptionLogMs = 0;
   private backendFailures = 0;
   private backendRetryAt = 0;
@@ -294,6 +301,7 @@ export class ProjectBatchProcessor {
 
   async close(): Promise<void> {
     this.closed = true;
+    this.batchStartAc?.abort();
     this.currentBatchAc?.abort();
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
@@ -314,6 +322,7 @@ export class ProjectBatchProcessor {
    */
   async pause(): Promise<void> {
     this.paused = true;
+    this.batchStartAc?.abort();
     this.currentBatchAc?.abort();
     if (this.activeBatch) {
       await this.activeBatch;
@@ -376,10 +385,12 @@ export class ProjectBatchProcessor {
   private startBatch(): void {
     if (this.activeBatch || this.paused) return;
     const execute = (signal: AbortSignal) => this.processBatch(signal);
+    const startAc = new AbortController();
+    this.batchStartAc = startAc;
     const run = (
       this.runOperation
-        ? this.runOperation(execute)
-        : execute(new AbortController().signal)
+        ? this.runOperation(execute, startAc.signal)
+        : execute(startAc.signal)
     ).catch((err) => {
       if ((err as Error)?.name === "AbortError")
         log(this.wtag, "Batch cancelled during shutdown");
@@ -388,6 +399,7 @@ export class ProjectBatchProcessor {
     this.activeBatch = run;
     void run.finally(() => {
       if (this.activeBatch === run) this.activeBatch = null;
+      if (this.batchStartAc === startAc) this.batchStartAc = null;
     });
   }
 
