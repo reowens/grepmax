@@ -359,6 +359,70 @@ describe("ProjectBatchProcessor", () => {
     expect(processor.progress.pendingFiles).toBe(1);
   });
 
+  it("pause holds events without starting a batch, then resume indexes them", async () => {
+    vi.useFakeTimers();
+    const processor = makeProcessor();
+    await processor.pause();
+    processor.handleFileEvent("change", filePath);
+    expect((processor as any).debounceTimer).toBeNull();
+    (processor as any).startBatch();
+    expect((processor as any).activeBatch).toBeNull();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(pool.processFile).not.toHaveBeenCalled();
+    expect(processor.progress.pendingFiles).toBe(1);
+
+    processor.resume();
+    await vi.advanceTimersByTimeAsync(2_000);
+    vi.useRealTimers();
+    await vi.waitFor(() => expect(pool.processFile).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(meta.has(filePath)).toBe(true));
+  });
+
+  it("keeps a corruption backoff armed before a pause through resume", async () => {
+    meta.set(filePath, { hash: "old", mtimeMs: 1, size: 1 });
+    const corrupt = async () => {
+      throw new Error("Not found: deadbeef.lance fragment");
+    };
+    vectorDb.deletePaths.mockImplementation(corrupt);
+    vectorDb.deletePathsExcludingIds.mockImplementation(corrupt);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const processor = makeProcessor() as any;
+    processor.handleFileEvent("change", filePath);
+    processor.startBatch();
+    await processor.activeBatch;
+    const writes = () =>
+      vectorDb.deletePaths.mock.calls.length +
+      vectorDb.deletePathsExcludingIds.mock.calls.length;
+    expect(writes()).toBe(1);
+    const dueMs = processor.debounceDueMs;
+    expect(dueMs - Date.now()).toBeGreaterThan(29 * 60_000);
+
+    await processor.pause();
+    processor.resume();
+
+    expect(processor.debounceDueMs).toBe(dueMs);
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    expect(processor.activeBatch).toBeNull();
+    expect(writes()).toBe(1);
+  });
+
+  it("defers an earlier timer to a backend backoff set while paused", async () => {
+    vi.useFakeTimers();
+    const processor = makeProcessor() as any;
+    processor.handleFileEvent("change", filePath);
+    const earlyDue = processor.debounceDueMs;
+    await processor.pause();
+    // The interrupted batch's settle path sets the backoff while paused.
+    processor.backendRetryAt = Date.now() + 5_000;
+    processor.resume();
+    expect(processor.debounceDueMs).toBeGreaterThan(earlyDue);
+    expect(processor.debounceDueMs).toBeGreaterThanOrEqual(
+      processor.backendRetryAt,
+    );
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(pool.processFile).not.toHaveBeenCalled();
+  });
+
   it("runs up to the configured concurrency and dispatches the next file on settlement", async () => {
     const files = makeFiles(12);
     let active = 0;

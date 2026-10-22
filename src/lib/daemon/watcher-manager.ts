@@ -120,6 +120,10 @@ export class WatcherManager {
   private readonly degradedRoots = new Set<string>();
   private readonly terminalFailures = new Map<string, Set<string>>();
   private readonly watchLifecycles = new Map<string, AbortController>();
+  /** Store writes held for prune-only cleanup; subscriptions stay attached. */
+  private paused = false;
+  /** Roots whose catchup was interrupted or requested while paused. */
+  private readonly pausedCatchups = new Set<string>();
 
   private readonly recoveryStates = new Map<string, WatcherRecoveryTracker>();
 
@@ -287,6 +291,7 @@ export class WatcherManager {
         await processor.close();
         return;
       }
+      if (this.paused) void processor.pause();
       this.deps.processors.set(root, processor);
 
       // Subscribe with @parcel/watcher — native backend, no polling.
@@ -924,6 +929,12 @@ export class WatcherManager {
     root: string,
     processor: ProjectBatchProcessor,
   ): Promise<void> {
+    // Every catchup trigger (startup, poll, recovery, gap, policy) lands here.
+    // A paused manager remembers the root and runs one scan on resume.
+    if (this.paused) {
+      this.pausedCatchups.add(root);
+      return Promise.resolve();
+    }
     const existing = this.catchups.get(root);
     if (existing) {
       existing.dirty = true;
@@ -1007,6 +1018,7 @@ export class WatcherManager {
     }
     this.cancelDeferredCatchup(root);
     this.pendingOps.delete(`recover:${root}`);
+    this.pausedCatchups.delete(root);
 
     const processor = this.deps.processors.get(root);
     this.deps.processors.delete(root);
@@ -1049,6 +1061,49 @@ export class WatcherManager {
     return roots;
   }
 
+  get isPaused(): boolean {
+    return this.paused;
+  }
+
+  /**
+   * Hold every watched project's store writes without detaching it, for a
+   * prune-only cleanup. Native events keep queuing in each processor, so
+   * `resumePaused()` needs no full catchup walk — only roots whose scan was
+   * interrupted or requested meanwhile are scanned again.
+   */
+  async pauseAll(): Promise<string[]> {
+    this.paused = true;
+    const active = [...this.catchups.entries()];
+    for (const [root, catchup] of active) {
+      this.pausedCatchups.add(root);
+      catchup.controller.abort();
+    }
+    await Promise.allSettled(active.map(([, catchup]) => catchup.promise));
+    const roots = [...this.deps.processors.keys()];
+    await Promise.all(
+      [...this.deps.processors.values()].map((processor) => processor.pause()),
+    );
+    return roots;
+  }
+
+  resumePaused(): void {
+    if (!this.paused) return;
+    this.paused = false;
+    const rescans = [...this.pausedCatchups];
+    this.pausedCatchups.clear();
+    for (const processor of this.deps.processors.values()) processor.resume();
+    for (const root of rescans) {
+      const processor = this.deps.processors.get(root);
+      if (!processor) continue;
+      this.runCatchup(root, processor).catch((err) => {
+        console.error(
+          `[daemon:${path.basename(root)}] Catchup scan failed:`,
+          err,
+        );
+      });
+    }
+  }
+
   async resumeAll(
     roots: readonly string[],
     options: { catchup?: boolean } = {},
@@ -1070,6 +1125,8 @@ export class WatcherManager {
    * worker teardown.
    */
   async teardown(): Promise<void> {
+    this.paused = false;
+    this.pausedCatchups.clear();
     for (const lifecycle of this.watchLifecycles.values()) lifecycle.abort();
     this.watchLifecycles.clear();
     for (const interval of this.pollIntervals.values()) {

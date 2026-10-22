@@ -91,6 +91,7 @@ export class ProjectBatchProcessor {
   private activeBatch: Promise<void> | null = null;
   private processing = false;
   private closed = false;
+  private paused = false;
   private currentBatchAc: AbortController | null = null;
   private lastCorruptionLogMs = 0;
   private backendFailures = 0;
@@ -304,7 +305,38 @@ export class ProjectBatchProcessor {
     }
   }
 
+  /**
+   * Stop starting batches and let the current one settle, without detaching.
+   * Events keep queuing in `pending`; an interrupted batch requeues its
+   * unfinished files exactly as on close. A pending timer is kept, since it
+   * may carry a corruption or disk-pressure backoff; it starts nothing while
+   * paused. `resume()` schedules the backlog if no timer remains.
+   */
+  async pause(): Promise<void> {
+    this.paused = true;
+    this.currentBatchAc?.abort();
+    if (this.activeBatch) {
+      await this.activeBatch;
+    }
+  }
+
+  resume(): void {
+    if (!this.paused) return;
+    this.paused = false;
+    // A backend backoff set while paused could not move an earlier timer
+    // (scheduleBatch was a no-op); re-arm it so the backoff is honoured.
+    if (this.debounceTimer && this.debounceDueMs < this.backendRetryAt) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+      this.debounceDueMs = 0;
+    }
+    // A timer that outlived the pause still owns the next start and its delay.
+    if (!this.closed && this.pending.size > 0 && !this.debounceTimer)
+      this.schedulePendingBatch();
+  }
+
   private scheduleBatch(delayMs = DEBOUNCE_MS): void {
+    if (this.paused) return;
     delayMs = Math.max(delayMs, this.backendRetryAt - Date.now());
     const dueMs = Date.now() + Math.max(0, delayMs);
     if (
@@ -342,7 +374,7 @@ export class ProjectBatchProcessor {
   }
 
   private startBatch(): void {
-    if (this.activeBatch) return;
+    if (this.activeBatch || this.paused) return;
     const execute = (signal: AbortSignal) => this.processBatch(signal);
     const run = (
       this.runOperation
@@ -360,7 +392,13 @@ export class ProjectBatchProcessor {
   }
 
   private async processBatch(operationSignal: AbortSignal): Promise<void> {
-    if (this.closed || this.processing || this.pending.size === 0) return;
+    if (
+      this.closed ||
+      this.paused ||
+      this.processing ||
+      this.pending.size === 0
+    )
+      return;
 
     const diskPressure = this.vectorDb.checkDiskPressure();
     if (diskPressure === "critical") {

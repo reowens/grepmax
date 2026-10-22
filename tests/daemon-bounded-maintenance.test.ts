@@ -41,6 +41,14 @@ function fixture() {
   };
   d.processors.set("/fixture", {});
   d.watcherManager = {
+    isPaused: false,
+    pauseAll: vi.fn(async () => {
+      d.watcherManager.isPaused = true;
+      return ["/fixture"];
+    }),
+    resumePaused: vi.fn(() => {
+      d.watcherManager.isPaused = false;
+    }),
     quiesceAll: vi.fn(async () => {}),
     resumeAll: vi.fn(async () => {}),
     catchupAll: vi.fn(async () => {}),

@@ -1359,20 +1359,15 @@ export class Daemon {
     const runtime = await prepareVersionCleanup(PATHS.lancedbDir, deadline);
     // Runtime setup yields: a bulk index can start before exclusive intent.
     if (bulkIndexingActive()) return deferForIndexing();
-    let roots: string[] = [];
     try {
       return await this.operations.runExclusive(
         "version-cleanup",
         async () => {
           deadline.throwIfAborted();
           this.assertHeavyOperationAdmission("version-cleanup");
-          roots = [
-            ...new Set([
-              ...this.processors.keys(),
-              ...this.subscriptions.keys(),
-            ]),
-          ];
-          await this.watcherManager.quiesceAll();
+          // Hold watcher writes but keep subscriptions attached: detaching
+          // forced a full catchup walk of every watched root on each run.
+          await this.watcherManager.pauseAll();
         },
         async (signal) => {
           this.assertHeavyOperationAdmission("version-cleanup");
@@ -1408,14 +1403,11 @@ export class Daemon {
         },
       );
     } finally {
-      if (
-        !this.shuttingDown &&
-        this.ready &&
-        this.pausedReason === null &&
-        roots.length
-      ) {
-        await this.watcherManager.resumeAll(roots, { catchup: false });
-        await this.watcherManager.catchupAll(roots);
+      if (this.watcherManager.isPaused) {
+        if (!this.shuttingDown && this.ready && this.pausedReason === null)
+          this.watcherManager.resumePaused();
+        // A service paused meanwhile keeps the detached state it had before.
+        else if (!this.shuttingDown) await this.watcherManager.quiesceAll();
       }
     }
   }

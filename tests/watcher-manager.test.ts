@@ -796,6 +796,65 @@ describe("WatcherManager.unwatchProject", () => {
     await wm.unwatchProject(root);
   });
 
+  it("pauses writes without detaching and rescans only interrupted or requested roots", async () => {
+    const dependencies = deps();
+    const processor = (name: string) => ({
+      name,
+      pause: vi.fn(async () => {}),
+      resume: vi.fn(),
+      close: vi.fn(async () => {}),
+    });
+    const busy = processor("busy");
+    const idle = processor("idle");
+    const quiet = processor("quiet");
+    dependencies.processors.set("/p/busy", busy);
+    dependencies.processors.set("/p/idle", idle);
+    dependencies.processors.set("/p/quiet", quiet);
+    const subscription = { unsubscribe: vi.fn(async () => {}) };
+    dependencies.subscriptions.set("/p/busy", subscription);
+    const wm = new WatcherManager(dependencies) as any;
+    let scanAborted = false;
+    const scan = vi.spyOn(wm, "catchupScan").mockImplementation(
+      async (_root: unknown, _processor: unknown, signal: any) =>
+        new Promise<boolean>((resolve) => {
+          if (signal.aborted) return resolve(false);
+          signal.addEventListener("abort", () => {
+            scanAborted = true;
+            resolve(false);
+          });
+        }),
+    );
+    void wm.runCatchup("/p/busy", busy);
+    await Promise.resolve();
+
+    const roots = await wm.pauseAll();
+
+    expect(new Set(roots)).toEqual(new Set(["/p/busy", "/p/idle", "/p/quiet"]));
+    expect(scanAborted).toBe(true);
+    for (const p of [busy, idle, quiet]) {
+      expect(p.pause).toHaveBeenCalledOnce();
+      expect(p.close).not.toHaveBeenCalled();
+    }
+    expect(subscription.unsubscribe).not.toHaveBeenCalled();
+    expect(dependencies.subscriptions.size).toBe(1);
+    expect(dependencies.processors.size).toBe(3);
+
+    // A gap or poll scan requested while paused waits for resume.
+    await wm.runCatchup("/p/idle", idle);
+    expect(scan).toHaveBeenCalledOnce();
+
+    scan.mockClear();
+    scan.mockImplementation(async () => true);
+    wm.resumePaused();
+    expect(wm.isPaused).toBe(false);
+    for (const p of [busy, idle, quiet])
+      expect(p.resume).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(scan).toHaveBeenCalledTimes(2));
+    expect(new Set(scan.mock.calls.map(([root]) => root))).toEqual(
+      new Set(["/p/busy", "/p/idle"]),
+    );
+  });
+
   it("quiesces every processor and returns a resumable root snapshot", async () => {
     const dependencies = deps();
     const first = { close: vi.fn(async () => {}) };

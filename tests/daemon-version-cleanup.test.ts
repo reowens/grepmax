@@ -31,11 +31,21 @@ describe("daemon automatic version cleanup", () => {
       versionCleanupStatus: () => completed,
     };
     d.processors.set("/fixture", {});
-    d.watcherManager = {
-      quiesceAll: vi.fn(async () => ["/fixture"]),
-      resumeAll: vi.fn(async () => {}),
-      catchupAll: vi.fn(async () => {}),
+    const watcherManager = {
+      isPaused: false,
+      pauseAll: vi.fn(async () => {
+        watcherManager.isPaused = true;
+        return ["/fixture"];
+      }),
+      resumePaused: vi.fn(() => {
+        watcherManager.isPaused = false;
+      }),
+      quiesceAll: vi.fn(async () => {
+        watcherManager.isPaused = false;
+        return ["/fixture"];
+      }),
     };
+    d.watcherManager = watcherManager;
     vi.spyOn(d, "assertHeavyOperationAdmission").mockImplementation(() => {});
     return { daemon, d };
   }
@@ -54,7 +64,7 @@ describe("daemon automatic version cleanup", () => {
         reason: expect.stringContaining("indexing is active"),
       });
       expect(prepareVersionCleanup).not.toHaveBeenCalled();
-      expect(d.watcherManager.quiesceAll).not.toHaveBeenCalled();
+      expect(d.watcherManager.pauseAll).not.toHaveBeenCalled();
       await expect(
         d.operations.runShared("search", undefined, async () => "found"),
       ).resolves.toBe("found");
@@ -80,7 +90,7 @@ describe("daemon automatic version cleanup", () => {
     );
     prepared({ python: "fixture", script: "prune.py" });
     await expect(cleanup).resolves.toMatchObject({ status: "skipped" });
-    expect(d.watcherManager.quiesceAll).not.toHaveBeenCalled();
+    expect(d.watcherManager.pauseAll).not.toHaveBeenCalled();
     expect(daemon.operationStatus()).toBe("open");
     release();
     await bulk;
@@ -103,7 +113,7 @@ describe("daemon automatic version cleanup", () => {
     expect(d.vectorDb.cleanupVersions).toHaveBeenCalledOnce();
     clearInterval(d.cleanupInterval);
   });
-  it("runs despite continuous activity and status polling, then catches up watched edits", async () => {
+  it("runs despite continuous activity and status polling, then resumes watched edits without detaching", async () => {
     vi.useFakeTimers();
     const { daemon, d } = fixture();
     d.startVersionCleanupLoop();
@@ -113,10 +123,9 @@ describe("daemon automatic version cleanup", () => {
     }
     expect(d.vectorDb.cleanupVersions).toHaveBeenCalledOnce();
     expect(prepareVersionCleanup).toHaveBeenCalledOnce();
-    expect(d.watcherManager.resumeAll).toHaveBeenCalledWith(["/fixture"], {
-      catchup: false,
-    });
-    expect(d.watcherManager.catchupAll).toHaveBeenCalledWith(["/fixture"]);
+    expect(d.watcherManager.pauseAll).toHaveBeenCalledOnce();
+    expect(d.watcherManager.resumePaused).toHaveBeenCalledOnce();
+    expect(d.watcherManager.quiesceAll).not.toHaveBeenCalled();
     expect(daemon.operationStatus()).toBe("open");
     clearInterval(d.cleanupInterval);
   });
@@ -124,9 +133,20 @@ describe("daemon automatic version cleanup", () => {
     const { daemon, d } = fixture();
     d.vectorDb.cleanupVersions.mockRejectedValue(new Error("prune failed"));
     await expect(daemon.runVersionCleanup()).rejects.toThrow("prune failed");
-    expect(d.watcherManager.resumeAll).toHaveBeenCalledOnce();
-    expect(d.watcherManager.catchupAll).toHaveBeenCalledOnce();
+    expect(d.watcherManager.resumePaused).toHaveBeenCalledOnce();
+    expect(d.watcherManager.isPaused).toBe(false);
     expect(daemon.operationStatus()).toBe("open");
+  });
+  it("detaches paused watchers when the service pauses during cleanup", async () => {
+    const { daemon, d } = fixture();
+    d.vectorDb.cleanupVersions.mockImplementationOnce(async () => {
+      d.pausedReason = "critical pressure";
+      return completed;
+    });
+    await daemon.runVersionCleanup();
+    expect(d.watcherManager.resumePaused).not.toHaveBeenCalled();
+    expect(d.watcherManager.quiesceAll).toHaveBeenCalledOnce();
+    expect(d.watcherManager.isPaused).toBe(false);
   });
   it("does not pause watchers for refused runtime setup", async () => {
     const { daemon, d } = fixture();
@@ -134,7 +154,7 @@ describe("daemon automatic version cleanup", () => {
       new Error("setup refused"),
     );
     await expect(daemon.runVersionCleanup()).rejects.toThrow("setup refused");
-    expect(d.watcherManager.quiesceAll).not.toHaveBeenCalled();
+    expect(d.watcherManager.pauseAll).not.toHaveBeenCalled();
     expect(daemon.operationStatus()).toBe("open");
   });
   it("coalesces simultaneous manual and periodic requests", async () => {
