@@ -119,13 +119,28 @@ jobs:
           mkdir "$RUNNER_TEMP/rebuilt"
           npm pack --ignore-scripts --json --pack-destination "$RUNNER_TEMP/rebuilt" > "$RUNNER_TEMP/pack.json"
           python3 - <<'PY'
-          import hashlib, json, os, pathlib
+          import hashlib, json, os, pathlib, tarfile
           root = pathlib.Path(os.environ['RUNNER_TEMP'])
           metadata = json.loads((root / 'pack.json').read_text())[0]
           assert metadata['filename'] == f"grepmax-{os.environ['RELEASE_VERSION']}.tgz"
           archive = root / 'rebuilt' / metadata['filename']
           actual = hashlib.sha256(archive.read_bytes()).hexdigest()
-          assert actual == os.environ['ARCHIVE_SHA256'], f'Hosted archive differs from approved bytes: {actual}'
+          if actual != os.environ['ARCHIVE_SHA256']:
+              def entries(path):
+                  with tarfile.open(path) as package:
+                      return [(item.name, item.type.decode('ascii'), item.mode, item.uid, item.gid, item.mtime,
+                               hashlib.sha256(package.extractfile(item).read()).hexdigest() if item.isfile() else item.linkname)
+                              for item in package]
+              approved_entries = entries(root / 'approved' / metadata['filename'])
+              rebuilt_entries = entries(archive)
+              approved_by_name = {item[0]: item[1:] for item in approved_entries}
+              rebuilt_by_name = {item[0]: item[1:] for item in rebuilt_entries}
+              for name in sorted(approved_by_name.keys() | rebuilt_by_name.keys()):
+                  before, after = approved_by_name.get(name), rebuilt_by_name.get(name)
+                  if before != after:
+                      print(json.dumps({'path': name, 'approved': before, 'rebuilt': after}), flush=True)
+              print(f'Archive entry order matches: {[item[0] for item in approved_entries] == [item[0] for item in rebuilt_entries]}', flush=True)
+              raise AssertionError(f'Hosted archive differs from approved bytes: {actual}')
           print(f'Hosted build exactly matches approved archive: {actual}', flush=True)
           PY
 
