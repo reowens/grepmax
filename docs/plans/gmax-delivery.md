@@ -1,8 +1,8 @@
 ---
 type: plan
-status: in-session
+status: partial
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-22T05:06:11Z
+updated: 2026-10-22T05:55:47Z
 surfaces:
   - store
   - daemon
@@ -20,9 +20,9 @@ parent_plan:
 related_plans:
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "0.26.93 and trusted publishing are delivered. User selected a reduced resource-history variant: periodic process CPU/memory plus bounded local history and capture, with detailed per-operation tracking removed. Work isolated from retained479eb23; original regression remains open. Installed service/settings unchanged."
-next_step: "Wait for parent-model round2 review of0d5282c, then run exact-source --smoke and --measure once with Node22.23.1 in the isolated checkout; retain controls/cadence evidence and reconcile the result. Do not call it released or clear the original regression. No model load, installed-service change or Linux deployment selected."
-summary: "Implementing the agreed smaller resource sampler in isolation; published0.26.93 remains installed. Original overhead regression is preserved and unresolved; Linux waits for access."
+current_state: "0.26.93 and trusted publishing are delivered. Isolated reduced sampler0d5282c is source-approved; exact-source smoke and six-case diagnostic completed. Sampling/capture work, but off/off p95 differs40.7%, so performance remains unqualified. Original regression open; installed service/settings unchanged."
+next_step: "Before resource-statistics release work, resolve collection-off timing variability using the retained raw worker-stage evidence; do not repeat the same noisy comparison or claim overhead acceptance. No current0.26.93 integration, release, installed enablement or Linux deployment is selected. Preserve the original regression."
+summary: "Reduced resource sampler source and functional diagnostic complete in isolation; performance remains unqualified because controls vary40.7%. Published0.26.93 stays installed. Original regression unresolved; Linux waits for access."
 ---
 
 # Gmax Delivery Plan
@@ -126,9 +126,10 @@ real host-pressure probes remain active. No production safety override was added
 syntax and diff checks pass. New regressions cover retained CLI/MCP pools,
 intermediate memory spikes, stale grants/disabled-gap counters, delayed flushes,
 private critical-latch/ledger writes and primary quarantine refusal. Parent-model
-round2 review is running; expected report
-`/private/tmp/gmax-resource-sampling-review-v2-20261022.md`. No long measurement has
-run. A fresh exact-source smoke is required before the six-case diagnostic.
+round2 **approved exact source0d5282c**, independently passing142JavaScript tests,
+3Python tests and an async/write-failure fixture. Report:
+`/private/tmp/gmax-resource-sampling-review-v2-20261022.md`. Performance, package,
+release and current0.26.93 integration are explicitly outside that approval.
 
 The committed explicit measurement helper runs one off/off control pair, one
 off/on pair (70seconds per arm, retaining actual minute collection), then a
@@ -138,8 +139,48 @@ uses one owned synthetic worker, disposable Lance stores, the unchanged
 critical-only policy and guarded child handles; no process-group sweep or model
 starts. Every result remains diagnosticOnly/qualified:false: this is one control
 pair, parent/worker self CPU excludes probe-child CPU, and no full release
-acceptance or cause for the original regression can be inferred. Run it after
-review, so reviewer test execution does not compete with the measurement.
+acceptance or cause for the original regression can be inferred.
+
+**Completed after review, exact0d5282c / Node22.23.1:** all three smoke cases
+and all six measurement cases finished within their deadlines. Source/controller
+hashes and protected settings match before/after; private fixture homes were
+removed. Zero models, one owned synthetic worker per case, zero dropped records,
+zero collection errors and zero queued bytes at completion. The on case includes
+one actual measured-phase minute event; capture includes five measured-phase
+five-second events and completes back to off. Neither terminal drain nor the
+capture's initial pre-measurement sample is counted as a timer event.
+
+| Case | p95 wall latency (ms) | Parent + worker CPU (% of one core) | Peak sampled parent RSS (MiB) |
+| --- | ---: | ---: | ---: |
+| Off control A,70s | 50.128 | 14.124 | 357.516 |
+| Off control B,70s | 70.536 | 14.585 | 357.719 |
+| Off treatment,70s | 68.523 | 14.437 | 357.141 |
+| On treatment,70s | 43.579 | 13.749 | 357.422 |
+| Off capture control,30s | 49.670 | 13.497 | 357.641 |
+| Temporary capture,30s | 75.737 | 13.941 | 359.469 |
+
+**Disposition: functional diagnostic completed; overhead is inconclusive.**
+Off/off p95 varies+40.712%, failing both3% resolution and10% raw-pair precision.
+On being faster is not evidence of an improvement. Capture's observed CPU change
+is+0.444 percentage points of one core, but one noisy pair cannot establish its
+incremental cost. RSS is parent-only sampled resident memory, not unique physical
+memory or retained collector overhead; CPU excludes probe children. No full
+idle/model/disk/retention/package qualification ran. Do not clear either the
+original+41.935ms regression or the performance gate.
+
+Raw-stage inspection locates part of the off/off variation inside the worker RPC
+wall spans: processFile p95 is23.660→35.410ms and encodeQuery19.693→29.422ms.
+Native query p95 is3.097→5.640ms. These composite spans do not distinguish host
+probes, scheduling, IPC or worker work; they are observations, not cause attribution.
+Do not rerun the same comparison and hope for a pass. Reproducible collection-off
+controls are the next prerequisite before any overhead claim or release work.
+
+Smoke evidence:
+`/var/folders/n2/c5kbh3vj7_s4t9_q0xc42z0m0000gn/T/gmax-sampling-measure-EsB8OP`.
+Measurement evidence (raw cases, summary, closure and owner binding proof):
+`/var/folders/n2/c5kbh3vj7_s4t9_q0xc42z0m0000gn/T/gmax-sampling-measure-3l1wRI`.
+The isolated source remains clean at0d5282c; current0.26.93 is unchanged and this
+sampler is not shipped.
 
 ### Process-ownership repair — ready plan
 
@@ -2454,6 +2495,7 @@ parallel omnibus plan.
 
 ## Version History
 
+- **2026-10-22T05:55:47Z** Status: in-session → partial — Reduced sampler0d5282c source-approved; exact smoke and six-case diagnostic complete. Functional cadence/capture pass; off/off p95 varies40.7%, overhead remains unqualified. Original regression open; no release/integration selected.
 - **2026-10-22T05:06:11Z** Started (active → in-session).
 - **2026-10-22T05:06:11Z** Status: partial → active — User agreed to a smaller first resource-history version: reuse reviewed pieces, periodic CPU/memory sampling, bounded local history and timed capture; omit detailed operation tracking and measure overhead in isolation.
 - **2026-10-22T03:50:54Z** Status: in-session → partial — 0.26.93 ownership repair published, byte/provenance verified and installed; trusted publishing and verification-only run 39718868523 pass. Repair closed. Resource history stays open/deferred; Linux pending actual machine/access.

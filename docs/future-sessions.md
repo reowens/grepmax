@@ -4,7 +4,7 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-22T03:51:24Z
 audience: internal
-summary: Process-ownership repair 56c7806 / 0.26.93 is public, byte/provenance verified and installed on this Mac; trusted-publishing restoration is complete. Document search delivered. Reduced resource sampler0d5282c fixes both round1 blockers and is under round2 review; original regression remains open. Linux pending machine/access.
+summary: Process-ownership repair 56c7806 / 0.26.93 is public, byte/provenance verified and installed on this Mac; trusted-publishing restoration is complete. Document search delivered. Reduced resource sampler0d5282c is source-approved and functionally tested; noisy controls leave overhead unqualified; original regression remains open. Linux pending machine/access.
 ---
 
 # Future Sessions
@@ -65,11 +65,15 @@ Only the manually dispatched release workflow is active; no push/PR CI was resto
   `0d5282c` fixes both round1 blockers and passes168JS/3Python tests and
   types/build. Retained pools now save periodic worker samples and observe
   preferences; diagnostic latch/ledger persistence is private, with real primary
-  containment still read-only. Parent-model round2 review is running. Historical
-  smokes do not bind this source. After review, run exact-source `--smoke`, then
-  `scripts/resource-sampling-measure.cjs --measure` using Node22.23.1 in
-  `.claude/worktrees/resource-sampling-20261022`. This is not current0.26.93
-  integration or a released collector. Preserve approved477779b, retained479eb23,
+  containment still read-only. Parent-model round2 source review passed142JS/
+  3Python tests. Exact-source smoke and six-case Node22.23.1 diagnostic completed:
+  minute sampling and five-second capture work, zero errors/drops, protected
+  settings/source unchanged. Off/off p95 differed40.7%, so overhead remains
+  unqualified. Raw worker RPC spans also vary; their composite timings do not
+  identify the cause. Resolve reproducibility of collection-off controls before
+  release work; do not rerun the identical comparison hoping for a pass. Evidence
+  is recorded in the sole plan. This is not current0.26.93 integration or a
+  released collector. Preserve approved477779b, retained479eb23,
   frozen unreleased0.26.91 and failed/control evidence. The original+41.935ms p95
   regression stays unresolved; the new diagnostic cannot retroactively clear it.
 - **Linux P3 deployment:** requested, pending the actual machine/access and user
