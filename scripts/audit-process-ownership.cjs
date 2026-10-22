@@ -44,12 +44,15 @@ function load(relative, mocks, processMock) {
   }
   // Exercise the CLI failure sequence with the full compiled Daemon class:
   // a rejected start is always followed by shutdown for partial-start cleanup.
-  for (const kind of ["healthy", "draining", "malformed", "permission"]) {
+  for (const kind of ["healthy", "draining", "malformed", "permission", "late-draining", "late-unknown", "late-malformed"]) {
+    const late = kind.startsWith("late-");
     const PATHS = { globalRoot: "/fixture", daemonPidFile: "/fixture/daemon.pid", daemonDrainingFile: "/fixture/daemon.draining", daemonSocket: "/fixture/daemon.sock", daemonLockFile: "/fixture/daemon.lock" };
     const markers = new Map([[kind === "draining" ? PATHS.daemonDrainingFile : PATHS.daemonPidFile,
       kind === "draining" ? JSON.stringify({ pid: 910001, ts: 1 }) : kind === "malformed" ? "bad-pid" : "910001"],
       [PATHS.daemonSocket, "predecessor-socket"]]);
-    const before = [...markers], mutations = [], probes = [];
+    if (late) markers.clear();
+    let before = [...markers], releases = 0;
+    const mutations = [], probes = [];
     const fakeFs = {
       lstatSync(file) {
         if (kind === "permission") throw Object.assign(Error("denied"), { code: "EACCES" });
@@ -58,13 +61,17 @@ function load(relative, mocks, processMock) {
       },
       readFileSync: file => markers.get(file),
       unlinkSync(file) { mutations.push(["unlink", file]); markers.delete(file); },
-      mkdirSync() { throw Error("Unexpected mkdir"); },
-      writeFileSync() { throw Error("Unexpected write"); },
+      mkdirSync() { assert.ok(late, "Unexpected mkdir"); }, chmodSync() {},
+      writeFileSync(file) { assert.ok(late && file === PATHS.daemonLockFile, "Unexpected control publication"); },
     };
     const processMock = { env: { VITEST: "true" }, pid: 910000,
-      kill(pid, signal) { assert.equal(signal, 0); probes.push(pid); return true; } };
+      kill(pid, signal) {
+        assert.equal(signal, 0); probes.push(pid);
+        if (kind === "late-unknown") throw Object.assign(Error("denied"), { code: "EPERM" });
+        return true;
+      } };
     const client = {
-      isDaemonDraining: () => kind === "draining", waitForDaemonDrain: async () => false,
+      isDaemonDraining: () => kind === "draining" || late, waitForDaemonDrain: async () => false,
       writeDrainingMarker(pid) { mutations.push(["write-drain", pid]); markers.set(PATHS.daemonDrainingFile, JSON.stringify({ pid })); },
       clearDrainingMarker() { mutations.push(["clear-drain"]); markers.delete(PATHS.daemonDrainingFile); },
     };
@@ -82,6 +89,14 @@ function load(relative, mocks, processMock) {
     const noop = () => {};
     Object.assign(mocks, {
       "node:fs": fakeFs, "node:path": path, "../../config": { PATHS, CONFIG: {} },
+      "node:net": { createServer() { throw Error("Refused startup reached socket publication"); } },
+      "proper-lockfile": { lock: async () => {
+        assert.ok(late, "Unexpected lock acquisition");
+        markers.set(PATHS.daemonDrainingFile, kind === "late-malformed" ? "bad-json" : JSON.stringify({ pid: 910001, ts: 1 }));
+        before = [...markers];
+        return async () => { releases++; };
+      } },
+      "../utils/logger": { debug() {} },
       "../utils/async-semaphore": { AsyncSemaphore: class {} },
       "../utils/autostart": { daemonStartDeniedReason: () => null },
       "../utils/daemon-client": client,
@@ -107,6 +122,7 @@ function load(relative, mocks, processMock) {
       assert.deepEqual([...markers], before, `${kind}: predecessor evidence must survive caller cleanup`);
       assert.deepEqual(mutations, [], `${kind}: refused start owns no shared state`);
     }
+    if (late) assert.equal(releases, 1, "Refused post-lock start must release its own lock");
   }
   const { restartDaemon } = load("dist/lib/utils/daemon-restart.js", {}, {});
   for (const shutdownOk of [false, true]) {

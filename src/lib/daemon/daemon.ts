@@ -441,8 +441,12 @@ export class Daemon {
           this.shutdown().finally(() => process.exit(0));
         },
       });
-      this.ownsControlState = true;
+      // The previous owner releases its lock before finishing its resource
+      // drain. State may have appeared while lock acquisition was pending.
+      // Recheck under the lock before granting cleanup or publishing anything.
+      await this.processManager.assertStartupAvailable();
       this.assertStartupActive();
+      this.ownsControlState = true;
       dbg("daemon", "lock acquired");
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ELOCKED") {

@@ -245,4 +245,46 @@ describe("startup never terminates processes discovered outside its ownership", 
     expect(h.unregisterDaemon).not.toHaveBeenCalled();
     expect(release).toHaveBeenCalledOnce();
   });
+  it.each(["draining", "unknown", "malformed"] as const)(
+    "rechecks %s predecessor evidence published during lock acquisition",
+    async (kind) => {
+      const release = vi.fn(async () => {});
+      let before!: Array<[string, string]>;
+      h.lock.mockImplementationOnce((async () => {
+        h.files.set(
+          PATHS.daemonDrainingFile,
+          kind === "malformed"
+            ? "bad-json"
+            : JSON.stringify({ pid: 910001, ts: 1 }),
+        );
+        before = [...h.files];
+        return release;
+      }) as never);
+      h.draining = true;
+      vi.mocked(process.kill).mockImplementation((_pid, signal) => {
+        if (signal !== 0) throw new Error("Host signal forbidden");
+        if (kind === "unknown")
+          throw Object.assign(new Error("denied"), { code: "EPERM" });
+        return true;
+      });
+      const daemon: any = new Daemon();
+      vi.spyOn(daemon, "hostPressureDeniedReason").mockReturnValue(null);
+      await expect(daemon.start()).rejects.toThrow(/startup refused/);
+      await daemon.shutdown();
+      expect(release).toHaveBeenCalledOnce();
+      expect([...h.files]).toEqual(before);
+      expect(fs.unlinkSync).not.toHaveBeenCalled();
+      expect(h.writeDrain).not.toHaveBeenCalled();
+      expect(h.clearDrain).not.toHaveBeenCalled();
+      expect(h.unregisterDaemon).not.toHaveBeenCalled();
+      expect(h.kills).not.toHaveBeenCalled();
+      expect(h.discovery).not.toHaveBeenCalled();
+      const successor: any = new Daemon();
+      vi.spyOn(successor, "hostPressureDeniedReason").mockReturnValue(null);
+      await expect(successor.start()).rejects.toThrow(/startup refused/);
+      await successor.shutdown();
+      expect([...h.files]).toEqual(before);
+      expect(h.lock).toHaveBeenCalledOnce();
+    },
+  );
 });
