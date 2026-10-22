@@ -176,22 +176,35 @@ jobs:
           endpoint = f'https://registry.npmjs.org/grepmax/{version}'
           deadline = time.monotonic() + 480
           while True:
+              remaining = deadline - time.monotonic()
+              if remaining <= 0:
+                  raise TimeoutError('Registry verification deadline exceeded; publication must not be retried')
               try:
                   request_id = f'{os.environ["GITHUB_RUN_ID"]}-{time.monotonic_ns()}'
-                  with urllib.request.urlopen(endpoint + f'?verification={request_id}', timeout=20) as response:
+                  with urllib.request.urlopen(endpoint + f'?verification={request_id}', timeout=min(20, remaining)) as response:
                       metadata = json.load(response)
                   assert metadata['version'] == version
                   assert metadata['dist']['tarball'] == f'https://registry.npmjs.org/grepmax/-/grepmax-{version}.tgz'
                   download = metadata['dist']['tarball'] + f'?verification={request_id}'
-                  with urllib.request.urlopen(download, timeout=60) as response:
+                  remaining = deadline - time.monotonic()
+                  if remaining <= 0:
+                      raise TimeoutError('Registry verification deadline exceeded')
+                  with urllib.request.urlopen(download, timeout=min(60, remaining)) as response:
                       actual = hashlib.sha256(response.read()).hexdigest()
                   assert actual == expected, f'Registry bytes differ: {actual}'
                   break
               except urllib.error.HTTPError as error:
-                  if error.code != 404 or time.monotonic() >= deadline:
+                  error.close()
+                  if error.code not in (404, 408, 429, 500, 502, 503, 504):
                       raise
-                  print('Publication accepted; waiting for registry propagation...', flush=True)
-                  time.sleep(15)
+                  reason = f'HTTP {error.code}'
+              except (TimeoutError, urllib.error.URLError, ConnectionError) as error:
+                  reason = type(error).__name__
+              remaining = deadline - time.monotonic()
+              if remaining <= 0:
+                  raise TimeoutError('Registry verification deadline exceeded; publication must not be retried')
+              print(f'Publication accepted; registry verification pending ({reason})...', flush=True)
+              time.sleep(min(15, remaining))
           print(f'Public grepmax@{version} verified: {actual}', flush=True)
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
               summary.write(f'## Published grepmax {version}\n\nReviewed source: `{os.environ["REVIEWED_SOURCE"]}`\n\nArchive SHA256: `{actual}`\n\nHosted build tar content and public registry exactly match the approved archive.\n')
