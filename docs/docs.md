@@ -14,7 +14,7 @@ replaces the previous expanding queue:
 | Item | Disposition |
 | --- | --- |
 | Startup can stop another Gmax instance's daemon/workers without ownership proof | Delivered: reviewed 56c7806 / 0.26.93 is public, byte/provenance verified and installed; source/archive/native/installed checks pass. Trusted publisher recovery passes. |
-| CPU/memory/disk history | User-requested, open/deferred; unresolved overhead regression, not shipped |
+| CPU/memory/disk history | User selected a smaller sampler; isolated0d5282c fixes both round1 blockers, under parent-model round2 review. Original overhead regression remains unresolved; not shipped. |
 | Linux P3 setup | User-requested deployment, pending actual machine/access and selection; independent of document search |
 | Three-file docs exercise, new search helper and required external consumer rollout | Withdrawn; no demonstrated need |
 | Context composer, graph/ranking expansion, model promotion, automation and other enhancements | Optional; removed from the mandatory queue |
@@ -27,7 +27,7 @@ release workflow is enabled; push/PR CI remains absent. The user-authorized
 [repair](plans/gmax-delivery.md#process-ownership-repair--ready-plan) is complete.
 Trusted publication succeeded in run39717358032; reviewed cache recovery 52ea74e
 passes [verification-only run39718868523](https://github.com/reowens/grepmax/actions/runs/39718868523).
-The manual MFA path is withdrawn. No further repair work is selected.
+The manual MFA path is withdrawn. The newly selected reduced resource sampler is isolated and under review; its bounded measurement follows.
 
 ## Document index
 

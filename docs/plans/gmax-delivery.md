@@ -1,8 +1,8 @@
 ---
 type: plan
-status: partial
+status: in-session
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-22T03:50:54Z
+updated: 2026-10-22T05:06:11Z
 surfaces:
   - store
   - daemon
@@ -20,9 +20,9 @@ parent_plan:
 related_plans:
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Process-ownership repair 56c7806 / 0.26.93 is published, exact-byte/provenance verified and installed. Trusted publication succeeded in run 39717358032; reviewed publisher 52ea74e passes verification-only run 39718868523. Only manual release dispatch is active. Resource history open/deferred; Linux pending machine/access."
-next_step: "No further repair work is selected. Keep resource history open/deferred with its unresolved regression; Linux execution awaits the actual machine/access and user selection. Do not restart document rollout, manual npm MFA, model experiments or repeated handover."
-summary: "0.26.93 ownership repair and trusted-publishing restoration are delivered and verified; documentation is reconciled. Resource history remains open/deferred and Linux awaits machine/access."
+current_state: "0.26.93 and trusted publishing are delivered. User selected a reduced resource-history variant: periodic process CPU/memory plus bounded local history and capture, with detailed per-operation tracking removed. Work isolated from retained479eb23; original regression remains open. Installed service/settings unchanged."
+next_step: "Wait for parent-model round2 review of0d5282c, then run exact-source --smoke and --measure once with Node22.23.1 in the isolated checkout; retain controls/cadence evidence and reconcile the result. Do not call it released or clear the original regression. No model load, installed-service change or Linux deployment selected."
+summary: "Implementing the agreed smaller resource sampler in isolation; published0.26.93 remains installed. Original overhead regression is preserved and unresolved; Linux waits for access."
 ---
 
 # Gmax Delivery Plan
@@ -56,7 +56,7 @@ was implemented. Those proposals lacked a demonstrated user need.
 | Item | Evidence and necessity | Disposition |
 | --- | --- | --- |
 | Daemon startup can stop another Gmax instance's processes | Current 0.26.92 `ProcessManager.killStaleProcesses` finds all same-name daemons/workers, but checks this home's heartbeat/socket and never establishes each target's ownership. With no local daemon, a healthy other-home daemon can be called stale; workers are signalled unconditionally. A prior test incident is recorded in this plan. Exact installed-module simulation reproduces both cases with fake PIDs and zero real signals. This can interrupt indexing or another session. | **Delivered in reviewed 0.26.93 / 56c7806.** Public npm bytes, signed provenance, GitHub release, both installations and live handover are accepted. |
-| CPU/memory/disk history | Explicit user request, implemented in an isolated candidate; source approval exists but the original +41.935 ms p95 regression and control-precision problem remain unresolved. It is absent from the installed release. | **Keep open/deferred as the user directed.** No experiment or release selected. |
+| CPU/memory/disk history | Explicit user request, implemented in an isolated candidate; source approval exists but the original +41.935 ms p95 regression and control-precision problem remain unresolved. It is absent from the installed release. | **Reduced sampling-only prototype selected October22.** Original regression stays open; no release or installed enablement selected. |
 | Linux P3 setup | Explicit user-requested deployment/design work. It requires the actual machine and access. CPU installation/baseline is useful for that deployment, not required to complete the Mac product. | **Pending deployment when the machine is available and the user selects execution.** No dependency on document-search work; GPU purchase/CUDA remain optional. |
 
 The necessary ownership repair must identify the target instance/home and process
@@ -65,6 +65,81 @@ not ownership proof. Unknown ownership must refuse. Regressions should cover an
 unrelated daemon, an unrelated standalone watcher worker, recycled PID and normal
 same-home handover using simulated discovery/signals or owned isolated processes.
 This audit selects no live process signalling or service restart.
+
+### Reduced resource sampler — October 22, selected
+
+The user agreed to owning a small recorder that reuses built-in counters and the
+reviewed bounded writer. Telegraf remains an optional independent development
+reference, not a bundled dependency. Node processes use built-in CPU/memory
+counters; the already-owned Python backend uses its existing resource adapter.
+
+Work is isolated in `.claude/worktrees/resource-sampling-20261022`, branched from
+retained `479eb23`. The old source, frozen unreleased0.26.91 archive, failed
++41.935ms p95 result and failed controls remain unchanged. This is a reduced
+prototype, not a release candidate on current0.26.93; product integration and full
+release qualification must not be inferred from isolated results.
+
+Remove request/task UUIDs, AsyncLocalStorage context, per-result CPU snapshots,
+operation histograms/details and per-operation project HMAC work. Keep explicit
+60-second process sampling, finite five-second capture, cached workload state,
+owned-backend counters, lifecycle events and the reviewed storage/capture fences.
+Disk inventory remains a separate bounded activity; it must not run per request
+or be represented as an instantaneous/complete capture-end measurement. No new
+monitoring dependency, model load, production scan, setting change, service
+handover or publication is selected by this prototype step.
+
+Check the real worker message path with a model-free mocked worker, retain the
+capture/epoch/ownership/storage regressions, then make a bounded model-free
+measurement. Compare same-treatment controls before interpreting off/on latency.
+Short or noisy measurements are diagnostic only; they cannot waive the existing
+3% latency/CPU/retention qualification or retroactively explain the old42ms result.
+Use an independent parent-model reviewer for the exact final source under the
+standing owner-plus-independent-review requirement.
+
+**Prototype checkpoint:** exact commit
+`12cc7be7e48122ab312854b29244dae7d4b87608` removes the request-side collection
+paths. Focused validation passes162JavaScript tests in16files,3Python counter
+tests, source/test typechecks and build. Six optional MLX server tests skip
+without their runtime; no backend/model execution is claimed. The real
+process-child handler fixture verifies100task replies produce no CPU samples or
+resource payloads between timer ticks; off cancels periodic reports. The CLI
+marks operation tracking and standalone parent CPU as not collected.
+
+Historical disposable off/on/capture smokes passed before12cc7be, with zero
+models and unchanged settings/source during that run. Their hashes do not bind
+12cc7be or the corrected candidate; they are not exact-source acceptance. Evidence is
+`/var/folders/n2/c5kbh3vj7_s4t9_q0xc42z0m0000gn/T/gmax-sampling-measure-YUQ8m9`.
+These five-second cases do not cover baseline minute cadence or qualify overhead.
+**Round1 requested changes** for12cc7be: retained CLI/MCP pools stopped
+refreshing preferences and saving periodic worker samples, and the diagnostic
+could write the installed service's shared safety latch. Report:
+`/private/tmp/gmax-resource-sampling-review-v1-20261022.md`.
+
+**Corrected candidate:** `0d5282cfed7cca1c2bf11100dc28805376304f22` adds
+minute-throttled preference refresh at existing request/report boundaries and
+worker-only emission/flush, including packets arriving during an earlier flush.
+Off/on revokes the grant and resets the CPU baseline; direct-parent counters stay
+uncollected. The fixture isolates HOME before product imports, so latch/ledger
+writes stay private, while read-only primary containment checks and the selected
+real host-pressure probes remain active. No production safety override was added.
+168JavaScript tests in17files,3Python tests, source/test typechecks, build, script
+syntax and diff checks pass. New regressions cover retained CLI/MCP pools,
+intermediate memory spikes, stale grants/disabled-gap counters, delayed flushes,
+private critical-latch/ledger writes and primary quarantine refusal. Parent-model
+round2 review is running; expected report
+`/private/tmp/gmax-resource-sampling-review-v2-20261022.md`. No long measurement has
+run. A fresh exact-source smoke is required before the six-case diagnostic.
+
+The committed explicit measurement helper runs one off/off control pair, one
+off/on pair (70seconds per arm, retaining actual minute collection), then a
+30second off/capture pair. It retains raw cycle/stage wall times and sampling
+spans in at most1MiB per case, with a10minute global/95second case bound. It
+uses one owned synthetic worker, disposable Lance stores, the unchanged
+critical-only policy and guarded child handles; no process-group sweep or model
+starts. Every result remains diagnosticOnly/qualified:false: this is one control
+pair, parent/worker self CPU excludes probe-child CPU, and no full release
+acceptance or cause for the original regression can be inferred. Run it after
+review, so reviewer test execution does not compete with the measurement.
 
 ### Process-ownership repair — ready plan
 
@@ -2379,6 +2454,8 @@ parallel omnibus plan.
 
 ## Version History
 
+- **2026-10-22T05:06:11Z** Started (active → in-session).
+- **2026-10-22T05:06:11Z** Status: partial → active — User agreed to a smaller first resource-history version: reuse reviewed pieces, periodic CPU/memory sampling, bounded local history and timed capture; omit detailed operation tracking and measure overhead in isolation.
 - **2026-10-22T03:50:54Z** Status: in-session → partial — 0.26.93 ownership repair published, byte/provenance verified and installed; trusted publishing and verification-only run 39718868523 pass. Repair closed. Resource history stays open/deferred; Linux pending actual machine/access.
 - **2026-10-22T02:58:58Z** Started (active → in-session).
 - **2026-10-22T02:58:58Z** Status: awaiting → active — Repairing the disabled trusted-publication path after the user rejected the stalled manual publishing flow; release-only, no push/PR CI.

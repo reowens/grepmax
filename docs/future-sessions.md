@@ -4,7 +4,7 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-22T03:51:24Z
 audience: internal
-summary: Process-ownership repair 56c7806 / 0.26.93 is public, byte/provenance verified and installed on this Mac; trusted-publishing restoration is complete. Document search delivered. Resource statistics deferred; Linux pending machine/access.
+summary: Process-ownership repair 56c7806 / 0.26.93 is public, byte/provenance verified and installed on this Mac; trusted-publishing restoration is complete. Document search delivered. Reduced resource sampler0d5282c fixes both round1 blockers and is under round2 review; original regression remains open. Linux pending machine/access.
 ---
 
 # Future Sessions
@@ -58,13 +58,20 @@ commit/run. This repair is closed. Do not republish 0.26.93, request manual MFA,
 reinstall the accepted package, repeat handover or run a model experiment.
 Only the manually dispatched release workflow is active; no push/PR CI was restored.
 
-## Explicit requests still held
+## Remaining work
 
-- **Resource statistics:** user requested CPU/memory/disk history, then said to
-  leave it open and move forward. Preserve approved `477779b`, isolated `479eb23`,
-  frozen unreleased 0.26.91 and all failed/control evidence. Original +41.935 ms
-  p95 regression remains unresolved. No new experiment is selected; new history
-  is absent from the installed release and remains default-off in the retained design.
+- **Resource statistics:** the user agreed to a thin recorder using existing
+  counters/writer, with per-operation tracking removed. Isolated prototype
+  `0d5282c` fixes both round1 blockers and passes168JS/3Python tests and
+  types/build. Retained pools now save periodic worker samples and observe
+  preferences; diagnostic latch/ledger persistence is private, with real primary
+  containment still read-only. Parent-model round2 review is running. Historical
+  smokes do not bind this source. After review, run exact-source `--smoke`, then
+  `scripts/resource-sampling-measure.cjs --measure` using Node22.23.1 in
+  `.claude/worktrees/resource-sampling-20261022`. This is not current0.26.93
+  integration or a released collector. Preserve approved477779b, retained479eb23,
+  frozen unreleased0.26.91 and failed/control evidence. The original+41.935ms p95
+  regression stays unresolved; the new diagnostic cannot retroactively clear it.
 - **Linux P3 deployment:** requested, pending the actual machine/access and user
   selection. CPU installation/baseline first. GPU purchase/CUDA are conditional.
   The [design](linux-gpu-p3-design.md) is reference material, not an active queue or
