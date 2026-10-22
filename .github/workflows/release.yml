@@ -71,7 +71,7 @@ jobs:
       - name: Verify approved bytes and recover qualified native payloads
         run: |
           python3 - <<'PY'
-          import hashlib, json, os, pathlib, tarfile
+          import gzip, hashlib, json, os, pathlib, shutil, tarfile
           root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'approved'
           version, source, digest = (os.environ[k] for k in ('RELEASE_VERSION', 'REVIEWED_SOURCE', 'ARCHIVE_SHA256'))
           archive = root / f'grepmax-{version}.tgz'
@@ -119,12 +119,25 @@ jobs:
           mkdir "$RUNNER_TEMP/rebuilt"
           npm pack --ignore-scripts --json --pack-destination "$RUNNER_TEMP/rebuilt" > "$RUNNER_TEMP/pack.json"
           python3 - <<'PY'
-          import hashlib, json, os, pathlib, tarfile
+          import gzip, hashlib, json, os, pathlib, shutil, tarfile
           root = pathlib.Path(os.environ['RUNNER_TEMP'])
           metadata = json.loads((root / 'pack.json').read_text())[0]
           assert metadata['filename'] == f"grepmax-{os.environ['RELEASE_VERSION']}.tgz"
           archive = root / 'rebuilt' / metadata['filename']
           actual = hashlib.sha256(archive.read_bytes()).hexdigest()
+          if actual != os.environ['ARCHIVE_SHA256']:
+              approved = root / 'approved' / metadata['filename']
+              def tar_digest(path):
+                  with gzip.open(path, 'rb') as payload:
+                      return hashlib.file_digest(payload, 'sha256').hexdigest()
+              approved_tar, rebuilt_tar = tar_digest(approved), tar_digest(archive)
+              print(f'Uncompressed archive SHA256: approved={approved_tar}, hosted={rebuilt_tar}', flush=True)
+              if approved_tar == rebuilt_tar:
+                  # Node compression builds can differ across operating systems.
+                  # Retain approved compression only after every tar byte matches.
+                  shutil.copyfile(approved, archive)
+                  actual = hashlib.sha256(archive.read_bytes()).hexdigest()
+                  print('Hosted tar bytes match; retained the approved gzip container.', flush=True)
           if actual != os.environ['ARCHIVE_SHA256']:
               def entries(path):
                   with tarfile.open(path) as package:
@@ -141,7 +154,8 @@ jobs:
                       print(json.dumps({'path': name, 'approved': before, 'rebuilt': after}), flush=True)
               print(f'Archive entry order matches: {[item[0] for item in approved_entries] == [item[0] for item in rebuilt_entries]}', flush=True)
               raise AssertionError(f'Hosted archive differs from approved bytes: {actual}')
-          print(f'Hosted build exactly matches approved archive: {actual}', flush=True)
+          assert actual == os.environ['ARCHIVE_SHA256'], 'Final archive differs from approved bytes'
+          print(f'Hosted build content and final archive match approved bytes: {actual}', flush=True)
           PY
 
       - name: Publish through existing npm trusted publisher
@@ -171,7 +185,7 @@ jobs:
                   time.sleep(15)
           print(f'Public grepmax@{version} verified: {actual}', flush=True)
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
-              summary.write(f'## Published grepmax {version}\n\nReviewed source: `{os.environ["REVIEWED_SOURCE"]}`\n\nArchive SHA256: `{actual}`\n\nHosted build and public registry exactly match the approved archive.\n')
+              summary.write(f'## Published grepmax {version}\n\nReviewed source: `{os.environ["REVIEWED_SOURCE"]}`\n\nArchive SHA256: `{actual}`\n\nHosted build tar content and public registry exactly match the approved archive.\n')
           PY
 
       - name: Publish GitHub release
