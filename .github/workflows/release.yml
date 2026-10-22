@@ -16,6 +16,11 @@ on:
         description: SHA256 of the qualified archive attached to the draft release
         required: true
         type: string
+      verify_only:
+        description: Verify an existing publication without publishing again
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -159,6 +164,7 @@ jobs:
           PY
 
       - name: Publish through existing npm trusted publisher
+        if: ${{ !inputs.verify_only }}
         run: npm publish "$RUNNER_TEMP/rebuilt/grepmax-${RELEASE_VERSION}.tgz" --ignore-scripts --access=public --registry=https://registry.npmjs.org --provenance
 
       - name: Verify registry bytes
@@ -166,15 +172,18 @@ jobs:
           python3 - <<'PY'
           import hashlib, json, os, pathlib, time, urllib.error, urllib.request
           version, expected = os.environ['RELEASE_VERSION'], os.environ['ARCHIVE_SHA256']
+          # Avoid cached 404s created before npm finished processing the version.
           endpoint = f'https://registry.npmjs.org/grepmax/{version}'
           deadline = time.monotonic() + 480
           while True:
               try:
-                  with urllib.request.urlopen(endpoint, timeout=20) as response:
+                  request_id = f'{os.environ["GITHUB_RUN_ID"]}-{time.monotonic_ns()}'
+                  with urllib.request.urlopen(endpoint + f'?verification={request_id}', timeout=20) as response:
                       metadata = json.load(response)
                   assert metadata['version'] == version
                   assert metadata['dist']['tarball'] == f'https://registry.npmjs.org/grepmax/-/grepmax-{version}.tgz'
-                  with urllib.request.urlopen(metadata['dist']['tarball'], timeout=60) as response:
+                  download = metadata['dist']['tarball'] + f'?verification={request_id}'
+                  with urllib.request.urlopen(download, timeout=60) as response:
                       actual = hashlib.sha256(response.read()).hexdigest()
                   assert actual == expected, f'Registry bytes differ: {actual}'
                   break
