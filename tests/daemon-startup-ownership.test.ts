@@ -17,6 +17,11 @@ const h = vi.hoisted(() => ({
   unregisterDaemon: vi.fn(),
   writeDrain: vi.fn(),
   clearDrain: vi.fn(),
+  socketArrival: null as (() => void) | null,
+  socketClosed: vi.fn(),
+  resourceOpens: vi.fn(),
+  allowResource: false,
+  markIndexOwner: vi.fn(),
 }));
 vi.mock("node:fs", async (original) => ({
   ...(await original<typeof import("node:fs")>()),
@@ -52,8 +57,31 @@ vi.mock("node:child_process", async (original) => ({
 }));
 vi.mock("node:net", () => ({
   createServer: vi.fn(() => {
-    throw new Error("fixture-socket-failure");
+    if (!h.socketArrival) throw new Error("fixture-socket-failure");
+    return {
+      listening: true,
+      on() {},
+      listen(_file: string, callback: () => void) {
+        h.socketArrival!();
+        callback();
+      },
+      close(callback?: () => void) {
+        h.socketClosed();
+        callback?.();
+      },
+    };
   }),
+}));
+vi.mock("../src/lib/store/vector-db", () => ({
+  VectorDB: class {
+    constructor() {
+      h.resourceOpens();
+      if (!h.allowResource) throw new Error("fixture-resource-open-checkpoint");
+    }
+    markIndexOwner = h.markIndexOwner;
+    abortLeaseWaits() {}
+    async close() {}
+  },
 }));
 vi.mock("proper-lockfile", () => ({ default: { lock: h.lock } }));
 vi.mock("../src/lib/utils/process", () => ({ killProcess: h.kills }));
@@ -91,6 +119,8 @@ describe("startup never terminates processes discovered outside its ownership", 
     h.files.clear();
     h.markerError = null;
     h.draining = false;
+    h.socketArrival = null;
+    h.allowResource = false;
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(process, "kill").mockImplementation((() => {
       throw new Error("Host signal forbidden");
@@ -285,6 +315,110 @@ describe("startup never terminates processes discovered outside its ownership", 
       await successor.shutdown();
       expect([...h.files]).toEqual(before);
       expect(h.lock).toHaveBeenCalledOnce();
+    },
+  );
+  it.each([
+    ["lock", "live"],
+    ["lock", "unknown"],
+    ["lock", "malformed"],
+    ["socket", "live"],
+    ["socket", "unknown"],
+    ["socket", "malformed"],
+  ] as const)(
+    "refuses %s-time %s watcher before shared resources",
+    async (boundary, kind) => {
+      const watcher = {
+        pid: kind === "malformed" ? NaN : 910002,
+        projectRoot: "/fixture/repo",
+      };
+      const arrive = () => {
+        h.watchers = [watcher];
+      };
+      const release = vi.fn(async () => {});
+      h.lock.mockImplementationOnce((async () => {
+        if (boundary === "lock") arrive();
+        return release;
+      }) as never);
+      h.socketArrival = boundary === "socket" ? arrive : () => {};
+      vi.mocked(process.kill).mockImplementation((_pid, signal) => {
+        if (signal !== 0) throw new Error("Host signal forbidden");
+        if (kind === "unknown")
+          throw Object.assign(new Error("denied"), { code: "EPERM" });
+        return true;
+      });
+      const daemon: any = new Daemon();
+      vi.spyOn(daemon, "hostPressureDeniedReason").mockReturnValue(null);
+      await expect(daemon.start()).rejects.toThrow(
+        /Standalone watchers.*startup refused/,
+      );
+      await daemon.shutdown();
+      expect(h.resourceOpens).not.toHaveBeenCalled();
+      expect(h.watchers).toEqual([watcher]);
+      expect(h.unregister).not.toHaveBeenCalled();
+      expect(h.kills).not.toHaveBeenCalled();
+      expect(h.discovery).not.toHaveBeenCalled();
+      expect(release).toHaveBeenCalledOnce();
+      if (boundary === "socket") expect(h.socketClosed).toHaveBeenCalledOnce();
+      const successor: any = new Daemon();
+      vi.spyOn(successor, "hostPressureDeniedReason").mockReturnValue(null);
+      await expect(successor.start()).rejects.toThrow(
+        /Standalone watchers.*startup refused/,
+      );
+      await successor.shutdown();
+      expect(h.watchers).toEqual([watcher]);
+      expect(h.lock).toHaveBeenCalledOnce();
+    },
+  );
+  it("rechecks watcher evidence after awaited maintenance recovery before writer admission", async () => {
+    const release = vi.fn(async () => {});
+    h.lock.mockResolvedValueOnce(release as never);
+    h.socketArrival = () => {};
+    h.allowResource = true;
+    const watcher = { pid: 910002, projectRoot: "/fixture/repo" };
+    const daemon: any = new Daemon();
+    vi.spyOn(daemon, "hostPressureDeniedReason").mockReturnValue(null);
+    vi.spyOn(
+      daemon,
+      "recoverBoundedMaintenanceBeforeWriters",
+    ).mockImplementation(async () => {
+      h.watchers = [watcher];
+    });
+    vi.mocked(process.kill).mockImplementation((_pid, signal) => {
+      if (signal !== 0) throw new Error("Host signal forbidden");
+      return true;
+    });
+    await expect(daemon.start()).rejects.toThrow(
+      /Standalone watchers.*startup refused/,
+    );
+    await daemon.shutdown();
+    expect(h.resourceOpens).toHaveBeenCalledOnce();
+    expect(h.markIndexOwner).not.toHaveBeenCalled();
+    expect(h.watchers).toEqual([watcher]);
+    expect(h.unregister).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledOnce();
+  });
+  it.each(["read-only", "dead"] as const)(
+    "preserves %s policy at the final watcher check",
+    async (kind) => {
+      const release = vi.fn(async () => {});
+      h.lock.mockResolvedValueOnce(release as never);
+      h.socketArrival = () => {
+        h.watchers = [{ pid: 910002, projectRoot: "/fixture/repo" }];
+      };
+      vi.mocked(process.kill).mockImplementation((_pid, signal) => {
+        if (signal !== 0) throw new Error("Host signal forbidden");
+        throw Object.assign(new Error("gone"), { code: "ESRCH" });
+      });
+      const daemon: any = new Daemon();
+      vi.spyOn(daemon, "hostPressureDeniedReason").mockReturnValue(null);
+      await expect(
+        daemon.start({ readOnly: kind === "read-only" }),
+      ).rejects.toThrow("fixture-resource-open-checkpoint");
+      await daemon.shutdown();
+      expect(h.resourceOpens).toHaveBeenCalledOnce();
+      expect(h.watchers).toHaveLength(1);
+      expect(h.unregister).not.toHaveBeenCalled();
+      if (kind === "read-only") expect(process.kill).not.toHaveBeenCalled();
     },
   );
 });

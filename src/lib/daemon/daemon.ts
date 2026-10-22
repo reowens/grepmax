@@ -351,6 +351,31 @@ export class Daemon {
     return resources;
   }
 
+  private assertStandaloneWatchersStopped(): void {
+    if (this.pausedReason === null) {
+      const existing = listWatchers({ includeStale: true }).filter(
+        (watcher) => {
+          if (!Number.isSafeInteger(watcher.pid) || watcher.pid <= 0)
+            return true;
+          try {
+            process.kill(watcher.pid, 0);
+            return true;
+          } catch (error) {
+            // A stale heartbeat cannot establish process death. Unknown owners
+            // and recycled PIDs block takeover; only ESRCH establishes absence.
+            return (error as NodeJS.ErrnoException).code !== "ESRCH";
+          }
+        },
+      );
+      if (existing.length > 0) {
+        const pids = existing.map((watcher) => watcher.pid).join(", ");
+        throw new Error(
+          `Standalone watchers are still registered (PIDs: ${pids}); startup refused. Stop the owned watchers explicitly before starting the daemon.`,
+        );
+      }
+    }
+  }
+
   async start(options: { readOnly?: boolean } = {}): Promise<void> {
     const denied = daemonStartDeniedReason();
     if (denied !== null && !options.readOnly)
@@ -393,28 +418,7 @@ export class Daemon {
     // Preflight before publishing a socket/PID or opening shared resources.
     // Process names and registry PIDs never authorize automatic termination.
     await this.processManager.assertStartupAvailable();
-    if (this.pausedReason === null) {
-      const existing = listWatchers({ includeStale: true }).filter(
-        (watcher) => {
-          if (!Number.isSafeInteger(watcher.pid) || watcher.pid <= 0)
-            return true;
-          try {
-            process.kill(watcher.pid, 0);
-            return true;
-          } catch (error) {
-            // A stale heartbeat cannot establish process death. Unknown owners
-            // and recycled PIDs block takeover; only ESRCH establishes absence.
-            return (error as NodeJS.ErrnoException).code !== "ESRCH";
-          }
-        },
-      );
-      if (existing.length > 0) {
-        const pids = existing.map((watcher) => watcher.pid).join(", ");
-        throw new Error(
-          `Standalone watchers are still registered (PIDs: ${pids}); startup refused. Stop the owned watchers explicitly before starting the daemon.`,
-        );
-      }
-    }
+    this.assertStandaloneWatchersStopped();
     this.assertStartupActive();
 
     // 1. Acquire exclusive lock — kernel-enforced, atomic, auto-released on death
@@ -445,6 +449,7 @@ export class Daemon {
       // drain. State may have appeared while lock acquisition was pending.
       // Recheck under the lock before granting cleanup or publishing anything.
       await this.processManager.assertStartupAvailable();
+      this.assertStandaloneWatchersStopped();
       this.assertStartupActive();
       this.ownsControlState = true;
       dbg("daemon", "lock acquired");
@@ -546,6 +551,9 @@ export class Daemon {
       );
       this.activeConfig = readGlobalConfig();
       this.activeGeneration = resolveEmbeddingGeneration(this.activeConfig);
+      // Socket startup yields too. Registry evidence must be current at the
+      // shared-resource admission boundary, not only before lock acquisition.
+      this.assertStandaloneWatchersStopped();
       this.vectorDb = new VectorDB(
         PATHS.lancedbDir,
         this.activeGeneration.vectorDim,
@@ -553,6 +561,8 @@ export class Daemon {
         this.pausedReason === null ? {} : PAUSED_CACHE_OPTIONS,
       );
       await this.recoverBoundedMaintenanceBeforeWriters();
+      this.assertStartupActive();
+      this.assertStandaloneWatchersStopped();
       if (this.pausedReason === null) {
         this.vectorDb.markIndexOwner();
         try {

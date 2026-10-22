@@ -44,9 +44,14 @@ function load(relative, mocks, processMock) {
   }
   // Exercise the CLI failure sequence with the full compiled Daemon class:
   // a rejected start is always followed by shutdown for partial-start cleanup.
-  for (const kind of ["healthy", "draining", "malformed", "permission", "late-draining", "late-unknown", "late-malformed"]) {
-    const late = kind.startsWith("late-");
-    const PATHS = { globalRoot: "/fixture", daemonPidFile: "/fixture/daemon.pid", daemonDrainingFile: "/fixture/daemon.draining", daemonSocket: "/fixture/daemon.sock", daemonLockFile: "/fixture/daemon.lock" };
+  for (const kind of ["healthy", "draining", "malformed", "permission", "late-draining", "late-unknown", "late-malformed", "late-watcher-live", "late-watcher-unknown", "late-watcher-malformed", "listen-watcher-live", "listen-watcher-unknown", "listen-watcher-malformed"]) {
+    const watcherCase = kind.includes("-watcher-");
+    const listenWatcher = kind.startsWith("listen-");
+    const late = kind.startsWith("late-") || listenWatcher;
+    const watchers = [];
+    const watcher = { pid: kind.endsWith("-malformed") ? NaN : 910002, projectRoot: "/fixture/repo" };
+    const arrive = () => watchers.push(watcher);
+    const PATHS = { globalRoot: "/fixture", cacheDir: "/fixture/cache", lancedbDir: "/fixture/lance", daemonPidFile: "/fixture/daemon.pid", daemonDrainingFile: "/fixture/daemon.draining", daemonSocket: "/fixture/daemon.sock", daemonLockFile: "/fixture/daemon.lock" };
     const markers = new Map([[kind === "draining" ? PATHS.daemonDrainingFile : PATHS.daemonPidFile,
       kind === "draining" ? JSON.stringify({ pid: 910001, ts: 1 }) : kind === "malformed" ? "bad-pid" : "910001"],
       [PATHS.daemonSocket, "predecessor-socket"]]);
@@ -62,12 +67,15 @@ function load(relative, mocks, processMock) {
       readFileSync: file => markers.get(file),
       unlinkSync(file) { mutations.push(["unlink", file]); markers.delete(file); },
       mkdirSync() { assert.ok(late, "Unexpected mkdir"); }, chmodSync() {},
-      writeFileSync(file) { assert.ok(late && file === PATHS.daemonLockFile, "Unexpected control publication"); },
+      writeFileSync(file, value) {
+        assert.ok(late && (file === PATHS.daemonLockFile || (listenWatcher && file === PATHS.daemonPidFile)), "Unexpected control publication");
+        if (file === PATHS.daemonPidFile) markers.set(file, value);
+      },
     };
     const processMock = { env: { VITEST: "true" }, pid: 910000,
       kill(pid, signal) {
         assert.equal(signal, 0); probes.push(pid);
-        if (kind === "late-unknown") throw Object.assign(Error("denied"), { code: "EPERM" });
+        if (kind.endsWith("-unknown")) throw Object.assign(Error("denied"), { code: "EPERM" });
         return true;
       } };
     const client = {
@@ -89,10 +97,17 @@ function load(relative, mocks, processMock) {
     const noop = () => {};
     Object.assign(mocks, {
       "node:fs": fakeFs, "node:path": path, "../../config": { PATHS, CONFIG: {} },
-      "node:net": { createServer() { throw Error("Refused startup reached socket publication"); } },
+      "node:net": { createServer() {
+        assert.ok(listenWatcher, "Refused startup reached socket publication");
+        return { listening: true, on() {}, listen(_file, callback) { arrive(); callback(); }, close(callback) { callback?.(); } };
+      } },
+      "../index/index-config": { readGlobalConfig: () => ({}) },
+      "../index/embedding-generation": { resolveEmbeddingGeneration: () => ({ vectorDim: 1 }) },
+      "../store/vector-db": { VectorDB: class { constructor() { throw Error("Refused startup reached shared resource construction"); } } },
       "proper-lockfile": { lock: async () => {
         assert.ok(late, "Unexpected lock acquisition");
-        markers.set(PATHS.daemonDrainingFile, kind === "late-malformed" ? "bad-json" : JSON.stringify({ pid: 910001, ts: 1 }));
+        if (watcherCase) { if (!listenWatcher) arrive(); }
+        else markers.set(PATHS.daemonDrainingFile, kind === "late-malformed" ? "bad-json" : JSON.stringify({ pid: 910001, ts: 1 }));
         before = [...markers];
         return async () => { releases++; };
       } },
@@ -104,7 +119,7 @@ function load(relative, mocks, processMock) {
       "../utils/keyed-mutex": { KeyedMutex: class { async close() {} } },
       "../utils/operation-coordinator": { OperationCoordinator: class { async close() {} } },
       "../utils/resource-budget": { resourceBudget: { check: () => null } },
-      "../utils/watcher-store": { listWatchers: () => [], unregisterDaemon: () => mutations.push(["unregister-daemon"]) },
+      "../utils/watcher-store": { listWatchers: () => [...watchers], unregisterDaemon: () => mutations.push(["unregister-daemon"]) },
       "../workers/pool": { isWorkerPoolInitialized: () => false },
       "./mlx-server-manager": { MlxServerManager: class { async stopMlxServer() {} } },
       "./process-manager": { ProcessManager },
@@ -120,7 +135,8 @@ function load(relative, mocks, processMock) {
       await assert.rejects(() => daemon.start(), /startup refused/);
       await daemon.shutdown();
       assert.deepEqual([...markers], before, `${kind}: predecessor evidence must survive caller cleanup`);
-      assert.deepEqual(mutations, [], `${kind}: refused start owns no shared state`);
+      if (!listenWatcher) assert.deepEqual(mutations, [], `${kind}: refused start owns no shared state`);
+      if (watcherCase) assert.deepEqual(watchers, [watcher], `${kind}: registry evidence must survive cleanup`);
     }
     if (late) assert.equal(releases, 1, "Refused post-lock start must release its own lock");
   }
