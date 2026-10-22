@@ -2,7 +2,7 @@
 type: plan
 status: paused
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-22T05:58:26Z
+updated: 2026-10-22T07:46:47Z
 surfaces:
   - store
   - daemon
@@ -20,9 +20,9 @@ parent_plan:
 related_plans:
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Resource statistics is on hold at the user's request, including further performance investigation, integration and release. Preserve source-approved0d5282c and all inconclusive/original failure evidence. Published0.26.93 remains unchanged. Linux P3 setup is the only other pending requested deliverable, awaiting machine/access and selection."
-next_step: "Do not resume resource-statistics work without user direction. Linux setup remains pending the actual machine/access and user selection: install, verify indexing/search/watch/restart and establish a CPU baseline; GPU/CUDA is optional. Other research is outside the required queue."
-summary: "Resource statistics on hold by user direction. Linux P3 deployment pending machine/access; other enhancements optional. Mac document search, startup repair and trusted publishing delivered."
+current_state: "MCP context packing delivered in0.26.94 /58faaac: public registry bytes/provenance, three existing installations, two plugin scopes and ready live handover accepted. Registry-timeout fixa8b3617 is reviewed; verification-only run39734613010 is green. Resource statistics remains on hold; Linux awaits machine/access."
+next_step: "No MCP delivery or CI recovery work remains. Resource statistics stays on hold. Linux P3 deployment remains pending actual machine/access and user selection; other optional enhancements remain unselected. Do not republish, reinstall or repeat handover."
+summary: "0.26.94 MCP context fix and CI recovery delivered. Resource statistics on hold; Linux pending machine/access. Other optional work unselected."
 ---
 
 # Gmax Delivery Plan
@@ -66,6 +66,84 @@ unrelated daemon, an unrelated standalone watcher worker, recycled PID and norma
 same-home handover using simulated discovery/signals or owned isolated processes.
 This audit selects no live process signalling or service restart.
 
+### MCP context packing — delivered in 0.26.94
+
+The user selected the narrow correction: when the first function body exceeds the
+MCP `build_context` budget, skip it and try later candidates rather than ending
+the loop. Reuse the CLI's existing `packByBudget` selection with no forced overflow.
+Keep result relevance order and file/line references, and reserve space for entry
+points, separators and the footer within the existing approximate token budget.
+This does not select the broader shared context composer or model/ranking work.
+
+Work is isolated in `.claude/worktrees/mcp-context-packing-20261022` from accepted
+0.26.93 plus documentation. Regressions call the registered tool with disposable
+source files and mocked search/watcher/runtime boundaries: oversized first body,
+later fitting bodies, all oversized, exact budget pressure and mapped/raw paths.
+Run relevant MCP/CLI/budget tests and source/test types, then independent parent-
+model review of the final candidate. Follow existing release/archive/installation
+checks for delivery; source-only progress is not a published fix. Resource
+statistics and its performance investigation stay on hold.
+
+**Qualified candidate:** exact `58faaace8ded9e34136839cc904d155f0c63e9d4`
+(version0.26.94). Three new regressions fail on released source and pass fixed;
+four added tests preserve fitting-result order and labels, approximate complete
+output bounds, footer reserve and no forced oversized body. Full source suite
+passes2,461tests/237files, source/test types and build. Independent parent-model
+review approves exact source with101tests/6files. All JS/Python security audits
+are clean; Python suite runs50tests with13optional-runtime skips. Biome passes
+with pre-existing warnings/infos.
+
+Exact324-file archive changes only `dist/commands/mcp.js` and the three version
+manifests; native payloads and other320files match0.26.93. Four compiled-tool
+fixture cases pass against the packed archive; installed0.26.93 fails the same
+oversized-first check. Exact consumer audit, process ownership, document bridge,
+daemon/standalone watchers, native Session/containment, locked prune and bounded
+cleanup all pass. Receipt/archive/review evidence:
+`/private/tmp/gmax-mcp-context-release-0.26.94-20261022`;
+SHA256`1e8c7ebb903971f463d57b68f4262f7a749697c8f91b54839d8b794d46abff8e`.
+Review: `/private/tmp/gmax-mcp-context-packing-review-v1-20261022.md`.
+
+**Delivered:** tag`v0.26.94` is the reviewed product source58faaac. Trusted
+publication run`39732926638` rebuilt identical content and accepted publication at
+06:18:12UTC. The initial registry check received404s, then failed at06:23:52UTC
+on an unhandled metadata read timeout before the480-second deadline. This was a
+verifier failure after accepted publication, not a product test/build failure.
+
+Workflow-only fix`a8b3617d36c049ac75f7fdcd2ece99ccefab639e` retries transient HTTP/
+network reads within the existing deadline, caps request waits/backoff by remaining
+time and closes error responses. Wrong version/URL/bytes, malformed metadata and
+nontransient HTTP errors still fail. Nine source tests and18additional independent
+offline scenarios, actionlint/Python syntax/diff checks pass. Full stdlib Python
+suite now runs59tests with13optional skips. Parent-model review approves the exact
+workflow source. The package, product tag and source58faaac were unchanged.
+
+The version became publicly visible; owner download verifies SHA256/SHA512/size
+and npm latest0.26.94. Sigstore verification binds the exact artifact to the actual
+original publisher58faaac/run39732926638 and GitHub workflow/main identity.
+[Verification-only recovery39734613010](https://github.com/reowens/grepmax/actions/runs/39734613010)
+**passes**, explicitly skipping the sole npm publish step. It rebuilds/compares the
+same artifact, verifies public registry bytes and makes the GitHub release public.
+The original failed run remains historical; no duplicate publication occurred.
+[Public release0.26.94](https://github.com/reowens/grepmax/releases/tag/v0.26.94).
+Review: `/private/tmp/gmax-registry-timeout-review-v1-20261022.md`.
+
+The exact qualified archive is installed in all three existing prefixes:
+Homebrew/Node26.12.0 and NVM Node22.23.1/22.23.4. Each verifies all324packagefiles;
+the latter was a pre-existing stale0.26.92 install, now reconciled. All three
+native smoke checks pass without model loads. Both existing plugin scopes verify
+all15files, with other plugin records unchanged. Cooperative0.26.93→0.26.94
+handover completes with ready/active/open daemon PID35010; configured worker count
+remains2. PID/readiness is dated acceptance evidence.
+
+Gmax config/store identity, safety markers and26unrelated root files are preserved.
+Two Claude settings hashes changed after the initial snapshot but their06:14:03UTC
+mtime precedes local installation/plugin updates; they were left untouched, and
+recorded separately in`settings-proof.json`. Do not claim all client settings
+unchanged against that earlier snapshot. Receipt, registry/provenance, installation,
+plugin/native and recovery proofs are in the evidence directory above. Resource
+statistics remains on hold and is absent from this release. Delivery is closed;
+no manual MFA, repeat publication/installation/handover or model experiment remains.
+
 ### Reduced resource sampler — October 22, on hold
 
 **Latest user direction: put this work on hold.** Preserve the isolated prototype
@@ -81,7 +159,7 @@ counters; the already-owned Python backend uses its existing resource adapter.
 Work is isolated in `.claude/worktrees/resource-sampling-20261022`, branched from
 retained `479eb23`. The old source, frozen unreleased0.26.91 archive, failed
 +41.935ms p95 result and failed controls remain unchanged. This is a reduced
-prototype, not a release candidate on current0.26.93; product integration and full
+prototype, not integrated into installed0.26.94; product integration and full
 release qualification must not be inferred from isolated results.
 
 Remove request/task UUIDs, AsyncLocalStorage context, per-result CPU snapshots,
@@ -2500,6 +2578,9 @@ parallel omnibus plan.
 
 ## Version History
 
+- **2026-10-22T07:46:47Z** Status: in-session → paused — MCP context fix0.26.94 delivered: review/tests/archive/registry/provenance/three installations/two plugin scopes/live handover accepted. Reviewed CI timeout fixa8b3617 passes verification-only recovery39734613010. Resource statistics remains on hold; Linux awaits machine/access.
+- **2026-10-22T06:04:49Z** Started (active → in-session).
+- **2026-10-22T06:04:49Z** Status: paused → active — User selected narrow MCP context packing repair. Only that item resumes; resource statistics remains explicitly on hold.
 - **2026-10-22T05:58:26Z** Status: partial → paused — User put resource statistics on hold. Preserve approved0d5282c and all timing/regression evidence; no further investigation or release. Linux deployment separately awaits machine/access; other enhancements optional.
 - **2026-10-22T05:55:47Z** Status: in-session → partial — Reduced sampler0d5282c source-approved; exact smoke and six-case diagnostic complete. Functional cadence/capture pass; off/off p95 varies40.7%, overhead remains unqualified. Original regression open; no release/integration selected.
 - **2026-10-22T05:06:11Z** Started (active → in-session).

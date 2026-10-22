@@ -4,7 +4,7 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-22T03:51:24Z
 audience: internal
-summary: Process-ownership repair 56c7806 / 0.26.93 is public, byte/provenance verified and installed on this Mac; trusted-publishing restoration is complete. Document search delivered. Resource statistics is on hold by user direction; preserve approved0d5282c and inconclusive evidence. Linux pending machine/access.
+summary: MCP context fix0.26.94 is public, byte/provenance verified, installed in three existing Node prefixes and two plugin scopes with ready handover. Reviewed registry-timeout recovery passes. Resource statistics remains on hold; Linux pending machine/access.
 ---
 
 # Future Sessions
@@ -25,6 +25,29 @@ installed readiness accepted. Small/GPU, two workers, critical-only policy and
 settings are preserved. Optional Gemma remains stopped. Old daemon PID/readiness
 statements are dated evidence, not a continuing liveness assertion.
 
+## MCP context fix — delivered in 0.26.94
+
+`build_context` skips oversized bodies and includes later fitting results in
+relevance order, preserving source references. Entry points, separators and footer
+fit inside the existing approximate size limit. Reviewed product/tag58faaac;
+2,461source tests,101independent focused tests, types/build/security and exact
+archive/consumer/native checks pass. Public registry archive and signed provenance
+match the qualified324-file artifact. All three existing Node prefixes and both
+plugin scopes are updated and verified; native checks pass on all three runtimes.
+Cooperative handover serves0.26.94 ready/active/open PID35010 (dated evidence).
+
+Original publisher39732926638 accepted npm publication, then its registry verifier
+failed on an unhandled read timeout after404retries. Reviewed workflow fixa8b3617
+passes9source tests plus18independent offline scenarios.
+[Verification-only recovery39734613010](https://github.com/reowens/grepmax/actions/runs/39734613010)
+is green with npm publish skipped; the GitHub release is public. This is closed.
+Do not republish, reinstall, repeat handover or request manual MFA. Product source
+and provenance remain tied to58faaac/original publisher, not the recovery commit.
+Proofs:`/private/tmp/gmax-mcp-context-release-0.26.94-20261022` and the sole plan.
+Gmax config/store identity and26unrelated root files are unchanged. Two client
+settings changed before local installation and were left untouched; that boundary
+is documented in`settings-proof.json`. Broader context composition is unselected.
+
 ## Process-ownership repair — delivered
 
 Reviewed **56c7806 / 0.26.93** removes startup's global name-based termination and
@@ -42,7 +65,7 @@ files, 26 unrelated root files, other plugins, Small/GPU, two worker threads,
 critical-only policy and index/store identity are preserved. Optional Gemma stays
 stopped. PID/readiness statements are dated evidence.
 
-**Public npm latest is 0.26.93.** GitHub trusted publication succeeded in run
+**Earlier0.26.93 publication evidence:** GitHub trusted publication succeeded in run
 `39717358032` from approved publisher `911a267`; the complete hosted tar matches
 the reviewed package, and the final registry archive matches its raw SHA256/SHA512.
 Sigstore verification binds the artifact to the real GitHub workflow/main/source/run.

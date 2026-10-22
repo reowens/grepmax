@@ -3,10 +3,12 @@
 ## Current state — October 22, 2026
 
 **Gmax supports document search for indexed Markdown in registered projects.**
-Reviewed 0.26.93 is public through GitHub trusted publishing, with exact registry
-bytes and signed provenance verified. It is installed in both existing Node roots
-and Claude scopes, with accepted live handover. Storage, session, graph, ranking,
-optional Gemma and document readiness work is delivered. Small remains the default; settings and protection are preserved.
+Reviewed0.26.94 fixes MCP context output skipping later fitting functions. Public
+registry bytes and signed provenance match the qualified archive; all three
+existing Node installations and both plugin scopes are updated, with accepted
+live handover. The reviewed registry-timeout fix passes verification-only recovery.
+Storage, session, graph, ranking, optional Gemma, document readiness and startup
+ownership work remain delivered. Small remains the default.
 
 The [necessity audit](plans/gmax-delivery.md#necessity-audit--october-21-2026)
 replaces the previous expanding queue:
@@ -14,6 +16,7 @@ replaces the previous expanding queue:
 | Item | Disposition |
 | --- | --- |
 | Startup can stop another Gmax instance's daemon/workers without ownership proof | Delivered: reviewed 56c7806 / 0.26.93 is public, byte/provenance verified and installed; source/archive/native/installed checks pass. Trusted publisher recovery passes. |
+| MCP context drops later fitting function bodies | Delivered in reviewed58faaac /0.26.94; package, registry/provenance, installation and CI recovery accepted. |
 | CPU/memory/disk history | On hold by user direction. Preserve source-approved0d5282c and inconclusive timing evidence; original regression unresolved, not shipped. |
 | Linux P3 setup | User-requested deployment, pending actual machine/access and selection; independent of document search |
 | Three-file docs exercise, new search helper and required external consumer rollout | Withdrawn; no demonstrated need |
@@ -25,8 +28,10 @@ remain intact; historical instructions do not restart work. Existing release and
 security gates still apply to any actual change. Only the manually dispatched
 release workflow is enabled; push/PR CI remains absent. The user-authorized
 [repair](plans/gmax-delivery.md#process-ownership-repair--ready-plan) is complete.
-Trusted publication succeeded in run39717358032; reviewed cache recovery 52ea74e
-passes [verification-only run39718868523](https://github.com/reowens/grepmax/actions/runs/39718868523).
+0.26.94 trusted publication succeeded in run39732926638. Its registry verifier
+hit a read timeout; reviewed repaira8b3617 passes
+[verification-only recovery39734613010](https://github.com/reowens/grepmax/actions/runs/39734613010)
+with publication skipped. The release is public and delivery is closed.
 The manual MFA path is withdrawn. Resource statistics is on hold by user direction. Linux P3 setup is the only other pending requested deliverable, awaiting machine/access and selection.
 
 ## Document index
@@ -56,7 +61,7 @@ The manual MFA path is withdrawn. Resource statistics is on hold by user directi
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 180 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 182 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|
