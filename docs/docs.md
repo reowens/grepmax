@@ -1,34 +1,29 @@
 # Docs
 
-## Current execution — October 10, 2026
+## Current state — necessity audit, October 21, 2026
 
-The [Gmax Delivery Plan](plans/gmax-delivery.md) is the sole execution plan.
-Milestones A and B are complete. 0.26.86 is published, registry integrity and exact
-artifact identity verified, installed in both runtimes/plugin scopes and serving
-from a ready/active daemon.
-Four former open plans are archived as superseded/deferred, with explicit transfers.
-Historical audits, incident reports and agent proposals are reference records, not queues.
+**Gmax supports document search for indexed Markdown in registered projects.**
+Public 0.26.92 is registry-verified. Reviewed 0.26.93 is now installed locally in
+both existing Node roots and Claude scopes and serves the live daemon; its public
+npm publication awaits authentication. Storage/session/graph/ranking/optional Gemma and document-readiness
+work is delivered. Small remains the default; settings and protection are preserved.
 
-| Order | Deliverable | State |
-| --- | --- | --- |
-| A | Complete bounded storage and path/content query repair | Complete: local checks, publication, both installations/plugin scopes, daemon handover and installed repair verification |
-| B | Reduce session resource overhead | Complete: local acceptance, registry-verified publication, both installations/plugin scopes and active daemon |
-| C | Complete one document-search consumer rollout | Queued after the requested CI/release review |
+The [necessity audit](plans/gmax-delivery.md#necessity-audit--october-21-2026)
+replaces the previous expanding queue:
 
-The plan defines implementation, root review, local checks, release/install and closeout
-for each deliverable. GitHub Actions is disabled; all six workflow files are preserved
-outside its active directory. The user requested a full CI/release requirements
-review next session, including
-release-only CI and trusted publishing; future policy is not locked. Do not restore
-automation during this review without a selected change. Repeated unchanged
-cleanup/timing observations are cancelled.
-Research, optional polish, watcher extraction and embedding migration are outside the
-execution queue. Depot account/provider integration is handed off to platform.
+| Item | Disposition |
+| --- | --- |
+| Startup can stop another Gmax instance's daemon/workers without ownership proof | Repaired locally: reviewed 56c7806/0.26.93 installed and serving; full source/archive/native/installed checks pass. Public npm publication alone awaits authentication |
+| CPU/memory/disk history | User-requested, open/deferred; unresolved overhead regression, not shipped |
+| Linux P3 setup | User-requested deployment, pending actual machine/access and selection; independent of document search |
+| Three-file docs exercise, new search helper and required external consumer rollout | Withdrawn; no demonstrated need |
+| Context composer, graph/ranking expansion, model promotion, automation and other enhancements | Optional; removed from the mandatory queue |
 
-The previous remaining-items inventory incorrectly counted shipped budget packing,
-impact rollups, not-found recovery and SQL-template skeleton support. Those are not
-pending tasks. Historical evidence and unresolved limitations remain in archived
-records and Git history; archiving is not a claim that every proposal shipped.
+The audit covers the sole live plan, reference/suggestion/limitation records,
+archived metadata, root docs and source TODO markers. Earlier findings/evidence
+remain intact; historical instructions do not restart work. Existing release and
+security gates still apply to any actual change. GitHub Actions remains disabled.
+The user authorized the [repair and delivery plan](plans/gmax-delivery.md#process-ownership-repair--ready-plan). The repair is installed and serving 0.26.93. Only public npm publication remains, pending authentication; the exact command and evidence are in the plan.
 
 ## Document index
 
@@ -49,13 +44,15 @@ records and Git history; archiving is not a claim that every proposal shipped.
 | [Performance Review — 2026-08-04](2026-08-04-performance-review.md) | Reference |
 | [2026 08 17 Gmax Agent Facing Health Audit](2026-08-17-gmax-agent-facing-health-audit.md) | Reference |
 | [2026-08-25 Release Triage — Retrospective](2026-08-25-release-triage-retrospective.md) | Reference |
+| [Graphify and related projects — October 19, 2026](2026-10-19-graphify-related-projects.md) | Reference |
 | [gmax Agent POV Suggestions](agent-pov-suggestions.md) | Reference |
 | [Embedding Layout Decision](embedding-layout-decision.md) | Reference |
 | [Known Limitations](known-limitations.md) | Reference |
+| [Linux GPU support and P3 Ultra G2 commissioning](linux-gpu-p3-design.md) | Reference |
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 174 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 180 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|

@@ -2,7 +2,7 @@
 type: doc
 status: reference
 created: 2026-04-09
-updated: 2026-10-05T02:53:16Z
+updated: 2026-10-21T23:59:04Z
 summary: Live catalog of open gmax limitations with detection + recovery steps.
 audience: internal
 related_plans:
@@ -23,7 +23,23 @@ related_docs:
 
 # Known Limitations
 
-Last updated 2026-10-06.
+Catalog status reconciled October 21, 2026. The dated entries preserve their
+original evidence; they are not a list of required fixes. The
+[necessity audit](plans/gmax-delivery.md#necessity-audit--october-21-2026) identifies
+current obligations. Document search, bounded pruning/orphan reclamation, PID-reuse
+lease handling and shutdown fixes have shipped. Static graph limitations and
+optional ranking tradeoffs do not automatically require more implementation.
+
+**Startup process ownership is repaired locally in reviewed 0.26.93 / 56c7806.**
+The prior name-based startup termination could stop another instance's daemon or
+workers. The repair removes that termination and the raw-PID restart fallback,
+rechecks ownership after startup waits, and preserves predecessor evidence when
+startup refuses. It is installed in both existing prefixes and serves the live Mac
+daemon. Public npm publication remains pending authentication; public0.26.92 still
+contains the old defect. The [delivery checkpoint](plans/gmax-delivery.md#repair-implementation-checkpoint--october-22-utc)
+records source/archive/install verification and the remaining publication step.
+Unknown or unresponsive owners now cause refusal and may require an explicit stop;
+startup does not guess ownership or kill by process name.
 
 ## Small result lists preserve ranks; relevance still needs validation
 
@@ -287,9 +303,20 @@ v0.26.54’s single-fragment cleanup guard did not cover ordinary multiple-fragm
 
 The containment release disables full-table optimization and scheduled maintenance before native setup, including force and doctor paths. It preserves persistent host quarantine across startup and recycling. This prevents the automatic rewrite loop but does not recover retained copies. Existing low-level compaction guards are retained only for regression coverage behind a test-only policy mock; there is no production override.
 
-A separate prune-only helper remains unshipped pending exclusive cross-process ownership, runtime lock/wheel validation, protected-version correctness, bounded resources and interruption tests. It must not delay containment. Disk recovery must measure allocated blocks and free space alongside file lengths; do not claim recovered space from gross native deletion alone. Preserve the store and do not force compaction, use future cutoffs or manually delete fragments.
+**Subsequent delivery:** the bounded prune-only helper and cross-process ownership,
+locked runtime, protected-version, resource and interruption checks shipped in the
+storage-repair work, with additional readiness/helper-launch fixes in 0.26.92.
+The old “unshipped helper” description is superseded. Full-table rewrites remain
+contained; accepted bounded reclamation does not promise removal of every native
+retention case. Disk recovery uses allocated/free-space evidence as well as file
+lengths. Preserve the store; this history is not an instruction to force maintenance.
 
 ## Fresh unreferenced fragments can survive an idle-store cleanup
+
+**Current Gmax status:** milestone A delivered reference-proven bounded orphan
+reclamation. The native `optimize` behavior below remains a historical upstream
+limitation; it does not mean the Gmax orphan-reclamation feature is unshipped or
+that another cleanup experiment is required.
 
 Verified October 6 against both LanceDB 0.38.0 and 0.39.0 in synthetic temporary stores. A copied, unreferenced data fragment created after the latest manifest survived optimize when the single-fragment table needed no rewrite. After a normal row update committed a newer manifest, optimize removed the copy and preserved the row. Lance limits its data-file listing using the earliest retained manifest timestamp; `deleteUnverified: true` does not remove that listing boundary.
 
@@ -396,13 +423,11 @@ done
 A marker whose PID resolves to a process owned by a user other than your own, or whose `lstart`
 disagrees with the marker's `processStart`, is the blocker.
 
-**Recovery:** stop the daemon, confirm no gmax process is running, then delete the stale markers.
-They are reader markers only — no index data lives in them, and a live reader recreates its own.
-
-```bash
-pkill -f 'gmax-daemon|gmax-worker|gmax-embed'
-rm -f ~/.gmax/lancedb.lease/readers/*.json
-```
+**Current status:** the PID-reuse lease defect and related shutdown hang were
+fixed. The former blanket process-kill/reader-marker deletion recipe is retired:
+process names alone do not identify the owning Gmax instance. For a new lease
+failure, preserve the marker/process-start evidence and establish the actual owner
+before selecting recovery. No live recovery is required by this historical record.
 
 **Fix (implemented 2026-08-25, `defaultProbeOwner` in `store-lease.ts`; regression tests in
 `tests/store-lease.test.ts`):** `EPERM` means the PID exists but is not signalable — it
