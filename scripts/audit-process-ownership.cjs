@@ -15,7 +15,9 @@ function load(relative, mocks, processMock) {
       return mocks[name];
     },
     process: processMock,
-    console: { log() {} },
+    console: { log() {}, error() {} },
+    setTimeout: () => ({ unref() {} }),
+    clearTimeout() {}, clearInterval() {},
   }, { filename, timeout: 1000 });
   return exports;
 }
@@ -39,6 +41,72 @@ function load(relative, mocks, processMock) {
     await (manager.assertStartupAvailable || manager.killStaleProcesses).call(manager);
     assert.deepEqual(kills, [], "Foreign processes must never be termination targets");
     assert.deepEqual(discovery, [], "Startup must not discover processes globally");
+  }
+  // Exercise the CLI failure sequence with the full compiled Daemon class:
+  // a rejected start is always followed by shutdown for partial-start cleanup.
+  for (const kind of ["healthy", "draining", "malformed", "permission"]) {
+    const PATHS = { globalRoot: "/fixture", daemonPidFile: "/fixture/daemon.pid", daemonDrainingFile: "/fixture/daemon.draining", daemonSocket: "/fixture/daemon.sock", daemonLockFile: "/fixture/daemon.lock" };
+    const markers = new Map([[kind === "draining" ? PATHS.daemonDrainingFile : PATHS.daemonPidFile,
+      kind === "draining" ? JSON.stringify({ pid: 910001, ts: 1 }) : kind === "malformed" ? "bad-pid" : "910001"],
+      [PATHS.daemonSocket, "predecessor-socket"]]);
+    const before = [...markers], mutations = [], probes = [];
+    const fakeFs = {
+      lstatSync(file) {
+        if (kind === "permission") throw Object.assign(Error("denied"), { code: "EACCES" });
+        if (!markers.has(file)) throw Object.assign(Error("absent"), { code: "ENOENT" });
+        return { isFile: () => true, isSymbolicLink: () => false };
+      },
+      readFileSync: file => markers.get(file),
+      unlinkSync(file) { mutations.push(["unlink", file]); markers.delete(file); },
+      mkdirSync() { throw Error("Unexpected mkdir"); },
+      writeFileSync() { throw Error("Unexpected write"); },
+    };
+    const processMock = { env: { VITEST: "true" }, pid: 910000,
+      kill(pid, signal) { assert.equal(signal, 0); probes.push(pid); return true; } };
+    const client = {
+      isDaemonDraining: () => kind === "draining", waitForDaemonDrain: async () => false,
+      writeDrainingMarker(pid) { mutations.push(["write-drain", pid]); markers.set(PATHS.daemonDrainingFile, JSON.stringify({ pid })); },
+      clearDrainingMarker() { mutations.push(["clear-drain"]); markers.delete(PATHS.daemonDrainingFile); },
+    };
+    const { ProcessManager } = load("dist/lib/daemon/process-manager.js", {
+      "node:fs": fakeFs, "node:child_process": {}, "../../config": { PATHS }, "../utils/daemon-client": client,
+    }, processMock);
+    // Internal modules unused on this path have inert exports. None are loaded
+    // from the host; load() still rejects every unlisted dependency.
+    const daemonCode = fs.readFileSync(path.join(root, "dist/lib/daemon/daemon.js"), "utf8");
+    const mocks = {};
+    for (const [, name] of daemonCode.matchAll(/require\("([^" ]+)"\)/g)) {
+      assert.ok(name.startsWith(".") || ["node:fs", "node:net", "node:path", "proper-lockfile"].includes(name));
+      mocks[name] = {};
+    }
+    const noop = () => {};
+    Object.assign(mocks, {
+      "node:fs": fakeFs, "node:path": path, "../../config": { PATHS, CONFIG: {} },
+      "../utils/async-semaphore": { AsyncSemaphore: class {} },
+      "../utils/autostart": { daemonStartDeniedReason: () => null },
+      "../utils/daemon-client": client,
+      "../utils/host-guard-policy": { hostGuardPolicy: () => "critical-only" },
+      "../utils/keyed-mutex": { KeyedMutex: class { async close() {} } },
+      "../utils/operation-coordinator": { OperationCoordinator: class { async close() {} } },
+      "../utils/resource-budget": { resourceBudget: { check: () => null } },
+      "../utils/watcher-store": { listWatchers: () => [], unregisterDaemon: () => mutations.push(["unregister-daemon"]) },
+      "../workers/pool": { isWorkerPoolInitialized: () => false },
+      "./mlx-server-manager": { MlxServerManager: class { async stopMlxServer() {} } },
+      "./process-manager": { ProcessManager },
+      "./read-verbs": { registerGraphVerbs: noop }, "./rows-handler": { registerRowsVerbs: noop },
+      "./vector-handler": { registerVectorVerbs: noop }, "./watch-leases": { WatchLeases: class {} },
+      "./watcher-manager": { WatcherManager: class { async quiesceAll() {} } },
+    });
+    const { Daemon } = load("dist/lib/daemon/daemon.js", mocks, processMock);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const daemon = new Daemon();
+      daemon.hostPressureDeniedReason = () => null;
+      daemon.hasUnfinishedRebuild = () => false;
+      await assert.rejects(() => daemon.start(), /startup refused/);
+      await daemon.shutdown();
+      assert.deepEqual([...markers], before, `${kind}: predecessor evidence must survive caller cleanup`);
+      assert.deepEqual(mutations, [], `${kind}: refused start owns no shared state`);
+    }
   }
   const { restartDaemon } = load("dist/lib/utils/daemon-restart.js", {}, {});
   for (const shutdownOk of [false, true]) {
@@ -78,5 +146,5 @@ function load(relative, mocks, processMock) {
   assert.deepEqual(JSON.parse(JSON.stringify(listWatchers({ includeStale: true }))), [stale]);
   assert.deepEqual(deletes, []);
   assert.deepEqual(probes, []);
-  console.log("Packaged process ownership: foreign daemon/worker preserved; cooperative drain/refusal; registry evidence preserved; zero real signals");
+  console.log("Packaged process ownership: foreign daemon/worker preserved; cooperative drain/refusal; registry evidence and refused-start cleanup preserved; zero real signals");
 })().catch(error => { console.error(error); process.exitCode = 1; });

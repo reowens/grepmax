@@ -213,6 +213,9 @@ export class Daemon {
   private server: net.Server | null = null;
   private readonly connections = new Set<net.Socket>();
   private releaseLock: (() => Promise<void>) | null = null;
+  // Acquiring the home lock grants control-state cleanup ownership. A refused
+  // start owns nothing; keep this grant through the resource drain after release.
+  private ownsControlState = false;
   private lastActivity = Date.now();
   private readonly startTime = Date.now();
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
@@ -426,6 +429,9 @@ export class Daemon {
         retries: 0,
         stale: 120_000,
         onCompromised: () => {
+          // A replacement may now own the home. Close our own resources without
+          // publishing or deleting its control state.
+          this.ownsControlState = false;
           console.error(
             "[daemon] Lock compromised — another daemon took over. Shutting down.",
           );
@@ -435,6 +441,7 @@ export class Daemon {
           this.shutdown().finally(() => process.exit(0));
         },
       });
+      this.ownsControlState = true;
       this.assertStartupActive();
       dbg("daemon", "lock acquired");
     } catch (err) {
@@ -3227,7 +3234,7 @@ export class Daemon {
     // Announce graceful shutdown BEFORE dropping the liveness markers below, so a
     // successor spawned during the (possibly long) drain sees the draining marker
     // and defers instead of SIGKILLing us mid-cleanup.
-    writeDrainingMarker(process.pid);
+    if (this.ownsControlState) writeDrainingMarker(process.pid);
 
     // Stop accepting new IPC before draining admitted operations. Existing
     // sockets are destroyed below so their close handlers cancel queued work.
@@ -3248,12 +3255,14 @@ export class Daemon {
 
     // Drop external liveness markers now so interrupted cleanup cannot leave a
     // fresh-looking daemon that silently blocks its successor.
-    try {
-      fs.unlinkSync(PATHS.daemonSocket);
-    } catch {}
-    try {
-      fs.unlinkSync(PATHS.daemonPidFile);
-    } catch {}
+    if (this.ownsControlState) {
+      try {
+        fs.unlinkSync(PATHS.daemonSocket);
+      } catch {}
+      try {
+        fs.unlinkSync(PATHS.daemonPidFile);
+      } catch {}
+    }
     if (this.releaseLock) {
       const release = this.releaseLock;
       this.releaseLock = null;
@@ -3326,7 +3335,7 @@ export class Daemon {
     for (const root of this.processors.keys()) {
       unregisterWatcherByRoot(root);
     }
-    unregisterDaemon();
+    if (this.ownsControlState) unregisterDaemon();
     this.processors.clear();
 
     // Close shared resources
@@ -3348,7 +3357,7 @@ export class Daemon {
     // liveness markers (socket/pid/lock) are already gone — so the fresh
     // daemon's singleton check sees a clean slate and opens LanceDB/LMDB
     // without contending with this exiting process.
-    if (opts.relaunch) {
+    if (opts.relaunch && this.ownsControlState) {
       const pid = await spawnDaemon();
       console.log(
         `[daemon] Spawned successor daemon${pid ? ` (PID: ${pid})` : " (spawn failed)"}`,
@@ -3357,7 +3366,8 @@ export class Daemon {
 
     // Cleanly drained — drop the marker so a later start doesn't defer to a
     // process that's already gone (it self-expires after DRAIN_GRACE_MS anyway).
-    clearDrainingMarker();
+    if (this.ownsControlState) clearDrainingMarker();
+    this.ownsControlState = false;
 
     console.log("[daemon] Shutdown complete");
   }
