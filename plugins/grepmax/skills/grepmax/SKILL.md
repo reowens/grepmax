@@ -244,6 +244,7 @@ gmax config                                # view/change settings
 gmax doctor                                # health check
 gmax doctor --fix                          # auto-repair (compact, prune, clear stale locks)
 gmax repair --rebuild                      # last resort: destructive whole-store rebuild
+gmax repair --fts                          # build a missing full-text index once
 gmax llm on/off/start/stop/status          # local LLM server — see the warning above; ask first
 ```
 

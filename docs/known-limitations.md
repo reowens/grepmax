@@ -98,6 +98,10 @@ before search or sync mutation; existing rows are preserved.
 - Preserve a corrupt store and logs for diagnosis before invoking destructive repair.
 - A disconnected client cancels before drop; after drop the daemon continues from its durable rebuild
   journal. Re-running the command resumes an unfinished rebuild.
+- Under host-safety containment a rebuilt store has no full-text index, and searches warn
+  `Full-text search unavailable`. Once every project reports `indexed`, run `gmax repair --fts`
+  (0.26.96+) to build it once; it refuses while any project is still pending and never replaces an
+  existing index.
 
 ## `gmax surprises` is experimental orientation, not proof
 

@@ -481,6 +481,7 @@ gmax config --model-tier standard   # changes desired configuration only
 gmax config                         # shows configured vs built identity
 gmax status                         # reports current / legacy / stale / unbuilt per project
 gmax repair --rebuild               # guarded whole-corpus rebuild through the daemon
+gmax repair --fts                   # build a missing full-text index once (after a rebuild)
 ```
 
 `legacy` means the existing index is compatible but its exact model fingerprint was inferred from

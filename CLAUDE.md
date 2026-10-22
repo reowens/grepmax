@@ -242,6 +242,19 @@ The drop-and-rebuild mitigation in `vector-db.ts` stays. After the upgrade a pan
 to report upstream, not an expected cost. Preserve: `createFTSIndexUnsafe()` **throws** on terminal
 failure; `disabling auto-rebuild until an optimize succeeds` is transient.
 
+#### Building a missing FTS index once: `gmax repair --fts`
+
+Containment leaves `createFTSIndex()` adopt-only, so a store rebuilt from scratch (or a table that
+lost its index) has no full-text index and every search warns `Full-text search unavailable`.
+`gmax repair --fts` (0.26.96, ping capability `ftsBuild: 1`) is the one narrow way to build it. The
+daemon's `fts-build` shared operation calls `VectorDB.buildMissingFTSIndex()`, which runs inside the
+write gate, returns `exists` when an index already covers `content`, requires disk pressure `ok`, and
+makes a single `createIndex(..., { replace: false })` attempt; it never replaces or drops an index.
+The daemon refuses it while paused, while a bulk index operation runs, or while any project is
+`pending`; version cleanup and bounded maintenance defer while it runs. Rows written after the build
+stay searchable through FTS's unindexed-row scan (`fastSearch` off), so no later rebuild is needed.
+It does not lift containment: compaction and automatic index builds stay disabled.
+
 #### Abandoned `.tmp*` files are the other half of that panic's cost
 
 Every killed optimize — FTS panic, daemon restart mid-compaction, OOM — strands the scratch file
@@ -269,6 +282,11 @@ Status values: `"pending"` | `"indexed"` | `"error"`
 - `indexed` — searchable; the daemon watches it (and runs catchup) while a session holds a lease
 - `pending` — daemon indexes in background on startup via `indexPendingProject()`
 - `error` — **daemon ignores it**. Must be manually re-added or status edited.
+
+A shutdown, recycle or version handover that aborts `indexPendingProject` leaves the status as it
+was (normally `pending`), so the next daemon resumes it; before 0.26.96 the abort marked it `error`.
+An `initialSync` that returns `degraded` (walk errors or an incomplete root) stays `pending` and is
+retried 30 s later, up to five times.
 
 #### A missing root is not necessarily a dead project
 
@@ -410,6 +428,12 @@ File event (from watcher or catchup) -> pending map -> debounce 2s -> processBat
   Report reindex count
   If pending files remain, reschedule
 ```
+
+A batch waits for the project lock (`watch-batch` through `runProjectOperation`) with a per-batch
+start signal that `close()` and `pause()` abort, leaving its files pending. Callers that unwatch
+while holding that lock (`indexPendingProject`, `indexProject`, remove) would otherwise wait on a
+batch that is waiting on them. Before 0.26.96 that deadlock left a retried project `pending` forever,
+with `indexPendingProject start` logged but no `[index] Root:` or `Unwatched` line after it.
 
 ### Worker pool
 
