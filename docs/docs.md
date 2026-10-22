@@ -3,7 +3,7 @@
 ## Current state — October 22, 2026
 
 **Gmax supports document search for indexed Markdown in registered projects.**
-Reviewed0.26.94 fixes MCP context output skipping later fitting functions. Public
+Reviewed 0.26.94 fixes MCP context output skipping later fitting functions. Public
 registry bytes and signed provenance match the qualified archive; all three
 existing Node installations and both plugin scopes are updated, with accepted
 live handover. The reviewed registry-timeout fix passes verification-only recovery.
@@ -16,8 +16,8 @@ replaces the previous expanding queue:
 | Item | Disposition |
 | --- | --- |
 | Startup can stop another Gmax instance's daemon/workers without ownership proof | Delivered: reviewed 56c7806 / 0.26.93 is public, byte/provenance verified and installed; source/archive/native/installed checks pass. Trusted publisher recovery passes. |
-| MCP context drops later fitting function bodies | Delivered in reviewed58faaac /0.26.94; package, registry/provenance, installation and CI recovery accepted. |
-| CPU/memory/disk history | On hold by user direction. Preserve source-approved0d5282c and inconclusive timing evidence; original regression unresolved, not shipped. |
+| MCP context drops later fitting function bodies | Delivered in reviewed `58faaac` / 0.26.94; package, registry/provenance, installation and CI recovery accepted. |
+| CPU/memory/disk history | On hold by user direction. Preserve source-approved `0d5282c` and inconclusive timing evidence; original regression unresolved, not shipped. |
 | Linux P3 setup | User-requested deployment, pending actual machine/access and selection; independent of document search |
 | Three-file docs exercise, new search helper and required external consumer rollout | Withdrawn; no demonstrated need |
 | Context composer, graph/ranking expansion, model promotion, automation and other enhancements | Optional; removed from the mandatory queue |
@@ -28,9 +28,9 @@ remain intact; historical instructions do not restart work. Existing release and
 security gates still apply to any actual change. Only the manually dispatched
 release workflow is enabled; push/PR CI remains absent. The user-authorized
 [repair](plans/gmax-delivery.md#process-ownership-repair--ready-plan) is complete.
-0.26.94 trusted publication succeeded in run39732926638. Its registry verifier
-hit a read timeout; reviewed repaira8b3617 passes
-[verification-only recovery39734613010](https://github.com/reowens/grepmax/actions/runs/39734613010)
+0.26.94 trusted publication succeeded in run 39732926638. Its registry verifier
+hit a read timeout; reviewed repair `a8b3617` passes
+[verification-only recovery](https://github.com/reowens/grepmax/actions/runs/39734613010)
 with publication skipped. The release is public and delivery is closed.
 The manual MFA path is withdrawn. Resource statistics is on hold by user direction. Linux P3 setup is the only other pending requested deliverable, awaiting machine/access and selection.
 

@@ -2,7 +2,7 @@
 type: plan
 status: paused
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-22T07:46:47Z
+updated: 2026-10-22T07:53:49Z
 surfaces:
   - store
   - daemon
@@ -20,7 +20,7 @@ parent_plan:
 related_plans:
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "MCP context packing delivered in0.26.94 /58faaac: public registry bytes/provenance, three existing installations, two plugin scopes and ready live handover accepted. Registry-timeout fixa8b3617 is reviewed; verification-only run39734613010 is green. Resource statistics remains on hold; Linux awaits machine/access."
+current_state: "MCP context packing delivered in 0.26.94 / 58faaac: public registry bytes/provenance, three existing installations, two plugin scopes and ready live handover accepted. Registry-timeout fix a8b3617 is reviewed; verification-only run 39734613010 is green. Resource statistics remains on hold; Linux awaits machine/access."
 next_step: "No MCP delivery or CI recovery work remains. Resource statistics stays on hold. Linux P3 deployment remains pending actual machine/access and user selection; other optional enhancements remain unselected. Do not republish, reinstall or repeat handover."
 summary: "0.26.94 MCP context fix and CI recovery delivered. Resource statistics on hold; Linux pending machine/access. Other optional work unselected."
 ---
@@ -55,94 +55,93 @@ was implemented. Those proposals lacked a demonstrated user need.
 
 | Item | Evidence and necessity | Disposition |
 | --- | --- | --- |
-| Daemon startup can stop another Gmax instance's processes | Current 0.26.92 `ProcessManager.killStaleProcesses` finds all same-name daemons/workers, but checks this home's heartbeat/socket and never establishes each target's ownership. With no local daemon, a healthy other-home daemon can be called stale; workers are signalled unconditionally. A prior test incident is recorded in this plan. Exact installed-module simulation reproduces both cases with fake PIDs and zero real signals. This can interrupt indexing or another session. | **Delivered in reviewed 0.26.93 / 56c7806.** Public npm bytes, signed provenance, GitHub release, both installations and live handover are accepted. |
-| CPU/memory/disk history | Explicit user request, implemented in an isolated candidate; source approval exists but the original +41.935 ms p95 regression and control-precision problem remain unresolved. It is absent from the installed release. | **On hold by user direction.** Preserve source-approved0d5282c and inconclusive diagnostic; original regression stays open. No further investigation, integration or release selected. |
+| Daemon startup can stop another Gmax instance's processes | In 0.26.92, `ProcessManager.killStaleProcesses` finds all same-name daemons/workers, but checks this home's heartbeat/socket and never establishes each target's ownership. With no local daemon, a healthy other-home daemon can be called stale; workers are signalled unconditionally. A prior test incident is recorded in this plan. Exact installed-module simulation reproduces both cases with fake PIDs and zero real signals. This can interrupt indexing or another session. | **Delivered in reviewed 0.26.93 / 56c7806.** Public npm bytes, signed provenance, GitHub release, both installations and live handover are accepted. |
+| CPU/memory/disk history | Explicit user request, implemented in an isolated candidate; source approval exists but the original +41.935 ms p95 regression and control-precision problem remain unresolved. It is absent from the installed release. | **On hold by user direction.** Preserve source-approved `0d5282c` and inconclusive diagnostic; original regression stays open. No further investigation, integration or release selected. |
 | Linux P3 setup | Explicit user-requested deployment/design work. It requires the actual machine and access. CPU installation/baseline is useful for that deployment, not required to complete the Mac product. | **Pending deployment when the machine is available and the user selects execution.** No dependency on document-search work; GPU purchase/CUDA remain optional. |
 
-The necessary ownership repair must identify the target instance/home and process
-start identity before signalling; name-only discovery or failed local liveness is
-not ownership proof. Unknown ownership must refuse. Regressions should cover an
-unrelated daemon, an unrelated standalone watcher worker, recycled PID and normal
-same-home handover using simulated discovery/signals or owned isolated processes.
-This audit selects no live process signalling or service restart.
+The delivered ownership repair verifies the target instance/home and process
+start identity before signalling. Unknown ownership refuses. Its regressions cover
+foreign daemons and standalone watchers, recycled PIDs and cooperative same-home
+handover. The earlier audit used simulated processes; accepted release and live
+handover evidence is recorded below.
 
 ### MCP context packing — delivered in 0.26.94
 
-The user selected the narrow correction: when the first function body exceeds the
-MCP `build_context` budget, skip it and try later candidates rather than ending
-the loop. Reuse the CLI's existing `packByBudget` selection with no forced overflow.
-Keep result relevance order and file/line references, and reserve space for entry
-points, separators and the footer within the existing approximate token budget.
+The selected fix is delivered. When a function body exceeds the MCP
+`build_context` size budget, the tool skips it and tries later candidates. It
+reuses the CLI's existing `packByBudget` helper, keeps relevance order and
+file/line references, and counts entry points, separators and the footer toward
+the existing approximate token limit. An oversized body is never forced in.
+Existing MCP sessions need a normal restart to load the updated server code.
 This does not select the broader shared context composer or model/ranking work.
+Resource statistics and its performance investigation remain on hold.
 
-Work is isolated in `.claude/worktrees/mcp-context-packing-20261022` from accepted
-0.26.93 plus documentation. Regressions call the registered tool with disposable
-source files and mocked search/watcher/runtime boundaries: oversized first body,
-later fitting bodies, all oversized, exact budget pressure and mapped/raw paths.
-Run relevant MCP/CLI/budget tests and source/test types, then independent parent-
-model review of the final candidate. Follow existing release/archive/installation
-checks for delivery; source-only progress is not a published fix. Resource
-statistics and its performance investigation stay on hold.
+**Reviewed product source/tag:**
+`58faaace8ded9e34136839cc904d155f0c63e9d4` / `v0.26.94`.
+Implementation is preserved in `.claude/worktrees/mcp-context-packing-20261022`.
+Three regressions fail against released source and pass with the fix. Four added
+registered-tool cases cover oversized-first omission, fitting-result order and
+labels, oversized entry-point labels, footer reserve and no forced body.
 
-**Qualified candidate:** exact `58faaace8ded9e34136839cc904d155f0c63e9d4`
-(version0.26.94). Three new regressions fail on released source and pass fixed;
-four added tests preserve fitting-result order and labels, approximate complete
-output bounds, footer reserve and no forced oversized body. Full source suite
-passes2,461tests/237files, source/test types and build. Independent parent-model
-review approves exact source with101tests/6files. All JS/Python security audits
-are clean; Python suite runs50tests with13optional-runtime skips. Biome passes
-with pre-existing warnings/infos.
+Validation passed: 2,461 source tests in 237 files, source/test types, build and
+security audits. Independent parent-model review approved the exact source and
+passed 101 tests in six files. Four compiled archive cases pass; installed
+0.26.93 reproduces the original omission. The exact consumer audit, ownership,
+document bridge, daemon/standalone watchers, native Session/containment, locked
+prune and bounded cleanup checks pass. Biome passes with pre-existing warnings.
+The initial Python suite ran 50 tests with 13 optional-runtime skips.
 
-Exact324-file archive changes only `dist/commands/mcp.js` and the three version
-manifests; native payloads and other320files match0.26.93. Four compiled-tool
-fixture cases pass against the packed archive; installed0.26.93 fails the same
-oversized-first check. Exact consumer audit, process ownership, document bridge,
-daemon/standalone watchers, native Session/containment, locked prune and bounded
-cleanup all pass. Receipt/archive/review evidence:
-`/private/tmp/gmax-mcp-context-release-0.26.94-20261022`;
-SHA256`1e8c7ebb903971f463d57b68f4262f7a749697c8f91b54839d8b794d46abff8e`.
-Review: `/private/tmp/gmax-mcp-context-packing-review-v1-20261022.md`.
+The 324-file archive changes only `dist/commands/mcp.js` and the three version
+manifests; native payloads and the other 320 files match 0.26.93.
+Archive SHA256:
+`1e8c7ebb903971f463d57b68f4262f7a749697c8f91b54839d8b794d46abff8e`.
+Source/archive receipts, registry/provenance, installation, plugin/native and
+recovery proofs are in
+`/private/tmp/gmax-mcp-context-release-0.26.94-20261022`.
+Product review: `/private/tmp/gmax-mcp-context-packing-review-v1-20261022.md`.
 
-**Delivered:** tag`v0.26.94` is the reviewed product source58faaac. Trusted
-publication run`39732926638` rebuilt identical content and accepted publication at
-06:18:12UTC. The initial registry check received404s, then failed at06:23:52UTC
-on an unhandled metadata read timeout before the480-second deadline. This was a
-verifier failure after accepted publication, not a product test/build failure.
+**CI failure and recovery:** the original
+[publication run](https://github.com/reowens/grepmax/actions/runs/39732926638)
+rebuilt identical content and accepted npm publication at 06:18:12 UTC. Registry
+verification received 404s, then failed at 06:23:52 UTC on an unhandled metadata
+read timeout before the 480-second deadline. The product build and tests passed;
+this failure did not require another npm publication.
 
-Workflow-only fix`a8b3617d36c049ac75f7fdcd2ece99ccefab639e` retries transient HTTP/
-network reads within the existing deadline, caps request waits/backoff by remaining
-time and closes error responses. Wrong version/URL/bytes, malformed metadata and
-nontransient HTTP errors still fail. Nine source tests and18additional independent
-offline scenarios, actionlint/Python syntax/diff checks pass. Full stdlib Python
-suite now runs59tests with13optional skips. Parent-model review approves the exact
-workflow source. The package, product tag and source58faaac were unchanged.
+Reviewed workflow fix
+`a8b3617d36c049ac75f7fdcd2ece99ccefab639e` retries transient HTTP/network reads
+within the same deadline and caps request waits/backoff by remaining time. Wrong
+version, URL or bytes, malformed metadata and nontransient HTTP errors still
+fail. Nine source tests, 18 independent offline scenarios, actionlint, embedded
+Python syntax and diff checks pass. The full Python suite now runs 59 tests with
+13 optional-runtime skips. Product source, tag and archive are unchanged.
+Workflow review: `/private/tmp/gmax-registry-timeout-review-v1-20261022.md`.
 
-The version became publicly visible; owner download verifies SHA256/SHA512/size
-and npm latest0.26.94. Sigstore verification binds the exact artifact to the actual
-original publisher58faaac/run39732926638 and GitHub workflow/main identity.
-[Verification-only recovery39734613010](https://github.com/reowens/grepmax/actions/runs/39734613010)
-**passes**, explicitly skipping the sole npm publish step. It rebuilds/compares the
-same artifact, verifies public registry bytes and makes the GitHub release public.
-The original failed run remains historical; no duplicate publication occurred.
-[Public release0.26.94](https://github.com/reowens/grepmax/releases/tag/v0.26.94).
-Review: `/private/tmp/gmax-registry-timeout-review-v1-20261022.md`.
+The public registry archive matches SHA256, SHA512 and size; npm latest is
+0.26.94. Sigstore verifies the exact artifact against the original publisher
+`58faaac`, run `39732926638`, and GitHub workflow/main identity.
+[Verification-only recovery](https://github.com/reowens/grepmax/actions/runs/39734613010)
+**passes with the sole npm publication step skipped**. It rebuilds/compares the
+same artifact, verifies registry bytes and publishes the
+[GitHub release](https://github.com/reowens/grepmax/releases/tag/v0.26.94).
+The original red run is historical; no duplicate publication occurred.
 
-The exact qualified archive is installed in all three existing prefixes:
-Homebrew/Node26.12.0 and NVM Node22.23.1/22.23.4. Each verifies all324packagefiles;
-the latter was a pre-existing stale0.26.92 install, now reconciled. All three
-native smoke checks pass without model loads. Both existing plugin scopes verify
-all15files, with other plugin records unchanged. Cooperative0.26.93→0.26.94
-handover completes with ready/active/open daemon PID35010; configured worker count
-remains2. PID/readiness is dated acceptance evidence.
+**Installed acceptance:** all three existing prefixes (Homebrew Node 26.12.0,
+NVM Node 22.23.1 and 22.23.4) verify all 324 package files. The last was a stale
+0.26.92 install, now reconciled. Native checks pass in all three runtimes without
+loading a model. Both existing plugin scopes verify 15 files; other plugin
+records are unchanged. Cooperative 0.26.93 → 0.26.94 handover completed with a
+ready/active/open daemon, PID 35010, and configured worker count 2. PID/readiness
+is dated acceptance evidence.
 
-Gmax config/store identity, safety markers and26unrelated root files are preserved.
-Two Claude settings hashes changed after the initial snapshot but their06:14:03UTC
-mtime precedes local installation/plugin updates; they were left untouched, and
-recorded separately in`settings-proof.json`. Do not claim all client settings
-unchanged against that earlier snapshot. Receipt, registry/provenance, installation,
-plugin/native and recovery proofs are in the evidence directory above. Resource
-statistics remains on hold and is absent from this release. Delivery is closed;
-no manual MFA, repeat publication/installation/handover or model experiment remains.
+Gmax configuration, store identity, safety markers and 26 unrelated root files
+are preserved. Two Claude settings hashes changed after the initial snapshot;
+their 06:14:03 UTC mtime precedes local installation/plugin updates. They were
+left untouched and recorded in `settings-proof.json`. Do not claim all client
+settings matched that earlier snapshot or restore unrelated changes.
+
+Delivery and CI recovery are closed. No manual MFA, repeat publication,
+installation, handover or model experiment remains. Resource statistics is
+absent from this release and stays on hold.
 
 ### Reduced resource sampler — October 22, on hold
 
@@ -212,7 +211,7 @@ private critical-latch/ledger writes and primary quarantine refusal. Parent-mode
 round2 **approved exact source0d5282c**, independently passing142JavaScript tests,
 3Python tests and an async/write-failure fixture. Report:
 `/private/tmp/gmax-resource-sampling-review-v2-20261022.md`. Performance, package,
-release and current0.26.93 integration are explicitly outside that approval.
+release and installed-release integration are explicitly outside that approval.
 
 The committed explicit measurement helper runs one off/off control pair, one
 off/on pair (70seconds per arm, retaining actual minute collection), then a
@@ -262,7 +261,7 @@ Smoke evidence:
 `/var/folders/n2/c5kbh3vj7_s4t9_q0xc42z0m0000gn/T/gmax-sampling-measure-EsB8OP`.
 Measurement evidence (raw cases, summary, closure and owner binding proof):
 `/var/folders/n2/c5kbh3vj7_s4t9_q0xc42z0m0000gn/T/gmax-sampling-measure-3l1wRI`.
-The isolated source remains clean at0d5282c; current0.26.93 is unchanged and this
+The isolated source remains clean at0d5282c; the installed release is unchanged by this prototype and the
 sampler is not shipped.
 
 ### Process-ownership repair — ready plan
