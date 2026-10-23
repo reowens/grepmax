@@ -18,7 +18,7 @@ replaces the previous expanding queue:
 | Startup can stop another Gmax instance's daemon/workers without ownership proof | Delivered: reviewed 56c7806 / 0.26.93 is public, byte/provenance verified and installed; source/archive/native/installed checks pass. Trusted publisher recovery passes. |
 | MCP context drops later fitting function bodies | Delivered in reviewed `58faaac` / 0.26.94; package, registry/provenance, installation and CI recovery accepted. |
 | CPU/memory/disk history | On hold by user direction. Preserve source-approved `0d5282c` and inconclusive timing evidence; original regression unresolved, not shipped. |
-| Linux P3 setup | User-requested deployment, pending actual machine/access and selection; independent of document search |
+| Linux P3 setup | Machine/SSH readiness verified; Gmax installation awaits selection. CPU first, GPU optional. |
 | Three-file docs exercise, new search helper and required external consumer rollout | Withdrawn; no demonstrated need |
 | Context composer, graph/ranking expansion, model promotion, automation and other enhancements | Optional; removed from the mandatory queue |
 
@@ -32,7 +32,7 @@ release workflow is enabled; push/PR CI remains absent. The user-authorized
 hit a read timeout; reviewed repair `a8b3617` passes
 [verification-only recovery](https://github.com/reowens/grepmax/actions/runs/39734613010)
 with publication skipped. The release is public and delivery is closed.
-The manual MFA path is withdrawn. Resource statistics is on hold by user direction. Linux P3 setup is the only other pending requested deliverable, awaiting machine/access and selection.
+The manual MFA path is withdrawn. Resource statistics is on hold by user direction. Linux P3 readiness is verified; installation remains the only other pending requested deliverable, awaiting selection.
 
 ## Document index
 

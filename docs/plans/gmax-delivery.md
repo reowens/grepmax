@@ -2,7 +2,7 @@
 type: plan
 status: paused
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-22T07:53:49Z
+updated: 2026-10-22T12:25:00Z
 surfaces:
   - store
   - daemon
@@ -20,9 +20,9 @@ parent_plan:
 related_plans:
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "MCP context packing delivered in 0.26.94 / 58faaac: public registry bytes/provenance, three existing installations, two plugin scopes and ready live handover accepted. Registry-timeout fix a8b3617 is reviewed; verification-only run 39734613010 is green. Resource statistics remains on hold; Linux awaits machine/access."
-next_step: "No MCP delivery or CI recovery work remains. Resource statistics stays on hold. Linux P3 deployment remains pending actual machine/access and user selection; other optional enhancements remain unselected. Do not republish, reinstall or repeat handover."
-summary: "0.26.94 MCP context fix and CI recovery delivered. Resource statistics on hold; Linux pending machine/access. Other optional work unselected."
+current_state: "0.26.96 (db7643c) published to npm and GitHub, installed in the Homebrew 26.12.1, NVM 22.23.1 and NVM 22.23.4 prefixes, daemon handed over. Whole store rebuilt 2026-10-22 (14 projects indexed, 613k rows); FTS built once with gmax repair --fts in 13.7s. Fixes: queued-batch lock deadlock, abort keeps pending status, repair --fts. Docs 601cdda."
+next_step: "Queued: docs/plans/session-start-hint-trim.md. Optional: drop gmax from NVM 22.23.1 once processes on it restart (user decision); prune stale worktrees."
+summary: "0.26.96 released and live; store rebuilt and FTS built. Next queued work is the session-start hint trim."
 ---
 
 # Gmax Delivery Plan
@@ -57,7 +57,7 @@ was implemented. Those proposals lacked a demonstrated user need.
 | --- | --- | --- |
 | Daemon startup can stop another Gmax instance's processes | In 0.26.92, `ProcessManager.killStaleProcesses` finds all same-name daemons/workers, but checks this home's heartbeat/socket and never establishes each target's ownership. With no local daemon, a healthy other-home daemon can be called stale; workers are signalled unconditionally. A prior test incident is recorded in this plan. Exact installed-module simulation reproduces both cases with fake PIDs and zero real signals. This can interrupt indexing or another session. | **Delivered in reviewed 0.26.93 / 56c7806.** Public npm bytes, signed provenance, GitHub release, both installations and live handover are accepted. |
 | CPU/memory/disk history | Explicit user request, implemented in an isolated candidate; source approval exists but the original +41.935 ms p95 regression and control-precision problem remain unresolved. It is absent from the installed release. | **On hold by user direction.** Preserve source-approved `0d5282c` and inconclusive diagnostic; original regression stays open. No further investigation, integration or release selected. |
-| Linux P3 setup | Explicit user-requested deployment/design work. It requires the actual machine and access. CPU installation/baseline is useful for that deployment, not required to complete the Mac product. | **Pending deployment when the machine is available and the user selects execution.** No dependency on document-search work; GPU purchase/CUDA remain optional. |
+| Linux P3 setup | Explicit user-requested deployment/design work. It requires the actual machine and access. CPU installation/baseline is useful for that deployment, not required to complete the Mac product. | **Machine/SSH readiness verified October 22; installation awaits selection.** Ubuntu/Node/npm and registry access are ready; use a user-owned npm prefix. Gmax installation/runtime acceptance have not run. GPU/CUDA remains optional. |
 
 The delivered ownership repair verifies the target instance/home and process
 start identity before signalling. Unknown ownership refuses. Its regressions cover
@@ -2577,7 +2577,7 @@ parallel omnibus plan.
 
 ## Version History
 
-- **2026-10-22T07:46:47Z** Status: in-session → paused — MCP context fix0.26.94 delivered: review/tests/archive/registry/provenance/three installations/two plugin scopes/live handover accepted. Reviewed CI timeout fixa8b3617 passes verification-only recovery39734613010. Resource statistics remains on hold; Linux awaits machine/access.
+- **2026-10-22T07:46:47Z** Status: in-session → paused — MCP context fix0.26.94 delivered: review/tests/archive/registry/provenance/three installations/two plugin scopes/live handover accepted. Reviewed CI timeout fixa8b3617 passes verification-only recovery39734613010. Resource statistics remains on hold; P3 machine/access readiness is verified; Linux installation is not yet selected.
 - **2026-10-22T06:04:49Z** Started (active → in-session).
 - **2026-10-22T06:04:49Z** Status: paused → active — User selected narrow MCP context packing repair. Only that item resumes; resource statistics remains explicitly on hold.
 - **2026-10-22T05:58:26Z** Status: partial → paused — User put resource statistics on hold. Preserve approved0d5282c and all timing/regression evidence; no further investigation or release. Linux deployment separately awaits machine/access; other enhancements optional.

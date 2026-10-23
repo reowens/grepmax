@@ -2,9 +2,9 @@
 type: doc
 status: active
 created: 2026-10-03T02:39:56Z
-updated: 2026-10-22T07:53:09Z
+updated: 2026-10-23T06:57:01Z
 audience: internal
-summary: Gmax 0.26.94 is published, verified and installed. MCP context packing and registry-timeout recovery are delivered. Resource statistics is on hold; Linux setup awaits the machine and access.
+summary: Gmax 0.26.94 is published, verified and installed. MCP context packing and registry-timeout recovery are delivered. Resource statistics is on hold; P3 machine/access readiness is verified; Linux installation is not yet selected.
 ---
 
 # Future Sessions
@@ -78,9 +78,13 @@ are closed. No reinstall, repeated handover or manual npm MFA is needed.
   source-approved prototype `0d5282c`, its functional results, the inconclusive
   off/off comparison (40.7% p95 variation), and the original unresolved
   +41.935 ms regression. The collector is absent from installed 0.26.94.
-- **Linux P3 setup** is the only other pending requested deliverable. It awaits
-  the actual machine, access and user selection. Install and verify Gmax on CPU
-  first; GPU purchase and CUDA work are optional. The
+- **Linux P3 setup** is the only other pending requested deliverable. Machine
+  and SSH access were verified on October 22: Ubuntu 26.04.1 LTS, Core Ultra 9 285,
+  approximately 64 GB RAM and 1.8 TB free, Node 26.12.1/npm 11.20.0 and registry
+  access. Gmax is not on PATH or in the active global npm prefix. The system
+  prefix is not user-writable; use a user-owned prefix if installation is selected.
+  Install and verify CPU operation first. GPU purchase and CUDA are optional;
+  only Intel integrated graphics was observed. No installation was performed. The
   [Linux design](linux-gpu-p3-design.md) is dated reference research, not current
   purchase advice or an active execution queue.
 
