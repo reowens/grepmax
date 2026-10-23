@@ -2,7 +2,7 @@
 type: plan
 status: paused
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-22T12:25:00Z
+updated: 2026-10-23T08:09:03Z
 surfaces:
   - store
   - daemon
@@ -20,9 +20,9 @@ parent_plan:
 related_plans:
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "0.26.96 (db7643c) published to npm and GitHub, installed in the Homebrew 26.12.1, NVM 22.23.1 and NVM 22.23.4 prefixes, daemon handed over. Whole store rebuilt 2026-10-22 (14 projects indexed, 613k rows); FTS built once with gmax repair --fts in 13.7s. Fixes: queued-batch lock deadlock, abort keeps pending status, repair --fts. Docs 601cdda."
-next_step: "Queued: docs/plans/session-start-hint-trim.md. Optional: drop gmax from NVM 22.23.1 once processes on it restart (user decision); prune stale worktrees."
-summary: "0.26.96 released and live; store rebuilt and FTS built. Next queued work is the session-start hint trim."
+current_state: "0.26.96 (db7643c) is released and installed on the Mac; its rebuilt store and FTS are accepted. P3 CPU installation and bounded acceptance completed October 23: normal user installation 0.26.96, Small/CPU/one worker, models ready, no production project added, all test processes stopped. Resource statistics remains on hold."
+next_step: "P3 is ready for a selected real project; no additional benchmark or GPU work is scheduled. Preserve queued docs/plans/session-start-hint-trim.md and the optional NVM/worktree cleanup. Resource statistics stays on hold."
+summary: "0.26.96 released on the Mac and accepted on the P3 CPU. Resource statistics stays on hold; GPU work remains optional."
 ---
 
 # Gmax Delivery Plan
@@ -57,7 +57,7 @@ was implemented. Those proposals lacked a demonstrated user need.
 | --- | --- | --- |
 | Daemon startup can stop another Gmax instance's processes | In 0.26.92, `ProcessManager.killStaleProcesses` finds all same-name daemons/workers, but checks this home's heartbeat/socket and never establishes each target's ownership. With no local daemon, a healthy other-home daemon can be called stale; workers are signalled unconditionally. A prior test incident is recorded in this plan. Exact installed-module simulation reproduces both cases with fake PIDs and zero real signals. This can interrupt indexing or another session. | **Delivered in reviewed 0.26.93 / 56c7806.** Public npm bytes, signed provenance, GitHub release, both installations and live handover are accepted. |
 | CPU/memory/disk history | Explicit user request, implemented in an isolated candidate; source approval exists but the original +41.935 ms p95 regression and control-precision problem remain unresolved. It is absent from the installed release. | **On hold by user direction.** Preserve source-approved `0d5282c` and inconclusive diagnostic; original regression stays open. No further investigation, integration or release selected. |
-| Linux P3 setup | Explicit user-requested deployment/design work. It requires the actual machine and access. CPU installation/baseline is useful for that deployment, not required to complete the Mac product. | **Machine/SSH readiness verified October 22; installation awaits selection.** Ubuntu/Node/npm and registry access are ready; use a user-owned npm prefix. Gmax installation/runtime acceptance have not run. GPU/CUDA remains optional. |
+| Linux P3 setup | Explicit user-requested deployment/design work. CPU installation/baseline is useful for that deployment, not required to complete the Mac product. | **CPU installation and bounded acceptance complete October 23.** Existing user installation 0.26.96 matches all 324 published files and passes search, document search, FTS, MCP and indexed file-change checks. Normal account is Small/CPU/one worker with models ready; no production project added and no test process retained. GPU/CUDA remains optional; resource statistics stays on hold. |
 
 The delivered ownership repair verifies the target instance/home and process
 start identity before signalling. Unknown ownership refuses. Its regressions cover
@@ -804,6 +804,85 @@ for the readiness fix and already-covered document. Broader C rollout stays open
 for the narrow two-document coverage decision; resource-history remains deferred.
 
 <a id="resource-history-recovery-plan--current-execution"></a>
+
+## P3 CPU acceptance — October 23, 2026
+
+**Delivered:** the P3's normal user installation is `~/.local/bin/gmax` version
+0.26.96. It was already present at execution time and was preserved, verified
+against every file in the public npm archive, and tested. The originally agreed
+0.26.94 was installed separately for the initial CPU baseline; it did not replace
+the newer installation. No Gmax source or release change was needed.
+
+The normal account now has Small/CPU/one worker and query logging off. Its
+previously empty `~/.gmax` received the configuration and 27 verified model/grammar
+files copied from the successful test. No fixture project was registered there.
+No daemon or worker is left running. The existing shell profile already adds
+`~/.local/bin`; a shell opened before that directory existed may need a fresh login
+or the explicit binary path above. From a real project, use `gmax add .`.
+
+**Environment:** Ubuntu 26.04.1 LTS, kernel 7.0.0-38-generic, x86_64/glibc 2.43,
+Core Ultra 9 285 / 24 logical CPUs, about 64 GB RAM, Node 26.12.1, npm 11.20.0.
+The recorded CPU governor is `powersave`; it was not changed. Only Intel graphics
+was observed. No GPU driver, system npm prefix or system service was changed.
+
+**Checks passed:** native CPU indexing; CLI semantic search with expected source
+paths; extraction; inbound trace to the expected caller; context; lazy MCP startup
+without a daemon; coding MCP search/context; document coverage and search with
+matching SHA256 and source lines; native watcher create/delete and document edits;
+restart with the existing index; and graceful shutdown. The existing-index-only
+document bridge returns `daemon_unavailable` while stopped and starts no runtime.
+On 0.26.96, indexed symbol creation, rename/removal and deletion were checked
+through indexed symbols rather than live file excerpts. `doctor` reports no
+orphaned readers, stale temporary files, embedding mismatch or schema mismatch.
+
+0.26.94 initially reports missing full-text search. The 0.26.96 supported command
+`gmax repair --fts` builds it in the isolated store in 0.1 seconds, after which the
+warning disappears. This is existing released behavior, not a new repair.
+
+**Bounded measurements:** a fixed source snapshot of commit `58faaac` contains
+79 files / 14,114 lines / 465,915 bytes from `src/lib/index`, `src/lib/utils`,
+`src/config.ts`, `src/commands/config.ts` and `package.json`. One-worker initial
+indexing under 0.26.94 took 169.7 seconds and produced 1,155 rows, in addition to
+the 11-row contract fixture. First fixture setup including model/grammar downloads
+took 51.2 seconds; npm installation took 85.9 seconds. A CLI query against the
+completed fixture during source indexing took 0.81 seconds. Sampled aggregate RSS
+across owned Node processes reached about 1.4 GiB, including concurrent test
+clients; sampling every 250 ms is not an exact allocator or unique-memory peak.
+
+For 20 warm MCP requests across four fixed queries, 0.26.94 recorded median
+39.4 ms / p95 64.2 ms. Current 0.26.96 with FTS recorded median 39.4 ms /
+p95 45.9 ms / maximum 62.2 ms. The latter request group consumed 1.03 CPU seconds
+across surviving owned processes over 0.81 wall-clock seconds, and ended at about
+842 MiB aggregate RSS including both MCP clients. Different FTS state and the
+small sample do not establish a version speedup. Current indexed create, rename
+and deletion reached the index within about three seconds in this fixture.
+
+The current installation occupies 1,562,943,488 allocated bytes, the normal
+model/grammar/config home 192,536,576 bytes, and the isolated tested index about
+24 MB. Extra archives and the separate 0.26.94 test installation are qualification
+evidence, not required per-project storage. Swap remained unused at the recorded
+checks. These are small-corpus results, not a large-repository capacity claim or
+a CPU/GPU comparison; no further benchmark is selected.
+
+**Evidence:** P3 `~/.local/state/gmax-p3-qualification-20261023/` retains the
+harnesses, source tar, archives, logs, `results.json`,
+`current-0.26.96-results.json`, `host-facts.json`, `existing-0.26.96-proof.json`
+and `primary-ready-proof.json`. A local copy of the small records is in
+`/private/tmp/gmax-p3-acceptance-20261023/`. Two failed harness assertions are
+retained: one excluded the trailing empty source line; the other incorrectly
+asked the Markdown-only document status tool about TypeScript. Corrected checks
+passed; neither was treated as a product failure. The initial live-excerpt edit
+observation is superseded by the current indexed-symbol rename check.
+
+Archive SHA256: 0.26.94
+`1e8c7ebb903971f463d57b68f4262f7a749697c8f91b54839d8b794d46abff8e`;
+0.26.96 `9f1499e71239228284ca47de25d3fceb7bfaa95564fc6a01a0afd00e28730ade`.
+Both match all 324 installed package files. Source snapshot tar SHA256:
+`e4f5257607bf8aaace96bd54bc4fc2e37e20774ee378d8ac1f1418ddb613bce1`.
+
+CPU installation and this finite acceptance are complete. Resource statistics
+remains on hold. GPU/CUDA and larger workloads require a separate selection;
+the historical GPU acceptance gates below are not claimed complete.
 
 ## Resource-history recovery plan — deferred
 
@@ -1566,7 +1645,7 @@ and explicit unavailable contracts already shipped.
 
 ### D. Commission the Linux P3 and qualify optional GPU acceleration
 
-**Requested deployment work; pending actual machine access and user selection.**
+**Requested deployment work; CPU installation and acceptance selected October 23.**
 This is not a necessary Mac product repair and no longer waits for C. The user
 requested this milestone on October 19. The supplied MPN 30J5005MUS specifies no discrete GPU and
 a 330 W adapter; actual open-box contents need inspection. Plan for an optional
@@ -2577,6 +2656,9 @@ parallel omnibus plan.
 
 ## Version History
 
+- **2026-10-23T08:09:03Z** Status: in-session → paused — P3 CPU installation and bounded acceptance complete on existing user 0.26.96; normal Small/CPU/one-worker account and models prepared, no real projects added, all test processes stopped. Resource statistics stays on hold; GPU work remains optional; queued hint trim preserved.
+- **2026-10-23T07:54:44Z** Started (active → in-session).
+- **2026-10-23T07:54:44Z** Status: paused → active — User selected P3 CPU installation and bounded acceptance. Resource-statistics work stays on hold; other queued work is preserved.
 - **2026-10-22T07:46:47Z** Status: in-session → paused — MCP context fix0.26.94 delivered: review/tests/archive/registry/provenance/three installations/two plugin scopes/live handover accepted. Reviewed CI timeout fixa8b3617 passes verification-only recovery39734613010. Resource statistics remains on hold; P3 machine/access readiness is verified; Linux installation is not yet selected.
 - **2026-10-22T06:04:49Z** Started (active → in-session).
 - **2026-10-22T06:04:49Z** Status: paused → active — User selected narrow MCP context packing repair. Only that item resumes; resource statistics remains explicitly on hold.

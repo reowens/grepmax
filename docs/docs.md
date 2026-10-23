@@ -1,9 +1,14 @@
 # Docs
 
-## Current state — October 22, 2026
+## Current state — October 23, 2026
 
 **Gmax supports document search for indexed Markdown in registered projects.**
-Reviewed 0.26.94 fixes MCP context output skipping later fitting functions. Public
+The current baseline is 0.26.96, released and installed on the Mac and tested on
+the P3 CPU. The P3 is configured for Small/CPU/one worker with models ready;
+code/document search, FTS, MCP and file-change checks pass in an isolated store.
+No real P3 project has been added and all test processes are stopped.
+
+Earlier reviewed 0.26.94 fixes MCP context output skipping later fitting functions. Public
 registry bytes and signed provenance match the qualified archive; all three
 existing Node installations and both plugin scopes are updated, with accepted
 live handover. The reviewed registry-timeout fix passes verification-only recovery.
@@ -18,7 +23,7 @@ replaces the previous expanding queue:
 | Startup can stop another Gmax instance's daemon/workers without ownership proof | Delivered: reviewed 56c7806 / 0.26.93 is public, byte/provenance verified and installed; source/archive/native/installed checks pass. Trusted publisher recovery passes. |
 | MCP context drops later fitting function bodies | Delivered in reviewed `58faaac` / 0.26.94; package, registry/provenance, installation and CI recovery accepted. |
 | CPU/memory/disk history | On hold by user direction. Preserve source-approved `0d5282c` and inconclusive timing evidence; original regression unresolved, not shipped. |
-| Linux P3 setup | Machine/SSH readiness verified; Gmax installation awaits selection. CPU first, GPU optional. |
+| Linux P3 setup | CPU installation and bounded acceptance complete on 0.26.96; normal account configured and ready for a real project. GPU optional. |
 | Three-file docs exercise, new search helper and required external consumer rollout | Withdrawn; no demonstrated need |
 | Context composer, graph/ranking expansion, model promotion, automation and other enhancements | Optional; removed from the mandatory queue |
 
@@ -32,7 +37,9 @@ release workflow is enabled; push/PR CI remains absent. The user-authorized
 hit a read timeout; reviewed repair `a8b3617` passes
 [verification-only recovery](https://github.com/reowens/grepmax/actions/runs/39734613010)
 with publication skipped. The release is public and delivery is closed.
-The manual MFA path is withdrawn. Resource statistics is on hold by user direction. Linux P3 readiness is verified; installation remains the only other pending requested deliverable, awaiting selection.
+The manual MFA path is withdrawn. Resource statistics is on hold by user direction.
+[P3 CPU acceptance](plans/gmax-delivery.md#p3-cpu-acceptance--october-23-2026)
+is complete; GPU work and larger workload measurements remain optional.
 
 ## Document index
 
@@ -61,7 +68,7 @@ The manual MFA path is withdrawn. Resource statistics is on hold by user directi
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 182 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 184 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|

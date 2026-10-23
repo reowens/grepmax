@@ -4,18 +4,26 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-23T06:57:01Z
 audience: internal
-summary: Gmax 0.26.94 is published, verified and installed. MCP context packing and registry-timeout recovery are delivered. Resource statistics is on hold; P3 machine/access readiness is verified; Linux installation is not yet selected.
+summary: Gmax 0.26.96 is released on the Mac and tested on the P3 CPU. P3 uses Small/CPU/one worker with models ready. Resource statistics stays on hold; GPU work remains optional.
 ---
 
 # Future Sessions
 
-The accepted baseline is **0.26.94**. Read the
+The accepted baseline is **0.26.96**. Read the
 [delivery plan](plans/gmax-delivery.md) for the evidence and earlier decisions.
 The user rejected work added without a demonstrated reason. Historical proposals
 and old handoffs do not authorize new implementation or experiments.
 
 ## Delivered
 
+- **P3 CPU setup:** `~/.local/bin/gmax` 0.26.96 is verified and tested on Ubuntu.
+  Small/CPU/one worker is configured and the model cache is ready. Code/document
+  search, full-text search, MCP, file changes, restart and shutdown pass in a
+  separate test store. No real project was indexed and no test process remains.
+- **0.26.96 follow-up:** queued watcher batches can be cancelled during close or
+  pause, interrupted indexing retains pending status, and `gmax repair --fts`
+  builds a missing full-text index. The Mac release/install/store acceptance is
+  recorded in the delivery plan; P3 full-text creation and search also pass.
 - **MCP context output:** `build_context` skips an oversized function and tries
   later bodies that fit, preserving relevance order and file/line references.
   Entry-point labels, separators and the footer count toward its approximate
@@ -32,7 +40,7 @@ and old handoffs do not authorize new implementation or experiments.
   recovery described below are complete. Only the manual release workflow is
   enabled; push/PR CI was not restored.
 
-## Release and CI evidence
+## Earlier 0.26.94 release and CI evidence
 
 The reviewed product source and tag are `58faaac` / `v0.26.94`. The source suite
 passed **2,461 tests in 237 files**; the parent-model reviewer independently
@@ -77,16 +85,16 @@ are closed. No reinstall, repeated handover or manual npm MFA is needed.
   timing, integration or release without new direction. Preserve the isolated
   source-approved prototype `0d5282c`, its functional results, the inconclusive
   off/off comparison (40.7% p95 variation), and the original unresolved
-  +41.935 ms regression. The collector is absent from installed 0.26.94.
-- **Linux P3 setup** is the only other pending requested deliverable. Machine
-  and SSH access were verified on October 22: Ubuntu 26.04.1 LTS, Core Ultra 9 285,
-  approximately 64 GB RAM and 1.8 TB free, Node 26.12.1/npm 11.20.0 and registry
-  access. Gmax is not on PATH or in the active global npm prefix. The system
-  prefix is not user-writable; use a user-owned prefix if installation is selected.
-  Install and verify CPU operation first. GPU purchase and CUDA are optional;
-  only Intel integrated graphics was observed. No installation was performed. The
-  [Linux design](linux-gpu-p3-design.md) is dated reference research, not current
-  purchase advice or an active execution queue.
+  +41.935 ms regression. The collector is absent from installed 0.26.96.
+- **P3 CPU setup is complete for the selected bounded test.** The normal account
+  is ready for `~/.local/bin/gmax add .` from a real project. The fixed 79-file,
+  14,114-line snapshot indexed in 170 seconds with one worker; current-version
+  warm MCP queries had median 39 ms / p95 46 ms across 20 requests. These results
+  do not claim large-repository capacity. Full evidence and limits are in the
+  [P3 acceptance record](plans/gmax-delivery.md#p3-cpu-acceptance--october-23-2026).
+  No extra benchmark is scheduled. GPU purchase/CUDA remains optional; only Intel
+  integrated graphics was observed. The [Linux design](linux-gpu-p3-design.md)
+  remains dated reference research, not current purchase advice.
 
 Broader context composition, ranking/language features, model promotion,
 automatic index migration and watcher extraction remain optional. The narrow
