@@ -226,7 +226,7 @@ async function freeze(options) {
     need(sourcePin, 'INCOMPLETE', 'No retained source manifest hash');
     assertDigest(inventory.find(x => x.path === 'sources.json').sha256, sourcePin.sha256, 'sources.json');
     need(sourceManifest.schemaVersion === 1 && Array.isArray(sourceManifest.corpora), 'INCOMPLETE', 'Missing source corpora');
-    const sources = new Map(), rootMappings = [];
+    const sources = new Map(), rootMappings = [], sourceSpans = new Map();
     for (const corpus of sourceManifest.corpora) {
       need(corpora.has(corpus.id) && corpus.snapshotRoot === corpora.get(corpus.id).root &&
         Array.isArray(corpus.files) && corpus.files.length > 0, 'PROVENANCE', 'Source corpus/root mismatch');
@@ -242,21 +242,31 @@ async function freeze(options) {
         const bytes = read(file, b, b.cap.sourceBytes);
         assertDigest(sha(bytes), f.sha256, key);
         need(bytes.length === f.bytes, 'HASH_MISMATCH', 'Source byte count mismatch');
-        const text = utf8(bytes); need(!text.includes('\0'), 'SOURCE', 'Binary source refused');
+        // Source-span identity includes an initial UTF-8 BOM, if present.
+        const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+        need(!text.includes('\0'), 'SOURCE', 'Binary source refused');
         const row = { corpus: corpus.id, file: f.path, sha256: f.sha256, bytes: bytes.length,
           lineCount: text.split('\n').length, gitBlob: f.gitBlob, role: f.role };
+        for (const c of fixture.cases) if (c.corpus === corpus.id) for (const target of c.expected) {
+          if (target.file === f.path) sourceSpans.set(target, text.split('\n').slice(target.startLine - 1, target.endLine).join('\n'));
+        }
         sources.set(key, row);
         write(path.join(stage, corpus.snapshotRoot, f.path), bytes, b);
       }
     }
     need(rootMappings.length === corpora.size && new Set(rootMappings.map(x => x.corpus)).size === corpora.size,
       'INCOMPLETE', 'Missing source corpus');
-    const answers = [];
+    const answers = [], answerTexts = new Map();
     for (const c of fixture.cases) for (const target of c.expected) {
       const s = sources.get(`${c.corpus}/${target.file}`);
       need(s, 'INCOMPLETE', 'Answer source absent'); assertDigest(s.sha256, target.sourceSha256, c.id);
       need(target.endLine <= s.lineCount, 'ANSWER_BOUNDS', `Answer outside source: ${c.id}`);
-      answers.push({ caseId: c.id, corpus: c.corpus, ...target, lineCount: s.lineCount, coveringChunkIds: [] });
+      const span = sourceSpans.get(target);
+      need(typeof span === 'string' && span.length > 0, 'ANSWER_CONTENT', `Empty answer content: ${c.id}`);
+      const answer = { caseId: c.id, corpus: c.corpus, ...target, lineCount: s.lineCount,
+        sourceSpanSha256: sha(span), sourceSpanBytes: Buffer.byteLength(span),
+        coveringChunkIds: [], coveringChunkMatches: [] };
+      answers.push(answer); answerTexts.set(answer, span);
     }
     need(Array.isArray(chunkManifest.files) && chunkManifest.totalChunks > 0, 'INCOMPLETE', 'Missing chunk manifest');
     const chunkFiles = new Map(chunkManifest.files.map(f => [`${f.corpus}/${f.file}`, f]));
@@ -276,13 +286,20 @@ async function freeze(options) {
         row.end_line >= row.start_line && row.end_line < source.lineCount, 'CHUNK_BOUNDS', 'Chunk outside source');
       chunkIds.push(row.id); chunkSet.add(row.id); chunkCounts.set(key, (chunkCounts.get(key) || 0) + 1);
       for (const a of answers) if (a.corpus === row.corpus && a.file === row.file && !row.is_anchor &&
-        row.start_line + 1 <= a.startLine && row.end_line + 1 >= a.endLine) a.coveringChunkIds.push(row.id);
+        row.start_line + 1 <= a.startLine && row.end_line + 1 >= a.endLine) {
+        const offset = row.content.indexOf(answerTexts.get(a));
+        if (offset !== -1) {
+          a.coveringChunkIds.push(row.id);
+          a.coveringChunkMatches.push({ id: row.id, offsetUtf8Bytes: Buffer.byteLength(row.content.slice(0, offset)),
+            bytes: a.sourceSpanBytes, sha256: a.sourceSpanSha256 });
+        }
+      }
     }, path.join(stage, 'chunks.jsonl'));
     assertDigest(chunks.sha256, chunkManifest.sha256, 'chunks');
     if (expectedOld('chunks.jsonl')) assertDigest(chunks.sha256, expectedOld('chunks.jsonl'), 'historical chunks');
     need(chunks.rows === chunkManifest.totalChunks && chunks.bytes === chunkManifest.bytes &&
       [...chunkFiles].every(([key, f]) => chunkCounts.get(key) === f.chunks), 'INCOMPLETE', 'Incomplete chunk corpus');
-    need(answers.every(x => x.coveringChunkIds.length > 0), 'INCOMPLETE', 'A full answer has no non-anchor covering chunk');
+    need(answers.every(x => x.coveringChunkIds.length > 0), 'ANSWER_CONTENT', 'A full answer has no content-verified non-anchor covering chunk');
     inventory.push({ path: 'chunks.jsonl', ...chunks, state: 'frozen' });
     const fm = save(path.join(o.evidenceRoot, 'colbert-features-manifest.json'), 'historical/old/colbert-features-manifest.json', expectedOld('colbert-features-manifest.json'));
     assertDigest(fm.chunkSha256, chunks.sha256, 'feature chunk identity');
@@ -452,6 +469,7 @@ async function freeze(options) {
         verifiedAnswerSpans: answers.filter(x => x.coveringChunkIds.length).length },
       rootMappings, sources: [...sources.values()], answers, release, upstream, localArtifacts, historical, historicalSources, inventory,
       evidencePolicy: { historicalCachesAreCurrentReleaseCandidates: false,
+        answerContentVerification: 'Exact UTF-8 source span substring in a non-anchor chunk with covering coordinates. Source span uses 1-based inclusive LF-delimited lines, retaining internal separators and excluding the separator after the final line; no text normalization.',
         largeFeatureBytesCopied: o.copyLargeEvidence, sourceLabelsRebased: false,
         excluded: ['native stores/indexes', 'raw model weights', 'production configuration and private unrelated files'] },
       missing, nextGate: 'Before inference: obtain the accepted local release archive and prove evaluator source/lock/scorer equivalence; under a separately authorized runtime gate, verify immutable deployed model artifacts and export Granite document/query vectors plus exact ordered released-Searcher rerank inputs for all 30 fixed cases in a fresh isolated store. Preserve lexical candidates, structure weights, gate decisions and symbol additions. Historical caches cannot satisfy this gate.',

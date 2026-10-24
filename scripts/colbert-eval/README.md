@@ -114,3 +114,15 @@ correctly remains incomplete: current-release Granite document/query vectors,
 exact rerank pools and model artifact identity still need separate preparation.
 Runtime loading, actual device execution and real vector parity remain untested.
 The next wave is independent review of this preparation package.
+
+## Wave 2 corrections
+
+The first independent review requested two corrections. Resource sampling now
+continues after root exit while descendants hold the run open; post-root RSS
+breaches and unavailable readings refuse and clean the owned group. Answer
+coverage now requires exact complete source-span content, with source-span
+hashes and matched UTF-8 byte offsets, as well as covering line coordinates.
+Unrelated and truncated chunk content is refused even when cache hashes agree.
+The private corrected evidence bundle is `bundle-v4/result-manifest.json` in the
+measurement directory above. Its 30 spans pass the stronger content check.
+The original bundle manifests retain the weaker coordinate-only evidence.

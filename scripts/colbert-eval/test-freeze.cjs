@@ -7,7 +7,7 @@ const os = require('node:os');
 const { spawnSync } = require('node:child_process');
 const { freeze, sha, provenance, scan, budget, args } = require('./freeze.cjs');
 const encoded = value => JSON.stringify(value, null, 2) + '\n';
-function setup(t) {
+function setup(t, preparedContent, sourceText = 'function answer() {\n  return 42;\n}\n') {
   const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'colbert-freeze-test-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const old = path.join(root, 'old'), ranking = path.join(root, 'ranking');
@@ -15,7 +15,7 @@ function setup(t) {
     const p = path.join(base, file), bytes = typeof value === 'string' ? value : encoded(value);
     fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, bytes); return sha(bytes);
   };
-  const text = 'function answer() {\n  return 42;\n}\n', sourceHash = put(old, 'sources/code/a.ts', text);
+  const text = sourceText, sourceHash = put(old, 'sources/code/a.ts', text);
   const fixture = { schemaVersion: 1, corpora: [{ id: 'code', root: 'sources/code' }],
     cases: [{ id: 'q1', corpus: 'code', split: 'heldout', origin: 'curated-source', intent: 'flow', query: 'Where is the answer?',
       expected: [{ file: 'a.ts', symbol: 'answer', match: 'range', startLine: 1, endLine: 3, sourceSha256: sourceHash }] }] };
@@ -24,7 +24,7 @@ function setup(t) {
   const sm = { schemaVersion: 1, corpora: [{ id: 'code', originalRoot: '/original/code', snapshotRoot: 'sources/code',
     revision: 'a'.repeat(40), files: [{ path: 'a.ts', sha256: sourceHash, bytes: Buffer.byteLength(text), gitBlob: 'b'.repeat(40), role: 'candidate' }] }] };
   const sourceManifestHash = put(old, 'sources.json', sm);
-  const id = sha('chunk'), content = 'prepared answer';
+  const id = sha('chunk'), content = preparedContent ?? text;
   const chunksHash = put(old, 'chunks.jsonl', JSON.stringify({ id, corpus: 'code', file: 'a.ts',
     path: path.join(old, 'sources/code/a.ts'), sourceSha256: sourceHash, content, contentSha256: sha(content),
     start_line: 0, end_line: 2, is_anchor: false }) + '\n');
@@ -67,6 +67,8 @@ test('freezes authentic bytes, labels, roots and hashes; historical stays histor
   assert.deepEqual(manifest.counts, { sourceFiles: 1, preparedChunks: 1, answerSpans: 1, verifiedAnswerSpans: 1 });
   assert.equal(manifest.inferencePerformed, false); assert.equal(manifest.storesAccessed, false);
   assert.equal(manifest.answers[0].sourceSha256, s.fixture.cases[0].expected[0].sourceSha256);
+  assert.equal(manifest.answers[0].sourceSpanSha256, sha('function answer() {\n  return 42;\n}'));
+  assert.equal(manifest.answers[0].coveringChunkMatches[0].offsetUtf8Bytes, 0);
   assert.equal(manifest.rootMappings[0].originalRoot, '/original/code');
   assert.equal(manifest.historical.length, 4); assert.ok(manifest.historical.every(x => x.state === 'historical'));
   assert.equal(manifest.evidencePolicy.historicalCachesAreCurrentReleaseCandidates, false);
@@ -82,6 +84,35 @@ test('copy-large-evidence makes feature bytes portable without loading any model
   const manifest = JSON.parse(fs.readFileSync(result.manifestPath));
   const feature = manifest.inventory.find(x => x.path === 'historical/old/colbert-features.jsonl');
   assert.equal(feature.state, 'frozen'); assert.equal(feature.portable, true);
+});
+for (const [name, content] of [
+  ['unrelated text', 'UNRELATED TEXT WITHOUT THE ANSWER'],
+  ['missing first line', '  return 42;\n}'],
+  ['missing last line', 'function answer() {\n  return 42;'],
+]) test(`refuses ${name} despite valid covering coordinates and consistent cache hashes`, async t => {
+  const s = setup(t, content);
+  await assert.rejects(freeze(s.options), { code: 'ANSWER_CONTENT' });
+  assert.equal(fs.existsSync(s.options.out), false);
+  assert.deepEqual(fs.readdirSync(s.root).sort(), ['old', 'ranking']);
+});
+test('verifies an exact complete source span within prepared context and records UTF-8 offsets', async t => {
+  const prefix = '// \u03c0 context\n', span = 'function answer() {\n  return 42;\n}';
+  const s = setup(t, prefix + span + '\n// suffix');
+  const result = await freeze(s.options), m = JSON.parse(fs.readFileSync(result.manifestPath));
+  assert.equal(m.counts.verifiedAnswerSpans, 1);
+  assert.deepEqual(m.answers[0].coveringChunkMatches, [{ id: sha('chunk'),
+    offsetUtf8Bytes: Buffer.byteLength(prefix), bytes: Buffer.byteLength(span), sha256: sha(span) }]);
+  assert.match(m.evidencePolicy.answerContentVerification, /no text normalization/);
+});
+test('source-span byte identity retains an initial UTF-8 BOM', async t => {
+  const span = 'function answer() {\n  return 42;\n}';
+  const s = setup(t, span, '\ufeff' + span + '\n');
+  await assert.rejects(freeze(s.options), { code: 'ANSWER_CONTENT' });
+  assert.equal(fs.existsSync(s.options.out), false);
+  const good = setup(t, '\ufeff' + span, '\ufeff' + span + '\n');
+  const result = await freeze(good.options), m = JSON.parse(fs.readFileSync(result.manifestPath));
+  assert.equal(m.answers[0].sourceSpanSha256, sha('\ufeff' + span));
+  assert.equal(m.answers[0].sourceSpanBytes, Buffer.byteLength('\ufeff' + span));
 });
 test('rejects source/hash mismatch and publishes no partial bundle', async t => {
   const s = setup(t); fs.appendFileSync(path.join(s.old, 'sources/code/a.ts'), '// drift');
@@ -165,7 +196,7 @@ test('rejects partial-answer chunks despite valid file and chunk hashes', async 
   execution.hashes[path.join(s.old, 'chunks.jsonl')] = chunkHash;
   execution.hashes[path.join(s.old, 'chunk-manifest.json')] = cmHash;
   s.put(s.ranking, 'execution-manifest-v2.json', execution);
-  await assert.rejects(freeze(s.options), { code: 'INCOMPLETE' });
+  await assert.rejects(freeze(s.options), { code: 'ANSWER_CONTENT' });
   assert.equal(fs.existsSync(s.options.out), false);
 });
 test('accepted archive receipts remain hash-only unless exact bytes are supplied', async t => {

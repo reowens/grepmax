@@ -152,6 +152,25 @@ test('root exit does not hide a descendant holding the protocol pipe open', asyn
   assert.equal(result.manifest.childExit.code, 0);
   assert.equal(result.manifest.cleanup.noLiveOwnedProcesses, true);
 });
+for (const unavailable of [false, true]) test(`root exit keeps descendant ${unavailable ? 'sampler failure' : 'RSS breach'} guards active`, async () => {
+  let calls = 0;
+  const result = await run('orphan', {
+    limits: { deadlineMs: 4000 },
+    sampler: async () => {
+      if (++calls === 1) return healthy();
+      if (unavailable) throw new Error('post-root-exit sampler unavailable');
+      return healthy({ ownedRssBytes: DEFAULTS.maxOwnedRssBytes + 1 });
+    },
+  });
+  assert.equal(result.manifest.childExit.code, 0, 'root exited normally before periodic refusal');
+  assert.equal(calls, 2, 'owned group is sampled after root exit');
+  assert.equal(result.code, unavailable ? 'SAMPLING' : 'RESOURCE_RSS');
+  assert.equal(result.manifest.cleanup.noLiveOwnedProcesses, true);
+  assert.ok(result.manifest.cleanup.signals.includes('SIGKILL'));
+  const descendant = Number(await fs.readFile(path.join(result.evaluationRoot, 'home', 'descendant.pid'), 'utf8'));
+  assert.ok(result.manifest.ownership.observedPids.includes(descendant));
+  if (!unavailable) assert.equal(result.manifest.samples.length, 2);
+});
 test('abort uses only the owned child group, including pre-aborted admission', async () => {
   const controller = new AbortController();
   const pending = run('descendants', { signal: controller.signal });

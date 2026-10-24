@@ -370,9 +370,11 @@ async function executeChild({ command, args, input, limits, sampler, signal, mod
     });
     child.stdin.end(input);
     async function periodic() {
-      if (failure || manifest.childExit || samplingClosed) return;
+      // The root can exit while same-group descendants still hold the pipes.
+      // Keep all resource guards active until the execution wait ends.
+      if (failure || samplingClosed) return;
       try { pendingSample = sample(); await pendingSample; } catch (error) { if (!samplingClosed) fail(error); return; }
-      if (!failure && !manifest.childExit && !samplingClosed) periodicTimer = setTimeout(periodic, limits.sampleIntervalMs);
+      if (!failure && !samplingClosed) periodicTimer = setTimeout(periodic, limits.sampleIntervalMs);
     }
     periodicTimer = setTimeout(periodic, Math.max(1, limits.sampleIntervalMs - (performance.now() - started - lastSampleAt)));
     // Root exit alone is insufficient: inherited stdout may remain open in descendants.

@@ -77,6 +77,13 @@ evidence is an explicit refusal or incomplete preparation state, never success.
 Freeze current-release source/artifact identity from existing accepted local
 material where available; do not download a package to fill a missing artifact.
 
+An answer is verified only when a non-anchor chunk covers its declared line
+range and contains the exact UTF-8 source span. Spans use 1-based inclusive
+LF-delimited source lines, retaining internal separators and excluding the
+separator after the final line, with no normalization. The manifest records
+each span's byte count/SHA256 and matching byte offset in the prepared chunk;
+coordinates or self-consistent cache hashes alone do not establish coverage.
+
 ## Runner
 
 `runner.cjs` validates a request, creates a private fresh HOME/GMAX_HOME and
