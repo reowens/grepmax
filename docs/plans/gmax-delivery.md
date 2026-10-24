@@ -20,9 +20,9 @@ parent_plan:
 related_plans:
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Release is assigned to another session. This session stopped all release and verification work. Depot build lq0xk85hhp is canceled before test startup; no Gmax Depot jobs were active at the recorded observation. Local-only instructions and Depot CLI deny rules replace the remote-builder plan."
-next_step: "No release or verification work is authorized in this session. Follow CLAUDE.md local-only policy: no Depot or other remote builder without explicit approval for that run, and no CI except the existing manually invoked release workflow. Release belongs to the other session."
-summary: "Release handed to another session; added verification is withdrawn. Gmax remote execution is prohibited, Depot CLI is denied in repo Claude settings, and the interrupted remote build is canceled."
+current_state: "grepmax 0.26.97 was accepted by npm and its GitHub release is live from exact frozen candidate 44b16fe6a7. npm public propagation remains pending. The explicit release instruction skipped additional verification; no new tests ran. Runtime installation and P3 indexing resumption did not run."
+next_step: "npm asynchronous propagation is the only pending external publication completion. Do not add verification runs. Installation remains separate; P3 indexing stays thermally paused. No CI or remote builder is queued."
+summary: "0.26.97 is released on GitHub and accepted for npm processing without additional verification. Exact archive and source tag are retained; npm install availability is still propagating."
 ---
 
 # Gmax Delivery Plan
@@ -148,8 +148,8 @@ on their platforms; they were not repeated in this assignment.
 Payload comparison against published 0.26.96 found no added/removed files and no
 compiled JavaScript changes. The differences are the qualified native pair,
 maintenance manifest/acceptance/notices, version metadata and committed README/
-skill documentation. Uncommitted shared-checkout work is excluded. The installed
-release is unchanged; publication, tags, pushes and installation remain undone.
+skill documentation. Uncommitted shared-checkout work is excluded. npm accepted publication of the retained archive, and `v0.26.97` is pushed at
+its frozen source commit. Runtime installation and daemon handover did not run.
 
 The exact accepted archive, result, consumer log, npm audit and consumer lock are
 retained under `/Users/Shared/P3-Installer/gmax-release-package-20261023/`.
@@ -178,6 +178,10 @@ Remote contexts and commands in the retained evidence directory are historical
 only. `REMOTE-EXECUTION-DISABLED.txt` marks them as non-executable instructions.
 No release, further checks or remote retry is queued here. The existing manual
 release workflow remains unchanged, and the other session owns release work.
+
+### Publication 0.26.97
+
+[The publication receipt](assets/mac-mlx-baseline-20261023/publication-0.26.97.json) records npm acceptance of the exact retained archive, the pushed frozen-source tag and the [live GitHub release](https://github.com/reowens/grepmax/releases/tag/v0.26.97) with archive, source receipt and checksum assets. The user explicitly selected 0.26.97 and instructed publication without additional verification in this conversation. No further tests, audits, compilation or consumer qualification ran, and lifecycle scripts were disabled for publication. The remaining full local release qualification and macOS FSEvents package acceptance are not represented as passed. npm announced asynchronous processing and still returned E404 at the last registry read; npm install availability remains pending. Runtime installation is separate, and P3 indexing remains paused under its platform thermal record.
 
 ### Measured embedding stages
 

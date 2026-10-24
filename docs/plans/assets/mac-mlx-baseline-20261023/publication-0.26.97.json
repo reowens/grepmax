@@ -1,0 +1,41 @@
+{
+  "version": "0.26.97",
+  "sourceCommit": "44b16fe6a73df7a5aa3b791d789d7967e2c4af66",
+  "archive": "/Users/Shared/P3-Installer/gmax-release-package-20261023/grepmax-0.26.97.tgz",
+  "archiveSha256": "451383eb48b1405b2f4deb5e4be3feda1bb5c0cf3e60dbc36db3b892041caf80",
+  "npmShasum": "aee0c7afd300611997fbfecf00eb7acaf46e74c2",
+  "publish": {
+    "command": "npm publish <prepared archive> --access public --tag latest --ignore-scripts",
+    "exit": 0,
+    "result": "npm accepted grepmax@0.26.97; asynchronous registry processing announced",
+    "registryReadback": "npm still returns E404 during announced asynchronous processing; npm acceptance and live GitHub artifact are recorded, npm install availability remains pending."
+  },
+  "authorization": {
+    "record": "This conversation: user instructed \"bypass it now and release gmax .27 now\", then explicitly selected \"0.26.97 (prepared candidate)\" and completed npm sign-in and publish authorization.",
+    "additionalVerificationSkipped": true,
+    "additionalTestsRun": 0,
+    "lifecycleScriptsIgnored": true,
+    "existingEvidence": "Prior native and Linux packed-consumer qualification remain in release-package.json; no new pass is claimed for unrun full local release qualification or macOS FSEvents package acceptance."
+  },
+  "gitTag": {
+    "name": "v0.26.97",
+    "target": "44b16fe6a73df7a5aa3b791d789d7967e2c4af66",
+    "pushed": true
+  },
+  "runtimeChanges": {
+    "globalInstallation": false,
+    "daemonHandover": false,
+    "p3Indexing": "remains paused under platform P3 thermal containment record"
+  },
+  "publicationSource": "Retained frozen candidate only; current shared checkout edits and later commits were not packed.",
+  "recordedAt": "2026-10-24T03:24:15.422790+00:00",
+  "githubRelease": {
+    "url": "https://github.com/reowens/grepmax/releases/tag/v0.26.97",
+    "created": true,
+    "assets": [
+      "grepmax-0.26.97.tgz",
+      "gmax-0.26.97-source.json",
+      "gmax-0.26.97.sha256"
+    ]
+  }
+}
