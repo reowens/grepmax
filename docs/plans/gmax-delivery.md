@@ -2,7 +2,7 @@
 type: plan
 status: paused
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-24T01:21:24Z
+updated: 2026-10-24T01:52:34Z
 surfaces:
   - store
   - daemon
@@ -20,9 +20,9 @@ parent_plan:
 related_plans:
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Mac baseline is restored: normal 0.26.96 service, MLX and indexing are active after a qualified one-time native recovery. The source fix passed 22 shipping and 4 fault cases on Darwin in one invocation. Permanent artifact replacement still needs Linux qualification and packaging. Resource statistics remains held."
-next_step: "Qualify the native recovery source fix on Linux and prepare matching permanent artifacts before publication or installation. Mac service is restored through a one-time qualified helper; installed release artifacts are unchanged. ColBERT MLX, CUDA and resource history are not started; preserve queued hint trim and optional NVM/worktree cleanup."
-summary: "Mac normal service, MLX and indexing are restored. Native recovery source fix is Darwin-qualified; permanent bundle update awaits Linux qualification. ColBERT remains CPU; resource statistics stays held."
+current_state: "Matching native recovery artifacts are qualified on Darwin and Linux (22 normal and 4 fault cases per platform) and prepared in the source-build cache. The Mac remains active on unchanged installed 0.26.96. Runtime package integration, release and installation remain open; resource history stays held."
+next_step: "Build and verify a release package from a frozen archive of committed source using the prepared native artifact cache; publication and installation require authorization. ColBERT MLX and CUDA have not started; preserve held resource statistics, queued hint trim and optional NVM/worktree cleanup."
+summary: "Native recovery artifacts are qualified and prepared for both platforms. Mac service is active; permanent package integration, publication and installation remain open. Resource history stays held."
 ---
 
 # Gmax Delivery Plan
@@ -31,8 +31,8 @@ summary: "Mac normal service, MLX and indexing are restored. Native recovery sou
 
 ## Mac GPU baseline step 1: recovery and measurement
 
-**The Mac baseline is restored; permanent native artifact replacement remains
-open.** Normal service, MLX and file indexing are active, and a semantic read
+**The Mac baseline is restored and matching native artifacts are prepared;
+runtime package integration and delivery remain open.** Normal service, MLX and file indexing are active, and a semantic read
 returned results. The qualified one-time recovery finalized the retained receipt
 without data or search-index writes, preserving current table version 5600. The
 source fix passed 26 native cases in 1 qualification invocation on Darwin.
@@ -77,13 +77,38 @@ process. Configuration is unchanged and no P3 action was performed. Exact comman
 logs, source and executables remain under
 `/Users/Shared/P3-Installer/mac-gmax-recovery-20261023/`.
 
-**Permanent delivery remains open.** The one-time helper is qualified for this
-Mac repair; installed 0.26.96 native artifacts remain unchanged and still contain
-the original branch. The corrected source requires Linux qualification and
-matching shipping/fault proofs before a permanent packaged update. Packaging
-continues to enforce both platforms in `scripts/prepare-bounded-runtime.cjs:45`;
-there is no release, installation or Linux qualification claim for this repair.
-The Mac is available for work while that delivery remains open.
+### Matching permanent native artifacts prepared
+
+[Artifact preparation evidence](assets/mac-mlx-baseline-20261023/native-artifacts.json)
+records both platforms, exact source/binary hashes, acceptance case names,
+commands and preserved-cache custody. The Linux qualification ran once in an
+isolated native x86_64 Depot builder on Ubuntu 24.04 with Rust 1.99.1 and pinned
+pylance 12.0.0, PyArrow 25.0.1 and NumPy 2.5.3. Its 128 MiB tmpfs confined the
+space-loss cases. All 22 normal and 4 fault cases passed with zero skips or
+failures, including refusal by the released helper and recovery by the patch.
+The existing Darwin proofs and exact binary were reused without another test run.
+
+Both artifacts have the same native source digest and pass the existing gates in
+`scripts/assemble-bounded-runtime.cjs:17` and
+`scripts/prepare-bounded-runtime.cjs:20`. Compiler/dependency notices include the
+actual Rust 1.99.1 attribution. The refreshed source-build cache is
+`lance-maintenance/artifacts/`; a separately prepared runtime copy is retained at
+`/Users/Shared/P3-Installer/gmax-native-linux-20261023/prepared-runtime/`. The stale
+source cache is preserved byte-for-byte under the linked receipt's custody path.
+The installed runtime's files are unchanged and Mac 0.26.96 remains ready/active.
+
+The [successful native build](https://depot.dev/orgs/s0rjb3r4ql/projects/qkhvfs3900/builds/xhrhsp9x9l)
+uses only the native crate, fixture and license inputs. Before-test ABI/setup
+corrections and their attempt counts are retained in the receipt. No qualification
+was retried. P3 preflight was read-only; no tools, settings or services changed on
+P3. These results qualify the Linux native helper in the builder and do not claim
+physical P3 acceptance.
+
+**Permanent delivery remains open.** Installed 0.26.96 native artifacts still
+contain the original branch. The prepared pair must be integrated into a verified
+runtime release package before publication and installation. Neither action ran
+in this assignment. ColBERT MLX, CUDA and resource-history work remain unstarted
+or held as recorded above.
 
 ### Measured embedding stages
 
@@ -2750,6 +2775,9 @@ parallel omnibus plan.
 
 ## Version History
 
+- **2026-10-24T01:52:34Z** Status: in-session → paused — Linux native qualification passed 22 normal and 4 fault cases in 1 run. Matching source-identical Darwin/Linux artifacts passed both existing assembly/preparation gates and refreshed the source cache; stale cache preserved byte-for-byte, installed runtime unchanged and Mac active. Permanent runtime package integration, release and installation remain open.
+- **2026-10-24T01:26:09Z** Started (active → in-session).
+- **2026-10-24T01:26:09Z** Status: paused → active.
 - **2026-10-24T01:21:24Z** Status: in-session → paused — Mac restored through qualified one-time native recovery: version 5600 preserved, zero data/index writes, active daemon/MLX/indexing and semantic read accepted. Native source fix passes 22 shipping and 4 fault cases on Darwin in 1 invocation. Permanent bundle update remains open for Linux qualification and matching artifacts; installed release unchanged.
 - **2026-10-24T00:54:46Z** Started (active → in-session).
 - **2026-10-24T00:54:45Z** Status: paused → active.

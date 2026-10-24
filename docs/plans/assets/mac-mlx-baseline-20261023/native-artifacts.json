@@ -1,0 +1,297 @@
+{
+  "recordedAt": "2026-10-24T01:52:34.450186+00:00",
+  "nativeFixCommit": "eed6fc499f",
+  "sourceSha256": "95c18ccc73cd9bd0bee2b45c745bab4727d12ad23a7158dfc39d188df594139e",
+  "qualification": {
+    "passed": true,
+    "sourceSha256": "95c18ccc73cd9bd0bee2b45c745bab4727d12ad23a7158dfc39d188df594139e",
+    "testInvocations": 1,
+    "testsRun": 26,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0,
+    "capabilities": {
+      "budgetKind": "cumulative-writes",
+      "engine": "12.0.0",
+      "incrementalRepairProtocol": 1,
+      "nativeTotalWriteBudgetEnforced": true,
+      "protectedReaderProtocol": 1,
+      "protocolVersion": 1
+    }
+  },
+  "acceptance": {
+    "schemaVersion": 1,
+    "sourceSha256": "95c18ccc73cd9bd0bee2b45c745bab4727d12ad23a7158dfc39d188df594139e",
+    "platforms": {
+      "darwin-arm64": {
+        "testCases": [
+          "test_automatic_fallback_when_individually_small_fragments_form_large_task",
+          "test_automatic_small_batch_is_not_starved_by_oversized_first_fragment",
+          "test_budget_exhaustion_after_data_copy_is_safe_and_never_refunded",
+          "test_corrupt_receipt_or_counter_refuses_without_fallback_copy",
+          "test_fragment_selected_index_refresh_and_interruption",
+          "test_insufficient_preflight_space_refuses_without_store_mutation",
+          "test_interruption_at_protected_and_committed_reader_windows_preserves_head",
+          "test_mixed_index_coverage_is_preserved_or_refused_before_any_mutation",
+          "test_newer_orphan_requires_complete_references_and_age",
+          "test_no_work_handshake_and_result_are_read_only",
+          "test_oversized_fragment_makes_finite_bounded_progress",
+          "test_partial_relocation_preserves_values_and_protected_reader",
+          "test_per_write_space_loss_on_ci_owned_volume_refuses_before_data_copy",
+          "test_pre_receipt_zero_payload_journal_is_safely_retired_on_admitted_attempt",
+          "test_production_executable_rejects_qualification_fault_fields",
+          "test_real_selected_batch_preserves_rows_indices_tags_and_both_readers",
+          "test_recovery_uses_remaining_original_cap_after_its_own_space_consumption",
+          "test_repeated_index_catchup_merges_small_segments",
+          "test_string_ids_and_multiple_selected_unindexed_fragments",
+          "test_tiny_budget_never_corrupts_existing_rows_or_search",
+          "test_verified_copy_recovery_preserves_subsequent_watched_edits",
+          "test_verified_orphan_recovery_preserves_later_edits_and_requires_both_tags"
+        ],
+        "tests": {
+          "executed": 22,
+          "passed": 22,
+          "skipped": 0,
+          "failures": 0,
+          "errors": 0
+        },
+        "schemaVersion": 1,
+        "verdict": "PASS_BOUNDED_NATIVE_ACCEPTANCE",
+        "sourceDigest": "95c18ccc73cd9bd0bee2b45c745bab4727d12ad23a7158dfc39d188df594139e",
+        "provenanceUnchanged": true,
+        "binarySha256": "076794776c752b93a2de4200de9e1580701eed80670855d35c3963e0a607ffc6",
+        "engine": "12.0.0",
+        "platform": "darwin-arm64",
+        "profile": "release",
+        "scope": "Local Mac repair qualification; no Linux or package publication claim",
+        "faultRecovery": {
+          "testCases": [
+            "test_injected_backend_enospc_recovers_exact_owned_payloads_without_refund",
+            "test_newer_orphan_and_partial_inventory_never_use_a_timestamp_cutoff",
+            "test_relocation_interruptions_preserve_each_valid_intermediate_head",
+            "test_sigkill_after_first_owned_tag_delete_resumes_durable_finalization"
+          ],
+          "tests": {
+            "executed": 4,
+            "passed": 4,
+            "skipped": 0,
+            "failures": 0,
+            "errors": 0
+          },
+          "schemaVersion": 1,
+          "verdict": "PASS_BOUNDED_NATIVE_FAULT_ACCEPTANCE",
+          "sourceDigest": "95c18ccc73cd9bd0bee2b45c745bab4727d12ad23a7158dfc39d188df594139e",
+          "provenanceUnchanged": true,
+          "binarySha256": "2d88844620a2d8c0fbfc3d72040c0932465b4c0553626c4c26dc8e2d8640f608",
+          "engine": "12.0.0",
+          "platform": "darwin-arm64",
+          "profile": "release",
+          "scope": "Local Mac repair qualification; no Linux or package publication claim"
+        }
+      },
+      "linux-x64": {
+        "testCases": [
+          "test_automatic_fallback_when_individually_small_fragments_form_large_task",
+          "test_automatic_small_batch_is_not_starved_by_oversized_first_fragment",
+          "test_budget_exhaustion_after_data_copy_is_safe_and_never_refunded",
+          "test_corrupt_receipt_or_counter_refuses_without_fallback_copy",
+          "test_fragment_selected_index_refresh_and_interruption",
+          "test_insufficient_preflight_space_refuses_without_store_mutation",
+          "test_interruption_at_protected_and_committed_reader_windows_preserves_head",
+          "test_mixed_index_coverage_is_preserved_or_refused_before_any_mutation",
+          "test_newer_orphan_requires_complete_references_and_age",
+          "test_no_work_handshake_and_result_are_read_only",
+          "test_oversized_fragment_makes_finite_bounded_progress",
+          "test_partial_relocation_preserves_values_and_protected_reader",
+          "test_per_write_space_loss_on_ci_owned_volume_refuses_before_data_copy",
+          "test_pre_receipt_zero_payload_journal_is_safely_retired_on_admitted_attempt",
+          "test_production_executable_rejects_qualification_fault_fields",
+          "test_real_selected_batch_preserves_rows_indices_tags_and_both_readers",
+          "test_recovery_uses_remaining_original_cap_after_its_own_space_consumption",
+          "test_repeated_index_catchup_merges_small_segments",
+          "test_string_ids_and_multiple_selected_unindexed_fragments",
+          "test_tiny_budget_never_corrupts_existing_rows_or_search",
+          "test_verified_copy_recovery_preserves_subsequent_watched_edits",
+          "test_verified_orphan_recovery_preserves_later_edits_and_requires_both_tags"
+        ],
+        "tests": {
+          "executed": 22,
+          "passed": 22,
+          "skipped": 0,
+          "failures": 0,
+          "errors": 0
+        },
+        "schemaVersion": 1,
+        "verdict": "PASS_BOUNDED_NATIVE_ACCEPTANCE",
+        "sourceDigest": "95c18ccc73cd9bd0bee2b45c745bab4727d12ad23a7158dfc39d188df594139e",
+        "provenanceUnchanged": true,
+        "binarySha256": "c5aa982b7c28e84d47e34bf45a4cd0433586863263558cfa0b07b1264b0068d2",
+        "engine": "12.0.0",
+        "platform": "linux-x64",
+        "profile": "release",
+        "scope": "Linux native qualification in isolated Depot builder; no package publication claim",
+        "faultRecovery": {
+          "testCases": [
+            "test_injected_backend_enospc_recovers_exact_owned_payloads_without_refund",
+            "test_newer_orphan_and_partial_inventory_never_use_a_timestamp_cutoff",
+            "test_relocation_interruptions_preserve_each_valid_intermediate_head",
+            "test_sigkill_after_first_owned_tag_delete_resumes_durable_finalization"
+          ],
+          "tests": {
+            "executed": 4,
+            "passed": 4,
+            "skipped": 0,
+            "failures": 0,
+            "errors": 0
+          },
+          "schemaVersion": 1,
+          "verdict": "PASS_BOUNDED_NATIVE_FAULT_ACCEPTANCE",
+          "sourceDigest": "95c18ccc73cd9bd0bee2b45c745bab4727d12ad23a7158dfc39d188df594139e",
+          "provenanceUnchanged": true,
+          "binarySha256": "05eb3b50571577db6ba46ea88d407adc36bf27450c323972b9a2cb8167cbc572",
+          "engine": "12.0.0",
+          "platform": "linux-x64",
+          "profile": "release",
+          "scope": "Linux native qualification in isolated Depot builder; no package publication claim"
+        }
+      }
+    }
+  },
+  "manifest": {
+    "schemaVersion": 1,
+    "engine": "12.0.0",
+    "sourceSha256": "95c18ccc73cd9bd0bee2b45c745bab4727d12ad23a7158dfc39d188df594139e",
+    "qualified": true,
+    "binaries": {
+      "darwin-arm64": {
+        "file": "gmax-bounded-maintenance-darwin-arm64",
+        "sha256": "076794776c752b93a2de4200de9e1580701eed80670855d35c3963e0a607ffc6"
+      },
+      "linux-x64": {
+        "file": "gmax-bounded-maintenance-linux-x64",
+        "sha256": "c5aa982b7c28e84d47e34bf45a4cd0433586863263558cfa0b07b1264b0068d2"
+      }
+    }
+  },
+  "successfulBuild": {
+    "id": "xhrhsp9x9l",
+    "url": "https://depot.dev/orgs/s0rjb3r4ql/projects/qkhvfs3900/builds/xhrhsp9x9l",
+    "baseImages": [
+      "docker.io/library/python:3.13-slim-bookworm@sha256:e32be0e55814a08977501ca863271d9bd02443710db8f2afaf8372e2c4508530",
+      "docker.io/library/rust:1.99.1-bookworm@sha256:48b7f435b8fc6378ce43b44f15e3a47fd8919b2825f835c39bd4bd3da50af5b8",
+      "docker.io/library/ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac"
+    ],
+    "buildResults": {
+      "jobs": 6,
+      "memoryLimit": 32997224448,
+      "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+      "builds": [
+        {
+          "variant": "shipping",
+          "exitCode": 0,
+          "command": [
+            "cargo",
+            "build",
+            "--release",
+            "--locked",
+            "--features",
+            "engine",
+            "--manifest-path",
+            "lance-maintenance/native/Cargo.toml",
+            "--target-dir",
+            "/build-target",
+            "--jobs",
+            "6"
+          ]
+        },
+        {
+          "variant": "fault",
+          "exitCode": 0,
+          "command": [
+            "cargo",
+            "build",
+            "--release",
+            "--locked",
+            "--features",
+            "engine,qualification",
+            "--manifest-path",
+            "lance-maintenance/native/Cargo.toml",
+            "--target-dir",
+            "/build-target",
+            "--jobs",
+            "6"
+          ]
+        }
+      ]
+    },
+    "dockerfileSha256": "90d8a59a7d04c5f011164fbe659e06d8271874a30a7ff7516c09f36c271ef212",
+    "harnessSha256": "dded0edfcc564821c26e662ae22872c34db7fdc6b5195b13b9125e0e42e9a971",
+    "contextHashesReceipt": "/Users/Shared/P3-Installer/gmax-native-linux-20261023/build-input-hashes.json"
+  },
+  "earlierBuildAttempts": [
+    {
+      "id": "l6l41s71v2",
+      "outcome": "canceled before qualification to match the released Linux glibc 2.39 requirement",
+      "testInvocations": 0
+    },
+    {
+      "id": "l35k4qpvlh",
+      "outcome": "failed before qualification: missing trusted CA certificates",
+      "testInvocations": 0
+    },
+    {
+      "id": "d7mzj90w08",
+      "outcome": "failed before qualification: missing standard protobuf headers",
+      "testInvocations": 0
+    }
+  ],
+  "sourceArtifactCache": "/Users/reoiv/Development/beyond/tools/gmax/lance-maintenance/artifacts",
+  "previousSourceArtifactCache": "/Users/Shared/P3-Installer/gmax-native-linux-20261023/previous-source-artifacts",
+  "preparedRuntime": "/Users/Shared/P3-Installer/gmax-native-linux-20261023/prepared-runtime",
+  "preparedFileHashes": {
+    "acceptance.json": {
+      "size": 6857,
+      "sha256": "003bca1ae1a1a39988b13c7b0ab423a930467f52cd9595c5285132212de0e723"
+    },
+    "gmax-bounded-maintenance-linux-x64": {
+      "size": 178386512,
+      "sha256": "c5aa982b7c28e84d47e34bf45a4cd0433586863263558cfa0b07b1264b0068d2"
+    },
+    "gmax-bounded-maintenance-darwin-arm64": {
+      "size": 204054176,
+      "sha256": "076794776c752b93a2de4200de9e1580701eed80670855d35c3963e0a607ffc6"
+    },
+    "manifest.json": {
+      "size": 502,
+      "sha256": "4c9f0e960b53f3444d50a069b867a8365fe67ef1c91fc63e8e063db126b93010"
+    },
+    "THIRD-PARTY-NOTICES.txt": {
+      "size": 8496209,
+      "sha256": "35b25d77788fcf7091f45268ad909ee52ddabd1edfcf18fa81aa5b2b47f131e3"
+    }
+  },
+  "previousCachePreserved": true,
+  "installedRuntimeUnchanged": true,
+  "assemblyCommands": [
+    [
+      "node",
+      "scripts/assemble-bounded-runtime.cjs",
+      "/Users/Shared/P3-Installer/gmax-native-linux-20261023/artifact-input",
+      "/Users/Shared/P3-Installer/gmax-native-linux-20261023/assembled-artifacts"
+    ],
+    [
+      "node",
+      "scripts/prepare-bounded-runtime.cjs",
+      "--required",
+      "/Users/Shared/P3-Installer/gmax-native-linux-20261023/assembled-artifacts",
+      "/Users/Shared/P3-Installer/gmax-native-linux-20261023/prepared-runtime"
+    ]
+  ],
+  "publicationPerformed": false,
+  "installationPerformed": false,
+  "limits": [
+    "Linux qualification ran in an isolated native x86_64 Depot builder, not on P3.",
+    "P3 preflight was read-only; no P3 tools, settings or services changed.",
+    "The runtime package and release-level consumer acceptance remain a separate next step."
+  ]
+}
