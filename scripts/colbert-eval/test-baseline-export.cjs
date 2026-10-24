@@ -235,6 +235,17 @@ test('enabled nonempty rerank cannot be declared skipped', async t => {
   q.rerank.reason = 'skip-reason-unobservable';
   const opts = files(t, value); assert.throws(() => b.processMaterial(opts), { code: 'GATE' }); assert.equal(fs.existsSync(opts.out), false);
 });
+test('unrequested nonempty pool requires the active concentration gate to be evaluated', async t => {
+  const value = await material(); value.records = clone(value.records);
+  const q = value.records[4]; q.gate.evaluated = false; q.gate.share = null;
+  q.response.diagnostics.gate = clone(q.gate);
+  const opts = files(t, value); assert.throws(() => b.processMaterial(opts), { code: 'GATE' }); assert.equal(fs.existsSync(opts.out), false);
+});
+test('empty pooled stage cannot report an evaluated concentration gate', async t => {
+  const value = await material(); value.records = clone(value.records);
+  value.records[4].response.diagnostics.stages.pooled = 0;
+  const opts = files(t, value); assert.throws(() => b.processMaterial(opts), { code: 'GATE' }); assert.equal(fs.existsSync(opts.out), false);
+});
 test('successful lexical rows cannot coexist with failed/unavailable FTS diagnostics', t => rejectsMaterial(t, x => {
   x.records[4].response.diagnostics.fts = { available: false, searchFailed: true };
 }, 'LEXICAL'));

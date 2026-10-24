@@ -206,6 +206,8 @@ function validateQuestion(row, expected, plan) {
     need(!g.rerankInvoked || g.requestedRerank || g.activated, 'GATE', 'Disabled rerank cannot be invoked');
     const pooled = response.diagnostics?.stages?.pooled;
     if (Number.isSafeInteger(pooled) && pooled >= 0) {
+      need(g.evaluated === (!g.requestedRerank && pooled > 0 && g.threshold <= 1),
+        'GATE', 'Evaluation contradicts requested rerank, threshold or known pooled stage');
       need(!g.rerankInvoked || pooled > 0, 'GATE', 'Empty pooled stage cannot invoke rerank');
       need(!(g.requestedRerank || g.activated) || pooled === 0 || g.rerankInvoked,
         'GATE', 'Enabled nonempty pooled stage must invoke released rerank');

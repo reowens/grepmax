@@ -218,6 +218,8 @@ invocation requires requested or activated rerank; activation requires a valid
 evaluated concentration share reaching the positive threshold; an unevaluated
 gate has no share. Known pooled counts and successful lexical calls must also
 agree with the released invocation/FTS state. Missing facts remain unobserved.
+With known pooled counts, an unrequested nonempty pool evaluates the active
+concentration gate; an empty pool cannot report that evaluation.
 
 ## Material and wire representation
 
