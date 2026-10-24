@@ -2,7 +2,7 @@
 type: plan
 status: paused
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-24T10:36:39Z
+updated: 2026-10-24T11:07:07Z
 surfaces:
   - store
   - daemon
@@ -23,8 +23,8 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Publication 0.26.97 has its retained receipt; npm availability has no newer readback here. P3 and Windows Dell typechecks are accepted through local-worker entries. The separate ColBERT evaluation completed paired document timing, saved-output scoring and a frozen question screen; production is unchanged. P3 indexing remains paused under its platform host owner."
-next_step: "Windows unit startup failed before cases ran; the local-worker plan proposes shortening the cache path and one selected retry. ColBERT complete-index comparison remains a separate owner-selected experiment. Mac helper holds, P3 indexing pause and publication ownership remain; no job or release check is queued."
+current_state: "Publication 0.26.97 has its retained receipt; npm availability has no newer readback here. P3 and Windows Dell typechecks and one Windows unit file are accepted through local-worker entries. The separate ColBERT evaluation completed paired document timing, saved-output scoring and a frozen question screen; production is unchanged. P3 indexing remains paused under its platform host owner."
+next_step: "The selected Windows unit file passed after the shorter-cache repair. Use the accepted worker commands for the next selected Gmax development task; no additional verification campaign is queued. ColBERT complete-index comparison remains a separate owner-selected experiment. Mac helper holds, P3 indexing pause and publication ownership remain; no job or release check is queued."
 summary: "Delivery coordination for recorded publication, accepted Linux/Windows typecheck routes and separate ColBERT evaluation. No automatic checks, hosted builders or runtime restart is queued."
 ---
 
@@ -40,7 +40,7 @@ A documentation reconciliation does not start the next task or transfer a claim.
 | Workstream | Owner and current boundary |
 | --- | --- |
 | Publication | [Publication 0.26.97](#publication-02697) owns the exact archive and publication receipt. The local-worker session does not repeat release work. npm availability has no newer readback in this reconciliation. |
-| Local development jobs | [Local workers](gmax-local-workers.md#current-use-and-next-task) owns the commands and accepted P3/Windows typechecks. Windows uses the repaired profile cache. Other task coverage and named Mac pool use remain open. |
+| Local development jobs | [Local workers](gmax-local-workers.md#current-use-and-next-task) owns the commands, accepted P3/Windows typechecks and selected Windows unit file. Windows uses the shorter profile cache. Other task coverage and named Mac pool use remain open. |
 | ColBERT GPU/model evaluation | [Backend evaluation](colbert-backend-evaluation.md#recenter--paired-run-completed) owns the later paired timing, saved-output scoring and frozen question-screen results. Complete-index throughput and product integration remain open; production is unchanged. |
 | Installed P3 | The host's session plan, section `Gmax thermal containment, 2026-10-23`, owns installed state, the indexing pause and bounded service. Do not resume indexing or restart its daemon from a Gmax task. |
 | Worker enrollment | The host's developer-setup plan owns the current operator sequence. Pool admission and enrollment remain separate from Gmax source integration. |
