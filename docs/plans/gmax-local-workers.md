@@ -2,7 +2,7 @@
 type: plan
 status: partial
 created: 2026-10-24T03:25:08Z
-updated: 2026-10-24T06:56:02Z
+updated: 2026-10-24T07:53:20Z
 surfaces:
   - development
   - workers
@@ -17,8 +17,8 @@ related_plans:
   - docs/plans/gmax-delivery.md
 related_docs:
   - CLAUDE.md
-current_state: "The Gmax repository entry, named task catalog, frozen source inputs, existing-pool dispatch, Windows command closure and result/artifact checks are implemented. One local fixture invocation passed 12/12 without workers or tools; two final narrow edits passed syntax checks only. P3 dependency preparation and the first live typecheck passed. A reusable explicit prepare command is implemented with 16 local fixtures passing; its live execution and other tasks/OS routes remain unaccepted."
-next_step: "Reusable preparation is implemented. When separately selected, wire ordinary Gmax development commands to the local-worker path, retaining named task/machine selection. No check or live preparation is queued; Windows preparation and the remaining OS/task acceptance stay open."
+current_state: "The Gmax repository entry, named task catalog, frozen source inputs, existing-pool dispatch, Windows command closure and result/artifact checks are implemented. One local fixture invocation passed 12/12 without workers or tools; two final narrow edits passed syntax checks only. P3 dependency preparation and the first live typecheck passed. Reusable explicit preparation and pnpm worker task entries are implemented. The package-entry assignment passed 18 local cases through a fixture runner; live preparation and other tasks/OS routes remain unaccepted."
+next_step: "The pnpm worker entry points are implemented. When selected, extend dependency preparation to the native Windows route, retaining explicit task/machine selection and existing admission. No live job, extra check, worker activation or release step is queued."
 summary: "Named jobs, reusable explicit dependency preparation and P3 typecheck acceptance are recorded. Matching caches reuse without installation; missing caches use frozen manifests with scripts disabled. No cloud fallback or automatic placement."
 ---
 
@@ -255,9 +255,11 @@ run another task or enable a held worker.
 
 `scripts/lib/gmax-project.mjs:prepareGmaxDependencies` materializes only committed
 `package.json`, `pnpm-lock.yaml` and `pnpm-workspace.yaml`. A matching cache must
-retain identical manifests and the expected lock/platform/architecture/Node
-identity. It returns `disposition: reused` without invoking pnpm. An inconsistent
-cache refuses without replacing it.
+retain matching preparation inputs and the expected lock/platform/architecture/Node
+identity. The package `scripts` field is excluded because install scripts are
+disabled; other package fields must match, and lock/workspace bytes must match.
+It returns `disposition: reused` without invoking pnpm. An inconsistent cache
+refuses without replacing it.
 
 A missing cache uses a per-key lock and private staging directory. The only
 installation command is `pnpm install --frozen-lockfile --ignore-scripts
@@ -274,8 +276,42 @@ filesystem fixtures used a fake installer; no worker was contacted or pnpm run.
 This is source evidence, not live preparation acceptance. The existing P3 cache
 and typecheck receipt above remain unchanged.
 
+## Package-script development entry points
+
+`package.json:scripts` exposes these explicit developer commands:
+
+| Command | Named task |
+| --- | --- |
+| `pnpm worker:prepare --worker <name>` | Dependency preparation or reuse |
+| `pnpm worker:typecheck --worker <name>` | TypeScript typecheck |
+| `pnpm worker:test --worker <name> --test tests/<file>.test.ts` | Selected Vitest files |
+| `pnpm worker:package --worker <name>` | Package creation with prepared inputs |
+| `pnpm worker:compatibility --worker <name>` | Prepared CLI version startup |
+| `pnpm worker:native-build --worker <name>` | Offline native build |
+
+Each calls `scripts/local-worker.cjs` once; `--ref <full-commit>` and `--timeout`
+pass to the existing parser. Worker choice remains required, no preparation or
+extra task is automatic, and a refusal is returned without fallback. These entries
+are for the source checkout with the adjacent platform integration. Normal local
+commands, dependency versions and release lifecycle commands are unchanged.
+
+The package-script addition does not require dependency reinstallation:
+`scripts/lib/gmax-project.mjs:prepareGmaxDependencies` compares package fields
+apart from `scripts`, while preserving strict lock/workspace and dependency-field
+checks. Other manifest differences refuse without replacing existing caches.
+
+Package-entry receipt (private record)
+records 18 passing cases from 1 local invocation. The new integration fixture
+ran real pnpm package-script dispatch through a temporary repository entry and a
+fixture platform parser, proving all 6 task mappings, argument forwarding and
+exit-code propagation. No compiler, test suite, installer or transport ran on a
+real worker. Previous P3 live typecheck evidence remains separate.
+
 ## Version History
 
+- **2026-10-24T07:53:20Z** Status: in-session → partial — pnpm worker task entries implemented; scripts-only edits reuse matching dependencies. One focused local invocation passed 18/18 through fixture dispatch; no live worker job ran.
+- **2026-10-24T07:50:22Z** Started (active → in-session).
+- **2026-10-24T07:50:22Z** Status: partial → active — User selected package-script entry points for named local-worker development tasks, 0 agents and 1 focused local test.
 - **2026-10-24T06:56:02Z** Status: in-session → partial — Reusable explicit manifest-only preparation and matching-cache reuse implemented. One focused local invocation passed 16/16; no live worker or installation ran.
 - **2026-10-24T06:52:37Z** Started (active → in-session).
 - **2026-10-24T06:52:37Z** Status: partial → active — User selected reusable manifest-only dependency preparation and cache reuse, 0 agents, 1 focused local test.

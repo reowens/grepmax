@@ -585,6 +585,27 @@ whether you need to act.
 
 See [CLAUDE.md](CLAUDE.md) for development setup, commands, and architecture details.
 
+### Local worker commands
+
+In the source checkout, select a user-owned roster machine explicitly:
+
+```bash
+pnpm worker:prepare --worker p3
+pnpm worker:typecheck --worker p3
+pnpm worker:test --worker p3 --test tests/core.test.ts
+```
+
+Add `--ref <full-commit>` to pin committed source; dirty files are not transferred.
+`worker:package`, `worker:compatibility` and `worker:native-build` select their
+fixed tasks through the same entry. Preparation creates dependencies only;
+execution requires the task's prepared inputs. These commands do not chain
+checks or fall back to another machine or a cloud builder.
+
+The adjacent platform checkout supplies the roster, admission and transport.
+[The local-worker plan](docs/plans/gmax-local-workers.md) records platform support,
+cache preparation and accepted live tasks. Normal local commands and the release
+workflow are unchanged; these source-only entries are invoked explicitly.
+
 ### Benchmarks
 
 Two retrieval evaluation harnesses emit JSON via `:json` variants. Additional token and experimental-orientation harnesses are available as `bench:tokens` and `bench:surprises`.
