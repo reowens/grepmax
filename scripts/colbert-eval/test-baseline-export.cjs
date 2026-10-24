@@ -8,8 +8,8 @@ const { spawnSync } = require('node:child_process');
 const b = require('./baseline-export.cjs');
 const H = '1'.repeat(64), REV = '2'.repeat(40), FILE = path.join(__dirname, 'baseline-export.cjs');
 const array48 = n => Array(48).fill(n);
-function fixture() {
-  const chunks = ['doc-b', 'doc-a', 'doc-c'].map((id, i) => ({ id, path: `/frozen/${id}.ts`, content: `function value${i}() { return ${i}; }`, chunk_index: i, start_line: 0, end_line: 0 }));
+function fixture(documentCount = 3) {
+  const chunks = Array.from({ length: documentCount }, (_, i) => ['doc-b', 'doc-a', 'doc-c'][i] ?? `doc-extra-${i}`).map((id, i) => ({ id, path: `/frozen/${id}.ts`, content: `function value${i}() { return ${i}; }`, chunk_index: i, start_line: 0, end_line: 0 }));
   const model = dimensions => ({ modelId: 'synthetic/not-a-model', revision: REV, dimensions, precision: 'synthetic-f64', normalization: 'synthetic-none', artifacts: [{ path: 'mock.bin', sha256: H, bytes: 1 }] });
   return { chunks, plan: { schemaVersion: 1, baseline: { ...b.PIN },
     identities: Object.fromEntries(['sourceManifestSha256', 'chunkManifestSha256', 'sourceTreeSha256', 'scorerSha256', 'evaluatorAdapterSha256'].map(k => [k, H])),
@@ -22,8 +22,8 @@ function response(invoked = false, empty = false) {
   return { data: [], diagnostics: { gate: gate(invoked), fts: { available: true, searchFailed: false }, stages: { pooled: empty ? 0 : 3 } } };
 }
 function encoding() { return { dense: new Float32Array([1, -0, 3]), colbert: [array48(0.25)], colbertDim: 48, pooled_colbert_48d: array48(0.1) }; }
-async function material({ invoke = false, observe = true, unavailable = false } = {}) {
-  const f = fixture(), capture = b.createCapture(f.plan, { provenance: 'synthetic' });
+async function material({ invoke = false, observe = true, unavailable = false, documentCount = 3 } = {}) {
+  const f = fixture(documentCount), capture = b.createCapture(f.plan, { provenance: 'synthetic' });
   f.chunks.forEach((chunk, i) => capture.recordDocument(chunk, new Float32Array([i, i + 1, i + 2])));
   for (const q of f.plan.questions) {
     const observer = capture.beginQuestion(q.id);
@@ -97,6 +97,7 @@ test('legitimate no-rerank keeps empty call list, explicit gate reason and retri
   const q = value.records[4]; assert.equal(q.rerank.reason, 'released-gate-disabled'); assert.deepEqual(q.rerank.calls, []);
   assert.deepEqual(b.decodeWire(q.response).data, []);
   assert.equal(own(q.rerank, 'candidateIds'), false);
+  assert(result.blockers.includes('q-0:released-gate-window-unobserved'));
 });
 const own = (v, k) => Object.prototype.hasOwnProperty.call(v, k);
 test('unobservable ranking/IDs remain named blockers, never guessed from diagnostic ranks', async t => {
@@ -167,6 +168,22 @@ test('genuine underlying FTS failure remains ordinary released unavailability', 
   try { await (await db.ensureTable()).search(f.plan.questions[0].query).toArray(); }
   catch (error) { assert.equal(error, failure); r.diagnostics.fts = { available: false, searchFailed: true }; }
   assert.equal(obs.finish(r).lexical.state, 'unavailable');
+});
+for (const value of [null, undefined, false, 0, -0, NaN, '', 0n]) test(`falsy thrown ${String(value)} remains a permanent observation failure`, async () => {
+  const f = fixture(), cap = b.createCapture(f.plan); f.chunks.forEach(c => cap.recordDocument(c, [1, 2, 3]));
+  const obs = cap.beginQuestion('q-0'); await obs.wrapWorkerPool({ encodeQuery: () => encoding() }).encodeQuery(f.plan.questions[0].query);
+  const row = { ...f.chunks[0] }; Object.defineProperty(row, 'snapshotFailure', { enumerable: true, get() { throw value; } });
+  let successful = 0, caught = false;
+  const db = obs.wrapDatabase({ async ensureTable() { return { search: () => ({ async toArray() { successful++; return [row]; } }) }; } });
+  const r = response();
+  try { await (await db.ensureTable()).search(f.plan.questions[0].query).toArray(); }
+  catch (error) { caught = true; assert(Object.is(error, value)); r.diagnostics.fts = { available: false, searchFailed: true }; }
+  assert.equal(successful, 1); assert.equal(caught, true);
+  for (const fn of [() => obs.finish(r), () => cap.records(), () => cap.beginQuestion('q-1')]) {
+    let failed = false;
+    try { fn(); } catch (error) { failed = true; assert(Object.is(error, value)); }
+    assert.equal(failed, true, 'every capture continuation must rethrow even a falsy original value');
+  }
 });
 test('no diagnostic gate stays blocked rather than inferred from final result', async () => {
   const f = fixture(), cap = b.createCapture(f.plan); f.chunks.forEach(c => cap.recordDocument(c, [1, 2, 3]));
@@ -246,6 +263,50 @@ test('empty pooled stage cannot report an evaluated concentration gate', async t
   value.records[4].response.diagnostics.stages.pooled = 0;
   const opts = files(t, value); assert.throws(() => b.processMaterial(opts), { code: 'GATE' }); assert.equal(fs.existsSync(opts.out), false);
 });
+test('known single-entry fusion cannot claim share 0.3 and skip required rerank', t => rejectsMaterial(t, x => {
+  const q = x.records[4]; q.gate = { requestedRerank: false, threshold: 0.7, evaluated: true, share: 0.3, activated: false, rerankInvoked: false };
+  q.response.diagnostics.gate = clone(q.gate); q.response.diagnostics.stages = { fusion: 1, pooled: 1 };
+  q.rerank = { state: 'skipped', reason: 'released-gate-disabled', calls: [] };
+}, 'GATE'));
+test('concentration shares cover every bucket ratio for windows one through ten and the top-ten cap', async () => {
+  const invoked = await material({ invoke: true, documentCount: 20 }), skipped = await material({ documentCount: 20 });
+  const plan = b.validatePlan(invoked.plan), expected = plan.questions[0];
+  for (const fusion of [...Array.from({ length: 10 }, (_, i) => i + 1), 11, 20]) {
+    const n = Math.min(fusion, 10);
+    for (let bucket = 1; bucket <= n; bucket++) {
+      const share = bucket / n, activated = share >= 0.7;
+      const row = clone((activated ? invoked : skipped).records[21]);
+      row.gate = { requestedRerank: false, threshold: 0.7, evaluated: true, share, activated, rerankInvoked: activated };
+      row.response.diagnostics.gate = clone(row.gate); row.response.diagnostics.stages = { fusion, pooled: fusion };
+      row.response.diagnostics.trace = { total: fusion }; row.ranking = null; row.lexical.calls[0].rows = [];
+      if (fusion === 1) {
+        row.rerank.calls[0].input.docs.length = 1; row.rerank.calls[0].candidateIds.length = 1; row.rerank.calls[0].result.values.length = 1;
+      }
+      assert.doesNotThrow(() => b.validateQuestion(row, expected, plan), `fusion=${fusion}, bucket=${bucket}`);
+      const impossible = clone(row); impossible.gate.share = (bucket - 0.5) / n;
+      impossible.gate.activated = impossible.gate.share >= 0.7; impossible.gate.rerankInvoked = impossible.gate.activated;
+      impossible.response.diagnostics.gate = clone(impossible.gate);
+      assert.throws(() => b.validateQuestion(impossible, expected, plan), { code: 'GATE' });
+    }
+  }
+});
+test('unknown window cannot accept a share impossible for every top-ten bucket ratio', t => rejectsMaterial(t, x => {
+  const q = x.records[4]; q.gate = { requestedRerank: false, threshold: 0.7, evaluated: true, share: 0.35, activated: false, rerankInvoked: false };
+  q.response.diagnostics.gate = clone(q.gate); q.rerank = { state: 'skipped', reason: 'released-gate-disabled', calls: [] };
+}, 'GATE'));
+test('known fusion count must agree with trace total and bound pooled count', async t => {
+  for (const stages of [{ fusion: -1, pooled: 1 }, { fusion: '1', pooled: 1 }, { fusion: 1, pooled: 2 }]) {
+    await rejectsMaterial(t, x => { x.records[4].response.diagnostics.stages = stages; }, 'GATE');
+  }
+  await rejectsMaterial(t, x => {
+    x.records[4].response.diagnostics.stages = { fusion: 2, pooled: 2 }; x.records[4].response.diagnostics.trace = { total: 1 };
+  }, 'GATE');
+});
+test('trace total alone supplies the exact original fusion window', t => rejectsMaterial(t, x => {
+  const q = x.records[4]; q.gate = { requestedRerank: false, threshold: 0.7, evaluated: true, share: 0.3, activated: false, rerankInvoked: false };
+  q.response.diagnostics.gate = clone(q.gate); q.response.diagnostics.trace = { total: 1 }; q.response.diagnostics.stages = { pooled: 1 };
+  q.rerank = { state: 'skipped', reason: 'released-gate-disabled', calls: [] };
+}, 'GATE'));
 test('successful lexical rows cannot coexist with failed/unavailable FTS diagnostics', t => rejectsMaterial(t, x => {
   x.records[4].response.diagnostics.fts = { available: false, searchFailed: true };
 }, 'LEXICAL'));

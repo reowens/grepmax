@@ -170,6 +170,13 @@ function validateDocument(row, expected, plan) {
   need(chunk.id === row.id && typeof chunk.content === 'string' && typeof chunk.path === 'string', 'CHUNK', 'Full original chunk id/path/content required');
   vector(decodeWire(row.graniteVector), plan.granite.dimensions);
 }
+function possibleConcentrationShare(share, window) {
+  // The pinned release uses at most ten fusion entries and an integer bucket.
+  for (let n = window ?? 1; n <= (window ?? 10); n++) {
+    for (let bucket = 1; bucket <= n; bucket++) if (share === bucket / n) return true;
+  }
+  return false;
+}
 function validateQuestion(row, expected, plan) {
   keys(row, ['type', 'id', 'query', 'encoding', 'lexical', 'gate', 'rerank', 'ranking', 'response']);
   need(row.type === 'question' && row.id === expected.id && row.query === expected.query, 'COVERAGE', 'Question identity/order mismatch');
@@ -202,10 +209,30 @@ function validateQuestion(row, expected, plan) {
     if (g.evaluated) need(!g.requestedRerank && g.threshold <= 1 && Number.isFinite(g.share) && g.share > 0 && g.share <= 1,
       'GATE', 'Evaluation requires an unrequested rerank and a valid concentration share');
     else need(g.share === null, 'GATE', 'Unevaluated gate cannot have a concentration share');
+    if (g.evaluated) need(possibleConcentrationShare(g.share), 'GATE', 'Concentration share is impossible for a released top-ten window');
+    const fusionCounts = [];
+    for (const [record, key] of [[response.diagnostics?.stages, 'fusion'], [response.diagnostics?.trace, 'total']]) {
+      if (record && own(record, key)) {
+        need(Number.isSafeInteger(record[key]) && record[key] >= 0 && record[key] <= docs.size,
+          'GATE', 'Invalid original fusion count');
+        fusionCounts.push(record[key]);
+      }
+    }
+    need(fusionCounts.every(n => n === fusionCounts[0]), 'GATE', 'Fusion and trace total disagree');
+    const fusion = fusionCounts[0];
+    if (fusion !== undefined) {
+      need(g.evaluated === (!g.requestedRerank && fusion > 0 && g.threshold <= 1),
+        'GATE', 'Evaluation contradicts known fusion window');
+      if (g.evaluated) need(possibleConcentrationShare(g.share, Math.min(fusion, 10)),
+        'GATE', 'Concentration share contradicts known fusion window');
+      need(g.rerankInvoked === ((g.requestedRerank || g.activated) && fusion > 0),
+        'GATE', 'Invocation contradicts known fusion window');
+    }
     need(g.activated === (g.evaluated && g.share >= g.threshold), 'GATE', 'Activation contradicts concentration evaluation');
     need(!g.rerankInvoked || g.requestedRerank || g.activated, 'GATE', 'Disabled rerank cannot be invoked');
     const pooled = response.diagnostics?.stages?.pooled;
     if (Number.isSafeInteger(pooled) && pooled >= 0) {
+      if (fusion !== undefined) need(pooled <= fusion, 'GATE', 'Pooled count exceeds original fusion count');
       need(g.evaluated === (!g.requestedRerank && pooled > 0 && g.threshold <= 1),
         'GATE', 'Evaluation contradicts requested rerank, threshold or known pooled stage');
       need(!g.rerankInvoked || pooled > 0, 'GATE', 'Empty pooled stage cannot invoke rerank');
@@ -251,11 +278,11 @@ function validateQuestion(row, expected, plan) {
 /** One observer per question, sequential calls only. It never selects candidates or scores. */
 function createCapture(inputPlan, { provenance = 'unverified-released-capture' } = {}) {
   const plan = validatePlan(inputPlan), first = header(plan, provenance);
-  const documents = [], questions = []; let active = false, captureBytes = Buffer.byteLength(canonical(first)) + 1, observationFailure;
-  const sound = () => { if (observationFailure) throw observationFailure; };
+  const documents = [], questions = []; let active = false, captureBytes = Buffer.byteLength(canonical(first)) + 1, observationFailed = false, observationFailure;
+  const sound = () => { if (observationFailed) throw observationFailure; };
   // Released Searcher may catch dependency errors (notably FTS). An exporter
   // error after a successful dependency call must never become normal absence.
-  const observed = fn => { sound(); try { return fn(); } catch (error) { observationFailure = error; throw error; } };
+  const observed = fn => { sound(); try { return fn(); } catch (error) { observationFailed = true; observationFailure = error; throw error; } };
   const retain = row => { const bytes = Buffer.byteLength(canonical(row)) + 1; need(bytes <= LIMITS.lineBytes && captureBytes + bytes <= LIMITS.inputBytes, 'BOUND', 'Capture byte limit exceeded'); captureBytes += bytes; return freeze(row); };
   return Object.freeze({
     plan,
@@ -376,6 +403,10 @@ function* lines(file, state) {
 function blockersFor(row) {
   const out = [];
   if (!row.gate) out.push(`${row.id}:released-gate-unobserved`);
+  else if (row.gate.evaluated) {
+    const response = decodeWire(row.response);
+    if (!Number.isSafeInteger(response.diagnostics?.stages?.fusion) && !Number.isSafeInteger(response.diagnostics?.trace?.total)) out.push(`${row.id}:released-gate-window-unobserved`);
+  }
   if (row.lexical.state === 'blocked') out.push(`${row.id}:lexical-candidates-unobserved`);
   if (row.rerank.calls.some(c => c.candidateIds === null)) out.push(`${row.id}:exact-rerank-chunk-ids-unobserved`);
   if (row.rerank.reason === 'skip-reason-unobservable') out.push(`${row.id}:skip-reason-unobservable`);

@@ -190,6 +190,8 @@ error (for example its FTS fallback), `finish()`, subsequent questions and
 `records()` still rethrow that original observation failure. A genuine failed
 underlying FTS call remains distinguishable from a successful dependency result
 that the observer could not record. Original rows/results are never substituted.
+The failure latch records occurrence separately from the thrown value; `null`,
+`undefined`, `false`, zero, `NaN`, empty strings and zero BigInt remain fatal.
 
 `wrapDatabase` intercepts only `ensureTable()`/`table.search()`/chained FTS
 `toArray()` to retain the exact lexical call result in original order. Other
@@ -220,6 +222,12 @@ gate has no share. Known pooled counts and successful lexical calls must also
 agree with the released invocation/FTS state. Missing facts remain unobserved.
 With known pooled counts, an unrequested nonempty pool evaluates the active
 concentration gate; an empty pool cannot report that evaluation.
+Concentration shares must be an integer bucket ratio within the released
+top-ten window. Original `stages.fusion` and/or `trace.total` determine its exact
+length when supplied and must agree; a one-entry window has share 1. Known
+counts must fit the document inventory and bound the pooled stage. Missing
+fusion size retains `released-gate-window-unobserved`; it is not inferred from
+final results or the capped diagnostic cohort.
 
 ## Material and wire representation
 
