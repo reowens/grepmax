@@ -2,7 +2,7 @@
 type: plan
 status: paused
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-24T02:29:03Z
+updated: 2026-10-24T02:53:20Z
 surfaces:
   - store
   - daemon
@@ -20,9 +20,9 @@ parent_plan:
 related_plans:
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Release candidate 0.26.97 is built from frozen committed source with both qualified native artifacts. Package acceptance used its single run and stopped at strict admission against live Mac MCP clients; early consumer checks passed. The exact archive and isolated Linux acceptance packet are retained. Installed 0.26.96 is unchanged; release, installation and resource history remain open or held."
-next_step: "Use one fresh test allowance to qualify the retained 0.26.97 tarball with the prepared clean-host consumer packet. Accept only result.json status 0 and the exact archive hash; retain the separate macOS FSEvents and full-release proof boundaries. Do not reconnect user clients or weaken admission. Publication and installation remain unperformed; preserve held resource statistics and deferred GPU work."
-summary: "Candidate 0.26.97 is built; package acceptance stopped at Mac host admission. Exact archive and clean-host acceptance packet are retained. No publication or installation; resource history stays held."
+current_state: "Candidate 0.26.97 passed Linux package consumer acceptance in one test run against the exact retained archive. Both native artifacts are qualified. A missing builder library was repaired before any test started. Full local release:check remains unrun; installed 0.26.96 is unchanged and publication/installation remain unperformed."
+next_step: "Complete the existing full local release qualification on frozen candidate 44b16fe6a7 with accepted native inputs, in a clean host scope and one bounded invocation. Preserve the successful package/native proofs, Mac FSEvents qualification boundary, live clients and held resource/GPU work. Publication and installation remain unperformed."
+summary: "Linux package acceptance passed all stages for unchanged 0.26.97 archive. Full local release qualification remains outstanding; no publication or installation. Resource history stays held."
 ---
 
 # Gmax Delivery Plan
@@ -31,8 +31,8 @@ summary: "Candidate 0.26.97 is built; package acceptance stopped at Mac host adm
 
 ## Mac GPU baseline step 1: recovery and measurement
 
-**The Mac baseline is restored and matching native artifacts are prepared;
-runtime package integration and delivery remain open.** Normal service, MLX and file indexing are active, and a semantic read
+**The native repair and Linux package acceptance are verified;
+full local release qualification and delivery remain open.** Normal service, MLX and file indexing are active, and a semantic read
 returned results. The qualified one-time recovery finalized the retained receipt
 without data or search-index writes, preserving current table version 5600. The
 source fix passed 26 native cases in 1 qualification invocation on Darwin.
@@ -105,10 +105,10 @@ P3. These results qualify the Linux native helper in the builder and do not clai
 physical P3 acceptance.
 
 **Permanent delivery remains open.** Installed 0.26.96 native artifacts still
-contain the original branch. The prepared pair must be integrated into a verified
-runtime release package before publication and installation. Neither action ran
-in this assignment. ColBERT MLX, CUDA and resource-history work remain unstarted
-or held as recorded above.
+contain the original branch. The pair is now in the built 0.26.97 package, whose
+Linux consumer acceptance passed. Full local release qualification, publication
+and installation remain open. ColBERT MLX, CUDA and resource-history work remain
+unstarted or held as recorded above.
 
 ### Release package candidate 0.26.97
 
@@ -120,14 +120,28 @@ the frozen archive after the build. Its SHA-256 is
 [Release package evidence](assets/mac-mlx-baseline-20261023/release-package.json)
 records commands, stage results, payload diff, hashes and cleanup.
 
-**Package acceptance is incomplete.** Its single invocation passed the consumer
-dependency audit, process-ownership checks and document-contract/import boundary.
-Initial watcher catchup then failed strict admission: 28 host MCP processes lack
-client reservations in the fixture's fresh private home. The upgrade/reconnect
-message does not establish that those live clients are outdated. Watcher events,
-native SDK/Session/containment, prune and bounded consumer stages did not run.
-No guard, registry or live client was changed, and no retry ran. The full release
-suite has not run.
+**Linux package acceptance passed.** The single qualification invocation ran on
+an isolated Ubuntu 24.04 x86_64 Depot builder for 127.616 seconds, exit 0. It
+passed consumer dependency audit (zero vulnerabilities), process ownership,
+document contract/import boundaries, native daemon and standalone watcher edits,
+atomic saves, injected-gap convergence, policy re-inclusion/retirement, native
+SDK/Session/compaction containment, prune and bounded maintenance consumers.
+The three bounded cases preserved identical complete-row digests for 448 rows:
+copy with Node readers, interrupted-before-copy recovery and incremental repair
+with Node readers. The reader cases completed 81 and 569 reads, respectively.
+
+The [successful package qualification](https://depot.dev/orgs/s0rjb3r4ql/projects/qkhvfs3900/builds/gnll0kdq3f)
+used Node 26.12.1/npm 11.20.0, Python 3.13.17 and uv 0.13.5. An earlier builder
+startup failed because Node lacked `libatomic.so.1`; its driver and tests never
+started. Adding `libatomic1` and checking tool startup fixed the disposable image.
+There were two builder starts, one test invocation and no test retry. Candidate
+bytes and all seven frozen fixture/assertion scripts remained unchanged.
+
+The previous Mac attempt remains recorded as failed: the fixture's private home
+lacks reservations for 28 live host MCP processes, so strict catchup admission
+refused. Those sessions and the guard were left intact. Linux passing does not
+qualify macOS FSEvents. Both native artifact suites already passed independently
+on their platforms; they were not repeated in this assignment.
 
 Payload comparison against published 0.26.96 found no added/removed files and no
 compiled JavaScript changes. The differences are the qualified native pair,
@@ -135,16 +149,23 @@ maintenance manifest/acceptance/notices, version metadata and committed README/
 skill documentation. Uncommitted shared-checkout work is excluded. The installed
 release is unchanged; publication, tags, pushes and installation remain undone.
 
-A complete clean-host input packet and exact command are staged under
-`/Users/Shared/P3-Installer/gmax-release-package-20261023/`. It uses Ubuntu 24.04,
-Node 26.12.1, Python 3.13 and uv 0.13.5 in an isolated Linux builder. Seven frozen
-consumer scripts are unchanged; a private adapter supplies the retained archive
-to real `npm pack` and rejects a different output hash. It preserves the consumer
-lock, audit and result logs before fixture cleanup. The packet has not executed.
-Only `result.json` status 0 with the expected input hash counts as acceptance;
-builder success alone does not. This would qualify Linux package consumers,
-not macOS FSEvents. Bounded read-only SSH to the alternate Mac timed out.
-Continue with one fresh qualification allowance; preserve existing host sessions.
+The exact accepted archive, result, consumer log, npm audit and consumer lock are
+retained under `/Users/Shared/P3-Installer/gmax-release-package-20261023/`.
+The private adapter supplied that archive to real `npm pack` and verified its
+returned hash. Builder success alone was not used as the verdict: exported
+`result.json` has status 0 and `qualificationPassed: true`, and
+`accepted-input.json` records the expected archive hash. Fixture stores/homes
+were disposable and original cleanup paths completed; no local service, model,
+credential or P3 setting changed.
+
+**Full release qualification remains open.** The existing `release:check` command
+in `package.json` includes full JavaScript/Python audits and tests, typechecks,
+format/build and consumer checks. It has not run for this frozen candidate.
+This is an existing release gate, not covered by the narrower successful native
+and package runs. Continue against the same frozen source and accepted native
+inputs on a clean host; keep one test invocation per assignment and preserve the
+separate Mac FSEvents proof boundary. Do not publish or install from these results
+alone.
 
 ### Measured embedding stages
 
@@ -2811,6 +2832,9 @@ parallel omnibus plan.
 
 ## Version History
 
+- **2026-10-24T02:53:20Z** Status: in-session → paused — Linux package consumer acceptance passed all stages in 1 test invocation against exact 0.26.97 archive. One builder-only libatomic setup failure preceded test startup. Full local release qualification remains outstanding; nothing published or installed.
+- **2026-10-24T02:45:53Z** Started (active → in-session).
+- **2026-10-24T02:45:53Z** Status: paused → active.
 - **2026-10-24T02:29:03Z** Status: in-session → paused — Candidate built; sole consumer acceptance run stopped at private-registry/host-client admission. Retained exact archive and unexecuted clean-host packet; next assignment gets one fresh qualification run. No publication or installation.
 - **2026-10-24T02:00:40Z** Started (active → in-session).
 - **2026-10-24T02:00:40Z** Status: paused → active.

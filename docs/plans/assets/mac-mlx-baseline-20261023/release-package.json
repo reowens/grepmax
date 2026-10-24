@@ -1,6 +1,6 @@
 {
-  "recordedAt": "2026-10-24T02:29:03.022015+00:00",
-  "verdict": "built; package consumer acceptance incomplete; not release qualified",
+  "recordedAt": "2026-10-24T02:53:20.780559+00:00",
+  "verdict": "PASS Linux package consumer acceptance; full local release qualification remains outstanding",
   "candidate": {
     "version": "0.26.97",
     "sourceCommit": "44b16fe6a73df7a5aa3b791d789d7967e2c4af66",
@@ -59,7 +59,91 @@
     },
     "compiledJavaScriptChanges": []
   },
-  "qualification": {
+  "diagnosis": {
+    "source": "src/lib/utils/resource-budget.ts:368-378 and scripts/test-watcher-consumer.cjs private HOME/GMAX_HOME setup",
+    "finding": "The fixture uses a fresh private reservation registry but resource admission sees same-user host MCP processes. Those processes have no reservation in that private registry, so strict admission refuses. The message does not establish that the live clients are outdated or require a real-session reconnect.",
+    "guardChanged": false,
+    "liveRegistryChanged": false,
+    "clientReconnectOrTerminationPerformed": false
+  },
+  "nextQualificationPacket": {
+    "context": "/Users/Shared/P3-Installer/gmax-release-package-20261023/clean-consumer-context",
+    "commandFile": "/Users/Shared/P3-Installer/gmax-release-package-20261023/next-clean-consumer-command.txt",
+    "executed": true,
+    "host": "isolated Linux x86_64 Depot builder, Ubuntu 24.04",
+    "tools": [
+      "Node 26.12.1",
+      "npm 11.20.0",
+      "Python 3.13.17",
+      "uv 0.13.5"
+    ],
+    "input": "same retained tarball; private preload supplies it to real npm pack and rejects a different output SHA256",
+    "fixtureSources": "seven unchanged scripts copied from frozen source archive",
+    "resultRule": "result.json qualificationPassed=true and status=0, plus accepted-input.json expected archive SHA256; exporting the build result alone does not establish acceptance",
+    "proofLimit": "Pass establishes Linux package consumers and the recorded native/helper cases. It does not establish macOS FSEvents; full local release:check remains unrun.",
+    "alternateMacHost": "Air SSH port 22 timed out on bounded read-only preflight; no changes made",
+    "result": "/Users/Shared/P3-Installer/gmax-release-package-20261023/clean-consumer-result/result.json",
+    "contextManifest": "/Users/Shared/P3-Installer/gmax-release-package-20261023/clean-consumer-context-hashes-setup-2.json"
+  },
+  "cleanup": {
+    "temporaryConsumers": [
+      {
+        "path": "/private/var/folders/n2/c5kbh3vj7_s4t9_q0xc42z0m0000gn/T/gmax-packed-consumer-5bgiV2",
+        "stillExists": false
+      },
+      {
+        "path": "/private/var/folders/n2/c5kbh3vj7_s4t9_q0xc42z0m0000gn/T/gmax-watcher-consumer-N3Njvp",
+        "stillExists": false
+      }
+    ],
+    "testSubprocess": "returned exit 1; fixture unwatch and finally cleanup recorded",
+    "nativeModelStartedByThisAssignment": false,
+    "published": false,
+    "taggedOrPushed": false,
+    "globalInstallOrDaemonHandover": false,
+    "p3Changed": false,
+    "cleanHostQualification": {
+      "buildCompleted": true,
+      "exitStatus": 0,
+      "fixtureScopes": "disposable builder temporary HOME, stores and synthetic vectors",
+      "fixtureCleanup": "original fixtures completed their finally/unwatch/close paths; only five evidence files exported",
+      "localRuntimeOrP3Changed": false
+    }
+  },
+  "evidenceRoot": "/Users/Shared/P3-Installer/gmax-release-package-20261023",
+  "evidenceSha256": {
+    "source.tar": "d7c055006d92090d1e05224a58c35cd9105dfccce8beb326950f689e36583092",
+    "source-receipt.json": "62b0112bcd930c3e3ca179c10ec78336bcfd16e180eebddcf9e5ae7f8c078484",
+    "test-types.log": "419425223cd16295938397133b5b8b4a9ac9a09ccc1c2b477fc6994a94266183",
+    "build.log": "ad9c3473de7f406dcf876516dc2c414ab36c75152df95fc2e17ec3f1ea930697",
+    "consumer.log": "20cd86dc68851e98932cfcb86bb85cc98bdae8d379f6005988639a1e47956682",
+    "tested-pack.json": "1777c099b12f0aabd786b4391ba8e935ed94bceeba124467c77dc09bc678b8d8",
+    "payload-diff.json": "3f834a275d54e61bd750e7aeb226600ae8f5816e4bfcdc3e01cc6738930642d0",
+    "final-integrity.json": "c7872ca1c800036daacb8f4a30d784172cd7efda8465b1322de1283b6e56ce42",
+    "capture-pack.cjs": "dce23a70035ba47814dcf8ea439ad1812fe398f03bef3740c002d365e0221463",
+    "clean-consumer-context-hashes.json": "30b4c5105034f87484ea87f450465fd937ef04221c3372cdd936ad37e6ea1aae",
+    "next-clean-consumer-command.txt": "6149701260825da19f7bcebb32908444c7de8f1538489414f02baf0d0dc44af5",
+    "clean-consumer-context/Dockerfile": "1353bd78ad074070ec1e5ee1487c1f07b473db8aba9599fc01ff3e4d6b5d3e38",
+    "clean-consumer-context/exact-input.cjs": "9d6367a35bad747b0ff4ca6687ec1d50289eea747891003f0f5e1016e832f1be",
+    "clean-consumer-context/run.cjs": "a754261a73be0856da3bca61a1813d816210008530e3aad9ee77a5580985904a",
+    "clean-consumer-result/accepted-input.json": "ca82a4ffb10b67535360ac828b777755dd8bb9e6a0b744cd12db2d8976c0a2a2",
+    "clean-consumer-result/npm-audit.json": "09fb924231ae22c459c692e93ddfd0379bcde386bebad9abf52dcb5c03b33912",
+    "clean-consumer-result/result.json": "03459f5791eb5ccf52d5153fe7fb1810b0b31c220c1e3f464037fcf3df127317",
+    "clean-consumer-result/package-lock.json": "5e3f1e494cb9f0c55973d56f7db6dac80f817d6fe87258d419b6640b24e7f349",
+    "clean-consumer-result/consumer.log": "893fb31624438b8a8c4955f841b4df1cf492ef60f2589c1103c19c0ba528d020",
+    "clean-consumer-build.log": "13b1f1e7be44258424dd822da8e0a034f76ab991f140b6266d1c409dc1adef3d",
+    "clean-consumer-build-2.log": "c4138a7cdc239ed526888ff46ba5daa1e2cb8656bce8036acea71d0cd71de9de",
+    "clean-consumer-metadata-2.json": "07a997c360db4cf2b4e4579bcf157395517ccf35cf90e953259b337cfa1e78af",
+    "clean-consumer-setup-1.json": "3b26511e6a1f98f83634abea16037942db4e88f58ddf8b20bec3fea0e5b90dfd",
+    "clean-consumer-Dockerfile-setup-1": "25bdb7c9faef1cefef23cf3faa169785ce11d8a54a14b73c57b6f582740c55f8",
+    "clean-consumer-context-hashes-setup-2.json": "8d99322736c70e5499273c751b58c4d6ac950de8a3390767196b180812bf1844"
+  },
+  "limits": {
+    "assignmentMinutes": 45,
+    "maximumTestInvocations": 1,
+    "testAllowanceConsumed": true
+  },
+  "previousMacHostQualification": {
     "testInvocations": 1,
     "exitStatus": 1,
     "command": "PATH=\"/Users/Shared/P3-Installer/gmax-release-package-20261023/tool-bin:$PATH\" node --require /Users/Shared/P3-Installer/gmax-release-package-20261023/capture-pack.cjs /Users/Shared/P3-Installer/gmax-release-package-20261023/source/scripts/audit-consumer.cjs",
@@ -79,67 +163,117 @@
     "retryPerformed": false,
     "fullReleaseSuiteRun": false
   },
-  "diagnosis": {
-    "source": "src/lib/utils/resource-budget.ts:368-378 and scripts/test-watcher-consumer.cjs private HOME/GMAX_HOME setup",
-    "finding": "The fixture uses a fresh private reservation registry but resource admission sees same-user host MCP processes. Those processes have no reservation in that private registry, so strict admission refuses. The message does not establish that the live clients are outdated or require a real-session reconnect.",
-    "guardChanged": false,
-    "liveRegistryChanged": false,
-    "clientReconnectOrTerminationPerformed": false
-  },
-  "nextQualificationPacket": {
-    "context": "/Users/Shared/P3-Installer/gmax-release-package-20261023/clean-consumer-context",
-    "commandFile": "/Users/Shared/P3-Installer/gmax-release-package-20261023/next-clean-consumer-command.txt",
-    "executed": false,
-    "host": "isolated Linux x86_64 Depot builder, Ubuntu 24.04",
-    "tools": [
-      "Node 26.12.1",
-      "Python 3.13",
-      "uv 0.13.5"
+  "qualification": {
+    "host": "isolated Linux x86_64 Depot builder",
+    "build": "gnll0kdq3f",
+    "buildUrl": "https://depot.dev/orgs/s0rjb3r4ql/projects/qkhvfs3900/builds/gnll0kdq3f",
+    "testInvocations": 1,
+    "result": {
+      "started": "2026-10-24T02:48:43.821Z",
+      "finished": "2026-10-24T02:50:51.437Z",
+      "status": 0,
+      "signal": null,
+      "error": null,
+      "qualificationPassed": true
+    },
+    "elapsedSeconds": 127.616,
+    "candidateSha256": "451383eb48b1405b2f4deb5e4be3feda1bb5c0cf3e60dbc36db3b892041caf80",
+    "passedStages": [
+      "Packed consumer audit: no vulnerabilities",
+      "Packaged process ownership: foreign daemon/worker preserved; cooperative drain/refusal; registry evidence and refused-start cleanup preserved; zero real signals",
+      "Packaged existing-index-only document contract/import boundary: pass",
+      "Watcher consumer daemon (linux): native edits, atomic saves, injected gap convergence, retained subscription and policy re-inclusion/retirement passed",
+      "Watcher consumer standalone (linux): native edits, atomic saves, injected gap convergence, retained subscription and policy re-inclusion/retirement passed",
+      "Packed consumer native runtime, Session and compaction containment: pass",
+      "Packed prune runtime: locked setup, exact helper files, CLI version dispatch, exclusive deletion, protected/current rows, durable receipt and Node reopen passed",
+      "bounded maintenance consumer: all three cases passed"
     ],
-    "input": "same retained tarball; private preload supplies it to real npm pack and rejects a different output SHA256",
-    "fixtureSources": "seven unchanged scripts copied from frozen source archive",
-    "resultRule": "result.json qualificationPassed=true and status=0, plus accepted-input.json expected archive SHA256; exporting the build result alone does not establish acceptance",
-    "proofLimit": "Linux package acceptance cannot qualify macOS FSEvents. Full release suite remains unrun. The packet and input adapter are prepared but unexecuted.",
-    "alternateMacHost": "Air SSH port 22 timed out on bounded read-only preflight; no changes made"
-  },
-  "cleanup": {
-    "temporaryConsumers": [
-      {
-        "path": "/private/var/folders/n2/c5kbh3vj7_s4t9_q0xc42z0m0000gn/T/gmax-packed-consumer-5bgiV2",
-        "stillExists": false
+    "audit": {
+      "vulnerabilities": {
+        "info": 0,
+        "low": 0,
+        "moderate": 0,
+        "high": 0,
+        "critical": 0,
+        "total": 0
       },
+      "dependencies": {
+        "prod": 152,
+        "dev": 0,
+        "optional": 66,
+        "peer": 0,
+        "peerOptional": 0,
+        "total": 217
+      }
+    },
+    "boundedConsumer": {
+      "verdict": "passed",
+      "cases": [
+        {
+          "kind": "actual-copy-with-node-readers",
+          "reads": 81,
+          "beforeDigest": "31f41282749b251c783ef8749e5eec1185bc89a34849b0d76b9b8dcbaa5807f9",
+          "afterDigest": "31f41282749b251c783ef8749e5eec1185bc89a34849b0d76b9b8dcbaa5807f9",
+          "verified": {
+            "version": 11,
+            "rows": 448,
+            "deletedRows": 0,
+            "receiptPhase": "finalized"
+          }
+        },
+        {
+          "kind": "interrupted-before-copy",
+          "reads": null,
+          "beforeDigest": "31f41282749b251c783ef8749e5eec1185bc89a34849b0d76b9b8dcbaa5807f9",
+          "afterDigest": "31f41282749b251c783ef8749e5eec1185bc89a34849b0d76b9b8dcbaa5807f9",
+          "verified": {
+            "version": 9,
+            "rows": 448,
+            "deletedRows": 64,
+            "receiptPhase": "finalized"
+          }
+        },
+        {
+          "kind": "incremental-repair-with-node-readers",
+          "reads": 569,
+          "beforeDigest": "31f41282749b251c783ef8749e5eec1185bc89a34849b0d76b9b8dcbaa5807f9",
+          "afterDigest": "31f41282749b251c783ef8749e5eec1185bc89a34849b0d76b9b8dcbaa5807f9",
+          "verified": {
+            "version": 12,
+            "rows": 448,
+            "deletedRows": 0,
+            "receiptPhase": "finalized"
+          }
+        }
+      ]
+    },
+    "unrunStages": [],
+    "fullReleaseSuiteRun": false,
+    "guardChanged": false,
+    "liveClientsChanged": false,
+    "modelsLoaded": false
+  },
+  "attemptAccounting": {
+    "currentAssignmentTestInvocations": 1,
+    "currentAssignmentBuilderStarts": 2,
+    "beforeTestSetupFailures": [
       {
-        "path": "/private/var/folders/n2/c5kbh3vj7_s4t9_q0xc42z0m0000gn/T/gmax-watcher-consumer-N3Njvp",
-        "stillExists": false
+        "build": "c6zx19g3tx",
+        "exitStatus": 127,
+        "error": "Node could not load libatomic.so.1 before the driver started",
+        "testInvocations": 0,
+        "repair": "Added libatomic1 to disposable Ubuntu image and recorded tool startup versions before qualification"
       }
     ],
-    "testSubprocess": "returned exit 1; fixture unwatch and finally cleanup recorded",
-    "nativeModelStartedByThisAssignment": false,
-    "published": false,
-    "taggedOrPushed": false,
-    "globalInstallOrDaemonHandover": false,
-    "p3Changed": false
+    "candidateBytesChanged": false,
+    "fixtureAssertionsChanged": false,
+    "testRetries": 0
   },
-  "evidenceRoot": "/Users/Shared/P3-Installer/gmax-release-package-20261023",
-  "evidenceSha256": {
-    "source.tar": "d7c055006d92090d1e05224a58c35cd9105dfccce8beb326950f689e36583092",
-    "source-receipt.json": "62b0112bcd930c3e3ca179c10ec78336bcfd16e180eebddcf9e5ae7f8c078484",
-    "test-types.log": "419425223cd16295938397133b5b8b4a9ac9a09ccc1c2b477fc6994a94266183",
-    "build.log": "ad9c3473de7f406dcf876516dc2c414ab36c75152df95fc2e17ec3f1ea930697",
-    "consumer.log": "20cd86dc68851e98932cfcb86bb85cc98bdae8d379f6005988639a1e47956682",
-    "tested-pack.json": "1777c099b12f0aabd786b4391ba8e935ed94bceeba124467c77dc09bc678b8d8",
-    "payload-diff.json": "3f834a275d54e61bd750e7aeb226600ae8f5816e4bfcdc3e01cc6738930642d0",
-    "final-integrity.json": "c7872ca1c800036daacb8f4a30d784172cd7efda8465b1322de1283b6e56ce42",
-    "capture-pack.cjs": "dce23a70035ba47814dcf8ea439ad1812fe398f03bef3740c002d365e0221463",
-    "clean-consumer-context-hashes.json": "30b4c5105034f87484ea87f450465fd937ef04221c3372cdd936ad37e6ea1aae",
-    "next-clean-consumer-command.txt": "6149701260825da19f7bcebb32908444c7de8f1538489414f02baf0d0dc44af5",
-    "clean-consumer-context/Dockerfile": "25bdb7c9faef1cefef23cf3faa169785ce11d8a54a14b73c57b6f582740c55f8",
-    "clean-consumer-context/exact-input.cjs": "9d6367a35bad747b0ff4ca6687ec1d50289eea747891003f0f5e1016e832f1be",
-    "clean-consumer-context/run.cjs": "a754261a73be0856da3bca61a1813d816210008530e3aad9ee77a5580985904a"
-  },
-  "limits": {
-    "assignmentMinutes": 45,
-    "maximumTestInvocations": 1,
-    "testAllowanceConsumed": true
+  "remainingReleaseQualification": {
+    "command": "pnpm run release:check",
+    "sourceCommit": "44b16fe6a73df7a5aa3b791d789d7967e2c4af66",
+    "basis": "package.json scripts.release:check, scripts/postrelease.sh:16 and docs/known-limitations.md full JavaScript/Python audit requirements",
+    "state": "not run for this frozen candidate",
+    "boundary": "Use frozen candidate source and accepted native inputs on a clean host; do not include current shared uncommitted changes or bypass the Mac admission refusal. Package acceptance/native proofs already retained. No further test was started in this assignment."
   }
 }
