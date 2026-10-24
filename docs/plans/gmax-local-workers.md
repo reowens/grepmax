@@ -2,7 +2,7 @@
 type: plan
 status: partial
 created: 2026-10-24T03:25:08Z
-updated: 2026-10-24T10:36:39Z
+updated: 2026-10-24T10:46:27Z
 surfaces:
   - development
   - workers
@@ -17,8 +17,8 @@ related_plans:
   - docs/plans/gmax-delivery.md
 related_docs:
   - CLAUDE.md
-current_state: "P3 and Windows Dell typecheck routes are accepted on their recorded committed sources. Windows cache/store layout was repaired after a readiness refusal; the corrected run completed the assignment's single compiler invocation with exit 0 and confirmed dependency-link/native temp cleanup. Other tasks and Mac acceptance remain open."
-next_step: "Proposed: one Windows worker unit task for tests/agent-cheatsheet.test.ts, with normal Vitest setup, 0 agents and 1 invocation within45minutes. Run only when selected. Do not repeat accepted typechecks, start an OS matrix, enable held Macs or change P3 indexing/release/evaluation ownership."
+current_state: "P3 and Windows typecheck routes remain accepted. The single selected Windows Vitest invocation failed at startup before any cases ran: ERR_PACKAGE_IMPORT_NOT_DEFINED for #module-evaluator. Its valid installed manifest is at a 260-character path; a path-length lookup problem is suspected, not proven. Dependency-link and native temp cleanup confirmed; no retry ran."
+next_step: "Proposed repair: use <job-profile>/gmax-cache as the shorter Windows-only cache root, prepare fresh dependencies there without moving junctions or changing versions, then run the same agent-cheatsheet unit file once. Requires selection; no retry, OS matrix or extra verification is queued."
 summary: "Named jobs and reusable preparation are implemented; P3 and Windows Dell typechecks have accepted live evidence. Windows uses the repaired profile cache/store and removes owned job links. Other task coverage and named Mac pool use remain open."
 ---
 
@@ -69,19 +69,17 @@ and the fleet. This plan owns only the Gmax integration, not fleet repair.
 | Route | Recorded use and boundary |
 | --- | --- |
 | P3 Linux | [Typecheck accepted](#p3-first-live-typecheck) on its recorded commit; matching prepared dependencies and existing desktop-idle admission apply. |
-| Windows Dell | [Typecheck accepted](#windows-typecheck-and-preparation-layout-repair) after the profile cache/store repair, with native and dependency-link cleanup confirmed. |
+| Windows Dell | [Typecheck accepted](#windows-typecheck-and-preparation-layout-repair); [selected unit task failed during Vitest startup](#windows-unit-startup-failure), before any cases ran. Cleanup confirmed. |
 | Current Mac checkout | Normal local `pnpm typecheck` / `pnpm test` entry points remain in `package.json`; no fresh Mac typecheck or named Mac worker is accepted by these receipts. |
 | Named Mac helpers | Air and Pro remain `off` in the host's worker roster; their current lanes/holds are not changed here. |
 | Installed Linux Workers | Enrollment and activation follow the host's developer-setup plan; an enrolled Worker without Gmax capability refuses without an SSH workaround. |
 | Remaining tasks | Unit execution, package/native/runtime tasks and wider OS coverage retain their recorded limits. Available command definitions are not live acceptance. |
 
-The proposed next worker task is 1 existing Windows unit-test file:
-`tests/agent-cheatsheet.test.ts`. It checks the real SessionStart text contract;
-its source imports string data, and `tests/setup.ts` mocks embedding workers.
-Normal `vitest.config.mts` setup still applies, including the grammar availability
-step in `tests/global-setup.ts`. No separate setup campaign or new test config
-is proposed. Use 0 agents, at most 45 minutes and 1 test invocation, only after
-the user selects it. This proposal queues no job.
+The selected `tests/agent-cheatsheet.test.ts` invocation failed at Vitest startup;
+[the receipt below](#windows-unit-startup-failure) owns the exact result and next
+repair proposal. No test config, setup bypass or version upgrade was introduced.
+The file remains an appropriate small unit task after the startup issue is fixed;
+normal `vitest.config.mts`, `tests/setup.ts` and `tests/global-setup.ts` still apply.
 
 Backend evaluation has its own [next complete-index comparison](colbert-backend-evaluation.md#recenter--paired-run-completed).
 The paired timing and question screen are recorded there; this worker task does
@@ -412,8 +410,37 @@ result is historical source evidence. Acceptance here is the actual repaired
 Windows preparation and 1 compiler execution. Unit, runtime/native package,
 Mac, broader workload and subsequent-readiness acceptance are not claimed.
 
+## Windows unit startup failure
+
+Unit receipt (private record) records 1
+native Windows Vitest invocation on committed source
+`0a64b031307277892be305577143e05b167c3055`, selecting only
+`tests/agent-cheatsheet.test.ts`. Startup returned exit 1 with
+`ERR_PACKAGE_IMPORT_NOT_DEFINED` for `#module-evaluator`; no test cases started.
+There was no retry or local fallback. Dependency-link removal, native temporary
+cleanup and reservation/lock release completed under the existing route.
+
+A read-only metadata inspection found the installed Vitest manifest includes
+`#module-evaluator` and declares support for the observed Node version. Its
+resolved `package.json` path is exactly 260 characters long. A Windows long-path
+package-scope lookup issue is the leading explanation; metadata alone does not
+prove that cause. No Node/Vitest upgrade or import-map patch is justified by
+this result alone.
+
+The proposed repair uses `<job-profile>/gmax-cache` as the Windows-only cache
+root, retaining the existing pnpm store and full lock/platform/Node identity
+checks. Prepare fresh
+packages at that final path; do not move a populated junction tree. After the
+user selects the repair, run this same file once with normal Vitest setup,
+0 agents, at most 45 minutes and 1 test invocation. This proposal queues no work.
+Earlier typecheck acceptances remain valid for their recorded sources; Windows
+unit acceptance remains open.
+
 ## Version History
 
+- **2026-10-24T10:46:27Z** Status: in-session → partial — Single Windows Vitest invocation failed at startup with ERR_PACKAGE_IMPORT_NOT_DEFINED before cases ran. Valid import metadata found at a 260-character path; shorter-cache repair proposed, no retry. Cleanup confirmed.
+- **2026-10-24T10:39:57Z** Started (active → in-session).
+- **2026-10-24T10:39:57Z** Status: partial → active — User selected one Windows unit invocation for tests/agent-cheatsheet.test.ts with normal Vitest setup and 0 agents.
 - **2026-10-24T09:33:23Z** Status: in-session → partial — Windows readiness placement bug repaired; corrected native preparation and one actual compiler invocation passed, cleanup confirmed. Initial dispatch refused before compiler startup. No local fixture rerun or additional test queued.
 - **2026-10-24T09:18:00Z** Started (active → in-session).
 - **2026-10-24T09:17:59Z** Status: partial → active — User selected one native Windows typecheck using the prepared cache, 0 agents and no additional tests.

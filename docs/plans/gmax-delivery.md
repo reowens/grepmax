@@ -24,7 +24,7 @@ related_plans:
 related_docs:
   - docs/linux-gpu-p3-design.md
 current_state: "Publication 0.26.97 has its retained receipt; npm availability has no newer readback here. P3 and Windows Dell typechecks are accepted through local-worker entries. The separate ColBERT evaluation completed paired document timing, saved-output scoring and a frozen question screen; production is unchanged. P3 indexing remains paused under its platform host owner."
-next_step: "Proposed worker task: run one existing model-free unit-test file on Windows through the prepared route, only when selected. ColBERT complete-index comparison remains a separate owner-selected experiment. Mac helper holds, P3 indexing pause and publication ownership remain; no job or release check is queued."
+next_step: "Windows unit startup failed before cases ran; the local-worker plan proposes shortening the cache path and one selected retry. ColBERT complete-index comparison remains a separate owner-selected experiment. Mac helper holds, P3 indexing pause and publication ownership remain; no job or release check is queued."
 summary: "Delivery coordination for recorded publication, accepted Linux/Windows typecheck routes and separate ColBERT evaluation. No automatic checks, hosted builders or runtime restart is queued."
 ---
 
