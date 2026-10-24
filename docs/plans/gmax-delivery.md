@@ -1,8 +1,8 @@
 ---
 type: plan
-status: paused
+status: in-session
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-24T01:52:34Z
+updated: 2026-10-24T02:00:40Z
 surfaces:
   - store
   - daemon
@@ -109,6 +109,14 @@ contain the original branch. The prepared pair must be integrated into a verifie
 runtime release package before publication and installation. Neither action ran
 in this assignment. ColBERT MLX, CUDA and resource-history work remain unstarted
 or held as recorded above.
+
+### Release package candidate 0.26.97
+
+The selected package candidate is 0.26.97. Its package, plugin and marketplace
+version metadata agree. Build and consumer acceptance are in progress against a
+frozen archive of committed source, with the qualified native pair supplied as
+generated inputs. Publication and installation remain unperformed. Shared
+checkout source edits are outside this candidate.
 
 ### Measured embedding stages
 
@@ -2775,6 +2783,8 @@ parallel omnibus plan.
 
 ## Version History
 
+- **2026-10-24T02:00:40Z** Started (active → in-session).
+- **2026-10-24T02:00:40Z** Status: paused → active.
 - **2026-10-24T01:52:34Z** Status: in-session → paused — Linux native qualification passed 22 normal and 4 fault cases in 1 run. Matching source-identical Darwin/Linux artifacts passed both existing assembly/preparation gates and refreshed the source cache; stale cache preserved byte-for-byte, installed runtime unchanged and Mac active. Permanent runtime package integration, release and installation remain open.
 - **2026-10-24T01:26:09Z** Started (active → in-session).
 - **2026-10-24T01:26:09Z** Status: paused → active.
