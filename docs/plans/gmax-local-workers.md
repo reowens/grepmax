@@ -2,7 +2,7 @@
 type: plan
 status: partial
 created: 2026-10-24T03:25:08Z
-updated: 2026-10-24T03:58:56Z
+updated: 2026-10-24T04:55:00Z
 surfaces:
   - development
   - workers
@@ -14,10 +14,11 @@ domain: Run selected Gmax development jobs on the existing user-owned worker poo
 audience: internal
 parent_plan: docs/plans/gmax-delivery.md
 related_plans:
+  - docs/plans/gmax-delivery.md
 related_docs:
   - CLAUDE.md
 current_state: "The Gmax repository entry, named task catalog, frozen source inputs, existing-pool dispatch, Windows command closure and result/artifact checks are implemented. One local fixture invocation passed 12/12 without workers or tools; two final narrow edits passed syntax checks only. Live workers and dependency preparation remain unrun."
-next_step: "Select a named local worker and task for first use. It needs matching prepared Gmax dependencies; no cache producer or installation ran here. Enrolled Linux Workers without Gmax capability refuse rather than switch transports. Current release remains with the other session."
+next_step: "Select a named local worker and task for first use. It needs matching prepared Gmax dependencies; no cache producer or installation ran here. Enrolled Linux Workers without Gmax capability refuse rather than switch transports. Publication and the P3 indexing pause have separate owners in the delivery session map; neither is a first-use job."
 summary: "Local-worker source integration is implemented and locally fixture-tested. Explicit worker selection only; no automatic placement, cloud fallback, software installation or live acceptance has run."
 ---
 
@@ -31,7 +32,9 @@ means the existing owner-operated Linux, Windows and Mac pool, including its
 normal authenticated SSH/Worker transport; it excludes hosted cloud builders.
 
 The user approved implementation. The source integration is built; no live job has run.
-The current release belongs to another session. This plan adds no release gate,
+The [delivery session map](gmax-delivery.md#session-ownership-and-current-direction)
+keeps publication, active backend evaluation and P3 runtime ownership separate.
+This plan adds no release gate,
 CI workflow, scheduled run, benchmark, enrollment replacement or model backend.
 The [local-only rule](../../CLAUDE.md#local-checks-and-remote-execution) applies;
 the existing manual release workflow remains the sole CI exception.
@@ -55,7 +58,7 @@ the existing manual release workflow remains the sole CI exception.
   `scripts/prepare-bounded-runtime.cjs:20-57`. Keep those existing checks.
 
 `platform/` references above are relative to the sibling platform checkout;
-Worker pool (private record) owns those files
+the host's worker-pool plan owns those files
 and the fleet. This plan owns only the Gmax integration, not fleet repair.
 
 ## Job selection and machine roles
@@ -123,13 +126,22 @@ it does not hold the current release or authorize extra work.
 
 ## Ownership and boundaries
 
-Worker pool (private record) owns placement and
-transport; Dell workers (private record)
-owns machine-specific admission and installed repair. Their existing stops and
+the host's worker-pool plan owns placement and transport;
+the host's worker-machine plan owns machine-specific admission
+and installed repair. Their existing stops and
 holds remain in force. Reuse the roster; do not create a second machine registry.
 The [Gmax delivery plan](gmax-delivery.md) owns the release handoff and historical
-proof. Fleet compute (private record) owns
-shared cache and broader scheduling work; this integration does not reopen it.
+proof. The host's fleet-compute plan owns shared cache and broader
+scheduling work; this integration does not reopen it. These paths are relative
+to the enclosing host workspace, not this Gmax repository.
+
+[Backend evaluation](colbert-backend-evaluation.md) owns its active experiment
+session; the local-worker catalog does not run that experiment. The platform
+the host's session plan thermal-containment section owns the indexing pause. A
+selected worker job is not permission to resume indexing, restart its daemon or
+change its bounded service. Installed enrollment follows
+the host's developer-setup plan; a Gmax capability
+refusal remains a refusal rather than a reason to change enrollment or transport.
 
 Work alone unless the user approves a stated agent count. This implementation
 ran one local fixture test and two syntax-only checks. No worker was contacted;

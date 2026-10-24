@@ -2,7 +2,7 @@
 type: plan
 status: paused
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-24T03:08:52Z
+updated: 2026-10-24T04:55:00Z
 surfaces:
   - store
   - daemon
@@ -19,25 +19,45 @@ audience: internal
 parent_plan:
 related_plans:
   - docs/plans/gmax-local-workers.md
+  - docs/plans/colbert-backend-evaluation.md
+  - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "grepmax 0.26.97 was accepted by npm and its GitHub release is live from exact frozen candidate 44b16fe6a7. npm public propagation remains pending. The explicit release instruction skipped additional verification; no new tests ran. The platform P3 host plan owns runtime installation and current bounded indexing status."
-next_step: "npm asynchronous propagation is the only pending external publication completion. Do not add verification runs. Follow the platform P3 host record for runtime resource controls and restart ownership. No CI or remote builder is queued."
-summary: "0.26.97 is released on GitHub and accepted for npm processing without additional verification. Exact archive and source tag are retained; npm install availability is still propagating."
+current_state: "grepmax 0.26.97 was accepted by npm and its GitHub release is live from exact frozen candidate 44b16fe6a7. npm install availability was pending at the last publication readback; it has not been rechecked here. The explicit release instruction skipped additional verification; no new tests ran. The platform P3 host plan owns runtime installation and current bounded indexing status."
+next_step: "Continue only the user-selected workstream under the session ownership map. Publication has its retained receipt; npm availability is unconfirmed here. P3 indexing remains paused under the platform host record. No verification, restart or builder job is queued."
+summary: "0.26.97 is released on GitHub and accepted for npm processing without additional verification. Exact archive and source tag are retained; npm install availability was unconfirmed at the last readback."
 ---
 
 # Gmax Delivery Plan
 
 <a id="current-direction--document-search-rollout-preparation"></a>
 
+## Session ownership and current direction
+
+This plan coordinates delivery; each linked plan owns its execution and evidence.
+A documentation reconciliation does not start the next task or transfer a claim.
+
+| Workstream | Owner and current boundary |
+| --- | --- |
+| Publication | [Publication 0.26.97](#publication-02697) owns the exact archive and publication receipt. The local-worker session does not repeat release work. npm availability has no newer readback in this reconciliation. |
+| Local development jobs | [Local workers](gmax-local-workers.md) owns the source integration and first-use dependency gap. Source is committed; live worker execution remains unaccepted. |
+| ColBERT GPU/model evaluation | [Backend evaluation](colbert-backend-evaluation.md#first-real-mac-run--completed) owns the active experiment session and its CPU/MPS result. That result does not change the production backend or qualify ONNX, ranking, storage or P3. |
+| Installed P3 | The host's session plan, section `Gmax thermal containment, 2026-10-23`, owns installed state, the indexing pause and bounded service. Do not resume indexing or restart its daemon from a Gmax task. |
+| Worker enrollment | The host's developer-setup plan owns the current operator sequence. Pool admission and enrollment remain separate from Gmax source integration. |
+| Startup text | [Session-start hint](session-start-hint-trim.md) stays queued for a separately selected change; its old 0.26.96 dependency is historical. |
+
+The [repository execution policy](../../CLAUDE.md#local-checks-and-remote-execution)
+and [verification budget](../../AGENTS.md#review-and-verification-budget) apply to
+all workstreams. The records below retain dated evidence; they do not queue
+another verification round, remote builder, installation or runtime restart.
+
 ## Local-worker source integration
 
 [Gmax on the local worker pool](gmax-local-workers.md) owns the developer entry,
 named tasks, frozen Gmax inputs and result/artifact handling through existing
-local transports. Source fixtures passed 12/12; two final fixes have syntax
-evidence only. No live job or dependency preparation ran. Explicit worker choice
-is required, and enrolled Linux without Gmax support refuses. The current
-release remains with the other session; pool and machine owners keep their scopes.
+local transports. Its source checkpoint owns the test evidence and remaining
+first-use limits. This integration adds no release gate; pool and machine owners
+keep their scopes.
 
 ## Mac GPU baseline step 1: recovery and measurement
 
@@ -51,7 +71,7 @@ without data or search-index writes, preserving current table version 5600. The
 source fix passed 26 native cases in 1 qualification invocation on Darwin.
 [Native repair evidence](assets/mac-mlx-baseline-20261023/native-repair.json)
 records the build/source/binary hashes, test cases, live result and service state.
-Resource history remains held; ColBERT MLX and CUDA implementation have not started.
+Resource history remains held. Production ColBERT MLX and CUDA integration have not started; the separate backend-evaluation plan owns its completed Mac screen.
 
 ### Native recovery repair
 
@@ -117,10 +137,12 @@ was retried. P3 preflight was read-only; no tools, settings or services changed 
 P3. These results qualify the Linux native helper in the builder and do not claim
 physical P3 acceptance.
 
-**Release is handed off.** The retained 0.26.97 package contains the qualified
-native pair. Another session owns publication and any selected release work.
-This session has no queued verification or installation step. ColBERT MLX, CUDA
-and resource-history work remain unstarted or held as recorded above.
+**Publication is recorded below.** The retained 0.26.97 package contains the qualified
+native pair. The [publication receipt](#publication-02697) owns its disposition;
+there is no queued verification or installation step here. The separate
+[backend evaluation](colbert-backend-evaluation.md) owns subsequent experiments;
+its source preparation and Mac screen are not a production backend change.
+CUDA and resource-history work remain unstarted or held as recorded above.
 
 ### Release package candidate 0.26.97
 
@@ -186,12 +208,12 @@ for other repositories. No browser setting was changed.
 
 Remote contexts and commands in the retained evidence directory are historical
 only. `REMOTE-EXECUTION-DISABLED.txt` marks them as non-executable instructions.
-No release, further checks or remote retry is queued here. The existing manual
-release workflow remains unchanged, and the other session owns release work.
+No further checks or remote retry is queued here. The existing manual
+release workflow remains unchanged; publication disposition is recorded below.
 
 ### Publication 0.26.97
 
-[The publication receipt](assets/mac-mlx-baseline-20261023/publication-0.26.97.json) records npm acceptance of the exact retained archive, the pushed frozen-source tag and the [live GitHub release](https://github.com/reowens/grepmax/releases/tag/v0.26.97) with archive, source receipt and checksum assets. The user explicitly selected 0.26.97 and instructed publication without additional verification in this conversation. No further tests, audits, compilation or consumer qualification ran, and lifecycle scripts were disabled for publication. The remaining full local release qualification and macOS FSEvents package acceptance are not represented as passed. npm announced asynchronous processing and still returned E404 at the last registry read; npm install availability remains pending. The platform the host's session plan owns subsequent runtime installation and current bounded indexing status; this publication receipt retains its original no-install boundary.
+[The publication receipt](assets/mac-mlx-baseline-20261023/publication-0.26.97.json) records npm acceptance of the exact retained archive, the pushed frozen-source tag and the [live GitHub release](https://github.com/reowens/grepmax/releases/tag/v0.26.97) with archive, source receipt and checksum assets. The user explicitly selected 0.26.97 and instructed publication without additional verification in this conversation. No further tests, audits, compilation or consumer qualification ran, and lifecycle scripts were disabled for publication. The remaining full local release qualification and macOS FSEvents package acceptance are not represented as passed. npm announced asynchronous processing and returned E404 at the recorded registry read; this is a dated readback, not a new registry check or proof of continuing propagation. The platform the host's session plan owns subsequent runtime installation and current bounded indexing status; this publication receipt retains its original no-install boundary.
 
 ### Measured embedding stages
 
@@ -228,8 +250,7 @@ restored daemon described above. Private profiling command/output and observers
 remain in `/Users/Shared/P3-Installer/mac-gmax-baseline-20261023/`. That earlier
 profiling assignment used 1 test invocation without a retry, separately from the
 native repair qualification. Current P3 workspace and commissioning status belong
-to the platform session-host plan (private record),
-not the earlier dated P3 qualification below.
+to the host's session plan, section `Gmax thermal containment, 2026-10-23`. The earlier P3 qualification below is dated evidence.
 
 ## Necessity audit — October 21, 2026
 
@@ -1411,7 +1432,8 @@ until the reviewed delivery step. C1/context and C/D remain separately queued.
 
 ## Recenter decision
 
-This is the sole execution plan. It replaces the four former open plan records:
+This is the delivery coordination plan. The session ownership map above names
+the current execution plans; this record replaces the four former open records:
 host safety/disk recovery, multi-fragment cleanup, semantic-search landscape, and
 embedding migration. Their history is preserved in the archive. Archiving means
 superseded or explicitly deferred, not that every proposal was implemented.
