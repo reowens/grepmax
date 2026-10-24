@@ -41,8 +41,8 @@ the existing manual release workflow remains the sole CI exception.
 - The platform runner has placement, admission, source transfer, usage logs,
   cancellation and result markers: `platform/scripts/worker-job.mjs:1-40` and
   `platform/scripts/lib/pool-placement.mjs:1-44`.
-- Its source root is the platform repository (`worker-job.mjs:48` imports
-  `REPO_ROOT`; `scripts/lib/repo-map.mjs:15` defines it). Named Worker commands
+- Its source root is the platform repository (`worker-job.mjs:49` imports
+  `REPO_ROOT`; `scripts/lib/repo-map.mjs:14` defines it). Named Worker commands
   are platform `just` tasks (`packages/worker/src/job-executor.mjs:13-22`).
   Passing a Gmax path or arbitrary shell command is not a project integration.
 - The existing external project descriptor accepts Backfeed only and is Mac
