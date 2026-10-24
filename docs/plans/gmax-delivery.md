@@ -21,8 +21,8 @@ related_plans:
   - docs/plans/gmax-local-workers.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "grepmax 0.26.97 was accepted by npm and its GitHub release is live from exact frozen candidate 44b16fe6a7. npm public propagation remains pending. The explicit release instruction skipped additional verification; no new tests ran. Runtime installation and P3 indexing resumption did not run."
-next_step: "npm asynchronous propagation is the only pending external publication completion. Do not add verification runs. Installation remains separate; P3 indexing stays thermally paused. No CI or remote builder is queued."
+current_state: "grepmax 0.26.97 was accepted by npm and its GitHub release is live from exact frozen candidate 44b16fe6a7. npm public propagation remains pending. The explicit release instruction skipped additional verification; no new tests ran. The platform P3 host plan owns runtime installation and current bounded indexing status."
+next_step: "npm asynchronous propagation is the only pending external publication completion. Do not add verification runs. Follow the platform P3 host record for runtime resource controls and restart ownership. No CI or remote builder is queued."
 summary: "0.26.97 is released on GitHub and accepted for npm processing without additional verification. Exact archive and source tag are retained; npm install availability is still propagating."
 ---
 
@@ -158,7 +158,7 @@ Payload comparison against published 0.26.96 found no added/removed files and no
 compiled JavaScript changes. The differences are the qualified native pair,
 maintenance manifest/acceptance/notices, version metadata and committed README/
 skill documentation. Uncommitted shared-checkout work is excluded. npm accepted publication of the retained archive, and `v0.26.97` is pushed at
-its frozen source commit. Runtime installation and daemon handover did not run.
+its frozen source commit. No runtime installation or daemon handover ran during publication; subsequent P3 runtime work is recorded in the platform host plan.
 
 The exact accepted archive, result, consumer log, npm audit and consumer lock are
 retained under `/Users/Shared/P3-Installer/gmax-release-package-20261023/`.
@@ -190,7 +190,7 @@ release workflow remains unchanged, and the other session owns release work.
 
 ### Publication 0.26.97
 
-[The publication receipt](assets/mac-mlx-baseline-20261023/publication-0.26.97.json) records npm acceptance of the exact retained archive, the pushed frozen-source tag and the [live GitHub release](https://github.com/reowens/grepmax/releases/tag/v0.26.97) with archive, source receipt and checksum assets. The user explicitly selected 0.26.97 and instructed publication without additional verification in this conversation. No further tests, audits, compilation or consumer qualification ran, and lifecycle scripts were disabled for publication. The remaining full local release qualification and macOS FSEvents package acceptance are not represented as passed. npm announced asynchronous processing and still returned E404 at the last registry read; npm install availability remains pending. Runtime installation is separate, and P3 indexing remains paused under its platform thermal record.
+[The publication receipt](assets/mac-mlx-baseline-20261023/publication-0.26.97.json) records npm acceptance of the exact retained archive, the pushed frozen-source tag and the [live GitHub release](https://github.com/reowens/grepmax/releases/tag/v0.26.97) with archive, source receipt and checksum assets. The user explicitly selected 0.26.97 and instructed publication without additional verification in this conversation. No further tests, audits, compilation or consumer qualification ran, and lifecycle scripts were disabled for publication. The remaining full local release qualification and macOS FSEvents package acceptance are not represented as passed. npm announced asynchronous processing and still returned E404 at the last registry read; npm install availability remains pending. The platform the host's session plan owns subsequent runtime installation and current bounded indexing status; this publication receipt retains its original no-install boundary.
 
 ### Measured embedding stages
 
