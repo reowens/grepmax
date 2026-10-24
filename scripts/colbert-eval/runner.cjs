@@ -453,7 +453,7 @@ async function runValidation(request, options = {}) {
 }
 
 async function runMacSmoke(root, options = {}) {
-  checkOptions(options, ['execute', 'signal', 'compareOnnx', 'paired']);
+  checkOptions(options, ['execute', 'signal', 'compareOnnx', 'paired', 'labelScreen']);
   if (process.platform !== 'darwin' || process.arch !== 'arm64') refuse('PLATFORM', 'This experiment requires Apple Silicon macOS');
   if (options.execute !== undefined && typeof options.execute !== 'boolean') refuse('OPTIONS', 'Execution must be explicit');
   root = await fsp.realpath(root);
@@ -464,12 +464,19 @@ async function runMacSmoke(root, options = {}) {
   if (options.compareOnnx && !execute) refuse('OPTIONS', 'ONNX comparison requires execution');
   if (options.paired !== undefined && typeof options.paired !== 'boolean') refuse('OPTIONS', 'Paired mode must be explicit');
   if (options.paired && !options.compareOnnx) refuse('OPTIONS', 'Paired mode requires ONNX comparison');
+  if (options.labelScreen !== undefined && typeof options.labelScreen !== 'boolean') refuse('OPTIONS', 'Label screen must be explicit');
+  if (options.labelScreen && (!execute || options.paired || options.compareOnnx)) refuse('OPTIONS', 'Label screen requires separate explicit execution');
   const limits = limitsFor({ deadlineMs: execute ? 30 * 60 * 1000 : 60 * 1000 });
   const footprint = await execFileAsync('/usr/bin/du', ['-sk', root], { encoding: 'utf8', timeout: 10000, maxBuffer: 4096,
     env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' } });
   const match = /^(\d+)\s/.exec(footprint.stdout);
   if (!match || footprint.stderr.trim()) refuse('SAMPLING', 'Prepared runtime disk footprint unavailable');
-  const preparedDiskBytes = Number(match[1]) * 1024;
+  let preparedDiskBytes = Number(match[1]) * 1024;
+  if (options.labelScreen) {
+    for (const name of ['embeddinggemma2-eval-20261021-mac-01/colbert-features.jsonl', 'colbert-backend-wave1-20261023/bundle-v4/chunks.jsonl']) {
+      preparedDiskBytes += (await fsp.stat(path.join(root, '..', name))).size;
+    }
+  }
   if (!Number.isSafeInteger(preparedDiskBytes)) refuse('SAMPLING', 'Invalid prepared disk footprint');
   // Include prepared runtime/cache/model bytes as well as the fresh child root.
   const sampler = async context => {
@@ -479,8 +486,10 @@ async function runMacSmoke(root, options = {}) {
   };
   sampler.source = 'host-builtins-with-prepared-disk-snapshot';
   sampler.limitations = ['Prepared runtime/model/cache allocation is a one-time du snapshot; those inputs remain unchanged during execution. Fresh child-root allocation is sampled live.'];
-  return executeChild({ command: python, args: ['-I', '-B', path.join(__dirname, 'mac-smoke.py'), options.paired ? '--compare-paired' : options.compareOnnx ? '--compare-onnx' : execute ? '--execute' : '--ready', '--root', root,
-    '--node', process.execPath],
+  const command = options.labelScreen ? process.execPath : python;
+  const args = options.labelScreen ? [path.join(__dirname, 'label-screen.cjs'), '--child', root] : ['-I', '-B', path.join(__dirname, 'mac-smoke.py'), options.paired ? '--compare-paired' : options.compareOnnx ? '--compare-onnx' : execute ? '--execute' : '--ready', '--root', root,
+    '--node', process.execPath];
+  return executeChild({ command, args,
     input: Buffer.from('{}\n'), limits, sampler, signal: options.signal,
     mode: execute ? 'cpu-mps-smoke' : 'mac-smoke-readiness',
     validateResponse: bytes => {

@@ -68,12 +68,59 @@ observed. This is evidence of a repeatable document batching gain within this ru
 not an idle-host or production throughput guarantee. Earlier fixed-order timing
 claims remain provisional; background load was not recorded during those runs.
 
-The saved-output storage/scoring check is also complete (below). Next: compare
-correct-answer retrieval on the existing frozen 30-question code/document set,
-using ONNX queries with MPS documents versus ONNX documents. Count lost/found
-targets and report Recall@10/MRR@10 before selecting integration. No new labels,
-exporter hardening or independent review is needed for that screening experiment.
+The saved-output compatibility check and the frozen 30-question quality screen
+are complete (below). Both document backends found 28/30 labeled answers in the
+top10, with no top10 losses. Query encoding stays on ONNX. Next: one disposable
+end-to-end indexing comparison with fixed dense encoding to measure whether the
+ColBERT document gain improves complete indexing, before selecting integration.
 Deployed model, settings, services and indexes remain unchanged.
+
+## Frozen 30-question screen
+
+Selected command: `node scripts/colbert-eval/label-screen.cjs --execute <private-root>`.
+The bounded runner reuses the prepared small model/runtime and cached ONNX
+query/document vectors, then runs original-weight FP32 MPS documents at batch16.
+All 12,717 frozen chunks across five repositories are scored within their own
+corpus using the released int8 conversion and MaxSim/rerank code. No favorable
+shortlist or inserted target is used. Every document token-ID sequence matched
+the cached ONNX inputs exactly; all 30 accepted answer content proofs and source
+hashes were checked. All 30 fixed ONNX query matrices stayed unchanged.
+
+This is **ColBERT-only ranking**, not the complete Granite/FTS/fusion/symbol/ANN
+pipeline. Cached ONNX vectors remain explicitly historical; artifact hashes,
+token-ID equality, cache hashes and released arithmetic identify the comparison.
+The exposed, previously reviewed question set is not a blind holdout. No new
+labels, exporter changes or independent review were needed.
+
+| Result | ONNX documents | MPS documents |
+|---|---:|---:|
+| Correct answer in top10 | 28 / 30 | 28 / 30 |
+| Recall@10 | 93.33% | 93.33% |
+| MRR@10 | 0.64833 | 0.65389 |
+| Document questions found | 4 / 5 | 4 / 5 |
+| Code questions found | 24 / 25 | 24 / 25 |
+
+No correct answer was gained or lost at10. Five retained answers moved lower:
+`gmax-independent-04`2→3, `runlist-independent-03`2→3,
+`runlist-independent-04`4→6, `platform-independent-02`4→5 and
+`platform-independent-04`5→6. Two improved: `runlist-independent-05`3→2 and
+`stripes-independent-03`2→1. The two existing misses stayed outside10:
+`stripes-independent-04`23→28 and `stripes-independent-06`31→33.
+Per-repository MRR declined in Gmax, Runlist and Platform, stayed unchanged in
+Capstone and improved in Stripes. The aggregate gain is small and does not imply
+every question improved. Full case ranks/top10 outputs are retained.
+
+Execution completed in 263.04s; peak sampled owned RSS 1,743.05MiB, zero swap growth,
+peak accounted experiment disk 3.05GiB. Existing 6GiB RSS/512MiB swap/12GiB disk,
+normal-pressure and 30-minute ceilings stayed unchanged. Checked cleanup found no
+live owned processes and needed no signals. The MPS arm wrote 4,702,617 token rows;
+its 40.44s includes raw-vector output and hashing, so this is not a matched indexing
+speed measurement. Query inference and ONNX document inference were not repeated.
+
+Private evidence under the prepared root: `label-screen-01/`, with raw MPS
+vectors, input IDs, fixed query cache, source hashes, complete case results,
+resource samples, byte identities and cleanup. Both the fresh run and the retained
+copy are preserved using filesystem clones for the large output.
 
 ## Saved-output storage and scoring check
 
