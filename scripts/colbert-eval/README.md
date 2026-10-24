@@ -12,6 +12,13 @@ then LateOn-Code-edge, then LFM2.5-ColBERT through MLX/GGUF. Granite stays fixed
 See `docs/plans/colbert-backend-evaluation.md` for the execution order and gates.
 Resource-history development stays on hold.
 
+The next executable step is the [first real Mac CPU/MPS comparison](MAC-SMOKE.md).
+Its isolated environment, original model files and 64 Gmax-tokenized inputs are
+prepared. The readiness attempt refused at host memory pressure before Python
+startup; no model was loaded. `mac-smoke.cjs --execute` is the explicit bounded
+run entrypoint. Existing validation-only commands and mock loaders retain their
+original behavior.
+
 ## Components
 
 - `CONTRACT.md` defines the versioned wire format, file ownership and boundaries.

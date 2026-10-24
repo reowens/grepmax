@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-// Wave 1 only. No model command, inference switch, package install, or service API.
+// Validation/fixtures plus the explicit, fixed Mac smoke entrypoint. No service API.
 const fs = require('node:fs');
 const fsp = fs.promises;
 const path = require('node:path');
@@ -272,7 +272,7 @@ async function executeChild({ command, args, input, limits, sampler, signal, mod
   await fsp.writeFile(requestPath, input, { mode: 0o600, flag: 'wx' });
   const started = performance.now();
   const manifest = {
-    schemaVersion: 1, operation: mode, inferencePerformed: false,
+    schemaVersion: 1, operation: mode, inferencePerformed: mode === 'cpu-mps-smoke' ? null : false,
     startedAt: new Date().toISOString(), deadlineAt: new Date(Date.now() + limits.deadlineMs).toISOString(),
     deadlineScope: 'Admission and child execution; bounded cleanup may extend total wall time.',
     argv: [command, ...args], cwd: path.join(evaluationRoot, 'work'), evaluationRoot, limits,
@@ -281,7 +281,7 @@ async function executeChild({ command, args, input, limits, sampler, signal, mod
     stderr: { bytes: 0, sha256: hash(Buffer.alloc(0)), retainedBytes: 0 },
     metricUnits: { '*Bytes': 'bytes', ownedCpuSeconds: 'seconds', elapsedMs: 'milliseconds', sampleIntervalMs: 'milliseconds' },
     sampling: {
-      source: sampler === sampleHost ? 'host-builtins' : 'injected-test-sampler', intervalMs: limits.sampleIntervalMs,
+      source: sampler === sampleHost ? 'host-builtins' : sampler.source || 'injected-test-sampler', intervalMs: limits.sampleIntervalMs,
       limitations: [
         'Periodic snapshots are screening guards, not OS resource enforcement; peaks between samples can be missed.',
         'Short children can exit before the first owned RSS/CPU sample; exited process CPU is not accumulated.',
@@ -292,9 +292,10 @@ async function executeChild({ command, args, input, limits, sampler, signal, mod
         'Allocated disk blocks cover this fresh evaluation root only, with symlinks not followed.',
         'Admission and periodic readings only; cleanup inventory is separate from resource sampling.',
         'Controller SIGKILL/crash and descendants that escape the owned session are outside stdlib process-group guarantees.',
+        ...(sampler.limitations || []),
       ],
     },
-    isolation: { environmentAllowlist: true, privateDirectories: true, filesystemSandbox: false, networkSandbox: false, note: 'Trusted fixed validation adapter or owned model-free fixture only; offline flags are not network access control.' },
+    isolation: { environmentAllowlist: true, privateDirectories: true, filesystemSandbox: false, networkSandbox: false, note: 'Fixed validation adapter, owned model-free fixture or explicitly selected Mac smoke program; offline flags are not network access control.' },
     ownership: { controllerPid: process.pid, detachedNewSession: true, processGroupId: null, childPid: null, observedPids: [] },
     cleanup: { signals: [], noLiveOwnedProcesses: true, zombiePids: [] }, samples: [],
     outcome: 'incomplete', code: null,
@@ -385,7 +386,7 @@ async function executeChild({ command, args, input, limits, sampler, signal, mod
     if (!stdout.length || stdout[stdout.length - 1] !== 10 || stdout.indexOf(10) !== stdout.length - 1) refuse('PROTOCOL', 'Expected exactly one terminated response frame');
     response = validateResponse(stdout);
     if (response.ok === false) refuse('ADAPTER_REFUSAL', 'Validation adapter refused request');
-    manifest.outcome = 'validated';
+    manifest.outcome = mode === 'cpu-mps-smoke' ? 'completed' : mode === 'mac-smoke-readiness' ? 'ready' : 'validated';
     manifest.code = 'OK';
     manifest.response.complete = true;
   } catch (error) {
@@ -409,6 +410,8 @@ async function executeChild({ command, args, input, limits, sampler, signal, mod
     manifest.response.sha256 = outputHash.digest('hex');
     manifest.stderr.bytes = stderrBytes; manifest.stderr.retainedBytes = stderr.length; manifest.stderr.sha256 = stderrHash.digest('hex');
     manifest.response.hashScope = 'all observed stdout bytes; stream may be truncated by refusal';
+    if (mode === 'cpu-mps-smoke') manifest.inferencePerformed = !child?.pid ? false :
+      typeof response?.inferencePerformed === 'boolean' ? response.inferencePerformed : null;
     manifest.stderr.hashScope = 'all observed stderr bytes; stream may be truncated by refusal';
     if (manifest.code !== 'OK') manifest.refusal = { code: manifest.code, message: manifest.code === failure?.code ? failure.message : 'Owned process cleanup could not be verified' };
     await fsp.writeFile(responsePath, stdout, { mode: 0o600, flag: 'wx' });
@@ -447,6 +450,39 @@ async function runValidation(request, options = {}) {
   const input = Buffer.from(encodeLine(validated));
   const command = await pythonExecutable();
   return executeChild({ command, args: ['-I', '-B', '-S', ADAPTER], input, limits, sampler: options.sampler || sampleHost, signal: options.signal, mode: 'validate', validateResponse: (bytes) => validateValidationResponse(parseLine(bytes), validated) });
+}
+
+async function runMacSmoke(root, options = {}) {
+  checkOptions(options, ['execute', 'signal']);
+  if (process.platform !== 'darwin' || process.arch !== 'arm64') refuse('PLATFORM', 'This experiment requires Apple Silicon macOS');
+  if (options.execute !== undefined && typeof options.execute !== 'boolean') refuse('OPTIONS', 'Execution must be explicit');
+  root = await fsp.realpath(root);
+  const python = path.join(root, 'venv', 'bin', 'python');
+  await fsp.access(python, fs.constants.X_OK);
+  const execute = options.execute === true;
+  const limits = limitsFor({ deadlineMs: execute ? 30 * 60 * 1000 : 60 * 1000 });
+  const footprint = await execFileAsync('/usr/bin/du', ['-sk', root], { encoding: 'utf8', timeout: 10000, maxBuffer: 4096,
+    env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' } });
+  const match = /^(\d+)\s/.exec(footprint.stdout);
+  if (!match || footprint.stderr.trim()) refuse('SAMPLING', 'Prepared runtime disk footprint unavailable');
+  const preparedDiskBytes = Number(match[1]) * 1024;
+  if (!Number.isSafeInteger(preparedDiskBytes)) refuse('SAMPLING', 'Invalid prepared disk footprint');
+  // Include prepared runtime/cache/model bytes as well as the fresh child root.
+  const sampler = async context => {
+    const sample = await sampleHost(context);
+    sample.experimentDiskBytes += preparedDiskBytes;
+    return sample;
+  };
+  sampler.source = 'host-builtins-with-prepared-disk-snapshot';
+  sampler.limitations = ['Prepared runtime/model/cache allocation is a one-time du snapshot; those inputs remain unchanged during execution. Fresh child-root allocation is sampled live.'];
+  return executeChild({ command: python, args: ['-I', '-B', path.join(__dirname, 'mac-smoke.py'), execute ? '--execute' : '--ready', '--root', root],
+    input: Buffer.from('{}\n'), limits, sampler, signal: options.signal,
+    mode: execute ? 'cpu-mps-smoke' : 'mac-smoke-readiness',
+    validateResponse: bytes => {
+      const response = parseObjectFrame(bytes);
+      if (typeof response.ok !== 'boolean' || typeof response.inferencePerformed !== 'boolean' || (!execute && response.inferencePerformed)) refuse('PROTOCOL', 'Invalid smoke response');
+      return response;
+    } });
 }
 
 const HELP = `Wave 1 validation-only runner (Node stdlib; no model execution).
@@ -504,4 +540,4 @@ if (require.main === module) main(process.argv.slice(2)).catch((error) => {
   process.stderr.write(JSON.stringify({ ok: false, code: error.code || 'RUNNER', message: 'Wave 1 validation refused; use --help and inspect the bounded payload/budget.' }) + '\n');
   process.exitCode = 1;
 });
-module.exports = { runValidation, runBoundedChild, RunnerError, RUNNER_DEFAULT_LIMITS, limitsFor, sampleHost, validateSample, validateValidationResponse, parseLinuxMemory, cpuSeconds, HELP };
+module.exports = { runValidation, runBoundedChild, runMacSmoke, RunnerError, RUNNER_DEFAULT_LIMITS, limitsFor, sampleHost, validateSample, validateValidationResponse, parseLinuxMemory, cpuSeconds, HELP };
