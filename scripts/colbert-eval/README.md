@@ -9,6 +9,13 @@ with no top10 losses (including unchanged 4/5 document questions). MRR@10 change
 from 0.64833 to 0.65389; five retained answers ranked lower. Next measure complete
 indexing in a disposable comparison before integration. See [MAC-SMOKE.md](MAC-SMOKE.md).
 
+The selected complete-indexing comparison is unfinished. Its UTC process view
+caused the native guard to delete shared resource-registration records when
+comparing `ps lstart` strings. Sixteen MCP clients now need reconnect; indexes
+and installed models are unchanged. The harness now preserves foreign records
+and checks admission before model loading. Await user reconnect before retry;
+there is no end-to-end speed result. See the incident record in MAC-SMOKE.md.
+
 The original 17M model has run on this Mac through PyLate CPU/MPS and against
 Gmax's deployed ONNX-int8 CPU encoder, using 64 frozen Gmax-tokenized inputs.
 The experiments completed within the resource limits and cleaned up their
@@ -41,6 +48,8 @@ Preparation corrections do not automatically trigger reviews or repeat suites.
   validation route does not import an inference framework.
 - `runner.cjs` owns validation and explicitly selected Mac experiment children,
   limits, samples and cleanup.
+- `index-screen.cjs` / `index-mps.py` prepare the disposable indexing comparison;
+  `index-admission.cjs` preserves foreign reservations during native admission.
 - `label-screen.cjs` / `label-screen.py` run the bounded frozen 30-question screen.
 - `saved-compat.cjs` replays released storage/scoring code on saved vectors only.
 - `mac-smoke.cjs` / `mac-smoke.py` run the bounded Mac experiments;

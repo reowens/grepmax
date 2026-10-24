@@ -68,12 +68,61 @@ observed. This is evidence of a repeatable document batching gain within this ru
 not an idle-host or production throughput guarantee. Earlier fixed-order timing
 claims remain provisional; background load was not recorded during those runs.
 
-The saved-output compatibility check and the frozen 30-question quality screen
-are complete (below). Both document backends found 28/30 labeled answers in the
-top10, with no top10 losses. Query encoding stays on ONNX. Next: one disposable
-end-to-end indexing comparison with fixed dense encoding to measure whether the
-ColBERT document gain improves complete indexing, before selecting integration.
-Deployed model, settings, services and indexes remain unchanged.
+The saved-output compatibility check and frozen30-question quality screen are
+complete. Both document backends found28/30 labeled answers in top10, with no
+losses. The selected complete-indexing experiment is **unfinished**: native
+resource admission exposed a timezone/registration incident described below.
+There is no end-to-end speed result and no production integration decision.
+
+## Disposable indexing experiment — awaiting client reconnect
+
+Prepared command:
+`node scripts/colbert-eval/index-screen.cjs --execute <private-root>`.
+It uses all81 frozen Gmax candidate files, releasedv0.26.96 worker/chunk/store
+code, fresh Granite-small q4 ONNX CPU dense vectors on both arms, ColBERT ONNX
+CPU versus original-FP32 MPS documents, and actual disposable LanceDB/LMDB stores.
+The MPS arm uses an owned stdin/stdout process, with no listener or service.
+Two full untimed warmups precede two timed passes in opposite backend orders.
+This measures a warm single-worker initial-indexing configuration, including
+read/chunk/skeleton, dense/ColBERT inference, native writes and metadata close.
+It does not measure daemon scheduling, multiple workers or MLX dense encoding.
+
+Attempts stopped before a completed warmup or any timed comparison. The initial
+loader missed a released JSON module; that was corrected. Native resource
+probes also needed trusted `/usr/sbin`/`/sbin` in the isolated PATH; this was
+corrected without changing resource ceilings. The private resource ledger then
+made host MCP registrations appear absent. The owner connected native admission
+to the real shared ledger, but failed to account for the controller's UTC timezone.
+
+**Incident:** released `ResourceBudget.records()` treats a differing `ps lstart`
+string as proof of PID reuse and deletes that reservation. `ps lstart` changes
+with `TZ`. The experiment's UTC view differed by seven hours from the host's
+local timestamps and deleted the shared reservation records. A read-only check
+then found zero records and16 live MCP clients requiring reconnect. This affected
+resource-registration metadata; no search index, installed model or configuration
+was changed. No other process was stopped or restarted. All owned process-group
+cleanup checks passed. This is an owner error; the indexing run was stopped.
+
+The harness now drops its inherited `TZ` before host admission and treats every
+foreign registration as read-only: identity mismatches refuse rather than delete.
+It checks actual host admission before constructing models, keeps client
+registration and pressure/footprint limits enabled, reads host quarantine, uses
+the shared ledger only for its own reserve/release operations, and confines
+critical-stop writes to its private home. Four model-free focused checks passed
+in one invocation: timezone mismatch preserves records, matching records remain,
+dead foreign records are not deleted, and quarantine is respected.
+
+The user must reconnect the running Gmax MCP clients to recreate their original
+registrations. Do not fabricate registrations for those processes, stop other
+sessions or bypass registration checks. No automatic retry is queued. After the
+user confirms reconnect, the prepared command can retry under the unchanged
+bounds. The underlying product defect—timezone-formatted process identity used
+as deletion evidence—remains open; this task did not patch or publish product code.
+
+Private failure manifests, stderr, exact timezone evidence, cleanup results and
+source hashes are retained under `index-screen-blocked-01/` in the prepared root.
+The installed source/runtime models are unchanged; private model/grammar clones
+were prepared for the experiment. No independent review or broad test suite ran.
 
 ## Frozen 30-question screen
 

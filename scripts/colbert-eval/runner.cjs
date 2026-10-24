@@ -59,7 +59,7 @@ function childEnvironment(root) {
   const home = path.join(root, 'home');
   const cache = path.join(root, 'cache');
   return {
-    PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C', TZ: 'UTC',
+    PATH: '/usr/bin:/bin:/usr/sbin:/sbin', LANG: 'C', LC_ALL: 'C', TZ: 'UTC',
     HOME: home, GMAX_HOME: path.join(root, 'gmax'),
     XDG_CACHE_HOME: cache, XDG_CONFIG_HOME: path.join(root, 'config'),
     XDG_DATA_HOME: path.join(root, 'data'), XDG_STATE_HOME: path.join(root, 'state'),
@@ -453,7 +453,7 @@ async function runValidation(request, options = {}) {
 }
 
 async function runMacSmoke(root, options = {}) {
-  checkOptions(options, ['execute', 'signal', 'compareOnnx', 'paired', 'labelScreen']);
+  checkOptions(options, ['execute', 'signal', 'compareOnnx', 'paired', 'labelScreen', 'indexScreen']);
   if (process.platform !== 'darwin' || process.arch !== 'arm64') refuse('PLATFORM', 'This experiment requires Apple Silicon macOS');
   if (options.execute !== undefined && typeof options.execute !== 'boolean') refuse('OPTIONS', 'Execution must be explicit');
   root = await fsp.realpath(root);
@@ -466,6 +466,8 @@ async function runMacSmoke(root, options = {}) {
   if (options.paired && !options.compareOnnx) refuse('OPTIONS', 'Paired mode requires ONNX comparison');
   if (options.labelScreen !== undefined && typeof options.labelScreen !== 'boolean') refuse('OPTIONS', 'Label screen must be explicit');
   if (options.labelScreen && (!execute || options.paired || options.compareOnnx)) refuse('OPTIONS', 'Label screen requires separate explicit execution');
+  if (options.indexScreen !== undefined && typeof options.indexScreen !== 'boolean') refuse('OPTIONS', 'Index screen must be explicit');
+  if (options.indexScreen && (!execute || options.paired || options.compareOnnx || options.labelScreen)) refuse('OPTIONS', 'Index screen requires separate explicit execution');
   const limits = limitsFor({ deadlineMs: execute ? 30 * 60 * 1000 : 60 * 1000 });
   const footprint = await execFileAsync('/usr/bin/du', ['-sk', root], { encoding: 'utf8', timeout: 10000, maxBuffer: 4096,
     env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' } });
@@ -486,8 +488,8 @@ async function runMacSmoke(root, options = {}) {
   };
   sampler.source = 'host-builtins-with-prepared-disk-snapshot';
   sampler.limitations = ['Prepared runtime/model/cache allocation is a one-time du snapshot; those inputs remain unchanged during execution. Fresh child-root allocation is sampled live.'];
-  const command = options.labelScreen ? process.execPath : python;
-  const args = options.labelScreen ? [path.join(__dirname, 'label-screen.cjs'), '--child', root] : ['-I', '-B', path.join(__dirname, 'mac-smoke.py'), options.paired ? '--compare-paired' : options.compareOnnx ? '--compare-onnx' : execute ? '--execute' : '--ready', '--root', root,
+  const command = options.labelScreen || options.indexScreen ? process.execPath : python;
+  const args = options.indexScreen ? [path.join(__dirname, 'index-screen.cjs'), '--child', root] : options.labelScreen ? [path.join(__dirname, 'label-screen.cjs'), '--child', root] : ['-I', '-B', path.join(__dirname, 'mac-smoke.py'), options.paired ? '--compare-paired' : options.compareOnnx ? '--compare-onnx' : execute ? '--execute' : '--ready', '--root', root,
     '--node', process.execPath];
   return executeChild({ command, args,
     input: Buffer.from('{}\n'), limits, sampler, signal: options.signal,
