@@ -1,8 +1,8 @@
 ---
 type: plan
-status: planned
+status: partial
 created: 2026-10-24T03:25:08Z
-updated: 2026-10-24T03:25:08Z
+updated: 2026-10-24T03:58:56Z
 surfaces:
   - development
   - workers
@@ -16,9 +16,9 @@ parent_plan: docs/plans/gmax-delivery.md
 related_plans:
 related_docs:
   - CLAUDE.md
-current_state: Plan only. The pool runs platform jobs and has a Backfeed-specific Mac project path; Gmax has no registered project/task path. No worker was contacted and no job, test, installation or release ran for this plan.
-next_step: On implementation approval, add the bounded Gmax project/task definitions to the existing pool and its repository entry point, then connect the supported local OS routes. Work alone; no cloud jobs or current-release work.
-summary: Use existing Linux, Windows and Mac machines for selected Gmax jobs, with fixed task definitions, source identity, resource admission and returned artifacts. No cloud fallback or automatic verification rounds.
+current_state: "The Gmax repository entry, named task catalog, frozen source inputs, existing-pool dispatch, Windows command closure and result/artifact checks are implemented. One local fixture invocation passed 12/12 without workers or tools; two final narrow edits passed syntax checks only. Live workers and dependency preparation remain unrun."
+next_step: "Select a named local worker and task for first use. It needs matching prepared Gmax dependencies; no cache producer or installation ran here. Enrolled Linux Workers without Gmax capability refuse rather than switch transports. Current release remains with the other session."
+summary: "Local-worker source integration is implemented and locally fixture-tested. Explicit worker selection only; no automatic placement, cloud fallback, software installation or live acceptance has run."
 ---
 
 # Gmax on the local worker pool
@@ -30,7 +30,7 @@ revision, chosen machine, command, result and artifacts recorded together. Local
 means the existing owner-operated Linux, Windows and Mac pool, including its
 normal authenticated SSH/Worker transport; it excludes hosted cloud builders.
 
-The user requested this plan. Implementation and live jobs have not started.
+The user approved implementation. The source integration is built; no live job has run.
 The current release belongs to another session. This plan adds no release gate,
 CI workflow, scheduled run, benchmark, enrollment replacement or model backend.
 The [local-only rule](../../CLAUDE.md#local-checks-and-remote-execution) applies;
@@ -60,9 +60,9 @@ and the fleet. This plan owns only the Gmax integration, not fleet repair.
 
 ## Job selection and machine roles
 
-The developer selects a task and optionally a local machine. Auto placement may
-choose only a compatible, enabled local roster entry before execution starts.
-It does not add tasks or start an OS matrix. Begin with these declared roles:
+The developer selects a task and an exact enabled local roster machine. This
+first implementation requires `--worker`; automatic placement is not implemented.
+It does not add tasks or start an OS matrix. The task roles are:
 
 - Linux: ordinary TypeScript/Python work, packaging and explicitly selected
   Linux native builds. P3 is eligible only under its existing desktop-idle policy;
@@ -82,18 +82,18 @@ An aggregate is allowed only when the user explicitly selects that aggregate.
 
 ## Implementation sequence
 
-- [ ] **1. Register Gmax and its named tasks.** Add a developer-only entry under
+- [x] **1. Register Gmax and its named tasks (source).** Add a developer-only entry under
   `scripts/` and task definitions in the existing platform job path. Extend the
   platform-only project/root selection additively, preserving existing platform
   and Backfeed behavior. No public Gmax CLI or separate job server is needed.
-- [ ] **2. Connect the local OS routes.** Reuse the pool roster, authentication,
+- [x] **2. Connect the local OS routes (source; live execution unaccepted).** Reuse the pool roster, authentication,
   admission, queue, resource budgets, locks and cancellation. Materialize the
   selected committed Gmax source in the existing job workspace mechanism, scoped
   separately from platform sources and live Gmax indexes. Carry declared native
   artifacts as hashed inputs. Missing tools, enrollment, capacity or platform
   support produce a clear held/refused result; they do not trigger installs,
   policy changes, another transport or a cloud job.
-- [ ] **3. Return results and artifacts.** Record job ID, commit/source digest,
+- [x] **3. Return results and artifacts (source).** Record job ID, commit/source digest,
   OS/architecture, tool versions, task/arguments, exit code and timings. Return
   selected logs and artifacts with hashes; reuse unchanged compatible artifacts.
   Key caches by source, lockfile, platform and toolchain. A lost completion is
@@ -106,9 +106,9 @@ an absent result, skipped platform or different source as a successful result.
 
 ## Completion and verification scope
 
-Implementation is complete when the named Gmax entry uses the existing local
-routes and produces the recorded result/artifact shape without changing other
-projects. Record source implementation separately from live OS acceptance.
+The source entry uses the existing local routes and produces the recorded
+result/artifact shape. Live execution is not accepted on any OS by these source
+fixtures; record it separately when a user-selected job runs.
 
 Each assignment returns within 45 minutes and uses at most 1 focused test
 invocation. Select the smallest test relevant to the changed routing/contract;
@@ -131,6 +131,85 @@ The [Gmax delivery plan](gmax-delivery.md) owns the release handoff and historic
 proof. Fleet compute (private record) owns
 shared cache and broader scheduling work; this integration does not reopen it.
 
-Work alone unless the user approves a stated agent count. No agents, remote jobs,
-checks, source copies on workers, software installation or runtime changes were
-performed to write this plan.
+Work alone unless the user approves a stated agent count. This implementation
+ran one local fixture test and two syntax-only checks. No worker was contacted;
+no job, agent, cloud work, software installation or release ran.
+
+## Source checkpoint and limits
+
+Source integration receipt (private record)
+records exact files, hashes, the local test command and the proof boundary.
+
+The Gmax entry is `scripts/local-worker.cjs`; it locates the adjacent platform
+checkout and calls `platform/scripts/gmax-worker.mjs`. The catalog and source
+validation live in `platform/scripts/lib/gmax-project.mjs`; the worker-side task
+is `platform/scripts/gmax-worker-task.mjs`. Windows admits that exact bridge and
+its three-file source closure in `scripts/lib/worker-windows.mjs`. The shared
+`worker-job.mjs:runJob` has an opt-in `allowFallback: false` and named-job memory
+demand; existing fallback behavior is unchanged for other callers.
+
+Linux first reads the installed Developer configuration. Only its explicit
+`worker-sender-not-enrolled` state selects the pool's existing SSH route.
+An enrolled Worker currently has no Gmax project capability and refuses; a timeout,
+expired or unconfirmed configuration also refuses. No enrolled refusal switches
+to SSH. Mac and Windows use their existing roster routes and admission; held
+Mac rows are not enabled. There is no automatic placement in this version.
+
+One `node --test` invocation covered the two focused integration files: 12 passed,
+0 failed/skipped. The transports, Git capture and compiler were mocked; temporary
+files were owned by the fixtures. It covered all three OS dispatch shapes,
+Windows closure mapping, committed-source validation, matching receipts/artifacts,
+missing preparation, failure handling and opt-in no-fallback versus legacy fallback.
+After that run, Windows input separators were normalized at the receiver and the
+new explicit memory-option validation was scoped to leave legacy callers alone.
+Both final edits passed `node --check`; the test suite was not repeated. Those
+edits have syntax evidence only, not a second behavioral qualification.
+
+## Repository command and prepared inputs
+
+These are invocation examples, not queued jobs:
+
+```bash
+node scripts/local-worker.cjs describe
+node scripts/local-worker.cjs run --task typecheck --worker p3 --ref <full-commit>
+node scripts/local-worker.cjs run --task unit --worker dell-win --ref <full-commit> --test tests/core.test.ts
+```
+
+`describe` is static and contacts no worker. `run` captures only the selected
+committed Gmax tree; dirty working files are not job inputs. Requests accept fixed
+tasks, exact test-file selectors and a maximum 900-second execution deadline.
+Source is capped at 64 MiB and refuses credentials, links, traversal and case
+collisions. Each request is unique and never automatically reruns elsewhere.
+
+Dependencies are not installed by a job. A worker must already have a matching
+prepared directory beside its platform clone:
+
+```text
+../project-cache/gmax/<pnpm-lock-sha256>-<node-platform>-<arch>-<node-version>/
+  preparation.json
+  node_modules/
+  native-artifacts/    # existing qualified inputs, required for package creation
+  runtime/             # required only for the CLI-version compatibility task
+```
+
+`preparation.json` declares `schemaVersion: 1`, `project: "gmax"`, `lockSha256`,
+`platform` (`linux`, `darwin` or `win32`), `architecture` and `nodeVersion`.
+The initial unit task covers selected Vitest files; a separate Python task is
+not implemented. Compatibility also requires `runtimeCommit` and a `runtimeFiles` path-to-SHA-256
+inventory including `package.json` and `dist/bin.js`. The job verifies that inventory
+and checks only CLI version startup; it is not complete Windows compatibility.
+Cache preparation/production and any dependency installation have not run and
+are not claimed implemented by this descriptor. Missing preparation returns a
+refusal before executing tools. Native builds use the installed offline Cargo
+cache and two build jobs; absent tools/dependencies fail without provisioning.
+
+Results return under the platform checkout's `tmp/gmax-jobs/<jobId>/`, with
+`result.json`, `stdout.log` and the requested artifact. A package returns
+`package.tgz`; a native build returns `gmax-bounded-maintenance`. Native build
+output alone is not qualified for release. Package creation reuses existing
+qualified native inputs and does not run consumer/native/release test suites.
+
+## Version History
+
+- **2026-10-24T03:58:56Z** Status: in-session → partial — Source entry/catalog, committed inputs, existing local-pool dispatch, Windows closure and result/artifact handling implemented. One focused local invocation passed 12/12 with mocked transports/tools. Two final fixes syntax-checked only. No worker, cache preparation, installed capability, automatic placement or live acceptance claimed.
+- **2026-10-24T03:30:28Z** Started (planned → in-session).

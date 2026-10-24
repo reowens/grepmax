@@ -30,13 +30,14 @@ summary: "0.26.97 is released on GitHub and accepted for npm processing without 
 
 <a id="current-direction--document-search-rollout-preparation"></a>
 
-## Planned local-worker integration
+## Local-worker source integration
 
-[Gmax on the local worker pool](gmax-local-workers.md) owns the proposed Gmax
-project entry, OS routing and artifact return through the existing user-owned
-Linux, Windows and Mac workers. It is planned only; no implementation or jobs
-have started. The current release remains with the other session. The pool's
-transport/admission and the machine plans retain their existing ownership.
+[Gmax on the local worker pool](gmax-local-workers.md) owns the developer entry,
+named tasks, frozen Gmax inputs and result/artifact handling through existing
+local transports. Source fixtures passed 12/12; two final fixes have syntax
+evidence only. No live job or dependency preparation ran. Explicit worker choice
+is required, and enrolled Linux without Gmax support refuses. The current
+release remains with the other session; pool and machine owners keep their scopes.
 
 ## Mac GPU baseline step 1: recovery and measurement
 
