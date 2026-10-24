@@ -1,0 +1,224 @@
+{
+  "startedAt": "2026-10-24T00:18:20.503Z",
+  "testInvocations": 1,
+  "storeWrites": 0,
+  "installedVersion": "0.26.96",
+  "samples": [
+    {
+      "stage": "cold16",
+      "name": "colbertLoad",
+      "ms": 128.46470899999986
+    },
+    {
+      "stage": "cold16",
+      "name": "graniteMlxHttp",
+      "ms": 72.2700420000001,
+      "texts": 16,
+      "success": true
+    },
+    {
+      "stage": "cold16",
+      "name": "colbertOnnxInference",
+      "ms": 163.23395899999923
+    },
+    {
+      "stage": "cold16",
+      "name": "colbertTotal",
+      "ms": 185.0570829999997,
+      "texts": 16
+    },
+    {
+      "stage": "cold16",
+      "name": "hybridTotal",
+      "ms": 410.956459,
+      "texts": 16
+    },
+    {
+      "stage": "warm16a",
+      "name": "graniteMlxHttp",
+      "ms": 56.93712499999947,
+      "texts": 16,
+      "success": true
+    },
+    {
+      "stage": "warm16a",
+      "name": "colbertOnnxInference",
+      "ms": 171.37783299999865
+    },
+    {
+      "stage": "warm16a",
+      "name": "colbertTotal",
+      "ms": 176.94379200000003,
+      "texts": 16
+    },
+    {
+      "stage": "warm16a",
+      "name": "hybridTotal",
+      "ms": 278.080582999999,
+      "texts": 16
+    },
+    {
+      "stage": "warm16b",
+      "name": "graniteMlxHttp",
+      "ms": 71.44754199999988,
+      "texts": 16,
+      "success": true
+    },
+    {
+      "stage": "warm16b",
+      "name": "colbertOnnxInference",
+      "ms": 162.6478330000009
+    },
+    {
+      "stage": "warm16b",
+      "name": "colbertTotal",
+      "ms": 167.03058300000157,
+      "texts": 16
+    },
+    {
+      "stage": "warm16b",
+      "name": "hybridTotal",
+      "ms": 334.8167909999993,
+      "texts": 16
+    },
+    {
+      "stage": "warm16c",
+      "name": "graniteMlxHttp",
+      "ms": 68.64900000000125,
+      "texts": 16,
+      "success": true
+    },
+    {
+      "stage": "warm16c",
+      "name": "colbertOnnxInference",
+      "ms": 167.59749999999985
+    },
+    {
+      "stage": "warm16c",
+      "name": "colbertTotal",
+      "ms": 172.1002499999995,
+      "texts": 16
+    },
+    {
+      "stage": "warm16c",
+      "name": "hybridTotal",
+      "ms": 377.64929200000006,
+      "texts": 16
+    },
+    {
+      "stage": "sourceFile",
+      "name": "graniteMlxHttp",
+      "ms": 38.027000000000044,
+      "texts": 8,
+      "success": true
+    },
+    {
+      "stage": "sourceFile",
+      "name": "colbertOnnxInference",
+      "ms": 217.57254099999955
+    },
+    {
+      "stage": "sourceFile",
+      "name": "colbertTotal",
+      "ms": 224.13170799999898,
+      "texts": 8
+    },
+    {
+      "stage": "sourceFile",
+      "name": "fileTotal",
+      "ms": 380.6206250000014,
+      "vectors": 8,
+      "bytes": 3822
+    }
+  ],
+  "generation": {
+    "tier": "small",
+    "vectorDim": 384,
+    "onnxModel": "onnx-community/granite-embedding-small-english-r2-ONNX",
+    "mlxModel": "ibm-granite/granite-embedding-small-english-r2",
+    "colbertModel": "ryandono/mxbai-edge-colbert-v0-17m-onnx-int8",
+    "fingerprint": "cc340c3dd6f2967512f793457deadd6dd8f2574ec09f0a63bda0f41035d15f68"
+  },
+  "mlxStartupMs": 6097.109042,
+  "mlx": {
+    "enabled": true,
+    "state": "owned-ready",
+    "port": 8100,
+    "model": "ibm-granite/granite-embedding-small-english-r2",
+    "pid": 17493,
+    "lastHealthyAt": 1792801106624
+  },
+  "fallbacks": 0,
+  "verdict": "PASS_ISOLATED_MLX_STAGE_PROFILE",
+  "finishedAt": "2026-10-24T00:18:28.610Z",
+  "mlxAfter": {
+    "enabled": false,
+    "state": "stopped",
+    "port": 8100,
+    "model": "ibm-granite/granite-embedding-small-english-r2",
+    "pid": null
+  },
+  "limitation": "One bounded isolated invocation, three warm batches of 16 substrings up to 600 characters plus one real source file. Stage timers exclude added host-pressure checks; end-to-end timers include those checks. No index/storage-write or steady-state production throughput qualification.",
+  "inputs": {
+    "path": "src/lib/utils/autostart.ts",
+    "sha256": "0b6813123e3271cf49b1d3ef4ceed18bdd967933358723b7953f1c220b68c7c8",
+    "batchTextCount": 16,
+    "maxCharactersPerText": 600,
+    "warmBatchCount": 3
+  },
+  "harness": {
+    "command": "node /Users/Shared/P3-Installer/mac-gmax-baseline-20261023/acceptance.cjs",
+    "sha256": "b1856b0b3d4f4e42ce6bb1a755125529d951892a6fc57f02322300de28401f0b",
+    "serverWrapperSha256": "f8e613e445372b1560f1528e1badf57dde9603760b448f0e884f8c46ee80ba3a"
+  },
+  "metalEvidence": [
+    {
+      "device": "Device(gpu, 0)",
+      "metalAvailable": true,
+      "texts": 1,
+      "elapsedMs": 15.662666992284358,
+      "activeMetalBytes": 95326482
+    },
+    {
+      "device": "Device(gpu, 0)",
+      "metalAvailable": true,
+      "texts": 16,
+      "elapsedMs": 65.49991700740065,
+      "activeMetalBytes": 95357714
+    },
+    {
+      "device": "Device(gpu, 0)",
+      "metalAvailable": true,
+      "texts": 16,
+      "elapsedMs": 53.74266699072905,
+      "activeMetalBytes": 95357714
+    },
+    {
+      "device": "Device(gpu, 0)",
+      "metalAvailable": true,
+      "texts": 16,
+      "elapsedMs": 68.17333299841266,
+      "activeMetalBytes": 95357714
+    },
+    {
+      "device": "Device(gpu, 0)",
+      "metalAvailable": true,
+      "texts": 16,
+      "elapsedMs": 65.9571669966681,
+      "activeMetalBytes": 95357714
+    },
+    {
+      "device": "Device(gpu, 0)",
+      "metalAvailable": true,
+      "texts": 8,
+      "elapsedMs": 35.52829200634733,
+      "activeMetalBytes": 95337234
+    }
+  ],
+  "installedSourceHashes": {
+    "mlx-embed-server/server.py": "aaea3cbe3b484954af0f83b8f173d159aaccc6e8f691ff90d25a83249591534c",
+    "dist/lib/workers/orchestrator.js": "46d7a806531d4c66f95a0ea7101f8792cb413505771be5ff7d63f15cc1871e2e",
+    "dist/lib/workers/embeddings/colbert.js": "011907949bd1150933c5454197d5a1095ed00faaa52a25aaa0c45cfc86409c1c"
+  },
+  "runtimeSetup": "uv offline materialized the installed package managed mlx-embed-server/.venv from cache. The managed environment is retained; the owned MLX process exited."
+}

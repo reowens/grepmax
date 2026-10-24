@@ -1,0 +1,65 @@
+{
+  "verdict": "BLOCKED_NATIVE_RECOVERY",
+  "attempts": 1,
+  "reason": "Reclamation changed logical data/index state",
+  "receipt": {
+    "protocolVersion": 3,
+    "phase": "verified",
+    "receiptId": "47b1163b64283d8a3083b612f4adac2c892bb23063ccfda1ced15d7a2bbb3c29",
+    "planId": "af69d00dbad5697380936b0edaf3ee815c82b81d351d3dbeac7d613ec1ada58d",
+    "beforeVersion": 5410,
+    "afterVersion": 5410,
+    "verifiedCopyVersion": 5410,
+    "selectedFragmentIds": [],
+    "readerTag": "gmax-native-47b1163b64283d8a3083b612f4adac2c892bb23063ccfda1ced15d7a2bbb3c29-before",
+    "afterTag": "gmax-native-47b1163b64283d8a3083b612f4adac2c892bb23063ccfda1ced15d7a2bbb3c29-after",
+    "originalTags": {},
+    "journal": "_gmax-maintenance-47b1163b64283d8a3083b612f4adac2c892bb23063ccfda1ced15d7a2bbb3c29.journal",
+    "ownedWrites": "_gmax-owned-47b1163b64283d8a3083b612f4adac2c892bb23063ccfda1ced15d7a2bbb3c29.jsonl",
+    "totalWriteBudgetBytes": 536870912,
+    "sourceBytes": 0,
+    "sourceRowsDigest": "",
+    "rowsVerified": 0,
+    "beforeFingerprint": "4408752f48e48f9dbf2ecf2f36e797a1eb0073b4fb067b0ff8bdea628c12b4c7",
+    "acceptedFingerprint": null,
+    "helperPid": 53154,
+    "helperStart": "Fri Oct 23 06:50:30 2026",
+    "aborted": false,
+    "abortProven": false,
+    "finalizationReserveBytes": 524288,
+    "retiredMetadata": [],
+    "repair": {
+      "fragments": [],
+      "name": "",
+      "field": "",
+      "merge": [],
+      "output": null,
+      "orphans": {
+        "complete": false,
+        "versionsScanned": 32,
+        "versionsRemaining": 13,
+        "candidates": [],
+        "reclaimed": 0
+      }
+    }
+  },
+  "preservation": {
+    "at": "2026-10-24T00:19:44.625Z",
+    "configUnchanged": true,
+    "registryUnchanged": true,
+    "nativeReceiptUnchanged": true,
+    "profileServerExited": true,
+    "diagnosticDaemonExited": true,
+    "paused": {
+      "mode": "paused",
+      "reason": "read-only service requested"
+    },
+    "processPid": 37115,
+    "receiptSha256": "e0883fd8772df41a353162d8c34ab3f3582b4c580fb27f34b6588c7d7313c03d"
+  },
+  "nativeWire": "stdout: {\"budgetKind\":\"cumulative-writes\",\"engine\":\"12.0.0\",\"incrementalRepairProtocol\":1,\"nativeTotalWriteBudgetEnforced\":true,\"protectedReaderProtocol\":1,\"protocolVersion\":1}\nstdout: {\"phase\":\"launch\"}\nstderr: Bounded maintenance refused: stderr: Reclamation changed logical data/index state\nstdout: {\"phase\":\"error\",\"reason\":\"Reclamation changed logical data/index state\",\"status\":\"blocked\"}\n",
+  "installedNativeSha256": "579482f176e96a98183eaae9775ee915511e39ca9227507e67aa647741b994bd",
+  "qualificationUnchanged": true,
+  "sourceChanged": false,
+  "p3Touched": false
+}

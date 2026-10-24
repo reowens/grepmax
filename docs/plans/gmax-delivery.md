@@ -2,7 +2,7 @@
 type: plan
 status: paused
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-23T08:09:03Z
+updated: 2026-10-24T00:20:53Z
 surfaces:
   - store
   - daemon
@@ -20,14 +20,95 @@ parent_plan:
 related_plans:
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "0.26.96 (db7643c) is released and installed on the Mac; its rebuilt store and FTS are accepted. P3 CPU installation and bounded acceptance completed October 23: normal user installation 0.26.96, Small/CPU/one worker, models ready, no production project added, all test processes stopped. Resource statistics remains on hold."
-next_step: "P3 is ready for a selected real project; no additional benchmark or GPU work is scheduled. Preserve queued docs/plans/session-start-hint-trim.md and the optional NVM/worktree cleanup. Resource statistics stays on hold."
-summary: "0.26.96 released on the Mac and accepted on the P3 CPU. Resource statistics stays on hold; GPU work remains optional."
+current_state: "Mac 0.26.96 retains bounded read-only service: native recovery refuses an older verified orphan receipt after the table advanced. Isolated Granite Metal GPU and ColBERT CPU stage profiling passed; normal Mac indexing remains blocked. P3 readiness is tracked by the platform session-host plan. Resource statistics remains held."
+next_step: "Finish Mac baseline step 1 by repairing and qualifying native recovery of a verified receipt after later writes, then restore normal service. ColBERT MLX, CUDA and resource history are not started. Preserve the queued session-start-hint trim and optional NVM/worktree cleanup."
+summary: "Mac baseline step 1 is partial: actual Granite Metal GPU use is proved, while native cleanup recovery blocks normal indexing. ColBERT remains CPU. Resource statistics stays held."
 ---
 
 # Gmax Delivery Plan
 
 <a id="current-direction--document-search-rollout-preparation"></a>
+
+## Mac GPU baseline step 1: recovery and measurement
+
+**Step 1 remains partial.** Normal Mac indexing is blocked by native receipt
+recovery. The single isolated acceptance invocation passed actual Granite Metal
+GPU inference and measured ColBERT CPU work. No model, provider, index generation,
+worker setting, host policy or P3 setting changed. Resource history remains held;
+ColBERT MLX and CUDA implementation have not started.
+
+### Native recovery blocker
+
+The installed 0.26.96 daemon refused one recovery attempt with
+`Reclamation changed logical data/index state`. The pending receipt is phase
+`verified`, before/after/verified-copy version 5410, with both owned protection
+tags still pointing to 5410. Its orphan inventory is incomplete with no selected
+candidates and no reclaimed files. Independent version pruning previously
+completed at version 5585; that completion does not finalize this separate
+receipt. Exact receipt, native output, binary digest and preservation checks:
+[recovery.json](assets/mac-mlx-baseline-20261023/recovery.json).
+
+The source recovery branch at
+`lance-maintenance/native/src/engine.rs:1471` checks the current head against the
+old before fingerprint for every repair receipt before reaching the branch at
+`:1505` that verifies an already recorded after-version through its owned tags.
+`lance-maintenance/native/src/orphans.rs:352` requires equal before/after
+fingerprints, so later ordinary table writes make that first branch refuse this
+otherwise protected historical comparison. The proposed repair routes receipts
+with a recorded after-version through the existing protected before/candidate
+verification; only an attempt with no recorded after-version uses current-head
+candidate discovery. Preserve tag checks, exact historical comparison, source
+journals, the non-resetting write budget, current-head protection and reader drain.
+Do not delete or rewrite the receipt to force service open.
+
+Remaining step 1 work is a qualified native repair, including a disposable
+orphan attempt interrupted after verification, later ordinary writes, successful
+protected recovery, and refusal when either historical snapshot or owned tag
+changes. Packaging still requires matching native source and artifact proofs for
+both shipped platforms, as enforced by `scripts/prepare-bounded-runtime.cjs:45`.
+No native source or artifact was changed in this assignment. The existing Mac
+store remains available through explicit bounded read-only service, with its
+receipt and protection tags retained; normal indexing and daemon-owned MLX are
+not restored. The temporary child-process observer was removed by a graceful
+handover to that read-only service, without another recovery retry.
+
+### Measured embedding stages
+
+[acceptance.json](assets/mac-mlx-baseline-20261023/acceptance.json) records the
+single invocation, inputs, source hashes and all timings. It ran installed
+0.26.96 code with a private observer around the packaged MLX server and model
+calls. The model itself and all inference algorithms were unchanged. The MLX
+server reported `Device(gpu, 0)`, available Metal, evaluated real embeddings and
+about 91 MiB active Metal memory. Every dense batch used MLX; CPU fallback count
+was zero. ColBERT's installed `executionProviders: ["cpu"]` session performed the
+second neural stage (`src/lib/workers/embeddings/colbert.ts:48`).
+
+| Stage | Measured result |
+| --- | --- |
+| MLX process/model startup | 6.10 s |
+| ColBERT first load | 128 ms |
+| Granite MLX, 16-text warm batch, including loopback HTTP | 57-71 ms |
+| ColBERT CPU, same warm batch, including its preparation and output processing | 167-177 ms |
+| ColBERT CPU inference within those warm batches | 163-171 ms |
+| Real 3,822-byte source file, 8 vectors | Granite 38 ms; ColBERT 224 ms |
+
+ColBERT is the larger measured embedding stage. These are 3 warm batches of 16
+source substrings up to 600 characters plus 1 real source-file run, not a
+production corpus benchmark or a quality comparison. End-to-end timers include
+additional pressure admission checks inserted by the private harness; stage
+timers exclude those checks. Do not attribute the remaining time to parsing or
+storage, or derive production throughput from these end-to-end totals. No
+VectorDB was instantiated and no index insert/delete was called by the profiler.
+
+The managed MLX Python environment was materialized by `uv` offline from its
+cache and retained for later normal startup. The owned MLX process stopped, port
+8100 was released, and configuration, project
+registry and native receipt match the before-state. Private command/output and
+observer sources remain in
+`/Users/Shared/P3-Installer/mac-gmax-baseline-20261023/`. One test invocation was
+used; there was no retry. Current P3 workspace and commissioning status belong
+to [the platform session-host plan](../../../../platform/docs/plans/p3-session-host.md),
+not the earlier dated P3 qualification below.
 
 ## Necessity audit — October 21, 2026
 
@@ -2656,6 +2737,9 @@ parallel omnibus plan.
 
 ## Version History
 
+- **2026-10-24T00:20:53Z** Status: in-session → paused — Mac baseline step 1 remains partial: isolated installed Granite Metal/ColBERT CPU profiling passed in 1 test invocation; one native recovery operation refused a protected historical orphan receipt after later table writes. Receipt/config/registry retained and bounded read-only service restored. Native source/artifacts unchanged.
+- **2026-10-24T00:15:46Z** Started (active → in-session).
+- **2026-10-24T00:15:45Z** Status: paused → active.
 - **2026-10-23T08:09:03Z** Status: in-session → paused — P3 CPU installation and bounded acceptance complete on existing user 0.26.96; normal Small/CPU/one-worker account and models prepared, no real projects added, all test processes stopped. Resource statistics stays on hold; GPU work remains optional; queued hint trim preserved.
 - **2026-10-23T07:54:44Z** Started (active → in-session).
 - **2026-10-23T07:54:44Z** Status: paused → active — User selected P3 CPU installation and bounded acceptance. Resource-statistics work stays on hold; other queued work is preserved.
