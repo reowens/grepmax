@@ -58,7 +58,7 @@ def prepare(root):
     return lock, contract, inputs, versions
 
 
-def run(root, execute, state, compare_onnx=False, node=None):
+def run(root, execute, state, compare_onnx=False, node=None, paired=False):
     lock, contract, inputs, versions = prepare(root)
     import torch
     from pylate import models
@@ -83,7 +83,7 @@ def run(root, execute, state, compare_onnx=False, node=None):
     import numpy as np
     from safetensors.torch import load_file
     onnx = None
-    if compare_onnx:
+    if compare_onnx and not paired:
         completed = subprocess.run([node, str(HERE / 'onnx-smoke.cjs'), str(root)], stdout=sys.stderr, stderr=sys.stderr)
         onnx = json.loads(Path('onnx-result.json').read_text())
         state['inferencePerformed'] = onnx['inferencePerformed']
@@ -161,6 +161,8 @@ def run(root, execute, state, compare_onnx=False, node=None):
             require(worst >= 0.999, f'Raw token cosine below 0.999: {label}')
 
     try:
+        if paired:
+            return run_paired(root, node, inputs, model, forward, sync, compare, ready, load_seconds, state, np, parity)
         if onnx:
             for measurement in onnx['measurements']:
                 for item, row in zip(inputs, onnx_rows(measurement)):
@@ -211,6 +213,147 @@ def run(root, execute, state, compare_onnx=False, node=None):
         torch.mps.empty_cache()
 
 
+def run_paired(root, node, inputs, model, forward, sync, compare, ready, load_seconds, state, np, parity):
+    """Fixed local paired experiment; both sessions stay loaded throughout."""
+    import plistlib
+    iterations = 5
+    measurements, observations = [], []
+
+    def snapshot(label):
+        record = dict(label=label, timeUnixSeconds=time.time(), loadAverage=os.getloadavg())
+        try:
+            text = subprocess.check_output(['/bin/ps', '-axo', 'pid=,pcpu=,rss=,comm='], text=True, timeout=5)
+            records = []
+            for line in text.splitlines():
+                fields = line.strip().split(None, 3)
+                if len(fields) == 4:
+                    records.append(dict(pid=int(fields[0]), cpuPercent=float(fields[1]), rssKiB=int(fields[2]), command=fields[3]))
+            record['topProcesses'] = sorted(records, key=lambda x: x['cpuPercent'], reverse=True)[:12]
+            record['cpuReadingLimitation'] = 'ps pcpu is a decaying process average, not interval host CPU utilization; includes experiment processes'
+        except Exception as error:
+            record['cpuUnavailable'] = str(error)[:200]
+        try:
+            values = plistlib.loads(subprocess.check_output(['/usr/sbin/ioreg', '-a', '-r', '-c', 'IOAccelerator'], timeout=5))
+            found = []
+            def walk(value):
+                if isinstance(value, dict):
+                    if 'PerformanceStatistics' in value:
+                        stats = value['PerformanceStatistics']
+                        found.append({key: stats[key] for key in ('Device Utilization %', 'Renderer Utilization %', 'Tiler Utilization %', 'In use system memory') if key in stats})
+                    for child in value.values():
+                        walk(child)
+                elif isinstance(value, list):
+                    for child in value:
+                        walk(child)
+            walk(values)
+            record['gpuSnapshots'] = found
+            record['gpuReadingLimitation'] = 'Whole-device snapshot; cannot separate owned model work from background work or establish peaks'
+        except Exception as error:
+            record['gpuUnavailable'] = str(error)[:200]
+        observations.append(record)
+
+    child = subprocess.Popen([node, str(HERE / 'onnx-smoke.cjs'), str(root), '--paired'],
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=sys.stderr, text=True, bufsize=1)
+
+    def receive():
+        line = child.stdout.readline(65537)
+        require(line.endswith('\n') and len(line) <= 65536, 'Missing/oversized ONNX phase response')
+        response = json.loads(line)
+        require(response.get('ok') is True, 'ONNX phase failed: ' + str(response))
+        return response
+
+    def job(kind, batch_size, repetition):
+        child.stdin.write(json.dumps(dict(command='phase', kind=kind, batchSize=batch_size, repetition=repetition)) + '\n')
+        child.stdin.flush()
+        return receive()
+
+    try:
+        require(receive().get('ready') is True, 'ONNX session not ready')
+        model.to(device='mps')
+        require(all(p.device.type == 'mps' for p in model.parameters()), 'MPS parameter placement mismatch')
+        snapshot('before-warmup')
+        for kind in ('query', 'document'):
+            selected = [item for item in inputs if item['kind'] == kind]
+            require(len(selected) == 32, 'Expected 32 inputs per kind')
+            for batch_size in (1, 8, 16):
+                job(kind, batch_size, 0)
+                for start in range(0, len(selected), batch_size):
+                    forward(selected[start:start + batch_size], 'mps')
+        snapshot('after-warmup')
+        for repetition, order in ((1, ('onnx-cpu', 'mps')), (2, ('mps', 'onnx-cpu'))):
+            for kind in ('query', 'document'):
+                selected = [item for item in inputs if item['kind'] == kind]
+                for batch_size in (1, 8, 16):
+                    for device in order:
+                        label = f'{kind}/batch{batch_size}/pass{repetition}/{device}'
+                        snapshot('before/' + label)
+                        print('Measuring ' + label, file=sys.stderr, flush=True)
+                        if device == 'onnx-cpu':
+                            result = job(kind, batch_size, repetition)['measurement']
+                        else:
+                            sync('mps')
+                            cpu_started = resource.getrusage(resource.RUSAGE_SELF)
+                            started = time.perf_counter()
+                            for _ in range(iterations):
+                                rows = []
+                                for start in range(0, len(selected), batch_size):
+                                    rows.extend(forward(selected[start:start + batch_size], 'mps'))
+                            sync('mps')
+                            seconds = time.perf_counter() - started
+                            cpu_finished = resource.getrusage(resource.RUSAGE_SELF)
+                            file = f'mps-{kind}-batch{batch_size}-pass{repetition}.npz'
+                            np.savez(file, **{i['id']: row for i, row in zip(selected, rows)})
+                            result = dict(device='mps', kind=kind, batchSize=batch_size, repetition=repetition,
+                                          iterations=iterations, seconds=seconds, secondsPerTraversal=seconds / iterations,
+                                          cpuUserSeconds=cpu_finished.ru_utime - cpu_started.ru_utime,
+                                          cpuSystemSeconds=cpu_finished.ru_stime - cpu_started.ru_stime,
+                                          inputs=len(selected), file=file, sha256=digest(Path(file)))
+                        measurements.append(result)
+                        snapshot('after/' + label)
+        child.stdin.write('{"command":"close"}\n')
+        child.stdin.flush()
+        child.stdin.close()
+        require(child.wait(timeout=10) == 0, 'ONNX child failed at close')
+        onnx = json.loads(Path('onnx-result.json').read_text())
+        require(onnx['ok'] and onnx['inputsSha256'] == ready['inputsSha256'], 'ONNX identity mismatch')
+        for measurement in measurements:
+            if measurement['device'] != 'mps':
+                continue
+            baseline = next(m for m in measurements if m['device'] == 'onnx-cpu' and all(m[k] == measurement[k] for k in ('kind', 'batchSize', 'repetition')))
+            selected = [item for item in inputs if item['kind'] == measurement['kind']]
+            require(digest(Path(baseline['file'])) == baseline['sha256'], 'ONNX wire hash mismatch')
+            raw = np.fromfile(baseline['file'], dtype='<f4')
+            require(raw.size == sum(len(i['inputIds']) for i in selected) * 48 and bool(np.isfinite(raw).all()), 'Invalid ONNX raw rows')
+            offset = 0
+            with np.load(measurement['file'], allow_pickle=False) as actual:
+                for item in selected:
+                    count = len(item['inputIds']) * 48
+                    compare(raw[offset:offset + count].reshape(-1, 48), actual[item['id']],
+                            f'paired/{measurement["kind"]}/batch{measurement["batchSize"]}/pass{measurement["repetition"]}/{item["id"]}', strict=False)
+                    offset += count
+        report = dict(ready, ok=True, inferencePerformed=True, modelConstructed=True,
+                      experiment='fully-warmed-paired-onnx-mps', loadSeconds=load_seconds, measurements=measurements,
+                      observations=observations, onnx=onnx, iterationsPerMeasurement=iterations, parity=parity,
+                      minTokenCosine=min(p['minTokenCosine'] for p in parity),
+                      zeroVectorDisagreements=sum(p['zeroVectorDisagreements'] for p in parity),
+                      warmup='Full traversal of each kind and batch size on both backends before all measurements',
+                      order=['ONNX then MPS for every kind/batch pair', 'MPS then ONNX for every kind/batch pair'],
+                      compatibilityQualified=False,
+                      limitations='Two paired passes on a shared active host; boundary GPU snapshots and decaying process CPU averages cannot prove quiet intervals. Forward timing includes padding, transfer, validation and CPU output copy; output files and host snapshots excluded. Five traversals amortize timer noise; same synthetic 32 inputs per kind.')
+        Path('result.json').write_text(json.dumps(report, indent=2) + '\n')
+        return dict(ok=True, inferencePerformed=True, modelConstructed=True,
+                    resultPath=str(Path('result.json').resolve()), measurements=len(measurements))
+    finally:
+        if child.poll() is None:
+            child.terminate()
+            try:
+                child.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait(timeout=5)
+        Path('host-observations.json').write_text(json.dumps(observations, indent=2) + '\n')
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--root', required=True)
@@ -219,12 +362,13 @@ def main():
     mode.add_argument('--ready', action='store_true')
     mode.add_argument('--execute', action='store_true')
     mode.add_argument('--compare-onnx', action='store_true')
+    mode.add_argument('--compare-paired', action='store_true')
     args = p.parse_args()
     state = dict(inferencePerformed=False, modelConstructed=False, modelConstructionAttempted=False)
     try:
         with contextlib.redirect_stdout(sys.stderr):
-            require(not args.compare_onnx or args.node, 'ONNX comparison requires the owned Node executable')
-            result = run(Path(args.root).resolve(strict=True), args.execute or args.compare_onnx, state, args.compare_onnx, args.node)
+            require(not (args.compare_onnx or args.compare_paired) or args.node, 'ONNX comparison requires the owned Node executable')
+            result = run(Path(args.root).resolve(strict=True), args.execute or args.compare_onnx or args.compare_paired, state, args.compare_onnx or args.compare_paired, args.node, args.compare_paired)
     except Exception as error:
         traceback.print_exc(file=sys.stderr)
         result = dict(ok=False, **state, error=dict(type=type(error).__name__, message=str(error)[:500]))

@@ -11,12 +11,14 @@ const expectedHash = 'bf220582767b501f17fc8a9b484f92f43c7756908ea87f7ac5053682be
 const state = { ok: false, inferencePerformed: false, modelConstructed: false };
 
 async function main() {
-  if (process.argv.length !== 3) throw new Error('Expected fixed experiment root');
+  const paired = process.argv[3] === '--paired';
+  if (process.argv.length !== (paired ? 4 : 3)) throw new Error('Expected fixed experiment root');
   const root = fs.realpathSync(process.argv[2]);
   const artifact = JSON.parse(fs.readFileSync(path.join(root, 'onnx-artifact.json')));
   const modelPath = path.join(root, 'model-onnx/model_int8.onnx');
   if (sha(fs.readFileSync(modelPath)) !== expectedHash) throw new Error('ONNX artifact differs from deployed hash');
   const requireInstalled = createRequire(artifact.installedPackageJson);
+  const installedVersion = JSON.parse(fs.readFileSync(artifact.installedPackageJson)).version;
   const version = requireInstalled('onnxruntime-node/package.json').version;
   if (version !== artifact.ortVersion || version !== '1.30.0') throw new Error('Installed ONNX runtime identity changed');
   const ort = requireInstalled('onnxruntime-node');
@@ -47,24 +49,46 @@ async function main() {
     return rows;
   }
   try {
-    await forward(inputs.slice(0, 1));
     const measurements = [];
-    for (const batchSize of [1, 8, 16]) for (const repetition of [1, 2]) {
+    async function measure(selected, batchSize, repetition, kind, warmup = false) {
       const started = performance.now(); const cpuStarted = process.cpuUsage(); const rows = [];
-      for (let start = 0; start < inputs.length; start += batchSize) rows.push(...await forward(inputs.slice(start, start + batchSize)));
+      const iterations = paired && !warmup ? 5 : 1;
+      for (let iteration = 0; iteration < iterations; iteration++) {
+        rows.length = 0;
+        for (let start = 0; start < selected.length; start += batchSize) rows.push(...await forward(selected.slice(start, start + batchSize)));
+      }
       const seconds = (performance.now() - started) / 1000;
       const cpu = process.cpuUsage(cpuStarted);
+      if (warmup) return { ok: true, warmed: true };
       const joined = new Float32Array(rows.reduce((n, row) => n + row.length, 0));
       let offset = 0; for (const row of rows) { joined.set(row, offset); offset += row.length; }
       const bytes = Buffer.from(joined.buffer);
-      const file = `onnx-batch${batchSize}-pass${repetition}.f32`;
+      const file = `onnx-${kind}-batch${batchSize}-pass${repetition}.f32`;
       fs.writeFileSync(file, bytes, { mode: 0o600, flag: 'wx' });
-      measurements.push({ device: 'onnx-cpu', batchSize, repetition, seconds, cpuUserSeconds: cpu.user / 1e6,
-        cpuSystemSeconds: cpu.system / 1e6, inputs: inputs.length,
-        effectiveTokens: inputs.reduce((n, item) => n + item.inputIds.length, 0), file, sha256: sha(bytes),
-        format: 'little-endian float32, input order, unpadded token rows, 48 columns' });
+      const measurement = { device: 'onnx-cpu', kind, batchSize, repetition, iterations, seconds, secondsPerTraversal: seconds / iterations, cpuUserSeconds: cpu.user / 1e6,
+        cpuSystemSeconds: cpu.system / 1e6, inputs: selected.length, ids: selected.map(i => i.id),
+        effectiveTokens: selected.reduce((n, item) => n + item.inputIds.length, 0), file, sha256: sha(bytes),
+        format: 'little-endian float32, input order, unpadded token rows, 48 columns' };
+      measurements.push(measurement);
+      return { ok: true, measurement };
     }
-    Object.assign(state, { ok: true, ortVersion: version, installedGmax: artifact.installedVersion,
+    if (paired) {
+      process.stdout.write(JSON.stringify({ ok: true, ready: true }) + '\n');
+      const lines = require('node:readline').createInterface({ input: process.stdin, crlfDelay: Infinity });
+      for await (const line of lines) {
+        if (line.length > 1024) throw new Error('Oversized paired command');
+        const job = JSON.parse(line);
+        if (job.command === 'close') break;
+        if (!['query', 'document'].includes(job.kind) || ![1, 8, 16].includes(job.batchSize) || ![0, 1, 2].includes(job.repetition)) throw new Error('Invalid paired phase');
+        const selected = inputs.filter(i => i.kind === job.kind);
+        const result = await measure(selected, job.batchSize, job.repetition, job.kind, job.repetition === 0);
+        process.stdout.write(JSON.stringify(result) + '\n');
+      }
+    } else {
+      await forward(inputs.slice(0, 1));
+      for (const batchSize of [1, 8, 16]) for (const repetition of [1, 2]) await measure(inputs, batchSize, repetition, 'all');
+    }
+    Object.assign(state, { ok: true, ortVersion: version, installedGmax: installedVersion,
       weightsSha256: expectedHash, inputsSha256: sha(inputBytes), options, loadSeconds, measurements });
   } finally { await session.release(); }
 }

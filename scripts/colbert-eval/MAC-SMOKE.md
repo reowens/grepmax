@@ -58,31 +58,55 @@ reported without adding the same allocation twice.
 
 ## Current conclusion and next step
 
-The model runs successfully on MPS within the recorded memory limits. We have
-not established a dependable speed advantage. Background CPU/GPU activity was
-not captured in either run, so background load is a plausible explanation for
-the variation, not a measured cause. Warm-up, shape compilation, cache state and
-fixed backend order are additional confounders. Keep the timing tables as raw
-observations; do not use 7.49× as a production expectation. Vector comparisons
-remain recorded separately from this uncertain timing conclusion.
+The fully warmed paired comparison completed: document batch16 MPS was
+6.53–6.66× faster than deployed ONNX CPU in both orders. Batch1 queries were
+6.65–8.79× slower on MPS. Keep query encoding on ONNX. Document batching is worth
+a saved-vector compatibility check before any production integration.
 
-Keep the deployed ONNX encoder unchanged. The next selected experiment is one
-bounded run on a naturally quiet Mac, reusing the same models and 64 inputs:
+The host was active: Swift compilation, simulator, host-project and Gmax activity were
+observed. This is evidence of a repeatable document batching gain within this run,
+not an idle-host or production throughput guarantee. Earlier fixed-order timing
+claims remain provisional; background load was not recorded during those runs.
 
-1. Warm every batch/sequence shape on both backends before timing.
-2. Time query and document subsets separately at batches 1/8/16. Use opposite
-   backend orders across two paired passes: ONNX→MPS, then MPS→ONNX.
-3. Record available host CPU/GPU activity along with owned resource samples.
-   State any unavailable GPU-load reading; do not install production telemetry,
-   stop another session, poll indefinitely, or relax the resource limits.
-4. Report paired timings and their spread. If batching has no consistent useful
-   gain, retain ONNX. If document batching wins, check saved MPS document vectors
-   against unchanged ONNX queries, including storage/scoring behavior, before
-   integrating. This follow-up can start from saved outputs without new inference.
+Next: use the saved MPS document outputs with unchanged ONNX query outputs to
+check Gmax normalization, int8 storage and MaxSim behavior. This analysis needs
+no new model execution. Full ranking quality remains unverified. Deployed model,
+settings, services and indexes remain unchanged.
 
-Extend only the existing experiment runner as needed for warm-up/interleaving.
-This documentation update launches no experiment, tests or independent review.
-The next run still needs to be selected; no automatic retry is queued.
+## Fully warmed paired comparison
+
+Selected command: `--compare-paired --root <same-root>`. Both sessions stay loaded.
+Every query/document batch/sequence shape receives a full warm-up traversal before
+measurements. Each measurement repeats the same 32 inputs five times, excluding
+output-file writes and host snapshots. Pass1 uses ONNX→MPS for each pair; pass2
+uses MPS→ONNX. Timings include input preparation, forward, validation and CPU
+output copy. Raw outputs retain the last traversal of each measurement.
+
+Seconds per 32-input traversal, shown as pass1 / pass2:
+
+| Inputs | Batch | ONNX CPU | MPS | ONNX time / MPS time |
+|---|---:|---:|---:|---:|
+| Queries | 1 | 0.0561 / 0.0491 | 0.4931 / 0.3263 | 0.114 / 0.150 |
+| Queries | 8 | 0.0653 / 0.0461 | 0.0987 / 0.0374 | 0.662 / 1.233 |
+| Queries | 16 | 0.0406 / 0.0367 | 0.0567 / 0.0212 | 0.716 / 1.735 |
+| Documents | 1 | 0.3872 / 0.3494 | 0.9816 / 0.7249 | 0.395 / 0.482 |
+| Documents | 8 | 0.4980 / 0.4948 | 0.1225 / 0.0852 | 4.064 / 5.810 |
+| Documents | 16 | 0.5052 / 0.4855 | 0.0759 / 0.0744 | 6.659 / 6.529 |
+
+All 24 measurements completed in 55.44s. Peak sampled owned RSS was 1,939.81MiB,
+swap growth zero, and checked cleanup found no live owned processes without
+signals. Resource ceilings were unchanged. Minimum matched token cosine against
+the different ONNX-int8 artifact was 0.99091131, with no zero-vector disagreement;
+this is not storage/scoring or ranking acceptance.
+
+Boundary snapshots retain top process CPU/RSS and whole-device GPU readings
+(0–89% utilization, including experiment activity). `ps` CPU percentages are
+decaying process averages; boundary snapshots cannot prove quiet intervals or
+attribute GPU use. The parent retains its usual one-second resource samples.
+No other processes were stopped. The installed ONNX runtime was 1.30.0 from
+Gmax 0.26.96, using the same pinned private graph and released session settings.
+Full vectors, measurements, host snapshots, source hashes and cleanup evidence
+are retained under the private preparation root's `run-03/` directory.
 
 ## First execution result
 

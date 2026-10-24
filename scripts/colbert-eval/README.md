@@ -1,23 +1,24 @@
 # ColBERT backend evaluation
 
+The fully warmed paired Mac run completed (`run-03` in the private measurement
+root). Document batch16 MPS was 6.53–6.66× faster in both orders; batch1 queries
+were 6.65–8.79× slower. The host remained active. Keep query encoding on ONNX;
+next check saved MPS documents with unchanged ONNX queries under Gmax's storage
+and scoring rules before integration. See [MAC-SMOKE.md](MAC-SMOKE.md).
+
 The original 17M model has run on this Mac through PyLate CPU/MPS and against
 Gmax's deployed ONNX-int8 CPU encoder, using 64 frozen Gmax-tokenized inputs.
-Both experiments completed within the resource limits and cleaned up their owned
-processes. No installed model, index, service or setting changed.
+All three experiments completed within the resource limits and cleaned up their
+owned processes. No installed model, index, service or setting changed.
 
-**Performance is still provisional.** Warm MPS batch 16 time changed from 0.359 s
-to 0.087 s between runs. Background CPU/GPU activity was not recorded. Background
-load is plausible, but warm-up, compilation, cache state and fixed execution
-order also confound the result. The observed 7.49× ratio is not a stable speedup.
+Earlier fixed-order timings remain provisional: background activity was not
+recorded, and warm-up/order/cache effects were uncontrolled. The paired run
+warms every measured shape and reverses order, recording background snapshots.
+Its batch16 document gain is consistent across the two passes, while query
+batching is variable and batch1 is slower. This is a small synthetic comparison
+on an active host, not a production throughput guarantee.
 Raw FP32 CPU/MPS vector agreement passed; the ONNX comparison changes precision
 and does not establish storage, ranking or cross-store compatibility.
-
-Keep the deployed ONNX path unchanged. Next is one naturally quiet-host run:
-warm all tested shapes, alternate ONNX/MPS order, separate query and document
-timings, and record available background-load evidence. If document batching
-still wins, check MPS document outputs with unchanged ONNX queries using the
-saved vectors before integration. See [the run record and next step](MAC-SMOKE.md).
-No new model run, test or review is part of this documentation update.
 
 The broader model order remains current17M, LateOn-Code-edge, then
 LFM2.5-ColBERT through MLX/GGUF, with Granite fixed. Resource-history development
