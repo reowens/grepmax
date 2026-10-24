@@ -9,6 +9,8 @@ import inspect
 import json
 import os
 from pathlib import Path
+import resource
+import subprocess
 import sys
 import time
 import traceback
@@ -56,7 +58,7 @@ def prepare(root):
     return lock, contract, inputs, versions
 
 
-def run(root, execute, state):
+def run(root, execute, state, compare_onnx=False, node=None):
     lock, contract, inputs, versions = prepare(root)
     import torch
     from pylate import models
@@ -80,6 +82,14 @@ def run(root, execute, state):
 
     import numpy as np
     from safetensors.torch import load_file
+    onnx = None
+    if compare_onnx:
+        completed = subprocess.run([node, str(HERE / 'onnx-smoke.cjs'), str(root)], stdout=sys.stderr, stderr=sys.stderr)
+        onnx = json.loads(Path('onnx-result.json').read_text())
+        state['inferencePerformed'] = onnx['inferencePerformed']
+        state['modelConstructed'] = onnx['modelConstructed']
+        require(completed.returncode == 0 and onnx['ok'], 'ONNX arm failed: ' + str(onnx.get('error')))
+        require(onnx['inputsSha256'] == ready['inputsSha256'], 'ONNX inputs differ from MPS inputs')
     load_started = time.perf_counter()
     state['modelConstructionAttempted'] = True
     model = models.ColBERT(**kwargs).to(device='cpu', dtype=torch.float32).eval()
@@ -94,7 +104,25 @@ def run(root, execute, state):
     require(tuple(params['1.linear.weight'].shape) == (512, 256) and tuple(params['2.linear.weight'].shape) == (48, 512), 'Projection chain differs')
     del expected, params
     load_seconds = time.perf_counter() - load_started
-    references, results, parity = {}, [], []
+    references, results, parity, onnx_variation = {}, [], [], []
+
+    def onnx_rows(measurement):
+        file = Path(measurement['file'])
+        count = sum(len(item['inputIds']) for item in inputs) * 48
+        require(file.stat().st_size == count * 4 and digest(file) == measurement['sha256'], 'ONNX output artifact mismatch')
+        raw = np.fromfile(file, dtype='<f4')
+        require(bool(np.isfinite(raw).all()), 'Nonfinite ONNX output artifact')
+        rows, offset = [], 0
+        for item in inputs:
+            size = len(item['inputIds']) * 48
+            rows.append(raw[offset:offset + size].reshape(-1, 48))
+            offset += size
+        return rows
+
+    if onnx:
+        results.extend(onnx['measurements'])
+        references = {item['id']: row for item, row in zip(inputs, onnx_rows(onnx['measurements'][0]))}
+        np.savez('onnx-reference.npz', **references)
 
     def sync(device):
         if device == 'mps':
@@ -116,19 +144,29 @@ def run(root, execute, state):
         raw = output.detach().cpu().numpy()
         return [raw[i, :len(item['inputIds'])].copy() for i, item in enumerate(batch)]
 
-    def compare(reference, actual, label):
+    def compare(reference, actual, label, strict=True, destination=None):
         require(reference.shape == actual.shape, 'Vector shape mismatch')
         a, b = reference.astype(np.float64), actual.astype(np.float64)
         na, nb = np.linalg.norm(a, axis=1), np.linalg.norm(b, axis=1)
-        require(bool(np.all((na == 0) == (nb == 0))), 'Zero-vector disagreement')
+        zero_mismatches = int(np.count_nonzero((na == 0) != (nb == 0)))
+        if strict:
+            require(zero_mismatches == 0, 'Zero-vector disagreement')
         nonzero = (na > 0) & (nb > 0)
-        cosine = np.sum(a[nonzero] * b[nonzero], axis=1) / (na[nonzero] * nb[nonzero])
+        cosine = np.clip(np.sum(a[nonzero] * b[nonzero], axis=1) / (na[nonzero] * nb[nonzero]), -1, 1)
         worst = float(cosine.min()) if cosine.size else 1.0
-        parity.append(dict(label=label, minTokenCosine=worst, maxAbsoluteDifference=float(np.max(np.abs(a - b)))))
-        require(worst >= 0.999, f'Raw token cosine below 0.999: {label}')
+        (parity if destination is None else destination).append(dict(label=label, minTokenCosine=worst,
+            meanTokenCosine=float(cosine.mean()) if cosine.size else 1.0, comparedTokenRows=int(cosine.size),
+            zeroVectorDisagreements=zero_mismatches, maxAbsoluteDifference=float(np.max(np.abs(a - b)))))
+        if strict:
+            require(worst >= 0.999, f'Raw token cosine below 0.999: {label}')
 
     try:
-        for device in ('cpu', 'mps'):
+        if onnx:
+            for measurement in onnx['measurements']:
+                for item, row in zip(inputs, onnx_rows(measurement)):
+                    compare(references[item['id']], row, f'onnx/batch{measurement["batchSize"]}/pass{measurement["repetition"]}/{item["id"]}',
+                            strict=False, destination=onnx_variation)
+        for device in (('mps',) if onnx else ('cpu', 'mps')):
             model.to(device=device, dtype=torch.float32)
             require(all(p.device.type == device and p.dtype == torch.float32 for p in model.parameters()), 'Parameter placement mismatch')
             forward(inputs[:1], device)  # One warm-up, excluded from measured passes.
@@ -136,23 +174,34 @@ def run(root, execute, state):
                 for repetition in (1, 2):
                     sync(device)
                     started = time.perf_counter()
+                    cpu_started = resource.getrusage(resource.RUSAGE_SELF)
                     rows = []
                     for start in range(0, len(inputs), batch_size):
                         rows.extend(forward(inputs[start:start + batch_size], device))
                     sync(device)
                     elapsed = time.perf_counter() - started
+                    cpu_finished = resource.getrusage(resource.RUSAGE_SELF)
                     if device == 'cpu' and batch_size == 1 and repetition == 1:
                         references = {item['id']: row for item, row in zip(inputs, rows)}
                         np.savez('cpu-reference.npz', **references)
-                    for item, row in zip(inputs, rows):
-                        compare(references[item['id']], row, f'{device}/batch{batch_size}/pass{repetition}/{item["id"]}')
+                    paired = onnx_rows(next(m for m in onnx['measurements'] if m['batchSize'] == batch_size and m['repetition'] == repetition)) if onnx else [references[item['id']] for item in inputs]
+                    for item, reference, row in zip(inputs, paired, rows):
+                        compare(reference, row, f'{device}/batch{batch_size}/pass{repetition}/{item["id"]}', strict=not compare_onnx)
                     results.append(dict(device=device, batchSize=batch_size, repetition=repetition, seconds=elapsed,
+                                        cpuUserSeconds=cpu_finished.ru_utime - cpu_started.ru_utime,
+                                        cpuSystemSeconds=cpu_finished.ru_stime - cpu_started.ru_stime,
                                         inputs=len(inputs), effectiveTokens=sum(len(i['inputIds']) for i in inputs)))
                     np.savez(f'{device}-batch{batch_size}-pass{repetition}.npz', **{i['id']: r for i, r in zip(inputs, rows)})
         report = dict(ready, inferencePerformed=True, modelConstructed=True, loadSeconds=load_seconds,
                       measurements=results, parity=parity, minTokenCosine=min(p['minTokenCosine'] for p in parity),
-                      scope='Original-weight FP32 raw forward CPU/MPS; not ONNX-int8, ranking, tokenizer cross-runtime or storage compatibility',
+                      scope=('Deployed ONNX-int8 CPU versus original-weight FP32 MPS on identical tokens; artifact/precision change, not a same-weight parity pass' if onnx else
+                             'Original-weight FP32 raw forward CPU/MPS; not ONNX-int8, ranking, tokenizer cross-runtime or storage compatibility'),
                       limits='Parent monitors aggregate process RSS/CPU/disk/swap. Metal allocation shares unified memory; not added twice. Device labels and fallback=0 do not prove operation-level absence of every internal CPU fallback.')
+        if onnx:
+            report.update(onnx=onnx, onnxBatchVariation=onnx_variation, comparison='MPS FP32 versus matching-batch ONNX-int8',
+                          meanTokenCosine=sum(p['meanTokenCosine'] * p['comparedTokenRows'] for p in parity) / sum(p['comparedTokenRows'] for p in parity),
+                          zeroVectorDisagreements=sum(p['zeroVectorDisagreements'] for p in parity),
+                          compatibilityQualified=False)
         Path('result.json').write_text(json.dumps(report, indent=2) + '\n')
         return dict(ok=True, inferencePerformed=True, modelConstructed=True, minTokenCosine=report['minTokenCosine'],
                     resultPath=str(Path('result.json').resolve()), measurements=len(results))
@@ -165,14 +214,17 @@ def run(root, execute, state):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--root', required=True)
+    p.add_argument('--node')
     mode = p.add_mutually_exclusive_group(required=True)
     mode.add_argument('--ready', action='store_true')
     mode.add_argument('--execute', action='store_true')
+    mode.add_argument('--compare-onnx', action='store_true')
     args = p.parse_args()
     state = dict(inferencePerformed=False, modelConstructed=False, modelConstructionAttempted=False)
     try:
         with contextlib.redirect_stdout(sys.stderr):
-            result = run(Path(args.root).resolve(strict=True), args.execute, state)
+            require(not args.compare_onnx or args.node, 'ONNX comparison requires the owned Node executable')
+            result = run(Path(args.root).resolve(strict=True), args.execute or args.compare_onnx, state, args.compare_onnx, args.node)
     except Exception as error:
         traceback.print_exc(file=sys.stderr)
         result = dict(ok=False, **state, error=dict(type=type(error).__name__, message=str(error)[:500]))

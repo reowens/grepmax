@@ -22,6 +22,13 @@ MPS took 0.359 s versus CPU 0.553 s; batch1 was slower on MPS.
 run entrypoint. Existing validation-only commands and mock loaders retain their
 original behavior.
 
+The subsequent ONNX-int8 CPU comparison also completed. In its warm second pass,
+batch16 MPS took 0.087 s versus ONNX 0.653 s for 64 inputs; batch1 was slower on
+MPS. Mean token cosine was 0.999907, with document minimum 0.999691 and query
+minimum 0.990911. Different weights/precision and variable warm timings prevent
+a production-compatibility or stable-speedup claim. See the result and limits in
+`MAC-SMOKE.md`; no installed model or index changed.
+
 ## Components
 
 - `CONTRACT.md` defines the versioned wire format, file ownership and boundaries.

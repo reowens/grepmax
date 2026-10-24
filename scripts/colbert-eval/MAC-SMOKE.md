@@ -77,3 +77,36 @@ time 20.08 s and total wall time 90.67 s. Owned-process cleanup passed without
 signals. Separate Metal allocation peaks were not retained. Full raw vectors,
 timings, resource samples and manifests are in the private preparation root's
 `run-01/` directory; `run-01/summary.json` records the result and its limits.
+
+## ONNX CPU comparison
+
+`--compare-onnx --root <same-root>` runs the installed ONNX-int8 CPU artifact
+first and original-FP32 MPS second under the same bounded controller. The ONNX
+child inherits the owned process group and uses the installed Gmax runtime and
+released one-thread session settings. It reads only the private model copy.
+Both arms consume the frozen IDs/masks, trim added padding and save raw vectors.
+Different weight precision is reported as a comparison, not a same-weight pass.
+
+The selected run completed all 12 passes. Second-pass totals for 64 inputs:
+
+| Batch | ONNX CPU seconds | MPS seconds |
+|---|---:|---:|
+| 1 | 0.499 | 1.597 |
+| 8 | 0.611 | 0.123 |
+| 16 | 0.653 | 0.087 |
+
+Warm batch16 MPS was 7.49× faster in this run; batch1 was 3.20× slower. Timed
+batch16 CPU use was 0.532 CPU-seconds for ONNX versus 0.066 for MPS. Peak sampled
+RSS was 1,273.66 MiB, swap growth zero, wall time 23.97 s, and cleanup passed.
+
+Mean matched token cosine was 0.99990666 and worst 0.99091131. Document minimum
+was 0.99969095; query minimum 0.99091131. No zero-vector disagreements occurred.
+This does not establish int8 storage, pooling/MaxSim, ranking or cross-store
+compatibility. Keep individual calls on ONNX; document batching is the candidate
+for a saved-vector compatibility follow-up before integration.
+
+Two passes, fixed backend order and uncontrolled host/cache effects limit speed
+claims: earlier batch16 MPS took 0.359 s, versus 0.087 s here. The 7.49× figure is
+an observation, not a production guarantee. Full evidence is in `run-02/` under
+the private preparation root. No installed model, settings, service or index was
+changed.

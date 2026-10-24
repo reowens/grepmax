@@ -453,13 +453,15 @@ async function runValidation(request, options = {}) {
 }
 
 async function runMacSmoke(root, options = {}) {
-  checkOptions(options, ['execute', 'signal']);
+  checkOptions(options, ['execute', 'signal', 'compareOnnx']);
   if (process.platform !== 'darwin' || process.arch !== 'arm64') refuse('PLATFORM', 'This experiment requires Apple Silicon macOS');
   if (options.execute !== undefined && typeof options.execute !== 'boolean') refuse('OPTIONS', 'Execution must be explicit');
   root = await fsp.realpath(root);
   const python = path.join(root, 'venv', 'bin', 'python');
   await fsp.access(python, fs.constants.X_OK);
   const execute = options.execute === true;
+  if (options.compareOnnx !== undefined && typeof options.compareOnnx !== 'boolean') refuse('OPTIONS', 'ONNX comparison must be explicit');
+  if (options.compareOnnx && !execute) refuse('OPTIONS', 'ONNX comparison requires execution');
   const limits = limitsFor({ deadlineMs: execute ? 30 * 60 * 1000 : 60 * 1000 });
   const footprint = await execFileAsync('/usr/bin/du', ['-sk', root], { encoding: 'utf8', timeout: 10000, maxBuffer: 4096,
     env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' } });
@@ -475,7 +477,8 @@ async function runMacSmoke(root, options = {}) {
   };
   sampler.source = 'host-builtins-with-prepared-disk-snapshot';
   sampler.limitations = ['Prepared runtime/model/cache allocation is a one-time du snapshot; those inputs remain unchanged during execution. Fresh child-root allocation is sampled live.'];
-  return executeChild({ command: python, args: ['-I', '-B', path.join(__dirname, 'mac-smoke.py'), execute ? '--execute' : '--ready', '--root', root],
+  return executeChild({ command: python, args: ['-I', '-B', path.join(__dirname, 'mac-smoke.py'), options.compareOnnx ? '--compare-onnx' : execute ? '--execute' : '--ready', '--root', root,
+    '--node', process.execPath],
     input: Buffer.from('{}\n'), limits, sampler, signal: options.signal,
     mode: execute ? 'cpu-mps-smoke' : 'mac-smoke-readiness',
     validateResponse: bytes => {
