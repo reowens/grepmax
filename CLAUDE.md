@@ -379,7 +379,7 @@ throttled to one per minute, so missing intermediate totals do not mean missing
 counter increments. Completed reconciliation timestamps indicate scan completion;
 verify embedding queues and failed files separately before claiming catchup.
 Historical overflow measurements are snapshots, not current guarantees. Watching
-remains owned by standalone gmax; Hetchy Developer is optional.
+remains owned by standalone gmax; a downstream developer tool is optional.
 
 The optional `watcherRecovery` health record separates FSEvents `gapCount` from
 `terminalErrorCount`. A scan captures both counts when it starts; only a complete

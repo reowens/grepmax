@@ -153,7 +153,7 @@ restored daemon described above. Private profiling command/output and observers
 remain in `/Users/Shared/P3-Installer/mac-gmax-baseline-20261023/`. That earlier
 profiling assignment used 1 test invocation without a retry, separately from the
 native repair qualification. Current P3 workspace and commissioning status belong
-to [the platform session-host plan](../../../../platform/docs/plans/p3-session-host.md),
+to the platform session-host plan (private record),
 not the earlier dated P3 qualification below.
 
 ## Necessity audit — October 21, 2026
@@ -1974,7 +1974,7 @@ installed trace reports, watcher failure/diagnostic/resumed consumer logs and
 ### Host stop review and live activation — October 19
 
 The user questioned the reported quarantine and clarified that owned packages
-should be exempt. Review confirmed two separate mechanisms: Hetchy Developer's
+should be exempt. Review confirmed two separate mechanisms: a downstream developer tool's
 `critical-only` exemption forbids its automatic Gmax worker cuts/restores/restarts;
 Gmax itself owns critical-pressure protection. The stop was Gmax's persistent
 `~/.gmax/safety-stop.json`, written October 14 at 16:24:45 UTC after known critical
@@ -2759,7 +2759,7 @@ parallel omnibus plan.
 | Embedded languages | SQL skeleton MVP already shipped. Broader GraphQL/CSS/template symbol support requires a concrete corpus failure. |
 | Relevance research | The bounded Mac EmbeddingGemma comparison is selected above. PPR/k-hop candidate recovery, graph-distance reranking, static expansion, generated hypotheses, semantic cache, seeded/hot-cold indexing and Merkle/chunk invalidation remain unselected and gated by archived evidence/fixture thresholds. Local model startup still follows the repository's explicit in-the-moment authorization rule; this planning turn loads none. |
 | MCP protocol additions | Catalog hints, progressive discovery, Tasks and subscriptions require a real supported client workflow. Keep local STDIO; no speculative transport or protocol work. |
-| Shared watcher | An independent package is optional. Watching stays in Gmax unless deliberately extracted; Hetchy Developer cannot be a dependency. |
+| Shared watcher | An independent package is optional. Watching stays in Gmax unless deliberately extracted; a downstream developer tool cannot be a dependency. |
 | Embedding migration | Zero-downtime staging/cutover is unimplemented and deferred until a superior model, table layout/granularity and capacity are chosen. Archiving the former plan does not ship migration. |
 | Depot/account reporting | Platform owns vaulted credentials, account usage and provider integration. Gmax's two existing uncommitted generic collector edits are preserved for disposition with that handoff; they are not a delivered provider integration or a new Gmax runtime milestone. |
 

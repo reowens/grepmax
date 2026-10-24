@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "requestId": "runner-synthetic-01",
+  "operation": "validate",
+  "contract": {
+    "modelId": "mixedbread-ai/mxbai-edge-colbert-v0-17m",
+    "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "weightsSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "tokenizerSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "projectionSha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "backend": "torch-cpu",
+    "precision": "float32",
+    "dimensions": 48,
+    "queryMaxTokens": 32,
+    "documentMaxTokens": 512,
+    "preparation": "gmax-token-ids-v1",
+    "normalization": "per-token-l2",
+    "documentStorage": "int8-per-document-maxabs-127"
+  },
+  "inputs": [
+    {"id":"q1","kind":"query","inputIds":[50281,50368,50282],"attentionMask":[1,1,1]}
+  ]
+}

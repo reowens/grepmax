@@ -282,7 +282,7 @@ standalone watchers running.
 
 A single daemon watches your projects via native OS file events (FSEvents/inotify). Changes are detected in sub-second and incrementally reindexed. All writes to LanceDB are routed through the daemon via IPC, eliminating lock contention.
 
-Filesystem watching belongs to gmax, in both daemon and standalone watch modes. Hetchy Developer is an optional monitor/controller that reads gmax status and invokes gmax commands. Watching, indexing and search must work with the dev app and its helper absent or stopped. Any future shared watcher extraction must be an independent component or package with an interface and lifecycle usable without Hetchy Developer; the dev app cannot become a gmax runtime dependency.
+Filesystem watching belongs to gmax, in both daemon and standalone watch modes. a downstream developer tool is an optional monitor/controller that reads gmax status and invokes gmax commands. Watching, indexing and search must work with the dev app and its helper absent or stopped. Any future shared watcher extraction must be an independent component or package with an interface and lifecycle usable without a downstream developer tool; the dev app cannot become a gmax runtime dependency.
 
 The daemon watches only projects that are in use: each Claude Code session (its MCP server and session hooks) holds a lease on its project, and `gmax add` / `gmax index` take a short one. When the last lease ends the project is unwatched; its index stays searchable, and the next session's catch-up scan picks up whatever changed in between. Set `GMAX_WATCH_ALL=1` to watch every registered project instead.
 

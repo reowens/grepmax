@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 1,
+  "kind": "upstream-source-metadata-not-runtime-qualification",
+  "modelId": "mixedbread-ai/mxbai-edge-colbert-v0-17m",
+  "revision": "592c6417c1c6687572043408ed1ae5196bce16b1",
+  "metadataFetchedAt": "2026-10-24T02:10:55.494715+00:00",
+  "weightsDownloaded": false,
+  "inferencePerformed": false,
+  "metadataUrl": "https://huggingface.co/api/models/mixedbread-ai/mxbai-edge-colbert-v0-17m?blobs=true",
+  "backbone": {
+    "path": "model.safetensors",
+    "expectedSha256": "63e9d246f0166ceafa8bd63ee52cb929335ca30110efdb28e7f877c7aa641ca1",
+    "bytes": 67195976,
+    "digestSource": "HF LFS metadata; weight bytes not locally verified"
+  },
+  "tokenizer": {
+    "path": "tokenizer.json",
+    "gitBlobSha1": "bc7ae4f3fe3110e96aa87aee0324b66fb30396e2",
+    "sha256": "594291000b476c98ed600cbb1914ff128c79642a9433aac86213c7a5562d7c1a",
+    "bytes": 3583588,
+    "digestSource": "existing ONNX tokenizer bytes match pinned upstream Git blob identity; tokenizer_config.json differs and is not claimed identical"
+  },
+  "projection": {
+    "digestRecipe": "SHA256 of UTF-8 JSON.stringify(ordered [relativePath, sha256] pairs), no whitespace or trailing newline",
+    "orderedArtifacts": [
+      [
+        "1_Dense/config.json",
+        "fdedbe7da07dafae623a002bcde227e767b8129da964fd90a3da301e3c7f929f"
+      ],
+      [
+        "1_Dense/model.safetensors",
+        "cbd910c4bc2a0338f58f08b4a840770b38bceda90eb1c433233cbf227121bee1"
+      ],
+      [
+        "2_Dense/config.json",
+        "d0e3d51270eb8bef21c3f321b2848ebfc2894d5e93fde02f7f09a8c7308748f0"
+      ],
+      [
+        "2_Dense/model.safetensors",
+        "8e724279af3acf91c20d4a4dd33c6bd272f80b02095ff969e8a3f3de6432175c"
+      ]
+    ],
+    "expectedAggregateSha256": "5e55d448ebdb0dcb824f8e8226e991deb7a072f75433bfa34ad38b6609b67e2b",
+    "weightDigestsLocallyVerified": false
+  },
+  "configs": [
+    {
+      "path": "modules.json",
+      "sha256": "930b80c6d74f342665da7c56d01a9d906176ba3c74dd9f332cea8922121c4bbf",
+      "bytes": 319,
+      "content": [
+        {
+          "idx": 0,
+          "name": "0",
+          "path": "",
+          "type": "sentence_transformers.models.Transformer"
+        },
+        {
+          "idx": 1,
+          "name": "1",
+          "path": "1_Dense",
+          "type": "pylate.models.Dense.Dense"
+        },
+        {
+          "idx": 2,
+          "name": "2",
+          "path": "2_Dense",
+          "type": "pylate.models.Dense.Dense"
+        }
+      ]
+    },
+    {
+      "path": "config_sentence_transformers.json",
+      "sha256": "629c4f00d1ac23abe86fec195dc90a7799ee33ceae236df6a3c026d8db018816",
+      "bytes": 760,
+      "content": {
+        "model_type": "ColBERT",
+        "__version__": {
+          "sentence_transformers": "5.1.1",
+          "transformers": "4.56.2",
+          "pytorch": "2.7.0+cu126"
+        },
+        "prompts": {
+          "query": "",
+          "document": ""
+        },
+        "default_prompt_name": null,
+        "similarity_fn_name": "MaxSim",
+        "query_prefix": "[Q] ",
+        "document_prefix": "[D] ",
+        "query_length": 48,
+        "document_length": 512,
+        "attend_to_expansion_tokens": false,
+        "skiplist_words": [
+          "!",
+          "\"",
+          "#",
+          "$",
+          "%",
+          "&",
+          "'",
+          "(",
+          ")",
+          "*",
+          "+",
+          ",",
+          "-",
+          ".",
+          "/",
+          ":",
+          ";",
+          "<",
+          "=",
+          ">",
+          "?",
+          "@",
+          "[",
+          "\\",
+          "]",
+          "^",
+          "_",
+          "`",
+          "{",
+          "|",
+          "}",
+          "~"
+        ],
+        "do_query_expansion": false
+      }
+    },
+    {
+      "path": "1_Dense/config.json",
+      "sha256": "fdedbe7da07dafae623a002bcde227e767b8129da964fd90a3da301e3c7f929f",
+      "bytes": 133,
+      "content": {
+        "in_features": 256,
+        "out_features": 512,
+        "bias": false,
+        "activation_function": "torch.nn.modules.linear.Identity"
+      }
+    },
+    {
+      "path": "2_Dense/config.json",
+      "sha256": "d0e3d51270eb8bef21c3f321b2848ebfc2894d5e93fde02f7f09a8c7308748f0",
+      "bytes": 132,
+      "content": {
+        "in_features": 512,
+        "out_features": 48,
+        "bias": false,
+        "activation_function": "torch.nn.modules.linear.Identity"
+      }
+    }
+  ],
+  "knownPreparationDifferences": {
+    "gmax": {
+      "queryMaxTokens": 32,
+      "attendedMaskExpansion": true
+    },
+    "upstream": {
+      "queryMaxTokens": 48,
+      "attendToExpansionTokens": false,
+      "doQueryExpansion": false
+    }
+  },
+  "gate": "validation-only; all referenced local artifacts and runtime/device behavior require later verification"
+}
