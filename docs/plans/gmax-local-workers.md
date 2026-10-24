@@ -2,7 +2,7 @@
 type: plan
 status: partial
 created: 2026-10-24T03:25:08Z
-updated: 2026-10-24T08:55:38Z
+updated: 2026-10-24T09:33:23Z
 surfaces:
   - development
   - workers
@@ -17,8 +17,8 @@ related_plans:
   - docs/plans/gmax-delivery.md
 related_docs:
   - CLAUDE.md
-current_state: "Named jobs, reusable preparation and pnpm worker entries are implemented. P3 live typecheck and the first native Windows dependency preparation passed. The Windows assignment used 1 local test invocation with 22 passing cases and 1 real dependency-preparation operation; no Windows compiler/test job ran. Other task/OS acceptance remains open."
-next_step: "When selected, run 1 Windows typecheck through pnpm worker:typecheck --worker dell-win using the prepared cache. Do not add an OS matrix or repeat source tests. Mac holds, P3 indexing pause, enrolled Linux limits and separate release/evaluation ownership remain."
+current_state: "P3 and Windows Dell typecheck routes are accepted on their recorded committed sources. Windows cache/store layout was repaired after a readiness refusal; the corrected run completed the assignment's single compiler invocation with exit 0 and confirmed dependency-link/native temp cleanup. Other tasks and Mac acceptance remain open."
+next_step: "Use the named local-worker commands for the next selected Gmax development task. No additional verification campaign is queued. Mac helper holds and remaining task coverage stay open with their owners; preserve P3 indexing pause and separate release/evaluation ownership."
 summary: "Named jobs, reusable explicit dependency preparation and P3 typecheck acceptance are recorded. Matching caches reuse without installation; missing caches use frozen manifests with scripts disabled. No cloud fallback or automatic placement."
 ---
 
@@ -197,8 +197,8 @@ collisions. Each request is unique and never automatically reruns elsewhere.
 
 Execution tasks do not install dependencies. The explicit `prepare` command
 creates or reuses the matching directory beside the worker's platform clone
-on Linux/Darwin. Windows uses the existing writable runtime directory
-`C:\ProgramData\<worker-root>\jobs\run\project-cache\gmax` instead:
+on Linux/Darwin. Windows uses the job account's profile directory
+`<job-profile>/AppData/Local/<worker-root>/project-cache/gmax` instead:
 
 ```text
 ../project-cache/gmax/<pnpm-lock-sha256>-<node-platform>-<arch>-<node-version>/
@@ -319,11 +319,13 @@ fixed preparation task through the existing protected native Windows bridge.
 Node executable with its installed `tools/node_modules/pnpm/bin/pnpm.cjs`; it
 uses no `.cmd` launcher or command shell and does not bootstrap missing tools.
 
-`scripts/lib/gmax-project.mjs:gmaxDependencyCache` selects `jobs/run/project-cache`
-under the job account's existing writable runtime area. The jobs root remains
-read-only to that account. Target app-data directories are isolated under the
-job home by `scripts/gmax-worker-task.mjs:executeGmaxTask`. No account, ACL,
-policy, C# job runner, roster or credential change is needed.
+`scripts/lib/gmax-project.mjs:gmaxDependencyCache` selects the job account's
+profile cache under `AppData/Local/<worker-root>/project-cache/gmax`. The pnpm
+store is separately pinned to `AppData/Local/<worker-root>/pnpm-store`. Transient
+app-data directories live under the existing native job temp directory, selected
+by `scripts/gmax-worker-task.mjs:executeGmaxTask`. The source and runtime readiness
+guards remain unchanged; no account, ACL, policy, C# runner, roster or credential
+change is needed.
 
 Windows installs into its final cache directory under the per-key preparation
 lock, then publishes `preparation.json` by atomic file rename after success.
@@ -342,14 +344,49 @@ they do not prove Windows junction or ACL behavior by themselves.
 The selected live preparation completed on `dell-win`, exit 0, with frozen Gmax
 source `814a27555316c8812d15f80db47444f4510751ec`. Its pinned Node and installed
 pnpm executed the frozen-lockfile install with scripts disabled. The receipt
-owns exact versions, cache path, hashes and native cleanup. This accepts cache
-creation only; no Windows typecheck, unit test, runtime compatibility or second
-cache-reuse invocation ran. The caller pnpm performed its ordinary local
+owns exact versions, cache path, hashes and native cleanup. That operation accepted cache
+creation only at its recorded point; its source/runtime placement was later
+found incompatible with the readiness scan and is superseded below. No compiler
+ran during that preparation. The caller pnpm performed its ordinary local
 precheck/postinstall before dispatch and reported dependencies already up to date;
 package, lock and workspace working files were unchanged.
 
+## Windows typecheck and preparation layout repair
+
+Windows typecheck receipt (private record)
+records the accepted run on `dell-win` against committed Gmax source
+`591469033fab975a73536d4276aa01f815a8c8fd`. Exactly 1 `tsc --noEmit` invocation ran
+and returned exit 0. It consumed the prepared profile cache without an install
+step, fallback or second compiler invocation. The native transport and target
+both confirmed cleanup, including removal of the owned dependency junction.
+
+The first dispatch refused before compiler startup. Its readiness scan encountered
+pnpm's generated store under the prior preparation's source-tree job home.
+The runtime cache also contained links incompatible with that guard's traversal.
+The guard remains unchanged. `gmaxDependencyCache` now uses the job account's
+profile; preparation pins its store there, and transient app data uses the
+existing native job temp directory. `executeGmaxTask` removes its own dependency
+junction on completion without deleting the profile cache. Cleanup failure
+returns a refusal rather than a successful result.
+
+The earlier generated home and cache directories are preserved outside the
+guarded trees at the receipt's exact custody path. Their metadata hash was
+checked before moving; that custody copy is evidence, not a ready cache. The
+corrected preparation completed through the normal native route before the
+single compiler execution. The receipt retains both dispatches, the readiness
+diagnostic, custody attempts, source commits and actual cleanup results.
+
+No local fixture suite ran in this assignment. Fixture expectations were updated
+for the corrected profile/temp locations but were not rerun; the earlier 22-case
+result is historical source evidence. Acceptance here is the actual repaired
+Windows preparation and 1 compiler execution. Unit, runtime/native package,
+Mac, broader workload and subsequent-readiness acceptance are not claimed.
+
 ## Version History
 
+- **2026-10-24T09:33:23Z** Status: in-session → partial — Windows readiness placement bug repaired; corrected native preparation and one actual compiler invocation passed, cleanup confirmed. Initial dispatch refused before compiler startup. No local fixture rerun or additional test queued.
+- **2026-10-24T09:18:00Z** Started (active → in-session).
+- **2026-10-24T09:17:59Z** Status: partial → active — User selected one native Windows typecheck using the prepared cache, 0 agents and no additional tests.
 - **2026-10-24T08:55:38Z** Status: in-session → partial — Native Windows preparation implemented and one real Dell dependency-cache operation completed exit 0. Single local source invocation passed 22/22; no Windows compiler/test job ran.
 - **2026-10-24T08:48:00Z** Started (active → in-session).
 - **2026-10-24T08:48:00Z** Status: partial → active — User selected native Windows dependency preparation source integration, 0 agents and 1 focused local test.
