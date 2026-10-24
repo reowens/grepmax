@@ -72,7 +72,8 @@ test('pack keeps exact ordering, vectors, lexical lists, calls and wire hashes; 
   const value = await material({ invoke: true }), opts = files(t, value), manifest = b.processMaterial(opts);
   assert.deepEqual(manifest.counts, { documents: 3, questions: 30, rerankInvoked: 30, rerankSkipped: 0 });
   assert.equal(manifest.currentRelease, false); assert.equal(manifest.qualification, 'unqualified'); assert.equal(manifest.status, 'incomplete');
-  assert.equal(manifest.completeness.requiredObservationsComplete, true);
+  assert.equal(manifest.completeness.requiredObservationsComplete, false);
+  assert(manifest.blockers.includes('q-0:ranking-coverage-unverified'));
   assert(manifest.blockers.includes('synthetic-observations-not-runtime-evidence'));
   assert.equal(fs.readFileSync(path.join(opts.out, 'material.jsonl'), 'utf8'), fs.readFileSync(opts.materialPath, 'utf8'));
   const rows = fs.readFileSync(path.join(opts.out, 'material.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
@@ -137,8 +138,35 @@ test('lexical wrapper snapshots rows before released Searcher can clear/mutate t
 test('empty candidate rerank skip is directly justified by gate plus empty pooled stage', async () => {
   const f = fixture(), cap = b.createCapture(f.plan); f.chunks.forEach(c => cap.recordDocument(c, [1, 2, 3]));
   const obs = cap.beginQuestion('q-0'); await obs.wrapWorkerPool({ encodeQuery: () => encoding() }).encodeQuery(f.plan.questions[0].query);
-  const r = response(false, true); r.diagnostics.gate.requestedRerank = true;
+  const r = response(true, true); r.diagnostics.gate.rerankInvoked = false;
   assert.equal(obs.finish(r).rerank.reason, 'empty-candidate-pool');
+});
+test('lexical snapshot failure stays fatal when released FTS catch converts it to unavailable', async () => {
+  const f = fixture(), cap = b.createCapture(f.plan); f.chunks.forEach(c => cap.recordDocument(c, [1, 2, 3]));
+  const obs = cap.beginQuestion('q-0'); await obs.wrapWorkerPool({ encodeQuery: () => encoding() }).encodeQuery(f.plan.questions[0].query);
+  let successes = 0, caught;
+  const rows = [Object.assign(Object.create({ custom: true }), f.chunks[0])];
+  const builder = { async toArray() { successes++; return rows; } };
+  const db = obs.wrapDatabase({ async ensureTable() { return { search: () => builder }; } });
+  const r = response();
+  try { await (await db.ensureTable()).search(f.plan.questions[0].query).toArray(); }
+  catch (error) { caught = error; r.diagnostics.fts = { available: false, searchFailed: true }; }
+  assert.equal(successes, 1, 'underlying FTS dependency succeeded');
+  assert.equal(caught.code, 'WIRE');
+  assert.throws(() => obs.finish(r), error => error === caught);
+  assert.throws(() => cap.records(), error => error === caught);
+  assert.throws(() => cap.beginQuestion('q-1'), error => error === caught);
+  assert.equal(rows[0].id, f.chunks[0].id, 'original result is not substituted or mutated');
+});
+test('genuine underlying FTS failure remains ordinary released unavailability', async () => {
+  const f = fixture(), cap = b.createCapture(f.plan); f.chunks.forEach(c => cap.recordDocument(c, [1, 2, 3]));
+  const obs = cap.beginQuestion('q-0'); await obs.wrapWorkerPool({ encodeQuery: () => encoding() }).encodeQuery(f.plan.questions[0].query);
+  const failure = new Error('synthetic dependency failure');
+  const db = obs.wrapDatabase({ async ensureTable() { return { search: () => ({ async toArray() { throw failure; } }) }; } });
+  const r = response();
+  try { await (await db.ensureTable()).search(f.plan.questions[0].query).toArray(); }
+  catch (error) { assert.equal(error, failure); r.diagnostics.fts = { available: false, searchFailed: true }; }
+  assert.equal(obs.finish(r).lexical.state, 'unavailable');
 });
 test('no diagnostic gate stays blocked rather than inferred from final result', async () => {
   const f = fixture(), cap = b.createCapture(f.plan); f.chunks.forEach(c => cap.recordDocument(c, [1, 2, 3]));
@@ -176,6 +204,61 @@ test('duplicate rerank IDs refuse', t => rejectsMaterial(t, x => { x.records[4].
 test('short score outputs refuse', t => rejectsMaterial(t, x => { x.records[4].rerank.calls[0].result.values.pop(); }, 'VECTOR'));
 test('gate/call disagreement refuses', t => rejectsMaterial(t, x => { x.records[4].response.diagnostics.gate.rerankInvoked = false; x.records[4].gate.rerankInvoked = false; }, 'GATE'));
 test('gate copied from elsewhere refuses', t => rejectsMaterial(t, x => { x.records[4].gate.threshold = 0.9; }, 'GATE'));
+for (const [name, change] of [
+  ['disabled but invoked', g => { g.requestedRerank = false; g.activated = false; }],
+  ['activated without evaluation', g => { g.requestedRerank = false; g.evaluated = false; g.share = null; g.activated = true; }],
+  ['requested and evaluated', g => { g.evaluated = true; g.share = 0.8; }],
+  ['evaluated without share', g => { g.requestedRerank = false; g.evaluated = true; g.share = null; }],
+  ['activated below threshold', g => { g.requestedRerank = false; g.evaluated = true; g.share = 0.3; g.activated = true; }],
+  ['share outside unit range', g => { g.requestedRerank = false; g.evaluated = true; g.share = 1.1; g.activated = true; }],
+]) test(`contradictory gate ${name} refuses even when both gate copies agree`, t => rejectsMaterial(t, x => {
+  change(x.records[4].gate); x.records[4].response.diagnostics.gate = clone(x.records[4].gate);
+}, 'GATE'));
+test('invoked rerank with an empty pooled stage refuses', t => rejectsMaterial(t, x => { x.records[4].response.diagnostics.stages.pooled = 0; }, 'GATE'));
+test('valid automatic activation and disabled-above-one threshold are retained', async t => {
+  const automatic = await material({ invoke: true }); automatic.records = clone(automatic.records);
+  for (const q of automatic.records.slice(4)) {
+    q.gate = { requestedRerank: false, threshold: 0.7, evaluated: true, share: 0.7, activated: true, rerankInvoked: true };
+    q.response.diagnostics.gate = clone(q.gate);
+  }
+  assert.equal(b.processMaterial(files(t, automatic)).counts.rerankInvoked, 30);
+  const disabled = await material(); disabled.records = clone(disabled.records);
+  for (const q of disabled.records.slice(4)) {
+    q.gate = { requestedRerank: false, threshold: 1.1, evaluated: false, share: null, activated: false, rerankInvoked: false };
+    q.response.diagnostics.gate = clone(q.gate);
+  }
+  assert.equal(b.processMaterial(files(t, disabled)).counts.rerankSkipped, 30);
+});
+test('enabled nonempty rerank cannot be declared skipped', async t => {
+  const value = await material(); value.records = clone(value.records);
+  const q = value.records[4]; q.gate = gate(true); q.gate.rerankInvoked = false; q.response.diagnostics.gate = clone(q.gate);
+  q.rerank.reason = 'skip-reason-unobservable';
+  const opts = files(t, value); assert.throws(() => b.processMaterial(opts), { code: 'GATE' }); assert.equal(fs.existsSync(opts.out), false);
+});
+test('successful lexical rows cannot coexist with failed/unavailable FTS diagnostics', t => rejectsMaterial(t, x => {
+  x.records[4].response.diagnostics.fts = { available: false, searchFailed: true };
+}, 'LEXICAL'));
+test('empty ranking details contradict a known nonempty scored result', t => rejectsMaterial(t, x => {
+  x.records[4].ranking = { structureWeights: [], priors: [], symbolAdditions: [] };
+  x.records[4].response.data = [{ id: 'doc-b' }]; x.records[4].response.diagnostics.stages.scored = 3;
+}, 'RANKING'));
+test('partial and default-looking ranking details cannot establish full cohort coverage', async t => {
+  const value = await material({ invoke: true }); value.records = clone(value.records);
+  for (const q of value.records.slice(4)) {
+    q.response.data = [{ id: 'doc-b' }]; q.response.diagnostics.stages.scored = 3;
+    q.ranking = { structureWeights: [{ id: 'doc-b', value: 1 }], priors: [], symbolAdditions: [] };
+  }
+  const result = b.processMaterial(files(t, value));
+  assert.equal(result.completeness.requiredObservationsComplete, false);
+  for (const q of value.plan.questions) assert(result.blockers.includes(`${q.id}:ranking-coverage-unverified`));
+});
+test('empty ranking details for an empty result remain explicitly coverage-unverified', async t => {
+  const value = await material(); value.records = clone(value.records);
+  for (const q of value.records.slice(4)) q.ranking = { structureWeights: [], priors: [], symbolAdditions: [] };
+  const result = b.processMaterial(files(t, value));
+  assert.equal(result.completeness.requiredObservationsComplete, false);
+  assert(result.blockers.includes('q-0:ranking-coverage-unverified'));
+});
 test('changed query matrix refuses', t => rejectsMaterial(t, x => { x.records[4].rerank.calls[0].input.query[0][0] = 0.75; }, 'VECTOR'));
 test('changed baseline release refuses', t => rejectsMaterial(t, x => { x.plan.baseline.sourceCommit = REV; }, 'BASELINE'));
 test('changed baseline lock refuses', t => rejectsMaterial(t, x => { x.plan.baseline.lockSha256 = H; }, 'BASELINE'));

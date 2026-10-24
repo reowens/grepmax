@@ -45,6 +45,15 @@ such a bundle as a complete capture. This is not an OS sandbox or protection
 against a hostile process concurrently replacing ancestor directories. Parent
 directory fsync/power-loss durability is not claimed.
 
+The current ranking hook has no full ordered scoring-cohort domain or explicit
+default/inapplicable-prior semantics. Even supplied ranking arrays therefore
+retain `ranking-coverage-unverified` and cannot set
+`requiredObservationsComplete:true`. A later reviewed hook/schema must expose
+that domain; final results, rerank membership and capped diagnostics cannot
+establish it. Empty structure observations contradicting known nonempty scoring
+are rejected. Empty symbol additions or inapplicable priors do not themselves
+prove full coverage.
+
 ## Immutable source evidence
 
 The release source is commit
@@ -175,6 +184,13 @@ rerank input is copied before delegation and output copied immediately after
 resolution. Original arrays/buffers/results are never mutated by observation.
 Dependency exceptions propagate; they cannot produce exportable partial output.
 
+Exporter snapshot failures are sticky across the entire capture. If released
+code catches a serialization/identity/bounds failure as an ordinary dependency
+error (for example its FTS fallback), `finish()`, subsequent questions and
+`records()` still rethrow that original observation failure. A genuine failed
+underlying FTS call remains distinguishable from a successful dependency result
+that the observer could not record. Original rows/results are never substituted.
+
 `wrapDatabase` intercepts only `ensureTable()`/`table.search()`/chained FTS
 `toArray()` to retain the exact lexical call result in original order. Other
 methods are bound to their original receivers. It performs no independent
@@ -197,6 +213,11 @@ rerank has `calls:[]` and a reason from original gate detail:
 An empty response remains empty: retrieval misses are never supplemented with
 answer chunks. FTS unavailability is separately retained without a candidate
 list. Missing diagnostic gate/lexical/ranking observations remain named blockers.
+Contradictory supplied evidence is rejected even when both gate copies agree:
+invocation requires requested or activated rerank; activation requires a valid
+evaluated concentration share reaching the positive threshold; an unevaluated
+gate has no share. Known pooled counts and successful lexical calls must also
+agree with the released invocation/FTS state. Missing facts remain unobserved.
 
 ## Material and wire representation
 
@@ -246,6 +267,8 @@ current frame. These limits are preparation limits, not runtime qualification.
    not expose those fields. Never reconstruct them from bounded diagnostics or
    duplicate/text-rewrite the ranker. Until this hook is reviewed, actual release
    loading remains disabled and these observations remain blockers.
+   Its full scoring domain must include defaults and inapplicable prior values
+   explicitly before the ranking coverage blocker can be removed.
 3. Verify the actual 30-case fixture and complete frozen source/chunk inventory,
    original document/text formatting, lexical behavior, all Granite document
    and query vectors, generation/model/tokenizer/config/weight artifacts and

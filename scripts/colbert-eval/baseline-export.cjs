@@ -188,12 +188,28 @@ function validateQuestion(row, expected, plan) {
   need(object(response) && Array.isArray(response.data), 'RESPONSE', 'Original response required (empty data preserves misses)');
   if (row.lexical.state === 'unavailable') need(response.diagnostics?.fts?.available === false && row.lexical.reason === 'released-fts-unavailable', 'LEXICAL', 'Unsubstantiated FTS absence');
   if (row.lexical.state === 'blocked') need(row.lexical.reason === 'lexical-call-unobserved', 'LEXICAL', 'Unsubstantiated lexical blocker');
-  if (row.lexical.state === 'observed') need(row.lexical.reason === '', 'LEXICAL', 'Unexpected lexical reason');
+  if (row.lexical.state === 'observed') {
+    need(row.lexical.reason === '', 'LEXICAL', 'Unexpected lexical reason');
+    if (response.diagnostics?.fts) need(response.diagnostics.fts.available === true && response.diagnostics.fts.searchFailed === false,
+      'LEXICAL', 'Successful lexical observation contradicts released FTS state');
+  }
   const releasedGate = response.diagnostics?.gate;
   need(canonical(row.gate) === canonical(releasedGate ? snapshotWire(releasedGate) : null), 'GATE', 'Gate must be original released diagnostic detail');
   if (releasedGate) {
     for (const k of ['requestedRerank', 'evaluated', 'activated', 'rerankInvoked']) need(typeof releasedGate[k] === 'boolean', 'GATE', 'Malformed gate decision');
-    need(Number.isFinite(releasedGate.threshold) && (releasedGate.share === null || Number.isFinite(releasedGate.share)), 'GATE', 'Nonfinite gate decision');
+    const g = releasedGate;
+    need(Number.isFinite(g.threshold) && g.threshold > 0, 'GATE', 'Invalid gate threshold');
+    if (g.evaluated) need(!g.requestedRerank && g.threshold <= 1 && Number.isFinite(g.share) && g.share > 0 && g.share <= 1,
+      'GATE', 'Evaluation requires an unrequested rerank and a valid concentration share');
+    else need(g.share === null, 'GATE', 'Unevaluated gate cannot have a concentration share');
+    need(g.activated === (g.evaluated && g.share >= g.threshold), 'GATE', 'Activation contradicts concentration evaluation');
+    need(!g.rerankInvoked || g.requestedRerank || g.activated, 'GATE', 'Disabled rerank cannot be invoked');
+    const pooled = response.diagnostics?.stages?.pooled;
+    if (Number.isSafeInteger(pooled) && pooled >= 0) {
+      need(!g.rerankInvoked || pooled > 0, 'GATE', 'Empty pooled stage cannot invoke rerank');
+      need(!(g.requestedRerank || g.activated) || pooled === 0 || g.rerankInvoked,
+        'GATE', 'Enabled nonempty pooled stage must invoke released rerank');
+    }
   }
   keys(row.rerank, ['state', 'reason', 'calls']);
   need(['invoked', 'skipped'].includes(row.rerank.state) && Array.isArray(row.rerank.calls) && row.rerank.calls.length <= 1, 'RERANK', 'Invalid rerank calls');
@@ -225,13 +241,19 @@ function validateQuestion(row, expected, plan) {
       for (const x of row.ranking[field]) { keys(x, ['id', 'value']); need(docs.has(x.id) && typeof x.value === 'number' && Number.isFinite(x.value), 'RANKING', 'Malformed ranking observation'); }
     }
     need(Array.isArray(row.ranking.symbolAdditions) && new Set(row.ranking.symbolAdditions).size === row.ranking.symbolAdditions.length && row.ranking.symbolAdditions.every(x => docs.has(x)), 'RANKING', 'Invalid symbol additions');
+    if (response.data.length > 0 || response.diagnostics?.stages?.scored > 0) need(row.ranking.structureWeights.length > 0,
+      'RANKING', 'Empty structure observations contradict known nonempty scoring');
   }
 }
 
 /** One observer per question, sequential calls only. It never selects candidates or scores. */
 function createCapture(inputPlan, { provenance = 'unverified-released-capture' } = {}) {
   const plan = validatePlan(inputPlan), first = header(plan, provenance);
-  const documents = [], questions = []; let active = false, captureBytes = Buffer.byteLength(canonical(first)) + 1;
+  const documents = [], questions = []; let active = false, captureBytes = Buffer.byteLength(canonical(first)) + 1, observationFailure;
+  const sound = () => { if (observationFailure) throw observationFailure; };
+  // Released Searcher may catch dependency errors (notably FTS). An exporter
+  // error after a successful dependency call must never become normal absence.
+  const observed = fn => { sound(); try { return fn(); } catch (error) { observationFailure = error; throw error; } };
   const retain = row => { const bytes = Buffer.byteLength(canonical(row)) + 1; need(bytes <= LIMITS.lineBytes && captureBytes + bytes <= LIMITS.inputBytes, 'BOUND', 'Capture byte limit exceeded'); captureBytes += bytes; return freeze(row); };
   return Object.freeze({
     plan,
@@ -243,12 +265,13 @@ function createCapture(inputPlan, { provenance = 'unverified-released-capture' }
       validateDocument(row, expected, plan); documents.push(retain(row));
     },
     beginQuestion(questionId) {
+      sound();
       need(!active && documents.length === plan.documents.length && questions.length < 30 && plan.questions[questions.length].id === questionId, 'ORDER', 'Question order/coverage mismatch');
       active = true;
       const q = plan.questions[questions.length]; let done = false, encoding, encodeStarted = false, rerankStarted = false, ranking = null, ids = null, inFlight = 0;
       const calls = [], lexicalCalls = [];
-      const live = () => need(!done, 'ORDER', 'Question already finished');
-      const observeLexical = (query, rows) => { live(); need(lexicalCalls.length === 0 && query === q.query, 'LEXICAL', 'Duplicate/changed lexical query'); lexicalCalls.push(freeze({ query, rows: snapshotWire(rows) })); };
+      const live = () => { sound(); need(!done, 'ORDER', 'Question already finished'); };
+      const observeLexical = (query, rows) => observed(() => { live(); need(lexicalCalls.length === 0 && query === q.query, 'LEXICAL', 'Duplicate/changed lexical query'); lexicalCalls.push(freeze({ query, rows: snapshotWire(rows) })); });
       function wrapQuery(builder, text) {
         return new Proxy(builder, { get(target, prop) {
           const value = Reflect.get(target, prop, target);
@@ -262,11 +285,11 @@ function createCapture(inputPlan, { provenance = 'unverified-released-capture' }
             const value = Reflect.get(target, prop, target);
             if (prop === 'encodeQuery') return async (...args) => {
               live(); need(!encodeStarted && args[0] === q.query, 'QUERY', 'Duplicate/changed encode query'); encodeStarted = true; inFlight++;
-              try { const result = await value.apply(target, args); encoding = snapshotWire(result); return result; } finally { inFlight--; }
+              try { const result = await value.apply(target, args); encoding = observed(() => snapshotWire(result)); return result; } finally { inFlight--; }
             };
             if (prop === 'rerank') return async (...args) => {
               live(); need(!rerankStarted && encoding, 'ORDER', 'Duplicate or premature rerank'); rerankStarted = true; inFlight++;
-              try { const input = snapshotWire(args[0]), candidateIds = ids; const result = await value.apply(target, args); calls.push(freeze({ input, result: snapshotWire(result), candidateIds })); return result; } finally { inFlight--; }
+              try { const input = observed(() => snapshotWire(args[0])), candidateIds = ids; const result = await value.apply(target, args); calls.push(observed(() => freeze({ input, result: snapshotWire(result), candidateIds }))); return result; } finally { inFlight--; }
             };
             return typeof value === 'function' ? value.bind(target) : value;
           } });
@@ -282,8 +305,8 @@ function createCapture(inputPlan, { provenance = 'unverified-released-capture' }
           } });
         },
         // Requires a new explicitly reviewed evaluator observation hook. Not inferred.
-        observeRanking(value) { live(); need(ranking === null, 'ORDER', 'Duplicate ranking observation'); ranking = snapshotWire(value); },
-        observeRerankIds(value) { live(); need(ids === null && !rerankStarted && encoding && inFlight === 0, 'ORDER', 'IDs must be observed before actual rerank boundary'); ids = snapshotWire(value); },
+        observeRanking(value) { live(); need(ranking === null, 'ORDER', 'Duplicate ranking observation'); ranking = observed(() => snapshotWire(value)); },
+        observeRerankIds(value) { live(); need(ids === null && !rerankStarted && encoding && inFlight === 0, 'ORDER', 'IDs must be observed before actual rerank boundary'); ids = observed(() => snapshotWire(value)); },
         finish(response) {
           live(); need(inFlight === 0 && encoding, 'ORDER', 'Incomplete dependency calls');
           const original = snapshotWire(response), gate = response.diagnostics?.gate ? snapshotWire(response.diagnostics.gate) : null;
@@ -296,7 +319,7 @@ function createCapture(inputPlan, { provenance = 'unverified-released-capture' }
         },
       });
     },
-    records() { need(!active && documents.length === plan.documents.length && questions.length === 30, 'COVERAGE', 'Partial capture cannot be exported'); return Object.freeze([first, ...documents, ...questions]); },
+    records() { sound(); need(!active && documents.length === plan.documents.length && questions.length === 30, 'COVERAGE', 'Partial capture cannot be exported'); return Object.freeze([first, ...documents, ...questions]); },
   });
 }
 
@@ -355,12 +378,13 @@ function blockersFor(row) {
   if (row.rerank.calls.some(c => c.candidateIds === null)) out.push(`${row.id}:exact-rerank-chunk-ids-unobserved`);
   if (row.rerank.reason === 'skip-reason-unobservable') out.push(`${row.id}:skip-reason-unobservable`);
   if (!row.ranking) out.push(`${row.id}:structure-weights-priors-symbol-additions-unobserved`);
+  else out.push(`${row.id}:ranking-coverage-unverified`);
   return out;
 }
 /** Validate ordered JSONL, optionally pack it into an atomic private fresh directory. */
 function processMaterial({ planPath, materialPath, out }) {
   const plan = readPlan(planPath), state = { bytes: 0, hash: crypto.createHash('sha256') };
-  let stage, destination, reservation, outputBytes = 0, streamFd, recordCount = 0, invoked = 0, skipped = 0;
+  let stage, destination, reservation, outputBytes = 0, streamFd, recordCount = 0, invoked = 0, skipped = 0, observationsComplete = true;
   const blockers = ['release-source-archive-adapter-scorer-lock-equivalence-unverified', 'frozen-fixture-source-chunk-inventories-unverified', 'model-artifact-bytes-and-runtime-unqualified', 'isolated-execution-gate-not-selected'];
   if (!plan.granite.artifacts.length) blockers.push('granite-artifact-identity-missing');
   if (!plan.colbert.artifacts.length) blockers.push('colbert-artifact-identity-missing');
@@ -386,7 +410,8 @@ function processMaterial({ planPath, materialPath, out }) {
       else {
         const index = recordCount - plan.documents.length - 1;
         need(index < 30, 'COVERAGE', 'Extra material records'); validateQuestion(row, plan.questions[index], plan);
-        blockers.push(...blockersFor(row)); row.rerank.state === 'invoked' ? invoked++ : skipped++;
+        const missing = blockersFor(row); blockers.push(...missing); observationsComplete &&= missing.length === 0;
+        row.rerank.state === 'invoked' ? invoked++ : skipped++;
       }
       const parts = row.type === 'document' ? { chunk: wireHash(row.chunk), graniteVector: wireHash(row.graniteVector) }
         : row.type === 'question' ? { encoding: wireHash(row.encoding), lexical: wireHash(row.lexical), gate: wireHash(row.gate), ranking: wireHash(row.ranking), response: wireHash(row.response),
@@ -403,7 +428,7 @@ function processMaterial({ planPath, materialPath, out }) {
       planSha256: wireHash(plan), materialSha256: state.hash.digest('hex'), materialBytes: state.bytes,
       baseline: plan.baseline, identities: plan.identities, granite: plan.granite, colbert: plan.colbert,
       provenance: headerRow.provenance, counts: { documents: plan.documents.length, questions: 30, rerankInvoked: invoked, rerankSkipped: skipped },
-      completeness: { orderedDocumentAndQuestionCoverage: true, requiredObservationsComplete: !blockers.some(x => x.includes('unobserved') || x.includes('unobservable')) },
+      completeness: { orderedDocumentAndQuestionCoverage: true, requiredObservationsComplete: observationsComplete },
       laterExecutionLimits: LATER_EXECUTION_LIMITS, blockers };
     if (stage) {
       write(wireFdPath, Buffer.from(wireRows.join('')));
