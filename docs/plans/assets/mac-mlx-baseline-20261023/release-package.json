@@ -1,0 +1,145 @@
+{
+  "recordedAt": "2026-10-24T02:29:03.022015+00:00",
+  "verdict": "built; package consumer acceptance incomplete; not release qualified",
+  "candidate": {
+    "version": "0.26.97",
+    "sourceCommit": "44b16fe6a73df7a5aa3b791d789d7967e2c4af66",
+    "sourceArchiveSha256": "d7c055006d92090d1e05224a58c35cd9105dfccce8beb326950f689e36583092",
+    "archive": "/Users/Shared/P3-Installer/gmax-release-package-20261023/grepmax-0.26.97.tgz",
+    "sha256": "451383eb48b1405b2f4deb5e4be3feda1bb5c0cf3e60dbc36db3b892041caf80",
+    "compressedBytes": 121951702,
+    "unpackedBytes": 395899709,
+    "files": 324,
+    "nativeManifest": {
+      "schemaVersion": 1,
+      "engine": "12.0.0",
+      "sourceSha256": "95c18ccc73cd9bd0bee2b45c745bab4727d12ad23a7158dfc39d188df594139e",
+      "qualified": true,
+      "binaries": {
+        "darwin-arm64": {
+          "file": "gmax-bounded-maintenance-darwin-arm64",
+          "sha256": "076794776c752b93a2de4200de9e1580701eed80670855d35c3963e0a607ffc6"
+        },
+        "linux-x64": {
+          "file": "gmax-bounded-maintenance-linux-x64",
+          "sha256": "c5aa982b7c28e84d47e34bf45a4cd0433586863263558cfa0b07b1264b0068d2"
+        }
+      }
+    }
+  },
+  "build": {
+    "sourceTypecheck": "passed; tsc -p tsconfig.tests.json",
+    "runtimeBuild": "passed; prebuild, tsc and postbuild",
+    "trackedSourceIntegrity": {
+      "trackedSourceFilesCompared": 655,
+      "changedTrackedSourceFiles": [],
+      "candidateSha256": "451383eb48b1405b2f4deb5e4be3feda1bb5c0cf3e60dbc36db3b892041caf80"
+    },
+    "uncommittedPeerSourceIncluded": false
+  },
+  "packagePayloadReview": {
+    "baseline": "published grepmax 0.26.96",
+    "diff": {
+      "added": [],
+      "removed": [],
+      "changed": [
+        ".claude-plugin/marketplace.json",
+        "README.md",
+        "dist/vendor/maintenance/THIRD-PARTY-NOTICES.txt",
+        "dist/vendor/maintenance/acceptance.json",
+        "dist/vendor/maintenance/gmax-bounded-maintenance-darwin-arm64",
+        "dist/vendor/maintenance/gmax-bounded-maintenance-linux-x64",
+        "dist/vendor/maintenance/manifest.json",
+        "package.json",
+        "plugins/grepmax/.claude-plugin/plugin.json",
+        "plugins/grepmax/skills/grepmax/SKILL.md"
+      ],
+      "baselineFiles": 324,
+      "candidateFiles": 324
+    },
+    "compiledJavaScriptChanges": []
+  },
+  "qualification": {
+    "testInvocations": 1,
+    "exitStatus": 1,
+    "command": "PATH=\"/Users/Shared/P3-Installer/gmax-release-package-20261023/tool-bin:$PATH\" node --require /Users/Shared/P3-Installer/gmax-release-package-20261023/capture-pack.cjs /Users/Shared/P3-Installer/gmax-release-package-20261023/source/scripts/audit-consumer.cjs",
+    "passedStages": [
+      "npm consumer dependency audit: no vulnerabilities",
+      "process ownership: simulated drain/refusal, no real signals",
+      "existing-index-only document contract and heavy-import boundary"
+    ],
+    "failedStage": "watcher initial catchup admission before native event delivery",
+    "failure": "ResourceAdmissionError: 28 MCP client(s) need to reconnect after upgrading; heavy work paused",
+    "unrunStages": [
+      "watcher native events and injected-gap convergence",
+      "native SDK, Session and compaction containment consumer",
+      "prune consumer",
+      "bounded native maintenance consumer"
+    ],
+    "retryPerformed": false,
+    "fullReleaseSuiteRun": false
+  },
+  "diagnosis": {
+    "source": "src/lib/utils/resource-budget.ts:368-378 and scripts/test-watcher-consumer.cjs private HOME/GMAX_HOME setup",
+    "finding": "The fixture uses a fresh private reservation registry but resource admission sees same-user host MCP processes. Those processes have no reservation in that private registry, so strict admission refuses. The message does not establish that the live clients are outdated or require a real-session reconnect.",
+    "guardChanged": false,
+    "liveRegistryChanged": false,
+    "clientReconnectOrTerminationPerformed": false
+  },
+  "nextQualificationPacket": {
+    "context": "/Users/Shared/P3-Installer/gmax-release-package-20261023/clean-consumer-context",
+    "commandFile": "/Users/Shared/P3-Installer/gmax-release-package-20261023/next-clean-consumer-command.txt",
+    "executed": false,
+    "host": "isolated Linux x86_64 Depot builder, Ubuntu 24.04",
+    "tools": [
+      "Node 26.12.1",
+      "Python 3.13",
+      "uv 0.13.5"
+    ],
+    "input": "same retained tarball; private preload supplies it to real npm pack and rejects a different output SHA256",
+    "fixtureSources": "seven unchanged scripts copied from frozen source archive",
+    "resultRule": "result.json qualificationPassed=true and status=0, plus accepted-input.json expected archive SHA256; exporting the build result alone does not establish acceptance",
+    "proofLimit": "Linux package acceptance cannot qualify macOS FSEvents. Full release suite remains unrun. The packet and input adapter are prepared but unexecuted.",
+    "alternateMacHost": "Air SSH port 22 timed out on bounded read-only preflight; no changes made"
+  },
+  "cleanup": {
+    "temporaryConsumers": [
+      {
+        "path": "/private/var/folders/n2/c5kbh3vj7_s4t9_q0xc42z0m0000gn/T/gmax-packed-consumer-5bgiV2",
+        "stillExists": false
+      },
+      {
+        "path": "/private/var/folders/n2/c5kbh3vj7_s4t9_q0xc42z0m0000gn/T/gmax-watcher-consumer-N3Njvp",
+        "stillExists": false
+      }
+    ],
+    "testSubprocess": "returned exit 1; fixture unwatch and finally cleanup recorded",
+    "nativeModelStartedByThisAssignment": false,
+    "published": false,
+    "taggedOrPushed": false,
+    "globalInstallOrDaemonHandover": false,
+    "p3Changed": false
+  },
+  "evidenceRoot": "/Users/Shared/P3-Installer/gmax-release-package-20261023",
+  "evidenceSha256": {
+    "source.tar": "d7c055006d92090d1e05224a58c35cd9105dfccce8beb326950f689e36583092",
+    "source-receipt.json": "62b0112bcd930c3e3ca179c10ec78336bcfd16e180eebddcf9e5ae7f8c078484",
+    "test-types.log": "419425223cd16295938397133b5b8b4a9ac9a09ccc1c2b477fc6994a94266183",
+    "build.log": "ad9c3473de7f406dcf876516dc2c414ab36c75152df95fc2e17ec3f1ea930697",
+    "consumer.log": "20cd86dc68851e98932cfcb86bb85cc98bdae8d379f6005988639a1e47956682",
+    "tested-pack.json": "1777c099b12f0aabd786b4391ba8e935ed94bceeba124467c77dc09bc678b8d8",
+    "payload-diff.json": "3f834a275d54e61bd750e7aeb226600ae8f5816e4bfcdc3e01cc6738930642d0",
+    "final-integrity.json": "c7872ca1c800036daacb8f4a30d784172cd7efda8465b1322de1283b6e56ce42",
+    "capture-pack.cjs": "dce23a70035ba47814dcf8ea439ad1812fe398f03bef3740c002d365e0221463",
+    "clean-consumer-context-hashes.json": "30b4c5105034f87484ea87f450465fd937ef04221c3372cdd936ad37e6ea1aae",
+    "next-clean-consumer-command.txt": "6149701260825da19f7bcebb32908444c7de8f1538489414f02baf0d0dc44af5",
+    "clean-consumer-context/Dockerfile": "25bdb7c9faef1cefef23cf3faa169785ce11d8a54a14b73c57b6f582740c55f8",
+    "clean-consumer-context/exact-input.cjs": "9d6367a35bad747b0ff4ca6687ec1d50289eea747891003f0f5e1016e832f1be",
+    "clean-consumer-context/run.cjs": "a754261a73be0856da3bca61a1813d816210008530e3aad9ee77a5580985904a"
+  },
+  "limits": {
+    "assignmentMinutes": 45,
+    "maximumTestInvocations": 1,
+    "testAllowanceConsumed": true
+  }
+}

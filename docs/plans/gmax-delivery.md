@@ -1,8 +1,8 @@
 ---
 type: plan
-status: in-session
+status: paused
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-24T02:00:40Z
+updated: 2026-10-24T02:29:03Z
 surfaces:
   - store
   - daemon
@@ -20,9 +20,9 @@ parent_plan:
 related_plans:
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Matching native recovery artifacts are qualified on Darwin and Linux (22 normal and 4 fault cases per platform) and prepared in the source-build cache. The Mac remains active on unchanged installed 0.26.96. Runtime package integration, release and installation remain open; resource history stays held."
-next_step: "Build and verify a release package from a frozen archive of committed source using the prepared native artifact cache; publication and installation require authorization. ColBERT MLX and CUDA have not started; preserve held resource statistics, queued hint trim and optional NVM/worktree cleanup."
-summary: "Native recovery artifacts are qualified and prepared for both platforms. Mac service is active; permanent package integration, publication and installation remain open. Resource history stays held."
+current_state: "Release candidate 0.26.97 is built from frozen committed source with both qualified native artifacts. Package acceptance used its single run and stopped at strict admission against live Mac MCP clients; early consumer checks passed. The exact archive and isolated Linux acceptance packet are retained. Installed 0.26.96 is unchanged; release, installation and resource history remain open or held."
+next_step: "Use one fresh test allowance to qualify the retained 0.26.97 tarball with the prepared clean-host consumer packet. Accept only result.json status 0 and the exact archive hash; retain the separate macOS FSEvents and full-release proof boundaries. Do not reconnect user clients or weaken admission. Publication and installation remain unperformed; preserve held resource statistics and deferred GPU work."
+summary: "Candidate 0.26.97 is built; package acceptance stopped at Mac host admission. Exact archive and clean-host acceptance packet are retained. No publication or installation; resource history stays held."
 ---
 
 # Gmax Delivery Plan
@@ -112,11 +112,39 @@ or held as recorded above.
 
 ### Release package candidate 0.26.97
 
-The selected package candidate is 0.26.97. Its package, plugin and marketplace
-version metadata agree. Build and consumer acceptance are in progress against a
-frozen archive of committed source, with the qualified native pair supplied as
-generated inputs. Publication and installation remain unperformed. Shared
-checkout source edits are outside this candidate.
+Candidate 0.26.97 is built from committed source `44b16fe6a7`. Source/test
+TypeScript compilation and runtime assembly passed. The retained tarball contains
+324 files (121,951,702 compressed bytes); all 655 tracked source files still match
+the frozen archive after the build. Its SHA-256 is
+`451383eb48b1405b2f4deb5e4be3feda1bb5c0cf3e60dbc36db3b892041caf80`.
+[Release package evidence](assets/mac-mlx-baseline-20261023/release-package.json)
+records commands, stage results, payload diff, hashes and cleanup.
+
+**Package acceptance is incomplete.** Its single invocation passed the consumer
+dependency audit, process-ownership checks and document-contract/import boundary.
+Initial watcher catchup then failed strict admission: 28 host MCP processes lack
+client reservations in the fixture's fresh private home. The upgrade/reconnect
+message does not establish that those live clients are outdated. Watcher events,
+native SDK/Session/containment, prune and bounded consumer stages did not run.
+No guard, registry or live client was changed, and no retry ran. The full release
+suite has not run.
+
+Payload comparison against published 0.26.96 found no added/removed files and no
+compiled JavaScript changes. The differences are the qualified native pair,
+maintenance manifest/acceptance/notices, version metadata and committed README/
+skill documentation. Uncommitted shared-checkout work is excluded. The installed
+release is unchanged; publication, tags, pushes and installation remain undone.
+
+A complete clean-host input packet and exact command are staged under
+`/Users/Shared/P3-Installer/gmax-release-package-20261023/`. It uses Ubuntu 24.04,
+Node 26.12.1, Python 3.13 and uv 0.13.5 in an isolated Linux builder. Seven frozen
+consumer scripts are unchanged; a private adapter supplies the retained archive
+to real `npm pack` and rejects a different output hash. It preserves the consumer
+lock, audit and result logs before fixture cleanup. The packet has not executed.
+Only `result.json` status 0 with the expected input hash counts as acceptance;
+builder success alone does not. This would qualify Linux package consumers,
+not macOS FSEvents. Bounded read-only SSH to the alternate Mac timed out.
+Continue with one fresh qualification allowance; preserve existing host sessions.
 
 ### Measured embedding stages
 
@@ -2783,6 +2811,7 @@ parallel omnibus plan.
 
 ## Version History
 
+- **2026-10-24T02:29:03Z** Status: in-session → paused — Candidate built; sole consumer acceptance run stopped at private-registry/host-client admission. Retained exact archive and unexecuted clean-host packet; next assignment gets one fresh qualification run. No publication or installation.
 - **2026-10-24T02:00:40Z** Started (active → in-session).
 - **2026-10-24T02:00:40Z** Status: paused → active.
 - **2026-10-24T01:52:34Z** Status: in-session → paused — Linux native qualification passed 22 normal and 4 fault cases in 1 run. Matching source-identical Darwin/Linux artifacts passed both existing assembly/preparation gates and refreshed the source cache; stale cache preserved byte-for-byte, installed runtime unchanged and Mac active. Permanent runtime package integration, release and installation remain open.
