@@ -1,33 +1,32 @@
-# ColBERT evaluation preparation
+# ColBERT backend evaluation
 
-Wave 1 builds a model-free preparation package. The public protocol accepts only
-`validate`; `infer` is refused. Nothing here establishes that PyLate, MPS or a new
-model is working in Gmax. Follow the repository's
-[review and verification budget](../../AGENTS.md#review-and-verification-budget).
-Preparation corrections do not trigger new review rounds. Real execution uses
-the selected experiment's authorization and resource limits.
+The original 17M model has run on this Mac through PyLate CPU/MPS and against
+Gmax's deployed ONNX-int8 CPU encoder, using 64 frozen Gmax-tokenized inputs.
+Both experiments completed within the resource limits and cleaned up their owned
+processes. No installed model, index, service or setting changed.
 
-The experiment compares the existing 17M ColBERT model through PyLate first,
-then LateOn-Code-edge, then LFM2.5-ColBERT through MLX/GGUF. Granite stays fixed.
-See `docs/plans/colbert-backend-evaluation.md` for the execution order and gates.
-Resource-history development stays on hold.
+**Performance is still provisional.** Warm MPS batch 16 time changed from 0.359 s
+to 0.087 s between runs. Background CPU/GPU activity was not recorded. Background
+load is plausible, but warm-up, compilation, cache state and fixed execution
+order also confound the result. The observed 7.49× ratio is not a stable speedup.
+Raw FP32 CPU/MPS vector agreement passed; the ONNX comparison changes precision
+and does not establish storage, ranking or cross-store compatibility.
 
-The next executable step is the [first real Mac CPU/MPS comparison](MAC-SMOKE.md).
-Its isolated environment, original model files and 64 Gmax-tokenized inputs are
-prepared. The initial readiness attempt refused at host memory pressure; the
-subsequent user-selected execution passed all 12 CPU/MPS passes and raw vector
-parity, with 912 MiB peak sampled RSS and zero swap growth. Second-pass batch16
-MPS took 0.359 s versus CPU 0.553 s; batch1 was slower on MPS.
-`mac-smoke.cjs --execute` is the explicit bounded
-run entrypoint. Existing validation-only commands and mock loaders retain their
-original behavior.
+Keep the deployed ONNX path unchanged. Next is one naturally quiet-host run:
+warm all tested shapes, alternate ONNX/MPS order, separate query and document
+timings, and record available background-load evidence. If document batching
+still wins, check MPS document outputs with unchanged ONNX queries using the
+saved vectors before integration. See [the run record and next step](MAC-SMOKE.md).
+No new model run, test or review is part of this documentation update.
 
-The subsequent ONNX-int8 CPU comparison also completed. In its warm second pass,
-batch16 MPS took 0.087 s versus ONNX 0.653 s for 64 inputs; batch1 was slower on
-MPS. Mean token cosine was 0.999907, with document minimum 0.999691 and query
-minimum 0.990911. Different weights/precision and variable warm timings prevent
-a production-compatibility or stable-speedup claim. See the result and limits in
-`MAC-SMOKE.md`; no installed model or index changed.
+The broader model order remains current17M, LateOn-Code-edge, then
+LFM2.5-ColBERT through MLX/GGUF, with Granite fixed. Resource-history development
+stays on hold. The local plan is `docs/plans/colbert-backend-evaluation.md`.
+
+The original preparation protocol still accepts only `validate`; its mock loaders
+remain inert. Real experiments use the separate explicit `mac-smoke.cjs` route.
+Follow the repository [review and verification budget](../../AGENTS.md#review-and-verification-budget).
+Preparation corrections do not automatically trigger reviews or repeat suites.
 
 ## Components
 
@@ -36,7 +35,10 @@ a production-compatibility or stable-speedup claim. See the result and limits in
 - `freeze.cjs` freezes available fixture/source/cache provenance without models.
 - `adapter.py` prepares pretokenized PyLate input and numeric contracts; its
   validation route does not import an inference framework.
-- `runner.cjs` owns isolated validation children, limits, samples and cleanup.
+- `runner.cjs` owns validation and explicitly selected Mac experiment children,
+  limits, samples and cleanup.
+- `mac-smoke.cjs` / `mac-smoke.py` run the bounded Mac experiments;
+  `onnx-smoke.cjs` supplies the installed ONNX arm.
 - `upstream-mixedbread.json` pins source metadata and expected artifact hashes.
 
 ## Important model details
@@ -44,7 +46,8 @@ a production-compatibility or stable-speedup claim. See the result and limits in
 The pinned upstream model has 2 Dense layers, 256 to 512 then 512 to 48. The
 ordered module/config/weight chain matters. The redundant nested `2_Dense` path
 is not an additional module. Expected weight digests come from pinned upstream
-LFS metadata; no original model weight bytes were downloaded or qualified here.
+LFS metadata during Wave1. The later Mac setup downloaded and verified all 12
+original files, and actual loaded parameter values matched those checkpoints.
 The existing ONNX tokenizer bytes match the upstream `tokenizer.json` Git blob,
 but the separate `tokenizer_config.json` is not identical.
 

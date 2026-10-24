@@ -1,4 +1,4 @@
-# First real Mac CPU/MPS comparison
+# Mac ColBERT backend experiments
 
 The selected run uses original Mixedbread17M FP32 weights through PyLate on this
 Mac, first CPU and then MPS. It does not use the unfinished baseline exporter,
@@ -56,6 +56,34 @@ quality and P3 remain later work. Device checks and fallback=0 alone do not prov
 every internal operation ran on MPS. Metal memory shares system memory and is
 reported without adding the same allocation twice.
 
+## Current conclusion and next step
+
+The model runs successfully on MPS within the recorded memory limits. We have
+not established a dependable speed advantage. Background CPU/GPU activity was
+not captured in either run, so background load is a plausible explanation for
+the variation, not a measured cause. Warm-up, shape compilation, cache state and
+fixed backend order are additional confounders. Keep the timing tables as raw
+observations; do not use 7.49× as a production expectation. Vector comparisons
+remain recorded separately from this uncertain timing conclusion.
+
+Keep the deployed ONNX encoder unchanged. The next selected experiment is one
+bounded run on a naturally quiet Mac, reusing the same models and 64 inputs:
+
+1. Warm every batch/sequence shape on both backends before timing.
+2. Time query and document subsets separately at batches 1/8/16. Use opposite
+   backend orders across two paired passes: ONNX→MPS, then MPS→ONNX.
+3. Record available host CPU/GPU activity along with owned resource samples.
+   State any unavailable GPU-load reading; do not install production telemetry,
+   stop another session, poll indefinitely, or relax the resource limits.
+4. Report paired timings and their spread. If batching has no consistent useful
+   gain, retain ONNX. If document batching wins, check saved MPS document vectors
+   against unchanged ONNX queries, including storage/scoring behavior, before
+   integrating. This follow-up can start from saved outputs without new inference.
+
+Extend only the existing experiment runner as needed for warm-up/interleaving.
+This documentation update launches no experiment, tests or independent review.
+The next run still needs to be selected; no automatic retry is queued.
+
 ## First execution result
 
 The user subsequently selected execution. Admission passed; all 12 passes over
@@ -69,7 +97,7 @@ Actual loaded parameters matched the original backbone and both projections.
 | 16 | 0.553 | 0.359 |
 
 These are second-pass totals for 64 inputs. Batch16 MPS was about 1.54× faster;
-batch1 was slower. The first MPS batch1 pass took 8.38 s, including cold shapes.
+batch 1 was slower. The first MPS batch 1 pass took 8.38 s, including cold shapes.
 Two passes and fixed backend order do not establish a production speedup.
 
 Peak sampled process-group RSS was 912.30 MiB, swap growth zero, last sampled CPU
@@ -95,18 +123,19 @@ The selected run completed all 12 passes. Second-pass totals for 64 inputs:
 | 8 | 0.611 | 0.123 |
 | 16 | 0.653 | 0.087 |
 
-Warm batch16 MPS was 7.49× faster in this run; batch1 was 3.20× slower. Timed
-batch16 CPU use was 0.532 CPU-seconds for ONNX versus 0.066 for MPS. Peak sampled
+Warm batch 16 MPS was 7.49× faster in this run; batch 1 was 3.20× slower. Timed
+batch 16 CPU use was 0.532 CPU-seconds for ONNX versus 0.066 for MPS. Peak sampled
 RSS was 1,273.66 MiB, swap growth zero, wall time 23.97 s, and cleanup passed.
 
 Mean matched token cosine was 0.99990666 and worst 0.99091131. Document minimum
 was 0.99969095; query minimum 0.99091131. No zero-vector disagreements occurred.
 This does not establish int8 storage, pooling/MaxSim, ranking or cross-store
-compatibility. Keep individual calls on ONNX; document batching is the candidate
-for a saved-vector compatibility follow-up before integration.
+compatibility. Keep the deployed encoder unchanged. Establish repeatable timings
+first; document batching is then the candidate for a saved-vector compatibility
+follow-up before integration.
 
 Two passes, fixed backend order and uncontrolled host/cache effects limit speed
-claims: earlier batch16 MPS took 0.359 s, versus 0.087 s here. The 7.49× figure is
+claims: earlier batch 16 MPS took 0.359 s, versus 0.087 s here. The 7.49× figure is
 an observation, not a production guarantee. Full evidence is in `run-02/` under
 the private preparation root. No installed model, settings, service or index was
 changed.
