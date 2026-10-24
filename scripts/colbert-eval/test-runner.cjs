@@ -133,7 +133,9 @@ test('admission refuses host memory, free disk, pressure, RSS and experiment dis
   }
 });
 test('real owned timeout kills a resistant descendant and records checked cleanup', async () => {
-  const result = await run('descendants', { limits: { deadlineMs: 350 } });
+  // Allow both Node processes to start and install their handlers under parallel
+  // test load; killing a not-yet-initialized child does not exercise escalation.
+  const result = await run('descendants', { limits: { deadlineMs: 2000 } });
   assert.equal(result.code, 'TIMEOUT');
   assert.equal(result.manifest.cleanup.noLiveOwnedProcesses, true);
   assert.ok(result.manifest.cleanup.signals.includes('SIGKILL'));

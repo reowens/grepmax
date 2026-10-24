@@ -1,0 +1,1612 @@
+{
+  "schemaVersion": 1,
+  "kind": "proposed-source-pinned-mock-api-contract-NOT-resolved-dependency-lock",
+  "runtimeQualified": false,
+  "realImportsPerformed": false,
+  "modelLoadsPerformed": false,
+  "realInferencePerformed": false,
+  "mockApiVersions": {
+    "torch": "2.7.0",
+    "pylate": "1.5.1",
+    "sentence-transformers": "5.3.0",
+    "transformers": "4.56.2",
+    "safetensors": "0.6.2",
+    "huggingface-hub": "0.34.4",
+    "tokenizers": "0.22.0"
+  },
+  "dependencies": {
+    "torch": {
+      "version": "2.7.0",
+      "metadataEvidence": {
+        "url": "https://pypi.org/pypi/torch/2.7.0/json",
+        "bytes": 57769,
+        "sha256": "65d74de2c101e9d43633c813df5d78c437138953cab0292b35d0c2bb10bbacf4"
+      },
+      "requiresPython": ">=3.9.0",
+      "baseRequirements": [
+        "filelock",
+        "typing-extensions>=4.10.0",
+        "setuptools; python_version >= \"3.12\"",
+        "sympy>=1.13.3",
+        "networkx",
+        "jinja2",
+        "fsspec",
+        "nvidia-cuda-nvrtc-cu12==12.6.77; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+        "nvidia-cuda-runtime-cu12==12.6.77; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+        "nvidia-cuda-cupti-cu12==12.6.80; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+        "nvidia-cudnn-cu12==9.5.1.17; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+        "nvidia-cublas-cu12==12.6.4.1; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+        "nvidia-cufft-cu12==11.3.0.4; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+        "nvidia-curand-cu12==10.3.7.77; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+        "nvidia-cusolver-cu12==11.7.1.2; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+        "nvidia-cusparse-cu12==12.5.4.2; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+        "nvidia-cusparselt-cu12==0.6.3; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+        "nvidia-nccl-cu12==2.26.2; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+        "nvidia-nvtx-cu12==12.6.77; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+        "nvidia-nvjitlink-cu12==12.6.85; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+        "nvidia-cufile-cu12==1.11.1.6; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+        "triton==3.3.0; platform_system == \"Linux\" and platform_machine == \"x86_64\""
+      ],
+      "distributionFilesFetched": false,
+      "selectedDistribution": null,
+      "selectedDistributionSha256": null,
+      "macOSWheelFilenames": [
+        "torch-2.7.0-cp310-none-macosx_11_0_arm64.whl",
+        "torch-2.7.0-cp311-none-macosx_11_0_arm64.whl",
+        "torch-2.7.0-cp312-none-macosx_11_0_arm64.whl",
+        "torch-2.7.0-cp313-cp313t-macosx_14_0_arm64.whl",
+        "torch-2.7.0-cp313-none-macosx_11_0_arm64.whl",
+        "torch-2.7.0-cp39-none-macosx_11_0_arm64.whl"
+      ]
+    },
+    "pylate": {
+      "version": "1.5.1",
+      "metadataEvidence": {
+        "url": "https://pypi.org/pypi/pylate/1.5.1/json",
+        "bytes": 20602,
+        "sha256": "3b199885bb9a18be6d5ce7a91fe9eb48a436b61bf8723f8a0538cefa9998e5b1"
+      },
+      "requiresPython": ">=3.10",
+      "baseRequirements": [
+        "sentence-transformers==5.3.0",
+        "datasets>=2.20.0",
+        "accelerate>=0.31.0",
+        "pandas>=2.2.1",
+        "transformers<=5.3.0,>=4.41.0",
+        "ujson==5.12.0",
+        "ninja==1.11.1.4",
+        "fastkmeans==0.5.0",
+        "fast-plaid<=1.4.6.2110,>=1.4.6.270"
+      ],
+      "distributionFilesFetched": false,
+      "selectedDistribution": null,
+      "selectedDistributionSha256": null,
+      "macOSWheelFilenames": []
+    },
+    "sentence-transformers": {
+      "version": "5.3.0",
+      "metadataEvidence": {
+        "url": "https://pypi.org/pypi/sentence-transformers/5.3.0/json",
+        "bytes": 21240,
+        "sha256": "1519277db035c5b0ee7fc8b6c47a784cb70f656499dcb9db221cf6fa73d458fc"
+      },
+      "requiresPython": ">=3.10",
+      "baseRequirements": [
+        "transformers<6.0.0,>=4.41.0",
+        "huggingface-hub>=0.20.0",
+        "torch>=1.11.0",
+        "numpy",
+        "scikit-learn",
+        "scipy",
+        "typing_extensions>=4.5.0",
+        "tqdm"
+      ],
+      "distributionFilesFetched": false,
+      "selectedDistribution": null,
+      "selectedDistributionSha256": null,
+      "macOSWheelFilenames": []
+    },
+    "transformers": {
+      "version": "4.56.2",
+      "metadataEvidence": {
+        "url": "https://pypi.org/pypi/transformers/4.56.2/json",
+        "bytes": 53189,
+        "sha256": "234b6f53d42cbe8706d1365ca245c6a08638e0379db2eb93de35cff831a22872"
+      },
+      "requiresPython": ">=3.9.0",
+      "baseRequirements": [
+        "filelock",
+        "huggingface-hub<1.0,>=0.34.0",
+        "numpy>=1.17",
+        "packaging>=20.0",
+        "pyyaml>=5.1",
+        "regex!=2019.12.17",
+        "requests",
+        "tokenizers<=0.23.0,>=0.22.0",
+        "safetensors>=0.4.3",
+        "tqdm>=4.27"
+      ],
+      "distributionFilesFetched": false,
+      "selectedDistribution": null,
+      "selectedDistributionSha256": null,
+      "macOSWheelFilenames": []
+    },
+    "safetensors": {
+      "version": "0.6.2",
+      "metadataEvidence": {
+        "url": "https://pypi.org/pypi/safetensors/0.6.2/json",
+        "bytes": 16946,
+        "sha256": "b7fd4627f413e4cf8ba1e2bb06829bb0ca01376800fba543dff0be15cbca1141"
+      },
+      "requiresPython": ">=3.9",
+      "baseRequirements": [],
+      "distributionFilesFetched": false,
+      "selectedDistribution": null,
+      "selectedDistributionSha256": null,
+      "macOSWheelFilenames": [
+        "safetensors-0.6.2-cp38-abi3-macosx_10_12_x86_64.whl",
+        "safetensors-0.6.2-cp38-abi3-macosx_11_0_arm64.whl"
+      ]
+    },
+    "huggingface-hub": {
+      "version": "0.34.4",
+      "metadataEvidence": {
+        "url": "https://pypi.org/pypi/huggingface-hub/0.34.4/json",
+        "bytes": 15643,
+        "sha256": "5c4d6f3ad66b35e0c19c8eea0dbb04a3f13acbf670ea9754a94d4daeba6df51d"
+      },
+      "requiresPython": ">=3.8.0",
+      "baseRequirements": [
+        "filelock",
+        "fsspec>=2023.5.0",
+        "packaging>=20.9",
+        "pyyaml>=5.1",
+        "requests",
+        "tqdm>=4.42.1",
+        "typing-extensions>=3.7.4.3",
+        "hf-xet<2.0.0,>=1.1.3; platform_machine == \"x86_64\" or platform_machine == \"amd64\" or platform_machine == \"arm64\" or platform_machine == \"aarch64\""
+      ],
+      "distributionFilesFetched": false,
+      "selectedDistribution": null,
+      "selectedDistributionSha256": null,
+      "macOSWheelFilenames": []
+    },
+    "tokenizers": {
+      "version": "0.22.0",
+      "metadataEvidence": {
+        "url": "https://pypi.org/pypi/tokenizers/0.22.0/json",
+        "bytes": 20400,
+        "sha256": "c043a98eb8fab24da162cb14d5bfea8755777d4434f32a4e5ec215ca507b3289"
+      },
+      "requiresPython": ">=3.9",
+      "baseRequirements": [
+        "huggingface-hub<1.0,>=0.16.4"
+      ],
+      "distributionFilesFetched": false,
+      "selectedDistribution": null,
+      "selectedDistributionSha256": null,
+      "macOSWheelFilenames": [
+        "tokenizers-0.22.0-cp39-abi3-macosx_10_12_x86_64.whl",
+        "tokenizers-0.22.0-cp39-abi3-macosx_11_0_arm64.whl"
+      ]
+    }
+  },
+  "sourceEvidence": [
+    {
+      "url": "https://raw.githubusercontent.com/lightonai/pylate/2ca9899261205c6b14ee54e72e716110a573fb4a/pyproject.toml",
+      "bytes": 3306,
+      "sha256": "f7dc93e2e3c1f1ef1f1e8864908413241d0138308ce6697d260f65a726a50dd1",
+      "package": "pylate",
+      "revision": "2ca9899261205c6b14ee54e72e716110a573fb4a",
+      "path": "pyproject.toml"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lightonai/pylate/2ca9899261205c6b14ee54e72e716110a573fb4a/pylate/__version__.py",
+      "bytes": 99,
+      "sha256": "7a1539203aba9cb5e5dd2b2136544132508eee97224275f1105ee9eb33aa0280",
+      "package": "pylate",
+      "revision": "2ca9899261205c6b14ee54e72e716110a573fb4a",
+      "path": "pylate/__version__.py"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lightonai/pylate/2ca9899261205c6b14ee54e72e716110a573fb4a/pylate/models/colbert.py",
+      "bytes": 64055,
+      "sha256": "87005f68ad496abeda2275eb0024f597a0e181897abe8bdef47620f790efa19b",
+      "package": "pylate",
+      "revision": "2ca9899261205c6b14ee54e72e716110a573fb4a",
+      "path": "pylate/models/colbert.py"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/lightonai/pylate/2ca9899261205c6b14ee54e72e716110a573fb4a/pylate/models/Dense.py",
+      "bytes": 8249,
+      "sha256": "82d963a0815d67d287a13d5be392f94cfb2b099fc03fc4857d63f55bf078998a",
+      "package": "pylate",
+      "revision": "2ca9899261205c6b14ee54e72e716110a573fb4a",
+      "path": "pylate/models/Dense.py"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/huggingface/sentence-transformers/ce48ecc77f8c7ed97c8fcc3cd99fde6071206680/sentence_transformers/SentenceTransformer.py",
+      "bytes": 126264,
+      "sha256": "e9421a2bd9bf22b81d4f402a2384a84aa7a77ec8f9357ca267352fe8b9ee1cfd",
+      "package": "sentence-transformers",
+      "revision": "ce48ecc77f8c7ed97c8fcc3cd99fde6071206680",
+      "path": "sentence_transformers/SentenceTransformer.py"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/huggingface/sentence-transformers/ce48ecc77f8c7ed97c8fcc3cd99fde6071206680/sentence_transformers/models/Transformer.py",
+      "bytes": 22099,
+      "sha256": "26abc9cd485f13bae81d81ff39209dcb4a081de8d3c8afbac6144c192f921b7d",
+      "package": "sentence-transformers",
+      "revision": "ce48ecc77f8c7ed97c8fcc3cd99fde6071206680",
+      "path": "sentence_transformers/models/Transformer.py"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/huggingface/transformers/cd74917ffc3e8f84e4a886052c5ab32b7ac623cc/src/transformers/models/modernbert/modeling_modernbert.py",
+      "bytes": 65979,
+      "sha256": "5aa58d059af7f391328e0448a4d47d587fe33d1600b72475852aeeb3610ae7ba",
+      "package": "transformers",
+      "revision": "cd74917ffc3e8f84e4a886052c5ab32b7ac623cc",
+      "path": "src/transformers/models/modernbert/modeling_modernbert.py"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/pytorch/pytorch/134179474539648ba7dee1317959529fbd0e7f89/torch/nn/modules/module.py",
+      "bytes": 125884,
+      "sha256": "93ea15db35d0d605228826b9c110e450399015f7a74adbdb32a194599d0dda0e",
+      "package": "torch",
+      "revision": "134179474539648ba7dee1317959529fbd0e7f89",
+      "path": "torch/nn/modules/module.py"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/pytorch/pytorch/134179474539648ba7dee1317959529fbd0e7f89/torch/autograd/grad_mode.py",
+      "bytes": 13171,
+      "sha256": "a67ddb0da569646f5d3806e248c2093b6e2f75f0a6b4959ab966e119c1b28d6d",
+      "package": "torch",
+      "revision": "134179474539648ba7dee1317959529fbd0e7f89",
+      "path": "torch/autograd/grad_mode.py"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/pytorch/pytorch/134179474539648ba7dee1317959529fbd0e7f89/torch/backends/mps/__init__.py",
+      "bytes": 1642,
+      "sha256": "a6ef4865f6b888cbdbd704336f61dc39f567d3c75b5508f7393030e37e88da57",
+      "package": "torch",
+      "revision": "134179474539648ba7dee1317959529fbd0e7f89",
+      "path": "torch/backends/mps/__init__.py"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/pytorch/pytorch/134179474539648ba7dee1317959529fbd0e7f89/aten/src/ATen/mps/MPSFallback.mm",
+      "bytes": 4328,
+      "sha256": "d0cad8b4ebb2503127b89397827da53c4b1512900fbdf4929573d2c0cecde80b",
+      "package": "torch",
+      "revision": "134179474539648ba7dee1317959529fbd0e7f89",
+      "path": "aten/src/ATen/mps/MPSFallback.mm"
+    }
+  ],
+  "model": {
+    "modelId": "mixedbread-ai/mxbai-edge-colbert-v0-17m",
+    "revision": "592c6417c1c6687572043408ed1ae5196bce16b1",
+    "artifacts": {
+      "config.json": {
+        "bytes": 1252,
+        "sha256": "8dfe2360cfa456796f9f2f27d87dbbda083d0329320542b871cea6d34d2c5e8c",
+        "content": {
+          "architectures": [
+            "ModernBertModel"
+          ],
+          "attention_bias": false,
+          "attention_dropout": 0.0,
+          "bos_token_id": 50281,
+          "causal_mask": false,
+          "classifier_activation": "gelu",
+          "classifier_bias": false,
+          "classifier_dropout": 0.0,
+          "classifier_pooling": "mean",
+          "cls_token_id": 50281,
+          "decoder_bias": true,
+          "deterministic_flash_attn": false,
+          "dtype": "float32",
+          "embedding_dropout": 0.0,
+          "eos_token_id": 50282,
+          "global_attn_every_n_layers": 3,
+          "global_rope_theta": 160000.0,
+          "gradient_checkpointing": false,
+          "hidden_activation": "gelu",
+          "hidden_size": 256,
+          "initializer_cutoff_factor": 2.0,
+          "initializer_range": 0.02,
+          "intermediate_size": 384,
+          "is_causal": false,
+          "layer_norm_eps": 1e-05,
+          "local_attention": 128,
+          "local_rope_theta": 160000.0,
+          "max_position_embeddings": 7999,
+          "mlp_bias": false,
+          "mlp_dropout": 0.0,
+          "model_type": "modernbert",
+          "norm_bias": false,
+          "norm_eps": 1e-05,
+          "num_attention_heads": 4,
+          "num_hidden_layers": 7,
+          "pad_token_id": 50283,
+          "position_embedding_type": "sans_pos",
+          "repad_logits_with_grad": false,
+          "sep_token_id": 50282,
+          "sparse_pred_ignore_index": -100,
+          "sparse_prediction": false,
+          "transformers_version": "4.56.2",
+          "vocab_size": 50370
+        },
+        "evidence": {
+          "url": "https://huggingface.co/mixedbread-ai/mxbai-edge-colbert-v0-17m/raw/592c6417c1c6687572043408ed1ae5196bce16b1/config.json",
+          "bytes": 1252,
+          "sha256": "8dfe2360cfa456796f9f2f27d87dbbda083d0329320542b871cea6d34d2c5e8c"
+        }
+      },
+      "modules.json": {
+        "bytes": 319,
+        "sha256": "930b80c6d74f342665da7c56d01a9d906176ba3c74dd9f332cea8922121c4bbf",
+        "content": [
+          {
+            "idx": 0,
+            "name": "0",
+            "path": "",
+            "type": "sentence_transformers.models.Transformer"
+          },
+          {
+            "idx": 1,
+            "name": "1",
+            "path": "1_Dense",
+            "type": "pylate.models.Dense.Dense"
+          },
+          {
+            "idx": 2,
+            "name": "2",
+            "path": "2_Dense",
+            "type": "pylate.models.Dense.Dense"
+          }
+        ],
+        "evidence": {
+          "url": "https://huggingface.co/mixedbread-ai/mxbai-edge-colbert-v0-17m/raw/592c6417c1c6687572043408ed1ae5196bce16b1/modules.json",
+          "bytes": 319,
+          "sha256": "930b80c6d74f342665da7c56d01a9d906176ba3c74dd9f332cea8922121c4bbf"
+        }
+      },
+      "config_sentence_transformers.json": {
+        "bytes": 760,
+        "sha256": "629c4f00d1ac23abe86fec195dc90a7799ee33ceae236df6a3c026d8db018816",
+        "content": {
+          "model_type": "ColBERT",
+          "__version__": {
+            "sentence_transformers": "5.1.1",
+            "transformers": "4.56.2",
+            "pytorch": "2.7.0+cu126"
+          },
+          "prompts": {
+            "query": "",
+            "document": ""
+          },
+          "default_prompt_name": null,
+          "similarity_fn_name": "MaxSim",
+          "query_prefix": "[Q] ",
+          "document_prefix": "[D] ",
+          "query_length": 48,
+          "document_length": 512,
+          "attend_to_expansion_tokens": false,
+          "skiplist_words": [
+            "!",
+            "\"",
+            "#",
+            "$",
+            "%",
+            "&",
+            "'",
+            "(",
+            ")",
+            "*",
+            "+",
+            ",",
+            "-",
+            ".",
+            "/",
+            ":",
+            ";",
+            "<",
+            "=",
+            ">",
+            "?",
+            "@",
+            "[",
+            "\\",
+            "]",
+            "^",
+            "_",
+            "`",
+            "{",
+            "|",
+            "}",
+            "~"
+          ],
+          "do_query_expansion": false
+        },
+        "evidence": {
+          "url": "https://huggingface.co/mixedbread-ai/mxbai-edge-colbert-v0-17m/raw/592c6417c1c6687572043408ed1ae5196bce16b1/config_sentence_transformers.json",
+          "bytes": 760,
+          "sha256": "629c4f00d1ac23abe86fec195dc90a7799ee33ceae236df6a3c026d8db018816"
+        }
+      },
+      "sentence_bert_config.json": {
+        "bytes": 57,
+        "sha256": "418d0ad8b3489d2505453940b1d635e2ec7099fad599ea97d64cd116eb468e76",
+        "content": {
+          "max_seq_length": 7999,
+          "do_lower_case": true
+        },
+        "evidence": {
+          "url": "https://huggingface.co/mixedbread-ai/mxbai-edge-colbert-v0-17m/raw/592c6417c1c6687572043408ed1ae5196bce16b1/sentence_bert_config.json",
+          "bytes": 57,
+          "sha256": "418d0ad8b3489d2505453940b1d635e2ec7099fad599ea97d64cd116eb468e76"
+        }
+      },
+      "special_tokens_map.json": {
+        "bytes": 581,
+        "sha256": "6edfb9d64c0d7e5cbaa53516e90280fe1f42ba5ea7923d005a5f9b6e082142cf",
+        "content": {
+          "cls_token": {
+            "content": "[CLS]",
+            "lstrip": false,
+            "normalized": false,
+            "rstrip": false,
+            "single_word": false
+          },
+          "mask_token": {
+            "content": "[MASK]",
+            "lstrip": true,
+            "normalized": false,
+            "rstrip": false,
+            "single_word": false
+          },
+          "pad_token": "[MASK]",
+          "sep_token": {
+            "content": "[SEP]",
+            "lstrip": false,
+            "normalized": false,
+            "rstrip": false,
+            "single_word": false
+          },
+          "unk_token": {
+            "content": "[UNK]",
+            "lstrip": false,
+            "normalized": false,
+            "rstrip": false,
+            "single_word": false
+          }
+        },
+        "evidence": {
+          "url": "https://huggingface.co/mixedbread-ai/mxbai-edge-colbert-v0-17m/raw/592c6417c1c6687572043408ed1ae5196bce16b1/special_tokens_map.json",
+          "bytes": 581,
+          "sha256": "6edfb9d64c0d7e5cbaa53516e90280fe1f42ba5ea7923d005a5f9b6e082142cf"
+        }
+      },
+      "tokenizer_config.json": {
+        "bytes": 21181,
+        "sha256": "cf6fbfaeb7553a572debf790d8b8bac09686648b83827e01b3efed0470e9f338",
+        "content": {
+          "added_tokens_decoder": {
+            "0": {
+              "content": "|||IP_ADDRESS|||",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "1": {
+              "content": "<|padding|>",
+              "lstrip": false,
+              "normalized": false,
+              "rstrip": false,
+              "single_word": false,
+              "special": true
+            },
+            "50254": {
+              "content": "                        ",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50255": {
+              "content": "                       ",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50256": {
+              "content": "                      ",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50257": {
+              "content": "                     ",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50258": {
+              "content": "                    ",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50259": {
+              "content": "                   ",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50260": {
+              "content": "                  ",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50261": {
+              "content": "                 ",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50262": {
+              "content": "                ",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50263": {
+              "content": "               ",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50264": {
+              "content": "              ",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50265": {
+              "content": "             ",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50266": {
+              "content": "            ",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50267": {
+              "content": "           ",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50268": {
+              "content": "          ",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50269": {
+              "content": "         ",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50270": {
+              "content": "        ",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50271": {
+              "content": "       ",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50272": {
+              "content": "      ",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50273": {
+              "content": "     ",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50274": {
+              "content": "    ",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50275": {
+              "content": "   ",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50276": {
+              "content": "  ",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50277": {
+              "content": "|||EMAIL_ADDRESS|||",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50278": {
+              "content": "|||PHONE_NUMBER|||",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50279": {
+              "content": "<|endoftext|>",
+              "lstrip": false,
+              "normalized": false,
+              "rstrip": false,
+              "single_word": false,
+              "special": true
+            },
+            "50280": {
+              "content": "[UNK]",
+              "lstrip": false,
+              "normalized": false,
+              "rstrip": false,
+              "single_word": false,
+              "special": true
+            },
+            "50281": {
+              "content": "[CLS]",
+              "lstrip": false,
+              "normalized": false,
+              "rstrip": false,
+              "single_word": false,
+              "special": true
+            },
+            "50282": {
+              "content": "[SEP]",
+              "lstrip": false,
+              "normalized": false,
+              "rstrip": false,
+              "single_word": false,
+              "special": true
+            },
+            "50283": {
+              "content": "[PAD]",
+              "lstrip": false,
+              "normalized": false,
+              "rstrip": false,
+              "single_word": false,
+              "special": true
+            },
+            "50284": {
+              "content": "[MASK]",
+              "lstrip": true,
+              "normalized": false,
+              "rstrip": false,
+              "single_word": false,
+              "special": true
+            },
+            "50285": {
+              "content": "[unused0]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50286": {
+              "content": "[unused1]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50287": {
+              "content": "[unused2]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50288": {
+              "content": "[unused3]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50289": {
+              "content": "[unused4]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50290": {
+              "content": "[unused5]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50291": {
+              "content": "[unused6]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50292": {
+              "content": "[unused7]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50293": {
+              "content": "[unused8]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50294": {
+              "content": "[unused9]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50295": {
+              "content": "[unused10]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50296": {
+              "content": "[unused11]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50297": {
+              "content": "[unused12]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50298": {
+              "content": "[unused13]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50299": {
+              "content": "[unused14]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50300": {
+              "content": "[unused15]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50301": {
+              "content": "[unused16]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50302": {
+              "content": "[unused17]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50303": {
+              "content": "[unused18]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50304": {
+              "content": "[unused19]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50305": {
+              "content": "[unused20]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50306": {
+              "content": "[unused21]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50307": {
+              "content": "[unused22]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50308": {
+              "content": "[unused23]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50309": {
+              "content": "[unused24]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50310": {
+              "content": "[unused25]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50311": {
+              "content": "[unused26]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50312": {
+              "content": "[unused27]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50313": {
+              "content": "[unused28]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50314": {
+              "content": "[unused29]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50315": {
+              "content": "[unused30]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50316": {
+              "content": "[unused31]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50317": {
+              "content": "[unused32]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50318": {
+              "content": "[unused33]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50319": {
+              "content": "[unused34]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50320": {
+              "content": "[unused35]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50321": {
+              "content": "[unused36]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50322": {
+              "content": "[unused37]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50323": {
+              "content": "[unused38]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50324": {
+              "content": "[unused39]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50325": {
+              "content": "[unused40]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50326": {
+              "content": "[unused41]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50327": {
+              "content": "[unused42]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50328": {
+              "content": "[unused43]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50329": {
+              "content": "[unused44]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50330": {
+              "content": "[unused45]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50331": {
+              "content": "[unused46]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50332": {
+              "content": "[unused47]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50333": {
+              "content": "[unused48]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50334": {
+              "content": "[unused49]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50335": {
+              "content": "[unused50]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50336": {
+              "content": "[unused51]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50337": {
+              "content": "[unused52]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50338": {
+              "content": "[unused53]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50339": {
+              "content": "[unused54]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50340": {
+              "content": "[unused55]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50341": {
+              "content": "[unused56]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50342": {
+              "content": "[unused57]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50343": {
+              "content": "[unused58]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50344": {
+              "content": "[unused59]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50345": {
+              "content": "[unused60]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50346": {
+              "content": "[unused61]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50347": {
+              "content": "[unused62]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50348": {
+              "content": "[unused63]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50349": {
+              "content": "[unused64]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50350": {
+              "content": "[unused65]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50351": {
+              "content": "[unused66]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50352": {
+              "content": "[unused67]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50353": {
+              "content": "[unused68]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50354": {
+              "content": "[unused69]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50355": {
+              "content": "[unused70]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50356": {
+              "content": "[unused71]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50357": {
+              "content": "[unused72]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50358": {
+              "content": "[unused73]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50359": {
+              "content": "[unused74]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50360": {
+              "content": "[unused75]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50361": {
+              "content": "[unused76]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50362": {
+              "content": "[unused77]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50363": {
+              "content": "[unused78]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50364": {
+              "content": "[unused79]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50365": {
+              "content": "[unused80]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50366": {
+              "content": "[unused81]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50367": {
+              "content": "[unused82]",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50368": {
+              "content": "[Q] ",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            },
+            "50369": {
+              "content": "[D] ",
+              "lstrip": false,
+              "normalized": true,
+              "rstrip": false,
+              "single_word": false,
+              "special": false
+            }
+          },
+          "clean_up_tokenization_spaces": true,
+          "cls_token": "[CLS]",
+          "extra_special_tokens": {},
+          "mask_token": "[MASK]",
+          "model_input_names": [
+            "input_ids",
+            "attention_mask"
+          ],
+          "model_max_length": 7999,
+          "pad_token": "[MASK]",
+          "sep_token": "[SEP]",
+          "tokenizer_class": "PreTrainedTokenizerFast",
+          "unk_token": "[UNK]"
+        },
+        "evidence": {
+          "url": "https://huggingface.co/mixedbread-ai/mxbai-edge-colbert-v0-17m/raw/592c6417c1c6687572043408ed1ae5196bce16b1/tokenizer_config.json",
+          "bytes": 21181,
+          "sha256": "cf6fbfaeb7553a572debf790d8b8bac09686648b83827e01b3efed0470e9f338"
+        }
+      },
+      "1_Dense/config.json": {
+        "bytes": 133,
+        "sha256": "fdedbe7da07dafae623a002bcde227e767b8129da964fd90a3da301e3c7f929f",
+        "content": {
+          "in_features": 256,
+          "out_features": 512,
+          "bias": false,
+          "activation_function": "torch.nn.modules.linear.Identity"
+        },
+        "evidence": {
+          "url": "https://huggingface.co/mixedbread-ai/mxbai-edge-colbert-v0-17m/raw/592c6417c1c6687572043408ed1ae5196bce16b1/1_Dense/config.json",
+          "bytes": 133,
+          "sha256": "fdedbe7da07dafae623a002bcde227e767b8129da964fd90a3da301e3c7f929f"
+        }
+      },
+      "2_Dense/config.json": {
+        "bytes": 132,
+        "sha256": "d0e3d51270eb8bef21c3f321b2848ebfc2894d5e93fde02f7f09a8c7308748f0",
+        "content": {
+          "in_features": 512,
+          "out_features": 48,
+          "bias": false,
+          "activation_function": "torch.nn.modules.linear.Identity"
+        },
+        "evidence": {
+          "url": "https://huggingface.co/mixedbread-ai/mxbai-edge-colbert-v0-17m/raw/592c6417c1c6687572043408ed1ae5196bce16b1/2_Dense/config.json",
+          "bytes": 132,
+          "sha256": "d0e3d51270eb8bef21c3f321b2848ebfc2894d5e93fde02f7f09a8c7308748f0"
+        }
+      },
+      "model.safetensors": {
+        "bytes": 67195976,
+        "sha256": "63e9d246f0166ceafa8bd63ee52cb929335ca30110efdb28e7f877c7aa641ca1",
+        "evidence": {
+          "url": "https://huggingface.co/api/models/mixedbread-ai/mxbai-edge-colbert-v0-17m?blobs=true",
+          "revision": "592c6417c1c6687572043408ed1ae5196bce16b1",
+          "kind": "upstream metadata expectation; raw artifact not fetched in this wave"
+        }
+      },
+      "tokenizer.json": {
+        "bytes": 3583588,
+        "sha256": "594291000b476c98ed600cbb1914ff128c79642a9433aac86213c7a5562d7c1a",
+        "evidence": {
+          "url": "https://huggingface.co/api/models/mixedbread-ai/mxbai-edge-colbert-v0-17m?blobs=true",
+          "revision": "592c6417c1c6687572043408ed1ae5196bce16b1",
+          "kind": "upstream metadata expectation; raw artifact not fetched in this wave"
+        }
+      },
+      "1_Dense/model.safetensors": {
+        "bytes": 524376,
+        "sha256": "cbd910c4bc2a0338f58f08b4a840770b38bceda90eb1c433233cbf227121bee1",
+        "evidence": {
+          "url": "https://huggingface.co/api/models/mixedbread-ai/mxbai-edge-colbert-v0-17m?blobs=true",
+          "revision": "592c6417c1c6687572043408ed1ae5196bce16b1",
+          "kind": "upstream metadata expectation; raw artifact not fetched in this wave"
+        }
+      },
+      "2_Dense/model.safetensors": {
+        "bytes": 98392,
+        "sha256": "8e724279af3acf91c20d4a4dd33c6bd272f80b02095ff969e8a3f3de6432175c",
+        "evidence": {
+          "url": "https://huggingface.co/api/models/mixedbread-ai/mxbai-edge-colbert-v0-17m?blobs=true",
+          "revision": "592c6417c1c6687572043408ed1ae5196bce16b1",
+          "kind": "upstream metadata expectation; raw artifact not fetched in this wave"
+        }
+      }
+    },
+    "projectionSha256": "5e55d448ebdb0dcb824f8e8226e991deb7a072f75433bfa34ad38b6609b67e2b",
+    "orderedModules": [
+      "",
+      "1_Dense",
+      "2_Dense"
+    ],
+    "excludedDuplicateProjection": "2_Dense/2_Dense/model.safetensors",
+    "checkpointMap": [
+      {
+        "file": "model.safetensors",
+        "prefix": "0.auto_model."
+      },
+      {
+        "file": "1_Dense/model.safetensors",
+        "prefix": "1.",
+        "exactTensors": {
+          "linear.weight": [
+            512,
+            256
+          ]
+        }
+      },
+      {
+        "file": "2_Dense/model.safetensors",
+        "prefix": "2.",
+        "exactTensors": {
+          "linear.weight": [
+            48,
+            512
+          ]
+        }
+      }
+    ]
+  },
+  "execution": {
+    "enabled": false,
+    "qualificationIssuer": null,
+    "realRuntimeEntry": "unconditionally denied; no issuer or flag exists in this source",
+    "allowedMockAttention": [
+      "eager",
+      "sdpa"
+    ],
+    "referenceCompile": false,
+    "pretokenizedForward": "SentenceTransformer.forward(features) -> token_embeddings; bypass encode/tokenize",
+    "normalization": "raw model output; adapter performs numeric conversion separately",
+    "mockPrecisionMatrix": {
+      "cpu": [
+        "float32",
+        "float16"
+      ],
+      "mps": [
+        "float32",
+        "float16"
+      ]
+    },
+    "realPrecisionMatrix": {},
+    "mpsFallbackCaveat": "PYTORCH_ENABLE_MPS_FALLBACK=0 is necessary but insufficient: pinned Torch also registers some unconditional CPU fallbacks. Placement alone cannot prove no CPU execution."
+  },
+  "unresolvedGates": [
+    "independent review and separately authorized runtime qualification",
+    "full transitive dependency resolution, exact platform/Python/ABI distributions and verified wheel/sdist hashes",
+    "PyLate source commit to selected distribution byte correspondence",
+    "native fast-plaid/fastkmeans/ninja availability and build behavior on each target host",
+    "private original checkpoint/tokenizer acquisition and local byte verification; no existing cache reuse authorization",
+    "real checkpoint tensor keys/values and constructor loading completeness",
+    "real pretokenized forward, batch 1/8/16, order/masks/padding invariance",
+    "CPU/MPS precision support and operation-level fallback evidence",
+    "tokenizer parity with v0.26.96; separate preprocessing experiment for upstream defaults",
+    "ONNX-int8 versus original FP artifact effects; document/query normalization/storage/pooling/MaxSim/cross-store exports",
+    "resource execution gate and containment; local-only flags are not an OS sandbox"
+  ],
+  "resourceCeilings": {
+    "aggregateRssGiB": 6,
+    "swapGrowthMiB": 512,
+    "experimentDiskGiB": 12,
+    "hostAvailableMemoryGiB": 8,
+    "freeDiskGiB": 15,
+    "sampleIntervalSeconds": 1,
+    "cellDeadlineMinutes": 30
+  },
+  "baseline": {
+    "version": "0.26.96",
+    "source": "db7643cbfa42fa30d854078b42afb46d8ab04263",
+    "archiveSha256": "9f1499e71239228284ca47de25d3fceb7bfaa95564fc6a01a0afd00e28730ade"
+  },
+  "preparationSource": "5df9af186a15be966a964cd0b7a9eaba50da94f9"
+}

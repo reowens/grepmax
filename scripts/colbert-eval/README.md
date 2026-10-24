@@ -126,3 +126,26 @@ Unrelated and truncated chunk content is refused even when cache hashes agree.
 The private corrected evidence bundle is `bundle-v4/result-manifest.json` in the
 measurement directory above. Its 30 spans pass the stronger content check.
 The original bundle manifests retain the weaker coordinate-only evidence.
+
+## Baseline-export and loader preparation
+
+[BASELINE-EXPORT.md](BASELINE-EXPORT.md) describes the model-free capture API,
+validator and packer. It preserves exact observed vectors, lexical ordering and
+rerank payloads; valid packed material remains explicitly unqualified. Released
+Searcher loading is disabled. Its rerank call does not carry chunk IDs, so a
+reviewed observation hook must expose those IDs and internal scoring details
+before a complete real baseline can be captured.
+
+[RUNTIME-LOADER.md](RUNTIME-LOADER.md) describes the proposed source-pinned
+PyLate/Torch constructor and forward wiring, exercised only with in-memory fake
+artifacts and runtime providers. `runtime-lock.json` is an API proposal, not a
+resolved dependency environment. Real loading always refuses. Actual local-file
+verification, artifact/tensor values, device execution and vector parity remain
+unqualified. Neither addition changes the validation-only runner or adapter.
+
+Additional model-free checks:
+
+```sh
+node --test scripts/colbert-eval/test-baseline-export.cjs
+python3 -B scripts/colbert-eval/test_runtime_loader.py
+```
