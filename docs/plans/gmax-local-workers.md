@@ -2,7 +2,7 @@
 type: plan
 status: partial
 created: 2026-10-24T03:25:08Z
-updated: 2026-10-24T07:53:20Z
+updated: 2026-10-24T08:55:38Z
 surfaces:
   - development
   - workers
@@ -17,8 +17,8 @@ related_plans:
   - docs/plans/gmax-delivery.md
 related_docs:
   - CLAUDE.md
-current_state: "The Gmax repository entry, named task catalog, frozen source inputs, existing-pool dispatch, Windows command closure and result/artifact checks are implemented. One local fixture invocation passed 12/12 without workers or tools; two final narrow edits passed syntax checks only. P3 dependency preparation and the first live typecheck passed. Reusable explicit preparation and pnpm worker task entries are implemented. The package-entry assignment passed 18 local cases through a fixture runner; live preparation and other tasks/OS routes remain unaccepted."
-next_step: "The pnpm worker entry points are implemented. When selected, extend dependency preparation to the native Windows route, retaining explicit task/machine selection and existing admission. No live job, extra check, worker activation or release step is queued."
+current_state: "Named jobs, reusable preparation and pnpm worker entries are implemented. P3 live typecheck and the first native Windows dependency preparation passed. The Windows assignment used 1 local test invocation with 22 passing cases and 1 real dependency-preparation operation; no Windows compiler/test job ran. Other task/OS acceptance remains open."
+next_step: "When selected, run 1 Windows typecheck through pnpm worker:typecheck --worker dell-win using the prepared cache. Do not add an OS matrix or repeat source tests. Mac holds, P3 indexing pause, enrolled Linux limits and separate release/evaluation ownership remain."
 summary: "Named jobs, reusable explicit dependency preparation and P3 typecheck acceptance are recorded. Matching caches reuse without installation; missing caches use frozen manifests with scripts disabled. No cloud fallback or automatic placement."
 ---
 
@@ -196,7 +196,9 @@ Source is capped at 64 MiB and refuses credentials, links, traversal and case
 collisions. Each request is unique and never automatically reruns elsewhere.
 
 Execution tasks do not install dependencies. The explicit `prepare` command
-creates or reuses the matching directory beside the worker's platform clone:
+creates or reuses the matching directory beside the worker's platform clone
+on Linux/Darwin. Windows uses the existing writable runtime directory
+`C:\ProgramData\<worker-root>\jobs\run\project-cache\gmax` instead:
 
 ```text
 ../project-cache/gmax/<pnpm-lock-sha256>-<node-platform>-<arch>-<node-version>/
@@ -250,7 +252,7 @@ No additional check is queued; P3 indexing remains paused under its host owner.
 `node scripts/local-worker.cjs prepare --worker <name> --ref <full-commit>` uses
 `scripts/gmax-worker.mjs:parseGmaxArgs` to select the fixed `prepare` task through
 the existing named-worker admission, deadline and result path. It supports Linux
-and Darwin source routes; Windows preparation remains unavailable. It does not
+and Darwin routes plus the existing native Windows route. It does not
 run another task or enable a held worker.
 
 `scripts/lib/gmax-project.mjs:prepareGmaxDependencies` materializes only committed
@@ -264,8 +266,10 @@ refuses without replacing it.
 A missing cache uses a per-key lock and private staging directory. The only
 installation command is `pnpm install --frozen-lockfile --ignore-scripts
 --reporter=append-only`, within the existing task deadline and isolated environment.
-Manifest identity is checked again before the cache is published by rename;
-failed preparation removes its owned staging and lock. A concurrent preparation
+Manifest identity is checked again before publishing the ready marker. Linux
+and Darwin rename a staged cache into place; Windows keeps the final directory
+so absolute junctions remain valid. Failed preparation removes its owned
+unpublished directory and lock. A concurrent preparation
 refuses without retry. Installation scripts, native build/qualification, models,
 indexing and runtime/native artifacts are not prepared by this command.
 
@@ -307,8 +311,48 @@ fixture platform parser, proving all 6 task mappings, argument forwarding and
 exit-code propagation. No compiler, test suite, installer or transport ran on a
 real worker. Previous P3 live typecheck evidence remains separate.
 
+## Native Windows dependency preparation
+
+`pnpm worker:prepare --worker dell-win --ref <full-commit>` now selects the same
+fixed preparation task through the existing protected native Windows bridge.
+`scripts/lib/gmax-project.mjs:gmaxPreparationCommand` invokes the pinned running
+Node executable with its installed `tools/node_modules/pnpm/bin/pnpm.cjs`; it
+uses no `.cmd` launcher or command shell and does not bootstrap missing tools.
+
+`scripts/lib/gmax-project.mjs:gmaxDependencyCache` selects `jobs/run/project-cache`
+under the job account's existing writable runtime area. The jobs root remains
+read-only to that account. Target app-data directories are isolated under the
+job home by `scripts/gmax-worker-task.mjs:executeGmaxTask`. No account, ACL,
+policy, C# job runner, roster or credential change is needed.
+
+Windows installs into its final cache directory under the per-key preparation
+lock, then publishes `preparation.json` by atomic file rename after success.
+Consumers refuse until that marker exists. This preserves pnpm's absolute
+Windows junctions. Ordinary failure removes only the unpublished directory and
+owned lock; an interrupted hard-killed process can leave an incomplete cache
+that refuses rather than being overwritten or automatically retried.
+
+Windows preparation receipt (private record)
+records source evidence and the separately selected native preparation result.
+The single local test invocation passed 22 cases, including simulated Windows
+path/environment handling, link preservation, reuse, failure cleanup and exact
+native bridge dispatch. These fixtures ran on Darwin with fake installers;
+they do not prove Windows junction or ACL behavior by themselves.
+
+The selected live preparation completed on `dell-win`, exit 0, with frozen Gmax
+source `814a27555316c8812d15f80db47444f4510751ec`. Its pinned Node and installed
+pnpm executed the frozen-lockfile install with scripts disabled. The receipt
+owns exact versions, cache path, hashes and native cleanup. This accepts cache
+creation only; no Windows typecheck, unit test, runtime compatibility or second
+cache-reuse invocation ran. The caller pnpm performed its ordinary local
+precheck/postinstall before dispatch and reported dependencies already up to date;
+package, lock and workspace working files were unchanged.
+
 ## Version History
 
+- **2026-10-24T08:55:38Z** Status: in-session → partial — Native Windows preparation implemented and one real Dell dependency-cache operation completed exit 0. Single local source invocation passed 22/22; no Windows compiler/test job ran.
+- **2026-10-24T08:48:00Z** Started (active → in-session).
+- **2026-10-24T08:48:00Z** Status: partial → active — User selected native Windows dependency preparation source integration, 0 agents and 1 focused local test.
 - **2026-10-24T07:53:20Z** Status: in-session → partial — pnpm worker task entries implemented; scripts-only edits reuse matching dependencies. One focused local invocation passed 18/18 through fixture dispatch; no live worker job ran.
 - **2026-10-24T07:50:22Z** Started (active → in-session).
 - **2026-10-24T07:50:22Z** Status: partial → active — User selected package-script entry points for named local-worker development tasks, 0 agents and 1 focused local test.
