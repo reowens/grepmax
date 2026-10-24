@@ -4,6 +4,26 @@ Read this before making changes.
 
 ---
 
+## Local checks and remote execution
+
+All checks run locally in this repository. Do not send checks, tests, audits,
+compilation or builds to Depot or any other remote builder without the user's
+explicit approval for that run. Depot is not an approved verification path for
+Gmax. A request to release does not authorize remote checks or remote builders.
+
+The existing manually invoked `.github/workflows/release.yml` is the only CI
+exception. Do not add or trigger other CI, remote qualification jobs or remote
+verification stages. Do not expand the release workflow to run added checks.
+
+The repo's `.claude/settings.json` denies Depot CLI commands for Claude Code.
+All other agents must obey this rule directly; do not bypass it with another
+shell, an absolute executable path, a shared project or a different provider.
+
+Approved instruction, 2026-10-23: "DO NOT run check anywhere other than local"
+and "stop using remote builders".
+
+---
+
 ## ⛔ HARD STOP — Never load the summarizer / large local LLMs without asking
 
 **DO NOT, under any circumstances, start the summarizer server, load the
@@ -403,15 +423,16 @@ The source change must be deployed before relying on this evidence in live servi
 Recovery qualification checks committed rows and metadata against current file
 bytes, in addition to scan coverage and queue drainage. The focused recovery
 fixtures cover dropped creates/deletes, atomic saves, repeated and late gaps,
-terminal subscription replacement and refused admission. Packed-consumer CI runs
-`scripts/test-watcher-consumer.cjs` with real native watchers, LanceDB and LMDB;
-a separate macOS job exercises the FSEvents backend. Both use tiny temporary
-homes/stores and deterministic vectors, with subprocess startup forbidden.
+terminal subscription replacement and refused admission. Local packed-consumer
+acceptance uses `scripts/test-watcher-consumer.cjs` with real native watchers,
+LanceDB and LMDB. FSEvents coverage requires a local macOS run. These fixtures
+use tiny temporary homes/stores and deterministic vectors, with subprocess
+startup forbidden.
 They also check native edits and exclusion re-inclusion/retirement. Gap callbacks
 are deliberately injected after muted delivery; this proves recovery convergence,
 not that the OS will never drop events or that production has recovered. Keep
-natural-gap live acceptance separate. Run these native fixtures in CI, not against
-the development machine's live store.
+natural-gap live acceptance separate. Run these native fixtures locally against
+disposable stores, outside the development machine's live store.
 
 ### Batch processor (`ProjectBatchProcessor`)
 
@@ -600,7 +621,7 @@ GMAX_DEBUG=1 gmax watch --daemon -b
 
 `scripts/sandbox-smoke.sh` runs the read commands under the two `sandbox-exec` profiles that
 reproduce Claude Code's Bash sandbox and prints an exit-code/first-line table. macOS only and
-manual (CI is `ubuntu-latest`); pass `--root <indexed project>` when running from a worktree.
+manual; pass `--root <indexed project>` when running from another directory.
 
 The two profiles, for reproducing one command by hand. They are the smallest thing that recreates
 the two walls Claude Code puts up — writes under `~/.gmax` denied (the store lease is a `mkdir`, so
@@ -691,12 +712,16 @@ curl -s http://127.0.0.1:8100/health               # MLX embed server up?
   the release CI audit gate then blocked on.
 
 ### Release
-`npm version patch` runs the whole chain: `preversion` gates (full `pnpm audit`, `pnpm run audit:python`, JavaScript/Python tests, both typechecks, Biome) ->
-`sync-versions.sh` (plugin.json + marketplace.json) -> `postrelease.sh` (push, tag, wait for
-`release.yml` — which publishes to npm and only then cuts the GitHub release — global install,
-daemon restart). The audit runs locally first so a new advisory fails before a tag is burned; if CI
-fails anyway, `postrelease.sh` prints whether anything reached npm and the exact cleanup commands. CI re-runs every
-gate plus full JavaScript and Python lockfile audits, a packed-consumer audit/native temporary-store smoke test, a tag/version match check, and a tarball source-leak audit.
+Checks run locally only when selected by the user. `package.json` exposes
+`release:check`; its existence does not authorize a new verification round or a
+remote run. `npm version patch` stages version metadata and invokes the version
+hook, so do not use it as a read-only readiness command.
+
+Publication uses the existing manually dispatched `.github/workflows/release.yml`
+for the reviewed archive and source receipt. This is the sole CI exception;
+additional checks and Depot builds are not part of publication. The hook pushes
+versions without publishing or installing. Installation and normal daemon
+handover use the explicit `scripts/postrelease.sh --install` path.
 
 The Python audit uses Python 3.11+ standard-library TOML/HTTP support and OSV; it installs
 no packages and loads no models. Network failures or incomplete responses fail the gate.

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(depot:*)",
+      "Bash(/opt/homebrew/bin/depot:*)",
+      "Bash(/usr/local/bin/depot:*)"
+    ]
+  }
+}

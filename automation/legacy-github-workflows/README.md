@@ -1,5 +1,11 @@
 # Preserved GitHub workflows
 
+Current policy is in [CLAUDE.md](../../CLAUDE.md#local-checks-and-remote-execution):
+checks stay local; remote builders require explicit approval for that run. The
+existing manually invoked release workflow is the sole CI exception. Do not
+restore these archived workflows or convert them to Depot jobs. Historical
+review notes below do not authorize remote work.
+
 These six workflow files were moved intact from `.github/workflows/` on October 10,
 2026 at the user's direction. They are reference material, not active automation.
 GitHub Actions is currently disabled for this repository. The user has requested

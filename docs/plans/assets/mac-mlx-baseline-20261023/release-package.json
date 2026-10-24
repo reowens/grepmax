@@ -1,6 +1,6 @@
 {
-  "recordedAt": "2026-10-24T02:53:20.780559+00:00",
-  "verdict": "PASS Linux package consumer acceptance; full local release qualification remains outstanding",
+  "recordedAt": "2026-10-24T03:08:52.301925+00:00",
+  "verdict": "Retained package acceptance evidence; release handed to another session; added remote verification canceled",
   "candidate": {
     "version": "0.26.97",
     "sourceCommit": "44b16fe6a73df7a5aa3b791d789d7967e2c4af66",
@@ -83,7 +83,8 @@
     "proofLimit": "Pass establishes Linux package consumers and the recorded native/helper cases. It does not establish macOS FSEvents; full local release:check remains unrun.",
     "alternateMacHost": "Air SSH port 22 timed out on bounded read-only preflight; no changes made",
     "result": "/Users/Shared/P3-Installer/gmax-release-package-20261023/clean-consumer-result/result.json",
-    "contextManifest": "/Users/Shared/P3-Installer/gmax-release-package-20261023/clean-consumer-context-hashes-setup-2.json"
+    "contextManifest": "/Users/Shared/P3-Installer/gmax-release-package-20261023/clean-consumer-context-hashes-setup-2.json",
+    "reexecutionAuthorized": false
   },
   "cleanup": {
     "temporaryConsumers": [
@@ -270,10 +271,19 @@
     "testRetries": 0
   },
   "remainingReleaseQualification": {
-    "command": "pnpm run release:check",
-    "sourceCommit": "44b16fe6a73df7a5aa3b791d789d7967e2c4af66",
-    "basis": "package.json scripts.release:check, scripts/postrelease.sh:16 and docs/known-limitations.md full JavaScript/Python audit requirements",
-    "state": "not run for this frozen candidate",
-    "boundary": "Use frozen candidate source and accepted native inputs on a clean host; do not include current shared uncommitted changes or bypass the Mac admission refusal. Package acceptance/native proofs already retained. No further test was started in this assignment."
+    "state": "withdrawn from this session; no further verification authorized here",
+    "releaseOwner": "another session, as explicitly directed by user",
+    "remoteExecution": "prohibited without explicit approval for that run; checks local only",
+    "existingCommand": "pnpm run release:check exists in package.json; its existence is not authorization to execute it"
+  },
+  "sessionDisposition": {
+    "releaseTransferred": true,
+    "releaseChecksStopped": true,
+    "depotBuild": "lq0xk85hhp",
+    "depotBuildStatus": "canceled",
+    "testExecutionStarted": false,
+    "localTestsRunDuringDisablement": 0,
+    "remoteTestsRunDuringDisablement": 0,
+    "remoteExecutionMarker": "/Users/Shared/P3-Installer/gmax-release-package-20261023/REMOTE-EXECUTION-DISABLED.txt"
   }
 }

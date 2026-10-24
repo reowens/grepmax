@@ -1,0 +1,36 @@
+{
+  "recordedAt": "2026-10-24T03:08:52.302834+00:00",
+  "userDirection": [
+    "Disable depot for gmax",
+    "DO NOT run check anywhere other than local",
+    "stop using remote builders",
+    "the release belongs to another session"
+  ],
+  "activeBuildsAtObservation": [],
+  "interruptedBuild": {
+    "id": "lq0xk85hhp",
+    "status": "canceled",
+    "startTime": "2026-10-24T02:58:44Z",
+    "duration": 167
+  },
+  "testsStarted": false,
+  "scope": {
+    "projectId": "qkhvfs3900",
+    "projectName": "beyond",
+    "sharedProjectChanged": false,
+    "gmaxDepotConfigPresent": false,
+    "gmaxRepoIntegrationChanged": "repo agent instructions prohibit remote builders; repo Claude permissions deny Depot CLI",
+    "browserSettingsChanged": false,
+    "releaseWorkflowChanged": false,
+    "organizationCredentialsChanged": false
+  },
+  "enforcementFiles": [
+    "CLAUDE.md",
+    "AGENTS.md",
+    ".claude/settings.json"
+  ],
+  "pendingRemoteCommandsAuthorized": false,
+  "historicalEvidenceMarker": "/Users/Shared/P3-Installer/gmax-release-package-20261023/REMOTE-EXECUTION-DISABLED.txt",
+  "sourceListingSha256": "4b14e30ec1dda0663cde9245845ced2b66e48a019f4ab0d750b37113da34514d",
+  "checksRun": 0
+}

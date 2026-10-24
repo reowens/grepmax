@@ -2,7 +2,7 @@
 type: plan
 status: paused
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-24T02:53:20Z
+updated: 2026-10-24T03:08:52Z
 surfaces:
   - store
   - daemon
@@ -20,9 +20,9 @@ parent_plan:
 related_plans:
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Candidate 0.26.97 passed Linux package consumer acceptance in one test run against the exact retained archive. Both native artifacts are qualified. A missing builder library was repaired before any test started. Full local release:check remains unrun; installed 0.26.96 is unchanged and publication/installation remain unperformed."
-next_step: "Complete the existing full local release qualification on frozen candidate 44b16fe6a7 with accepted native inputs, in a clean host scope and one bounded invocation. Preserve the successful package/native proofs, Mac FSEvents qualification boundary, live clients and held resource/GPU work. Publication and installation remain unperformed."
-summary: "Linux package acceptance passed all stages for unchanged 0.26.97 archive. Full local release qualification remains outstanding; no publication or installation. Resource history stays held."
+current_state: "Release is assigned to another session. This session stopped all release and verification work. Depot build lq0xk85hhp is canceled before test startup; no Gmax Depot jobs were active at the recorded observation. Local-only instructions and Depot CLI deny rules replace the remote-builder plan."
+next_step: "No release or verification work is authorized in this session. Follow CLAUDE.md local-only policy: no Depot or other remote builder without explicit approval for that run, and no CI except the existing manually invoked release workflow. Release belongs to the other session."
+summary: "Release handed to another session; added verification is withdrawn. Gmax remote execution is prohibited, Depot CLI is denied in repo Claude settings, and the interrupted remote build is canceled."
 ---
 
 # Gmax Delivery Plan
@@ -31,8 +31,11 @@ summary: "Linux package acceptance passed all stages for unchanged 0.26.97 archi
 
 ## Mac GPU baseline step 1: recovery and measurement
 
-**The native repair and Linux package acceptance are verified;
-full local release qualification and delivery remain open.** Normal service, MLX and file indexing are active, and a semantic read
+**Release belongs to another session. This session has stopped release and
+verification work.** Checks run locally under the policy in [CLAUDE.md](../../CLAUDE.md#local-checks-and-remote-execution); Depot and other remote builders require explicit approval for that run. The existing manually invoked release workflow is the sole CI exception.
+
+The following native and package results are retained evidence, not authorization
+to repeat checks or start remote jobs. Normal service, MLX and file indexing are active, and a semantic read
 returned results. The qualified one-time recovery finalized the retained receipt
 without data or search-index writes, preserving current table version 5600. The
 source fix passed 26 native cases in 1 qualification invocation on Darwin.
@@ -104,11 +107,10 @@ was retried. P3 preflight was read-only; no tools, settings or services changed 
 P3. These results qualify the Linux native helper in the builder and do not claim
 physical P3 acceptance.
 
-**Permanent delivery remains open.** Installed 0.26.96 native artifacts still
-contain the original branch. The pair is now in the built 0.26.97 package, whose
-Linux consumer acceptance passed. Full local release qualification, publication
-and installation remain open. ColBERT MLX, CUDA and resource-history work remain
-unstarted or held as recorded above.
+**Release is handed off.** The retained 0.26.97 package contains the qualified
+native pair. Another session owns publication and any selected release work.
+This session has no queued verification or installation step. ColBERT MLX, CUDA
+and resource-history work remain unstarted or held as recorded above.
 
 ### Release package candidate 0.26.97
 
@@ -158,14 +160,24 @@ returned hash. Builder success alone was not used as the verdict: exported
 were disposable and original cleanup paths completed; no local service, model,
 credential or P3 setting changed.
 
-**Full release qualification remains open.** The existing `release:check` command
-in `package.json` includes full JavaScript/Python audits and tests, typechecks,
-format/build and consumer checks. It has not run for this frozen candidate.
-This is an existing release gate, not covered by the narrower successful native
-and package runs. Continue against the same frozen source and accepted native
-inputs on a clean host; keep one test invocation per assignment and preserve the
-separate Mac FSEvents proof boundary. Do not publish or install from these results
-alone.
+**Added verification is withdrawn.** The user assigned the release to another
+session and declined the added verification rounds. The attempted full remote
+release check did not reach tests: Depot build `lq0xk85hhp` is `canceled` after
+167 seconds, during source upload. No jobs were active in the recorded project
+listing. [Disablement receipt](assets/mac-mlx-baseline-20261023/depot-disabled.json)
+records the observed state and scope.
+
+Gmax has no `depot.json` or dedicated Depot project in this checkout. The commands
+used shared project `qkhvfs3900`, named `beyond`; its organization-wide settings
+and credentials are unchanged. `.claude/settings.json` now denies Depot CLI
+commands for this repository, and `AGENTS.md` points every agent to the explicit
+local-only policy in `CLAUDE.md`. The shared project is not claimed to be disabled
+for other repositories. No browser setting was changed.
+
+Remote contexts and commands in the retained evidence directory are historical
+only. `REMOTE-EXECUTION-DISABLED.txt` marks them as non-executable instructions.
+No release, further checks or remote retry is queued here. The existing manual
+release workflow remains unchanged, and the other session owns release work.
 
 ### Measured embedding stages
 
@@ -2832,6 +2844,9 @@ parallel omnibus plan.
 
 ## Version History
 
+- **2026-10-24T03:08:52Z** Status: in-session → paused — User stopped added verification and assigned release to another session. Depot build lq0xk85hhp is canceled before tests; no active jobs at recorded observation. Gmax remote execution is prohibited without explicit approval; local-only rule and repo Depot CLI deny settings added. No release or checks queued here.
+- **2026-10-24T02:56:00Z** Started (active → in-session).
+- **2026-10-24T02:56:00Z** Status: paused → active.
 - **2026-10-24T02:53:20Z** Status: in-session → paused — Linux package consumer acceptance passed all stages in 1 test invocation against exact 0.26.97 archive. One builder-only libatomic setup failure preceded test startup. Full local release qualification remains outstanding; nothing published or installed.
 - **2026-10-24T02:45:53Z** Started (active → in-session).
 - **2026-10-24T02:45:53Z** Status: paused → active.
