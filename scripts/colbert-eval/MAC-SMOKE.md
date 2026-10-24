@@ -68,10 +68,51 @@ observed. This is evidence of a repeatable document batching gain within this ru
 not an idle-host or production throughput guarantee. Earlier fixed-order timing
 claims remain provisional; background load was not recorded during those runs.
 
-Next: use the saved MPS document outputs with unchanged ONNX query outputs to
-check Gmax normalization, int8 storage and MaxSim behavior. This analysis needs
-no new model execution. Full ranking quality remains unverified. Deployed model,
-settings, services and indexes remain unchanged.
+The saved-output storage/scoring check is also complete (below). Next: compare
+correct-answer retrieval on the existing frozen 30-question code/document set,
+using ONNX queries with MPS documents versus ONNX documents. Count lost/found
+targets and report Recall@10/MRR@10 before selecting integration. No new labels,
+exporter hardening or independent review is needed for that screening experiment.
+Deployed model, settings, services and indexes remain unchanged.
+
+## Saved-output storage and scoring check
+
+`node scripts/colbert-eval/saved-compat.cjs <private-root>` replays released
+`v0.26.96` document normalization, int8 conversion, mean pooling, query
+normalization and MaxSim/rerank arithmetic against the saved outputs. Model
+session results are supplied from files; constructors/loads and tokenizer
+initialization are bypassed. The model constructor's unused TS parameter-property
+modifier is removed for Node strip-only parsing; the arithmetic is retained.
+The skiplist is frozen from the installed model, with source/vector/input hashes
+retained. No model inference, store access or production change occurs.
+
+All 32 MPS documents preserved token alignment and finite outputs, passed signed
+int8 byte round-trip checks, and scored with all 32 unchanged ONNX batch1 queries:
+1,024 query/document pairs per configuration. Two saved MPS batch16 passes produced
+identical stored scores, as did the two ONNX batch16 controls.
+
+| Compared with ONNX document batch16 pass1 | ONNX batch1 | MPS batch16 |
+|---|---:|---:|
+| Mean absolute MaxSim difference | 0.00195 | 0.02434 |
+| Maximum absolute MaxSim difference | 0.05015 | 0.08849 |
+| Queries with a changed first result | 0 / 32 | 12 / 32 |
+| Mean top-five overlap | 100% | 91.875% |
+| Minimum pooled-vector cosine | 0.99999954 | 0.99995186 |
+
+MPS changed an average 34.29% of int8 components per document relative to ONNX;
+this counts differing integer components, not percentage vector error. Its two
+passes agreed exactly. Winner changes are between repeated variants of the same
+synthetic text, with baseline score gaps no greater than 0.03031. They have
+different token sequences. The sample contains 25 distinct document tokenizations
+and has no relevance labels. These results demonstrate format/scorer operation
+and measurable numerical/rank drift; they do not establish retrieval quality,
+database/ANN behavior, or safe index mixing on real projects.
+
+Private evidence: `saved-compat/result.json` and `summary.json` under the prepared
+root, including all scores, changed winners, inversion details and hashes.
+The first replay attempt stopped before arithmetic because this Node build
+supports TS strip mode only; the owner corrected the inert constructor handling
+and completed the replay. No test suite or reviewer was added.
 
 ## Fully warmed paired comparison
 

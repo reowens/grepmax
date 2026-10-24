@@ -3,8 +3,9 @@
 The fully warmed paired Mac run completed (`run-03` in the private measurement
 root). Document batch16 MPS was 6.53–6.66× faster in both orders; batch1 queries
 were 6.65–8.79× slower. The host remained active. Keep query encoding on ONNX;
-next check saved MPS documents with unchanged ONNX queries under Gmax's storage
-and scoring rules before integration. See [MAC-SMOKE.md](MAC-SMOKE.md).
+the saved-output check confirms format/scorer operation, but MPS changed the
+first result for 12/32 synthetic queries (91.875% mean top-five overlap). Next
+compare correct answers on the frozen 30-question set before integration. See [MAC-SMOKE.md](MAC-SMOKE.md).
 
 The original 17M model has run on this Mac through PyLate CPU/MPS and against
 Gmax's deployed ONNX-int8 CPU encoder, using 64 frozen Gmax-tokenized inputs.
@@ -38,6 +39,7 @@ Preparation corrections do not automatically trigger reviews or repeat suites.
   validation route does not import an inference framework.
 - `runner.cjs` owns validation and explicitly selected Mac experiment children,
   limits, samples and cleanup.
+- `saved-compat.cjs` replays released storage/scoring code on saved vectors only.
 - `mac-smoke.cjs` / `mac-smoke.py` run the bounded Mac experiments;
   `onnx-smoke.cjs` supplies the installed ONNX arm.
 - `upstream-mixedbread.json` pins source metadata and expected artifact hashes.
