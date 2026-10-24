@@ -1469,6 +1469,8 @@ pub async fn run(request: Request) -> Result<()> {
             }
             receipt.after_version = Some(request.expected_version);
         } else if receipt.repair.is_some()
+            && !(receipt.after_version.is_some()
+                && matches!(receipt.phase.as_str(), "copied" | "verified"))
             && fingerprint(&dataset).await? != receipt.before_fingerprint
         {
             ensure!(

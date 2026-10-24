@@ -995,6 +995,108 @@ class BoundedNativeAcceptance(unittest.TestCase):
             finally:
                 recovery.close()
 
+    def test_verified_orphan_recovery_preserves_later_edits_and_requires_both_tags(self):
+        import lance
+        import pyarrow as pa
+
+        def protected_state(root):
+            # Admission can append meter journals even when recovery refuses.
+            return {name: state for name, state in fixture_support.file_state(root).items()
+                    if name.startswith(('data/', '_indices/', '_deletions/',
+                                        '_versions/', '_refs/'))
+                    or name == '_gmax-bounded-receipt.json'}
+
+        for changed_tag in (None, 'readerTag', 'afterTag'):
+            with self.subTest(changed_tag=changed_tag), tempfile.TemporaryDirectory(
+                    prefix='gmax-native-orphan-verified-advance-') as home:
+                root, current = self.prepare(home, deleted=False)
+                seed = current.to_table(filter='id = 11').to_pylist()[0]
+                for n in range(35):
+                    row = {**seed, 'id': 9000 + n}
+                    current = lance.write_dataset(
+                        pa.Table.from_pylist([row], schema=current.schema),
+                        str(root), mode='append')
+                interrupted = NativeSession(self.binary, root,
+                                            qualification={'operation': 'repair-orphans'})
+                try:
+                    interrupted.reach('reader-drain')
+                finally:
+                    interrupted.close()
+                receipt_path = root / '_gmax-bounded-receipt.json'
+                receipt = json.loads(receipt_path.read_text())
+                self.assertEqual(receipt['phase'], 'verified')
+                self.assertIsNotNone(receipt['repair']['orphans'])
+                self.assertFalse(receipt['repair']['orphans']['complete'])
+                self.assertEqual(receipt['repair']['orphans']['candidates'], [])
+                copied_version = receipt['afterVersion']
+                current = lance.dataset(str(root))
+                appended = current.to_table(filter='id = 11').to_pylist()[0]
+                appended.update(id=4096, content='ordinarywatcher unique4096',
+                                path='/fixture/advanced-orphan-edit.ts')
+                current = lance.write_dataset(
+                    pa.Table.from_pylist([appended], schema=current.schema),
+                    str(root), mode='append', max_rows_per_file=128)
+                current.delete('id = 13')
+                edited_version = current.version
+                edited_digest = fixture_support.row_digest(current)
+                self.assertGreater(edited_version, copied_version)
+                if changed_tag:
+                    current.tags.delete(receipt[changed_tag])
+                    current.tags.create(receipt[changed_tag], edited_version)
+                current = None
+                before = fixture_support.file_state(root)
+                protected_before = protected_state(root)
+                baseline = os.environ.get('GMAX_BOUNDED_BASELINE_EXECUTABLE')
+                if baseline and not changed_tag:
+                    old = NativeSession(baseline, root, action='recover')
+                    try:
+                        self.drive_to_exit(old)
+                        self.assertNotEqual(old.process.returncode, 0)
+                        self.assertIn('Reclamation changed logical data/index state',
+                                      self.failure_reason(old))
+                        self.assertEqual(protected_state(root), protected_before)
+                    finally:
+                        old.close()
+                recovery = NativeSession(self.binary, root, action='recover')
+                try:
+                    result = self.drive_to_exit(recovery)
+                    if changed_tag:
+                        self.assertNotEqual(recovery.process.returncode, 0)
+                        self.assertIn('Recovery protected heads changed',
+                                      self.failure_reason(recovery))
+                        self.assertEqual(protected_state(root), protected_before)
+                    else:
+                        self.assertEqual(recovery.process.returncode, 0,
+                                         self.failure_reason(recovery))
+                        self.assertEqual(result['status'], 'recovered')
+                        self.assertEqual(result['operation'], 'orphan-reclamation')
+                        self.assertFalse(result['recoveryPending'])
+                        self.assertTrue(result['acceptedFinalization'])
+                        self.assertEqual(result['verifiedCopyVersion'], copied_version)
+                        self.assertEqual(result['afterVersion'], edited_version)
+                        self.assertEqual(result['rowsVerified'], 0)
+                        self.assertEqual(result['dataBytesWritten'], 0)
+                        self.assertEqual(result['indexBytesWritten'], 0)
+                        self.assertLessEqual(result['totalBytesWritten'],
+                                             recovery.request['totalWriteBudgetBytes'])
+                        self.assertEqual(
+                            {n: v for n, v in fixture_support.file_state(root).items()
+                             if n.startswith(('data/', '_indices/'))},
+                            {n: v for n, v in before.items()
+                             if n.startswith(('data/', '_indices/'))})
+                    current = lance.dataset(str(root))
+                    self.assertEqual(current.version, edited_version)
+                    self.assertEqual(fixture_support.row_digest(current), edited_digest)
+                    self.assertEqual(current.to_table(full_text_query={
+                        'query': 'unique4096', 'columns': ['content']})['id'].to_pylist(),
+                                     [4096])
+                    if not changed_tag:
+                        self.assertEqual(set(current.tags.list()), {'user-reader'})
+                        self.assertEqual(json.loads(receipt_path.read_text())['phase'],
+                                         'finalized')
+                finally:
+                    recovery.close()
+
     @staticmethod
     def drive_to_exit(session):
         result = None

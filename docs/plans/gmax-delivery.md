@@ -2,7 +2,7 @@
 type: plan
 status: paused
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-24T00:20:53Z
+updated: 2026-10-24T01:21:24Z
 surfaces:
   - store
   - daemon
@@ -20,9 +20,9 @@ parent_plan:
 related_plans:
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Mac 0.26.96 retains bounded read-only service: native recovery refuses an older verified orphan receipt after the table advanced. Isolated Granite Metal GPU and ColBERT CPU stage profiling passed; normal Mac indexing remains blocked. P3 readiness is tracked by the platform session-host plan. Resource statistics remains held."
-next_step: "Finish Mac baseline step 1 by repairing and qualifying native recovery of a verified receipt after later writes, then restore normal service. ColBERT MLX, CUDA and resource history are not started. Preserve the queued session-start-hint trim and optional NVM/worktree cleanup."
-summary: "Mac baseline step 1 is partial: actual Granite Metal GPU use is proved, while native cleanup recovery blocks normal indexing. ColBERT remains CPU. Resource statistics stays held."
+current_state: "Mac baseline is restored: normal 0.26.96 service, MLX and indexing are active after a qualified one-time native recovery. The source fix passed 22 shipping and 4 fault cases on Darwin in one invocation. Permanent artifact replacement still needs Linux qualification and packaging. Resource statistics remains held."
+next_step: "Qualify the native recovery source fix on Linux and prepare matching permanent artifacts before publication or installation. Mac service is restored through a one-time qualified helper; installed release artifacts are unchanged. ColBERT MLX, CUDA and resource history are not started; preserve queued hint trim and optional NVM/worktree cleanup."
+summary: "Mac normal service, MLX and indexing are restored. Native recovery source fix is Darwin-qualified; permanent bundle update awaits Linux qualification. ColBERT remains CPU; resource statistics stays held."
 ---
 
 # Gmax Delivery Plan
@@ -31,46 +31,59 @@ summary: "Mac baseline step 1 is partial: actual Granite Metal GPU use is proved
 
 ## Mac GPU baseline step 1: recovery and measurement
 
-**Step 1 remains partial.** Normal Mac indexing is blocked by native receipt
-recovery. The single isolated acceptance invocation passed actual Granite Metal
-GPU inference and measured ColBERT CPU work. No model, provider, index generation,
-worker setting, host policy or P3 setting changed. Resource history remains held;
-ColBERT MLX and CUDA implementation have not started.
+**The Mac baseline is restored; permanent native artifact replacement remains
+open.** Normal service, MLX and file indexing are active, and a semantic read
+returned results. The qualified one-time recovery finalized the retained receipt
+without data or search-index writes, preserving current table version 5600. The
+source fix passed 26 native cases in 1 qualification invocation on Darwin.
+[Native repair evidence](assets/mac-mlx-baseline-20261023/native-repair.json)
+records the build/source/binary hashes, test cases, live result and service state.
+Resource history remains held; ColBERT MLX and CUDA implementation have not started.
 
-### Native recovery blocker
+### Native recovery repair
 
-The installed 0.26.96 daemon refused one recovery attempt with
-`Reclamation changed logical data/index state`. The pending receipt is phase
-`verified`, before/after/verified-copy version 5410, with both owned protection
-tags still pointing to 5410. Its orphan inventory is incomplete with no selected
-candidates and no reclaimed files. Independent version pruning previously
-completed at version 5585; that completion does not finalize this separate
-receipt. Exact receipt, native output, binary digest and preservation checks:
+The installed 0.26.96 helper compares the current head against the old before
+fingerprint for repair receipts before reaching historical candidate verification.
+The retained orphan receipt was `verified` at version 5410, with both owned tags
+still protecting 5410; later ordinary writes advanced the table. Its reference
+inventory was incomplete with no selected candidates or reclaimed files.
+`lance-maintenance/native/src/orphans.rs:352` requires equal before/after
+fingerprints, so comparing the newer head with that old snapshot refused recovery.
+The original refusal and protected receipt are retained in
 [recovery.json](assets/mac-mlx-baseline-20261023/recovery.json).
 
-The source recovery branch at
-`lance-maintenance/native/src/engine.rs:1471` checks the current head against the
-old before fingerprint for every repair receipt before reaching the branch at
-`:1505` that verifies an already recorded after-version through its owned tags.
-`lance-maintenance/native/src/orphans.rs:352` requires equal before/after
-fingerprints, so later ordinary table writes make that first branch refuse this
-otherwise protected historical comparison. The proposed repair routes receipts
-with a recorded after-version through the existing protected before/candidate
-verification; only an attempt with no recorded after-version uses current-head
-candidate discovery. Preserve tag checks, exact historical comparison, source
-journals, the non-resetting write budget, current-head protection and reader drain.
-Do not delete or rewrite the receipt to force service open.
+The source fix at `lance-maintenance/native/src/engine.rs:1471` routes completed
+`copied` or `verified` receipts with a recorded result through the existing
+historical before/candidate verification and both owned-tag checks. Incomplete
+relocations retain current-head discovery even when they record an intermediate
+version. Tag checks, journals, the original cumulative write cap, current-head
+protection and reader drain remain enforced. The live recovery used the admitted
+`runBoundedMaintenance(..., "recover")` path with an exclusive store lease; no
+receipt was edited manually and no protection was bypassed.
 
-Remaining step 1 work is a qualified native repair, including a disposable
-orphan attempt interrupted after verification, later ordinary writes, successful
-protected recovery, and refusal when either historical snapshot or owned tag
-changes. Packaging still requires matching native source and artifact proofs for
-both shipped platforms, as enforced by `scripts/prepare-bounded-runtime.cjs:45`.
-No native source or artifact was changed in this assignment. The existing Mac
-store remains available through explicit bounded read-only service, with its
-receipt and protection tags retained; normal indexing and daemon-owned MLX are
-not restored. The temporary child-process observer was removed by a graceful
-handover to that read-only service, without another recovery retry.
+`tests/python/test_bounded_native_acceptance.py:998` reproduces the incomplete
+inventory, interruption after verification and later ordinary append/delete. The
+released helper refuses that fixture; the source fix recovers it while preserving
+all edited rows, search results and payload files. Changing either protection tag
+still refuses recovery. Existing intermediate relocation interruption cases at
+`tests/native/bounded_native_fault_acceptance.py:77` also pass.
+
+The single qualification invocation ran 22 normal cases and 4 fault cases with
+zero failures, errors or skips against separate optimized executables. The
+128 MiB disposable disk image covered fresh-space loss and remaining-budget
+recovery without filling the host filesystem. It was detached and removed.
+The temporary native helper exited; the normal daemon owns the running MLX
+process. Configuration is unchanged and no P3 action was performed. Exact command,
+logs, source and executables remain under
+`/Users/Shared/P3-Installer/mac-gmax-recovery-20261023/`.
+
+**Permanent delivery remains open.** The one-time helper is qualified for this
+Mac repair; installed 0.26.96 native artifacts remain unchanged and still contain
+the original branch. The corrected source requires Linux qualification and
+matching shipping/fault proofs before a permanent packaged update. Packaging
+continues to enforce both platforms in `scripts/prepare-bounded-runtime.cjs:45`;
+there is no release, installation or Linux qualification claim for this repair.
+The Mac is available for work while that delivery remains open.
 
 ### Measured embedding stages
 
@@ -100,13 +113,13 @@ timers exclude those checks. Do not attribute the remaining time to parsing or
 storage, or derive production throughput from these end-to-end totals. No
 VectorDB was instantiated and no index insert/delete was called by the profiler.
 
-The managed MLX Python environment was materialized by `uv` offline from its
-cache and retained for later normal startup. The owned MLX process stopped, port
-8100 was released, and configuration, project
-registry and native receipt match the before-state. Private command/output and
-observer sources remain in
-`/Users/Shared/P3-Installer/mac-gmax-baseline-20261023/`. One test invocation was
-used; there was no retry. Current P3 workspace and commissioning status belong
+The profiling assignment materialized the managed MLX Python environment with
+`uv` offline and retained it. Its temporary profiling process stopped and its
+configuration/registry preservation checks passed; normal MLX is now owned by the
+restored daemon described above. Private profiling command/output and observers
+remain in `/Users/Shared/P3-Installer/mac-gmax-baseline-20261023/`. That earlier
+profiling assignment used 1 test invocation without a retry, separately from the
+native repair qualification. Current P3 workspace and commissioning status belong
 to [the platform session-host plan](../../../../platform/docs/plans/p3-session-host.md),
 not the earlier dated P3 qualification below.
 
@@ -2737,6 +2750,9 @@ parallel omnibus plan.
 
 ## Version History
 
+- **2026-10-24T01:21:24Z** Status: in-session → paused — Mac restored through qualified one-time native recovery: version 5600 preserved, zero data/index writes, active daemon/MLX/indexing and semantic read accepted. Native source fix passes 22 shipping and 4 fault cases on Darwin in 1 invocation. Permanent bundle update remains open for Linux qualification and matching artifacts; installed release unchanged.
+- **2026-10-24T00:54:46Z** Started (active → in-session).
+- **2026-10-24T00:54:45Z** Status: paused → active.
 - **2026-10-24T00:20:53Z** Status: in-session → paused — Mac baseline step 1 remains partial: isolated installed Granite Metal/ColBERT CPU profiling passed in 1 test invocation; one native recovery operation refused a protected historical orphan receipt after later table writes. Receipt/config/registry retained and bounded read-only service restored. Native source/artifacts unchanged.
 - **2026-10-24T00:15:46Z** Started (active → in-session).
 - **2026-10-24T00:15:45Z** Status: paused → active.

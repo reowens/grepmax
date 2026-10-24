@@ -1,0 +1,221 @@
+{
+  "scope": "Mac-only qualified one-time recovery; installed release artifacts unchanged; Linux qualification and a packaged permanent update remain open",
+  "qualification": {
+    "passed": true,
+    "sourceSha256": "95c18ccc73cd9bd0bee2b45c745bab4727d12ad23a7158dfc39d188df594139e",
+    "testInvocations": 1,
+    "testsRun": 26,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0,
+    "capabilities": {
+      "budgetKind": "cumulative-writes",
+      "engine": "12.0.0",
+      "incrementalRepairProtocol": 1,
+      "nativeTotalWriteBudgetEnforced": true,
+      "protectedReaderProtocol": 1,
+      "protocolVersion": 1
+    }
+  },
+  "shipping": {
+    "testCases": [
+      "test_automatic_fallback_when_individually_small_fragments_form_large_task",
+      "test_automatic_small_batch_is_not_starved_by_oversized_first_fragment",
+      "test_budget_exhaustion_after_data_copy_is_safe_and_never_refunded",
+      "test_corrupt_receipt_or_counter_refuses_without_fallback_copy",
+      "test_fragment_selected_index_refresh_and_interruption",
+      "test_insufficient_preflight_space_refuses_without_store_mutation",
+      "test_interruption_at_protected_and_committed_reader_windows_preserves_head",
+      "test_mixed_index_coverage_is_preserved_or_refused_before_any_mutation",
+      "test_newer_orphan_requires_complete_references_and_age",
+      "test_no_work_handshake_and_result_are_read_only",
+      "test_oversized_fragment_makes_finite_bounded_progress",
+      "test_partial_relocation_preserves_values_and_protected_reader",
+      "test_per_write_space_loss_on_ci_owned_volume_refuses_before_data_copy",
+      "test_pre_receipt_zero_payload_journal_is_safely_retired_on_admitted_attempt",
+      "test_production_executable_rejects_qualification_fault_fields",
+      "test_real_selected_batch_preserves_rows_indices_tags_and_both_readers",
+      "test_recovery_uses_remaining_original_cap_after_its_own_space_consumption",
+      "test_repeated_index_catchup_merges_small_segments",
+      "test_string_ids_and_multiple_selected_unindexed_fragments",
+      "test_tiny_budget_never_corrupts_existing_rows_or_search",
+      "test_verified_copy_recovery_preserves_subsequent_watched_edits",
+      "test_verified_orphan_recovery_preserves_later_edits_and_requires_both_tags"
+    ],
+    "tests": {
+      "executed": 22,
+      "passed": 22,
+      "skipped": 0,
+      "failures": 0,
+      "errors": 0
+    },
+    "schemaVersion": 1,
+    "verdict": "PASS_BOUNDED_NATIVE_ACCEPTANCE",
+    "sourceDigest": "95c18ccc73cd9bd0bee2b45c745bab4727d12ad23a7158dfc39d188df594139e",
+    "provenanceUnchanged": true,
+    "binarySha256": "076794776c752b93a2de4200de9e1580701eed80670855d35c3963e0a607ffc6",
+    "engine": "12.0.0",
+    "platform": "darwin-arm64",
+    "profile": "release",
+    "scope": "Local Mac repair qualification; no Linux or package publication claim"
+  },
+  "fault": {
+    "testCases": [
+      "test_injected_backend_enospc_recovers_exact_owned_payloads_without_refund",
+      "test_newer_orphan_and_partial_inventory_never_use_a_timestamp_cutoff",
+      "test_relocation_interruptions_preserve_each_valid_intermediate_head",
+      "test_sigkill_after_first_owned_tag_delete_resumes_durable_finalization"
+    ],
+    "tests": {
+      "executed": 4,
+      "passed": 4,
+      "skipped": 0,
+      "failures": 0,
+      "errors": 0
+    },
+    "schemaVersion": 1,
+    "verdict": "PASS_BOUNDED_NATIVE_FAULT_ACCEPTANCE",
+    "sourceDigest": "95c18ccc73cd9bd0bee2b45c745bab4727d12ad23a7158dfc39d188df594139e",
+    "provenanceUnchanged": true,
+    "binarySha256": "2d88844620a2d8c0fbfc3d72040c0932465b4c0553626c4c26dc8e2d8640f608",
+    "engine": "12.0.0",
+    "platform": "darwin-arm64",
+    "profile": "release",
+    "scope": "Local Mac repair qualification; no Linux or package publication claim"
+  },
+  "builds": [
+    {
+      "variant": "shipping",
+      "command": [
+        "cargo",
+        "build",
+        "--release",
+        "--locked",
+        "--features",
+        "engine",
+        "--manifest-path",
+        "lance-maintenance/native/Cargo.toml",
+        "--target-dir",
+        "/Users/Shared/P3-Installer/mac-gmax-recovery-20261023/target",
+        "--jobs",
+        "2"
+      ],
+      "exitCode": 0
+    },
+    {
+      "variant": "fault",
+      "command": [
+        "cargo",
+        "build",
+        "--release",
+        "--locked",
+        "--features",
+        "engine,qualification",
+        "--manifest-path",
+        "lance-maintenance/native/Cargo.toml",
+        "--target-dir",
+        "/Users/Shared/P3-Installer/mac-gmax-recovery-20261023/target",
+        "--jobs",
+        "2"
+      ],
+      "exitCode": 0
+    }
+  ],
+  "command": "lance-maintenance/.venv/bin/python /Users/Shared/P3-Installer/mac-gmax-recovery-20261023/qualify.py",
+  "privateEvidenceDirectory": "/Users/Shared/P3-Installer/mac-gmax-recovery-20261023",
+  "harnessSha256": "b3916f1a7233e5954d1651af4068e75bee4eefd7a6b3bcdcab3eeb3c7a1adfec",
+  "liveOperation": {
+    "startedAt": "2026-10-24T01:17:10.547Z",
+    "finishedAt": "2026-10-24T01:17:16.539Z",
+    "runtime": {
+      "executable": "/Users/Shared/P3-Installer/mac-gmax-recovery-20261023/gmax-bounded-maintenance-darwin-arm64",
+      "incrementalRepairProtocol": 1
+    },
+    "headVersionBefore": 5600,
+    "result": {
+      "status": "completed",
+      "at": 1792804636155,
+      "attempts": 1,
+      "elapsedMs": 424,
+      "reason": "interrupted maintenance finalized under its original write ledger",
+      "rewritten": false,
+      "operation": "orphan-reclamation",
+      "sourceBytesRead": 0,
+      "remainingIndexFragments": 1591,
+      "remainingIndexRows": 708949,
+      "orphansReclaimed": 0,
+      "inventoryComplete": false,
+      "inventoryVersionsRemaining": 13,
+      "beforeVersion": 5410,
+      "protectedVersion": 5600,
+      "afterVersion": 5600,
+      "totalBytesWritten": 152681,
+      "dataBytesWritten": 0,
+      "indexBytesWritten": 0,
+      "metadataBytesWritten": 152681,
+      "verificationBytesWritten": 0,
+      "rowsVerified": 0,
+      "remainingDeletedRows": 166814,
+      "aborted": false,
+      "recoveryPending": false,
+      "verifiedCopyVersion": 5410,
+      "acceptedFinalization": true,
+      "freeBytesBefore": 84268171264,
+      "freeBytesAfter": 84268195840,
+      "diskBytesBefore": 20925902848,
+      "diskBytesAfter": 20925894656,
+      "planId": "af69d00dbad5697380936b0edaf3ee815c82b81d351d3dbeac7d613ec1ada58d",
+      "receiptId": "47b1163b64283d8a3083b612f4adac2c892bb23063ccfda1ced15d7a2bbb3c29"
+    },
+    "receiptPhaseAfter": "finalized",
+    "configUnchanged": true
+  },
+  "restoredService": {
+    "at": "2026-10-24T01:18:01.134Z",
+    "ping": {
+      "ok": true,
+      "ready": true,
+      "pid": 62222,
+      "uptime": 44,
+      "version": "0.26.96",
+      "operationStatus": "open",
+      "service": {
+        "mode": "active"
+      },
+      "resourceGeneration": 1,
+      "rebuildPending": false,
+      "capabilities": {
+        "exclusiveGenerationRebuild": 1,
+        "readVerbs": 1,
+        "searchDiagnostics": 1,
+        "existingIndexOnlySearch": 1,
+        "perFileSearch": 1,
+        "ftsBuild": 1,
+        "watchLeases": 1
+      }
+    },
+    "service": {
+      "mode": "active"
+    },
+    "mlx": {
+      "enabled": true,
+      "state": "owned-ready",
+      "port": 8100,
+      "model": "ibm-granite/granite-embedding-small-english-r2",
+      "pid": 62457,
+      "lastHealthyAt": 1792804639996
+    },
+    "workers": 1,
+    "watchedProjects": 1
+  },
+  "semanticRead": {
+    "command": "gmax 'daemon native cleanup recovery before indexing' --agent -m 3",
+    "exitCode": 0,
+    "output": "src/lib/store/lance-cleanup.ts:195\ts=1.000 [ORCH] \u2014 ? \"disk full\"\nsrc/lib/daemon/daemon.ts:1124\ts=0.897 [ORCH] \u2014 * native receipt before worker, watcher or ordinary maintenance creation. */\nsrc/lib/daemon/watcher-manager.ts:1060\ts=0.869 [ORCH] \u2014 * prune-only cleanup. Native events keep queuing in each processor, so\n"
+  },
+  "cleanup": {
+    "disposableVolumeDetached": true,
+    "detachOutput": "\"disk10\" ejected.\n",
+    "temporaryCompilerProcessesFinished": true
+  }
+}
