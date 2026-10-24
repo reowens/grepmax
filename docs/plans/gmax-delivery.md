@@ -2,7 +2,7 @@
 type: plan
 status: paused
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-24T04:55:00Z
+updated: 2026-10-24T10:36:39Z
 surfaces:
   - store
   - daemon
@@ -23,9 +23,9 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "grepmax 0.26.97 was accepted by npm and its GitHub release is live from exact frozen candidate 44b16fe6a7. npm install availability was pending at the last publication readback; it has not been rechecked here. The explicit release instruction skipped additional verification; no new tests ran. The platform P3 host plan owns runtime installation and current bounded indexing status."
-next_step: "Continue only the user-selected workstream under the session ownership map. Publication has its retained receipt; npm availability is unconfirmed here. P3 indexing remains paused under the platform host record. No verification, restart or builder job is queued."
-summary: "0.26.97 is released on GitHub and accepted for npm processing without additional verification. Exact archive and source tag are retained; npm install availability was unconfirmed at the last readback."
+current_state: "Publication 0.26.97 has its retained receipt; npm availability has no newer readback here. P3 and Windows Dell typechecks are accepted through local-worker entries. The separate ColBERT evaluation completed paired document timing, saved-output scoring and a frozen question screen; production is unchanged. P3 indexing remains paused under its platform host owner."
+next_step: "Proposed worker task: run one existing model-free unit-test file on Windows through the prepared route, only when selected. ColBERT complete-index comparison remains a separate owner-selected experiment. Mac helper holds, P3 indexing pause and publication ownership remain; no job or release check is queued."
+summary: "Delivery coordination for recorded publication, accepted Linux/Windows typecheck routes and separate ColBERT evaluation. No automatic checks, hosted builders or runtime restart is queued."
 ---
 
 # Gmax Delivery Plan
@@ -40,8 +40,8 @@ A documentation reconciliation does not start the next task or transfer a claim.
 | Workstream | Owner and current boundary |
 | --- | --- |
 | Publication | [Publication 0.26.97](#publication-02697) owns the exact archive and publication receipt. The local-worker session does not repeat release work. npm availability has no newer readback in this reconciliation. |
-| Local development jobs | [Local workers](gmax-local-workers.md) owns source integration and [P3 typecheck acceptance](gmax-local-workers.md#p3-first-live-typecheck). Other tasks and OS routes remain open. |
-| ColBERT GPU/model evaluation | [Backend evaluation](colbert-backend-evaluation.md#first-real-mac-run--completed) owns the active experiment session and its CPU/MPS result. That result does not change the production backend or qualify ONNX, ranking, storage or P3. |
+| Local development jobs | [Local workers](gmax-local-workers.md#current-use-and-next-task) owns the commands and accepted P3/Windows typechecks. Windows uses the repaired profile cache. Other task coverage and named Mac pool use remain open. |
+| ColBERT GPU/model evaluation | [Backend evaluation](colbert-backend-evaluation.md#recenter--paired-run-completed) owns the later paired timing, saved-output scoring and frozen question-screen results. Complete-index throughput and product integration remain open; production is unchanged. |
 | Installed P3 | The host's session plan, section `Gmax thermal containment, 2026-10-23`, owns installed state, the indexing pause and bounded service. Do not resume indexing or restart its daemon from a Gmax task. |
 | Worker enrollment | The host's developer-setup plan owns the current operator sequence. Pool admission and enrollment remain separate from Gmax source integration. |
 | Startup text | [Session-start hint](session-start-hint-trim.md) stays queued for a separately selected change; its old 0.26.96 dependency is historical. |
@@ -55,17 +55,21 @@ another verification round, remote builder, installation or runtime restart.
 
 [Gmax on the local worker pool](gmax-local-workers.md) owns the developer entry,
 named tasks, frozen Gmax inputs and result/artifact handling through existing
-local transports. Its source checkpoint owns the test evidence and remaining
-first-use limits. This integration adds no release gate; pool and machine owners
-keep their scopes.
+local transports. Its [current-use table](gmax-local-workers.md#current-use-and-next-task)
+links accepted P3 and Windows typechecks and distinguishes unrun task coverage.
+Earlier source-only receipts are dated evidence, not blanket passes for later
+repairs. This integration adds no release gate; pool and machine
+owners keep their scopes.
 
 ## Mac GPU baseline step 1: recovery and measurement
 
-**Release belongs to another session. This session has stopped release and
-verification work.** Checks run locally under the policy in [CLAUDE.md](../../CLAUDE.md#local-checks-and-remote-execution); Depot and other remote builders require explicit approval for that run. The existing manually invoked release workflow is the sole CI exception.
+**Publication and runtime installation retain their separate owners. No release
+or additional verification is queued in this workstream.** Checks run locally under the policy in [CLAUDE.md](../../CLAUDE.md#local-checks-and-remote-execution); Depot and other remote builders require explicit approval for that run. The existing manually invoked release workflow is the sole CI exception.
 
-The following native and package results are retained evidence, not authorization
-to repeat checks or start remote jobs. Normal service, MLX and file indexing are active, and a semantic read
+The following native and package results are dated evidence, not authorization
+to repeat checks or start remote jobs. Service/version statements describe those
+recorded runs, not fresh readbacks. At that baseline, normal service, MLX and file
+indexing were active, and a semantic read
 returned results. The qualified one-time recovery finalized the retained receipt
 without data or search-index writes, preserving current table version 5600. The
 source fix passed 26 native cases in 1 qualification invocation on Darwin.

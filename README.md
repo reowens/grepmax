@@ -592,7 +592,7 @@ In the source checkout, select a user-owned roster machine explicitly:
 ```bash
 pnpm worker:prepare --worker p3
 pnpm worker:typecheck --worker p3
-pnpm worker:test --worker p3 --test tests/core.test.ts
+pnpm worker:test --worker p3 --test tests/agent-cheatsheet.test.ts
 ```
 
 Add `--ref <full-commit>` to pin committed source; dirty files are not transferred.
@@ -605,6 +605,10 @@ The adjacent platform checkout supplies the roster, admission and transport.
 [The local-worker plan](docs/plans/gmax-local-workers.md) records platform support,
 cache preparation and accepted live tasks. Normal local commands and the release
 workflow are unchanged; these source-only entries are invoked explicitly.
+For automation, the direct equivalent `node scripts/local-worker.cjs run --task
+typecheck --worker p3` uses the same worker path without package-manager startup
+prechecks. The plan records the prior pnpm caller precheck/postinstall separately
+from the selected native job.
 
 ### Benchmarks
 

@@ -2,7 +2,7 @@
 type: plan
 status: partial
 created: 2026-10-24T03:25:08Z
-updated: 2026-10-24T09:33:23Z
+updated: 2026-10-24T10:36:39Z
 surfaces:
   - development
   - workers
@@ -18,8 +18,8 @@ related_plans:
 related_docs:
   - CLAUDE.md
 current_state: "P3 and Windows Dell typecheck routes are accepted on their recorded committed sources. Windows cache/store layout was repaired after a readiness refusal; the corrected run completed the assignment's single compiler invocation with exit 0 and confirmed dependency-link/native temp cleanup. Other tasks and Mac acceptance remain open."
-next_step: "Use the named local-worker commands for the next selected Gmax development task. No additional verification campaign is queued. Mac helper holds and remaining task coverage stay open with their owners; preserve P3 indexing pause and separate release/evaluation ownership."
-summary: "Named jobs, reusable explicit dependency preparation and P3 typecheck acceptance are recorded. Matching caches reuse without installation; missing caches use frozen manifests with scripts disabled. No cloud fallback or automatic placement."
+next_step: "Proposed: one Windows worker unit task for tests/agent-cheatsheet.test.ts, with normal Vitest setup, 0 agents and 1 invocation within45minutes. Run only when selected. Do not repeat accepted typechecks, start an OS matrix, enable held Macs or change P3 indexing/release/evaluation ownership."
+summary: "Named jobs and reusable preparation are implemented; P3 and Windows Dell typechecks have accepted live evidence. Windows uses the repaired profile cache/store and removes owned job links. Other task coverage and named Mac pool use remain open."
 ---
 
 # Gmax on the local worker pool
@@ -31,9 +31,12 @@ revision, chosen machine, command, result and artifacts recorded together. Local
 means the existing owner-operated Linux, Windows and Mac pool, including its
 normal authenticated SSH/Worker transport; it excludes hosted cloud builders.
 
-The source integration is built. The user-selected [P3 first live typecheck](#p3-first-live-typecheck) passed with matching prepared dependencies; this accepts only that task and machine.
+The source integration is built. [P3 typecheck](#p3-first-live-typecheck) and
+[Windows typecheck](#windows-typecheck-and-preparation-layout-repair) have
+accepted live evidence on their recorded sources. That evidence covers the
+selected tasks and machines, not the entire task catalog.
 The [delivery session map](gmax-delivery.md#session-ownership-and-current-direction)
-keeps publication, active backend evaluation and P3 runtime ownership separate.
+keeps publication, separate backend evaluation and P3 runtime ownership distinct.
 This plan adds no release gate,
 CI workflow, scheduled run, benchmark, enrollment replacement or model backend.
 The [local-only rule](../../CLAUDE.md#local-checks-and-remote-execution) applies;
@@ -60,6 +63,30 @@ the existing manual release workflow remains the sole CI exception.
 `platform/` references above are relative to the sibling platform checkout;
 the host's worker-pool plan owns those files
 and the fleet. This plan owns only the Gmax integration, not fleet repair.
+
+## Current use and next task
+
+| Route | Recorded use and boundary |
+| --- | --- |
+| P3 Linux | [Typecheck accepted](#p3-first-live-typecheck) on its recorded commit; matching prepared dependencies and existing desktop-idle admission apply. |
+| Windows Dell | [Typecheck accepted](#windows-typecheck-and-preparation-layout-repair) after the profile cache/store repair, with native and dependency-link cleanup confirmed. |
+| Current Mac checkout | Normal local `pnpm typecheck` / `pnpm test` entry points remain in `package.json`; no fresh Mac typecheck or named Mac worker is accepted by these receipts. |
+| Named Mac helpers | Air and Pro remain `off` in the host's worker roster; their current lanes/holds are not changed here. |
+| Installed Linux Workers | Enrollment and activation follow the host's developer-setup plan; an enrolled Worker without Gmax capability refuses without an SSH workaround. |
+| Remaining tasks | Unit execution, package/native/runtime tasks and wider OS coverage retain their recorded limits. Available command definitions are not live acceptance. |
+
+The proposed next worker task is 1 existing Windows unit-test file:
+`tests/agent-cheatsheet.test.ts`. It checks the real SessionStart text contract;
+its source imports string data, and `tests/setup.ts` mocks embedding workers.
+Normal `vitest.config.mts` setup still applies, including the grammar availability
+step in `tests/global-setup.ts`. No separate setup campaign or new test config
+is proposed. Use 0 agents, at most 45 minutes and 1 test invocation, only after
+the user selects it. This proposal queues no job.
+
+Backend evaluation has its own [next complete-index comparison](colbert-backend-evaluation.md#recenter--paired-run-completed).
+The paired timing and question screen are recorded there; this worker task does
+not load a model or switch the production backend. Existing Mac holds and the
+P3 indexing pause remain with their machine owners.
 
 ## Job selection and machine roles
 
@@ -110,9 +137,10 @@ an absent result, skipped platform or different source as a successful result.
 ## Completion and verification scope
 
 The source entry uses the existing local routes and produces the recorded
-result/artifact shape. Source fixtures do not establish live execution. The separately recorded
-[P3 typecheck](#p3-first-live-typecheck) accepts that selected Linux task; other
-tasks and OS routes remain open.
+result/artifact shape. Source fixtures do not establish live execution. The
+separate [P3](#p3-first-live-typecheck) and
+[Windows](#windows-typecheck-and-preparation-layout-repair) receipts accept those
+typechecks; other task coverage and named Mac pool use remain open.
 
 Each assignment returns within 45 minutes and uses at most 1 focused test
 invocation. Select the smallest test relevant to the changed routing/contract;
@@ -136,8 +164,9 @@ proof. The host's fleet-compute plan owns shared cache and broader
 scheduling work; this integration does not reopen it. These paths are relative
 to the enclosing host workspace, not this Gmax repository.
 
-[Backend evaluation](colbert-backend-evaluation.md) owns its active experiment
-session; the local-worker catalog does not run that experiment. The platform
+[Backend evaluation](colbert-backend-evaluation.md#recenter--paired-run-completed)
+owns the separate experiment workstream; the local-worker catalog does not run
+that experiment. The platform
 the host's session plan thermal-containment section owns the indexing pause. A
 selected worker job is not permission to resume indexing, restart its daemon or
 change its bounded service. Installed enrollment follows
@@ -175,8 +204,9 @@ Windows closure mapping, committed-source validation, matching receipts/artifact
 missing preparation, failure handling and opt-in no-fallback versus legacy fallback.
 After that run, Windows input separators were normalized at the receiver and the
 new explicit memory-option validation was scoped to leave legacy callers alone.
-Both final edits passed `node --check`; the test suite was not repeated. Those
-edits have syntax evidence only, not a second behavioral qualification.
+Both final edits passed `node --check`; that test suite was not repeated in the
+source assignment. At that checkpoint they had syntax evidence only. Later
+source and live receipts below record their own revisions and limits.
 
 ## Repository command and prepared inputs
 
@@ -186,7 +216,7 @@ These are invocation examples, not queued jobs:
 node scripts/local-worker.cjs describe
 node scripts/local-worker.cjs prepare --worker p3 --ref <full-commit>
 node scripts/local-worker.cjs run --task typecheck --worker p3 --ref <full-commit>
-node scripts/local-worker.cjs run --task unit --worker dell-win --ref <full-commit> --test tests/core.test.ts
+node scripts/local-worker.cjs run --task unit --worker dell-win --ref <full-commit> --test tests/agent-cheatsheet.test.ts
 ```
 
 `describe` is static and contacts no worker. `run` captures only the selected
