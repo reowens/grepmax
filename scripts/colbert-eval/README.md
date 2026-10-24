@@ -14,8 +14,11 @@ Resource-history development stays on hold.
 
 The next executable step is the [first real Mac CPU/MPS comparison](MAC-SMOKE.md).
 Its isolated environment, original model files and 64 Gmax-tokenized inputs are
-prepared. The readiness attempt refused at host memory pressure before Python
-startup; no model was loaded. `mac-smoke.cjs --execute` is the explicit bounded
+prepared. The initial readiness attempt refused at host memory pressure; the
+subsequent user-selected execution passed all 12 CPU/MPS passes and raw vector
+parity, with 912 MiB peak sampled RSS and zero swap growth. Second-pass batch16
+MPS took 0.359 s versus CPU 0.553 s; batch1 was slower on MPS.
+`mac-smoke.cjs --execute` is the explicit bounded
 run entrypoint. Existing validation-only commands and mock loaders retain their
 original behavior.
 

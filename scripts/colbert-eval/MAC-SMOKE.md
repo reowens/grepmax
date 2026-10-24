@@ -46,7 +46,7 @@ The readiness-only mode verifies files and imports the runtime without
 constructing a model. The sole preparation readiness attempt refused with
 `RESOURCE_MEMORY_PRESSURE` before Python startup. Its manifest is retained as
 `readiness-manifest.json` in the private preparation root. No model was loaded,
-and runtime imports/constructor/forward behavior remain unverified on this host.
+and runtime imports/constructor/forward behavior were unverified at that point.
 The actual command repeats admission once when selected; continuing pressure
 will refuse again. No polling or additional preparation review is required.
 
@@ -55,3 +55,25 @@ operation-level CPU fallback profiling, storage/pooling/MaxSim parity, ranking
 quality and P3 remain later work. Device checks and fallback=0 alone do not prove
 every internal operation ran on MPS. Metal memory shares system memory and is
 reported without adding the same allocation twice.
+
+## First execution result
+
+The user subsequently selected execution. Admission passed; all 12 passes over
+64 frozen inputs completed with minimum token cosine 0.9999999999990468.
+Actual loaded parameters matched the original backbone and both projections.
+
+| Batch | CPU seconds | MPS seconds |
+|---|---:|---:|
+| 1 | 0.633 | 2.616 |
+| 8 | 0.512 | 0.487 |
+| 16 | 0.553 | 0.359 |
+
+These are second-pass totals for 64 inputs. Batch16 MPS was about 1.54× faster;
+batch1 was slower. The first MPS batch1 pass took 8.38 s, including cold shapes.
+Two passes and fixed backend order do not establish a production speedup.
+
+Peak sampled process-group RSS was 912.30 MiB, swap growth zero, last sampled CPU
+time 20.08 s and total wall time 90.67 s. Owned-process cleanup passed without
+signals. Separate Metal allocation peaks were not retained. Full raw vectors,
+timings, resource samples and manifests are in the private preparation root's
+`run-01/` directory; `run-01/summary.json` records the result and its limits.
