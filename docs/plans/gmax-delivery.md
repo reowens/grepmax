@@ -18,6 +18,7 @@ domain: Complete storage/query repair, session resource reduction, document-sear
 audience: internal
 parent_plan:
 related_plans:
+  - docs/plans/gmax-local-workers.md
 related_docs:
   - docs/linux-gpu-p3-design.md
 current_state: "grepmax 0.26.97 was accepted by npm and its GitHub release is live from exact frozen candidate 44b16fe6a7. npm public propagation remains pending. The explicit release instruction skipped additional verification; no new tests ran. Runtime installation and P3 indexing resumption did not run."
@@ -28,6 +29,14 @@ summary: "0.26.97 is released on GitHub and accepted for npm processing without 
 # Gmax Delivery Plan
 
 <a id="current-direction--document-search-rollout-preparation"></a>
+
+## Planned local-worker integration
+
+[Gmax on the local worker pool](gmax-local-workers.md) owns the proposed Gmax
+project entry, OS routing and artifact return through the existing user-owned
+Linux, Windows and Mac workers. It is planned only; no implementation or jobs
+have started. The current release remains with the other session. The pool's
+transport/admission and the machine plans retain their existing ownership.
 
 ## Mac GPU baseline step 1: recovery and measurement
 
