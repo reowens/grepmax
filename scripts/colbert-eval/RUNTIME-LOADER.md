@@ -229,14 +229,16 @@ outputs, and failure cleanup. These are **mock evidence only**.
 
 ## Remaining execution and export gates
 
-Before any later real execution, independent review and a separate execution
-instruction must establish an authorized qualification mechanism. Neither this
-source nor `runtime-lock.json` issues one. Required work still includes:
+Follow the repository [review and verification budget](../../AGENTS.md#review-and-verification-budget).
+Finishing this loader does not automatically require another independent review
+or fresh approval for work already authorized. Real loading remains unimplemented
+here; neither this source nor `runtime-lock.json` proves runtime qualification.
+Complete only the following work needed for the selected bounded run:
 
 1. Resolve all transitive dependencies for each exact target platform/Python/ABI;
    select and hash all distributions; verify source-to-distribution correspondence
    and native dependency availability without hidden build/runtime downloads.
-2. Acquire the original private artifact bundle under separate authorization,
+2. Obtain the original model artifacts for the selected run,
    verify every raw byte and tokenizer/config identity, build the reviewed OS
    reader, and verify checkpoint header/key/shape/value loading without random
    initialization, hidden files, symlinks or verification/load races.

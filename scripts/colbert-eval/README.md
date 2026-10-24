@@ -2,8 +2,10 @@
 
 Wave 1 builds a model-free preparation package. The public protocol accepts only
 `validate`; `infer` is refused. Nothing here establishes that PyLate, MPS or a new
-model is working in Gmax. Runtime execution follows independent review and a
-separate execution instruction.
+model is working in Gmax. Follow the repository's
+[review and verification budget](../../AGENTS.md#review-and-verification-budget).
+Preparation corrections do not trigger new review rounds. Real execution uses
+the selected experiment's authorization and resource limits.
 
 The experiment compares the existing 17M ColBERT model through PyLate first,
 then LateOn-Code-edge, then LFM2.5-ColBERT through MLX/GGUF. Granite stays fixed.
@@ -113,7 +115,9 @@ The latest bundle is `bundle-v2/result-manifest.json` in that directory. It
 correctly remains incomplete: current-release Granite document/query vectors,
 exact rerank pools and model artifact identity still need separate preparation.
 Runtime loading, actual device execution and real vector parity remain untested.
-The next wave is independent review of this preparation package.
+The preparation review history is retained in the local plan. It does not create
+another approval gate. Next is the smallest real CPU/MPS comparison; full-pipeline
+capture work is needed only for comparisons that actually consume those exports.
 
 ## Wave 2 corrections
 

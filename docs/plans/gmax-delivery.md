@@ -2839,12 +2839,15 @@ parallel omnibus plan.
 
 ## Execution and closure rules
 
+- The repository [review and verification budget](../../AGENTS.md#review-and-verification-budget)
+  supersedes older blanket independent-review language in this plan. Prior review
+  records are evidence, not instructions to restart review after each correction.
 - One current milestone, one owner and one finite acceptance contract. No new plan
   for each diagnosis, test pass, package step or observation window.
-- Implement, review, run required checks, release/install and close the delivered
+- Implement, run focused checks within that budget, release/install when selected and close the delivered
   work. Source-only progress is not delivery. Record blocked portions explicitly.
-- Run checks once for a final change. Repeat only for a new change, failure or
-  unresolved concern. Unchanged automatic-cleanup/timing observations are cancelled.
+- Run the selected focused checks once within the root budget. Additional runs
+  require the user's instruction. Cancel unchanged automatic-cleanup/timing observations.
 - Fix a shipping failure before publication; CI does not monopolize execution or
   block independent implementation work authorized by the user. Documentation-only replanning
   does not require native builds, runtime probes, storage operations or model loads.

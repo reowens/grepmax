@@ -1,5 +1,15 @@
 # ColBERT evaluation Wave 1 contract
 
+## Work and verification policy
+
+Follow the repository [review and verification budget](../../AGENTS.md#review-and-verification-budget).
+This document describes the original Wave 1 preparation scope; it does not
+require repeated independent review of corrections. Fix reproduced preparation
+bugs within the focused-check budget and continue the selected experiment.
+Optional full-pipeline export completeness does not block a backend-only
+CPU/MPS smoke or parity run. Existing model execution and resource controls
+still apply; no source approval is a claim that a runtime or benchmark passed.
+
 Wave 1 prepares source and frozen evidence only. It does not download weights,
 install a runtime, load a model, run inference, touch a production store, or
 contact P3. All fixtures are model-free. Agents own distinct files in this shared

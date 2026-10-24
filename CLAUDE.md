@@ -2,6 +2,10 @@
 
 Read this before making changes.
 
+The [review and verification budget in AGENTS.md](AGENTS.md#review-and-verification-budget)
+applies to every agent. Older plan or evaluation review language cannot add
+automatic review rounds or repeat test invocations beyond that budget.
+
 ---
 
 ## Local checks and remote execution
@@ -54,8 +58,9 @@ explicitly, unambiguously tells you to bring it up in that exact session.
 
 ## Subagents
 
-When spawning subagents (Agent tool), use `model: "opus"` unless the user asks
-for a different model.
+When spawning subagents, use the parent agent's model unless the user explicitly
+requests a different model. Omit model overrides when inheritance is supported;
+otherwise select the same model as the parent.
 
 Agent worktrees land under `.claude/worktrees/` *inside* this repo. The directory is gitignored
 and `vitest.config` excludes it, but a leftover worktree still shows in `git worktree list` and

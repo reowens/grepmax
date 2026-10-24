@@ -1,5 +1,10 @@
 # Released baseline export preparation
 
+Follow the repository [review and verification budget](../../AGENTS.md#review-and-verification-budget).
+Observation hooks and preparation corrections do not automatically require new
+independent review rounds. Full-pipeline export work is needed for ranking replay;
+it does not block a backend-only CPU/MPS comparison that uses identical inputs.
+
 `baseline-export.cjs` contains a reusable observation API and a model-free JSONL
 validator/packer. It imports Node built-ins only. It does not import Searcher,
 load a runtime/model, read model/cache/store files, run inference, install
