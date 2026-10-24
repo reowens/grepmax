@@ -2,7 +2,7 @@
 type: plan
 status: partial
 created: 2026-10-24T03:25:08Z
-updated: 2026-10-24T04:55:00Z
+updated: 2026-10-24T06:33:44Z
 surfaces:
   - development
   - workers
@@ -17,9 +17,9 @@ related_plans:
   - docs/plans/gmax-delivery.md
 related_docs:
   - CLAUDE.md
-current_state: "The Gmax repository entry, named task catalog, frozen source inputs, existing-pool dispatch, Windows command closure and result/artifact checks are implemented. One local fixture invocation passed 12/12 without workers or tools; two final narrow edits passed syntax checks only. Live workers and dependency preparation remain unrun."
-next_step: "Select a named local worker and task for first use. It needs matching prepared Gmax dependencies; no cache producer or installation ran here. Enrolled Linux Workers without Gmax capability refuse rather than switch transports. Publication and the P3 indexing pause have separate owners in the delivery session map; neither is a first-use job."
-summary: "Local-worker source integration is implemented and locally fixture-tested. Explicit worker selection only; no automatic placement, cloud fallback, software installation or live acceptance has run."
+current_state: "The Gmax repository entry, named task catalog, frozen source inputs, existing-pool dispatch, Windows command closure and result/artifact checks are implemented. One local fixture invocation passed 12/12 without workers or tools; two final narrow edits passed syntax checks only. P3 dependency preparation and the first live typecheck passed; other tasks and OS routes remain unaccepted."
+next_step: "The selected P3 typecheck is accepted. Use the prepared matching P3 cache for a separately selected next Gmax job; no additional checks are queued. Other tasks, OS routes, enrolled Linux capability and automatic placement remain open. Preserve P3 indexing pause and separate release/evaluation ownership."
+summary: "Source integration and the first P3 typecheck are accepted. A matching P3 dependency cache is prepared with install scripts disabled. Other tasks and OS routes remain open; no cloud fallback or automatic placement."
 ---
 
 # Gmax on the local worker pool
@@ -31,7 +31,7 @@ revision, chosen machine, command, result and artifacts recorded together. Local
 means the existing owner-operated Linux, Windows and Mac pool, including its
 normal authenticated SSH/Worker transport; it excludes hosted cloud builders.
 
-The user approved implementation. The source integration is built; no live job has run.
+The source integration is built. The user-selected [P3 first live typecheck](#p3-first-live-typecheck) passed with matching prepared dependencies; this accepts only that task and machine.
 The [delivery session map](gmax-delivery.md#session-ownership-and-current-direction)
 keeps publication, active backend evaluation and P3 runtime ownership separate.
 This plan adds no release gate,
@@ -110,8 +110,9 @@ an absent result, skipped platform or different source as a successful result.
 ## Completion and verification scope
 
 The source entry uses the existing local routes and produces the recorded
-result/artifact shape. Live execution is not accepted on any OS by these source
-fixtures; record it separately when a user-selected job runs.
+result/artifact shape. Source fixtures do not establish live execution. The separately recorded
+[P3 typecheck](#p3-first-live-typecheck) accepts that selected Linux task; other
+tasks and OS routes remain open.
 
 Each assignment returns within 45 minutes and uses at most 1 focused test
 invocation. Select the smallest test relevant to the changed routing/contract;
@@ -143,9 +144,9 @@ change its bounded service. Installed enrollment follows
 the host's developer-setup plan; a Gmax capability
 refusal remains a refusal rather than a reason to change enrollment or transport.
 
-Work alone unless the user approves a stated agent count. This implementation
-ran one local fixture test and two syntax-only checks. No worker was contacted;
-no job, agent, cloud work, software installation or release ran.
+Work alone unless the user approves a stated agent count. The source-only
+implementation evidence below is distinct from the selected P3 first-use receipt.
+Neither authorizes another check, agent, release or runtime operation.
 
 ## Source checkpoint and limits
 
@@ -210,8 +211,9 @@ The initial unit task covers selected Vitest files; a separate Python task is
 not implemented. Compatibility also requires `runtimeCommit` and a `runtimeFiles` path-to-SHA-256
 inventory including `package.json` and `dist/bin.js`. The job verifies that inventory
 and checks only CLI version startup; it is not complete Windows compatibility.
-Cache preparation/production and any dependency installation have not run and
-are not claimed implemented by this descriptor. Missing preparation returns a
+The P3 first-use receipt records a manifest-only dependency preparation, with
+install scripts disabled, for typechecking. A reusable cache producer remains
+unimplemented; other workers have no preparation accepted here. Missing preparation returns a
 refusal before executing tools. Native builds use the installed offline Cargo
 cache and two build jobs; absent tools/dependencies fail without provisioning.
 
@@ -221,7 +223,31 @@ Results return under the platform checkout's `tmp/gmax-jobs/<jobId>/`, with
 output alone is not qualified for release. Package creation reuses existing
 qualified native inputs and does not run consumer/native/release test suites.
 
+## P3 first live typecheck
+
+P3 receipt (private record) records the
+single selected run, exact source/cache identities, tool versions, admission and
+transport result. `scripts/local-worker.cjs` dispatched committed Gmax source
+`55b6d43ee5c64b37a82fdcf86aaee3b0091aa192` through the existing pool to P3. Its
+`tsc --noEmit` returned exit 0; no fallback or retry ran. This checks committed
+source only, not other sessions' concurrent dirty files.
+
+The matching cache beside P3's platform clones was prepared from that commit's
+`package.json`, `pnpm-lock.yaml` and `pnpm-workspace.yaml` with frozen-lockfile
+installation and install scripts disabled. The receipt owns the exact path,
+Node/TypeScript versions, preparation command and hashes. Only dependency
+manifests were materialized for preparation; no Gmax service or model started.
+The pool's Node version differs from the interactive shell and is the cache key.
+
+This is live Linux typecheck acceptance, not unit tests, runtime/native package
+qualification, Mac/Windows acceptance or a completed worker rollout. A reusable
+cache producer and the remaining source limits stay open. No additional check
+is queued; P3 indexing remains paused under its host owner.
+
 ## Version History
 
+- **2026-10-24T06:33:44Z** Status: in-session → partial — Matching P3 dependencies prepared; single selected local-worker typecheck passed on frozen source. Other tasks and OS routes remain open; no further checks queued.
+- **2026-10-24T06:31:08Z** Started (active → in-session).
+- **2026-10-24T06:31:08Z** Status: partial → active — User approved P3 dependency preparation and one local-worker typecheck, with 0 agents.
 - **2026-10-24T03:58:56Z** Status: in-session → partial — Source entry/catalog, committed inputs, existing local-pool dispatch, Windows closure and result/artifact handling implemented. One focused local invocation passed 12/12 with mocked transports/tools. Two final fixes syntax-checked only. No worker, cache preparation, installed capability, automatic placement or live acceptance claimed.
 - **2026-10-24T03:30:28Z** Started (planned → in-session).

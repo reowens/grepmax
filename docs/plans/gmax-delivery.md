@@ -40,7 +40,7 @@ A documentation reconciliation does not start the next task or transfer a claim.
 | Workstream | Owner and current boundary |
 | --- | --- |
 | Publication | [Publication 0.26.97](#publication-02697) owns the exact archive and publication receipt. The local-worker session does not repeat release work. npm availability has no newer readback in this reconciliation. |
-| Local development jobs | [Local workers](gmax-local-workers.md) owns the source integration and first-use dependency gap. Source is committed; live worker execution remains unaccepted. |
+| Local development jobs | [Local workers](gmax-local-workers.md) owns source integration and [P3 typecheck acceptance](gmax-local-workers.md#p3-first-live-typecheck). Other tasks and OS routes remain open. |
 | ColBERT GPU/model evaluation | [Backend evaluation](colbert-backend-evaluation.md#first-real-mac-run--completed) owns the active experiment session and its CPU/MPS result. That result does not change the production backend or qualify ONNX, ranking, storage or P3. |
 | Installed P3 | The host's session plan, section `Gmax thermal containment, 2026-10-23`, owns installed state, the indexing pause and bounded service. Do not resume indexing or restart its daemon from a Gmax task. |
 | Worker enrollment | The host's developer-setup plan owns the current operator sequence. Pool admission and enrollment remain separate from Gmax source integration. |
