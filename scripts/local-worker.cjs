@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
 
 function localWorkerCommand(args, { root = path.resolve(__dirname, '..'), platformRoot } = {}) {
-  if (!['describe', 'run'].includes(args[0])) throw new Error('Use describe or run --task <task> --worker <local roster name>');
+  if (!['describe', 'run', 'prepare'].includes(args[0])) throw new Error('Use describe, prepare --worker <name>, or run --task <task> --worker <name>');
   if (args.includes('--source-root')) throw new Error('Gmax source root is fixed by this repository entry');
   platformRoot ??= [path.resolve(root, '../platform'), path.resolve(root, '../../platform')]
     .find(candidate => fs.existsSync(path.join(candidate, 'scripts/gmax-worker.mjs')));

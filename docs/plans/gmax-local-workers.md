@@ -2,7 +2,7 @@
 type: plan
 status: partial
 created: 2026-10-24T03:25:08Z
-updated: 2026-10-24T06:33:44Z
+updated: 2026-10-24T06:56:02Z
 surfaces:
   - development
   - workers
@@ -17,9 +17,9 @@ related_plans:
   - docs/plans/gmax-delivery.md
 related_docs:
   - CLAUDE.md
-current_state: "The Gmax repository entry, named task catalog, frozen source inputs, existing-pool dispatch, Windows command closure and result/artifact checks are implemented. One local fixture invocation passed 12/12 without workers or tools; two final narrow edits passed syntax checks only. P3 dependency preparation and the first live typecheck passed; other tasks and OS routes remain unaccepted."
-next_step: "The selected P3 typecheck is accepted. Use the prepared matching P3 cache for a separately selected next Gmax job; no additional checks are queued. Other tasks, OS routes, enrolled Linux capability and automatic placement remain open. Preserve P3 indexing pause and separate release/evaluation ownership."
-summary: "Source integration and the first P3 typecheck are accepted. A matching P3 dependency cache is prepared with install scripts disabled. Other tasks and OS routes remain open; no cloud fallback or automatic placement."
+current_state: "The Gmax repository entry, named task catalog, frozen source inputs, existing-pool dispatch, Windows command closure and result/artifact checks are implemented. One local fixture invocation passed 12/12 without workers or tools; two final narrow edits passed syntax checks only. P3 dependency preparation and the first live typecheck passed. A reusable explicit prepare command is implemented with 16 local fixtures passing; its live execution and other tasks/OS routes remain unaccepted."
+next_step: "Reusable preparation is implemented. When separately selected, wire ordinary Gmax development commands to the local-worker path, retaining named task/machine selection. No check or live preparation is queued; Windows preparation and the remaining OS/task acceptance stay open."
+summary: "Named jobs, reusable explicit dependency preparation and P3 typecheck acceptance are recorded. Matching caches reuse without installation; missing caches use frozen manifests with scripts disabled. No cloud fallback or automatic placement."
 ---
 
 # Gmax on the local worker pool
@@ -76,8 +76,8 @@ It does not add tasks or start an OS matrix. The task roles are:
   Do not run the POSIX `rm`/`chmod` build lifecycle unchanged on Windows or claim
   Windows bounded-native-helper support; its artifact is not currently shipped.
 
-Initial task definitions are typecheck, selected unit tests, package creation,
-platform compatibility and native build. Each maps to a fixed command/argument
+Task definitions are explicit dependency preparation, typecheck, selected unit
+tests, package creation, platform compatibility and native build. Each maps to a fixed command/argument
 shape using existing Gmax scripts; test selectors are validated repository paths.
 Native build and MLX work run only when explicitly selected. Creating a package
 does not automatically run consumer tests, native qualification or release:check.
@@ -184,6 +184,7 @@ These are invocation examples, not queued jobs:
 
 ```bash
 node scripts/local-worker.cjs describe
+node scripts/local-worker.cjs prepare --worker p3 --ref <full-commit>
 node scripts/local-worker.cjs run --task typecheck --worker p3 --ref <full-commit>
 node scripts/local-worker.cjs run --task unit --worker dell-win --ref <full-commit> --test tests/core.test.ts
 ```
@@ -194,8 +195,8 @@ tasks, exact test-file selectors and a maximum 900-second execution deadline.
 Source is capped at 64 MiB and refuses credentials, links, traversal and case
 collisions. Each request is unique and never automatically reruns elsewhere.
 
-Dependencies are not installed by a job. A worker must already have a matching
-prepared directory beside its platform clone:
+Execution tasks do not install dependencies. The explicit `prepare` command
+creates or reuses the matching directory beside the worker's platform clone:
 
 ```text
 ../project-cache/gmax/<pnpm-lock-sha256>-<node-platform>-<arch>-<node-version>/
@@ -212,9 +213,9 @@ not implemented. Compatibility also requires `runtimeCommit` and a `runtimeFiles
 inventory including `package.json` and `dist/bin.js`. The job verifies that inventory
 and checks only CLI version startup; it is not complete Windows compatibility.
 The P3 first-use receipt records a manifest-only dependency preparation, with
-install scripts disabled, for typechecking. A reusable cache producer remains
-unimplemented; other workers have no preparation accepted here. Missing preparation returns a
-refusal before executing tools. Native builds use the installed offline Cargo
+install scripts disabled, for typechecking. The reusable producer below is
+implemented; other workers have no live preparation accepted here. Missing
+preparation returns a refusal before executing tools. Native builds use the installed offline Cargo
 cache and two build jobs; absent tools/dependencies fail without provisioning.
 
 Results return under the platform checkout's `tmp/gmax-jobs/<jobId>/`, with
@@ -240,12 +241,44 @@ manifests were materialized for preparation; no Gmax service or model started.
 The pool's Node version differs from the interactive shell and is the cache key.
 
 This is live Linux typecheck acceptance, not unit tests, runtime/native package
-qualification, Mac/Windows acceptance or a completed worker rollout. A reusable
-cache producer and the remaining source limits stay open. No additional check
-is queued; P3 indexing remains paused under its host owner.
+qualification, Mac/Windows acceptance or a completed worker rollout. The reusable
+cache producer below has separate source evidence; the remaining limits stay open.
+No additional check is queued; P3 indexing remains paused under its host owner.
+
+## Reusable dependency preparation
+
+`node scripts/local-worker.cjs prepare --worker <name> --ref <full-commit>` uses
+`scripts/gmax-worker.mjs:parseGmaxArgs` to select the fixed `prepare` task through
+the existing named-worker admission, deadline and result path. It supports Linux
+and Darwin source routes; Windows preparation remains unavailable. It does not
+run another task or enable a held worker.
+
+`scripts/lib/gmax-project.mjs:prepareGmaxDependencies` materializes only committed
+`package.json`, `pnpm-lock.yaml` and `pnpm-workspace.yaml`. A matching cache must
+retain identical manifests and the expected lock/platform/architecture/Node
+identity. It returns `disposition: reused` without invoking pnpm. An inconsistent
+cache refuses without replacing it.
+
+A missing cache uses a per-key lock and private staging directory. The only
+installation command is `pnpm install --frozen-lockfile --ignore-scripts
+--reporter=append-only`, within the existing task deadline and isolated environment.
+Manifest identity is checked again before the cache is published by rename;
+failed preparation removes its owned staging and lock. A concurrent preparation
+refuses without retry. Installation scripts, native build/qualification, models,
+indexing and runtime/native artifacts are not prepared by this command.
+
+Preparation source receipt (private record)
+records the one local invocation: 16 cases passed, including the existing routing
+regressions, install-once/reuse-without-tools, cleanup and cache conflicts. Real
+filesystem fixtures used a fake installer; no worker was contacted or pnpm run.
+This is source evidence, not live preparation acceptance. The existing P3 cache
+and typecheck receipt above remain unchanged.
 
 ## Version History
 
+- **2026-10-24T06:56:02Z** Status: in-session → partial — Reusable explicit manifest-only preparation and matching-cache reuse implemented. One focused local invocation passed 16/16; no live worker or installation ran.
+- **2026-10-24T06:52:37Z** Started (active → in-session).
+- **2026-10-24T06:52:37Z** Status: partial → active — User selected reusable manifest-only dependency preparation and cache reuse, 0 agents, 1 focused local test.
 - **2026-10-24T06:33:44Z** Status: in-session → partial — Matching P3 dependencies prepared; single selected local-worker typecheck passed on frozen source. Other tasks and OS routes remain open; no further checks queued.
 - **2026-10-24T06:31:08Z** Started (active → in-session).
 - **2026-10-24T06:31:08Z** Status: partial → active — User approved P3 dependency preparation and one local-worker typecheck, with 0 agents.
