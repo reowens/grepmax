@@ -28,6 +28,20 @@ vi.mock("../src/lib/utils/daemon-client", () => ({
   readDaemonPid: vi.fn(() => 12345),
   waitForProcessExit: vi.fn(async () => true),
 }));
+const unit = vi.hoisted(() => ({
+  current: null as null | { name: string; restart: string },
+}));
+vi.mock("../src/lib/utils/service-unit", () => ({
+  systemdServiceUnit: () => unit.current,
+}));
+vi.mock("../src/lib/utils/exit", () => ({
+  gracefulExit: async (code?: number) => {
+    process.exitCode = code ?? 0;
+  },
+}));
+vi.mock("../src/lib/utils/store-access", () => ({
+  storeWriteDeniedNotice: () => null,
+}));
 vi.mock("../src/lib/utils/daemon-launcher", () => ({
   spawnDaemonProcess: spawn,
 }));
@@ -88,6 +102,25 @@ describe("hook-driven background daemon launch", () => {
     expect(process.exitCode).toBe(1);
     expect(spawn).not.toHaveBeenCalled();
     expect(signal).not.toHaveBeenCalled();
+  });
+  it("version-mismatch launch leaves a systemd unit's daemon to its unit", async () => {
+    vi.stubEnv("GMAX_DAEMON_START_ONLY", "0");
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    unit.current = {
+      name: "gmax.service",
+      restart: "systemctl --user restart gmax.service",
+    };
+    try {
+      await watch.parseAsync(["--daemon", "-b"], { from: "user" });
+    } finally {
+      unit.current = null;
+    }
+    expect(process.exitCode).toBe(2);
+    expect(spawn).not.toHaveBeenCalled();
+    expect(ping).not.toHaveBeenCalledWith(
+      expect.objectContaining({ cmd: "shutdown" }),
+      expect.anything(),
+    );
   });
   it("version-mismatch launch refuses a predecessor still draining after 90 seconds", async () => {
     vi.useFakeTimers();
@@ -161,5 +194,32 @@ describe("read-only launch beside a busy daemon", () => {
     h.draining = true;
     await watch.parseAsync(["--daemon", "-b"], { from: "user" });
     expect(spawn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("gmax watch restart beside a systemd unit", () => {
+  const exitCode = process.exitCode;
+  afterEach(() => {
+    unit.current = null;
+    vi.restoreAllMocks();
+    process.exitCode = exitCode;
+  });
+
+  it("refuses before stopping anything and names the unit's restart", async () => {
+    ping.mockClear();
+    spawn.mockClear();
+    const out = vi.spyOn(console, "log").mockImplementation(() => {});
+    unit.current = {
+      name: "gmax.service",
+      restart: "systemctl --user restart gmax.service",
+    };
+    const restart = watch.commands.find((c) => c.name() === "restart");
+    await restart?.parseAsync(["--json"], { from: "user" });
+    expect(process.exitCode).toBe(2);
+    expect(ping).not.toHaveBeenCalled();
+    expect(spawn).not.toHaveBeenCalled();
+    expect(JSON.parse(String(out.mock.calls[0][0])).error).toContain(
+      "systemctl --user restart gmax.service",
+    );
   });
 });

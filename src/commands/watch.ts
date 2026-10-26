@@ -32,6 +32,7 @@ import {
 } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import { QUERY_EXECUTION_OPTIONS } from "../lib/utils/query-timeout";
+import { systemdServiceUnit } from "../lib/utils/service-unit";
 import {
   getWatcherCoveringPath,
   getWatcherForProject,
@@ -158,6 +159,16 @@ export const watch = new Command("watch")
                 if (!paused.ok) throw new Error(String(paused.error));
               }
               process.exit(0);
+            }
+            const unit = systemdServiceUnit(
+              typeof resp.pid === "number" ? resp.pid : (readDaemonPid() ?? 0),
+            );
+            if (unit) {
+              console.error(
+                `Daemon version mismatch (${resp.version} → ${cliVersion}); the daemon runs as ${unit.name}, which holds its limits. Restart it with: ${unit.restart}`,
+              );
+              process.exitCode = 2;
+              return;
             }
             console.log(
               `Daemon version mismatch (${resp.version} → ${cliVersion}), restarting...`,
@@ -665,6 +676,15 @@ watch
     }
 
     const client = await import("../lib/utils/daemon-client");
+    const unitPid = client.readDaemonPid();
+    const unit = unitPid === null ? null : systemdServiceUnit(unitPid);
+    if (unit) {
+      refuse(
+        `the daemon runs as ${unit.name}, which holds its limits; restart it with: ${unit.restart}`,
+      );
+      await gracefulExit(2);
+      return;
+    }
     const { spawnDaemonProcess } = await import("../lib/utils/daemon-launcher");
     let parentCmd = "?";
     try {

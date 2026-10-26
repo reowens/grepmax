@@ -94,6 +94,10 @@ import {
 import { describeRoot } from "../utils/root-availability";
 import { latchSafetyStop } from "../utils/safety-latch";
 import {
+  SERVICE_RECYCLE_EXIT_CODE,
+  systemdServiceUnit,
+} from "../utils/service-unit";
+import {
   heartbeat,
   listWatchers,
   registerDaemon,
@@ -248,6 +252,9 @@ export class Daemon {
   private recycling = false;
   private recycleDueSinceMs: number | null = null;
   private recycleReason = "";
+  // A systemd unit holds this host's CPU limits; a successor spawned from here
+  // would die with the unit's cgroup, so the unit restarts the daemon instead.
+  private readonly serviceUnit = systemdServiceUnit(process.pid);
   private lastRecycleDeferLogMs = 0;
   // False until LanceDB + MetaCache are open. The socket starts listening early
   // (so liveness probes succeed during slow init), so commands that need those
@@ -3069,6 +3076,15 @@ export class Daemon {
       `[daemon] Recycling (${this.recycleReason})${forced} — handing off to a fresh daemon`,
     );
     this.recycling = true;
+    if (this.serviceUnit) {
+      console.log(
+        `[daemon] ${this.serviceUnit.name} restarts the daemon (exit ${SERVICE_RECYCLE_EXIT_CODE})`,
+      );
+      void this.shutdown().finally(() =>
+        process.exit(SERVICE_RECYCLE_EXIT_CODE),
+      );
+      return;
+    }
     void this.shutdown({ relaunch: true }).finally(() => process.exit(0));
   }
 
