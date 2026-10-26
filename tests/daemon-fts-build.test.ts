@@ -53,6 +53,27 @@ describe("daemon one-time FTS build", () => {
     );
   });
 
+  it("drops cached searchers so the next search adopts the new index", async () => {
+    mocks.projects = [{ root: "/a", status: "indexed" }];
+    const daemon = fixture();
+    daemon.searchers.set("/a", { stale: true });
+    await daemon.buildMissingFTSIndex();
+    expect(daemon.searchers.size).toBe(0);
+  });
+
+  it("keeps cached searchers when the build fails", async () => {
+    mocks.projects = [{ root: "/a", status: "indexed" }];
+    const daemon = fixture();
+    daemon.vectorDb.buildMissingFTSIndex.mockRejectedValueOnce(
+      new Error("disk pressure"),
+    );
+    daemon.searchers.set("/a", { stale: true });
+    await expect(daemon.buildMissingFTSIndex()).rejects.toThrow(
+      "disk pressure",
+    );
+    expect(daemon.searchers.size).toBe(1);
+  });
+
   it("refuses while any project is still pending", async () => {
     mocks.projects = [
       { root: "/a", status: "indexed" },

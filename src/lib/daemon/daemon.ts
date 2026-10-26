@@ -1099,10 +1099,13 @@ export class Daemon {
         ok: false,
         error: `projects are still being indexed (${pending.length} pending); retry when they finish`,
       };
-    return this.runSharedOperation("fts-build", undefined, async () => ({
-      ok: true,
-      ...(await db.buildMissingFTSIndex()),
-    }));
+    return this.runSharedOperation("fts-build", undefined, async () => {
+      const result = await db.buildMissingFTSIndex();
+      // A searcher remembers an FTS miss for 5 minutes. Drop them so the next
+      // search adopts the index this build just made.
+      this.searchers.clear();
+      return { ok: true, ...result };
+    });
   }
 
   versionCleanupStatus(): VersionCleanupResult | null {
