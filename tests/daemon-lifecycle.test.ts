@@ -236,6 +236,28 @@ describe("Daemon self-recycle", () => {
     expect(exitSpy).toHaveBeenCalledWith(0);
   });
 
+  it("leaves the restart to its systemd unit instead of spawning a successor", async () => {
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation((() => {}) as never);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const shutdownSpy = vi
+      .spyOn(daemon, "shutdown")
+      .mockResolvedValue(undefined);
+    daemon.serviceUnit = {
+      name: "gmax.service",
+      restart: "systemctl --user restart gmax.service",
+    };
+    footprint.mb = 4096;
+
+    daemon.maybeRecycle();
+
+    expect(shutdownSpy).toHaveBeenCalledWith();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(exitSpy).toHaveBeenCalledWith(75);
+  });
+
   it("captures a baseline and one due snapshot, with no extra heartbeat sampling", () => {
     footprint.mb = 4096;
     daemon.vectorDb = {
