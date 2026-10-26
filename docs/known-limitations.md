@@ -101,7 +101,8 @@ before search or sync mutation; existing rows are preserved.
 - Under host-safety containment a rebuilt store has no full-text index, and searches warn
   `Full-text search unavailable`. Once every project reports `indexed`, run `gmax repair --fts`
   (0.26.96+) to build it once; it refuses while any project is still pending and never replaces an
-  existing index.
+  existing index. The daemon's own searches adopt the new index at once; an MCP session or an
+  in-process CLI search rechecks within 5 minutes.
 
 ## `gmax surprises` is experimental orientation, not proof
 
