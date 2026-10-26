@@ -247,6 +247,7 @@ export class Daemon {
     | null = null;
   private lastCleanupAttempt = 0;
   private cleanupRetrySoon = false;
+  private cleanupFailures = 0;
   private heartbeatTick = 0;
   private shuttingDown = false;
   private recycling = false;
@@ -1126,6 +1127,10 @@ export class Daemon {
   }
 
   private versionCleanupIntervalMs(): number {
+    // Every attempt pauses watched edits, so a prune that keeps failing must
+    // not cancel live batches each minute: 5, 10, 20, 40, then 60 minutes.
+    if (this.cleanupFailures > 0)
+      return Math.min(5 * 60_000 * 2 ** (this.cleanupFailures - 1), 60 * 60_000);
     return !this.cleanupRetrySoon &&
       this.versionCleanupStatus()?.eligibleVersionsRemaining === 0
       ? 5 * 60_000
@@ -1358,7 +1363,16 @@ export class Daemon {
     if (this.cleanupPromise) return this.cleanupPromise;
     this.lastCleanupAttempt = Date.now();
     this.cleanupRetrySoon = false;
-    const run = this.performVersionCleanup();
+    const run = this.performVersionCleanup().then(
+      (result) => {
+        this.cleanupFailures = 0;
+        return result;
+      },
+      (error) => {
+        this.cleanupFailures++;
+        throw error;
+      },
+    );
     const tracked = run.finally(() => {
       if (this.cleanupPromise === tracked) this.cleanupPromise = null;
     });

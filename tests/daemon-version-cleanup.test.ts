@@ -168,6 +168,33 @@ describe("daemon automatic version cleanup", () => {
     await Promise.all([first, second]);
     expect(d.vectorDb.cleanupVersions).toHaveBeenCalledOnce();
   });
+  it("backs off a failing prune so watched edits are not paused every minute", async () => {
+    vi.useFakeTimers();
+    const { d } = fixture();
+    d.vectorDb.versionCleanupStatus = () => ({
+      ...completed,
+      eligibleVersionsRemaining: 5,
+    });
+    d.vectorDb.cleanupVersions.mockRejectedValue(new Error("SIGABRT"));
+    d.startVersionCleanupLoop();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(d.vectorDb.cleanupVersions).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(4 * 60_000);
+    expect(d.vectorDb.cleanupVersions).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(d.vectorDb.cleanupVersions).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(9 * 60_000);
+    expect(d.vectorDb.cleanupVersions).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(d.vectorDb.cleanupVersions).toHaveBeenCalledTimes(3);
+    expect(d.watcherManager.pauseAll).toHaveBeenCalledTimes(3);
+    d.vectorDb.cleanupVersions.mockResolvedValue(completed);
+    await vi.advanceTimersByTimeAsync(20 * 60_000);
+    expect(d.vectorDb.cleanupVersions).toHaveBeenCalledTimes(4);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(d.vectorDb.cleanupVersions).toHaveBeenCalledTimes(5);
+    clearInterval(d.cleanupInterval);
+  });
   it("retries backlog on the next minute and never runs during a paused service", async () => {
     vi.useFakeTimers();
     const { d } = fixture();
