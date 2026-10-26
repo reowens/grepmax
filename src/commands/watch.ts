@@ -48,6 +48,22 @@ import { isGemma2Profile } from "../lib/workers/embeddings/gemma2";
 // 30s operation-drain grace so the orderly path normally wins.
 const SIGNAL_EXIT_BACKSTOP_MS = 90_000;
 
+// A busy daemon misses the 2-second ping but still answers a pause once its
+// event loop frees up.
+const READ_ONLY_PAUSE_TIMEOUT_MS = 30_000;
+
+type DaemonSend = (
+  cmd: Record<string, unknown>,
+  opts?: { timeoutMs?: number },
+) => Promise<{ ok: boolean; [key: string]: unknown }>;
+
+function pauseForReadOnly(send: DaemonSend) {
+  return send(
+    { cmd: "pause", reason: "read-only service requested" },
+    { timeoutMs: READ_ONLY_PAUSE_TIMEOUT_MS },
+  );
+}
+
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const IDLE_CHECK_INTERVAL_MS = 60 * 1000; // check every minute
 
@@ -122,6 +138,7 @@ export const watch = new Command("watch")
           const {
             isDaemonRunning,
             daemonProcessMayExist,
+            isDaemonDraining,
             isDaemonHeartbeatFresh,
             sendDaemonCommand,
             readDaemonPid,
@@ -137,10 +154,7 @@ export const watch = new Command("watch")
             const resp = await sendDaemonCommand({ cmd: "ping" });
             if (resp.version && resp.version === cliVersion) {
               if (options.readOnly) {
-                const paused = await sendDaemonCommand({
-                  cmd: "pause",
-                  reason: "read-only service requested",
-                });
+                const paused = await pauseForReadOnly(sendDaemonCommand);
                 if (!paused.ok) throw new Error(String(paused.error));
               }
               process.exit(0);
@@ -187,11 +201,38 @@ export const watch = new Command("watch")
             console.log(formatRestartResult(result));
             process.exitCode = result.ok ? 0 : 1;
             return;
-          } else if (isDaemonHeartbeatFresh()) {
-            // Ping failed but daemon.lock mtime is fresh — another daemon is
-            // alive but too busy to answer (e.g. mid-index). Don't spawn a
-            // competitor while the existing daemon is busy.
-            process.exit(0);
+          }
+          // The ping failed, but a fresh heartbeat or a live PID in daemon.pid
+          // means a daemon is too busy to answer (e.g. mid-index). A second
+          // daemon would refuse startup for that same PID, so never spawn one
+          // unless it is draining; a read-only request still has to reach the
+          // busy daemon as a pause.
+          const peerPid = readDaemonPid();
+          if (
+            isDaemonHeartbeatFresh() ||
+            (peerPid !== null &&
+              daemonProcessMayExist(peerPid) &&
+              !isDaemonDraining(peerPid))
+          ) {
+            if (!options.readOnly) {
+              if (!startOnly)
+                console.log(
+                  `Daemon PID ${peerPid ?? "?"} is running but busy; not starting another`,
+                );
+              return;
+            }
+            const paused = await pauseForReadOnly(sendDaemonCommand);
+            if (!paused.ok) {
+              console.error(
+                `gmax: daemon PID ${peerPid ?? "?"} is running but did not accept the read-only pause within ${READ_ONLY_PAUSE_TIMEOUT_MS / 1000}s (${String(paused.error)}); nothing was started`,
+              );
+              process.exitCode = 1;
+              return;
+            }
+            console.log(
+              `Daemon PID ${peerPid ?? "?"} paused for read-only service`,
+            );
+            return;
           }
 
           const { spawnDaemonProcess } = await import(
