@@ -67,6 +67,12 @@ function helperEnvironment(): NodeJS.ProcessEnv {
     ...env,
     RAYON_NUM_THREADS: "1",
     TOKIO_WORKER_THREADS: "1",
+    // Lance sizes its own pools from the core count, and glibc gives each
+    // thread a 64 MiB arena: on a 24-core Linux host that crossed prune.py's
+    // 2 GiB address-space limit and aborted every prune.
+    LANCE_CPU_THREADS: "1",
+    LANCE_IO_THREADS: "1",
+    MALLOC_ARENA_MAX: "2",
     OMP_NUM_THREADS: "1",
     OPENBLAS_NUM_THREADS: "1",
     MKL_NUM_THREADS: "1",

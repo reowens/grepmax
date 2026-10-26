@@ -69,6 +69,9 @@ describe("prune helper subprocess bounds", () => {
       const options = vi.mocked(spawn).mock.calls[0][2] as any;
       expect(options.env.GMAX_FIXTURE_SECRET).toBeUndefined();
       expect(options.env.RAYON_NUM_THREADS).toBe("1");
+      expect(options.env.LANCE_CPU_THREADS).toBe("1");
+      expect(options.env.LANCE_IO_THREADS).toBe("1");
+      expect(options.env.MALLOC_ARENA_MAX).toBe("2");
       expect(options.env.UV_PYTHON_DOWNLOADS).toBe("never");
       expect(options.stdio).toEqual(["ignore", "pipe", "pipe"]);
       child.stdout.write("fixture");
