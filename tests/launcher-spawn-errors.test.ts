@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("node:child_process", () => ({ spawn: mocks.spawn }));
+vi.mock("../src/lib/utils/service-startup", () => ({
+  installedUserDaemonService: () => null,
+}));
 vi.mock("../src/lib/utils/log-rotate", () => ({
   openRotatedLog: vi.fn(() => 999_999),
 }));

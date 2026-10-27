@@ -543,6 +543,19 @@ To serve bounded reads under an existing startup quarantine, run `gmax watch --d
 
 On Linux the daemon can run as a systemd service, so the unit's CPU and memory limits cover it and its workers: `ExecStart` runs `node …/dist/bin.js watch --daemon` directly, with `Restart=on-failure` and `Environment=GMAX_DAEMON_IDLE_TIMEOUT_MS=0`. A daemon that is its unit's main process leaves restarts to the unit. Its 24-hour or memory recycle exits with status 75 instead of spawning a successor, and `gmax watch restart` and a version-mismatch `gmax watch --daemon -b` refuse and print the `systemctl` restart command, since a daemon started from the CLI would run outside the unit's limits. `gmax watch stop` still stops it; start it again through `systemctl`.
 
+**Unreleased startup follow-up:** source startup recognizes `gmax.service` or
+`hetchy-gmax.service` in `$XDG_CONFIG_HOME/systemd/user` (default
+`~/.config/systemd/user`) for the default `~/.gmax` home. Hooks already delegate
+to the background CLI launcher; that path and implicit CLI/MCP startup use
+`systemctl --user start` and return the unit's MainPID. A masked, ambiguous,
+unreadable or failed service is reported without starting a detached daemon or
+per-project watcher. Existing quarantine and Gemma-profile gates run first.
+Secondary stores keep their own routing. A read-only launch with no live daemon
+refuses to start a normal unit; the host operator must configure the service for
+read-only operation first. This follow-up does not change 0.26.98's published
+behavior until a new package is released and installed.
+
+
 Full-table compaction and new FTS/ANN index builds are disabled in the containment release, including forced maintenance and doctor repair. Existing indexes remain readable; missing lexical indexes fall back to available retrieval. Do not repeatedly force repair, use future cutoffs or manually remove index fragments.
 
 The package includes a separate prune-only helper with pinned Lance 12 dependencies, plus an exclusively leased Node wrapper. Runtime preparation uses `uv >=0.12.18`, an existing Python interpreter and locked wheels; it does not download Python, build from source, load an embedding model or run during installation. The helper currently supports macOS and Linux. The daemon runs independent prune-only retention: at most 128 old versions per pass, keeping current, tagged and two-minute recent versions. It retries backlog every minute and checks settled history every five minutes; status polling and watched edits do not prevent cleanup. Runtime setup happens before writer suspension. Bulk project indexing defers retention without stopping watchers or closing reads, with a one-minute retry. Reads also remain available while watcher work quiesces; admission closes briefly to drain old native readers before pruning starts. Older readers and external store owners are drained under an exclusive lease; new read-only queries may use the protected current version while history is deleted. Writers resume and watchers reconcile edits after the pass. Full-table compaction admission never gates this reclamation. Normal configured host policy applies; explicit offline recovery retains its separate admission.

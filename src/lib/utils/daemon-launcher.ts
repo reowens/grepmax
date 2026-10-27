@@ -5,6 +5,10 @@ import { PATHS } from "../../config";
 import { isGemma2Profile } from "../workers/embeddings/gemma2";
 import { daemonStartDeniedReason } from "./autostart";
 import { openRotatedLog } from "./log-rotate";
+import {
+  installedUserDaemonService,
+  startUserDaemonService,
+} from "./service-startup";
 
 /**
  * Spawn the daemon in background mode.
@@ -13,6 +17,10 @@ import { openRotatedLog } from "./log-rotate";
 export async function spawnDaemon(): Promise<number | null> {
   if (isGemma2Profile(PATHS.globalRoot) || daemonStartDeniedReason() !== null)
     return null;
+  // Keep errors visible: null permits watcher-launcher to start a per-project
+  // watcher, which would escape an installed service's resource limits too.
+  const unit = installedUserDaemonService();
+  if (unit) return startUserDaemonService(unit);
   let out: number | null = null;
   try {
     const logFile = path.join(PATHS.logsDir, "daemon.log");
@@ -53,6 +61,7 @@ export async function spawnDaemonProcess(
 ): Promise<{
   pid: number;
   logFile: string;
+  service?: string;
 }> {
   if (isGemma2Profile(PATHS.globalRoot))
     throw new Error(
@@ -60,6 +69,15 @@ export async function spawnDaemonProcess(
     );
   const denied = daemonStartDeniedReason();
   if (denied !== null && !options.readOnly) throw new Error(`gmax: ${denied}`);
+  const unit = installedUserDaemonService();
+  if (unit) {
+    const pid = await startUserDaemonService(unit, options);
+    return {
+      pid,
+      logFile: path.join(PATHS.logsDir, "daemon.log"),
+      service: unit,
+    };
+  }
   const logFile = path.join(PATHS.logsDir, "daemon.log");
   const out = openRotatedLog(logFile);
   try {

@@ -249,7 +249,7 @@ export const watch = new Command("watch")
           const { spawnDaemonProcess } = await import(
             "../lib/utils/daemon-launcher"
           );
-          let started: { pid: number; logFile: string };
+          let started: { pid: number; logFile: string; service?: string };
           try {
             started = options.readOnly
               ? await spawnDaemonProcess({ readOnly: true })
@@ -263,7 +263,9 @@ export const watch = new Command("watch")
           }
 
           console.log(
-            `Daemon started (PID: ${started.pid}, log: ${started.logFile})`,
+            started.service
+              ? `Daemon started via ${started.service} (PID: ${started.pid}; logs: journalctl --user -u ${started.service})`
+              : `Daemon started (PID: ${started.pid}, log: ${started.logFile})`,
           );
           process.exit(0);
         }
