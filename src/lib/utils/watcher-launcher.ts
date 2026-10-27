@@ -107,7 +107,16 @@ export async function launchWatcher(
       message: `Daemon did not accept the watch: ${error ?? "unknown error"}`,
     };
   }
-  const daemonPid = await spawnDaemon();
+  let daemonPid: number | null;
+  try {
+    daemonPid = await spawnDaemon();
+  } catch (error) {
+    return {
+      ok: false,
+      reason: "daemon-refused",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
   if (daemonPid) {
     for (let i = 0; i < 25; i++) {
       await new Promise((r) => setTimeout(r, 200));
