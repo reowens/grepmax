@@ -543,7 +543,7 @@ To serve bounded reads under an existing startup quarantine, run `gmax watch --d
 
 On Linux the daemon can run as a systemd service, so the unit's CPU and memory limits cover it and its workers: `ExecStart` runs `node …/dist/bin.js watch --daemon` directly, with `Restart=on-failure` and `Environment=GMAX_DAEMON_IDLE_TIMEOUT_MS=0`. A daemon that is its unit's main process leaves restarts to the unit. Its 24-hour or memory recycle exits with status 75 instead of spawning a successor, and `gmax watch restart` and a version-mismatch `gmax watch --daemon -b` refuse and print the `systemctl` restart command, since a daemon started from the CLI would run outside the unit's limits. `gmax watch stop` still stops it; start it again through `systemctl`.
 
-**Unreleased startup follow-up:** source startup recognizes `gmax.service` or
+**Service-aware startup (0.26.99+):** startup recognizes `gmax.service` or
 `hetchy-gmax.service` in `$XDG_CONFIG_HOME/systemd/user` (default
 `~/.config/systemd/user`) for the default `~/.gmax` home. Hooks already delegate
 to the background CLI launcher; that path and implicit CLI/MCP startup use
@@ -552,9 +552,8 @@ unreadable or failed service is reported without starting a detached daemon or
 per-project watcher. Existing quarantine and Gemma-profile gates run first.
 Secondary stores keep their own routing. A read-only launch with no live daemon
 refuses to start a normal unit; the host operator must configure the service for
-read-only operation first. This follow-up does not change 0.26.98's published
-behavior until a new package is released and installed.
-
+read-only operation first. Upgrade the installed package to use this routing;
+publication alone does not change a running daemon.
 
 Full-table compaction and new FTS/ANN index builds are disabled in the containment release, including forced maintenance and doctor repair. Existing indexes remain readable; missing lexical indexes fall back to available retrieval. Do not repeatedly force repair, use future cutoffs or manually remove index fragments.
 
