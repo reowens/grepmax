@@ -321,100 +321,101 @@ export async function runFtsRefresh(
   check(store);
   const initialSwap = memory().swap;
   let attempt: FtsRefreshState | undefined;
-  return lease.withExclusiveUse(store, async () => {
-    const previous = readFtsRefreshState(store);
-    if (
-      request.run &&
-      previous?.outcome === "uncertain" &&
-      request.acknowledgeUncertain !== previous.attemptId
-    )
-      throw new Error(
-        `Inspect the interrupted attempt, then use --acknowledge-uncertain ${previous.attemptId} before retry`,
-      );
-    const beforeBytes = tableBytes(table);
-    const reservation = resourceBudget.reserve(1024, "fts-refresh");
-    let unpin: (() => void) | undefined;
-    let childPid: number | undefined;
-    try {
-      const output = await runCleanupProcess(
-        runtime.python,
-        [
-          "-I",
-          path.join(path.dirname(runtime.script), "fts.py"),
-          "--table",
-          table,
-          "--expected-version",
-          String(request.expectedVersion),
-          "--lease-owner",
-          storeLeasePaths(store).intentOwnerFile,
-          "--lease-nonce",
-          lease.owner.nonce,
-          ...(request.run ? ["--run"] : []),
-        ],
-        {
-          signal: request.signal,
-          env: { LANCE_IO_THREADS: "2", LANCE_AUTO_MIGRATION: "false" },
-          timeoutMs: MAX_MS,
-          admission: {
-            nonce: lease.owner.nonce,
-            start: (pid) => {
-              unpin = lease.pinExclusiveHelper(pid);
-              childPid = pid;
-              reservation.attach(pid);
-            },
-            approve: () => {
-              check(store, initialSwap, childPid);
-              request.signal?.throwIfAborted();
-              if (request.run) {
-                attempt = {
-                  schemaVersion: 1,
-                  storeIdentity: store,
-                  attemptId: randomUUID(),
-                  expectedVersion: request.expectedVersion!,
-                  startedAt: Date.now(),
-                  outcome: "running",
-                  previousUncertainAttemptId:
-                    previous?.outcome === "uncertain"
-                      ? previous.attemptId
-                      : previous?.previousUncertainAttemptId,
-                };
-                writeState(attempt);
-              }
-            },
-            check: () => {
-              check(store, initialSwap, childPid);
-              if (tableBytes(table) - beforeBytes > MAX_GROWTH)
-                throw new Error(
-                  "FTS refresh sampled disk growth exceeded limit",
-                );
-            },
-            close: () => {
-              unpin?.();
+  try {
+    const result = await lease.withExclusiveUse(store, async () => {
+      const previous = readFtsRefreshState(store);
+      if (
+        request.run &&
+        previous?.outcome === "uncertain" &&
+        request.acknowledgeUncertain !== previous.attemptId
+      )
+        throw new Error(
+          `Inspect the interrupted attempt, then use --acknowledge-uncertain ${previous.attemptId} before retry`,
+        );
+      const beforeBytes = tableBytes(table);
+      const reservation = resourceBudget.reserve(1024, "fts-refresh");
+      let unpin: (() => void) | undefined;
+      let childPid: number | undefined;
+      try {
+        const output = await runCleanupProcess(
+          runtime.python,
+          [
+            "-I",
+            path.join(path.dirname(runtime.script), "fts.py"),
+            "--table",
+            table,
+            "--expected-version",
+            String(request.expectedVersion),
+            "--lease-owner",
+            storeLeasePaths(store).intentOwnerFile,
+            "--lease-nonce",
+            lease.owner.nonce,
+            ...(request.run ? ["--run"] : []),
+          ],
+          {
+            signal: request.signal,
+            env: { LANCE_IO_THREADS: "2", LANCE_AUTO_MIGRATION: "false" },
+            timeoutMs: MAX_MS,
+            admission: {
+              nonce: lease.owner.nonce,
+              start: (pid) => {
+                unpin = lease.pinExclusiveHelper(pid);
+                childPid = pid;
+                reservation.attach(pid);
+              },
+              approve: () => {
+                check(store, initialSwap, childPid);
+                request.signal?.throwIfAborted();
+                if (request.run) {
+                  attempt = {
+                    schemaVersion: 1,
+                    storeIdentity: store,
+                    attemptId: randomUUID(),
+                    expectedVersion: request.expectedVersion!,
+                    startedAt: Date.now(),
+                    outcome: "running",
+                    previousUncertainAttemptId:
+                      previous?.outcome === "uncertain"
+                        ? previous.attemptId
+                        : previous?.previousUncertainAttemptId,
+                  };
+                  writeState(attempt);
+                }
+              },
+              check: () => {
+                check(store, initialSwap, childPid);
+                if (tableBytes(table) - beforeBytes > MAX_GROWTH)
+                  throw new Error(
+                    "FTS refresh sampled disk growth exceeded limit",
+                  );
+              },
+              close: () => {
+                unpin?.();
+              },
             },
           },
-        },
-      );
-      const result: FtsRefreshResult = JSON.parse(output);
-      if (!validResult(result, request.expectedVersion!, !!request.run))
-        throw new Error("Invalid FTS result; completion is uncertain");
-      if (attempt)
-        writeState({
-          ...attempt,
-          outcome: "completed",
-          finishedAt: Date.now(),
-          result,
-        });
-      return result;
-    } catch (error) {
-      if (attempt)
-        writeState({
-          ...attempt,
-          outcome: "uncertain",
-          finishedAt: Date.now(),
-        });
-      throw error;
-    } finally {
-      reservation.release();
-    }
-  });
+        );
+        const result: FtsRefreshResult = JSON.parse(output);
+        if (!validResult(result, request.expectedVersion!, !!request.run))
+          throw new Error("Invalid FTS result; completion is uncertain");
+        return result;
+      } finally {
+        reservation.release();
+      }
+    });
+    // withExclusiveUse performs its final ownership check after the callback.
+    // The caller still holds the lease through this synchronous transition.
+    if (attempt)
+      writeState({
+        ...attempt,
+        outcome: "completed",
+        finishedAt: Date.now(),
+        result,
+      });
+    return result;
+  } catch (error) {
+    if (attempt)
+      writeState({ ...attempt, outcome: "uncertain", finishedAt: Date.now() });
+    throw error;
+  }
 }

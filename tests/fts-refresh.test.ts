@@ -11,7 +11,7 @@ import {
   runFtsRefresh,
 } from "../src/lib/store/fts-refresh";
 import { runCleanupProcess } from "../src/lib/store/lance-cleanup";
-import { StoreLease } from "../src/lib/store/store-lease";
+import { StoreLease, storeLeasePaths } from "../src/lib/store/store-lease";
 
 vi.mock("../src/lib/store/lance-cleanup", () => ({
   prepareCleanupRuntime: vi.fn(),
@@ -182,6 +182,48 @@ describe("explicit FTS catch-up guards", () => {
         expectedVersion: 5,
       }),
     ).rejects.toThrow(state.attemptId);
+    expect(runCleanupProcess).toHaveBeenCalledOnce();
+  });
+  it("retains uncertainty when final ownership verification fails after native success", async () => {
+    lease = await StoreLease.acquireExclusive({ storeDir: store });
+    const ownerFile = storeLeasePaths(store).intentOwnerFile;
+    const originalOwner = fs.readFileSync(ownerFile);
+    const withExclusiveUse = lease.withExclusiveUse.bind(lease);
+    vi.spyOn(lease, "withExclusiveUse").mockImplementation(
+      (directory, operation) =>
+        withExclusiveUse(directory, async () => {
+          const result = await operation();
+          // Change ownership only after the callback has consumed a successful
+          // native result. The real post-callback StoreLease check must reject.
+          const owner = JSON.parse(originalOwner.toString("utf8"));
+          fs.writeFileSync(
+            ownerFile,
+            JSON.stringify({ ...owner, nonce: randomUUID() }),
+          );
+          return result;
+        }),
+    );
+    try {
+      await expect(
+        runFtsRefresh(runtime, table, lease, {
+          table,
+          run: true,
+          expectedVersion: 5,
+        }),
+      ).rejects.toThrow("ownership could not be verified");
+      expect(readFtsRefreshState(store)?.outcome).toBe("uncertain");
+      expect(runCleanupProcess).toHaveBeenCalledOnce();
+    } finally {
+      fs.writeFileSync(ownerFile, originalOwner);
+    }
+    const uncertain = readFtsRefreshState(store)!;
+    await expect(
+      runFtsRefresh(runtime, table, lease, {
+        table,
+        run: true,
+        expectedVersion: 5,
+      }),
+    ).rejects.toThrow(uncertain.attemptId);
     expect(runCleanupProcess).toHaveBeenCalledOnce();
   });
   it("invalid native completion cannot become a successful receipt", async () => {
