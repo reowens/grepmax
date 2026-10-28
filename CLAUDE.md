@@ -21,6 +21,10 @@ Existing host limits, owned-process cleanup, rollback, local-only checks and the
 large-model hard stop below remain authoritative. Stop only on a real blocker
 or genuinely missing authorization/input, and identify it precisely.
 
+For approved FTS catch-up, use [the P3 runbook](docs/runbooks/p3-fts-catch-up.md).
+Two content-bounded batches are normal. Complete admitted batches without
+repeated approval; distinguish a completed FTS update from a later profile guard.
+
 ## Local checks and remote execution
 
 All checks run locally. Do not use Depot or another remote builder without an

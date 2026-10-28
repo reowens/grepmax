@@ -16,6 +16,10 @@ for each approved work batch, shared by the owner and delegates.
   existing small models/service, recording results and proposing the next work,
   unless the user explicitly narrows that scope. Do not end after publishing and
   offer deployment/profile as a new task when they are already authorized.
+- An approved bounded multi-batch action includes all normally admitted batches
+  in that owner window. For FTS catch-up, follow the runbook until the exclusive
+  snapshot has zero unindexed rows or the selected budget ends; positive
+  remainingRows after a completed batch is normal, not another approval gate.
 - A “go” authorizes one focused test invocation if relevant. A profile included in
   the approved scope is also authorized once. Deployment health/version reads are
   operational confirmation, not a reason to start another test suite. Do not ask
