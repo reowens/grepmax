@@ -1,8 +1,8 @@
 {
-  "startedAt": "2026-10-28T00:26:56Z",
-  "root": "/tmp/gmax-p3-search-m1f0wxjm",
-  "script": "/tmp/gmax-p3-packed-search-latency.cjs",
-  "scriptSha256": "cae4258094d5fbaa7b34071b4ca9846674db215bbc1ac64e34f6ec1ca2647397",
+  "startedAt": "2026-10-28T00:34:41Z",
+  "root": "/tmp/gmax-p3-search-ccwbda6h",
+  "script": "/tmp/gmax-release-packed-search-latency.cjs",
+  "scriptSha256": "08f6917371c3c3602368fceba588c7068ac7b3942fb63895117581344fa4f210",
   "models": [
     {
       "model": "onnx-community/granite-embedding-small-english-r2-ONNX",
@@ -77,10 +77,10 @@
     ]
   },
   "outcome": "completed",
-  "childPid": 2895087,
+  "childPid": 2927158,
   "exitCode": 0,
   "noLiveOwnedProcesses": true,
-  "elapsedSeconds": 25.41029512701789,
-  "peakSampledOwnedRssBytes": 713728000,
+  "elapsedSeconds": 32.86939392797649,
+  "peakSampledOwnedRssBytes": 704835584,
   "privateModelsAndStoreRemoved": true
 }

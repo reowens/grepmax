@@ -1,0 +1,23 @@
+{
+  "measurementSourceCommit": "8c7678f2f0880b376a5871390ccf6d731ad76e69",
+  "sourceHashesMatch": {
+    "src/lib/search/searcher.ts": true,
+    "src/lib/workers/orchestrator.ts": true,
+    "src/lib/workers/colbert-math.ts": true,
+    "src/lib/workers/colbert-packed.ts": true,
+    "src/lib/workers/embeddings/granite.ts": true,
+    "src/lib/workers/embeddings/colbert.ts": true
+  },
+  "resultFile": "packed-search-results.json",
+  "earlierDevelopmentEvidence": {
+    "commit": "3ac832a4de1fd12835e3bfe1b6ad6db252ec77ef",
+    "path": "docs/plans/assets/p3-cpu-20261027/packed-search-results.json",
+    "scope": "Supporting development measurement, not the exact isolated release candidate. That development checkout also contained an excluded queryFeatures encoder extraction and a pre-lint buffer assignment expression. The replacement evidence here measures the isolated candidate with the published inline encoder and checked source hashes."
+  },
+  "review": {
+    "reviewedCommit": "3ac832a4de1fd12835e3bfe1b6ad6db252ec77ef",
+    "verdict": "approved; no blocking findings",
+    "ownerChangesAfterReview": "One inert service-unit mock in the packaged process-control fixture, plus documentation/evidence provenance corrections. No new review round required by AGENTS.md.",
+    "optionalFollowup": "A deterministic cancellation fixture could strengthen multiple-contender winner-refinement coverage; this was not a reproduced defect or release blocker."
+  }
+}

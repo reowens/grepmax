@@ -37,7 +37,7 @@ Natural-language search that works like `grep`. Fast, local, and built for codin
 **CPU search in 0.26.100:** ColBERT reranking batches token dot products and
 reuses decoding buffers. Search fetches selected payloads by row ID within one
 snapshot. Existing indexes need no rebuild. A bounded warm P3 comparison on 96
-synthetic documents measured reranked search at 30.37 → 19.38 ms median with
+synthetic documents measured reranked search at 44.05 → 27.48 ms median with
 identical results; workload and host conditions determine the gain.
 
 ## Quick Start
