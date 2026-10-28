@@ -1,0 +1,38 @@
+{
+  "root": "/tmp/gmax-fts-tokenizer-verify-hdfv8hue",
+  "command": [
+    "/usr/local/bin/node",
+    "/home/reoiv/dev/hetchy/tools/gmax/.claude/worktrees/gmax-fts-release-026103/node_modules/vitest/vitest.mjs",
+    "run",
+    "tests/fts-refresh-native.test.ts",
+    "--maxWorkers=1",
+    "--testNamePattern",
+    "preserves the physical custom stop-word list|refuses incomplete physical tokenizer metadata|batches more",
+    "--reporter=json",
+    "--outputFile=/tmp/gmax-fts-tokenizer-verify-hdfv8hue/vitest.json"
+  ],
+  "limits": {
+    "deadlineSeconds": 120,
+    "maxOwnedRssBytes": 2147483648,
+    "minAvailableBytes": 8589934592,
+    "maxSwapGrowthBytes": 536870912,
+    "cpus": [
+      0,
+      1
+    ]
+  },
+  "outcome": "passed",
+  "childPid": 3173216,
+  "exitCode": 0,
+  "noLiveOwnedProcesses": true,
+  "elapsedSeconds": 7.175132139003836,
+  "peakSampledOwnedRssBytes": 673677312,
+  "privateHomeAndFixturesRemoved": true,
+  "tests": {
+    "numTotalTests": 11,
+    "numPassedTests": 5,
+    "numFailedTests": 0,
+    "numPendingTests": 6,
+    "success": true
+  }
+}

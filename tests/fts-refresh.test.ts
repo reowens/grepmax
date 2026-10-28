@@ -184,6 +184,55 @@ describe("explicit FTS catch-up guards", () => {
     ).rejects.toThrow(state.attemptId);
     expect(runCleanupProcess).toHaveBeenCalledOnce();
   });
+  it("retains a completed partial batch receipt without treating remaining rows as failure", async () => {
+    lease = await StoreLease.acquireExclusive({ storeDir: store });
+    const defaultRun = vi.mocked(runCleanupProcess).getMockImplementation()!;
+    vi.mocked(runCleanupProcess).mockImplementation(async (...args) => {
+      const result = JSON.parse(await defaultRun(...args));
+      return JSON.stringify({
+        ...result,
+        rows: 150_000,
+        unindexedRows: 120_000,
+        batchRows: 80_000,
+        physicalInputRows: 98_000,
+        contentBytes: 40_000,
+        pendingFragments: 30,
+        selectedFragments: 20,
+        remainingRows: 40_000,
+      });
+    });
+    await runFtsRefresh(runtime, table, lease, {
+      table,
+      run: true,
+      expectedVersion: 5,
+    });
+    expect(readFtsRefreshState(store)).toMatchObject({
+      outcome: "completed",
+      result: { batchRows: 80_000, remainingRows: 40_000, afterVersion: 6 },
+    });
+  });
+  it("rejects a partial batch whose remaining-row count does not reconcile", async () => {
+    lease = await StoreLease.acquireExclusive({ storeDir: store });
+    const defaultRun = vi.mocked(runCleanupProcess).getMockImplementation()!;
+    vi.mocked(runCleanupProcess).mockImplementation(async (...args) => {
+      const result = JSON.parse(await defaultRun(...args));
+      return JSON.stringify({
+        ...result,
+        batchRows: 2,
+        selectedFragments: 1,
+        pendingFragments: 2,
+        remainingRows: 0,
+      });
+    });
+    await expect(
+      runFtsRefresh(runtime, table, lease, {
+        table,
+        run: true,
+        expectedVersion: 5,
+      }),
+    ).rejects.toThrow();
+    expect(readFtsRefreshState(store)?.outcome).toBe("uncertain");
+  });
   it("retains uncertainty when final ownership verification fails after native success", async () => {
     lease = await StoreLease.acquireExclusive({ storeDir: store });
     const ownerFile = storeLeasePaths(store).intentOwnerFile;
