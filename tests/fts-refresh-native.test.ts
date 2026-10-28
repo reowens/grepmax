@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -66,7 +67,12 @@ describe.skipIf(!python || process.platform !== "linux")(
       table = await connection.openTable("chunks");
       return table;
     }
-    async function fixture(appended: number, long = false, deleted = false) {
+    async function fixture(
+      appended: number,
+      long = false,
+      deleted = false,
+      ftsOptions?: Parameters<typeof Index.fts>[0],
+    ) {
       fs.mkdirSync(store, { recursive: true });
       connection = await connect(store, {
         session: new Session(BigInt(8 * 1024 ** 2), BigInt(8 * 1024 ** 2)),
@@ -86,6 +92,7 @@ describe.skipIf(!python || process.platform !== "linux")(
           withPosition: true,
           stem: false,
           removeStopWords: false,
+          ...ftsOptions,
         }),
       });
       await table.createIndex("path", { config: Index.btree() });
@@ -370,6 +377,114 @@ describe.skipIf(!python || process.platform !== "linux")(
       ).toBe(receipt);
       expect(hashes()).toEqual(before.hashes);
     }, 20_000);
+    it.each([{ customStopWords: [] }, { customStopWords: ["sharedtoken"] }])(
+      "preserves the physical custom stop-word list %j",
+      async ({ customStopWords }) => {
+        const before = await fixture(32, false, false, {
+          removeStopWords: true,
+          customStopWords,
+        });
+        const result = await runFtsRefresh(
+          runtime(),
+          tablePath,
+          await acquire(),
+          {
+            table: tablePath,
+            run: true,
+            expectedVersion: before.version,
+          },
+        );
+        expect(result).toMatchObject({ remainingRows: 0, batchRows: 32 });
+        expect(hashes()).toEqual(before.hashes);
+        await lease!.release();
+        lease = undefined;
+        const reopened = await open();
+        // "the" is normally a built-in stop word, but neither explicit list
+        // contains it. Search the new fragment, not the retained old segment.
+        expect(
+          (
+            await reopened
+              .query()
+              .where("id = 'id-128'")
+              .fullTextSearch("the")
+              .toArray()
+          ).map((r: any) => r.id),
+        ).toEqual(["id-128"]);
+      },
+      15_000,
+    );
+    it.each(["missing-params", "missing-tokenizer"])(
+      "refuses incomplete physical tokenizer metadata %s before write admission",
+      async (mode) => {
+        const before = await fixture(32);
+        // Reproduce missing physical settings while the normalized manifest
+        // description still supplies keys. Only this private fixture is edited.
+        const source = `import json, os, resource, sys
+from pathlib import Path
+os.environ["LANCE_AUTO_MIGRATION"] = "false"
+resource.setrlimit(resource.RLIMIT_AS, (2 * 1024**3, 2 * 1024**3))
+resource.setrlimit(resource.RLIMIT_CPU, (10, 11))
+import lance
+from lance.file import LanceFileReader, LanceFileWriter
+root = Path(sys.argv[1])
+ds = lance.dataset(str(root), index_cache_size_bytes=8*1024**2, metadata_cache_size_bytes=8*1024**2)
+index = next(i for i in ds.list_indices() if i["name"] == "content_idx")
+file = root / "_indices" / index["uuid"] / "metadata.lance"
+reader = LanceFileReader(str(file))
+metadata = dict(reader.metadata().schema.metadata)
+data = reader.read_all().to_table()
+if sys.argv[2] == "missing-params":
+    metadata.pop(b"params")
+else:
+    params = json.loads(metadata[b"params"])
+    params.pop("base_tokenizer")
+    metadata[b"params"] = json.dumps(params).encode()
+data = data.replace_schema_metadata(metadata)
+temporary = file.with_name("fixture-metadata.lance")
+with LanceFileWriter(str(temporary), data.schema, version="2.0") as writer:
+    writer.write_batch(data)
+os.replace(temporary, file)
+`;
+        await new Promise<void>((resolve, reject) => {
+          execFile(
+            python!,
+            ["-I", "-c", source, tablePath, mode],
+            {
+              timeout: 10_000,
+              killSignal: "SIGKILL",
+              maxBuffer: 64 * 1024,
+            },
+            (error) => (error ? reject(error) : resolve()),
+          );
+        });
+        const payloads = new Map<string, string>();
+        for (const file of fs.readdirSync(path.join(tablePath, "_indices"), {
+          recursive: true,
+        })) {
+          const full = path.join(tablePath, "_indices", String(file));
+          if (fs.statSync(full).isFile())
+            payloads.set(
+              full,
+              createHash("sha256").update(fs.readFileSync(full)).digest("hex"),
+            );
+        }
+        await expect(
+          runFtsRefresh(runtime(), tablePath, await acquire(), {
+            table: tablePath,
+            run: true,
+            expectedVersion: before.version,
+          }),
+        ).rejects.toThrow();
+        expect(readFtsRefreshState(store)).toBeNull();
+        expect(hashes()).toEqual(before.hashes);
+        for (const [file, digest] of payloads)
+          expect(
+            createHash("sha256").update(fs.readFileSync(file)).digest("hex"),
+          ).toBe(digest);
+        expect(await (await open()).version()).toBe(before.version);
+      },
+      20_000,
+    );
     it("stale versions and over-budget rows/content refuse before a write is admitted", async () => {
       const before = await fixture(32);
       await acquire();
@@ -416,7 +531,7 @@ describe.skipIf(!python || process.platform !== "linux")(
         );
         const marker = path.join(root, "native-marker");
         const call =
-          "        append_batch(ds, batch_fragments, details, format_version, verify_before_commit)";
+          "        append_batch(ds, root, batch_fragments, details, format_version, verify_before_commit)";
         const interrupted = patchedHelper((text) =>
           text.replace(
             call,

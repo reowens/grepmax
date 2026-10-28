@@ -39,3 +39,28 @@ reuses this evidence without another test invocation or model load.
 Dependencies, model identities, native binaries and containment remain unchanged.
 The release is prepared separately from P3 installation and production FTS
 catch-up; the prior installation remains in service until an explicit handover.
+
+## Single publication review and owner correction
+
+The one static publication review of `ac8b184` found two blockers: normalized
+manifest descriptions synthesize missing tokenizer defaults, and their
+conversion drops custom stop-word lists. The owner correction reads each
+segment's physical `metadata.lance` parameter JSON instead. Missing/incomplete,
+unknown or differing parameter sets and legacy token-file layouts refuse
+before admission. Metadata files are capped at 1 MiB and parameter JSON at
+64 KiB. Only local plain-string row-document indexes are admitted.
+
+The new segment is built from those physical parameters, including `null`
+versus an explicit empty custom stop-word list. Its staged partition metadata
+is compared before publishing, and committed physical metadata is compared
+afterward. Existing batch, ownership and receipt control flow is retained.
+
+Source build, test typecheck and Python syntax checks pass for the correction.
+Four new native regression cases cover empty/nonempty custom stop-word lists
+and missing physical parameter/tokenizer metadata. One existing two-batch case
+is selected because this reader changed. The five-case focused invocation is
+prepared but has not run: explicit additional-test authorization is pending
+under AGENTS.md. The earlier 21-pass invocation remains historical evidence of
+its exact source; it does not establish coverage of these two findings.
+The old archive is held under `reviewed-original` in local delivery state and
+must not be published. No additional independent review round is required.

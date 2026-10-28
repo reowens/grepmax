@@ -14,6 +14,7 @@ from pathlib import Path
 import resource
 import sys
 import time
+from uuid import UUID
 
 INDEX = "content_idx"
 MAX_ROWS = 100_000
@@ -108,20 +109,56 @@ def open_dataset(lance, root):
                          read_params={"cache_repetition_index": False})
 
 
-def index_config(ds):
+def stored_index_config(file):
+    from lance.file import LanceFileReader
+    # Legacy token-file layouts and incomplete metadata are deliberately refused.
+    # The manifest description fills absent parameters with defaults and drops
+    # custom_stop_words. It cannot establish the stored tokenizer's identity.
+    if file.is_symlink() or not file.is_file() or not 0 < file.stat().st_size <= 1024**2:
+        raise ValueError("index")
+    metadata = LanceFileReader(str(file)).metadata().schema.metadata or {}
+    raw = metadata.get(b"params")
+    if raw is None or len(raw) > 64 * 1024:
+        raise ValueError("index")
+    parameters = json.loads(raw)
+    required = {"lance_tokenizer", "base_tokenizer", "language", "with_position",
+                "max_token_length", "lower_case", "stem", "remove_stop_words",
+                "custom_stop_words", "ascii_folding", "min_ngram_length",
+                "max_ngram_length", "prefix_only", "block_size", "split_identifiers",
+                "split_on_numerics", "preserve_original", "index_operators"}
+    if (not isinstance(parameters, dict) or set(parameters) != required
+            or parameters["lance_tokenizer"] != "text"
+            or not parameters["base_tokenizer"] or not parameters["language"]):
+        raise ValueError("index")
+    return parameters
+
+
+def physical_index_config(root, segment_id):
+    if str(UUID(segment_id)) != segment_id:
+        raise ValueError("index")
+    return stored_index_config(root / "_indices" / segment_id / "metadata.lance")
+
+
+def index_config(ds, root):
+    import pyarrow as pa
     descriptions = [d for d in ds.describe_indices() if d.name == INDEX]
     if (len(descriptions) != 1 or descriptions[0].field_names != ["content"]
             or not descriptions[0].type_url.endswith("InvertedIndexDetails")):
         raise ValueError("index")
     description = descriptions[0]
-    details = description.details
-    # Do not silently substitute creation defaults for legacy/unknown metadata.
-    if not isinstance(details, dict) or "base_tokenizer" not in details or "with_position" not in details:
+    # Only plain string, row-document indexes are qualified for this command.
+    field_type = ds.schema.field("content").type
+    if (not (pa.types.is_string(field_type) or pa.types.is_large_string(field_type))
+            or description.details.get("document_granularity") != "row"):
         raise ValueError("index")
     versions = [s.index_version for s in description.segments]
-    if not versions or any(v not in (1, 2, 3) for v in versions):
+    if (not versions or any(v not in (1, 2, 3) for v in versions)
+            or any(s.base_id is not None for s in description.segments)):
         raise ValueError("index")
-    return details, max(versions)
+    configs = [physical_index_config(root, s.uuid) for s in description.segments]
+    if any(config != configs[0] for config in configs[1:]):
+        raise ValueError("index")
+    return {**configs[0], "document_granularity": "row"}, max(versions)
 
 
 def prepare(ds):
@@ -184,7 +221,7 @@ def prepare(ds):
             metadata, all_indices, batch_fragments)
 
 
-def append_batch(ds, fragment_ids, details, format_version, verify):
+def append_batch(ds, root, fragment_ids, details, format_version, verify):
     from lance.indices import IndexConfig
     parameters = {**details, "format_version": format_version,
                   "memory_limit": 128, "num_workers": 1}
@@ -195,7 +232,19 @@ def append_batch(ds, fragment_ids, details, format_version, verify):
         "content", IndexConfig("inverted", parameters), name=INDEX,
         replace=True, fragment_ids=fragment_ids,
         document_granularity=details.get("document_granularity", "row"))
-    if set(segment.fragment_ids) != set(fragment_ids):
+    # Distributed builds store their full parameters in staged partition
+    # metadata until commit finalizes metadata.lance. Check those files before
+    # publishing, including the distinction between null and [] stop words.
+    files = segment.files or []
+    metadata_files = [f.path for f in files if len(Path(f.path).parts) == 2
+                      and Path(f.path).parts[0] == "staging"
+                      and Path(f.path).name.startswith("part_")
+                      and Path(f.path).name.endswith("_metadata.lance")]
+    expected = {key: value for key, value in details.items() if key != "document_granularity"}
+    if (set(segment.fragment_ids) != set(fragment_ids)
+            or not metadata_files or len(files) > MAX_FILES
+            or any(stored_index_config(root / "_indices" / segment.uuid / file) != expected
+                   for file in metadata_files)):
         raise ValueError("verification-new-index")
     # Building may be interrupted without a commit. Recheck ownership/head
     # immediately before publishing; retained segments have disjoint coverage.
@@ -221,8 +270,8 @@ def run(args, admission):
     # rather than changing persistent configuration or silently pruning files.
     if any(key.startswith("lance.auto_cleanup.") for key in config):
         raise ValueError("automatic-cleanup")
+    details, format_version = index_config(ds, root)
     plan, fragments, before_indices, batch_fragments = prepare(ds)
-    details, format_version = index_config(ds)
     schema = ds.schema.serialize().to_pybytes()
     tags = canonical(ds.tags.list())
     fingerprint = hashlib.sha256(canonical([fragments, before_indices, schema.hex(), tags]).encode()).hexdigest()
@@ -238,7 +287,7 @@ def run(args, admission):
                 or ds.latest_version != args.expected_version):
             raise ValueError("ownership-or-version")
     if args.run and plan["batchRows"]:
-        append_batch(ds, batch_fragments, details, format_version, verify_before_commit)
+        append_batch(ds, root, batch_fragments, details, format_version, verify_before_commit)
     after = open_dataset(lance, root)
     after_files = inventory(root)
     after_indices, after_selected = indices(after)
@@ -264,7 +313,7 @@ def run(args, admission):
         "new-index": (len(after_selected) == len(old_selected) + int(changed)
                       and (not changed or (len(added) == 1
                            and set(added[0]["fragment_ids"]) == set(batch_fragments)))
-                      and index_config(after)[0] == details),
+                      and index_config(after, root)[0] == details),
         "owner": verify_owner(root, args.lease_owner, args.lease_nonce) == owner,
     }
     for category, passed in checks.items():
