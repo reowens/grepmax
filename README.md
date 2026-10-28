@@ -47,6 +47,16 @@ measured default median latency at 36.77 → 26.87 ms and median CPU time
 exactly. Default p95 rose from 44.39 to 56.74 ms in that shared-host sample;
 these results establish no production tail-latency or relevance guarantee.
 
+**CPU search and FTS catch-up in 0.26.102:** Ranking materializes bounded content
+prefixes, then restores full bodies for final results on the same snapshot.
+A paired warm P3 fixture with 3,072 synthetic rows measured default p95
+52.28 → 32.44 ms and median CPU 3.3% lower, with exact full-response parity
+across 240 queries per arm. These shared-host results are not a production
+latency or relevance guarantee. An explicit Linux-only `fts-refresh` command
+can catch up an existing full-text index under exclusive ownership and input,
+resource and interruption guards; it does not compact data or prune versions.
+Models, dependencies and full-table containment are unchanged.
+
 ## Quick Start
 
 Requires **Node.js 22.12.0 or newer**.
@@ -569,6 +579,8 @@ read-only operation first. Upgrade the installed package to use this routing;
 publication alone does not change a running daemon.
 
 Full-table compaction and new FTS/ANN index builds are disabled in the containment release, including forced maintenance and doctor repair. Existing indexes remain readable; missing lexical indexes fall back to available retrieval. Do not repeatedly force repair, use future cutoffs or manually remove index fragments.
+
+`gmax fts-refresh --table /path/to/lancedb/chunks.lance` reads the durable FTS receipt. `--check --expected-version N` checks native coverage and input admission; `--run --expected-version N` appends an FTS delta after all store owners close. This Linux-only command admits at most 100,000 physical input rows and 64 MiB of live content, with a 120-second deadline, 90-second CPU limit, two-CPU affinity, 2 GiB address-space cap and sampled 1 GiB helper RSS guard. It requires 8 GiB available host memory and disk headroom for 512 MiB sampled growth plus 1 GiB margin. Sampled guards can overshoot and are not a native cumulative-write cap. The command preserves quarantine, refuses configured native automatic cleanup and never stops services, compacts data or prunes versions. Interrupted writes require inspection and the exact `--acknowledge-uncertain` attempt ID before retry; no automatic retry runs. Corpus-statistic updates can change BM25 scores. See `--help` for the command contract.
 
 The package includes a separate prune-only helper with pinned Lance 12 dependencies, plus an exclusively leased Node wrapper. Runtime preparation uses `uv >=0.12.18`, an existing Python interpreter and locked wheels; it does not download Python, build from source, load an embedding model or run during installation. The helper currently supports macOS and Linux. The daemon runs independent prune-only retention: at most 128 old versions per pass, keeping current, tagged and two-minute recent versions. It retries backlog every minute and checks settled history every five minutes; status polling and watched edits do not prevent cleanup. Runtime setup happens before writer suspension. Bulk project indexing defers retention without stopping watchers or closing reads, with a one-minute retry. Reads also remain available while watcher work quiesces; admission closes briefly to drain old native readers before pruning starts. Older readers and external store owners are drained under an exclusive lease; new read-only queries may use the protected current version while history is deleted. Writers resume and watchers reconcile edits after the pass. Full-table compaction admission never gates this reclamation. Normal configured host policy applies; explicit offline recovery retains its separate admission.
 

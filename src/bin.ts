@@ -48,7 +48,7 @@ function selectHome(): void {
   if (
     argv[0] === "mcp" ||
     argv[0] === "status" ||
-    explicitCommand(argv) === "recover"
+    ["recover", "fts-refresh"].includes(explicitCommand(argv) ?? "")
   )
     return;
   const match = matchStore(commandTarget(argv, process.cwd()));
