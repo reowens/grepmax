@@ -40,9 +40,17 @@ function makeRecord(i: number): VectorRecord {
 
 function makeTable(records: VectorRecord[]) {
   const read = vi.fn();
+  const stored = new Map<bigint, VectorRecord>();
+  const store = (record: VectorRecord) => {
+    const row = { ...record, _rowid: BigInt(stored.size) };
+    stored.set(row._rowid, row);
+    return row;
+  };
+  records = records.map(store);
   const vectorSearch = () => {
     let limitVal = records.length;
     const chain = {
+      withRowId: () => chain,
       select: () => chain,
       limit: (n: number) => {
         limitVal = n;
@@ -59,6 +67,7 @@ function makeTable(records: VectorRecord[]) {
 
   const emptySearch = () => {
     const chain = {
+      withRowId: () => chain,
       select: () => chain,
       limit: () => chain,
       where: () => chain,
@@ -95,7 +104,30 @@ function makeTable(records: VectorRecord[]) {
     return chain;
   };
 
-  return { vectorSearch, search: emptySearch, query, read };
+  const takeRowIds = (ids: readonly (bigint | number)[]) => {
+    const chain = {
+      select: () => chain,
+      toArray: async () => {
+        read();
+        return ids.flatMap((id) => {
+          const row = stored.get(BigInt(id));
+          return row ? [row] : [];
+        });
+      },
+    };
+    return chain;
+  };
+  return {
+    vectorSearch,
+    search: emptySearch,
+    query,
+    takeRowIds,
+    version: async () => 1,
+    checkout: async () => {},
+    close: () => {},
+    store,
+    read,
+  };
 }
 
 describe("Searcher result window", () => {
@@ -403,6 +435,7 @@ describe("Searcher result window", () => {
   it("records FTS query failure while preserving vector results", async () => {
     const table = makeTable(records);
     const chain = {
+      withRowId: () => chain,
       select: () => chain,
       limit: () => chain,
       where: () => chain,
@@ -430,8 +463,9 @@ describe("Searcher result window", () => {
   it("retains keyword-only membership and separates fusion from the stage-one cut", async () => {
     vi.stubEnv("GMAX_STAGE1_K", "2");
     const table = makeTable(records);
-    const keywordOnly = makeRecord(99);
+    const keywordOnly = table.store(makeRecord(99));
     const chain = {
+      withRowId: () => chain,
       select: () => chain,
       limit: () => chain,
       where: () => chain,

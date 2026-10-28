@@ -25,6 +25,7 @@ constraint-dependencies = [
     "certifi>=2026.10.19",
     "click>=8.3.3",
     "datasets>=5.0.1",
+    "filelock>=4.2.4",
     "fsspec>=2026.6.0",
     "idna>=3.15",
     "multidict>=6.9.1",

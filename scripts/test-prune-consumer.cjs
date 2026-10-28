@@ -55,7 +55,11 @@ print(json.dumps({"version": ds.version, "tagged": tagged, "rows": ds.count_rows
     const cacheCheck = await runCleanupProcess(process.execPath, ["-e", `require(${JSON.stringify(path.join(packageRoot,"dist/lib/store/lance-cleanup.js"))}).prepareCleanupRuntime().catch(e=>{console.error(e);process.exitCode=1})`]);
     assert.equal(cacheCheck, "");
     const table = path.join(store, "chunks.lance");
-    const prepared = JSON.parse(await runCleanupProcess(runtime.python, ["-I", "-c", prepare, table]));
+    // Lance 12 halves transaction I/O concurrency; one slot stalls overwrites.
+    // Override fixture creation only. Production pruning keeps its own limits.
+    const prepared = JSON.parse(await runCleanupProcess(runtime.python, ["-I", "-c", prepare, table], {
+      env: {LANCE_IO_THREADS: "2"},
+    }));
     const cliStatus = () => {
       const run = spawnSync(process.execPath,[path.join(packageRoot,"dist/bin.js"),"recover","--table",table,"--json"],{encoding:"utf8",timeout:10000});
       assert.equal(run.status,0,run.stderr);
