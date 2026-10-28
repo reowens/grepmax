@@ -119,6 +119,7 @@ function load(relative, mocks, processMock) {
       "../utils/keyed-mutex": { KeyedMutex: class { async close() {} } },
       "../utils/operation-coordinator": { OperationCoordinator: class { async close() {} } },
       "../utils/resource-budget": { resourceBudget: { check: () => null } },
+      "../utils/service-unit": { systemdServiceUnit: () => null },
       "../utils/watcher-store": { listWatchers: () => [...watchers], unregisterDaemon: () => mutations.push(["unregister-daemon"]) },
       "../workers/pool": { isWorkerPoolInitialized: () => false },
       "./mlx-server-manager": { MlxServerManager: class { async stopMlxServer() {} } },
