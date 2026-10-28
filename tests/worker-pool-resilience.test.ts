@@ -383,6 +383,205 @@ describe("WorkerPool resilience", () => {
     expect(pool.workers).toEqual([]);
   });
 
+  describe("file retry admission", () => {
+    const input = { path: "/repo/nested/file.ts", projectRoot: "/repo" };
+    const sent = () =>
+      h.children.flatMap((child) =>
+        child.send.mock.calls.map(([message]: any[]) => ({ child, message })),
+      );
+    const finishRetry = async (retry: Promise<unknown>) => {
+      const dispatched = sent().find(
+        ({ message }) => message.payload.reusableKeys?.[0] === "retry",
+      );
+      expect(dispatched).toBeDefined();
+      dispatched!.child.emit("message", {
+        id: dispatched!.message.id,
+        result: { vectors: [], hash: "fresh" },
+      });
+      await expect(retry).resolves.toMatchObject({ hash: "fresh" });
+    };
+
+    it.each(["result", "error", "exit"] as const)(
+      "waits for the aborted file's terminal %s while other work proceeds",
+      async (terminal) => {
+        vi.useFakeTimers();
+        pool = new WorkerPool();
+        pool.maxWorkers = 2;
+        pool.spawnWorker();
+        const [owner, spare] = pool.workers;
+        const ac = new AbortController();
+        const first = pool.processFile(input, ac.signal);
+        const firstId = owner.pendingTaskId;
+        ac.abort();
+        await expect(first).rejects.toMatchObject({ name: "AbortError" });
+
+        const retry = pool.processFile({ ...input, reusableKeys: ["retry"] });
+        owner.child.emit("message", { id: firstId, heartbeat: true });
+        expect(spare.child.send).not.toHaveBeenCalled();
+        expect(owner.busy).toBe(true);
+
+        const query = pool.encodeQuery("foreground");
+        expect(spare.child.send.mock.calls[0][0].method).toBe("encodeQuery");
+        spare.child.emit("message", {
+          id: spare.pendingTaskId,
+          result: { dense: [], colbert: [], colbertDim: 0 },
+        });
+        await query;
+
+        const other = pool.processFile({ ...input, path: "/repo/other.ts" });
+        expect(spare.child.send.mock.calls[1][0].payload.path).toBe(
+          "/repo/other.ts",
+        );
+        spare.child.emit("message", {
+          id: spare.pendingTaskId,
+          result: { vectors: [] },
+        });
+        await other;
+        expect(
+          sent().filter(({ message }) => message.payload.path === input.path),
+        ).toHaveLength(1);
+
+        if (terminal === "exit") owner.child.emit("exit", 1, null);
+        else
+          owner.child.emit("message", {
+            id: firstId,
+            ...(terminal === "error"
+              ? { error: "old task failed" }
+              : { result: { vectors: [], hash: "obsolete" } }),
+          });
+
+        expect(h.children).toHaveLength(2);
+        expect(
+          sent().filter(({ message }) => message.payload.path === input.path),
+        ).toHaveLength(2);
+        await finishRetry(retry);
+      },
+    );
+
+    it("does not scale up for a fenced retry or release its owner on queued abort", async () => {
+      vi.useFakeTimers();
+      pool = new WorkerPool();
+      pool.maxWorkers = 2;
+      const owner = pool.workers[0];
+      const originalAbort = new AbortController();
+      const first = pool.processFile(input, originalAbort.signal);
+      const firstId = owner.pendingTaskId;
+      originalAbort.abort();
+      await expect(first).rejects.toMatchObject({ name: "AbortError" });
+
+      const queuedAbort = new AbortController();
+      const cancelled = pool.processFile(input, queuedAbort.signal);
+      queuedAbort.abort();
+      await expect(cancelled).rejects.toMatchObject({ name: "AbortError" });
+      const retry = pool.processFile({ ...input, reusableKeys: ["retry"] });
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(h.children).toHaveLength(1);
+      expect(owner.child.send).toHaveBeenCalledTimes(1);
+
+      const query = pool.encodeQuery("foreground");
+      expect(h.children).toHaveLength(2);
+      const spare = pool.workers[1];
+      expect(spare.child.send.mock.calls[0][0].method).toBe("encodeQuery");
+      spare.child.emit("message", {
+        id: spare.pendingTaskId,
+        result: { dense: [], colbert: [], colbertDim: 0 },
+      });
+      await query;
+      owner.child.emit("message", { id: firstId, result: { vectors: [] } });
+      await finishRetry(retry);
+    });
+
+    it("keeps a timed-out file fenced until the child confirms exit", async () => {
+      vi.useFakeTimers();
+      pool = new WorkerPool();
+      pool.maxWorkers = 2;
+      pool.spawnWorker();
+      const owner = pool.workers[0];
+      owner.child.kill.mockReturnValue(true);
+      const first = pool.processFile(input);
+      const firstCheck = expect(first).rejects.toThrow(/exceeded no progress/);
+      const firstTask = pool.tasks.get(owner.pendingTaskId);
+      const retry = pool.processFile({ ...input, reusableKeys: ["retry"] });
+
+      pool.handleTaskTimeout(firstTask, owner);
+      await firstCheck;
+      expect(owner.child.kill).toHaveBeenCalledWith("SIGKILL");
+      owner.child.emit("error", new Error("exit not yet confirmed"));
+      expect(sent()).toHaveLength(1);
+
+      owner.child.emit("exit", null, "SIGKILL");
+      await finishRetry(retry);
+    });
+
+    it("keeps the same path in different projects independent", async () => {
+      vi.useFakeTimers();
+      pool = new WorkerPool();
+      pool.maxWorkers = 2;
+      pool.spawnWorker();
+      const [firstWorker, secondWorker] = pool.workers;
+      const first = pool.processFile(input);
+      const second = pool.processFile({
+        ...input,
+        projectRoot: "/repo/nested",
+      });
+      expect(secondWorker.child.send).toHaveBeenCalledTimes(1);
+      for (const worker of [firstWorker, secondWorker])
+        worker.child.emit("message", {
+          id: worker.pendingTaskId,
+          result: { vectors: [] },
+        });
+      await Promise.all([first, second]);
+    });
+
+    it("admits the next retry when dispatching its predecessor throws", async () => {
+      vi.useFakeTimers();
+      pool = new WorkerPool();
+      pool.maxWorkers = 1;
+      const owner = pool.workers[0];
+      const first = pool.processFile(input);
+      const firstId = owner.pendingTaskId;
+      const failed = pool.processFile({ ...input, reusableKeys: ["failed"] });
+      const failedCheck = expect(failed).rejects.toThrow("send failed");
+      const retry = pool.processFile({ ...input, reusableKeys: ["retry"] });
+      owner.child.send.mockImplementationOnce(() => {
+        throw new Error("send failed");
+      });
+
+      owner.child.emit("message", { id: firstId, result: { vectors: [] } });
+      await first;
+      await failedCheck;
+      await finishRetry(retry);
+    });
+
+    it("does not make existing-worker queries yield to a fenced retry", async () => {
+      vi.useFakeTimers();
+      pool = new WorkerPool();
+      pool.maxWorkers = 2;
+      pool.spawnWorker();
+      const [owner, spare] = pool.workers;
+      spare.queryReady = true;
+      const ac = new AbortController();
+      const first = pool.processFile(input, ac.signal);
+      const firstId = owner.pendingTaskId;
+      ac.abort();
+      await expect(first).rejects.toMatchObject({ name: "AbortError" });
+      const retry = pool.processFile({ ...input, reusableKeys: ["retry"] });
+
+      for (let i = 0; i < 5; i++) {
+        const query = pool.encodeQueryExisting(`foreground-${i}`);
+        expect(spare.child.send).toHaveBeenCalledTimes(i + 1);
+        spare.child.emit("message", {
+          id: spare.pendingTaskId,
+          result: { dense: [], colbert: [], colbertDim: 0 },
+        });
+        await query;
+      }
+
+      owner.child.emit("message", { id: firstId, result: { vectors: [] } });
+      await finishRetry(retry);
+    });
+  });
+
   describe("demand-driven scale-up", () => {
     const sentMethods = (child: any) =>
       child.send.mock.calls.map((call: any[]) => call[0].method);

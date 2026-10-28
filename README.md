@@ -69,6 +69,14 @@ including an explicit empty list. Synthetic Linux fixtures verified two-batch ca
 106,496 physical / 53,248 live pending rows, preserved snapshots and payloads,
 and interruption handling; production throughput remains unqualified.
 
+**Background indexing and watch leases in 0.26.104:** A retry for the same
+project and file waits until its previous worker task finishes, including when
+the original caller cancels. Searches and unrelated files remain eligible;
+blocked retries do not trigger additional demand-driven workers. A lease renewed
+while teardown is queued keeps the project watched. Explicit indexing/removal
+operations can still detach watchers. Focused mocked-worker and lease tests cover
+these behaviors; a production CPU or latency improvement has not been measured.
+
 ## Quick Start
 
 Requires **Node.js 22.12.0 or newer**.

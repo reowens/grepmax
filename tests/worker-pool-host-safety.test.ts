@@ -295,7 +295,7 @@ describe("WorkerPool host admission", () => {
     expect(childProcess.fork).toHaveBeenCalledTimes(1);
   });
 
-  it("settles pending tasks when the no-progress timer cannot replace a worker", async () => {
+  it("settles callers on denied timeout replacement and retains ownership until exit", async () => {
     pool = new WorkerPool();
     const assigned = pool.processFile({
       path: "/repo/a.ts",
@@ -314,9 +314,14 @@ describe("WorkerPool host admission", () => {
     h.kernel = { status: "unknown", reason: "timeout" };
     await vi.advanceTimersByTimeAsync(120001);
     await Promise.all([failed, denied]);
-    expect(pool.tasks.size).toBe(0);
+    const originalChild = h.children[0];
+    expect(originalChild.kill).toHaveBeenCalledWith("SIGKILL");
+    expect(pool.tasks.size).toBe(1);
     expect(childProcess.fork).toHaveBeenCalledTimes(1);
     expect(h.latch).not.toHaveBeenCalled();
+
+    originalChild.emit("exit", null, "SIGKILL");
+    expect(pool.tasks.size).toBe(0);
   });
 
   it("contains a thrown admission probe before constructor fork", () => {

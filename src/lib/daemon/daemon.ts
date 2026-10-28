@@ -894,7 +894,7 @@ export class Daemon {
     if (this.shouldWatch(root) || !this.processors.has(root)) {
       return Promise.resolve();
     }
-    return this.unwatchProject(root, signal);
+    return this.unwatchProjectIfUnleased(root, signal);
   }
 
   /**
@@ -920,7 +920,7 @@ export class Daemon {
       console.log(
         `[daemon] No session holds ${path.basename(root)} any more — unwatching`,
       );
-      void this.unwatchProject(root).catch((err) => {
+      void this.unwatchProjectIfUnleased(root).catch((err) => {
         console.error(
           `[daemon] Failed to unwatch ${path.basename(root)}:`,
           err,
@@ -1130,7 +1130,10 @@ export class Daemon {
     // Every attempt pauses watched edits, so a prune that keeps failing must
     // not cancel live batches each minute: 5, 10, 20, 40, then 60 minutes.
     if (this.cleanupFailures > 0)
-      return Math.min(5 * 60_000 * 2 ** (this.cleanupFailures - 1), 60 * 60_000);
+      return Math.min(
+        5 * 60_000 * 2 ** (this.cleanupFailures - 1),
+        60 * 60_000,
+      );
     return !this.cleanupRetrySoon &&
       this.versionCleanupStatus()?.eligibleVersionsRemaining === 0
       ? 5 * 60_000
@@ -1592,6 +1595,20 @@ export class Daemon {
     } finally {
       this.shutdownAbortControllers.delete(ac);
     }
+  }
+
+  private unwatchProjectIfUnleased(
+    root: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    return this.withProjectLock(root, signal, () =>
+      this.runSharedOperation("unwatch", signal, () => {
+        // A lease may have arrived while teardown waited for the lock or
+        // admission. Recheck immediately before detaching the watcher.
+        if (this.shouldWatch(root)) return Promise.resolve();
+        return this.unwatchProjectWithinOperation(root);
+      }),
+    );
   }
 
   unwatchProject(root: string, signal?: AbortSignal): Promise<void> {

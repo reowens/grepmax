@@ -74,6 +74,7 @@ type PendingTask<M extends TaskMethod = TaskMethod> = {
   signal?: AbortSignal;
   abortListener?: () => void;
   callerAborted?: boolean;
+  fileKey?: string;
   existingOnly?: boolean;
   waitTimeout?: NodeJS.Timeout;
 };
@@ -289,10 +290,12 @@ export class WorkerPool {
   private workers: ProcessWorker[] = [];
   // Two queues so searches don't wait behind a long indexing backlog. Priority
   // tasks (encodeQuery/rerank) are dispatched first; processFile tasks queue
-  // in the regular queue. FIFO is preserved within each priority class.
+  // in the regular queue. A file retry waits for its previous native owner;
+  // unrelated files can pass that blocked entry.
   private priorityQueue: number[] = [];
   private taskQueue: number[] = [];
   private tasks = new Map<number, PendingTask<TaskMethod>>();
+  private fileOwners = new Map<string, number>();
   // Separate from ordinary queues: these requests must never trigger expansion.
   private existingWaiters = new Map<number, PendingTask<"encodeQuery">>();
   private existingBurst = 0;
@@ -387,11 +390,18 @@ export class WorkerPool {
     if (idx !== -1) this.taskQueue.splice(idx, 1);
   }
 
+  private canDispatch(task: PendingTask): boolean {
+    return (
+      !task.worker &&
+      (task.fileKey === undefined || !this.fileOwners.has(task.fileKey))
+    );
+  }
+
   private hasUnassignedTasks(): boolean {
     const hasUnassigned = (queue: number[]) =>
       queue.some((id) => {
         const t = this.tasks.get(id);
-        return t && !t.worker;
+        return t && this.canDispatch(t);
       });
     return hasUnassigned(this.priorityQueue) || hasUnassigned(this.taskQueue);
   }
@@ -432,6 +442,12 @@ export class WorkerPool {
       task.abortListener = undefined;
     }
     this.tasks.delete(task.id);
+    if (
+      task.fileKey !== undefined &&
+      this.fileOwners.get(task.fileKey) === task.id
+    ) {
+      this.fileOwners.delete(task.fileKey);
+    }
     this.existingWaiters.delete(task.id);
     this.removeFromQueue(task.id);
 
@@ -490,7 +506,7 @@ export class WorkerPool {
       const hasPendingTasks = this.hasUnassignedTasks();
       if (
         (!worker.suppressReplacement && this.workers.length === 0) ||
-        hasPendingTasks
+        (hasPendingTasks && !this.workers.some((w) => !w.busy))
       ) {
         this.maybeRespawn(reason, hasPendingTasks);
       }
@@ -722,6 +738,8 @@ export class WorkerPool {
         }
       };
 
+      const file =
+        method === "processFile" ? (payload as ProcessFileInput) : null;
       const task: PendingTask<M> = {
         id,
         method,
@@ -730,6 +748,9 @@ export class WorkerPool {
         reject: safeReject,
         queuedAt: Date.now(),
         signal,
+        fileKey: file
+          ? JSON.stringify([file.projectRoot, file.path])
+          : undefined,
       };
 
       if (signal) {
@@ -781,7 +802,6 @@ export class WorkerPool {
       "pool",
       `timeout task=${task.id} method=${task.method} file=${filePath} (${reason}, ${limitMs}ms) — killing worker PID:${worker.child.pid}`,
     );
-    this.completeTask(task, null);
     task.reject(
       new Error(
         `Worker task ${task.method} exceeded ${reason} limit (${limitMs}ms) on ${filePath}`,
@@ -792,6 +812,18 @@ export class WorkerPool {
     worker.child.removeAllListeners("message");
     worker.child.removeAllListeners("exit");
     worker.child.removeAllListeners("error");
+    // A kill request is not proof of exit. Keep this file fenced until the
+    // old child actually exits, including when signalling it fails.
+    worker.child.once("exit", () => {
+      this.completeTask(task, null);
+      this.dispatch();
+    });
+    worker.child.on("error", (error: Error) => {
+      debug(
+        "pool",
+        `timed-out worker PID:${worker.child.pid}: ${error.message}`,
+      );
+    });
     try {
       worker.child.kill("SIGKILL");
     } catch {}
@@ -832,7 +864,7 @@ export class WorkerPool {
     const findUnassigned = (queue: number[]): number | undefined =>
       queue.find((id) => {
         const t = this.tasks.get(id);
-        return t && !t.worker;
+        return t && this.canDispatch(t);
       });
     const nextTaskId =
       findUnassigned(this.priorityQueue) ?? findUnassigned(this.taskQueue);
@@ -886,6 +918,7 @@ export class WorkerPool {
     idle.pendingTaskId = task.id;
     idle.busySince = Date.now();
     task.worker = idle;
+    if (task.fileKey !== undefined) this.fileOwners.set(task.fileKey, task.id);
     task.startTime = Date.now();
 
     task.timeout = setTimeout(
@@ -920,6 +953,7 @@ export class WorkerPool {
       this.clearTaskTimeout(task);
       this.completeTask(task, idle);
       task.reject(err);
+      this.dispatch();
       return;
     }
 
@@ -935,7 +969,7 @@ export class WorkerPool {
     const unassigned = (queue: number[]) =>
       queue.flatMap((id) => {
         const t = this.tasks.get(id);
-        return t && !t.worker ? [t] : [];
+        return t && this.canDispatch(t) ? [t] : [];
       });
     if (unassigned(this.priorityQueue).length > 0) return 0;
     const waiting = unassigned(this.taskQueue);
@@ -1015,7 +1049,9 @@ export class WorkerPool {
       // A continuous caller stream cannot keep indexing behind this queue.
       if (
         this.existingBurst >= EXISTING_QUERY_QUEUE_LIMIT &&
-        [...this.tasks.values()].some((t) => !t.worker && !t.existingOnly)
+        [...this.tasks.values()].some(
+          (t) => !t.existingOnly && this.canDispatch(t),
+        )
       )
         return;
       if (state === "busy") return;
