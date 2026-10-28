@@ -66,7 +66,7 @@ describe.skipIf(!python || process.platform !== "linux")(
       table = await connection.openTable("chunks");
       return table;
     }
-    async function fixture(appended: number, long = false) {
+    async function fixture(appended: number, long = false, deleted = false) {
       fs.mkdirSync(store, { recursive: true });
       connection = await connect(store, {
         session: new Session(BigInt(8 * 1024 ** 2), BigInt(8 * 1024 ** 2)),
@@ -74,20 +74,30 @@ describe.skipIf(!python || process.platform !== "linux")(
       const row = (i: number) => ({
         id: `id-${i}`,
         path: `/fixture/${i}.ts`,
-        content: `needle${i} sharedtoken worker cache metadata ${long ? "alpha beta gamma delta epsilon ".repeat(16) : ""}`,
+        content: `needle${i} sharedtoken worker cache metadata running the ${long ? "alpha beta gamma delta epsilon ".repeat(16) : ""}`,
         vector: [1, i % 3, 0, 0],
       });
       table = await connection.createTable(
         "chunks",
         Array.from({ length: 128 }, (_, i) => row(i)),
       );
-      await table.createIndex("content", { config: Index.fts() });
+      await table.createIndex("content", {
+        config: Index.fts({
+          withPosition: true,
+          stem: false,
+          removeStopWords: false,
+        }),
+      });
       await table.createIndex("path", { config: Index.btree() });
       for (let i = 0; i < appended; i += 4096)
         await table.add(
           Array.from({ length: Math.min(4096, appended - i) }, (_, n) =>
             row(128 + i + n),
           ),
+        );
+      if (deleted)
+        await table.delete(
+          [0, 2, 4, 6, 8].map((n) => `id LIKE '%${n}'`).join(" OR "),
         );
       const version = await table.version();
       const pathStats = await table.indexStats("path_idx");
@@ -230,6 +240,136 @@ describe.skipIf(!python || process.platform !== "linux")(
       expect(readFtsRefreshState(store)).toBe(null);
       expect(hashes()).toEqual(before.hashes);
     }, 15_000);
+    it("batches more than 100,000 physical rows with deletions and preserves snapshots and index settings", async () => {
+      const before = await fixture(106_496, false, true);
+      const pinned = await open();
+      await pinned.checkout(before.version);
+      const oldStats = await pinned.indexStats("content_idx");
+      const expectedRows = await pinned.countRows();
+      await acquire();
+      const checked = await runFtsRefresh(runtime(), tablePath, lease!, {
+        table: tablePath,
+        check: true,
+        expectedVersion: before.version,
+      });
+      expect(checked.unindexedRows).toBe(53_248);
+      expect(checked.physicalInputRows).toBe(98_304);
+      expect(checked.batchRows).toBe(49_152);
+      expect(checked.remainingRows).toBe(53_248);
+      expect(checked.selectedFragments).toBeLessThan(checked.pendingFragments);
+      expect(readFtsRefreshState(store)).toBeNull();
+      const first = await runFtsRefresh(runtime(), tablePath, lease!, {
+        table: tablePath,
+        run: true,
+        expectedVersion: before.version,
+      });
+      expect(first).toMatchObject({
+        batchRows: 49_152,
+        physicalInputRows: 98_304,
+        remainingRows: 4096,
+        afterVersion: before.version + 1,
+      });
+      expect(readFtsRefreshState(store)?.result).toMatchObject({
+        remainingRows: 4096,
+      });
+      expect(await pinned.version()).toBe(before.version);
+      expect(await pinned.indexStats("content_idx")).toEqual(oldStats);
+      const second = await runFtsRefresh(runtime(), tablePath, lease!, {
+        table: tablePath,
+        run: true,
+        expectedVersion: first.afterVersion,
+      });
+      expect(second).toMatchObject({
+        batchRows: 4096,
+        physicalInputRows: 8192,
+        remainingRows: 0,
+        afterVersion: first.afterVersion + 1,
+      });
+      expect(hashes()).toEqual(before.hashes);
+      table!.close();
+      table = undefined;
+      await connection!.close();
+      connection = undefined;
+      await lease!.release();
+      lease = undefined;
+      const reopened = await open();
+      expect(await reopened.countRows()).toBe(expectedRows);
+      expect(await reopened.indexStats("content_idx")).toMatchObject({
+        numUnindexedRows: 0,
+        numIndices: 3,
+      });
+      expect(await reopened.indexStats("path_idx")).toEqual(before.pathStats);
+      const ids = (
+        await reopened
+          .query()
+          .where("id IN ('id-0', 'id-127', 'id-128')")
+          .withRowId()
+          .toArray()
+      )
+        .map((r: any) => [r.id, String(r._rowid)])
+        .sort();
+      expect(ids).toEqual(before.ids);
+      expect(
+        (await reopened.query().fullTextSearch("needle106623").toArray()).map(
+          (r: any) => r.id,
+        ),
+      ).toEqual(["id-106623"]);
+      for (const token of ["running", "the"])
+        expect(
+          (
+            await reopened
+              .query()
+              .where("id = 'id-106623'")
+              .fullTextSearch(token)
+              .toArray()
+          ).map((r: any) => r.id),
+        ).toEqual(["id-106623"]);
+    }, 45_000);
+    it("ends a batch before the content limit and refuses an oversized first fragment", async () => {
+      const before = await fixture(8192);
+      await acquire();
+      // Each 4096-row fragment is below 384 KiB; both together exceed it.
+      const bounded = patchedHelper((text) =>
+        text.replace(
+          "MAX_CONTENT_BYTES = 64 * 1024**2",
+          "MAX_CONTENT_BYTES = 384 * 1024",
+        ),
+      );
+      const result = await runFtsRefresh(bounded, tablePath, lease!, {
+        table: tablePath,
+        run: true,
+        expectedVersion: before.version,
+      });
+      expect(result).toMatchObject({
+        batchRows: 4096,
+        physicalInputRows: 4096,
+        remainingRows: 4096,
+        selectedFragments: 1,
+        pendingFragments: 2,
+      });
+      expect(result.contentBytes).toBeLessThanOrEqual(384 * 1024);
+      fs.writeFileSync(
+        path.join(root, "helper/fts.py"),
+        fs
+          .readFileSync(path.join(path.dirname(script), "fts.py"), "utf8")
+          .replace("MAX_CONTENT_BYTES = 64 * 1024**2", "MAX_CONTENT_BYTES = 1"),
+      );
+      const receipt = fs.readFileSync(
+        path.join(store, ".gmax-fts-refresh.json"),
+        "utf8",
+      );
+      await expect(
+        runFtsRefresh(bounded, tablePath, lease!, {
+          table: tablePath,
+          run: true,
+          expectedVersion: result.afterVersion,
+        }),
+      ).rejects.toThrow();
+      expect(
+        fs.readFileSync(path.join(store, ".gmax-fts-refresh.json"), "utf8"),
+      ).toBe(receipt);
+      expect(hashes()).toEqual(before.hashes);
+    }, 20_000);
     it("stale versions and over-budget rows/content refuse before a write is admitted", async () => {
       const before = await fixture(32);
       await acquire();
@@ -276,7 +416,7 @@ describe.skipIf(!python || process.platform !== "linux")(
         );
         const marker = path.join(root, "native-marker");
         const call =
-          "        ds.optimize.optimize_indices(index_names=[INDEX], num_indices_to_merge=0, retrain=False)";
+          "        append_batch(ds, batch_fragments, details, format_version, verify_before_commit)";
         const interrupted = patchedHelper((text) =>
           text.replace(
             call,

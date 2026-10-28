@@ -57,6 +57,16 @@ can catch up an existing full-text index under exclusive ownership and input,
 resource and interruption guards; it does not compact data or prune versions.
 Models, dependencies and full-table containment are unchanged.
 
+**Bounded FTS catch-up in 0.26.103:** Each explicit `fts-refresh --run`
+processes one batch of whole pending fragments within the existing 100,000
+physical-row and 64 MiB live-content limits. Physical rows include deletions.
+The command copies stored tokenizer settings, retains existing index segments,
+and reports `batchRows`, `selectedFragments` and `remainingRows`. Inspect the
+new head version before selecting another batch. A single fragment exceeding
+admission is refused. Synthetic Linux fixtures verified two-batch catch-up of
+106,496 physical / 53,248 live pending rows, preserved snapshots and payloads,
+and interruption handling; production throughput remains unqualified.
+
 ## Quick Start
 
 Requires **Node.js 22.12.0 or newer**.
@@ -580,7 +590,7 @@ publication alone does not change a running daemon.
 
 Full-table compaction and new FTS/ANN index builds are disabled in the containment release, including forced maintenance and doctor repair. Existing indexes remain readable; missing lexical indexes fall back to available retrieval. Do not repeatedly force repair, use future cutoffs or manually remove index fragments.
 
-`gmax fts-refresh --table /path/to/lancedb/chunks.lance` reads the durable FTS receipt. `--check --expected-version N` checks native coverage and input admission; `--run --expected-version N` appends an FTS delta after all store owners close. This Linux-only command admits at most 100,000 physical input rows and 64 MiB of live content, with a 120-second deadline, 90-second CPU limit, two-CPU affinity, 2 GiB address-space cap and sampled 1 GiB helper RSS guard. It requires 8 GiB available host memory and disk headroom for 512 MiB sampled growth plus 1 GiB margin. Sampled guards can overshoot and are not a native cumulative-write cap. The command preserves quarantine, refuses configured native automatic cleanup and never stops services, compacts data or prunes versions. Interrupted writes require inspection and the exact `--acknowledge-uncertain` attempt ID before retry; no automatic retry runs. Corpus-statistic updates can change BM25 scores. See `--help` for the command contract.
+`gmax fts-refresh --table /path/to/lancedb/chunks.lance` reads the durable FTS receipt. `--check --expected-version N` checks native coverage and input admission; `--run --expected-version N` appends one fragment-bounded FTS delta after all store owners close. The result reports total `unindexedRows`, selected `batchRows`/`selectedFragments` and `remainingRows`; a completed batch may leave a backlog. Inspect the fresh head before explicitly selecting another run. Stored tokenizer settings and existing index segments are preserved; a single oversized fragment is refused. This Linux-only command admits at most 100,000 physical input rows and 64 MiB of live content, with a 120-second deadline, 90-second CPU limit, two-CPU affinity, 2 GiB address-space cap and sampled 1 GiB helper RSS guard. It requires 8 GiB available host memory and disk headroom for 512 MiB sampled growth plus 1 GiB margin. Sampled guards can overshoot and are not a native cumulative-write cap. The command preserves quarantine, refuses configured native automatic cleanup and never stops services, compacts data or prunes versions. Interrupted writes require inspection and the exact `--acknowledge-uncertain` attempt ID before retry; no automatic retry runs. Corpus-statistic updates can change BM25 scores. See `--help` for the command contract.
 
 The package includes a separate prune-only helper with pinned Lance 12 dependencies, plus an exclusively leased Node wrapper. Runtime preparation uses `uv >=0.12.18`, an existing Python interpreter and locked wheels; it does not download Python, build from source, load an embedding model or run during installation. The helper currently supports macOS and Linux. The daemon runs independent prune-only retention: at most 128 old versions per pass, keeping current, tagged and two-minute recent versions. It retries backlog every minute and checks settled history every five minutes; status polling and watched edits do not prevent cleanup. Runtime setup happens before writer suspension. Bulk project indexing defers retention without stopping watchers or closing reads, with a one-minute retry. Reads also remain available while watcher work quiesces; admission closes briefly to drain old native readers before pruning starts. Older readers and external store owners are drained under an exclusive lease; new read-only queries may use the protected current version while history is deleted. Writers resume and watchers reconcile edits after the pass. Full-table compaction admission never gates this reclamation. Normal configured host policy applies; explicit offline recovery retains its separate admission.
 

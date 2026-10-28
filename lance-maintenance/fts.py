@@ -108,6 +108,22 @@ def open_dataset(lance, root):
                          read_params={"cache_repetition_index": False})
 
 
+def index_config(ds):
+    descriptions = [d for d in ds.describe_indices() if d.name == INDEX]
+    if (len(descriptions) != 1 or descriptions[0].field_names != ["content"]
+            or not descriptions[0].type_url.endswith("InvertedIndexDetails")):
+        raise ValueError("index")
+    description = descriptions[0]
+    details = description.details
+    # Do not silently substitute creation defaults for legacy/unknown metadata.
+    if not isinstance(details, dict) or "base_tokenizer" not in details or "with_position" not in details:
+        raise ValueError("index")
+    versions = [s.index_version for s in description.segments]
+    if not versions or any(v not in (1, 2, 3) for v in versions):
+        raise ValueError("index")
+    return details, max(versions)
+
+
 def prepare(ds):
     all_indices, selected = indices(ds)
     if len(selected) >= MAX_SEGMENTS:
@@ -116,32 +132,75 @@ def prepare(ds):
     if len(fragments) > MAX_FRAGMENTS:
         raise ValueError("fragments")
     covered = set().union(*(set(i["fragment_ids"]) for i in selected))
-    pending = [f for f in fragments if f.fragment_id not in covered]
-    physical_rows = sum(f.physical_rows for f in pending)
-    if physical_rows > MAX_ROWS:
-        raise ValueError("rows")
+    pending = sorted((f for f in fragments if f.fragment_id not in covered),
+                     key=lambda f: f.fragment_id)
     stats = ds.index_statistics(INDEX)
     unindexed = stats["num_unindexed_rows"]
-    if type(unindexed) is not int or not 0 <= unindexed <= physical_rows:
+    if type(unindexed) is not int or not 0 <= unindexed <= sum(f.physical_rows for f in pending):
         raise ValueError("coverage")
-    # Only content is scanned. The physical-row bound also covers deleted rows;
-    # the native delta scans live rows. No vectors or full-table payload scan.
+    # The public segment commit drops deferred zero-coverage placeholders.
+    # This operation promises to retain old segments, so refuse that case.
+    if unindexed and any(not set(i["fragment_ids"]) for i in selected):
+        raise ValueError("index")
+    # Admit a deterministic prefix of whole fragments. Physical admission counts
+    # deleted rows too. Only this prefix's live content is read; never scan the
+    # entire backlog to fit a batch, and never split a fragment's index coverage.
     import pyarrow.compute as pc
-    content_bytes = live_rows = 0
+    content_bytes = live_rows = physical_rows = 0
+    batch_fragments = []
     for fragment in pending:
+        if physical_rows + fragment.physical_rows > MAX_ROWS:
+            if not batch_fragments:
+                raise ValueError("rows")
+            break
+        fragment_bytes = fragment_rows = 0
         for batch in fragment.to_batches(columns=["content"], batch_size=256,
                                           batch_readahead=1):
-            live_rows += batch.num_rows
-            content_bytes += pc.sum(pc.binary_length(batch.column(0))).as_py() or 0
-            if content_bytes > MAX_CONTENT_BYTES:
+            fragment_rows += batch.num_rows
+            fragment_bytes += pc.sum(pc.binary_length(batch.column(0))).as_py() or 0
+            if content_bytes + fragment_bytes > MAX_CONTENT_BYTES:
+                break
+        if content_bytes + fragment_bytes > MAX_CONTENT_BYTES:
+            if not batch_fragments or not live_rows:
                 raise ValueError("content-bytes")
-    if live_rows != unindexed:
+            break
+        if fragment_rows != fragment.count_rows():
+            raise ValueError("coverage")
+        batch_fragments.append(fragment.fragment_id)
+        physical_rows += fragment.physical_rows
+        live_rows += fragment_rows
+        content_bytes += fragment_bytes
+    if live_rows > unindexed or (len(batch_fragments) == len(pending) and live_rows != unindexed):
         raise ValueError("coverage")
+    if unindexed and not live_rows:
+        raise ValueError("rows")
+    if live_rows and len(all_indices) >= MAX_SEGMENTS:
+        raise ValueError("segments")
     metadata = [f.metadata.to_json() for f in fragments]
     return ({"rows": ds.count_rows(), "unindexedRows": unindexed,
+             "batchRows": live_rows, "selectedFragments": len(batch_fragments),
              "physicalInputRows": physical_rows, "contentBytes": content_bytes,
              "pendingFragments": len(pending), "segmentsBefore": len(selected)},
-            metadata, all_indices)
+            metadata, all_indices, batch_fragments)
+
+
+def append_batch(ds, fragment_ids, details, format_version, verify):
+    from lance.indices import IndexConfig
+    parameters = {**details, "format_version": format_version,
+                  "memory_limit": 128, "num_workers": 1}
+    # The build requires replace=True to reuse an existing name, but is strictly
+    # uncommitted. Only the disjoint-segment commit below publishes metadata;
+    # it retains every existing segment rather than replacing the logical index.
+    segment = ds.create_index_uncommitted(
+        "content", IndexConfig("inverted", parameters), name=INDEX,
+        replace=True, fragment_ids=fragment_ids,
+        document_granularity=details.get("document_granularity", "row"))
+    if set(segment.fragment_ids) != set(fragment_ids):
+        raise ValueError("verification-new-index")
+    # Building may be interrupted without a commit. Recheck ownership/head
+    # immediately before publishing; retained segments have disjoint coverage.
+    verify()
+    ds.commit_existing_index_segments(INDEX, "content", [segment])
 
 
 def run(args, admission):
@@ -162,7 +221,8 @@ def run(args, admission):
     # rather than changing persistent configuration or silently pruning files.
     if any(key.startswith("lance.auto_cleanup.") for key in config):
         raise ValueError("automatic-cleanup")
-    plan, fragments, before_indices = prepare(ds)
+    plan, fragments, before_indices, batch_fragments = prepare(ds)
+    details, format_version = index_config(ds)
     schema = ds.schema.serialize().to_pybytes()
     tags = canonical(ds.tags.list())
     fingerprint = hashlib.sha256(canonical([fragments, before_indices, schema.hex(), tags]).encode()).hexdigest()
@@ -173,13 +233,18 @@ def run(args, admission):
             or ds.latest_version != args.expected_version):
         raise ValueError("ownership-or-version")
     started = time.monotonic()
-    if args.run and plan["unindexedRows"]:
-        ds.optimize.optimize_indices(index_names=[INDEX], num_indices_to_merge=0, retrain=False)
+    def verify_before_commit():
+        if (verify_owner(root, args.lease_owner, args.lease_nonce) != owner
+                or ds.latest_version != args.expected_version):
+            raise ValueError("ownership-or-version")
+    if args.run and plan["batchRows"]:
+        append_batch(ds, batch_fragments, details, format_version, verify_before_commit)
     after = open_dataset(lance, root)
     after_files = inventory(root)
     after_indices, after_selected = indices(after)
     old_selected = [i for i in before_indices if i["name"] == INDEX]
-    changed = bool(args.run and plan["unindexedRows"])
+    changed = bool(args.run and plan["batchRows"])
+    added = [i for i in after_selected if i["uuid"] not in {j["uuid"] for j in old_selected}]
     # Fresh readers must agree, including after native commit. All historical
     # files remain; only new FTS files, a transaction and manifest may be added.
     checks = {
@@ -196,14 +261,17 @@ def run(args, admission):
                      if name.startswith(("data/", "_indices/", "_deletions/"))),
         "other-index": canonical([i for i in after_indices if i["name"] != INDEX]) == canonical([i for i in before_indices if i["name"] != INDEX]),
         "old-index": all(canonical(i) in {canonical(j) for j in after_selected} for i in old_selected),
-        "new-index": len(after_selected) == len(old_selected) + int(changed),
+        "new-index": (len(after_selected) == len(old_selected) + int(changed)
+                      and (not changed or (len(added) == 1
+                           and set(added[0]["fragment_ids"]) == set(batch_fragments)))
+                      and index_config(after)[0] == details),
         "owner": verify_owner(root, args.lease_owner, args.lease_nonce) == owner,
     }
     for category, passed in checks.items():
         if not passed:
             raise ValueError("verification-" + category)
     remaining = after.index_statistics(INDEX)["num_unindexed_rows"]
-    if remaining != (0 if args.run else plan["unindexedRows"]):
+    if remaining != plan["unindexedRows"] - (plan["batchRows"] if args.run else 0):
         raise ValueError("verification")
     growth = sum(v[0] for k, v in after_files.items() if k not in before_files)
     if growth > MAX_GROWTH:

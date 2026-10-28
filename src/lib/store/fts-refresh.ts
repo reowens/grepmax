@@ -29,6 +29,9 @@ export interface FtsRefreshResult {
   dataRewritten: false;
   rows: number;
   unindexedRows: number;
+  /** Absent only in receipts produced before fragment-bounded catch-up. */
+  batchRows?: number;
+  selectedFragments?: number;
   physicalInputRows: number;
   contentBytes: number;
   pendingFragments: number;
@@ -57,6 +60,11 @@ function validResult(
   run: boolean,
 ): boolean {
   const count = (v: number) => Number.isSafeInteger(v) && v >= 0;
+  const batchRows = r?.batchRows === undefined ? r?.unindexedRows : r.batchRows;
+  const selectedFragments =
+    r?.selectedFragments === undefined
+      ? r?.pendingFragments
+      : r.selectedFragments;
   return (
     r?.engine === "12.0.0" &&
     r.index === "content_idx" &&
@@ -74,7 +82,15 @@ function validResult(
       r.newFileBytes,
       r.elapsedMs,
     ].every(count) &&
-    r.unindexedRows <= r.physicalInputRows &&
+    (r.batchRows === undefined) === (r.selectedFragments === undefined) &&
+    count(batchRows) &&
+    count(selectedFragments) &&
+    batchRows <= r.unindexedRows &&
+    batchRows <= r.physicalInputRows &&
+    selectedFragments <= r.pendingFragments &&
+    (batchRows > 0 || r.unindexedRows === 0) &&
+    (batchRows === 0 || selectedFragments > 0) &&
+    (selectedFragments < r.pendingFragments || batchRows === r.unindexedRows) &&
     r.unindexedRows <= r.rows &&
     r.physicalInputRows <= 100_000 &&
     r.contentBytes <= 64 * MIB &&
@@ -82,8 +98,8 @@ function validResult(
     r.segmentsBefore > 0 &&
     r.segmentsBefore < 256 &&
     r.newFileBytes <= MAX_GROWTH &&
-    r.remainingRows === (run ? 0 : r.unindexedRows) &&
-    r.afterVersion === version + Number(run && r.unindexedRows > 0) &&
+    r.remainingRows === r.unindexedRows - (run ? batchRows : 0) &&
+    r.afterVersion === version + Number(run && batchRows > 0) &&
     /^[a-f0-9]{64}$/.test(r.beforeFingerprint)
   );
 }

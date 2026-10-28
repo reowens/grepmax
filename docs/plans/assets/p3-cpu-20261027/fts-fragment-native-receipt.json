@@ -1,0 +1,39 @@
+{
+  "root": "/tmp/gmax-fts-fragment-verify-4xhwffbq",
+  "command": [
+    "/usr/local/bin/node",
+    "/home/reoiv/dev/hetchy/tools/gmax/node_modules/vitest/vitest.mjs",
+    "run",
+    "tests/fts-refresh.test.ts",
+    "tests/fts-refresh-native.test.ts",
+    "--maxWorkers=1",
+    "--testNamePattern",
+    "explicit FTS catch-up guards|batches more|ends a batch|check is native|stale versions|reopens safely",
+    "--reporter=json",
+    "--outputFile=/tmp/gmax-fts-fragment-verify-4xhwffbq/vitest.json"
+  ],
+  "limits": {
+    "deadlineSeconds": 120,
+    "maxOwnedRssBytes": 2147483648,
+    "minAvailableBytes": 8589934592,
+    "maxSwapGrowthBytes": 536870912,
+    "cpus": [
+      0,
+      1
+    ]
+  },
+  "outcome": "passed",
+  "childPid": 2997938,
+  "exitCode": 0,
+  "noLiveOwnedProcesses": true,
+  "elapsedSeconds": 9.866736711992417,
+  "peakSampledOwnedRssBytes": 640131072,
+  "privateHomeAndFixturesRemoved": true,
+  "tests": {
+    "numTotalTests": 22,
+    "numPassedTests": 21,
+    "numFailedTests": 0,
+    "numPendingTests": 1,
+    "success": true
+  }
+}

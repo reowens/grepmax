@@ -1,0 +1,75 @@
+{
+  "preparedAt": "2026-10-28T11:34:30.024887+00:00",
+  "head": "1517fe0b9b5a301043f8c7eb2163c50998c8fe0b",
+  "sourceHashes": {
+    "lance-maintenance/fts.py": "d77ae5e34a214cd6df46af28c35f020373eecef56bfd20ebb07492547b7cfc5d",
+    "src/lib/store/fts-refresh.ts": "baa5242498d4c4a92fa00be48ef6cb4b80028ff5dce34dad975d30c13e596be5",
+    "src/commands/fts-refresh.ts": "f43bd9da976ba6ec76a3801385c5b7c936e4e2dd8a5678392451bcd90b63f0dd",
+    "tests/fts-refresh-native.test.ts": "44f13ca5dd2220f8a692ce3ed1bce93a93f0cb24ae69fa50b9839b72e0dbd94f",
+    "tests/fts-refresh.test.ts": "e6da0ee4730e19bbe2361680371bfa2d6a62a99345eeb506a77fb8a29ee3676b"
+  },
+  "implementation": "One deterministic bounded prefix of whole pending fragments; native uncommitted FTS build and disjoint commit; stored tokenizer settings and current posting format retained",
+  "inputLimits": {
+    "physicalRows": 100000,
+    "liveContentBytes": 67108864
+  },
+  "checks": {
+    "sourceTypecheck": "passed with root TypeScript --module preserve workaround",
+    "testTypecheck": "passed with same override",
+    "pythonSyntax": "passed AST parse without execution",
+    "scopedFormat": "passed",
+    "scopedDiff": "passed"
+  },
+  "testInvocation": {
+    "outcome": "passed",
+    "authorization": "User explicitly requested Run one focused invocation",
+    "invocations": 1,
+    "passed": 21,
+    "failed": 0,
+    "skipped": 1,
+    "executedScope": {
+      "nativeCases": 6,
+      "receiptAndGuardCases": 15
+    },
+    "skippedCase": "Earlier 83561-row whole-backlog regression intentionally excluded",
+    "receipt": "fts-fragment-native-receipt.json",
+    "cases": "fts-fragment-native-tests.json",
+    "elapsedSeconds": 9.866736711992417,
+    "peakSampledOwnedRssBytes": 640131072,
+    "noLiveOwnedProcesses": true,
+    "privateHomeAndFixturesRemoved": true
+  },
+  "release": "not selected for new implementation",
+  "installedVersion": "0.26.102",
+  "productionAccess": "none during fragment implementation",
+  "runtimePinsChanged": false,
+  "capsRaised": false,
+  "validatedAt": "2026-10-28T11:46:24.664382+00:00",
+  "verifiedNativeAssertions": {
+    "physicalPendingRows": 106496,
+    "livePendingRows": 53248,
+    "firstBatch": {
+      "physicalInputRows": 98304,
+      "batchRows": 49152,
+      "remainingRows": 4096
+    },
+    "secondBatch": {
+      "physicalInputRows": 8192,
+      "batchRows": 4096,
+      "remainingRows": 0
+    },
+    "rowsAndSampledRowIdsPreserved": true,
+    "baseFileHashesPreserved": true,
+    "otherIndexStatsPreserved": true,
+    "retainedSnapshotVersionAndIndexStatsPreserved": true,
+    "nondefaultStemmingAndStopWordsPreserved": true,
+    "contentBoundary": "384 KiB reduced-cap fixture; excludes next whole fragment and refuses oversized first fragment",
+    "interruptionPhases": [
+      "during-build",
+      "after-commit"
+    ],
+    "finalOwnershipLossRemainsUncertain": true
+  },
+  "limits": "Synthetic temporary four-dimensional fixtures on Linux; no production-corpus update, performance guarantee or broader-platform qualification",
+  "next": "Prepare release candidate and its single publication review if selected, then controlled installation and freshly admitted production batches"
+}
