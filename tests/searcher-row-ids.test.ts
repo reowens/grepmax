@@ -122,6 +122,44 @@ it("takes zero and 64-bit row IDs from vector and FTS results without ID scans",
   expect(f.table.close).toHaveBeenCalledOnce();
 });
 
+it.each(["vector", "fts"] as const)(
+  "materializes %s Arrow rows without enumerating the proxy",
+  async (retriever) => {
+    const options = { rerank: true, diagnostics: true };
+    const expected = await fixture().searcher.search(
+      "where are requests handled",
+      10,
+      options,
+    );
+    const f = fixture();
+    const row = f.rows[retriever === "vector" ? 0 : 1];
+    const toJSON = vi.fn(() => ({ ...row }));
+    const arrowRow = new Proxy(
+      {},
+      {
+        get: (_target, key) => {
+          if (key === "toJSON") return toJSON;
+          throw new Error(`unexpected proxy lookup: ${String(key)}`);
+        },
+        ownKeys: () => {
+          throw new Error("Arrow row enumeration forbidden");
+        },
+      },
+    );
+    f[retriever].toArray.mockResolvedValue([arrowRow]);
+    const actual = await f.searcher.search(
+      "where are requests handled",
+      10,
+      options,
+    );
+    expect(actual).toEqual(expected);
+    expect(toJSON).toHaveBeenCalledOnce();
+    expect(row._rowid).toBe(
+      retriever === "vector" ? BigInt(0) : BigInt("9007199254740993"),
+    );
+  },
+);
+
 it.each(["version", "checkout", "vector", "take", "rerank"])(
   "closes the search snapshot when %s fails",
   async (stage) => {

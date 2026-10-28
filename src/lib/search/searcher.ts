@@ -53,6 +53,14 @@ function readSymbolArray(val: unknown): string[] {
   return [];
 }
 
+function materializeSearchRow<T extends Record<string, unknown>>(row: T): T {
+  // Arrow StructRow.toJSON copies schema fields directly, preserving nested
+  // vectors and bigint row IDs. Spreading the proxy repeats schema lookups and
+  // property-descriptor checks for every field of every retrieved candidate.
+  const arrowRow = row as T & { toJSON?: () => T };
+  return typeof arrowRow.toJSON === "function" ? arrowRow.toJSON() : { ...row };
+}
+
 // A query that is a single bare identifier ("BeyondError", "requireAuth", "map")
 // is almost always a symbol lookup — the user wants the chunk that *defines*
 // that symbol. Returns the trimmed identifier, or null for natural-language
@@ -636,9 +644,7 @@ export class Searcher {
       }
       const vectorResults = (
         await vectorQuery.toArray(QUERY_EXECUTION_OPTIONS)
-      ).map((r: any) => ({
-        ...r,
-      })) as VectorRecord[];
+      ).map(materializeSearchRow) as VectorRecord[];
 
       let ftsResults: VectorRecord[] = [];
       let ftsSearchFailed = false;
@@ -653,9 +659,7 @@ export class Searcher {
             ftsQuery = ftsQuery.where(whereClause);
           }
           ftsResults = (await ftsQuery.toArray(QUERY_EXECUTION_OPTIONS)).map(
-            (r: any) => ({
-              ...r,
-            }),
+            materializeSearchRow,
           ) as VectorRecord[];
         } catch (e) {
           ftsSearchFailed = true;
