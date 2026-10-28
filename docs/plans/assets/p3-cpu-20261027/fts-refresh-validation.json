@@ -1,0 +1,178 @@
+{
+  "initial": {
+    "root": "/tmp/gmax-fts-refresh-validation-g5vbkvnn",
+    "command": [
+      "/usr/local/bin/node",
+      "/home/reoiv/dev/hetchy/tools/gmax/node_modules/vitest/vitest.mjs",
+      "run",
+      "tests/fts-refresh.test.ts",
+      "tests/fts-refresh-native.test.ts",
+      "tests/lance-cleanup.test.ts",
+      "--maxWorkers=1",
+      "--reporter=json",
+      "--outputFile=/tmp/gmax-fts-refresh-validation-g5vbkvnn/vitest.json"
+    ],
+    "limits": {
+      "deadlineSeconds": 120,
+      "maxOwnedRssBytes": 2147483648,
+      "minAvailableBytes": 8589934592,
+      "maxSwapGrowthBytes": 536870912,
+      "cpus": [
+        0,
+        1
+      ]
+    },
+    "outcome": "failed",
+    "childPid": 1193801,
+    "exitCode": 1,
+    "noLiveOwnedProcesses": true,
+    "elapsedSeconds": 67.02014127204893,
+    "peakSampledOwnedRssBytes": 818237440,
+    "privateHomeAndFixturesRemoved": true,
+    "tests": {
+      "numTotalTests": 45,
+      "numPassedTests": 43,
+      "numFailedTests": 2,
+      "numPendingTests": 0,
+      "success": false
+    }
+  },
+  "correction": {
+    "root": "/tmp/gmax-fts-refresh-correction-umqi4r0t",
+    "command": [
+      "/usr/local/bin/node",
+      "/home/reoiv/dev/hetchy/tools/gmax/node_modules/vitest/vitest.mjs",
+      "run",
+      "tests/fts-refresh-native.test.ts",
+      "--maxWorkers=1",
+      "--testNamePattern",
+      "catches up an 83,561|interruption after-commit",
+      "--reporter=json",
+      "--outputFile=/tmp/gmax-fts-refresh-correction-umqi4r0t/vitest.json"
+    ],
+    "limits": {
+      "deadlineSeconds": 120,
+      "maxOwnedRssBytes": 2147483648,
+      "minAvailableBytes": 8589934592,
+      "maxSwapGrowthBytes": 536870912,
+      "cpus": [
+        0,
+        1
+      ]
+    },
+    "outcome": "failed",
+    "childPid": 1304183,
+    "exitCode": 1,
+    "noLiveOwnedProcesses": true,
+    "elapsedSeconds": 3.7531803469755687,
+    "peakSampledOwnedRssBytes": 661381120,
+    "privateHomeAndFixturesRemoved": true,
+    "tests": {
+      "numTotalTests": 5,
+      "numPassedTests": 1,
+      "numFailedTests": 1,
+      "numPendingTests": 3,
+      "success": false
+    }
+  },
+  "corrections": [
+    "FTS-only I/O=2; prune-only stays unchanged",
+    "Native fixture aborts and awaits active helpers before releasing ownership",
+    "Refuse manifest-configured auto cleanup before native admission"
+  ],
+  "productionChanged": false,
+  "releaseHeld": true,
+  "distinctPassedCases": 45,
+  "remaining": null,
+  "latestSourceTypecheck": "passed",
+  "remainingDiagnostic": {
+    "root": "/tmp/gmax-fts-refresh-remaining-0cp4ejsw",
+    "command": [
+      "/usr/local/bin/node",
+      "/home/reoiv/dev/hetchy/tools/gmax/node_modules/vitest/vitest.mjs",
+      "run",
+      "tests/fts-refresh-native.test.ts",
+      "--maxWorkers=1",
+      "--testNamePattern",
+      "catches up an 83,561",
+      "--reporter=json",
+      "--outputFile=/tmp/gmax-fts-refresh-remaining-0cp4ejsw/vitest.json"
+    ],
+    "limits": {
+      "deadlineSeconds": 120,
+      "maxOwnedRssBytes": 2147483648,
+      "minAvailableBytes": 8589934592,
+      "maxSwapGrowthBytes": 536870912,
+      "cpus": [
+        0,
+        1
+      ]
+    },
+    "outcome": "failed",
+    "childPid": 1400363,
+    "exitCode": 1,
+    "noLiveOwnedProcesses": true,
+    "elapsedSeconds": 1.886694521002937,
+    "peakSampledOwnedRssBytes": 626929664,
+    "privateHomeAndFixturesRemoved": true,
+    "tests": {
+      "numTotalTests": 5,
+      "numPassedTests": 0,
+      "numFailedTests": 1,
+      "numPendingTests": 4,
+      "success": false
+    }
+  },
+  "failureCategory": "verification-files",
+  "payloadVerification": {
+    "root": "/tmp/gmax-fts-refresh-payload-verify-tocz761y",
+    "command": [
+      "/usr/local/bin/node",
+      "/home/reoiv/dev/hetchy/tools/gmax/node_modules/vitest/vitest.mjs",
+      "run",
+      "tests/fts-refresh-native.test.ts",
+      "--maxWorkers=1",
+      "--testNamePattern",
+      "catches up an 83,561",
+      "--reporter=json",
+      "--outputFile=/tmp/gmax-fts-refresh-payload-verify-tocz761y/vitest.json"
+    ],
+    "limits": {
+      "deadlineSeconds": 120,
+      "maxOwnedRssBytes": 2147483648,
+      "minAvailableBytes": 8589934592,
+      "maxSwapGrowthBytes": 536870912,
+      "cpus": [
+        0,
+        1
+      ]
+    },
+    "outcome": "passed",
+    "childPid": 1462123,
+    "exitCode": 0,
+    "noLiveOwnedProcesses": true,
+    "elapsedSeconds": 2.4378534959978424,
+    "peakSampledOwnedRssBytes": 631087104,
+    "privateHomeAndFixturesRemoved": true,
+    "tests": {
+      "numTotalTests": 5,
+      "numPassedTests": 1,
+      "numFailedTests": 0,
+      "numPendingTests": 4,
+      "success": true
+    }
+  },
+  "status": "validated-local",
+  "sourceSha256": {
+    "src/lib/store/fts-refresh.ts": "018cdbb662573682891a5697e7e7ba18bb7e9f3f3b9c00a9f1626e0c439c1c6c",
+    "src/lib/store/lance-cleanup.ts": "2ce61e1a9083a11c539b05fb39557f6cb384fd1494161070f09acf6e9a3d8158",
+    "src/commands/fts-refresh.ts": "e89b52b85e0f4fb276b8f1009d5ef806eea45ad9fa80ec00c4e3278074ec4a35",
+    "src/bin.ts": "6a3005e097cade70c35e89b930e22957bc410e53c027f3000009581cc338a671",
+    "src/index.ts": "0ea9c8d63b01b0794bd90e68b6d133a8a8d96a6f731fe6957c4583032760e3cd",
+    "lance-maintenance/fts.py": "f00942903ab9c2b2208d350f2d1e120bf4a3c6906a772fd13054042239ed51ff",
+    "package.json": "dde55e7df15dc14abd7f874c73ff572bf9ed49710ba8c898ac76cf3237020f08",
+    "tests/fts-refresh.test.ts": "1f444896d866e8e65b473fb5096dcdab69e04d001a5fd381ae77f0055160a83b",
+    "tests/fts-refresh-native.test.ts": "2b62b455448a7e13f2559cba9d47948b4c938a8dbf0419e8e72acb1336c0f9b5"
+  },
+  "validationScope": "45 distinct cases passed across four explicitly approved invocations. Initial 43 passed/2 failed; correction 1 passed/1 failed/3 skipped; diagnostic 1 failed/4 skipped; final remaining-case verification 1 passed/4 skipped. Passing suites were not repeated. Native fixtures are synthetic and model-free; no live production FTS update or production timing claim."
+}

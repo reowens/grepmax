@@ -61,6 +61,21 @@ function materializeSearchRow<T extends Record<string, unknown>>(row: T): T {
   return typeof arrowRow.toJSON === "function" ? arrowRow.toJSON() : { ...row };
 }
 
+const SHORT_CONTENT_LENGTH = 50;
+
+function lightweightProjection(columns: string[]): Record<string, string> {
+  // LEFT produces a native string-view type the JS Arrow reader cannot decode;
+  // the explicit STRING cast keeps the existing UTF-8 wire type.
+  return Object.fromEntries(
+    columns.map((column) => [
+      column,
+      column === "content"
+        ? `CAST(left(content, ${SHORT_CONTENT_LENGTH}) AS STRING)`
+        : column,
+    ]),
+  );
+}
+
 // A query that is a single bare identifier ("BeyondError", "requireAuth", "map")
 // is almost always a symbol lookup — the user wants the chunk that *defines*
 // that symbol. Returns the trimmed identifier, or null for natural-language
@@ -413,7 +428,10 @@ export class Searcher {
       adjusted *= docPenalty;
     }
     // Import-only penalty
-    if ((record.content || "").length < 50 && !record.is_exported) {
+    if (
+      (record.content || "").length < SHORT_CONTENT_LENGTH &&
+      !record.is_exported
+    ) {
       adjusted *= 0.9;
     }
 
@@ -632,8 +650,17 @@ export class Searcher {
       ];
       // _distance is auto-added by vectorSearch, _score by FTS — include each
       // in the respective query to suppress LanceDB deprecation warnings
-      const VECTOR_COLUMNS = [...LIGHTWEIGHT_COLUMNS, "_distance"];
-      const FTS_COLUMNS = [...LIGHTWEIGHT_COLUMNS, "_score"];
+      // Before display, content is used only for the short-body boost. Taking
+      // 50 Unicode characters preserves the <50 UTF-16-unit decision too, while
+      // avoiding full-body string materialization for every retrieved row.
+      const VECTOR_COLUMNS = lightweightProjection([
+        ...LIGHTWEIGHT_COLUMNS,
+        "_distance",
+      ]);
+      const FTS_COLUMNS = lightweightProjection([
+        ...LIGHTWEIGHT_COLUMNS,
+        "_score",
+      ]);
 
       let vectorQuery = configureAnnVectorQuery(table.vectorSearch(queryVector))
         .withRowId()
@@ -1183,6 +1210,7 @@ export class Searcher {
         diversified.map((item) => item.record),
         [
           "id",
+          "content",
           "defined_symbols",
           "parent_symbol",
           "imports",
@@ -1195,6 +1223,7 @@ export class Searcher {
       for (const item of diversified) {
         const extra = displayMap.get(item.record.id);
         if (extra) {
+          (item.record as any).content = extra.content;
           (item.record as any).defined_symbols = extra.defined_symbols;
           (item.record as any).parent_symbol = extra.parent_symbol;
           (item.record as any).imports = extra.imports;

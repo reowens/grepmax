@@ -1,6 +1,6 @@
 {
   "name": "grepmax",
-  "version": "0.26.101",
+  "version": "0.26.102",
   "author": "Robert Owens <78518764+reowens@users.noreply.github.com>",
   "homepage": "https://github.com/reowens/grepmax",
   "bugs": {
@@ -77,6 +77,7 @@
     "scripts/postinstall.js",
     "mlx-embed-server",
     "lance-maintenance/prune.py",
+    "lance-maintenance/fts.py",
     "lance-maintenance/pyproject.toml",
     "lance-maintenance/uv.lock",
     "README.md",

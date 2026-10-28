@@ -1,0 +1,32 @@
+{
+  "sourceSha256": "a8bf256b00a21133eda2e1cc8fb440d366e26e67ff3d1d06961523de667e79a8",
+  "compiledSha256": "50bd6b28c0ca7fd84eb0af7035a66f94f9b617986f4ef030995bc2173a179ed8",
+  "sourceAndTestTypechecks": "passed",
+  "changedFileBiome": "passed",
+  "focusedTests": {
+    "initial": {
+      "passed": 36,
+      "failed": 3,
+      "receipt": "content-prefix-initial-tests.json"
+    },
+    "targetedNativeAfterFix": {
+      "passed": 3,
+      "skipped": 14,
+      "receipt": "content-prefix-native-tests.json"
+    },
+    "distinctCasesPassedAcrossInvocations": 39,
+    "passingCasesNotRepeated": true,
+    "note": "Initial SUBSTR candidate failed native compatibility. Corrected CAST(left(content,50) AS STRING) passed the three native regressions, including UTF-16 threshold and full-content recovery. Mocked-query cases from the first run were not repeated."
+  },
+  "benchmark": {
+    "samplesPerArm": 240,
+    "exactFullResponseParity": true,
+    "medianTimeReductionPercent": 3.2208556823432266,
+    "p95TimeReductionPercent": 37.93970273620476,
+    "medianCpuReductionPercent": 3.3282753663698483
+  },
+  "productionChange": false,
+  "publicationOrServiceAction": false,
+  "baseCommit": "91eef19bb1954691d4681899a6919eb6d51e970d",
+  "resourceCleanup": "Both completed model diagnostics and the rejected comparison exited, with temporary models/stores removed; focused checks removed their private homes."
+}

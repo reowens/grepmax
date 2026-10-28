@@ -193,10 +193,15 @@ export function runCleanupProcess(
       else if (code !== 0) {
         // Whitelist categories, never repeat registry credentials, file paths,
         // full traceback text or arbitrary diagnostics from a subprocess.
-        const detail =
-          /lockfile.*(?:needs|updated|out.of.date)|locked.*(?:changed|update)/i.test(
+        const ftsFailure =
+          /(?:^|\n)GMAX_FTS_FAILURE:(verification-(?:head|fragments|schema|config|tags|rows|files|other-index|old-index|new-index|owner)|native(?:-memory|-files)?|automatic-cleanup|growth)\s*(?:\n|$)/.exec(
             diagnostics,
-          )
+          );
+        const detail = ftsFailure
+          ? `FTS ${ftsFailure[1]}`
+          : /lockfile.*(?:needs|updated|out.of.date)|locked.*(?:changed|update)/i.test(
+                diagnostics,
+              )
             ? "locked project/runtime mismatch"
             : /no space left|ENOSPC/i.test(diagnostics)
               ? "disk full"

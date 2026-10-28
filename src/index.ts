@@ -15,6 +15,7 @@ import { diff } from "./commands/diff";
 import { doctor } from "./commands/doctor";
 import { installDroid, uninstallDroid } from "./commands/droid";
 import { extract } from "./commands/extract";
+import { ftsRefresh } from "./commands/fts-refresh";
 import { helpAgent } from "./commands/help-agent";
 import { impact } from "./commands/impact";
 import { index } from "./commands/index";
@@ -126,6 +127,7 @@ program.addCommand(config);
 program.addCommand(doctor);
 program.addCommand(repair);
 program.addCommand(recover);
+program.addCommand(ftsRefresh);
 
 // Plugins
 program.addCommand(plugin);

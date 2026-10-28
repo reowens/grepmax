@@ -1,0 +1,34 @@
+{
+  "baseline": "c5b47662dd2596d0e3f6202049469199142c8bd3",
+  "version": "0.26.102",
+  "sourceSha256": {
+    "src/lib/search/searcher.ts": "a8bf256b00a21133eda2e1cc8fb440d366e26e67ff3d1d06961523de667e79a8",
+    "src/lib/store/fts-refresh.ts": "018cdbb662573682891a5697e7e7ba18bb7e9f3f3b9c00a9f1626e0c439c1c6c",
+    "src/lib/store/lance-cleanup.ts": "2ce61e1a9083a11c539b05fb39557f6cb384fd1494161070f09acf6e9a3d8158",
+    "src/commands/fts-refresh.ts": "e89b52b85e0f4fb276b8f1009d5ef806eea45ad9fa80ec00c4e3278074ec4a35",
+    "src/bin.ts": "6a3005e097cade70c35e89b930e22957bc410e53c027f3000009581cc338a671",
+    "src/index.ts": "0ea9c8d63b01b0794bd90e68b6d133a8a8d96a6f731fe6957c4583032760e3cd",
+    "lance-maintenance/fts.py": "f00942903ab9c2b2208d350f2d1e120bf4a3c6906a772fd13054042239ed51ff",
+    "tests/searcher-row-ids.test.ts": "7d8341e762fdb49b21e9ac327468735c6daccb35670adcd4300608a83405bdd1",
+    "tests/fts-refresh.test.ts": "1f444896d866e8e65b473fb5096dcdab69e04d001a5fd381ae77f0055160a83b",
+    "tests/fts-refresh-native.test.ts": "2b62b455448a7e13f2559cba9d47948b4c938a8dbf0419e8e72acb1336c0f9b5"
+  },
+  "boundedContent": {
+    "sourceIdenticalToMeasured": true,
+    "distinctCasesPassedAcrossTwoInvocations": 39,
+    "passingCasesNotRepeated": true,
+    "fullResponseParityQueriesPerArm": 240,
+    "receipt": "/home/reoiv/dev/hetchy/tools/gmax/docs/plans/assets/p3-cpu-20261027/content-prefix-validation.json",
+    "limitations": "Synthetic shared-host fixture. Encoder extraction pending in main is excluded; paired runtime imports were identical installed 0.26.101 dependencies."
+  },
+  "ftsRefresh": {
+    "allRecordedSourceHashesMatch": true,
+    "packageDifference": "Version-only bump over measured metadata; FTS helper inclusion is preserved",
+    "distinctCasesPassedAcrossFourInvocations": 45,
+    "passingCasesNotRepeated": true,
+    "receipt": "/home/reoiv/dev/hetchy/tools/gmax/docs/plans/assets/p3-cpu-20261027/fts-refresh-validation.json",
+    "limitations": "Native model-free synthetic fixtures with four-dimensional vectors. Actual production input eligibility/resources and update not exercised."
+  },
+  "dependenciesUnchanged": true,
+  "newTestsOrModelsRun": false
+}

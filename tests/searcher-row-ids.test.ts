@@ -294,3 +294,61 @@ it("keeps native payload reads on their retrieval version while a writer updates
     fs.rmSync(`${root}.lease`, { recursive: true, force: true });
   }
 }, 15_000);
+
+it("preserves full native display content and Unicode short-body boosts", async () => {
+  vi.stubEnv("GMAX_CONCENTRATION_THRESHOLD", "2");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "gmax-search-prefix-"));
+  const db = new VectorDB(root, CONFIG.VECTOR_DIM);
+  const vector = Array(CONFIG.VECTOR_DIM).fill(0);
+  vector[0] = 1;
+  const bodies = [
+    "a".repeat(49),
+    "b".repeat(50),
+    `${"😀".repeat(24)}x`,
+    "😀".repeat(25),
+    "// header before the actual function\n".repeat(4) +
+      "function retainedBody() { return 'full display payload'; }",
+  ];
+  try {
+    const seed = (db as any).seedRow();
+    await db.insertBatch(
+      bodies.map((content, i) => ({
+        ...seed,
+        id: `prefix-${i}`,
+        path: path.join(root, `body-${i}.ts`),
+        hash: `hash-${i}`,
+        vector,
+        content,
+        chunk_type: "function",
+        role: "FIXTURE",
+        is_anchor: false,
+        is_exported: false,
+        defined_symbols: ["fixture"],
+        start_line: 0,
+        end_line: content.split("\n").length - 1,
+      })),
+    );
+    const searcher = new Searcher(db, {
+      encodeQuery: async () => ({ dense: vector, colbert: [], colbertDim: 48 }),
+      rerank: vi.fn(),
+    });
+    const response = await searcher.search("fixture materialization", 10, {
+      rerank: false,
+      explain: true,
+    });
+    expect(response.data).toHaveLength(bodies.length);
+    for (const [i, body] of bodies.entries()) {
+      const row = response.data.find((r) => r.metadata?.hash === `hash-${i}`)!;
+      expect(row).toBeDefined();
+      expect(row.scoreBreakdown?.boost).toBeCloseTo(
+        body.length < 50 ? 0.99 : 1.1,
+        12,
+      );
+      expect(row.text).toBe(body.replace(/^(?:\/\/[^\n]*\n)+/, ""));
+    }
+  } finally {
+    await db.close();
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(`${root}.lease`, { recursive: true, force: true });
+  }
+}, 15_000);
