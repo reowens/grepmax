@@ -1,0 +1,33 @@
+{
+  "taskId": "node:delegated-task:command%3Amcp%3A96ead231-4472-4f58-a452-3faf19bb1b81%3Adelegate-task%3Agmax-fragment-release-026103-review-1",
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "options": {
+    "reasoningEffort": "xhigh",
+    "serviceTier": "default"
+  },
+  "passes": 1,
+  "reviewedCommit": "ac8b184e72cfb642c87fa16da7b08735cb336065",
+  "verdict": "request-changes",
+  "findings": [
+    {
+      "severity": "P1",
+      "problem": "Normalized manifest details synthesize absent tokenizer values; key checks cannot prove stored metadata presence.",
+      "ownerFix": "Read bounded physical metadata.lance params for every segment; refuse missing/incomplete/unknown or inconsistent parameter sets and legacy layouts before admission.",
+      "status": "resolved by owner; targeted native regressions passed"
+    },
+    {
+      "severity": "P2",
+      "problem": "Manifest conversion omits custom_stop_words, including explicit empty lists, causing new FTS segments to use different tokenization.",
+      "ownerFix": "Build from physical parameters including custom_stop_words null versus []; compare staged new-segment parameters before commit and actual physical metadata again afterward.",
+      "status": "resolved by owner; targeted native regressions passed"
+    }
+  ],
+  "newChecksRunByReviewer": false,
+  "additionalReviewRoundRequired": false,
+  "publication": "Single requested review complete; both findings corrected and verified by owner. No additional review required.",
+  "ownerFixCommit": "a48a9a0926530ac08df1f14ea70aae23be3195b0",
+  "unresolvedValidation": null,
+  "unresolvedBlockingFindings": 0,
+  "ownerFixValidation": "/home/reoiv/.local/state/gmax-delivery/20261028-0.26.103/owner-fix-validation.json"
+}

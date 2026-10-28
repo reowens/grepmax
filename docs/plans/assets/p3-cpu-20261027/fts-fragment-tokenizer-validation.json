@@ -1,0 +1,74 @@
+{
+  "ownerFixCommit": "a48a9a0926530ac08df1f14ea70aae23be3195b0",
+  "sourceHashes": {
+    "lance-maintenance/fts.py": "e0237011fd0950e0373a383b0c2ae62631d7a376f578d182b68c948c2e6f953e",
+    "tests/fts-refresh-native.test.ts": "99843938c7622f305f50250856b4db373c5515b1ab0151c41e3464dbd3c945e7"
+  },
+  "sourceBuild": "passed",
+  "testTypecheck": "passed",
+  "pythonSyntax": "passed AST parse",
+  "scopedFormat": "passed",
+  "tests": {
+    "invocations": 1,
+    "authorization": "User explicitly requested Run the five targeted cases",
+    "passed": 5,
+    "failed": 0,
+    "skipped": 6,
+    "cases": [
+      {
+        "title": "catches up an 83,561-row backlog without touching base files, row IDs or another index",
+        "status": "skipped"
+      },
+      {
+        "title": "check is native and leaves coverage, version and receipt unchanged",
+        "status": "skipped"
+      },
+      {
+        "title": "batches more than 100,000 physical rows with deletions and preserves snapshots and index settings",
+        "status": "passed"
+      },
+      {
+        "title": "ends a batch before the content limit and refuses an oversized first fragment",
+        "status": "skipped"
+      },
+      {
+        "title": "preserves the physical custom stop-word list {\"customStopWords\":[]}",
+        "status": "passed"
+      },
+      {
+        "title": "preserves the physical custom stop-word list {\"customStopWords\":[\"sharedtoken\"]}",
+        "status": "passed"
+      },
+      {
+        "title": "refuses incomplete physical tokenizer metadata missing-params before write admission",
+        "status": "passed"
+      },
+      {
+        "title": "refuses incomplete physical tokenizer metadata missing-tokenizer before write admission",
+        "status": "passed"
+      },
+      {
+        "title": "stale versions and over-budget rows/content refuse before a write is admitted",
+        "status": "skipped"
+      },
+      {
+        "title": "reopens safely after interruption during-build and never silently retries",
+        "status": "skipped"
+      },
+      {
+        "title": "reopens safely after interruption after-commit and never silently retries",
+        "status": "skipped"
+      }
+    ],
+    "elapsedSeconds": 7.175132139003836,
+    "peakSampledOwnedRssBytes": 673677312,
+    "noLiveOwnedProcesses": true,
+    "privateHomeAndFixturesRemoved": true
+  },
+  "controller": "/tmp/gmax-026103-tokenizer-controller.py",
+  "publication": "authorized; corrected archive rebuild pending",
+  "independentReviewPasses": 1,
+  "additionalReviewRequired": false,
+  "reviewFindings": "Both reproduced static defects corrected and targeted regressions passed; no second independent review claimed or required",
+  "prior21TestScope": "Retained historical invocation and exact hashes; no claim all were rerun on this correction"
+}

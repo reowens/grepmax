@@ -55,12 +55,20 @@ versus an explicit empty custom stop-word list. Its staged partition metadata
 is compared before publishing, and committed physical metadata is compared
 afterward. Existing batch, ownership and receipt control flow is retained.
 
-Source build, test typecheck and Python syntax checks pass for the correction.
-Four new native regression cases cover empty/nonempty custom stop-word lists
-and missing physical parameter/tokenizer metadata. One existing two-batch case
-is selected because this reader changed. The five-case focused invocation is
-prepared but has not run: explicit additional-test authorization is pending
-under AGENTS.md. The earlier 21-pass invocation remains historical evidence of
-its exact source; it does not establish coverage of these two findings.
-The old archive is held under `reviewed-original` in local delivery state and
-must not be published. No additional independent review round is required.
+Source build, test typecheck, Python syntax and formatting checks pass for the
+correction. The user explicitly approved its targeted invocation: five native
+cases passed, zero failed, six unselected cases skipped. Empty/nonempty custom
+stop-word lists and missing physical parameter/tokenizer metadata are covered;
+the two-batch case also passed through the corrected reader. The invocation
+took 7.18 seconds and peaked at 673,677,312 bytes sampled owned-group RSS, with
+all owned processes closed and private home/fixtures removed. The earlier
+21-pass invocation remains historical evidence of its exact source; these
+five cases establish the added coverage for the two findings. Both review
+findings are resolved by the owner; no additional independent review is claimed
+or required. The initial archive is retained under `reviewed-original` and must
+not be published. Only the rebuilt corrected archive is the release candidate.
+
+[Correction/source proof](assets/p3-cpu-20261027/fts-fragment-tokenizer-validation.json),
+[correction process receipt](assets/p3-cpu-20261027/fts-fragment-tokenizer-receipt.json),
+[correction cases](assets/p3-cpu-20261027/fts-fragment-tokenizer-tests.json), and
+[single review disposition](assets/p3-cpu-20261027/fts-fragment-release-review.json).
