@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { inner } from "numkong";
 import { MODEL_IDS, PATHS } from "../../config";
+import { preparePackedMaxSim } from "./colbert-packed";
 
 const SKIP_IDS = new Map<string, Set<number>>();
 
@@ -49,33 +50,61 @@ export function maxSim(
   if (queryEmbeddings.length === 0 || docEmbeddings.length === 0) {
     return 0;
   }
+  return createMaxSimScorer(queryEmbeddings, modelId)(
+    docEmbeddings,
+    docTokenIds,
+  );
+}
 
+/** Prepare one query for synchronous scoring of a document batch. */
+export function createMaxSimScorer(
+  queryEmbeddings: number[][] | Float32Array[],
+  modelId = MODEL_IDS.colbert,
+): (document: number[][] | Float32Array[], tokenIds?: number[]) => number {
+  if (queryEmbeddings.length === 0) return () => 0;
   const qVecs = queryEmbeddings.map((v) =>
     v instanceof Float32Array ? v : new Float32Array(v),
   );
-  const dVecs = docEmbeddings.map((v) =>
-    v instanceof Float32Array ? v : new Float32Array(v),
-  );
-  const dTokenIds =
-    docTokenIds && docTokenIds.length === dVecs.length ? docTokenIds : null;
+  // Packing overhead outweighs batching for tiny queries.
+  const packed = qVecs.length >= 4 ? preparePackedMaxSim(qVecs) : undefined;
   const skipIds = loadSkipIds(modelId);
-
-  let totalScore = 0;
-  for (const qVec of qVecs) {
-    let maxDotProduct = -Infinity;
-    for (let idx = 0; idx < dVecs.length; idx++) {
+  return (docEmbeddings, docTokenIds) => {
+    const dTokenIds =
+      docTokenIds && docTokenIds.length === docEmbeddings.length
+        ? docTokenIds
+        : null;
+    // Filter once per document rather than once for every query token. Keep
+    // the original views: ordinary 48d pairs need no subarray allocations.
+    const dVecs: Float32Array[] = [];
+    for (let idx = 0; idx < docEmbeddings.length; idx++) {
       const tokenId = dTokenIds ? dTokenIds[idx] : null;
       if (tokenId !== null && skipIds.has(Number(tokenId))) continue;
-      const dVec = dVecs[idx];
-      const dim = Math.min(qVec.length, dVec.length);
-      const dot = inner(qVec.subarray(0, dim), dVec.subarray(0, dim));
-      if (dot > maxDotProduct) maxDotProduct = dot;
+      const vec = docEmbeddings[idx];
+      dVecs.push(vec instanceof Float32Array ? vec : new Float32Array(vec));
     }
-    if (maxDotProduct === -Infinity) maxDotProduct = 0;
-    totalScore += maxDotProduct;
-  }
+    if (dVecs.length === 0) return 0;
+    const packedScore = packed?.(dVecs);
+    if (packedScore !== undefined) return packedScore;
 
-  return totalScore;
+    let totalScore = 0;
+    for (const qVec of qVecs) {
+      let maxDotProduct = -Infinity;
+      for (const dVec of dVecs) {
+        const dot =
+          qVec.length === dVec.length
+            ? inner(qVec, dVec)
+            : inner(
+                qVec.subarray(0, Math.min(qVec.length, dVec.length)),
+                dVec.subarray(0, Math.min(qVec.length, dVec.length)),
+              );
+        if (dot > maxDotProduct) maxDotProduct = dot;
+      }
+      if (maxDotProduct === -Infinity) maxDotProduct = 0;
+      totalScore += maxDotProduct;
+    }
+
+    return totalScore;
+  };
 }
 
 export function cosineSim(

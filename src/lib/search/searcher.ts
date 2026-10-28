@@ -16,7 +16,7 @@ import {
 } from "../utils/filter-builder";
 import { debug } from "../utils/logger";
 import { QUERY_EXECUTION_OPTIONS } from "../utils/query-timeout";
-import { getWorkerPool } from "../workers/pool";
+import { getWorkerPool, type WorkerPool } from "../workers/pool";
 import {
   type ArtifactPreference,
   artifactPreference,
@@ -184,7 +184,10 @@ export function buildWhereClause(
 export class Searcher {
   constructor(
     private db: VectorDB,
-    private readonly workerPool = getWorkerPool(),
+    private readonly workerPool: Pick<
+      WorkerPool,
+      "encodeQuery" | "rerank"
+    > = getWorkerPool(),
   ) {}
 
   private mapRecordToChunk(
@@ -452,6 +455,29 @@ export class Searcher {
     return deduped;
   }
 
+  private async readCandidateRows(
+    table: Table,
+    candidates: VectorRecord[],
+    columns: string[],
+  ): Promise<Partial<VectorRecord>[]> {
+    const selected = candidates.filter((record) => record.id);
+    if (selected.length === 0) return [];
+    const rowIds = selected.map((record) => {
+      const rowId = record._rowid;
+      if (
+        (typeof rowId === "bigint" && rowId >= BigInt(0)) ||
+        (typeof rowId === "number" && Number.isSafeInteger(rowId) && rowId >= 0)
+      ) {
+        return rowId;
+      }
+      throw new Error("Search candidate has no valid Lance row ID");
+    });
+    return table
+      .takeRowIds(rowIds)
+      .select(columns)
+      .toArray(QUERY_EXECUTION_OPTIONS);
+  }
+
   private ftsIndexChecked = false;
   private ftsAvailable = false;
   private ftsLastCheckedAt = 0;
@@ -539,433 +565,441 @@ export class Searcher {
         ? envPreK
         : Math.max(finalLimit * 5, 500);
     const table: Table = await this.db.ensureTable();
+    try {
+      // Row addresses must remain valid between retrieval and payload reads.
+      // ensureTable opens a separate handle for this search; pin and close it
+      // without changing the connection's handles used by writers or peers.
+      await table.checkout(await table.version());
 
-    // Ensure FTS index exists (lazy init, retry periodically on failure)
-    const now = Date.now();
-    if (
-      !this.ftsIndexChecked ||
-      (!this.ftsAvailable &&
-        now - this.ftsLastCheckedAt > Searcher.FTS_RETRY_INTERVAL_MS)
-    ) {
-      this.ftsIndexChecked = true;
-      this.ftsLastCheckedAt = now;
-      try {
-        // Adopt-only: search runs in every process, so building here raced
-        // CreateIndex across processes and duplicated a full-size index per
-        // winner. Owners build it (daemon pre-warm, `gmax index`, maintenance).
-        await this.db.adoptFTSIndex();
-        this.ftsAvailable = true;
-      } catch (e) {
-        this.ftsAvailable = false;
-        debug("searcher", `FTS index unavailable, vector-only search: ${e}`);
-      }
-    }
-
-    // Phase A: Lightweight retrieval — only columns needed for RRF, cosine, boost, dedup
-    // PageRank tiebreaker needs defined_symbols for the per-chunk lookup; include
-    // it in the lightweight path only when the flag is on so we don't bloat the
-    // default query path.
-    const pagerankEnabled = process.env.GMAX_PAGERANK === "1" && !!pathPrefix;
-    // Symbol-definition promotion needs defined_symbols on every candidate, not
-    // just the final display set — load it for bare-symbol queries too.
-    // Seed-symbol matching reads defined_symbols (referenced_symbols is always
-    // loaded), so pull it into the lightweight path when symbols were seeded.
-    const needDefinedSymbols =
-      pagerankEnabled || symbolQuery !== null || seedCtx.symbols.size > 0;
-    const LIGHTWEIGHT_COLUMNS = [
-      "id",
-      "path",
-      "hash",
-      "chunk_index",
-      "start_line",
-      "end_line",
-      "is_anchor",
-      "chunk_type",
-      "role",
-      "complexity",
-      "is_exported",
-      "content",
-      "parent_symbol",
-      "referenced_symbols",
-      "pooled_colbert_48d",
-      ...(needDefinedSymbols ? ["defined_symbols"] : []),
-    ];
-    // _distance is auto-added by vectorSearch, _score by FTS — include each
-    // in the respective query to suppress LanceDB deprecation warnings
-    const VECTOR_COLUMNS = [...LIGHTWEIGHT_COLUMNS, "_distance"];
-    const FTS_COLUMNS = [...LIGHTWEIGHT_COLUMNS, "_score"];
-
-    let vectorQuery = configureAnnVectorQuery(table.vectorSearch(queryVector))
-      .select(VECTOR_COLUMNS)
-      .limit(PRE_RERANK_K);
-    if (whereClause) {
-      vectorQuery = vectorQuery.where(whereClause);
-    }
-    const vectorResults = (
-      await vectorQuery.toArray(QUERY_EXECUTION_OPTIONS)
-    ).map((r: any) => ({
-      ...r,
-    })) as VectorRecord[];
-
-    let ftsResults: VectorRecord[] = [];
-    let ftsSearchFailed = false;
-    if (this.ftsAvailable) {
-      try {
-        let ftsQuery = table
-          .search(query)
-          .select(FTS_COLUMNS)
-          .limit(PRE_RERANK_K);
-        if (whereClause) {
-          ftsQuery = ftsQuery.where(whereClause);
+      // Ensure FTS index exists (lazy init, retry periodically on failure)
+      const now = Date.now();
+      if (
+        !this.ftsIndexChecked ||
+        (!this.ftsAvailable &&
+          now - this.ftsLastCheckedAt > Searcher.FTS_RETRY_INTERVAL_MS)
+      ) {
+        this.ftsIndexChecked = true;
+        this.ftsLastCheckedAt = now;
+        try {
+          // Adopt-only: search runs in every process, so building here raced
+          // CreateIndex across processes and duplicated a full-size index per
+          // winner. Owners build it (daemon pre-warm, `gmax index`, maintenance).
+          await this.db.adoptFTSIndex();
+          this.ftsAvailable = true;
+        } catch (e) {
+          this.ftsAvailable = false;
+          debug("searcher", `FTS index unavailable, vector-only search: ${e}`);
         }
-        ftsResults = (await ftsQuery.toArray(QUERY_EXECUTION_OPTIONS)).map(
-          (r: any) => ({
-            ...r,
-          }),
-        ) as VectorRecord[];
-      } catch (e) {
-        ftsSearchFailed = true;
-        this.ftsAvailable = false;
-        const msg = e instanceof Error ? e.message : String(e);
-        if (msg.includes("position")) {
-          // FTS index lacks positional data — rebuild it, but only from the
-          // index owner. This drops the index before recreating it, so a
-          // non-owner (CLI fallback, MCP session) would yank the shared index
-          // out from under every other process and, with several running at
-          // once, race CreateIndex on the way back up. Non-owners degrade to
-          // vector-only and let the daemon repair it.
-          if (this.db.canBuildIndexes()) {
-            try {
-              await this.db.createFTSIndex(true);
-              this.ftsAvailable = true;
-              console.warn(
-                "[Searcher] Rebuilt FTS index with position support — retry search",
+      }
+
+      // Phase A: Lightweight retrieval — only columns needed for RRF, cosine, boost, dedup
+      // PageRank tiebreaker needs defined_symbols for the per-chunk lookup; include
+      // it in the lightweight path only when the flag is on so we don't bloat the
+      // default query path.
+      const pagerankEnabled = process.env.GMAX_PAGERANK === "1" && !!pathPrefix;
+      // Symbol-definition promotion needs defined_symbols on every candidate, not
+      // just the final display set — load it for bare-symbol queries too.
+      // Seed-symbol matching reads defined_symbols (referenced_symbols is always
+      // loaded), so pull it into the lightweight path when symbols were seeded.
+      const needDefinedSymbols =
+        pagerankEnabled || symbolQuery !== null || seedCtx.symbols.size > 0;
+      const LIGHTWEIGHT_COLUMNS = [
+        "id",
+        "_rowid",
+        "path",
+        "hash",
+        "chunk_index",
+        "start_line",
+        "end_line",
+        "is_anchor",
+        "chunk_type",
+        "role",
+        "complexity",
+        "is_exported",
+        "content",
+        "parent_symbol",
+        "referenced_symbols",
+        "pooled_colbert_48d",
+        ...(needDefinedSymbols ? ["defined_symbols"] : []),
+      ];
+      // _distance is auto-added by vectorSearch, _score by FTS — include each
+      // in the respective query to suppress LanceDB deprecation warnings
+      const VECTOR_COLUMNS = [...LIGHTWEIGHT_COLUMNS, "_distance"];
+      const FTS_COLUMNS = [...LIGHTWEIGHT_COLUMNS, "_score"];
+
+      let vectorQuery = configureAnnVectorQuery(table.vectorSearch(queryVector))
+        .withRowId()
+        .select(VECTOR_COLUMNS)
+        .limit(PRE_RERANK_K);
+      if (whereClause) {
+        vectorQuery = vectorQuery.where(whereClause);
+      }
+      const vectorResults = (
+        await vectorQuery.toArray(QUERY_EXECUTION_OPTIONS)
+      ).map((r: any) => ({
+        ...r,
+      })) as VectorRecord[];
+
+      let ftsResults: VectorRecord[] = [];
+      let ftsSearchFailed = false;
+      if (this.ftsAvailable) {
+        try {
+          let ftsQuery = table
+            .search(query)
+            .withRowId()
+            .select(FTS_COLUMNS)
+            .limit(PRE_RERANK_K);
+          if (whereClause) {
+            ftsQuery = ftsQuery.where(whereClause);
+          }
+          ftsResults = (await ftsQuery.toArray(QUERY_EXECUTION_OPTIONS)).map(
+            (r: any) => ({
+              ...r,
+            }),
+          ) as VectorRecord[];
+        } catch (e) {
+          ftsSearchFailed = true;
+          this.ftsAvailable = false;
+          const msg = e instanceof Error ? e.message : String(e);
+          if (msg.includes("position")) {
+            // FTS index lacks positional data — rebuild it, but only from the
+            // index owner. This drops the index before recreating it, so a
+            // non-owner (CLI fallback, MCP session) would yank the shared index
+            // out from under every other process and, with several running at
+            // once, race CreateIndex on the way back up. Non-owners degrade to
+            // vector-only and let the daemon repair it.
+            if (this.db.canBuildIndexes()) {
+              try {
+                await this.db.createFTSIndex(true);
+                this.ftsAvailable = true;
+                console.warn(
+                  "[Searcher] Rebuilt FTS index with position support — retry search",
+                );
+              } catch {}
+            } else {
+              debug(
+                "searcher",
+                "FTS index lacks positions; deferring rebuild to the index owner",
               );
-            } catch {}
+            }
           } else {
-            debug(
-              "searcher",
-              "FTS index lacks positions; deferring rebuild to the index owner",
+            console.warn(
+              `[Searcher] FTS search failed (will retry later): ${msg}`,
             );
           }
-        } else {
-          console.warn(
-            `[Searcher] FTS search failed (will retry later): ${msg}`,
-          );
         }
       }
-    }
 
-    if (signal?.aborted) {
-      const err = new Error("Aborted");
-      err.name = "AbortError";
-      throw err;
-    }
+      if (signal?.aborted) {
+        const err = new Error("Aborted");
+        err.name = "AbortError";
+        throw err;
+      }
 
-    // Reciprocal Rank Fusion (vector + FTS)
-    const RRF_K = 60;
-    const candidateScores = new Map<string, number>();
-    const docMap = new Map<string, VectorRecord>();
-    // Best (lowest) 1-indexed rank each candidate reached in any retriever —
-    // the relevance gate for seeding (see the seed block below). Only tracked
-    // when seeding is active; otherwise it stays empty and costs nothing.
-    const bestRank = new Map<string, number>();
-    const noteRank = seedCtx.active
-      ? (key: string, rank: number) => {
-          const prev = bestRank.get(key);
-          if (prev === undefined || rank + 1 < prev)
-            bestRank.set(key, rank + 1);
-        }
-      : () => {};
+      // Reciprocal Rank Fusion (vector + FTS)
+      const RRF_K = 60;
+      const candidateScores = new Map<string, number>();
+      const docMap = new Map<string, VectorRecord>();
+      // Best (lowest) 1-indexed rank each candidate reached in any retriever —
+      // the relevance gate for seeding (see the seed block below). Only tracked
+      // when seeding is active; otherwise it stays empty and costs nothing.
+      const bestRank = new Map<string, number>();
+      const noteRank = seedCtx.active
+        ? (key: string, rank: number) => {
+            const prev = bestRank.get(key);
+            if (prev === undefined || rank + 1 < prev)
+              bestRank.set(key, rank + 1);
+          }
+        : () => {};
 
-    vectorResults.forEach((doc, rank) => {
-      const key = doc.id || `${doc.path}:${doc.chunk_index}`;
-      docMap.set(key, doc);
-      const score = 1.0 / (RRF_K + rank + 1);
-      candidateScores.set(key, (candidateScores.get(key) || 0) + score);
-      noteRank(key, rank);
-    });
-
-    ftsResults.forEach((doc, rank) => {
-      const key = doc.id || `${doc.path}:${doc.chunk_index}`;
-      if (!docMap.has(key)) docMap.set(key, doc);
-      const score = 1.0 / (RRF_K + rank + 1);
-      candidateScores.set(key, (candidateScores.get(key) || 0) + score);
-      noteRank(key, rank);
-    });
-
-    const fused = Array.from(candidateScores.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([key]) => docMap.get(key))
-      .filter(Boolean) as VectorRecord[];
-
-    diagnostics?.capture("vector", vectorResults);
-    diagnostics?.capture("fts", ftsResults);
-    diagnostics?.capture("rrf", fused);
-
-    // Free raw search results — docMap holds the only needed references
-    vectorResults.length = 0;
-    ftsResults.length = 0;
-
-    // Aider-style seeding (Phase 4): bump the RRF score of candidates matching
-    // the agent's working context, gated by each candidate's own relevance so
-    // off-topic seed files are never injected (the safety invariant). Because
-    // the final ordering also reads candidateScores, this one bump propagates
-    // through the stage-1 cosine cut, the stage-2 window, the rerank set, AND
-    // the final score — and can recover a candidate fusion buried below the
-    // display cut, which a rerank-only seed could not. See ./seed-weight.ts.
-    if (seedCtx.active) {
-      // Bound the scan to the relevant head of the pool. The gate is each
-      // candidate's best retriever rank (bestRank), so off-topic seed chunks
-      // that only appear deep in the pool are never lifted.
-      const SEED_WINDOW = 200;
-      const seedParams = seedParamsFromEnv();
-      let boosted = false;
-      for (const doc of fused.slice(0, SEED_WINDOW)) {
-        const sym =
-          seedCtx.symbols.size > 0
-            ? matchesSeedSymbol(
-                seedCtx,
-                readSymbolArray(
-                  (doc as { defined_symbols?: unknown }).defined_symbols,
-                ),
-                readSymbolArray(
-                  (doc as { referenced_symbols?: unknown }).referenced_symbols,
-                ),
-              )
-            : { def: false, ref: false };
-        const match = {
-          file: matchesSeedFile(seedCtx, doc.path),
-          symbolDef: sym.def,
-          symbolRef: sym.ref && !sym.def,
-        };
+      vectorResults.forEach((doc, rank) => {
         const key = doc.id || `${doc.path}:${doc.chunk_index}`;
-        const bonus = seedBoost(
-          match,
-          bestRank.get(key) ?? Infinity,
-          seedParams,
-        );
-        if (bonus > 0) {
-          candidateScores.set(key, (candidateScores.get(key) ?? 0) + bonus);
-          boosted = true;
-        }
-      }
-      if (boosted) {
-        fused.sort((a, b) => {
-          const ka = a.id || `${a.path}:${a.chunk_index}`;
-          const kb = b.id || `${b.path}:${b.chunk_index}`;
-          return (
-            (candidateScores.get(kb) ?? 0) - (candidateScores.get(ka) ?? 0)
-          );
-        });
-      }
-    }
-
-    // Candidate-concentration gate (Bundle B, v0.17.2 OSS-fixture finding):
-    // ColBERT rerank is shape-sensitive. When the post-fusion pool clusters
-    // into one file (single-file-repo / concentrated shape, e.g. lodash) rerank
-    // lifts recall sharply (+0.283 MRR on the OSS bench); on modular/spread
-    // pools (express, platform) it regresses. So detect the concentrated regime
-    // here and *add* rerank-on for it. This only ever flips doRerank false→true:
-    // an explicit GMAX_RERANK=1 (doRerank already true) is never overridden off.
-    const envConcThreshold = Number.parseFloat(
-      process.env.GMAX_CONCENTRATION_THRESHOLD ?? "",
-    );
-    // <= 0 (or NaN with the default) keeps the gate active at 0.7; a value > 1
-    // disables it (no possible share reaches it), giving a rerank-fully-off
-    // baseline for sweeps without touching the doRerank default. 0.7 is the
-    // sweep winner: highest threshold (least spurious firing) that still
-    // retains lodash's +0.15 MRR lift while leaving express/platform flat.
-    const CONCENTRATION_THRESHOLD =
-      Number.isFinite(envConcThreshold) && envConcThreshold > 0
-        ? envConcThreshold
-        : 0.7;
-    if (!doRerank) {
-      // Histogram a fixed top-K window (not finalLimit) so the threshold stays
-      // calibrated across callers regardless of the result window they request.
-      const CONCENTRATION_K = 10;
-      const window = fused.slice(0, CONCENTRATION_K);
-      if (window.length > 0 && CONCENTRATION_THRESHOLD <= 1) {
-        const buckets = new Map<string, number>();
-        for (const doc of window) {
-          buckets.set(doc.path, (buckets.get(doc.path) ?? 0) + 1);
-        }
-        let maxBucket = 0;
-        for (const count of buckets.values()) {
-          if (count > maxBucket) maxBucket = count;
-        }
-        const share = maxBucket / window.length;
-        gateEvaluated = true;
-        gateShare = share;
-        if (share >= CONCENTRATION_THRESHOLD) {
-          doRerank = true;
-          gateActivated = true;
-        }
-      }
-    }
-
-    diagnostics?.capture("fusion", fused);
-
-    // Item 8: Widen PRE_RERANK_K
-    // Retrieve a wide set for Stage 1 filtering
-    const envStage1 = Number.parseInt(process.env.GMAX_STAGE1_K ?? "", 10);
-    const STAGE1_K =
-      Number.isFinite(envStage1) && envStage1 > 0 ? envStage1 : 200;
-    const topCandidates = fused.slice(0, STAGE1_K);
-
-    diagnostics?.capture("stage1", topCandidates);
-
-    // Free docMap — topCandidates already holds record references
-    docMap.clear();
-
-    // Item 9: Two-stage rerank
-    // Stage 1: Cheap pooled cosine filter
-    let stage2Candidates = topCandidates;
-    const envStage2K = Number.parseInt(process.env.GMAX_STAGE2_K ?? "", 10);
-    const STAGE2_K =
-      Number.isFinite(envStage2K) && envStage2K > 0 ? envStage2K : 40;
-
-    const envRerankTop = Number.parseInt(process.env.GMAX_RERANK_TOP ?? "", 10);
-    const RERANK_TOP =
-      Number.isFinite(envRerankTop) && envRerankTop > 0 ? envRerankTop : 20;
-    const envBlend = Number.parseFloat(process.env.GMAX_RERANK_BLEND ?? "");
-    const FUSED_WEIGHT =
-      Number.isFinite(envBlend) && envBlend >= 0 ? envBlend : 0.5;
-
-    if (queryPooled && topCandidates.length > STAGE2_K) {
-      const cosineScores = topCandidates.map((doc) => {
-        const docVec = doc.pooled_colbert_48d;
-        // Reject missing or short vectors. Also treat an all-zero vector as
-        // "no pooled signal" rather than a genuine cosine of 0 — chunks indexed
-        // before the pooled-IPC fix (orchestrator.ts) stored all-zero padding,
-        // and on a mixed index those must sort below chunks that carry real
-        // pooled vectors, not tie with orthogonal ones.
-        if (!docVec || docVec.length < queryPooled.length) return -1;
-        // Manual cosine sim since we don't have helper here easily
-        // Assuming vectors are normalized (which they should be from orchestrator)
-        let dot = 0;
-        let nonZero = false;
-        for (let i = 0; i < queryPooled.length; i++) {
-          const c = docVec[i] || 0;
-          if (c !== 0) nonZero = true;
-          dot += queryPooled[i] * c;
-        }
-        return nonZero ? dot : -1;
+        docMap.set(key, doc);
+        const score = 1.0 / (RRF_K + rank + 1);
+        candidateScores.set(key, (candidateScores.get(key) || 0) + score);
+        noteRank(key, rank);
       });
 
-      // Sort by cosine score and keep top N
-      const withScore = topCandidates.map((doc, i) => ({
-        doc,
-        score: cosineScores[i],
-      }));
-      withScore.sort((a, b) => b.score - a.score);
-      stage2Candidates = withScore.slice(0, STAGE2_K).map((x) => x.doc);
-    }
+      ftsResults.forEach((doc, rank) => {
+        const key = doc.id || `${doc.path}:${doc.chunk_index}`;
+        if (!docMap.has(key)) docMap.set(key, doc);
+        const score = 1.0 / (RRF_K + rank + 1);
+        candidateScores.set(key, (candidateScores.get(key) || 0) + score);
+        noteRank(key, rank);
+      });
 
-    diagnostics?.capture("pooled", stage2Candidates);
-    const diagnosticDetails = () => ({
-      settings: {
-        finalLimit,
-        preK: PRE_RERANK_K,
-        rrfK: RRF_K,
-        stage1K: STAGE1_K,
-        stage2K: STAGE2_K,
-        rerankTop: RERANK_TOP,
-        fusedWeight: FUSED_WEIGHT,
-        pagerankEnabled,
-        seedsActive: seedCtx.active,
-        symbolQuery,
-        pooledFilterApplied: !!queryPooled && topCandidates.length > STAGE2_K,
-        testArtifactRequested: preference.tests,
-        documentationRequested: preference.documentation,
-      },
-      gate: {
-        requestedRerank,
-        threshold: CONCENTRATION_THRESHOLD,
-        evaluated: gateEvaluated,
-        share: gateShare,
-        activated: gateActivated,
-        rerankInvoked,
-      },
-      fts: { available: this.ftsAvailable, searchFailed: ftsSearchFailed },
-    });
-    if (stage2Candidates.length === 0) {
-      return {
-        data: [],
-        ...(diagnostics
-          ? { diagnostics: diagnostics.finish(diagnosticDetails()) }
-          : {}),
-      };
-    }
+      const fused = Array.from(candidateScores.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([key]) => docMap.get(key))
+        .filter(Boolean) as VectorRecord[];
 
-    const envMaxPerFile = Number.parseInt(
-      process.env.GMAX_MAX_PER_FILE ?? "",
-      10,
-    );
-    const MAX_PER_FILE =
-      requestedMaxPerFile ??
-      (Number.isFinite(envMaxPerFile) && envMaxPerFile > 0 ? envMaxPerFile : 3);
+      diagnostics?.capture("vector", vectorResults);
+      diagnostics?.capture("fts", ftsResults);
+      diagnostics?.capture("rrf", fused);
 
-    // Rank the entire bounded candidate pool before trimming the result count.
-    // A limit-dependent cut here discarded contenders before structure boosts
-    // and dedup, so requesting three results could hide the top match returned
-    // by a ten-result request. Expensive reranking stays independently bounded;
-    // display columns are still fetched only for the final results below.
-    const displayCandidates = [...stage2Candidates];
-    const rerankCandidates = stage2Candidates.slice(0, RERANK_TOP);
+      // Free raw search results — docMap holds the only needed references
+      vectorResults.length = 0;
+      ftsResults.length = 0;
 
-    // Symbol-definition promotion (1/2): membership. For a bare-symbol query,
-    // ensure the chunk(s) that actually DEFINE the symbol reach the rerank set
-    // even when the cosine / RERANK_TOP cuts would drop them — e.g. ErrorCodes
-    // sits at pooled-cosine rank 24 (> RERANK_TOP=20) and resolveActor at fusion
-    // rank 91 (> the stage-2 cut). Pulled from the top-200 fusion pool, bounded
-    // so the rerank batch stays small. Must run before Phase B so the injected
-    // chunks get their colbert data fetched for reranking. The score boost in
-    // (2/2) below then lets them win dedup over their own method-child chunks.
-    if (symbolQuery && rerankCandidates.length > 0) {
-      const present = new Set(
-        rerankCandidates.map((d) => d.id).filter(Boolean) as string[],
-      );
-      const displayPresent = new Set(
-        displayCandidates.map((d) => d.id).filter(Boolean) as string[],
-      );
-      const MAX_INJECT = 5;
-      let injected = 0;
-      for (const d of topCandidates) {
-        if (injected >= MAX_INJECT) break;
-        if (!d.id || present.has(d.id)) continue;
-        if (
-          readSymbolArray(
-            (d as { defined_symbols?: unknown }).defined_symbols,
-          ).includes(symbolQuery)
-        ) {
-          rerankCandidates.push(d);
-          present.add(d.id);
-          if (!displayPresent.has(d.id)) {
-            displayCandidates.push(d);
-            displayPresent.add(d.id);
+      // Aider-style seeding (Phase 4): bump the RRF score of candidates matching
+      // the agent's working context, gated by each candidate's own relevance so
+      // off-topic seed files are never injected (the safety invariant). Because
+      // the final ordering also reads candidateScores, this one bump propagates
+      // through the stage-1 cosine cut, the stage-2 window, the rerank set, AND
+      // the final score — and can recover a candidate fusion buried below the
+      // display cut, which a rerank-only seed could not. See ./seed-weight.ts.
+      if (seedCtx.active) {
+        // Bound the scan to the relevant head of the pool. The gate is each
+        // candidate's best retriever rank (bestRank), so off-topic seed chunks
+        // that only appear deep in the pool are never lifted.
+        const SEED_WINDOW = 200;
+        const seedParams = seedParamsFromEnv();
+        let boosted = false;
+        for (const doc of fused.slice(0, SEED_WINDOW)) {
+          const sym =
+            seedCtx.symbols.size > 0
+              ? matchesSeedSymbol(
+                  seedCtx,
+                  readSymbolArray(
+                    (doc as { defined_symbols?: unknown }).defined_symbols,
+                  ),
+                  readSymbolArray(
+                    (doc as { referenced_symbols?: unknown })
+                      .referenced_symbols,
+                  ),
+                )
+              : { def: false, ref: false };
+          const match = {
+            file: matchesSeedFile(seedCtx, doc.path),
+            symbolDef: sym.def,
+            symbolRef: sym.ref && !sym.def,
+          };
+          const key = doc.id || `${doc.path}:${doc.chunk_index}`;
+          const bonus = seedBoost(
+            match,
+            bestRank.get(key) ?? Infinity,
+            seedParams,
+          );
+          if (bonus > 0) {
+            candidateScores.set(key, (candidateScores.get(key) ?? 0) + bonus);
+            boosted = true;
           }
-          injected++;
+        }
+        if (boosted) {
+          fused.sort((a, b) => {
+            const ka = a.id || `${a.path}:${a.chunk_index}`;
+            const kb = b.id || `${b.path}:${b.chunk_index}`;
+            return (
+              (candidateScores.get(kb) ?? 0) - (candidateScores.get(ka) ?? 0)
+            );
+          });
         }
       }
-    }
 
-    // Selected rerank membership is separate from actual batch execution.
-    diagnostics?.capture("rerank", rerankCandidates);
+      // Candidate-concentration gate (Bundle B, v0.17.2 OSS-fixture finding):
+      // ColBERT rerank is shape-sensitive. When the post-fusion pool clusters
+      // into one file (single-file-repo / concentrated shape, e.g. lodash) rerank
+      // lifts recall sharply (+0.283 MRR on the OSS bench); on modular/spread
+      // pools (express, platform) it regresses. So detect the concentrated regime
+      // here and *add* rerank-on for it. This only ever flips doRerank false→true:
+      // an explicit GMAX_RERANK=1 (doRerank already true) is never overridden off.
+      const envConcThreshold = Number.parseFloat(
+        process.env.GMAX_CONCENTRATION_THRESHOLD ?? "",
+      );
+      // <= 0 (or NaN with the default) keeps the gate active at 0.7; a value > 1
+      // disables it (no possible share reaches it), giving a rerank-fully-off
+      // baseline for sweeps without touching the doRerank default. 0.7 is the
+      // sweep winner: highest threshold (least spurious firing) that still
+      // retains lodash's +0.15 MRR lift while leaving express/platform flat.
+      const CONCENTRATION_THRESHOLD =
+        Number.isFinite(envConcThreshold) && envConcThreshold > 0
+          ? envConcThreshold
+          : 0.7;
+      if (!doRerank) {
+        // Histogram a fixed top-K window (not finalLimit) so the threshold stays
+        // calibrated across callers regardless of the result window they request.
+        const CONCENTRATION_K = 10;
+        const window = fused.slice(0, CONCENTRATION_K);
+        if (window.length > 0 && CONCENTRATION_THRESHOLD <= 1) {
+          const buckets = new Map<string, number>();
+          for (const doc of window) {
+            buckets.set(doc.path, (buckets.get(doc.path) ?? 0) + 1);
+          }
+          let maxBucket = 0;
+          for (const count of buckets.values()) {
+            if (count > maxBucket) maxBucket = count;
+          }
+          const share = maxBucket / window.length;
+          gateEvaluated = true;
+          gateShare = share;
+          if (share >= CONCENTRATION_THRESHOLD) {
+            doRerank = true;
+            gateActivated = true;
+          }
+        }
+      }
 
-    // Phase B: Lazy-load colbert data only for the ~20 rerank candidates
-    if (doRerank && rerankCandidates.length > 0) {
-      const rerankIds = rerankCandidates
-        .map((doc) => doc.id)
-        .filter(Boolean)
-        .map((id) => `'${escapeSqlString(id)}'`);
-      if (rerankIds.length > 0) {
-        const colbertRows = await table
-          .query()
-          .select(["id", "colbert", "colbert_scale", "doc_token_ids"])
-          .where(`id IN (${rerankIds.join(",")})`)
-          .limit(rerankIds.length)
-          .toArray(QUERY_EXECUTION_OPTIONS);
+      diagnostics?.capture("fusion", fused);
+
+      // Item 8: Widen PRE_RERANK_K
+      // Retrieve a wide set for Stage 1 filtering
+      const envStage1 = Number.parseInt(process.env.GMAX_STAGE1_K ?? "", 10);
+      const STAGE1_K =
+        Number.isFinite(envStage1) && envStage1 > 0 ? envStage1 : 200;
+      const topCandidates = fused.slice(0, STAGE1_K);
+
+      diagnostics?.capture("stage1", topCandidates);
+
+      // Free docMap — topCandidates already holds record references
+      docMap.clear();
+
+      // Item 9: Two-stage rerank
+      // Stage 1: Cheap pooled cosine filter
+      let stage2Candidates = topCandidates;
+      const envStage2K = Number.parseInt(process.env.GMAX_STAGE2_K ?? "", 10);
+      const STAGE2_K =
+        Number.isFinite(envStage2K) && envStage2K > 0 ? envStage2K : 40;
+
+      const envRerankTop = Number.parseInt(
+        process.env.GMAX_RERANK_TOP ?? "",
+        10,
+      );
+      const RERANK_TOP =
+        Number.isFinite(envRerankTop) && envRerankTop > 0 ? envRerankTop : 20;
+      const envBlend = Number.parseFloat(process.env.GMAX_RERANK_BLEND ?? "");
+      const FUSED_WEIGHT =
+        Number.isFinite(envBlend) && envBlend >= 0 ? envBlend : 0.5;
+
+      if (queryPooled && topCandidates.length > STAGE2_K) {
+        const cosineScores = topCandidates.map((doc) => {
+          const docVec = doc.pooled_colbert_48d;
+          // Reject missing or short vectors. Also treat an all-zero vector as
+          // "no pooled signal" rather than a genuine cosine of 0 — chunks indexed
+          // before the pooled-IPC fix (orchestrator.ts) stored all-zero padding,
+          // and on a mixed index those must sort below chunks that carry real
+          // pooled vectors, not tie with orthogonal ones.
+          if (!docVec || docVec.length < queryPooled.length) return -1;
+          // Manual cosine sim since we don't have helper here easily
+          // Assuming vectors are normalized (which they should be from orchestrator)
+          let dot = 0;
+          let nonZero = false;
+          for (let i = 0; i < queryPooled.length; i++) {
+            const c = docVec[i] || 0;
+            if (c !== 0) nonZero = true;
+            dot += queryPooled[i] * c;
+          }
+          return nonZero ? dot : -1;
+        });
+
+        // Sort by cosine score and keep top N
+        const withScore = topCandidates.map((doc, i) => ({
+          doc,
+          score: cosineScores[i],
+        }));
+        withScore.sort((a, b) => b.score - a.score);
+        stage2Candidates = withScore.slice(0, STAGE2_K).map((x) => x.doc);
+      }
+
+      diagnostics?.capture("pooled", stage2Candidates);
+      const diagnosticDetails = () => ({
+        settings: {
+          finalLimit,
+          preK: PRE_RERANK_K,
+          rrfK: RRF_K,
+          stage1K: STAGE1_K,
+          stage2K: STAGE2_K,
+          rerankTop: RERANK_TOP,
+          fusedWeight: FUSED_WEIGHT,
+          pagerankEnabled,
+          seedsActive: seedCtx.active,
+          symbolQuery,
+          pooledFilterApplied: !!queryPooled && topCandidates.length > STAGE2_K,
+          testArtifactRequested: preference.tests,
+          documentationRequested: preference.documentation,
+        },
+        gate: {
+          requestedRerank,
+          threshold: CONCENTRATION_THRESHOLD,
+          evaluated: gateEvaluated,
+          share: gateShare,
+          activated: gateActivated,
+          rerankInvoked,
+        },
+        fts: { available: this.ftsAvailable, searchFailed: ftsSearchFailed },
+      });
+      if (stage2Candidates.length === 0) {
+        return {
+          data: [],
+          ...(diagnostics
+            ? { diagnostics: diagnostics.finish(diagnosticDetails()) }
+            : {}),
+        };
+      }
+
+      const envMaxPerFile = Number.parseInt(
+        process.env.GMAX_MAX_PER_FILE ?? "",
+        10,
+      );
+      const MAX_PER_FILE =
+        requestedMaxPerFile ??
+        (Number.isFinite(envMaxPerFile) && envMaxPerFile > 0
+          ? envMaxPerFile
+          : 3);
+
+      // Rank the entire bounded candidate pool before trimming the result count.
+      // A limit-dependent cut here discarded contenders before structure boosts
+      // and dedup, so requesting three results could hide the top match returned
+      // by a ten-result request. Expensive reranking stays independently bounded;
+      // display columns are still fetched only for the final results below.
+      const displayCandidates = [...stage2Candidates];
+      const rerankCandidates = stage2Candidates.slice(0, RERANK_TOP);
+
+      // Symbol-definition promotion (1/2): membership. For a bare-symbol query,
+      // ensure the chunk(s) that actually DEFINE the symbol reach the rerank set
+      // even when the cosine / RERANK_TOP cuts would drop them — e.g. ErrorCodes
+      // sits at pooled-cosine rank 24 (> RERANK_TOP=20) and resolveActor at fusion
+      // rank 91 (> the stage-2 cut). Pulled from the top-200 fusion pool, bounded
+      // so the rerank batch stays small. Must run before Phase B so the injected
+      // chunks get their colbert data fetched for reranking. The score boost in
+      // (2/2) below then lets them win dedup over their own method-child chunks.
+      if (symbolQuery && rerankCandidates.length > 0) {
+        const present = new Set(
+          rerankCandidates.map((d) => d.id).filter(Boolean) as string[],
+        );
+        const displayPresent = new Set(
+          displayCandidates.map((d) => d.id).filter(Boolean) as string[],
+        );
+        const MAX_INJECT = 5;
+        let injected = 0;
+        for (const d of topCandidates) {
+          if (injected >= MAX_INJECT) break;
+          if (!d.id || present.has(d.id)) continue;
+          if (
+            readSymbolArray(
+              (d as { defined_symbols?: unknown }).defined_symbols,
+            ).includes(symbolQuery)
+          ) {
+            rerankCandidates.push(d);
+            present.add(d.id);
+            if (!displayPresent.has(d.id)) {
+              displayCandidates.push(d);
+              displayPresent.add(d.id);
+            }
+            injected++;
+          }
+        }
+      }
+
+      // Selected rerank membership is separate from actual batch execution.
+      diagnostics?.capture("rerank", rerankCandidates);
+
+      // Phase B: Lazy-load colbert data only for the ~20 rerank candidates
+      if (doRerank && rerankCandidates.length > 0) {
+        const colbertRows = await this.readCandidateRows(
+          table,
+          rerankCandidates,
+          ["id", "colbert", "colbert_scale", "doc_token_ids"],
+        );
         const colbertMap = new Map(colbertRows.map((r: any) => [r.id, r]));
         for (const doc of rerankCandidates) {
           const extra = colbertMap.get(doc.id);
@@ -976,173 +1010,174 @@ export class Searcher {
           }
         }
       }
-    }
 
-    const rerankScoreByKey = new Map<string, number>();
-    if (doRerank && rerankCandidates.length > 0) {
-      rerankInvoked = true;
-      const scores = await pool.rerank(
-        {
-          query: queryMatrixRaw,
-          docs: rerankCandidates.map((doc) => ({
-            colbert:
-              (doc.colbert as Buffer | Int8Array | Uint8Array | number[]) ?? [],
-            scale:
-              typeof doc.colbert_scale === "number" ? doc.colbert_scale : 1,
-            token_ids: Array.isArray((doc as any).doc_token_ids)
-              ? ((doc as any).doc_token_ids as number[])
-              : undefined,
-          })),
-          colbertDim,
-        },
-        signal,
-      );
-      for (const [idx, doc] of rerankCandidates.entries()) {
-        const key = doc.id || `${doc.path}:${doc.chunk_index}`;
-        rerankScoreByKey.set(key, scores?.[idx] ?? 0);
-      }
-    }
-
-    type ScoredItem = {
-      record: (typeof displayCandidates)[number];
-      score: number;
-      breakdown?: {
-        rerank: number;
-        fused: number;
-        boost: number;
-        normalized: number;
-      };
-    };
-
-    // Symbol-definition promotion (2/2): score. Multiplicatively boost any
-    // candidate that defines the queried symbol so the definition chunk outranks
-    // its own method-child chunks (e.g. the `BeyondError` class chunk vs its
-    // constructor/toJSON, which otherwise score higher on the literal and evict
-    // the parent in overlap dedup). Multiplicative keeps it scale-invariant
-    // across the rerank-on (ColBERT maxsim) and rerank-off (fusion) score ranges.
-    const envDefBoost = Number.parseFloat(process.env.GMAX_DEF_BOOST ?? "");
-    const DEF_MATCH_BOOST =
-      Number.isFinite(envDefBoost) && envDefBoost >= 1 ? envDefBoost : 5;
-
-    const scored: ScoredItem[] = displayCandidates.map((doc, idx) => {
-      const key = doc.id || `${doc.path}:${doc.chunk_index}`;
-      const fusedScore = candidateScores.get(key) ?? 0;
-      const base = rerankScoreByKey.get(key) ?? (fusedScore || 1 / (idx + 1));
-      const blended = base + FUSED_WEIGHT * fusedScore;
-      let boosted = this.applyStructureBoost(
-        doc,
-        blended,
-        searchIntent,
-        preference,
-      );
-      if (
-        symbolQuery &&
-        readSymbolArray(
-          (doc as { defined_symbols?: unknown }).defined_symbols,
-        ).includes(symbolQuery)
-      ) {
-        boosted *= DEF_MATCH_BOOST;
-      }
-      return {
-        record: doc,
-        score: boosted,
-        breakdown: explain
-          ? {
-              rerank: base,
-              fused: fusedScore,
-              boost: blended > 0 ? boosted / blended : 1,
-              normalized: 0,
-            }
-          : undefined,
-      };
-    });
-
-    // PageRank tiebreaker (opt-in via GMAX_PAGERANK=1). Small additive delta on
-    // top of the post-boost score, sourced from the per-project call graph. Read
-    // docs/plans/2026-05-25-semantic-search-landscape.md (Bundle B / G1) for the
-    // measurement criterion that decides whether this flag becomes default-on.
-    if (pagerankEnabled && pathPrefix) {
-      try {
-        const { scores: prScores, max: prMax } = await loadOrComputePageRank(
-          this.db,
-          pathPrefix,
+      const rerankScoreByKey = new Map<string, number>();
+      if (doRerank && rerankCandidates.length > 0) {
+        rerankInvoked = true;
+        const scores = await pool.rerank(
+          {
+            query: queryMatrixRaw,
+            docs: rerankCandidates.map((doc) => ({
+              colbert:
+                (doc.colbert as Buffer | Int8Array | Uint8Array | number[]) ??
+                [],
+              scale:
+                typeof doc.colbert_scale === "number" ? doc.colbert_scale : 1,
+              token_ids: Array.isArray((doc as any).doc_token_ids)
+                ? ((doc as any).doc_token_ids as number[])
+                : undefined,
+            })),
+            colbertDim,
+          },
+          signal,
         );
-        if (prMax > 0) {
-          const envWeight = Number.parseFloat(process.env.GMAX_PR_WEIGHT ?? "");
-          const PR_WEIGHT =
-            Number.isFinite(envWeight) && envWeight >= 0 ? envWeight : 0.05;
-          for (const item of scored) {
-            const raw = (item.record as { defined_symbols?: unknown })
-              .defined_symbols;
-            let defs: string[] = [];
-            if (Array.isArray(raw)) {
-              defs = raw.filter((v): v is string => typeof v === "string");
-            } else if (
-              raw &&
-              typeof (raw as { toArray?: () => unknown }).toArray === "function"
-            ) {
-              try {
-                const arr = (raw as { toArray: () => unknown }).toArray();
-                if (Array.isArray(arr)) {
-                  defs = arr.filter((v): v is string => typeof v === "string");
-                }
-              } catch {}
-            }
-            const norm = pageRankBoostForSymbols(defs, prScores, prMax);
-            item.score += PR_WEIGHT * norm;
-          }
+        for (const [idx, doc] of rerankCandidates.entries()) {
+          const key = doc.id || `${doc.path}:${doc.chunk_index}`;
+          rerankScoreByKey.set(key, scores?.[idx] ?? 0);
         }
-      } catch (e) {
-        console.warn(`[Searcher] PageRank tiebreaker failed: ${e}`);
       }
-    }
 
-    // Note: "boosted" was not previously declared -- fix to use "scored"
-    scored.sort((a: ScoredItem, b: ScoredItem) => b.score - a.score);
+      type ScoredItem = {
+        record: (typeof displayCandidates)[number];
+        score: number;
+        breakdown?: {
+          rerank: number;
+          fused: number;
+          boost: number;
+          normalized: number;
+        };
+      };
 
-    diagnostics?.capture(
-      "scored",
-      scored.map((item) => item.record),
-    );
+      // Symbol-definition promotion (2/2): score. Multiplicatively boost any
+      // candidate that defines the queried symbol so the definition chunk outranks
+      // its own method-child chunks (e.g. the `BeyondError` class chunk vs its
+      // constructor/toJSON, which otherwise score higher on the literal and evict
+      // the parent in overlap dedup). Multiplicative keeps it scale-invariant
+      // across the rerank-on (ColBERT maxsim) and rerank-off (fusion) score ranges.
+      const envDefBoost = Number.parseFloat(process.env.GMAX_DEF_BOOST ?? "");
+      const DEF_MATCH_BOOST =
+        Number.isFinite(envDefBoost) && envDefBoost >= 1 ? envDefBoost : 5;
 
-    // Item 11: Intelligent Deduplication
-    const uniqueScored = this.deduplicateResults(scored);
+      const scored: ScoredItem[] = displayCandidates.map((doc, idx) => {
+        const key = doc.id || `${doc.path}:${doc.chunk_index}`;
+        const fusedScore = candidateScores.get(key) ?? 0;
+        const base = rerankScoreByKey.get(key) ?? (fusedScore || 1 / (idx + 1));
+        const blended = base + FUSED_WEIGHT * fusedScore;
+        let boosted = this.applyStructureBoost(
+          doc,
+          blended,
+          searchIntent,
+          preference,
+        );
+        if (
+          symbolQuery &&
+          readSymbolArray(
+            (doc as { defined_symbols?: unknown }).defined_symbols,
+          ).includes(symbolQuery)
+        ) {
+          boosted *= DEF_MATCH_BOOST;
+        }
+        return {
+          record: doc,
+          score: boosted,
+          breakdown: explain
+            ? {
+                rerank: base,
+                fused: fusedScore,
+                boost: blended > 0 ? boosted / blended : 1,
+                normalized: 0,
+              }
+            : undefined,
+        };
+      });
 
-    diagnostics?.capture(
-      "dedup",
-      uniqueScored.map((item) => item.record),
-    );
-
-    // Item 10: Per-file diversification
-    const seenFiles = new Map<string, number>();
-    const diversified: ScoredItem[] = [];
-
-    for (const item of uniqueScored) {
-      const path = item.record.path || "";
-      const count = seenFiles.get(path) || 0;
-      if (count < MAX_PER_FILE) {
-        diversified.push(item);
-        seenFiles.set(path, count + 1);
-      } else {
-        diagnostics?.noteFileLimit(item.record);
+      // PageRank tiebreaker (opt-in via GMAX_PAGERANK=1). Small additive delta on
+      // top of the post-boost score, sourced from the per-project call graph. Read
+      // docs/plans/2026-05-25-semantic-search-landscape.md (Bundle B / G1) for the
+      // measurement criterion that decides whether this flag becomes default-on.
+      if (pagerankEnabled && pathPrefix) {
+        try {
+          const { scores: prScores, max: prMax } = await loadOrComputePageRank(
+            this.db,
+            pathPrefix,
+          );
+          if (prMax > 0) {
+            const envWeight = Number.parseFloat(
+              process.env.GMAX_PR_WEIGHT ?? "",
+            );
+            const PR_WEIGHT =
+              Number.isFinite(envWeight) && envWeight >= 0 ? envWeight : 0.05;
+            for (const item of scored) {
+              const raw = (item.record as { defined_symbols?: unknown })
+                .defined_symbols;
+              let defs: string[] = [];
+              if (Array.isArray(raw)) {
+                defs = raw.filter((v): v is string => typeof v === "string");
+              } else if (
+                raw &&
+                typeof (raw as { toArray?: () => unknown }).toArray ===
+                  "function"
+              ) {
+                try {
+                  const arr = (raw as { toArray: () => unknown }).toArray();
+                  if (Array.isArray(arr)) {
+                    defs = arr.filter(
+                      (v): v is string => typeof v === "string",
+                    );
+                  }
+                } catch {}
+              }
+              const norm = pageRankBoostForSymbols(defs, prScores, prMax);
+              item.score += PR_WEIGHT * norm;
+            }
+          }
+        } catch (e) {
+          console.warn(`[Searcher] PageRank tiebreaker failed: ${e}`);
+        }
       }
-      if (diversified.length >= finalLimit) break;
-    }
 
-    diagnostics?.capture(
-      "final",
-      diversified.map((item) => item.record),
-    );
+      // Note: "boosted" was not previously declared -- fix to use "scored"
+      scored.sort((a: ScoredItem, b: ScoredItem) => b.score - a.score);
 
-    // Phase C: Lazy-load display columns only for the final ~10 results
-    const finalIds = diversified
-      .map((item) => item.record.id)
-      .filter(Boolean)
-      .map((id) => `'${escapeSqlString(id)}'`);
-    if (finalIds.length > 0) {
-      const displayRows = await table
-        .query()
-        .select([
+      diagnostics?.capture(
+        "scored",
+        scored.map((item) => item.record),
+      );
+
+      // Item 11: Intelligent Deduplication
+      const uniqueScored = this.deduplicateResults(scored);
+
+      diagnostics?.capture(
+        "dedup",
+        uniqueScored.map((item) => item.record),
+      );
+
+      // Item 10: Per-file diversification
+      const seenFiles = new Map<string, number>();
+      const diversified: ScoredItem[] = [];
+
+      for (const item of uniqueScored) {
+        const path = item.record.path || "";
+        const count = seenFiles.get(path) || 0;
+        if (count < MAX_PER_FILE) {
+          diversified.push(item);
+          seenFiles.set(path, count + 1);
+        } else {
+          diagnostics?.noteFileLimit(item.record);
+        }
+        if (diversified.length >= finalLimit) break;
+      }
+
+      diagnostics?.capture(
+        "final",
+        diversified.map((item) => item.record),
+      );
+
+      // Phase C: Lazy-load display columns only for the final ~10 results
+      const displayRows = await this.readCandidateRows(
+        table,
+        diversified.map((item) => item.record),
+        [
           "id",
           "defined_symbols",
           "parent_symbol",
@@ -1150,10 +1185,8 @@ export class Searcher {
           "exports",
           "summary",
           "file_skeleton",
-        ])
-        .where(`id IN (${finalIds.join(",")})`)
-        .limit(finalIds.length)
-        .toArray(QUERY_EXECUTION_OPTIONS);
+        ],
+      );
       const displayMap = new Map(displayRows.map((r: any) => [r.id, r]));
       for (const item of diversified) {
         const extra = displayMap.get(item.record.id);
@@ -1166,56 +1199,58 @@ export class Searcher {
           (item.record as any).file_skeleton = extra.file_skeleton;
         }
       }
+
+      const finalResults = diversified.map((item: ScoredItem) => ({
+        ...item.record,
+        _score: item.score,
+        _breakdown: item.breakdown,
+        vector: undefined,
+        colbert: undefined,
+      }));
+
+      // Item 12: Score Calibration
+      const maxScore = finalResults.length > 0 ? finalResults[0]._score : 1.0;
+
+      return {
+        data: finalResults.map((r: (typeof finalResults)[number]) => {
+          const chunk = this.mapRecordToChunk(r, r._score || 0);
+
+          // Normalize score relative to top result
+          const normalized = maxScore > 0 ? r._score / maxScore : 0;
+
+          let confidence: "High" | "Medium" | "Low" = "Low";
+          if (normalized > 0.8) confidence = "High";
+          else if (normalized > 0.5) confidence = "Medium";
+
+          chunk.score = normalized;
+          if ((r as any)._breakdown) {
+            chunk.scoreBreakdown = { ...(r as any)._breakdown, normalized };
+          }
+          chunk.confidence = confidence;
+          return chunk;
+        }),
+        ...(diagnostics
+          ? {
+              diagnostics: diagnostics.finish({
+                ...diagnosticDetails(),
+                settings: {
+                  ...diagnosticDetails().settings,
+                  maxPerFile: MAX_PER_FILE,
+                  definitionBoost: DEF_MATCH_BOOST,
+                },
+              }),
+            }
+          : {}),
+        ...(!this.ftsAvailable || ftsSearchFailed
+          ? {
+              warnings: [
+                "Full-text search unavailable — results may be less precise",
+              ],
+            }
+          : {}),
+      };
+    } finally {
+      table.close();
     }
-
-    const finalResults = diversified.map((item: ScoredItem) => ({
-      ...item.record,
-      _score: item.score,
-      _breakdown: item.breakdown,
-      vector: undefined,
-      colbert: undefined,
-    }));
-
-    // Item 12: Score Calibration
-    const maxScore = finalResults.length > 0 ? finalResults[0]._score : 1.0;
-
-    return {
-      data: finalResults.map((r: (typeof finalResults)[number]) => {
-        const chunk = this.mapRecordToChunk(r, r._score || 0);
-
-        // Normalize score relative to top result
-        const normalized = maxScore > 0 ? r._score / maxScore : 0;
-
-        let confidence: "High" | "Medium" | "Low" = "Low";
-        if (normalized > 0.8) confidence = "High";
-        else if (normalized > 0.5) confidence = "Medium";
-
-        chunk.score = normalized;
-        if ((r as any)._breakdown) {
-          chunk.scoreBreakdown = { ...(r as any)._breakdown, normalized };
-        }
-        chunk.confidence = confidence;
-        return chunk;
-      }),
-      ...(diagnostics
-        ? {
-            diagnostics: diagnostics.finish({
-              ...diagnosticDetails(),
-              settings: {
-                ...diagnosticDetails().settings,
-                maxPerFile: MAX_PER_FILE,
-                definitionBoost: DEF_MATCH_BOOST,
-              },
-            }),
-          }
-        : {}),
-      ...(!this.ftsAvailable || ftsSearchFailed
-        ? {
-            warnings: [
-              "Full-text search unavailable — results may be less precise",
-            ],
-          }
-        : {}),
-    };
   }
 }

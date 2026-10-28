@@ -34,6 +34,12 @@ Natural-language search that works like `grep`. Fast, local, and built for codin
 - **Centralized Index:** One database at `~/.gmax/` — index once, search from anywhere.
 - **Agent-Ready:** `--agent` flag returns compact one-line output — ~89% fewer tokens than default.
 
+**CPU search in 0.26.100:** ColBERT reranking batches token dot products and
+reuses decoding buffers. Search fetches selected payloads by row ID within one
+snapshot. Existing indexes need no rebuild. A bounded warm P3 comparison on 96
+synthetic documents measured reranked search at 30.37 → 19.38 ms median with
+identical results; workload and host conditions determine the gain.
+
 ## Quick Start
 
 Requires **Node.js 22.12.0 or newer**.

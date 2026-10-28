@@ -28,7 +28,7 @@ import {
 import { debug as dbg, debugTimer } from "../utils/logger";
 import { resolveContainedPath } from "../utils/path-containment";
 import { resourceBudget } from "../utils/resource-budget";
-import { maxSim } from "./colbert-math";
+import { createMaxSimScorer } from "./colbert-math";
 import { EmbeddingBackendUnavailableError } from "./embedding-error";
 import { ColbertModel, type HybridResult } from "./embeddings/colbert";
 import {
@@ -580,34 +580,46 @@ export class WorkerOrchestrator {
     docs: RerankDoc[];
     colbertDim: number;
   }): Promise<number[]> {
-    await this.ensureReady();
-    const queryMatrix = input.query.map((row) =>
-      row instanceof Float32Array ? row : new Float32Array(row),
-    );
-
-    return input.docs.map((doc) => {
-      const colbert = coerceColbertBytes(doc.colbert);
-
-      const seqLen = Math.floor(colbert.length / input.colbertDim);
-      const docMatrix: Float32Array[] = [];
-      for (let i = 0; i < seqLen; i++) {
-        const start = i * input.colbertDim;
-        const row = new Float32Array(input.colbertDim);
-        for (let d = 0; d < input.colbertDim; d++) {
-          row[d] = (colbert[start + d] * doc.scale) / 127.0;
-        }
-        docMatrix.push(row);
-      }
-      const tokenIds =
-        Array.isArray(doc.token_ids) && doc.token_ids.length === seqLen
-          ? doc.token_ids
-          : undefined;
-      return maxSim(
-        queryMatrix,
-        docMatrix,
-        tokenIds,
-        this.generation.colbertModel,
-      );
-    });
+    // Both sides are already encoded; reranking needs no model or parser.
+    return rerankColbert(input, this.generation.colbertModel);
   }
+}
+
+/** Score already-encoded ColBERT features without loading an embedding backend. */
+export function rerankColbert(
+  input: { query: number[][]; docs: RerankDoc[]; colbertDim: number },
+  modelId: string,
+): number[] {
+  if (input.query.length === 0) return input.docs.map(() => 0);
+  const queryMatrix = input.query.map((row) =>
+    row instanceof Float32Array ? row : new Float32Array(row),
+  );
+  const scoreDocument = createMaxSimScorer(queryMatrix, modelId);
+  // MaxSim consumes each document synchronously. Reuse token buffers across
+  // documents so allocation scales with the longest document, not the batch.
+  const rowBuffers: Float32Array[] = [];
+
+  return input.docs.map((doc) => {
+    const colbert = coerceColbertBytes(doc.colbert);
+
+    const seqLen = Math.floor(colbert.length / input.colbertDim);
+    const docMatrix: Float32Array[] = [];
+    for (let i = 0; i < seqLen; i++) {
+      const start = i * input.colbertDim;
+      let row = rowBuffers[i];
+      if (!row) {
+        row = new Float32Array(input.colbertDim);
+        rowBuffers[i] = row;
+      }
+      for (let d = 0; d < input.colbertDim; d++) {
+        row[d] = (colbert[start + d] * doc.scale) / 127.0;
+      }
+      docMatrix.push(row);
+    }
+    const tokenIds =
+      Array.isArray(doc.token_ids) && doc.token_ids.length === seqLen
+        ? doc.token_ids
+        : undefined;
+    return scoreDocument(docMatrix, tokenIds);
+  });
 }

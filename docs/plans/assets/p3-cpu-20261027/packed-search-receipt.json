@@ -1,0 +1,86 @@
+{
+  "startedAt": "2026-10-28T00:26:56Z",
+  "root": "/tmp/gmax-p3-search-m1f0wxjm",
+  "script": "/tmp/gmax-p3-packed-search-latency.cjs",
+  "scriptSha256": "cae4258094d5fbaa7b34071b4ca9846674db215bbc1ac64e34f6ec1ca2647397",
+  "models": [
+    {
+      "model": "onnx-community/granite-embedding-small-english-r2-ONNX",
+      "file": "tokenizer.json",
+      "bytes": 2128614,
+      "sha256": "feeb83348dcb033bc6b9d2e1f7906ca9eb2d122845000c9416d894d7c2927149"
+    },
+    {
+      "model": "onnx-community/granite-embedding-small-english-r2-ONNX",
+      "file": "tokenizer_config.json",
+      "bytes": 20839,
+      "sha256": "ce06781b38bb393db68c9e0709bddd31ef5d88f2c6fbb3fd9f369778fb85e451"
+    },
+    {
+      "model": "onnx-community/granite-embedding-small-english-r2-ONNX",
+      "file": "config.json",
+      "bytes": 1526,
+      "sha256": "1a1710c20911da8c96179716bf44058e54cca6fa7952cce77be83ef05edae3ee"
+    },
+    {
+      "model": "onnx-community/granite-embedding-small-english-r2-ONNX",
+      "file": "onnx/model_q4.onnx",
+      "bytes": 212629,
+      "sha256": "3a27c53213858379e4938858d8c72711f3792dd2c00cf1bd08cd65d23b8b36ae"
+    },
+    {
+      "model": "onnx-community/granite-embedding-small-english-r2-ONNX",
+      "file": "onnx/model_q4.onnx_data",
+      "bytes": 99292672,
+      "sha256": "ac9b1830d3204072803f706581573752f3b80bf4e08e7ff323a7091636cbeaaa"
+    },
+    {
+      "model": "ryandono/mxbai-edge-colbert-v0-17m-onnx-int8",
+      "file": "skiplist.json",
+      "bytes": 120,
+      "sha256": "2dc13c564fbf6f9e4cd9229600da6f6a75a35da1768be25ae4a6654d4223bbd5"
+    },
+    {
+      "model": "ryandono/mxbai-edge-colbert-v0-17m-onnx-int8",
+      "file": "tokenizer.json",
+      "bytes": 3583588,
+      "sha256": "594291000b476c98ed600cbb1914ff128c79642a9433aac86213c7a5562d7c1a"
+    },
+    {
+      "model": "ryandono/mxbai-edge-colbert-v0-17m-onnx-int8",
+      "file": "tokenizer_config.json",
+      "bytes": 21177,
+      "sha256": "b90169fbc9d84d112cce181ca326b0a46515e155ff9987e04d2b55ec282c3798"
+    },
+    {
+      "model": "ryandono/mxbai-edge-colbert-v0-17m-onnx-int8",
+      "file": "config.json",
+      "bytes": 1343,
+      "sha256": "69f36f1a2c14ed309d3f7f7197d7123153a3053c2f73c9387a9dd7e135b3761b"
+    },
+    {
+      "model": "ryandono/mxbai-edge-colbert-v0-17m-onnx-int8",
+      "file": "onnx/model_int8.onnx",
+      "bytes": 56371702,
+      "sha256": "bf220582767b501f17fc8a9b484f92f43c7756908ea87f7ac5053682be495ded"
+    }
+  ],
+  "limits": {
+    "deadlineSeconds": 180,
+    "maxOwnedRssBytes": 2147483648,
+    "maxPrivateBytes": 536870912,
+    "minAvailableBytes": 8589934592,
+    "maxSwapGrowthBytes": 536870912,
+    "cpus": [
+      0,
+      1
+    ]
+  },
+  "outcome": "completed",
+  "childPid": 2895087,
+  "exitCode": 0,
+  "noLiveOwnedProcesses": true,
+  "elapsedSeconds": 25.41029512701789,
+  "peakSampledOwnedRssBytes": 713728000,
+  "privateModelsAndStoreRemoved": true
+}

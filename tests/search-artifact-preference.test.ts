@@ -58,9 +58,11 @@ function row(id: string, file: string): VectorRecord {
   };
 }
 function searcher(records: VectorRecord[]) {
+  records = records.map((record, i) => ({ ...record, _rowid: BigInt(i) }));
   const retrieval = () => {
     let count = records.length;
     const chain = {
+      withRowId: () => chain,
       select: () => chain,
       where: () => chain,
       limit: (n: number) => {
@@ -72,10 +74,21 @@ function searcher(records: VectorRecord[]) {
     return chain;
   };
   const table = {
+    version: async () => 1,
+    checkout: async () => {},
+    close: () => {},
+    takeRowIds: (ids: readonly (bigint | number)[]) => {
+      const chain = {
+        select: () => chain,
+        toArray: async () => ids.map((id) => records[Number(id)]),
+      };
+      return chain;
+    },
     vectorSearch: retrieval,
     query: retrieval,
     search: () => {
       const chain = {
+        withRowId: () => chain,
         select: () => chain,
         where: () => chain,
         limit: () => chain,
