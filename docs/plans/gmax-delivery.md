@@ -2501,6 +2501,12 @@ longer context, remote inference and index migration remain unselected. C1/conte
 and C/D keep their separate scope and order. The pending delivery handoff, live
 config/service/host protection and unrelated Depot collector edits are preserved.
 
+## Outstanding Mac ColBERT indexing comparison
+
+The [Mac smoke record](../../scripts/colbert-eval/MAC-SMOKE.md#disposable-indexing-experiment--awaiting-client-reconnect) owns the separate CPU/MPS document-encoding experiment, its incomplete end-to-end indexing comparison and the resource-registration incident. The final [Pro MLX-session handoff](t3-thread://v1/c0d28353-0ab9-463e-b305-5bba94abe980), dated October 24, stopped at client reconnect and proposed verification before retry. The completed ranking screen and Gemma evaluation above do not establish complete-indexing speedup or close the recorded process-identity defect.
+
+Current registration recovery, disposition of the timezone-sensitive product cleanup path and selection of any indexing retry remain open; no later recovery or completed comparison receipt is linked here. The old request to restart T3 is a dated handoff, not a current process instruction. This reconciliation performs no client restart, model load, benchmark, installation or release.
+
 ## Usage statistics audit — October 21
 
 The user requested an audit of CPU time, memory and disk statistics for debugging
