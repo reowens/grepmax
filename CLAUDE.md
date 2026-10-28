@@ -4,6 +4,33 @@ Read this before making changes.
 
 ---
 
+The workflow/verification contract in [AGENTS.md](AGENTS.md) applies to every
+agent and supersedes older acceptance, review and test instructions below.
+
+## Completion contract
+
+[AGENTS.md](AGENTS.md#complete-the-approved-outcome-without-repeated-stops) owns
+end-to-end autonomy and verification scope. A release includes publication, P3
+installation/normal handover, one bounded post-deployment CPU profile, recorded
+results and concrete next items unless the user explicitly narrows the request.
+Do not finish after an intermediate milestone and ask to continue already
+approved work. A “go” authorizes one focused test invocation if needed; an
+included profile is authorized once too. Do not add automatic review/acceptance
+rounds, repeat passing suites or create another package release for preparation.
+Existing host limits, owned-process cleanup, rollback, local-only checks and the
+large-model hard stop below remain authoritative. Stop only on a real blocker
+or genuinely missing authorization/input, and identify it precisely.
+
+## Local checks and remote execution
+
+All checks run locally. Do not use Depot or another remote builder without an
+explicit user request for that run. The existing manually dispatched
+`.github/workflows/release.yml` is the sole publication CI exception; do not add
+jobs, qualification stages or acceptance suites. A release request does not
+otherwise authorize remote checks.
+
+---
+
 ## ⛔ HARD STOP — Never load the summarizer / large local LLMs without asking
 
 **DO NOT, under any circumstances, start the summarizer server, load the
@@ -34,8 +61,8 @@ explicitly, unambiguously tells you to bring it up in that exact session.
 
 ## Subagents
 
-When spawning subagents (Agent tool), use `model: "opus"` unless the user asks
-for a different model.
+When spawning subagents, inherit the parent model and settings unless the user
+explicitly selects a different model. Do not create agents to reset test budgets.
 
 Agent worktrees land under `.claude/worktrees/` *inside* this repo. The directory is gitignored
 and `vitest.config` excludes it, but a leftover worktree still shows in `git worktree list` and
