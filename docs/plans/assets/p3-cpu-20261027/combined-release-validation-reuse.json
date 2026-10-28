@@ -37,7 +37,9 @@
       "reason": "P2 final ownership receipt ordering",
       "nativeOptionsAndWriteVerificationUnchanged": true,
       "priorEvidenceScope": "Native delta/input/admission/reopen and helper process cases retained; completion ordering separately covered by new targeted regression. No whole-suite rerun.",
-      "regressionStatus": "pending authorization"
+      "regressionStatus": "passed: 2 cases/11 skipped",
+      "receipt": "/home/reoiv/.local/state/gmax-delivery/20261028-0.26.102/receipt-regression-validation.json",
+      "distinctFtsHelperCasesIncludingNewRegression": 46
     }
   },
   "dependenciesUnchanged": true,

@@ -1,0 +1,50 @@
+{
+  "finding": "P2 completion before final ownership verification",
+  "fixCommit": "7048bfa567ef401864e42fd224a9b549078addce",
+  "status": "owner fix verified",
+  "sourceSha256": {
+    "src/lib/store/fts-refresh.ts": "f938644048ad9ded4191c40a070a1b74eee1b24d1bb5119eac62e5f284762c9b",
+    "tests/fts-refresh.test.ts": "72c7e21ab53ab4e7bbe03fe4224c83981cb1450b68f37fbf6909e68edab2a747",
+    "src/lib/store/store-lease.ts": "7ae7e57c56cf5ca0d08f5816d84a69ce7dc5279913b75bcf3b05891635617841"
+  },
+  "receipt": {
+    "root": "/tmp/gmax-fts-release-receipt-4z7opyj7",
+    "command": [
+      "/usr/local/bin/node",
+      "/home/reoiv/dev/hetchy/tools/gmax/.claude/worktrees/gmax-fts-release-026102/node_modules/vitest/vitest.mjs",
+      "run",
+      "tests/fts-refresh.test.ts",
+      "--maxWorkers=1",
+      "--testNamePattern",
+      "syncs running state|final ownership verification",
+      "--reporter=json",
+      "--outputFile=/tmp/gmax-fts-release-receipt-4z7opyj7/vitest.json"
+    ],
+    "limits": {
+      "deadlineSeconds": 120,
+      "maxOwnedRssBytes": 2147483648,
+      "minAvailableBytes": 8589934592,
+      "maxSwapGrowthBytes": 536870912,
+      "cpus": [
+        0,
+        1
+      ]
+    },
+    "outcome": "passed",
+    "childPid": 2096877,
+    "exitCode": 0,
+    "noLiveOwnedProcesses": true,
+    "elapsedSeconds": 0.5895210310118273,
+    "peakSampledOwnedRssBytes": 216162304,
+    "privateHomeAndFixturesRemoved": true,
+    "tests": {
+      "numTotalTests": 13,
+      "numPassedTests": 2,
+      "numFailedTests": 0,
+      "numPendingTests": 11,
+      "success": true
+    }
+  },
+  "scope": "One explicitly approved focused invocation: new final-ownership-loss regression and normal completion; 2 passed/11 skipped. Actual StoreLease final owner check rejects a changed nonce after successful native callback. Uncertain outcome persists and unacknowledged retry refuses. Native/search passing suites were not repeated.",
+  "additionalReviewRound": false
+}
