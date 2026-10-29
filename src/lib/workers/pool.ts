@@ -5,14 +5,19 @@
 import * as childProcess from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { CONFIG, MAX_WORKER_MEMORY_MB, WORKER_TIMEOUT_MS } from "../../config";
+import {
+  CONFIG,
+  MAX_WORKER_MEMORY_MB,
+  resolveWorkerThreads,
+  WORKER_TIMEOUT_MS,
+} from "../../config";
 import {
   type EmbeddingGenerationConfig,
   resolveEmbeddingGeneration,
 } from "../index/embedding-generation";
 import { readGlobalConfig } from "../index/index-config";
 import { daemonStartDeniedReason } from "../utils/autostart";
-import { effectiveCpuCount } from "../utils/cpu-capacity";
+import { type CpuCapacity, effectiveCpuCount } from "../utils/cpu-capacity";
 import { hostGuardPolicy } from "../utils/host-guard-policy";
 import {
   formatPressureProbe,
@@ -286,6 +291,15 @@ const PRIORITY_METHODS: ReadonlySet<TaskMethod> = new Set([
   "rerank",
 ]);
 
+export interface WorkerPoolCpuConfiguration {
+  /** Snapshot taken when this pool was initialized, not a live CPU measurement. */
+  capacity: CpuCapacity;
+  maxWorkers: number;
+  automaticWorkerThreads: number;
+  /** Global admitted background files, not running native threads. */
+  backgroundIndexingLimit: number;
+}
+
 export class WorkerPool {
   private workers: ProcessWorker[] = [];
   private retiringWorkers = new Set<ProcessWorker>();
@@ -308,6 +322,8 @@ export class WorkerPool {
   private readonly maxWorkers: number;
   // File work shares this CPU/worker reservation across every project using the pool.
   private readonly fileCpuLimit: number;
+  private readonly cpuCapacity: CpuCapacity | null;
+  private readonly automaticWorkerThreads: number;
   private readonly embeddingEnvironment: Record<string, string>;
   private consecutiveRespawns = 0;
   private respawnLimitReached = false;
@@ -327,7 +343,15 @@ export class WorkerPool {
     this.modulePath = resolved.filename;
     this.execArgv = resolved.execArgv;
     this.maxWorkers = Math.max(1, CONFIG.WORKER_THREADS);
-    this.fileCpuLimit = Math.max(1, effectiveCpuCount() - 1);
+    let cpuCapacity: CpuCapacity | null = null;
+    const effectiveCpus = effectiveCpuCount({}, (capacity) => {
+      cpuCapacity = capacity;
+    });
+    this.cpuCapacity = cpuCapacity;
+    this.fileCpuLimit = Math.max(1, effectiveCpus - 1);
+    this.automaticWorkerThreads = resolveWorkerThreads({
+      cpuBudget: effectiveCpus,
+    }).value;
     const config = generation && embedMode ? null : readGlobalConfig();
     this.generation = generation ?? resolveEmbeddingGeneration(config!);
     this.embedMode = embedMode ?? config!.embedMode;
@@ -353,6 +377,21 @@ export class WorkerPool {
     return (
       !this.destroyed && !this.spawnDeniedReason && this.workers.length > 0
     );
+  }
+
+  private backgroundIndexingLimit(): number {
+    return Math.min(this.fileCpuLimit, Math.max(1, this.maxWorkers - 1));
+  }
+
+  /** Read initialized limits without sampling, spawning or changing admission. */
+  getCpuConfiguration(): WorkerPoolCpuConfiguration | null {
+    if (!this.cpuCapacity) return null;
+    return {
+      capacity: { ...this.cpuCapacity },
+      maxWorkers: this.maxWorkers,
+      automaticWorkerThreads: this.automaticWorkerThreads,
+      backgroundIndexingLimit: this.backgroundIndexingLimit(),
+    };
   }
 
   /** PIDs of workers the pool currently tracks. Used by the daemon's orphan
@@ -399,8 +438,7 @@ export class WorkerPool {
       !task.worker &&
       (task.fileKey === undefined ||
         (!this.fileOwners.has(task.fileKey) &&
-          this.fileOwners.size <
-            Math.min(this.fileCpuLimit, Math.max(1, this.maxWorkers - 1))))
+          this.fileOwners.size < this.backgroundIndexingLimit()))
     );
   }
 

@@ -349,6 +349,79 @@ gmax watch restart            # Stop it, wait for it to exit, start a fresh one 
 gmax status                   # See all projects + watcher status
 ```
 
+Human `gmax status` also explains the serving daemon's CPU and worker limits.
+For example, a daemon with eight CPUs in its affinity set, a two-CPU quota and
+an explicit four-worker setting shows:
+
+```text
+Daemon CPU capacity: 2 effective CPUs (affinity: 8; cgroup quota: 2 CPUs)
+Configured workers: 4 (explicit: config); automatic default: 2
+Background indexing allowance: 1 file across all projects
+```
+
+These are the pool's initialization snapshot and configured allowances, not CPU
+utilization, running native threads or proof that indexing has stopped. Effective
+CPUs combine affinity-aware parallelism with the tightest readable Linux
+cgroup-v2 ancestor quota, rounded down with a one-CPU floor. The quota itself is
+shown before rounding. Incomplete quota visibility is labeled; unavailable quota
+data is not treated as unlimited. Worker counts describe processes: an explicit
+environment override is labeled `GMAX_WORKER_THREADS`, a stored override is
+labeled `config`, and the default is labeled `automatic`. Explicit overrides
+retain their existing behavior. The automatic default is what the existing
+resolver would choose from the reported capacity without an override; the
+background allowance applies globally across this pool's projects.
+
+`gmax status --json` adds `daemon.cpuConfiguration` with `capacity` (`affinityCpus`,
+`quotaCpus`, `quotaStatus`, `effectiveCpus`), `maxWorkers`, `automaticWorkerThreads`
+and `backgroundIndexingLimit`. `quotaStatus` is `limited`, `unlimited`, `partial`,
+`unavailable` or `not-applicable`; `partial` means some ancestor metadata could
+not be read or parsed, and `quotaCpus` retains the tightest readable finite quota,
+or null if none was available. `daemon.workerThreadsSetting` carries the serving
+daemon's `{value, source}` (`env`, `config`, `default`); the existing numeric
+`daemon.workerThreads` remains compatible. The existing `settings.workerThreads`
+describes the invoking client's configuration, which may differ from the daemon.
+Older daemons may omit the new IPC fields. JSON uses null and human output says
+`unavailable` for unreported diagnostics, an uninitialized pool, or no serving
+daemon; it never substitutes the client's CPU/configuration for daemon values.
+Status does not initialize a pool or refresh CPU limits. After changing service
+CPU limits, a deliberate daemon restart is needed to refresh this snapshot.
+
+The status header and configured embedding-model line describe the serving
+daemon pool's initialized tier, dimension, mode and model IDs, not the invoking
+client's saved configuration. This does not prove that a backend is currently
+ready or loaded. Older daemons and uninitialized pools report unavailable.
+JSON adds `daemon.embeddingConfiguration` (`generation` and `embedMode`);
+existing `settings` continues to describe the client. `settings.storedWorkerThreads`
+is the persisted count or null for auto, distinct from the resolved client count.
+Human status flags a saved worker setting that differs from the running
+generation. A daemon environment override remains authoritative across restart;
+the notice does not promise that restarting alone applies the saved value.
+
+Idle projects now explain whether a watch lease was reported, expired, absent,
+or unavailable. A reported lease includes its latest expiry; absence means only
+that no live lease was reported, not that all background work is stopped.
+Queued/active index health takes precedence over an unleased explanation.
+JSON adds per-project `watchLease` summaries and an `idleReason` for idle rows.
+The daemon's existing live-lease snapshot omits already swept/dead leases, so
+their earlier expiry cannot be reconstructed. These displays do not change
+leases, watchers, work admission, or start any additional status requests.
+
+Search warnings explain unavailable lexical retrieval and reranking inputs when
+those stages actually run. Missing FTS is identified from index availability,
+never from zero hits; `gmax repair --fts` only builds a missing index after an
+explicit request. Query-embedding or reranking failures identify the failed
+stage and point to `gmax config` / `gmax status --json` without starting models or
+changing fallback behavior. CLI warnings go to stderr, including agent mode;
+successful HTTP search responses may carry an optional `warnings` array.
+See [search degradation and recovery](docs/search-degradation.md).
+
+Common non-search daemon failures in `add`, `index`, `remove`, `project`, and
+`symbols` retain their reason and suggest a manual next step: status/wait/retry
+for busy or starting/closing daemons, and `gmax watch restart` for unsupported
+commands. Existing configuration errors already list valid choices or ranges.
+Guidance stays on stderr and does not retry or change exit codes or store-access
+rules. See [CLI error guidance](docs/cli-error-guidance.md).
+
 Adding or indexing a project can start the daemon automatically. MCP acquires primary-project watch leases lazily when an index-reading tool is used; discovery and catalog listing start no background work. It shuts down after 4 hours of inactivity, and hands off to a fresh daemon after 24 hours or once its memory footprint passes 2.5 GB. File-change batches are processed on up to four worker processes by default, added only when work backs up, with one kept free for searches; full-table compaction and new FTS/ANN index builds are disabled by containment. Existing indexes remain readable. Host safety stops persist across restart and block heavy operations.
 
 `gmax watch status` reports failed files, native watcher recovery or polling, dropped-event counts, and the last complete filesystem reconciliation. FSEvents dropped-event warnings keep the native stream attached and preserve the accompanying events. A reconciliation covers the gap; repeated warnings coalesce into one later scan, with a 30-second scan interval. Recovery stays visible until a complete scan covers the latest gap. Other backend errors still trigger subscription recovery; repeated terminal failures fall back to five-minute polling, where recent edits can lag. Search and MCP responses retain health warnings even after the file queue drains. On macOS, gmax also forwards up to eight existing policy-excluded directories to the native event stream, prioritizing dependency, build and development output. Discovery is bounded; remaining paths retain glob filtering and file-policy checks. Policy edits refresh exclusions, and a policy change during subscription setup is checked before keeping a directory exclusion. Live edit batches can run during reconciliation instead of waiting for the full filesystem walk. Whole-project reindex and removal still quiesce the watcher and drain its work before changing the project. A complete reconciliation means the filesystem scan completed; queued embedding work can still be pending.

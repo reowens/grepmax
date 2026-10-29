@@ -1,0 +1,33 @@
+{
+  "files": 335,
+  "previousFiles": 331,
+  "unchanged": 314,
+  "changed": [
+    "package/.claude-plugin/marketplace.json",
+    "package/README.md",
+    "package/dist/commands/add.js",
+    "package/dist/commands/index.js",
+    "package/dist/commands/project.js",
+    "package/dist/commands/remove.js",
+    "package/dist/commands/search-output.js",
+    "package/dist/commands/serve.js",
+    "package/dist/commands/status.js",
+    "package/dist/commands/symbols.js",
+    "package/dist/lib/daemon/daemon.js",
+    "package/dist/lib/daemon/ipc-handler.js",
+    "package/dist/lib/search/searcher.js",
+    "package/dist/lib/utils/cpu-capacity.js",
+    "package/dist/lib/workers/pool.js",
+    "package/package.json",
+    "package/plugins/grepmax/.claude-plugin/plugin.json"
+  ],
+  "added": [
+    "package/dist/lib/search/degradation.js",
+    "package/dist/lib/utils/cli-error-guidance.js",
+    "package/docs/cli-error-guidance.md",
+    "package/docs/search-degradation.md"
+  ],
+  "removed": [],
+  "dependenciesUnchanged": true,
+  "newHelpersAndDocsIncluded": true
+}

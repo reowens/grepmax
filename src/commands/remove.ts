@@ -4,6 +4,7 @@ import { Command } from "commander";
 import { assertStoreMutationAllowed } from "../lib/store/maintenance-policy";
 import { MetaCache } from "../lib/store/meta-cache";
 import { VectorDB } from "../lib/store/vector-db";
+import { formatCliErrorGuidance } from "../lib/utils/cli-error-guidance";
 import { gracefulExit } from "../lib/utils/exit";
 import { killProcess } from "../lib/utils/process";
 import { removeMarker } from "../lib/utils/project-marker";
@@ -139,7 +140,7 @@ Examples:
       console.log(`Removed ${projectName}${chunkStr}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
-      console.error("Failed to remove project:", message);
+      console.error("Failed to remove project:", formatCliErrorGuidance(message));
       process.exitCode = 1;
     } finally {
       if (metaCache) {

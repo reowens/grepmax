@@ -4,10 +4,89 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-29
 audience: internal
-summary: "COMPLETE: ratified seven-step CPU batch released0.26.105/b7066b8, serving P3 ready/open/active. One profile completed48 requests within guards/zero swap growth; no speedup claim.44 retained distinct unit passes/two invocations; static CLI fixture fix unrerun and zero new unit tests. Unrelated work preserved; next CPU investigation is a proposal only."
+summary: "COMPLETE: all six selected status/CLI features released0.26.106/source b4955e0; one publication and normal P3 handover ready/open/active. Production compilation/package only; zero new tests/profile/maintenance."
 ---
 
 # Future Sessions
+
+## Six-feature release0.26.106 complete — recenter with the user
+
+The [owning plan](plans/gmax-delivery.md#six-feature-status-and-cli-release--complete)
+records all six completed features, hash manifests, guards, one publication and
+normal P3 handover. Source `b4955e0e1869c0538017e20c8b45f39d13267c8f`,
+tag `v0.26.106`, [release](https://github.com/reowens/grepmax/releases/tag/v0.26.106).
+Both new helpers and both user docs are included in the complete335-file package.
+All source was production-compiled; no runtime feature test or CPU-gain claim.
+
+The final local compilation/runtime preparation passed in1.987s (peak341,807,104
+bytes) and packaging in10.916s (peak619,065,344 bytes). One existing release.yml
+run40806913854 passed, including hosted content/registry-byte identity; one npm
+publication, no repeat. The staged canonical-tarball404 was recovered only for
+that failed install: a cache-busted published download matched the approved hash.
+Successful staging retained exact0.26.105 dependencies, matched335 package files,
+and stayed within guards (110.356s, peak1,984,008,192 bytes). Compiler/package/
+staging groups closed with zero swap growth under twoCPU/nice10,2GiB,180s,
+minimum8GiB available-memory guards. Failed first staging is honestly retained.
+
+P3 daemon942028 was confirmed serving0.26.106 **ready/open/active** under the
+same `legacy-gmax.service` MainPID. Small/CPU/384,stored workers4, config/unit
+hashes, store/cache directory identities and twoCPU/weight10/nice10 are unchanged.
+Owned autostart marker removed; no safety latch cleared. Exact0.26.105 rollback:
+`/home/reoiv/.local/state/gmax-handover/20261029T023232Z-0.26.106/previous-install`.
+Prior rollback under `20261029T010000Z-0.26.105/previous-install` remains intact.
+Archive SHA256: `c5ccdf2865838094ddd3198035db71705962560e414dcc43902cfd52819e505d`.
+Receipts: `docs/plans/assets/status-guidance-release-20261029/`;
+full local release state: `/home/reoiv/.local/state/gmax-delivery/20261029-0.26.106/`.
+
+Unrelated dirty/intent-to-add work and private history are preserved; no private
+history was pushed. Zero tests/test writing, review, audit, profiling, CPU capture,
+model exercise or maintenance. FTS remains completed and untouched. Optional CPU
+attribution and the held resource-history prototype remain unselected. The six
+selected features are complete; return to recentering and start no new work.
+Earlier records and their narrower restrictions below remain historical.
+
+## Three-feature product batch complete locally
+
+The [owning plan](plans/gmax-delivery.md#three-feature-cpu-status-and-cli-guidance-batch--complete-locally)
+records the complete files, behavior, compiler receipt and limits. Human status
+and additive JSON explain the serving daemon pool's CPU/affinity/quota, worker
+setting/source, automatic default and global background allowance; older-daemon
+or uninitialized values remain unavailable, never inferred from the client.
+Search explains actual lexical, embedding and rerank failures/unavailability,
+using existing warnings/hints with supported manual actions. Empty hits do not
+prove missing FTS, and inactive reranking is not degraded. Direct/HTTP-backed
+CLI warnings stay on stderr; HTTP success may add optional warnings. Five
+non-search command catches preserve raw reasons and add bounded busy/readiness/
+closing/incompatibility guidance. Existing adequate config validation remains.
+
+The user consolidated remaining search work and final integration into the
+existing CLI owner after both search delegation attempts failed before execution
+due to model capacity. Shared README/plan/handoff ownership transferred to that
+owner. All selected source/docs are now integrated; no further delegation ran.
+
+**Final combined production-only compilation passed**, one invocation of
+`node_modules/.bin/tsc --noEmit --incremental false` after all source edits.
+Existing controller guards: two CPUs(0,1)/nice10,2GiB aggregate owned RSS,180s,
+minimum8GiB available memory and zero swap growth. Actual elapsed0.845086602s,
+sampled peak296,775,680 bytes, zero swap growth, all owned processes closed.
+Receipt: `/tmp/gmax-three-features-typecheck-_x5msou2/typecheck-receipt.json`;
+compiler log: `/tmp/gmax-three-features-typecheck-_x5msou2/typecheck-phase-0.log`.
+The older initial CPU typecheck is historical evidence, not another final pass.
+
+README and both requested feature docs are complete. `docs/search-degradation.md`
+and `docs/cli-error-guidance.md` have scoped force/intent-to-add entries so the
+existing `docs/` ignore rule cannot hide them from the diff. New helpers are
+ordinary untracked source files; no broad staging or other index mutation ran.
+All unrelated dirty/intent-to-add work and completed0.26.105 records are intact.
+
+No remaining blocker for the approved implementation/docs/typecheck outcome.
+No runtime validation was selected: zero tests/test writing, independent review,
+audit, profile/benchmark, native dataset/model execution, live P3/RPC/SSH action,
+install/package/preparation, maintenance, commit/push, versioning or release.
+Guard reads were limited to the approved local compilation. Published/deployed
+0.26.105 is unchanged, without a fresh live verification claim. FTS remains
+historically completed9801→9802→9803/zero pending and untouched. The optional CPU
+attribution plan below remains unratified and unexecuted. No next action is selected.
 
 ## Seven-step CPU delivery complete — October 29, 2026 (UTC)
 

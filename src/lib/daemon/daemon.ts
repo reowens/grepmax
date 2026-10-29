@@ -1844,6 +1844,21 @@ export class Daemon {
     return this.workerPool?.getWorkerPids().length ?? 0;
   }
 
+  /** This daemon's initialized pool only; status must not create one. */
+  cpuConfiguration() {
+    return this.workerPool?.getCpuConfiguration() ?? null;
+  }
+
+  /** Initialized configuration only; this does not establish backend readiness. */
+  embeddingConfiguration() {
+    return this.workerPool
+      ? {
+          generation: { ...this.workerPool.generation },
+          embedMode: this.workerPool.embedMode,
+        }
+      : null;
+  }
+
   /** True once shared resources (LanceDB + MetaCache) are open. */
   isReady(): boolean {
     return this.ready;
