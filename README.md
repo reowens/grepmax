@@ -1009,4 +1009,4 @@ Review and source/configuration diffs (private record), installed real-project a
 
 This rollout changed no Gmax runtime configuration, service, model or index; the check used only temporary source/state/cache/temp nonce files. Gmax's existing execution and model authorization rules still apply.
 
-Remaining protective parser/global Git/Codex hook error changes (private record) are prepared for review and remain unapplied; they preserve intentional observational behavior and the accepted filesystem profiles above. The global Git setting is shared through ROBOT's existing link to Personal, and the proposed registration edit preserves that link.
+The reviewed protective parser/global Git/Codex hook error changes (private record) are applied. Application evidence (private record) records passing guard/global/fault checks and one corrected Codex sibling-prefix fixture awaiting a focused rerun under the test limit. Intentional observers, accepted filesystem profiles and ROBOT's shared settings symlink are preserved.
