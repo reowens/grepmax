@@ -45,6 +45,41 @@ describe("worker threads setting", () => {
     );
   });
 
+  it("sizes defaults from the effective CPU quota instead of the host core count", () => {
+    expect(resolveWorkerThreads({ cores: 16, cpuBudget: 2 })).toEqual({
+      value: 2,
+      source: "default",
+    });
+    expect(resolveWorkerThreads({ cores: 16, cpuBudget: 1 })).toEqual({
+      value: 1,
+      source: "default",
+    });
+  });
+
+  it("preserves explicit worker overrides when the default CPU budget is smaller", () => {
+    expect(
+      resolveWorkerThreads({ cores: 16, cpuBudget: 2, configValue: 4 }),
+    ).toEqual({ value: 4, source: "config" });
+    expect(resolveWorkerThreads({ cores: 16, cpuBudget: 2, env: "3" })).toEqual(
+      { value: 3, source: "env" },
+    );
+    expect(
+      resolveWorkerThreads({ cores: 2, cpuBudget: 1, configValue: 2, env: "6" }),
+    ).toEqual({ value: 6, source: "env" });
+    expect(
+      resolveWorkerThreads({ cores: 2, cpuBudget: 1, configValue: 3 }),
+    ).toEqual({ value: 1, source: "default" });
+  });
+
+  it("bounds injected default budgets by whole available host cores", () => {
+    expect(resolveWorkerThreads({ cores: 16, cpuBudget: 2.9 }).value).toBe(2);
+    expect(resolveWorkerThreads({ cores: 1, cpuBudget: 8 }).value).toBe(1);
+    expect(resolveWorkerThreads({ cores: 16, cpuBudget: 0 }).value).toBe(1);
+    expect(
+      resolveWorkerThreads({ cores: 6, cpuBudget: Number.NaN }).value,
+    ).toBe(3);
+  });
+
   it("parses typed values strictly", () => {
     expect(parseWorkerThreads("2", 8)).toBe(2);
     expect(parseWorkerThreads(" 8 ", 8)).toBe(8);

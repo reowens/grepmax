@@ -1,0 +1,49 @@
+{
+  "kind": "five-outstanding-cpu-quota-cli-regressions",
+  "testInvocations": 1,
+  "commands": [
+    {
+      "label": "focused-tests",
+      "argv": [
+        "/usr/local/bin/node",
+        "--max-old-space-size=768",
+        "node_modules/vitest/vitest.mjs",
+        "run",
+        "--config",
+        "/home/reoiv/dev/hetchy/tools/gmax/docs/plans/assets/cpu-quota-five-cases-20261029/focused-vitest.config.mjs",
+        "--reporter=json",
+        "--outputFile=/home/reoiv/.local/state/gmax-cpu-quota-five-cases/20261029T003810Z/focused-tests-results.json"
+      ],
+      "exitCode": 1
+    }
+  ],
+  "limits": {
+    "deadlineSeconds": 120,
+    "ownedRssBytes": 2147483648,
+    "minimumAvailableBytes": 8589934592,
+    "swapGrowthBytes": 0,
+    "cpuAffinity": [
+      0,
+      1
+    ]
+  },
+  "outcome": "failed",
+  "error": "check-failed:focused-tests",
+  "elapsedSeconds": 0.66094118100591,
+  "peakOwnedRssBytes": 249847808,
+  "maximumSwapGrowthBytes": 0,
+  "minimumAvailableBytes": 44254986240,
+  "noLiveOwnedProcesses": true,
+  "sourceHashes": {
+    "src/config.ts": "c4b2f1dccdaf061dbbd8eb92a95962a27362b77008a8fc2d08c01a0fd3667b2a",
+    "src/commands/config.ts": "912f87a0e98175d367a290388a60238c4b11cb24143fd5ef9c0541827b8e0c9a",
+    "src/lib/utils/cpu-capacity.ts": "7d45b11da2a6e21e1a3822b5a9a17ac99d51eebfc06d9d276cf55bfbbafa8151",
+    "src/lib/workers/pool.ts": "ae49c79813a08d011eb7eca2866713f655c562f82470c9ed6af211ee5266be11",
+    "tests/setup.ts": "496d04818516a2114a5e301a733e0a7ef54ee7216d9ffc335bc636b6741fc77a",
+    "tests/cpu-capacity.test.ts": "daad3432b4490a59d9612487967a6e9d3a2bcdcd1ad3e2fe1c22b10de2ff4df1",
+    "tests/worker-threads-setting.test.ts": "3d699c5570c8d0338ffd1abb8bc4261527fc09999a32e6137f4e2a27923b864b",
+    "tests/config-command.test.ts": "b141da45d073fa0520029f7a4fd1ea84c4d3b072611444ad0e10a0757274a2ea",
+    "tests/worker-pool-resilience.test.ts": "41e35145e4a449e3eaf767a2d0e4760d1bf0902fe7b3f5ca05c5804b46939e2a"
+  },
+  "temporaryHomeRemoved": true
+}

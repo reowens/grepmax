@@ -3,6 +3,10 @@ import { CONFIG } from "../src/config";
 
 // Avoid spinning up heavy embedding workers during tests.
 const vectorDim = CONFIG.VECTOR_DIM;
+// Pool tests must not depend on the test runner's affinity or host cgroup quotas.
+vi.mock("../src/lib/utils/cpu-capacity", () => ({
+  effectiveCpuCount: () => 8,
+}));
 vi.mock("../src/lib/utils/host-resource", () => ({
   sampleHostResources: vi.fn(() => null),
 }));

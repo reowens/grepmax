@@ -1,0 +1,37 @@
+{
+  "preparedAtUtc": "20261029T003810Z",
+  "stateDirectory": "/home/reoiv/.local/state/gmax-cpu-quota-five-cases/20261029T003810Z",
+  "controller": "/home/reoiv/dev/hetchy/tools/gmax/docs/plans/assets/cpu-quota-five-cases-20261029/focused-test-controller.py",
+  "filter": "^(?:effective CPU capacity > handles root membership and rejects unsafe or non-unified membership|config command > worker threads > stores a valid count and says a daemon restart applies it|config command > worker threads > auto removes the stored value|config command > worker threads > rejects a count outside 1\\.\\.cores|config command > worker threads > shows the value and its source)$",
+  "selectedCases": [
+    {
+      "file": "tests/config-command.test.ts",
+      "name": "config command > worker threads > stores a valid count and says a daemon restart applies it",
+      "priorStatus": "skipped"
+    },
+    {
+      "file": "tests/config-command.test.ts",
+      "name": "config command > worker threads > auto removes the stored value",
+      "priorStatus": "skipped"
+    },
+    {
+      "file": "tests/config-command.test.ts",
+      "name": "config command > worker threads > rejects a count outside 1..cores",
+      "priorStatus": "skipped"
+    },
+    {
+      "file": "tests/config-command.test.ts",
+      "name": "config command > worker threads > shows the value and its source",
+      "priorStatus": "skipped"
+    },
+    {
+      "file": "tests/cpu-capacity.test.ts",
+      "name": "effective CPU capacity > handles root membership and rejects unsafe or non-unified membership",
+      "priorStatus": "failed"
+    }
+  ],
+  "staticSelectionMethod": "Actual test source and installed Vitest separator read; match against immutable prior JSON ancestorTitles/title. No test discovery or trial runner command.",
+  "authorizedInvocations": 1,
+  "retainedPriorPasses": 40,
+  "priorEvidenceDirectory": "/home/reoiv/dev/hetchy/tools/gmax/docs/plans/assets/cpu-quota-tests-20261029"
+}

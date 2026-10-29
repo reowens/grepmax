@@ -69,6 +69,14 @@ including an explicit empty list. Synthetic Linux fixtures verified two-batch ca
 106,496 physical / 53,248 live pending rows, preserved snapshots and payloads,
 and interruption handling; production throughput remains unqualified.
 
+**Background indexing and watch leases in 0.26.104:** A retry for the same
+project and file waits until its previous worker task finishes, including when
+the original caller cancels. Searches and unrelated files remain eligible;
+blocked retries do not trigger additional demand-driven workers. A lease renewed
+while teardown is queued keeps the project watched. Explicit indexing/removal
+operations can still detach watchers. Focused mocked-worker and lease tests cover
+these behaviors; a production CPU or latency improvement has not been measured.
+
 ## Quick Start
 
 Requires **Node.js 22.12.0 or newer**.
@@ -80,6 +88,19 @@ gmax "where do we handle auth?" --agent  # 3. Search
 ```
 
 No setup required — gmax auto-detects your platform (GPU on Apple Silicon, CPU elsewhere) and downloads models on first use.
+
+### CPU worker budget
+
+Automatic workers use process CPU affinity and the tightest readable Linux
+cgroup-v2 ancestor quota, rounded down with a one-CPU floor. The default keeps
+up to four workers. `gmax config --worker-threads auto` removes the stored
+override and reports this automatic value; `GMAX_WORKER_THREADS` still wins over
+a stored explicit count. Restart the daemon through its existing service owner.
+Background file work shares one pool-wide limit across projects:
+`max(1, min(effective CPUs - 1, max workers - 1))`. Foreground query work has
+priority. Cancelled or failed callers retain their native file ownership until
+the worker completes or exits; timed-out children remain tracked through shutdown.
+Explicit worker settings remain unchanged and do not bypass file admission.
 
 ### Setup & Config
 

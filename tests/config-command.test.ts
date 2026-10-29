@@ -1,6 +1,14 @@
 import type { Command } from "commander";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// Setup imports config under its host-independent CPU mock. Re-import this file's
+// modules after mocks are registered so the one-CPU CLI fixture owns its binding.
+vi.hoisted(() => vi.resetModules());
+
+vi.mock("../src/lib/utils/cpu-capacity", () => ({
+  effectiveCpuCount: () => 1,
+}));
+
 vi.mock("../src/lib/index/index-config", () => ({
   readGlobalConfig: vi.fn(() => ({
     modelTier: "small",
@@ -181,6 +189,9 @@ describe("config command", () => {
       const arg = vi.mocked(writeGlobalConfig).mock.calls[0][0];
       expect("workerThreads" in arg).toBe(true);
       expect(arg.workerThreads).toBeUndefined();
+      expect(spy.mock.calls.map((c) => c[0]).join("\n")).toContain(
+        "Worker threads set to auto (1 on this machine).",
+      );
       spy.mockRestore();
     });
 
