@@ -194,6 +194,8 @@ export async function handleCommand(
           versionCleanup: daemon.versionCleanupStatus?.() ?? null,
           boundedMaintenance: daemon.boundedMaintenanceStatus?.() ?? null,
           workerThreads: WORKER_THREADS_SETTING,
+          cpuConfiguration: daemon.cpuConfiguration?.() ?? null,
+          embeddingConfiguration: daemon.embeddingConfiguration?.() ?? null,
           service: daemon.serviceStatus?.(),
         };
 

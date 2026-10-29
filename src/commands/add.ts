@@ -17,6 +17,7 @@ import {
   isGitWorktreeRoot,
   WORKTREE_REFUSAL,
 } from "../lib/utils/blocked-roots";
+import { formatCliErrorGuidance } from "../lib/utils/cli-error-guidance";
 import { gracefulExit } from "../lib/utils/exit";
 import { createMarker } from "../lib/utils/project-marker";
 import {
@@ -320,7 +321,7 @@ Examples:
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
-      console.error("Failed to add project:", message);
+      console.error("Failed to add project:", formatCliErrorGuidance(message));
       process.exitCode = 1;
     } finally {
       if (vectorDb) {

@@ -11,6 +11,7 @@ import {
   formatIndexStateFooter,
   type IndexState,
 } from "../lib/output/index-state-footer";
+import { formatSearchWarnings } from "../lib/search/degradation";
 import { parseCliPerFile } from "../lib/search/per-file";
 import type {
   ChunkType,
@@ -27,6 +28,12 @@ import { extractImports } from "../lib/utils/import-extractor";
 import { resolveContainedFile } from "../lib/utils/path-containment";
 import type { SearchOptions } from "./search-run";
 import { outputSkeletons } from "./search-skeletons";
+
+function reportSearchWarnings(warnings: unknown, agent: boolean): void {
+  for (const warning of formatSearchWarnings(warnings)) {
+    console.warn(agent ? `warn\t${warning}` : `Warning: ${warning}`);
+  }
+}
 
 /**
  * Standalone HTTP-server search path. The per-project server answers the query
@@ -88,7 +95,11 @@ export async function executeServerSearch(params: {
     });
 
     if (response.ok) {
-      const body = (await response.json()) as { results: any[] };
+      const body = (await response.json()) as {
+        results: any[];
+        warnings?: unknown;
+      };
+      reportSearchWarnings(body.warnings, options.agent);
 
       const searchResult = { data: body.results };
       const filteredData = searchResult.data.filter(
@@ -249,15 +260,7 @@ export async function renderSearchOutput(
     indexState,
   } = params;
 
-  if (searchResult.warnings?.length) {
-    for (const w of searchResult.warnings) {
-      console.warn(
-        options.agent
-          ? `warn\t${w.replace(/[\r\n\t]/g, " ")}`
-          : `Warning: ${w}`,
-      );
-    }
-  }
+  reportSearchWarnings(searchResult.warnings, options.agent);
 
   // Partial-index signal (Phase 6): when the index is mid-catchup, results
   // may be incomplete. Non-agent renders it now as a warning; agent mode

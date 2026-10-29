@@ -11,6 +11,7 @@ import { ensureSetup } from "../lib/setup/setup-helpers";
 import { assertStoreMutationAllowed } from "../lib/store/maintenance-policy";
 import { VectorDB } from "../lib/store/vector-db";
 import { autostartDisabledNotice } from "../lib/utils/autostart";
+import { formatCliErrorGuidance } from "../lib/utils/cli-error-guidance";
 import { gracefulExit } from "../lib/utils/exit";
 import {
   getProject,
@@ -268,7 +269,7 @@ Examples:
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
-      console.error("Failed to index:", message);
+      console.error("Failed to index:", formatCliErrorGuidance(message));
       process.exitCode = 1;
     } finally {
       process.removeListener("SIGINT", onSignal);

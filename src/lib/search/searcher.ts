@@ -22,6 +22,7 @@ import {
   artifactPreference,
 } from "./artifact-preference";
 import { SearchDiagnosticCollector } from "./diagnostics";
+import { lexicalSearchWarning, runSearchStage } from "./degradation";
 import { detectIntent, type SearchIntent } from "./intent";
 import { loadOrComputePageRank, pageRankBoostForSymbols } from "./pagerank";
 import { validateMaxPerFile } from "./per-file";
@@ -506,6 +507,7 @@ export class Searcher {
 
   private ftsIndexChecked = false;
   private ftsAvailable = false;
+  private ftsIndexMissing = false;
   private ftsLastCheckedAt = 0;
   private static readonly FTS_RETRY_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -569,7 +571,9 @@ export class Searcher {
       colbert: queryMatrixRaw,
       colbertDim,
       pooled_colbert_48d: queryPooled,
-    } = await pool.encodeQuery(query, signal);
+    } = await runSearchStage("query-embedding", () =>
+      pool.encodeQuery(query, signal),
+    );
 
     if (signal?.aborted) {
       const err = new Error("Aborted");
@@ -579,7 +583,7 @@ export class Searcher {
 
     if (colbertDim !== CONFIG.COLBERT_DIM) {
       throw new Error(
-        `[Searcher] Query ColBERT dim (${colbertDim}) != Config (${CONFIG.COLBERT_DIM})`,
+        `[Searcher] Query ColBERT dim (${colbertDim}) != Config (${CONFIG.COLBERT_DIM}). Check gmax config and have the operator resolve query embedding model compatibility before retrying.`,
       );
     }
 
@@ -612,9 +616,14 @@ export class Searcher {
           // winner. Owners build it (daemon pre-warm, `gmax index`, maintenance).
           await this.db.adoptFTSIndex();
           this.ftsAvailable = true;
+          this.ftsIndexMissing = false;
         } catch (e) {
           this.ftsAvailable = false;
-          debug("searcher", `FTS index unavailable, vector-only search: ${e}`);
+          this.ftsIndexMissing =
+            e instanceof Error &&
+            e.message ===
+              "[vector-db] FTS index not built yet; this process is not the index owner";
+          debug("searcher", "FTS index unavailable, vector-only search");
         }
       }
 
@@ -691,6 +700,7 @@ export class Searcher {
         } catch (e) {
           ftsSearchFailed = true;
           this.ftsAvailable = false;
+          this.ftsIndexMissing = false;
           const msg = e instanceof Error ? e.message : String(e);
           if (msg.includes("position")) {
             // FTS index lacks positional data — rebuild it, but only from the
@@ -703,7 +713,8 @@ export class Searcher {
               try {
                 await this.db.createFTSIndex(true);
                 this.ftsAvailable = true;
-                console.warn(
+                debug(
+                  "searcher",
                   "[Searcher] Rebuilt FTS index with position support — retry search",
                 );
               } catch {}
@@ -714,9 +725,7 @@ export class Searcher {
               );
             }
           } else {
-            console.warn(
-              `[Searcher] FTS search failed (will retry later): ${msg}`,
-            );
+            debug("searcher", "FTS query failed; using vector-only search");
           }
         }
       }
@@ -958,9 +967,17 @@ export class Searcher {
         },
         fts: { available: this.ftsAvailable, searchFailed: ftsSearchFailed },
       });
+      const warnings: string[] = [];
+      const lexicalWarning = lexicalSearchWarning({
+        available: this.ftsAvailable,
+        searchFailed: ftsSearchFailed,
+        missingIndex: this.ftsIndexMissing,
+      });
+      if (lexicalWarning) warnings.push(lexicalWarning);
       if (stage2Candidates.length === 0) {
         return {
           data: [],
+          ...(warnings.length ? { warnings } : {}),
           ...(diagnostics
             ? { diagnostics: diagnostics.finish(diagnosticDetails()) }
             : {}),
@@ -1026,10 +1043,15 @@ export class Searcher {
 
       // Phase B: Lazy-load colbert data only for the ~20 rerank candidates
       if (doRerank && rerankCandidates.length > 0) {
-        const colbertRows = await this.readCandidateRows(
-          table,
-          rerankCandidates,
-          ["id", "colbert", "colbert_scale", "doc_token_ids"],
+        const colbertRows = await runSearchStage(
+          requestedRerank ? "requested-rerank" : "automatic-rerank",
+          () =>
+            this.readCandidateRows(table, rerankCandidates, [
+              "id",
+              "colbert",
+              "colbert_scale",
+              "doc_token_ids",
+            ]),
         );
         const colbertMap = new Map(colbertRows.map((r: any) => [r.id, r]));
         for (const doc of rerankCandidates) {
@@ -1044,23 +1066,37 @@ export class Searcher {
 
       const rerankScoreByKey = new Map<string, number>();
       if (doRerank && rerankCandidates.length > 0) {
+        const rerankLabel = requestedRerank ? "Requested" : "Automatic";
+        if (queryMatrixRaw.length === 0) {
+          warnings.push(
+            `${rerankLabel} reranking has no query token embeddings — it contributes no token-match scores. Check \`gmax config\` and have the operator restore the configured query embedding backend.`,
+          );
+        } else if (rerankCandidates.every((doc) => !doc.colbert?.length)) {
+          warnings.push(
+            `${rerankLabel} reranking has no stored candidate token embeddings — it contributes no token-match scores. Check \`gmax status --json\` and \`gmax config\`; have the store owner resolve index/model compatibility before planning any reindexing.`,
+          );
+        }
         rerankInvoked = true;
-        const scores = await pool.rerank(
-          {
-            query: queryMatrixRaw,
-            docs: rerankCandidates.map((doc) => ({
-              colbert:
-                (doc.colbert as Buffer | Int8Array | Uint8Array | number[]) ??
-                [],
-              scale:
-                typeof doc.colbert_scale === "number" ? doc.colbert_scale : 1,
-              token_ids: Array.isArray((doc as any).doc_token_ids)
-                ? ((doc as any).doc_token_ids as number[])
-                : undefined,
-            })),
-            colbertDim,
-          },
-          signal,
+        const scores = await runSearchStage(
+          requestedRerank ? "requested-rerank" : "automatic-rerank",
+          () =>
+            pool.rerank(
+              {
+                query: queryMatrixRaw,
+                docs: rerankCandidates.map((doc) => ({
+                  colbert:
+                    (doc.colbert as Buffer | Int8Array | Uint8Array | number[]) ??
+                    [],
+                  scale:
+                    typeof doc.colbert_scale === "number" ? doc.colbert_scale : 1,
+                  token_ids: Array.isArray((doc as any).doc_token_ids)
+                    ? ((doc as any).doc_token_ids as number[])
+                    : undefined,
+                })),
+                colbertDim,
+              },
+              signal,
+            ),
         );
         for (const [idx, doc] of rerankCandidates.entries()) {
           const key = doc.id || `${doc.path}:${doc.chunk_index}`;
@@ -1274,13 +1310,7 @@ export class Searcher {
               }),
             }
           : {}),
-        ...(!this.ftsAvailable || ftsSearchFailed
-          ? {
-              warnings: [
-                "Full-text search unavailable — results may be less precise",
-              ],
-            }
-          : {}),
+        ...(warnings.length ? { warnings } : {}),
       };
     } finally {
       table.close();

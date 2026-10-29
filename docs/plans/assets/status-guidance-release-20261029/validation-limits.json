@@ -1,0 +1,15 @@
+{
+  "newUnitTestInvocations": 0,
+  "newTestWriting": false,
+  "testTypecheck": false,
+  "independentReview": false,
+  "audits": false,
+  "runtimeFeatureExercise": false,
+  "profiles": false,
+  "nativeModelDatasetExecution": false,
+  "validation": "Complete selected source compiled locally; packaging metadata/bytes inspected. Old receipts are historical, not runtime coverage of new behavior.",
+  "sixSelectedFeaturesComplete": true,
+  "unselectedResourceHistoryPrototypeIncluded": false,
+  "optionalCpuAttributionExecuted": false,
+  "maintenanceInvoked": false
+}

@@ -9,6 +9,7 @@ import {
   projectCounts,
   projectCoverageNotice,
 } from "../lib/output/project-coverage";
+import { formatCliErrorGuidance } from "../lib/utils/cli-error-guidance";
 import { sendDaemonCommand } from "../lib/utils/daemon-client";
 import { gracefulExit } from "../lib/utils/exit";
 import { listProjects, resolveRootOrExit } from "../lib/utils/project-registry";
@@ -128,7 +129,7 @@ export const project = new Command("project")
     } catch (error) {
       if (!reportStoreAccessRefusal(error)) {
         const msg = error instanceof Error ? error.message : "Unknown error";
-        console.error("Project summary failed:", msg);
+        console.error("Project summary failed:", formatCliErrorGuidance(msg));
         process.exitCode = 1;
       }
     } finally {

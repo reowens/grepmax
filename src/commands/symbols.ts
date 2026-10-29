@@ -5,6 +5,7 @@ import {
   type SymbolEntry,
   withLocalStore,
 } from "../lib/daemon/rows-handler";
+import { formatCliErrorGuidance } from "../lib/utils/cli-error-guidance";
 import { sendDaemonCommand } from "../lib/utils/daemon-client";
 import { gracefulExit } from "../lib/utils/exit";
 import { resolveRootOrExit } from "../lib/utils/project-registry";
@@ -159,7 +160,7 @@ export const symbols = new Command("symbols")
       // lease escaped as a raw node:fs stack trace instead of the one-line hint.
       if (!reportStoreAccessRefusal(error)) {
         const msg = error instanceof Error ? error.message : "Unknown error";
-        console.error("Symbols failed:", msg);
+        console.error("Symbols failed:", formatCliErrorGuidance(msg));
         process.exitCode = 1;
       }
     } finally {

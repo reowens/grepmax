@@ -1,6 +1,6 @@
 {
   "name": "grepmax",
-  "version": "0.26.105",
+  "version": "0.26.106",
   "author": "Robert Owens <78518764+reowens@users.noreply.github.com>",
   "homepage": "https://github.com/reowens/grepmax",
   "bugs": {
@@ -83,7 +83,9 @@
     "README.md",
     "LICENSE",
     "NOTICE",
-    "DOCUMENT-SEARCH.md"
+    "DOCUMENT-SEARCH.md",
+    "docs/search-degradation.md",
+    "docs/cli-error-guidance.md"
   ],
   "license": "Apache-2.0",
   "description": "Semantic code search for coding agents. Local embeddings, call graph tracing, compact code context.",

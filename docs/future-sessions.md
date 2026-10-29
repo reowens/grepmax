@@ -4,10 +4,64 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-29
 audience: internal
-summary: "COMPLETE: ratified seven-step CPU batch released0.26.105/b7066b8, serving P3 ready/open/active. One profile completed48 requests within guards/zero swap growth; no speedup claim.44 retained distinct unit passes/two invocations; static CLI fixture fix unrerun and zero new unit tests. Unrelated work preserved; next CPU investigation is a proposal only."
+summary: "Three-feature product batch complete locally: serving CPU status, search degradation explanations and actionable non-search CLI errors. Final combined production typecheck passed with guards/owned cleanup; no tests/runtime validation/release.0.26.105 and unrelated work preserved; optional CPU investigation remains unratified."
 ---
 
 # Future Sessions
+
+## Six-feature release selected; implementation complete
+
+The [owning plan](plans/gmax-delivery.md#six-feature-status-and-cli-release--implementation-complete-release-preparation-active)
+records the explicit release authorization and all six completed source features.
+Serving model/mode, idle watch-lease reasons and saved-worker notices now join
+CPU status, search degradation and non-search CLI guidance. New source passed the necessary production compilation and runtime preparation;
+final packaging/publication/handover follow. The
+same owner continues through one publication and normal P3 handover without a
+user checkpoint, then documents and recenters. No tests, review, audit, profile,
+model exercise or FTS/maintenance is selected; unrelated/private work is preserved.
+
+## Three-feature product batch complete locally
+
+The [owning plan](plans/gmax-delivery.md#three-feature-cpu-status-and-cli-guidance-batch--complete-locally)
+records the complete files, behavior, compiler receipt and limits. Human status
+and additive JSON explain the serving daemon pool's CPU/affinity/quota, worker
+setting/source, automatic default and global background allowance; older-daemon
+or uninitialized values remain unavailable, never inferred from the client.
+Search explains actual lexical, embedding and rerank failures/unavailability,
+using existing warnings/hints with supported manual actions. Empty hits do not
+prove missing FTS, and inactive reranking is not degraded. Direct/HTTP-backed
+CLI warnings stay on stderr; HTTP success may add optional warnings. Five
+non-search command catches preserve raw reasons and add bounded busy/readiness/
+closing/incompatibility guidance. Existing adequate config validation remains.
+
+The user consolidated remaining search work and final integration into the
+existing CLI owner after both search delegation attempts failed before execution
+due to model capacity. Shared README/plan/handoff ownership transferred to that
+owner. All selected source/docs are now integrated; no further delegation ran.
+
+**Final combined production-only compilation passed**, one invocation of
+`node_modules/.bin/tsc --noEmit --incremental false` after all source edits.
+Existing controller guards: two CPUs(0,1)/nice10,2GiB aggregate owned RSS,180s,
+minimum8GiB available memory and zero swap growth. Actual elapsed0.845086602s,
+sampled peak296,775,680 bytes, zero swap growth, all owned processes closed.
+Receipt: `/tmp/gmax-three-features-typecheck-_x5msou2/typecheck-receipt.json`;
+compiler log: `/tmp/gmax-three-features-typecheck-_x5msou2/typecheck-phase-0.log`.
+The older initial CPU typecheck is historical evidence, not another final pass.
+
+README and both requested feature docs are complete. `docs/search-degradation.md`
+and `docs/cli-error-guidance.md` have scoped force/intent-to-add entries so the
+existing `docs/` ignore rule cannot hide them from the diff. New helpers are
+ordinary untracked source files; no broad staging or other index mutation ran.
+All unrelated dirty/intent-to-add work and completed0.26.105 records are intact.
+
+No remaining blocker for the approved implementation/docs/typecheck outcome.
+No runtime validation was selected: zero tests/test writing, independent review,
+audit, profile/benchmark, native dataset/model execution, live P3/RPC/SSH action,
+install/package/preparation, maintenance, commit/push, versioning or release.
+Guard reads were limited to the approved local compilation. Published/deployed
+0.26.105 is unchanged, without a fresh live verification claim. FTS remains
+historically completed9801→9802→9803/zero pending and untouched. The optional CPU
+attribution plan below remains unratified and unexecuted. No next action is selected.
 
 ## Seven-step CPU delivery complete — October 29, 2026 (UTC)
 

@@ -23,9 +23,9 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "COMPLETE: all seven ratified CPU/config/worker delivery steps finished.0.26.105 source b7066b8 is public and serving P3 ready/open/active. One profile completed48 measured requests within guards; no before/after speedup claim."
-next_step: "Propose a later bounded investigation of daemon non-main-thread CPU and quota throttling under natural background indexing. No additional batch, tests, profiles, model loads or maintenance starts automatically."
-summary: "Complete source/fixtures/contracts/docs included; private history and unrelated edits preserved.44 retained distinct passes/two old invocations, static CLI cache correction unrerun; zero new unit tests/reviews/audits. Local package passed, one npm publication plus one verification-only recovery passed, P3 handover and one134.645s profile completed. FTS left untouched."
+current_state: "Six-feature implementation complete; release preparation selected. Prior three-feature product batch complete locally: serving-daemon CPU status, search degradation explanations and actionable non-search CLI errors. Final combined production typecheck passed; no runtime validation or release. Completed0.26.105 delivery and unrelated work are preserved."
+next_step: "Complete required guarded production compilation/preparation/package, one0.26.106 publication and normal P3 handover, then record outcome and recenter. No tests, profiling or maintenance; optional CPU attribution remains unratified."
+summary: "All three features and focused docs are integrated; final guarded production-only tsc passed in0.845s with296775680-byte sampled peak owned RSS, zero swap growth and owned cleanup confirmed. Zero tests, audits, independent reviews or live actions for this batch. Prior0.26.105 release evidence is historical and preserved."
 ---
 
 # Gmax Delivery Plan
@@ -34,6 +34,191 @@ Project status belongs in this plan and its linked plans, never in `AGENTS.md` o
 `CLAUDE.md`. [Architecture/operations history](architecture-operations-history.md)
 preserves status, incident measurements and release context moved out of
 `CLAUDE.md`; those excerpts are historical and add no execution authorization.
+
+## Six-feature status and CLI release — implementation and guarded production build complete, publication pending
+
+Selected October 29, 2026 (UTC), by the explicit instruction to finish status
+items2–4 and then release the complete existing batch. All six product features
+are implemented: serving CPU/worker capacity, degraded-search explanations,
+actionable non-search CLI errors, serving embedding model/mode, idle-project
+lease explanations, and saved-versus-serving worker notices. The last three
+are in `status.ts` plus a read-only initialized identity accessor in `daemon.ts`
+and additive status IPC; no model/health probe, lifecycle change or extra RPC.
+Legacy/uninitialized daemon identity is unavailable, never client substitution.
+Reported leases retain expiry semantics; swept leases cannot be reconstructed.
+Environment worker precedence is explicit; restart does not promise to apply a
+saved value while a daemon environment override wins.
+
+The complete public-source production build passed under the existing controller:
+`tsc --incremental false`, Lance JS runtime preparation and reuse of unchanged
+qualified native artifacts; no native executable was run. Elapsed1.986952766s,
+peak sampled owned RSS341,807,104 bytes, zero swap growth, no live owned processes.
+Limits: two CPUs(0,1),nice10,2GiB aggregate owned RSS,180s,8GiB minimum available
+memory and zero swap growth. Receipt:
+`/home/reoiv/.local/state/gmax-delivery/20261029-0.26.106/package-controller-receipt.json`.
+Only version metadata and documentation change after this compilation.
+
+The existing0.26.105 release remains unchanged while preparation proceeds.
+Final source compilation/runtime preparation passed; packaging, one existing release.yml
+publication, normal same-unit P3 handover and final records are selected. Zero
+unit tests, test typechecks, independent reviews, audits, runtime smoke exercises,
+profiles, CPU captures or maintenance are selected. The earlier three-feature
+production typecheck below predates these last source edits. Optional CPU
+attribution and the held resource-history prototype remain unselected; FTS stays
+historically completed9801→9802→9803/zero pending and untouched.
+
+A clean public-source release worktree will contain the entire selected batch,
+including both new source helpers and both focused user docs. Unrelated private
+README/history edits and dirty/intent-to-add entries stay in the development
+checkout. Exact copied-source hashes and intentionally projected public docs are
+recorded under `/home/reoiv/.local/state/gmax-delivery/20261029-0.26.106/`.
+No private history is to be pushed. Validation remains static/production-compiled;
+there is no runtime feature correctness or CPU-gain claim.
+
+## Three-feature CPU status and CLI guidance batch — complete locally
+
+Completed October 29, 2026 (UTC), within the selected implementation/docs and
+production-compilation scope. After both search delegations failed before
+execution due to model capacity, the user consolidated the remaining search work
+and final integration into the existing CLI implementation owner. No replacement
+agent, model change or additional approval checkpoint was introduced.
+
+1. **Serving-daemon CPU status:** the completed CPU-agent implementation below
+   reports effective CPUs, affinity and fractional inherited quota, configured
+   workers/source, automatic default and global background indexing allowance.
+   Additive JSON fields preserve legacy values; older-daemon/no-pool diagnostics
+   remain unavailable instead of substituting invoking-client data.
+2. **Search degradation explanations:** `src/lib/search/degradation.ts` and
+   `searcher.ts` use existing FTS adoption/query outcomes and actual query-encode,
+   rerank payload-read and rerank calls. Missing FTS, failed lexical retrieval,
+   unavailable/failed query encoding, host-safety refusal and actual rerank
+   failures/missing token inputs get bounded reasons and supported manual actions.
+   Empty hits do not imply missing FTS; inactive or candidate-free reranking is
+   not labeled degraded. `src/commands/search-output.ts` renders optional warnings
+   on stderr in direct and HTTP-backed CLI modes. `src/commands/serve.ts` retains
+   optional warnings only on successful HTTP search responses. Existing daemon
+   warnings/hints already carry these messages; no new protocol schema or extra
+   probe, index scan, retry, timer or model access was needed. Missing/malformed
+   optional warning metadata does not fail valid hits; legacy generic lexical
+   warnings receive a conservative explanation without assuming a missing index.
+3. **Non-search CLI guidance:** `src/lib/utils/cli-error-guidance.ts` is used only
+   by the error-rendering catches in `add.ts`, `index.ts`, `remove.ts`, `project.ts`
+   and `symbols.ts`. It preserves the original reason and supplied exclusive
+   operation, suggesting status/wait/retry for busy, initializing/not-ready and
+   closing daemons, or the existing restart command for unsupported live-daemon
+   commands. It does not duplicate existing restart guidance. Unknown errors and
+   existing sufficient config choice/range messages remain unchanged.
+
+Ranking/scoring, returned results, fallback/refusal policy, exit codes, resource
+and store ownership, scheduling and safety markers are unchanged. New hints do
+not include private query/source/argv/environment/path/stack content. Human search
+and error guidance uses stderr; successful result stdout remains compatible.
+No hint executes a recovery action.
+
+**Final combined production compilation passed:** exactly one final invocation
+of `node_modules/.bin/tsc --noEmit --incremental false`, after all final source
+edits, exited0. The existing local controller was copied with only its output
+directory changed. Guarded elapsed0.845086602s; peak sampled owned
+RSS296,775,680 bytes; zero swap growth; no live owned processes after cleanup.
+Limits: two CPUs (0,1), nice10,2GiB aggregate owned RSS,180s, minimum8GiB available
+host memory and zero swap growth. Final available memory39,225,815,040 bytes.
+Receipt: `/tmp/gmax-three-features-typecheck-_x5msou2/typecheck-receipt.json`;
+compiler log: `/tmp/gmax-three-features-typecheck-_x5msou2/typecheck-phase-0.log`.
+The earlier CPU-agent typecheck below is retained separately and is not counted
+as this final-source validation. No source changed after the combined pass.
+
+`README.md`, [search degradation](../search-degradation.md), and
+[CLI error guidance](../cli-error-guidance.md) document the behavior. Both
+specifically requested new docs have scoped force/intent-to-add entries because
+the existing ignore rule excludes `docs/`; they are visible in the working diff.
+No other index entries were changed by integration. New source helpers remain
+ordinary untracked files pending any separately selected staging/commit work.
+
+**Limits:** source/diff reasoning and production typechecking only; zero tests or
+test writing, test-typecheck, independent review, audit, benchmark/profile, native
+dataset/model execution, live P3/RPC/SSH action, install/preparation/package,
+maintenance, commit/push, versioning, publication or deployment. Resource reads
+were solely the approved local compiler admission/guard and owned cleanup.
+No blocker remains for this selected outcome; runtime behavior has not been
+exercised.0.26.105 remains the published/deployed release without a fresh live
+claim. Its records and all unrelated dirty/intent-to-add files are preserved.
+FTS9801→9802→9803/zero pending remains historical completed work and untouched.
+The optional CPU attribution proposal below remains unratified and unexecuted.
+
+## CPU configuration status visibility — integrated
+
+Selected October 29, 2026 (UTC): the user accepted one implementation agent for
+this finite feature, documentation and one bounded local production compilation.
+This supersedes the earlier docs-only restriction only for the selected feature;
+the optional CPU attribution plan below remains **proposed and unratified**.
+The user subsequently added degraded-search explanations and actionable non-search
+CLI errors. The initial separate ownership and compilation deferral were later
+superseded by the consolidated owner integration recorded above.
+
+The CPU feature's source and user documentation are complete locally:
+
+- `src/lib/utils/cpu-capacity.ts` retains the numeric `effectiveCpuCount` API and
+  its existing parser/rounding policy, adding an optional snapshot callback for
+  affinity-aware parallelism, the tightest readable fractional cgroup-v2 quota,
+  effective whole-CPU capacity and explicit quota visibility. Missing/malformed
+  ancestor metadata is distinguished from unlimited quota. Existing numeric-only
+  callers and injected detectors remain compatible; no competing parser exists.
+- `src/lib/workers/pool.ts` captures those inputs at its existing initialization
+  read, computes the hypothetical automatic count through `resolveWorkerThreads`
+  without an override, and exposes the actual pool maximum and global background
+  file allowance. Dispatch and reporting share the unchanged allowance formula.
+  Scheduling, overrides, service limits and native ownership remain unchanged.
+- `src/lib/daemon/daemon.ts` and `ipc-handler.ts` add optional `cpuConfiguration`
+  status data from the serving daemon's existing pool. Reading status never
+  initializes a pool, samples processes, loads models or starts a timer.
+- `src/commands/status.ts` displays daemon effective CPU/affinity/quota, configured
+  workers with explicit/automatic source, automatic default and global background
+  indexing allowance. Additive JSON `daemon.cpuConfiguration` and
+  `daemon.workerThreadsSetting` preserve the numeric legacy field. Unreported
+  older-daemon/no-pool/no-daemon diagnostics remain null or clearly unavailable;
+  invoking-client values are never substituted. Existing `settings.workerThreads`
+  still describes the client. These are capacity/allowance snapshots, not native
+  thread activity, CPU utilization or evidence of quiescence. Compact `--agent`
+  output is unchanged.
+- `README.md` gives concrete output and field/legacy/initialization semantics.
+
+**Retained validation and precise limit:** one local production-only
+`node_modules/.bin/tsc --noEmit --incremental false` passed (exit0), through the
+existing release compilation controller restricted to that single command.
+It ran before the two additional agents were announced and before the final
+numeric-helper compatibility adjustment; it is **not final combined-source
+validation**. The final combined-source pass is recorded above. Initial receipt:
+`/tmp/gmax-status-cpu-typecheck-0nbeijq9/typecheck-receipt.json`; compiler output:
+`/tmp/gmax-status-cpu-typecheck-0nbeijq9/typecheck-phase-0.log`.
+Elapsed0.850s, peak sampled owned RSS262,569,984 bytes, zero swap growth, all owned
+processes closed. Guards: two CPUs/nice10,2GiB aggregate owned RSS,180s,
+minimum8GiB host available memory and zero swap growth. Source/docs diff inspection
+was the only other validation in that agent's handoff. **The single final combined
+production compilation is now complete under the existing authorization.**
+No test was written or executed; no test-typecheck, build, package/install, audit,
+review, profile, model/native/dataset execution, P3/RPC/SSH/live action, maintenance,
+commit, push, version change, publication or deployment ran for this feature.
+
+Completed0.26.105 reconciliation and ALL unrelated dirty/intent-to-add files are
+preserved. Its old44 distinct passes and final unrerun CLI fixture correction
+remain historical evidence, not coverage of this feature. FTS9801→9802→9803/zero
+pending remains completed and untouched. No release is authorized.
+
+Source-grounded finite alternatives, **suggestions only**, identified during the
+selected implementation reads (no separate audit):
+
+1. Show the serving daemon's embedding model/mode in status: its current header
+   and JSON settings use `readGlobalConfig` in the invoking client, while the
+   pool already retains its embedding generation and mode. This would explain
+   stored-versus-serving model differences without changing models or indexing.
+2. Explain why an indexed project is idle: status IPC already returns watch
+   leases, but CLI `loadStatusView` drops them and `projectState` renders only
+   `idle`. Show whether a lease exists and its remaining expiry, with unavailable
+   handling for older daemons. No watcher policy change is needed.
+3. Flag a saved worker-setting change awaiting daemon restart: JSON now exposes
+   both client and serving worker settings, but human status does not compare
+   them. Add a concise pending-change indication and existing restart guidance;
+   do not apply the new count or restart automatically.
 
 ## CPU batch end-to-end completion — COMPLETE
 

@@ -4,8 +4,11 @@ import { Command } from "commander";
 import {
   PATHS,
   resolveWorkerThreads,
+  type WorkerThreadsSetting,
   type WorkerThreadsSource,
 } from "../config";
+import type { WatchLease } from "../lib/daemon/watch-leases";
+import type { EmbeddingGenerationConfig } from "../lib/index/embedding-generation";
 import {
   countLegacyEmbeddingProjects,
   formatLegacyEmbeddingNotice,
@@ -39,6 +42,7 @@ import {
 } from "../lib/utils/store-context";
 import type { WatcherInfo } from "../lib/utils/watcher-store";
 import { getWatcherForProject, listWatchers } from "../lib/utils/watcher-store";
+import type { WorkerPoolCpuConfiguration } from "../lib/workers/pool";
 
 /**
  * What `status` needs from the store, however it was obtained: which projects
@@ -48,16 +52,25 @@ export interface StatusView {
   watchers: Map<string, Pick<WatcherInfo, "status">>;
   chunkCounts: Map<string, number>;
   health?: Map<string, IndexState>;
+  leases?: WatchLease[];
   /** Present only when the daemon answered. */
   daemon?: {
     pid: number | null;
     uptimeSec: number | null;
     workers: number | null;
     workerThreads: number | null;
+    workerThreadsSetting?: WorkerThreadsSetting | null;
+    cpuConfiguration?: WorkerPoolCpuConfiguration | null;
+    embeddingConfiguration?: DaemonEmbeddingConfiguration | null;
     service?: { mode: "active" | "paused"; reason?: string };
     resources?: ResourceSnapshot | null;
     compaction?: CompactionResult | null;
   };
+}
+
+interface DaemonEmbeddingConfiguration {
+  generation: EmbeddingGenerationConfig;
+  embedMode: "cpu" | "gpu";
 }
 
 /**
@@ -127,8 +140,28 @@ async function loadStatusView(projects: ProjectEntry[]): Promise<StatusView> {
           typeof (resp.workerThreads as { value?: unknown }).value === "number"
             ? (resp.workerThreads as { value: number }).value
             : null,
+        workerThreadsSetting: daemonWorkerThreadsSetting(resp.workerThreads),
+        cpuConfiguration:
+          (resp.cpuConfiguration as WorkerPoolCpuConfiguration | undefined) ??
+          null,
+        embeddingConfiguration: readDaemonEmbeddingConfiguration(
+          resp.embeddingConfiguration,
+        ),
       };
-      return { watchers, chunkCounts, daemon, health };
+      const leases = Array.isArray(resp.leases)
+        ? resp.leases.filter(
+            (lease): lease is WatchLease =>
+              lease !== null &&
+              typeof lease === "object" &&
+              typeof lease.root === "string" &&
+              typeof lease.holder === "string" &&
+              typeof lease.expiresAt === "number" &&
+              Number.isFinite(lease.expiresAt) &&
+              lease.expiresAt >= 0 &&
+              lease.expiresAt <= 8_640_000_000_000_000,
+          )
+        : undefined;
+      return { watchers, chunkCounts, daemon, health, leases };
     },
     inProcess: async () => {
       listWatchers(); // cleans stale entries as side effect
@@ -168,6 +201,125 @@ async function loadStatusView(projects: ProjectEntry[]): Promise<StatusView> {
       return { watchers, chunkCounts };
     },
   });
+}
+
+function daemonWorkerThreadsSetting(value: unknown): WorkerThreadsSetting | null {
+  if (!value || typeof value !== "object") return null;
+  const setting = value as Partial<WorkerThreadsSetting>;
+  return typeof setting.value === "number" &&
+    (setting.source === "env" ||
+      setting.source === "config" ||
+      setting.source === "default")
+    ? { value: setting.value, source: setting.source }
+    : null;
+}
+
+function readDaemonEmbeddingConfiguration(
+  value: unknown,
+): DaemonEmbeddingConfiguration | null {
+  if (!value || typeof value !== "object") return null;
+  const config = value as Partial<DaemonEmbeddingConfiguration>;
+  const generation = config.generation;
+  if (
+    (config.embedMode !== "cpu" && config.embedMode !== "gpu") ||
+    !generation ||
+    typeof generation.tier !== "string" ||
+    !Number.isInteger(generation.vectorDim) ||
+    typeof generation.onnxModel !== "string" ||
+    typeof generation.mlxModel !== "string" ||
+    typeof generation.colbertModel !== "string" ||
+    typeof generation.fingerprint !== "string"
+  )
+    return null;
+  return { generation, embedMode: config.embedMode };
+}
+
+function savedWorkerNotice(
+  daemon: StatusView["daemon"],
+  saved: number | undefined,
+): string | null {
+  const serving = daemon?.workerThreadsSetting;
+  if (!serving) return null;
+  const savedLabel = saved === undefined ? "auto" : String(saved);
+  if (serving.source === "env") {
+    if (saved === serving.value) return null;
+    return `Saved worker setting: ${savedLabel}; serving GMAX_WORKER_THREADS override: ${serving.value}. Restart alone does not make the saved setting take precedence.`;
+  }
+  if (
+    (serving.source === "config" && saved !== serving.value) ||
+    (serving.source === "default" && saved !== undefined)
+  ) {
+    return `Saved worker setting: ${savedLabel}; serving generation: ${serving.value} (${serving.source}). Awaiting a deliberate daemon restart: gmax watch restart. The saved value is revalidated at startup; GMAX_WORKER_THREADS takes precedence if set in the daemon's environment.`;
+  }
+  return null;
+}
+
+function watchLeaseSummary(root: string, view: StatusView, now: number) {
+  if (!view.leases)
+    return { state: "unavailable" as const, count: null, latestExpiresAt: null };
+  const leases = view.leases.filter((lease) => lease.root === root);
+  const live = leases.filter((lease) => lease.expiresAt > now);
+  return {
+    state: live.length
+      ? "present" as const
+      : leases.length
+        ? "expired" as const
+        : "unleased" as const,
+    count: live.length,
+    latestExpiresAt: leases.length
+      ? Math.max(...(live.length ? live : leases).map((lease) => lease.expiresAt))
+      : null,
+  };
+}
+
+function idleProjectReason(root: string, view: StatusView, now: number): string {
+  const health = view.health?.get(root);
+  if (
+    health?.indexing || health?.pendingFiles || health?.queue?.activeFiles ||
+    health?.queue?.live || health?.queue?.catchup || health?.queue?.cleanup
+  )
+    return "Index work is queued or active; no watcher is reported.";
+  const lease = watchLeaseSummary(root, view, now);
+  if (lease.state === "unavailable")
+    return "Watch lease information unavailable; no watcher is reported.";
+  if (lease.state === "present")
+    return `${lease.count} watch lease(s) reported, latest expiry ${new Date(lease.latestExpiresAt!).toISOString()}; no watcher is reported.`;
+  return `${lease.state === "expired" ? "Reported watch leases expired" : "No live watch lease reported"}; indexed data remains searchable.`;
+}
+
+/** Never fill gaps in daemon diagnostics from the invoking client's environment. */
+function formatCpuConfiguration(daemon: StatusView["daemon"]): string[] {
+  if (!daemon) return ["CPU configuration: unavailable (no serving daemon)"];
+  const config = daemon.cpuConfiguration;
+  const setting = daemon.workerThreadsSetting;
+  const workers = config?.maxWorkers ?? daemon.workerThreads;
+  const source =
+    setting?.source === "default"
+      ? "automatic"
+      : setting?.source === "env"
+        ? "explicit: GMAX_WORKER_THREADS"
+        : setting?.source === "config"
+          ? "explicit: config"
+          : "source unavailable";
+  const unavailable = "unavailable (not reported by daemon)";
+  let cpu = unavailable;
+  if (config) {
+    const capacity = config.capacity;
+    const quota =
+      capacity.quotaCpus === null
+        ? capacity.quotaStatus === "unlimited"
+          ? "unlimited"
+          : capacity.quotaStatus === "not-applicable"
+            ? "not applicable"
+            : "unavailable"
+        : `${capacity.quotaCpus} CPUs`;
+    cpu = `${capacity.effectiveCpus} effective CPUs (affinity: ${capacity.affinityCpus ?? "unavailable"}; cgroup quota: ${quota}${capacity.quotaStatus === "partial" ? "; quota visibility incomplete" : ""})`;
+  }
+  return [
+    `Daemon CPU capacity: ${cpu}`,
+    `Configured workers: ${workers ?? "unavailable"} (${source}); automatic default: ${config?.automaticWorkerThreads ?? "unavailable"}`,
+    `Background indexing allowance: ${config ? `${config.backgroundIndexingLimit} ${config.backgroundIndexingLimit === 1 ? "file" : "files"} across all projects` : unavailable}`,
+  ];
 }
 
 /** State shown per project; shared by --agent and --json. */
@@ -219,6 +371,9 @@ export interface StatusJson {
     pid: number | null;
     since: number | null;
     workerThreads: number | null;
+    workerThreadsSetting?: WorkerThreadsSetting | null;
+    cpuConfiguration?: WorkerPoolCpuConfiguration | null;
+    embeddingConfiguration?: DaemonEmbeddingConfiguration | null;
     service?: { mode: "active" | "paused"; reason?: string };
     resources?: ResourceSnapshot | null;
     compaction?: CompactionResult | null;
@@ -229,6 +384,7 @@ export interface StatusJson {
     vectorDim: number;
     queryLog: boolean;
     workerThreads: { value: number; source: WorkerThreadsSource };
+    storedWorkerThreads?: number | null;
   };
   workersRunning: number | null;
   indexing: boolean;
@@ -240,6 +396,8 @@ export interface StatusJson {
     state: string;
     embedding: string;
     health?: IndexState;
+    watchLease?: ReturnType<typeof watchLeaseSummary>;
+    idleReason?: string;
   }>;
   at: number;
 }
@@ -276,6 +434,9 @@ export function buildStatusJson(input: {
       pid: d?.pid ?? null,
       since: d?.uptimeSec != null ? now - d.uptimeSec * 1000 : null,
       workerThreads: d?.workerThreads ?? null,
+      workerThreadsSetting: d?.workerThreadsSetting ?? null,
+      cpuConfiguration: d?.cpuConfiguration ?? null,
+      embeddingConfiguration: d?.embeddingConfiguration ?? null,
       ...(d?.service ? { service: d.service } : {}),
       ...(d?.resources !== undefined ? { resources: d.resources } : {}),
       ...(d?.compaction !== undefined ? { compaction: d.compaction } : {}),
@@ -286,6 +447,7 @@ export function buildStatusJson(input: {
       vectorDim: globalConfig.vectorDim,
       queryLog: globalConfig.queryLog === true,
       workerThreads: input.workerThreads,
+      storedWorkerThreads: globalConfig.workerThreads ?? null,
     },
     workersRunning,
     indexing: input.indexing,
@@ -296,6 +458,10 @@ export function buildStatusJson(input: {
       indexedAt: toMs(project.lastIndexed),
       state: projectState(project, view.watchers.get(project.root)),
       embedding: projectEmbeddingStatus(project, globalConfig).state,
+      watchLease: watchLeaseSummary(project.root, view, now),
+      ...(projectState(project, view.watchers.get(project.root)) === "idle"
+        ? { idleReason: idleProjectReason(project.root, view, now) }
+        : {}),
       ...(view.health?.has(project.root)
         ? { health: view.health.get(project.root) }
         : {}),
@@ -395,9 +561,26 @@ Examples:
 
     if (!opts.agent) {
       // Header
+      const serving = view.daemon?.embeddingConfiguration;
       console.log(
-        `\n${style.bold("gmax")} · ${globalConfig.modelTier} (${globalConfig.vectorDim}d, ${globalConfig.embedMode})${indexing ? style.yellow(" · indexing...") : ""}`,
+        `\n${style.bold("gmax")} · ${serving ? `daemon configuration: ${serving.generation.tier} (${serving.generation.vectorDim}d, ${serving.embedMode})` : "daemon embedding configuration unavailable"}${indexing ? style.yellow(" · indexing...") : ""}`,
       );
+      if (serving) {
+        const model =
+          serving.embedMode === "gpu"
+            ? serving.generation.mlxModel
+            : serving.generation.onnxModel;
+        console.log(
+          `  Embedding model (configured): ${model}; ColBERT: ${serving.generation.colbertModel}`,
+        );
+      }
+      for (const line of formatCpuConfiguration(view.daemon))
+        console.log(`  ${line}`);
+      const workerNotice = savedWorkerNotice(
+        view.daemon,
+        globalConfig.workerThreads,
+      );
+      if (workerNotice) console.log(`  ${workerNotice}`);
     }
 
     if (view.daemon?.service?.mode === "paused") {
@@ -514,6 +697,8 @@ Examples:
       console.log(
         `  ${name}  ${chunks.padEnd(12)}  ${age.padEnd(10)}  ${statusStr}  embedding:${embedding}${marker}`,
       );
+      if (projectState(project, watcher) === "idle")
+        console.log(`    ${idleProjectReason(project.root, view, Date.now())}`);
       const health = formatIndexStateFooter(view.health?.get(project.root), {
         agent: false,
       });

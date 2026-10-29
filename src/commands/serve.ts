@@ -4,6 +4,7 @@ import * as http from "node:http";
 import * as path from "node:path";
 import { Command } from "commander";
 import { PATHS } from "../config";
+import { formatSearchWarnings } from "../lib/search/degradation";
 import { validateMaxPerFile } from "../lib/search/per-file";
 import type { SearchFilter } from "../lib/store/types";
 import {
@@ -286,7 +287,11 @@ export function createServeHttpServer(
           });
           return;
         }
-        writeJson(res, 200, { results: response.data ?? [] });
+        const warnings = formatSearchWarnings(response.warnings);
+        writeJson(res, 200, {
+          results: response.data ?? [],
+          ...(warnings.length ? { warnings } : {}),
+        });
         return;
       }
 
