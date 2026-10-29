@@ -2,12 +2,41 @@
 type: doc
 status: active
 created: 2026-10-03T02:39:56Z
-updated: 2026-10-29T07:22:00Z
+updated: 2026-10-29T07:43:57Z
 audience: internal
-summary: "Stable Lance SDK/native 0.40.0 and Python 13 upgraded coherently; official runtime prepared; one guarded production compile passed, zero tests/native execution. Not released; no measured RSS gain. Existing quality stop/unknown attempted-query count preserved."
+summary: "All selected upgrade/discovery source, existing fixtures, instructions and docs complete locally. Final guarded compile passed; earlier global swap-guard refusal preserved. Claude config-home bug fixed; Mac/Linux root cause and runtime/native behavior unproven. P3 unchanged."
 ---
 
 # Future Sessions
+
+## Final local upgrade/discovery integration complete
+
+Lance upgrade commit `4b414da` remains intact (SDK/native 0.40.0, core 13,
+Python 13; separate qualified Rust 12 unchanged). All 16 discovery files plus the
+narrow Claude config-home fix and shared durable guidance are integrated.
+`gmax status --current`, hooks and MCP `repo_status` distinguish repo setup from
+daemon state and actual tool attachment. Plugin cache checks/removal now honor
+`CLAUDE_CONFIG_DIR`; this source bug is not proven to explain the missing catalog.
+See [final record](plans/assets/local-integration-20261029/completion.md) and
+[platform findings/client adapter proposal](plans/gmax-agent-discovery.md).
+
+Final combined production compilation passed with unchanged guards: 0.845s,
+339,361,792bytes peak owned RSS, zero swap growth and no owned survivors. The
+first integration attempt (before later platform steering/fix) had compiler
+exit 0 but final swap guard failure 6,283,264bytes; it is retained separately.
+The earlier upgrade-only passing receipt does not cover discovery. Zero tests,
+queries, native/import/runtime smokes or host/client activation; no generated
+SDK preparation rerun. All selected source/fixture/doc work is complete locally.
+
+External T3/client adapter remains unimplemented: verify host/user/HOME/PATH/
+workspace mapping, approved STDIO config/transport identity, snapshot invalidation
+(including same-cwd changes) and real provider catalog refresh. Claude hooks/CLI
+hints alone cannot attach tools. Mac/Linux failure remains unproven. No current
+catalog attachment, release, global install or P3 change is claimed; deployed
+0.26.108 is only the prior record. Quality attempts remain unknown/no retry;
+Table-handle cleanup unselected; CPU/backend/resource-history deferred.
+No further work starts automatically; older next-action text below is historical.
+
 
 ## Stable Lance upgrade complete locally
 

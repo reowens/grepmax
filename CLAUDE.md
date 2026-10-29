@@ -58,6 +58,11 @@ large-model restriction remain.
 
 ## Local checks and remote execution
 
+[Ordinary repository retrieval](AGENTS.md#ordinary-repository-retrieval) is
+separate from test/benchmark execution. Current-repo availability and actual
+client tool attachment must be reported independently; explicit query, resource,
+startup and model restrictions still apply.
+
 All checks run locally in this repository. Do not send checks, tests, audits,
 compilation or builds to Depot or any other remote builder without the user's
 explicit approval for that run. Depot is not an approved verification path for

@@ -137,8 +137,9 @@ async function installPlugin() {
     console.log("1. Restart Claude Code if it's running");
     console.log("2. Run `gmax add` in your project to index it");
     console.log(
-      "3. Claude will use gmax for semantic code search automatically",
+      "3. Plugin hooks surface current-repo status and CLI suggestions; they do not register MCP tools",
     );
+    console.log("   MCP tools require a separate explicit STDIO registration: gmax mcp");
     console.log("\nTo update the plugin after upgrading gmax:");
     console.log("  gmax install-claude-code");
   } catch (error) {

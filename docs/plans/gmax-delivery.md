@@ -2,7 +2,7 @@
 type: plan
 status: active
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-29T07:22:46Z
+updated: 2026-10-29T07:43:28Z
 surfaces:
   - store
   - daemon
@@ -23,12 +23,54 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Stable Lance upgrade locally complete: SDK/native 0.40.0, embedded core 13, Python 13; one guarded production compilation passed, zero tests. Not released. Quality guard-stop ranks remain unmeasured and attempted-query count unknown; no retry/budget reset."
-next_step: "Local upgrade complete; no automatic next action. Native/store compatibility unexercised; Python 14 forward writes into SDK core 13 not established. Table-handle cleanup remains unselected; CPU/backend/resource-history deferred. No release/deployment authorized."
-summary: "Stable Lance SDK/native 0.40.0 and Python 13 upgraded coherently; official runtime prepared; one guarded production compile passed, zero tests/native execution. Not released; no measured RSS gain. Existing quality stop/unknown attempted-query count preserved."
+current_state: "Local Lance upgrade and repository agent discovery integrated; SDK/native0.40/core 13/Python 13. Final combined guarded production compilation passed after later config-home fix; earlier swap-guard failure retained. Zero tests/runtime queries/native execution. Not released; quality attempt count unknown."
+next_step: "Local selected work complete; no automatic action. External T3/client host/workspace/config/STDIO/catalog adapter remains unimplemented with concrete proposal. No activation, release, query retry, Table-handle cleanup or deferred CPU/backend/resource-history work selected."
+summary: "All selected upgrade/discovery source, existing fixtures, instructions and docs complete locally. Final guarded compile passed; earlier global swap-guard refusal preserved. Claude config-home bug fixed; Mac/Linux root cause and runtime/native behavior unproven. P3 unchanged."
 ---
 
 # Gmax Delivery Plan
+
+## Upgrade and agent discovery — final local integration complete
+
+**October 29, 2026 UTC.** Upgrade commit `4b414da` is retained: official
+SDK/all npm native packages 0.40.0, embedded Lance 13, Python maintenance 13.0.0;
+separate qualified Rust 12 maintenance remains unchanged/unqualified for core 13
+mutation. The prior 58-file official generated SDK match was reused without
+another preparation run. No version bump/publication/global install/P3 action.
+
+All 16 frozen discovery files, including new `repo-status.js`/`repo-status.ts`,
+are integrated along with durable ordinary-retrieval guidance. A targeted
+macOS/Linux source check also fixed the plugin manager's hardcoded Claude cache
+home: detection/removal now honor `CLAUDE_CONFIG_DIR` before the default home.
+No runtime/client configuration was changed. [Discovery implementation and host/
+client adapter boundary](gmax-agent-discovery.md) distinguish current-repo
+registration/index status, daemon state and actual MCP attachment. The adapter
+proposal is concrete but remains **client-owned/unimplemented**: bind execution
+host/user/workspace/cwd/config/argv, consume/invalidate status snapshots, attach
+only approved STDIO registration and refresh the actual provider catalog. Hooks
+cannot make T3 execute Claude hooks; a CLI hint does not attach a tool. No claim
+that Gmax now appears in this thread's catalog or that Mac/Linux caused its absence.
+
+[Final integration record](assets/local-integration-20261029/completion.md):
+`node_modules/.bin/tsc --noEmit --incremental false` passed on final combined
+source in 0.845s, peak 339,361,792bytes aggregate owned RSS, zero swap growth,
+43,484,372,992bytes final available, no owned survivors. Two CPUs/nice10,
+2GiB/180s, minimum 8GiB/zero-new-swap guards unchanged. An earlier integration
+attempt before the later config-home fix had compiler exit 0 but **failed the
+final host guard** on 6,283,264bytes global swap growth; its receipt is retained,
+not called a passing guarded run. The subsequent material source fix received
+one final authorized compilation; no passing check was repeated for receipts.
+The upgrade-only 0.846s receipt predates discovery and remains historical.
+
+Zero tests/test typechecks, hook/CLI/MCP startup, native imports/stores/models,
+queries, profiles/benchmarks/audits/reviews or live host probes. Native and hook/
+transport behavior remain unexercised; no RSS/relevance improvement claimed.
+P3 remains the previously recorded deployed 0.26.108 (not freshly verified).
+Quality attempt count remains unknown, ranks unmeasured, and no retry/budget reset.
+Table-handle cleanup remains proposed/unselected; FTS complete and unchanged;
+CPU attribution/resource-history/backend experiments remain deferred. All local
+selected work is finished; stop without automatically activating or publishing it.
+
 
 ## Stable Lance dependency upgrade — locally complete, not released
 

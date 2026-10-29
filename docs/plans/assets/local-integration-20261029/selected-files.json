@@ -1,0 +1,136 @@
+{
+  "upgradeBaseCommit": "4b414da3b2007ad1e009bd069545112786900838",
+  "selectedFileCountExcludingThisManifest": 24,
+  "selectedFiles": [
+    {
+      "path": "docs/plans/gmax-agent-discovery.md",
+      "sha256": "8a6d2a08c175d005978e797a01b298e390d667399666a9f724d4df192b17d7a8",
+      "content": "complete selected file"
+    },
+    {
+      "path": "plugins/grepmax/hooks/repo-status.js",
+      "sha256": "f4d7ed071c010efc09608c29c7ff5b82a6dd834399f5bd49a4fd4415918efdfe",
+      "content": "complete selected file"
+    },
+    {
+      "path": "plugins/grepmax/hooks/start.js",
+      "sha256": "7b5b03e6709cc6c92e9937178f2ccffad523092c0b0466cb60b8cd8dc21d9d2d",
+      "content": "complete selected file"
+    },
+    {
+      "path": "plugins/grepmax/hooks/cwd-changed.js",
+      "sha256": "87ca85440c0fad3ff2138b97a23d4dd0d260c1eab9a8a5c536ea283da8b78644",
+      "content": "complete selected file"
+    },
+    {
+      "path": "plugins/grepmax/hooks/subagent-start.js",
+      "sha256": "4344a0468fe1451bac93d6c1238bdacf1b2b4a299fa9536dc56a4086ca501db2",
+      "content": "complete selected file"
+    },
+    {
+      "path": "plugins/grepmax/hooks/pre-grep.js",
+      "sha256": "92bfddaa5ece6c0362c324c3c7779d05abb68697e90b7dc2697fc201f6bde451",
+      "content": "complete selected file"
+    },
+    {
+      "path": "plugins/grepmax/commands/gmax-status.md",
+      "sha256": "91b647f7b409aaba650a47f01d29a02916f0e8f73040dfcc666b9b3b87c34dec",
+      "content": "complete selected file"
+    },
+    {
+      "path": "plugins/grepmax/skills/grepmax/SKILL.md",
+      "sha256": "2dab40e8b59f09ffa7095d567dc4f6d8630244faeb5629c3afb74b4b86469691",
+      "content": "complete selected file"
+    },
+    {
+      "path": "src/bin.ts",
+      "sha256": "fdc7bf9c71161012b5a0dce8f889920a863a4845a8084bed1daca5f09e4f4027",
+      "content": "complete selected file"
+    },
+    {
+      "path": "src/commands/status.ts",
+      "sha256": "4e6466c530d8c93c946efd23f2b5fe9020d7c808610b3d7d2043f8a6525f4550",
+      "content": "complete selected file"
+    },
+    {
+      "path": "src/commands/mcp.ts",
+      "sha256": "d03e326be646fef10648fb141622ba201d0d281c8c4ff538f6f0ac991b774b62",
+      "content": "complete selected file"
+    },
+    {
+      "path": "src/commands/claude-code.ts",
+      "sha256": "40ba0b0a0f52b3da12ccb3903af7dfd84875ed308d083fb631fed556a54423c1",
+      "content": "complete selected file"
+    },
+    {
+      "path": "src/lib/utils/repo-status.ts",
+      "sha256": "9ca07d14a5abe3b02cb142b2de25b1fc9997bc56bcffe997099665cb3c0a8277",
+      "content": "complete selected file"
+    },
+    {
+      "path": "src/lib/help/agent-cheatsheet.ts",
+      "sha256": "6e98eaafc11058dbb1794e96f402e08fb693cb3662db45b9a8b971f9d81b761b",
+      "content": "complete selected file"
+    },
+    {
+      "path": "tests/claude-hook-lifecycle.test.ts",
+      "sha256": "806f7a370002c83cbc44e9184e2601b03f2a71132400f7f7bd064a012516de1e",
+      "content": "complete selected file"
+    },
+    {
+      "path": "tests/agent-cheatsheet.test.ts",
+      "sha256": "dfbefabc97f6916b84479a36768a712b6b7daa238ad6e7ce52f55298a00e1f0b",
+      "content": "complete selected file"
+    },
+    {
+      "path": "AGENTS.md",
+      "sha256": "03ae48dafc78b67abe1ec19dd65bc758de867fc16471c5eac9732609090fcb38",
+      "content": "complete selected file"
+    },
+    {
+      "path": "CLAUDE.md",
+      "sha256": "9b396508ab903830d03e3bc42ba5e56f7ea2219152c712d0601ef2ac8de27d43",
+      "content": "complete selected file"
+    },
+    {
+      "path": "docs/plans/gmax-delivery.md",
+      "sha256": "a0ded9d08c8d0d0997217ac36050e9aed10ee04254ab5fa663d14e3b4ad3a3f9",
+      "content": "selected commit image; unrelated dirty document history excluded"
+    },
+    {
+      "path": "docs/future-sessions.md",
+      "sha256": "be8b151fd852700125c491918d1e83065760e001c75686265c68cac728e348d4",
+      "content": "selected commit image; unrelated dirty document history excluded"
+    },
+    {
+      "path": "src/commands/plugin.ts",
+      "sha256": "441259a93e9effd7a843fe1300e321defb9691af9c1bdbd753d43364c7ab6ffd",
+      "content": "complete selected file"
+    },
+    {
+      "path": "docs/plans/assets/local-integration-20261029/completion.md",
+      "sha256": "118ecbba76d99d0ece2e36cb4fe830e2c9b0c1c5263022eabe752824320c3459",
+      "content": "complete selected file"
+    },
+    {
+      "path": "docs/plans/assets/local-integration-20261029/pre-platform-fix-typecheck-receipt.json",
+      "sha256": "be6b2abd26701da21f0b64355314d6d997486c4057a75ccdd9055919e090633f",
+      "content": "complete selected file"
+    },
+    {
+      "path": "docs/plans/assets/local-integration-20261029/typecheck-receipt.json",
+      "sha256": "9532a2485943cf298949b2657e8f64698995fdf7c5bdd78eecb6c0be13fdf289",
+      "content": "complete selected file"
+    }
+  ],
+  "productionCompilationCommand": [
+    "node_modules/.bin/tsc",
+    "--noEmit",
+    "--incremental",
+    "false"
+  ],
+  "finalSourceUnchangedSinceCompilation": true,
+  "testsInvoked": 0,
+  "nativeRuntimeExercised": false,
+  "published": false
+}

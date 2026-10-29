@@ -29,6 +29,12 @@ import { isLocked } from "../lib/utils/lock";
 import type { ProjectEntry } from "../lib/utils/project-registry";
 import { listProjects } from "../lib/utils/project-registry";
 import { findProjectRoot } from "../lib/utils/project-root";
+import {
+  formatRepoContext,
+  getRepoStatus,
+  readRepoStatus,
+  type RepoStatus,
+} from "../lib/utils/repo-status";
 import { QUERY_EXECUTION_OPTIONS } from "../lib/utils/query-timeout";
 import type { ResourceSnapshot } from "../lib/utils/resource-snapshot";
 import {
@@ -364,6 +370,7 @@ function toMs(iso: string | undefined): number | null {
 }
 
 export interface StatusJson {
+  currentProject?: RepoStatus;
   stores?: StoreInventory[];
   daemon: {
     running: boolean;
@@ -403,6 +410,7 @@ export interface StatusJson {
 }
 
 export function buildStatusJson(input: {
+  currentProject?: RepoStatus;
   stores?: StoreInventory[];
   view: StatusView;
   projects: ProjectEntry[];
@@ -425,6 +433,7 @@ export function buildStatusJson(input: {
         : null);
   }
   return {
+    ...(input.currentProject ? { currentProject: input.currentProject } : {}),
     ...(input.stores ? { stores: input.stores } : {}),
     daemon: {
       running: d !== undefined,
@@ -506,6 +515,8 @@ function formatChunks(n?: number): string {
 
 export const status = new Command("status")
   .description("Show gmax index status for all projects")
+  .option("--current", "Bounded current-repo metadata and daemon ping only", false)
+  .option("--cwd <directory>", "Directory for --current (defaults to current directory)")
   .option("--agent", "Compact output for AI agents", false)
   .option(
     "--json",
@@ -518,9 +529,17 @@ export const status = new Command("status")
 Examples:
   gmax status              Show status of all indexed projects
   gmax status --json       The same, plus daemon and settings, as JSON
+  gmax status --current --json  Current repo only; no store/model/watcher startup
 `,
   )
   .action(async (opts) => {
+    if (opts.current) {
+      const current = await getRepoStatus(opts.cwd ?? process.cwd());
+      console.log(opts.json ? JSON.stringify(current) : formatRepoContext(current));
+      return;
+    }
+    if (opts.cwd) throw new Error("--cwd requires --current");
+    const currentProject = readRepoStatus();
     const globalConfig = readGlobalConfig();
     const projects = listProjects();
     const indexing = isLocked(PATHS.globalRoot);
@@ -543,6 +562,7 @@ Examples:
 
     if (opts.json) {
       const json = buildStatusJson({
+        currentProject,
         stores,
         view,
         projects,
@@ -582,6 +602,8 @@ Examples:
       );
       if (workerNotice) console.log(`  ${workerNotice}`);
     }
+
+    console.log(formatRepoContext(currentProject));
 
     if (view.daemon?.service?.mode === "paused") {
       const reason = (view.daemon.service.reason ?? "host pressure").replace(

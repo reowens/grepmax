@@ -1,19 +1,15 @@
 /**
  * Canonical agent cheatsheet — the single source of truth for the gmax command
- * survey shown to agent sessions. Consumed by two places:
- *   - `gmax help-agent` (re-summon the survey on demand, e.g. after a session
- *     has compacted away the original SessionStart injection)
- *   - the SessionStart hook (`plugins/grepmax/hooks/start.js`), which loads this
- *     compiled module from the installed package and falls back to an inline
- *     copy only if the require fails — so the two can never silently drift.
+ * survey available through `gmax help-agent`. Session hooks emit repo-specific
+ * availability from repo-status.js rather than assuming this CLI is ready.
  *
  * Keep this file as plain string data with NO imports so the hook can cheaply
  * `require()` the compiled CommonJS output.
  */
 
-/** Intro line shown only at SessionStart (not part of the on-demand command). */
+/** Compatibility intro for consumers of the exported full hint. */
 export const SESSION_START_PREFIX =
-  "gmax ready. Add --agent to any command for compact output (~89% fewer tokens).";
+  "Gmax CLI reference (availability depends on the current repo). Add --agent for compact output. MCP tools require client registration and actual catalog advertisement.";
 
 /** The command survey — Find / Understand / Survey + scope/roles/recovery. */
 export const AGENT_CHEATSHEET = `Find:
@@ -35,6 +31,7 @@ Survey:
   gmax context "topic-or-path" --budget 4000 topic summary or deterministic file/dir context
   gmax log <path-or-symbol>          git commits (replaces recent/diff)
   gmax status                        indexed projects
+  gmax status --current --json        current-repo setup (metadata + bounded ping only)
 
 Scope flags: --root <name|path>, --in <subpath>, --exclude <subpath>.
 Roles in results: [DEFI] [ORCH] [IMPL] [DOCS].
@@ -45,5 +42,5 @@ Notation: s=/d= score/distance (higher s / lower d = better; s is per-query-norm
   (not indexed) = external/builtin, no definition in the index.
 Recovery: "not added yet" → gmax add; stale → gmax index; broken → gmax doctor --fix.`;
 
-/** Full SessionStart context = prefix + cheatsheet. */
+/** Full CLI reference; this does not establish current-repo availability. */
 export const SESSION_START_HINT = `${SESSION_START_PREFIX}\n\n${AGENT_CHEATSHEET}`;

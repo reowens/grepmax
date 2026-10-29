@@ -130,6 +130,11 @@ import {
 } from "../lib/utils/path-containment";
 import { listProjects, type ProjectEntry } from "../lib/utils/project-registry";
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
+import {
+  formatRepoContext,
+  getRepoStatus,
+  readRepoStatus,
+} from "../lib/utils/repo-status";
 import { resourceBudget } from "../lib/utils/resource-budget";
 import type { ResolvedScope } from "../lib/utils/scope-filter";
 import { resolveScope } from "../lib/utils/scope-filter";
@@ -2532,6 +2537,7 @@ export const mcp = new Command("mcp")
         // per-project chunk counts) lives in `list_projects` — keep this tool
         // focused on index health and avoid the N-project LanceDB scans.
         const lines = [
+          formatRepoContext(readRepoStatus(currentRoot())),
           `Index: ${storeDir()} (${chunks} chunks, ${files} files)`,
           `Configured embedding: ${identity.configured.tier} ${identity.configured.vectorDim}d [${embeddingFingerprintLabel(identity.configured.fingerprint)}] (${globalConfig.embedMode})`,
           identity.built
@@ -3503,6 +3509,9 @@ export const mcp = new Command("mcp")
             tools: {},
           },
           instructions:
+            formatRepoContext(readRepoStatus(process.cwd())) + "\n" +
+            "Use repo_status for bounded current-repo setup/status, including unregistered roots; " +
+            "it does not open the index or start services. " +
             "gmax is a local semantic code-search index over one or more projects. " +
             "By default tools operate on the project at the server's working directory. " +
             "If you are NOT inside a specific repo, or want a different one: call " +
@@ -3633,11 +3642,31 @@ export const mcp = new Command("mcp")
         );
       }
 
+      // Unlike index-reading tools, setup discovery must also accept a repo
+      // with no registration, and must bypass withStoreContext/read fallbacks.
+      server.registerTool(
+        "repo_status",
+        {
+          description:
+            "Current-repo Gmax setup: registered root, cached index state and bounded daemon ping. No search, store/model access, leases or startup. Accepts unregistered repos. " +
+            `Launch repo index state: ${readRepoStatus(process.cwd()).indexState}.`,
+          inputSchema: z.object({
+            cwd: z.string().describe("Repo directory; defaults to server launch cwd").optional(),
+          }),
+          annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+          _meta: { "anthropic/alwaysLoad": true },
+        },
+        async (args) => {
+          const status = await getRepoStatus(args.cwd ?? process.cwd());
+          return ok(formatRepoContext(status), { ...status });
+        },
+      );
+
       tool(
         "semantic_search",
         {
           description:
-            "Search code by meaning. Use scope:'all' for cross-project. Prefer CLI: gmax \"query\" --plain",
+            "Search code by meaning in the current registered repo. Use for conceptual discovery; keep literal text/file lookup with rg. Cross-project search requires explicit scope:'all'.",
           inputSchema: {
             query: z
               .string()
@@ -3995,7 +4024,7 @@ export const mcp = new Command("mcp")
       tool(
         "index_status",
         {
-          description: "Index health: chunks, files, projects, watcher status.",
+          description: "All-project index health: chunks, files, projects, watcher status. For lightweight current-repo setup use repo_status.",
           inputSchema: {},
           _meta: { "anthropic/alwaysLoad": true },
         },
