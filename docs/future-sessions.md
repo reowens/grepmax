@@ -4,10 +4,45 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-29
 audience: internal
-summary: "SHIPPED0.26.107/source ed5b9cf: complete soft inferred-definition source/assertion/docs, one publication and normal P3 handover ready/open/active. Prior no-emit compile reused; artifact build/package passed. No unit/runtime relevance tests or measured gain."
+summary: "SHIPPED0.26.108/source 2ebdb62: per-file save coalescing complete through one publication and normal P3 handover. 15 focused cases passed once/53 skipped; one guarded local compilation/package passed. Exact107 rollback retained; fan/speedup unmeasured."
 ---
 
 # Future Sessions
+
+## Per-file save coalescing SHIPPED —0.26.108
+
+The [owning completed record](plans/gmax-delivery.md#per-file-save-coalescing--shipped-in026108)
+contains the whole ratified batch. Source `2ebdb621bda25ada7b400d968700544dbea7b853`,
+tag `v0.26.108`, [release](https://github.com/reowens/grepmax/releases/tag/v0.26.108).
+The source,15 timing fixtures, scoped README and docs are committed and included.
+Per-path2s quiet/10s maximum eligibility wait uses one project timer; ready files
+and catch-up continue. Deletion/forced work, retries, fairness, ownership, hash
+skips and unchanged-chunk reuse remain. In-flight work can still be superseded.
+
+Exactly one focused fake-clock invocation passed15 cases;53 unrelated cases
+were skipped, and test-typechecking was not run. One guarded local production
+compilation/runtime preparation and packaging passed with zero swap growth and
+owned cleanup. All335 archive files are accounted for;330 payloads are identical
+to0.26.107, with only scheduler/README/three version manifests changed. Native
+payloads, provenance and dependencies remain unchanged. One publication
+workflow40822910285 succeeded; registry bytes match the qualified archive.
+
+P3 daemon2467304 serves0.26.108 **ready/open/active** through the same unit
+and unchanged configuration, model, workers4, two-CPU quota/weight10/nice10 and
+store identities. Published staging passed in22.745s, peak
+1,169,068,032 bytes, zero swap growth and owned cleanup;
+exact prior working dependencies retained. Rollback:
+`/home/reoiv/.local/state/gmax-handover/20261029T052046Z-0.26.108/previous-install`.
+Owned marker removed; predecessor exited; earlier rollbacks preserved.
+Public receipts: `docs/plans/assets/save-coalescing-release-20261029/`;
+full local release/reconciliation: `/home/reoiv/.local/state/gmax-delivery/20261029-0.26.108/`.
+
+No additional tests, independent review, audit, profile, new measurements,
+runtime/native/model search exercise, FTS or maintenance ran. Fan/speedup gain
+remains unmeasured; prior catch-up repetition/thermal cause remains unproven.
+0.26.107 eligibility and prior FTS completion remain complete. Unrelated dirty/
+intent-to-add/private work is preserved and excluded. Keep the umbrella active,
+consume no saved prompts, return the shipped result and start no new work.
 
 ## Soft inferred-definition fix SHIPPED —0.26.107
 

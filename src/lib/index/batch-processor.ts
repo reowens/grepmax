@@ -52,7 +52,14 @@ const MAX_BATCH_SIZE = 50;
 const MAX_CATCHUP_BATCH_SIZE = 4;
 const BACKGROUND_DISPATCH_WINDOW_MS = 2000;
 const MAX_CONSECUTIVE_LIVE_BATCHES = 3;
-type PendingWork = { kind: WatchWorkKind; queuedAt: number };
+const SAVE_QUIET_MS = 2000;
+const SAVE_MAX_WAIT_MS = 10_000;
+type PendingWork = {
+  kind: WatchWorkKind;
+  queuedAt: number;
+  save?: { firstPendingAt: number; lastEventAt: number };
+  bypassQuiet?: boolean;
+};
 const WORK_PRIORITY = { live: 0, catchup: 1, cleanup: 2 };
 // Pool priority cannot preempt an active processFile, so keep one worker free
 // for latency-sensitive encodeQuery/rerank work during indexing bursts.
@@ -92,6 +99,7 @@ export class ProjectBatchProcessor {
   private forceGeneration = 0;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private debounceDueMs = 0;
+  private batchNotBeforeMs = 0;
   private activeBatch: Promise<void> | null = null;
   private processing = false;
   private closed = false;
@@ -198,7 +206,8 @@ export class ProjectBatchProcessor {
     this.enqueueWork(normalized, event, {
       kind: options?.workKind ?? "live",
       queuedAt: Date.now(),
-    });
+      bypassQuiet: options?.forceReprocess === true,
+    }, true);
     this.onActivity?.();
     this.scheduleBatch();
   }
@@ -207,29 +216,53 @@ export class ProjectBatchProcessor {
     absPath: string,
     event: "change" | "unlink",
     work: PendingWork,
+    freshEvent = false,
   ): void {
-    const previous =
-      this.pendingWork.get(absPath) ?? this.activeWork.get(absPath);
-    this.pending.set(absPath, event);
-    this.pendingWork.set(
-      absPath,
+    const pending = this.pendingWork.get(absPath);
+    const previous = pending ?? this.activeWork.get(absPath);
+    const priority =
       !previous || WORK_PRIORITY[work.kind] < WORK_PRIORITY[previous.kind]
         ? work
-        : {
-            kind: previous.kind,
-            queuedAt:
-              previous.kind === work.kind
-                ? Math.min(previous.queuedAt, work.queuedAt)
-                : previous.queuedAt,
-          },
-    );
+        : { kind: previous.kind, queuedAt: previous.queuedAt };
+    // A save during active work starts a new pending window. Only pending
+    // saves merge into it; retries and catchup never refresh the last-save time.
+    let save = pending?.save ?? (freshEvent ? undefined : work.save);
+    if (freshEvent && event === "unlink") save = undefined;
+    else if (freshEvent && work.kind === "live" && !work.bypassQuiet) {
+      save = {
+        firstPendingAt: pending?.save?.firstPendingAt ?? work.queuedAt,
+        lastEventAt: work.queuedAt,
+      };
+    }
+    this.pending.set(absPath, event);
+    this.pendingWork.set(absPath, {
+      ...priority,
+      queuedAt:
+        previous?.kind === work.kind
+          ? Math.min(previous.queuedAt, work.queuedAt)
+          : priority.queuedAt,
+      save,
+      bypassQuiet: pending?.bypassQuiet || work.bypassQuiet,
+    });
+  }
+
+  private eligibleAt(absPath: string): number {
+    const work = this.pendingWork.get(absPath);
+    const save = work?.save;
+    const quietAt =
+      this.pending.get(absPath) === "change" && !work?.bypassQuiet && save
+        ? Math.min(
+            save.lastEventAt + SAVE_QUIET_MS,
+            save.firstPendingAt + SAVE_MAX_WAIT_MS,
+          )
+        : 0;
+    return Math.max(quietAt, this.retryAt.get(absPath) ?? 0);
   }
 
   private hasReadyLiveWork(): boolean {
     const now = Date.now();
     for (const [file, work] of this.pendingWork) {
-      if (work.kind === "live" && (this.retryAt.get(file) ?? 0) <= now)
-        return true;
+      if (work.kind === "live" && this.eligibleAt(file) <= now) return true;
     }
     return false;
   }
@@ -318,7 +351,7 @@ export class ProjectBatchProcessor {
    * Events keep queuing in `pending`; an interrupted batch requeues its
    * unfinished files exactly as on close. A pending timer is kept, since it
    * may carry a corruption or disk-pressure backoff; it starts nothing while
-   * paused. `resume()` schedules the backlog if no timer remains.
+   * paused. `resume()` recalculates the backlog's readiness deadline.
    */
   async pause(): Promise<void> {
     this.paused = true;
@@ -332,54 +365,49 @@ export class ProjectBatchProcessor {
   resume(): void {
     if (!this.paused) return;
     this.paused = false;
-    // A backend backoff set while paused could not move an earlier timer
-    // (scheduleBatch was a no-op); re-arm it so the backoff is honoured.
-    if (this.debounceTimer && this.debounceDueMs < this.backendRetryAt) {
-      clearTimeout(this.debounceTimer);
-      this.debounceTimer = null;
-      this.debounceDueMs = 0;
-    }
-    // A timer that outlived the pause still owns the next start and its delay.
-    if (!this.closed && this.pending.size > 0 && !this.debounceTimer)
-      this.schedulePendingBatch();
+    this.schedulePendingBatch();
   }
 
   private scheduleBatch(delayMs = DEBOUNCE_MS): void {
-    if (this.paused) return;
-    delayMs = Math.max(delayMs, this.backendRetryAt - Date.now());
-    const dueMs = Date.now() + Math.max(0, delayMs);
-    if (
-      this.debounceTimer &&
-      this.debounceDueMs <= dueMs &&
-      this.debounceDueMs >= this.backendRetryAt
-    )
-      return;
-    if (this.debounceTimer) clearTimeout(this.debounceTimer);
-    this.debounceDueMs = dueMs;
-    this.debounceTimer = setTimeout(
-      () => {
-        this.debounceTimer = null;
-        this.debounceDueMs = 0;
-        this.startBatch();
-      },
-      Math.max(0, delayMs),
-    );
+    if (this.closed || this.paused) return;
+    // Keep the project's original batching floor while recalculating the
+    // per-path quiet deadlines, which can move either earlier or later.
+    if (!this.activeBatch && !this.debounceTimer)
+      this.batchNotBeforeMs = Math.max(
+        this.batchNotBeforeMs,
+        Date.now() + delayMs,
+      );
+    this.schedulePendingBatch(0);
   }
 
   private schedulePendingBatch(defaultDelayMs = DEBOUNCE_MS): void {
+    if (this.closed || this.paused) return;
     const now = Date.now();
-    let earliestRetryMs = Number.POSITIVE_INFINITY;
-    for (const absPath of this.pending.keys()) {
-      const retryAt = this.retryAt.get(absPath) ?? 0;
-      if (retryAt <= now) {
-        this.scheduleBatch(defaultDelayMs);
-        return;
-      }
-      earliestRetryMs = Math.min(earliestRetryMs, retryAt - now);
+    if (defaultDelayMs > 0)
+      this.batchNotBeforeMs = Math.max(
+        this.batchNotBeforeMs,
+        now + defaultDelayMs,
+      );
+    // The active batch (including a mutex waiter) schedules after settling.
+    if (this.activeBatch) return;
+    let next = Number.POSITIVE_INFINITY;
+    for (const absPath of this.pending.keys())
+      next = Math.min(next, this.eligibleAt(absPath));
+    if (!Number.isFinite(next)) {
+      if (this.debounceTimer) clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+      this.debounceDueMs = 0;
+      return;
     }
-    this.scheduleBatch(
-      Number.isFinite(earliestRetryMs) ? earliestRetryMs : defaultDelayMs,
-    );
+    const dueMs = Math.max(now, next, this.batchNotBeforeMs, this.backendRetryAt);
+    if (this.debounceTimer && this.debounceDueMs === dueMs) return;
+    if (this.debounceTimer) clearTimeout(this.debounceTimer);
+    this.debounceDueMs = dueMs;
+    this.debounceTimer = setTimeout(() => {
+      this.debounceTimer = null;
+      this.debounceDueMs = 0;
+      this.startBatch();
+    }, dueMs - now);
   }
 
   private startBatch(): void {
@@ -400,6 +428,7 @@ export class ProjectBatchProcessor {
     void run.finally(() => {
       if (this.activeBatch === run) this.activeBatch = null;
       if (this.batchStartAc === startAc) this.batchStartAc = null;
+      this.schedulePendingBatch(0);
     });
   }
 
@@ -430,7 +459,7 @@ export class ProjectBatchProcessor {
       cleanup: [],
     };
     for (const absPath of this.pending.keys()) {
-      if ((this.retryAt.get(absPath) ?? 0) > now) continue;
+      if (this.eligibleAt(absPath) > now) continue;
       const kind = this.pendingWork.get(absPath)?.kind ?? "live";
       if (ready[kind].length < MAX_BATCH_SIZE) ready[kind].push(absPath);
     }
@@ -463,7 +492,7 @@ export class ProjectBatchProcessor {
       }
     }
     if (batch.size === 0) {
-      this.schedulePendingBatch(30_000);
+      this.schedulePendingBatch(0);
       return;
     }
 
@@ -519,7 +548,10 @@ export class ProjectBatchProcessor {
         event: "change" | "unlink",
         failed: boolean,
       ) => {
-        if (this.pending.has(absPath)) return;
+        if (this.pending.has(absPath)) {
+          this.enqueueWork(absPath, this.pending.get(absPath)!, batchWork.get(absPath)!);
+          return;
+        }
         if (failed) {
           const retry = computePathRetry(
             this.retryCount.get(absPath) ?? 0,
@@ -957,17 +989,12 @@ export class ProjectBatchProcessor {
       }
       this.activeWork = new Map();
       if (!this.closed && this.pending.size > 0) {
-        if (backoffOverrideMs > 0) {
-          if (this.debounceTimer) clearTimeout(this.debounceTimer);
-          this.debounceDueMs = Date.now() + backoffOverrideMs;
-          this.debounceTimer = setTimeout(() => {
-            this.debounceTimer = null;
-            this.debounceDueMs = 0;
-            this.startBatch();
-          }, backoffOverrideMs);
-        } else {
-          this.schedulePendingBatch();
-        }
+        if (backoffOverrideMs > 0)
+          this.batchNotBeforeMs = Math.max(
+            this.batchNotBeforeMs,
+            Date.now() + backoffOverrideMs,
+          );
+        this.schedulePendingBatch(backoffOverrideMs > 0 ? 0 : DEBOUNCE_MS);
       }
       if (!this.closed) this.onBatchSettled?.();
     }

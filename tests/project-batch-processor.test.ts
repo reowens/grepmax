@@ -75,6 +75,27 @@ describe("ProjectBatchProcessor", () => {
     return processor;
   }
 
+  function makeSavesReady(processor: any): void {
+    for (const work of processor.pendingWork.values()) {
+      if (work.save) {
+        work.save = {
+          firstPendingAt: Date.now() - 10_000,
+          lastEventAt: Date.now() - 2_000,
+        };
+      }
+    }
+  }
+
+  function startReadyBatch(processor: any): void {
+    makeSavesReady(processor);
+    processor.startBatch();
+  }
+
+  function processReadyBatch(processor: any): Promise<void> {
+    makeSavesReady(processor);
+    return processor.processBatch(new AbortController().signal);
+  }
+
   function makeFiles(count: number): string[] {
     const files = [filePath];
     for (let i = 1; i < count; i++) {
@@ -84,6 +105,276 @@ describe("ProjectBatchProcessor", () => {
     }
     return files;
   }
+
+  describe("per-file quiet scheduling", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-10-29T05:00:00Z"));
+      pool.processFile.mockImplementation(async (input: { path: string }) =>
+        makeWorkerResult(input.path),
+      );
+    });
+
+    function scheduled(extra: Parameters<typeof makeProcessor>[0] = {}) {
+      return makeProcessor({
+        filePolicy: {
+          isLexicallyContained: () => true,
+          isPolicyFile: () => false,
+          classifyFile: async (candidate: string) =>
+            fs.existsSync(candidate)
+              ? { status: "indexable", stat: fs.statSync(candidate) }
+              : { status: "missing" },
+        } as any,
+        ...extra,
+      }) as any;
+    }
+
+    async function advance(_processor: any, milliseconds: number) {
+      await vi.advanceTimersByTimeAsync(milliseconds);
+    }
+
+    it("coalesces five saves until two seconds after the last save", async () => {
+      const p = scheduled();
+      p.handleFileEvent("change", filePath);
+      for (let i = 0; i < 4; i++) {
+        await advance(p, 300);
+        p.handleFileEvent("change", filePath);
+        expect(vi.getTimerCount()).toBe(1);
+      }
+      expect(p.progress.pendingFiles).toBe(1);
+      await advance(p, 1999);
+      expect(pool.processFile).not.toHaveBeenCalled();
+      await advance(p, 1);
+      await p.activeBatch;
+      expect(pool.processFile).toHaveBeenCalledOnce();
+      expect(p.progress.pendingFiles).toBe(0);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("an earlier project timer runs a ready file without admitting a hot file", async () => {
+      const [hot, ready] = makeFiles(2);
+      const p = scheduled();
+      p.handleFileEvent("change", ready);
+      await advance(p, 1000);
+      p.handleFileEvent("change", hot);
+      await advance(p, 900);
+      p.handleFileEvent("change", hot);
+      await advance(p, 100);
+      await p.activeBatch;
+      expect(pool.processFile.mock.calls.map(([input]: any[]) => input.path)).toEqual([ready]);
+      await advance(p, 1999);
+      expect(pool.processFile).toHaveBeenCalledOnce();
+      await advance(p, 1);
+      await p.activeBatch;
+      expect(pool.processFile.mock.calls[1][0].path).toBe(hot);
+    });
+
+    it("admits continuous saves at the original ten-second eligibility bound", async () => {
+      const p = scheduled();
+      p.handleFileEvent("change", filePath);
+      for (let i = 0; i < 9; i++) {
+        await advance(p, 1000);
+        p.handleFileEvent("change", filePath);
+      }
+      await advance(p, 999);
+      expect(pool.processFile).not.toHaveBeenCalled();
+      await advance(p, 1);
+      await p.activeBatch;
+      expect(pool.processFile).toHaveBeenCalledOnce();
+      p.handleFileEvent("change", filePath);
+      const save = p.pendingWork.get(filePath).save;
+      expect(save.firstPendingAt).toBe(Date.now());
+    });
+
+    it("continues ready catchup past a hot first path without a quiet delay", async () => {
+      const [hot, background] = makeFiles(2);
+      const p = scheduled();
+      p.handleFileEvent("change", hot);
+      p.handleFileEvent("change", background, { workKind: "catchup" });
+      await advance(p, 1000);
+      p.handleFileEvent("change", hot);
+      await advance(p, 1000);
+      await p.activeBatch;
+      expect(pool.processFile.mock.calls.map(([input]: any[]) => input.path)).toEqual([background]);
+      expect(p.progress.queue.live).toBe(1);
+    });
+
+    it("merges in-flight saves into one fresh followup and rejects the stale result", async () => {
+      const p = scheduled();
+      let finish!: (result: ReturnType<typeof makeWorkerResult>) => void;
+      const old = makeWorkerResult(filePath);
+      pool.processFile.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+      p.handleFileEvent("change", filePath);
+      await advance(p, 2000);
+      expect(pool.processFile).toHaveBeenCalledOnce();
+      for (let i = 0; i < 3; i++) {
+        await advance(p, 100);
+        fs.writeFileSync(filePath, `export const sample = ${i}; // changed content\n`);
+        p.handleFileEvent("change", filePath);
+      }
+      expect(p.progress.pendingFiles).toBe(1);
+      expect(p.pendingWork.get(filePath).save).toEqual({
+        firstPendingAt: Date.now() - 200,
+        lastEventAt: Date.now(),
+      });
+      finish(old);
+      await p.activeBatch;
+      expect(metaCache.put).not.toHaveBeenCalled();
+      await advance(p, 1999);
+      expect(pool.processFile).toHaveBeenCalledOnce();
+      await advance(p, 1);
+      await p.activeBatch;
+      expect(pool.processFile).toHaveBeenCalledTimes(2);
+      expect(p.progress.pendingFiles).toBe(0);
+    });
+
+    it("skips an unchanged followup when the active snapshot already covers it", async () => {
+      const p = scheduled();
+      let finish!: (result: ReturnType<typeof makeWorkerResult>) => void;
+      pool.processFile.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+      p.handleFileEvent("change", filePath);
+      await advance(p, 2000);
+      await advance(p, 100);
+      p.handleFileEvent("change", filePath);
+      p.handleFileEvent("change", filePath);
+      finish(makeWorkerResult(filePath));
+      await p.activeBatch;
+      await advance(p, 2000);
+      await p.activeBatch;
+      expect(pool.processFile).toHaveBeenCalledOnce();
+      expect(p.progress.pendingFiles).toBe(0);
+    });
+
+    it("does not re-age live saves on catchup or internal retry bookkeeping", async () => {
+      const p = scheduled();
+      p.handleFileEvent("change", filePath);
+      const original = p.pendingWork.get(filePath);
+      await advance(p, 1000);
+      p.handleFileEvent("change", filePath, { workKind: "catchup" });
+      p.enqueueWork(filePath, "change", original);
+      expect(p.pendingWork.get(filePath).save).toEqual(original.save);
+      await advance(p, 1000);
+      await p.activeBatch;
+      expect(pool.processFile).toHaveBeenCalledOnce();
+    });
+
+    it("does not postpone unlink cleanup when a save was hot", async () => {
+      const p = scheduled();
+      p.handleFileEvent("change", filePath);
+      await advance(p, 1000);
+      fs.unlinkSync(filePath);
+      p.handleFileEvent("unlink", filePath);
+      await advance(p, 1000);
+      await p.activeBatch;
+      expect(pool.processFile).not.toHaveBeenCalled();
+      expect(vectorDb.deletePaths).toHaveBeenCalledWith([filePath]);
+    });
+
+    it("gives a recreated path a fresh quiet window after an unlink", async () => {
+      const p = scheduled();
+      p.handleFileEvent("unlink", filePath);
+      await advance(p, 1000);
+      p.handleFileEvent("change", filePath);
+      await advance(p, 1999);
+      expect(pool.processFile).not.toHaveBeenCalled();
+      await advance(p, 1);
+      await p.activeBatch;
+      expect(pool.processFile).toHaveBeenCalledOnce();
+    });
+
+    it("preserves forced repair urgency when an ordinary save follows", async () => {
+      const p = scheduled();
+      p.handleFileEvent("change", filePath);
+      await advance(p, 1000);
+      p.handleFileEvent("change", filePath, { forceReprocess: true });
+      p.handleFileEvent("change", filePath);
+      await advance(p, 1000);
+      await p.activeBatch;
+      expect(pool.processFile).toHaveBeenCalledOnce();
+      expect(p.forcedReprocess.size).toBe(0);
+    });
+
+    it("retains a newer forced generation arriving during active repair", async () => {
+      const p = scheduled();
+      let finish!: (result: ReturnType<typeof makeWorkerResult>) => void;
+      pool.processFile.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+      p.handleFileEvent("change", filePath, { forceReprocess: true });
+      await advance(p, 2000);
+      await advance(p, 100);
+      p.handleFileEvent("change", filePath, { forceReprocess: true });
+      finish(makeWorkerResult(filePath));
+      await p.activeBatch;
+      expect(p.forcedReprocess.size).toBe(1);
+      await advance(p, 2000);
+      await p.activeBatch;
+      expect(pool.processFile).toHaveBeenCalledTimes(2);
+      expect(p.forcedReprocess.size).toBe(0);
+    });
+
+    it("preserves save timestamps while paused and the resume scheduling floor", async () => {
+      const p = scheduled();
+      await p.pause();
+      const first = Date.now();
+      p.handleFileEvent("change", filePath);
+      await advance(p, 1000);
+      p.handleFileEvent("change", filePath);
+      await advance(p, 3000);
+      expect(pool.processFile).not.toHaveBeenCalled();
+      expect(p.pendingWork.get(filePath).save).toEqual({ firstPendingAt: first, lastEventAt: first + 1000 });
+      p.resume();
+      await advance(p, 1999);
+      expect(pool.processFile).not.toHaveBeenCalled();
+      await advance(p, 1);
+      await p.activeBatch;
+      expect(pool.processFile).toHaveBeenCalledOnce();
+    });
+
+    it("closes the only pending timer and ignores later events", async () => {
+      const p = scheduled();
+      p.handleFileEvent("change", filePath);
+      await p.close();
+      p.handleFileEvent("change", filePath);
+      await advance(p, 20_000);
+      expect(pool.processFile).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("rechecks quiet readiness after a project mutex wait", async () => {
+      const mutex = new KeyedMutex();
+      let release!: () => void;
+      const holder = mutex.run(tmpDir, undefined, () => new Promise<void>(resolve => { release = resolve; }));
+      const p = scheduled({ runOperation: (execute, signal) => mutex.run(tmpDir, signal, () => execute(signal)) });
+      p.handleFileEvent("change", filePath);
+      await advance(p, 2000);
+      await advance(p, 500);
+      p.handleFileEvent("change", filePath);
+      release();
+      await holder;
+      await p.activeBatch;
+      expect(pool.processFile).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(1);
+      await advance(p, 1999);
+      expect(pool.processFile).not.toHaveBeenCalled();
+      await advance(p, 1);
+      await p.activeBatch;
+      expect(pool.processFile).toHaveBeenCalledOnce();
+    });
+
+    it("honors backend and per-path retry deadlines without busy wakeups", async () => {
+      const p = scheduled();
+      p.handleFileEvent("change", filePath);
+      p.backendRetryAt = Date.now() + 5000;
+      p.retryAt.set(filePath, Date.now() + 7000);
+      p.schedulePendingBatch(0);
+      expect(vi.getTimerCount()).toBe(1);
+      await advance(p, 6999);
+      expect(pool.processFile).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(1);
+      await advance(p, 1);
+      await p.activeBatch;
+      expect(pool.processFile).toHaveBeenCalledOnce();
+    });
+  });
 
   it("indexes a live edit ahead of a 11000-path catchup/cleanup backlog", async () => {
     const processor = makeProcessor() as any;
@@ -106,7 +397,7 @@ describe("ProjectBatchProcessor", () => {
       cleanup: 1000,
       activeFiles: 0,
     });
-    await processor.processBatch(new AbortController().signal);
+    await processReadyBatch(processor);
     expect(pool.processFile).toHaveBeenCalledOnce();
     expect(pool.processFile.mock.calls[0][0].path).toBe(filePath);
     expect(meta.has(filePath)).toBe(true);
@@ -131,9 +422,10 @@ describe("ProjectBatchProcessor", () => {
     const processor = makeProcessor({ concurrency: 3 }) as any;
     for (const file of files)
       processor.handleFileEvent("change", file, { workKind: "catchup" });
-    const background = processor.processBatch(new AbortController().signal);
+    const background = processReadyBatch(processor);
     await vi.waitFor(() => expect(pool.processFile).toHaveBeenCalledOnce());
     processor.handleFileEvent("change", fresh);
+    makeSavesReady(processor);
     finish(makeWorkerResult(files[0]));
     await background;
     expect(pool.processFile).toHaveBeenCalledOnce();
@@ -145,7 +437,7 @@ describe("ProjectBatchProcessor", () => {
       activeFiles: 0,
     });
     expect(processor.retryCount.size).toBe(0);
-    await processor.processBatch(new AbortController().signal);
+    await processReadyBatch(processor);
     expect(pool.processFile.mock.calls[1][0].path).toBe(fresh);
     expect(meta.has(fresh)).toBe(true);
   });
@@ -161,7 +453,7 @@ describe("ProjectBatchProcessor", () => {
       const processor = makeProcessor() as any;
       for (const file of files)
         processor.handleFileEvent("change", file, { workKind: "catchup" });
-      await processor.processBatch(new AbortController().signal);
+      await processReadyBatch(processor);
       expect(pool.processFile).toHaveBeenCalledOnce();
       expect(processor.progress.queue.catchup).toBe(7);
       expect(processor.progress.failedFiles).toBe(0);
@@ -185,7 +477,7 @@ describe("ProjectBatchProcessor", () => {
     });
     for (let round = 1; round <= 8; round++) {
       processor.handleFileEvent("change", files[round]);
-      await processor.processBatch(new AbortController().signal);
+      await processReadyBatch(processor);
     }
     expect(meta.has(files[0])).toBe(true);
     expect(
@@ -215,7 +507,7 @@ describe("ProjectBatchProcessor", () => {
       pool.processFile.mockRejectedValueOnce(
         new EmbeddingBackendUnavailableError("offline"),
       );
-      await processor.processBatch(new AbortController().signal);
+      await processReadyBatch(processor);
       now.mockReturnValue(10000);
       expect(processor.progress.queue.oldestLiveEditAgeMs).toBe(4000);
       expect(processor.progress.queue.live).toBe(1);
@@ -237,7 +529,7 @@ describe("ProjectBatchProcessor", () => {
             finish = resolve;
           }),
       );
-      const active = processor.processBatch(new AbortController().signal);
+      const active = processReadyBatch(processor);
       await vi.waitFor(() => expect(pool.processFile).toHaveBeenCalledOnce());
       now.mockReturnValue(3500);
       expect(processor.progress.queue).toMatchObject({
@@ -264,7 +556,7 @@ describe("ProjectBatchProcessor", () => {
     );
     processor.handleFileEvent("change", filePath);
     for (let i = 0; i < 8; i++) {
-      await processor.processBatch(new AbortController().signal);
+      await processReadyBatch(processor);
       expect(processor.progress.failedFiles).toBe(0);
       expect(processor.retryCount.size).toBe(0);
       expect(processor.pending.has(filePath)).toBe(true);
@@ -274,7 +566,7 @@ describe("ProjectBatchProcessor", () => {
     expect(vectorDb.deletePaths).not.toHaveBeenCalled();
     expect(metaCache.put).not.toHaveBeenCalled();
     pool.processFile.mockResolvedValue(makeWorkerResult(filePath));
-    await processor.processBatch(new AbortController().signal);
+    await processReadyBatch(processor);
     expect(processor.pending.size).toBe(0);
     expect(processor.backendRetryAt).toBe(0);
     expect(metaCache.put).toHaveBeenCalled();
@@ -305,7 +597,7 @@ describe("ProjectBatchProcessor", () => {
     const q = queueBehindHeldLock();
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     q.processor.handleFileEvent("change", filePath);
-    q.processor.startBatch();
+    startReadyBatch(q.processor);
     await expect(q.processor.close()).resolves.toBeUndefined();
     expect(q.admitted).not.toHaveBeenCalled();
     expect(spy).not.toHaveBeenCalled();
@@ -318,14 +610,14 @@ describe("ProjectBatchProcessor", () => {
   it("pause cancels a queued batch and keeps its files for resume", async () => {
     const q = queueBehindHeldLock();
     q.processor.handleFileEvent("change", filePath);
-    q.processor.startBatch();
+    startReadyBatch(q.processor);
     await expect(q.processor.pause()).resolves.toBeUndefined();
     expect(q.admitted).not.toHaveBeenCalled();
     expect(q.processor.pending.has(filePath)).toBe(true);
     q.release();
     await q.holder;
     q.processor.resume();
-    q.processor.startBatch();
+    startReadyBatch(q.processor);
     await q.processor.activeBatch;
     expect(q.admitted).toHaveBeenCalledOnce();
     expect(q.processor.pending.size).toBe(0);
@@ -340,7 +632,7 @@ describe("ProjectBatchProcessor", () => {
     }) as any;
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     processor.handleFileEvent("change", filePath);
-    processor.startBatch();
+    startReadyBatch(processor);
     await processor.activeBatch;
     expect(spy).not.toHaveBeenCalled();
     expect(processor.retryCount.size).toBe(0);
@@ -372,7 +664,7 @@ describe("ProjectBatchProcessor", () => {
 
     const processor = makeProcessor();
     processor.handleFileEvent("change", filePath);
-    (processor as any).startBatch();
+    startReadyBatch(processor);
 
     await vi.waitFor(() => expect(pool.processFile).toHaveBeenCalledTimes(1));
 
@@ -400,7 +692,7 @@ describe("ProjectBatchProcessor", () => {
 
     const processor = makeProcessor();
     processor.handleFileEvent("change", filePath);
-    (processor as any).startBatch();
+    startReadyBatch(processor);
 
     await vi.waitFor(() => expect(pool.processFile).toHaveBeenCalledTimes(1));
     const activeBatch = (processor as any).activeBatch as Promise<void>;
@@ -417,7 +709,7 @@ describe("ProjectBatchProcessor", () => {
     await processor.pause();
     processor.handleFileEvent("change", filePath);
     expect((processor as any).debounceTimer).toBeNull();
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     expect((processor as any).activeBatch).toBeNull();
     await vi.advanceTimersByTimeAsync(10_000);
     expect(pool.processFile).not.toHaveBeenCalled();
@@ -440,7 +732,7 @@ describe("ProjectBatchProcessor", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const processor = makeProcessor() as any;
     processor.handleFileEvent("change", filePath);
-    processor.startBatch();
+    startReadyBatch(processor);
     await processor.activeBatch;
     const writes = () =>
       vectorDb.deletePaths.mock.calls.length +
@@ -500,7 +792,7 @@ describe("ProjectBatchProcessor", () => {
     const processor = makeProcessor({ concurrency: 3 });
     for (const file of files) processor.handleFileEvent("change", file);
 
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await vi.waitFor(() => expect(pool.processFile).toHaveBeenCalledTimes(3));
     expect(maxActive).toBe(3);
 
@@ -538,7 +830,7 @@ describe("ProjectBatchProcessor", () => {
     const processor = makeProcessor({ concurrency: 3 });
     for (const file of files) processor.handleFileEvent("change", file);
 
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     let resolved = 0;
     while (resolved < files.length) {
       await vi.waitFor(() => expect(pending.length).toBeGreaterThan(resolved));
@@ -564,7 +856,7 @@ describe("ProjectBatchProcessor", () => {
     const processor = makeProcessor({ concurrency: 1 });
     for (const file of files) processor.handleFileEvent("change", file);
 
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await vi.waitFor(() => expect(pool.processFile).toHaveBeenCalledTimes(1));
     pending[0].resolve(makeWorkerResult(pending[0].path));
     await vi.waitFor(() => expect(pool.processFile).toHaveBeenCalledTimes(2));
@@ -590,7 +882,7 @@ describe("ProjectBatchProcessor", () => {
     const processor = makeProcessor({ concurrency: 3 });
     for (const file of files) processor.handleFileEvent("change", file);
 
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     // Settle each full wave of three in reverse dispatch order.
     for (let wave = 1; wave <= 3; wave++) {
       await vi.waitFor(() =>
@@ -624,7 +916,7 @@ describe("ProjectBatchProcessor", () => {
     const processor = makeProcessor({ concurrency: 3 });
     for (const file of files) processor.handleFileEvent("change", file);
 
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await vi.waitFor(() => expect(pool.processFile).toHaveBeenCalledTimes(3));
     (processor as any).currentBatchAc.abort();
     await (processor as any).activeBatch;
@@ -641,7 +933,7 @@ describe("ProjectBatchProcessor", () => {
     const processor = makeProcessor({ concurrency: 2 });
     for (const file of files) processor.handleFileEvent("change", file);
 
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await (processor as any).activeBatch;
 
     expect(pool.processFile.mock.calls.length).toBeLessThanOrEqual(3);
@@ -658,7 +950,7 @@ describe("ProjectBatchProcessor", () => {
     const processor = makeProcessor({ concurrency: 3 });
     for (const file of files) processor.handleFileEvent("change", file);
 
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await (processor as any).activeBatch;
 
     const progress = writeSpy.mock.calls
@@ -677,7 +969,7 @@ describe("ProjectBatchProcessor", () => {
     const processor = makeProcessor();
 
     processor.handleFileEvent("change", sensitive);
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await (processor as any).activeBatch;
 
     expect(pool.processFile).not.toHaveBeenCalled();
@@ -701,7 +993,7 @@ describe("ProjectBatchProcessor", () => {
     const processor = makeProcessor();
 
     processor.handleFileEvent("change", filePath, { forceReprocess: true });
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await (processor as any).activeBatch;
 
     expect(pool.processFile).toHaveBeenCalledOnce();
@@ -736,7 +1028,7 @@ describe("ProjectBatchProcessor", () => {
     const processor = makeProcessor();
 
     processor.handleFileEvent("change", filePath, { forceReprocess: true });
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await vi.waitFor(() => expect(pool.processFile).toHaveBeenCalledOnce());
 
     processor.handleFileEvent("change", filePath, { forceReprocess: true });
@@ -744,7 +1036,7 @@ describe("ProjectBatchProcessor", () => {
     await (processor as any).activeBatch;
     expect(processor.progress.pendingFiles).toBe(1);
 
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await (processor as any).activeBatch;
     expect(pool.processFile).toHaveBeenCalledTimes(2);
   });
@@ -754,7 +1046,7 @@ describe("ProjectBatchProcessor", () => {
     const processor = makeProcessor();
 
     processor.handleFileEvent("unlink", orphan, { forceDelete: true });
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await (processor as any).activeBatch;
 
     expect(vectorDb.deletePaths).toHaveBeenCalledWith([orphan]);
@@ -767,7 +1059,7 @@ describe("ProjectBatchProcessor", () => {
     const processor = makeProcessor({ onPolicyChange });
 
     processor.handleFileEvent("unlink", policyFile, { forceDelete: true });
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await (processor as any).activeBatch;
 
     expect(onPolicyChange).not.toHaveBeenCalled();
@@ -824,7 +1116,7 @@ describe("ProjectBatchProcessor", () => {
     const processor = makeProcessor({ filePolicy: errorPolicy });
 
     processor.handleFileEvent("change", filePath);
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await (processor as any).activeBatch;
 
     expect(vectorDb.deletePaths).not.toHaveBeenCalled();
@@ -857,7 +1149,7 @@ describe("ProjectBatchProcessor", () => {
     const processor = makeProcessor({ filePolicy: transientPolicy });
 
     processor.handleFileEvent("change", filePath);
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await (processor as any).activeBatch;
     expect(processor.progress.pendingFiles).toBe(1);
     expect((processor as any).retryCount.get(filePath)).toBe(1);
@@ -882,7 +1174,7 @@ describe("ProjectBatchProcessor", () => {
     const processor = makeProcessor();
 
     processor.handleFileEvent("change", filePath);
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await vi.waitFor(() => expect(pool.processFile).toHaveBeenCalledOnce());
     processor.handleFileEvent("unlink", filePath);
     rejectWorker(new Error("transient worker failure"));
@@ -911,7 +1203,7 @@ describe("ProjectBatchProcessor", () => {
     processor.handleFileEvent("change", filePath);
     (processor as any).retryCount.set(filePath, 4);
 
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await (processor as any).activeBatch;
 
     expect(processor.progress.pendingFiles).toBe(0);
@@ -960,7 +1252,7 @@ describe("ProjectBatchProcessor", () => {
     processor.handleFileEvent("change", otherPath);
     (processor as any).retryCount.set(filePath, 4);
 
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await (processor as any).activeBatch;
 
     expect((processor as any).terminalFailures.has(filePath)).toBe(true);
@@ -978,7 +1270,7 @@ describe("ProjectBatchProcessor", () => {
     const processor = makeProcessor();
 
     processor.handleFileEvent("change", sensitive);
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await (processor as any).activeBatch;
 
     expect(processor.progress.pendingFiles).toBe(1);
@@ -998,7 +1290,7 @@ describe("ProjectBatchProcessor", () => {
     const processor = makeProcessor();
 
     processor.handleFileEvent("unlink", filePath);
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await (processor as any).activeBatch;
 
     expect(pool.processFile).not.toHaveBeenCalled();
@@ -1018,7 +1310,7 @@ describe("ProjectBatchProcessor", () => {
     const processor = makeProcessor();
 
     processor.handleFileEvent("unlink", filePath);
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await (processor as any).activeBatch;
 
     expect(meta.get(filePath)).toBe(cached);
@@ -1035,7 +1327,7 @@ describe("ProjectBatchProcessor", () => {
 
     processor.handleFileEvent("unlink", removed);
     processor.handleFileEvent("change", filePath);
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await (processor as any).activeBatch;
 
     expect(pool.processFile).not.toHaveBeenCalled();
@@ -1053,7 +1345,7 @@ describe("ProjectBatchProcessor", () => {
     const processor = makeProcessor();
 
     processor.handleFileEvent("change", sensitive);
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await (processor as any).activeBatch;
 
     expect(pool.processFile).not.toHaveBeenCalled();
@@ -1071,7 +1363,7 @@ describe("ProjectBatchProcessor", () => {
     const processor = makeProcessor();
 
     processor.handleFileEvent("change", filePath);
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await (processor as any).activeBatch;
 
     expect(vectorDb.checkDiskPressure).toHaveBeenCalledOnce();
@@ -1084,7 +1376,7 @@ describe("ProjectBatchProcessor", () => {
     const processor = makeProcessor();
 
     processor.handleFileEvent("change", filePath);
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await (processor as any).activeBatch;
 
     expect(processor.progress.pendingFiles).toBe(1);
@@ -1096,7 +1388,7 @@ describe("ProjectBatchProcessor", () => {
     const processor = makeProcessor();
 
     processor.handleFileEvent("unlink", filePath);
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await (processor as any).activeBatch;
 
     expect(pool.processFile).toHaveBeenCalledOnce();
@@ -1126,7 +1418,7 @@ describe("ProjectBatchProcessor", () => {
     const processor = makeProcessor({ filePolicy: recreatedPolicy });
 
     processor.handleFileEvent("unlink", filePath);
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await (processor as any).activeBatch;
 
     expect(vectorDb.deletePaths).not.toHaveBeenCalled();
@@ -1141,7 +1433,7 @@ describe("ProjectBatchProcessor", () => {
       const processor = makeProcessor({ projectRoot: alias });
       processor.handleFileEvent("change", fs.realpathSync(filePath));
       expect(processor.progress.pendingFiles).toBe(1);
-      (processor as any).startBatch();
+      startReadyBatch(processor);
       await (processor as any).activeBatch;
 
       expect(pool.processFile).toHaveBeenCalledWith(
@@ -1176,7 +1468,7 @@ describe("ProjectBatchProcessor", () => {
     const processor = makeProcessor({ filePolicy: changingPolicy });
 
     processor.handleFileEvent("change", filePath);
-    (processor as any).startBatch();
+    startReadyBatch(processor);
     await (processor as any).activeBatch;
 
     expect(vectorDb.insertBatch).not.toHaveBeenCalled();
@@ -1220,7 +1512,7 @@ describe("ProjectBatchProcessor", () => {
       const processor = makeProcessor();
 
       processor.handleFileEvent("change", filePath);
-      (processor as any).startBatch();
+      startReadyBatch(processor);
       await (processor as any).activeBatch;
 
       expect(vectorDb.getReusableEmbeddings).toHaveBeenCalledWith(filePath);
@@ -1240,7 +1532,7 @@ describe("ProjectBatchProcessor", () => {
       const processor = makeProcessor();
 
       processor.handleFileEvent("change", filePath, { forceReprocess: true });
-      (processor as any).startBatch();
+      startReadyBatch(processor);
       await (processor as any).activeBatch;
 
       expect(vectorDb.getReusableEmbeddings).not.toHaveBeenCalled();
@@ -1252,7 +1544,7 @@ describe("ProjectBatchProcessor", () => {
       const processor = makeProcessor();
 
       processor.handleFileEvent("change", filePath);
-      (processor as any).startBatch();
+      startReadyBatch(processor);
       await (processor as any).activeBatch;
 
       expect(vectorDb.getReusableEmbeddings).not.toHaveBeenCalled();
@@ -1266,7 +1558,7 @@ describe("ProjectBatchProcessor", () => {
       const processor = makeProcessor();
 
       processor.handleFileEvent("change", filePath);
-      (processor as any).startBatch();
+      startReadyBatch(processor);
       await (processor as any).activeBatch;
 
       expect(pool.processFile).toHaveBeenCalledOnce();
@@ -1287,7 +1579,7 @@ describe("ProjectBatchProcessor", () => {
       const processor = makeProcessor();
 
       processor.handleFileEvent("change", filePath);
-      (processor as any).startBatch();
+      startReadyBatch(processor);
       await (processor as any).activeBatch;
 
       expect(vectorDb.insertBatch).not.toHaveBeenCalled();

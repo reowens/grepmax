@@ -1,0 +1,15 @@
+{
+  "focusedTestInvocations": 1,
+  "focusedCasesPassed": 15,
+  "unselectedCasesSkipped": 53,
+  "testTypecheck": false,
+  "localProductionCompilations": 1,
+  "independentReview": false,
+  "audits": false,
+  "profiles": 0,
+  "runtimeFeatureOrSearchQueries": 0,
+  "nativeModelTests": 0,
+  "fanOrSpeedupGainMeasured": false,
+  "purpose": "Reduce intermediate save selection; does not eliminate in-flight discarded work or establish cause of previous catchup counts",
+  "unrelatedDirtyWorkExcluded": true
+}
