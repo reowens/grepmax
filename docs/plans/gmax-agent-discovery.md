@@ -15,12 +15,30 @@ qualified Rust 12 remains unchanged. No memory/fan/relevance gain is established
 Standard Codex registration was missing and is now repaired (`gmax`, `["mcp"]`),
 with other configuration preserved. The direct server advertised 28 tools,
 including `repo_status` and `semantic_search`; Gmax was not_registered and
-Platform indexed. At the retained active-provider check, its catalog still had
-301 entries and no Gmax tools. Reconnect/consume standard registration and confirm
-actual tool visibility; attachment is **not verified**. No T3 adapter/code change
-or automatic cwd catalog refresh is required or promised. These are retained
-observations, not fresh checks during this docs-only update. See the
-[README workflow](../../README.md#current-repo-status).
+Platform indexed. The earlier October 29 retained active-provider catalog had
+301 entries and no Gmax tools; that remains a dated prior observation. The direct
+listing and registration did not establish parent attachment at that stage.
+See the [README workflow](../../README.md#current-repo-status).
+
+## Selected item 1 complete — parent catalog confirmation
+
+**Selected item 1 — agent visibility: COMPLETE for the parent provider.**
+On October 29, 2026 the parent reported its current actual `ALL_TOOLS` scan:
+**329 tools including 28 `mcp__gmax__` tools**, including
+`mcp__gmax__repo_status` and `mcp__gmax__semantic_search`. All 28 descriptions
+identify current repo `<gmax-checkout>`,
+`index=not_registered`, `matchedRoot=null`, `daemon=unobserved`.
+This is actual parent catalog advertisement, superseding the earlier retained
+301/no-Gmax parent visibility result; it is not inferred from CLI configuration
+or the direct server's 28-tool listing. No reconnect/configuration change is
+needed for this selected parent goal.
+
+The owner's separate child catalog scan still has **301 tools / zero Gmax tools**.
+Parent visibility is confirmed; child attachment is not. Neither observation
+establishes search readiness for this **unregistered** repo. No indexing is
+authorized. No search/status RPC, client process, provider reconnect or runtime
+verification was performed to record this confirmation. No automatic cwd/catalog
+refresh or visibility in every client is claimed.
 
 ## Historical local integration — before publication
 
@@ -133,8 +151,9 @@ changes are selected or authorized. The approach is standard MCP registration
 plus Gmax-owned status/context. A missing Gmax entry in the active catalog does
 not prove that T3 lacks MCP support or needs new infrastructure. The actual
 registration, inheritance, launch and catalog state was unverified at this
-correction. Subsequent delivery established standard registration and direct
-server operation; active-provider consumption/attachment remains unverified.
+correction. Subsequent delivery established standard registration/direct server
+operation, and the later parent catalog scan above confirms parent advertisement.
+The owner's child catalog remains separate and does not contradict that result.
 
 The existing Gmax Codex installer already uses the exact registration command
 `codex mcp add gmax -- gmax mcp` (`src/commands/codex.ts:97-117`). The launch

@@ -2,14 +2,14 @@
 type: doc
 status: active
 created: 2026-10-03T02:39:56Z
-updated: 2026-10-29T09:06:49Z
+updated: 2026-10-29
 audience: internal
-summary: "README and delivery/discovery handoff aligned with retained 0.26.109 evidence. SDK/native 0.40, core/Python 13; separate Rust 12 unchanged. P3/hook/direct-MCP results are retained observations; active provider attachment remains unverified. Docs-only closeout."
+summary: "Parent agent visibility confirmed from its current actual catalog: 28 Gmax tools among 329. Earlier 301/no-Gmax evidence retained as history; child catalog separately still 301/no Gmax. Repo remains unregistered; docs-only recording, no runtime or config actions."
 ---
 
 # Future Sessions
 
-## 0.26.109 delivered — remaining provider activation is unverified
+## 0.26.109 delivered — parent catalog visibility confirmed
 
 Use the [retained completion evidence](plans/assets/lance-discovery-release-20261029/completion.md)
 and [README setup guidance](../README.md#current-repo-status). Release source
@@ -25,10 +25,26 @@ verification-only recovery. No result was rerun for this documentation closeout.
 Standard Codex registration is repaired: STDIO command `gmax`, args `["mcp"]`.
 The direct server advertised **28 tools**, including `repo_status` and
 `semantic_search`; metadata reported Gmax not_registered and Platform indexed.
-At the retained active-provider check there were **301 tools and no Gmax tools**.
-Reconnect a provider session consuming that registration and confirm visibility;
-do not call attachment verified or require a T3 adapter/code change. Hooks/CLI
-hints do not attach tools, and automatic cwd catalog refresh is not promised.
+The earlier October 29 retained active-provider check had **301 tools and no
+Gmax tools**. It remains historical evidence.
+
+**Selected item 1 — agent visibility: COMPLETE for the parent provider.**
+On October 29, 2026 the parent reported its current actual `ALL_TOOLS` scan:
+**329 tools including 28 `mcp__gmax__` tools**, including
+`mcp__gmax__repo_status` and `mcp__gmax__semantic_search`. All 28 descriptions
+identify current repo `<gmax-checkout>`,
+`index=not_registered`, `matchedRoot=null`, `daemon=unobserved`.
+This is actual parent catalog advertisement, superseding the earlier retained
+301/no-Gmax parent visibility result; it is not inferred from CLI configuration
+or the direct server's 28-tool listing. No reconnect/configuration change is
+needed for this selected parent goal.
+
+The owner's separate child catalog scan still has **301 tools / zero Gmax tools**.
+Parent visibility is confirmed; child attachment is not. Neither observation
+establishes search readiness for this **unregistered** repo. No indexing is
+authorized. No search/status RPC, client process, provider reconnect or runtime
+verification was performed to record this confirmation. No automatic cwd/catalog
+refresh or visibility in every client is claimed.
 
 No new runtime checks, tests, builds, queries, service/config actions or publication
 occurred in this docs-only closeout. Quality attempts remain unknown/no retry;
@@ -39,9 +55,8 @@ Older stages below are historical and do not start another batch.
 
 The previously pending publication/P3/hooks/standard-MCP steps were completed as
 recorded above. [Preparation evidence](plans/assets/lance-discovery-release-20261029/preparation.md)
-is retained; the old continuation instruction is superseded. Provider attachment
-still requires observation after consuming registration, without a new query or
-test budget.
+is retained; the old continuation instruction is superseded. The parent catalog
+was subsequently confirmed above; no reconnect or new query/test budget follows.
 
 ## Final local upgrade/discovery integration complete
 

@@ -2,7 +2,7 @@
 type: plan
 status: active
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-29T09:06:49Z
+updated: 2026-10-29
 surfaces:
   - store
   - daemon
@@ -23,9 +23,9 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "0.26.109 (source 60bc601) published. P3 last verified ready/open/active; hooks refreshed. One native invocation: 3 passed, 8 unselected skipped; compile reused. Standard registration repaired and direct MCP 28 tools verified; retained active catalog 301/no Gmax, attachment unconfirmed."
-next_step: "Docs closeout complete. Consume standard registration in a reconnected provider session and confirm actual catalog visibility. No T3 adapter/code change or automatic cwd-refresh claim; no query retry, Table-handle cleanup or deferred CPU/backend/resource-history work selected."
-summary: "README and delivery/discovery handoff aligned with retained 0.26.109 evidence. SDK/native 0.40, core/Python 13; separate Rust 12 unchanged. P3/hook/direct-MCP results are retained observations; active provider attachment remains unverified. Docs-only closeout."
+current_state: "Selected item 1 complete: parent live catalog confirmed 329 tools including 28 mcp__gmax__ tools. Descriptions report this Gmax repo not_registered, matchedRoot null, daemon unobserved. Child separately remains 301/no Gmax. No reconnect/config change or indexing performed; 0.26.109 delivery evidence retained."
+next_step: "No further action for selected item 1. Parent tool advertisement is confirmed; this unregistered repo has no established search readiness. No indexing, semantic query, other selected item, reconnect, T3 change, tests or service work authorized by this docs closeout."
+summary: "Parent agent visibility confirmed from its current actual catalog: 28 Gmax tools among 329. Earlier 301/no-Gmax evidence retained as history; child catalog separately still 301/no Gmax. Repo remains unregistered; docs-only recording, no runtime or config actions."
 ---
 
 # Gmax Delivery Plan
@@ -52,14 +52,30 @@ Standard Codex STDIO registration (`gmax`, args `["mcp"]`) was repaired with oth
 configuration preserved. A direct 0.26.109 MCP connection advertised **28 tools**,
 including `repo_status` and `semantic_search`; metadata reported Gmax
 **not_registered** and Platform **indexed**, with its daemon ready. At the
-retained active-provider check, the catalog had **301 entries and no Gmax tools**.
-Registration and direct server listing do not prove provider attachment. Remaining
-activation is to reconnect/consume the standard registration and **confirm actual
-catalog visibility**. No T3 adapter/code change or automatic cwd catalog refresh
-is required or promised by this record.
+earlier retained check on October 29, the active catalog had **301 entries and
+no Gmax tools**. That is a dated prior observation, not the current parent state.
+Registration/direct listing alone still do not prove attachment.
+
+**Selected item 1 — agent visibility: COMPLETE for the parent provider.**
+On October 29, 2026 the parent reported its current actual `ALL_TOOLS` scan:
+**329 tools including 28 `mcp__gmax__` tools**, including
+`mcp__gmax__repo_status` and `mcp__gmax__semantic_search`. All 28 descriptions
+identify current repo `<gmax-checkout>`,
+`index=not_registered`, `matchedRoot=null`, `daemon=unobserved`.
+This is actual parent catalog advertisement, superseding the earlier retained
+301/no-Gmax parent visibility result; it is not inferred from CLI configuration
+or the direct server's 28-tool listing. No reconnect/configuration change is
+needed for this selected parent goal.
+
+The owner's separate child catalog scan still has **301 tools / zero Gmax tools**.
+Parent visibility is confirmed; child attachment is not. Neither observation
+establishes search readiness for this **unregistered** repo. No indexing is
+authorized. No search/status RPC, client process, provider reconnect or runtime
+verification was performed to record this confirmation. No automatic cwd/catalog
+refresh or visibility in every client is claimed.
 
 README now documents current-repo status, standard MCP setup and these distinctions.
-This closeout changes documentation only: no fresh runtime/tool/service checks,
+This closeout changes documentation only: no fresh RPC/service checks,
 tests, builds or publication. Original quality attempt count remains unknown,
 with no retry/reset. Table-handle cleanup remains proposed/unimplemented;
 CPU attribution/resource history/backend experiments remain deferred.
@@ -69,8 +85,9 @@ CPU attribution/resource history/backend experiments remain deferred.
 
 This stage prepared the whole selected upgrade/discovery batch on public
 0.26.108 history. Its approved publication, P3 handover, hook refresh and standard
-MCP verification are now recorded above; the remaining provider attachment
-condition is explicit. [Preparation evidence](assets/lance-discovery-release-20261029/preparation.md)
+MCP verification are now recorded above. The later parent catalog confirmation
+also completes selected item 1; the earlier attachment condition is historical.
+[Preparation evidence](assets/lance-discovery-release-20261029/preparation.md)
 preserves the earlier scope and native-case selection. It does not authorize a
 new test or query round. Older local/prepublication records below are historical.
 
