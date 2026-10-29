@@ -4,10 +4,40 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-29
 audience: internal
-summary: "Deterministic write-table cleanup complete locally/unreleased with MCP 64d10ed/fff1556 preserved. Source/diff inspected only; no tests/compiler/runtime or RSS evidence. Deployed 0.26.109 and unknown quality-attempt budget unchanged."
+summary: "MCP/cleanup delivery safety-stopped before publication: compiler exit0 but final swap guard failed14,573,568bytes. No P3/config/core activation; exact candidate/receipts preserved, no automatic retry."
 ---
 
 # Future Sessions
+
+## MCP and table-cleanup delivery — SAFETY STOP / NOT PUBLISHED
+
+User “ship it” selected the entire MCP64d10ed/fff1556/0b98ac8 + cleanup37aa904
+release and core8 handover. [Exact owning stop](plans/gmax-delivery.md#mcp-and-table-cleanup-delivery--safety-stop-before-publication)
+records a real final resource guard failure, not an added checkpoint. The
+public109-based complete candidate and all three new fixtures are retained at
+`.claude/worktrees/gmax-mcp-cleanup-release-026110`; unrelated later dependency/
+Arrow/Lance0.41, ColBERT/private/ITA work was excluded and preserved.
+
+Offline frozen script-disabled dependency setup passed. ONE emitted production
+compiler `node_modules/.bin/tsc --incremental false` and required runtime phases
+all exited0, but the combined controller **FAILED** final host swap growth:
+**14,573,568bytes**, required0. 3.408306s,381,321,216bytes peak ownedRSS,
+30,335,418,368bytes available, no survivors; unchanged twoCPU/nice10/2GiB/180s/
+min8GiB/zero-swap guards. No attribution of global swap to a particular process.
+No guard raise/new window/retry. Old36/36 fake evidence reused only as historical
+coverage; later fixture expectation remains unrerun. No tests or runtime feature/
+model/native/relevance calls were added.
+
+No source version/tag/publication, pack, P3 service/install/plugin refresh or
+Codex core8 config/reconnect occurred. Deployed109 and prior active329/full28
+remain unchanged by this attempt. Gmax repo unregistered; quality attempts unknown,
+no retry. To resume, preserve the exact candidate/receipts and select a safe
+continuation of failed guarded preparation before the remaining approved delivery;
+no automatic rerun or newly invented verification gate. No source defect found.
+Evidence: `/home/reoiv/.local/state/gmax-delivery/20261029-0.26.110/`.
+All owned groups closed. Pending prompts untouched, CPU/backend/resource-history
+deferred, no next work starts automatically.
+
 
 ## Deterministic write-table cleanup — COMPLETE LOCALLY / UNRELEASED
 

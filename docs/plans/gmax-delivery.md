@@ -23,12 +23,61 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Deterministic operation-owned table cleanup complete locally, source-inspected only; no tests/compiler/runtime validation. Existing MCP commits 64d10ed/fff1556 remain local/unreleased; deployed 0.26.109 unchanged."
-next_step: "Return selected cleanup source/docs commit and limits; no automatic tests, compilation, runtime verification, release or relevance retry."
-summary: "Local deterministic cleanup for insertBatch, deletePaths and deletePathsExcludingIds, including schema diagnostics and failed acquisition; shared Connection/Session/lease ownership unchanged. RSS impact unmeasured."
+current_state: "Complete selected MCP/cleanup release candidate assembled; ONE emitted compiler exit0 but final zero-swap guard FAILED14,573,568bytes. No publication/P3/core activation."
+next_step: "Return exact safety-stop receipt and preserved candidate; no automatic retry/new guard window or release."
+summary: "MCP/cleanup delivery stopped before versioning/publication on final host swap guard; owned processes closed and unrelated work preserved."
 ---
 
 # Gmax Delivery Plan
+
+## MCP and table-cleanup delivery — SAFETY STOP BEFORE PUBLICATION
+
+**October 29, 2026:** user “ship it” selected the complete MCP64d10ed,
+receiptfff1556, plan0b98ac8, deterministic Table-cleanup37aa904 and required
+README/catalog/docs release, P3 rollback/handover and selected Codex core8 setup.
+The full candidate is assembled on public109records `aa7985a` in
+`.claude/worktrees/gmax-mcp-cleanup-release-026110`; v0.26.110 was confirmed unused
+in public tags/registry. No version bump/tag/source commit/publication was made.
+Unrelated later dependency/Arrow/Lance0.41 upgrades and ColBERT/private/ITA work
+were preserved and excluded; candidate uses the published109 Lance0.40/Python13/
+qualified-Rust12 dependency baseline. All three new selected fixture files exist;
+selected product source/fixtures byte-match the committed implementation.
+
+**Actual safety blocker:** isolated frozen/offline, script-disabled dependency
+preparation passed. The ONE combined emitted production compilation
+`node_modules/.bin/tsc --incremental false` exited0, as did official SDK/runtime
+preparation, chmod and existing qualified bounded-runtime copying. However,
+that combined controller **FAILED** its final zero-host-swap-growth guard:
+**14,573,568 bytes** growth. Elapsed **3.408306s**, peak sampled aggregate owned
+RSS **381,321,216 bytes**, final available **30,335,418,368 bytes**, no live owned
+processes. Limits unchanged: two CPUs0/1, nice10,2GiB owned RSS,180s deadline,
+min8GiB available, zero swap growth. Exit0 is not a passing guarded result.
+The retained global counter does not attribute swap growth to the compiler,
+preparation or a particular unrelated process. No new window/rerun or cap raise.
+
+**Disposition:** stop before versioning, pack/publication, P3/package/plugin
+handover or selected MCP configuration/refresh. No new tests or native/model/
+LLM/runtime-feature/relevance calls, metadata RPC, maintenance/indexing, remote
+builder/review/profile/audit or service action. Existing36/36 fake-only evidence
+is retained, with its later literal-name fixture tightening still unrerun; it
+does not validate the cleanup or override this guard failure. No new native
+compatibility evidence, RSS/fan/cache-eviction or relevance benefit is claimed.
+Current release remains109; exact109rollback/core8 activation were not performed.
+Prior observed active catalog329/full28 remains the last pre-activation state;
+Gmax repo not_registered, quality attempted-query count unknown/no retry.
+
+**Preserved continuation, not an automatic retry:** candidate, exact selected
+patch and locked local dependencies are ready. The failed guarded preparation
+needs a separately selected safe continuation before pack/version/tag/publish;
+then the already specified109rollback P3 handover/plugin refresh, selected-server
+core8 env and direct-vs-active catalog verification remain unfinished. No new
+code/test/review gate was introduced, and no source defect was reported by tsc.
+Full receipts/logs/source/dirty-index before-images:
+`/home/reoiv/.local/state/gmax-delivery/20261029-0.26.110/`
+(`deps-controller-receipt.json`, `compile-prep-receipt.json`, phase logs,
+`selected-local.patch`, `release-worktree.txt`). All owned child groups closed.
+CPU/backend/resource-history work remains deferred; saved prompts untouched.
+
 
 ## Deterministic write-table cleanup — COMPLETE LOCALLY
 
