@@ -29,6 +29,7 @@ export interface ReviewOptions {
   commitRef: string;
   projectRoot: string;
   verbose?: boolean;
+  signal?: AbortSignal;
 }
 
 export interface ReviewResult {
@@ -39,7 +40,8 @@ export interface ReviewResult {
 }
 
 export async function reviewCommit(opts: ReviewOptions): Promise<ReviewResult> {
-  const { commitRef, projectRoot, verbose = false } = opts;
+  const { commitRef, projectRoot, verbose = false, signal } = opts;
+  signal?.throwIfAborted();
   const wallStart = Date.now();
 
   // 1. Extract diff
@@ -69,7 +71,10 @@ export async function reviewCommit(opts: ReviewOptions): Promise<ReviewResult> {
   let contextStr = "";
   let riskStr = "";
   const paths = ensureProjectPaths(projectRoot);
+  signal?.throwIfAborted();
   const vectorDb = new VectorDB(paths.lancedbDir);
+  // A caller abort does not prove a native operation stopped. Drain before close.
+  const pending: Promise<unknown>[] = [];
   try {
     const searcher = new Searcher(vectorDb);
     const graphBuilder = new GraphBuilder(vectorDb, projectRoot);
@@ -83,27 +88,37 @@ export async function reviewCommit(opts: ReviewOptions): Promise<ReviewResult> {
     // Deterministic risk ranking (Phase 8) — gives the LLM an explicit
     // blast-radius × tests × churn ordering to anchor its judgement, rather
     // than inferring importance from prose alone.
-    const [context, riskInputs] = await Promise.all([
-      gatherContext(symbols, changedFiles, ctx, verbose),
-      gatherRiskInputs(commitRef, projectRoot, {
+    signal?.throwIfAborted();
+    const contextPromise = gatherContext(symbols, changedFiles, ctx, verbose, pending, signal);
+    const riskPromise = gatherRiskInputs(commitRef, projectRoot, {
         vectorDb,
         graphBuilder,
-      }).catch(() => []),
-    ]);
+      }).catch((error) => {
+        signal?.throwIfAborted();
+        if (error instanceof Error && error.name === "AbortError") throw error;
+        return [];
+      });
+    pending.push(riskPromise);
+    const [context, riskInputs] = await Promise.all([contextPromise, riskPromise]);
+    signal?.throwIfAborted();
     contextStr = context;
     const riskRows = computeRiskTable(riskInputs);
     if (riskRows.length > 0) {
       riskStr = formatRiskTable(riskRows, { agent: false });
     }
   } catch (err) {
+    signal?.throwIfAborted();
+    if (err instanceof Error && err.name === "AbortError") throw err;
     if (verbose) {
       process.stderr.write(
         `[review] context gathering failed: ${err instanceof Error ? err.message : String(err)}\n`,
       );
     }
   } finally {
+    await Promise.allSettled(pending);
     await vectorDb.close();
   }
+  signal?.throwIfAborted();
 
   // 5. Build prompts
   const systemPrompt = buildSystemPrompt(languages);
@@ -128,7 +143,8 @@ export async function reviewCommit(opts: ReviewOptions): Promise<ReviewResult> {
       ],
       max_tokens: config.maxTokens,
       temperature: 0,
-    });
+    }, { signal });
+    signal?.throwIfAborted();
 
     content = response.choices?.[0]?.message?.content ?? "";
     if (!content) {
@@ -138,12 +154,13 @@ export async function reviewCommit(opts: ReviewOptions): Promise<ReviewResult> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (verbose) process.stderr.write(`[review] LLM call failed: ${msg}\n`);
-    const duration = Math.round((Date.now() - wallStart) / 1000);
-    return { commit: info.short, findingCount: 0, duration, clean: true };
+    signal?.throwIfAborted();
+    throw err;
   }
 
   // 7. Parse response
   const { findings, summary } = parseFindings(content);
+  signal?.throwIfAborted();
   const duration = Math.round((Date.now() - wallStart) / 1000);
 
   if (verbose) {
@@ -162,6 +179,7 @@ export async function reviewCommit(opts: ReviewOptions): Promise<ReviewResult> {
     summary,
     clean: findings.length === 0,
   };
+  signal?.throwIfAborted();
   appendReview(projectRoot, entry);
 
   return {
@@ -184,7 +202,10 @@ async function gatherContext(
   changedFiles: string[],
   ctx: InvestigateContext,
   verbose: boolean,
+  pending: Promise<unknown>[],
+  signal?: AbortSignal,
 ): Promise<string> {
+  signal?.throwIfAborted();
   // Launch all tool calls in parallel
   const peekPromises = symbols.map((s) =>
     executeTool("peek", { symbol: s }, ctx),
@@ -207,14 +228,14 @@ async function gatherContext(
   ];
 
   // Race against timeout
-  const timeout = new Promise<"timeout">((resolve) =>
-    setTimeout(() => resolve("timeout"), CONTEXT_TIMEOUT_MS),
-  );
-
-  const settled = await Promise.race([
-    Promise.allSettled(allPromises),
-    timeout.then(() => "timeout" as const),
-  ]);
+  pending.push(...allPromises);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<"timeout">((resolve) => {
+    timer = setTimeout(() => resolve("timeout"), CONTEXT_TIMEOUT_MS);
+  });
+  const settled = await Promise.race([Promise.allSettled(allPromises), timeout])
+    .finally(() => clearTimeout(timer));
+  signal?.throwIfAborted();
 
   const peekResults: string[] = [];
   const impactResults: string[] = [];
@@ -415,11 +436,7 @@ function parseFindings(content: string): {
   findings: Finding[];
   summary: string;
 } {
-  const empty = {
-    findings: [],
-    summary: "Parse error — could not extract findings from model output.",
-  };
-  if (!content) return empty;
+  if (!content) throw new Error("Review inference returned empty output");
 
   // Strip think tags and markdown fences
   let cleaned = stripThinkTags(content);
@@ -452,7 +469,7 @@ function parseFindings(content: string): {
     } catch {}
   }
 
-  return empty;
+  throw new Error("Review inference returned invalid findings JSON");
 }
 
 function validateFindings(raw: unknown[]): Finding[] {
@@ -472,5 +489,7 @@ function validateFindings(raw: unknown[]): Finding[] {
       suggestion: String(f.suggestion || ""),
     });
   }
+  if (raw.length > 0 && findings.length === 0)
+    throw new Error("Review inference returned no valid findings");
   return findings;
 }

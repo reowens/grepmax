@@ -250,13 +250,38 @@ and confirm `repo_status` and `semantic_search` in the **actual client catalog**
 A successful direct server listing, hook or CLI hint does not prove attachment;
 automatic catalog refresh on cwd changes is not promised.
 
-`gmax mcp` uses the official MCP SDK v2.3.0 and serves both legacy (2025 handshake) and modern (2026-07-28 discovery and per-request metadata) clients over the same stdio entry. Discovery and catalog listing perform no daemon, model or watcher startup. Index-reading tools acquire watch leases lazily; one timer renews the primary projects actually used, and disconnect closes the SDK connection and its timer.
+Select the startup catalog using the registration's environment:
+`GMAX_MCP_TOOL_PROFILE=core` exposes exactly `repo_status`, `list_projects`,
+`semantic_search`, `list_symbols`, `extract_symbol`, `code_skeleton`,
+`trace_calls` and `impact_analysis`. Explicit core is recommended for new or
+selected clients. `GMAX_MCP_TOOL_PROFILE=full`, or leaving it unset, preserves
+all 28 existing names and arguments. Full adds `peek_symbol`, `find_tests`,
+`related_files`, `find_similar`, `build_context`, `summarize_project`,
+`diff_changes`, `audit`, `dead`, `get_neighbors`, `find_paths`,
+`subgraph_for_files`, `surprising_connections`, `review_risk`, `index_status`,
+`recent_changes`, `review_report`, `investigate`, `review_commit` and
+`summarize_directory`. The directory summarizer is deliberately disabled;
+its full-profile compatibility entry reports that no summaries were generated.
 
-Clients requesting progress receive operation-stage messages with increasing stage counts and no estimated percentage. Cancelling a daemon read closes that request's IPC connection and prevents subsequent tool operations or fallback work; concurrent requests and the session's watch leases continue. An already-running local native query finishes under its existing deadline before its store closes. Cancellation does not undo indexing writes or interrupt optional LLM work.
+Only exact `core` and `full` are valid. An empty, whitespace or unknown value
+prints a stderr diagnostic and exits 2 before registering a client or opening
+the transport. The profile is read once per server lifecycle; calls and registry
+changes do not expand it. Keep command `gmax` and args `["mcp"]` unchanged. To
+migrate a selected registration later, back up its existing environment, change
+only this key, and use that client's supported restart/reconnect. Confirm the
+eight names in its actual catalog; shipping this option does not activate it in
+existing sessions. Restore the prior key/value (or remove the newly added key)
+and reconnect to roll back. No automatic refresh or child-session inheritance
+is promised. An unregistered current repo still requires separate indexing
+authorization and never silently falls back to another corpus.
+
+`gmax mcp` uses the official MCP SDK v2.3.0 and serves both legacy (2025 handshake) and modern (2026-07-28 discovery and per-request metadata) clients over the same stdio entry. SDK major 2, JSON-RPC 2.0 and the date-versioned MCP protocol are distinct; a catalog listing alone does not establish the actual request protocol. Discovery and catalog listing perform no daemon, model or watcher startup. Index-reading tools acquire watch leases lazily; one timer renews the primary projects actually used, and disconnect closes the SDK connection and its timer.
+
+Clients requesting progress receive operation-stage messages with increasing stage counts and no estimated percentage. Cancelling a daemon read closes that request's IPC connection and prevents subsequent tool operations or fallback work; concurrent requests and the session's watch leases continue. An already-running local native query finishes under its existing deadline before its store closes. Cancellation does not undo completed indexing writes. Optional LLM startup, health and all inference rounds receive the caller signal. Aborting prevents later dispatches and a report append when observed before its synchronous write boundary. Already-started native work drains before its local store closes; this is not a native-quiescence guarantee. An accepted model-start request or server-side inference may continue after the client aborts. Cancellation never kills a shared model server or another client's leases.
 
 `gmax mcp` starts a stdio-based MCP server for clients that support MCP but can't run shell commands (Cursor, Windsurf, custom agents). Search-backed tools use the singleton daemon when available, avoiding a separate embedding worker per MCP session, and use an in-process worker for supported offline/secondary-store access. An unsupported daemon command requires `gmax watch restart`.
 
-`semantic_search`, `trace_calls`, `dead`, and `index_status` also advertise output schemas and return `structuredContent` with `schemaVersion: 1`, alongside the existing text. Search matches follow the same scope and display filters and include paths, one-based start/end lines, symbols, scores (null when unavailable), and warnings. Trace results preserve caller ancestry and legacy edge classifications; unresolved callees have no location. Graph conclusions carry `approximate: true`. Index health includes embedding identity, watcher/reconciliation state, and the last compaction result; unavailable health is null or unobserved. These four tools advertise read-only, non-destructive, closed-world annotations. Other tools retain their current contracts.
+`semantic_search`, `trace_calls`, `dead`, and `index_status` also advertise output schemas and return `structuredContent` with `schemaVersion: 1`, alongside the existing text. Search matches follow the same scope and display filters and include paths, one-based start/end lines, symbols, scores (null when unavailable), and warnings. Trace results preserve caller ancestry and legacy edge classifications; unresolved callees have no location. Graph conclusions carry `approximate: true`. Index health includes embedding identity, watcher/reconciliation state, and the last compaction result; unavailable health is null or unobserved. Annotations are explicit and independent of output schemas. Only bounded `repo_status` claims no environmental writes. Watch-capable tools conservatively advertise possible destructive effects because background reconciliation can replace/remove indexed rows; this does not mean source files are deleted. Other helper calls can write query logs; local LLM tools can start an enabled model, and review appends its report. All have a closed local domain. These advisory hints do not change existing startup, logging, watching or model authorization requirements. `review_commit` inference errors (including timeouts and invalid output) fail rather than returning a clean verdict; valid clean/finding result shapes are unchanged. Foreground CLI failures remain nonzero, and background CLI acknowledgement still means queued.
 
 Trace adds `evidenceVersion: 1`, reference evidence, center-selection evidence and coverage summaries. Evidence identifies indexed spellings, source chunks and candidate targets; `bindingResolved: false` and a null callsite preserve what the index cannot establish. Legacy `EXTRACTED`/`INFERRED` and `free`/`member`/`type` labels do not prove a call or target binding. Coverage separates producer limits from display limits, reports unknown totals as null, and treats missing metadata from older daemons as unknown. The existing `omittedCallees`/`omittedImporters` fields count display omissions only. Public evidence spans are one-based. CLI `trace --agent` keeps its data rows and appends a reserved `# evidence` summary line; parsers should skip that comment line.
 

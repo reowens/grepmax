@@ -20,6 +20,7 @@ export interface InvestigateOptions {
   projectRoot: string;
   maxRounds?: number;
   verbose?: boolean;
+  signal?: AbortSignal;
 }
 
 export interface InvestigateResult {
@@ -75,7 +76,8 @@ export function finalizeAnswer(
 export async function investigate(
   opts: InvestigateOptions,
 ): Promise<InvestigateResult> {
-  const { question, projectRoot, verbose = false } = opts;
+  const { question, projectRoot, verbose = false, signal } = opts;
+  signal?.throwIfAborted();
   const maxRounds = opts.maxRounds ?? MAX_ROUNDS;
   const config = getLlmConfig();
   const modelName = path.basename(config.model, path.extname(config.model));
@@ -87,24 +89,18 @@ export async function investigate(
 
   // Health check
   try {
-    await client.models.list();
+    await client.models.list({ signal });
   } catch {
+    signal?.throwIfAborted();
     throw new Error(
       "Cannot connect to LLM server. Run `gmax llm on && gmax llm start`.",
     );
   }
+  signal?.throwIfAborted();
 
   // Initialize gmax resources
   const paths = ensureProjectPaths(projectRoot);
   const vectorDb = new VectorDB(paths.lancedbDir);
-  const searcher = new Searcher(vectorDb);
-  const graphBuilder = new GraphBuilder(vectorDb, projectRoot);
-  const ctx: InvestigateContext = {
-    vectorDb,
-    searcher,
-    graphBuilder,
-    projectRoot,
-  };
 
   const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: SYSTEM_PROMPT },
@@ -117,7 +113,11 @@ export async function investigate(
   let rounds = 0;
 
   try {
+    const searcher = new Searcher(vectorDb);
+    const graphBuilder = new GraphBuilder(vectorDb, projectRoot);
+    const ctx: InvestigateContext = { vectorDb, searcher, graphBuilder, projectRoot };
     for (let round = 0; round < maxRounds; round++) {
+      signal?.throwIfAborted();
       rounds = round + 1;
       const roundStart = Date.now();
 
@@ -127,7 +127,8 @@ export async function investigate(
         tools: TOOLS,
         tool_choice: "auto",
         temperature: 0,
-      });
+      }, { signal });
+      signal?.throwIfAborted();
 
       if (!response.choices?.length) {
         throw new Error("LLM returned empty response");
@@ -142,6 +143,7 @@ export async function investigate(
           process.stderr.write(`[R${round}] Final answer (${roundMs}ms)\n`);
         }
         const answer = finalizeAnswer(message.content, modelName);
+        signal?.throwIfAborted();
         return {
           answer,
           rounds,
@@ -167,6 +169,7 @@ export async function investigate(
 
       // Execute each tool call
       for (const tc of message.tool_calls) {
+        signal?.throwIfAborted();
         // Only handle function-type tool calls
         if (tc.type !== "function") continue;
         const fn = tc.function;
@@ -206,6 +209,8 @@ export async function investigate(
         }
 
         result = await executeTool(fn.name, args, ctx);
+        // Do not close the store until the awaited native operation has settled.
+        signal?.throwIfAborted();
 
         if (verbose) {
           const preview = result.split("\n").slice(0, 5).join("\n");
@@ -223,6 +228,7 @@ export async function investigate(
     }
 
     // Round cap — force final answer
+    signal?.throwIfAborted();
     if (verbose) {
       process.stderr.write(
         `[R${maxRounds}] Round cap reached, forcing final answer\n`,
@@ -239,7 +245,8 @@ export async function investigate(
       model: modelName,
       messages,
       temperature: 0,
-    });
+    }, { signal });
+    signal?.throwIfAborted();
 
     if (!response.choices?.length) {
       throw new Error("LLM returned empty response");
@@ -249,6 +256,7 @@ export async function investigate(
       response.choices[0].message.content,
       modelName,
     );
+    signal?.throwIfAborted();
 
     return {
       answer,

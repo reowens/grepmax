@@ -4,10 +4,43 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-29
 audience: internal
-summary: "MCP core/full correctness plan mcp-core-full-20261029 is READY/AWAITING START. Documentation only; proposed one focused fake-only invocation and one guarded compilation are unapproved. Parent catalog remains 329/28 Gmax; repo unregistered."
+summary: "MCP stages1-6 COMPLETE LOCALLY: single fake-only invocation36/36 and single guarded noEmit compilation passed. No stage7 packaging/release/P3/core activation. Active full28 and repo unregistered unchanged."
 ---
 
 # Future Sessions
+
+## MCP profile/correctness implementation — COMPLETE LOCALLY
+
+User “go” selected stages1–6 of `mcp-core-full-20261029`; the
+[local batch record](plans/gmax-delivery.md#mcp-corefull-local-implementation--complete-locally)
+records exact nine paths, commands, resource limits, numeric receipts and API/
+behavior limits. Implementation commit: **LOCAL_BATCH_COMMIT_PENDING**.
+Source/fixtures/README/docs are complete together. Product source/README are
+unchanged after checks; the core fixture expectation was tightened to a literal
+eight-name list after the run (not rerun; no extra budget). No unresolved selected
+source defect is known. One focused fake-only invocation passed **3 files / 36 tests**;
+one guarded production noEmit compilation passed. Both allowances are spent,
+zero swap growth and no owned survivors. The private focused config skipped the
+grammar-download setup; pnpm's unplanned cached install/postinstall only printed
+guidance, with tracked manifests/lockfiles and client config unchanged.
+Private complete logs/receipts/validated inputs:
+`/home/reoiv/.local/state/gmax-mcp-core/20261029-local/`.
+
+Unset remains full28; explicit core selects the exact eight only at startup.
+Invalid values fail closed. Annotations reflect effects; summarizer stays disabled;
+review failures no longer become clean; cancellation reaches startup/inference/
+rounds/report boundary, draining owned native work before store close. It does
+not kill shared model/native jobs or guarantee server-side inference stops.
+MCP/CLI/background success/queued and failure contracts remain compatible.
+
+Stage7 packaging/publication/P3/core activation is **unselected**. No version,
+tag, push, emitted package, config activation, live MCP/native/store/model/search/
+status call, profile, benchmark, independent review or more agents. Current active
+parent remains329/full28Gmax, repo not_registered; no current core8 activation or
+deployment claim. Parent orchestration-only; prompts untouched; unrelated dirty
+ColBERT/private docs/index/ITA preserved. Return the completed local batch; no
+automatic next action, release-permission loop or fresh verification budget.
+The original ready-plan text below is historical to this completed local start.
 
 ## MCP profile/correctness plan — READY/AWAITING START
 

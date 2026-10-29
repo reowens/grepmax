@@ -23,12 +23,93 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "MCP core/full profile and correctness batch planned: READY/AWAITING START, not implemented or execution-authorized. Parent catalog 329/28 Gmax remains confirmed; current repo not_registered; separate old child 301/no Gmax."
-next_step: "Await explicit authorization for the finite MCP batch below, including its proposed single fake-only test invocation and single guarded production compilation. Publication/P3/core activation require expressly selected delivery scope; old permissions do not carry forward."
-summary: "Implementation-ready MCP plan: startup-only eight-tool core/full28 with unset->full, accurate annotations, disabled summarizer wording, review failure handling and bounded caller cancellation. Documentation only; no execution or activation."
+current_state: "MCP core/full stages1-6 complete locally: 36/36 fake-only tests in the single invocation; one guarded noEmit production compilation passed. Local commit receipt follows. Stage7 unselected; active full28 and repo not_registered retained."
+next_step: "Return completed local implementation with exact commit/receipts. No automatic next work; stage7 packaging/publication/P3/core activation remains unselected. Verification allowances spent, no reruns."
+summary: "Selectable core8/full28 plus truthful annotations, disabled summarizer and review/cancellation correctness complete locally. Focused36/36 and guarded compiler passed once each; no release/client migration."
 ---
 
 # Gmax Delivery Plan
+
+## MCP core/full local implementation — COMPLETE LOCALLY
+
+**Batch `mcp-core-full-20261029`, October 29, 2026:** user “go” selected
+stages1–6 of the plan below; implementation, fixtures, README and owning docs are
+complete locally. Stage7 packaging/publication/P3/core activation is NOT selected.
+Parent orchestration-only, no further agents, pending prompts untouched.
+
+Startup-only `GMAX_MCP_TOOL_PROFILE=core|full` preserves unset->full28, exact
+core8 order and all full input signatures; invalid/empty values refuse on stderr
+with exit2 before resource/transport work. Each lifecycle captures one selection
+for all discovery factories. No call-triggered expansion or client refresh claim.
+Explicit effect annotations are independent of output schema presence; descriptions
+acknowledge watch/lease/model/log/report writes and the deliberately disabled
+summarizer's compatibility result. Existing startup/scheduling/lease rules remain.
+
+Review inference rejection, timeout and invalid output now fail instead of
+returning clean; genuine empty-diff and clean/finding successes retain their
+shapes. Existing MCP isError, foreground CLI exit1/finally cleanup, and background
+queued acknowledgement/error-log callsites are preserved. Optional signal flows
+through MCP ping/llm-start and both libraries, including health/all inference
+rounds/forced synthesis and pre-report checks. Started native context/dispatch
+work settles before local store close; context selection retains its15s deadline
+and clears its timer. Abort does not kill shared model/daemon/native work or undo
+a completed synchronous write; accepted server-side model work may continue.
+
+Exact selected paths (the whole local batch): `src/commands/mcp.ts`,
+`src/lib/llm/investigate.ts`, `src/lib/llm/review.ts`,
+`tests/mcp-profiles.test.ts`, `tests/review-failure.test.ts`,
+`tests/llm-request-lifecycle.test.ts`, `README.md`, `docs/plans/gmax-delivery.md`,
+`docs/future-sessions.md`. Implementation commit: **LOCAL_BATCH_COMMIT_PENDING**.
+Only selected deltas are committed; unrelated ColBERT work, older private README/
+plan/handoff history and index/ITA entries remain outside this batch.
+
+**Approved verification used exactly once each, with no reruns:**
+
+- One fake-only invocation: `pnpm exec vitest run --config
+  /home/reoiv/.local/state/gmax-mcp-core/20261029-local/focused.vitest.config.mjs
+  tests/mcp-profiles.test.ts tests/review-failure.test.ts
+  tests/llm-request-lifecycle.test.ts` — **3 files / 36 tests passed**, runner
+  exit0/controller passed; elapsed **1.640892s**, peak sampled aggregate owned
+  RSS **491671552 bytes**, final available **34620256256 bytes**, swap growth0,
+  no live owned processes. The small private config bypasses the repo global
+  grammar-download setup, with no extra fixture campaign. The `pnpm exec`
+  wrapper unexpectedly printed a cached supply-chain/install check and ran the
+  existing postinstall (“already up to date”); source inspection confirms that
+  script only prints guidance. Manifests/lockfiles are unchanged and no client
+  configuration/service action followed. This was not another requested audit.
+- One production compilation: `node_modules/.bin/tsc --noEmit --incremental false`
+  — compiler exit0/controller passed, elapsed **0.842497s**, peak sampled
+  aggregate owned RSS **339156992 bytes**, final available **34764148736 bytes**,
+  swap growth0, no live owned processes. It excludes test typechecking and emits
+  no package/distribution. No second compilation/build is inferred.
+- Both used the retained guard convention: two CPUs0/1, nice10,180s deadline,
+  max2GiB aggregate owned RSS, min8GiB available, zero swap growth, owned
+  TERM/KILL cleanup. Guards passed. Source/fixture/README bytes were unchanged
+  after these checks, except the core-catalog fixture expectation was tightened
+  to an independent literal eight-name list instead of importing the production
+  list. This fixture-only correction is **not rerun** under the spent allowance;
+  production source and README remain exactly those that passed. Final docs
+  bookkeeping followed. The36/36 result applies to the pre-tightening fixture.
+
+Private retained before-images, validated-input hashes, exact commands, controller,
+focused config, complete logs and numeric receipts:
+`/home/reoiv/.local/state/gmax-mcp-core/20261029-local/`
+(`tests-receipt.json`, `compile-receipt.json`, `validated-inputs.json`). The metrics
+above are durable summaries; private paths are supplementary. Scoped diff/link
+inspection supplies documentation verification, not another suite or review.
+
+**Limits:** fake SDK/IPC/OpenAI/store/graph/report/CLI fixtures establish local
+contracts, not live transport/native/model inference or deployed behavior. No
+independent review or whole28-tool result/schema campaign. Local/unreleased on
+0.26.109; retained active parent catalog remains **329 / full28 Gmax**, selected
+client env unchanged, current repo **not_registered**. No version/tag/push,
+packaging, P3 operation, activation, live MCP/native/store/model/search/status call,
+profile/benchmark or relevance retry. Native Table-handle cleanup and relevance/
+CPU/backend/resource-history work remain deferred. Stage7 requires later express
+selection; do not start it or request another milestone as part of this closeout.
+
+The original plan below is retained with stages1–6 checked; its initial
+READY/AWAITING START authorization statements are historical to the later “go.”
 
 ## MCP core/full profile and correctness batch — READY/AWAITING START
 
@@ -51,14 +132,14 @@ unknown/no retry), CPU/backend/resource-history work remain deferred/out of scop
 
 ### 1. Freeze the startup profile and compatibility contract
 
-- [ ] In `src/commands/mcp.ts`, read `GMAX_MCP_TOOL_PROFILE` once at command
+- [x] In `src/commands/mcp.ts`, read `GMAX_MCP_TOOL_PROFILE` once at command
   lifecycle entry, before client/resource registration, timers or `serveStdio`.
   Absent means `full`; exact `core` and `full` are accepted. Empty, whitespace,
   case variants and any other present value fail closed: one stderr diagnostic
   naming the accepted values, exit code **2**, no stdout/protocol/catalog and no
   startup work. This follows the CLI's invalid invocation exit convention
   (`src/bin.ts`); never fall back to the broader profile for a typo.
-- [ ] Capture the immutable selection outside `createServer`; every pinned
+- [x] Capture the immutable selection outside `createServer`; every pinned
   connection/disposable discovery factory in that lifecycle uses the same set.
   Core is exactly, in this deterministic order: `repo_status`, `list_projects`,
   `semantic_search`, `list_symbols`, `extract_symbol`, `code_skeleton`,
@@ -66,7 +147,7 @@ unknown/no retry), CPU/backend/resource-history work remain deferred/out of scop
   input signatures**, including the disabled summarizer compatibility entry.
   Preserve existing result/success shapes and full catalog ordering. Use a
   fixed core ordering, not registry readiness, to determine membership.
-- [ ] Recommend explicit `core` for new/selected clients. Ship the selectable
+- [x] Recommend explicit `core` for new/selected clients. Ship the selectable
   profile separately from migration: existing registrations without the env
   override stay full28. STDIO command `gmax`, args `["mcp"]` stay unchanged;
   no installer rewrite, T3 adapter/code or protocol migration. No tool-call
@@ -76,13 +157,13 @@ unknown/no retry), CPU/backend/resource-history work remain deferred/out of scop
 
 ### 2. Describe environmental effects and disabled functionality honestly
 
-- [ ] In `src/commands/mcp.ts`, make explicit annotations part of each tool's
+- [x] In `src/commands/mcp.ts`, make explicit annotations part of each tool's
   registration metadata, independent of `MCP_READ_OUTPUT_SCHEMAS`. Keep input
   and existing output schemas intact. `repo_status` is read-only/closed-world;
   the 27 helper tools can log calls, and 20 acquire/renew watch leases. Avoid
   claiming those tools never modify their environment. Do not change logging,
   watching, startup, scheduling, leases or model enablement to improve hints.
-- [ ] Settled conservative metadata: `repo_status` gets readOnly=true,
+- [x] Settled conservative metadata: `repo_status` gets readOnly=true,
   destructive=false, idempotent=true, openWorld=false. The following watch-capable
   tools get readOnly=false, destructive=true (background reconciliation can
   replace/delete indexed rows), idempotent=false, openWorld=false:
@@ -96,7 +177,7 @@ unknown/no retry), CPU/backend/resource-history work remain deferred/out of scop
   `review_report`) get readOnly=false, destructive=false, idempotent=false,
   openWorld=false, reflecting logging/startup/additive report writes and the
   local closed domain. Hints remain advisory; no automatic consent bypass.
-- [ ] Descriptions distinguish bounded repo setup, all-project status, index
+- [x] Descriptions distinguish bounded repo setup, all-project status, index
   reads/watch acquisition and explicit local-LLM startup/report writes. Keep
   the no-autostart safety switch and large-model authorization rule. Describe
   `summarize_directory` as disabled; return an explicit disabled/unavailable
@@ -106,7 +187,7 @@ unknown/no retry), CPU/backend/resource-history work remain deferred/out of scop
 
 ### 3. Propagate review failures through every existing caller
 
-- [ ] In `src/lib/llm/review.ts`, replace the inference catch returning
+- [x] In `src/lib/llm/review.ts`, replace the inference catch returning
   `clean:true` with a meaningful thrown failure (preserve cause/message),
   including transport timeout. Preserve `ReviewResult` for successful clean
   and findings cases; an empty diff remains genuinely clean. Never append a
@@ -114,7 +195,7 @@ unknown/no retry), CPU/backend/resource-history work remain deferred/out of scop
   caller abort. Empty/unparseable inference output must also fail rather than
   letting `parseFindings`' fallback empty array become a clean verdict; retain
   the existing supported JSON/fence extraction for valid responses.
-- [ ] Callsite map, to retain shared-helper compatibility: MCP
+- [x] Callsite map, to retain shared-helper compatibility: MCP
   `src/commands/mcp.ts:3352-3404` catches and returns `isError:true`; foreground
   `src/commands/review.ts:116-136` already catches, prints `Review failed`, sets
   exitCode=1 and finally calls `gracefulExit`; daemon
@@ -126,14 +207,14 @@ unknown/no retry), CPU/backend/resource-history work remain deferred/out of scop
 
 ### 4. Carry caller cancellation without taking shared-process ownership
 
-- [ ] `src/commands/mcp.ts`: use the existing request signal (`mcpSignal`) for
+- [x] `src/commands/mcp.ts`: use the existing request signal (`mcpSignal`) for
   the two LLM startup IPCs and their bounded daemon preflight. Use the existing
   signal-aware `sendMcpCommand` with ping's existing 2s timeout and llm-start's
   existing 90s timeout; check cancellation before/after startup and before
   entering a library. Do not expand `isDaemonRunning` for unrelated callers.
   Thread optional `signal?: AbortSignal` into both library options; absent
   signal preserves direct CLI and background behavior.
-- [ ] `src/lib/llm/investigate.ts`: check before resources/health/each round,
+- [x] `src/lib/llm/investigate.ts`: check before resources/health/each round,
   before and after each internal tool dispatch and before returning an answer.
   Pass `{signal}` to `client.models.list` and the second options argument of
   **every** `chat.completions.create`, including the forced final answer.
@@ -141,7 +222,7 @@ unknown/no retry), CPU/backend/resource-history work remain deferred/out of scop
   work and after inference/parsing, then immediately before synchronous
   `appendReview`. Abort must escape context/risk fallback catches and health
   catch remapping; normal non-abort degradation remains as before.
-- [ ] Preserve native ownership: an in-flight native context/tool operation
+- [x] Preserve native ownership: an in-flight native context/tool operation
   need not be interruptible. Stop scheduling subsequent work, settle/drain
   already-started owned native promises before closing their local VectorDB
   in `finally`, and do not race abort against store close. In review context
@@ -149,7 +230,7 @@ unknown/no retry), CPU/backend/resource-history work remain deferred/out of scop
   timer, and drain launched work on cancellation before cleanup. Cancellation
   prevents the report append when observed before its synchronous boundary;
   it cannot undo a completed write or preempt synchronous JS mid-write.
-- [ ] Do not stop/kill a shared model server, daemon, worker/native job or
+- [x] Do not stop/kill a shared model server, daemon, worker/native job or
   another client's leases. Socket abort settles the caller; an already-accepted
   `llm-start` may still complete on the daemon. HTTP abort releases this request,
   not a guarantee of server-side inference quiescence. Keep these limits in
@@ -168,7 +249,7 @@ must recheck their signal rather than turn cancellation into a normal failure.
 
 ### 5. Add minimal fake-based fixtures; propose one verification budget
 
-- [ ] Add **only three focused fixture files**: `tests/mcp-profiles.test.ts`
+- [x] Add **only three focused fixture files**: `tests/mcp-profiles.test.ts`
   (mock SDK/registration, registry, IPC, resource client, timers, logging and all
   native/model constructors); `tests/review-failure.test.ts` (mock OpenAI, git,
   context/store/report and CLI lifecycle); `tests/llm-request-lifecycle.test.ts`
@@ -176,7 +257,7 @@ must recheck their signal rather than turn cancellation into a normal failure.
   Reuse the in-process registration pattern from `tests/mcp-read-verbs.test.ts`,
   not the subprocess campaigns in `tests/mcp-sdk-v2.test.ts`. No real socket,
   child/server process, store/model/search, user cache or shared service access.
-- [ ] Exact assertions: explicit core eight/order; full28 and absent->full
+- [x] Exact assertions: explicit core eight/order; full28 and absent->full
   retain the frozen name set and representative existing input signatures;
   each invalid value rejects before registration/startup; changing env after
   entry cannot change later factory
@@ -184,7 +265,7 @@ must recheck their signal rather than turn cancellation into a normal failure.
   representative setup/watch/log-only/LLM-report effects, independent of output
   schema presence; disabled summary is explicit and absent from core. Do not
   add an optional 28-tool result/schema matrix or token/overhead benchmark.
-- [ ] Review fixtures: genuine empty-diff clean, successful empty findings,
+- [x] Review fixtures: genuine empty-diff clean, successful empty findings,
   successful findings keep their shapes; inference rejection, timeout and
   invalid output fail with no append, MCP isError and foreground CLI nonzero
   (mock `gracefulExit`, no subprocess). Cancellation fixtures cover pre-abort
@@ -194,7 +275,7 @@ must recheck their signal rather than turn cancellation into a normal failure.
   and abort immediately before report append (zero write). One other fake
   request continues; no shared kill/stop/unwatch is emitted. Include listener/
   timer cleanup and non-abort error preservation, not new process campaigns.
-- [ ] **PROPOSED, NOT AUTHORIZED NOW:** one local invocation,
+- [x] **PROPOSED, NOT AUTHORIZED NOW:** one local invocation,
   `pnpm exec vitest run tests/mcp-profiles.test.ts tests/review-failure.test.ts tests/llm-request-lifecycle.test.ts`;
   and one guarded production compilation,
   `node_modules/.bin/tsc --noEmit --incremental false`. Use the existing local
@@ -211,7 +292,7 @@ must recheck their signal rather than turn cancellation into a normal failure.
 
 ### 6. Complete the selected implementation, fixtures and documentation together
 
-- [ ] Exact implementation edit set: `src/commands/mcp.ts`,
+- [x] Exact implementation edit set: `src/commands/mcp.ts`,
   `src/lib/llm/investigate.ts`, `src/lib/llm/review.ts`, the three fixture files
   above, `README.md`, `docs/plans/gmax-delivery.md`, `docs/future-sessions.md`.
   Read-only compatibility dependencies are `src/commands/review.ts`,
@@ -222,7 +303,7 @@ must recheck their signal rather than turn cancellation into a normal failure.
   `src/lib/output/mcp-results.ts`, `src/lib/index/summaries.ts` and
   `src/commands/codex.ts`; no edits there are presently required. No manifests,
   lockfiles, SDK/runtime upgrade, AGENTS/CLAUDE, T3 or service changes.
-- [ ] README explains core selection, compatibility default, invalid-profile
+- [x] README explains core selection, compatibility default, invalid-profile
   refusal, full advanced names, environmental effects, failure/cancellation
   limits, unchanged registration and the difference between indexed readiness,
   advertisement and actual request protocol. Record actual evidence/limits in
