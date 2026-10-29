@@ -9,12 +9,14 @@ with no top10 losses (including unchanged 4/5 document questions). MRR@10 change
 from 0.64833 to 0.65389; five retained answers ranked lower. Next measure complete
 indexing in a disposable comparison before integration. See [MAC-SMOKE.md](MAC-SMOKE.md).
 
-The selected complete-indexing comparison is unfinished. Its UTC process view
-caused the native guard to delete shared resource-registration records when
-comparing `ps lstart` strings. Sixteen MCP clients now need reconnect; indexes
-and installed models are unchanged. The harness now preserves foreign records
-and checks admission before model loading. Await user reconnect before retry;
-there is no end-to-end speed result. See the incident record in MAC-SMOKE.md.
+The complete-indexing comparison is unfinished. Its UTC process view previously
+caused the native guard to delete shared resource-registration records. The
+harness now preserves foreign records and checks admission before model loading.
+On October 28, a read-only check found both live Gmax MCP servers correctly
+registered, with no timestamp mismatch or host safety stop. The reconnect blocker
+is cleared; the benchmark has not been retried. Resume the prepared bounded
+comparison through normal admission. There is no end-to-end speed result.
+See the incident and recovery record in [MAC-SMOKE.md](MAC-SMOKE.md).
 
 The original 17M model has run on this Mac through PyLate CPU/MPS and against
 Gmax's deployed ONNX-int8 CPU encoder, using 64 frozen Gmax-tokenized inputs.

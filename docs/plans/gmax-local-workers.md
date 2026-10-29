@@ -81,10 +81,8 @@ Normal `vitest.config.mts`, `tests/setup.ts` and `tests/global-setup.ts` applied
 without a setup bypass, test-config change or version upgrade. Use the worker
 commands for the next selected development task; no additional test is queued.
 
-Backend evaluation has its own [next complete-index comparison](colbert-backend-evaluation.md#recenter--paired-run-completed).
-The paired timing and question screen are recorded there; this worker task does
-not load a model or switch the production backend. Existing Mac holds and the
-P3 indexing pause remain with their machine owners.
+[Backend evaluation](colbert-backend-evaluation.md#recenter--paired-run-completed) and its recovered Pro handoff own the paired timing, question screen and prepared complete-index comparison. The October 28 registration recovery is recorded there; this worker catalog starts no retry, model load or production backend change. Current P3 runtime/indexing state remains with the delivery and host owners.
+
 
 ## Job selection and machine roles
 

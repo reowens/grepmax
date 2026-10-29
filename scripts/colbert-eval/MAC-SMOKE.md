@@ -72,9 +72,10 @@ The saved-output compatibility check and frozen30-question quality screen are
 complete. Both document backends found28/30 labeled answers in top10, with no
 losses. The selected complete-indexing experiment is **unfinished**: native
 resource admission exposed a timezone/registration incident described below.
-There is no end-to-end speed result and no production integration decision.
+The October 28 read-only check confirmed registration recovery; no benchmark
+retry has run. There is no end-to-end speed result or production integration decision.
 
-## Disposable indexing experiment — awaiting client reconnect
+## Disposable indexing experiment — registrations recovered, retry pending
 
 Prepared command:
 `node scripts/colbert-eval/index-screen.cjs --execute <private-root>`.
@@ -112,12 +113,22 @@ critical-stop writes to its private home. Four model-free focused checks passed
 in one invocation: timezone mismatch preserves records, matching records remain,
 dead foreign records are not deleted, and quarantine is respected.
 
-The user must reconnect the running Gmax MCP clients to recreate their original
-registrations. Do not fabricate registrations for those processes, stop other
-sessions or bypass registration checks. No automatic retry is queued. After the
-user confirms reconnect, the prepared command can retry under the unchanged
-bounds. The underlying product defect—timezone-formatted process identity used
-as deletion evidence—remains open; this task did not patch or publish product code.
+**Recovery verified, October 28:** a read-only process/ledger check found two live
+Gmax MCP servers, both correctly registered with matching host-local process
+start timestamps. Both belong to T3 Code (Beta). No registrations were missing,
+no ledger parse errors or identity mismatches were found, and neither a host
+safety stop nor an autostart-disabled marker was present. Reconnect is no longer
+an outstanding action. Evidence: `registration-recovery-20261028.json` under the
+prepared root. This is a point-in-time registration check, not benchmark admission.
+
+No benchmark, model inference, test suite or reviewer ran during recovery or this
+documentation handoff. The next execution remains the already selected bounded
+indexing comparison. Recheck admission through its normal runner, preserve
+foreign records, and refuse any pressure/quarantine/identity failure; never
+fabricate registrations or bypass checks. The earlier four focused admission
+checks need not be repeated. The underlying product defect—timezone-formatted
+process identity used as deletion evidence—remains open; this task did not patch
+or publish product code.
 
 Private failure manifests, stderr, exact timezone evidence, cleanup results and
 source hashes are retained under `index-screen-blocked-01/` in the prepared root.

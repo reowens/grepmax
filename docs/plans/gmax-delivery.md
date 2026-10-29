@@ -1198,10 +1198,10 @@ A documentation reconciliation does not start the next task or transfer a claim.
 | --- | --- |
 | Publication | [0.26.99 is complete](#publication-02699-complete--october-27-2026): exact rebuild, accepted publication and matching public bytes via verify-only recovery. No republish is queued. |
 | Local development jobs | [Local workers](gmax-local-workers.md#current-use-and-next-task) owns the commands, accepted P3/Windows typechecks and selected Windows unit file. Windows uses the shorter profile cache. Other task coverage and named Mac pool use remain open. |
-| ColBERT GPU/model evaluation | Separate, unfinished work. Referenced `colbert-backend-evaluation.md` is absent here; older timing/scoring summaries are historical until retained evidence is recovered. No experiment or promotion is queued. |
+| ColBERT GPU/model evaluation | [Backend evaluation](colbert-backend-evaluation.md#recenter--paired-run-completed) and the recovered Pro handoff retain the paired timing, question screen and prepared complete-index comparison. The October 28 read-only registration recovery cleared the older reconnection prerequisite; no complete-index timing or production backend promotion is accepted. No experiment is queued by this reconciliation. |
 | Installed P3 | Platform host receipt (private record) records installed0.26.99 and verified service/cgroup limits. Its host plan retains thermal/indexing ownership. |
 | Worker enrollment | The host's developer-setup plan owns the current operator sequence. Pool admission and enrollment remain separate from Gmax source integration. |
-| Startup text | Historical `session-start-hint-trim.md` is absent here. No startup-text change is selected; its old 0.26.96 dependency is historical. |
+| Startup text | The restored private [startup-text plan](session-start-hint-trim.md) retains its historical scope. No startup-text change is selected; its old 0.26.96 dependency is historical. |
 
 The [repository execution policy](../../CLAUDE.md#local-checks-and-remote-execution)
 and [verification budget](../../AGENTS.md#review-and-verification-budget) apply to
@@ -1213,7 +1213,8 @@ another verification round, remote builder, installation or runtime restart.
 [Gmax on the local worker pool](gmax-local-workers.md) owns the developer entry,
 named tasks, frozen Gmax inputs and result/artifact handling through existing
 local transports. Its [current-use table](gmax-local-workers.md#current-use-and-next-task)
-links accepted P3 and Windows typechecks and distinguishes unrun task coverage.
+links accepted P3/Windows typechecks and the selected Windows unit file, and
+distinguishes unrun task coverage.
 Earlier source-only receipts are dated evidence, not blanket passes for later
 repairs. This integration adds no release gate; pool and machine
 owners keep their scopes.
