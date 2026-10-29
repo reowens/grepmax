@@ -2,7 +2,7 @@
 type: doc
 status: reference
 created: 2026-04-09
-updated: 2026-10-22T03:51:24Z
+updated: 2026-10-29
 summary: Live catalog of open gmax limitations with detection + recovery steps.
 audience: internal
 related_plans:

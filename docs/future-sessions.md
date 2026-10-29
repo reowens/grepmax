@@ -4,19 +4,50 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-29
 audience: internal
-summary: "Soft inferred-definition fix COMPLETE LOCALLY, NOT RELEASED: source, one existing assertion and scoped docs finished. One guarded production compilation passed exit0,0.837s, peak310296576bytes, zero swap growth and clean owned exit. Zero tests/runtime relevance checks. Published0.26.106 and unrelated dirty/deferred work preserved."
+summary: "SHIPPED0.26.107/source ed5b9cf: complete soft inferred-definition source/assertion/docs, one publication and normal P3 handover ready/open/active. Prior no-emit compile reused; artifact build/package passed. No unit/runtime relevance tests or measured gain."
 ---
 
 # Future Sessions
 
-## Soft inferred-definition release selected
+## Soft inferred-definition fix SHIPPED —0.26.107
 
-The explicit release instruction selects the complete prepared five-file change,
-required artifact packaging/compilation, one publication and normal P3 handover.
-The passing0.837s no-emit typecheck is reused; no tests, runtime search exercises,
-review or profiling are added. Earlier uncommitted/local-only statements below
-are historical pre-release context, superseded only for this narrow batch.
-All unrelated ColBERT/resource-history work and saved prompts are preserved.
+The [owning release record](plans/gmax-delivery.md#soft-inferred-definition-eligibility-release--shipped-in026107)
+records complete selected source/assertion/docs, one publication and normal P3
+handover. Source `ed5b9cf98fee50520c26f60a555af7aa1eb7fc47`, tag `v0.26.107`,
+[release](https://github.com/reowens/grepmax/releases/tag/v0.26.107).
+The fix is committed and shipped, rather than an unfinished local batch.
+Inferred definition wording no longer imposes definition-only eligibility;
+explicit definition filters/intent and normal ranking boost remain unchanged.
+Relevance gain and native cost are unmeasured; existing source evidence is not a
+newly reproduced production miss. No caller, model, dependency or budget changed.
+
+The prior0.837s no-emit production compile is reused. Required artifact compilation/
+runtime preparation passed1.992s, peak353,021,952 bytes; packaging11.178s,
+peak608,202,752 bytes. All335 files retained except four byte changes: the intent
+module and three version manifests;331 payloads, dependencies/native provenance
+are unchanged. One existing release.yml run40817041765 passed hosted content and
+registry-byte identity. No second publication or verification-only rerun occurred.
+
+Published-byte staging matched335 package files, kept exact0.26.106 dependencies
+and passed in105.778s, peak1,890,308,096 bytes. Build/package/
+staging guards remained two CPUs/nice10,2GiB owned RSS,180s,minimum8GiB available
+memory,zero swap growth; owned child groups closed. Same-unit P3 handover confirmed
+daemon1788060 serving0.26.107 **ready/open/active**, with config/model/workers,
+unit/quota/weight/nice and store/cache directory identities preserved. Owned marker
+removed; no safety latch cleared. Exact0.26.106 rollback:
+`/home/reoiv/.local/state/gmax-handover/20261029T041714Z-0.26.107/previous-install`.
+Earlier rollback paths remain intact. Archive SHA256:
+`8deb49e4e50d2c7064f2f007ba67caf262fd30af124a43dd940183e6951827a8`.
+Receipts: `docs/plans/assets/soft-definition-release-20261029/`;
+full local state: `/home/reoiv/.local/state/gmax-delivery/20261029-0.26.107/`.
+
+Zero tests/test-typechecks, runtime feature/search/model exercises, review, audit,
+profiling or maintenance. The existing assertion was inspected, not executed.
+Normal startup/version/readiness is not measured relevance correctness or gain.
+Unrelated ColBERT/private dirty/index work is preserved; private history was not
+pushed. CPU/backend/resource-history work stays deferred; FTS and0.26.106 remain
+completed history. Runlist umbrella stays active; no saved prompts consumed.
+Return the concrete shipped result and start no further work automatically.
 
 ## Current direction — better search results
 
@@ -28,53 +59,13 @@ catch-up9801→9802→9803/two normal batches/zero pending are completed history
 The [owning direction](plans/gmax-delivery.md#next-selected-direction--better-search-results)
 is finding expected files/symbols, not further output polish.
 
-The local retained-evidence/source investigation is now complete; its
-[five-step owning plan](plans/gmax-delivery.md#better-results-investigation--soft-inferred-definition-intent-proposed)
-now keeps automatically inferred `DEFINITION` intent as a ranking hint without
-adding `definitionsOnly` to retrieval. Explicit filters and explicitly supplied
-definition-only intent remain intact. Released source applies the inferred
-predicate to both vector and FTS, so symbol-free/non-DEFINITION chunks are
-excluded before ranking. The historical `where is the source` / `source.ts`
-fixture exclusion supports this mechanism; that corrected synthetic fixture is
-not a production miss or an outstanding defect. The referenced private relevance
-artifacts are absent locally; no production expected-answer classification or
-retrieval gain is established. See the owning proposal for exact evidence limits.
-
-Implementation is **COMPLETE LOCALLY, NOT RELEASED** under the user's explicit
-“begin now”. One
-owner changed `src/lib/search/intent.ts`'s inferred return, the one existing
-assertion in `tests/intent.test.ts > classifies 'where is' as DEFINITION` to
-`toBeUndefined()`, and the selected bare-symbol section of
-`docs/known-limitations.md`. Existing dirty docs and unrelated unreleased ColBERT
-query-feature work are preserved. No caller or native/snapshot fixture was edited.
-
-Normal Searcher, daemon/CLI/MCP fallbacks and paused `searchPausedIndex` inherit
-the inference change without caller edits. Explicit `filters.def` and directly
-supplied `SearchIntent.filters.definitionsOnly` keep existing eligibility and
-precedence; the paused payload has filters but no supplied-intent field. Normal
-definition-intent ranking boost and bare-symbol promotion remain unchanged.
-Keep explicit-filter assertions and the corrected native snapshot fixture intact.
-
-The sole final-source local production compilation,
-`node_modules/.bin/tsc --noEmit --incremental false`, passed exit0 on the first
-invocation:0.836990295s, peak sampled owned RSS310,296,576bytes, zero swap growth,
-final available memory44,588,781,568bytes and no live owned compiler processes.
-The reused controller enforced CPUs0/1/nice10,2GiB aggregate owned RSS,180s,
-minimum8GiB available memory and zero swap growth, with owned cleanup verified.
-Receipt: `/tmp/gmax-soft-definition-typecheck-rs1_b_kt/typecheck-receipt.json`;
-log: `/tmp/gmax-soft-definition-typecheck-rs1_b_kt/typecheck-phase-0.log`.
-Scoped diff inspection/check passed. The assertion was inspected, not executed
-or test-typechecked. Six preserved source/caller/fixture files match their
-pre-edit hashes, including both dirty ColBERT refactor files. No source changed
-after compilation. The full outcome is in the owning plan.
-
-Zero tests/test-typechecks, runtime/native dataset/model/query runs, benchmarks,
-audits/reviews, profiling, live/remote/P3 actions, maintenance/FTS, installs,
-staging/commits/pushes or release actions. No source/type fix retry was needed.
-No remaining work in this authorized local batch; do not reopen research or add
-validation/release gates. Production relevance gain and native cost remain
-unproven. The change is uncommitted/unreleased; current models, explicit scope,
-budgets, ownership and JSON compatibility are preserved by source reasoning.
+The first better-results change is **SHIPPED in0.26.107**, as recorded above.
+The0.26.106 baseline applied inferred definition-only eligibility before ranking;
+0.26.107 removes that inferred restriction while retaining explicit filters and
+normal ranking boost. The historical fixture is not a production improvement
+measurement. No further miss investigation, test, query collection or validation
+campaign is selected. Original evidence/compatibility limits remain in the owning
+plan; this completed release does not promise production relevance gain.
 
 CPU attribution and resource history are **DEFERRED/UNSELECTED**; the latter retains
 its unresolved overhead regression and is not a release blocker. Migration,
@@ -82,7 +73,7 @@ broader recall and memory/host roadmaps remain optional/deferred.44 retained old
 test passes/two invocations and the unrerun fixture correction remain historical;
 new UI/CLI behavior was source-reasoned/production-compiled only. These limits
 create no automatic acceptance gate. Existing release/rollback receipts remain.
-Parent receives the completed local batch; no release starts automatically. Superseded pending/
+Parent receives the completed shipped batch; no further work starts automatically. Superseded pending/
 unreleased/next claims in chronological records below do not reopen completed work.
 
 ## Six-feature release0.26.106 complete — recenter with the user

@@ -23,9 +23,9 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Soft inferred-definition implementation complete; explicit0.26.107 release/preparation and normal P3 handover now selected. Reuse passing no-emit compilation; no new tests/runtime relevance checks or profiling."
-next_step: "Finish required artifact build/package, one publication and normal P3 handover, then document shipped outcome and return. No additional research, test/review/profile or model/backend/dependency work selected."
-summary: "One product return and one existing assertion changed; normal/paused eligibility inherits fix with explicit filters/intent, budgets, models, ownership and JSON shapes preserved. One production compilation passed; zero tests/runtime relevance checks. Unreleased and unrelated dirty/ITA work preserved."
+current_state: "SHIPPED0.26.107/source ed5b9cf: complete soft inferred-definition source/assertion/docs, one publication and normal P3 handover ready/open/active. Prior no-emit compile reused; artifact build/package passed. No unit/runtime relevance tests or measured gain."
+next_step: "Return the completed shipped result; start no additional investigation, tests/review/profile, model/backend/dependency work or release automatically. Delivery umbrella remains active; deferred work stays unselected."
+summary: "One inferred return and one existing assertion shipped with scoped docs;335-file package changes only intent.js and three version manifests. Exact0.26.106 rollback and configuration/store safety preserved; unrelated dirty/index/private work retained."
 ---
 
 # Gmax Delivery Plan
@@ -35,42 +35,97 @@ Project status belongs in this plan and its linked plans, never in `AGENTS.md` o
 preserves status, incident measurements and release context moved out of
 `CLAUDE.md`; those excerpts are historical and add no execution authorization.
 
-## Soft inferred-definition eligibility release — preparation active
+## Soft inferred-definition eligibility release — SHIPPED in0.26.107
 
-The user's explicit prepare/commit/release instruction now selects the complete
-narrow batch and normal P3 handover. It supersedes the earlier local-only/no-release
-restriction for this completed change, without adding tests, review, runtime
-queries or profiling. Source remains exactly the prepared single inferred return
-in `src/lib/search/intent.ts`, one aligned existing assertion in
-`tests/intent.test.ts`, and the scoped explanatory docs. Inferred DEFINITION is
-a ranking hint rather than a hard candidate filter; explicit `filters.def`, direct
-definition-only intent, normal ranking boost, budgets/models/ownership and JSON
-compatibility remain unchanged by source reasoning. No production relevance or
-cost gain is measured. The delivery umbrella remains active; no saved prompt is
-consumed and all unrelated experiments remain deferred.
+Completed October29,2026 (UTC), under the explicit prepare/commit/release and
+normal P3 handover authorization. Source `ed5b9cf98fee50520c26f60a555af7aa1eb7fc47`,
+tag `v0.26.107`, [release](https://github.com/reowens/grepmax/releases/tag/v0.26.107).
+The complete selected batch is committed and shipped: the inferred return in
+`src/lib/search/intent.ts`, one aligned existing assertion in `tests/intent.test.ts`,
+and the scoped limitations/owning-plan/handoff documentation. All unrelated dirty,
+intent-to-add, private-history, ColBERT query-feature and resource-history work
+is preserved and excluded from the public source and package.
 
-The prior passing production-only no-emit compilation is reused, not rerun as a
-standalone check:0.836990295s, peak310,296,576 bytes, zero swap growth and owned
-cleanup. Its existing assertion was inspected, not executed/test-typechecked.
-Normal artifact compilation/runtime preparation/packaging are selected only as
-required to create the release archive, followed by one existing release.yml
-publication and normal same-unit P3 handover with exact0.26.106 rollback.
-Retained typecheck: `/tmp/gmax-soft-definition-typecheck-rs1_b_kt/typecheck-receipt.json`.
-Release state: `/home/reoiv/.local/state/gmax-delivery/20261029-0.26.107/`.
-No private history or unrelated source is to be published.
+Automatically inferred DEFINITION remains a ranking hint, without inferred
+`definitionsOnly` eligibility. Normal and paused readers inherit that change;
+explicit `filters.def` precedence and directly supplied definition-only intent
+remain restrictive. Normal definition-ranking boost, bare-symbol promotion,
+models/dependencies, scope, budgets, ownership and JSON shapes are unchanged by
+source reasoning. Broader eligibility can change returned matches and native
+cost; no production expected-answer gain or cost improvement was measured.
+
+**Validation and packaging:** the passing standalone production no-emit compile
+was reused, not rerun:0.836990295s, peak310,296,576 bytes, zero swap growth and
+owned compiler cleanup. Receipt:
+`/tmp/gmax-soft-definition-typecheck-rs1_b_kt/typecheck-receipt.json`.
+The normal archive-producing compilation/runtime preparation then passed locally
+in1.991502464s, peak353,021,952 bytes; packaging passed in11.178067142s,
+peak608,202,752 bytes. Existing guards: CPUs0/1,nice10,2GiB aggregate owned RSS,
+180s, minimum8GiB available memory and zero swap growth. Owned child groups
+closed cleanly with zero swap growth. No source changed after compilation;
+only release version metadata and records changed. The test assertion received
+source/diff inspection only: zero test invocations or test-typecheck rounds.
+
+The335-file archive retains331 byte-identical payloads from0.26.106. Only
+`dist/lib/search/intent.js` and the three version manifests differ; no files are
+added or removed. Dependencies, native payloads and provenance are unchanged.
+The clean public-source checkout includes the complete selected source/assertion
+and projected docs without unrelated root changes. Source and archive manifests
+retain exact hashes; neither a synthetic fixture nor absent private relevance
+artifacts were presented as a newly reproduced production miss.
+
+**Publication:** one dispatch of existing release.yml, run40817041765, passed;
+hosted rebuilt content and registry bytes matched the approved archive. One npm
+publication; no second dispatch, verification-only rerun or publication retry.
+[Workflow](https://github.com/reowens/grepmax/actions/runs/40817041765).
+Archive SHA256: `8deb49e4e50d2c7064f2f007ba67caf262fd30af124a43dd940183e6951827a8`.
+
+**P3 normal handover:** a cache-busted published tarball download matched that
+approved hash and staged successfully on the first attempt. All335 package files
+matched. Staging retained the exact working0.26.106 dependency tree after proving
+unchanged manifests; separately resolved dependencies are retained as evidence,
+not installed in the serving tree. Guarded staging took105.778308262s,
+peak sampled owned RSS1,890,308,096 bytes, zero swap growth,
+and all owned staging processes closed within the same limits above.
+
+The existing `hetchy-gmax.service` now serves0.26.107; daemon1788060 was
+confirmed **ready/open/active**, matching systemd MainPID. Config and unit hashes,
+store/cache directory identities, Small/CPU/384,stored workers4 and kernel limits
+(two CPUs200000/100000,weight10,nice10) are preserved. The predecessor exited;
+the temporary owned autostart marker was removed and no safety latch was cleared.
+Exact0.26.106 rollback:
+`/home/reoiv/.local/state/gmax-handover/20261029T041714Z-0.26.107/previous-install`.
+Earlier rollback installs, including0.26.105 under the0.26.106 handover and the
+older0.26.104 install, remain untouched. This is normal version/readiness handover
+validation, not runtime search/feature correctness validation.
+
+Public receipts: `docs/plans/assets/soft-definition-release-20261029/`.
+Full local release/reconciliation state:
+`/home/reoiv/.local/state/gmax-delivery/20261029-0.26.107/`.
+Handover state: `/home/reoiv/.local/state/gmax-handover/20261029T041714Z-0.26.107`.
+Private-root reconciliation preserves unrelated working bytes and index entries;
+private history is not pushed. The normal service intentionally stays running;
+compiler/package/staging groups and owned markers are cleaned up.
+
+**Completion boundary:** zero unit-test invocations, test smokes, new runtime
+search/native/model queries, independent review, audit, benchmark/profile or CPU
+capture. No dependency/model change, FTS repair/refresh, compaction/pruning,
+maintenance or migration ran. FTS9801→9802→9803/zero pending and prior CPU/six-feature
+releases remain complete history. CPU attribution, resource history and backend
+experiments stay DEFERRED/UNSELECTED. Runlist bookkeeping leaves this delivery
+umbrella active and consumes no saved prompt. All selected work is complete;
+return the shipped result and start no new investigation or validation campaign.
+Earlier local-only/uncommitted statements below are historical and superseded
+by this explicit release outcome, not outstanding selected work.
 
 ## Next selected direction — better search results
 
-The authorized local investigation is complete. The [finite proposal below](#better-results-investigation--soft-inferred-definition-intent-proposed)
-selects one source-grounded eligibility issue with current models. It does not
-establish a production expected-answer miss: the referenced private relevance
-artifacts are absent from this checkout, and the strongest exact retained example
-is a historical synthetic fixture exclusion. Candidate absence is established
-for that recorded mechanism; production incidence and retrieval gain remain
-unproven. The user's subsequent “begin now” batch is **COMPLETE LOCALLY, NOT
-RELEASED**: source, existing assertion, scoped documentation and the sole guarded
-production compilation are finished. There is no remaining authorized step and
-no automatic follow-up test, measurement, review or release.
+The first selected source-grounded eligibility correction is now **SHIPPED
+in0.26.107**, as recorded above. It keeps inferred definition intent soft while
+preserving explicit definition restrictions. The original investigation did not
+establish a production expected-answer miss or measured gain; that limitation
+remains. No additional research, test, profile or release is selected after this
+completed batch. The original investigation/local-only records below are history.
 
 The earlier investigation used local file/source searches and reads, read-only Git
 views/diffs and owning plan/handoff edits only. No implementation, sample
@@ -98,7 +153,10 @@ current disposition; they do not reopen completed CPU/CLI/FTS delivery.
 
 <a id="better-results-investigation--soft-inferred-definition-intent-proposed"></a>
 
-## Better-results investigation — soft inferred definition intent (COMPLETE LOCALLY, NOT RELEASED)
+## Better-results investigation — soft inferred definition intent (SHIPPED in0.26.107)
+
+The following preserves the historical investigation/local-only implementation
+record. The shipped outcome above supersedes its former no-release scope.
 
 Investigation completed October 29, 2026 (UTC), as the single research owner,
 without further delegation. The subsequent explicit “begin now” authorizes the
@@ -141,6 +199,8 @@ from the previously inspected recipe. Scoped source/docs diff inspection and
 `git diff --check` passed. The production compiler excludes the test assertion;
 that edit received source/diff inspection only. Compilation includes existing
 dirty production source too and does not qualify those unrelated changes.
+
+**Historical local-only completion, before explicit release authorization.**
 
 No tests/test-typechecks, new fixtures/helpers, runtime queries/native dataset
 execution, benchmarks/profiles, audits/independent review, model loads, remote
