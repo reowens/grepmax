@@ -1,0 +1,11 @@
+{
+  "sourceUnchangedSinceEmittedCompiler": true,
+  "previousCompilerExitCode": 0,
+  "previousControllerOutcome": "failed-final-swap-guard",
+  "previousFailedReceiptUnchanged": true,
+  "newCompilationInvocations": 0,
+  "runtimePreparationReused": true,
+  "newGuardedPreparation": "npm pack --ignore-scripts",
+  "nativeRuntimeVersion": "0.40.0",
+  "newUnitInvocations": 0
+}

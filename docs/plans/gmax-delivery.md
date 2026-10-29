@@ -23,12 +23,47 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Whole selected MCP/cleanup candidate prepared; authorized fresh packaging guard passed with zero swap. Prior emitted compiler exit0 reused, failed original host guard preserved."
-next_step: "Publish once, hand P3 over retaining exact109rollback, refresh plugin and selected Codex core8 registration, separately observe actual catalog."
-summary: "MCP/cleanup delivery stopped before versioning/publication on final host swap guard; owned processes closed and unrelated work preserved."
+current_state: "0.26.110 published/source920afc5 once; fresh pack guard passed reusing emitted outputs. P3 staging stopped on160,866,304B host swap growth; install109 untouched, core8 not activated."
+next_step: "Return precise published-vs-deployment guard outcome. Do not republish or automatically retry guard; P3/plugin/core8 remain unfinished."
+summary: "Complete MCP/cleanup source published as110; actual staging swap guard stopped delivery before install/config changes. No extra tests/compile; private unrelated work preserved."
 ---
 
 # Gmax Delivery Plan
+
+## 0.26.110 published — P3 handover stopped by safety guard
+
+**October29,2026:** the entire selected MCP64d10ed/fff1556/0b98ac8 and
+Table-cleanup37aa904 source/fixtures/README/catalog/docs batch is published as
+[0.26.110](https://github.com/reowens/grepmax/releases/tag/v0.26.110), source
+`920afc5419ea65bc314833a79b6c09600e1cc556`. [Completion and exact stop](assets/mcp-cleanup-release-20261029/completion.md)
+retains all receipts. One manual workflow40860070807 published and verified the
+identical341-file npm archive; no republish or verification-only recovery.
+
+The original emitted compiler/runtime phases exited0 but final host guard failed
+14,573,568bytes swap growth. Preserve that failure unchanged. After explicit user
+resume, unchanged outputs were reused; fresh guarded packaging passedzero swap,
+18.585845s/630,263,808B peakownedRSS/no survivors. No extra compile/tests/native/
+LLM/relevance/profile/audit/review; retained36/36 fake cases have a later fixture-
+only literal expectation tightening unrerun. Cleanup's runtime/RSS effect unproven.
+
+**Actual unfinished delivery:** ordinary isolated staging hit zero-host-swap
+failure **160,866,304bytes**,1.647504s/224,145,408B ownedRSS,35,792,224,256B
+available/no survivors. No automatic further retry or raised limits. Host-wide
+counter growth is not attributed to the owned process. Global installation is
+still109; no service handover/shutdown/config/store/latch change occurred, so no
+rollback needed. Exact109rollback directory step was not reached; live109 remains
+untouched and prior108rollback retained. No fresh ready/open/active observation.
+Plugin refresh, selected Codex core8 configuration/direct list and active core8
+confirmation have NOT run. Last retained active provider329/full28 remains a
+prior observation; Gmax staysnot_registered, no indexing/query-budget reset.
+
+Complete public source uses109's SDK/native0.40/Python13/qualifiedRust12 baseline;
+later unrelated dependency/Arrow/Lance0.41, ColBERT/private/dirty/ITA work is
+preserved/excluded. Publication complete; continuation must not publish again.
+Remaining staging/P3/plugin/core8 steps are retained but no further guard window
+is automatic. This is an actual safety blocker, not a new test/review gate.
+CPU/backend/resource-history stay deferred; saved prompts untouched.
+
 
 ## Approved delivery resumed — October 29, 2026
 

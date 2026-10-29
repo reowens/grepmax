@@ -1,0 +1,64 @@
+{
+  "outcome": "failed",
+  "testsInvoked": 0,
+  "phases": [
+    {
+      "command": [
+        "node",
+        "scripts/prepare-lance-runtime.cjs"
+      ],
+      "exitCode": 0,
+      "log": "/home/reoiv/.local/state/gmax-delivery/20261029-0.26.110/compile-prep-phase-0.log",
+      "noLiveOwnedProcesses": true
+    },
+    {
+      "command": [
+        "node_modules/.bin/tsc",
+        "--incremental",
+        "false"
+      ],
+      "exitCode": 0,
+      "log": "/home/reoiv/.local/state/gmax-delivery/20261029-0.26.110/compile-prep-phase-1.log",
+      "noLiveOwnedProcesses": true
+    },
+    {
+      "command": [
+        "chmod",
+        "+x",
+        "dist/bin.js",
+        "dist/index.js"
+      ],
+      "exitCode": 0,
+      "log": "/home/reoiv/.local/state/gmax-delivery/20261029-0.26.110/compile-prep-phase-2.log",
+      "noLiveOwnedProcesses": true
+    },
+    {
+      "command": [
+        "node",
+        "scripts/prepare-bounded-runtime.cjs",
+        "/home/reoiv/.local/state/gmax-delivery/20261028-0.26.104/native",
+        "dist/vendor/maintenance",
+        "--required"
+      ],
+      "exitCode": 0,
+      "log": "/home/reoiv/.local/state/gmax-delivery/20261029-0.26.110/compile-prep-phase-3.log",
+      "noLiveOwnedProcesses": true
+    }
+  ],
+  "limits": {
+    "deadlineSeconds": 180,
+    "maxOwnedRssBytes": 2147483648,
+    "minAvailableBytes": 8589934592,
+    "maxSwapGrowthBytes": 0,
+    "cpus": [
+      0,
+      1
+    ]
+  },
+  "noLiveOwnedProcesses": true,
+  "finalAvailableBytes": 30335418368,
+  "finalSwapGrowthBytes": 14573568,
+  "error": "Final host resource guard refused continuation",
+  "elapsedSeconds": 3.408305778983049,
+  "peakSampledOwnedRssBytes": 381321216
+}
