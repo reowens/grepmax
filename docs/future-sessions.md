@@ -2,43 +2,46 @@
 type: doc
 status: active
 created: 2026-10-03T02:39:56Z
-updated: 2026-10-29T07:43:57Z
+updated: 2026-10-29T09:06:49Z
 audience: internal
-summary: "Whole selected Lance upgrade/discovery batch shipped109. SDK/native0.40/core13/Python13; Rust12 unchanged. One focused native invocation3passed; P3/hook refresh/direct MCP metadata complete. Active provider attachment not confirmed; standard session reload remains."
+summary: "README and delivery/discovery handoff aligned with retained 0.26.109 evidence. SDK/native 0.40, core/Python 13; separate Rust 12 unchanged. P3/hook/direct-MCP results are retained observations; active provider attachment remains unverified. Docs-only closeout."
 ---
 
 # Future Sessions
 
-## 0.26.109 published and serving — standard registration repaired
+## 0.26.109 delivered — remaining provider activation is unverified
 
-Release/source`60bc601`, SDK/native0.40.0/core13/Python13; separate qualified
-Rust12 unchanged. Whole selected source/fixtures/docs and archive closeouts are
-included. One focused native invocation passed3/8unselected skipped; final
-production compile reused, no duplicate passing check. Publication invoked once;
-initial metadata404 timeout recovered with one verification-only run (no publish).
-P3 **109 ready/open/active**, same config/unit/store/worker4/limits; exact108
-rollback retained. Claude plugin109 refreshed through current CLI config;7files
-match. See [completion and receipts](plans/assets/lance-discovery-release-20261029/completion.md).
+Use the [retained completion evidence](plans/assets/lance-discovery-release-20261029/completion.md)
+and [README setup guidance](../README.md#current-repo-status). Release source
+`60bc601196075961367d0fa58e511090c9ddcb82` is published; P3 was last verified
+ready/open/active, with the exact 0.26.108 rollback retained. Claude hooks were
+refreshed to 0.26.109. SDK/native 0.40.0, embedded Lance 13 and Python 13 shipped;
+the separately qualified Rust engine remains 12, unchanged.
 
-Codex standard STDIO`gmax`,args`["mcp"]` registration was missing and is now added
-with all other config preserved. Direct server109 advertises28tools including
-repo_status/semantic_search; metadata confirms Gmax not_registered and Platform
-indexed/daemon ready. **Active provider still301tools/zero Gmax**: reconnect/start
-a provider session consuming standard config, then observe actual attachment.
-No T3 code/adapter or blind app restart; no catalog-availability promise.
-No semantic calls, indexing/FTS/maintenance/profile/new models. Original quality
-attempt count unknown/no retries; Table-handle cleanup proposed only; CPU/backend/
-resource-history deferred. Approved delivery complete; no automatic new work.
+Exactly one focused native invocation passed **3 cases / 8 unselected skipped**;
+final production compilation was reused. Publication ran once, with one successful
+verification-only recovery. No result was rerun for this documentation closeout.
 
+Standard Codex registration is repaired: STDIO command `gmax`, args `["mcp"]`.
+The direct server advertised **28 tools**, including `repo_status` and
+`semantic_search`; metadata reported Gmax not_registered and Platform indexed.
+At the retained active-provider check there were **301 tools and no Gmax tools**.
+Reconnect a provider session consuming that registration and confirm visibility;
+do not call attachment verified or require a T3 adapter/code change. Hooks/CLI
+hints do not attach tools, and automatic cwd catalog refresh is not promised.
 
-## Selected 0.26.109 delivery in progress
+No new runtime checks, tests, builds, queries, service/config actions or publication
+occurred in this docs-only closeout. Quality attempts remain unknown/no retry;
+Table-handle cleanup is proposed only; CPU/backend/resource history is deferred.
+Older stages below are historical and do not start another batch.
 
-One focused native invocation passed3/8unselected skipped. Whole selected source/
-fixtures/docs are prepared on public108 history; final production typecheck is
-reused. Continue the already-approved publication/P3/hooks/standard MCP/catalog
-steps without another query/test round. See owning delivery plan and release
-preparation assets; exact publication/handover outcomes will be recorded.
+## Historical 0.26.109 preparation — completed
 
+The previously pending publication/P3/hooks/standard-MCP steps were completed as
+recorded above. [Preparation evidence](plans/assets/lance-discovery-release-20261029/preparation.md)
+is retained; the old continuation instruction is superseded. Provider attachment
+still requires observation after consuming registration, without a new query or
+test budget.
 
 ## Final local upgrade/discovery integration complete
 

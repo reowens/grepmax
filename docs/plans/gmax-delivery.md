@@ -2,7 +2,7 @@
 type: plan
 status: active
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-29T07:43:28Z
+updated: 2026-10-29T09:06:49Z
 surfaces:
   - store
   - daemon
@@ -23,66 +23,56 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "0.26.109 published/source60bc601, P3ready/open/active. Native3passed/8skipped; final compile reused; one publication plus verification-only recovery. Claude hooks109 and standard Codex MCP registration ready; direct server28tools works. Active provider301tools/noGmax; attachment awaits standard session reload."
-next_step: "No new implementation/test/query/release selected. Reconnect/new provider session consuming standard gmax mcp registration and observe its actual catalog; no T3 code/adapter. Quality attempt count unknown/no retry, Table-handle cleanup unselected, CPU/backend/resource history deferred."
-summary: "Whole selected Lance upgrade/discovery batch shipped109. SDK/native0.40/core13/Python13; Rust12 unchanged. One focused native invocation3passed; P3/hook refresh/direct MCP metadata complete. Active provider attachment not confirmed; standard session reload remains."
+current_state: "0.26.109 (source 60bc601) published. P3 last verified ready/open/active; hooks refreshed. One native invocation: 3 passed, 8 unselected skipped; compile reused. Standard registration repaired and direct MCP 28 tools verified; retained active catalog 301/no Gmax, attachment unconfirmed."
+next_step: "Docs closeout complete. Consume standard registration in a reconnected provider session and confirm actual catalog visibility. No T3 adapter/code change or automatic cwd-refresh claim; no query retry, Table-handle cleanup or deferred CPU/backend/resource-history work selected."
+summary: "README and delivery/discovery handoff aligned with retained 0.26.109 evidence. SDK/native 0.40, core/Python 13; separate Rust 12 unchanged. P3/hook/direct-MCP results are retained observations; active provider attachment remains unverified. Docs-only closeout."
 ---
 
 # Gmax Delivery Plan
 
 ## 0.26.109 shipped — Lance upgrade, discovery and standard MCP setup
 
-**October 29, 2026 UTC.** Whole selected source/fixtures/docs shipped as
-[`60bc601`](https://github.com/reowens/grepmax/releases/tag/v0.26.109), including
-SDK/native0.40.0/core13, Python13, current-repo status/hooks/MCP, config-home fix
-and selected archive/doc corrections. Separate qualified Rust12 stays unchanged;
-full-table maintenance remains disabled, with no new qualification claim.
+**Retained October 29, 2026 evidence; not rechecked during this docs closeout.**
+[0.26.109](https://github.com/reowens/grepmax/releases/tag/v0.26.109), source
+`60bc601196075961367d0fa58e511090c9ddcb82`, is published. P3 was last verified
+**ready/open/active** with configuration, unit, store identities and limits
+preserved. Hooks were refreshed to enabled Claude plugin 0.26.109; all seven
+selected payloads matched its CLI-selected cache. Exact 0.26.108 rollback is
+recorded in the [completion evidence](assets/lance-discovery-release-20261029/completion.md).
 
-[Completion/evidence](assets/lance-discovery-release-20261029/completion.md): one
-focused native invocation **3passed/8unselected skipped**, tiny temporary data,
-zero swap/owned survivors. Final combined production compilation reused; local
-artifact emission/runtime/pack passed.341published files match the approved
-archive. Exactly one publication accepted; the first registry-metadata check
-failed404 propagation. One **verification-only** recovery skipped publication
-and completed successfully; no duplicate publish.
+The release includes SDK/native 0.40.0, embedded Lance 13 and Python maintenance
+13.0.0. The separately qualified Rust engine remains 12, unchanged and not newly
+qualified for forward mutation; full-table maintenance remains disabled. One
+focused native invocation passed **3 cases**, with **8 unselected cases skipped**.
+The final production compilation was reused. One publication was followed by
+successful verification-only recovery from a registry metadata timeout; no
+republish or performance/relevance claim.
 
-P3 serves **0.26.109 ready/open/active** under the unchanged systemd unit/config/
-store identities/worker4/quota/nice policy. Exact108rollback is retained at
-`/home/reoiv/.local/state/gmax-handover/20261029T083816Z-0.26.109/previous-install`. Owned marker removed; no maintenance/model/relevance workload added.
-Claude's existing installer reports enabled user plugin109 and all7selected
-payloads match; CLI-selected cache is `.claude-robot/.../0.26.109`.
+Standard Codex STDIO registration (`gmax`, args `["mcp"]`) was repaired with other
+configuration preserved. A direct 0.26.109 MCP connection advertised **28 tools**,
+including `repo_status` and `semantic_search`; metadata reported Gmax
+**not_registered** and Platform **indexed**, with its daemon ready. At the
+retained active-provider check, the catalog had **301 entries and no Gmax tools**.
+Registration and direct server listing do not prove provider attachment. Remaining
+activation is to reconnect/consume the standard registration and **confirm actual
+catalog visibility**. No T3 adapter/code change or automatic cwd catalog refresh
+is required or promised by this record.
 
-Standard Codex registration was missing and now has exactly STDIO`gmax`,args
-`["mcp"]`, with other config preserved. Direct standard MCP109 initialization/
-28-tool listing/`repo_status` succeeded: Gmax remains **not_registered**;
-Platform is **indexed**, daemon ready. No search/store query/model call.
-**Active provider catalog remains301entries/zero Gmax tools.** No hot-load or
-provider attachment is claimed. Reconnect/new provider session must consume the
-new standard registration and actually advertise the tools; no T3 code change,
-custom adapter, blind whole-app restart or automatic next batch is selected.
-
-Original quality attempt count remains unknown/no retry/reset, ranks unmeasured.
-Table-handle cleanup still proposed/unimplemented; CPU attribution/resource
-history/backend experiments remain deferred. No measured fan/RSS/relevance gain.
-All approved delivery/setup-verification/records work is complete; the explicit
-remaining live-session activation condition is not hidden as an attached catalog.
+README now documents current-repo status, standard MCP setup and these distinctions.
+This closeout changes documentation only: no fresh runtime/tool/service checks,
+tests, builds or publication. Original quality attempt count remains unknown,
+with no retry/reset. Table-handle cleanup remains proposed/unimplemented;
+CPU attribution/resource history/backend experiments remain deferred.
 
 
-## Selected Lance/discovery publication — 0.26.109 preparation
+## Historical 0.26.109 preparation — completed
 
-The user approved the full one-native-invocation/package/publication/P3/hooks/
-standard-MCP verification sequence. One native invocation passed3cases;8
-unselected skipped, temporary stores removed, zero swap/owned survivors. No
-second test invocation or semantic-query retry is authorized. SDK/native0.40.0,
-core13 and Python13 remain; separate qualified Rust12 unchanged and full-table
-maintenance disabled. Entire selected local batch is included on public108
-history, excluding private/unrelated source. Prior final production compilation
-is reused; packaging emission is not a new semantic check.
-[Exact focused/preparation record](assets/lance-discovery-release-20261029/preparation.md).
-No T3 changes/adapter selected; standard registration and actual catalog are
-separate observations. Quality attempt count remains unknown/no retry;
-Table-handle cleanup unselected; CPU/backend/resource-history deferred.
-
+This stage prepared the whole selected upgrade/discovery batch on public
+0.26.108 history. Its approved publication, P3 handover, hook refresh and standard
+MCP verification are now recorded above; the remaining provider attachment
+condition is explicit. [Preparation evidence](assets/lance-discovery-release-20261029/preparation.md)
+preserves the earlier scope and native-case selection. It does not authorize a
+new test or query round. Older local/prepublication records below are historical.
 
 ## Upgrade and agent discovery — final local integration complete
 
