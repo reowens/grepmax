@@ -2,7 +2,7 @@
 type: plan
 status: active
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-29T13:07:41Z
+updated: 2026-10-29T14:20:20Z
 surfaces:
   - store
   - daemon
@@ -23,12 +23,28 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "0.26.110 deployment remains complete. Remote background embedding is planned only, awaiting implementation selection; cooling controls have separate ownership."
-next_step: "Remote background embedding plan is ready for source-batch selection; no implementation, model activation or release has started. Cooling controls remain separately owned."
+current_state: "Canonical operational guard process-metric repair locally complete, source-only; WOL unverified and no retry selected. 0.26.110 stays deployed; remote embedding remains planned only."
+next_step: "Report the locally committed source-only guard repair; no automatic WOL, power, network, worker activation or release action. Platform compiler caps are separately owned."
 summary: "Scoped guard/policy and P3/plugin handover complete. Five no-swap operational cohorts passed/closed; core8 configured/directly advertised, active provider still28. Historical failures and unrelated work preserved."
 ---
 
 # Gmax Delivery Plan
+
+## Process-metric guard repair locally complete; WOL remains unverified
+
+The selected canonical guard repair is source-complete in
+`scripts/guard-local-operation.py` revision4; [exact semantics and incident limits](assets/mcp-cleanup-release-20261029/isolated-guard/process-metrics-repair.md)
+record pinned proc identity, strict live RSS/swap parsing, confirmed nonlive
+accounting and structured immutable process-metric failures. Existing scoped
+no-swap/CPU/RSS/deadline/host-memory/containment/OOM/cleanup bounds are unchanged.
+Source/diff inspection only: zero tests, compilation, guard runs or hardware
+checks. The historical WOL failure is not proven to be an exit race; its exact
+helper invocation/path was not retained, so no old operational copy is guessed
+or rewritten. NetworkManager Reapply accepted the request, but NIC WOL state and
+profile persistence remain unverified. No WOL/power/network action or retry ran;
+power-saver must remain enabled. Platform compiler caps have a separate owner.
+Published/deployed110 stays unchanged, remote embedding remains planned only,
+and no relevance query budget, saved prompt, release or push is selected here.
 
 ## Remote background embedding planned; implementation awaits selection
 
@@ -5726,6 +5742,9 @@ parallel omnibus plan.
   every remaining item. Archiving a record is never evidence of a completed repair.
 
 ## Version History
+
+- **2026-10-29T14:20:20Z** Status: in-session → active — Canonical guard process-metric repair source-complete; no runtime verification or WOL retry. Existing limits and failed historical receipts preserved.
+- **2026-10-29T14:17:30Z** Started (active → in-session).
 
 - **2026-10-29T13:07:41Z** Status: in-session → active — Remote background embedding plan prepared; no implementation or new runtime work selected.
 - **2026-10-29T13:03:50Z** Started (active → in-session).

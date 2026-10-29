@@ -24,11 +24,77 @@ def fields(file):
     return dict(line.split(maxsplit=1) for line in file.read_text().splitlines())
 
 
-def status(pid):
-    data = dict(line.split(':', 1) for line in Path(f'/proc/{pid}/status').read_text().splitlines() if ':' in line)
-    if data['State'].strip().startswith('Z'):
-        return {'VmRSS': 0, 'VmSwap': 0}
-    return {k: int(data[k].split()[0]) * 1024 for k in ('VmRSS', 'VmSwap')}
+class ProcessMetricError(RuntimeError):
+    def __init__(self, pid, field, reason):
+        self.details = {'pid': pid, 'field': field, 'reason': reason}
+        super().__init__(f'process {pid} {field}: {reason}')
+
+
+def status(pid, expected_cgroup=None, still_member=None):
+    """Return strict live metrics, or None for a confirmed departed task."""
+    proc_fd = None
+    field = 'process directory'
+    try:
+        # The directory descriptor keeps later reads on this task if the PID
+        # exits and its numeric ID is reused before sampling finishes.
+        proc_fd = os.open(f'/proc/{pid}', os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+
+        def read(name):
+            with os.fdopen(os.open(name, os.O_RDONLY | os.O_CLOEXEC,
+                                   dir_fd=proc_fd)) as file:
+                return file.read()
+
+        def identity():
+            raw = read('stat')
+            end = raw.rfind(')')
+            values = raw[end+2:].split()
+            if end < 0 or int(raw.split('(', 1)[0]) != pid:
+                raise ValueError('invalid process stat identity')
+            state, threads, start = values[0], int(values[17]), int(values[19])
+            if len(state) != 1 or threads < 0 or start < 0:
+                raise ValueError('invalid process stat fields')
+            return state, threads, start
+
+        field = 'stat'
+        before = identity()
+        field = 'cgroup'
+        membership = read('cgroup').strip() if expected_cgroup is not None else None
+        field = 'status'
+        data = dict(line.split(':', 1) for line in read('status').splitlines() if ':' in line)
+        field = 'stat'
+        after = identity()
+        if before[2] != after[2]:
+            raise ProcessMetricError(pid, 'starttime', 'process identity changed during read')
+        if after[0] in ('Z', 'X', 'x'):
+            if after[1] > 1:
+                raise ProcessMetricError(pid, 'VmRSS', 'departed leader still has live thread-group members')
+            return None
+        if expected_cgroup is not None:
+            field = 'cgroup'
+            if membership != '0::'+expected_cgroup or read('cgroup').strip() != membership:
+                raise ProcessMetricError(pid, field, 'live process membership differs from owned cgroup')
+        field = 'State'
+        state = data['State'].split()[0]
+        if len(state) != 1 or state in ('Z', 'X', 'x'):
+            raise ValueError('inconsistent live process state')
+        metrics = {}
+        for field in ('VmRSS', 'VmSwap'):
+            value, unit = data[field].split()
+            if unit != 'kB' or not value.isascii() or not value.isdecimal():
+                raise ValueError('expected nonnegative integer kB')
+            metrics[field] = int(value)*1024
+        return metrics
+    except (FileNotFoundError, ProcessLookupError):
+        # Absence alone can also mean hidden proc visibility. Require the PID
+        # to be gone from the owned group, including when its ID is reused.
+        if still_member is None or still_member():
+            raise ProcessMetricError(pid, field, 'process unavailable; departure from owned scope unconfirmed')
+        return None
+    except (OSError, UnicodeError, KeyError, ValueError, IndexError) as error:
+        raise ProcessMetricError(pid, field, f'{type(error).__name__}: {error}') from error
+    finally:
+        if proc_fd is not None:
+            os.close(proc_fd)
 
 
 def main():
@@ -62,7 +128,7 @@ def main():
     identity = None
     initial = None
     last = None
-    result = {'revision': 3, 'operation': args.operation, 'host': socket.gethostname(),
+    result = {'revision': 4, 'operation': args.operation, 'host': socket.gethostname(),
               'kernel': os.uname().release, 'cgroup': relative,
               'limits': {'cpus': cpus, 'niceAtLeast': 10, 'maxOwnedRssBytes': 2*GIB,
                          'deadlineSeconds': 180, 'minAvailableBytes': 8*GIB,
@@ -71,9 +137,11 @@ def main():
 
     def fail(reason, phase, sample=None):
         if result['firstFailure'] is None:
-            result['firstFailure'] = {'reason': reason, 'phase': phase,
+            result['firstFailure'] = {'reason': str(reason), 'phase': phase,
                                       'sample': sample, 'monotonicNs': time.monotonic_ns(),
                                       'utc': datetime.datetime.now(datetime.timezone.utc).isoformat()}
+            if isinstance(reason, ProcessMetricError):
+                result['firstFailure']['processMetric'] = reason.details
 
     def verify_identity():
         st = group.stat()
@@ -108,13 +176,16 @@ def main():
         vm = fields(Path('/proc/vmstat'))
         members = pids()
         own = status(os.getpid())
+        if own is None:
+            raise ProcessMetricError(os.getpid(), 'status', 'supervisor is not live')
         rss = own['VmRSS']
+        nonlive = 0
         for pid in members:
-            try:
-                rss += status(pid)['VmRSS']
-            except FileNotFoundError:
-                if pid in pids():
-                    raise
+            process = status(pid, relative, lambda: pid in pids())
+            if process is None:
+                nonlive += 1
+            else:
+                rss += process['VmRSS']
         return {'utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 'monotonicNs': time.monotonic_ns(), 'availableBytes': mem['MemAvailable'],
                 'hostSwapAllocatedBytes': mem['SwapTotal']-mem['SwapFree'],
@@ -128,7 +199,7 @@ def main():
                 'jobMemoryEvents': {k:int(v) for k,v in fields(group/'memory.events').items()},
                 'jobSwapEvents': {k:int(v) for k,v in fields(group/'memory.swap.events').items()},
                 'ownedRssBytes': rss, 'supervisorSwapBytes': own['VmSwap'],
-                'jobProcessCount': len(members)}
+                'jobProcessCount': len(members), 'jobNonLiveProcessCount': nonlive}
 
     def check(value, phase):
         reasons = []
@@ -195,7 +266,7 @@ def main():
     except BaseException as error:
         # A failed metric read has no complete trigger sample. Keep the last
         # successful observation separate instead of labeling it as the trigger.
-        fail(str(error), 'operation')
+        fail(error, 'operation')
     finally:
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
         signal.signal(signal.SIGINT, signal.SIG_IGN)
@@ -213,7 +284,7 @@ def main():
                         except (FileNotFoundError, ProcessLookupError): pass
                 except BaseException as error:
                     result['cleanupErrors'].append(str(error))
-                    fail(str(error), 'cleanup enumeration')
+                    fail(error, 'cleanup enumeration')
                     # Even lost PID visibility must not leave the owned cohort running.
                     verify_identity(); (group/'cgroup.kill').write_text('1\n')
                 if fields(group/'cgroup.events')['populated'] != '0': time.sleep(.5)
@@ -228,7 +299,7 @@ def main():
                 final = sample(); result['final'] = final
                 check(final, 'final')
             except BaseException as error:
-                result['cleanupErrors'].append(str(error)); fail(str(error), 'cleanup')
+                result['cleanupErrors'].append(str(error)); fail(error, 'cleanup')
                 try:
                     verify_identity(); (group/'cgroup.kill').write_text('1\n')
                     if child is not None: child.wait(timeout=max(.1, cleanup_deadline-time.monotonic()))
@@ -238,7 +309,7 @@ def main():
                 try:
                     verify_identity(); group.rmdir(); result['ownedCgroupRemoved'] = True
                 except BaseException as error:
-                    result['cleanupErrors'].append(str(error)); fail(str(error), 'cgroup removal')
+                    result['cleanupErrors'].append(str(error)); fail(error, 'cgroup removal')
         result['lastObservedSample'] = last
         result['elapsedSeconds'] = time.monotonic()-started
         if initial is not None and 'final' in result:

@@ -856,6 +856,12 @@ job spilled. Missing delegation or enforcement refuses work. The wrapper grants
 no test, model, maintenance or deployment permission; see
 [the operational procedure](CLAUDE.md#guarded-local-operational-commands).
 
+Process sampling pins the proc directory and checks start time and owned-cgroup
+membership. Confirmed departures are accounted separately from live RSS; missing
+or malformed live metrics and unreadable in-scope processes still stop the job.
+The immutable first failure includes process/field details for metric errors,
+separate from cleanup and final observations.
+
 ### Benchmarks
 
 Two retrieval evaluation harnesses emit JSON via `:json` variants. Additional token and experimental-orientation harnesses are available as `bench:tokens` and `bench:surprises`.

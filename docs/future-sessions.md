@@ -9,6 +9,22 @@ summary: "Scoped guard/policy and P3/plugin handover complete. Five no-swap oper
 
 # Future Sessions
 
+## Process-metric guard repair locally complete; WOL remains unverified
+
+The selected canonical guard repair is source-complete in
+`scripts/guard-local-operation.py` revision4; [exact semantics and incident limits](plans/assets/mcp-cleanup-release-20261029/isolated-guard/process-metrics-repair.md)
+record pinned proc identity, strict live RSS/swap parsing, confirmed nonlive
+accounting and structured immutable process-metric failures. Existing scoped
+no-swap/CPU/RSS/deadline/host-memory/containment/OOM/cleanup bounds are unchanged.
+Source/diff inspection only: zero tests, compilation, guard runs or hardware
+checks. The historical WOL failure is not proven to be an exit race; its exact
+helper invocation/path was not retained, so no old operational copy is guessed
+or rewritten. NetworkManager Reapply accepted the request, but NIC WOL state and
+profile persistence remain unverified. No WOL/power/network action or retry ran;
+power-saver must remain enabled. Platform compiler caps have a separate owner.
+Published/deployed110 stays unchanged, remote embedding remains planned only,
+and no relevance query budget, saved prompt, release or push is selected here.
+
 ## Remote background embedding planned; implementation awaits selection
 
 User “plan it now” selected documentation only. The
