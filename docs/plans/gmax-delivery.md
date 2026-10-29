@@ -23,12 +23,37 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "0.26.110 published/source920afc5 once; fresh pack guard passed reusing emitted outputs. P3 staging stopped on160,866,304B host swap growth; install109 untouched, core8 not activated."
-next_step: "Return precise published-vs-deployment guard outcome. Do not republish or automatically retry guard; P3/plugin/core8 remain unfinished."
-summary: "Complete MCP/cleanup source published as110; actual staging swap guard stopped delivery before install/config changes. No extra tests/compile; private unrelated work preserved."
+current_state: "P3 swap investigation complete: net host-swap guard valid, historical owner unknown. Two passive reads show no disk swap-out increment; retained swap mostly Next sessions; Gmax service~90MiB. No deployment/core retry."
+next_step: "Return bounded findings; recommend normal-owner cleanup of unused large Next dev servers, without kernel/guard changes or automatic deployment retry."
+summary: "Read-only swap findings recorded. Published110/last-deployed109 and pending core8 unchanged; current holders do not establish failure-time causation."
 ---
 
 # Gmax Delivery Plan
+
+## P3 swap investigation — READ-ONLY COMPLETE
+
+October29,2026: [focused findings](assets/mcp-cleanup-release-20261029/swap-investigation.md)
+trace both failed guards to the same local P3 host/procfs. KiB conversion and
+baseline routing are correct. Their metric is net host-wide swap allocation,
+not owned-work swap or disk-write bytes; final growth is not a retained trigger/
+peak sample. Historical per-process/cgroup/counter attribution is unavailable.
+
+Two passive reads35.096s apart found33.09→31.74GiB available,12.81GiB retained
+swap,44.15MiB net swap allocation decline,pswpout0 and14.05MiB disk-counter
+swap-in. zswap is enabled, so zero disk-output does not exclude compressed-swap
+activity. No binding inspected cgroup high/max limit or OOM event explains current
+swap; “all activity idle” is not claimed. Three largest Next servers hold5.79GiB;
+Gmax service≈90MiB, daemon18.5MiB. Separately51MCP clients hold917MiB; no orphan
+or historical-cause claim.734readable process statuses,0unreadable; PID1 namespace
+symlink comparison denied and not bypassed. Full caveats/citations are in the note.
+
+Recommendation: owners verify the three Next dev-server lifetimes and normally
+close any unused servers, before speculative kernel/guard/Gmax changes. None was
+stopped. Global rule remains unchanged; no tests/build/runtime/model/MCP/query/
+service/config/deployment/guard retry/remote action or push. Published110,
+last-deployed109/core8 pending and unknown relevance-attempt budget stay intact.
+No new execution starts automatically; saved prompts untouched.
+
 
 ## 0.26.110 published — P3 handover stopped by safety guard
 
