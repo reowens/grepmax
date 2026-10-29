@@ -2,7 +2,7 @@
 type: plan
 status: active
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-29T14:20:20Z
+updated: 2026-10-29T14:39:55Z
 surfaces:
   - store
   - daemon
@@ -23,12 +23,95 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Canonical operational guard process-metric repair locally complete, source-only; WOL unverified and no retry selected. 0.26.110 stays deployed; remote embedding remains planned only."
-next_step: "Report the locally committed source-only guard repair; no automatic WOL, power, network, worker activation or release action. Platform compiler caps are separately owned."
-summary: "Scoped guard/policy and P3/plugin handover complete. Five no-swap operational cohorts passed/closed; core8 configured/directly advertised, active provider still28. Historical failures and unrelated work preserved."
+current_state: "Quiet-P3 recenter complete from retained evidence. Guard afb8dda and Platform compiler cap4434ed5 are local/source-only; power-saver last verified13:58:34, WOL readback/persistence unfinished. Product110 deployment remains completed."
+next_step: "Recommend one bounded WOL readback/persistence closure preserving Ethernet and power-saver, only if selected. Remote embedding/3 proposed spins and real compiler-cap qualification remain optional and unstarted."
+summary: "Quiet-P3 docs recentered: two source-only local repairs complete, WOL unverified, remote embedding proposed; no new execution or release selected."
 ---
 
 # Gmax Delivery Plan
+
+## Recenter: quiet P3, finish WOL closure before optional offload
+
+**October 29, 2026: documentation reconciliation only.** P3 is this local machine;
+no host-connectivity uncertainty, new operational read, runtime qualification,
+model load, test, compile, agent, setting change, release or push is implied.
+The next actions below are proposals for user selection, not an automatic batch.
+
+| Area | Established state and limit |
+| --- | --- |
+| Product | 0.26.110/source `920afc5` publication and P3 handover completed, last verified ready/open/active; exact 0.26.109 rollback retained in the [delivery receipt](assets/mcp-cleanup-release-20261029/isolated-guard/completion.md). No fresh service check here. |
+| Quiet operation | Power-saver re-enabled at 13:54:58 UTC and verified again 13:58:34: all 24 EPP values `power`, Ethernet `enp128s31f6` up/carrier1/default route preserved. Automatic cooling retained; no BIOS, manual fan/PWM or RAPL changes. |
+| WOL | NetworkManager permission was YES and the supported Reapply returned true, but hardware readback and saved-profile persistence were not reached. WOL is not complete or blocked solely on root permission. |
+| Gmax guard | Local commit `afb8dda`, revision4: pinned process identity, confirmed departure accounting and structured fail-closed metric errors. [Source-only repair/limits](assets/mcp-cleanup-release-20261029/isolated-guard/process-metrics-repair.md); no guard execution. |
+| Platform compiler cap | Local commit `4434ed5aa99e1eef8c365cf80432de7358c6e5c2`: admitted whole-job kernel cap, not just Node heap flags. Owning implementation record (private record); source-only, no runtime qualification/restart. |
+| MCP | Core profile configuration/direct advertisement of 8 tools remain completed evidence; the last retained parent catalog had 329 tools/28 Gmax tools. No catalog, attachment or current-repo readiness claim was rechecked. |
+| Remote embedding | [Plan `7922a38`](gmax-remote-background-embedding.md), not implemented. Windows v1 is prepared; the proposed Mac/Windows+MLX work has not started and no large-model load is authorized. |
+
+**Noise evidence:** the user's “No noise now” described the first power-saver
+activation, before the incident rollback. It is not a new acoustic measurement
+after re-enabling, a measured fan-RPM result or proof of 24/7 quiet operation.
+Keep power-saver selected. The passive Gmax CPU sample did not isolate embedding
+stage cost and cannot promise that offloading inference removes all host noise.
+
+**Interruption attribution, corrected:** the retained evidence strongly correlates
+the server interruption with two host-global OOM events and two other Platform
+native TypeScript 7 API compilations. Q3 Home owned the first shared compile
+(`20261029-063545.log`, Q4 joined); Room Privacy lane A phase 17 L3 round 4 owned
+the second (`20261029-063920.log`). The second was **not** Q3's retry. Kernel
+victim PID-to-PPID ancestry is absent, so this is strong time/exit-137 correlation,
+not reconstructed parentage. The normal shared provider scope had no individual
+hard cap; Node heap flags do not cap this native compiler. Power-saver is not
+shown to have caused the interruption. Full private provenance is retained in
+[the OOM summary](/home/reoiv/.local/state/gmax-delivery/20261029-0.26.110/isolated-guard/oom-investigation-1793281719065-summary.json)
+and [the retained cross-thread provenance](/home/reoiv/.local/state/gmax-delivery/20261029-0.26.110/isolated-guard/oom-investigation-1793281719065-launch-read.json); do not copy
+private cross-thread command/source material into public records.
+
+**Compiler repair scope:** every admitted tsc-resource payload now enters the
+Python pre-exec supervisor from `work-scheduler.mjs:1098`. The declared MiB
+becomes `memory.max` in bytes, no larger than a finite ancestor ceiling; API's
+default stays 11,000 MiB. Fresh empty cohort, `memory.swap.max=0`, `memory.oom.group=1` and exact
+membership/start-time readback gate exec. Nested/shared owners and daemon loans
+reuse the same budget/cohort, not a second allowance. Joining/admission remains.
+Refusal exit 126 and OOM exit 137 are not cached compiler verdicts. Linux missing delegation or
+essential metrics, stale loan metadata, unpreservable ancestry and non-Linux
+without a hard-cap backend refuse. The 6-file local commit includes its owning
+notes; no compiler/test/build/service execution, restart or runtime/noise result
+was reported. No new compile campaign is a prerequisite for the next proposal.
+
+### Small next proposal, in order
+
+1. **Finish WOL readback and persistence as one bounded operational closure.**
+   Under the repaired canonical guard, use the existing NetworkManager/libnm
+   route to read the applied and hardware wake state and persist only the
+   selected magic-wake setting. Preserve connection identity/version, external
+   IP/default route, live Ethernet and power-saver. The prior sudo-n denial is
+   not proof all routes lack permission: NM permissions were YES; cloning the
+   applied connection and requesting magic-wake flag 64 via versioned Reapply with
+   preserve-external-IP flag 1 returned true. The guard failed on `'VmRSS'` at
+   14:00:03.735 UTC before readback/persistence; exact invocation path and
+   event-time process state are not retained. The saved profile was unchanged (last wake flag 0); the last PCI wake read was
+   disabled.
+   No NIC restart/link bounce, suspend/wake or reboot test is proposed. A future
+   successful closure may establish configured/read-back state, not actual
+   wake-from-sleep behavior. This docs turn performs none of those actions.
+2. **Optional next feature: select the proposed remote-embedding work.**
+   Three proposed spins are (1) P3 contract/routing/integration, (2) matching-model
+   Mac and dell-win worker backend, (3) source-only MLX dense+ColBERT compatibility
+   assessment. None has started. Preserve P3's authoritative writer/reuse/source
+   checks and local foreground query path; settle matching model contracts and
+   model lifetime before activation. Existing MLX is dense-only, not a complete
+   ColBERT replacement; Mac compatibility and persistent reuse versus bounded
+   per-job cold loads remain unqualified design questions. No fan gain promised.
+3. **Qualify compiler containment only when separately selected.** A future
+   expressly approved bounded operation can establish real enforcement/cleanup
+   of the source-complete cap. No new stress, benchmark, compiler campaign or
+   automatic verification gate is selected here or required before WOL closure.
+
+Quiet P3 operation is the priority; optional offload is separate from the power
+profile that helped. Unrelated CPU attribution, resource history, backend/native
+Lance0.41 work and dirty/index/private history remain preserved and unselected,
+not blockers for a release that has already completed. The relevance attempt
+count remains unknown; no query budget is reset. Saved prompts remain pending.
 
 ## Process-metric guard repair locally complete; WOL remains unverified
 
@@ -5742,6 +5825,9 @@ parallel omnibus plan.
   every remaining item. Archiving a record is never evidence of a completed repair.
 
 ## Version History
+
+- **2026-10-29T14:39:55Z** Status: in-session → active — Docs-only quiet-P3 recenter; source repairs afb8dda/4434ed5 complete but unexercised. WOL closure proposed next; remote embedding/Mac agents remain unstarted.
+- **2026-10-29T14:35:41Z** Started (active → in-session).
 
 - **2026-10-29T14:20:20Z** Status: in-session → active — Canonical guard process-metric repair source-complete; no runtime verification or WOL retry. Existing limits and failed historical receipts preserved.
 - **2026-10-29T14:17:30Z** Started (active → in-session).

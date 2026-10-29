@@ -2,7 +2,7 @@
 type: plan
 status: awaiting
 created: 2026-10-29T13:06:23Z
-updated: 2026-10-29T13:07:41Z
+updated: 2026-10-29
 surfaces:
 modules:
   - src/lib/workers/orchestrator.ts
@@ -13,12 +13,35 @@ audience: internal
 parent_plan: docs/plans/gmax-delivery.md
 related_plans:
 related_docs:
-current_state: READY FOR IMPLEMENTATION; planning only. Named Windows worker route selected as the smallest existing transport; live inference and activation remain unqualified.
-next_step: On a later implementation selection, finish the 7-step source/fixture/docs batch. No worker activation, model load or release is authorized by this plan.
+current_state: "Prepared Windows-v1 background-embedding design; optional Mac/Windows and source-only MLX work proposed, not started. Runtime compatibility and model lifetime remain unqualified."
+next_step: "After the separately proposed WOL closure, select whether to start the remote-embedding source batch/3 proposed spins. No implementation, model load, worker activation or release is authorized now."
 summary: Move background dense and ColBERT inference off P3 through a bounded named Gmax worker task, retaining P3 parsing, reuse, source fencing and the only store writer.
 ---
 
 # Remote background embedding
+
+## Recenter: optional Mac/Windows work is proposed, not started
+
+The [quiet-P3 recenter](gmax-delivery.md#recenter-quiet-p3-finish-wol-closure-before-optional-offload)
+puts one proposed WOL readback/persistence closure ahead of optional embedding
+work. Power-saver was selected again; no new acoustic result or measured
+embedding-offload benefit is claimed. This plan remains unimplemented.
+
+The earlier bounded 16-chunk dell-win design below is the prepared v1 proposal,
+not an activated worker or a mandate to reload models per job indefinitely.
+The user also discussed Mac MLX and proposed agent ownership. Three **proposed**
+spins are: P3 contract/routing/integration; matching-model Mac+dell-win worker
+backend; source-only MLX dense+ColBERT compatibility assessment. None is launched
+or authorized to load a large model by this documentation update.
+
+Mac is a plausible additional worker, not qualified as compatible. Existing MLX
+serves dense vectors only; it does not replace the ColBERT representation. Exact
+model/tokenizer/normalization identity and cross-platform numerics still matter.
+Persistent model reuse versus the prepared bounded job's cold-load cost remains
+a design decision to settle in that selected work, without silently migrating
+models or introducing a hot local fallback. The settled P3 writer, reuse, fencing,
+background-only routing and local foreground-query boundaries below remain.
+No new backend experiment, release, service or worker activation is queued.
 
 ## Decision and evidence
 
@@ -313,6 +336,8 @@ experiments and cooling settings are not selected by this plan. No current
 availability/version claim is added to AGENTS.md or CLAUDE.md.
 
 ## Version History
+
+- **2026-10-29** Docs-only quiet-P3 recenter: WOL closure proposed first; Mac/Windows backend and source-only MLX work are proposed, not started. No model load, verification or release selected.
 
 - **2026-10-29T13:07:41Z** Status: in-session → awaiting — Planning complete; implementation, verification and worker activation are not started.
 - **2026-10-29T13:07:41Z** Started (planned → in-session).

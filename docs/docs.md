@@ -1,13 +1,23 @@
 # Docs
 
+## Current state: quiet-P3 recenter, October 29, 2026
+
+[Delivery and next proposal](plans/gmax-delivery.md#recenter-quiet-p3-finish-wol-closure-before-optional-offload)
+and [handoff](future-sessions.md#recenter-quiet-p3-first-wol-closure-proposed-next)
+record completed 0.26.110 delivery, two local/source-only guard repairs, power-saver's
+retained verification and unfinished WOL readback/persistence. Recommend that
+one bounded WOL closure next, preserving Ethernet and power-saver; nothing runs
+from this docs update. Remote embedding/Mac MLX work remains proposed and
+unstarted, with no promised acoustic gain or new model authorization.
+
 ## Selected planning: remote background embedding
 
-[Remote background embedding](plans/gmax-remote-background-embedding.md) is ready
-for implementation selection. It is documentation only: no remote inference,
-model activation, verification run or release has started. The delivery plan and
-handoff link its exact scope; cooling settings have separate ownership.
+[Remote background embedding](plans/gmax-remote-background-embedding.md) retains
+the prepared Windows v1 proposal, with Mac/Windows and MLX assessment proposed
+but unstarted. No remote inference, model activation, verification or release
+has started. The delivery plan and handoff own the current ordering.
 
-## Current state — October 29, 2026
+## Earlier delivery snapshot — October 29, 2026 (superseded)
 
 **[0.26.108 is shipped](https://github.com/reowens/grepmax/releases/tag/v0.26.108).**
 All selected work through its normal P3 ready/open/active handover is complete,

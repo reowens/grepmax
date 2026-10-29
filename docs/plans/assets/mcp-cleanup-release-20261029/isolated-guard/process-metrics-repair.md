@@ -82,3 +82,14 @@ or WOL retry was performed. There is no runtime validation claim for revision4.
 The Platform compiler-cap owner has separate source/records; no Platform file is
 included in this Gmax commit. Published/deployed110 and remote embedding's
 planning-only state remain unchanged; no release or push is selected.
+
+## Recenter follow-up, retained evidence only
+
+Guard source repair is local commit `afb8dda`. Platform's separate compiler
+containment repair is local commit `4434ed5aa99e1eef8c365cf80432de7358c6e5c2`;
+its owning source-only record (private record)
+reports no runtime qualification. The [delivery recenter](../../../gmax-delivery.md#recenter-quiet-p3-finish-wol-closure-before-optional-offload)
+keeps WOL readback/persistence as the smallest proposed operational closure,
+not an action performed or authorized by this documentation update. Both
+historical failures and the unproven invocation path/exit-race cause above stay
+unchanged. No power/network/guard operation or test was run for this follow-up.

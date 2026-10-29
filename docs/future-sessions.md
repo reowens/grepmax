@@ -4,10 +4,31 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-29
 audience: internal
-summary: "Scoped guard/policy and P3/plugin handover complete. Five no-swap operational cohorts passed/closed; core8 configured/directly advertised, active provider still28. Historical failures and unrelated work preserved."
+summary: "Quiet-P3 docs recentered: two source-only local repairs complete, WOL unverified, remote embedding proposed; no new execution or release selected."
 ---
 
 # Future Sessions
+
+## Recenter: quiet P3 first; WOL closure proposed next
+
+The [current decision and ordered proposal](plans/gmax-delivery.md#recenter-quiet-p3-finish-wol-closure-before-optional-offload)
+reconcile retained evidence only. Both local source repairs are committed:
+Gmax guard `afb8dda`, Platform compiler cap `4434ed5`; neither has runtime
+qualification. Product 0.26.110 handover remains completed with 0.26.109 rollback retained.
+Power-saver was last verified 13:58:34 UTC with 24 EPP `power` and Ethernet/route
+preserved. The earlier “No noise now” was the user's first-activation report,
+not a fresh acoustic result. Two other Platform native API compiles strongly
+correlate with global OOM; power-saver is not shown to have caused the outage.
+
+Recommend one selected bounded NM WOL readback/persistence closure, preserving
+power-saver/Ethernet and without link restart, suspend/wake or reboot testing.
+The prior versioned Reapply was accepted; hardware WOL and saved state remain
+unverified after the old guard failure. Exact helper path/exit-race cause are
+unproven. Next optional feature is remote embedding with 3 **proposed, unstarted**
+spins including Mac/dell-win matching models and source-only MLX assessment.
+Compiler runtime qualification is separate and only if expressly selected.
+No execution, model load, agent start, query retry, release or push is queued;
+core config/direct 8 versus last parent catalog of 329 tools/28 Gmax tools remains historical evidence.
 
 ## Process-metric guard repair locally complete; WOL remains unverified
 
