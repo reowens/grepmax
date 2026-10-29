@@ -4,10 +4,77 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-29
 audience: internal
-summary: "COMPLETE: all six selected status/CLI features released0.26.106/source b4955e0; one publication and normal P3 handover ready/open/active. Production compilation/package only; zero new tests/profile/maintenance."
+summary: "SHIPPED0.26.107/source ed5b9cf: complete soft inferred-definition source/assertion/docs, one publication and normal P3 handover ready/open/active. Prior no-emit compile reused; artifact build/package passed. No unit/runtime relevance tests or measured gain."
 ---
 
 # Future Sessions
+
+## Soft inferred-definition fix SHIPPED —0.26.107
+
+The [owning release record](plans/gmax-delivery.md#soft-inferred-definition-eligibility-release--shipped-in026107)
+records complete selected source/assertion/docs, one publication and normal P3
+handover. Source `ed5b9cf98fee50520c26f60a555af7aa1eb7fc47`, tag `v0.26.107`,
+[release](https://github.com/reowens/grepmax/releases/tag/v0.26.107).
+The fix is committed and shipped, rather than an unfinished local batch.
+Inferred definition wording no longer imposes definition-only eligibility;
+explicit definition filters/intent and normal ranking boost remain unchanged.
+Relevance gain and native cost are unmeasured; existing source evidence is not a
+newly reproduced production miss. No caller, model, dependency or budget changed.
+
+The prior0.837s no-emit production compile is reused. Required artifact compilation/
+runtime preparation passed1.992s, peak353,021,952 bytes; packaging11.178s,
+peak608,202,752 bytes. All335 files retained except four byte changes: the intent
+module and three version manifests;331 payloads, dependencies/native provenance
+are unchanged. One existing release.yml run40817041765 passed hosted content and
+registry-byte identity. No second publication or verification-only rerun occurred.
+
+Published-byte staging matched335 package files, kept exact0.26.106 dependencies
+and passed in105.778s, peak1,890,308,096 bytes. Build/package/
+staging guards remained two CPUs/nice10,2GiB owned RSS,180s,minimum8GiB available
+memory,zero swap growth; owned child groups closed. Same-unit P3 handover confirmed
+daemon1788060 serving0.26.107 **ready/open/active**, with config/model/workers,
+unit/quota/weight/nice and store/cache directory identities preserved. Owned marker
+removed; no safety latch cleared. Exact0.26.106 rollback:
+`/home/reoiv/.local/state/gmax-handover/20261029T041714Z-0.26.107/previous-install`.
+Earlier rollback paths remain intact. Archive SHA256:
+`8deb49e4e50d2c7064f2f007ba67caf262fd30af124a43dd940183e6951827a8`.
+Receipts: `docs/plans/assets/soft-definition-release-20261029/`;
+full local state: `/home/reoiv/.local/state/gmax-delivery/20261029-0.26.107/`.
+
+Zero tests/test-typechecks, runtime feature/search/model exercises, review, audit,
+profiling or maintenance. The existing assertion was inspected, not executed.
+Normal startup/version/readiness is not measured relevance correctness or gain.
+Unrelated ColBERT/private dirty/index work is preserved; private history was not
+pushed. CPU/backend/resource-history work stays deferred; FTS and0.26.106 remain
+completed history. Runlist umbrella stays active; no saved prompts consumed.
+Return the concrete shipped result and start no further work automatically.
+
+## Current direction — better search results
+
+0.26.106 completed all six selected features, both helpers/user docs, one
+publication and normal P3 handover. Source `b4955e0`, public records `d547e8a`,
+private reconciliation `cd9720f`; daemon942028 ready/open/active is the recorded
+handover observation, not a fresh live read.0.26.105 CPU delivery/profile and FTS
+catch-up9801→9802→9803/two normal batches/zero pending are completed history.
+The [owning direction](plans/gmax-delivery.md#next-selected-direction--better-search-results)
+is finding expected files/symbols, not further output polish.
+
+The first better-results change is **SHIPPED in0.26.107**, as recorded above.
+The0.26.106 baseline applied inferred definition-only eligibility before ranking;
+0.26.107 removes that inferred restriction while retaining explicit filters and
+normal ranking boost. The historical fixture is not a production improvement
+measurement. No further miss investigation, test, query collection or validation
+campaign is selected. Original evidence/compatibility limits remain in the owning
+plan; this completed release does not promise production relevance gain.
+
+CPU attribution and resource history are **DEFERRED/UNSELECTED**; the latter retains
+its unresolved overhead regression and is not a release blocker. Migration,
+broader recall and memory/host roadmaps remain optional/deferred.44 retained older
+test passes/two invocations and the unrerun fixture correction remain historical;
+new UI/CLI behavior was source-reasoned/production-compiled only. These limits
+create no automatic acceptance gate. Existing release/rollback receipts remain.
+Parent receives the completed shipped batch; no further work starts automatically. Superseded pending/
+unreleased/next claims in chronological records below do not reopen completed work.
 
 ## Six-feature release0.26.106 complete — recenter with the user
 

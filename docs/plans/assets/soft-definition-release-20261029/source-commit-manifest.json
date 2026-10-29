@@ -1,0 +1,20 @@
+{
+  "sourceCommit": "ed5b9cf98fee50520c26f60a555af7aa1eb7fc47",
+  "files": {
+    "src/lib/search/intent.ts": "164c02917b91acc6fcc6f2dcea2ca048b7ea59ae1cc9c628fb29e0c59dbb6dc0",
+    "tests/intent.test.ts": "e5e0b3cbfa0b4706d99700b377e022fdbd981fafc54eb6625daf8f4ceee982fa",
+    "docs/known-limitations.md": "ff5169898fda35b6a90c5afc46f2d4fc3877872293a1e282b42a0a5191acaaca",
+    "docs/plans/gmax-delivery.md": "91a9904b6ea5aae3323638f58cba9b9992d4c8ca07bf9f71f5964453f6e01458",
+    "docs/future-sessions.md": "283c3158b561fc85a2a3af0abec91b3a063d44af8825c70cfebda3eebce7d80f",
+    "package.json": "8ef3d4e8b3f0546c02c81b3222204d9cf9104f1257c4c5069c28727ac9c3d7e0",
+    "plugins/grepmax/.claude-plugin/plugin.json": "85d5fa42a1cf832607c4bc5cae099463d581779328639e68df379c0fc18c5d5d",
+    ".claude-plugin/marketplace.json": "5e022d9e5c3f0a994addc3a70fec138d09f112bd634be7e3373a2e3d74ed948c",
+    "docs/plans/assets/soft-definition-release-20261029/reused-typecheck-receipt.json": "915da743705738720bfe5e5fd2ecca2c86a48679c33fcc5e3e41d51e745824d3",
+    "docs/plans/assets/soft-definition-release-20261029/pack-controller-receipt.json": "0b41e7f3f006306a22b7a2d3a2c701770e0876f4fb1830861109c625dc1966b1",
+    "docs/plans/assets/soft-definition-release-20261029/source-copy.json": "df2273785634f196dc57f521b594442ba42e775781c3f979d13f198032513b9a",
+    "docs/plans/assets/soft-definition-release-20261029/validation-limits.json": "498d039883f05f888c785364257c4b6216b8155ebd26a154bfbe310ade274fc6",
+    "docs/plans/assets/soft-definition-release-20261029/payload-comparison.json": "2b0ab68477fcb7e40c1ed0e84bf44b16cc144731a2729be4bbe00ad00f8dfbc4",
+    "docs/plans/assets/soft-definition-release-20261029/production-build-receipt.json": "d5e88e1c048f59a189dd35cb384af5aab37cfe210828d996a28df951558e41b5"
+  },
+  "sourceAndAssertionMatchPreparedRoot": true
+}

@@ -1,0 +1,16 @@
+{
+  "publicBaseline": "d547e8a34d6da4d8e65454fc9eeafb649e403d5a",
+  "releaseWorktree": "/home/reoiv/dev/hetchy/tools/gmax/.claude/worktrees/gmax-soft-definition-release-026107",
+  "exactRootSourceAndAssertion": {
+    "src/lib/search/intent.ts": "164c02917b91acc6fcc6f2dcea2ca048b7ea59ae1cc9c628fb29e0c59dbb6dc0",
+    "tests/intent.test.ts": "e5e0b3cbfa0b4706d99700b377e022fdbd981fafc54eb6625daf8f4ceee982fa"
+  },
+  "projectedDocs": [
+    "docs/known-limitations.md",
+    "docs/plans/gmax-delivery.md",
+    "docs/future-sessions.md"
+  ],
+  "selectedLimitationParagraphSha256": "61edb064e933572b2e92c99580787b978b0665703e1eb468c5df5ebf028caab1",
+  "unrelatedColbertRefactorIncluded": false,
+  "noNewTestInvocation": true
+}

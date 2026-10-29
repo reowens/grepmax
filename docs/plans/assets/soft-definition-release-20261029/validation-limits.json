@@ -1,0 +1,17 @@
+{
+  "reusedNoEmitTypecheck": "/tmp/gmax-soft-definition-typecheck-rs1_b_kt/typecheck-receipt.json",
+  "reusedNoEmitSeconds": 0.8369902950362302,
+  "standaloneNoEmitRerun": false,
+  "artifactCompilationRequiredByPackaging": true,
+  "unitTestInvocations": 0,
+  "testAssertionInspectedNotExecuted": true,
+  "testTypecheck": false,
+  "runtimeQueriesOrFeatureExercise": false,
+  "independentReview": false,
+  "audit": false,
+  "profiles": false,
+  "relevanceGainMeasured": false,
+  "nativeCostMeasured": false,
+  "modelsOrDependenciesChanged": false,
+  "maintenanceInvoked": false
+}

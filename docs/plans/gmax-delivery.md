@@ -2,7 +2,7 @@
 type: plan
 status: active
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-29
+updated: 2026-10-29T04:09:47Z
 surfaces:
   - store
   - daemon
@@ -23,9 +23,9 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "COMPLETE: all six selected status/CLI features released0.26.106/source b4955e0; one publication and normal P3 handover ready/open/active. Production compilation/package only; zero new tests/profile/maintenance."
-next_step: "Recenter with the user. No new batch, profiling, maintenance or prototype integration selected; optional CPU attribution remains unratified."
-summary: "Complete selected source/docs/helpers shipped in335-file archive; dependencies/native payloads unchanged. Guarded local build/package and one existing workflow passed; cached staging tarball404 recovered without republishing. P3 configuration/store preserved and exact0.26.105 rollback retained."
+current_state: "SHIPPED0.26.107/source ed5b9cf: complete soft inferred-definition source/assertion/docs, one publication and normal P3 handover ready/open/active. Prior no-emit compile reused; artifact build/package passed. No unit/runtime relevance tests or measured gain."
+next_step: "Return the completed shipped result; start no additional investigation, tests/review/profile, model/backend/dependency work or release automatically. Delivery umbrella remains active; deferred work stays unselected."
+summary: "One inferred return and one existing assertion shipped with scoped docs;335-file package changes only intent.js and three version manifests. Exact0.26.106 rollback and configuration/store safety preserved; unrelated dirty/index/private work retained."
 ---
 
 # Gmax Delivery Plan
@@ -34,6 +34,384 @@ Project status belongs in this plan and its linked plans, never in `AGENTS.md` o
 `CLAUDE.md`. [Architecture/operations history](architecture-operations-history.md)
 preserves status, incident measurements and release context moved out of
 `CLAUDE.md`; those excerpts are historical and add no execution authorization.
+
+## Soft inferred-definition eligibility release — SHIPPED in0.26.107
+
+Completed October29,2026 (UTC), under the explicit prepare/commit/release and
+normal P3 handover authorization. Source `ed5b9cf98fee50520c26f60a555af7aa1eb7fc47`,
+tag `v0.26.107`, [release](https://github.com/reowens/grepmax/releases/tag/v0.26.107).
+The complete selected batch is committed and shipped: the inferred return in
+`src/lib/search/intent.ts`, one aligned existing assertion in `tests/intent.test.ts`,
+and the scoped limitations/owning-plan/handoff documentation. All unrelated dirty,
+intent-to-add, private-history, ColBERT query-feature and resource-history work
+is preserved and excluded from the public source and package.
+
+Automatically inferred DEFINITION remains a ranking hint, without inferred
+`definitionsOnly` eligibility. Normal and paused readers inherit that change;
+explicit `filters.def` precedence and directly supplied definition-only intent
+remain restrictive. Normal definition-ranking boost, bare-symbol promotion,
+models/dependencies, scope, budgets, ownership and JSON shapes are unchanged by
+source reasoning. Broader eligibility can change returned matches and native
+cost; no production expected-answer gain or cost improvement was measured.
+
+**Validation and packaging:** the passing standalone production no-emit compile
+was reused, not rerun:0.836990295s, peak310,296,576 bytes, zero swap growth and
+owned compiler cleanup. Receipt:
+`/tmp/gmax-soft-definition-typecheck-rs1_b_kt/typecheck-receipt.json`.
+The normal archive-producing compilation/runtime preparation then passed locally
+in1.991502464s, peak353,021,952 bytes; packaging passed in11.178067142s,
+peak608,202,752 bytes. Existing guards: CPUs0/1,nice10,2GiB aggregate owned RSS,
+180s, minimum8GiB available memory and zero swap growth. Owned child groups
+closed cleanly with zero swap growth. No source changed after compilation;
+only release version metadata and records changed. The test assertion received
+source/diff inspection only: zero test invocations or test-typecheck rounds.
+
+The335-file archive retains331 byte-identical payloads from0.26.106. Only
+`dist/lib/search/intent.js` and the three version manifests differ; no files are
+added or removed. Dependencies, native payloads and provenance are unchanged.
+The clean public-source checkout includes the complete selected source/assertion
+and projected docs without unrelated root changes. Source and archive manifests
+retain exact hashes; neither a synthetic fixture nor absent private relevance
+artifacts were presented as a newly reproduced production miss.
+
+**Publication:** one dispatch of existing release.yml, run40817041765, passed;
+hosted rebuilt content and registry bytes matched the approved archive. One npm
+publication; no second dispatch, verification-only rerun or publication retry.
+[Workflow](https://github.com/reowens/grepmax/actions/runs/40817041765).
+Archive SHA256: `8deb49e4e50d2c7064f2f007ba67caf262fd30af124a43dd940183e6951827a8`.
+
+**P3 normal handover:** a cache-busted published tarball download matched that
+approved hash and staged successfully on the first attempt. All335 package files
+matched. Staging retained the exact working0.26.106 dependency tree after proving
+unchanged manifests; separately resolved dependencies are retained as evidence,
+not installed in the serving tree. Guarded staging took105.778308262s,
+peak sampled owned RSS1,890,308,096 bytes, zero swap growth,
+and all owned staging processes closed within the same limits above.
+
+The existing `legacy-gmax.service` now serves0.26.107; daemon1788060 was
+confirmed **ready/open/active**, matching systemd MainPID. Config and unit hashes,
+store/cache directory identities, Small/CPU/384,stored workers4 and kernel limits
+(two CPUs200000/100000,weight10,nice10) are preserved. The predecessor exited;
+the temporary owned autostart marker was removed and no safety latch was cleared.
+Exact0.26.106 rollback:
+`/home/reoiv/.local/state/gmax-handover/20261029T041714Z-0.26.107/previous-install`.
+Earlier rollback installs, including0.26.105 under the0.26.106 handover and the
+older0.26.104 install, remain untouched. This is normal version/readiness handover
+validation, not runtime search/feature correctness validation.
+
+Public receipts: `docs/plans/assets/soft-definition-release-20261029/`.
+Full local release/reconciliation state:
+`/home/reoiv/.local/state/gmax-delivery/20261029-0.26.107/`.
+Handover state: `/home/reoiv/.local/state/gmax-handover/20261029T041714Z-0.26.107`.
+Private-root reconciliation preserves unrelated working bytes and index entries;
+private history is not pushed. The normal service intentionally stays running;
+compiler/package/staging groups and owned markers are cleaned up.
+
+**Completion boundary:** zero unit-test invocations, test smokes, new runtime
+search/native/model queries, independent review, audit, benchmark/profile or CPU
+capture. No dependency/model change, FTS repair/refresh, compaction/pruning,
+maintenance or migration ran. FTS9801→9802→9803/zero pending and prior CPU/six-feature
+releases remain complete history. CPU attribution, resource history and backend
+experiments stay DEFERRED/UNSELECTED. Runlist bookkeeping leaves this delivery
+umbrella active and consumes no saved prompt. All selected work is complete;
+return the shipped result and start no new investigation or validation campaign.
+Earlier local-only/uncommitted statements below are historical and superseded
+by this explicit release outcome, not outstanding selected work.
+
+## Next selected direction — better search results
+
+The first selected source-grounded eligibility correction is now **SHIPPED
+in0.26.107**, as recorded above. It keeps inferred definition intent soft while
+preserving explicit definition restrictions. The original investigation did not
+establish a production expected-answer miss or measured gain; that limitation
+remains. No additional research, test, profile or release is selected after this
+completed batch. The original investigation/local-only records below are history.
+
+The earlier investigation used local file/source searches and reads, read-only Git
+views/diffs and owning plan/handoff edits only. No implementation, sample
+collection, tests, review, benchmark/profile, compilation, query/model/native
+execution, remote/live check or release ran. New UI/CLI behavior was source-
+reasoned and production-compiled, not runtime-exercised. The44 retained test
+passes span two older invocations; the later fixture correction remains unrerun.
+The0.26.105 CPU delivery/profile is complete history, not a CPU-gain claim for
+0.26.106. These limits create no automatic acceptance gate.
+
+CPU attribution is **DEFERRED/UNSELECTED**, not the next required gate. The
+resource-history prototype is **DEFERRED/UNSELECTED** because its overhead
+regression remains unresolved; it did not ship and does not block the completed
+release. Other migration, broader recall and memory/host roadmaps remain optional
+or deferred, not hidden unfinished approved work. FTS catch-up is complete in
+two normal content-bounded batches9801→9802→9803 with zero pending.
+
+All six features, both helpers/user docs, one publication and normal P3 handover
+are complete in0.26.106. Existing completion records identify source `b4955e0`,
+public records `d547e8a` and private reconciliation `cd9720f`. Daemon942028
+ready/open/active is the **recorded handover observation**, not a fresh live check.
+Release, rollback and chronological evidence below remain unchanged. Earlier
+"unreleased", "pending" and "next" claims are historical where superseded by this
+current disposition; they do not reopen completed CPU/CLI/FTS delivery.
+
+<a id="better-results-investigation--soft-inferred-definition-intent-proposed"></a>
+
+## Better-results investigation — soft inferred definition intent (SHIPPED in0.26.107)
+
+The following preserves the historical investigation/local-only implementation
+record. The shipped outcome above supersedes its former no-release scope.
+
+Investigation completed October 29, 2026 (UTC), as the single research owner,
+without further delegation. The subsequent explicit “begin now” authorizes the
+prepared narrow source/assertion/docs change and one guarded local production
+compilation. Published baseline remains
+`b4955e0e1869c0538017e20c8b45f39d13267c8f` / `v0.26.106`; public records
+`d547e8a` and private reconciliation `cd9720f` remain the previously recorded
+receipts, without fresh service or release verification.
+
+**Implementation completion — October29,2026 (UTC).** The same owner completed
+the explicitly selected five-file batch without further delegation:
+`src/lib/search/intent.ts` now returns `{ type: "DEFINITION" }` for inferred
+definition intent; the one existing assertion in `tests/intent.test.ts` now
+expects `definitionsOnly` to be undefined. The selected bare-symbol paragraph in
+`docs/known-limitations.md`, this plan and the current handoff describe broader
+eligibility without promising rank or production quality. No caller, filter
+builder, ranking weight, payload/type, native/snapshot fixture, model or dependency
+was changed. Normal Searcher retains its existing definition-ranking hint;
+paused keyword search inherits eligibility without new ranking logic. Explicit
+`filters.def` precedence and directly supplied definition-only intent remain
+unchanged, as do scope, candidate/result budgets, store/lease ownership, refusal
+paths and JSON schemas. These compatibility conclusions are source/diff reasoning,
+not runtime tests. Root's ColBERT query-feature refactor and four read-only
+caller/filter/fixture boundary files match their saved pre-edit SHA256 values
+(six files checked, zero changed). All unrelated dirty/ITA/private work remains.
+
+The **one final-source local production compilation** ran
+`node_modules/.bin/tsc --noEmit --incremental false` and passed exit0 on its first
+invocation. Elapsed0.8369902950362302s; peak sampled owned RSS310,296,576bytes;
+zero swap growth; final available memory44,588,781,568bytes. The unchanged
+retained controller recipe enforced CPUs0/1, nice10,2GiB aggregate owned RSS,
+180s, minimum8GiB available memory, zero swap-growth checks and owned-process
+cleanup. It recorded `noLiveOwnedProcesses: true` both for the phase and final
+cleanup. No guard trip, type error, retry or source edit after compilation.
+Compiler receipt: `/tmp/gmax-soft-definition-typecheck-rs1_b_kt/typecheck-receipt.json`;
+log: `/tmp/gmax-soft-definition-typecheck-rs1_b_kt/typecheck-phase-0.log`;
+controller and selected-file pre-edit copies/preservation hashes are in the same
+private directory. The controller differs only in its output `STATE` directory
+from the previously inspected recipe. Scoped source/docs diff inspection and
+`git diff --check` passed. The production compiler excludes the test assertion;
+that edit received source/diff inspection only. Compilation includes existing
+dirty production source too and does not qualify those unrelated changes.
+
+**Historical local-only completion, before explicit release authorization.**
+
+No tests/test-typechecks, new fixtures/helpers, runtime queries/native dataset
+execution, benchmarks/profiles, audits/independent review, model loads, remote
+or live/P3 actions, installs, maintenance/FTS, staging/commits/pushes, versioning,
+publication or deployment ran. Runtime incidence, ranking gain and native cost
+remain unmeasured; no extra validation is made a completion gate. This local
+fix is complete and uncommitted/unreleased. Published0.26.106 and its shipped
+six-feature/CPU/FTS records stay unchanged. Runlist start/completion bookkeeping
+uses the existing delivery plan, leaves the umbrella open and consumes no saved
+prompt; all CPU/backend/model/dependency/resource-history work stays deferred.
+
+**Historical preparation continuation — October29,2026 (UTC).** The user requested “plan
+the fix and prepare to start”, not implementation. Exact callers/types/assertion,
+the local compiler launcher/configuration and the retained guard controller were
+read statically. The following checklist is ready for one owner after an explicit
+start, with no new discovery round. No source/test changes, compiler, tests,
+queries, models, remote actions, staging or worktree creation ran. Lifecycle
+`status: active` is unchanged; readiness here is the disposition of this batch.
+
+**Strongest retained example and evidence limits.** The exact query
+`where is the source` expects the fixture file `source.ts`, row `native-row`,
+whose content defines `source()`. The [retained fixture](../../tests/searcher-row-ids.test.ts)
+(lines230–290) supplies this query, target and injected query/rerank behavior.
+The [October27 handoff record](../future-sessions.md) (historical paragraph beginning
+“Source and test typechecks passed”, originally lines1647–1655) attributes its
+earlier exclusion to missing `defined_symbols`; adding `["source"]` corrected
+the fixture. The [original failure receipt](assets/p3-cpu-20261027/search-focused-receipt.json)
+records exit1, and the [targeted corrected receipt](assets/p3-cpu-20261027/native-snapshot-receipt.json)
+records exit0. Neither receipt contains a candidate trace or the original failed
+row snapshot. Thus the exact example is linked through the retained narrative
+and corrected fixture, rather than a newly reproduced/raw per-query failure.
+Its store was native but inputs/reranking were injected, with48-dimensional
+ColBERT-shaped data; it identifies no real model or production index. This is a
+corrected fixture-metadata omission, **not an outstanding fixture defect or an
+observed production miss**. Do not remove metadata from that fixture or reopen
+the completed snapshot work to manufacture another failure.
+
+The private `docs/measurements/` directory is absent here, including the
+30-question `candidate-holdout-v3.json` and `label-screen-01/` referenced by the
+[deferred backend plan](colbert-backend-evaluation.md). Its summary reports two
+Stripes answers outside10 in ColBERT-only screening, without their query/target
+bytes or released blended candidate lists; that cannot locate this defect.
+[Known limitations](../known-limitations.md#small-result-lists-preserve-ranks-relevance-still-needs-validation)
+records cancelled-MCP-request and search-pipeline ranking problems, but lacks
+the exact queries/expected spans and full traces here. Its separate per-file
+triage records scored targets suppressed by diversity and other pooled cuts;
+these are different mechanisms, not evidence for inferred-definition filtering.
+The retained P3 profile queries such as `cache` are latency inputs with stage
+counts and no expected answers, and were not relabeled as relevance evidence.
+
+**Static causal finding in the released baseline, before this local fix.**
+
+- [intent.ts](../../src/lib/search/intent.ts), lines10–15, infers `DEFINITION`
+  **and** `filters.definitionsOnly=true` from `where is`, `what is` or `define`.
+  This inference is made even without an explicit symbol/role filter.
+- [Searcher.search](../../src/lib/search/searcher.ts), lines556/590, passes that
+  inferred intent to `buildWhereClause`. Lines186–195 add
+  `(role = 'DEFINITION' OR array_length(defined_symbols) > 0)` unless an explicit
+  `def` predicate already applies. The same clause is passed to vector retrieval
+  (lines674–683) and FTS (lines689–699), before fusion, pooled selection or rerank.
+- A row with no definitions and a different/empty role is therefore ineligible
+  in **both** retrieval arms. Reranking or widening its window cannot recover it.
+  [fallbackChunk](../../src/lib/index/chunker.ts), lines1254–1275, legitimately
+  emits blocks without definition metadata; doc-like chunks become `DOCS`
+  (lines337–338). Symbol-free content is not by itself a broken index. This
+  connects the predicate to a valid product chunk class, independently of the
+  synthetic fixture's omitted metadata. No live frequency is inferred.
+
+**Classification:** high confidence in pre-fusion **candidate exclusion** for
+rows failing that predicate, and in the static causal path. The historical
+synthetic exclusion is supported by the handoff, with the provenance limits
+above. **Unknown** for any production expected file/symbol: there is no usable
+local query + expected indexed row + results/candidates record. Even an eligible
+row could subsequently miss the bounded vector/FTS windows or rank below output.
+No claim that a complete expected file was absent, FTS was missing, or a reranker
+would fix a documented production ranking miss follows from this finding.
+
+The preparation's read-only comparison with `b4955e0` found no differences in `search/`,
+`store/vector-db.ts`, `index/chunker.ts`, `daemon/paused-reads.ts`, the relevant
+fixture or `tests/intent.test.ts`. Released views confirm the predicate and
+inference. Root has unrelated unreleased ColBERT `queryFeatures` extraction in
+`workers/embeddings/colbert.ts` / `workers/orchestrator.ts`; those dirty bytes
+were not used to claim released query behavior and must remain untouched.
+
+**Three possible fixes; choose the first.** Make automatically inferred
+`DEFINITION` a ranking hint only, by omitting its inferred `definitionsOnly` flag
+in `detectIntent`. This is the smallest coherent change and retains the existing
+definition role boost. A second option is adding selected roles/`parent_symbol`
+exceptions to the SQL predicate; that still excludes valid fallback/doc chunks
+and invents another eligibility taxonomy. A third is unioning an unfiltered
+retrieval arm; that adds reads and candidate-budget choices for a problem the
+existing bounded retrievers can address. No ranking weight/window sweep is needed.
+
+**Exact ownership and pre-implementation dirty baseline.** The owner edits only
+`src/lib/search/intent.ts`, `tests/intent.test.ts`, one explanatory paragraph in
+`docs/known-limitations.md` under “Bare-symbol queries promote the symbol's
+definition over its usages”, and this plan/current `docs/future-sessions.md`
+handoff. The first two files are clean and match `b4955e0`; the three docs are
+already dirty and must receive narrow additive/scoped edits preserving their
+existing content. `searcher.ts`, `paused-reads.ts`, `search-handler.ts`,
+`search-run.ts`, `mcp.ts`, `searcher-filters.test.ts` and the corrected
+`searcher-row-ids.test.ts` are clean read-only reference boundaries. Root's dirty
+`workers/embeddings/colbert.ts` (84 insertions/3 deletions) and
+`workers/orchestrator.ts` (1 insertion/71 deletions) are unrelated query-feature
+work and must not be changed, reverted or copied into a release. All other dirty,
+untracked and intent-to-add work stays with its existing owner. No worktree,
+staging, commit or cleanup is needed for this batch.
+
+**Five ordered implementation steps — completed locally under the later begin-now instruction:**
+
+1. Make the one product data change in `detectIntent` (`intent.ts`, line15):
+   return `{ type: "DEFINITION" }` instead of including
+   `filters: { definitionsOnly: true }`. Retain the classifier regex and other
+   intent types; the `SearchIntent` type needs no change. Retain
+   `Searcher.applyStructureBoost`'s existing1.2 definition-intent multiplier
+   within its existing eligible chunk-type branch. Add no weight or retrieval arm.
+2. Preserve the established caller behavior without editing those callers:
+   `Searcher.search` uses `intent || detectIntent(query)` (sixth argument), so
+   directly supplied `SearchIntent` objects bypass inference unchanged.
+   `buildWhereClause` keeps explicit `SearchFilter.def`'s exact
+   `array_contains(defined_symbols, ...)` predicate and its precedence over the
+   generic definition-only branch; a supplied
+   `{ type: "DEFINITION", filters: { definitionsOnly: true } }` still produces
+   `(role = 'DEFINITION' OR array_length(defined_symbols) > 0)`. All other
+   explicit filters remain AND-composed. `handleDaemonSearch` passes undefined
+   intent, as do the CLI `runSearch` fallback and MCP `searchViaDaemon` fallback;
+   they inherit the fix. `DaemonSearchPayload` has no intent field: add none.
+   `searchPausedIndex` directly calls `detectIntent` and the same where builder,
+   inheriting broader eligibility with no new ranking step. Its payload filters
+   still apply, including `def`, role and scope. There is no supplied-intent
+   parameter on that paused path; do not invent one. Preserve all existing
+   safety/refusal, lease/store ownership and response/JSON shapes.
+3. In `tests/intent.test.ts`, existing case
+   `detectIntent > classifies 'where is' as DEFINITION`, keep the type assertion
+   and replace only `expect(result.filters?.definitionsOnly).toBe(true)` with
+   `.toBeUndefined()`. No other existing assertion requires alignment. Keep
+   `searcher-filters.test.ts` cases `handles DEFINITION intent with definitionsOnly`
+   and `def filter overrides DEFINITION intent` unchanged. Keep
+   `searcher-row-ids.test.ts > keeps native payload reads on their retrieval version while a writer updates rows`
+   and its `defined_symbols: ["source"]` unchanged. Zero test invocations, new
+   test cases/helpers or synthetic reproductions are planned.
+4. Complete the source, existing assertion and scoped documentation together.
+   In the selected known-limitations paragraph and owning records, distinguish
+   ordinary `where is the source` / `what is ...` / `define ...` wording from
+   an explicit structured definition filter. Before, symbol-free/non-DEFINITION
+   rows fail inferred eligibility; after, they compete within the same scoped
+   bounded retrieval while normal search retains the existing definition ranking
+   hint. Wording `define source` alone is also inference, not a strict filter.
+   Explicit `filters.def: "source"` still requires that symbol; a directly
+   supplied definition-only intent still restricts eligibility. Bare-symbol
+   promotion is unchanged. Broader eligibility promises no rank/quality gain,
+   and the corrected `source` fixture is not a demonstrated improvement case.
+5. Inspect the five-file diff, then perform **one guarded local production
+   compilation on the final source** using the recipe below. Fix any in-scope
+   type error from its existing output; repeat only that failed compilation if
+   needed, with the same controls. Do not repeat a passing compilation or add
+   test-typechecking. Unrelated dirty-source errors are reported honestly rather
+   than repaired/reverted under this scope. Record the complete change, compiler
+   outcome and validation limits in the owning plan/handoff, and return without
+   an intermediate checkpoint. No test, benchmark/query/model/native run, audit,
+   independent review, profile, package, publication or live action is included.
+
+**Retained compiler recipe — inspected in preparation, run once as recorded above.** From this existing checkout use
+`node_modules/.bin/tsc --noEmit --incremental false` directly. The installed
+shell launcher forwards to TypeScript's local Node/native compiler launcher;
+it invokes no npm lifecycle scripts. `tsconfig.json` includes `src/**/*` and
+excludes tests/scripts; `--noEmit --incremental false` avoids emitted output and
+incremental-state writes. It does not validate the edited test assertion, which
+gets source/diff inspection only. Do not substitute `pnpm build`, `release:check`,
+`test:typecheck`, package preparation or a worker task.
+
+Reuse the actual controller already retained at
+`/tmp/gmax-three-features-typecheck-_x5msou2/controller.py`: after start, copy it
+to a fresh private typecheck evidence directory, change only `STATE` to that
+directory, and run that copy with `python3`. It already contains exactly the
+compiler command above, repository cwd,250ms guard polling, first two allowed
+CPUs/nice10,2GiB aggregate owned RSS,180s deadline, minimum8GiB available memory
+and zero swap-growth admission/final checks. Its child environment sets
+`GMAX_NO_AUTOSTART=1`, `NODE_OPTIONS=--max-old-space-size=768`,
+`MALLOC_ARENA_MAX=2`; cleanup signals only the owned process group (TERM,0.5s,
+KILL if still owned, wait3s), verifies no live owned descendants and writes a
+receipt/log. Do not overwrite old evidence, alter limits or create a new harness.
+The compile sees preserved dirty `src` work too; its result is a checkout-wide
+production compilation, not validation or inclusion of unrelated changes.
+No controller copy, compiler or admission/host sample was executed in preparation;
+the later implementation invocation and actual outcome are recorded above.
+
+**Compatibility/resource boundaries and completion criteria.** This changes
+eligibility only for automatically inferred definition intent. Existing scoped
+predicates, empty-project fail-closed behavior, explicit definition-only intent,
+current models/dimensions/index format, daemon store ownership, FTS adoption,
+snapshot/payload reads, cancellation and response schema stay unchanged. Normal
+retriever limits (default500 per arm), stage1=200, stage2=40, rerank20 plus the
+existing bounded symbol additions, final limit and per-file diversity stay
+unchanged, including all existing overrides. The paused reader still uses
+existing-index-only FTS `fastSearch`,20-row cap and2s timeout, without embedding,
+scan fallback or recovery. More rows becoming eligible can change native cost
+and displace previous matches; bounded counts are not a speed/no-regression
+guarantee. Hits and scores may change for affected questions, but exact response
+field/protocol compatibility must remain.
+
+Completion means the one behavior change, necessary existing assertion/doc
+alignment, scoped diff and the one production compilation outcome are recorded;
+runtime relevance improvement is explicitly unverified. A single retained or
+user-supplied production query with its expected indexed file/span and saved
+results/candidate scope could later establish whether this mechanism matters.
+That missing fact does not demand a new broad benchmark or another research
+round. No such collection is authorized here. CPU attribution, backend/model
+experiments, resource history, dependency/model migration, graph recovery,
+window/weight tuning, optional exports and all live/release actions remain
+**DEFERRED/UNSELECTED**. All unrelated dirty/intent-to-add work is preserved.
 
 ## Six-feature status and CLI release — complete
 
