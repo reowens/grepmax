@@ -14,6 +14,94 @@ const SOCKET = path.join(GMAX_DIR, "daemon.sock");
 
 // Activity refreshes this TTL; idle sessions do not watch forever.
 const SESSION_LEASE_TTL_MS = 4 * 60 * 60 * 1000;
+const SESSION_RENEW_INTERVAL_MS = SESSION_LEASE_TTL_MS / 4;
+
+function socketIdentity() {
+  try {
+    const stat = fs.statSync(SOCKET);
+    return `${stat.dev}:${stat.ino}:${stat.ctimeMs}`;
+  } catch {
+    return null;
+  }
+}
+
+async function withSessionLeaseState(
+  holder,
+  root,
+  action,
+  deadline = Date.now() + 5000,
+) {
+  let file;
+  let lock;
+  let owner;
+  try {
+    const key = require("node:crypto")
+      .createHash("sha256")
+      .update(JSON.stringify([holder, root]))
+      .digest("hex");
+    const dir = path.join(GMAX_DIR, "hook-watch-leases");
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    file = path.join(dir, `${key}.json`);
+    lock = path.join(dir, `${key}.lock`);
+    owner = path.join(lock, String(process.pid));
+    fs.mkdirSync(lock, { mode: 0o700 });
+  } catch (error) {
+    if (!lock || error.code !== "EEXIST") return action(null);
+    // Only reclaim a dead hook's lock; live hooks finish within the IPC budget.
+    try {
+      const owners = fs.readdirSync(lock);
+      if (owners.length === 0) {
+        if (Date.now() - fs.statSync(lock).mtimeMs > 30_000) fs.rmdirSync(lock);
+      } else if (owners.length === 1 && /^\d+$/.test(owners[0])) {
+        try {
+          process.kill(Number(owners[0]), 0);
+        } catch (err) {
+          if (err.code === "ESRCH") {
+            fs.unlinkSync(path.join(lock, owners[0]));
+            fs.rmdirSync(lock);
+          }
+        }
+      }
+    } catch {}
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    return withSessionLeaseState(holder, root, action, deadline);
+  }
+  try {
+    fs.writeFileSync(owner, "", { flag: "wx", mode: 0o600 });
+    return await action(file);
+  } catch {
+    return false;
+  } finally {
+    try {
+      fs.unlinkSync(owner);
+      fs.rmdirSync(lock);
+    } catch {}
+  }
+}
+
+function leaseRenewedRecently(file, daemon) {
+  if (!file || !daemon) return false;
+  try {
+    const state = JSON.parse(fs.readFileSync(file, "utf8"));
+    const age = Date.now() - state.renewedAt;
+    return (
+      state.daemon === daemon &&
+      Number.isFinite(state.renewedAt) &&
+      age >= 0 &&
+      age < SESSION_RENEW_INTERVAL_MS
+    );
+  } catch {
+    return false;
+  }
+}
+
+function forgetSessionLease(file) {
+  if (!file) return;
+  try {
+    fs.unlinkSync(file);
+  } catch {}
+}
 
 function markerPresentOrUnknown(file) {
   try {
@@ -177,9 +265,35 @@ async function acquireSessionLease(input, dir) {
 }
 
 /** Reuse a lease-capable daemon; start one only after a definite absent socket. */
-async function ensureSessionLease(input, dir, { allowStart = false } = {}) {
-  if (isAutostartDisabled() || !sessionHolder(input) || !registeredRootFor(dir))
-    return false;
+async function ensureSessionLease(
+  input,
+  dir,
+  { allowStart = false, throttle = false } = {},
+) {
+  const holder = sessionHolder(input);
+  const root = registeredRootFor(dir);
+  if (isAutostartDisabled() || !holder || !root) return false;
+  return withSessionLeaseState(holder, root, async (file) => {
+    const daemon = socketIdentity();
+    if (throttle && leaseRenewedRecently(file, daemon)) return true;
+    forgetSessionLease(file);
+    const renewedAt = Date.now();
+    const ok = await ensureDaemonLease(input, dir, allowStart);
+    const currentDaemon = socketIdentity();
+    if (ok && file && currentDaemon && (!daemon || daemon === currentDaemon)) {
+      try {
+        fs.writeFileSync(
+          file,
+          JSON.stringify({ daemon: currentDaemon, renewedAt }),
+          { mode: 0o600 },
+        );
+      } catch {}
+    }
+    return ok;
+  });
+}
+
+async function ensureDaemonLease(input, dir, allowStart) {
   const ping = await sendOnce({ cmd: "ping" }, 500);
   if (ping.ok) {
     if (!ping.resp.capabilities?.watchLeases) return false;
@@ -216,6 +330,13 @@ async function releaseSessionLeases(input, dir) {
   const holder = sessionHolder(input);
   const root = registeredRootFor(dir);
   if (!holder || !root) return false;
+  return withSessionLeaseState(holder, root, async (file) => {
+    forgetSessionLease(file);
+    return releaseDaemonLease(root, holder);
+  });
+}
+
+async function releaseDaemonLease(root, holder) {
   // Only release against a live daemon that understands leases: an older one
   // reads `unwatch` as "stop watching for everyone".
   const ping = await sendDaemonLine({ cmd: "ping" }, 1000);

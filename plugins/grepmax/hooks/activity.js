@@ -6,6 +6,7 @@ async function main() {
   const input = await readHookInput();
   await ensureSessionLease(input, input.cwd || process.cwd(), {
     allowStart: true,
+    throttle: true,
   });
 }
 
