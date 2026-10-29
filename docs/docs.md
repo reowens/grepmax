@@ -1,5 +1,12 @@
 # Docs
 
+## Selected planning: remote background embedding
+
+[Remote background embedding](plans/gmax-remote-background-embedding.md) is ready
+for implementation selection. It is documentation only: no remote inference,
+model activation, verification run or release has started. The delivery plan and
+handoff link its exact scope; cooling settings have separate ownership.
+
 ## Current state — October 29, 2026
 
 **[0.26.108 is shipped](https://github.com/reowens/grepmax/releases/tag/v0.26.108).**

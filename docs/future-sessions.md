@@ -9,6 +9,22 @@ summary: "Scoped guard/policy and P3/plugin handover complete. Five no-swap oper
 
 # Future Sessions
 
+## Remote background embedding planned; implementation awaits selection
+
+User “plan it now” selected documentation only. The
+[implementation-ready remote background embedding plan](plans/gmax-remote-background-embedding.md)
+chooses a bounded named `embed-batch` task on the existing `dell-win` Gmax route,
+with explicit background-only opt-in and no silent P3 fallback. P3 keeps parsing,
+reuse, source fencing, store writes and foreground query embedding. The plan
+settles payload/resource/cancellation/unknown-job custody and 7 source-batch steps;
+it does not claim current worker inference compatibility or availability.
+No implementation, model load, worker activation, test, compile or release ran.
+The separate cooling owner owns fan/power controls; the passive thermal context
+cannot quantify inference cost or promise acoustic benefit. Completed110 and its
+rollback stay intact; the historical directcore8/parent28 distinction and unknown
+relevance-attempt budget are unchanged. Deferred CPU/resource/backend work remains
+unselected. Next is selection of that finite source batch, not an automatic run.
+
 ## 0.26.110 deployed; isolated guard complete; core8 configured
 
 **October29,2026, user “go”:** the scoped guard/policy correction and remaining
@@ -276,7 +292,7 @@ Gmax tools**. It remains historical evidence.
 On October 29, 2026 the parent reported its current actual `ALL_TOOLS` scan:
 **329 tools including 28 `mcp__gmax__` tools**, including
 `mcp__gmax__repo_status` and `mcp__gmax__semantic_search`. All 28 descriptions
-identify current repo `/home/reoiv/dev/hetchy/tools/gmax`,
+identify current repo `<gmax-checkout>`,
 `index=not_registered`, `matchedRoot=null`, `daemon=unobserved`.
 This is actual parent catalog advertisement, superseding the earlier retained
 301/no-Gmax parent visibility result; it is not inferred from CLI configuration
@@ -528,7 +544,7 @@ staging groups closed with zero swap growth under twoCPU/nice10,2GiB,180s,
 minimum8GiB available-memory guards. Failed first staging is honestly retained.
 
 P3 daemon942028 was confirmed serving0.26.106 **ready/open/active** under the
-same `hetchy-gmax.service` MainPID. Small/CPU/384,stored workers4, config/unit
+same `legacy-gmax.service` MainPID. Small/CPU/384,stored workers4, config/unit
 hashes, store/cache directory identities and twoCPU/weight10/nice10 are unchanged.
 Owned autostart marker removed; no safety latch cleared. Exact0.26.105 rollback:
 `/home/reoiv/.local/state/gmax-handover/20261029T023232Z-0.26.106/previous-install`.
@@ -1144,7 +1160,7 @@ checked by diff inspection; no further profile, test, review or release is queue
 
 The selected P3 installation and production catch-up are complete. **0.26.103
 is serving**, with ready/open admission on daemon **3608673**, through unchanged
-`hetchy-gmax.service`. Kernel limits remain `cpu.max=200000 100000`, CPU weight10
+`legacy-gmax.service`. Kernel limits remain `cpu.max=200000 100000`, CPU weight10
 and nice10. Model Small/CPU/384 dimensions, workerThreads4, configuration and
 unit hashes and store/cache directory identities are preserved. Postinstall
 changed no client/integration settings. The published source is82bae78.
@@ -1323,7 +1339,7 @@ No additional test invocation is authorized or queued.
 
 The user selected the P3 installation/handover and freshly admitted production
 FTS catch-up. **P3 now serves0.26.102**, through the unchanged
-`hetchy-gmax.service`. The accepted daemon PID is **2622469**, ready/active with
+`legacy-gmax.service`. The accepted daemon PID is **2622469**, ready/active with
 open admission. Kernel controls remain `cpu.max=200000 100000`, weight10 and
 nice10 in the same unit/cgroup. Configuration and unit-file hashes and the
 production store/cache directory identities are preserved. No model identity,
@@ -1759,7 +1775,7 @@ registry propagation, with no republishing or verification retry workflow.
 [Delivery receipt](plans/assets/p3-cpu-20261027/0.26.101-delivery.json).
 
 The handover confirmed ready/active/open **0.26.101**, PID **231823**, matching
-`hetchy-gmax.service` MainPID and cgroup. Kernel `cpu.max` remains
+`legacy-gmax.service` MainPID and cgroup. Kernel `cpu.max` remains
 `200000 100000`, `cpu.weight=10`, nice 10. The old daemon PID3134008 exited.
 Configuration/unit hashes and production store/cache directory identities were
 preserved; the owned autostart marker was removed, and no safety marker was
@@ -1933,7 +1949,7 @@ release or service restart was added to this implementation task.
 
 **0.26.100 is installed and serving P3's existing daemon socket.** The
 [handover receipt](plans/assets/p3-cpu-20261027/0.26.100-handover.json) confirms
-PID `3134008` was ready/active/open in `hetchy-gmax.service`, with kernel
+PID `3134008` was ready/active/open in `legacy-gmax.service`, with kernel
 `cpu.max=200000 100000`, `cpu.weight=10` and nice 10. All 327 installed package
 payload files matched the approved public archive before handover. A small,
 model-free packed-rerank smoke completed its score assertions against the fresh
@@ -2191,14 +2207,14 @@ Any new invocation follows the existing AGENTS.md budget and host controls.
 ## P3 installation and checkout complete — October 27, 2026
 
 0.26.99 is installed and the daemon is owned by the existing
-`hetchy-gmax.service`. Point-in-time acceptance found ready/active/open PID
+`legacy-gmax.service`. Point-in-time acceptance found ready/active/open PID
 `41423`, equal to the unit MainPID and in its cgroup. Kernel `cpu.max` is
 `200000 100000` (200%), `cpu.weight` is `10`, and nice is `10`, preserving the
 existing unit. All 326 staged payload files matched the approved release.
 Configuration and store-directory identities were preserved; no index reset or
 host-limit change ran. The task-owned temporary autostart marker was removed.
 
-The [platform host receipt](../../../platform/docs/plans/assets/p3-gmax-load-20261023/0.26.99-handover.json)
+The platform host receipt (private record)
 and its owning P3 plan record installation; platform documentation commit is
 `dd74628a03`. Full local evidence and the prior install are retained under
 `/home/reoiv/.local/state/gmax-handover/20261027T131543Z/`. The prior install is
@@ -2284,14 +2300,14 @@ verification are closed. Release does not establish installed runtime state.
 
 The pre-handover P3 readback on October 27 reported `0.26.97-p3.1`, ready/active/open.
 Its four repaired compiled modules exactly matched 0.26.98, but the daemon ran in
-a tmux scope while `hetchy-gmax.service` was failed with MainPID 0. That earlier condition was corrected by the controlled handover above. The platform host plan owns service changes,
+a tmux scope while `legacy-gmax.service` was failed with MainPID 0. That earlier condition was corrected by the controlled handover above. The platform host plan owns service changes,
 thermal limits and indexing decisions. Gmax owns the source startup paths.
 
 ## Next items to select
 
 1. **Service startup ownership — released in 0.26.99.** Isolated
    branch `work/gmax-service-startup`, commit `999976c`, starts at released
-   `fbdaea7`. Its shared launcher recognizes `gmax.service` / `hetchy-gmax.service`
+   `fbdaea7`. Its shared launcher recognizes `gmax.service` / `legacy-gmax.service`
    in the user's systemd config directory for the default home. Hook background
    startup already delegates to that launcher. Failed service startup cannot
    fall through to a detached daemon or per-project watcher; quarantine/Gemma
