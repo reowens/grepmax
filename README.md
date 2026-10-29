@@ -34,6 +34,12 @@ Natural-language search that works like `grep`. Fast, local, and built for codin
 - **Centralized Index:** One database at `~/.gmax/` — index once, search from anywhere.
 - **Agent-Ready:** `--agent` flag returns compact one-line output — ~89% fewer tokens than default.
 
+**0.26.110:** Choose a compact eight-tool MCP catalog with
+`GMAX_MCP_TOOL_PROFILE=core`; unset/full keeps the existing 28 tools. Review
+failures and cancellation are reported accurately, and selected write operations
+close their local Lance table handles after work settles. No index rebuild is
+needed; memory or relevance gains have not been measured.
+
 **0.26.109:** Current-repo discovery/status and clearer agent setup, with
 LanceDB SDK/native packages **0.40.0** (embedded Lance **13**) and Python
 maintenance **13.0.0**. See the [release notes](https://github.com/reowens/grepmax/releases/tag/v0.26.109)

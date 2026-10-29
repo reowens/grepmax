@@ -1,5 +1,18 @@
 # Gmax agent discovery and current-repo status
 
+## 0.26.110 publication; core8 handover not executed
+
+October29: MCP profiles/errors/cancellation and Table cleanup are published in
+source920afc5. Fresh packaging passed after the explicitly resumed preparation;
+subsequent P3 staging stopped on160,866,304bytes host-wide swap growth. No live
+installation/service/plugin or selected Codex configuration change occurred.
+Core8 direct listing and actual active core8 visibility are NOT verified. Last
+retained parent329/full28 advertisement remains a prior observation; current
+repo not_registered. No indexing, T3 adapter/restart or automatic retry. See
+[exact delivery outcome](assets/mcp-cleanup-release-20261029/completion.md).
+Earlier local/shipped/catalog records below retain their original chronology.
+
+
 Implementation note, 2026-10-29. This is the focused discovery record; the
 delivery/upgrade owners retain their shared plans and instruction files.
 

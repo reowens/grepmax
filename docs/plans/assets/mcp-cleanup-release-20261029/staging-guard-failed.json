@@ -1,0 +1,27 @@
+{
+  "command": [
+    "python3",
+    "/home/reoiv/.local/state/gmax-handover/20261029-0.26.110/prepare-stage.py"
+  ],
+  "prefix": "/home/reoiv/.local/state/gmax-handover/20261029-0.26.110/stage",
+  "liveInstallationChanged": false,
+  "serviceRestartSuppressed": true,
+  "limits": {
+    "deadlineSeconds": 180,
+    "maxOwnedRssBytes": 2147483648,
+    "minAvailableBytes": 8589934592,
+    "maxSwapGrowthBytes": 0,
+    "cpus": [
+      0,
+      1
+    ]
+  },
+  "outcome": "failed",
+  "childPid": 1985826,
+  "error": "Final host resource guard refused continuation",
+  "noLiveOwnedProcesses": true,
+  "finalAvailableBytes": 35792224256,
+  "finalSwapGrowthBytes": 160866304,
+  "elapsedSeconds": 1.6475044980179518,
+  "peakSampledOwnedRssBytes": 224145408
+}

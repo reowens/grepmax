@@ -23,12 +23,70 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Complete selected MCP/cleanup release candidate assembled; ONE emitted compiler exit0 but final zero-swap guard FAILED14,573,568bytes. No publication/P3/core activation."
-next_step: "Return exact safety-stop receipt and preserved candidate; no automatic retry/new guard window or release."
-summary: "MCP/cleanup delivery stopped before versioning/publication on final host swap guard; owned processes closed and unrelated work preserved."
+current_state: "0.26.110 published/source920afc5 once; fresh pack guard passed reusing emitted outputs. P3 staging stopped on160,866,304B host swap growth; install109 untouched, core8 not activated."
+next_step: "Return precise published-vs-deployment guard outcome. Do not republish or automatically retry guard; P3/plugin/core8 remain unfinished."
+summary: "Complete MCP/cleanup source published as110; actual staging swap guard stopped delivery before install/config changes. No extra tests/compile; private unrelated work preserved."
 ---
 
 # Gmax Delivery Plan
+
+## 0.26.110 published — P3 handover stopped by safety guard
+
+**October29,2026:** the entire selected MCP64d10ed/fff1556/0b98ac8 and
+Table-cleanup37aa904 source/fixtures/README/catalog/docs batch is published as
+[0.26.110](https://github.com/reowens/grepmax/releases/tag/v0.26.110), source
+`920afc5419ea65bc314833a79b6c09600e1cc556`. [Completion and exact stop](assets/mcp-cleanup-release-20261029/completion.md)
+retains all receipts. One manual workflow40860070807 published and verified the
+identical341-file npm archive; no republish or verification-only recovery.
+
+The original emitted compiler/runtime phases exited0 but final host guard failed
+14,573,568bytes swap growth. Preserve that failure unchanged. After explicit user
+resume, unchanged outputs were reused; fresh guarded packaging passedzero swap,
+18.585845s/630,263,808B peakownedRSS/no survivors. No extra compile/tests/native/
+LLM/relevance/profile/audit/review; retained36/36 fake cases have a later fixture-
+only literal expectation tightening unrerun. Cleanup's runtime/RSS effect unproven.
+
+**Actual unfinished delivery:** ordinary isolated staging hit zero-host-swap
+failure **160,866,304bytes**,1.647504s/224,145,408B ownedRSS,35,792,224,256B
+available/no survivors. No automatic further retry or raised limits. Host-wide
+counter growth is not attributed to the owned process. Global installation is
+still109; no service handover/shutdown/config/store/latch change occurred, so no
+rollback needed. Exact109rollback directory step was not reached; live109 remains
+untouched and prior108rollback retained. No fresh ready/open/active observation.
+Plugin refresh, selected Codex core8 configuration/direct list and active core8
+confirmation have NOT run. Last retained active provider329/full28 remains a
+prior observation; Gmax staysnot_registered, no indexing/query-budget reset.
+
+Complete public source uses109's SDK/native0.40/Python13/qualifiedRust12 baseline;
+later unrelated dependency/Arrow/Lance0.41, ColBERT/private/dirty/ITA work is
+preserved/excluded. Publication complete; continuation must not publish again.
+Remaining staging/P3/plugin/core8 steps are retained but no further guard window
+is automatic. This is an actual safety blocker, not a new test/review gate.
+CPU/backend/resource-history stay deferred; saved prompts untouched.
+
+
+## Approved delivery resumed — October 29, 2026
+
+Fresh authorized packaging window passed:18.585845s,630,263,808bytes peak
+owned RSS,23,562,391,552bytes available,zero swap growth/no owned survivors.
+Unchanged compiler/runtime outputs were reused; no new compiler/test invocation.
+The earlier14,573,568byte global-swap failure remains a separate failed receipt,
+not recast as a passing compiler guard. Required archive payloads byte-match the
+assembled candidate, with official SDK/native0.40 and no later dependency imports.
+
+The user explicitly selected one fresh guarded preparation window after reviewing
+the prior host-wide swap failure. Prior failed receipts remain unchanged. Reuse
+the unchanged emitted compiler/runtime outputs: the previous compiler exited0,
+but its combined host guard failed; no passing guarded compiler result is claimed.
+Source/fixture bytes match selected commits and artifact content contains both
+MCP-profile and table cleanup changes; no source or native runtime changed since
+emission. Fresh packaging/admission uses the same twoCPU/nice10/2GiB/180s/
+min8GiB/zero-swap limits, with no automatic second retry. No tests/native cases,
+LLM/relevance/profile work is added. Public109 dependencies (SDK0.40/Python13/
+qualified Rust12) remain isolated from later unrelated dependency work. Complete
+one publication,109rollback P3 handover/plugin refresh and selected Codex core8
+registration; actual provider advertisement remains separate from direct listing.
+
 
 ## MCP and table-cleanup delivery — SAFETY STOP BEFORE PUBLICATION
 
@@ -77,6 +135,37 @@ Full receipts/logs/source/dirty-index before-images:
 (`deps-controller-receipt.json`, `compile-prep-receipt.json`, phase logs,
 `selected-local.patch`, `release-worktree.txt`). All owned child groups closed.
 CPU/backend/resource-history work remains deferred; saved prompts untouched.
+
+
+## Selected MCP and table-cleanup release — 0.26.110 preparation
+
+**October 29, 2026, user “ship it”:** complete selected local MCP profiles,
+annotations/error/cancellation behavior, fixtures/README/docs (64d10ed,
+fff1556,0b98ac8) and deterministic Table cleanup (37aa904) are assembled on
+public 0.26.109 source/history. Later unrelated dependency upgrades, ColBERT
+refactors, dirty/ITA files and private history are preserved and excluded.
+LanceDB/native 0.40.0, embedded Lance 13/Python13 and qualified Rust12 remain
+this release's dependency baseline; no model, migration or maintenance change.
+All selected new fixture files and prior current-catalog/docs records are included.
+
+Approved verification reuses the ONE prior fake-only invocation (3 files/36
+passed), noting the core fixture's later independent literal-name expectation
+was not rerun. Cleanup had source-only inspection; one guarded combined emitted
+production compilation now covers the selected release source. No new unit/native
+cases, model/runtime feature exercise, relevance query, benchmark/profile, audit
+or independent review. All source/fixtures/docs and authorized preparation finish
+before publication; source/archive identity and limits are retained separately.
+
+Selected delivery: publish once via existing manual release.yml, normal P3
+systemd handover with exact109rollback/config/models/workers/quota/store/quarantine
+preserved, normal plugin refresh, and only the selected standard Codex server's
+GMAX_MCP_TOOL_PROFILE=core. Direct MCP initialize/tools-list is metadata-only;
+actual active provider catalog must be observed separately. No T3 adapter/app
+restart, unsafe current-session reset, global environment or indexing. Core8
+activation is not inferred from config or direct advertisement. Current repo
+not_registered and unknown prior quality-attempt count remain unchanged/no retry.
+RSS/fan/cache-eviction/relevance gains remain unproven. CPU/backend/resource-history
+work stays deferred; pending saved prompts are untouched.
 
 
 ## Deterministic write-table cleanup — COMPLETE LOCALLY

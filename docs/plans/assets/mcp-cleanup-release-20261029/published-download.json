@@ -1,0 +1,8 @@
+{
+  "version": "0.26.110",
+  "tarball": "https://registry.npmjs.org/grepmax/-/grepmax-0.26.110.tgz",
+  "sha256": "1297ae0ccdafb03af3c776130e098dd91b966db6d11b84aa2c1de7e0489dc2d8",
+  "registryBytesMatch": true,
+  "source": "direct npm tarball after workflow publication success",
+  "at": 1793271224.5398064
+}
