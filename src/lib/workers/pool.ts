@@ -12,6 +12,7 @@ import {
 } from "../index/embedding-generation";
 import { readGlobalConfig } from "../index/index-config";
 import { daemonStartDeniedReason } from "../utils/autostart";
+import { effectiveCpuCount } from "../utils/cpu-capacity";
 import { hostGuardPolicy } from "../utils/host-guard-policy";
 import {
   formatPressureProbe,
@@ -162,9 +163,8 @@ class ProcessWorker {
   // Consecutive post-task readings over WORKER_RSS_RECYCLE_MB. Recycling
   // waits for BLOAT_STREAK_TO_RECYCLE of these; reset by any lean reading.
   bloatStreak = 0;
-  // Set when the pool has cleaned up after this worker (via exit or error
-  // event). Guards against handleWorkerExit running twice when both events
-  // fire for the same crash.
+  // Set when this worker exits or is retired from dispatch. Retiring a child
+  // does not release its native task ownership before confirmed exit.
   cleanedUp = false;
   private resourceReservation: ResourceReservation;
 
@@ -288,6 +288,7 @@ const PRIORITY_METHODS: ReadonlySet<TaskMethod> = new Set([
 
 export class WorkerPool {
   private workers: ProcessWorker[] = [];
+  private retiringWorkers = new Set<ProcessWorker>();
   // Two queues so searches don't wait behind a long indexing backlog. Priority
   // tasks (encodeQuery/rerank) are dispatched first; processFile tasks queue
   // in the regular queue. A file retry waits for its previous native owner;
@@ -305,6 +306,8 @@ export class WorkerPool {
   private readonly modulePath: string;
   private readonly execArgv: string[];
   private readonly maxWorkers: number;
+  // File work shares this CPU/worker reservation across every project using the pool.
+  private readonly fileCpuLimit: number;
   private readonly embeddingEnvironment: Record<string, string>;
   private consecutiveRespawns = 0;
   private respawnLimitReached = false;
@@ -324,6 +327,7 @@ export class WorkerPool {
     this.modulePath = resolved.filename;
     this.execArgv = resolved.execArgv;
     this.maxWorkers = Math.max(1, CONFIG.WORKER_THREADS);
+    this.fileCpuLimit = Math.max(1, effectiveCpuCount() - 1);
     const config = generation && embedMode ? null : readGlobalConfig();
     this.generation = generation ?? resolveEmbeddingGeneration(config!);
     this.embedMode = embedMode ?? config!.embedMode;
@@ -354,14 +358,14 @@ export class WorkerPool {
   /** PIDs of workers the pool currently tracks. Used by the daemon's orphan
    * sweep to distinguish live, accounted-for workers from de-listed strays. */
   getWorkerPids(): number[] {
-    return this.workers
+    return [...this.workers, ...this.retiringWorkers]
       .map((w) => w.child.pid)
       .filter((pid): pid is number => pid !== undefined);
   }
 
   /** Latest worker-reported RSS, sampled after each IPC message. */
   getWorkerMemoryStats(): Array<{ pid: number; rssBytes: number }> {
-    return this.workers.flatMap((worker) =>
+    return [...this.workers, ...this.retiringWorkers].flatMap((worker) =>
       worker.child.pid === undefined
         ? []
         : [{ pid: worker.child.pid, rssBytes: worker.lastRssBytes }],
@@ -393,7 +397,10 @@ export class WorkerPool {
   private canDispatch(task: PendingTask): boolean {
     return (
       !task.worker &&
-      (task.fileKey === undefined || !this.fileOwners.has(task.fileKey))
+      (task.fileKey === undefined ||
+        (!this.fileOwners.has(task.fileKey) &&
+          this.fileOwners.size <
+            Math.min(this.fileCpuLimit, Math.max(1, this.maxWorkers - 1))))
     );
   }
 
@@ -463,11 +470,9 @@ export class WorkerPool {
     worker: ProcessWorker,
     code: number | null,
     signal: NodeJS.Signals | null,
-    reason: "exit" | "error" = "exit",
-    err?: Error,
   ) {
-    // Crash paths can fire both 'error' and 'exit'. Either is sufficient
-    // to clean up; running this twice would double-respawn.
+    // Retired workers have their own exit handler; duplicate exit events must
+    // not release a successor's ownership or trigger another replacement.
     if (worker.cleanedUp) return;
     worker.cleanedUp = true;
 
@@ -483,22 +488,16 @@ export class WorkerPool {
         "unknown";
       debug(
         "pool",
-        `${reason} killed task=${task.id} method=${task.method} file=${filePath}`,
+        `exit killed task=${task.id} method=${task.method} file=${filePath}`,
       );
-      const exitDetail = err
-        ? `: ${err.message}`
-        : `${code ? ` (code ${code})` : ""}${signal ? ` signal ${signal}` : ""}`;
-      task.reject(
-        new Error(
-          `Worker ${reason === "error" ? "errored" : "exited unexpectedly"}${exitDetail}`,
-        ),
-      );
+      const exitDetail = `${code ? ` (code ${code})` : ""}${signal ? ` signal ${signal}` : ""}`;
+      task.reject(new Error(`Worker exited unexpectedly${exitDetail}`));
       this.completeTask(task, null);
     }
 
     log(
       "pool",
-      `Worker PID:${worker.child.pid} ${reason} (code:${code} signal:${signal}${err ? ` err:${err.message}` : ""} pending=${failedTasks.length})`,
+      `Worker PID:${worker.child.pid} exit (code:${code} signal:${signal} pending=${failedTasks.length})`,
     );
     this.workers = this.workers.filter((w) => w !== worker);
     if (!this.destroyed) {
@@ -508,10 +507,48 @@ export class WorkerPool {
         (!worker.suppressReplacement && this.workers.length === 0) ||
         (hasPendingTasks && !this.workers.some((w) => !w.busy))
       ) {
-        this.maybeRespawn(reason, hasPendingTasks);
+        this.maybeRespawn("exit", hasPendingTasks);
       }
       this.dispatch();
     }
+  }
+
+  /** Stop dispatching to an unresponsive child, retaining native ownership. */
+  private retireWorker(worker: ProcessWorker, reason: string) {
+    if (worker.cleanedUp) return;
+    worker.cleanedUp = true;
+    const owned = [...this.tasks.values()].filter((t) => t.worker === worker);
+    for (const task of owned) this.clearTaskTimeout(task);
+    worker.child.removeAllListeners("message");
+    worker.child.removeAllListeners("exit");
+    worker.child.removeAllListeners("error");
+    this.retiringWorkers.add(worker);
+    this.workers = this.workers.filter((w) => w !== worker);
+    worker.child.once("exit", () => {
+      for (const task of owned) this.completeTask(task, null);
+      this.retiringWorkers.delete(worker);
+      this.dispatch();
+    });
+    worker.child.on("error", (error: Error) => {
+      debug("pool", `retiring worker PID:${worker.child.pid}: ${error.message}`);
+    });
+    // A signal request (or IPC error) cannot establish that native work ended.
+    // Keep the child visible to ownership/shutdown bookkeeping if it fails.
+    try {
+      worker.child.kill("SIGKILL");
+    } catch {}
+    if (!this.destroyed) {
+      const pending = this.hasUnassignedTasks();
+      if (
+        (!worker.suppressReplacement && this.workers.length === 0) ||
+        (pending &&
+          !this.workers.some((w) => !w.busy) &&
+          this.workers.length < this.maxWorkers)
+      ) {
+        this.maybeRespawn(reason, pending);
+      }
+    }
+    this.dispatch();
   }
 
   private spawnDeniedError(): Error {
@@ -692,13 +729,18 @@ export class WorkerPool {
     };
 
     const onExit = (code: number | null, signal: NodeJS.Signals | null) =>
-      this.handleWorkerExit(worker, code, signal, "exit");
+      this.handleWorkerExit(worker, code, signal);
 
     // 'error' fires when spawn fails, IPC send fails async, or the child
     // can't be killed. Without this handler the worker stays in
     // this.workers as a zombie that the next dispatch tries to send to.
-    const onError = (err: Error) =>
-      this.handleWorkerExit(worker, null, null, "error", err);
+    const onError = (err: Error) => {
+      for (const task of this.tasks.values()) {
+        if (task.worker === worker)
+          task.reject(new Error(`Worker errored: ${err.message}`));
+      }
+      this.retireWorker(worker, "error");
+    };
 
     worker.child.on("message", onMessage);
     worker.child.on("exit", onExit);
@@ -808,31 +850,7 @@ export class WorkerPool {
       ),
     );
 
-    worker.cleanedUp = true;
-    worker.child.removeAllListeners("message");
-    worker.child.removeAllListeners("exit");
-    worker.child.removeAllListeners("error");
-    // A kill request is not proof of exit. Keep this file fenced until the
-    // old child actually exits, including when signalling it fails.
-    worker.child.once("exit", () => {
-      this.completeTask(task, null);
-      this.dispatch();
-    });
-    worker.child.on("error", (error: Error) => {
-      debug(
-        "pool",
-        `timed-out worker PID:${worker.child.pid}: ${error.message}`,
-      );
-    });
-    try {
-      worker.child.kill("SIGKILL");
-    } catch {}
-
-    this.workers = this.workers.filter((w) => w !== worker);
-    if (!this.destroyed) {
-      this.maybeRespawn(`timeout (${reason})`, this.hasUnassignedTasks());
-    }
-    this.dispatch();
+    this.retireWorker(worker, `timeout (${reason})`);
   }
 
   private dispatch() {
@@ -1385,7 +1403,8 @@ export class WorkerPool {
     this.priorityQueue = [];
 
     const exitedWorkers = new Set<ProcessWorker>();
-    const killPromises = this.workers.map(
+    const shutdownWorkers = [...this.workers, ...this.retiringWorkers];
+    const killPromises = shutdownWorkers.map(
       (w) =>
         new Promise<void>((resolve, reject) => {
           let settled = false;
@@ -1401,6 +1420,7 @@ export class WorkerPool {
           };
           const exited = () => {
             exitedWorkers.add(w);
+            this.retiringWorkers.delete(w);
             settle();
           };
           w.cleanedUp = true;
@@ -1408,6 +1428,15 @@ export class WorkerPool {
           w.child.removeAllListeners("exit");
           w.child.removeAllListeners("error");
           w.child.once("exit", exited);
+          w.child.on("error", (error: Error) => {
+            if (options.requireExit) {
+              settle(
+                new Error(
+                  `Worker PID:${w.child.pid} shutdown error: ${error.message}`,
+                ),
+              );
+            }
+          });
           force = setTimeout(() => {
             try {
               if (!w.child.kill("SIGKILL") && options.requireExit) {
@@ -1460,6 +1489,7 @@ export class WorkerPool {
       this.workers = options.requireExit
         ? this.workers.filter((worker) => !exitedWorkers.has(worker))
         : [];
+      if (!options.requireExit) this.retiringWorkers.clear();
       const failures = results.flatMap((result) =>
         result.status === "rejected" ? [result.reason] : [],
       );

@@ -1,8 +1,8 @@
 ---
 type: plan
-status: in-session
+status: active
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-24T02:00:40Z
+updated: 2026-10-29
 surfaces:
   - store
   - daemon
@@ -18,27 +18,1152 @@ domain: Complete storage/query repair, session resource reduction, document-sear
 audience: internal
 parent_plan:
 related_plans:
+  - docs/plans/gmax-local-workers.md
+  - docs/plans/colbert-backend-evaluation.md
+  - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Matching native recovery artifacts are qualified on Darwin and Linux (22 normal and 4 fault cases per platform) and prepared in the source-build cache. The Mac remains active on unchanged installed 0.26.96. Runtime package integration, release and installation remain open; resource history stays held."
-next_step: "Build and verify a release package from a frozen archive of committed source using the prepared native artifact cache; publication and installation require authorization. ColBERT MLX and CUDA have not started; preserve held resource statistics, queued hint trim and optional NVM/worktree cleanup."
-summary: "Native recovery artifacts are qualified and prepared for both platforms. Mac service is active; permanent package integration, publication and installation remain open. Resource history stays held."
+current_state: "ACTIVE: all seven steps ratified by user ‘ok ratify1-7 go’; one implementation/release owner executing the complete CPU batch, publication, P3 handover, one bounded profile and records."
+next_step: "Finish static CLI fixture correction and complete source reconciliation; then authorized local compilation/packaging, one publication and P3 handover/profile."
+summary: "ZERO new unit-test invocations. Reuse44 distinct passes across TWO retained invocations; static CLI cache correction remains unrerun. No independent review/audit. FTS complete9803 remains untouched."
 ---
 
 # Gmax Delivery Plan
 
+Project status belongs in this plan and its linked plans, never in `AGENTS.md` or
+`CLAUDE.md`. [Architecture/operations history](architecture-operations-history.md)
+preserves status, incident measurements and release context moved out of
+`CLAUDE.md`; those excerpts are historical and add no execution authorization.
+
+## CPU batch end-to-end completion — ACTIVE RATIFIED EXECUTION
+
+Execution began October 29, 2026 (UTC), after explicit user ratification
+**“ok ratify1-7 go”**. All seven steps are authorized as one batch, owned by one
+implementation/release agent with no further delegation. The scope below governs
+execution; older holds are historical. Root/index/intent-to-add preservation is
+recorded under `/home/reoiv/.local/state/gmax-delivery/20261029-0.26.105/`.
+The CLI fixture now resets module cache in a hoisted callback; this correction
+is static and deliberately unrerun. Existing evidence remains unchanged.
+
+**Ratification boundary:** approve this complete seven-step batch once, including
+its ordinary substeps, in-scope corrections, local build/package preparation,
+scoped source reconciliation, commits/version/tag/push, publication through the
+existing manual workflow, P3 installation/normal service handover and rollback,
+**at most ONE postdeployment search-profile window**, and final documentation.
+Parent remains orchestration-only; one delegated owner, using the parent's model
+and settings, keeps this entire deliverable through completion, with no further
+delegation or automatic reviewer. The owner returns within45 minutes. Completion
+of a step is not a permission checkpoint. Give progress while continuing; do not
+ask again for an ordinary action inside this ratified boundary.
+
+1. **Preserve the checkout and settle the complete source scope.** Capture the
+   current HEAD, index (including intent-to-add entries), scoped diffs and before
+   copies without resetting, stashing, cleaning or discarding anything. The
+   selected implementation is `src/lib/utils/cpu-capacity.ts`, `src/config.ts`,
+   `src/commands/config.ts`, `src/lib/workers/pool.ts`; fixtures are
+   `tests/cpu-capacity.test.ts`, `tests/worker-threads-setting.test.ts`,
+   `tests/config-command.test.ts`, `tests/worker-pool-resilience.test.ts`,
+   `tests/setup.ts`, plus `vitest.cpu-quota.config.mjs` and CPU documentation in
+   this plan, the handoff and the affected README/config explanation. Preserve
+   earlier published worker/lease fixes. The shared checkout records0.26.103
+   metadata/HEAD63078ee while the last recorded public/P3 release is0.26.104;
+   reconcile against local tag `v0.26.104` and its source receipt, rather than
+   copying every dirty file or accidentally reverting published behavior. Keep
+   unrelated ColBERT/Gemma/evaluation/daemon/Depot/worker-plan edits, historical
+   assets and instruction-file changes out of this CPU release and intact in
+   the shared checkout. This is a scoped comparison, not a new repository audit.
+
+2. **Finish CPU/config/worker coherence in one owner pass.** Resolve the retained
+   CLI auto mismatch using source/fixture reasoning. `tests/setup.ts` imports
+   config with `effectiveCpuCount=8`; the CLI file then mocks1, while the cached
+   config function can retain the earlier8 binding and display4. Preferred
+   correction: isolate the CLI file's module imports from the setup cache
+   (a hoisted `vi.resetModules()` before its imports), retain its1-CPU mock and
+   expected1 assertion, and retain the stored-value-removal assertions. This is
+   a static fixture diagnosis, not evidence of a production quota defect; do
+   not change production defaults merely to satisfy the fixture. In the same
+   pass, resolve any in-scope inconsistency between helper/default/CLI/admission
+   paths: affinity plus tightest readable cgroup-v2 ancestor, whole-CPU/one-CPU
+   floor, default versus explicit override precedence, foreground priority,
+   shared file limit `max(1, min(effective CPUs - 1, max workers - 1))`, and
+   cancellation/error/timeout ownership through confirmed exit and strict
+   shutdown. Keep the root `resolve` correction; its targeted case passed and
+   the double-slash exact-key mismatch was not an established production bug.
+   Update affected fixtures/explanations together. Implementation completion
+   means every selected source/fixture/doc change is present and coherent by
+   scoped source/diff inspection, with no known in-scope defect deferred to
+   another release. Optional hardening/new optimizations remain outside scope.
+
+3. **Prepare one complete release locally, with zero further unit tests.** Reuse
+   the [40-pass receipt](assets/cpu-quota-tests-20261029/summary.json) and
+   [four-new-pass receipt](assets/cpu-quota-five-cases-20261029/summary.json):
+   **44 DISTINCT passing cases across TWO invocations, one reported auto failure**.
+   No passing case, failing case, collection or broad suite is rerun. The exact
+   auto correction will remain unrerun and must be disclosed. No independent
+   review, audits, separate source/test typecheck or native acceptance is added.
+   After step2 is wholly complete, a private release worktree may start from the
+   accepted public source and receive **every** final CPU source/fixture/doc hunk,
+   including new untracked helper/fixture/selection files. Record a scope-to-commit
+   mapping; an isolated checkout cannot conceal unfinished CPU work. Preserve
+   unrelated root index/worktree entries. Reconcile published source into the
+   development history with a scoped merge/hunk integration and captured conflict
+   copies; include all CPU changes and preserve all unrelated edits. Do not use a
+   blanket checkout/reset, overwrite the dirty index, force-push or leave the
+   release as an unrecorded divergent subset.
+
+   Choose the next unused patch after the last public version (expected0.26.105;
+   establish the version during authorized release work). Set the three version
+   manifests together using `npm version <version> --ignore-scripts
+   --no-git-tag-version` and the existing `scripts/sync-versions.sh` logic with
+   the already-installed local formatter; do not let lifecycle hooks push early
+   or let `npx` fetch tools. Commit/tag only after the whole selected batch and
+   required preparation below are complete. Use existing locked local tools,
+   a fresh worktree `dist`, and the retained unchanged qualified native payloads
+   from `/home/reoiv/.local/state/gmax-delivery/20261028-0.26.104/native`:
+
+   ```text
+   node scripts/prepare-lance-runtime.cjs
+   node_modules/.bin/tsc --incremental false
+   chmod +x dist/bin.js dist/index.js
+   node scripts/prepare-bounded-runtime.cjs <retained-native-dir> dist/vendor/maintenance --required
+   npm pack --ignore-scripts --json --pack-destination <new-owned-release-state>
+   ```
+
+   These are production compilation/runtime-copy/archive operations, not unit
+   tests; the emitting compiler supplies the build's necessary type checking.
+   No `release:check`, `prepublishOnly`, `worker:package`, consumer/native smoke,
+   Python tests, broad style check, local dependency install or native rebuild.
+   Bind archive checksum/version/tag/source SHA in `release-SOURCE-ARTIFACT.json`;
+   inspect package bytes/modes and the scoped source mapping against0.26.104 to
+   ensure the complete selected payload and unchanged dependency/native/model
+   assets. Reuse receipts rather than invent a qualification campaign. A compile
+   or package defect authorizes its in-scope repair and repetition of only the
+   failed required preparation and invalidated downstream artifact steps; it
+   adds no test budget or review round. A resource guard abort never authorizes
+   another resource run or raised caps.
+
+4. **Publish this complete artifact once.** Push the scoped release source and
+   tag through the existing main history without discarding development work;
+   keep product source at dispatch HEAD identical to the tagged archive source.
+   Public history receives only this release's scoped changes on the accepted
+   public baseline; keep private development history local during reconciliation.
+   Create the draft GitHub release with `grepmax-<version>.tgz` and
+   `release-SOURCE-ARTIFACT.json`, then dispatch the existing workflow once:
+   `gh workflow run release.yml --ref main -f version=<version>
+   -f source_commit=<full-sha> -f archive_sha256=<sha256>`.
+   Its existing hosted reconstruction, archive identity, trusted npm publication,
+   registry-byte confirmation and GitHub publication are the **sole remote
+   execution exception**. Add no CI checks or Depot work. Record the workflow
+   result; if publication was accepted but registry propagation times out, do
+   not republish or bump again. Resolve that same publication using the existing
+   bounded registry confirmation or at most one `verify_only=true` recovery
+   dispatch. Confirmed bytes permit installation. Missing credentials
+   or an unresolved artifact/publication mismatch is a real blocker.
+
+5. **Install on P3 and perform the normal same-unit handover, retaining rollback.**
+   Reuse the retained0.26.104 staging/handover procedure in
+   `/home/reoiv/.local/state/gmax-handover/20261028T231503Z-0.26.104/` with fresh
+   paths/version/observed predecessor; do not blindly execute old hardcoded
+   controllers. Stage `bash scripts/postrelease.sh --install` with
+   `npm_package_version=<version>`, `npm_config_prefix=<owned-stage>`,
+   `GMAX_NO_AUTOSTART=1`, audits/funding disabled. Confirm published payload
+   identity; preserve the exact working dependency tree when manifests are
+   unchanged, as in the prior handover. Capture current service/config/store
+   identities and exact previous installation for rollback. Use an exclusively
+   owned temporary autostart marker, graceful shutdown IPC and
+   `systemctl --user stop hetchy-gmax.service`; wait for the predecessor's exit
+   before the atomic package swap. Remove only that owned marker, then
+   `systemctl --user start hetchy-gmax.service`. Confirm daemon **ping**, unit
+   MainPID and ready/open/active state, not merely CLI `--version`. Preserve
+   Small/CPU/384, stored workerThreads4, config/unit hashes, store/cache identities
+   and `cpu.max=200000 100000`, weight10/nice10. Defaults/admission take effect
+   without migrating config or overriding the user's explicit worker setting.
+   A failed swap/readiness handover restores the exact previous package and same
+   unit when safe; preserve any new safety/quarantine marker and leave the
+   service safely stopped when it prevents rollback startup. Never force-start
+   around a guard. Postrelease's warning-only restart output is not deployment
+   success. No integration/plugin refresh or unrelated host upgrade is selected.
+
+6. **Take at most ONE explicitly ratified postdeploy P3 search profile.** This
+   proposal includes one window because the requested outcome includes a
+   profile; it is fresh authorization requested here, not inferred from release
+   wording or the rejected before/after rounds. Reuse the0.26.104 live-search
+   driver/controller procedure at
+   `/home/reoiv/.local/state/gmax-profile/20261028T231716Z-0.26.104-production-search/`,
+   adapting state/version bindings, the stricter zero-swap condition and the
+   optional metadata omission specified below; do not expand the workload.
+   Through the serving daemon on the registered platform corpus, use the same
+   six queries, at most12 warmups and48 measured requests, serial default versus
+   explicit rerank, at most20s/request and180s total. There is no prior-version
+   arm, passing baseline rerun, standalone model load, new native probe or FTS
+   operation. Omit the driver's optional native metadata helper: ordinary bounded
+   ping/status and existing process/cgroup counters suffice for this experiment.
+   Retain numeric latency, inclusive daemon/main/other-thread/worker CPU,
+   throttling, background queue context, RSS, sample count and stop reason.
+   A refusal/guard/deadline ends this one allowance: close owned clients/helpers,
+   record partial or unavailable evidence, confirm ordinary service state if
+   safe, then proceed directly to documentation. No retry, raised cap, extra
+   diagnostic campaign or performance-success gate. A partial shared-host window
+   establishes neither causal speedup nor a stable tail-latency improvement.
+
+7. **Close documentation and return the actual result plus next items.** Update
+   this owning plan and handoff with source/version/archive/publication receipts,
+   exact installed/runtime outcome or rollback,44 retained passing cases and the
+   unrerun correction, build/package results, the one profile's complete/partial/
+   omitted result, guards and owned cleanup. Commit/push only these scoped final
+   records as part of the ratified delivery; instruction files receive no status.
+   Report remaining defects/blockers honestly. List only evidence-supported next
+   CPU work, with limits and priority, as proposals for a later batch; do not
+   execute them, reopen unrelated old backlogs or create another release loop.
+
+**Execution limits for ratification:** every local build/package/staging child
+window retains two-CPU affinity, nice10,2GiB aggregate owned-process RSS,180s
+deadline,8GiB minimum host available memory and **zero swap growth** (the later
+user restriction is stricter than historical512MiB receipts). The single profile
+also retains1GiB aggregate service-RSS growth and2560MiB daemon-RSS guards; P3's
+existing two-CPU service quota/weight/nice remain unchanged. Retain final guard
+samples and terminate/reap only owned process groups, with bounded TERM/KILL
+cleanup. Guards can overshoot between samples; record that honestly. No large
+local model/summarizer, model/config migration, maintenance, compaction, pruning,
+FTS rerun or native rebuild is authorized. FTS already completed9801→9802→9803
+in **two normal content-bounded batches**, ending zero pending; that is historical
+snapshot evidence, not permission to check or refresh coverage again.
+
+**Stop boundary:** stop dependent execution only for missing input/credentials,
+an ownership/resource/safety failure requiring forbidden action, an irreversible
+scope expansion that cannot be avoided, or a later user STOP. Apply the defined
+safe abort/owned cleanup/rollback first where possible and finish the records;
+continue independent in-scope documentation. An unresolved in-scope defect blocks
+publication of the whole batch, not just its unfinished file. Ordinary fixes,
+milestones, changed hashes and a partial profile create no new approval gate.
+No publication/deployment/speedup is promised in the face of an actual blocker.
+
+### Execution receipt — local preparation complete
+
+Source/fixture coherence is complete for the selected batch, including the
+hoisted CLI cache reset (not rerun), inherited quota defaults, shared admission,
+native ownership and tracked timeout shutdown. All selected changes, the durable
+contract/status relocation, and both immutable test-evidence directories are
+included on public baseline `7d82c41` in
+`.claude/worktrees/gmax-cpu-quota-release-026105`. Root private history and
+unrelated edits remain preserved. No selected defect is knowingly deferred.
+
+Required local preparation passed in13.114s: runtime copy, emitting TypeScript
+compilation, executable modes, unchanged qualified native payload copy and
+`npm pack --ignore-scripts`. Peak sampled owned RSS658,333,696 bytes, zero swap
+growth, no surviving owned processes. No unit tests, separate typechecks, audits,
+reviews or native acceptance ran.44 distinct retained passes span two prior
+invocations; the static CLI fixture correction is deliberately unrerun.
+
+The archive contains331 files: seven changed payloads plus the new compiled
+CPU helper;323 payloads, dependencies, native and model assets are unchanged
+from0.26.104. [Preparation receipt](assets/cpu-quota-release-20261029/package-controller-receipt.json),
+[payload comparison](assets/cpu-quota-release-20261029/payload-comparison.json) and
+[source mapping](assets/cpu-quota-release-20261029/source-copy.json) retain details.
+Publication, P3 handover, the sole profile and final records continue next.
+
+The retained execution history follows unchanged.
+
+## Five outstanding CPU/CLI cases executed; auto confirmation still fails — October 29, 2026 (UTC)
+
+The user's subsequent explicit **“go”** authorized exactly one additional local
+invocation containing only the corrected root-cgroup case and four previously
+skipped CLI worker-thread cases, retaining the40 earlier passes. One test agent
+performed it without delegation, source/test edits, trial collection or rerun.
+The existing bounded controller was adapted only for fresh evidence/selection,
+two-CPU admission and the user's stricter **zero swap-growth** threshold (including
+a final sample). The broad reusable CPU config was not executed.
+
+Exact wrapper command from the repository root:
+
+```text
+python3 docs/plans/assets/cpu-quota-five-cases-20261029/focused-test-controller.py
+```
+
+It launched exactly once:
+
+```text
+/usr/local/bin/node --max-old-space-size=768 node_modules/vitest/vitest.mjs run --config /home/reoiv/dev/hetchy/tools/gmax/docs/plans/assets/cpu-quota-five-cases-20261029/focused-vitest.config.mjs --reporter=json --outputFile=/home/reoiv/.local/state/gmax-cpu-quota-five-cases/20261029T003810Z/focused-tests-results.json
+```
+
+The fresh config includes only `tests/cpu-capacity.test.ts` and
+`tests/config-command.test.ts`, disables global setup, reuses mocked
+`tests/setup.ts`, and uses one Vitest worker with serial files. Its root resolves
+relative to its own URL. The exact anchored `testNamePattern` is:
+
+```text
+^(?:effective CPU capacity > handles root membership and rejects unsafe or non-unified membership|config command > worker threads > stores a valid count and says a daemon restart applies it|config command > worker threads > auto removes the stored value|config command > worker threads > rejects a count outside 1\.\.cores|config command > worker threads > shows the value and its source)$
+```
+
+Static selection used the actual suite/test source, installed Vitest's ` > `
+separator and the immutable prior receipt's ancestor/title fields. Post-run JSON
+confirms **exactly these five cases executed**; none of the40 retained passes ran:
+
+- **Passed:** root membership and unsafe/non-unified membership rejection,
+  including the assertions not reached during the prior failure.
+- **Passed:** CLI valid count/restart message, out-of-range count rejection,
+  and displayed worker value/source.
+- **Failed:** CLI `auto removes the stored value`, at
+  `tests/config-command.test.ts:188`: confirmation displayed
+  `Worker threads set to auto (4 on this machine).`, expected1.
+
+**Result: exit1;4 passed,1 failed,20 filtered skips.** The20 skips are unselected
+cases in these two files, not additional outstanding selected cases. Static
+reading suggests a fixture/module-cache interaction: `tests/setup.ts` imports
+`CONFIG`/`src/config` while mocking effective CPUs to8; the CLI test later supplies
+a1-CPU mock, but cached config can retain the setup binding, whose default is4.
+This is an unverified cause inference, not a proven production quota failure.
+No source/test correction or further invocation was attempted.
+
+The0.661-second controller window peaked at249,847,808 bytes sampled aggregate
+owned-process-group RSS, with zero swap growth and44,254,986,240 bytes minimum
+host available memory. Two CPUs/nice10,2GiB group RSS,120s deadline and8GiB
+available-memory floor remained enforced; no guard stopped the run. All owned
+processes exited and the temporary HOME/GMAX_HOME was removed.
+
+Retained evidence is **40 prior passing cases plus4 new passing cases across TWO
+invocations**, yielding44 distinct passing cases and1 unresolved CLI case within
+the45-case CPU scope. This was not a fresh45-case combined run. The prior root
+failure is superseded by its pass here. All immutable prior receipt files remain
+unchanged; recorded source hashes match the prior receipt except for the already
+documented `cpu-capacity.ts` correction.
+
+[Summary and exact command](assets/cpu-quota-five-cases-20261029/summary.json),
+[selection](assets/cpu-quota-five-cases-20261029/selection.json),
+[raw results](assets/cpu-quota-five-cases-20261029/focused-tests-results.json),
+[guard/cleanup receipt](assets/cpu-quota-five-cases-20261029/focused-tests.json),
+[config](assets/cpu-quota-five-cases-20261029/focused-vitest.config.mjs),
+[controller](assets/cpu-quota-five-cases-20261029/focused-test-controller.py) and
+[log](assets/cpu-quota-five-cases-20261029/focused-tests.log) preserve the invocation.
+Full local state is
+`/home/reoiv/.local/state/gmax-cpu-quota-five-cases/20261029T003810Z/`.
+
+**The CPU batch is not release-ready: the selected CLI auto-confirmation failure
+is a concrete remaining blocker.** Packaging/build were not performed; that
+limitation does not add a new acceptance gate. No typecheck, build, audit, review,
+profile/benchmark, package preparation/install, model/native dataset execution,
+live/P3/RPC/store access, maintenance/FTS, remote execution, versioning,
+publication/deployment, commit or push occurred. No measured CPU improvement is
+established. FTS remains complete9801→9802→9803/zero pending and was left alone.
+All unrelated dirty and intent-to-add work was preserved. The single additional
+invocation budget is consumed; this record authorizes no correction or rerun.
+
+The following entries predate this additional invocation and retain their
+original authorization, observations and historical validation limits.
+
+## CPU root-path and focused-selection correction complete; unexecuted — October 29, 2026 (UTC)
+
+After the failed invocation below, the user explicitly answered **“go”** for one
+sole correction agent using existing evidence. This authorized only the narrow
+source/fixture/selection-documentation correction, file reads and scoped diff
+inspection; it authorized **zero tests or other execution**. No further delegation
+or independent review occurred. The correction is complete locally; release and
+live/P3 actions remain held.
+
+The retained failure and exact source/fixture establish the mismatch:
+`0::/` makes `path.posix.normalize(root + relative)` retain `/sys/fs/cgroup/`.
+Appending `/cpu.max` therefore asks the injected reader for
+`/sys/fs/cgroup//cpu.max`. The exact-key fixture supplies only
+`/sys/fs/cgroup/cpu.max`; the missed read is caught, and `dirname(current)` then
+moves outside the visible root, leaving affinity8 instead of the expected2.
+Linux filesystem lookup resolves these interior repeated separators equivalently;
+this is a proven helper/fixture path mismatch, **not evidence of a production
+quota failure**. `src/lib/utils/cpu-capacity.ts` now uses `path.posix.resolve`
+on the already-absolute combined path, removing the trailing separator and making
+both controller lookup and the root stopping condition canonical. The fixture
+and its expected2 assertion are unchanged. No runtime result is claimed for this
+unexecuted source change.
+
+The selection defect is also established statically. Installed Vitest's
+`dist/chunks/run.BTlFXlnv.js` builds `fullTestName` with `createTaskName`, whose
+default separator in `dist/task-utils.js` is ` > `; `interpretTaskModes` matches
+that field. The JSON reporter's space-joined `fullName` is different. Thus the
+recorded `config command worker threads` pattern misses the nested suite
+`config command > worker threads`.
+
+New reusable [vitest.cpu-quota.config.mjs](../../vitest.cpu-quota.config.mjs)
+keeps the same four files, mocked setup, disabled global setup, one worker and
+serial files, and changes that pattern arm to `config command.*worker threads`.
+It retains all effective-capacity, worker-default/override, global file-admission
+and file-retry/lifecycle selections. It includes these four CLI cases:
+
+- stores a valid count and says a daemon restart applies it;
+- auto removes the stored value (including the effective-default confirmation);
+- rejects a count outside1..cores;
+- shows the value and its source.
+
+For a future **separately explicitly authorized** invocation, the command template
+is shown below, with a fresh evidence directory substituted. This is preparation
+only: no collection, test, name-matching experiment or controller invocation ran.
+The existing bounded controller's private HOME/GMAX_HOME, two-CPU/nice10,
+2GiB RSS,120s deadline,8GiB host-available floor,512MiB swap-growth ceiling and
+owned-process cleanup still apply; the config itself does not enforce them.
+Do not execute or overwrite the historical controller/config/results directory,
+or infer authorization to rerun passing cases from this template.
+
+```text
+node --max-old-space-size=768 node_modules/vitest/vitest.mjs run --config vitest.cpu-quota.config.mjs --reporter=json --outputFile=<fresh-evidence-directory>/focused-tests-results.json
+```
+
+**Validation remains limited to the existing40 passed,1 failed,38 filtered skips.**
+Those results and their exact command, hashes, old selection config, logs and
+cleanup receipts are unchanged. The corrected source/config are unexecuted; the
+four CLI cases and the later unsafe/non-unified assertions in the failed case
+remain unvalidated. No tests, typechecks, builds, audits, benchmarks/profiles,
+package/model/native preparation or execution, probes/RPCs, production store
+access, maintenance/FTS, remote execution, deployment, release, commits or pushes
+ran for this correction. All unrelated dirty/intent-to-add work, the prior CPU
+patch and instruction/history migration are preserved; no reset, stash, deletion
+or isolated worktree was used. FTS remains complete9801→9802→9803 at zero pending;
+no new observation or action was taken. No new acceptance gate is added.
+
+The following invocation record predates this correction and retains its original
+command, results and authorization boundaries.
+
+## CPU quota/admission single focused invocation failed — October 29, 2026 (UTC)
+
+The user's latest explicit **“go”** authorized one shared local focused invocation,
+consumed by the test agent without delegation or rerun. It superseded the earlier
+no-tests hold only for this run. Implementation and test sources were unchanged.
+
+The existing bounded local controller was reused with only evidence paths, fixture
+prefix, selected config and source-hash list adapted. It invoked `/usr/local/bin/node
+--max-old-space-size=768 node_modules/vitest/vitest.mjs run --config
+/home/reoiv/.local/state/gmax-cpu-quota-tests/20261029T002307Z/focused-vitest.config.mjs
+--reporter=json
+--outputFile=/home/reoiv/.local/state/gmax-cpu-quota-tests/20261029T002307Z/focused-tests-results.json`
+once. The config includes the four requested files and name pattern
+`effective CPU capacity|worker threads setting|config command worker threads|global indexing CPU admission|file retry admission`.
+Global setup was disabled; one Vitest worker used temporary HOME/GMAX_HOME,
+injected controller metadata and mocked children, with no model/native setup.
+
+**Result: exit1;40 passed,1 failed,38 filtered skips.** CPU capacity passed11/12,
+worker settings9/9 and selected worker file-retry/global-admission cases20/20.
+The failing case, `handles root membership and rejects unsafe or non-unified
+membership`, expected2 and received8 at `tests/cpu-capacity.test.ts:92`.
+Source reading indicates root membership leaves a trailing slash in `current`,
+producing `/sys/fs/cgroup//cpu.max`, absent from the exact-key injected fixture.
+A live filesystem quota failure is not established. Later unsafe/non-unified
+assertions in that case were not reached. **The configured name filter also
+unintentionally skipped all four CLI worker-thread cases, including auto
+confirmation** (all13 config-command cases were skipped); that requested coverage
+remains unvalidated. Neither limitation was repaired or rerun under this budget.
+
+The1.101-second controller window peaked at280,272,896 bytes sampled aggregate
+owned-process-group RSS, with zero swap growth and44,534,636,544 bytes minimum host
+available memory. Two-CPU affinity/nice10,2GiB RSS,120s deadline,8GiB host-available
+floor and512MiB swap-growth ceiling remained enforced; no resource guard stopped
+the run. All owned processes exited and the temporary home was removed.
+
+[Summary](assets/cpu-quota-tests-20261029/summary.json),
+[guard/cleanup receipt](assets/cpu-quota-tests-20261029/focused-tests.json),
+[raw results](assets/cpu-quota-tests-20261029/focused-tests-results.json),
+[log](assets/cpu-quota-tests-20261029/focused-tests.log),
+[config](assets/cpu-quota-tests-20261029/focused-vitest.config.mjs) and
+[controller](assets/cpu-quota-tests-20261029/focused-test-controller.py) preserve
+scope, command and source hashes. Full local evidence remains at
+`/home/reoiv/.local/state/gmax-cpu-quota-tests/20261029T002307Z/`.
+No further tests, source/test edits, typechecks, builds, reviews, profiles, live/P3
+or FTS actions, commits, pushes or release occurred or are authorized by this
+record. Release remains held; no CPU speedup or production behavior is claimed.
+
+The following implementation-only record predates this invocation; its
+unexecuted-validation statements describe that earlier handoff.
+
+## CPU quota/admission implementation complete locally; release remains held
+
+The user selected **one delegated implementation agent** with “spin the agent
+now” to finish the existing CPU-capacity/default-config/global indexing-admission
+patch, its fixtures and associated plan documentation. This narrow source-edit
+authorization supersedes the older docs-only hold for this batch only. No further
+delegation, tests (including a focused invocation), typechecks, builds, profiles,
+audits, package preparation/install, model loads, native dataset execution,
+probes/live RPCs, production store access, maintenance, FTS, remote execution,
+deployment, releases, commits or pushes were authorized or performed by this agent.
+
+**Implementation and fixtures are complete locally; validation is unexecuted.**
+Completion is based on source reading and scoped diff inspection only. No unit
+test for this CPU quota/global-admission patch has run; earlier worker/controller
+results do not qualify it. No measured CPU improvement or production behavior is
+claimed. Release remains held, and this record adds no verification or review
+gate and grants no further execution permission.
+
+The completed batch consists of:
+
+- `src/lib/utils/cpu-capacity.ts`: affinity-aware capacity, constrained on Linux
+  by the tightest readable cgroup-v2 `cpu.max` from membership through the visible
+  `/sys/fs/cgroup` ancestors. Fractional quotas round down with a one-CPU floor;
+  missing or invalid metadata leaves other readable limits/affinity authoritative.
+- `src/config.ts` and `src/commands/config.ts`: defaults use that effective budget;
+  stored values retain their host-core bounds and environment overrides retain
+  precedence/semantics. The `auto` confirmation now displays the effective default.
+- `src/lib/workers/pool.ts`: all projects sharing the pool share a file-ownership
+  limit of `max(1, min(effective CPUs - 1, max workers - 1))`. Queries/reranks retain
+  foreground dispatch; blocked files do not drive scale-up or force existing
+  queries to yield. Caller cancellation does not free running native ownership.
+  Terminal IPC results/errors and confirmed exits release eligible successors.
+- `tests/setup.ts`, `tests/cpu-capacity.test.ts`,
+  `tests/worker-pool-resilience.test.ts`, `tests/worker-threads-setting.test.ts`
+  and `tests/config-command.test.ts`: deterministic CPU/controller/child-process
+  fixtures covering ancestor/fractional/malformed quotas, defaults/overrides,
+  global admission, single-CPU progress, foreground dispatch and lifecycle cleanup.
+  These fixtures were edited, **not executed**.
+
+Static source reasoning also found and fixed an ownership defect: a child-process
+`error` can mean an IPC/signal failure while native work still runs, so it cannot
+release a file slot. Error/timeout retirement now retains that slot until confirmed
+exit and tracks the retired child in PID/memory/shutdown bookkeeping. This also
+fixes timeout children escaping strict shutdown tracking. Failed kill requests
+remain fail-closed; duplicate exits cannot release a successor's slot. Shutdown
+handles child errors without an unhandled event. No extra optimization or
+independent review was added.
+
+The shared dirty checkout, earlier released worker/lease fixes, direct
+`AGENTS.md`/`CLAUDE.md` contract updates and
+`docs/plans/architecture-operations-history.md` were preserved. Exact paths and
+the preexisting before-edit recovery state remain in
+[the current handoff](../future-sessions.md). Finish every approved batch change
+before release; do not ship a subset or infer another acceptance round.
+
+FTS already completed9801→9802→9803 in two normal content-bounded calls, ending
+with zero unindexed rows. The64MiB content cap explains the second batch. Later
+profile RSS guards are separate outcomes; do not report them as FTS failures or
+rerun FTS. See [the runbook](../runbooks/p3-fts-catch-up.md). The user rejected
+additional CPU rounds; no earlier “go” or experiment label authorizes more.
+
+## 0.26.104 deployed/profiled; continuous execution contract committed — October 28, 2026 (UTC)
+
+Contract commits20d2863/5f2b034 make approved release work continue through
+publication,P3 installation/normal handover,one bounded profile,recorded results
+and next items without checkpoint approval turns. Review is opt-in; go authorizes
+one focused test if needed and the included profile once. Preserve existing
+resource/rollback/large-model/local-only controls. No new package release was
+made for the contract changes.
+
+P3 serves0.26.104 on2333206,ready/open/active through the same two-CPU/weight10/
+nice10 service. Model/config/unit/store/cache identities are preserved;330 payloads
+matched and159 working dependency manifests were copied unchanged. Exact0.26.103
+rollback is retained. No FTS refresh,pruning,compaction or migration ran.
+
+The one profile completed12 warmups and45/48 measured requests,22 complete pairs:
+median2.588s default/2.580s reranked. The unchanged1GiB service RSS-growth cap ended
+the152.92-second window at aggregate service RSS2,638,815,232 bytes; owned profiler
+peak266,604,544 bytes,zero swap growth and all owned processes closed. No rerun or
+raised cap. Same daemon remained healthy. Service CPU averaged1.895cores,79.1% of
+periods throttled; daemon non-main threads supplied73.5% of observed process CPU,
+including background indexing. Snapshot9667 had511680 rows,30352 unindexed,65FTS
+segments and no vector index; no after snapshot was reached. No stablep95,release
+speedup,FTS causality or memory leak is established.
+
+Next batch: one bounded FTS-tail catch-up/paired-query experiment,then evidence-led
+native/global foreground-background CPU budgeting changes. Keep related work in
+one measured batch before another release. [Detailed handoff](../future-sessions.md),
+[completion](assets/p3-cpu-20261027/0.26.104-handover.json),
+[contract](assets/p3-cpu-20261027/completion-contract-20261028.json),
+[analysis](assets/p3-cpu-20261027/production-search-026104-analysis.json),
+[guard receipt](assets/p3-cpu-20261027/production-search-026104-receipt.json) and
+[samples](assets/p3-cpu-20261027/production-search-026104-samples.json) retain proof.
+
+## 0.26.104 worker/lease release published — October 28, 2026 (UTC)
+
+Clean isolated commit **4bcd8bd07778e2c8cc25793c27af7c08ac30e85e** contains only
+public0.26.103 plus the two source fixes, three test edits, README and three
+version-only manifests. The nine lease cases passed in the approved invocation;
+worker evidence is78 retained passes plus one separately passed corrected case.
+All five copied source/test hashes match. No fresh combined suite was run.
+
+Official pinned TypeScript7.0.2 build/test typechecks, scoped style/runtime
+preparation and npm pack passed locally in15.03 seconds, with658,853,888 bytes
+peak sampled owned RSS under two-CPU /2 GiB /180-second and host guards. Every
+owned process closed; packaging invoked zero tests.330 payloads contain six
+changes and324 byte/mode-identical files; dependencies, native/Python/Lance/model
+payloads and licenses are unchanged. Archive125,585,725 bytes, SHA-256
+`8bac73bd3795c8a0ee021983763ac28d1a5cd8cb1a49cd91c1ad9f57b3f59014`.
+
+The user explicitly directed immediate release with no further tests/review
+gates. No independent publication review was performed. Source/tag and assets are
+public; existing publisher40784187421 **succeeded**, accepting npm submission at
+23:01:48UTC and matching public registry bytes at23:08:29. npm latest is0.26.104;
+GitHub publication completed at23:05:03. One dispatch, no republish. P3 remains
+on0.26.103 with no install/service/store action. Next handover and one useful CPU
+measurement, then batch actual CPU work before another release. Root private
+history/pending edits are preserved; development reconciliation remains ordinary
+housekeeping rather than another acceptance or publication gate.
+No performance gain is asserted from the earlier contended production profile.
+
+[Handoff](../future-sessions.md),
+[delivery receipt](assets/p3-cpu-20261027/0.26.104-delivery.json),
+[candidate](assets/p3-cpu-20261027/0.26.104-candidate.json),
+[package receipt](assets/p3-cpu-20261027/0.26.104-package-receipt.json),
+[payload comparison](assets/p3-cpu-20261027/0.26.104-payload-comparison.json),
+[validation reuse](assets/p3-cpu-20261027/0.26.104-validation-reuse.json) and
+[source identity](assets/p3-cpu-20261027/0.26.104-source-artifact.json) retain scope.
+Full state: `/home/reoiv/.local/state/gmax-delivery/20261028-0.26.104/`.
+
+## Lease teardown fix integrated; nine focused cases passed — October 28, 2026 (UTC)
+
+The two selected agents completed the source and regression edits in separate
+files, with no test/model/live action. The parent integrated them without a new
+review gate. Release and sweep now recheck current leases inside both the project
+lock and admitted shared operation before detaching; unconditional operation
+teardown remains unchanged. Five new promise-barrier cases plus four existing
+lease cases are prepared, using the real mutex and mocked watcher/admission.
+The approved lease runtime invocation passed9/9 with no failures/skips; its
+1.10-second window peaked at502,759,424 bytes owned RSS with zero swap growth,
+no retained owned processes and its temporary home removed.
+
+Parent source/test typechecks and scoped style checks pass. The bounded static
+window took2.18 seconds at569,032,704 bytes peak owned RSS, zero swap growth and
+no live owned process afterward. All validated worker source/test hashes remain
+unchanged, and no passing worker case was repeated. The isolated no-model
+nine-case invocation then passed and the combined release candidate was prepared
+as recorded above. No publication, installation, live profile or service action
+occurred.
+
+[Current handoff](../future-sessions.md),
+[candidate](assets/p3-cpu-20261027/lease-teardown-candidate.json),
+[static checks](assets/p3-cpu-20261027/lease-teardown-static-checks.json) and
+[agent reports](assets/p3-cpu-20261027/lease-teardown-agent-reports.json) preserve
+scope, hashes, limits and before-edit recovery state. P3 remains on0.26.103;
+production incidence and performance impact of both source defects are unproven.
+
+## Worker admission fix; focused validation complete — October 28, 2026 (UTC)
+
+The two selected source/evidence-only investigations completed without edits or
+runtime checks. They found (1) lease-driven unwatch checks ownership before
+waiting for the project lock and can detach after renewal, and (2) caller-aborted
+file work can be retried while its original native task still runs. Both are
+source findings in0.26.103; neither is attributed to the measured P3 incident.
+
+The owner implemented the second finding first: exact projectRoot/path ownership
+fences same-pool file retries while allowing queries and independent files to
+proceed. Blocked retries do not count for demand scale-up or existing-query
+fairness. Timeout retains file ownership until confirmed child exit; terminal
+cleanup and synchronous send failure release eligible successors. The single
+approved local invocation passed **78/79 cases, including all eight new
+regressions**. Its sole failure was an old host-admission assertion expecting
+task removal after SIGKILL request without child exit. Only that test was
+corrected to check one retained task before exit and zero afterward; product
+source is unchanged. The separately approved targeted invocation then passed
+the corrected case (one pass,45 unselected skipped). The78 earlier passing cases
+were not rerun; no fresh combined suite is claimed. Typechecks and scoped style
+checks pass after correction. The invocation took0.87 seconds at300,683,264 bytes
+peak sampled owned RSS, zero swap growth, all owned processes closed and its
+temporary home removed. The targeted run took0.45 seconds at210,018,304 bytes
+peak sampled RSS, zero swap growth, no live owned process and its temporary home
+removed. Focused validation is complete; no additional invocation is queued.
+No models, live service action, installation, profile or publication ran. The
+separate lease fix remains next.
+
+See the [current handoff](../future-sessions.md),
+[investigations](assets/p3-cpu-20261027/cpu-contention-investigations.json),
+[candidate](assets/p3-cpu-20261027/worker-file-admission-candidate.json) and
+[static-check receipt](assets/p3-cpu-20261027/worker-file-admission-static-checks.json),
+[runtime receipt](assets/p3-cpu-20261027/worker-file-admission-tests-receipt.json),
+[results](assets/p3-cpu-20261027/worker-file-admission-tests-results.json) and
+[correction checks](assets/p3-cpu-20261027/worker-file-admission-correction-static-checks.json),
+[targeted correction receipt](assets/p3-cpu-20261027/worker-file-admission-timeout-validation-receipt.json)
+and [targeted result](assets/p3-cpu-20261027/worker-file-admission-timeout-validation-results.json).
+Private before-edit recovery files, check logs and the executed one-case controller
+are under `/home/reoiv/.local/state/gmax-worker-fence/20261028/`.
+
+## Partial production search profile; next target is catch-up lifecycle — October 28, 2026 (UTC)
+
+The single approved live profile completed 12 warmups and **17/48 measured
+requests** before the unchanged 512 MiB global swap-growth guard stopped it.
+The **eight complete default/rerank pairs** had median latency **1.754/1.906 s**.
+No qualified p95 or isolated reranking-overhead estimate follows from this
+partial sample. The two-second pre-query window already used 3.997 CPU-seconds;
+measured service CPU averaged 2.000 core equivalents, with **314/326 periods
+throttled (96.3%)**. All CPU measurements include background indexing.
+
+Journal events requeued a 1,125-file catch-up backlog across watch/unwatch
+transitions before and during this run. Their cause is unresolved. Investigate
+lease transitions, cancellation/quiescence of in-flight work and foreground
+admission before selecting an optimization. Metadata snapshot 8727 had 506,336
+rows, 13,808 unindexed rows, 67 FTS segments and no vector index. The earlier
+zero-tail result was scoped to snapshot 8379. No after-run metadata snapshot completed.
+
+The guard stopped at 65.79 seconds and 608,178,176 bytes sampled global swap
+growth. Owned-process peak RSS was 272,248,832 bytes; every owned process and
+metadata reader closed. Existing service health, source/config/unit hashes,
+models and two-CPU limit were preserved. No service restart, extra profile/test,
+code change or release was performed. See the [detailed handoff](../future-sessions.md),
+[analysis](assets/p3-cpu-20261027/production-search-026103-analysis.json),
+[process receipt](assets/p3-cpu-20261027/production-search-026103-receipt.json) and
+[samples](assets/p3-cpu-20261027/production-search-026103-samples.json).
+
+## 0.26.103 serving; production FTS catch-up complete — October 28, 2026 (UTC)
+
+The controlled handover is complete on ready/open daemon3608673 through existing
+`hetchy-gmax.service`: unchanged two-CPU quota, CPU weight10, nice10, configuration
+and store/cache identities. All330 staged payloads and158 runtime dependency
+packages matched, and the seven changed hashes matched after swap. Exact0.26.102
+is retained for rollback. Staging took133.45 seconds at1,949,782,016 bytes peak
+sampled RSS under the approved2 GiB/180-second guard.
+
+A host resource guard cancelled the first FTS attempt after admission. All owned
+helpers closed; a shared-leased inspection established8329 was a normal append
+with the same64 FTS segments as8328. After a30-second zero-swap-growth window,
+the exact inspected uncertain attempt was acknowledged through the released API.
+Three freshly admitted batches completed at8376→8379:61,546/35,438,
+52,004/34,575 and43,802/31,780 physical/live rows. Every call stayed within100,000
+physical rows and64 MiB live content. The final snapshot has503,645 indexed live
+rows, zero unindexed and67 FTS segments. Helper post-admission time, including
+append and verification, totaled5.805 seconds;
+the full owner window took13.44 seconds, peaked at439,431,168 bytes sampled RSS,
+recorded zero swap growth and closed every owned process. The durable receipt
+is completed and preserves the acknowledged uncertain-attempt chain.
+
+The controllers invoked no compaction/pruning, raised no caps and patched no
+installed helper. Service/configuration protections and only-owned-marker cleanup
+were preserved. Zero backlog is scoped to8379; normal ongoing indexing can add
+new pending rows. [Actual handover/catch-up receipt](assets/p3-cpu-20261027/0.26.103-handover.json)
+and [current handoff](../future-sessions.md) preserve detailed recovery, inspection,
+process and per-batch records. No additional test invocation/review was used.
+The subsequently selected production profile is recorded above; no extra
+maintenance is queued.
+
+## 0.26.103 publication and development reconciliation record — October 28, 2026 (UTC)
+
+[0.26.103 is public](https://github.com/reowens/grepmax/releases/tag/v0.26.103)
+from82bae78d9d284d1523d03af85e10dc94c88192c7 and npm `latest` is0.26.103.
+Its125,585,020-byte archive matches independent public SHA-256/SHA-512 checks:
+`909605f7b09a5235370567526c88e6acef73ddccca7e3572f57e4af2fb72cb4f`.
+Seven payloads changed and323 remain identical; dependencies/native/model
+payloads and existing admission/containment limits are unchanged.
+
+Both findings from the single static review were corrected by the owner:
+physical tokenizer parameters are checked before admission, explicit empty/custom
+stop-word lists are retained, and staged new parameters are checked before
+commit. The authorized correction invocation passed five native cases with
+zero failures (six unselected cases skipped), in7.18 seconds at673,677,312 bytes
+peak sampled RSS. All owned processes closed and temporary fixtures were
+removed. Historical21-pass coverage is retained with its exact original scope;
+no second review round or repeated suite was added.
+
+The [publisher run](https://github.com/reowens/grepmax/actions/runs/40686317045)
+matched the hosted archive and npm accepted the upload, then its registry wait
+timed out during acknowledged server processing. That workflow remains failed.
+Independent public-byte and latest checks subsequently passed, and the existing
+GitHub draft was completed at12:27:35 UTC. One npm dispatch, no republish or
+repeat hosted build. [Delivery/reconciliation evidence](assets/p3-cpu-20261027/0.26.103-delivery.json)
+and [current handoff](../future-sessions.md) retain exact records and limits.
+
+Development merge63078ee preserves private history, including Pro handoff e57891d,
+113 byte-identical pending files and all69 prior intent-to-add entries. Four
+version/README working files were integrated and five evidence/plan files added;
+there is no staged content or conflict. Main is42 ahead / zero behind origin,
+and the private history was not pushed. Full recovery files and the backup
+branch are recorded in delivery state.
+
+At publication, P3 remained on0.26.102; that step performed no service action or
+production write. The subsequently selected controlled handover and production
+catch-up are complete in the current section above.
+
+## Initial fragment-bounded FTS validation before review — October 28, 2026 (UTC)
+
+The local helper now builds a single FTS segment for a deterministic prefix of
+pending fragments using Lance12's uncommitted-build/disjoint-segment commit APIs.
+Each run stays within100,000 physical rows (including deletions) and64 MiB live
+content, copies persisted tokenizer settings and retains prior index segments.
+A remaining backlog is reported rather than silently processed in another batch.
+Old receipts remain readable; new receipts identify batch rows/fragment counts.
+The final ownership check still precedes durable completion.
+
+Source/test typechecks, Python syntax and scoped diff/format checks pass. The
+single explicitly approved invocation passed21 cases (six native,15 guards),
+with the earlier83,561-row case deliberately skipped and no failures.106,496
+physical pending rows with deletions completed in two batches under the
+unchanged cap; snapshots, base hashes, sampled row IDs, other index and stored
+FTS settings were preserved. Reduced-cap content boundaries, interruption/reopen,
+partial receipts and final ownership-loss handling passed. The invocation took
+9.87 seconds and peaked at640,131,072 bytes sampled owned-group RSS; all owned
+processes closed and temporary home/fixtures were removed.
+
+[Source/scope proof](assets/p3-cpu-20261027/fts-fragment-source-receipt.json),
+[process receipt](assets/p3-cpu-20261027/fts-fragment-native-receipt.json) and
+[current handoff](../future-sessions.md) retain exact evidence and limits. These
+are synthetic four-dimensional Linux fixtures; no production or broader-platform
+qualification is claimed. This implementation is neither published nor installed;
+P3 remains on0.26.102, and no production FTS write or cap increase was attempted.
+If selected, prepare the next candidate and its single publication review before
+controlled installation and freshly admitted production batches. No extra test
+invocation is queued.
+
+## 0.26.102 serving; FTS physical-row admission refusal — October 28, 2026 (UTC)
+
+The selected controlled installation/handover is complete. P3 serves0.26.102 on
+ready/active/open daemon PID2622469 through unchanged `hetchy-gmax.service`:
+two-CPU quota, weight10, nice10, original config/unit hashes and store/cache
+directory identities. All330 staged archive payloads and158 runtime dependency
+versions matched; eleven changed/added payloads were checked again after swap.
+The exact0.26.101 installation remains in the handover state's `previous-install`.
+
+Fresh production FTS preflight at version7671 saw92,719 live unindexed rows but
+refused the whole physical input with category `rows`. It never reached a write
+call or created a write-attempt receipt. No FTS update, data compaction or version
+pruning ran. All owned helpers closed and the service resumed on0.26.102.
+A separately leased read-only metadata snapshot at7710 observed1,756 pending
+fragments containing **142,855 physical /93,098 live /49,757 deleted rows**; the
+largest fragment has2,194 physical rows. Counts can advance during normal indexing.
+
+The next implementation needs bounded fragment batches under the existing
+100,000-physical-row and64 MiB-content caps. The installed whole-backlog index
+optimizer does not select subsets; a cap increase or broad maintenance is not
+an authorized workaround. [Handover/admission receipt](assets/p3-cpu-20261027/0.26.102-handover.json)
+and [current handoff](../future-sessions.md) retain actual source/cleanup evidence,
+rollback and the explicit remaining work. No new test suite, review or model
+load was added to this operational step.
+
+## 0.26.102 published; P3 handover remains separate — October 28, 2026 (UTC)
+
+[0.26.102 is public](https://github.com/reowens/grepmax/releases/tag/v0.26.102)
+from `77963b2497ec8046e82f76ee325fa2f13d2904f6`. The existing manually dispatched
+[publication workflow](https://github.com/reowens/grepmax/actions/runs/40673648148)
+succeeded. Hosted build content and public npm SHA-256/SHA-512 bytes match the
+approved 330-file,125,582,007-byte archive:
+`0c1e19b6a664d18f7fa16ea0114c4985685939e196c23b23458ff368fe48f55b`.
+Publication was submitted once; registry propagation was observed without a
+second publish. [Delivery receipt](assets/p3-cpu-20261027/0.26.102-delivery.json).
+
+Development merge `1517fe0` retains the published source and prior local history.
+Of121 snapshotted working files,117 stayed byte-identical; only version metadata
+and README integration changed before the deliberate handoff/plan update.
+Sixty-six intent-to-add entries are retained, with no staged/unmerged paths;
+main is40 ahead / zero behind origin/main and was not pushed. The backup branch
+and full recovery files are recorded in the
+[reconciliation receipt](assets/p3-cpu-20261027/0.26.102-reconciliation.json).
+
+P3 remains installed on0.26.101. Publication made no service/configuration change
+or explicit production FTS update. Controlled installation/handover through the
+existing unit and fresh production FTS admission/update remain the next actions;
+preserve existing resource limits, containment and the prior installation for
+rollback. No extra review round or passing-suite repeat is queued.
+
+## 0.26.102 release candidate ready — October 28, 2026 (UTC)
+
+Isolated candidate `77963b2497ec8046e82f76ee325fa2f13d2904f6` combines the
+bounded-content Searcher and explicit Linux FTS catch-up on published 0.26.101,
+preserving unrelated main-checkout work. The 330-file archive has SHA-256
+`0c1e19b6a664d18f7fa16ea0114c4985685939e196c23b23458ff368fe48f55b`:
+three added payloads, eight changed and 319 unchanged from 0.26.101. Dependencies,
+model identities, native binaries and full-table containment are unchanged.
+
+The single review found one P2 receipt-ordering defect. Owner correction
+`7048bfa` now waits for final lease ownership verification before persisting
+completion; the whole operation has an uncertainty handler. The explicitly
+authorized focused invocation passed the real final-ownership-loss regression
+and normal completion (2 passed/11 skipped), with no native dataset/model run.
+Source/test typechecks and scoped formatting pass; prior search/native suites
+were retained with exact scope, rather than repeated. No additional review
+round is required or claimed. The final evidence-only commit changes no built
+product bytes. [Regression](assets/p3-cpu-20261027/combined-release-receipt-regression.json)
+and [reuse scope](assets/p3-cpu-20261027/combined-release-validation-reuse.json).
+
+All release receipts, archive, notes and original reviewed bytes are under
+`/home/reoiv/.local/state/gmax-delivery/20261028-0.26.102/`. The candidate is
+prepared, not published or installed. Production remains 0.26.101 and no live
+FTS update has run. Use the final source/archive receipt for publication, then
+fresh ownership/resource admission for the service handover and actual catch-up.
+
+## Release held for FTS catch-up — October 28, 2026 (UTC)
+
+The user selected FTS catch-up before publication. The local explicit offline
+`fts-refresh` command uses the pinned Python index-only delta route, exclusive
+store ownership, input admission, process limits and durable uncertain/completed
+outcomes. It refuses existing owners and retained containment, preserves prior
+data/index files and never invokes compaction, pruning or an automatic retry.
+The corrected **83,561-row native case passes**, leaving zero unindexed rows
+while base-file hashes, sampled row IDs and the separate path index stay
+unchanged. All **45 distinct focused cases passed across four explicitly
+approved invocations**; passing cases were not repeated. Source/test typechecks
+and scoped formatting pass. The final invocation took 2.44 seconds, peaked at
+631,087,104 bytes sampled owned-group RSS and removed all owned processes/private
+stores. This synthetic fixture uses four-dimensional vectors; it does not
+qualify production corpus resources, timings or relevance. The writer uses I/O=2;
+the fixture aborts/awaits helpers before lease release, and immutable payload
+verification retains the head/schema/fragment/index invariants. Production
+remains unchanged and release remains held.
+See [the current handoff](../future-sessions.md) for limits, CLI semantics and
+the retained [validation/source receipts](assets/p3-cpu-20261027/fts-refresh-validation.json).
+The bounded-content improvement stays local for a
+later combined release; no publication or service action is selected now.
+
+## Tail attribution and local candidate complete — October 28, 2026 (UTC)
+
+All nine measured FTS and nine hydration outliers overlapped major GC on the
+unmodified installed 0.26.101 Searcher. The local candidate limits early content
+to 50 Unicode characters using `CAST(left(content, 50) AS STRING)`, then restores
+full bodies through final snapshot-bound row-ID hydration. It preserves the
+existing UTF-16 short-body boost and full response text. The native compatibility
+cast matters: SUBSTR was unsupported and plain LEFT's string-view result could
+not be read by the installed JS Arrow binding.
+
+The paired fully indexed synthetic fixture retained exact full responses for
+240 queries per arm: median 25.058 → 24.251 ms, CPU 25.043 → 24.210 ms and
+p95 52.279 → 32.445 ms. This is a shared-host diagnostic with an interleaved heap,
+not a production tail guarantee or independent per-arm GC attribution. All 39
+focused cases passed across the initial 36-pass/3-fail run and targeted 3-pass
+native correction; passing mocked cases were not repeated. Source/test
+typechecks and changed-file Biome checks pass. [Current handoff](../future-sessions.md),
+[paired evidence](assets/p3-cpu-20261027/content-prefix-results.json) and
+[validation](assets/p3-cpu-20261027/content-prefix-validation.json) retain scope,
+cleanup, native compatibility findings and recovery paths. The candidate is
+local only; P3 remains 0.26.101 and production FTS work remains separate.
+
+## FTS feasibility and checkout reconciliation — October 28, 2026 (UTC)
+
+The selected index-only experiment passed on a private 4,096-row Node-created
+dataset using pinned Python Lance12. Targeting only `content_idx` with zero
+index merging added one delta and eliminated the 3,584-row unindexed portion.
+Base data files/fragments, schema, rows/vectors/row IDs, the path BTREE and the
+pinned old snapshot were preserved. FTS-only warm median was68.769 →0.806 ms;
+this is a synthetic sequential diagnostic, with changed BM25 corpus statistics,
+not a production or exact-ranking claim. The later read-only production refresh
+observed83,561 unindexed of493,921 rows (16.92%) at version6839. No production
+mutation or service action ran. See [the current handoff](../future-sessions.md)
+for evidence and the outstanding production admission/interruption boundaries.
+
+Reconciliation merge `91eef19` now includes released0.26.101 while preserving all
+38 local-only commits and pending work. Of97 dirty/untracked files,95 remained
+byte-identical; README gained release notes and package.json advanced to0.26.101.
+There are no staged/unmerged paths, and main is39 ahead / zero behind origin/main.
+The backup branch, exact files/index/patches and recovery paths are in the
+[receipt](assets/p3-cpu-20261027/0.26.101-reconciliation.json). No stash or push
+was used. Tail-latency attribution is next in the user's selected order.
+
+## 0.26.101 delivery complete — October 28, 2026 (UTC)
+
+[0.26.101 is public](https://github.com/reowens/grepmax/releases/tag/v0.26.101)
+from reviewed `c5b4766`; the existing
+[publication workflow](https://github.com/reowens/grepmax/actions/runs/40645625271)
+succeeded. Hosted content and public registry bytes match approved SHA-256
+`9ff872d3f72cf85caf91f1706516b86433d3622fb89fdf23ecf8cbd4562c23a1`.
+The existing service serves ready/active/open 0.26.101 as PID231823, with
+MainPID/cgroup ownership and kernel CPU200%, weight10, nice10 verified.
+Configuration/unit hashes and store/cache directory identities were preserved.
+No manual rebuild or maintenance ran; the complete 0.26.100 install is retained
+for rollback. [Delivery receipt](assets/p3-cpu-20261027/0.26.101-delivery.json),
+[runtime receipt](assets/p3-cpu-20261027/0.26.101-handover.json) and
+[current handoff](../future-sessions.md) retain the full evidence and paths.
+Preflight waited for open admission before any change. No extra review or focused
+suite rerun was added; the shared checkout was preserved. FTS catch-up design
+remains a separate selected-work candidate.
+
+## Production FTS observation and patch preparation — October 28, 2026 (UTC)
+
+The selected read-only check found 411,577 indexed / 81,609 unindexed rows among
+493,186 at pinned version 6669 (16.55% unindexed). The reader closed and its own
+lease marker was removed. No models, maintenance or service changes ran. These
+counts establish a backlog, not a measured production latency or missing-result
+defect. [Observation](assets/p3-cpu-20261027/production-fts-coverage.json).
+
+The selected narrow release is prepared as 0.26.101 at `c5b4766`, starting from
+published 0.26.100 in clean branch `work/gmax-arrow-release`. The 327-file archive
+differs in only Searcher JS, README and three version files; 322 other payloads
+match the published archive. Source/compiled Searcher and both passed test files
+match the existing 37-case/paired evidence byte-for-byte, with no suite rerun.
+Isolated typechecks/Biome passed. The single requested read-only release review
+approved `c5b4766` with no blocking findings; no further review is queued.
+[Review](assets/p3-cpu-20261027/arrow-release-review.json),
+[candidate/evidence](assets/p3-cpu-20261027/arrow-release-candidate.json)
+and [current handoff](../future-sessions.md) retain the full hashes and paths.
+This preparation checkpoint preceded the subsequent publication and handover
+recorded above. Installed P3 is now 0.26.101.
+
+## Local Arrow materialization follow-up — October 28, 2026 (UTC)
+
+The selected CPU profile attributed most sampled synchronous search work to
+spreading Arrow candidate proxies. The local candidate uses Arrow's shallow
+`toJSON()` method for vector/FTS rows, with a plain-object copy fallback. Only
+that helper and its two callers differ from the installed compiled Searcher.
+Paired default median elapsed/CPU were 36.768 → 26.874 ms and
+35.413 → 26.815 ms; rerank CPU was 39.482 → 30.497 ms. Every full response and
+score matched. Default p95 worsened in the sample, so no tail improvement is
+claimed. All 37 focused cases and source/test typechecks passed. See the
+[current handoff](../future-sessions.md) for provenance, cleanup and limitations.
+The candidate remains local; published/installed P3 is still 0.26.100.
+
+The subsequently selected observation and patch preparation are recorded above.
+Maintenance questions remain separate from the CPU improvement; default-p95
+attribution remains optional unless selected. The [current handoff](../future-sessions.md)
+records the concrete scope, evidence and next action.
+
+## CPU release deployment and profile — October 28, 2026 (UTC)
+
+The selected 0.26.100 installation and service handover are complete. The
+[current handover receipt](assets/p3-cpu-20261027/0.26.100-handover.json) supersedes
+the older 0.26.99 installed-state observation below. It verifies the actual
+daemon's version and systemd ownership, unchanged two-CPU limits, configuration
+and store/cache directory identities, graceful predecessor exit and the retained
+0.26.99 rollback install. No index rebuild ran.
+
+The selected larger temporary-corpus profile is also complete. A fully indexed
+3,072-row fixture measured 44.153 ms median, 53.948 ms p95 and 42.424 ms CPU.
+The subsequent attribution and Arrow improvement are recorded above. An initial
+incomplete-FTS condition is retained separately to avoid mistaking append fallback
+for indexed FTS performance. See [the current handoff](../future-sessions.md) for stage
+timings, evidence, synthetic-corpus limitations and the next proposed items.
+No production index maintenance, new release, extra review or suite rerun is
+needed to finish these two selected actions.
+
+## Installed P3 and main integration — October 27, 2026
+
+[The platform host receipt](../../../../platform/docs/plans/assets/p3-gmax-load-20261023/0.26.99-handover.json)
+owns installed-state evidence. 0.26.99 is installed after all 326 payload files
+matched the approved archive; the old daemon shut down through authenticated IPC.
+The new ready/active/open daemon matches unit MainPID and cgroup, and its kernel
+CPU quota, weight and nice match the unchanged existing service. Configuration,
+unit file and store-directory identities were preserved. The temporary owned
+marker is removed; no large model or regression suite ran. No sustained-workload
+or cooling acceptance is claimed. Platform documentation commit: `dd74628a03`.
+
+Main merge `72e426e` contains the release and all 37 prior local-only commits.
+Before integration, 42 dirty/untracked files were snapshotted; 41 stayed identical
+and package.json retained dependency edits with only the version advancing.
+README reapplication preserved the existing dirty content. No unmerged/staged
+paths or development-main push remain. Recovery branch, retained two-file stash,
+old installation and receipts are recorded under
+`/home/reoiv/.local/state/gmax-handover/20261027T131543Z/`.
+The selected release/checkout/runtime tasks are complete. Unrelated pending
+dependency/audit changes retain their owners and are not qualified by this work.
+Older checkpoints below retain their original dates and scope.
+
+## Publication 0.26.99 complete — October 27, 2026
+
+[0.26.99](https://github.com/reowens/grepmax/releases/tag/v0.26.99) is public from
+`a5df790dd55a166ea79c079893a26dd696694c6d`, with approved SHA-256
+`6289ed0c50d40bb9fc0215e1472fbf3b9056d3de7c0e4f1b27906fa48cd69ce9`.
+The 326-file archive contains `999976c` plus release metadata/README changes.
+All 97 focused tests and the single release review pass; native helper pins and
+qualified artifacts are unchanged. No extra tests/review were run for publication.
+
+[Original run40507991485](https://github.com/reowens/grepmax/actions/runs/40507991485)
+accepted npm publication and matched the rebuild, then timed out on registry404s.
+[Recovery40509542174](https://github.com/reowens/grepmax/actions/runs/40509542174)
+passed with `verify_only=true`: publication was skipped, public registry bytes
+matched the approved archive, and the GitHub release became public. Preserve the
+original result; no republishing is needed. Detailed receipt/logs are under
+`/home/reoiv/.local/state/gmax-delivery/20261027-0.26.99/`.
+
+Publication itself changed no installed service. The subsequent authorized
+installation and main integration are complete in the section above. The release
+supports the two named user-config units/default home.
+Earlier checkpoints below retain their dated scope.
+
+## Publication 0.26.98 complete — October 27, 2026
+
+[Workflow 40501026004](https://github.com/reowens/grepmax/actions/runs/40501026004)
+succeeded: rebuilt archive matched, trusted npm publication succeeded, registry
+bytes matched the approved SHA-256 and the [GitHub release](https://github.com/reowens/grepmax/releases/tag/v0.26.98)
+is public. Source/tag: `fbdaea7fc98c3ef9abedcd5707a81aac39d7a94d` / `v0.26.98`.
+All 84 focused tests passed across six files in one Vitest invocation. One
+independent release review approved with no blocking findings; no further review
+or test round ran. Existing native qualification was reused through its validator.
+
+The artifact is the same retained candidate documented below. Local receipts
+under `/home/reoiv/.local/state/gmax-delivery/20261027-0.26.98/` record the exact
+archive hash, source, review, tests and publication result. No installation or runtime operations ran during that earlier publication;
+the later0.26.99 handover closes the service-startup defect for its selected scope.
+Remote main points to the clean release. Local main subsequently incorporated
+it through merge `b98a022`, preserving local commits and dirty work without a
+reset or force-push. Publication itself did not install or restart anything.
+
+## Service startup follow-up — October 27, 2026
+
+Branch `work/gmax-service-startup` at `999976c` implements the shared-launcher fix
+over released `fbdaea7`, without carrying unfinished main-checkout experiments.
+User-installed `gmax.service` / `hetchy-gmax.service` own default-home startup;
+service failure is refused rather than falling back to a detached daemon or
+watcher. Read-only requests cannot start normal service. README documents scope.
+
+Source and test types pass. The first invocation passed 96/97 cases and failed
+on a new fixture spying on immutable ESM `fs.lstatSync`. The fixture was corrected;
+the user explicitly authorized a rerun, which passed **97/97 cases in ten files**
+in 5.14 seconds against unchanged `999976c`. The later 0.26.99 release review and publication completed as recorded above;
+no installation or runtime change ran. Detailed evidence is in
+`/home/reoiv/.local/state/gmax-service-startup/20261027/implementation.json`.
+
+## Recenter — October 27, 2026
+
+The [handoff](../future-sessions.md#next-items-to-select) lists the remaining
+choices. Publication is closed. The startup ownership implementation passed all 97 focused tests, was released,
+and is now installed and integrated as recorded above. An installed systemd unit
+must remain the owner when hooks or CLI/MCP startup encounter no live daemon. The 0.26.98 recycle/restart fix applies to a
+daemon already running as the unit's main process and does not close this gap.
+
+Checkout reconciliation is complete at `b98a022`: both `da793ae` and release
+`fbdaea7` are parents, and all 36 formerly local-only commits remain ancestors.
+The tree differs from prior local main only in three version fields (0.26.98).
+All 32 dirty/untracked files, modes and status were verified unchanged after
+merging. Local main is 37 ahead / zero behind its tracking ref; no push ran.
+Recovery branch `backup/main-before-02698-reconcile-20261027` and the snapshot
+under `/home/reoiv/.local/state/gmax-reconciliation/20261027T122359Z/` retain the
+before state. These coordination notes were updated after that preservation
+check. No tests, models or runtime operations ran for this metadata/history merge.
+
+The candidate at `fbdaea7` was built from `44b16fe` plus the four fixes and version
+metadata. Earlier pnpm preparation failed before Vitest; direct runner execution
+subsequently passed 84 tests across six files. The single independent review
+approved that source, and workflow publication/registry verification succeeded.
+Candidate qualification and publication are complete, with their limits recorded
+above. No additional test or review round is queued.
+
+The absent `colbert-backend-evaluation.md` and `session-start-hint-trim.md` are
+historical references, not runnable task handoffs. Recover evidence before selecting
+that work. Resource statistics remains held; model/ranking work remains optional.
+
 <a id="current-direction--document-search-rollout-preparation"></a>
+
+## Session ownership and current direction
+
+This plan coordinates delivery; each linked plan owns its execution and evidence.
+A documentation reconciliation does not start the next task or transfer a claim.
+
+| Workstream | Owner and current boundary |
+| --- | --- |
+| Publication | [0.26.99 is complete](#publication-02699-complete--october-27-2026): exact rebuild, accepted publication and matching public bytes via verify-only recovery. No republish is queued. |
+| Local development jobs | [Local workers](gmax-local-workers.md#current-use-and-next-task) owns the commands, accepted P3/Windows typechecks and selected Windows unit file. Windows uses the shorter profile cache. Other task coverage and named Mac pool use remain open. |
+| ColBERT GPU/model evaluation | Separate, unfinished work. Referenced `colbert-backend-evaluation.md` is absent here; older timing/scoring summaries are historical until retained evidence is recovered. No experiment or promotion is queued. |
+| Installed P3 | [Platform host receipt](../../../../platform/docs/plans/assets/p3-gmax-load-20261023/0.26.99-handover.json) records installed0.26.99 and verified service/cgroup limits. Its host plan retains thermal/indexing ownership. |
+| Worker enrollment | `beyond/platform/docs/plans/developer-setup-without-loops.md` owns the current operator sequence. Pool admission and enrollment remain separate from Gmax source integration. |
+| Startup text | Historical `session-start-hint-trim.md` is absent here. No startup-text change is selected; its old 0.26.96 dependency is historical. |
+
+The [repository execution policy](../../CLAUDE.md#local-checks-and-remote-execution)
+and [verification budget](../../AGENTS.md#review-and-verification-budget) apply to
+all workstreams. The records below retain dated evidence; they do not queue
+another verification round, remote builder, installation or runtime restart.
+
+## Local-worker source integration
+
+[Gmax on the local worker pool](gmax-local-workers.md) owns the developer entry,
+named tasks, frozen Gmax inputs and result/artifact handling through existing
+local transports. Its [current-use table](gmax-local-workers.md#current-use-and-next-task)
+links accepted P3 and Windows typechecks and distinguishes unrun task coverage.
+Earlier source-only receipts are dated evidence, not blanket passes for later
+repairs. This integration adds no release gate; pool and machine
+owners keep their scopes.
 
 ## Mac GPU baseline step 1: recovery and measurement
 
-**The Mac baseline is restored and matching native artifacts are prepared;
-runtime package integration and delivery remain open.** Normal service, MLX and file indexing are active, and a semantic read
+The records from this point onward are historical checkpoints. Their pending
+steps and installed-state statements retain their original date and scope; the
+October 27 publication and ownership sections above define current direction.
+
+**Publication and runtime installation retain their separate owners. No release
+or additional verification is queued in this workstream.** Checks run locally under the policy in [CLAUDE.md](../../CLAUDE.md#local-checks-and-remote-execution); Depot and other remote builders require explicit approval for that run. The existing manually invoked release workflow is the sole CI exception.
+
+The following native and package results are dated evidence, not authorization
+to repeat checks or start remote jobs. Service/version statements describe those
+recorded runs, not fresh readbacks. At that baseline, normal service, MLX and file
+indexing were active, and a semantic read
 returned results. The qualified one-time recovery finalized the retained receipt
 without data or search-index writes, preserving current table version 5600. The
 source fix passed 26 native cases in 1 qualification invocation on Darwin.
 [Native repair evidence](assets/mac-mlx-baseline-20261023/native-repair.json)
 records the build/source/binary hashes, test cases, live result and service state.
-Resource history remains held; ColBERT MLX and CUDA implementation have not started.
+Resource history remains held. Production ColBERT MLX and CUDA integration have not started; the separate backend-evaluation plan owns its completed Mac screen.
 
 ### Native recovery repair
 
@@ -104,19 +1229,83 @@ was retried. P3 preflight was read-only; no tools, settings or services changed 
 P3. These results qualify the Linux native helper in the builder and do not claim
 physical P3 acceptance.
 
-**Permanent delivery remains open.** Installed 0.26.96 native artifacts still
-contain the original branch. The prepared pair must be integrated into a verified
-runtime release package before publication and installation. Neither action ran
-in this assignment. ColBERT MLX, CUDA and resource-history work remain unstarted
-or held as recorded above.
+**Publication is recorded below.** The retained 0.26.97 package contains the qualified
+native pair. The [publication receipt](#publication-02697) owns its disposition;
+there is no queued verification or installation step here. The separate
+backend evaluation workstream (its referenced plan is absent here) owns subsequent experiments;
+its source preparation and Mac screen are not a production backend change.
+CUDA and resource-history work remain unstarted or held as recorded above.
 
 ### Release package candidate 0.26.97
 
-The selected package candidate is 0.26.97. Its package, plugin and marketplace
-version metadata agree. Build and consumer acceptance are in progress against a
-frozen archive of committed source, with the qualified native pair supplied as
-generated inputs. Publication and installation remain unperformed. Shared
-checkout source edits are outside this candidate.
+Candidate 0.26.97 is built from committed source `44b16fe6a7`. Source/test
+TypeScript compilation and runtime assembly passed. The retained tarball contains
+324 files (121,951,702 compressed bytes); all 655 tracked source files still match
+the frozen archive after the build. Its SHA-256 is
+`451383eb48b1405b2f4deb5e4be3feda1bb5c0cf3e60dbc36db3b892041caf80`.
+[Release package evidence](assets/mac-mlx-baseline-20261023/release-package.json)
+records commands, stage results, payload diff, hashes and cleanup.
+
+**Linux package acceptance passed.** The single qualification invocation ran on
+an isolated Ubuntu 24.04 x86_64 Depot builder for 127.616 seconds, exit 0. It
+passed consumer dependency audit (zero vulnerabilities), process ownership,
+document contract/import boundaries, native daemon and standalone watcher edits,
+atomic saves, injected-gap convergence, policy re-inclusion/retirement, native
+SDK/Session/compaction containment, prune and bounded maintenance consumers.
+The three bounded cases preserved identical complete-row digests for 448 rows:
+copy with Node readers, interrupted-before-copy recovery and incremental repair
+with Node readers. The reader cases completed 81 and 569 reads, respectively.
+
+The [successful package qualification](https://depot.dev/orgs/s0rjb3r4ql/projects/qkhvfs3900/builds/gnll0kdq3f)
+used Node 26.12.1/npm 11.20.0, Python 3.13.17 and uv 0.13.5. An earlier builder
+startup failed because Node lacked `libatomic.so.1`; its driver and tests never
+started. Adding `libatomic1` and checking tool startup fixed the disposable image.
+There were two builder starts, one test invocation and no test retry. Candidate
+bytes and all seven frozen fixture/assertion scripts remained unchanged.
+
+The previous Mac attempt remains recorded as failed: the fixture's private home
+lacks reservations for 28 live host MCP processes, so strict catchup admission
+refused. Those sessions and the guard were left intact. Linux passing does not
+qualify macOS FSEvents. Both native artifact suites already passed independently
+on their platforms; they were not repeated in this assignment.
+
+Payload comparison against published 0.26.96 found no added/removed files and no
+compiled JavaScript changes. The differences are the qualified native pair,
+maintenance manifest/acceptance/notices, version metadata and committed README/
+skill documentation. Uncommitted shared-checkout work is excluded. npm accepted publication of the retained archive, and `v0.26.97` is pushed at
+its frozen source commit. No runtime installation or daemon handover ran during publication; subsequent P3 runtime work is recorded in the platform host plan.
+
+The exact accepted archive, result, consumer log, npm audit and consumer lock are
+retained under `/Users/Shared/P3-Installer/gmax-release-package-20261023/`.
+The private adapter supplied that archive to real `npm pack` and verified its
+returned hash. Builder success alone was not used as the verdict: exported
+`result.json` has status 0 and `qualificationPassed: true`, and
+`accepted-input.json` records the expected archive hash. Fixture stores/homes
+were disposable and original cleanup paths completed; no local service, model,
+credential or P3 setting changed.
+
+**Added verification is withdrawn.** The user assigned the release to another
+session and declined the added verification rounds. The attempted full remote
+release check did not reach tests: Depot build `lq0xk85hhp` is `canceled` after
+167 seconds, during source upload. No jobs were active in the recorded project
+listing. [Disablement receipt](assets/mac-mlx-baseline-20261023/depot-disabled.json)
+records the observed state and scope.
+
+Gmax has no `depot.json` or dedicated Depot project in this checkout. The commands
+used shared project `qkhvfs3900`, named `beyond`; its organization-wide settings
+and credentials are unchanged. `.claude/settings.json` now denies Depot CLI
+commands for this repository, and `AGENTS.md` points every agent to the explicit
+local-only policy in `CLAUDE.md`. The shared project is not claimed to be disabled
+for other repositories. No browser setting was changed.
+
+Remote contexts and commands in the retained evidence directory are historical
+only. `REMOTE-EXECUTION-DISABLED.txt` marks them as non-executable instructions.
+No further checks or remote retry is queued here. The existing manual
+release workflow remains unchanged; publication disposition is recorded below.
+
+### Publication 0.26.97
+
+[The publication receipt](assets/mac-mlx-baseline-20261023/publication-0.26.97.json) records npm acceptance of the exact retained archive, the pushed frozen-source tag and the [live GitHub release](https://github.com/reowens/grepmax/releases/tag/v0.26.97) with archive, source receipt and checksum assets. The user explicitly selected 0.26.97 and instructed publication without additional verification in this conversation. No further tests, audits, compilation or consumer qualification ran, and lifecycle scripts were disabled for publication. The remaining full local release qualification and macOS FSEvents package acceptance are not represented as passed. npm announced asynchronous processing and returned E404 at the recorded registry read; this is a dated readback, not a new registry check or proof of continuing propagation. The platform `beyond/platform/docs/plans/p3-session-host.md` owns subsequent runtime installation and current bounded indexing status; this publication receipt retains its original no-install boundary.
 
 ### Measured embedding stages
 
@@ -153,8 +1342,7 @@ restored daemon described above. Private profiling command/output and observers
 remain in `/Users/Shared/P3-Installer/mac-gmax-baseline-20261023/`. That earlier
 profiling assignment used 1 test invocation without a retry, separately from the
 native repair qualification. Current P3 workspace and commissioning status belong
-to [the platform session-host plan](../../../../platform/docs/plans/p3-session-host.md),
-not the earlier dated P3 qualification below.
+to `beyond/platform/docs/plans/p3-session-host.md`, section `Gmax thermal containment, 2026-10-23`. The earlier P3 qualification below is dated evidence.
 
 ## Necessity audit — October 21, 2026
 
@@ -1336,7 +2524,8 @@ until the reviewed delivery step. C1/context and C/D remain separately queued.
 
 ## Recenter decision
 
-This is the sole execution plan. It replaces the four former open plan records:
+This is the delivery coordination plan. The session ownership map above names
+the current execution plans; this record replaces the four former open records:
 host safety/disk recovery, multi-fragment cleanup, semantic-search landscape, and
 embedding migration. Their history is preserved in the archive. Archiving means
 superseded or explicitly deferred, not that every proposal was implemented.
@@ -2400,6 +3589,12 @@ longer context, remote inference and index migration remain unselected. C1/conte
 and C/D keep their separate scope and order. The pending delivery handoff, live
 config/service/host protection and unrelated Depot collector edits are preserved.
 
+## Outstanding Mac ColBERT indexing comparison
+
+The [Mac smoke record](../../scripts/colbert-eval/MAC-SMOKE.md#disposable-indexing-experiment--awaiting-client-reconnect) owns the separate CPU/MPS document-encoding experiment, its incomplete end-to-end indexing comparison and the resource-registration incident. The final [Pro MLX-session handoff](t3-thread://v1/c0d28353-0ab9-463e-b305-5bba94abe980), dated October 24, stopped at client reconnect and proposed verification before retry. The completed ranking screen and Gemma evaluation above do not establish complete-indexing speedup or close the recorded process-identity defect.
+
+Current registration recovery, disposition of the timezone-sensitive product cleanup path and selection of any indexing retry remain open; no later recovery or completed comparison receipt is linked here. The old request to restart T3 is a dated handoff, not a current process instruction. This reconciliation performs no client restart, model load, benchmark, installation or release.
+
 ## Usage statistics audit — October 21
 
 The user requested an audit of CPU time, memory and disk statistics for debugging
@@ -2765,12 +3960,15 @@ parallel omnibus plan.
 
 ## Execution and closure rules
 
+- The repository [review and verification budget](../../AGENTS.md#review-and-verification-budget)
+  supersedes older blanket independent-review language in this plan. Prior review
+  records are evidence, not instructions to restart review after each correction.
 - One current milestone, one owner and one finite acceptance contract. No new plan
   for each diagnosis, test pass, package step or observation window.
-- Implement, review, run required checks, release/install and close the delivered
+- Implement, run focused checks within that budget, release/install when selected and close the delivered
   work. Source-only progress is not delivery. Record blocked portions explicitly.
-- Run checks once for a final change. Repeat only for a new change, failure or
-  unresolved concern. Unchanged automatic-cleanup/timing observations are cancelled.
+- Run the selected focused checks once within the root budget. Additional runs
+  require the user's instruction. Cancel unchanged automatic-cleanup/timing observations.
 - Fix a shipping failure before publication; CI does not monopolize execution or
   block independent implementation work authorized by the user. Documentation-only replanning
   does not require native builds, runtime probes, storage operations or model loads.
@@ -2783,6 +3981,13 @@ parallel omnibus plan.
 
 ## Version History
 
+- **2026-10-24T03:08:52Z** Status: in-session → paused — User stopped added verification and assigned release to another session. Depot build lq0xk85hhp is canceled before tests; no active jobs at recorded observation. Gmax remote execution is prohibited without explicit approval; local-only rule and repo Depot CLI deny settings added. No release or checks queued here.
+- **2026-10-24T02:56:00Z** Started (active → in-session).
+- **2026-10-24T02:56:00Z** Status: paused → active.
+- **2026-10-24T02:53:20Z** Status: in-session → paused — Linux package consumer acceptance passed all stages in 1 test invocation against exact 0.26.97 archive. One builder-only libatomic setup failure preceded test startup. Full local release qualification remains outstanding; nothing published or installed.
+- **2026-10-24T02:45:53Z** Started (active → in-session).
+- **2026-10-24T02:45:53Z** Status: paused → active.
+- **2026-10-24T02:29:03Z** Status: in-session → paused — Candidate built; sole consumer acceptance run stopped at private-registry/host-client admission. Retained exact archive and unexecuted clean-host packet; next assignment gets one fresh qualification run. No publication or installation.
 - **2026-10-24T02:00:40Z** Started (active → in-session).
 - **2026-10-24T02:00:40Z** Status: paused → active.
 - **2026-10-24T01:52:34Z** Status: in-session → paused — Linux native qualification passed 22 normal and 4 fault cases in 1 run. Matching source-identical Darwin/Linux artifacts passed both existing assembly/preparation gates and refreshed the source cache; stale cache preserved byte-for-byte, installed runtime unchanged and Mac active. Permanent runtime package integration, release and installation remain open.

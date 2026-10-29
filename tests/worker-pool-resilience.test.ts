@@ -9,12 +9,16 @@ const h = vi.hoisted(() => {
     children: [] as any[],
     nextPid: { v: 1000 },
     modelTier: { v: "small" },
+    cpuCapacity: { v: 8 },
   };
 });
 
 // Never inspect host pressure or write a real containment marker in tests.
 vi.mock("../src/lib/utils/autostart", () => ({
   daemonStartDeniedReason: () => null,
+}));
+vi.mock("../src/lib/utils/cpu-capacity", () => ({
+  effectiveCpuCount: () => h.cpuCapacity.v,
 }));
 vi.mock("../src/lib/utils/safety-latch", () => ({
   latchSafetyStop: vi.fn(),
@@ -76,6 +80,7 @@ describe("WorkerPool resilience", () => {
     h.children.length = 0;
     h.nextPid.v = 1000;
     h.modelTier.v = "small";
+    h.cpuCapacity.v = 8;
     vi.mocked(childProcess.fork).mockClear();
   });
 
@@ -406,7 +411,7 @@ describe("WorkerPool resilience", () => {
       async (terminal) => {
         vi.useFakeTimers();
         pool = new WorkerPool();
-        pool.maxWorkers = 2;
+        pool.maxWorkers = 3;
         pool.spawnWorker();
         const [owner, spare] = pool.workers;
         const ac = new AbortController();
@@ -516,7 +521,7 @@ describe("WorkerPool resilience", () => {
     it("keeps the same path in different projects independent", async () => {
       vi.useFakeTimers();
       pool = new WorkerPool();
-      pool.maxWorkers = 2;
+      pool.maxWorkers = 3;
       pool.spawnWorker();
       const [firstWorker, secondWorker] = pool.workers;
       const first = pool.processFile(input);
@@ -579,6 +584,217 @@ describe("WorkerPool resilience", () => {
 
       owner.child.emit("message", { id: firstId, result: { vectors: [] } });
       await finishRetry(retry);
+    });
+  });
+
+  describe("global indexing CPU admission", () => {
+    it.each([
+      { cpus: 1, workers: 1, limit: 1 },
+      { cpus: 1, workers: 4, limit: 1 },
+      { cpus: 3, workers: 4, limit: 2 },
+      { cpus: 8, workers: 2, limit: 1 },
+    ])(
+      "admits $limit files with $cpus CPUs and $workers workers",
+      async ({ cpus, workers, limit }) => {
+        vi.useFakeTimers();
+        h.cpuCapacity.v = cpus;
+        pool = new WorkerPool();
+        pool.maxWorkers = workers;
+        while (pool.workers.length < workers) pool.spawnWorker();
+        const files = Array.from({ length: limit + 1 }, (_, i) =>
+          pool.processFile({ path: `/${i}/file.ts`, projectRoot: `/${i}` }),
+        );
+        const sentCount = () =>
+          h.children.reduce(
+            (total, child) => total + child.send.mock.calls.length,
+            0,
+          );
+        expect(sentCount()).toBe(limit);
+        expect(pool.fileOwners.size).toBe(limit);
+        for (let i = 0; i < files.length; i++) {
+          const worker = pool.workers.find((w: any) => w.busy);
+          expect(worker).toBeDefined();
+          worker.child.emit("message", {
+            id: worker.pendingTaskId,
+            result: { vectors: [] },
+          });
+        }
+        await Promise.all(files);
+        expect(sentCount()).toBe(files.length);
+        expect(pool.fileOwners.size).toBe(0);
+      },
+    );
+
+    it("shares a two-CPU file budget across projects while foreground work proceeds", async () => {
+      vi.useFakeTimers();
+      h.cpuCapacity.v = 2;
+      pool = new WorkerPool();
+      pool.maxWorkers = 4;
+      const firstWorker = pool.workers[0];
+      const first = pool.processFile({ path: "/a/file.ts", projectRoot: "/a" });
+      const firstId = firstWorker.pendingTaskId;
+      const second = pool.processFile({
+        path: "/b/file.ts",
+        projectRoot: "/b",
+      });
+
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(h.children).toHaveLength(1);
+      const query = pool.encodeQuery("foreground");
+      expect(h.children).toHaveLength(2);
+      const queryWorker = pool.workers[1];
+      expect(queryWorker.child.send.mock.calls[0][0].method).toBe("encodeQuery");
+
+      firstWorker.child.emit("message", {
+        id: firstId,
+        result: { vectors: [] },
+      });
+      expect(firstWorker.child.send.mock.calls[1][0].payload.path).toBe(
+        "/b/file.ts",
+      );
+      firstWorker.child.emit("message", {
+        id: firstWorker.pendingTaskId,
+        result: { vectors: [] },
+      });
+      queryWorker.child.emit("message", {
+        id: queryWorker.pendingTaskId,
+        result: { dense: [], colbert: [], colbertDim: 0 },
+      });
+      await Promise.all([first, second, query]);
+    });
+
+    it("reserves a worker globally when several projects share a larger CPU budget", async () => {
+      vi.useFakeTimers();
+      pool = new WorkerPool();
+      pool.maxWorkers = 3;
+      pool.spawnWorker();
+      pool.spawnWorker();
+      const [one, two, spare] = pool.workers;
+      const files = ["a", "b", "c"].map((name) =>
+        pool.processFile({ path: `/${name}/file.ts`, projectRoot: `/${name}` }),
+      );
+      expect(spare.child.send).not.toHaveBeenCalled();
+      const query = pool.encodeQuery("foreground");
+      expect(spare.child.send.mock.calls[0][0].method).toBe("encodeQuery");
+
+      one.child.emit("message", {
+        id: one.pendingTaskId,
+        result: { vectors: [] },
+      });
+      expect(one.child.send.mock.calls[1][0].payload.path).toBe("/c/file.ts");
+      for (const worker of [one, two, spare])
+        worker.child.emit("message", {
+          id: worker.pendingTaskId,
+          result: { vectors: [], dense: [], colbert: [], colbertDim: 0 },
+        });
+      await Promise.all([...files, query]);
+    });
+
+    it("counts caller-aborted native owners until they release the global file slot", async () => {
+      vi.useFakeTimers();
+      h.cpuCapacity.v = 2;
+      pool = new WorkerPool();
+      pool.maxWorkers = 4;
+      const worker = pool.workers[0];
+      const ac = new AbortController();
+      const first = pool.processFile(
+        { path: "/a/file.ts", projectRoot: "/a" },
+        ac.signal,
+      );
+      const firstId = worker.pendingTaskId;
+      ac.abort();
+      await expect(first).rejects.toMatchObject({ name: "AbortError" });
+
+      const next = pool.processFile({ path: "/b/file.ts", projectRoot: "/b" });
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(h.children).toHaveLength(1);
+      expect(worker.child.send).toHaveBeenCalledTimes(1);
+      worker.child.emit("message", { id: firstId, result: { vectors: [] } });
+      expect(worker.child.send.mock.calls[1][0].payload.path).toBe(
+        "/b/file.ts",
+      );
+      worker.child.emit("message", {
+        id: worker.pendingTaskId,
+        result: { vectors: [] },
+      });
+      await next;
+    });
+
+    it.each(["timeout", "ipc-error", "failed-signal", "refused-signal"] as const)(
+      "keeps the global slot and child tracked through %s until confirmed exit",
+      async (failure) => {
+        vi.useFakeTimers();
+        h.cpuCapacity.v = 2;
+        pool = new WorkerPool();
+        pool.maxWorkers = 4;
+        const owner = pool.workers[0];
+        owner.lastRssBytes = 123;
+        const first = pool.processFile({ path: "/a/file.ts", projectRoot: "/a" });
+        const firstCheck = expect(first).rejects.toThrow(
+          failure === "ipc-error" ? /Worker errored/ : /exceeded no progress/,
+        );
+        const next = pool.processFile({ path: "/b/file.ts", projectRoot: "/b" });
+        owner.child.kill.mockImplementation(() => {
+          if (failure === "failed-signal") throw new Error("signal failed");
+          return failure !== "refused-signal";
+        });
+        if (failure === "ipc-error")
+          owner.child.emit("error", new Error("IPC failed"));
+        else pool.handleTaskTimeout(pool.tasks.get(owner.pendingTaskId), owner);
+        await firstCheck;
+
+        const replacement = pool.workers[0];
+        expect(replacement).not.toBe(owner);
+        expect(replacement.child.send).not.toHaveBeenCalled();
+        expect(pool.fileOwners.size).toBe(1);
+        expect(pool.getWorkerPids()).toContain(owner.child.pid);
+        expect(pool.getWorkerMemoryStats()).toContainEqual({
+          pid: owner.child.pid,
+          rssBytes: 123,
+        });
+        owner.child.emit("error", new Error("still not proof of exit"));
+        await vi.advanceTimersByTimeAsync(2_000);
+        expect(replacement.child.send).not.toHaveBeenCalled();
+
+        owner.child.emit("exit", null, "SIGKILL");
+        expect(pool.getWorkerPids()).not.toContain(owner.child.pid);
+        expect(replacement.child.send.mock.calls[0][0].payload.path).toBe(
+          "/b/file.ts",
+        );
+        expect(pool.fileOwners.size).toBe(1);
+        // Duplicate events from the retired owner cannot free its successor.
+        owner.child.emit("exit", null, "SIGKILL");
+        expect(pool.fileOwners.size).toBe(1);
+        replacement.child.emit("message", {
+          id: replacement.pendingTaskId,
+          result: { vectors: [] },
+        });
+        await next;
+        expect(pool.fileOwners.size).toBe(0);
+      },
+    );
+
+    it("includes a retired native owner in strict shutdown", async () => {
+      vi.useFakeTimers();
+      h.cpuCapacity.v = 2;
+      pool = new WorkerPool();
+      const owner = pool.workers[0];
+      const first = pool.processFile({ path: "/a/file.ts", projectRoot: "/a" });
+      const firstCheck = expect(first).rejects.toThrow(/exceeded no progress/);
+      owner.child.kill.mockReturnValue(true);
+      pool.handleTaskTimeout(pool.tasks.get(owner.pendingTaskId), owner);
+      await firstCheck;
+
+      const shutdown = pool.destroy({ requireExit: true });
+      const shutdownCheck = expect(shutdown).rejects.toThrow(
+        /did not exit within/,
+      );
+      await vi.advanceTimersByTimeAsync(60_000);
+      await shutdownCheck;
+      expect(owner.child.kill).toHaveBeenCalledWith("SIGTERM");
+      expect(pool.getWorkerPids()).toContain(owner.child.pid);
+      owner.child.emit("exit", null, "SIGKILL");
+      expect(pool.getWorkerPids()).not.toContain(owner.child.pid);
     });
   });
 
@@ -673,6 +889,9 @@ describe("WorkerPool resilience", () => {
       for (let i = 0; i < 40; i++) {
         pool.processFile({ path: `/huge-${i}.ts` } as any).catch(() => {});
       }
+      // Indexing leaves the second slot reserved; foreground work can use it.
+      expect(h.children).toHaveLength(1);
+      pool.encodeQuery("foreground").catch(() => {});
       vi.advanceTimersByTime(10_000);
 
       expect(h.children).toHaveLength(2);

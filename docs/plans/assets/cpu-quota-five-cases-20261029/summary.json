@@ -1,0 +1,83 @@
+{
+  "authorizedTestInvocations": 1,
+  "executedTestInvocations": 1,
+  "exitCode": 1,
+  "passed": 4,
+  "failed": 1,
+  "skippedByFilter": 20,
+  "selectedCaseCount": 5,
+  "selectionExactlyMatched": true,
+  "executedCases": [
+    {
+      "file": "tests/config-command.test.ts",
+      "name": "config command > worker threads > stores a valid count and says a daemon restart applies it",
+      "status": "passed",
+      "failureMessages": []
+    },
+    {
+      "file": "tests/config-command.test.ts",
+      "name": "config command > worker threads > auto removes the stored value",
+      "status": "failed",
+      "failureMessages": [
+        "AssertionError: expected 'Worker threads set to auto (4 on this\u2026' to contain 'Worker threads set to auto (1 on this\u2026'\n    at /home/reoiv/dev/hetchy/tools/gmax/tests/config-command.test.ts:188:58\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async file:///home/reoiv/dev/hetchy/tools/gmax/node_modules/.pnpm/vitest@5.0.3_@opentelemetry+api@1.9.1_@types+node@26.6.1_vite@8.3.4_@types+node@26.6.1_esbuild@0.28.2_tsx@4.23.13_/node_modules/vitest/dist/chunks/run.BTlFXlnv.js:2783:20"
+      ]
+    },
+    {
+      "file": "tests/config-command.test.ts",
+      "name": "config command > worker threads > rejects a count outside 1..cores",
+      "status": "passed",
+      "failureMessages": []
+    },
+    {
+      "file": "tests/config-command.test.ts",
+      "name": "config command > worker threads > shows the value and its source",
+      "status": "passed",
+      "failureMessages": []
+    },
+    {
+      "file": "tests/cpu-capacity.test.ts",
+      "name": "effective CPU capacity > handles root membership and rejects unsafe or non-unified membership",
+      "status": "passed",
+      "failureMessages": []
+    }
+  ],
+  "wrapperCommand": "python3 docs/plans/assets/cpu-quota-five-cases-20261029/focused-test-controller.py",
+  "testCommand": "/usr/local/bin/node --max-old-space-size=768 node_modules/vitest/vitest.mjs run --config /home/reoiv/dev/hetchy/tools/gmax/docs/plans/assets/cpu-quota-five-cases-20261029/focused-vitest.config.mjs --reporter=json --outputFile=/home/reoiv/.local/state/gmax-cpu-quota-five-cases/20261029T003810Z/focused-tests-results.json",
+  "testNamePattern": "^(?:effective CPU capacity > handles root membership and rejects unsafe or non-unified membership|config command > worker threads > stores a valid count and says a daemon restart applies it|config command > worker threads > auto removes the stored value|config command > worker threads > rejects a count outside 1\\.\\.cores|config command > worker threads > shows the value and its source)$",
+  "retainedCoverage": {
+    "priorPassingCases": 40,
+    "newPassingCases": 4,
+    "distinctPassingCasesAcrossTwoInvocations": 44,
+    "unresolvedCases": 1,
+    "totalSelectedCasesAcrossTwoInvocations": 45,
+    "freshCombined45CaseRun": false,
+    "priorRootFailureSupersededByNewRootPass": true,
+    "priorReceiptFilesUnchanged": true
+  },
+  "priorSourceHashComparison": {
+    "unchanged": [
+      "src/config.ts",
+      "src/commands/config.ts",
+      "src/lib/workers/pool.ts",
+      "tests/setup.ts",
+      "tests/cpu-capacity.test.ts",
+      "tests/worker-threads-setting.test.ts",
+      "tests/config-command.test.ts",
+      "tests/worker-pool-resilience.test.ts"
+    ],
+    "changed": {
+      "src/lib/utils/cpu-capacity.ts": {
+        "prior": "e1982c7f4f2ad446979a5516396919ff93dcd440da1f8a29b4c48c6a1b1270e6",
+        "current": "7d45b11da2a6e21e1a3822b5a9a17ac99d51eebfc06d9d276cf55bfbbafa8151"
+      }
+    }
+  },
+  "failureInterpretation": "CLI auto confirmation at tests/config-command.test.ts:188 expected 1 but observed 4. Static inference: tests/setup.ts imports CONFIG/src/config while applying its effectiveCpuCount=8 mock before the test file applies its effectiveCpuCount=1 mock; cached config retains the setup binding (defaultWorkerThreads(8)=4). This inference is unverified; no production quota failure established.",
+  "readiness": "CPU batch is not release-ready: the selected CLI auto-confirmation assertion remains failing. Corrected root/unsafe/non-unified case and the other three CLI cases pass. No source/test changes or rerun performed.",
+  "validationLimits": [
+    "Injected cgroup metadata and mocked CLI persistence only; no real worker/model/native dataset/production behavior exercised.",
+    "Prior 40 passing cases retained without rerun; only the known CPU path correction differs in the recorded source-hash list.",
+    "No typecheck, build, package preparation/install, review, profile, live/P3/FTS action, release, commit or push. Packaging/build are unperformed, not newly imposed gates. No measured CPU improvement."
+  ],
+  "stateDirectory": "/home/reoiv/.local/state/gmax-cpu-quota-five-cases/20261029T003810Z"
+}

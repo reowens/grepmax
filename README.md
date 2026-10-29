@@ -89,6 +89,19 @@ gmax "where do we handle auth?" --agent  # 3. Search
 
 No setup required — gmax auto-detects your platform (GPU on Apple Silicon, CPU elsewhere) and downloads models on first use.
 
+### CPU worker budget
+
+Automatic workers use process CPU affinity and the tightest readable Linux
+cgroup-v2 ancestor quota, rounded down with a one-CPU floor. The default keeps
+up to four workers. `gmax config --worker-threads auto` removes the stored
+override and reports this automatic value; `GMAX_WORKER_THREADS` still wins over
+a stored explicit count. Restart the daemon through its existing service owner.
+Background file work shares one pool-wide limit across projects:
+`max(1, min(effective CPUs - 1, max workers - 1))`. Foreground query work has
+priority. Cancelled or failed callers retain their native file ownership until
+the worker completes or exits; timed-out children remain tracked through shutdown.
+Explicit worker settings remain unchanged and do not bypass file admission.
+
 ### Setup & Config
 
 ```bash

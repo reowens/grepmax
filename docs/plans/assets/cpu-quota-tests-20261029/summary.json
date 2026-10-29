@@ -1,0 +1,41 @@
+{
+  "authorizedTestInvocations": 1,
+  "executedTestInvocations": 1,
+  "exitCode": 1,
+  "passed": 40,
+  "failed": 1,
+  "skippedByFilter": 38,
+  "files": [
+    {
+      "path": "tests/config-command.test.ts",
+      "passed": 0,
+      "failed": 0,
+      "skipped": 13
+    },
+    {
+      "path": "tests/cpu-capacity.test.ts",
+      "passed": 11,
+      "failed": 1,
+      "skipped": 0
+    },
+    {
+      "path": "tests/worker-pool-resilience.test.ts",
+      "passed": 20,
+      "failed": 0,
+      "skipped": 25
+    },
+    {
+      "path": "tests/worker-threads-setting.test.ts",
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0
+    }
+  ],
+  "failureInterpretation": "Root-membership assertion expected 2, received 8. Source reading indicates path.posix.normalize preserves the root trailing slash, producing a /sys/fs/cgroup//cpu.max lookup absent from the exact-key injected fixture. A live filesystem quota failure is not established. The later unsafe/non-unified membership assertions in the same case were not reached.",
+  "validationLimits": [
+    "All four CLI worker-thread cases, including auto confirmation, were unintentionally skipped by the configured name filter.",
+    "Mocked child-process lifecycle and injected controller metadata only; no native models, real workers or production behavior exercised.",
+    "No rerun, source/test edits, typecheck, build, profile, remote/live action or release."
+  ],
+  "stateDirectory": "/home/reoiv/.local/state/gmax-cpu-quota-tests/20261029T002307Z"
+}

@@ -156,7 +156,7 @@ Examples:
       });
       console.log(
         value === undefined
-          ? `Worker threads set to auto (${defaultWorkerThreads(cores)} on this machine).`
+          ? `Worker threads set to auto (${defaultWorkerThreads()} on this machine).`
           : `Worker threads set to ${value}.`,
       );
       if (effective.source === "env") {

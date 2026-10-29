@@ -2,36 +2,74 @@
 
 Read this before making changes.
 
+The [review and verification budget in AGENTS.md](AGENTS.md#review-and-verification-budget)
+applies to every agent. Older plan or evaluation review language cannot add
+automatic review rounds or repeat test invocations beyond that budget.
+
 ---
 
-The workflow/verification contract in [AGENTS.md](AGENTS.md) applies to every
-agent and supersedes older acceptance, review and test instructions below.
+## Documentation ownership
 
-## Completion contract
+`AGENTS.md` and `CLAUDE.md` contain durable policy, architecture, invariants and
+reusable procedures. They must never contain project status, progress logs,
+release/deployment receipts, current versions, PIDs, snapshot IDs, test or benchmark
+results, temporary holds, unfinished-work lists or next-action queues.
 
-[AGENTS.md](AGENTS.md#complete-the-approved-outcome-without-repeated-stops) owns
-end-to-end autonomy and verification scope. A release includes publication, P3
-installation/normal handover, one bounded post-deployment CPU profile, recorded
-results and concrete next items unless the user explicitly narrows the request.
-Do not finish after an intermediate milestone and ask to continue already
-approved work. A “go” authorizes one focused test invocation if needed; an
-included profile is authorized once too. Do not add automatic review/acceptance
-rounds, repeat passing suites or create another package release for preparation.
-Existing host limits, owned-process cleanup, rollback, local-only checks and the
-large-model hard stop below remain authoritative. Stop only on a real blocker
-or genuinely missing authorization/input, and identify it precisely.
+Put those records in the owning plan under `docs/plans/`; use
+[the delivery plan](docs/plans/gmax-delivery.md) as the status entry point. Handoffs
+and runbooks link to that plan rather than making the instruction files a second
+status ledger. Exact dependency pins belong in dependency manifests; versioned
+API compatibility facts may appear here when needed to explain a durable rule.
+[Relocated history](docs/plans/architecture-operations-history.md) preserves the
+status and incident context removed from this guide.
 
-For approved FTS catch-up, use [the P3 runbook](docs/runbooks/p3-fts-catch-up.md).
-Two content-bounded batches are normal. Complete admitted batches without
-repeated approval; distinguish a completed FTS update from a later profile guard.
+When updating status, edit the plan only. Change these instruction files only
+when a durable rule, architecture or procedure changes. If status has leaked into
+an instruction file, move it to the plan with its original context and date;
+do not turn historical evidence into a current claim. Documentation relocation
+requires diff inspection only and grants no execution or verification permission.
+
+## Completion and release contract
+
+[AGENTS.md](AGENTS.md#finish-every-approved-change-before-any-release) requires
+ALL changes in the approved batch to be finished before versioning, publication,
+deployment or a release announcement. This includes implementation, fixtures,
+documentation and already-authorized verification. Do not release a completed
+subset while leaving other in-scope work unfinished, or use an isolated worktree
+to conceal it. Preserve unrelated pending work.
+
+A release hold does not authorize more tests, profiles, reviews or acceptance
+gates. A “go” does not reset a budget or authorize new before/after CPU rounds.
+Complete only expressly approved actions, without repeated checkpoint questions.
+Follow the user's execution mode: parent orchestration only when delegation is
+required; direct work only when explicitly authorized. Delegation grants no
+additional execution or verification permission.
+
+**A docs/contract-only instruction pauses all implementation and execution.**
+Do not start agents, tests, profiles, builds, maintenance, deployment or publication
+under that restriction.
+
+For explicitly approved FTS catch-up, use [the P3 runbook](docs/runbooks/p3-fts-catch-up.md).
+Content-bounded catch-up can require multiple batches; positive remaining rows
+are not a failure or another approval gate. Record completion in the owning plan
+and do not rerun a completed operation because a separate profile hit a guard.
+Host/process limits, rollback, owned-process cleanup, local-only checks and the
+large-model restriction remain.
 
 ## Local checks and remote execution
 
-All checks run locally. Do not use Depot or another remote builder without an
-explicit user request for that run. The existing manually dispatched
-`.github/workflows/release.yml` is the sole publication CI exception; do not add
-jobs, qualification stages or acceptance suites. A release request does not
-otherwise authorize remote checks.
+All checks run locally in this repository. Do not send checks, tests, audits,
+compilation or builds to Depot or any other remote builder without the user's
+explicit approval for that run. Depot is not an approved verification path for
+Gmax. A request to release does not authorize remote checks or remote builders.
+
+The existing manually invoked `.github/workflows/release.yml` is the only CI
+exception. Do not add or trigger other CI, remote qualification jobs or remote
+verification stages. Do not expand the release workflow to run added checks.
+
+The repo's `.claude/settings.json` denies Depot CLI commands for Claude Code.
+All other agents must obey this rule directly; do not bypass it with another
+shell, an absolute executable path, a shared project or a different provider.
 
 ---
 
@@ -65,8 +103,9 @@ explicitly, unambiguously tells you to bring it up in that exact session.
 
 ## Subagents
 
-When spawning subagents, inherit the parent model and settings unless the user
-explicitly selects a different model. Do not create agents to reset test budgets.
+When spawning subagents, use the parent agent's model unless the user explicitly
+requests a different model. Omit model overrides when inheritance is supported;
+otherwise select the same model as the parent.
 
 Agent worktrees land under `.claude/worktrees/` *inside* this repo. The directory is gitignored
 and `vitest.config` excludes it, but a leftover worktree still shows in `git worktree list` and
@@ -74,7 +113,11 @@ can hold a merged branch — `git worktree remove <path>` and `git branch -d` on
 
 ## Handoffs: `dotmd baton`
 
-The current reliability queue is in `docs/future-sessions.md` (local internal notes); tracked `docs/known-limitations.md` records consumer dependency audit caveats. Consume the latest runlist handoff before reusing old release or soak instructions. The ordered reliability fixes cover native cache wiring, consumer packaging, query deadlines/bounded scans, external-store MCP/status and obsolete fallback removal. These shipped in v0.26.44; longer memory cycles remain an observation task. Embedding migration and recall experiments remain measurement-gated.
+Read the owning plan under `docs/plans/` for current status and selected next work;
+[the delivery plan](docs/plans/gmax-delivery.md) is the entry point.
+`docs/future-sessions.md` holds local handoff notes, and
+`docs/known-limitations.md` records consumer dependency audit caveats. Consume the
+latest handoff before reusing old release or soak instructions.
 
 "Baton" means save a resume prompt for the next session with `dotmd baton`, not a plan doc:
 
@@ -126,10 +169,9 @@ never add a public MCP listener or wildcard bind. No MCP port needs a firewall r
 ### Session-scoped watching (watch leases)
 
 The daemon watches a registered project only while something holds a lease on it
-(`src/lib/daemon/watch-leases.ts`, persisted in `~/.gmax/watch-leases.json`). It used to
-subscribe to every indexed project for its whole life; with 14 registered projects that meant
-~300 cold worker spawns, 129 FSEvents overflows and 32 catchup scans a day for sessions that did
-not exist, and it was a large part of the memory pressure that froze the host.
+(`src/lib/daemon/watch-leases.ts`, persisted in `~/.gmax/watch-leases.json`).
+Lease-gated subscriptions avoid background catchup and worker work for projects
+without active consumers.
 
 | Holder | Taken by | Ends when |
 |---|---|---|
@@ -155,7 +197,7 @@ not exist, and it was a large part of the memory pressure that froze the host.
   never starts a second watcher. Hook startup polling is bounded, with later activity retrying
   ownership after cold startup. Hook-driven launches recheck quarantine in the child and
   leave a concurrently started daemon running, including when its version differs.
-  These hook/installer repairs ship in v0.26.51 and require a plugin refresh after upgrading.
+  Refresh the plugin after upgrading hook or installer behavior.
 
 ### Autostart kill switch
 
@@ -169,14 +211,20 @@ import from dist) — keep the two in sync.
 
 ### Singleton enforcement (daemon)
 
-1. `killStaleProcesses()` — `pgrep -x gmax-daemon` finds every daemon process (not just whatever `daemon.pid` last named). For each:
-   - Two independent liveness probes:
-     - `isDaemonHeartbeatFresh()` — `daemon.lock` mtime within 150 s **and** the PID file points at a live process (the PID check defends against SIGKILL/OOM/panic leaving a fresh-mtime orphan)
-     - Socket ping with 10 s timeout (covers a busy daemon whose event loop is blocked)
-   - If either probe says alive → exit 0 (defer to the running peer)
-   - Otherwise → kill it. Also kill any orphaned `gmax-worker` processes.
-2. Acquire `~/.gmax/daemon.lock` (proper-lockfile, kernel-enforced, stale after 120 s). On `ELOCKED` → exit 0.
-3. Unlink any stale socket file, then start listening on the socket **before** writing the PID file — so anyone who reads the PID can immediately ping and get a response.
+`ProcessManager.assertStartupAvailable()` checks this home's PID and draining
+markers before taking the lock and again after acquiring it. A live peer or
+unverifiable marker refuses startup; a draining predecessor must finish first.
+Process names and registry PIDs never authorize terminating another owner.
+
+The daemon takes the exclusive proper-lockfile lease (`stale: 120s`), starts its
+private socket, then writes its PID before opening shared resources. Only its
+owned control state may be removed during shutdown. Orphan-worker cleanup is
+limited to this daemon's children and requires two consecutive suspicion samples.
+
+A systemd-owned daemon's recycle/restart stays inside its unit. Default-home
+startup recognizes user-config `gmax.service` / `hetchy-gmax.service` and starts
+through systemctl. Failed or unverifiable service ownership cannot fall through
+to a detached daemon or watcher; read-only startup cannot start a normal unit.
 
 ---
 
@@ -214,11 +262,29 @@ Maps absolute file paths to `{hash: string, mtimeMs: number, size: number}`. Use
 
 ### VectorDB (LanceDB)
 
-One table (`chunks`), all projects share it, scoped by path prefix (`/absolute/path/to/project/`). A path btree accelerates scoped exact search. IVF_FLAT is flag-gated by `GMAX_ANN=1` and disabled by default because the production recall soak failed its acceptance threshold. The containment release schedules no maintenance loop and no speculative embedding warmup. Historical maintenance behavior is covered by tests with the immutable production policy explicitly mocked off.
+One table (`chunks`), all projects share it, scoped by path prefix
+(`/absolute/path/to/project/`). A path btree accelerates scoped exact search.
+IVF_FLAT is flag-gated by `GMAX_ANN=1` and disabled by default. Containment policy
+schedules no maintenance loop and no speculative embedding warmup. Historical
+maintenance fixtures explicitly mock off the immutable production policy;
+that mock does not authorize production maintenance.
 
-Compaction must take its snapshot **after** `drainWrites()`, and reopen the table on each retry. In the October 2 disk incident, opening before the drain let an outstanding delete invalidate the snapshot; all five retries reused it and stranded about 70 GB of full fragment copies. `optimize()` now caps calls at two attempts, updates the prune cutoff each time to include earlier failed copies, and checks fresh available space (not the cached pressure level) against twice the logical table size plus `DISK_CRITICAL_BYTES`. This is an estimate with overhead margin, not a reservation against other applications writing to disk. Regression coverage includes a native Lance delete/compact/reopen test in a temporary store. Do not reproduce the incident by rewriting the live store.
+Compaction must take its snapshot **after** `drainWrites()`, and reopen the table
+on each retry. `optimize()` caps calls at two attempts, updates the prune cutoff
+each time to include earlier failed copies, and checks fresh available space
+against twice the logical table size plus `DISK_CRITICAL_BYTES`. This estimate
+includes overhead margin but reserves no space against other applications.
+Use disposable stores for regression work; never rewrite the live store to
+reproduce an incident.
 
-The containment release disables all full-table optimization and scheduled maintenance, including force/doctor/startup paths, before native setup. There is no production override. Existing retained copies remain until a separately verified exclusive prune-only recovery. Prune-only recovery and its pinned Python helper ship through the explicit `gmax recover` path; live cleanup still requires fresh admission and exclusive ownership. Persistent host safety stops and existing quarantine must survive hook launches, recycle, installation and explicit daemon startup; do not remove them as routine troubleshooting. Legacy compaction regressions use a test-only policy mock; that does not authorize live compaction.
+Containment policy disables all full-table optimization and scheduled maintenance,
+including force/doctor/startup paths, before native setup. There is no production
+override. Retained copies require separately verified exclusive prune-only
+recovery through `gmax recover` and its pinned Python helper. Live cleanup requires
+fresh admission and exclusive ownership. Persistent host safety stops and
+quarantine must survive hook launches, recycle, installation and explicit daemon
+startup; do not remove them as routine troubleshooting. Legacy compaction
+regressions use a test-only policy mock; that does not authorize live compaction.
 
 New pressure stops retain optional bounded `diagnostics` inside the existing
 `~/.gmax/safety-stop.json` schema-version-1 record. Review that original record
@@ -234,8 +300,8 @@ Evidence uses an allowlist and excludes argv, query text, source paths, process
 inventories and raw probe output. Invalid optional evidence cannot prevent the
 stop; older reason-only records remain valid. The first stop's cause and evidence
 are preserved across later refusals. Guard thresholds, latch expiry/clear behavior
-and ownership rules are unchanged. This diagnostic change must be released and
-installed before it can explain new live incidents; old events cannot be backfilled.
+and ownership rules remain in force. Older events cannot be backfilled;
+interpret optional evidence according to the runtime that produced it.
 
 LanceDB 0.39 passes the absolute cleanup cutoff unchanged to native code; versions created during optimize can remain until later maintenance. Fresh unreferenced fragments newer than the latest retained manifest can also survive a no-rewrite optimize; see `docs/known-limitations.md`. Verify physical size/doctor rather than assuming success proves every copy was removed.
 
@@ -243,41 +309,40 @@ Compaction attempts and final outcomes are logged as bounded JSON records in `da
 
 #### LanceDB cache bounds and the daemon's footprint
 
-`lancedb.connect()` without a `Session` gets a 6 GB index cache and a 1 GB metadata cache, held
-for the connection's life. The daemon reached a 4 GB footprint (9.6 GB peak) that way, nearly all
-native malloc. `VectorDB` now connects with a Session capped at 1 GB / 256 MB
-(`GMAX_LANCE_INDEX_CACHE_MB`, `GMAX_LANCE_METADATA_CACHE_MB`). Pass the Session in `ConnectionOptions.session`: SDK 0.38 silently ignores the legacy positional third argument despite retaining its type declaration. The native regression test verifies queries populate the measured session; the whole index directory is
-~650 MB. `VectorDB.cacheSizeBytes()` reports what the caches currently hold.
+`lancedb.connect()` without a `Session` gets a 6 GB index cache and a 1 GB metadata
+cache, held for the connection's life. `VectorDB` connects with a Session capped at
+1 GB / 256 MB (`GMAX_LANCE_INDEX_CACHE_MB`, `GMAX_LANCE_METADATA_CACHE_MB`). Pass the
+Session in `ConnectionOptions.session`: SDK 0.38 silently ignores the legacy
+positional third argument despite retaining its type declaration.
+`VectorDB.cacheSizeBytes()` reports what the caches currently hold.
 
-The recycle watermark (`GMAX_DAEMON_RSS_WATERMARK_MB`, 2560) is compared against the physical
-footprint from `footprint -p` (`src/lib/utils/process-footprint.ts`), not RSS: RSS read 469 MB
-while the footprint was 4 GB, because compressed and swapped pages drop out of RSS. The footprint
-trigger waits for 30 min of uptime so a fresh daemon cannot recycle in a loop. Once a recycle is
-due it is re-checked every heartbeat, and after `GMAX_DAEMON_RECYCLE_FORCE_AFTER_MS` (1h) it
-proceeds over in-flight project work (compaction is still waited out). One daemon ran 8 days past
-its 24h limit because some batch was in flight at every 5-minute probe.
+The recycle watermark (`GMAX_DAEMON_RSS_WATERMARK_MB`, 2560) is compared against
+physical footprint from `footprint -p` (`src/lib/utils/process-footprint.ts`). RSS
+can omit compressed and swapped pages. The footprint trigger waits for 30 min of
+uptime so a fresh daemon cannot recycle in a loop. Once a recycle is due it is
+rechecked every heartbeat; after `GMAX_DAEMON_RECYCLE_FORCE_AFTER_MS` (1h) it proceeds
+over in-flight project work, while still waiting out compaction.
 
-#### The FTS optimize panic guard — fixed upstream, guard kept as a tripwire
+#### The FTS optimize panic guard
 
-`table.optimize()` on lance ≤ 11.0.0-beta.21 could panic inside the incremental FTS merge
-(`builder.rs:856`, [lance#8310](https://github.com/lance-format/lance/issues/8310)). Fixed by
-[lance#8312](https://github.com/lance-format/lance/pull/8312) in lance `11.0.0-beta.22`.
+The development dependency supplies the official LanceDB SDK. Build preparation
+copies its unmodified JS runtime into `dist/vendor/lancedb`; exact optional
+platform packages supply the native binary. This avoids resolving unused SDK
+provider dependencies for consumers. Preserve runtime/native pin compatibility,
+licenses and provenance. Dependency manifests own exact pins; do not maintain a
+second version ledger here. Postinstall must not overlay another native build.
 
-gmax pins `@lancedb/lancedb 0.39.0` GA as a development dependency and copies its unmodified JS runtime into `dist/vendor/lancedb` at build time (lance `=12.0.0`, which carries the fix). Exact optional platform packages supply the native binary. This prevents npm consumers from resolving the SDK's unused old transformers/openai provider pins; root runtime dependencies, license and provenance are checked during the build. The
-native binary comes from the `@lancedb/lancedb-darwin-arm64` platform package like any other
-dependency. From 0.26.23 through 0.26.26 the pin was `0.38.0-beta.3` (lance beta.16, pre-fix) with
-`scripts/postinstall.js` overlaying a fix-bearing beta.10 build from `~/.gmax/vendor/`; that
-overlay is gone, so the postinstall is a plain notice again and needs no `allow-scripts` grant.
-
-The drop-and-rebuild mitigation in `vector-db.ts` stays. After the upgrade a panic is a regression
-to report upstream, not an expected cost. Preserve: `createFTSIndexUnsafe()` **throws** on terminal
-failure; `disabling auto-rebuild until an optimize succeeds` is transient.
+Preserve the terminal-failure guard in `vector-db.ts`:
+`createFTSIndexUnsafe()` **throws** on terminal failure, and
+`disabling auto-rebuild until an optimize succeeds` is transient. A native panic
+must be reported upstream rather than treated as an expected retry cost. This
+does not lift the prohibition on production optimization.
 
 #### Building a missing FTS index once: `gmax repair --fts`
 
 Containment leaves `createFTSIndex()` adopt-only, so a store rebuilt from scratch (or a table that
 lost its index) has no full-text index and every search warns `Full-text search unavailable`.
-`gmax repair --fts` (0.26.96, ping capability `ftsBuild: 1`) is the one narrow way to build it. The
+`gmax repair --fts` (ping capability `ftsBuild: 1`) is the one narrow way to build it. The
 daemon's `fts-build` shared operation calls `VectorDB.buildMissingFTSIndex()`, which runs inside the
 write gate, returns `exists` when an index already covers `content`, requires disk pressure `ok`, and
 makes a single `createIndex(..., { replace: false })` attempt; it never replaces or drops an index.
@@ -286,14 +351,12 @@ The daemon refuses it while paused, while a bulk index operation runs, or while 
 stay searchable through FTS's unindexed-row scan (`fastSearch` off), so no later rebuild is needed.
 It does not lift containment: compaction and automatic index builds stay disabled.
 
-#### Abandoned `.tmp*` files are the other half of that panic's cost
+#### Abandoned `.tmp*` files
 
-Every killed optimize — FTS panic, daemon restart mid-compaction, OOM — strands the scratch file
-Lance was staging the new fragment into. These never get collected: they hold no manifest entry, so
-`optimize({deleteUnverified: true})` cannot prove they are garbage, and the leading dot hides them
-from a plain `ls`. Three of them (7.3 GB, up to 2.5 months old) held this store at a 2.1x
-disk/logical ratio that the bloat-retry in `runMaintenance` re-measured and re-optimized against
-every cycle without ever reclaiming a byte.
+An interrupted optimize can strand a scratch file with no manifest entry.
+`optimize({deleteUnverified: true})` cannot prove such files are garbage, and the
+leading dot hides them from a plain `ls`. Do not prescribe a whole-table rewrite
+to reclaim scratch bytes.
 
 `findStaleLanceTempFiles` / `sweepStaleLanceTempFiles` in `vector-db.ts` collect them, and both the
 maintenance loop and `doctor --fix` sweep **before** measuring bloat, so any ratio left afterwards
@@ -315,7 +378,7 @@ Status values: `"pending"` | `"indexed"` | `"error"`
 - `error` — **daemon ignores it**. Must be manually re-added or status edited.
 
 A shutdown, recycle or version handover that aborts `indexPendingProject` leaves the status as it
-was (normally `pending`), so the next daemon resumes it; before 0.26.96 the abort marked it `error`.
+was (normally `pending`), so the next daemon resumes it.
 An `initialSync` that returns `degraded` (walk errors or an incomplete root) stays `pending` and is
 retried 30 s later, up to five times.
 
@@ -345,23 +408,17 @@ deregisters a live one.
 ### Startup (`daemon.ts:start()`)
 
 ```
- 0. Set process title "gmax-daemon"
- 1. Singleton check: PID file -> socket ping -> kill stale
- 2. Acquire exclusive lock (daemon.lock, stale=120s)
- 3. Kill any per-project `gmax watch` processes so the daemon can take over their projects
- 4. Write PID file
- 5. Clean stale socket
- 6. Open LanceDB + MetaCache (shared resources)
- 7. Construct LlmServer (lazy, not started)
- 8. Register daemon in watcher store
- 9. Load watch leases; watch the "indexed" projects a live lease holds (subscribe + catchup)
- 9b. Index all "pending" projects (background, async)
-10. Start heartbeat (60s interval; every 5 ticks probes MLX `/health` and respawns the embed server if it's zombie — port held but unresponsive — or dead — nothing on the port, e.g. crashed at model load)
-11. Start idle checker (30min timeout)
-12. Start IPC socket server on daemon.sock
-
-6b. Start MLX embed server (GPU mode on Apple Silicon). Kills stale orphans on port first.
+ 0. Set process title and evaluate host resource admission / paused service.
+ 1. Register read verbs; preflight this home's daemon/draining markers and standalone watchers.
+ 2. Create private IPC home, acquire exclusive lock, then repeat ownership preflight.
+ 3. Start the private socket (0600), then publish the PID file.
+ 4. Open shared stores and initialize managers; optional LLM remains lazy.
+ 5. Restore eligible leased watches / pending indexing when service admission permits.
+ 6. Run heartbeat, idle/recycle handling and eligible embedding-server supervision.
 ```
+
+A live or unverifiable predecessor refuses startup; this path does not terminate
+processes by name. Paused service retains its bounded-read restrictions.
 
 ### Watch flow
 
@@ -429,20 +486,21 @@ callback errors cannot be backfilled. `gmax watch status` displays it when prese
 Standalone `WatcherHandle.health` exposes the same record; its registry snapshot
 updates on the existing 60-second heartbeat with a separate `indexStateAt`
 timestamp. Legacy entries and older runtimes can omit these optional fields.
-The source change must be deployed before relying on this evidence in live service.
+Interpret health evidence using the serving runtime's capabilities.
 
 Recovery qualification checks committed rows and metadata against current file
 bytes, in addition to scan coverage and queue drainage. The focused recovery
 fixtures cover dropped creates/deletes, atomic saves, repeated and late gaps,
-terminal subscription replacement and refused admission. Packed-consumer CI runs
-`scripts/test-watcher-consumer.cjs` with real native watchers, LanceDB and LMDB;
-a separate macOS job exercises the FSEvents backend. Both use tiny temporary
-homes/stores and deterministic vectors, with subprocess startup forbidden.
+terminal subscription replacement and refused admission. Local packed-consumer
+acceptance uses `scripts/test-watcher-consumer.cjs` with real native watchers,
+LanceDB and LMDB. FSEvents coverage requires a local macOS run. These fixtures
+use tiny temporary homes/stores and deterministic vectors, with subprocess
+startup forbidden.
 They also check native edits and exclusion re-inclusion/retirement. Gap callbacks
 are deliberately injected after muted delivery; this proves recovery convergence,
 not that the OS will never drop events or that production has recovered. Keep
-natural-gap live acceptance separate. Run these native fixtures in CI, not against
-the development machine's live store.
+natural-gap live acceptance separate. Run these native fixtures locally against
+disposable stores, outside the development machine's live store.
 
 ### Batch processor (`ProjectBatchProcessor`)
 
@@ -463,17 +521,18 @@ File event (from watcher or catchup) -> pending map -> debounce 2s -> processBat
 A batch waits for the project lock (`watch-batch` through `runProjectOperation`) with a per-batch
 start signal that `close()` and `pause()` abort, leaving its files pending. Callers that unwatch
 while holding that lock (`indexPendingProject`, `indexProject`, remove) would otherwise wait on a
-batch that is waiting on them. Before 0.26.96 that deadlock left a retried project `pending` forever,
-with `indexPendingProject start` logged but no `[index] Root:` or `Unwatched` line after it.
+batch that is waiting on them. Preserve this abortable lock wait to avoid deadlock.
 
 ### Worker pool
 
-- Starts with 1 worker and scales up to `CONFIG.WORKER_THREADS` (`min(4, max(2, cores/2))`, capped at cores; `workerThreads` in `~/.gmax/config.json` (`gmax config --worker-threads`) overrides it and `GMAX_WORKER_THREADS` overrides both; read once at daemon start). `dispatch()` adds a worker only when the pool is empty, a search task is waiting, more than 4 queued tasks per live worker are waiting, or the oldest queued task has waited 2s (`GMAX_WORKER_SCALE_UP_WAIT_MS`). Before this, a 6-file batch cold-started 3–4 workers that were reaped a minute later, ~300 times a day
+- Starts with 1 worker and scales up to `CONFIG.WORKER_THREADS` (`min(4, max(2, floor(effective CPUs/2)))`, capped at effective CPUs; `workerThreads` in `~/.gmax/config.json` (`gmax config --worker-threads`) overrides it and `GMAX_WORKER_THREADS` overrides both; read once at daemon start). `dispatch()` adds a worker only when the pool is empty, a search task is waiting, more than 4 queued tasks per live worker are waiting, or the oldest queued task has waited 2s (`GMAX_WORKER_SCALE_UP_WAIT_MS`).
+- Automatic CPU capacity uses affinity and the tightest readable cgroup-v2 ancestor quota, rounded down with a one-CPU floor. Explicit worker overrides retain their existing precedence and validation.
+- Background files share a pool-wide admission limit across projects: `max(1, min(effective CPUs - 1, max workers - 1))`, with foreground query priority. Cancellation settles the caller but retains native file ownership until completion or confirmed exit. Timed-out/error children remain tracked through shutdown.
 - `ProjectBatchProcessor` runs at most `ceil(batch.size / 4)` files of a batch at once
 - Workers are child processes (not threads) — isolates ONNX Runtime segfaults
 - IPC uses Node's advanced serialization so Buffer and typed-array payloads retain their binary types and view offsets
 - Idle workers reaped after 60s back down to `MIN_KEEP_WORKERS = 1` (favors low resident memory over search warmth — an idle worker holds ~300MB–1GB; the rare search pays a one-off cold start). Reap sends SIGTERM, then escalates to SIGKILL after 5s if the worker is still alive (defends against a worker stuck inside a native ONNX matmul tight loop that won't service signals)
-- Workers over 1536MB RSS for consecutive post-task samples are recycled; the threshold is calibrated above measured MLX and ONNX p95 steady state
+- Workers over 1536MB RSS for consecutive post-task samples are recycled
 - Task timeout: 120s (env: `GMAX_WORKER_TASK_TIMEOUT_MS`) -> SIGKILL worker -> respawn if tasks pending
 - Max consecutive respawns: 10, then pool stops spawning
 - Respawn counter resets on each successful task completion
@@ -487,7 +546,7 @@ processFile(path)
   Chunk via tree-sitter (parallel with skeleton generation)
   For each batch of 16 chunks:
     POST http://127.0.0.1:8100/embed (MLX GPU)
-    If MLX unavailable -> ONNX CPU in-process (~5x slower)
+    If MLX unavailable -> compatible ONNX CPU in-process
     Run ColBERT on dense embeddings
   Return vectors + hash + meta
 ```
@@ -578,8 +637,7 @@ deliberately narrow:
 - `ENOENT` / `ECONNREFUSED` — nothing is listening, so no daemon exists. The **only** case that
   permits opening the store in-process.
 - `unknown command` — an outdated or incompatible live daemon. Report it with `gmax watch restart`;
-  never open a second reader. The one-release transition allowance was removed after verifying
-  the running v0.26.43 daemon advertises `capabilities.readVerbs: 1`.
+  never open a second reader. Use `ping.capabilities.readVerbs` for protocol compatibility.
 - `EPERM` / `EACCES` — a sandbox blocked the socket. Refuse with exit code 2 and the one settings
   line; never open the store.
 - Anything else (`DAEMON_BUSY`, timeouts, scope rejections, store failures) — a *live* daemon said
@@ -631,7 +689,7 @@ GMAX_DEBUG=1 gmax watch --daemon -b
 
 `scripts/sandbox-smoke.sh` runs the read commands under the two `sandbox-exec` profiles that
 reproduce Claude Code's Bash sandbox and prints an exit-code/first-line table. macOS only and
-manual (CI is `ubuntu-latest`); pass `--root <indexed project>` when running from a worktree.
+manual; pass `--root <indexed project>` when running from another directory.
 
 The two profiles, for reproducing one command by hand. They are the smallest thing that recreates
 the two walls Claude Code puts up — writes under `~/.gmax` denied (the store lease is a `mkdir`, so
@@ -698,9 +756,7 @@ curl -s http://127.0.0.1:8100/health               # MLX embed server up?
 - `src/lib/workers/embeddings/mlx-client.ts` — HTTP client for MLX embed server (port 8100)
 - `src/lib/workers/embeddings/granite.ts` — ONNX CPU embedding (fallback)
 - `src/lib/workers/embeddings/colbert.ts` — ColBERT late interaction model
-- `src/lib/workers/colbert-math.ts` — MaxSim + cosine over ColBERT vectors. Uses `inner` from
-  `numkong` (simsimd's maintained successor; simsimd was dropped in v0.26.7 because it pulled
-  `mathjs` as an optional dependency and was silently falling back to its JS path)
+- `src/lib/workers/colbert-math.ts` — MaxSim + cosine over ColBERT vectors, using `inner` from `numkong`
 
 ### Embed Server
 - `mlx-embed-server/server.py` — FastAPI, MLX GPU embeddings, idle timeout, Metal cache management
@@ -718,16 +774,18 @@ curl -s http://127.0.0.1:8100/health               # MLX embed server up?
 - `pnpm-workspace.yaml` — **dependency overrides live here**, next to the other pnpm 10 settings.
   Do not move them to `package.json`'s top-level `overrides`: pnpm does not read that field, and
   npm ignores a *dependency's* overrides entirely, so it is inert both locally and for consumers.
-  A migration to that field silently un-pinned `mathjs` and reintroduced two high advisories that
-  the release CI audit gate then blocked on.
 
 ### Release
-`npm version patch` runs the whole chain: `preversion` gates (full `pnpm audit`, `pnpm run audit:python`, JavaScript/Python tests, both typechecks, Biome) ->
-`sync-versions.sh` (plugin.json + marketplace.json) -> `postrelease.sh` (push, tag, wait for
-`release.yml` — which publishes to npm and only then cuts the GitHub release — global install,
-daemon restart). The audit runs locally first so a new advisory fails before a tag is burned; if CI
-fails anyway, `postrelease.sh` prints whether anything reached npm and the exact cleanup commands. CI re-runs every
-gate plus full JavaScript and Python lockfile audits, a packed-consumer audit/native temporary-store smoke test, a tag/version match check, and a tarball source-leak audit.
+Checks run locally only when selected by the user. `package.json` exposes
+`release:check`; its existence does not authorize a new verification round or a
+remote run. `npm version patch` stages version metadata and invokes the version
+hook, so do not use it as a read-only readiness command.
+
+Publication uses the existing manually dispatched `.github/workflows/release.yml`
+for the reviewed archive and source receipt. This is the sole CI exception;
+additional checks and Depot builds are not part of publication. The hook pushes
+versions without publishing or installing. Installation and normal daemon
+handover use the explicit `scripts/postrelease.sh --install` path.
 
 The Python audit uses Python 3.11+ standard-library TOML/HTTP support and OSV; it installs
 no packages and loads no models. Network failures or incomplete responses fail the gate.
@@ -763,9 +821,9 @@ shared store.
 #### Checking which lance binary the daemon actually loaded
 
 After any global install, `lsof -p $(cat ~/.gmax/daemon.pid) | grep lancedb.*\.node` should point
-at the `@lancedb/lancedb-darwin-arm64` platform package under the global grepmax. A path under
-`@lancedb/lancedb/dist/` means a stale vendored overlay from the 0.26.26-era `~/.gmax/vendor/`
-mechanism is still in place; remove that install and reinstall.
+at the `@lancedb/lancedb-darwin-arm64` platform package under the global grepmax.
+An unexpected SDK-local native binary can indicate a stale overlay. Resolve the
+installation through the approved reinstall procedure rather than mixing binaries.
 
 Also: a same-version reinstall does **not** restart the daemon. `gmax watch --daemon -b` only
 hands off on a version mismatch, so after fixing an install in place run `gmax watch restart`

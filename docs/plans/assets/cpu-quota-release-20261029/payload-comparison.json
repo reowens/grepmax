@@ -1,0 +1,23 @@
+{
+  "baseline": "0.26.104",
+  "version": "0.26.105",
+  "files": 331,
+  "changed": [
+    "package/.claude-plugin/marketplace.json",
+    "package/README.md",
+    "package/dist/commands/config.js",
+    "package/dist/config.js",
+    "package/dist/lib/workers/pool.js",
+    "package/package.json",
+    "package/plugins/grepmax/.claude-plugin/plugin.json"
+  ],
+  "added": [
+    "package/dist/lib/utils/cpu-capacity.js"
+  ],
+  "removed": [],
+  "unchangedCount": 323,
+  "dependenciesUnchanged": true,
+  "nativeAndModelPayloadsUnchanged": true,
+  "executableEntrypoints": true,
+  "sha256": "04119ee62085f6c9024f9900dac91fc459b8e20c232e9299b923201f9d2fb67a"
+}

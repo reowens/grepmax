@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { effectiveCpuCount } from "./lib/utils/cpu-capacity";
 
 export const MODEL_TIERS: Record<
   string,
@@ -71,10 +72,10 @@ function coreCount(): number {
  * Each worker is a separate process that loads the ONNX models, peaking at
  * ~800 MB-1 GB. The old max(4, cores/2) let a 14-core host run 7 of them;
  * together with the daemon that froze a 48 GB machine. Four is the ceiling;
- * two is the floor where the cores exist, so one worker can stay free for
- * search.
+ * two is the floor where affinity and inherited CPU quotas allow it, so one
+ * worker can stay free for search. Explicit settings keep their existing limits.
  */
-export function defaultWorkerThreads(cores = coreCount()): number {
+export function defaultWorkerThreads(cores = effectiveCpuCount()): number {
   const target = Math.min(4, Math.max(2, Math.floor(cores * 0.5)));
   return Math.max(1, Math.min(target, cores));
 }
@@ -98,12 +99,14 @@ export function parseWorkerThreads(
  * GMAX_WORKER_THREADS wins, then `workerThreads` in ~/.gmax/config.json
  * (`gmax config --worker-threads`), then the computed default. The env var
  * keeps its old meaning (any positive whole number); a stored value outside
- * 1..cores is ignored.
+ * 1..cores is ignored. Only the default is constrained by the effective CPU
+ * budget (or an injected budget); explicit settings do not bypass file admission.
  */
 export function resolveWorkerThreads(opts: {
   env?: string;
   configValue?: unknown;
   cores?: number;
+  cpuBudget?: number;
 }): WorkerThreadsSetting {
   const cores = opts.cores ?? coreCount();
   const fromEnv = Number.parseInt(opts.env ?? "", 10);
@@ -112,7 +115,11 @@ export function resolveWorkerThreads(opts: {
   }
   const fromConfig = parseWorkerThreads(opts.configValue, cores);
   if (fromConfig !== null) return { value: fromConfig, source: "config" };
-  return { value: defaultWorkerThreads(cores), source: "default" };
+  const budget = opts.cpuBudget ?? effectiveCpuCount();
+  const available = Number.isFinite(budget)
+    ? Math.min(cores, Math.max(1, Math.floor(budget)))
+    : cores;
+  return { value: defaultWorkerThreads(available), source: "default" };
 }
 
 function storedWorkerThreads(): unknown {
