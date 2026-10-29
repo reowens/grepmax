@@ -22,7 +22,8 @@ export interface CleanupRuntime {
   script: string;
 }
 export interface PruneResult {
-  engine: "12.0.0";
+  /** Historical receipts retain their original engine; new helpers require 13. */
+  engine: "12.0.0" | "13.0.0";
   version: number;
   fragments: number;
   bytesRemoved: number;
@@ -453,7 +454,7 @@ export async function pruneVersions(
       );
       const result: PruneResult = JSON.parse(stdout);
       if (
-        result.engine !== "12.0.0" ||
+        result.engine !== "13.0.0" ||
         result.version !== version ||
         result.rewritten !== false ||
         (options.maxVersions !== undefined &&

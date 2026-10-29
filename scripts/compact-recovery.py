@@ -220,8 +220,8 @@ def main():
     if sys.stdin.readline(256).strip() != args.lease_nonce:
         raise ValueError('Launch admission unavailable')
     import importlib.metadata
-    if importlib.metadata.version('pylance') != '12.0.0':
-        raise ValueError('Requires locked pylance 12.0.0')
+    if importlib.metadata.version('pylance') != '13.0.0':
+        raise ValueError('Requires locked pylance 13.0.0')
     import lance
     dataset = support.open_dataset(lance, root)
     if dataset.version != args.version or dataset.latest_version != args.version:

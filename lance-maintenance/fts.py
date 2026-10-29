@@ -1,4 +1,4 @@
-"""Explicit, exclusively leased Lance 12 FTS delta update. No compaction/pruning.
+"""Explicit, exclusively leased Lance 13 FTS delta update. No compaction/pruning.
 
 Input limits are preflight admission, not a native cumulative-write guarantee.
 The parent holds exclusion through child close, monitors resources and records
@@ -258,7 +258,7 @@ def run(args, admission):
             or root.name != "chunks.lance" or root.resolve(strict=True) != root):
         raise ValueError("table")
     owner = verify_owner(root, args.lease_owner, args.lease_nonce)
-    if importlib.metadata.version("pylance") != "12.0.0":
+    if importlib.metadata.version("pylance") != "13.0.0":
         raise ValueError("engine")
     before_files = inventory(root)
     import lance
@@ -325,7 +325,7 @@ def run(args, admission):
     growth = sum(v[0] for k, v in after_files.items() if k not in before_files)
     if growth > MAX_GROWTH:
         raise ValueError("growth")
-    return {"engine": "12.0.0", "index": INDEX, "beforeVersion": args.expected_version,
+    return {"engine": "13.0.0", "index": INDEX, "beforeVersion": args.expected_version,
             "afterVersion": after.version, "outcome": "completed" if args.run else "checked",
             "dataRewritten": False, "remainingRows": remaining, "newFileBytes": growth,
             "beforeFingerprint": fingerprint, "elapsedMs": round((time.monotonic() - started) * 1000),

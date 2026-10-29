@@ -2,12 +2,31 @@
 type: doc
 status: active
 created: 2026-10-03T02:39:56Z
-updated: 2026-10-29
+updated: 2026-10-29T07:22:00Z
 audience: internal
-summary: "0.26.108 and all selected release/P3 work complete. Recenter on one concrete expected file/symbol miss, candidate absence versus ranking, keeping current models. Fan/throughput/relevance gains unmeasured; CPU/resource history/backend experiments deferred. No new execution selected."
+summary: "Stable Lance SDK/native 0.40.0 and Python 13 upgraded coherently; official runtime prepared; one guarded production compile passed, zero tests/native execution. Not released; no measured RSS gain. Existing quality stop/unknown attempted-query count preserved."
 ---
 
 # Future Sessions
+
+## Stable Lance upgrade complete locally
+
+SDK and all npm native pins 0.39.0→0.40.0 (embedded Lance 13); Python maintenance
+12.0.0→13.0.0, locks/helpers/fixtures/NOTICE/generated SDK coherent. One guarded
+production compilation passed; zero tests/native imports/stores/queries. All58
+generated SDK files match official0.40.0. Older 12 prune/FTS receipts remain
+readable; new helper outputs require 13. Python 14 forward-writer compatibility
+with SDK core 13 is not established. The separate qualified Rust 12 executable is
+unchanged/absent from this generated runtime; no new qualification or mutation.
+See [completion/compatibility record](plans/assets/lance-upgrade-20261029/completion.md)
+and [owning plan](plans/gmax-delivery.md#stable-lance-dependency-upgrade--locally-complete-not-released).
+
+No push/release/version bump/global install/P3 action or RSS-gain claim. Table
+handle cleanup remains unselected. Quality rankings remain unmeasured and query
+attempt count unknown: no retry/budget reset. The selected local upgrade is
+complete; await the user's next selected work rather than start a new round.
+Older evidence/next-action text below is historical to this selected upgrade.
+
 
 ## Current direction — better search results
 

@@ -11,12 +11,12 @@ import unittest
 os.environ['LANCE_CPU_THREADS'] = '2'
 os.environ['LANCE_IO_THREADS'] = '2'
 try:
-    available = importlib.metadata.version('pylance') == '12.0.0'
+    available = importlib.metadata.version('pylance') == '13.0.0'
 except importlib.metadata.PackageNotFoundError:
     available = False
 
 
-@unittest.skipUnless(available, 'locked pylance 12.0.0 is required')
+@unittest.skipUnless(available, 'locked pylance 13.0.0 is required')
 class VersionCleanupNativeTests(unittest.TestCase):
     def test_bounded_passes_preserve_rows_indices_tags_and_unselected_versions(self):
         spec = importlib.util.spec_from_file_location('retention', Path(__file__).parents[2] / 'lance-maintenance/prune.py')

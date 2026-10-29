@@ -50,7 +50,7 @@ class PruneTests(unittest.TestCase):
         self.engine = SimpleNamespace(dataset=Mock(return_value=self.dataset))
         self.addCleanup(patch.stopall)
         patch.dict("sys.modules", {"lance": self.engine}).start()
-        patch.object(pruner.importlib.metadata, "version", return_value="12.0.0").start()
+        patch.object(pruner.importlib.metadata, "version", return_value="13.0.0").start()
 
     def prune(self, version=5, cutoff=2500):
         return pruner.prune(str(self.root), version, cutoff, str(self.owner_file), "fixture-exclusive")
@@ -126,7 +126,7 @@ class PruneTests(unittest.TestCase):
         self.engine.dataset.assert_not_called()
 
     def test_engine_mismatch_refuses_before_open(self):
-        with patch.object(pruner.importlib.metadata, "version", return_value="13.0.0"), self.assertRaisesRegex(ValueError, "12.0.0"):
+        with patch.object(pruner.importlib.metadata, "version", return_value="14.0.2"), self.assertRaisesRegex(ValueError, "13.0.0"):
             self.prune()
         self.engine.dataset.assert_not_called()
 

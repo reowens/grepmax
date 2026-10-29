@@ -2,7 +2,7 @@
 type: plan
 status: active
 created: 2026-10-10T06:45:25Z
-updated: "2026-10-29"
+updated: 2026-10-29T07:22:46Z
 surfaces:
   - store
   - daemon
@@ -23,12 +23,41 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "0.26.108 SHIPPED/source 2ebdb62; all selected work through normal P3 ready/open/active handover complete. One focused invocation 15/15 passed, 53 skipped; guarded compilation/prep/pack and one publication complete. Fan/throughput/relevance gains unmeasured."
-next_step: "Recenter on better search results: one concrete expected file/symbol miss from existing examples or ordinary usage when available; distinguish candidate absence from ranking while keeping current models. No specific implementation, query collection, capture or other execution is selected now."
-summary: "Complete baseline 0.26.108: per-file 2s quiet/10s eligibility cap, one project timer and ready-file progress. Earlier 106/107/CPU/FTS work complete; CPU attribution/resource history/backend experiments deferred. Docs-only recenter; no new work starts."
+current_state: "Stable Lance upgrade locally complete: SDK/native 0.40.0, embedded core 13, Python 13; one guarded production compilation passed, zero tests. Not released. Quality guard-stop ranks remain unmeasured and attempted-query count unknown; no retry/budget reset."
+next_step: "Local upgrade complete; no automatic next action. Native/store compatibility unexercised; Python 14 forward writes into SDK core 13 not established. Table-handle cleanup remains unselected; CPU/backend/resource-history deferred. No release/deployment authorized."
+summary: "Stable Lance SDK/native 0.40.0 and Python 13 upgraded coherently; official runtime prepared; one guarded production compile passed, zero tests/native execution. Not released; no measured RSS gain. Existing quality stop/unknown attempted-query count preserved."
 ---
 
 # Gmax Delivery Plan
+
+## Stable Lance dependency upgrade — locally complete, not released
+
+**October 29, 2026 UTC.** The explicitly selected stable dependency upgrade is
+complete locally: official JS SDK/all seven npm native pins **0.39.0 → 0.40.0**,
+embedded engine **12 → 13**, and Python maintenance **pylance 12.0.0 → 13.0.0**.
+Manifest/locks, helper result guards, historical-receipt compatibility, existing
+version fixtures, NOTICE and generated official runtime were updated together.
+Exact pins are reproducibility choices, not a user freeze; the durable SDK
+packaging rule now records that preference without current status/version data.
+
+[Full selected-file, compatibility and preparation record](assets/lance-upgrade-20261029/completion.md)
+and [guarded compiler receipt](assets/lance-upgrade-20261029/typecheck-receipt.json):
+one production compilation passed, zero tests; two CPUs/nice10, 2GiB/180s,
+minimum 8GiB/zero swap growth, no surviving owned processes. Installed SDK/native
+and all 58 generated SDK files match 0.40.0; Python 13 wheels were installed without
+native import. Python 14.0.2 forward-writer compatibility with SDK core 13 is not
+established, so13.0.0 is the newest aligned stable maintenance selection. The
+separate qualified custom Rust maintenance executable remains 12 and was neither
+rebuilt nor relabeled; it is absent from generated runtime and full-table
+maintenance remains disabled. Its cross-engine mutation use is not qualified.
+
+**Limits:** native/store compatibility unexercised; no RSS improvement or search
+quality gain claimed. No release/version bump/push/global install/P3 action.
+The Table-handle cleanup remains unselected. The existing quality safety stop,
+unknown attempted-query count and both existing case-set receipts remain intact;
+no retry or query budget reset. CPU/backend/resource-history work stays deferred.
+The approved local upgrade is finished; no further action starts automatically.
+
 
 Project status belongs in this plan and its linked plans, never in `AGENTS.md` or
 `CLAUDE.md`. [Architecture/operations history](architecture-operations-history.md)

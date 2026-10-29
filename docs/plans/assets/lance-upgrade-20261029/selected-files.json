@@ -1,0 +1,105 @@
+{
+  "baseCommit": "47bccf598fa78e8768a6e30409eba1a43de459c0",
+  "selectedFiles": [
+    {
+      "path": "package.json",
+      "beforeSha256": "7a61e6ceda50788e6e681afb9db659587afc7bfc536d4f6618afa61f518a97e5",
+      "afterSha256": "347e2be2111673f814ed362f0edfeb192ffb36d4620529bd971bbd7e4005b81c"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "beforeSha256": "b4687f40384d893f2746069103b6a0154d5e3f00556371ed5541d2f52801ad47",
+      "afterSha256": "7d2a762dbf95a7c04cb0046072440ab6b07ddb0db59440c3f2c8897441be1801"
+    },
+    {
+      "path": "NOTICE",
+      "beforeSha256": "8185b0ea8e7a402564bcb742d3f4ada6c6b26b802099118b9fe3cba9625d7d0d",
+      "afterSha256": "2bb76891f8eab1fb696ed4901474707476246f802e4594293e9874f904b3ee0d"
+    },
+    {
+      "path": "CLAUDE.md",
+      "beforeSha256": "98a0025635c20e62aa9f12d7de76cfb19430ddbcfbcff6f0616e129ca4e27f19",
+      "afterSha256": "e67929913f103ae7d2d895a2c63b53b791c493bc69924539c38ff755e825ab3f"
+    },
+    {
+      "path": "lance-maintenance/pyproject.toml",
+      "beforeSha256": "f993d05520491f0303095a5ad236d55f24de8d5479e1cb278faf3ba5c2a5a1af",
+      "afterSha256": "9aae58f06e1151c97ca99965f6ef3ec2248ff2c3b3303db317e9ce7d0367fa56"
+    },
+    {
+      "path": "lance-maintenance/uv.lock",
+      "beforeSha256": "5708048498382b3a2d9c59291b0a227866792756d329dcaedbeb4ebf57d5d40e",
+      "afterSha256": "fd2b720fdf3e8a7f5235bbbb581618632dcf8ac22050d81153fc4e66ec04cc79"
+    },
+    {
+      "path": "lance-maintenance/prune.py",
+      "beforeSha256": "d5344892aef7155feb958c2dd2616342db4b62aa235d650afca0ba685bb62d8f",
+      "afterSha256": "f7a6060487d22aeac234d54443014582800a91a80c98da803b2273601d943933"
+    },
+    {
+      "path": "lance-maintenance/fts.py",
+      "beforeSha256": "e0237011fd0950e0373a383b0c2ae62631d7a376f578d182b68c948c2e6f953e",
+      "afterSha256": "8b78bf075511dd5707cad1b5b1143d2144ce3b034da61cb865464e3a1558961c"
+    },
+    {
+      "path": "src/lib/store/lance-cleanup.ts",
+      "beforeSha256": "2ce61e1a9083a11c539b05fb39557f6cb384fd1494161070f09acf6e9a3d8158",
+      "afterSha256": "a83eb76ae3bfe4cfe253ca5779a9f468fe4741b0662d02725e81d9c5d64d4784"
+    },
+    {
+      "path": "src/lib/store/prune-state.ts",
+      "beforeSha256": "1e9a2d3cea92fa72a5256476e4eaa26291809e717756a2de2865de07259da7ad",
+      "afterSha256": "99db071a39783f17fe669728fb956a3f7bc3ae35a6c8ebc84778a910d21c916d"
+    },
+    {
+      "path": "src/lib/store/fts-refresh.ts",
+      "beforeSha256": "baa5242498d4c4a92fa00be48ef6cb4b80028ff5dce34dad975d30c13e596be5",
+      "afterSha256": "0a3c6afe34985a28eea6ac0bddb9881710438436f93bb6f4f0fba85eeff58603"
+    },
+    {
+      "path": "tests/lance-cleanup.test.ts",
+      "beforeSha256": "d0bd7983e42d496f3738d7d67761ef2690c278c833b2bb34bfb0232c6a742225",
+      "afterSha256": "80ee85ce5b130e8a32d4d1398e003c5e34442eaa6d36f7bc54d02504c4becbc0"
+    },
+    {
+      "path": "tests/version-cleanup.test.ts",
+      "beforeSha256": "c1b5640e97ed785162853176113ef7def6f3d503e75c11fc7311b012e4b37398",
+      "afterSha256": "3d29d20ef8ee7341f966bd3c18a9e78ca82fbb39994223c47a3854ef28e1374d"
+    },
+    {
+      "path": "tests/fts-refresh.test.ts",
+      "beforeSha256": "e6da0ee4730e19bbe2361680371bfa2d6a62a99345eeb506a77fb8a29ee3676b",
+      "afterSha256": "c87394dbeea5815fb39b378eb3a90f5593e3c5681b7bea7587df6acefe2de142"
+    },
+    {
+      "path": "tests/python/test_lance_prune.py",
+      "beforeSha256": "0af2df4f3cb92e6f4c08f76300f48943d107e5adc88826b670d0530888c985bb",
+      "afterSha256": "c2a733f9526cfbeb8162ab9ca01119075d4108c8889bd843908201d4eeb62ba9"
+    },
+    {
+      "path": "tests/python/test_version_cleanup_native.py",
+      "beforeSha256": "87f8315715d0e69fefb4c1854bc676a44a6c846e15f80b874740805eabebacd6",
+      "afterSha256": "fd8675fb910e8022db284d1fe08b1c352a7400bb7a0103739bcdc14f53b927d7"
+    },
+    {
+      "path": "scripts/compact-recovery.py",
+      "beforeSha256": "cca81626cd8355dd3444ebb7f749f00cd5be841a9c36be08d4a0973d4e0146f0",
+      "afterSha256": "d3e4cb642dbebe6e61130ddf3633b219604e67d584f4154e2c5b99f3f72f69ae"
+    },
+    {
+      "path": "tests/python/test_compact_recovery.py",
+      "beforeSha256": "27bd642cbb2252f36b849bee74dd1ea72e3a975b3540c2eff3b8072b698a4915",
+      "afterSha256": "646da01c806beb73254f2ee9b3fcbff791a552d3a5f60cd7ed3a184b24087092"
+    }
+  ],
+  "sourceCompilationCovered": [
+    "src/lib/store/fts-refresh.ts",
+    "src/lib/store/lance-cleanup.ts",
+    "src/lib/store/prune-state.ts"
+  ],
+  "compilationAlsoIncluded": "Preserved working tree at compiler invocation, including unrelated ColBERT query-feature refactor; no later discovery edits are covered.",
+  "generatedSdkVersion": "0.40.0",
+  "newPythonRuntimeVersion": "13.0.0",
+  "testsInvoked": 0,
+  "published": false
+}

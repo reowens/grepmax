@@ -831,6 +831,15 @@ hands off on a version mismatch, so after fixing an install in place run `gmax w
 serving from npm's deleted staging directory.
 
 ### SDK packaging
+
+Exact dependency pins are reproducibility choices, not a user-imposed version
+freeze. When an upgrade is requested, refresh the stable SDK, matching native
+platform packages, lockfile and generated official runtime together. Align
+maintenance writers with the embedded storage engine using versioned upstream
+format/API evidence; document any actual compatibility constraint instead of
+attributing an old pin to the user. Do not relabel older qualified native
+artifacts or enable automatic upgrades or additional checks.
+
 `src/lib/store/lance-sdk.ts` loads the generated official SDK runtime for compiled consumers and the exact development pin for source tests. `scripts/prepare-lance-runtime.cjs` preserves licenses and checks native/runtime dependency pins. `pnpm run audit:consumer` packs the built distribution, resolves a fresh npm consumer without workspace overrides, audits it, and exercises the native store with synthetic vectors. It never loads a model.
 
 ### Logging
