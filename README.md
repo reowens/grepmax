@@ -74,6 +74,14 @@ including an explicit empty list. Synthetic Linux fixtures verified two-batch ca
 106,496 physical / 53,248 live pending rows, preserved snapshots and payloads,
 and interruption handling; production throughput remains unqualified.
 
+**Background indexing and watch leases in 0.26.104:** A retry for the same
+project and file waits until its previous worker task finishes, including when
+the original caller cancels. Searches and unrelated files remain eligible;
+blocked retries do not trigger additional demand-driven workers. A lease renewed
+while teardown is queued keeps the project watched. Explicit indexing/removal
+operations can still detach watchers. Focused mocked-worker and lease tests cover
+these behaviors; a production CPU or latency improvement has not been measured.
+
 ## Quick Start
 
 Requires **Node.js 22.12.0 or newer**.
@@ -93,12 +101,6 @@ startup through recognized installed systemd user services, preserving their
 resource limits when hooks or CLI/MCP startup find no running daemon. The prior
 0.26.98 repairs cover busy read-only startup, FTS adoption and cleanup backoff.
 Granite Small remains the default.
-
-Upgrade with `npm install -g grepmax@0.26.99`, then `gmax plugin update` for
-installed integrations. Restart standalone daemons with `gmax watch restart`;
-for systemd-owned daemons use their unit's systemctl command. Existing safety
-stops remain in force. Coordinate moving an already standalone daemon into its
-service with the host operator.
 
 ### CPU worker budget
 
@@ -124,7 +126,7 @@ gmax doctor                   # Health check
 gmax doctor --fix             # Repair checks; full-table maintenance is disabled
 ```
 
-**Storage containment:** full-table compaction is disabled, including forced maintenance and doctor repair. Existing retained index copies are not reclaimed by this release. Prune-only recovery is available through the explicit guarded `gmax recover` path; normal incremental indexing remains available when the host is healthy and not quarantined. A persistent host safety stop blocks mutation and normal daemon restart; an explicit read-only start can serve the retained index. Installing an update preserves existing quarantine. Speculative embedding warmup and maintenance timers are disabled. Under the default `strict` host policy on macOS, startup, heavy queries, worker forks and MLX launches require known normal OS memory pressure and a healthy kernel-zone sample; warning or unavailable probes pause heavy work while the daemon serves bounded reads. The explicit `critical-only` policy keeps semantic search and indexing available under warning or unavailable probes. Known critical pressure still stops the daemon.
+**Storage containment:** full-table compaction is disabled, including forced maintenance and doctor repair. Existing retained index copies are not reclaimed by this release. The verified prune-only recovery path is separate work; normal incremental indexing remains available when the host is healthy and not quarantined. A persistent host safety stop blocks mutation and normal daemon restart; an explicit read-only start can serve the retained index. Installing an update preserves existing quarantine. Speculative embedding warmup and maintenance timers are disabled. Under the default `strict` host policy on macOS, startup, heavy queries, worker forks and MLX launches require known normal OS memory pressure and a healthy kernel-zone sample; warning or unavailable probes pause heavy work while the daemon serves bounded reads. The explicit `critical-only` policy keeps semantic search and indexing available under warning or unavailable probes. Known critical pressure still stops the daemon.
 
 ### Optional EmbeddingGemma 2 on Apple Silicon
 
@@ -504,7 +506,7 @@ commands. Existing configuration errors already list valid choices or ranges.
 Guidance stays on stderr and does not retry or change exit codes or store-access
 rules. See [CLI error guidance](docs/cli-error-guidance.md).
 
-Adding or indexing a project can start the daemon automatically. MCP acquires primary-project watch leases lazily when an index-reading tool is used; discovery and catalog listing start no background work. It shuts down after 4 hours of inactivity, and hands off to a fresh daemon after 24 hours or once its memory footprint passes 2.5 GB. File-change batches are processed on up to four worker processes by default, added only when work backs up, with one kept free for searches; full-table compaction and automatic FTS/ANN index builds are disabled by containment. An explicit `gmax repair --fts` can build a missing full-text index once after indexing completes. Existing indexes remain readable. Host safety stops persist across restart and block heavy operations.
+Adding or indexing a project can start the daemon automatically. MCP acquires primary-project watch leases lazily when an index-reading tool is used; discovery and catalog listing start no background work. It shuts down after 4 hours of inactivity, and hands off to a fresh daemon after 24 hours or once its memory footprint passes 2.5 GB. File-change batches are processed on up to four worker processes by default, added only when work backs up, with one kept free for searches; full-table compaction and new FTS/ANN index builds are disabled by containment. Existing indexes remain readable. Host safety stops persist across restart and block heavy operations.
 
 `gmax watch status` reports failed files, native watcher recovery or polling, dropped-event counts, and the last complete filesystem reconciliation. FSEvents dropped-event warnings keep the native stream attached and preserve the accompanying events. A reconciliation covers the gap; repeated warnings coalesce into one later scan, with a 30-second scan interval. Recovery stays visible until a complete scan covers the latest gap. Other backend errors still trigger subscription recovery; repeated terminal failures fall back to five-minute polling, where recent edits can lag. Search and MCP responses retain health warnings even after the file queue drains. On macOS, gmax also forwards up to eight existing policy-excluded directories to the native event stream, prioritizing dependency, build and development output. Discovery is bounded; remaining paths retain glob filtering and file-policy checks. Policy edits refresh exclusions, and a policy change during subscription setup is checked before keeping a directory exclusion. Live edit batches can run during reconciliation instead of waiting for the full filesystem walk. Whole-project reindex and removal still quiesce the watcher and drain its work before changing the project. A complete reconciliation means the filesystem scan completed; queued embedding work can still be pending.
 
@@ -693,7 +695,6 @@ gmax config                         # shows configured vs built identity
 gmax status                         # reports current / legacy / stale / unbuilt per project
 gmax repair --rebuild               # guarded whole-corpus rebuild through the daemon
 gmax repair --fts                   # build a missing full-text index once (after a rebuild)
-# Daemon searches adopt the built FTS index immediately on 0.26.98+.
 ```
 
 `legacy` means the existing index is compatible but its exact model fingerprint was inferred from
@@ -753,21 +754,25 @@ When heavy work is paused, the daemon keeps metadata, bounded symbol/file lookup
 
 To serve bounded reads under an existing startup quarantine, run `gmax watch --daemon --read-only -b`. This preserves the safety markers. When a daemon is running but too busy to answer, the command sends it the pause with up to 30 seconds to accept and never starts a second daemon; it exits 1 if the pause is not accepted. `status --json` reports `daemon.service.mode` and its reason; `doctor` reports paused availability and skips native corpus diagnostics. Pausing is sticky for that daemon process. Full service requires a deliberate restart after host recovery and quarantine review. Known critical OS or kernel pressure still stops even the read-only service.
 
-On Linux (0.26.98+) the daemon can run as a systemd service, so the unit's CPU and memory limits cover it and its workers: `ExecStart` runs `node …/dist/bin.js watch --daemon` directly, with `Restart=on-failure` and `Environment=GMAX_DAEMON_IDLE_TIMEOUT_MS=0`. A daemon that is its unit's main process leaves restarts to the unit. Its 24-hour or memory recycle exits with status 75 instead of spawning a successor, and `gmax watch restart` and a version-mismatch `gmax watch --daemon -b` refuse and print the `systemctl` restart command, since a daemon started from the CLI would run outside the unit's limits. `gmax watch stop` still stops it; start it again through `systemctl`.
+On Linux the daemon can run as a systemd service, so the unit's CPU and memory limits cover it and its workers: `ExecStart` runs `node …/dist/bin.js watch --daemon` directly, with `Restart=on-failure` and `Environment=GMAX_DAEMON_IDLE_TIMEOUT_MS=0`. A daemon that is its unit's main process leaves restarts to the unit. Its 24-hour or memory recycle exits with status 75 instead of spawning a successor, and `gmax watch restart` and a version-mismatch `gmax watch --daemon -b` refuse and print the `systemctl` restart command, since a daemon started from the CLI would run outside the unit's limits. `gmax watch stop` still stops it; start it again through `systemctl`.
 
-**Service-aware startup (0.26.99+):** the default `~/.gmax` home recognizes
-`gmax.service` / `legacy-gmax.service` in `$XDG_CONFIG_HOME/systemd/user` (default
-`~/.config/systemd/user`). The shared launcher starts the unit and uses its MainPID;
-failed/masked/ambiguous/unreadable services cannot fall back to a detached daemon
-or watcher. Existing quarantine/Gemma gates remain first. A read-only request
-cannot start a normal unit; configure read-only service with the host operator.
-This does not install units or adopt an already standalone running daemon.
+**Service-aware startup (0.26.99+):** startup recognizes `gmax.service` or
+`legacy-gmax.service` in `$XDG_CONFIG_HOME/systemd/user` (default
+`~/.config/systemd/user`) for the default `~/.gmax` home. Hooks already delegate
+to the background CLI launcher; that path and implicit CLI/MCP startup use
+`systemctl --user start` and return the unit's MainPID. A masked, ambiguous,
+unreadable or failed service is reported without starting a detached daemon or
+per-project watcher. Existing quarantine and Gemma-profile gates run first.
+Secondary stores keep their own routing. A read-only launch with no live daemon
+refuses to start a normal unit; the host operator must configure the service for
+read-only operation first. Upgrade the installed package to use this routing;
+publication alone does not change a running daemon.
 
-Full-table compaction and automatic FTS/ANN index builds are disabled, including forced maintenance and doctor repair. `gmax repair --fts` is the explicit exception for a missing full-text index; it never replaces an existing index. Existing indexes remain readable; missing lexical indexes fall back to available retrieval. Do not repeatedly force repair, use future cutoffs or manually remove index fragments.
+Full-table compaction and new FTS/ANN index builds are disabled in the containment release, including forced maintenance and doctor repair. Existing indexes remain readable; missing lexical indexes fall back to available retrieval. Do not repeatedly force repair, use future cutoffs or manually remove index fragments.
 
 `gmax fts-refresh --table /path/to/lancedb/chunks.lance` reads the durable FTS receipt. `--check --expected-version N` checks native coverage and input admission; `--run --expected-version N` appends one fragment-bounded FTS delta after all store owners close. The result reports total `unindexedRows`, selected `batchRows`/`selectedFragments` and `remainingRows`; a completed batch may leave a backlog. Inspect the fresh head before explicitly selecting another run. Stored tokenizer settings and existing index segments are preserved; a single oversized fragment is refused. Missing, incomplete, unsupported or inconsistent physical tokenizer metadata is refused before writes; legacy token-file layouts are not supported. Physical metadata files are capped at 1 MiB each and parameter JSON at 64 KiB per segment. This Linux-only command admits at most 100,000 physical input rows and 64 MiB of live content, with a 120-second deadline, 90-second CPU limit, two-CPU affinity, 2 GiB address-space cap and sampled 1 GiB helper RSS guard. It requires 8 GiB available host memory and disk headroom for 512 MiB sampled growth plus 1 GiB margin. Sampled guards can overshoot and are not a native cumulative-write cap. The command preserves quarantine, refuses configured native automatic cleanup and never stops services, compacts data or prunes versions. Interrupted writes require inspection and the exact `--acknowledge-uncertain` attempt ID before retry; no automatic retry runs. Corpus-statistic updates can change BM25 scores. See `--help` for the command contract.
 
-The package includes a separate Python prune-only helper pinned to Lance 13, plus an exclusively leased Node wrapper. Runtime preparation uses `uv >=0.12.18`, an existing Python interpreter and locked wheels; it does not download Python, build from source, load an embedding model or run during installation. The helper currently supports macOS and Linux. The daemon runs independent prune-only retention: at most 128 old versions per pass, keeping current, tagged and two-minute recent versions. Successful passes retry remaining backlog every minute and check settled history every five minutes; status polling and watched edits do not prevent cleanup. In 0.26.98, cleanup failures back off for 5, 10, 20, 40, then 60 minutes, resetting after success. The helper bounds Lance CPU/I/O pools to one thread and glibc allocator arenas to two. Runtime setup happens before writer suspension. Bulk project indexing defers retention without stopping watchers or closing reads, with a one-minute retry. Reads also remain available while watcher work quiesces; admission closes briefly to drain old native readers before pruning starts. Older readers and external store owners are drained under an exclusive lease; new read-only queries may use the protected current version while history is deleted. Writers resume and watchers reconcile edits after the pass. Full-table compaction admission never gates this reclamation. Normal configured host policy applies; explicit offline recovery retains its separate admission.
+The package includes a separate Python prune-only helper pinned to Lance 13, plus an exclusively leased Node wrapper. Runtime preparation uses `uv >=0.12.18`, an existing Python interpreter and locked wheels; it does not download Python, build from source, load an embedding model or run during installation. The helper currently supports macOS and Linux. The daemon runs independent prune-only retention: at most 128 old versions per pass, keeping current, tagged and two-minute recent versions. It retries backlog every minute and checks settled history every five minutes; status polling and watched edits do not prevent cleanup. Runtime setup happens before writer suspension. Bulk project indexing defers retention without stopping watchers or closing reads, with a one-minute retry. Reads also remain available while watcher work quiesces; admission closes briefly to drain old native readers before pruning starts. Older readers and external store owners are drained under an exclusive lease; new read-only queries may use the protected current version while history is deleted. Writers resume and watchers reconcile edits after the pass. Full-table compaction admission never gates this reclamation. Normal configured host policy applies; explicit offline recovery retains its separate admission.
 
 `gmax recover --table /path/to/lancedb/chunks.lance --json` reads the durable recovery receipt without starting a daemon or preparing Python. `--check` samples admission without pruning. `--prune --version <current-version> --cutoff <absolute-ISO-timestamp>` explicitly requests one offline prune. A prior uncertain attempt requires `--acknowledge-uncertain <attempt-id>` after inspection. Recovery never creates/clears quarantine, stops other owners, retries automatically or enables rewriting.
 
