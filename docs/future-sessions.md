@@ -4,10 +4,48 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-29
 audience: internal
-summary: "SHIPPED0.26.107/source ed5b9cf: complete soft inferred-definition source/assertion/docs, one publication and normal P3 handover ready/open/active. Prior no-emit compile reused; artifact build/package passed. No unit/runtime relevance tests or measured gain."
+summary: "0.26.107 remains shipped. Save-coalescing plan ready/awaiting one ratification covering implementation, bounded test+compile and full commit/release/P3 delivery. Planning only: zero new executions; unrelated work and three saved prompts preserved."
 ---
 
 # Future Sessions
+
+## Per-file save coalescing — ready, awaiting one ratification
+
+**Ratified execution now in progress:** the user approved the full batch through
+release, normal P3 handover/rollback and final committed records. The original
+planning wording below is historical. Source/15 focused timing cases/README are
+prepared; the one focused invocation passed15 cases (53 unrelated cases skipped).
+The guarded production compilation/runtime preparation passed in1.972s with
+zero swap growth and owned cleanup. Publication/P3 handover remain in progress. No new profile, measurement, review or delegation.
+
+The [implementation-ready owning plan](plans/gmax-delivery.md#per-file-save-coalescing--ready-for-implementation--awaiting-ratification)
+is the current proposed next batch. It supersedes older return/no-next-action
+wording; 0.26.107/source `ed5b9cf98fee50520c26f60a555af7aa1eb7fc47` remains the
+completed shipped baseline. This turn changed plan/handoff documentation only;
+**zero tests, compilation, live/log reads, implementation or delivery actions**.
+
+The finite source change is `src/lib/index/batch-processor.ts`: per-path 2s quiet
+since the latest genuine save, 10s maximum eligibility wait since the first
+pending save, one project timer, ready-only selection. Preserve ordinary
+catch-up/deletion/force scheduling, internal retry timestamps, fairness,
+post-batch delay, native ownership, hash skips, chunk reuse and write semantics.
+In-flight saves merge into one follow-up; this cannot eliminate work already
+in flight or establish the production cause of fan noise/backlog replenishment.
+
+One future ratification covers implementation, targeted mocked fake-clock
+fixtures in `tests/project-batch-processor.test.ts`, scoped README/docs, **at
+most one focused timing-test invocation and one guarded local production
+compilation**, then commit/version/package/one publication/normal P3
+handover with retained rollback/final committed records. No separate release
+approval loop, extra test invocation, independent review, profile or new
+measurement. Full timing/merge/lifecycle semantics, cases, guard limits and
+complete-delivery checklist are in the owning section. No part is authorized now.
+
+Preserve all unrelated dirty/intent-to-add source and README changes, including
+the unreleased ColBERT refactor. Keep this umbrella active; do not consume,
+replace or create saved prompts. FTS remains completed history; CPU attribution,
+resource history and backend/model experiments remain deferred. No further
+investigation phase is required before implementing the ratified batch.
 
 ## Soft inferred-definition fix SHIPPED —0.26.107
 

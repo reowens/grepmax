@@ -23,9 +23,9 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "SHIPPED0.26.107/source ed5b9cf: complete soft inferred-definition source/assertion/docs, one publication and normal P3 handover ready/open/active. Prior no-emit compile reused; artifact build/package passed. No unit/runtime relevance tests or measured gain."
-next_step: "Return the completed shipped result; start no additional investigation, tests/review/profile, model/backend/dependency work or release automatically. Delivery umbrella remains active; deferred work stays unselected."
-summary: "One inferred return and one existing assertion shipped with scoped docs;335-file package changes only intent.js and three version manifests. Exact0.26.106 rollback and configuration/store safety preserved; unrelated dirty/index/private work retained."
+current_state: "Save-coalescing batch RATIFIED / IN PROGRESS through release and P3 handover. Source and 15 fake-clock cases prepared; single focused invocation and guarded production compilation not yet run. 0.26.107 remains deployed until normal handover."
+next_step: "Complete the ratified scheduler/fixtures/docs, one focused timing test invocation, one guarded production compilation, commit/version/package/one publication and normal P3 handover/rollback/final records without another permission loop. No profiling or new measurements."
+summary: "Finite save-coalescing proposal: 2s per-path quiet period, 10s maximum eligibility wait, one project timer; preserve throughput/admission and chunk reuse. Future ratification includes full commit-to-P3 delivery. 0.26.107 and completed FTS history remain intact; unrelated work preserved."
 ---
 
 # Gmax Delivery Plan
@@ -34,6 +34,222 @@ Project status belongs in this plan and its linked plans, never in `AGENTS.md` o
 `CLAUDE.md`. [Architecture/operations history](architecture-operations-history.md)
 preserves status, incident measurements and release context moved out of
 `CLAUDE.md`; those excerpts are historical and add no execution authorization.
+
+## Per-file save coalescing — READY FOR IMPLEMENTATION / AWAITING RATIFICATION
+
+**Execution update:** the user explicitly ratified the complete plan through release
+and P3 handover on October29,2026 UTC. The planning-only wording below records
+the original proposal, not a current hold. One owner is executing, no delegation
+or review. Selected source,15 deterministic cases and README text are complete. The single
+focused invocation passed all15 cases in1.186s, peak374,300,672 bytes, zero swap
+growth and owned cleanup;53 unrelated cases were skipped. The one local production
+compilation/runtime preparation passed in1.972s, peak335,855,616 bytes, zero swap
+growth and owned cleanup. Publication/P3 handover remain in progress. Guarded build/package and release receipts will
+be retained under `/home/reoiv/.local/state/gmax-delivery/20261029-0.26.108/`;
+the patch version remains subject to the normal public-version check.
+
+Prepared October 29, 2026 UTC at the user's explicit request to plan the fix.
+**Authorization now: local source reads, plan/handoff edits and diff inspection
+only. Tests run: zero. Compilations run: zero.** Implementation and delivery
+below are proposals, not actions authorized by this documentation turn. The
+umbrella remains active; no saved prompt is consumed or created. This section
+supersedes older next-action wording without reopening completed releases.
+
+### Selected outcome and evidence boundary
+
+Finish necessary indexing efficiently, then idle. Coalesce intermediate saves to
+the same file without slowing unrelated ready files or the catch-up backlog.
+Released baseline is 0.26.107/source
+`ed5b9cf98fee50520c26f60a555af7aa1eb7fc47`. It already deduplicates normalized
+paths, skips cached/unchanged content and reuses unchanged chunk embeddings.
+Its project-wide 2s timer preserves the earliest start instead of waiting for
+quiet on each edited path. Saves spanning active/completed passes can therefore
+cause sequential work; five filesystem events do not imply five committed
+reindexes or five simultaneous native jobs.
+
+The earlier bounded read at 04:43:50 UTC found 2,274 catch-up paths waiting,
+four selected and zero failed. Retained service records included 18 reindexed
+in 153.8s, 16 in 65.9s and four in 20.1s; catch-up summaries repeatedly reported
+roughly2,000–2,300 paths. Those are prior observations, not fresh measurements
+from this planning turn, and do not identify repeated unchanged files or establish
+thermal cause. This fix has no promised fan, CPU or elapsed-time improvement.
+0.26.107 eligibility delivery and FTS9801→9802→9803/zero pending remain complete.
+CPU attribution, resource history and backend/model experiments stay deferred.
+
+### Smallest implementation and timing contract
+
+Product source change: `src/lib/index/batch-processor.ts` only, in `PendingWork`,
+`handleFileEvent`, `enqueueWork`, `scheduleBatch`, `schedulePendingBatch`,
+`processBatch` ready selection and its settle/requeue scheduling, plus the existing
+`startBatch`/`pause`/`resume`/`close` lifecycle where necessary for timer ownership.
+Use existing `Date.now()`/timeout conventions and no public configuration/API.
+Add internal constants for **2,000ms quiet** and **10,000ms maximum wait**.
+Two seconds retains the current nominal save delay; ten seconds limits eligibility
+postponement during continuous edits without imposing pauses on the backlog.
+
+Extend pending work with optional ordinary-save timing `{firstPendingAt,
+lastEventAt}` and a pending explicit-force marker if needed for bypass semantics.
+Keep `queuedAt` and work-kind priority for existing health/ordering; do not reuse
+its active-work age as the start of a new follow-up save window. For a normal
+live `change` (also additions), calculate:
+
+`quietEligibleAt = min(lastEventAt + 2000, firstPendingAt + 10000)`
+
+Path eligibility is no earlier than its existing `retryAt`; project backend and
+post-batch delays still apply. **Ten seconds bounds quiet-window eligibility,
+not dispatch, completion, project-lock acquisition or resource admission.** Keep
+existing batch-size limits, map order among eligible paths, live/background
+fairness, background dispatch window and post-batch 2s defer. Filter for eligibility
+before filling each work-kind's bounded candidate list; skip a hot first entry
+rather than allowing it to block later ready files.
+
+For each genuine live save to an already-pending path, keep its first pending
+save time and update only its latest event time. The last change/unlink remains
+the pending event, one entry per normalized path. Internal requeues preserve the
+original timing record; incoming genuine saves merge latest timing into that
+record without resetting its first time. Never derive a new save timestamp from
+retry, policy-requeue or catch-up bookkeeping. Explicit force generations retain
+their existing supersession/clear rules; do not infer pending urgency from a
+force flag belonging only to the active batch.
+
+Maintain **one project timer**, not one timer per path: compute the earliest
+eligible pending deadline including existing per-path retries and project delay
+floors. Re-arm later when the only candidate becomes hot, earlier when another
+candidate becomes ready, and do nothing if the effective deadline is unchanged.
+Replace the current no-ready 30s fallback with the actual next deadline. Do not
+add a fresh 2s delay repeatedly when a quiet deadline fires. While an active batch
+or project-lock waiter owns progress, avoid event-driven wakeups that cannot
+start work; recompute after it settles. Re-evaluate eligibility inside
+`processBatch` after mutex admission, so saves while waiting cannot select a
+superseded ready snapshot. Preserve explicit error/backend backoffs; no busy
+rescheduling, polling interval or additional admission loop.
+
+### Queue-path compatibility
+
+- **Ordinary change/add:** first pending save starts the bounded window; later
+  saves on that path reset quiet only. Other ready paths continue normally.
+- **Unlink/rename:** unlink bypasses the new quiet window, retaining existing
+  project scheduling and apply-time missing/excluded checks. Rename is the
+  existing old-path unlink plus new-path change; the new path gets ordinary
+  save timing. If an unlink is superseded by recreation, the latest change gets
+  save timing; do not retain delete-only urgency for the recreated path.
+- **Explicit forced repair/delete:** bypass additional quiet delay and preserve
+  filtering bypass and forced-generation semantics; a normal event cannot erase
+  an outstanding explicit repair. Latest filesystem/policy checks still decide
+  whether to write/delete. Force alone does not bypass existing safety/backoffs.
+- **Catch-up/cleanup:** internal scan entries have no added quiet delay and do
+  not refresh live-save timestamps. A live save promotes an existing catch-up
+  item through existing priority merging and starts/updates save timing. Later
+  catch-up events preserve that timing; forced repair retains its bypass.
+  Initial full sync in `syncer.ts` is unchanged.
+- **In-flight saves:** selection removes the pending item as today. The first
+  subsequent real save creates a fresh follow-up timing window, separate from
+  active bookkeeping; further saves merge into that one pending item. When an
+  unfinished active item is requeued, preserve newer pending timing/force state;
+  when no new save exists, retain the selected record rather than restarting
+  quiet. No concurrent same-file native job is introduced.
+- **Pause/resume/close:** pause preserves pending timing and existing backoff
+  ownership; genuine saves while paused still update their path's latest time.
+  Resume schedules from retained deadlines plus existing resume/post-batch
+  floors, without replaying/re-aging events. Close clears the one timer, cancels
+  queued admission and prevents late callbacks. Existing native cleanup remains.
+- **Policy files:** keep the existing policy invalidation/rescan route; internal
+  rescan/requeue is not a new save. No watcher-manager/catch-up protocol change.
+
+`watcher-manager.ts`, `syncer.ts`, `pool.ts`, worker/orchestrator, embedding reuse,
+store and IPC remain unchanged. Preserve native ownership/cancellation fencing,
+stat/hash skips, exact formatted-input dense/ColBERT reuse, apply-time validation,
+batch writes and metadata publication. No worker/thread/quota/global-admission
+change, retry-policy change, model load, maintenance or stale-result/commit redesign.
+Quiet scheduling reduces some intermediate dispatches; it cannot eliminate edits
+during native work or the existing validation-to-commit window.
+
+### Targeted fixtures and proposed verification budget
+
+Extend the existing mocked fixtures in
+`tests/project-batch-processor.test.ts` under one named
+`per-file quiet scheduling` subgroup, using fake clocks and deferred mocked
+worker results. Reuse `tests/setup.ts` mocks and the existing keyed-mutex fixture;
+use temporary ordinary files only, no native/model/store workloads. Adjust only
+existing direct-dispatch fixture assumptions made obsolete by readiness checks.
+Meaningful deterministic cases (parameterize compatible variants):
+
+1. Five quick saves dispatch once 2s after the last save; another path's earlier
+   timer cannot dispatch the hot path early.
+2. A repeatedly saved early map entry cannot block a later ready live file or
+   eligible catch-up/cleanup work; existing fairness is retained.
+3. Continuous saves become eligible at the original 10s bound, without asserting
+   completion/admission by 10s; later pending windows get a fresh bound.
+4. Multiple in-flight saves queue one follow-up; internal requeue/catch-up does
+   not reset its first/latest timestamps or overwrite newer work. Preserve the
+   cache-hit follow-up path when the worker already read the latest revision.
+5. Unlink/recreate and explicit force bypass the added quiet delay as specified;
+   a forced event arriving in-flight is not cleared by an older generation.
+6. Pause/resume and close retain/cancel the timer correctly; saves during mutex
+   wait are re-evaluated after admission. Backend/retry floors remain respected,
+   including when the only path is not yet ready; no repeated zero-delay wakeups.
+
+**Proposed future ratification budget: at most ONE small focused unit-test
+invocation**, one worker, only the named timing subgroup above. Do not run the
+whole file/suite or reset this budget after fixes. A minimal disposable Vitest
+configuration may select that file/subgroup, reuse `tests/setup.ts`, set
+`globalSetup: []`, `maxWorkers: 1`, `fileParallelism: false`; this avoids the default
+grammar downloader. No additional acceptance harness, new installs or native cases.
+Also propose **ONE guarded local production compilation** of final source, using
+the established compiler recipe (`tsc --incremental false`, with existing supported
+module flags and emission to an owned package staging directory), reused for
+packaging; no separate no-emit/test-typecheck round or second local compilation.
+Reuse established two-CPU/nice 10/2 GiB aggregate owned RSS/180s limits,
+minimum 8 GiB available memory, zero swap-growth guard and owned-process cleanup.
+Existing installed tools only; abort evidence is retained without an automatic
+retry. These future guards are not permission for host reads now.
+
+No tests or compilation are authorized or run by this plan update. No independent
+review, broad passing-suite reruns, audit, profile, benchmark, runtime query or new
+measurement is proposed. If the one invocation fails, fix using its evidence;
+report any remaining validation limit without silently adding a rerun. A failure
+that prevents the selected result blocks release, without creating another gate.
+
+### One-owner implementation and complete delivery checklist
+
+One future explicit ratification covers **all** normal substeps below through
+final delivery, without milestone approval loops or a separate release approval.
+No commit/version/package/publication/handover action is authorized now.
+
+- [x] Implement only the scheduler/timing contract above, preserving all unrelated
+  dirty and intent-to-add bytes, including the unreleased ColBERT query refactor.
+- [x] Complete the targeted fake-clock fixtures and a scoped user-facing README
+  watch-behavior paragraph (2s quiet,10s eligibility cap and in-flight limitation).
+  Preserve the README's existing unrelated changes. Update this plan/handoff.
+- [x] Inspect the finite diff, run the single authorized focused invocation and
+  single guarded final-source production compilation, retaining honest results.
+  Complete all selected source/fixtures/docs and necessary fixes before release.
+- [ ] Commit the complete selected change. Isolate release source if needed so
+  unrelated work remains preserved and excluded; no partial selected batch may
+  be hidden by that checkout. Commit version/manifests through the established
+  release procedure; package the existing compiled final source and required
+  runtime/license payloads without another local compile or verification suite.
+- [ ] Publish once through the existing approved `release.yml` workflow; its
+  normal archive rebuild is part of publication, not another local compilation
+  budget. Retain exact source/archive/provenance and published-byte reconciliation
+  using the established process. No new CI/review/audit/profile gate is added.
+- [ ] Stage/install those published bytes through the established guarded P3
+  procedure, retaining the exact previous install as rollback. Perform normal
+  same-unit version/readiness handover only, preserving configuration, unit,
+  worker/model/quota/weight/nice, store/cache identity and safety markers. Include
+  existing bounded readiness reads/owned-process cleanup; no functional query,
+  new measurement, profile, maintenance or FTS run. If handover fails, restore the
+  retained prior install/service through the existing rollback procedure and
+  report the actual serving version; do not invent successful delivery.
+- [ ] Finish release/handover/rollback and validation-limit records in this plan
+  and `docs/future-sessions.md`; commit the scoped final documentation so selected
+  work is not left uncommitted. Return the concrete committed/published/serving
+  result. Keep the delivery umbrella active and deferred work unselected.
+
+The proposed outcome is a finite scheduler fix with complete delivery, not proof
+that this caused P3's repeated catch-up counts or laptop fan behavior. Rollback,
+privacy, safety-marker and cleanup rules remain applicable throughout the future
+ratified batch. No further research phase or diagnostic round is needed to start.
 
 ## Soft inferred-definition eligibility release — SHIPPED in0.26.107
 

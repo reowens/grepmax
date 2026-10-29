@@ -1,0 +1,15 @@
+{
+  "invocations": 1,
+  "selected": 15,
+  "passed": 15,
+  "failed": 0,
+  "unselectedSkipped": 53,
+  "scope": "ProjectBatchProcessor / per-file quiet scheduling",
+  "fakeClock": true,
+  "modelNativeStoreWorkloads": false,
+  "elapsedSeconds": 1.1863758509862237,
+  "peakSampledOwnedRssBytes": 374300672,
+  "swapGrowthBytes": 0,
+  "noLiveOwnedProcesses": true,
+  "otherExistingFixtureChanges": "Manual-dispatch fixtures explicitly mature save windows; those53 cases were not executed"
+}
