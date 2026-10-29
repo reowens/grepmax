@@ -288,6 +288,19 @@ A query that is a single bare identifier (`BeyondError`, `requireAuth`, `map`) i
 
 **Tradeoff / limitation:** for a bare-symbol query the **definition is promoted to the top**, ahead of usage/caller sites. This is the right default for "find X" (the overwhelmingly common intent), and usages still rank below — but if you specifically want callers, use `gmax trace --inbound <symbol>` or `gmax impact <symbol>` rather than a bare search. The promotion is **gated to single-identifier queries** via `asSymbolQuery`, so natural-language queries (anything with a space, dot, or punctuation) are completely unaffected. Disable per-process with `GMAX_DEF_BOOST=1` (neutralizes the score boost; injection still runs).
 
+Ordinary wording such as `where is the source`, `what is ...` or `define source`
+infers definition intent as a ranking hint, without imposing definition-only
+eligibility. Symbol-free chunks can compete within the existing scope and
+retrieval limits; broader eligibility does not promise a higher rank or better
+answer. Normal search retains its existing definition-intent role boost. The
+paused keyword reader inherits the eligibility change without adding ranking
+logic or changing its bounds. Explicit structured `filters.def: "source"` still
+requires that defined symbol and takes precedence over the generic
+definition-only predicate. A directly supplied `Searcher.search` intent with
+`type: "DEFINITION"` and `filters.definitionsOnly: true` remains restrictive;
+the paused payload accepts structured filters but has no supplied-intent field.
+Bare-symbol promotion and all other explicit filters remain unchanged.
+
 **Measurement note.** The same investigation fixed the OSS bench instrument (`eval-oss.ts` `chunkMatches`, v0.17.8): it now credits a file + `defined_symbols`-includes-query match, not just a line-range hit. Stale hand-curated `expectedLine` values had been scoring surfaced definitions as misses (platform recall read 0.333 vs a true ~0.800). Keep this in mind when comparing pre-v0.17.8 bench numbers in older entries above — they understate recall on symbol-lookup cases.
 
 ## Historical FTS merge panic is fixed; recurrence is a regression

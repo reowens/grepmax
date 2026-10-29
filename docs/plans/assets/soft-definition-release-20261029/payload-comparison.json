@@ -1,0 +1,16 @@
+{
+  "files": 335,
+  "previousFiles": 335,
+  "unchanged": 331,
+  "changed": [
+    "package/.claude-plugin/marketplace.json",
+    "package/dist/lib/search/intent.js",
+    "package/package.json",
+    "package/plugins/grepmax/.claude-plugin/plugin.json"
+  ],
+  "added": [],
+  "removed": [],
+  "dependenciesNativeProvenanceUnchanged": true,
+  "onlyProductPayloadChange": "dist/lib/search/intent.js",
+  "unrelatedColbertRefactorIncluded": false
+}

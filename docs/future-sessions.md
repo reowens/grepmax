@@ -4,10 +4,86 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-29
 audience: internal
-summary: "COMPLETE: all six selected status/CLI features released0.26.106/source b4955e0; one publication and normal P3 handover ready/open/active. Production compilation/package only; zero new tests/profile/maintenance."
+summary: "Soft inferred-definition fix COMPLETE LOCALLY, NOT RELEASED: source, one existing assertion and scoped docs finished. One guarded production compilation passed exit0,0.837s, peak310296576bytes, zero swap growth and clean owned exit. Zero tests/runtime relevance checks. Published0.26.106 and unrelated dirty/deferred work preserved."
 ---
 
 # Future Sessions
+
+## Soft inferred-definition release selected
+
+The explicit release instruction selects the complete prepared five-file change,
+required artifact packaging/compilation, one publication and normal P3 handover.
+The passing0.837s no-emit typecheck is reused; no tests, runtime search exercises,
+review or profiling are added. Earlier uncommitted/local-only statements below
+are historical pre-release context, superseded only for this narrow batch.
+All unrelated ColBERT/resource-history work and saved prompts are preserved.
+
+## Current direction — better search results
+
+0.26.106 completed all six selected features, both helpers/user docs, one
+publication and normal P3 handover. Source `b4955e0`, public records `d547e8a`,
+private reconciliation `cd9720f`; daemon942028 ready/open/active is the recorded
+handover observation, not a fresh live read.0.26.105 CPU delivery/profile and FTS
+catch-up9801→9802→9803/two normal batches/zero pending are completed history.
+The [owning direction](plans/gmax-delivery.md#next-selected-direction--better-search-results)
+is finding expected files/symbols, not further output polish.
+
+The local retained-evidence/source investigation is now complete; its
+[five-step owning plan](plans/gmax-delivery.md#better-results-investigation--soft-inferred-definition-intent-proposed)
+now keeps automatically inferred `DEFINITION` intent as a ranking hint without
+adding `definitionsOnly` to retrieval. Explicit filters and explicitly supplied
+definition-only intent remain intact. Released source applies the inferred
+predicate to both vector and FTS, so symbol-free/non-DEFINITION chunks are
+excluded before ranking. The historical `where is the source` / `source.ts`
+fixture exclusion supports this mechanism; that corrected synthetic fixture is
+not a production miss or an outstanding defect. The referenced private relevance
+artifacts are absent locally; no production expected-answer classification or
+retrieval gain is established. See the owning proposal for exact evidence limits.
+
+Implementation is **COMPLETE LOCALLY, NOT RELEASED** under the user's explicit
+“begin now”. One
+owner changed `src/lib/search/intent.ts`'s inferred return, the one existing
+assertion in `tests/intent.test.ts > classifies 'where is' as DEFINITION` to
+`toBeUndefined()`, and the selected bare-symbol section of
+`docs/known-limitations.md`. Existing dirty docs and unrelated unreleased ColBERT
+query-feature work are preserved. No caller or native/snapshot fixture was edited.
+
+Normal Searcher, daemon/CLI/MCP fallbacks and paused `searchPausedIndex` inherit
+the inference change without caller edits. Explicit `filters.def` and directly
+supplied `SearchIntent.filters.definitionsOnly` keep existing eligibility and
+precedence; the paused payload has filters but no supplied-intent field. Normal
+definition-intent ranking boost and bare-symbol promotion remain unchanged.
+Keep explicit-filter assertions and the corrected native snapshot fixture intact.
+
+The sole final-source local production compilation,
+`node_modules/.bin/tsc --noEmit --incremental false`, passed exit0 on the first
+invocation:0.836990295s, peak sampled owned RSS310,296,576bytes, zero swap growth,
+final available memory44,588,781,568bytes and no live owned compiler processes.
+The reused controller enforced CPUs0/1/nice10,2GiB aggregate owned RSS,180s,
+minimum8GiB available memory and zero swap growth, with owned cleanup verified.
+Receipt: `/tmp/gmax-soft-definition-typecheck-rs1_b_kt/typecheck-receipt.json`;
+log: `/tmp/gmax-soft-definition-typecheck-rs1_b_kt/typecheck-phase-0.log`.
+Scoped diff inspection/check passed. The assertion was inspected, not executed
+or test-typechecked. Six preserved source/caller/fixture files match their
+pre-edit hashes, including both dirty ColBERT refactor files. No source changed
+after compilation. The full outcome is in the owning plan.
+
+Zero tests/test-typechecks, runtime/native dataset/model/query runs, benchmarks,
+audits/reviews, profiling, live/remote/P3 actions, maintenance/FTS, installs,
+staging/commits/pushes or release actions. No source/type fix retry was needed.
+No remaining work in this authorized local batch; do not reopen research or add
+validation/release gates. Production relevance gain and native cost remain
+unproven. The change is uncommitted/unreleased; current models, explicit scope,
+budgets, ownership and JSON compatibility are preserved by source reasoning.
+
+CPU attribution and resource history are **DEFERRED/UNSELECTED**; the latter retains
+its unresolved overhead regression and is not a release blocker. Migration,
+broader recall and memory/host roadmaps remain optional/deferred.44 retained older
+test passes/two invocations and the unrerun fixture correction remain historical;
+new UI/CLI behavior was source-reasoned/production-compiled only. These limits
+create no automatic acceptance gate. Existing release/rollback receipts remain.
+Parent receives the completed local batch; no release starts automatically. Superseded pending/
+unreleased/next claims in chronological records below do not reopen completed work.
 
 ## Six-feature release0.26.106 complete — recenter with the user
 

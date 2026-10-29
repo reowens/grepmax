@@ -12,7 +12,7 @@ export function detectIntent(query: string): SearchIntent {
 
   // Definition queries
   if (/where is|what is|define/.test(normalized)) {
-    return { type: "DEFINITION", filters: { definitionsOnly: true } };
+    return { type: "DEFINITION" };
   }
 
   // Implementation queries

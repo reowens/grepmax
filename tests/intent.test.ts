@@ -5,7 +5,7 @@ describe("detectIntent", () => {
   it("classifies 'where is' as DEFINITION", () => {
     const result = detectIntent("where is the auth handler");
     expect(result.type).toBe("DEFINITION");
-    expect(result.filters?.definitionsOnly).toBe(true);
+    expect(result.filters?.definitionsOnly).toBeUndefined();
   });
 
   it("classifies 'what is' as DEFINITION", () => {
