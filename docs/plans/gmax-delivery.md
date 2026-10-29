@@ -23,7 +23,7 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "MCP core/full stages1-6 complete locally: 36/36 fake-only tests in the single invocation; one guarded noEmit production compilation passed. Local commit receipt follows. Stage7 unselected; active full28 and repo not_registered retained."
+current_state: "MCP core/full stages1-6 complete locally: 36/36 fake-only tests in the single invocation; one guarded noEmit production compilation passed. Implementation commit 64d10ed. Stage7 unselected; active full28 and repo not_registered retained."
 next_step: "Return completed local implementation with exact commit/receipts. No automatic next work; stage7 packaging/publication/P3/core activation remains unselected. Verification allowances spent, no reruns."
 summary: "Selectable core8/full28 plus truthful annotations, disabled summarizer and review/cancellation correctness complete locally. Focused36/36 and guarded compiler passed once each; no release/client migration."
 ---
@@ -59,7 +59,7 @@ Exact selected paths (the whole local batch): `src/commands/mcp.ts`,
 `src/lib/llm/investigate.ts`, `src/lib/llm/review.ts`,
 `tests/mcp-profiles.test.ts`, `tests/review-failure.test.ts`,
 `tests/llm-request-lifecycle.test.ts`, `README.md`, `docs/plans/gmax-delivery.md`,
-`docs/future-sessions.md`. Implementation commit: **LOCAL_BATCH_COMMIT_PENDING**.
+`docs/future-sessions.md`. Implementation commit: **64d10edb3ba9a345ffe5143cd8eb79bf93bd1616**.
 Only selected deltas are committed; unrelated ColBERT work, older private README/
 plan/handoff history and index/ITA entries remain outside this batch.
 

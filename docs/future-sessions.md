@@ -14,7 +14,7 @@ summary: "MCP stages1-6 COMPLETE LOCALLY: single fake-only invocation36/36 and s
 User “go” selected stages1–6 of `mcp-core-full-20261029`; the
 [local batch record](plans/gmax-delivery.md#mcp-corefull-local-implementation--complete-locally)
 records exact nine paths, commands, resource limits, numeric receipts and API/
-behavior limits. Implementation commit: **LOCAL_BATCH_COMMIT_PENDING**.
+behavior limits. Implementation commit: **64d10edb3ba9a345ffe5143cd8eb79bf93bd1616**.
 Source/fixtures/README/docs are complete together. Product source/README are
 unchanged after checks; the core fixture expectation was tightened to a literal
 eight-name list after the run (not rerun; no extra budget). No unresolved selected
