@@ -2,7 +2,7 @@
 type: plan
 status: active
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-29T05:31:08Z
+updated: "2026-10-29"
 surfaces:
   - store
   - daemon
@@ -23,9 +23,9 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "SHIPPED0.26.108/source 2ebdb62: complete per-file save coalescing source/fixtures/docs, one publication and normal P3 handover ready/open/active. 15 focused cases passed once; one local production compilation/package passed. Fan/speedup unmeasured."
-next_step: "Return the complete committed/published/serving save-coalescing result. Start no further tests, profiles, research, maintenance, model/config/backend work or release automatically; delivery umbrella remains active."
-summary: "Per-file2s quiet/10s maximum eligibility wait shipped, one project timer; ready files/catchup/native ownership/reuse preserved. One focused invocation15 passed/53 skipped, one guarded production compilation, one publication and normal P3 handover; exact107 rollback retained."
+current_state: "0.26.108 SHIPPED/source 2ebdb62; all selected work through normal P3 ready/open/active handover complete. One focused invocation 15/15 passed, 53 skipped; guarded compilation/prep/pack and one publication complete. Fan/throughput/relevance gains unmeasured."
+next_step: "Recenter on better search results: one concrete expected file/symbol miss from existing examples or ordinary usage when available; distinguish candidate absence from ranking while keeping current models. No specific implementation, query collection, capture or other execution is selected now."
+summary: "Complete baseline 0.26.108: per-file 2s quiet/10s eligibility cap, one project timer and ready-file progress. Earlier 106/107/CPU/FTS work complete; CPU attribution/resource history/backend experiments deferred. Docs-only recenter; no new work starts."
 ---
 
 # Gmax Delivery Plan
@@ -35,6 +35,36 @@ Project status belongs in this plan and its linked plans, never in `AGENTS.md` o
 preserves status, incident measurements and release context moved out of
 `CLAUDE.md`; those excerpts are historical and add no execution authorization.
 
+## Current direction — better search results
+
+**All selected implementation and release work through 0.26.108 is complete.**
+The retained [completion receipt](/home/reoiv/.local/state/gmax-delivery/20261029-0.26.108/completion.json)
+records source `2ebdb621bda25ada7b400d968700544dbea7b853`,
+[release0.26.108](https://github.com/reowens/grepmax/releases/tag/v0.26.108),
+and P3 ready/open/active at handover. This is recorded evidence, not a fresh live
+check. The 0.26.106 six product features, 0.26.107 definition-eligibility fix,
+earlier CPU delivery and two-batch FTS catch-up are also complete.
+
+Recenter on the user's prior choice: **better search results with the current
+models**. When an existing example or ordinary use supplies one concrete query
+and expected file/symbol that was missed, distinguish whether that candidate was
+absent or ranked too low before choosing a change. No specific next implementation,
+query collection, capture, test or profile is selected now. The completed
+0.26.107 eligibility correction is the baseline, not another proposal.
+
+Fan reduction, production throughput and relevance gains remain **unmeasured**.
+The repeated roughly 2,000–2,300 catch-up counts remain unattributed; they do not
+prove repeated indexing of the same unchanged files. 0.26.108 targets selection
+of intermediate saves and is not a proven explanation of all-day fan activity.
+Ordinary use can supply feedback about fans, freshness and result quality;
+this is not a manual measurement assignment or another acceptance gate.
+
+CPU attribution, resource history (including its unresolved overhead regression)
+and backend/indexing experiments remain **DEFERRED/UNSELECTED**. No automatic
+worker count reduction from 4 to 2, pacing/concurrency/model tuning or new diagnostics is selected.
+The delivery umbrella remains active, saved prompts remain untouched, and no new
+work starts from this documentation update.
+
 <a id="per-file-save-coalescing--ready-for-implementation--awaiting-ratification"></a>
 
 ## Per-file save coalescing — SHIPPED in0.26.108
@@ -43,6 +73,14 @@ preserves status, incident measurements and release context moved out of
 release.** Complete selected scheduler source,15 focused fixtures, README and
 plan/handoff documentation are included in source `2ebdb621bda25ada7b400d968700544dbea7b853` / tag
 `v0.26.108`. [Release](https://github.com/reowens/grepmax/releases/tag/v0.26.108).
+Ordinary saves share one pending entry per path and become eligible after
+**2s since the last save**, capped at **10s since the first pending save** during
+continuous edits. Ten seconds bounds eligibility, not completion or admission.
+Other ready files and catch-up work proceed through one project timer;
+deletion/force/lifecycle behavior, native ownership, hash skips and compatible
+unchanged-chunk reuse remain preserved. Edits during active work can still need
+one coalesced follow-up; already-running work can still be superseded.
+
 One focused fake-clock invocation passed **15/15 cases**, with **53 unrelated
 cases skipped**, in1.186s; peak374,300,672 bytes, zero swap growth and owned cleanup.
 The existing non-timing fixtures were adjusted only to mature save windows for
@@ -90,12 +128,13 @@ The ratified implementation/verification/delivery checklist below records the
 completed scope; its original planning-only/future-approval wording is historical
 and creates no remaining hold or new acceptance gate.
 
-Prepared October 29, 2026 UTC at the user's explicit request to plan the fix.
-**Authorization now: local source reads, plan/handoff edits and diff inspection
-only. Tests run: zero. Compilations run: zero.** Implementation and delivery
-below are proposals, not actions authorized by this documentation turn. The
-umbrella remains active; no saved prompt is consumed or created. This section
-supersedes older next-action wording without reopening completed releases.
+### Historical planning record — subsequently ratified and completed
+
+The original October29 planning turn allowed source/plan/handoff reads and docs
+only, with zero tests or compilation then. The user subsequently ratified the
+whole implementation-to-release batch, which completed as recorded above.
+The original contract and completed checklist below preserve that sequence;
+they contain no current implementation, release or verification queue.
 
 ### Selected outcome and evidence boundary
 
@@ -206,7 +245,7 @@ change, retry-policy change, model load, maintenance or stale-result/commit rede
 Quiet scheduling reduces some intermediate dispatches; it cannot eliminate edits
 during native work or the existing validation-to-commit window.
 
-### Targeted fixtures and proposed verification budget
+### Historical targeted-fixture and verification budget — fulfilled
 
 Extend the existing mocked fixtures in
 `tests/project-batch-processor.test.ts` under one named
@@ -252,11 +291,11 @@ measurement is proposed. If the one invocation fails, fix using its evidence;
 report any remaining validation limit without silently adding a rerun. A failure
 that prevents the selected result blocks release, without creating another gate.
 
-### One-owner implementation and complete delivery checklist
+### Completed one-owner implementation and delivery checklist
 
-One future explicit ratification covers **all** normal substeps below through
-final delivery, without milestone approval loops or a separate release approval.
-No commit/version/package/publication/handover action is authorized now.
+The user's one ratification covered **all** normal substeps through final
+delivery, without milestone approval loops or a separate release approval.
+Every selected item below is complete; this checklist selects no further action.
 
 - [x] Implement only the scheduler/timing contract above, preserving all unrelated
   dirty and intent-to-add bytes, including the unreleased ColBERT query refactor.
@@ -288,10 +327,10 @@ No commit/version/package/publication/handover action is authorized now.
   work is not left uncommitted. Return the concrete committed/published/serving
   result. Keep the delivery umbrella active and deferred work unselected.
 
-The proposed outcome is a finite scheduler fix with complete delivery, not proof
-that this caused P3's repeated catch-up counts or laptop fan behavior. Rollback,
-privacy, safety-marker and cleanup rules remain applicable throughout the future
-ratified batch. No further research phase or diagnostic round is needed to start.
+The finite scheduler fix and delivery are complete. This does not prove the
+cause of P3's repeated catch-up counts or laptop fan behavior. Recorded rollback,
+privacy, safety-marker and cleanup outcomes remain intact. The current direction
+above is for recentering; no new investigation or implementation starts here.
 
 ## Soft inferred-definition eligibility release — SHIPPED in0.26.107
 
@@ -376,7 +415,12 @@ return the shipped result and start no new investigation or validation campaign.
 Earlier local-only/uncommitted statements below are historical and superseded
 by this explicit release outcome, not outstanding selected work.
 
-## Next selected direction — better search results
+<a id="next-selected-direction--better-search-results"></a>
+
+## Prior better-results direction record — before0.26.108
+
+The current direction is recorded above. This dated section preserves the
+completed0.26.107 investigation and its original limits; it is not a new queue.
 
 The first selected source-grounded eligibility correction is now **SHIPPED
 in0.26.107**, as recorded above. It keeps inferred definition intent soft while

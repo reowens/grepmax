@@ -4,10 +4,43 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-29
 audience: internal
-summary: "SHIPPED0.26.108/source 2ebdb62: per-file save coalescing complete through one publication and normal P3 handover. 15 focused cases passed once/53 skipped; one guarded local compilation/package passed. Exact107 rollback retained; fan/speedup unmeasured."
+summary: "0.26.108 and all selected release/P3 work complete. Recenter on one concrete expected file/symbol miss, candidate absence versus ranking, keeping current models. Fan/throughput/relevance gains unmeasured; CPU/resource history/backend experiments deferred. No new execution selected."
 ---
 
 # Future Sessions
+
+## Current direction — better search results
+
+All selected work through **[0.26.108](https://github.com/reowens/grepmax/releases/tag/v0.26.108)**
+is complete, including normal P3 ready/open/active handover. Source
+`2ebdb621bda25ada7b400d968700544dbea7b853`; the retained
+[completion receipt](/home/reoiv/.local/state/gmax-delivery/20261029-0.26.108/completion.json)
+and [owning direction](plans/gmax-delivery.md#current-direction--better-search-results)
+are the current references. No live state was reverified for this docs update.
+The 0.26.106 six features, 0.26.107 eligibility fix, earlier CPU delivery and FTS
+catch-up are complete; none is pending implementation or release.
+
+Recenter on one concrete expected file/symbol miss from existing examples or
+ordinary usage when available: was the expected candidate absent, or merely
+ranked too low? Keep the current models. No particular next implementation,
+query collection, diagnostic capture or other execution is selected now.
+
+0.26.108 coalesces intermediate saves: per-path 2s quiet, at most 10s until
+eligibility from the first pending save; this is not a completion guarantee.
+Other ready files/catch-up continue. Its one timer preserves deletion/force,
+lifecycle/native ownership, hash skips and compatible chunk reuse. The completed
+release used one focused invocation (15/15 passed, 53 unrelated skipped), one
+guarded production compilation/runtime preparation/packaging and one publication
+with matching registry bytes. Owned helpers closed; exact 0.26.107 rollback is
+retained in the shipped record below. No profile/performance measurement ran.
+
+Fan reduction, production throughput and relevance gains are unmeasured.
+Roughly 2k catch-up counts do not prove unchanged files were repeatedly reindexed.
+Ordinary use may supply feedback about fans/freshness, without a measurement
+assignment or test gate. CPU attribution, resource history (overhead regression)
+and backend/indexing experiments stay DEFERRED/UNSELECTED. No automatic worker
+cap, pacing/concurrency/model change or new diagnostics. Keep the umbrella active,
+consume no saved prompt, and start no new work from this documentation update.
 
 ## Per-file save coalescing SHIPPED —0.26.108
 
@@ -84,7 +117,9 @@ pushed. CPU/backend/resource-history work stays deferred; FTS and0.26.106 remain
 completed history. Runlist umbrella stays active; no saved prompts consumed.
 Return the concrete shipped result and start no further work automatically.
 
-## Current direction — better search results
+## Prior better-results direction record — before0.26.108
+
+Historical context; use the current direction at the top of this handoff.
 
 0.26.106 completed all six selected features, both helpers/user docs, one
 publication and normal P3 handover. Source `b4955e0`, public records `d547e8a`,

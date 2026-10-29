@@ -1,6 +1,20 @@
 # Docs
 
-## Current state — October 23, 2026
+## Current state — October 29, 2026
+
+**[0.26.108 is shipped](https://github.com/reowens/grepmax/releases/tag/v0.26.108).**
+All selected work through its normal P3 ready/open/active handover is complete,
+according to the retained receipts; this docs update performed no live check.
+Use the [delivery plan](plans/gmax-delivery.md#current-direction--better-search-results)
+and [current handoff](future-sessions.md#current-direction--better-search-results).
+The next discussion is one concrete expected file/symbol search miss, separating
+candidate absence from ranking with current models. No new implementation or
+capture is selected. Fan/throughput/relevance gains remain unmeasured; CPU
+attribution, resource history and backend/indexing experiments remain deferred.
+The older dated baseline is retained below as history; the generated document
+index follows.
+
+## Recorded baseline — October 23, 2026 (superseded)
 
 **Gmax supports document search for indexed Markdown in registered projects.**
 The current baseline is 0.26.96, released and installed on the Mac and tested on
