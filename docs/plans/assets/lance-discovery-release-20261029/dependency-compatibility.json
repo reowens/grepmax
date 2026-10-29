@@ -1,0 +1,8 @@
+{
+  "ok": true,
+  "strategy": "Retain exact working non-Lance dependencies from108; replace official native packages with0.40.0",
+  "upgradedNativePackages": [
+    "lancedb-linux-x64-gnu"
+  ],
+  "nativeVersion": "0.40.0"
+}

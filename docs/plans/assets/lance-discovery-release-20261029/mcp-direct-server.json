@@ -1,0 +1,68 @@
+{
+  "command": "gmax",
+  "args": [
+    "mcp"
+  ],
+  "cwd": "/home/reoiv/dev/hetchy/tools/gmax",
+  "semanticCalls": 0,
+  "storeQueries": 0,
+  "modelsStarted": 0,
+  "cliCurrentRepo": {
+    "schemaVersion": 1,
+    "cwd": "/home/reoiv/dev/hetchy/tools/gmax",
+    "repoRoot": "/home/reoiv/dev/hetchy/tools/gmax",
+    "matchedRoot": null,
+    "indexState": "not_registered",
+    "source": "registry",
+    "cachedChunks": null,
+    "storeHome": "/home/reoiv/.gmax",
+    "daemon": {
+      "state": "unobserved"
+    },
+    "mcp": "client_catalog_required",
+    "cliHint": null
+  },
+  "server": {
+    "name": "gmax",
+    "version": "0.26.109"
+  },
+  "advertisedToolCount": 28,
+  "advertisedSelectedTools": [
+    "repo_status",
+    "semantic_search"
+  ],
+  "repoStatuses": [
+    {
+      "schemaVersion": 1,
+      "cwd": "/home/reoiv/dev/hetchy/tools/gmax",
+      "repoRoot": "/home/reoiv/dev/hetchy/tools/gmax",
+      "matchedRoot": null,
+      "indexState": "not_registered",
+      "source": "registry",
+      "cachedChunks": null,
+      "storeHome": "/home/reoiv/.gmax",
+      "daemon": {
+        "state": "unobserved"
+      },
+      "mcp": "client_catalog_required",
+      "cliHint": null
+    },
+    {
+      "schemaVersion": 1,
+      "cwd": "/home/reoiv/dev/hetchy/platform",
+      "repoRoot": "/home/reoiv/dev/hetchy/platform",
+      "matchedRoot": "/home/reoiv/dev/hetchy/platform",
+      "indexState": "indexed",
+      "source": "registry",
+      "cachedChunks": 566451,
+      "storeHome": "/home/reoiv/.gmax",
+      "daemon": {
+        "state": "ready"
+      },
+      "mcp": "client_catalog_required",
+      "cliHint": "gmax \"<concept>\" --root '/home/reoiv/dev/hetchy/platform' --agent"
+    }
+  ],
+  "outcome": "passed",
+  "connectionClosed": true
+}

@@ -1,0 +1,13 @@
+{
+  "exitCode": 0,
+  "gmaxPlugins": [
+    {
+      "id": "grepmax@grepmax",
+      "version": "0.26.97",
+      "scope": "user",
+      "enabled": true,
+      "installPath": "/home/reoiv/.claude/plugins/cache/grepmax/grepmax/0.26.97",
+      "projectPath": null
+    }
+  ]
+}

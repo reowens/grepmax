@@ -1,0 +1,10 @@
+{
+  "packageFiles": 341,
+  "sdk": "0.40.0",
+  "nativePins": "0.40.0",
+  "core": "13.0.0",
+  "python": "13.0.0",
+  "separateQualifiedRust": "12.0.0",
+  "newDiscoveryFilesIncluded": true,
+  "entireSelectedBatchIncluded": true
+}

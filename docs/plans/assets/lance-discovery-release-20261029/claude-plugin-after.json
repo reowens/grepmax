@@ -1,0 +1,17 @@
+{
+  "id": "grepmax@grepmax",
+  "version": "0.26.109",
+  "scope": "user",
+  "enabled": true,
+  "installPath": "/home/reoiv/.claude-robot/plugins/cache/grepmax/grepmax/0.26.109",
+  "selectedPayloadsMatch": [
+    "hooks/repo-status.js",
+    "hooks/start.js",
+    "hooks/cwd-changed.js",
+    "hooks/subagent-start.js",
+    "hooks/pre-grep.js",
+    "commands/gmax-status.md",
+    "skills/grepmax/SKILL.md"
+  ],
+  "runtimeHookEventExercised": false
+}

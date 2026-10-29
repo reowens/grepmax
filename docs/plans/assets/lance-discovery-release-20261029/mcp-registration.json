@@ -1,0 +1,13 @@
+{
+  "command": "codex mcp add gmax -- gmax mcp",
+  "exitCode": 0,
+  "registration": {
+    "command": "gmax",
+    "args": [
+      "mcp"
+    ]
+  },
+  "otherConfigurationPreserved": true,
+  "configBackup": "/home/reoiv/.local/state/gmax-delivery/20261029-0.26.109/codex-config-before.toml",
+  "activeProviderCatalogNotImplied": true
+}
