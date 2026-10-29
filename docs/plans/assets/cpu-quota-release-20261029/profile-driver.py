@@ -2,8 +2,8 @@
 import hashlib,json,math,os,socket,subprocess,sys,time
 from pathlib import Path
 STATE=Path('/home/reoiv/.local/state/gmax-profile/20261029T010000Z-0.26.105-production-search')
-HOME_DIR=Path('/home/reoiv/.gmax');PROJECT='/home/reoiv/dev/hetchy/platform'
-CGROUP=Path('/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/hetchy-gmax.service')
+HOME_DIR=Path('/home/reoiv/.gmax');PROJECT='<other-project>'
+CGROUP=Path('/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/gmax.service')
 HZ=os.sysconf('SC_CLK_TCK');ROUNDS=4
 QUERIES=[('cache','Where are cached values invalidated when a file changes?'),('worker','How does the worker pool dispatch queued tasks?'),('lease','How is an exclusive lease acquired and released?'),('timeout','Where are request deadlines enforced and aborted?'),('fts','Where are full text search indexes created and queried?'),('socket','How are local socket permissions checked at startup?')]
 report={'outcome':'incomplete','startedAt':time.time(),'projectRoot':PROJECT,'rounds':ROUNDS,'queries':len(QUERIES),'requestedSamples':48,'warmups':[],'samples':[],'roundStatus':[],'rpcCalls':{},'metadata':{}}

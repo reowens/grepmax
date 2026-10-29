@@ -1,6 +1,6 @@
 import hashlib,json,os,shutil,signal,subprocess,tempfile,time
 from pathlib import Path
-repo=Path('/home/reoiv/dev/hetchy/tools/gmax')
+repo=Path('<repo>')
 state=Path('/home/reoiv/.local/state/gmax-cpu-quota-tests/20261029T002307Z')
 node=shutil.which('node');assert node
 commands=[('focused-tests',[node,'--max-old-space-size=768','node_modules/vitest/vitest.mjs','run','--config',str(state/'focused-vitest.config.mjs'),'--reporter=json','--outputFile='+str(state/'focused-tests-results.json')])]

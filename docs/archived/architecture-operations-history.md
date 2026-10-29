@@ -53,7 +53,7 @@ Durable architecture, procedures and safety rules remain in `CLAUDE.md`.
 
 > 0.26.98 keeps a systemd-owned daemon's recycle/restart inside its unit. From
 > 0.26.99, default-home startup recognizes user-config `gmax.service` /
-> `hetchy-gmax.service` and starts through systemctl. Failed or unverifiable service
+> `gmax.service` and starts through systemctl. Failed or unverifiable service
 > ownership cannot fall through to a detached daemon or watcher; read-only startup
 > cannot start a normal unit. P3 installation and service/cgroup acceptance are
 > recorded by the platform host plan and `docs/future-sessions.md`.

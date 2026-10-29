@@ -12,7 +12,7 @@ import time
 STATE = Path('/home/reoiv/.local/state/gmax-handover/20261029T010000Z-0.26.105')
 HOME_DIR = Path('/home/reoiv/.gmax')
 INSTALL = Path('/home/reoiv/.local/lib/node_modules/grepmax')
-UNIT = 'hetchy-gmax.service'
+UNIT = 'gmax.service'
 UNIT_FILE = Path('/home/reoiv/.config/systemd/user') / UNIT
 MARKER = HOME_DIR / 'autostart-disabled'
 NODE = '/usr/local/bin/node'

@@ -19,7 +19,7 @@
       "name": "config command > worker threads > auto removes the stored value",
       "status": "failed",
       "failureMessages": [
-        "AssertionError: expected 'Worker threads set to auto (4 on this\u2026' to contain 'Worker threads set to auto (1 on this\u2026'\n    at /home/reoiv/dev/hetchy/tools/gmax/tests/config-command.test.ts:188:58\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async file:///home/reoiv/dev/hetchy/tools/gmax/node_modules/.pnpm/vitest@5.0.3_@opentelemetry+api@1.9.1_@types+node@26.6.1_vite@8.3.4_@types+node@26.6.1_esbuild@0.28.2_tsx@4.23.13_/node_modules/vitest/dist/chunks/run.BTlFXlnv.js:2783:20"
+        "AssertionError: expected 'Worker threads set to auto (4 on this\u2026' to contain 'Worker threads set to auto (1 on this\u2026'\n    at <repo>/tests/config-command.test.ts:188:58\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async file://<repo>/node_modules/.pnpm/vitest@5.0.3_@opentelemetry+api@1.9.1_@types+node@26.6.1_vite@8.3.4_@types+node@26.6.1_esbuild@0.28.2_tsx@4.23.13_/node_modules/vitest/dist/chunks/run.BTlFXlnv.js:2783:20"
       ]
     },
     {
@@ -42,7 +42,7 @@
     }
   ],
   "wrapperCommand": "python3 docs/plans/assets/cpu-quota-five-cases-20261029/focused-test-controller.py",
-  "testCommand": "/usr/local/bin/node --max-old-space-size=768 node_modules/vitest/vitest.mjs run --config /home/reoiv/dev/hetchy/tools/gmax/docs/plans/assets/cpu-quota-five-cases-20261029/focused-vitest.config.mjs --reporter=json --outputFile=/home/reoiv/.local/state/gmax-cpu-quota-five-cases/20261029T003810Z/focused-tests-results.json",
+  "testCommand": "/usr/local/bin/node --max-old-space-size=768 node_modules/vitest/vitest.mjs run --config <repo>/docs/plans/assets/cpu-quota-five-cases-20261029/focused-vitest.config.mjs --reporter=json --outputFile=/home/reoiv/.local/state/gmax-cpu-quota-five-cases/20261029T003810Z/focused-tests-results.json",
   "testNamePattern": "^(?:effective CPU capacity > handles root membership and rejects unsafe or non-unified membership|config command > worker threads > stores a valid count and says a daemon restart applies it|config command > worker threads > auto removes the stored value|config command > worker threads > rejects a count outside 1\\.\\.cores|config command > worker threads > shows the value and its source)$",
   "retainedCoverage": {
     "priorPassingCases": 40,

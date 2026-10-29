@@ -1,7 +1,7 @@
 import hashlib, json, os, signal, subprocess, time
 from pathlib import Path
 
-REPO=Path('/home/reoiv/dev/hetchy/tools/gmax/.claude/worktrees/gmax-cpu-quota-release-026105')
+REPO=Path('<repo>/.claude/worktrees/gmax-cpu-quota-release-026105')
 STATE=Path('/home/reoiv/.local/state/gmax-delivery/20261029-0.26.105')
 GIB=1024**3
 

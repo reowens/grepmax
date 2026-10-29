@@ -1,9 +1,9 @@
 import hashlib,json,os,shutil,signal,subprocess,tempfile,time
 from pathlib import Path
-repo=Path('/home/reoiv/dev/hetchy/tools/gmax')
+repo=Path('<repo>')
 state=Path('/home/reoiv/.local/state/gmax-cpu-quota-five-cases/20261029T003810Z')
 node=shutil.which('node');assert node
-commands=[('focused-tests',[node,'--max-old-space-size=768','node_modules/vitest/vitest.mjs','run','--config','/home/reoiv/dev/hetchy/tools/gmax/docs/plans/assets/cpu-quota-five-cases-20261029/focused-vitest.config.mjs','--reporter=json','--outputFile='+str(state/'focused-tests-results.json')])]
+commands=[('focused-tests',[node,'--max-old-space-size=768','node_modules/vitest/vitest.mjs','run','--config','<repo>/docs/plans/assets/cpu-quota-five-cases-20261029/focused-vitest.config.mjs','--reporter=json','--outputFile='+str(state/'focused-tests-results.json')])]
 def memory():
  v={s.split(':')[0]:int(s.split(':')[1].split()[0])*1024 for s in Path('/proc/meminfo').read_text().splitlines()}
  return v['MemAvailable'],v['SwapTotal']-v['SwapFree']

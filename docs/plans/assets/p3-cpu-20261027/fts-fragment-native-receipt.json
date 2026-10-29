@@ -2,7 +2,7 @@
   "root": "/tmp/gmax-fts-fragment-verify-4xhwffbq",
   "command": [
     "/usr/local/bin/node",
-    "/home/reoiv/dev/hetchy/tools/gmax/node_modules/vitest/vitest.mjs",
+    "<repo>/node_modules/vitest/vitest.mjs",
     "run",
     "tests/fts-refresh.test.ts",
     "tests/fts-refresh-native.test.ts",

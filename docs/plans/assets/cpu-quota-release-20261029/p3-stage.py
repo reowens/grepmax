@@ -6,7 +6,7 @@ import signal
 import subprocess
 import time
 
-REPO = Path('/home/reoiv/dev/hetchy/tools/gmax/.claude/worktrees/gmax-cpu-quota-release-026105')
+REPO = Path('<repo>/.claude/worktrees/gmax-cpu-quota-release-026105')
 SHARED = Path('/home/reoiv/.gmax')
 STATE = Path('/home/reoiv/.local/state/gmax-handover/20261029T010000Z-0.26.105')
 GIB = 1024**3

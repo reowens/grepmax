@@ -26,7 +26,7 @@
     "ActiveState": "active",
     "SubState": "running",
     "MainPID": "3991578",
-    "ControlGroup": "/user.slice/user-1000.slice/user@1000.service/app.slice/hetchy-gmax.service"
+    "ControlGroup": "/user.slice/user-1000.slice/user@1000.service/app.slice/gmax.service"
   },
   "configPreserved": true,
   "containmentMarkersAbsent": true,

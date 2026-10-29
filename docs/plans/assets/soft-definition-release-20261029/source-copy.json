@@ -1,6 +1,6 @@
 {
   "publicBaseline": "d547e8a34d6da4d8e65454fc9eeafb649e403d5a",
-  "releaseWorktree": "/home/reoiv/dev/hetchy/tools/gmax/.claude/worktrees/gmax-soft-definition-release-026107",
+  "releaseWorktree": "<repo>/.claude/worktrees/gmax-soft-definition-release-026107",
   "exactRootSourceAndAssertion": {
     "src/lib/search/intent.ts": "164c02917b91acc6fcc6f2dcea2ca048b7ea59ae1cc9c628fb29e0c59dbb6dc0",
     "tests/intent.test.ts": "e5e0b3cbfa0b4706d99700b377e022fdbd981fafc54eb6625daf8f4ceee982fa"

@@ -1,7 +1,7 @@
 """Contain one approved production-profile client; never signal the service."""
 import hashlib,json,os,signal,subprocess,time
 from pathlib import Path
-STATE=Path('/home/reoiv/.local/state/gmax-profile/20261029T010000Z-0.26.105-production-search');HOME_DIR=Path('/home/reoiv/.gmax');INSTALL=Path('/home/reoiv/.local/lib/node_modules/grepmax');CGROUP=Path('/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/hetchy-gmax.service');GIB=1024**3
+STATE=Path('/home/reoiv/.local/state/gmax-profile/20261029T010000Z-0.26.105-production-search');HOME_DIR=Path('/home/reoiv/.gmax');INSTALL=Path('/home/reoiv/.local/lib/node_modules/grepmax');CGROUP=Path('/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/gmax.service');GIB=1024**3
 
 def memory():
     v={line.split(':')[0]:int(line.split(':')[1].split()[0])*1024 for line in Path('/proc/meminfo').read_text().splitlines()};return v['MemAvailable'],v['SwapTotal']-v['SwapFree']
@@ -23,9 +23,9 @@ config=json.loads((HOME_DIR/'config.json').read_text());assert (config['modelTie
 assert json.loads((INSTALL/'package.json').read_text())['version']=='0.26.105'
 assert (CGROUP/'cpu.max').read_text().strip()=='200000 100000' and (CGROUP/'cpu.weight').read_text().strip()=='10'
 available,initial_swap=memory();assert available>=8*GIB
-initial_pids,initial_rss=service();daemon=int(subprocess.check_output(['systemctl','--user','show','hetchy-gmax.service','--property=MainPID','--value'],text=True).strip())
+initial_pids,initial_rss=service();daemon=int(subprocess.check_output(['systemctl','--user','show','gmax.service','--property=MainPID','--value'],text=True).strip())
 assert daemon in initial_pids
-hash_paths=[HOME_DIR/'config.json',Path('/home/reoiv/.config/systemd/user/hetchy-gmax.service'),INSTALL/'dist/lib/search/searcher.js',INSTALL/'dist/lib/workers/pool.js',INSTALL/'dist/lib/daemon/search-handler.js']
+hash_paths=[HOME_DIR/'config.json',Path('/home/reoiv/.config/systemd/user/gmax.service'),INSTALL/'dist/lib/search/searcher.js',INSTALL/'dist/lib/workers/pool.js',INSTALL/'dist/lib/daemon/search-handler.js']
 hashes={str(path):sha(path) for path in hash_paths}
 receipt={'outcome':'incomplete','profileInvocations':1,'testInvocations':0,'daemonPid':daemon,'initialServicePids':initial_pids,'initialServiceRssBytes':initial_rss,'sourceAndConfigHashes':hashes,'modelIdentity':config,'limits':{'deadlineSeconds':180,'requestTimeoutSeconds':20,'maxOwnedRssBytes':2*GIB,'minAvailableBytes':8*GIB,'maxSwapGrowthBytes':0,'maxServiceRssGrowthBytes':GIB,'maxDaemonRssBytes':2560*1024**2,'cpus':sorted(os.sched_getaffinity(0))[:2]},'serviceCpuMax':'200000 100000','serviceCpuWeight':'10','perfEventParanoid':Path('/proc/sys/kernel/perf_event_paranoid').read_text().strip()}
 def interrupted(*_):raise KeyboardInterrupt('Profile controller interrupted')

@@ -52,7 +52,7 @@ See the [README workflow](../../README.md#current-repo-status).
 On October 29, 2026 the parent reported its current actual `ALL_TOOLS` scan:
 **329 tools including 28 `mcp__gmax__` tools**, including
 `mcp__gmax__repo_status` and `mcp__gmax__semantic_search`. All 28 descriptions
-identify current repo `/home/reoiv/dev/hetchy/tools/gmax`,
+identify current repo `<repo>`,
 `index=not_registered`, `matchedRoot=null`, `daemon=unobserved`.
 This is actual parent catalog advertisement, superseding the earlier retained
 301/no-Gmax parent visibility result; it is not inferred from CLI configuration

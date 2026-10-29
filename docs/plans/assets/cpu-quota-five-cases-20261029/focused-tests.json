@@ -10,7 +10,7 @@
         "node_modules/vitest/vitest.mjs",
         "run",
         "--config",
-        "/home/reoiv/dev/hetchy/tools/gmax/docs/plans/assets/cpu-quota-five-cases-20261029/focused-vitest.config.mjs",
+        "<repo>/docs/plans/assets/cpu-quota-five-cases-20261029/focused-vitest.config.mjs",
         "--reporter=json",
         "--outputFile=/home/reoiv/.local/state/gmax-cpu-quota-five-cases/20261029T003810Z/focused-tests-results.json"
       ],

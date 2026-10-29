@@ -1,9 +1,9 @@
 export default {
-  "root": "/home/reoiv/dev/hetchy/tools/gmax",
+  "root": "<repo>",
   "test": {
     "environment": "node",
     "setupFiles": [
-      "/home/reoiv/dev/hetchy/tools/gmax/tests/setup.ts"
+      "<repo>/tests/setup.ts"
     ],
     "include": [
       "tests/cpu-capacity.test.ts",

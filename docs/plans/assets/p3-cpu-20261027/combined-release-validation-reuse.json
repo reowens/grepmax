@@ -18,7 +18,7 @@
     "distinctCasesPassedAcrossTwoInvocations": 39,
     "passingCasesNotRepeated": true,
     "fullResponseParityQueriesPerArm": 240,
-    "receipt": "/home/reoiv/dev/hetchy/tools/gmax/docs/plans/assets/p3-cpu-20261027/content-prefix-validation.json",
+    "receipt": "<repo>/docs/plans/assets/p3-cpu-20261027/content-prefix-validation.json",
     "limitations": "Synthetic shared-host fixture. Encoder extraction pending in main is excluded; paired runtime imports were identical installed 0.26.101 dependencies."
   },
   "ftsRefresh": {
@@ -26,7 +26,7 @@
     "packageDifference": "Version-only bump over measured metadata; FTS helper inclusion is preserved",
     "distinctCasesPassedAcrossFourInvocations": 45,
     "passingCasesNotRepeated": true,
-    "receipt": "/home/reoiv/dev/hetchy/tools/gmax/docs/plans/assets/p3-cpu-20261027/fts-refresh-validation.json",
+    "receipt": "<repo>/docs/plans/assets/p3-cpu-20261027/fts-refresh-validation.json",
     "limitations": "Native model-free synthetic fixtures with four-dimensional vectors. Actual production input eligibility/resources and update not exercised.",
     "originalImplementationMatchedAtReviewedCommit": true,
     "releaseOwnerFix": {

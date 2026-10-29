@@ -2,7 +2,7 @@
   "root": "/tmp/gmax-fts-tokenizer-verify-hdfv8hue",
   "command": [
     "/usr/local/bin/node",
-    "/home/reoiv/dev/hetchy/tools/gmax/.claude/worktrees/gmax-fts-release-026103/node_modules/vitest/vitest.mjs",
+    "<repo>/.claude/worktrees/gmax-fts-release-026103/node_modules/vitest/vitest.mjs",
     "run",
     "tests/fts-refresh-native.test.ts",
     "--maxWorkers=1",

@@ -10,7 +10,7 @@
   "initialServiceRssBytes": 1707450368,
   "sourceAndConfigHashes": {
     "/home/reoiv/.gmax/config.json": "b3cb750411b748aa1cab83b82e6f722e2555aaba0539a9318d25f6bb07ddea39",
-    "/home/reoiv/.config/systemd/user/hetchy-gmax.service": "63f370415f83cf814ace41779ea001015b00feccec20a13b97b0a19d03829e3b",
+    "/home/reoiv/.config/systemd/user/gmax.service": "63f370415f83cf814ace41779ea001015b00feccec20a13b97b0a19d03829e3b",
     "/home/reoiv/.local/lib/node_modules/grepmax/dist/lib/search/searcher.js": "50bd6b28c0ca7fd84eb0af7035a66f94f9b617986f4ef030995bc2173a179ed8",
     "/home/reoiv/.local/lib/node_modules/grepmax/dist/lib/workers/pool.js": "98fa513aaf86d37c2abf70218d7e7fa160e52c7d3921a32a7b3243c2f90f0d59",
     "/home/reoiv/.local/lib/node_modules/grepmax/dist/lib/daemon/search-handler.js": "04fa7893fd97cceae11a2180e35fc16355b43d78663a5acc8b68fd4e0d647949"

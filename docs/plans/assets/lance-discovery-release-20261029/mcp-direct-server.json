@@ -3,14 +3,14 @@
   "args": [
     "mcp"
   ],
-  "cwd": "/home/reoiv/dev/hetchy/tools/gmax",
+  "cwd": "<repo>",
   "semanticCalls": 0,
   "storeQueries": 0,
   "modelsStarted": 0,
   "cliCurrentRepo": {
     "schemaVersion": 1,
-    "cwd": "/home/reoiv/dev/hetchy/tools/gmax",
-    "repoRoot": "/home/reoiv/dev/hetchy/tools/gmax",
+    "cwd": "<repo>",
+    "repoRoot": "<repo>",
     "matchedRoot": null,
     "indexState": "not_registered",
     "source": "registry",
@@ -34,8 +34,8 @@
   "repoStatuses": [
     {
       "schemaVersion": 1,
-      "cwd": "/home/reoiv/dev/hetchy/tools/gmax",
-      "repoRoot": "/home/reoiv/dev/hetchy/tools/gmax",
+      "cwd": "<repo>",
+      "repoRoot": "<repo>",
       "matchedRoot": null,
       "indexState": "not_registered",
       "source": "registry",
@@ -49,9 +49,9 @@
     },
     {
       "schemaVersion": 1,
-      "cwd": "/home/reoiv/dev/hetchy/platform",
-      "repoRoot": "/home/reoiv/dev/hetchy/platform",
-      "matchedRoot": "/home/reoiv/dev/hetchy/platform",
+      "cwd": "<other-project>",
+      "repoRoot": "<other-project>",
+      "matchedRoot": "<other-project>",
       "indexState": "indexed",
       "source": "registry",
       "cachedChunks": 566451,
@@ -60,7 +60,7 @@
         "state": "ready"
       },
       "mcp": "client_catalog_required",
-      "cliHint": "gmax \"<concept>\" --root '/home/reoiv/dev/hetchy/platform' --agent"
+      "cliHint": "gmax \"<concept>\" --root '<other-project>' --agent"
     }
   ],
   "outcome": "passed",
