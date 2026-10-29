@@ -1,0 +1,35 @@
+{
+  "observedAt": 1793236920.8065312,
+  "ping": {
+    "ok": true,
+    "ready": true,
+    "pid": 3991578,
+    "uptime": 250,
+    "version": "0.26.105",
+    "operationStatus": "open",
+    "service": {
+      "mode": "active"
+    },
+    "resourceGeneration": 1,
+    "rebuildPending": false,
+    "capabilities": {
+      "exclusiveGenerationRebuild": 1,
+      "readVerbs": 1,
+      "searchDiagnostics": 1,
+      "existingIndexOnlySearch": 1,
+      "perFileSearch": 1,
+      "ftsBuild": 1,
+      "watchLeases": 1
+    }
+  },
+  "unit": {
+    "ActiveState": "active",
+    "SubState": "running",
+    "MainPID": "3991578",
+    "ControlGroup": "/user.slice/user-1000.slice/user@1000.service/app.slice/hetchy-gmax.service"
+  },
+  "configPreserved": true,
+  "containmentMarkersAbsent": true,
+  "ownedProfileProcessesClosed": true,
+  "profileEvidence": "/home/reoiv/.local/state/gmax-profile/20261029T010000Z-0.26.105-production-search/receipt.json"
+}

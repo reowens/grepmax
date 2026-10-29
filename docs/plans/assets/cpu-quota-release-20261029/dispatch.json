@@ -1,0 +1,12 @@
+{
+  "workflowInvocations": 2,
+  "workflowRunId": 40797401611,
+  "url": "https://github.com/reowens/grepmax/actions/runs/40797401611",
+  "sourceCommit": "b7066b82d42a7929a9a3ea7a762e8bde0147177d",
+  "version": "0.26.105",
+  "publicationInvocations": 1,
+  "verifyOnlyRecoveryInvocations": 1,
+  "verificationRecoveryRunId": 40798456941,
+  "verificationRecoveryUrl": "https://github.com/reowens/grepmax/actions/runs/40798456941",
+  "initialOutcome": "npm accepted; registry verification deadline exceeded after HTTP404s; no republish"
+}

@@ -1,0 +1,14 @@
+{
+  "version": "0.26.105",
+  "sourceCommit": "b7066b82d42a7929a9a3ea7a762e8bde0147177d",
+  "gitTag": "v0.26.105",
+  "archive": "grepmax-0.26.105.tgz",
+  "sha256": "04119ee62085f6c9024f9900dac91fc459b8e20c232e9299b923201f9d2fb67a",
+  "publicationInvocations": 1,
+  "verificationOnlyInvocations": 1,
+  "publicationRun": 40797401611,
+  "initialOutcome": "npm accepted; subsequent registry verification timed out on404s",
+  "verificationRun": 40798456941,
+  "finalOutcome": "registry archive bytes confirmed; GitHub release public",
+  "releaseUrl": "https://github.com/reowens/grepmax/releases/tag/v0.26.105"
+}
