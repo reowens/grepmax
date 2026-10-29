@@ -4,21 +4,60 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-29
 audience: internal
-summary: "ACTIVE RATIFIED EXECUTION: one owner completes the whole CPU/config/worker batch, local package, publication, P3 handover, at most one bounded postdeploy profile and final records. ZERO further unit tests. User ratified all seven steps; one owner executing. Retained44 distinct passes/two invocations and one auto mismatch; FTS complete9803."
+summary: "COMPLETE: ratified seven-step CPU batch released0.26.105/b7066b8, serving P3 ready/open/active. One profile completed48 requests within guards/zero swap growth; no speedup claim.44 retained distinct unit passes/two invocations; static CLI fixture fix unrerun and zero new unit tests. Unrelated work preserved; next CPU investigation is a proposal only."
 ---
 
 # Future Sessions
 
-## CPU completion ratified and executing — October 29, 2026 (UTC)
+## Seven-step CPU delivery complete — October 29, 2026 (UTC)
 
-The user explicitly ratified **“ok ratify1-7 go”**. The [seven-step owning plan](plans/gmax-delivery.md#cpu-batch-end-to-end-completion--active-ratified-execution)
-is active with one implementation/release owner and no further delegation.
-Source, fixtures and docs finish together before one publication, normal P3
-handover and at most one180-second guarded search profile. No new unit tests,
-audits or independent reviews. Reuse44 distinct passing cases from two retained
-invocations. CLI setup-cache correction is static and remains unrerun.
-Preservation and execution receipts: `/home/reoiv/.local/state/gmax-delivery/20261029-0.26.105/`.
-Earlier holds below retain their original historical context. FTS stays untouched.
+The user's **“ok ratify1-7 go”** batch is complete. The [owning delivery plan](plans/gmax-delivery.md#cpu-batch-end-to-end-completion--complete)
+records the final outcome, limits and next proposal. Complete source/fixtures,
+CPU/config/worker behavior and durable contract/status relocation shipped as
+`b7066b82d42a7929a9a3ea7a762e8bde0147177d`, tag `v0.26.105`.
+[Release](https://github.com/reowens/grepmax/releases/tag/v0.26.105).
+Archive SHA256: `04119ee62085f6c9024f9900dac91fc459b8e20c232e9299b923201f9d2fb67a`.
+One npm publication was accepted; its registry404 timeout was resolved by the
+one permitted verification-only recovery, which skipped publication and passed.
+No second publication/version bump, PR or extra CI ran.
+
+Required local compilation/runtime preparation/package passed.331 files include
+seven changed payloads and one new helper;323 payloads, dependencies, native and
+model assets are unchanged from0.26.104.44 distinct unit passes are retained
+across two prior invocations. The hoisted CLI fixture module-cache reset is
+static and **unrerun**. Zero additional unit tests, audits or reviews ran.
+
+P3's normal same-unit handover completed: daemon3991578 serves0.26.105
+**ready/open/active**, matching systemd MainPID. Small/CPU/384, stored
+workerThreads4, config/unit hashes, store/cache directory identities and two-CPU
+quota/weight10/nice10 remain unchanged. Exact0.26.104 rollback:
+`/home/reoiv/.local/state/gmax-handover/20261029T010000Z-0.26.105/previous-install`.
+Older0.26.103 rollback remains intact. No safety/autostart marker was left.
+
+The **sole** profile completed12 warmups and48 measured requests in134.645s.
+Default p50/p95:1.984/2.725s; explicit rerank:2.143/2.723s. No resource guard
+triggered; swap growth was zero, sampled service RSS growth972,632,064 bytes
+below1GiB, and all owned profiler processes closed. Background indexing remained
+natural (pending992 before /2354 after); inclusive CPU counters cannot isolate
+query work. The48 shared-host observations establish **no before/after speedup,
+stable tail improvement, SLO or relevance result**. Native metadata helper omitted.
+Post-profile ping confirmed the same ready/open/active0.26.105 daemon.
+
+Public receipts, controllers and numeric results:
+`docs/plans/assets/cpu-quota-release-20261029/`.
+Full local source/preservation/publication state:
+`/home/reoiv/.local/state/gmax-delivery/20261029-0.26.105/`.
+Handover state: `/home/reoiv/.local/state/gmax-handover/20261029T010000Z-0.26.105/`.
+Profile state: `/home/reoiv/.local/state/gmax-profile/20261029T010000Z-0.26.105-production-search/`.
+Root private history/unrelated working bytes and index entries were preserved;
+public source was reconciled locally without pushing private history.
+FTS remains historically completed9801→9802→9803/zero pending; it was untouched.
+
+Next proposed batch: distinguish daemon non-main-thread CPU and observed quota
+throttling from natural background indexing under a separately selected bounded
+scope, retaining memory guards. No next implementation/test/profile/maintenance
+or model experiment is started. Older holds/failures below are historical and
+superseded only where this completed receipt explicitly says so.
 
 ## Five outstanding CPU/CLI cases executed; auto confirmation blocks release — October 29, 2026 (UTC)
 

@@ -1,0 +1,62 @@
+{"phase": "profile-started", "pid": 3991578, "workers": 1, "pendingFiles": 992, "metadata": {"outcome": "omitted", "reason": "Optional native metadata helper excluded by ratified scope"}}
+{"phase": "warmup-completed", "query": "cache", "rerank": false, "elapsedMs": 2752.974}
+{"phase": "warmup-completed", "query": "cache", "rerank": true, "elapsedMs": 2979.806}
+{"phase": "warmup-completed", "query": "worker", "rerank": false, "elapsedMs": 1933.328}
+{"phase": "warmup-completed", "query": "worker", "rerank": true, "elapsedMs": 2042.293}
+{"phase": "warmup-completed", "query": "lease", "rerank": false, "elapsedMs": 2029.17}
+{"phase": "warmup-completed", "query": "lease", "rerank": true, "elapsedMs": 2146.829}
+{"phase": "warmup-completed", "query": "timeout", "rerank": false, "elapsedMs": 2642.926}
+{"phase": "warmup-completed", "query": "timeout", "rerank": true, "elapsedMs": 2845.766}
+{"phase": "warmup-completed", "query": "fts", "rerank": false, "elapsedMs": 1947.273}
+{"phase": "warmup-completed", "query": "fts", "rerank": true, "elapsedMs": 2756.108}
+{"phase": "warmup-completed", "query": "socket", "rerank": false, "elapsedMs": 2857.607}
+{"phase": "warmup-completed", "query": "socket", "rerank": true, "elapsedMs": 2590.983}
+{"phase": "sample", "count": 1, "query": "cache", "rerank": false, "elapsedMs": 2724.855, "serviceCpuMs": 5505.766}
+{"phase": "sample", "count": 2, "query": "cache", "rerank": true, "elapsedMs": 1897.162, "serviceCpuMs": 3736.526}
+{"phase": "sample", "count": 3, "query": "worker", "rerank": true, "elapsedMs": 2223.583, "serviceCpuMs": 4474.379}
+{"phase": "sample", "count": 4, "query": "worker", "rerank": false, "elapsedMs": 1480.875, "serviceCpuMs": 2604.62}
+{"phase": "sample", "count": 5, "query": "lease", "rerank": false, "elapsedMs": 1983.85, "serviceCpuMs": 3857.402}
+{"phase": "sample", "count": 6, "query": "lease", "rerank": true, "elapsedMs": 1832.617, "serviceCpuMs": 3681.111}
+{"phase": "sample", "count": 7, "query": "timeout", "rerank": true, "elapsedMs": 3081.805, "serviceCpuMs": 6209.56}
+{"phase": "sample", "count": 8, "query": "timeout", "rerank": false, "elapsedMs": 2792.267, "serviceCpuMs": 5544.967}
+{"phase": "sample", "count": 9, "query": "fts", "rerank": false, "elapsedMs": 2207.577, "serviceCpuMs": 4402.468}
+{"phase": "sample", "count": 10, "query": "fts", "rerank": true, "elapsedMs": 1937.856, "serviceCpuMs": 3882.369}
+{"phase": "sample", "count": 11, "query": "socket", "rerank": true, "elapsedMs": 1923.569, "serviceCpuMs": 3812.92}
+{"phase": "sample", "count": 12, "query": "socket", "rerank": false, "elapsedMs": 2520.235, "serviceCpuMs": 5061.264}
+{"phase": "sample", "count": 13, "query": "worker", "rerank": true, "elapsedMs": 2573.593, "serviceCpuMs": 5138.83}
+{"phase": "sample", "count": 14, "query": "worker", "rerank": false, "elapsedMs": 2328.525, "serviceCpuMs": 4662.388}
+{"phase": "sample", "count": 15, "query": "lease", "rerank": false, "elapsedMs": 1937.909, "serviceCpuMs": 3885.348}
+{"phase": "sample", "count": 16, "query": "lease", "rerank": true, "elapsedMs": 2153.831, "serviceCpuMs": 4293.209}
+{"phase": "sample", "count": 17, "query": "timeout", "rerank": true, "elapsedMs": 2676.999, "serviceCpuMs": 5344.053}
+{"phase": "sample", "count": 18, "query": "timeout", "rerank": false, "elapsedMs": 1957.493, "serviceCpuMs": 3957.744}
+{"phase": "sample", "count": 19, "query": "fts", "rerank": false, "elapsedMs": 1959.774, "serviceCpuMs": 3881.085}
+{"phase": "sample", "count": 20, "query": "fts", "rerank": true, "elapsedMs": 2722.704, "serviceCpuMs": 5505.252}
+{"phase": "sample", "count": 21, "query": "socket", "rerank": true, "elapsedMs": 2229.709, "serviceCpuMs": 4425.935}
+{"phase": "sample", "count": 22, "query": "socket", "rerank": false, "elapsedMs": 1900.035, "serviceCpuMs": 3800.245}
+{"phase": "sample", "count": 23, "query": "cache", "rerank": false, "elapsedMs": 2028.603, "serviceCpuMs": 4057.512}
+{"phase": "sample", "count": 24, "query": "cache", "rerank": true, "elapsedMs": 2007.149, "serviceCpuMs": 3983.451}
+{"phase": "sample", "count": 25, "query": "lease", "rerank": false, "elapsedMs": 1905.181, "serviceCpuMs": 3810.274}
+{"phase": "sample", "count": 26, "query": "lease", "rerank": true, "elapsedMs": 1879.55, "serviceCpuMs": 3752.541}
+{"phase": "sample", "count": 27, "query": "timeout", "rerank": true, "elapsedMs": 2414.136, "serviceCpuMs": 4836.655}
+{"phase": "sample", "count": 28, "query": "timeout", "rerank": false, "elapsedMs": 2286.921, "serviceCpuMs": 4571.15}
+{"phase": "sample", "count": 29, "query": "fts", "rerank": false, "elapsedMs": 2267.805, "serviceCpuMs": 4210.686}
+{"phase": "sample", "count": 30, "query": "fts", "rerank": true, "elapsedMs": 1688.295, "serviceCpuMs": 3228.843}
+{"phase": "sample", "count": 31, "query": "socket", "rerank": true, "elapsedMs": 2341.842, "serviceCpuMs": 4633.732}
+{"phase": "sample", "count": 32, "query": "socket", "rerank": false, "elapsedMs": 2309.247, "serviceCpuMs": 4625.585}
+{"phase": "sample", "count": 33, "query": "cache", "rerank": false, "elapsedMs": 2261.056, "serviceCpuMs": 4179.56}
+{"phase": "sample", "count": 34, "query": "cache", "rerank": true, "elapsedMs": 2558.884, "serviceCpuMs": 4980.816}
+{"phase": "sample", "count": 35, "query": "worker", "rerank": true, "elapsedMs": 2142.545, "serviceCpuMs": 4274.505}
+{"phase": "sample", "count": 36, "query": "worker", "rerank": false, "elapsedMs": 2018.63, "serviceCpuMs": 4007.224}
+{"phase": "sample", "count": 37, "query": "timeout", "rerank": true, "elapsedMs": 2147.645, "serviceCpuMs": 4337.527}
+{"phase": "sample", "count": 38, "query": "timeout", "rerank": false, "elapsedMs": 1500.655, "serviceCpuMs": 2840.343}
+{"phase": "sample", "count": 39, "query": "fts", "rerank": false, "elapsedMs": 2165.94, "serviceCpuMs": 4382.795}
+{"phase": "sample", "count": 40, "query": "fts", "rerank": true, "elapsedMs": 1562.019, "serviceCpuMs": 2711.937}
+{"phase": "sample", "count": 41, "query": "socket", "rerank": true, "elapsedMs": 1526.599, "serviceCpuMs": 2906.415}
+{"phase": "sample", "count": 42, "query": "socket", "rerank": false, "elapsedMs": 1827.571, "serviceCpuMs": 3684.457}
+{"phase": "sample", "count": 43, "query": "cache", "rerank": false, "elapsedMs": 1924.978, "serviceCpuMs": 3856.388}
+{"phase": "sample", "count": 44, "query": "cache", "rerank": true, "elapsedMs": 2209.358, "serviceCpuMs": 4427.53}
+{"phase": "sample", "count": 45, "query": "worker", "rerank": true, "elapsedMs": 1367.25, "serviceCpuMs": 2280.219}
+{"phase": "sample", "count": 46, "query": "worker", "rerank": false, "elapsedMs": 1593.324, "serviceCpuMs": 3072.212}
+{"phase": "sample", "count": 47, "query": "lease", "rerank": false, "elapsedMs": 1874.366, "serviceCpuMs": 3786.669}
+{"phase": "sample", "count": 48, "query": "lease", "rerank": true, "elapsedMs": 2136.848, "serviceCpuMs": 4250.176}
+{"outcome": "completed", "samples": 48, "elapsedSeconds": 134.5706014119787, "summaries": {"default": {"samples": 24, "elapsedMs": {"p50": 1983.849521027878, "p95": 2724.854644970037, "mean": 2073.236328214989, "max": 2792.2673209686764}, "serviceCpuMs": {"p50": 3957.744, "p95": 5505.766, "mean": 4093.6730000000002, "max": 5544.967}, "daemonCpuMs": {"p50": 2550.0, "p95": 4170.0, "mean": 3010.0, "max": 4200.0}, "daemonMainThreadCpuMs": {"p50": 20.0, "p95": 980.0, "mean": 177.91666666666666, "max": 1000.0}, "daemonOtherThreadCpuMs": {"p50": 2480.0, "p95": 4150.0, "mean": 2832.0833333333335, "max": 4180.0}, "workerCpuMs": {"p50": 1410.0, "p95": 1540.0, "mean": 1087.9166666666667, "max": 1550.0}, "throttledMs": {"p50": 1504.493, "p95": 4779.076, "mean": 1892.7628750000001, "max": 4790.091}, "throttledPeriods": 449, "cpuPeriods": 497, "processSetStableSamples": 24, "warnings": 0}, "reranked": {"samples": 24, "elapsedMs": {"p50": 2142.5449699745513, "p95": 2722.7041199803352, "mean": 2134.8145705414936, "max": 3081.805175053887}, "serviceCpuMs": {"p50": 4274.505, "p95": 5505.252, "mean": 4212.853791666666, "max": 6209.56}, "daemonCpuMs": {"p50": 2920.0, "p95": 4140.0, "mean": 3080.0, "max": 4420.0}, "daemonMainThreadCpuMs": {"p50": 20.0, "p95": 920.0, "mean": 196.66666666666666, "max": 930.0}, "daemonOtherThreadCpuMs": {"p50": 2690.0, "p95": 3890.0, "mean": 2883.3333333333335, "max": 4090.0}, "workerCpuMs": {"p50": 1380.0, "p95": 1710.0, "mean": 1130.0, "max": 1780.0}, "throttledMs": {"p50": 1673.777, "p95": 4509.117, "mean": 2134.0355, "max": 5806.79}, "throttledPeriods": 465, "cpuPeriods": 513, "processSetStableSamples": 24, "warnings": 0}}, "error": null}

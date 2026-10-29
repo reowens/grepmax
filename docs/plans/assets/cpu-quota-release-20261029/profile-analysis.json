@@ -1,0 +1,125 @@
+{
+  "version": "0.26.105",
+  "sourceCommit": "b7066b82d42a7929a9a3ea7a762e8bde0147177d",
+  "profileInvocations": 1,
+  "warmups": 12,
+  "measuredRequests": 48,
+  "outcome": "completed",
+  "elapsedSeconds": 134.6447919420316,
+  "latencyAndCpuSummaries": {
+    "default": {
+      "samples": 24,
+      "elapsedMs": {
+        "p50": 1983.849521027878,
+        "p95": 2724.854644970037,
+        "mean": 2073.236328214989,
+        "max": 2792.2673209686764
+      },
+      "serviceCpuMs": {
+        "p50": 3957.744,
+        "p95": 5505.766,
+        "mean": 4093.6730000000002,
+        "max": 5544.967
+      },
+      "daemonCpuMs": {
+        "p50": 2550.0,
+        "p95": 4170.0,
+        "mean": 3010.0,
+        "max": 4200.0
+      },
+      "daemonMainThreadCpuMs": {
+        "p50": 20.0,
+        "p95": 980.0,
+        "mean": 177.91666666666666,
+        "max": 1000.0
+      },
+      "daemonOtherThreadCpuMs": {
+        "p50": 2480.0,
+        "p95": 4150.0,
+        "mean": 2832.0833333333335,
+        "max": 4180.0
+      },
+      "workerCpuMs": {
+        "p50": 1410.0,
+        "p95": 1540.0,
+        "mean": 1087.9166666666667,
+        "max": 1550.0
+      },
+      "throttledMs": {
+        "p50": 1504.493,
+        "p95": 4779.076,
+        "mean": 1892.7628750000001,
+        "max": 4790.091
+      },
+      "throttledPeriods": 449,
+      "cpuPeriods": 497,
+      "processSetStableSamples": 24,
+      "warnings": 0
+    },
+    "reranked": {
+      "samples": 24,
+      "elapsedMs": {
+        "p50": 2142.5449699745513,
+        "p95": 2722.7041199803352,
+        "mean": 2134.8145705414936,
+        "max": 3081.805175053887
+      },
+      "serviceCpuMs": {
+        "p50": 4274.505,
+        "p95": 5505.252,
+        "mean": 4212.853791666666,
+        "max": 6209.56
+      },
+      "daemonCpuMs": {
+        "p50": 2920.0,
+        "p95": 4140.0,
+        "mean": 3080.0,
+        "max": 4420.0
+      },
+      "daemonMainThreadCpuMs": {
+        "p50": 20.0,
+        "p95": 920.0,
+        "mean": 196.66666666666666,
+        "max": 930.0
+      },
+      "daemonOtherThreadCpuMs": {
+        "p50": 2690.0,
+        "p95": 3890.0,
+        "mean": 2883.3333333333335,
+        "max": 4090.0
+      },
+      "workerCpuMs": {
+        "p50": 1380.0,
+        "p95": 1710.0,
+        "mean": 1130.0,
+        "max": 1780.0
+      },
+      "throttledMs": {
+        "p50": 1673.777,
+        "p95": 4509.117,
+        "mean": 2134.0355,
+        "max": 5806.79
+      },
+      "throttledPeriods": 465,
+      "cpuPeriods": 513,
+      "processSetStableSamples": 24,
+      "warnings": 0
+    }
+  },
+  "serviceRssGrowthPeakBytes": 972632064,
+  "serviceRssGrowthGuardBytes": 1073741824,
+  "maximumSwapGrowthBytes": 0,
+  "initialSwapUsedBytes": 16993079296,
+  "guardTriggered": false,
+  "noLiveOwnedProcesses": true,
+  "optionalNativeMetadataHelper": "omitted",
+  "limitations": [
+    "Live background indexing and concurrent writers remain enabled; service CPU, thread CPU and memory include background work. These are not isolated query CPU measurements.",
+    "Per-process/thread CPU uses scheduler ticks; cgroup CPU uses microseconds. CPU splits are execution buckets, not internal search-stage timers.",
+    "Kernel sampling is unavailable under current perf policy; existing search diagnostics expose candidate counts and rerank decisions, not phase times.",
+    "Optional native/table metadata snapshots were omitted. Response digest changes can reflect normal writes.",
+    "Small warm shared-host sample, no cold-start, SLO, relevance, prior-version comparison or measured FTS speedup claim.",
+    "Raw result content, vectors, paths and candidate traces are discarded; only numeric metrics and response digests are retained."
+  ],
+  "nextProposedBatch": "Investigate inclusive daemon non-main-thread CPU and two-CPU quota throttling while separating foreground search from natural background work. Select a bounded evidence budget later; no new work starts here."
+}

@@ -1,0 +1,52 @@
+{
+  "version": "0.26.104",
+  "ping": {
+    "ok": true,
+    "ready": true,
+    "pid": 2571667,
+    "uptime": 5523,
+    "version": "0.26.104",
+    "operationStatus": "open",
+    "service": {
+      "mode": "active"
+    },
+    "resourceGeneration": 1,
+    "rebuildPending": false,
+    "capabilities": {
+      "exclusiveGenerationRebuild": 1,
+      "readVerbs": 1,
+      "searchDiagnostics": 1,
+      "existingIndexOnlySearch": 1,
+      "perFileSearch": 1,
+      "ftsBuild": 1,
+      "watchLeases": 1
+    }
+  },
+  "unit": {
+    "ActiveState": "active",
+    "SubState": "running",
+    "MainPID": "2571667",
+    "ControlGroup": "/user.slice/user-1000.slice/user@1000.service/app.slice/hetchy-gmax.service",
+    "CPUWeight": "10",
+    "CPUQuotaPerSecUSec": "2s",
+    "Nice": "10"
+  },
+  "oldPidStartTicks": "49050851",
+  "configSha256": "b3cb750411b748aa1cab83b82e6f722e2555aaba0539a9318d25f6bb07ddea39",
+  "unitSha256": "63f370415f83cf814ace41779ea001015b00feccec20a13b97b0a19d03829e3b",
+  "storeDirectoryIdentities": {
+    "lancedb": [
+      64513,
+      55731855
+    ],
+    "lancedb/chunks.lance": [
+      64513,
+      56377177
+    ],
+    "cache": [
+      64513,
+      55577068
+    ]
+  },
+  "at": 1793236641.3070173
+}

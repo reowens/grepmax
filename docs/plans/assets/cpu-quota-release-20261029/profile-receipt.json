@@ -1,0 +1,62 @@
+{
+  "outcome": "completed",
+  "profileInvocations": 1,
+  "testInvocations": 0,
+  "daemonPid": 3991578,
+  "initialServicePids": [
+    3991578,
+    3991593
+  ],
+  "initialServiceRssBytes": 1707450368,
+  "sourceAndConfigHashes": {
+    "/home/reoiv/.gmax/config.json": "b3cb750411b748aa1cab83b82e6f722e2555aaba0539a9318d25f6bb07ddea39",
+    "/home/reoiv/.config/systemd/user/hetchy-gmax.service": "63f370415f83cf814ace41779ea001015b00feccec20a13b97b0a19d03829e3b",
+    "/home/reoiv/.local/lib/node_modules/grepmax/dist/lib/search/searcher.js": "50bd6b28c0ca7fd84eb0af7035a66f94f9b617986f4ef030995bc2173a179ed8",
+    "/home/reoiv/.local/lib/node_modules/grepmax/dist/lib/workers/pool.js": "98fa513aaf86d37c2abf70218d7e7fa160e52c7d3921a32a7b3243c2f90f0d59",
+    "/home/reoiv/.local/lib/node_modules/grepmax/dist/lib/daemon/search-handler.js": "04fa7893fd97cceae11a2180e35fc16355b43d78663a5acc8b68fd4e0d647949"
+  },
+  "modelIdentity": {
+    "modelTier": "small",
+    "vectorDim": 384,
+    "embedMode": "cpu",
+    "workerThreads": 4,
+    "queryLog": false
+  },
+  "limits": {
+    "deadlineSeconds": 180,
+    "requestTimeoutSeconds": 20,
+    "maxOwnedRssBytes": 2147483648,
+    "minAvailableBytes": 8589934592,
+    "maxSwapGrowthBytes": 0,
+    "maxServiceRssGrowthBytes": 1073741824,
+    "maxDaemonRssBytes": 2684354560,
+    "cpus": [
+      0,
+      1
+    ]
+  },
+  "serviceCpuMax": "200000 100000",
+  "serviceCpuWeight": "10",
+  "perfEventParanoid": "4",
+  "childPid": 3997190,
+  "exitCode": 0,
+  "noLiveOwnedProcesses": true,
+  "finalSample": {
+    "availableBytes": 46719799296,
+    "swapGrowthBytes": 0,
+    "serviceRssBytes": 2418446336,
+    "daemonRssBytes": 1492443136
+  },
+  "elapsedSeconds": 134.6447919420316,
+  "peakSampledOwnedRssBytes": 20467712,
+  "peakSampledServiceRssBytes": 2680082432,
+  "minimumSampledAvailableBytes": 45902737408,
+  "maximumSampledSwapGrowthBytes": 0,
+  "initialSwapUsedBytes": 16993079296,
+  "observedOwnedPids": [
+    3997190
+  ],
+  "sourceConfigAndUnitPreserved": true,
+  "serviceCpuLimitsPreserved": true,
+  "serviceSignalsSent": false
+}

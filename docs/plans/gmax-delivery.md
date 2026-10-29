@@ -23,9 +23,9 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "ACTIVE: all seven steps ratified by user ‘ok ratify1-7 go’; one implementation/release owner executing the complete CPU batch, publication, P3 handover, one bounded profile and records."
-next_step: "Finish static CLI fixture correction and complete source reconciliation; then authorized local compilation/packaging, one publication and P3 handover/profile."
-summary: "ZERO new unit-test invocations. Reuse44 distinct passes across TWO retained invocations; static CLI cache correction remains unrerun. No independent review/audit. FTS complete9803 remains untouched."
+current_state: "COMPLETE: all seven ratified CPU/config/worker delivery steps finished.0.26.105 source b7066b8 is public and serving P3 ready/open/active. One profile completed48 measured requests within guards; no before/after speedup claim."
+next_step: "Propose a later bounded investigation of daemon non-main-thread CPU and quota throttling under natural background indexing. No additional batch, tests, profiles, model loads or maintenance starts automatically."
+summary: "Complete source/fixtures/contracts/docs included; private history and unrelated edits preserved.44 retained distinct passes/two old invocations, static CLI cache correction unrerun; zero new unit tests/reviews/audits. Local package passed, one npm publication plus one verification-only recovery passed, P3 handover and one134.645s profile completed. FTS left untouched."
 ---
 
 # Gmax Delivery Plan
@@ -35,7 +35,7 @@ Project status belongs in this plan and its linked plans, never in `AGENTS.md` o
 preserves status, incident measurements and release context moved out of
 `CLAUDE.md`; those excerpts are historical and add no execution authorization.
 
-## CPU batch end-to-end completion — ACTIVE RATIFIED EXECUTION
+## CPU batch end-to-end completion — COMPLETE
 
 Execution began October 29, 2026 (UTC), after explicit user ratification
 **“ok ratify1-7 go”**. All seven steps are authorized as one batch, owned by one
@@ -45,7 +45,7 @@ recorded under `/home/reoiv/.local/state/gmax-delivery/20261029-0.26.105/`.
 The CLI fixture now resets module cache in a hoisted callback; this correction
 is static and deliberately unrerun. Existing evidence remains unchanged.
 
-**Ratification boundary:** approve this complete seven-step batch once, including
+**Ratified boundary:** the user approved this complete seven-step batch once, including
 its ordinary substeps, in-scope corrections, local build/package preparation,
 scoped source reconciliation, commits/version/tag/push, publication through the
 existing manual workflow, P3 installation/normal service handover and rollback,
@@ -185,8 +185,8 @@ ask again for an ordinary action inside this ratified boundary.
    success. No integration/plugin refresh or unrelated host upgrade is selected.
 
 6. **Take at most ONE explicitly ratified postdeploy P3 search profile.** This
-   proposal includes one window because the requested outcome includes a
-   profile; it is fresh authorization requested here, not inferred from release
+   ratification includes one window because the requested outcome includes a
+   profile; it is explicit authorization, not inferred from release
    wording or the rejected before/after rounds. Reuse the0.26.104 live-search
    driver/controller procedure at
    `/home/reoiv/.local/state/gmax-profile/20261028T231716Z-0.26.104-production-search/`,
@@ -238,7 +238,7 @@ publication of the whole batch, not just its unfinished file. Ordinary fixes,
 milestones, changed hashes and a partial profile create no new approval gate.
 No publication/deployment/speedup is promised in the face of an actual blocker.
 
-### Execution receipt — local preparation complete
+### Completed seven-step delivery receipt
 
 Source/fixture coherence is complete for the selected batch, including the
 hoisted CLI cache reset (not rerun), inherited quota defaults, shared admission,
@@ -260,7 +260,80 @@ CPU helper;323 payloads, dependencies, native and model assets are unchanged
 from0.26.104. [Preparation receipt](assets/cpu-quota-release-20261029/package-controller-receipt.json),
 [payload comparison](assets/cpu-quota-release-20261029/payload-comparison.json) and
 [source mapping](assets/cpu-quota-release-20261029/source-copy.json) retain details.
-Publication, P3 handover, the sole profile and final records continue next.
+Release source/tag is `b7066b82d42a7929a9a3ea7a762e8bde0147177d` /
+`v0.26.105`. Archive SHA256 is
+`04119ee62085f6c9024f9900dac91fc459b8e20c232e9299b923201f9d2fb67a`.
+The initial [publication run](https://github.com/reowens/grepmax/actions/runs/40797401611)
+matched archive bytes and npm accepted publication, then timed out after repeated
+registry404s. The one permitted [verification-only recovery](https://github.com/reowens/grepmax/actions/runs/40798456941)
+**passed**, with publication skipped and public registry bytes matching the
+approved archive. [GitHub release0.26.105](https://github.com/reowens/grepmax/releases/tag/v0.26.105)
+is public. Exactly one npm publication and one verification-only recovery ran.
+Development merge `74e1e4e5ccac7ea39d960acc48800111267e9f96` retains private
+history locally and preserves unrelated index entries/working bytes.
+[Scope mapping](assets/cpu-quota-release-20261029/scope-to-commit.json),
+[reconciliation](assets/cpu-quota-release-20261029/reconciliation.json) and
+[validation limits](assets/cpu-quota-release-20261029/validation-reuse.json)
+record the complete source and retained evidence.
+
+Published P3 staging passed in121.820s with331 matching package files, exact
+0.26.104 working dependencies retained, peak sampled owned RSS2,022,060,032 bytes,
+zero swap growth and no surviving staging processes. The ordinary same-unit
+handover confirmed predecessor2571667 exited, then serving daemon3991578 reported
+**0.26.105, ready/open/active**, matching the unit MainPID. `cpu.max=200000 100000`,
+weight10/nice10, Small/CPU/384 and stored workerThreads4 remain unchanged, as do
+config/unit hashes and store/cache directory identities. The owned autostart
+marker was removed; no safety stop appeared. Fresh exact rollback:
+`/home/reoiv/.local/state/gmax-handover/20261029T010000Z-0.26.105/previous-install`.
+The older0.26.103 rollback remains intact. No store maintenance/FTS action ran.
+The **one** postdeployment profile completed in134.645s:12 warmups and48
+measured requests (24 default,24 explicit rerank), no refusals or warnings, no
+triggered resource guard and no live owned profiler process. Default latency
+p50/p95 was1983.850/2724.855ms; explicit rerank2142.545/2722.704ms. Inclusive
+mean service CPU was4093.673/4212.854ms per request. Mean daemon main-thread CPU
+was177.917/196.667ms, other-thread CPU2832.083/2883.333ms and worker CPU
+1087.917/1130.000ms (default/rerank).914 of1010 sampled CPU periods were throttled.
+These execution buckets include natural background indexing and do not identify
+individual internal search stages or establish isolated query CPU cost.
+
+Sampled service RSS began1,707,450,368 bytes and peaked2,680,082,432 bytes:
+972,632,064 bytes growth, below the1GiB growth guard. Final daemon RSS was
+1,492,443,136 bytes, below2560MiB. Peak owned client RSS20,467,712 bytes and minimum
+host available memory45,902,737,408 bytes remained within limits. Maximum sampled
+swap growth was **zero**, from an existing16,993,079,296-byte used-swap baseline;
+this is not a claim that the host had no swap in use. No service signals were
+sent by the profiler; source/config/unit hashes and CPU limits were preserved.
+The optional native metadata helper was omitted; no FTS, maintenance or model
+experiment ran. Profile source, numeric results, guards and interpretation:
+[results](assets/cpu-quota-release-20261029/profile-results.json),
+[receipt](assets/cpu-quota-release-20261029/profile-receipt.json),
+[analysis](assets/cpu-quota-release-20261029/profile-analysis.json).
+
+Background indexing remained enabled: pendingFiles was992 before warmup,
+1491/1780/2360/2356 at round starts and2354 afterward; pool workers increased
+naturally from1 to2. Status activeFiles includes processor work waiting on the
+pool and is not a measurement of native file concurrency. The two existing
+background intervals remain context only. No before-version arm or FTS refresh
+ran. This48-request shared-host sample establishes **no causal speedup, stable
+tail-latency improvement, SLO or relevance claim**.
+
+The bounded post-profile health read confirmed the same daemon3991578 serving
+0.26.105 ready/open/active with the matching active unit; config remained
+unchanged and no containment marker was present. [Health receipt](assets/cpu-quota-release-20261029/p3-post-profile-health.json).
+All selected implementation, fixtures, contract relocation, package/publication,
+P3 handover, the sole profile and final records are complete. No known selected
+source defect is deferred. Validation remains deliberately limited to44 prior
+unit passes across two invocations, the unrerun static fixture correction and
+required compilation/packaging plus ordinary deployment confirmation.
+
+**Proposed next batch, not started:** first isolate the observed daemon
+non-main-thread CPU and two-CPU quota throttling from natural background work,
+using a separately selected bounded evidence budget. Preserve current model,
+worker override, guards and completed FTS state. The substantial service-RSS
+growth also argues for retaining the existing memory cap while interpreting
+that later work. Do not infer an optimization target or another profile from
+these inclusive buckets alone. Unrelated ColBERT/Gemma/evaluation/Depot/local-worker
+work remains preserved and outside this completed release.
 
 The retained execution history follows unchanged.
 

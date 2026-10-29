@@ -1,0 +1,17 @@
+{
+  "sourceCommit": "b7066b82d42a7929a9a3ea7a762e8bde0147177d",
+  "newUnitTestInvocations": 0,
+  "retainedDistinctPassingCases": 44,
+  "retainedInvocationCount": 2,
+  "priorEvidence": [
+    "docs/plans/assets/cpu-quota-tests-20261029/summary.json",
+    "docs/plans/assets/cpu-quota-five-cases-20261029/summary.json"
+  ],
+  "retainedResults": "40 initial passes plus4 distinct later passes. Prior root failure superseded by targeted pass; CLI auto failed displaying4 instead of expected1.",
+  "staticCorrection": "tests/config-command.test.ts now uses hoisted vi.resetModules() before file imports so setup's8-CPU cached config does not defeat the file's1-CPU mock. Stored override removal and expected1 assertions remain.",
+  "correctionRerun": false,
+  "productionQuotaFailureEstablished": false,
+  "localPreparation": "Required emitting compilation/runtime-copy/executable-mode/native-copy/archive phases passed; no separate source/test typecheck.",
+  "extraAuditsReviewsNativeAcceptance": 0,
+  "performanceClaim": "No measured before/after improvement established."
+}
