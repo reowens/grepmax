@@ -105,46 +105,49 @@ MCP attachment is client-owned: use a Gmax tool only if it is advertised in your
 The not-registered result requires no search and does not replace the daemon's
 other-project status with a claim that the daemon itself is absent.
 
-## Concrete client/T3 adapter proposal
+## Corrected direction: existing MCP registration, no T3 code changes
 
-Gmax can expose metadata, context hooks and an MCP catalog; it cannot inject a
-server into an unrelated client's provider tool catalog. T3/client integration
-is required for automatic availability in clients that do not run these hooks.
-No T3 hook/config contract or MCP-registration API was exposed in this thread's
-catalog, so no other repository or user configuration was edited.
+**User correction, October 29, 2026:** the earlier proposed T3 adapter is
+withdrawn and is not required work or an accepted next feature. No T3 codebase
+changes are selected or authorized. The approach is standard MCP registration
+plus Gmax-owned status/context. A missing Gmax entry in the active catalog does
+not prove that T3 lacks MCP support or needs new infrastructure. The actual
+registration, inheritance, launch and catalog state for this provider remains
+unverified; missing/disabled configuration or a launch failure could explain it.
 
-The client-owned adapter should:
+The existing Gmax Codex installer already uses the exact registration command
+`codex mcp add gmax -- gmax mcp` (`src/commands/codex.ts:97-117`). The launch
+metadata it recognizes is STDIO, command `gmax` (or a path with that basename),
+args `["mcp"]`. `gmax plugin update codex` selects that existing installer through
+`src/commands/plugin.ts:109-112`. These are documented configuration actions,
+not commands executed during this correction. No guessed T3-specific field,
+UI step or override flag is prescribed. Whether the T3 Codex driver consumes
+that particular Codex configuration has not been established here.
 
-1. At thread/workspace attachment and accepted cwd changes, obtain a snapshot
-   with argv `gmax`, `status`, `--current`, `--cwd`, the actual workspace/cwd,
-   `--json`. Consume `schemaVersion: 1`, `repoRoot`, `matchedRoot`, `indexState`,
-   `cachedChunks`, `daemon.state`, `storeHome` and `mcp` separately. Use argv,
-   not an interpolated shell command. Invalidate on selected registry/routing
-   metadata changes; coalesce events rather than polling or asking the model to
-   run a check before every task.
-2. Display/inject current-repo status even for `not_registered` or metadata
-   errors. A running daemon or registration for another project cannot override
-   this state. Never register/index the repo as a discovery side effect.
-3. Consult the client's actual approved MCP configuration and active tool
-   catalog. For a trusted, enabled Gmax STDIO registration, attach `gmax mcp` in
-   the thread's correct workspace, verify the connected server identity and
-   advertised `repo_status`/`semantic_search` tools, and refresh the provider
-   catalog through its supported lifecycle. Keep this thread/workspace binding
-   explicit; a global service cwd is not a safe substitute.
-4. Suggest semantic retrieval when the repo is indexed and the tool is actually
-   attached. Otherwise label attachment missing/disabled/error independently
-   from index state; provide a concrete registration/setup action through the
-   client's existing trust flow. A textual CLI hint must not set `toolAvailable`.
-5. After cwd changes, rebind the MCP connection or pass the verified matched
-   registered root explicitly to scoped queries. Cross-project fallback remains
-   opt-in. Keep the status surface available when no search tool is attached.
+For an existing standard MCP registration consumed by the active client,
+installing the new Gmax release supplies the new `repo_status` tool and
+repo-specific MCP initialization instructions through the same `gmax mcp`
+transport (`src/commands/mcp.ts:3511-3524,3645-3662`). `repo_status` remains
+available for unregistered repos. It reports status without auto-indexing. A
+release can therefore help an already-connected client without T3 code changes;
+it does not itself create or enable an absent client registration or refresh an
+already-running connection.
 
-The repo-owned hooks refresh on supported startup/cwd/subagent events; they
-cannot make T3 run Claude hooks. Same-cwd registry mutations are visible to an
-explicit status request or next applicable context event. Fully automatic
-mid-session registry-change propagation and dynamic tool attachment require the
-client adapter above. This is a partial implementation of the cross-client goal,
-not a claim that Gmax has appeared in this thread's catalog.
+For Claude Code integrations that already run the installed plugin, refreshing
+it with the existing `gmax plugin update claude` path makes the new startup/cwd/
+subagent context available on the client's supported events. The committed
+`CLAUDE_CONFIG_DIR` fix aligns plugin cache detection/removal with a custom
+Claude configuration home, so the Gmax release also contains a concrete
+configuration-home fix. That fix does not establish this Codex thread's cause.
+Claude hooks are not assumed to execute in a Codex session.
+
+No T3 source hunt, external changes, client activation or live configuration
+inspection is part of this correction. Provider configuration inheritance,
+Mac-GUI/Linux-agent host mapping and automatic cwd/registry-event delivery remain
+unknown. MCP initialization context reflects server launch cwd; `repo_status`
+accepts an explicit cwd. Automatic mid-session context/catalog refresh is not
+promised without evidence of existing client support, and is not a reason to
+prescribe an adapter or T3 rewrite.
 
 ## Targeted macOS/Linux configuration check — integration owner
 
@@ -187,15 +190,12 @@ arm64, not an Apple x64 package.
 Provided execution context identifies the `/home/reoiv/...` workspace; no mapping
 of a macOS T3 GUI to this agent/ACP process's HOME, PATH, cwd, package/Node runtime,
 MCP config or registry/socket was supplied. No private/global config or environment
-was dumped and no host was probed. The client adapter must bind the **actual
-execution host and user** as well as workspace/cwd, approved STDIO command/argv,
-config home and active provider catalog. Translate paths only using an explicit
-verified mapping; do not reuse a Mac registry or claim a Linux socket is the same
-service. A concrete adapter must distinguish launch/PATH/native-load/transport
-failure from no configured/attached server, refresh same-cwd registry changes,
-and refresh the real provider tool catalog. Cross-platform failure remains a
-plausible boundary, not an established diagnosis or a reason to dismiss the
-repository bug above.
+was dumped and no host was probed. Standard MCP registration needs to refer to
+the executable, environment/configuration home and workspace on the actual agent
+execution host. Their mapping is unverified here. Do not assume a Mac GUI's
+registration or local Unix socket is shared with a Linux agent. This is an
+existing configuration/launch consideration, not evidence for a required adapter
+or T3 code change. Cross-platform failure remains unproven.
 
 ## Durable instruction text for the integration owner
 

@@ -18,7 +18,7 @@ narrow Claude config-home fix and shared durable guidance are integrated.
 daemon state and actual tool attachment. Plugin cache checks/removal now honor
 `CLAUDE_CONFIG_DIR`; this source bug is not proven to explain the missing catalog.
 See [final record](plans/assets/local-integration-20261029/completion.md) and
-[platform findings/client adapter proposal](plans/gmax-agent-discovery.md).
+[discovery findings and existing MCP registration](plans/gmax-agent-discovery.md#corrected-direction-existing-mcp-registration-no-t3-code-changes).
 
 Final combined production compilation passed with unchanged guards: 0.845s,
 339,361,792bytes peak owned RSS, zero swap growth and no owned survivors. The
@@ -28,15 +28,33 @@ The earlier upgrade-only passing receipt does not cover discovery. Zero tests,
 queries, native/import/runtime smokes or host/client activation; no generated
 SDK preparation rerun. All selected source/fixture/doc work is complete locally.
 
-External T3/client adapter remains unimplemented: verify host/user/HOME/PATH/
-workspace mapping, approved STDIO config/transport identity, snapshot invalidation
-(including same-cwd changes) and real provider catalog refresh. Claude hooks/CLI
-hints alone cannot attach tools. Mac/Linux failure remains unproven. No current
+The earlier T3 adapter proposal is withdrawn. **No T3 code changes are selected
+or shown necessary.** Use existing standard MCP registration (STDIO command
+`gmax`, args `["mcp"]`); the existing Codex installer uses
+`codex mcp add gmax -- gmax mcp`. Current active provider registration,
+inheritance, launch and catalog state remain unverified. Gmax-owned status and
+context work when installed and consumed; Claude plugin refresh also picks up
+the hook/context and `CLAUDE_CONFIG_DIR` cache fix. Claude hooks are not assumed
+to run in Codex; no automatic cwd/registry refresh is promised. No registration,
+activation or T3 code change ran. Mac/Linux failure remains unproven. No current
 catalog attachment, release, global install or P3 change is claimed; deployed
 0.26.108 is only the prior record. Quality attempts remain unknown/no retry;
 Table-handle cleanup unselected; CPU/backend/resource-history deferred.
 No further work starts automatically; older next-action text below is historical.
 
+
+## Plan housekeeping — shortlist only
+
+The [owning shortlist](plans/gmax-delivery.md#plan-housekeeping-shortlist--october-29-2026)
+uses the current five-plan Runlist queue and retained completion records.
+`architecture-operations-history.md` is ready as a historical reference; the
+standalone `gmax-fts-fragment-release.md` release note is also superseded by
+completed 0.26.103 publication/handover evidence, but is outside that plan queue.
+`session-start-hint-trim.md` needs disposition of its remaining notation-key
+requirement, and `gmax-local-workers.md` remains partial with wider route coverage
+unaccepted. Keep delivery/current local upgrade/discovery and deferred backend/
+resource-history work. No plan was archived, moved, closed or resumed; no saved
+prompt was consumed. User selection is required before lifecycle changes.
 
 ## Stable Lance upgrade complete locally
 

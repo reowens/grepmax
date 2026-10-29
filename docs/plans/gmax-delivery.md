@@ -24,7 +24,7 @@ related_plans:
 related_docs:
   - docs/linux-gpu-p3-design.md
 current_state: "Local Lance upgrade and repository agent discovery integrated; SDK/native0.40/core 13/Python 13. Final combined guarded production compilation passed after later config-home fix; earlier swap-guard failure retained. Zero tests/runtime queries/native execution. Not released; quality attempt count unknown."
-next_step: "Local selected work complete; no automatic action. External T3/client host/workspace/config/STDIO/catalog adapter remains unimplemented with concrete proposal. No activation, release, query retry, Table-handle cleanup or deferred CPU/backend/resource-history work selected."
+next_step: "Local selected work complete; no automatic action. No T3 code changes selected or shown necessary; use existing standard MCP registration. Active provider registration/inheritance/launch/catalog state is unverified. Archive shortlist recorded below; no plan moved or closed. No activation, release, query retry, Table-handle cleanup or deferred experiment selected."
 summary: "All selected upgrade/discovery source, existing fixtures, instructions and docs complete locally. Final guarded compile passed; earlier global swap-guard refusal preserved. Claude config-home bug fixed; Mac/Linux root cause and runtime/native behavior unproven. P3 unchanged."
 ---
 
@@ -42,14 +42,17 @@ All 16 frozen discovery files, including new `repo-status.js`/`repo-status.ts`,
 are integrated along with durable ordinary-retrieval guidance. A targeted
 macOS/Linux source check also fixed the plugin manager's hardcoded Claude cache
 home: detection/removal now honor `CLAUDE_CONFIG_DIR` before the default home.
-No runtime/client configuration was changed. [Discovery implementation and host/
-client adapter boundary](gmax-agent-discovery.md) distinguish current-repo
-registration/index status, daemon state and actual MCP attachment. The adapter
-proposal is concrete but remains **client-owned/unimplemented**: bind execution
-host/user/workspace/cwd/config/argv, consume/invalidate status snapshots, attach
-only approved STDIO registration and refresh the actual provider catalog. Hooks
-cannot make T3 execute Claude hooks; a CLI hint does not attach a tool. No claim
-that Gmax now appears in this thread's catalog or that Mac/Linux caused its absence.
+No runtime/client configuration was changed. [Discovery implementation and
+standard MCP registration](gmax-agent-discovery.md#corrected-direction-existing-mcp-registration-no-t3-code-changes)
+distinguish current-repo registration/index status, daemon state and actual MCP
+attachment. The earlier T3 adapter proposal is withdrawn at the user's request.
+**No T3 code changes are selected or shown necessary.** Use existing standard MCP
+registration: STDIO command `gmax`, args `["mcp"]`. The current active provider's
+registration/inheritance/launch/catalog state is unverified; absent advertisement
+does not establish missing T3 infrastructure or a Mac/Linux cause. Gmax-owned
+status/context works when the installed release and client integration consume
+it; no automatic cwd/registry refresh is promised. The existing Codex installer
+uses `codex mcp add gmax -- gmax mcp`; no registration or activation ran here.
 
 [Final integration record](assets/local-integration-20261029/completion.md):
 `node_modules/.bin/tsc --noEmit --incremental false` passed on final combined
@@ -71,6 +74,56 @@ Table-handle cleanup remains proposed/unselected; FTS complete and unchanged;
 CPU attribution/resource-history/backend experiments remain deferred. All local
 selected work is finished; stop without automatically activating or publishing it.
 
+
+## Plan housekeeping shortlist — October 29, 2026
+
+Read-only `runlist plans` lists five plans: delivery active, backend evaluation
+deferred, architecture history historical, local workers partial and session
+hint queued-after. There are no completed-status plans in this queue. Age and
+100% checkbox completion alone do not establish delivery completion. This is a
+shortlist only: no lifecycle status, plan location or pending prompt was changed.
+
+Ready for archival when selected:
+
+| File | Recorded status/date | Why ready; successor and remaining work |
+| --- | --- | --- |
+| [Architecture and operations history](architecture-operations-history.md) | `historical`; updated 2026-10-28 | Completed relocation of dated CLAUDE status/incident excerpts. Its introduction explicitly delegates current status and selected work to this delivery plan. No implementation belongs to this historical record; preserve reference links when archiving. |
+| [Fragment-bounded FTS release note](gmax-fts-fragment-release.md) | No managed status/type; release evidence 2026-10-28 | This is a release note outside the five-plan queue, not an additional completed plan. Its prepared/reviewed-candidate wording is superseded by the [0.26.103 publication record](#026103-publication-and-development-reconciliation-record--october-28-2026-utc) and [completed handover/catch-up](#026103-serving-production-fts-catch-up-complete--october-28-2026-utc). Public source `82bae78`, publication and zero-backlog snapshot 8379 are recorded there. Release-specific work is complete; later FTS history/current operations stay here and in the runbook. |
+
+Needs an explicit disposition or carry-forward before archival:
+
+- [Session-start hint trim](session-start-hint-trim.md): `queued-after`, updated
+  October 24 (created October 22). Discovery commit `dbdb188` supersedes the old
+  unconditional startup survey and removes its duplicated fallback, but the
+  plan also requires moving the complete notation/role key into the skill.
+  That key remains in `src/lib/help/agent-cheatsheet.ts`; the skill lacks the
+  full key. Do not call the entire old plan completed. Decide whether to retain
+  or carry forward that requirement before closing it as superseded; no new
+  implementation or verification is selected by this inventory.
+- [Local workers](gmax-local-workers.md): `partial`, updated October 27. Recorded
+  P3/Windows typechecks and one Windows unit invocation cover their selected
+  routes, not wider task/native/runtime/package or named Mac acceptance. Its
+  completion-scope section explicitly retains those gaps. Keep the partial
+  record unless those optional routes are explicitly retired or carried to a
+  named owner; do not infer readiness from its three checked boxes.
+
+Keep active/reference:
+
+- This delivery umbrella owns current status, locally complete but unreleased
+  upgrade/discovery, the unresolved production-memory cause, proposed/unselected
+  Table-handle cleanup, missing quality rankings/unknown query count and deferred
+  resource-history/CPU work. Its shipped 103–108 sections are historical records
+  that could later be split out; the umbrella itself is not ready to archive.
+- [Backend evaluation](colbert-backend-evaluation.md): `deferred`, updated
+  October 29, with six open deliverables and measurement-gated experiments.
+  Completed paired runs do not complete the remaining model/backend scope.
+- [Agent discovery](gmax-agent-discovery.md) remains a local implementation and
+  configuration-boundary reference; installed consumption/tool attachment is
+  unverified. Do not mark it deployed or turn the withdrawn adapter into a task.
+
+Only one queued plan is clearly archive-ready, plus the separate historical FTS
+release note. Already archived files are not additional candidates. No archive,
+move, close, query, runtime check or new acceptance requirement follows here.
 
 ## Stable Lance dependency upgrade — locally complete, not released
 
