@@ -4,33 +4,39 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-29
 audience: internal
-summary: "Quiet-P3 docs recentered: two source-only local repairs complete, WOL unverified, remote embedding proposed; no new execution or release selected."
+summary: "WOL configuration/save-to-disk closure complete; PCI wake enabled, power-saver/Ethernet preserved. Driver/firmware/physical wake remain unverified; optional offload unstarted."
 ---
 
 # Future Sessions
 
-## Recenter: quiet P3 first; WOL closure proposed next
+## Recenter: quiet P3 preserved; WOL configuration closure complete
 
 The [current decision and ordered proposal](plans/gmax-delivery.md#recenter-quiet-p3-finish-wol-closure-before-optional-offload)
-reconcile retained evidence only. Both local source repairs are committed:
-Gmax guard `afb8dda`, Platform compiler cap `4434ed5`; neither has runtime
-qualification. Product 0.26.110 handover remains completed with 0.26.109 rollback retained.
-Power-saver was last verified 13:58:34 UTC with 24 EPP `power` and Ethernet/route
-preserved. The earlier “No noise now” was the user's first-activation report,
-not a fresh acoustic result. Two other Platform native API compiles strongly
-correlate with global OOM; power-saver is not shown to have caused the outage.
+now records the selected WOL configuration closure. At 15:50:21 UTC, NM applied
+magic64/version28 and saved magic64/version4 with `Unsaved=false` read back after
+the authorized versioned save-to-disk request. No runtime Reapply was needed.
+PCI wake reads enabled. Power-saver, all 24 EPP `power`, live Ethernet, addresses
+and default route are preserved. Host-owned evidence and limits (private record)
+distinguish the successful NM save from denied backing-YAML/driver-bit reads and
+unverified BIOS/physical wake. No link bounce, suspend, reboot or wake test ran.
 
-Recommend one selected bounded NM WOL readback/persistence closure, preserving
-power-saver/Ethernet and without link restart, suspend/wake or reboot testing.
-The prior versioned Reapply was accepted; hardware WOL and saved state remain
-unverified after the old guard failure. Exact helper path/exit-race cause are
-unproven. Next optional feature is remote embedding with 3 **proposed, unstarted**
-spins including Mac/dell-win matching models and source-only MLX assessment.
-Compiler runtime qualification is separate and only if expressly selected.
-No execution, model load, agent start, query retry, release or push is queued;
-core config/direct 8 versus last parent catalog of 329 tools/28 Gmax tools remains historical evidence.
+Canonical guard `afb8dda` revision4 passed the 3 operational stages with zero
+owned swap/OOM, no cleanup errors and empty owned cohorts removed. This does not
+qualify every failure branch; Platform compiler cap `4434ed5` remains source-only.
+Product 0.26.110 handover and its 0.26.109 rollback remain completed. Historical
+failed receipts and unproven exact guard path/exit-race attribution are retained.
+The earlier “No noise now” remains a first-activation report, not a new acoustic
+measurement; power-saver is not shown to have caused the earlier interruption.
+
+Next is the parent recenter. Remote embedding's 3 proposed spins, Mac/Windows+MLX
+assessment and real compiler-cap qualification remain unselected and unstarted.
+No further host action, model load, agent, query retry, release or push is queued.
+Core direct8 versus last parent329/28 advertisement remains historical evidence.
 
 ## Process-metric guard repair locally complete; WOL remains unverified
+
+**Historical source-only checkpoint:** the selected WOL operation above now
+supersedes this section's no-execution and pending-readback state.
 
 The selected canonical guard repair is source-complete in
 `scripts/guard-local-operation.py` revision4; [exact semantics and incident limits](plans/assets/mcp-cleanup-release-20261029/isolated-guard/process-metrics-repair.md)

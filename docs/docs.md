@@ -3,12 +3,13 @@
 ## Current state: quiet-P3 recenter, October 29, 2026
 
 [Delivery and next proposal](plans/gmax-delivery.md#recenter-quiet-p3-finish-wol-closure-before-optional-offload)
-and [handoff](future-sessions.md#recenter-quiet-p3-first-wol-closure-proposed-next)
-record completed 0.26.110 delivery, two local/source-only guard repairs, power-saver's
-retained verification and unfinished WOL readback/persistence. Recommend that
-one bounded WOL closure next, preserving Ethernet and power-saver; nothing runs
-from this docs update. Remote embedding/Mac MLX work remains proposed and
-unstarted, with no promised acoustic gain or new model authorization.
+and [handoff](future-sessions.md#recenter-quiet-p3-preserved-wol-configuration-closure-complete)
+record completed 0.26.110 delivery and the selected WOL configuration/save-to-disk
+closure, with power-saver and live Ethernet preserved. PCI wake is enabled;
+driver-bit, backing-YAML, BIOS and physical-wake verification limits remain.
+The repaired guard protected the operation; the Platform compiler cap remains
+source-only. Next is the parent recenter. Remote embedding/Mac MLX work remains
+proposed and unstarted; no new host action, model load, release or push is queued.
 
 ## Selected planning: remote background embedding
 

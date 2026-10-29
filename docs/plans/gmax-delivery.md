@@ -23,26 +23,27 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Quiet-P3 recenter complete from retained evidence. Guard afb8dda and Platform compiler cap4434ed5 are local/source-only; power-saver last verified13:58:34, WOL readback/persistence unfinished. Product110 deployment remains completed."
-next_step: "Recommend one bounded WOL readback/persistence closure preserving Ethernet and power-saver, only if selected. Remote embedding/3 proposed spins and real compiler-cap qualification remain optional and unstarted."
-summary: "Quiet-P3 docs recentered: two source-only local repairs complete, WOL unverified, remote embedding proposed; no new execution or release selected."
+current_state: "Selected WOL closure completed15:50:21UTC: NM magic64 applied and saved through versioned TO_DISK; PCI wake enabled, power-saver/24EPPpower/Ethernet/route preserved. Driver bit, backing-YAML bytes, firmware and physical wake remain unverified. Guard rev4 passed the 3 operational stages; Platform cap remains source-only. Product110 delivery completed."
+next_step: "Recenter with the user from completed WOL configuration/persistence and preserved quiet profile. Optional remote embedding/3 proposed spins and real compiler-cap qualification remain unselected; no further host action is queued."
+summary: "WOL applied and saved through authorized NM; PCI wake enabled and power-saver/Ethernet preserved. Driver/firmware/physical-wake limits retained; optional offload remains unstarted."
 ---
 
 # Gmax Delivery Plan
 
 ## Recenter: quiet P3, finish WOL closure before optional offload
 
-**October 29, 2026: documentation reconciliation only.** P3 is this local machine;
-no host-connectivity uncertainty, new operational read, runtime qualification,
-model load, test, compile, agent, setting change, release or push is implied.
-The next actions below are proposals for user selection, not an automatic batch.
+**October 29, 2026: selected WOL closure completed.** User “go” selected the
+bounded readback/persistence operation after the documentation recenter. P3 is
+this local machine. The host-owned closure and limits (private record)
+record the 15:50:21 UTC final readback. No further host action, test, compile,
+model load, agent, runtime qualification, release or push is queued.
 
 | Area | Established state and limit |
 | --- | --- |
 | Product | 0.26.110/source `920afc5` publication and P3 handover completed, last verified ready/open/active; exact 0.26.109 rollback retained in the [delivery receipt](assets/mcp-cleanup-release-20261029/isolated-guard/completion.md). No fresh service check here. |
-| Quiet operation | Power-saver re-enabled at 13:54:58 UTC and verified again 13:58:34: all 24 EPP values `power`, Ethernet `enp128s31f6` up/carrier1/default route preserved. Automatic cooling retained; no BIOS, manual fan/PWM or RAPL changes. |
-| WOL | NetworkManager permission was YES and the supported Reapply returned true, but hardware readback and saved-profile persistence were not reached. WOL is not complete or blocked solely on root permission. |
-| Gmax guard | Local commit `afb8dda`, revision4: pinned process identity, confirmed departure accounting and structured fail-closed metric errors. [Source-only repair/limits](assets/mcp-cleanup-release-20261029/isolated-guard/process-metrics-repair.md); no guard execution. |
+| Quiet operation | Power-saver re-enabled at 13:54:58 UTC and verified again 15:50:21: all 24 EPP values `power`, Ethernet `enp128s31f6` up/carrier1 and address/default-route identities preserved. Automatic cooling retained; no BIOS, manual fan/PWM or RAPL changes. |
+| WOL | Applied magic64/version28; versioned NM `TO_DISK|NO_REAPPLY` accepted, saved magic64/version4 and `Unsaved=false`. PCI wake enabled. Driver bit read denied; Netplan backing-file bytes, firmware and physical wake remain unverified. Host closure (private record). |
+| Gmax guard | Local commit `afb8dda`, revision4 protected the 3 selected WOL stages: all passed, zero owned swap/OOM, no cleanup errors, empty groups removed. This is actual operational evidence, not qualification of every failure branch; [source repair limits](assets/mcp-cleanup-release-20261029/isolated-guard/process-metrics-repair.md) remain. |
 | Platform compiler cap | Local commit `4434ed5aa99e1eef8c365cf80432de7358c6e5c2`: admitted whole-job kernel cap, not just Node heap flags. Owning implementation record (private record); source-only, no runtime qualification/restart. |
 | MCP | Core profile configuration/direct advertisement of 8 tools remain completed evidence; the last retained parent catalog had 329 tools/28 Gmax tools. No catalog, attachment or current-repo readiness claim was rechecked. |
 | Remote embedding | [Plan `7922a38`](gmax-remote-background-embedding.md), not implemented. Windows v1 is prepared; the proposed Mac/Windows+MLX work has not started and no large-model load is authorized. |
@@ -80,20 +81,17 @@ was reported. No new compile campaign is a prerequisite for the next proposal.
 
 ### Small next proposal, in order
 
-1. **Finish WOL readback and persistence as one bounded operational closure.**
-   Under the repaired canonical guard, use the existing NetworkManager/libnm
-   route to read the applied and hardware wake state and persist only the
-   selected magic-wake setting. Preserve connection identity/version, external
-   IP/default route, live Ethernet and power-saver. The prior sudo-n denial is
-   not proof all routes lack permission: NM permissions were YES; cloning the
-   applied connection and requesting magic-wake flag 64 via versioned Reapply with
-   preserve-external-IP flag 1 returned true. The guard failed on `'VmRSS'` at
-   14:00:03.735 UTC before readback/persistence; exact invocation path and
-   event-time process state are not retained. The saved profile was unchanged (last wake flag 0); the last PCI wake read was
-   disabled.
-   No NIC restart/link bounce, suspend/wake or reboot test is proposed. A future
-   successful closure may establish configured/read-back state, not actual
-   wake-from-sleep behavior. This docs turn performs none of those actions.
+1. **WOL configuration/persistence closure completed, 15:50:21 UTC.**
+   The supported NM route already read applied/saved magic64, so no redundant
+   runtime Reapply ran. An explicit version-checked save-to-disk request was
+   accepted and read back; all other applied/saved settings and live network
+   identities stayed unchanged. PCI wake reads enabled. The direct Netplan
+   backing read and ethtool hardware-bit read were denied; BIOS and physical
+   wake remain untested. No NIC restart/link bounce, suspend/wake or reboot ran.
+   [The private receipt and all 3 cleaned guard stages](/home/reoiv/.local/state/gmax-delivery/20261029-0.26.110/isolated-guard/wol-closure-1793288744073-summary.json)
+   preserve before/after values and exact selected-property rollback identity.
+   The old 14:00:03.735 UTC failure remains historical and immutable; its exact
+   executable path and event-time process state remain unproven.
 2. **Optional next feature: select the proposed remote-embedding work.**
    Three proposed spins are (1) P3 contract/routing/integration, (2) matching-model
    Mac and dell-win worker backend, (3) source-only MLX dense+ColBERT compatibility
