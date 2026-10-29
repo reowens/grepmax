@@ -1,0 +1,18 @@
+{
+  "version": "0.26.110",
+  "pid": 2840070,
+  "kernelLimits": {
+    "cpu.max": "200000 100000",
+    "cpu.weight": "10",
+    "nice": 10
+  },
+  "configPreserved": true,
+  "unitFilePreserved": true,
+  "storeDirectoryIdentitiesPreserved": true,
+  "ownedAutostartMarkerRemoved": true,
+  "rollbackInstall": "/home/reoiv/.local/state/gmax-handover/20261029-0.26.110-isolated/previous-install",
+  "observedAt": 1793275836.0948634,
+  "ready": true,
+  "operationStatus": "open",
+  "serviceMode": "active"
+}

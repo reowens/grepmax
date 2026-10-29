@@ -1,0 +1,8 @@
+{
+  "sha256": "f91e2fa200f97baada5613430511efc55f51b6a9845e7997b83541689611cf5b",
+  "usedFor": [
+    "registration",
+    "mcp-metadata"
+  ],
+  "failurePathsNotExercised": true
+}

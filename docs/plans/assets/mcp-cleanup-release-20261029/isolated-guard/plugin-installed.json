@@ -1,0 +1,26 @@
+{
+  "version": "0.26.110",
+  "scope": "user",
+  "installPath": "/home/reoiv/.claude-robot/plugins/cache/grepmax/grepmax/0.26.110",
+  "matchingPluginPayloadCount": 16,
+  "matchingPluginPayloads": [
+    "hooks.json",
+    "agents/semantic-explore.md",
+    "hooks/activity.js",
+    "hooks/watch-lease.js",
+    "hooks/pre-grep.js",
+    "hooks/cwd-changed.js",
+    "hooks/repo-status.js",
+    "hooks/stop.js",
+    "hooks/start.js",
+    "hooks/subagent-start.js",
+    ".claude-plugin/plugin.json",
+    "commands/gmax-add.md",
+    "commands/gmax-doctor.md",
+    "commands/gmax-status.md",
+    "commands/gmax-reindex.md",
+    "skills/grepmax/SKILL.md"
+  ],
+  "source": "installed published110 package",
+  "liveHookEventsExercised": false
+}

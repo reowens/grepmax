@@ -94,6 +94,22 @@ load models or change client registration merely to satisfy discovery/status.
 - Batch related CPU improvements before another release. Documentation/contract
   changes do not require another package release or another acceptance round.
 
+## Scoped protection for local operational jobs
+
+When a selected Linux operation requires no swapping, protect its payload and
+children in a fresh owned cgroup with `memory.swap.max=0`, verified empty and
+enforced before workload exec. Preserve the selected CPU, nice, aggregate RSS,
+deadline, available-memory floor, containment and cleanup limits. Never change
+a shared agent/service cgroup or global kernel swap settings. Missing delegation,
+enforcement or essential metrics refuses work; no unguarded fallback.
+
+For these scoped operations, host `SwapTotal-SwapFree` is diagnostic allocation
+accounting, not an owned-spill or disk-I/O failure predicate. Keep host pressure,
+OOM and safety-stop protection; do not substitute RSS-only or pswpout-only checks
+that miss swapped/compressed memory. Separate the immutable first trigger from
+cleanup/final samples. Historical guard failures keep their original meaning;
+this rule grants no execution, test or retry authorization.
+
 ## Review and verification budget
 
 These rules govern every agent and supersede older blanket review requirements

@@ -56,6 +56,28 @@ and do not rerun a completed operation because a separate profile hit a guard.
 Host/process limits, rollback, owned-process cleanup, local-only checks and the
 large-model restriction remain.
 
+## Guarded local operational commands
+
+[Scoped job protection](AGENTS.md#scoped-protection-for-local-operational-jobs)
+applies to selected Linux preparation/install commands. Use
+`scripts/guard-local-operation.py --receipt <new-file> --log <new-file>
+--cwd <root> --operation <label> -- <approved-command>` only for an already
+authorized operation. The supervisor creates one owned sibling in its existing
+delegated cgroup parent, verifies `memory.swap.max=0` before child exec and
+samples job swap/peak/zswap/events, owned RSS and host safety. It never alters the
+parent, another client or the service's cgroup. Unavailable controls refuse work.
+The job cohort is drained and its empty cgroup removed; the supervisor stays
+outside it. Host swap allocation is recorded separately from job enforcement.
+A normal approved service handover may pass `--owned-marker-receipt <file>`:
+only a marker matching that proof's inode/hash and a still-owned cohort PID is
+allowed. Publish complete marker bytes and proof before atomically linking the
+marker; foreign/quarantine markers remain authoritative. This is not permission
+to clear a marker or start a service.
+See the [kernel cgroup contract](https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files)
+for swap versus zswap and pressure semantics. Keep original failed receipts;
+record new guard revisions separately. This procedure authorizes no workload,
+new verification round, model startup or service handover by itself.
+
 ## Local checks and remote execution
 
 [Ordinary repository retrieval](AGENTS.md#ordinary-repository-retrieval) is
@@ -227,7 +249,7 @@ owned control state may be removed during shutdown. Orphan-worker cleanup is
 limited to this daemon's children and requires two consecutive suspicion samples.
 
 A systemd-owned daemon's recycle/restart stays inside its unit. Default-home
-startup recognizes user-config `gmax.service` / `legacy-gmax.service` and starts
+startup recognizes user-config `gmax.service` / `hetchy-gmax.service` and starts
 through systemctl. Failed or unverifiable service ownership cannot fall through
 to a detached daemon or watcher; read-only startup cannot start a normal unit.
 
@@ -472,7 +494,7 @@ throttled to one per minute, so missing intermediate totals do not mean missing
 counter increments. Completed reconciliation timestamps indicate scan completion;
 verify embedding queues and failed files separately before claiming catchup.
 Historical overflow measurements are snapshots, not current guarantees. Watching
-remains owned by standalone gmax; a downstream developer tool is optional.
+remains owned by standalone gmax; Hetchy Developer is optional.
 
 The optional `watcherRecovery` health record separates FSEvents `gapCount` from
 `terminalErrorCount`. A scan captures both counts when it starts; only a complete

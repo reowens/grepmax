@@ -1,5 +1,18 @@
 # Gmax agent discovery and current-repo status
 
+## 0.26.110 handover and selected core configuration — completed
+
+P3 now110ready/open/active with exact109rollback; plugin110refreshed. Standard
+Codexgmax args[mcp] nowselectedenvcore, otherconfig preserved. Direct metadata
+connectionadvertised exactcore8andclosed without toolcalls. Parentcurrentactual
+ALL_TOOLS remains329/28Gmax; owneralso329/28. No safe programmaticrefresh tool
+wasexposed. Actualcore8awaits normal supported client/provider MCP reconnect
+consuming updatedregistration and then anactualeight-name catalog; no forced
+app/provider restart, sessionreset/fork, modelchange orT3adapter. Repo remains
+not_registered,noindexing. [Exactguard/deploy/catalog record](assets/mcp-cleanup-release-20261029/isolated-guard/completion.md).
+Older stop/config/catalog sections belowretain their original observation dates.
+
+
 ## 0.26.110 publication; core8 handover not executed
 
 October29: MCP profiles/errors/cancellation and Table cleanup are published in
@@ -39,7 +52,7 @@ See the [README workflow](../../README.md#current-repo-status).
 On October 29, 2026 the parent reported its current actual `ALL_TOOLS` scan:
 **329 tools including 28 `mcp__gmax__` tools**, including
 `mcp__gmax__repo_status` and `mcp__gmax__semantic_search`. All 28 descriptions
-identify current repo `<gmax-checkout>`,
+identify current repo `/home/reoiv/dev/hetchy/tools/gmax`,
 `index=not_registered`, `matchedRoot=null`, `daemon=unobserved`.
 This is actual parent catalog advertisement, superseding the earlier retained
 301/no-Gmax parent visibility result; it is not inferred from CLI configuration

@@ -4,66 +4,43 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-29
 audience: internal
-summary: "Pinned kernel/source and retained receipts establish guard metric mismatch plus first-trigger overwrite. Original failures unchanged; no source/config/runtime action."
+summary: "Scoped guard/policy and P3/plugin handover complete. Five no-swap operational cohorts passed/closed; core8 configured/directly advertised, active provider still28. Historical failures and unrelated work preserved."
 ---
 
 # Future Sessions
 
-## Swap guard semantics — investigation complete; correction PROPOSED
+## 0.26.110 deployed; isolated guard complete; core8 configured
 
-October29,2026: [source-grounded diagnosis and finite correction](plans/assets/mcp-cleanup-release-20261029/swap-guard-semantics.md)
-conclude **wrong proxy for owned spill, not wrong arithmetic**. Pinned Linuxv7.0
-source and matching installed atomic-counter header do not support a per-CPU
-stat-fold/KB bug. Swap slots can be allocated before eviction, retained by cache,
-or used by zswap without disk writes. Existing0host-SwapUsed rule faithfully
-implements the selected literal budget, but cannot prove our task spilled or
-caused pressure. Which mechanism caused either old stop remains unknown.
+**October29,2026, user “go”:** the scoped guard/policy correction and remaining
+published110handover are complete. [Exact completion/evidence](plans/assets/mcp-cleanup-release-20261029/isolated-guard/completion.md)
+records source920afc5, original single publication/workflow40860070807 and unchanged
+verified341-file archive. No compiler/pack/test/native/LLM/search/profile rerun.
+Earlier36/36 fake cases retain the later unrerun literal-fixture correction limit.
 
-Definite reporting bug: both private controllers overwrite the first error with
-a final post-cleanup failure; final clamped growth is not the trigger or peak.
-Compiler phases all exited0 before that final stop; staging's trigger can differ
-from its later160,866,304B sample. Original failed receipts remain failed.
+New reusable operational wrapper creates/verifies a fresh owned no-swap cgroup
+before exec, preserving2CPU/nice10/2GiB/180s/min8GiB,containment/OOM/cleanup.
+Host SwapUsed is diagnostic; first trigger/final/cleanup are separated. Five
+ordinary operations passed with zero job swap/current/peak/zswap, no OOM/failure,
+closed cohorts and removed groups. Shared groups/global kernel/cache/processes
+unchanged. R1(stage/handover/plugin),R2(config/metadata) had actual passing use;
+finalR3 failed-metric cleanup/report refinement is source-only, no fault test.
+The14,573,568B/160,866,304B old failures remain failed/historical/immutable.
 
-Recommended finite future selection: isolated owned-job cgroup swap.max=0,
-current/peak/events plus unchanged CPU/nice/RSS/deadline/8GiB/containment/cleanup
-limits; host allocation diagnostic, host floor/critical/OOM protection retained,
-PSI and disk counters separate. Existing cgroup is shared; parent permission/
-memory-delegation metadata supports a fresh owned sibling scope, not mutation
-of peer clients or Gmax service. Creation remains unexercised/fail-closed.
-Fix first-trigger/final receipt separation in the same two controllers. No broad
-tolerance, RSS-only/pswpout-only fallback, supervisor project or new test gate.
-This is an explicit policy-scope change requiring selection, not today's waiver.
+P3 **110ready/open/active**, PID2840070; exact109rollback at
+`/home/reoiv/.local/state/gmax-handover/20261029-0.26.110-isolated/previous-install`.
+Config/worker4/quotas/unit/store identities preserved, owned marker removed.
+Claude plugin110 refreshed; all16payload files match published bytes. Standard
+Codex`gmax`/`["mcp"]` selected env nowcore, privatebackup/allotherconfig preserved.
+Direct metadata connection110advertised exact8and closed; zero tool/search calls.
 
-No repeated process inventory/passive memory window, tests/builds/compile/native/
-MCP/LLM/runtime/profiles, source/contract/kernel/config/service changes, deployment
-retry or push. Only retained data, official kernel/source and bounded read-only
-permission metadata used. Published110/P3last109/core8 pending unchanged. Prior
-Next-server holders are not causal proof or grounds to stop all servers.
-
-
-## P3 swap investigation — READ-ONLY COMPLETE
-
-October29,2026: [focused findings](plans/assets/mcp-cleanup-release-20261029/swap-investigation.md)
-trace both failed guards to the same local P3 host/procfs. KiB conversion and
-baseline routing are correct. Their metric is net host-wide swap allocation,
-not owned-work swap or disk-write bytes; final growth is not a retained trigger/
-peak sample. Historical per-process/cgroup/counter attribution is unavailable.
-
-Two passive reads35.096s apart found33.09→31.74GiB available,12.81GiB retained
-swap,44.15MiB net swap allocation decline,pswpout0 and14.05MiB disk-counter
-swap-in. zswap is enabled, so zero disk-output does not exclude compressed-swap
-activity. No binding inspected cgroup high/max limit or OOM event explains current
-swap; “all activity idle” is not claimed. Three largest Next servers hold5.79GiB;
-Gmax service≈90MiB, daemon18.5MiB. Separately51MCP clients hold917MiB; no orphan
-or historical-cause claim.734readable process statuses,0unreadable; PID1 namespace
-symlink comparison denied and not bypassed. Full caveats/citations are in the note.
-
-Recommendation: owners verify the three Next dev-server lifetimes and normally
-close any unused servers, before speculative kernel/guard/Gmax changes. None was
-stopped. Global rule remains unchanged; no tests/build/runtime/model/MCP/query/
-service/config/deployment/guard retry/remote action or push. Published110,
-last-deployed109/core8 pending and unknown relevance-attempt budget stay intact.
-No new execution starts automatically; saved prompts untouched.
+**Remaining client condition, honestly separate:** parent currentactual329/28Gmax,
+owner also329/28. No safe refresh capability exposed; actualcore8is NOT confirmed.
+A normal supported client/provider MCP reconnect must consume updatedstandard
+registration and actuallyadvertise8. No forcedT3/provider restart/reset/fork/new
+session/adapter/model switch or indexing. Currentrepo remainsnot_registered.
+No automatic nextbatch/relevance retry; unknown attempted-query budget remains.
+Later dependency/Lance0.41/Arrow/hourly-hook work stays separate and preserved;
+CPU/backend/resource-history deferred, pending prompts untouched.
 
 
 ## 0.26.110 published — P3 handover stopped by safety guard
@@ -299,7 +276,7 @@ Gmax tools**. It remains historical evidence.
 On October 29, 2026 the parent reported its current actual `ALL_TOOLS` scan:
 **329 tools including 28 `mcp__gmax__` tools**, including
 `mcp__gmax__repo_status` and `mcp__gmax__semantic_search`. All 28 descriptions
-identify current repo `<gmax-checkout>`,
+identify current repo `/home/reoiv/dev/hetchy/tools/gmax`,
 `index=not_registered`, `matchedRoot=null`, `daemon=unobserved`.
 This is actual parent catalog advertisement, superseding the earlier retained
 301/no-Gmax parent visibility result; it is not inferred from CLI configuration
@@ -551,7 +528,7 @@ staging groups closed with zero swap growth under twoCPU/nice10,2GiB,180s,
 minimum8GiB available-memory guards. Failed first staging is honestly retained.
 
 P3 daemon942028 was confirmed serving0.26.106 **ready/open/active** under the
-same `legacy-gmax.service` MainPID. Small/CPU/384,stored workers4, config/unit
+same `hetchy-gmax.service` MainPID. Small/CPU/384,stored workers4, config/unit
 hashes, store/cache directory identities and twoCPU/weight10/nice10 are unchanged.
 Owned autostart marker removed; no safety latch cleared. Exact0.26.105 rollback:
 `/home/reoiv/.local/state/gmax-handover/20261029T023232Z-0.26.106/previous-install`.
@@ -1167,7 +1144,7 @@ checked by diff inspection; no further profile, test, review or release is queue
 
 The selected P3 installation and production catch-up are complete. **0.26.103
 is serving**, with ready/open admission on daemon **3608673**, through unchanged
-`legacy-gmax.service`. Kernel limits remain `cpu.max=200000 100000`, CPU weight10
+`hetchy-gmax.service`. Kernel limits remain `cpu.max=200000 100000`, CPU weight10
 and nice10. Model Small/CPU/384 dimensions, workerThreads4, configuration and
 unit hashes and store/cache directory identities are preserved. Postinstall
 changed no client/integration settings. The published source is82bae78.
@@ -1346,7 +1323,7 @@ No additional test invocation is authorized or queued.
 
 The user selected the P3 installation/handover and freshly admitted production
 FTS catch-up. **P3 now serves0.26.102**, through the unchanged
-`legacy-gmax.service`. The accepted daemon PID is **2622469**, ready/active with
+`hetchy-gmax.service`. The accepted daemon PID is **2622469**, ready/active with
 open admission. Kernel controls remain `cpu.max=200000 100000`, weight10 and
 nice10 in the same unit/cgroup. Configuration and unit-file hashes and the
 production store/cache directory identities are preserved. No model identity,
@@ -1782,7 +1759,7 @@ registry propagation, with no republishing or verification retry workflow.
 [Delivery receipt](plans/assets/p3-cpu-20261027/0.26.101-delivery.json).
 
 The handover confirmed ready/active/open **0.26.101**, PID **231823**, matching
-`legacy-gmax.service` MainPID and cgroup. Kernel `cpu.max` remains
+`hetchy-gmax.service` MainPID and cgroup. Kernel `cpu.max` remains
 `200000 100000`, `cpu.weight=10`, nice 10. The old daemon PID3134008 exited.
 Configuration/unit hashes and production store/cache directory identities were
 preserved; the owned autostart marker was removed, and no safety marker was
@@ -1956,7 +1933,7 @@ release or service restart was added to this implementation task.
 
 **0.26.100 is installed and serving P3's existing daemon socket.** The
 [handover receipt](plans/assets/p3-cpu-20261027/0.26.100-handover.json) confirms
-PID `3134008` was ready/active/open in `legacy-gmax.service`, with kernel
+PID `3134008` was ready/active/open in `hetchy-gmax.service`, with kernel
 `cpu.max=200000 100000`, `cpu.weight=10` and nice 10. All 327 installed package
 payload files matched the approved public archive before handover. A small,
 model-free packed-rerank smoke completed its score assertions against the fresh
@@ -2214,14 +2191,14 @@ Any new invocation follows the existing AGENTS.md budget and host controls.
 ## P3 installation and checkout complete — October 27, 2026
 
 0.26.99 is installed and the daemon is owned by the existing
-`legacy-gmax.service`. Point-in-time acceptance found ready/active/open PID
+`hetchy-gmax.service`. Point-in-time acceptance found ready/active/open PID
 `41423`, equal to the unit MainPID and in its cgroup. Kernel `cpu.max` is
 `200000 100000` (200%), `cpu.weight` is `10`, and nice is `10`, preserving the
 existing unit. All 326 staged payload files matched the approved release.
 Configuration and store-directory identities were preserved; no index reset or
 host-limit change ran. The task-owned temporary autostart marker was removed.
 
-The platform host receipt (private record)
+The [platform host receipt](../../../platform/docs/plans/assets/p3-gmax-load-20261023/0.26.99-handover.json)
 and its owning P3 plan record installation; platform documentation commit is
 `dd74628a03`. Full local evidence and the prior install are retained under
 `/home/reoiv/.local/state/gmax-handover/20261027T131543Z/`. The prior install is
@@ -2307,14 +2284,14 @@ verification are closed. Release does not establish installed runtime state.
 
 The pre-handover P3 readback on October 27 reported `0.26.97-p3.1`, ready/active/open.
 Its four repaired compiled modules exactly matched 0.26.98, but the daemon ran in
-a tmux scope while `legacy-gmax.service` was failed with MainPID 0. That earlier condition was corrected by the controlled handover above. The platform host plan owns service changes,
+a tmux scope while `hetchy-gmax.service` was failed with MainPID 0. That earlier condition was corrected by the controlled handover above. The platform host plan owns service changes,
 thermal limits and indexing decisions. Gmax owns the source startup paths.
 
 ## Next items to select
 
 1. **Service startup ownership — released in 0.26.99.** Isolated
    branch `work/gmax-service-startup`, commit `999976c`, starts at released
-   `fbdaea7`. Its shared launcher recognizes `gmax.service` / `legacy-gmax.service`
+   `fbdaea7`. Its shared launcher recognizes `gmax.service` / `hetchy-gmax.service`
    in the user's systemd config directory for the default home. Hook background
    startup already delegates to that launcher. Failed service startup cannot
    fall through to a detached daemon or per-project watcher; quarantine/Gemma
