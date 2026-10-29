@@ -23,12 +23,44 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "P3 swap investigation complete: net host-swap guard valid, historical owner unknown. Two passive reads show no disk swap-out increment; retained swap mostly Next sessions; Gmax service~90MiB. No deployment/core retry."
-next_step: "Return bounded findings; recommend normal-owner cleanup of unused large Next dev servers, without kernel/guard changes or automatic deployment retry."
-summary: "Read-only swap findings recorded. Published110/last-deployed109 and pending core8 unchanged; current holders do not establish failure-time causation."
+current_state: "Swap guard source diagnosis complete: correct global accounting but wrong owned-spill proxy; reporting loses original trigger. Scoped owned-job zero-swap correction proposed, unimplemented. No deployment retry."
+next_step: "Return precise correction scope; current read-only request does not select guard/contract changes or a fresh operational attempt."
+summary: "Pinned kernel/source and retained receipts establish guard metric mismatch plus first-trigger overwrite. Original failures unchanged; no source/config/runtime action."
 ---
 
 # Gmax Delivery Plan
+
+## Swap guard semantics — investigation complete; correction PROPOSED
+
+October29,2026: [source-grounded diagnosis and finite correction](assets/mcp-cleanup-release-20261029/swap-guard-semantics.md)
+conclude **wrong proxy for owned spill, not wrong arithmetic**. Pinned Linuxv7.0
+source and matching installed atomic-counter header do not support a per-CPU
+stat-fold/KB bug. Swap slots can be allocated before eviction, retained by cache,
+or used by zswap without disk writes. Existing0host-SwapUsed rule faithfully
+implements the selected literal budget, but cannot prove our task spilled or
+caused pressure. Which mechanism caused either old stop remains unknown.
+
+Definite reporting bug: both private controllers overwrite the first error with
+a final post-cleanup failure; final clamped growth is not the trigger or peak.
+Compiler phases all exited0 before that final stop; staging's trigger can differ
+from its later160,866,304B sample. Original failed receipts remain failed.
+
+Recommended finite future selection: isolated owned-job cgroup swap.max=0,
+current/peak/events plus unchanged CPU/nice/RSS/deadline/8GiB/containment/cleanup
+limits; host allocation diagnostic, host floor/critical/OOM protection retained,
+PSI and disk counters separate. Existing cgroup is shared; parent permission/
+memory-delegation metadata supports a fresh owned sibling scope, not mutation
+of peer clients or Gmax service. Creation remains unexercised/fail-closed.
+Fix first-trigger/final receipt separation in the same two controllers. No broad
+tolerance, RSS-only/pswpout-only fallback, supervisor project or new test gate.
+This is an explicit policy-scope change requiring selection, not today's waiver.
+
+No repeated process inventory/passive memory window, tests/builds/compile/native/
+MCP/LLM/runtime/profiles, source/contract/kernel/config/service changes, deployment
+retry or push. Only retained data, official kernel/source and bounded read-only
+permission metadata used. Published110/P3last109/core8 pending unchanged. Prior
+Next-server holders are not causal proof or grounds to stop all servers.
+
 
 ## P3 swap investigation — READ-ONLY COMPLETE
 
