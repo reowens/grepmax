@@ -40,7 +40,7 @@ describe("systemd service unit of a daemon PID", () => {
         42,
         proc(
           ["SYSTEMD_EXEC_PID=7"],
-          "0::/user.slice/user-1000.slice/user@1000.service/app.slice/hetchy-helper.service\n",
+          "0::/user.slice/user-1000.slice/user@1000.service/app.slice/desk-helper.service\n",
         ),
       ),
     ).toBeNull();

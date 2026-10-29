@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { promisify } from "node:util";
 import { PATHS } from "../../config";
 
-const USER_UNITS = ["gmax.service", "hetchy-gmax.service"];
+const USER_UNIT = "gmax.service";
 
 /**
  * An installed user unit owns the default home's daemon, even when it is
@@ -28,21 +28,14 @@ export function installedUserDaemonService({
     throw new Error(
       "Cannot verify Gmax user service: XDG_CONFIG_HOME must be absolute",
     );
-  const found: string[] = [];
-  for (const name of USER_UNITS) {
-    try {
-      fs.lstatSync(path.join(configHome, "systemd/user", name));
-      found.push(name);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT")
-        throw new Error(`Cannot verify ${name}; refusing standalone startup`);
-    }
+  try {
+    fs.lstatSync(path.join(configHome, "systemd/user", USER_UNIT));
+    return USER_UNIT;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+      throw new Error(`Cannot verify ${USER_UNIT}; refusing standalone startup`);
+    return null;
   }
-  if (found.length > 1)
-    throw new Error(
-      "Both gmax.service and hetchy-gmax.service are installed; select one before starting Gmax",
-    );
-  return found[0] ?? null;
 }
 
 /** Start only through the existing unit; failures must never detach a daemon. */
@@ -50,7 +43,7 @@ export async function startUserDaemonService(
   name: string,
   options: { readOnly?: boolean } = {},
 ): Promise<number> {
-  if (!USER_UNITS.includes(name)) throw new Error("Unsupported Gmax user unit");
+  if (name !== USER_UNIT) throw new Error("Unsupported Gmax user unit");
   // A normal unit cannot accept CLI flags. Starting it and pausing afterwards
   // could index first, including under a read-only quarantine request.
   if (options.readOnly)

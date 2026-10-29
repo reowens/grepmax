@@ -428,7 +428,7 @@ A single daemon watches your projects via native OS file events (FSEvents/inotif
 
 Repeated saves to the same file share one pending entry. Ordinary saves become eligible for indexing after two seconds without another save to that path, or ten seconds after its first pending save during continuous editing. These are eligibility delays; active work, retries and resource limits can delay completion. Other ready files and catch-up work continue. Saves during indexing queue one follow-up; unchanged content is skipped and unchanged chunk embeddings are reused where compatible. Work already in flight may still finish or be discarded if the file changes.
 
-Filesystem watching belongs to gmax, in both daemon and standalone watch modes. a downstream developer tool is an optional monitor/controller that reads gmax status and invokes gmax commands. Watching, indexing and search must work with the dev app and its helper absent or stopped. Any future shared watcher extraction must be an independent component or package with an interface and lifecycle usable without a downstream developer tool; the dev app cannot become a gmax runtime dependency.
+Filesystem watching belongs to gmax, in both daemon and standalone watch modes. A desktop monitor may read gmax status and invoke gmax commands, but it is optional. Watching, indexing and search must work with any such app and its helper absent or stopped. Any future shared watcher extraction must be an independent component or package with an interface and lifecycle usable without that app; no app can become a gmax runtime dependency.
 
 The daemon watches only projects that are in use: each Claude Code session (its MCP server and session hooks) holds a lease on its project, and `gmax add` / `gmax index` take a short one. When the last lease ends the project is unwatched; its index stays searchable, and the next session's catch-up scan picks up whatever changed in between. Set `GMAX_WATCH_ALL=1` to watch every registered project instead.
 
@@ -762,8 +762,8 @@ To serve bounded reads under an existing startup quarantine, run `gmax watch --d
 
 On Linux the daemon can run as a systemd service, so the unit's CPU and memory limits cover it and its workers: `ExecStart` runs `node …/dist/bin.js watch --daemon` directly, with `Restart=on-failure` and `Environment=GMAX_DAEMON_IDLE_TIMEOUT_MS=0`. A daemon that is its unit's main process leaves restarts to the unit. Its 24-hour or memory recycle exits with status 75 instead of spawning a successor, and `gmax watch restart` and a version-mismatch `gmax watch --daemon -b` refuse and print the `systemctl` restart command, since a daemon started from the CLI would run outside the unit's limits. `gmax watch stop` still stops it; start it again through `systemctl`.
 
-**Service-aware startup (0.26.99+):** startup recognizes `gmax.service` or
-`legacy-gmax.service` in `$XDG_CONFIG_HOME/systemd/user` (default
+**Service-aware startup (0.26.99+):** startup recognizes `gmax.service`
+in `$XDG_CONFIG_HOME/systemd/user` (default
 `~/.config/systemd/user`) for the default `~/.gmax` home. Hooks already delegate
 to the background CLI launcher; that path and implicit CLI/MCP startup use
 `systemctl --user start` and return the unit's MainPID. A masked, ambiguous,
@@ -1004,15 +1004,3 @@ positive rules update both daemon and standalone subscriptions when the policy
 changes. Rules with negations, escapes or advanced pattern syntax remain in the
 indexing policy only, preserving re-included files. Source JSON outside an
 excluded path stays indexable.
-
-## P3 checkout session protection
-
-This P3 checkout has a local Claude shell write boundary in `.claude/settings.local.json`; it is host configuration, not a package default. Start a new session through `~/.<developer-tools>/bin/claude` from this repo to acquire the project pin and matching temp roots. Existing sessions do not acquire the launch-time environment retroactively.
-
-The shell can write this source root and the reviewed shared tool-state/cache/temp paths, with `scratchpad/` mounted read-only. Sibling source roots, stray home paths and unapproved caches are denied. Native file tools, hooks, MCP servers and service-mediated writes remain outside this shell boundary. Platform's repo hooks and worktree callbacks were not copied here; personal `--worktree`/`-w` sessions and linked-tree launches are not qualified and are refused by the managed launcher/selector.
-
-Review and source/configuration diffs (private record), installed real-project acceptance (private record) and machine-readable results (private record) let this repo review its profile. The single bounded batch passed 80 checks across the 4 installed profiles using real Git identity and the shell-prefix wrapper; this repo passed 20 checks, and all owned probe files were removed. Native account acceptance (private record) now passes Personal and ROBOT in this repo, with 17 checks per session. Across the 3 pilot repos, all 6 sessions and 102 checks passed in one 70.473-second batch, one Bash call per session and no retries. Context7 and Perplexity reported connected and TypeScript LSP registration remained present; MCP/LSP operations and dependency/build workflows were not exercised. Startup collection/implicit daemon starts were held, controls restored, and all 12 owned nonce files removed.
-
-This rollout changed no Gmax runtime configuration, service, model or index; the check used only temporary source/state/cache/temp nonce files. Gmax's existing execution and model authorization rules still apply.
-
-The reviewed protective parser/global Git/Codex hook error changes (private record) are applied. Application evidence (private record) records passing guard/global/fault checks and the corrected Codex sibling-prefix case passing its approved focused rerun. Intentional observers, accepted filesystem profiles and ROBOT's shared settings symlink are preserved.

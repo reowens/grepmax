@@ -63,14 +63,11 @@ describe("installed Gmax user service discovery", () => {
     expect(discover()).toBeNull();
     expect(h.run).not.toHaveBeenCalled();
   });
-  it.each(["gmax.service", "hetchy-gmax.service"])(
-    "recognizes %s regardless of active state",
-    (name) => {
-      install(name);
-      expect(discover()).toBe(name);
-      expect(h.run).not.toHaveBeenCalled();
-    },
-  );
+  it("recognizes gmax.service regardless of active state", () => {
+    install("gmax.service");
+    expect(discover()).toBe("gmax.service");
+    expect(h.run).not.toHaveBeenCalled();
+  });
   it("uses XDG config and retains a mask as service ownership", () => {
     const config = path.join(home, "xdg");
     install("gmax.service", config, true);
@@ -91,10 +88,9 @@ describe("installed Gmax user service discovery", () => {
     expect(discover()).toBeNull();
     expect(h.run).not.toHaveBeenCalled();
   });
-  it("refuses ambiguous installed owners", () => {
-    install("gmax.service");
-    install("hetchy-gmax.service");
-    expect(() => discover()).toThrow("Both");
+  it("ignores user units with other names", () => {
+    install("other.service");
+    expect(discover()).toBeNull();
   });
   it("refuses unreadable discovery rather than assuming no service", () => {
     vi.mocked(fs.lstatSync).mockImplementationOnce(() => {
@@ -106,11 +102,11 @@ describe("installed Gmax user service discovery", () => {
 
 describe("managed startup without detached fallback", () => {
   it("starts the unit without a shell, with a deadline, then returns its MainPID", async () => {
-    expect(await startUserDaemonService("hetchy-gmax.service")).toBe(42);
+    expect(await startUserDaemonService("gmax.service")).toBe(42);
     expect(h.run.mock.calls).toEqual([
       [
         "systemctl",
-        ["--user", "--no-ask-password", "start", "hetchy-gmax.service"],
+        ["--user", "--no-ask-password", "start", "gmax.service"],
         { timeout: 5000, maxBuffer: 65536, encoding: "utf8" },
       ],
       [
@@ -120,7 +116,7 @@ describe("managed startup without detached fallback", () => {
           "show",
           "--property=MainPID",
           "--value",
-          "hetchy-gmax.service",
+          "gmax.service",
         ],
         { timeout: 5000, maxBuffer: 65536, encoding: "utf8" },
       ],

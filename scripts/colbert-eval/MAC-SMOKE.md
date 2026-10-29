@@ -63,7 +63,7 @@ The fully warmed paired comparison completed: document batch16 MPS was
 6.65–8.79× slower on MPS. Keep query encoding on ONNX. Document batching is worth
 a saved-vector compatibility check before any production integration.
 
-The host was active: Swift compilation, simulator, host-project and Gmax activity were
+The host was active: Swift compilation, simulator and Gmax activity were
 observed. This is evidence of a repeatable document batching gain within this run,
 not an idle-host or production throughput guarantee. Earlier fixed-order timing
 claims remain provisional; background load was not recorded during those runs.

@@ -39,7 +39,7 @@ import { launchWatcher } from "../src/lib/utils/watcher-launcher";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  h.unit.mockReturnValue("hetchy-gmax.service");
+  h.unit.mockReturnValue("gmax.service");
   h.start.mockResolvedValue(42);
   h.denied.mockReturnValue(null);
   h.gemma.mockReturnValue(false);
@@ -49,16 +49,16 @@ afterEach(() => vi.restoreAllMocks());
 describe("all daemon launcher entry points honor service ownership", () => {
   it("implicit CLI/MCP startup returns the managed PID without detaching", async () => {
     expect(await spawnDaemon()).toBe(42);
-    expect(h.start).toHaveBeenCalledWith("hetchy-gmax.service");
+    expect(h.start).toHaveBeenCalledWith("gmax.service");
     expect(h.spawn).not.toHaveBeenCalled();
     expect(h.log).not.toHaveBeenCalled();
   });
   it("the background hook launcher uses the same managed start", async () => {
     expect(await spawnDaemonProcess()).toMatchObject({
       pid: 42,
-      service: "hetchy-gmax.service",
+      service: "gmax.service",
     });
-    expect(h.start).toHaveBeenCalledWith("hetchy-gmax.service", {});
+    expect(h.start).toHaveBeenCalledWith("gmax.service", {});
     expect(h.spawn).not.toHaveBeenCalled();
   });
   it("reports managed failure without falling back to a detached daemon", async () => {
@@ -109,7 +109,7 @@ describe("all daemon launcher entry points honor service ownership", () => {
     await expect(spawnDaemonProcess({ readOnly: true })).rejects.toThrow(
       "configure read-only service",
     );
-    expect(h.start).toHaveBeenCalledWith("hetchy-gmax.service", {
+    expect(h.start).toHaveBeenCalledWith("gmax.service", {
       readOnly: true,
     });
     expect(h.spawn).not.toHaveBeenCalled();
