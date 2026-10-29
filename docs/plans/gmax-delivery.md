@@ -23,12 +23,266 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Selected item 1 complete: parent live catalog confirmed 329 tools including 28 mcp__gmax__ tools. Descriptions report this Gmax repo not_registered, matchedRoot null, daemon unobserved. Child separately remains 301/no Gmax. No reconnect/config change or indexing performed; 0.26.109 delivery evidence retained."
-next_step: "No further action for selected item 1. Parent tool advertisement is confirmed; this unregistered repo has no established search readiness. No indexing, semantic query, other selected item, reconnect, T3 change, tests or service work authorized by this docs closeout."
-summary: "Parent agent visibility confirmed from its current actual catalog: 28 Gmax tools among 329. Earlier 301/no-Gmax evidence retained as history; child catalog separately still 301/no Gmax. Repo remains unregistered; docs-only recording, no runtime or config actions."
+current_state: "MCP core/full profile and correctness batch planned: READY/AWAITING START, not implemented or execution-authorized. Parent catalog 329/28 Gmax remains confirmed; current repo not_registered; separate old child 301/no Gmax."
+next_step: "Await explicit authorization for the finite MCP batch below, including its proposed single fake-only test invocation and single guarded production compilation. Publication/P3/core activation require expressly selected delivery scope; old permissions do not carry forward."
+summary: "Implementation-ready MCP plan: startup-only eight-tool core/full28 with unset->full, accurate annotations, disabled summarizer wording, review failure handling and bounded caller cancellation. Documentation only; no execution or activation."
 ---
 
 # Gmax Delivery Plan
+
+## MCP core/full profile and correctness batch — READY/AWAITING START
+
+**Plan ID: `mcp-core-full-20261029`. Planning selected October 29, 2026; implementation,
+verification and delivery NOT authorized.** The user accepted the completed one-pass
+review and asked for a plan. This is its finite implementation checklist, not another
+independent review or a new test/release permission. The umbrella remains active;
+READY/AWAITING START describes this batch, not a Runlist lifecycle transition.
+Parent remains orchestration-only. No further agents are authorized by this plan.
+Each owner returns within 45 minutes; this plan creates no delegated work.
+
+Baseline: released **0.26.109**, source
+`60bc601196075961367d0fa58e511090c9ddcb82`; discovery docs `8e8f0cd`, then catalog
+closeout `b8e87c6`. Retained parent actual catalog **329 total / 28 Gmax tools NOW**;
+the separate old child remains **301 / no Gmax**, not global invisibility. This
+checkout is still `not_registered`, `matchedRoot=null`, daemon `unobserved`.
+These are retained observations, not fresh RPCs. No indexing or other-corpus
+search is implied. Native Table-handle cleanup, relevance attempts (attempt count
+unknown/no retry), CPU/backend/resource-history work remain deferred/out of scope.
+
+### 1. Freeze the startup profile and compatibility contract
+
+- [ ] In `src/commands/mcp.ts`, read `GMAX_MCP_TOOL_PROFILE` once at command
+  lifecycle entry, before client/resource registration, timers or `serveStdio`.
+  Absent means `full`; exact `core` and `full` are accepted. Empty, whitespace,
+  case variants and any other present value fail closed: one stderr diagnostic
+  naming the accepted values, exit code **2**, no stdout/protocol/catalog and no
+  startup work. This follows the CLI's invalid invocation exit convention
+  (`src/bin.ts`); never fall back to the broader profile for a typo.
+- [ ] Capture the immutable selection outside `createServer`; every pinned
+  connection/disposable discovery factory in that lifecycle uses the same set.
+  Core is exactly, in this deterministic order: `repo_status`, `list_projects`,
+  `semantic_search`, `list_symbols`, `extract_symbol`, `code_skeleton`,
+  `trace_calls`, `impact_analysis`. Full retains all **28 existing names and
+  input signatures**, including the disabled summarizer compatibility entry.
+  Preserve existing result/success shapes and full catalog ordering. Use a
+  fixed core ordering, not registry readiness, to determine membership.
+- [ ] Recommend explicit `core` for new/selected clients. Ship the selectable
+  profile separately from migration: existing registrations without the env
+  override stay full28. STDIO command `gmax`, args `["mcp"]` stay unchanged;
+  no installer rewrite, T3 adapter/code or protocol migration. No tool-call
+  side effects enable names, no automatic cwd/registry catalog reshaping, and
+  no promise to force a client refresh. Derive server instructions from the
+  captured profile so core instructions do not recommend unavailable tools.
+
+### 2. Describe environmental effects and disabled functionality honestly
+
+- [ ] In `src/commands/mcp.ts`, make explicit annotations part of each tool's
+  registration metadata, independent of `MCP_READ_OUTPUT_SCHEMAS`. Keep input
+  and existing output schemas intact. `repo_status` is read-only/closed-world;
+  the 27 helper tools can log calls, and 20 acquire/renew watch leases. Avoid
+  claiming those tools never modify their environment. Do not change logging,
+  watching, startup, scheduling, leases or model enablement to improve hints.
+- [ ] Settled conservative metadata: `repo_status` gets readOnly=true,
+  destructive=false, idempotent=true, openWorld=false. The following watch-capable
+  tools get readOnly=false, destructive=true (background reconciliation can
+  replace/delete indexed rows), idempotent=false, openWorld=false:
+  `semantic_search`, `code_skeleton`, `trace_calls`, `extract_symbol`, `peek_symbol`,
+  `dead`, `audit`, `surprising_connections`, `get_neighbors`, `find_paths`,
+  `subgraph_for_files`, `list_symbols`, `related_files`, `recent_changes`,
+  `diff_changes`, `find_tests`, `impact_analysis`, `find_similar`, `build_context`,
+  `review_risk`. These are conservative effect hints, not a claim of source-file
+  deletion. The remaining seven (`index_status`, `list_projects`,
+  `summarize_directory`, `summarize_project`, `investigate`, `review_commit`,
+  `review_report`) get readOnly=false, destructive=false, idempotent=false,
+  openWorld=false, reflecting logging/startup/additive report writes and the
+  local closed domain. Hints remain advisory; no automatic consent bypass.
+- [ ] Descriptions distinguish bounded repo setup, all-project status, index
+  reads/watch acquisition and explicit local-LLM startup/report writes. Keep
+  the no-autostart safety switch and large-model authorization rule. Describe
+  `summarize_directory` as disabled; return an explicit disabled/unavailable
+  message instead of implying there were no eligible chunks. Retain its name,
+  arguments and text result envelope in full; exclude core. Leave the no-op
+  in `src/lib/index/summaries.ts` disabled; do not resurrect the summarizer.
+
+### 3. Propagate review failures through every existing caller
+
+- [ ] In `src/lib/llm/review.ts`, replace the inference catch returning
+  `clean:true` with a meaningful thrown failure (preserve cause/message),
+  including transport timeout. Preserve `ReviewResult` for successful clean
+  and findings cases; an empty diff remains genuinely clean. Never append a
+  successful review report after inference failure. Keep failure distinct from
+  caller abort. Empty/unparseable inference output must also fail rather than
+  letting `parseFindings`' fallback empty array become a clean verdict; retain
+  the existing supported JSON/fence extraction for valid responses.
+- [ ] Callsite map, to retain shared-helper compatibility: MCP
+  `src/commands/mcp.ts:3352-3404` catches and returns `isError:true`; foreground
+  `src/commands/review.ts:116-136` already catches, prints `Review failed`, sets
+  exitCode=1 and finally calls `gracefulExit`; daemon
+  `src/lib/daemon/daemon.ts:2983-3006` already catches/logs failure inside its
+  shared operation. Background CLI (`review.ts:72-94`) and
+  `src/lib/daemon/ipc-handler.ts:457-462` acknowledge **queued**, not completed.
+  Preserve that contract and do not fabricate successful background review.
+  No caller API/CLI rewrite is needed; exercise the foreground catch with fakes.
+
+### 4. Carry caller cancellation without taking shared-process ownership
+
+- [ ] `src/commands/mcp.ts`: use the existing request signal (`mcpSignal`) for
+  the two LLM startup IPCs and their bounded daemon preflight. Use the existing
+  signal-aware `sendMcpCommand` with ping's existing 2s timeout and llm-start's
+  existing 90s timeout; check cancellation before/after startup and before
+  entering a library. Do not expand `isDaemonRunning` for unrelated callers.
+  Thread optional `signal?: AbortSignal` into both library options; absent
+  signal preserves direct CLI and background behavior.
+- [ ] `src/lib/llm/investigate.ts`: check before resources/health/each round,
+  before and after each internal tool dispatch and before returning an answer.
+  Pass `{signal}` to `client.models.list` and the second options argument of
+  **every** `chat.completions.create`, including the forced final answer.
+  `src/lib/llm/review.ts`: pass `{signal}` to inference, check around context
+  work and after inference/parsing, then immediately before synchronous
+  `appendReview`. Abort must escape context/risk fallback catches and health
+  catch remapping; normal non-abort degradation remains as before.
+- [ ] Preserve native ownership: an in-flight native context/tool operation
+  need not be interruptible. Stop scheduling subsequent work, settle/drain
+  already-started owned native promises before closing their local VectorDB
+  in `finally`, and do not race abort against store close. In review context
+  gathering, retain the existing bounded context-selection timeout, clear its
+  timer, and drain launched work on cancellation before cleanup. Cancellation
+  prevents the report append when observed before its synchronous boundary;
+  it cannot undo a completed write or preempt synchronous JS mid-write.
+- [ ] Do not stop/kill a shared model server, daemon, worker/native job or
+  another client's leases. Socket abort settles the caller; an already-accepted
+  `llm-start` may still complete on the daemon. HTTP abort releases this request,
+  not a guarantee of server-side inference quiescence. Keep these limits in
+  README; no `llm-stop`, service signal, server lifecycle or engine rewrite.
+
+Installed API grounding (read-only source evidence): server SDK 2.3.0
+`ServerContext.mcpReq.signal` is an AbortSignal in
+`node_modules/@modelcontextprotocol/server/dist/createMcpHandler-D4NN8WsG.d.mts`;
+the existing adapter is `src/lib/utils/mcp-execution.ts`. OpenAI 7.15.0 accepts
+`RequestOptions.signal` in `node_modules/openai/internal/request-options.d.ts`;
+`models.list(options)` and `completions.create(body, options)` accept it, and
+`node_modules/openai/client.mjs` distinguishes user abort. Daemon IPC
+`src/lib/utils/daemon-client.ts:23-85` already accepts signal, removes its listener
+and destroys its owned socket, returning `{ok:false,error:"aborted"}`; callers
+must recheck their signal rather than turn cancellation into a normal failure.
+
+### 5. Add minimal fake-based fixtures; propose one verification budget
+
+- [ ] Add **only three focused fixture files**: `tests/mcp-profiles.test.ts`
+  (mock SDK/registration, registry, IPC, resource client, timers, logging and all
+  native/model constructors); `tests/review-failure.test.ts` (mock OpenAI, git,
+  context/store/report and CLI lifecycle); `tests/llm-request-lifecycle.test.ts`
+  (controllable deferred OpenAI/IPC/native fakes and request AbortControllers).
+  Reuse the in-process registration pattern from `tests/mcp-read-verbs.test.ts`,
+  not the subprocess campaigns in `tests/mcp-sdk-v2.test.ts`. No real socket,
+  child/server process, store/model/search, user cache or shared service access.
+- [ ] Exact assertions: explicit core eight/order; full28 and absent->full
+  retain the frozen name set and representative existing input signatures;
+  each invalid value rejects before registration/startup; changing env after
+  entry cannot change later factory
+  catalogs; no tool-triggered expansion. Assert annotation presence and the
+  representative setup/watch/log-only/LLM-report effects, independent of output
+  schema presence; disabled summary is explicit and absent from core. Do not
+  add an optional 28-tool result/schema matrix or token/overhead benchmark.
+- [ ] Review fixtures: genuine empty-diff clean, successful empty findings,
+  successful findings keep their shapes; inference rejection, timeout and
+  invalid output fail with no append, MCP isError and foreground CLI nonzero
+  (mock `gracefulExit`, no subprocess). Cancellation fixtures cover pre-abort
+  (no startup), abort during llm-start (no library), abort during health/inference
+  (same signal reaches request), abort between dispatches/rounds (no next call
+  or forced-final request), cancellation during native work (close after drain),
+  and abort immediately before report append (zero write). One other fake
+  request continues; no shared kill/stop/unwatch is emitted. Include listener/
+  timer cleanup and non-abort error preservation, not new process campaigns.
+- [ ] **PROPOSED, NOT AUTHORIZED NOW:** one local invocation,
+  `pnpm exec vitest run tests/mcp-profiles.test.ts tests/review-failure.test.ts tests/llm-request-lifecycle.test.ts`;
+  and one guarded production compilation,
+  `node_modules/.bin/tsc --noEmit --incremental false`. Use the existing local
+  compile-controller pattern (private controller
+  `/home/reoiv/.local/state/gmax-local-integration/20261029-upgrade-discovery/compile-controller.py`),
+  adapting only selected command/output paths. Keep 180s per invocation, 2GiB
+  aggregate owned RSS, at least 8GiB available, zero swap growth, two CPUs/nice10,
+  owned TERM/KILL cleanup and no survivors. The compiler emits no package.
+  No second typecheck, full suite, audit, profile, benchmark, live LLM/native
+  smoke, model load, semantic query or independent review. No rerun of passing
+  cases or budget reset on failure; fix from retained evidence and disclose
+  remaining validation limits. Production compilation excludes tests; the
+  focused runner transpiles the fixtures, with no added test-typecheck gate.
+
+### 6. Complete the selected implementation, fixtures and documentation together
+
+- [ ] Exact implementation edit set: `src/commands/mcp.ts`,
+  `src/lib/llm/investigate.ts`, `src/lib/llm/review.ts`, the three fixture files
+  above, `README.md`, `docs/plans/gmax-delivery.md`, `docs/future-sessions.md`.
+  Read-only compatibility dependencies are `src/commands/review.ts`,
+  `src/commands/investigate.ts`, `src/lib/daemon/daemon.ts`,
+  `src/lib/daemon/ipc-handler.ts`, `src/lib/utils/daemon-client.ts`,
+  `src/lib/utils/mcp-execution.ts`, `src/lib/utils/watcher-launcher.ts`,
+  `src/lib/llm/report.ts`, `src/lib/llm/tools.ts`,
+  `src/lib/output/mcp-results.ts`, `src/lib/index/summaries.ts` and
+  `src/commands/codex.ts`; no edits there are presently required. No manifests,
+  lockfiles, SDK/runtime upgrade, AGENTS/CLAUDE, T3 or service changes.
+- [ ] README explains core selection, compatibility default, invalid-profile
+  refusal, full advanced names, environmental effects, failure/cancellation
+  limits, unchanged registration and the difference between indexed readiness,
+  advertisement and actual request protocol. Record actual evidence/limits in
+  this plan and point the handoff here. Preserve all unrelated dirty/ITA/index
+  bytes and private history. Complete the whole batch and selected verification
+  before a scoped source/fixtures/docs commit or release preparation; never
+  hide unfinished in-scope work in a release worktree.
+
+### 7. Later delivery and core activation — conditional on one explicit selection
+
+- [ ] A future start must state whether it covers implementation/verification
+  only or **also** the complete following delivery sequence. Old release or
+  installation permissions do not apply. Once selected, finish the chosen
+  sequence without another milestone permission loop; stop only for an actual
+  blocker, safety guard or user STOP. This plan itself authorizes none of it.
+- [ ] After all source/fixtures/README/docs and the selected evidence are complete,
+  make one scoped batch commit; prepare one release candidate/package from the
+  complete selected source, preserving unrelated work. Package assembly is
+  distinct from tests/compilation: the proposal uses applicable compiler
+  evidence and the existing bounded packaging path without prepublish hooks
+  silently adding tests/builds. If release needs emitted JS, select emission
+  in the **one** guarded production compilation before execution (instead of
+  `--noEmit`), or use matching emitted evidence; a noEmit receipt alone cannot
+  produce/qualify changed dist. No second compiler invocation is inferred.
+- [ ] Only if expressly authorized: version once, publish once via the existing
+  release workflow, perform the normal guarded install/P3 handover preserving
+  unit/store/model/CPU/resource limits and exact previous-install rollback.
+  Reuse package/source evidence where applicable; any selected bounded
+  identity/health reads are operational handover evidence, not another test or
+  query round. No indexing, repair/FTS/prune, model load or relevance retry.
+- [ ] Only in that later ratified handover, back up the **selected existing**
+  standard client registration, change only its env override to
+  `GMAX_MCP_TOOL_PROFILE=core`, retain `gmax` args `["mcp"]` and all other config,
+  and use the client's supported restart/reconnect lifecycle. Observe its
+  actual parent catalog for the exact eight Gmax names; do not assert a total
+  catalog count or visibility in every child. At most one bounded selected
+  metadata/catalog connection, no retrieval/tool-call campaign; `repo_status`
+  only if separately included in the handover's metadata allowance. An
+  unregistered current repo stays unregistered. If the host cannot refresh,
+  report activation pending without T3 changes or endless reconnect attempts.
+- [ ] Rollback activation independently: restore the owned prior env value
+  (or remove only the newly added key), preserving other config, then the same
+  supported lifecycle; full28 remains available. Retain the prior install for
+  a separately needed package/P3 rollback. Record publication/source/package,
+  install/handover, backup/rollback location and actual core catalog evidence
+  or explicit pending state here and in the handoff; no secrets/private config
+  contents in Git. Publishing a selectable core profile is not proof that the
+  active registration has migrated. No extra acceptance/review/profile gate.
+
+Official references retained from the completed review (checked October 29,
+2026; no new browsing needed for this plan): MCP's current revision is
+[2026-07-28](https://modelcontextprotocol.io/docs/2026-07-28/learn/versioning),
+released [July 28, 2026](https://blog.modelcontextprotocol.io/posts/2026-07-28/).
+[Tools/list and change subscriptions](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)
+do not promise client auto-refresh or hidden tool search; a call must not expand
+the modern connection catalog. SDK **2.3.0**, JSON-RPC **2.0** and date-versioned
+MCP are separate; do not label this a migration to “MCP2.0.” The installed SDK
+[dual-era STDIO entry](https://raw.githubusercontent.com/modelcontextprotocol/typescript-sdk/v2.3.0/packages/server/src/server/serveStdio.ts)
+already supports modern and legacy clients. Actual parent request protocol
+remains unknown: the retained handshake/metadata receipt does not record it.
 
 ## 0.26.109 shipped — Lance upgrade, discovery and standard MCP setup
 

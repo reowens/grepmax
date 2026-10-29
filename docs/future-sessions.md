@@ -4,10 +4,55 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-29
 audience: internal
-summary: "Parent agent visibility confirmed from its current actual catalog: 28 Gmax tools among 329. Earlier 301/no-Gmax evidence retained as history; child catalog separately still 301/no Gmax. Repo remains unregistered; docs-only recording, no runtime or config actions."
+summary: "MCP core/full correctness plan mcp-core-full-20261029 is READY/AWAITING START. Documentation only; proposed one focused fake-only invocation and one guarded compilation are unapproved. Parent catalog remains 329/28 Gmax; repo unregistered."
 ---
 
 # Future Sessions
+
+## MCP profile/correctness plan — READY/AWAITING START
+
+The user accepted the completed one-pass MCP review and requested planning only.
+Plan **`mcp-core-full-20261029`** is ready in the
+[owning delivery plan](plans/gmax-delivery.md#mcp-corefull-profile-and-correctness-batch--readyawaiting-start).
+Read its seven steps and exact edit/fixture/verification boundaries before a
+later start. No implementation, test/compiler, config, runtime or delivery
+permission follows from this documentation request. Parent remains
+orchestration-only; no further agents or pending-prompt consumption.
+
+Settled selection: startup-only `GMAX_MCP_TOOL_PROFILE=core|full`; absent->full28
+for compatibility; invalid/empty values refuse with stderr/exit2 before startup.
+Core exact eight: `repo_status`, `list_projects`, `semantic_search`, `list_symbols`,
+`extract_symbol`, `code_skeleton`, `trace_calls`, `impact_analysis`. Capture once
+per lifecycle; no tool-triggered catalog changes. Full preserves all28 names/
+input signatures. Recommend explicit core for selected/new clients; shipping
+selection does not migrate the active standard `gmax` args `["mcp"]` registration.
+That env-only change, backup/rollback and supported reconnect belong to a later
+expressly ratified handover, with no T3 adapter or protocol migration.
+
+The finite correctness work is explicit effect annotations (retain startup/
+lease/logging behavior), honest disabled summarizer, review inference failures
+as failures across MCP/CLI/background callers, and optional AbortSignal through
+startup IPC, health/inference/rounds and before report writes. Drain owned native
+work before close; abort does not guarantee a shared model/native job stops.
+Do not kill shared services or change another client's leases. Exact source and
+fake fixture files, API evidence and cancellation limits are in the plan.
+
+**Future proposed budget only:** one `pnpm exec vitest run` invocation selecting
+the three new fake-only files, plus one guarded production compilation; no
+independent review, live stores/models/searches or new measurement round. If
+release is selected, decide emitted compilation versus applicable emitted
+evidence before spending the single compiler allowance; noEmit alone supplies
+no package JS. All source/fixtures/README/docs finish together before commit/
+release. Publication, P3 handover and selected core activation need fresh express
+delivery authorization; once selected, finish that sequence without milestone
+permission loops. Nothing starts automatically now.
+
+Retain baseline0.26.109/source`60bc601`, docs`8e8f0cd` then`b8e87c6`.
+Parent actual catalog is329/28Gmax NOW; separate old child301/noGmax is not a
+global invisibility claim. Current Gmax checkout remains not_registered, no
+indexing implied. Table-handle cleanup and relevance attempts remain deferred;
+unknown attempted-query count grants no retry. Older instructions below are
+historical where they conflict with this selected planning outcome.
 
 ## 0.26.109 delivered — parent catalog visibility confirmed
 
