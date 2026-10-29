@@ -23,9 +23,9 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Six-feature implementation complete; release preparation selected. Prior three-feature product batch complete locally: serving-daemon CPU status, search degradation explanations and actionable non-search CLI errors. Final combined production typecheck passed; no runtime validation or release. Completed0.26.105 delivery and unrelated work are preserved."
-next_step: "Complete required guarded production compilation/preparation/package, one0.26.106 publication and normal P3 handover, then record outcome and recenter. No tests, profiling or maintenance; optional CPU attribution remains unratified."
-summary: "All three features and focused docs are integrated; final guarded production-only tsc passed in0.845s with296775680-byte sampled peak owned RSS, zero swap growth and owned cleanup confirmed. Zero tests, audits, independent reviews or live actions for this batch. Prior0.26.105 release evidence is historical and preserved."
+current_state: "COMPLETE: all six selected status/CLI features released0.26.106/source b4955e0; one publication and normal P3 handover ready/open/active. Production compilation/package only; zero new tests/profile/maintenance."
+next_step: "Recenter with the user. No new batch, profiling, maintenance or prototype integration selected; optional CPU attribution remains unratified."
+summary: "Complete selected source/docs/helpers shipped in335-file archive; dependencies/native payloads unchanged. Guarded local build/package and one existing workflow passed; cached staging tarball404 recovered without republishing. P3 configuration/store preserved and exact0.26.105 rollback retained."
 ---
 
 # Gmax Delivery Plan
@@ -35,45 +35,96 @@ Project status belongs in this plan and its linked plans, never in `AGENTS.md` o
 preserves status, incident measurements and release context moved out of
 `CLAUDE.md`; those excerpts are historical and add no execution authorization.
 
-## Six-feature status and CLI release — implementation and guarded production build complete, publication pending
+## Six-feature status and CLI release — complete
 
-Selected October 29, 2026 (UTC), by the explicit instruction to finish status
-items2–4 and then release the complete existing batch. All six product features
-are implemented: serving CPU/worker capacity, degraded-search explanations,
-actionable non-search CLI errors, serving embedding model/mode, idle-project
-lease explanations, and saved-versus-serving worker notices. The last three
-are in `status.ts` plus a read-only initialized identity accessor in `daemon.ts`
-and additive status IPC; no model/health probe, lifecycle change or extra RPC.
-Legacy/uninitialized daemon identity is unavailable, never client substitution.
-Reported leases retain expiry semantics; swept leases cannot be reconstructed.
-Environment worker precedence is explicit; restart does not promise to apply a
-saved value while a daemon environment override wins.
+Completed October 29, 2026 (UTC), under the explicit instruction to finish status
+items2–4 and then release the complete selected batch without further checkpoints.
+All six features are included in `b4955e0e1869c0538017e20c8b45f39d13267c8f`,
+tag `v0.26.106`:
 
-The complete public-source production build passed under the existing controller:
-`tsc --incremental false`, Lance JS runtime preparation and reuse of unchanged
-qualified native artifacts; no native executable was run. Elapsed1.986952766s,
-peak sampled owned RSS341,807,104 bytes, zero swap growth, no live owned processes.
-Limits: two CPUs(0,1),nice10,2GiB aggregate owned RSS,180s,8GiB minimum available
-memory and zero swap growth. Receipt:
-`/home/reoiv/.local/state/gmax-delivery/20261029-0.26.106/package-controller-receipt.json`.
-Only version metadata and documentation change after this compilation.
+1. Serving-daemon CPU capacity, affinity/quota, workers/source, automatic default
+   and global background indexing allowance.
+2. Actual lexical/query-embedding/rerank failure and unavailability explanations;
+   no empty-hit/disabled-rerank inference, stderr CLI warnings, optional HTTP warnings.
+3. Original non-search CLI reasons plus manual busy/readiness/closing/protocol
+   recovery guidance in add/index/remove/project/symbols.
+4. Initialized serving-daemon embedding tier/dimension/mode/model IDs in status,
+   with unavailable legacy/uninitialized values and no backend-readiness claim.
+5. Idle-project explanations using the existing reported watch-lease snapshot,
+   presence/expiry/absence/unavailability and queued/active index-health precedence.
+6. Saved-versus-serving worker notices, retaining startup validation and daemon
+   environment precedence; restart alone is not promised to apply a saved value.
 
-The existing0.26.105 release remains unchanged while preparation proceeds.
-Final source compilation/runtime preparation passed; packaging, one existing release.yml
-publication, normal same-unit P3 handover and final records are selected. Zero
-unit tests, test typechecks, independent reviews, audits, runtime smoke exercises,
-profiles, CPU captures or maintenance are selected. The earlier three-feature
-production typecheck below predates these last source edits. Optional CPU
-attribution and the held resource-history prototype remain unselected; FTS stays
-historically completed9801→9802→9803/zero pending and untouched.
+Source for the last three additions is `src/commands/status.ts`, a read-only
+initialized-pool identity accessor in `src/lib/daemon/daemon.ts`, and additive
+status IPC in `ipc-handler.ts`. Existing JSON fields and compact agent output
+remain compatible. No extra probes, RPCs, model loads, lifecycle changes, retries,
+automatic recovery, ranking/fallback changes or scheduling tuning were added.
+Both new source helpers and both focused user docs are in the source commit and
+package. README contains all six durable behaviors. The package has335 files:
+314 unchanged from0.26.105,17 changed and4 added, zero removed. Dependencies,
+qualified native binaries/provenance and package identity are otherwise unchanged.
+The public checkout excludes unrelated private source, README/history edits and
+prototypes. Hash manifests record copied source and packaged bytes.
 
-A clean public-source release worktree will contain the entire selected batch,
-including both new source helpers and both focused user docs. Unrelated private
-README/history edits and dirty/intent-to-add entries stay in the development
-checkout. Exact copied-source hashes and intentionally projected public docs are
-recorded under `/home/reoiv/.local/state/gmax-delivery/20261029-0.26.106/`.
-No private history is to be pushed. Validation remains static/production-compiled;
-there is no runtime feature correctness or CPU-gain claim.
+**Validation:** the necessary final public-source production compilation and
+runtime preparation passed locally:1.986952766s, peak sampled owned
+RSS341,807,104 bytes. Packaging passed separately in10.916145817s, peak619,065,344
+bytes. Both used the existing controller's two CPUs(0,1),nice10,2GiB aggregate
+owned RSS,180s, minimum8GiB host available memory and zero swap-growth guards;
+zero swap growth and no live owned processes remained. No source changed after
+compilation, only release version metadata and docs. Earlier typechecks below
+are historical and do not constitute runtime coverage of the new features.
+
+**Publication:** one dispatch of existing release.yml, run40806913854, completed
+successfully. Hosted rebuilt content matched the approved archive, npm accepted
+one publication, and registry bytes were verified. No verification-only rerun or
+second publication/version was needed.
+[Release0.26.106](https://github.com/reowens/grepmax/releases/tag/v0.26.106).
+Archive SHA256: `c5ccdf2865838094ddd3198035db71705962560e414dcc43902cfd52819e505d`.
+[Workflow](https://github.com/reowens/grepmax/actions/runs/40806913854).
+
+**P3 handover:** the first staged install hit a cached canonical tarball404;
+it did not change the live install or service and cleaned up within guards
+(15.325s, peak1,055,375,360 bytes). The sole failed-staging recovery downloaded the
+published tarball with a cache-busting URL and required the same approved hash.
+Staging then succeeded in110.356s, peak1,984,008,192 bytes, within the same limits,
+zero swap growth and no live owned processes. All335 installed package files
+matched. Unchanged dependency manifests permitted retaining the exact working
+0.26.105 dependency tree; newly resolved dependencies are retained separately.
+No build/publication/test phase was repeated.
+
+The normal same-systemd-unit handover confirmed daemon942028 serving0.26.106
+**ready/open/active**, matching MainPID of `hetchy-gmax.service`. Config and unit
+hashes and store/cache directory identities are unchanged: Small/CPU/384,
+stored workers4, quota200000/100000(two CPUs), weight10,nice10. The predecessor
+exited and the temporary owned autostart marker was removed; no safety latch was
+cleared. Exact0.26.105 rollback install:
+`/home/reoiv/.local/state/gmax-handover/20261029T023232Z-0.26.106/previous-install`.
+The older0.26.105-release rollback remains untouched at
+`/home/reoiv/.local/state/gmax-handover/20261029T010000Z-0.26.105/previous-install`.
+
+Public receipts and full hash manifests:
+`docs/plans/assets/status-guidance-release-20261029/`.
+Full local release/continuation state:
+`/home/reoiv/.local/state/gmax-delivery/20261029-0.26.106/`.
+Handover state:
+`/home/reoiv/.local/state/gmax-handover/20261029T023232Z-0.26.106/`.
+Private-root reconciliation retains unrelated working bytes and index entries;
+private history is never pushed. The normal serving daemon intentionally remains
+running; compiler/package/staging child groups and owned markers are cleaned up.
+
+**Limits and recenter:** zero unit-test invocations or new test writing,
+test-typecheck, independent review, audit, runtime feature smoke, benchmark/profile,
+CPU capture, large model/summarizer exercise or maintenance. Normal readiness/
+version handover is not runtime feature correctness validation or a CPU-gain
+measurement. FTS9801→9802→9803/zero pending remains historical completed work and
+untouched.0.26.105 records and unrelated dirty/intent-to-add work are preserved.
+Optional CPU attribution and the resource-history prototype remain unselected;
+no dependency upgrade, model/config/quota tuning or other prototype was included.
+Selected implementation/publication/handover is complete; stop starting new work
+and recenter with the user. The earlier batch records below are historical and
+their old no-release restrictions are superseded only by this explicit release.
 
 ## Three-feature CPU status and CLI guidance batch — complete locally
 

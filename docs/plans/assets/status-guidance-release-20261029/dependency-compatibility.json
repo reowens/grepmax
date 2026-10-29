@@ -1,0 +1,5 @@
+{
+  "ok": true,
+  "strategy": "Retained exact working dependency tree from0.26.105; unchanged dependency manifests; newly resolved tree preserved separately",
+  "productionDependenciesChanged": false
+}

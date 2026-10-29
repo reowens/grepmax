@@ -1,0 +1,27 @@
+{
+  "command": [
+    "python3",
+    "/home/reoiv/.local/state/gmax-handover/20261029T023232Z-0.26.106/prepare-stage.py"
+  ],
+  "prefix": "/home/reoiv/.local/state/gmax-handover/20261029T023232Z-0.26.106/stage",
+  "liveInstallationChanged": false,
+  "serviceRestartSuppressed": true,
+  "limits": {
+    "deadlineSeconds": 180,
+    "maxOwnedRssBytes": 2147483648,
+    "minAvailableBytes": 8589934592,
+    "maxSwapGrowthBytes": 0,
+    "cpus": [
+      0,
+      1
+    ]
+  },
+  "outcome": "completed",
+  "childPid": 902756,
+  "exitCode": 0,
+  "noLiveOwnedProcesses": true,
+  "finalAvailableBytes": 44062597120,
+  "finalSwapGrowthBytes": 0,
+  "elapsedSeconds": 110.35629984998377,
+  "peakSampledOwnedRssBytes": 1984008192
+}

@@ -1,0 +1,49 @@
+{
+  "version": "0.26.106",
+  "pid": 942028,
+  "ping": {
+    "ok": true,
+    "ready": true,
+    "pid": 942028,
+    "uptime": 0,
+    "version": "0.26.106",
+    "operationStatus": "open",
+    "service": {
+      "mode": "active"
+    },
+    "resourceGeneration": 1,
+    "rebuildPending": false,
+    "capabilities": {
+      "exclusiveGenerationRebuild": 1,
+      "readVerbs": 1,
+      "searchDiagnostics": 1,
+      "existingIndexOnlySearch": 1,
+      "perFileSearch": 1,
+      "ftsBuild": 1,
+      "watchLeases": 1
+    }
+  },
+  "unit": {
+    "ActiveState": "active",
+    "SubState": "running",
+    "MainPID": "942028",
+    "ControlGroup": "/user.slice/user-1000.slice/user@1000.service/app.slice/hetchy-gmax.service",
+    "CPUWeight": "10",
+    "CPUQuotaPerSecUSec": "2s",
+    "Nice": "10"
+  },
+  "kernelLimits": {
+    "cpu.max": "200000 100000",
+    "cpu.weight": "10",
+    "nice": 10
+  },
+  "oldPidExited": 644729,
+  "configPreserved": true,
+  "unitFilePreserved": true,
+  "storeDirectoryIdentitiesPreserved": true,
+  "ownedAutostartMarkerRemoved": true,
+  "safetyStopPresent": false,
+  "rollbackInstall": "/home/reoiv/.local/state/gmax-handover/20261029T023232Z-0.26.106/previous-install",
+  "productionMaintenanceInvoked": false,
+  "observedAt": 1793241834.9065065
+}

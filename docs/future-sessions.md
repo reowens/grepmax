@@ -4,21 +4,46 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-29
 audience: internal
-summary: "Three-feature product batch complete locally: serving CPU status, search degradation explanations and actionable non-search CLI errors. Final combined production typecheck passed with guards/owned cleanup; no tests/runtime validation/release.0.26.105 and unrelated work preserved; optional CPU investigation remains unratified."
+summary: "COMPLETE: all six selected status/CLI features released0.26.106/source b4955e0; one publication and normal P3 handover ready/open/active. Production compilation/package only; zero new tests/profile/maintenance."
 ---
 
 # Future Sessions
 
-## Six-feature release selected; implementation complete
+## Six-feature release0.26.106 complete — recenter with the user
 
-The [owning plan](plans/gmax-delivery.md#six-feature-status-and-cli-release--implementation-complete-release-preparation-active)
-records the explicit release authorization and all six completed source features.
-Serving model/mode, idle watch-lease reasons and saved-worker notices now join
-CPU status, search degradation and non-search CLI guidance. New source passed the necessary production compilation and runtime preparation;
-final packaging/publication/handover follow. The
-same owner continues through one publication and normal P3 handover without a
-user checkpoint, then documents and recenters. No tests, review, audit, profile,
-model exercise or FTS/maintenance is selected; unrelated/private work is preserved.
+The [owning plan](plans/gmax-delivery.md#six-feature-status-and-cli-release--complete)
+records all six completed features, hash manifests, guards, one publication and
+normal P3 handover. Source `b4955e0e1869c0538017e20c8b45f39d13267c8f`,
+tag `v0.26.106`, [release](https://github.com/reowens/grepmax/releases/tag/v0.26.106).
+Both new helpers and both user docs are included in the complete335-file package.
+All source was production-compiled; no runtime feature test or CPU-gain claim.
+
+The final local compilation/runtime preparation passed in1.987s (peak341,807,104
+bytes) and packaging in10.916s (peak619,065,344 bytes). One existing release.yml
+run40806913854 passed, including hosted content/registry-byte identity; one npm
+publication, no repeat. The staged canonical-tarball404 was recovered only for
+that failed install: a cache-busted published download matched the approved hash.
+Successful staging retained exact0.26.105 dependencies, matched335 package files,
+and stayed within guards (110.356s, peak1,984,008,192 bytes). Compiler/package/
+staging groups closed with zero swap growth under twoCPU/nice10,2GiB,180s,
+minimum8GiB available-memory guards. Failed first staging is honestly retained.
+
+P3 daemon942028 was confirmed serving0.26.106 **ready/open/active** under the
+same `hetchy-gmax.service` MainPID. Small/CPU/384,stored workers4, config/unit
+hashes, store/cache directory identities and twoCPU/weight10/nice10 are unchanged.
+Owned autostart marker removed; no safety latch cleared. Exact0.26.105 rollback:
+`/home/reoiv/.local/state/gmax-handover/20261029T023232Z-0.26.106/previous-install`.
+Prior rollback under `20261029T010000Z-0.26.105/previous-install` remains intact.
+Archive SHA256: `c5ccdf2865838094ddd3198035db71705962560e414dcc43902cfd52819e505d`.
+Receipts: `docs/plans/assets/status-guidance-release-20261029/`;
+full local release state: `/home/reoiv/.local/state/gmax-delivery/20261029-0.26.106/`.
+
+Unrelated dirty/intent-to-add work and private history are preserved; no private
+history was pushed. Zero tests/test writing, review, audit, profiling, CPU capture,
+model exercise or maintenance. FTS remains completed and untouched. Optional CPU
+attribution and the held resource-history prototype remain unselected. The six
+selected features are complete; return to recentering and start no new work.
+Earlier records and their narrower restrictions below remain historical.
 
 ## Three-feature product batch complete locally
 
