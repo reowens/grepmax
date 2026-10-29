@@ -43,18 +43,21 @@ Table-handle cleanup unselected; CPU/backend/resource-history deferred.
 No further work starts automatically; older next-action text below is historical.
 
 
-## Plan housekeeping — shortlist only
+## Plan housekeeping — two archived
 
-The [owning shortlist](plans/gmax-delivery.md#plan-housekeeping-shortlist--october-29-2026)
-uses the current five-plan Runlist queue and retained completion records.
-`architecture-operations-history.md` is ready as a historical reference; the
-standalone `gmax-fts-fragment-release.md` release note is also superseded by
-completed 0.26.103 publication/handover evidence, but is outside that plan queue.
-`session-start-hint-trim.md` needs disposition of its remaining notation-key
-requirement, and `gmax-local-workers.md` remains partial with wider route coverage
-unaccepted. Keep delivery/current local upgrade/discovery and deferred backend/
-resource-history work. No plan was archived, moved, closed or resumed; no saved
-prompt was consumed. User selection is required before lifecycle changes.
+The user-selected closeouts are complete:
+
+- [Architecture and operations history](archived/architecture-operations-history.md)
+  — historical relocation complete; now archived with its dated content retained.
+- [Fragment-bounded FTS release note](archived/gmax-fts-fragment-release.md)
+  — completed 0.26.103 publication/handover/catch-up, now archived with receipts
+  and historical preparation retained.
+
+The [owning closeout](plans/gmax-delivery.md#plan-housekeeping-closeout--october-29-2026)
+records the two moves and their successor ownership. Session hint still needs
+notation-key disposition; local workers remains partial. Delivery, local
+unreleased upgrade/discovery, deferred backend/resource-history and every other
+record remain in place. No saved prompt was consumed or product action run.
 
 ## Stable Lance upgrade complete locally
 

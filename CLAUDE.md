@@ -20,7 +20,7 @@ Put those records in the owning plan under `docs/plans/`; use
 and runbooks link to that plan rather than making the instruction files a second
 status ledger. Exact dependency pins belong in dependency manifests; versioned
 API compatibility facts may appear here when needed to explain a durable rule.
-[Relocated history](docs/plans/architecture-operations-history.md) preserves the
+[Relocated history](docs/archived/architecture-operations-history.md) preserves the
 status and incident context removed from this guide.
 
 When updating status, edit the plan only. Change these instruction files only

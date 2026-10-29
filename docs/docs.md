@@ -55,6 +55,14 @@ The manual MFA path is withdrawn. Resource statistics is on hold by user directi
 [P3 CPU acceptance](plans/gmax-delivery.md#p3-cpu-acceptance--october-23-2026)
 is complete; GPU work and larger workload measurements remain optional.
 
+## Selected archive closeouts — October 29, 2026
+
+Closed out and archived at the user's direction:
+[architecture/operations history](archived/architecture-operations-history.md)
+and the [completed 0.26.103 FTS release note](archived/gmax-fts-fragment-release.md).
+Historical evidence is retained; [Delivery](plans/gmax-delivery.md#plan-housekeeping-closeout--october-29-2026)
+owns remaining work. No other plan or saved prompt was archived.
+
 ## Document index
 
 <!-- GENERATED:dotmd:start -->
@@ -82,7 +90,7 @@ is complete; GPU work and larger workload measurements remain optional.
 
 ## Archived
 
-Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 184 archived docs:
+Archived docs are indexed by the CLI/JSON output. Showing 8 recent or high-signal highlights out of 22 archived docs:
 
 | Doc | Status Snapshot |
 |-----|-----------------|

@@ -24,7 +24,7 @@ related_plans:
 related_docs:
   - docs/linux-gpu-p3-design.md
 current_state: "Local Lance upgrade and repository agent discovery integrated; SDK/native0.40/core 13/Python 13. Final combined guarded production compilation passed after later config-home fix; earlier swap-guard failure retained. Zero tests/runtime queries/native execution. Not released; quality attempt count unknown."
-next_step: "Local selected work complete; no automatic action. No T3 code changes selected or shown necessary; use existing standard MCP registration. Active provider registration/inheritance/launch/catalog state is unverified. Archive shortlist recorded below; no plan moved or closed. No activation, release, query retry, Table-handle cleanup or deferred experiment selected."
+next_step: "Local selected work complete; no automatic action. No T3 code changes selected or shown necessary; use existing standard MCP registration. Active provider registration/inheritance/launch/catalog state is unverified. Two user-selected records closed out and archived below; other plans unchanged. No activation, release, query retry, Table-handle cleanup or deferred experiment selected."
 summary: "All selected upgrade/discovery source, existing fixtures, instructions and docs complete locally. Final guarded compile passed; earlier global swap-guard refusal preserved. Claude config-home bug fixed; Mac/Linux root cause and runtime/native behavior unproven. P3 unchanged."
 ---
 
@@ -75,20 +75,19 @@ CPU attribution/resource-history/backend experiments remain deferred. All local
 selected work is finished; stop without automatically activating or publishing it.
 
 
-## Plan housekeeping shortlist — October 29, 2026
+## Plan housekeeping closeout — October 29, 2026
 
-Read-only `runlist plans` lists five plans: delivery active, backend evaluation
-deferred, architecture history historical, local workers partial and session
-hint queued-after. There are no completed-status plans in this queue. Age and
-100% checkbox completion alone do not establish delivery completion. This is a
-shortlist only: no lifecycle status, plan location or pending prompt was changed.
+The user explicitly selected closeout and archival of exactly the two records
+below. Both were moved through Runlist to `docs/archived/`, marked `archived`,
+and given completed closeouts. Historical content, dates and evidence are
+retained; incoming/outgoing links and the document index are updated. The prior
+five-plan inventory is now four managed nonarchived plans; the FTS note was
+scoped into metadata as a reference document before its archive operation.
 
-Ready for archival when selected:
-
-| File | Recorded status/date | Why ready; successor and remaining work |
+| Archived file | Closeout and retained evidence | Remaining scope |
 | --- | --- | --- |
-| [Architecture and operations history](architecture-operations-history.md) | `historical`; updated 2026-10-28 | Completed relocation of dated CLAUDE status/incident excerpts. Its introduction explicitly delegates current status and selected work to this delivery plan. No implementation belongs to this historical record; preserve reference links when archiving. |
-| [Fragment-bounded FTS release note](gmax-fts-fragment-release.md) | No managed status/type; release evidence 2026-10-28 | This is a release note outside the five-plan queue, not an additional completed plan. Its prepared/reviewed-candidate wording is superseded by the [0.26.103 publication record](#026103-publication-and-development-reconciliation-record--october-28-2026-utc) and [completed handover/catch-up](#026103-serving-production-fts-catch-up-complete--october-28-2026-utc). Public source `82bae78`, publication and zero-backlog snapshot 8379 are recorded there. Release-specific work is complete; later FTS history/current operations stay here and in the runbook. |
+| [Architecture and operations history](../archived/architecture-operations-history.md) | Historical relocation completed October 28; archived October 29. Dated CLAUDE excerpts are preserved as history. | None in this record; current status belongs to this delivery plan and policy remains in CLAUDE/AGENTS. |
+| [Fragment-bounded FTS release note](../archived/gmax-fts-fragment-release.md) | 0.26.103 source `82bae78`, [publication](#026103-publication-and-development-reconciliation-record--october-28-2026-utc) and [handover/catch-up](#026103-serving-production-fts-catch-up-complete--october-28-2026-utc) completed October 28; archived October 29. Final snapshot 8379 had zero unindexed rows. | None for this release note; later FTS history/current operations stay here and in the runbook. |
 
 Needs an explicit disposition or carry-forward before archival:
 
@@ -121,9 +120,10 @@ Keep active/reference:
   configuration-boundary reference; installed consumption/tool attachment is
   unverified. Do not mark it deployed or turn the withdrawn adapter into a task.
 
-Only one queued plan is clearly archive-ready, plus the separate historical FTS
-release note. Already archived files are not additional candidates. No archive,
-move, close, query, runtime check or new acceptance requirement follows here.
+Exactly the selected two records are archived. Delivery, session hint, local
+workers, backend evaluation, discovery and resource-history work remain in place.
+No saved prompt was consumed, and no product/runtime/release action or new
+verification was performed by this docs-only closeout.
 
 ## Stable Lance dependency upgrade — locally complete, not released
 
@@ -155,7 +155,7 @@ The approved local upgrade is finished; no further action starts automatically.
 
 
 Project status belongs in this plan and its linked plans, never in `AGENTS.md` or
-`CLAUDE.md`. [Architecture/operations history](architecture-operations-history.md)
+`CLAUDE.md`. [Architecture/operations history](../archived/architecture-operations-history.md)
 preserves status, incident measurements and release context moved out of
 `CLAUDE.md`; those excerpts are historical and add no execution authorization.
 
