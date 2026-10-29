@@ -1,0 +1,9 @@
+{
+  "sha256": "b87ff35c991b6803a3d7323354e9bf525453c4c13442e43b07025f61a4f137a5",
+  "usedFor": [
+    "stage",
+    "handover",
+    "plugin-refresh"
+  ],
+  "failedCleanupPathsNotExercised": true
+}

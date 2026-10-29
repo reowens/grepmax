@@ -1,0 +1,16 @@
+{
+  "command": "codex mcp add --env GMAX_MCP_TOOL_PROFILE=core gmax -- gmax mcp",
+  "configPath": "/home/reoiv/.codex/config.toml",
+  "backup": "/home/reoiv/.local/state/gmax-delivery/20261029-0.26.110/isolated-guard/codex-config-immediate-before-core.toml",
+  "commandRetained": "gmax",
+  "argsRetained": [
+    "mcp"
+  ],
+  "profile": "core",
+  "otherConfigurationPreserved": true,
+  "globalEnvironmentChanged": false,
+  "beforeSha256": "1cead0879586fbd5d5581ae5353ff2338d93c2a4a388aaaa3f8095e5ba47cc30",
+  "afterSha256": "1f53fed13bb480dd263debe041422209324f8bcdfded811249ec650bd37a10bf",
+  "activeCatalogImplied": false,
+  "observedAt": 1793275999.8965847
+}

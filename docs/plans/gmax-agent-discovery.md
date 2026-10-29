@@ -1,5 +1,18 @@
 # Gmax agent discovery and current-repo status
 
+## 0.26.110 handover and selected core configuration — completed
+
+P3 now110ready/open/active with exact109rollback; plugin110refreshed. Standard
+Codexgmax args[mcp] nowselectedenvcore, otherconfig preserved. Direct metadata
+connectionadvertised exactcore8andclosed without toolcalls. Parentcurrentactual
+ALL_TOOLS remains329/28Gmax; owneralso329/28. No safe programmaticrefresh tool
+wasexposed. Actualcore8awaits normal supported client/provider MCP reconnect
+consuming updatedregistration and then anactualeight-name catalog; no forced
+app/provider restart, sessionreset/fork, modelchange orT3adapter. Repo remains
+not_registered,noindexing. [Exactguard/deploy/catalog record](assets/mcp-cleanup-release-20261029/isolated-guard/completion.md).
+Older stop/config/catalog sections belowretain their original observation dates.
+
+
 ## 0.26.110 publication; core8 handover not executed
 
 October29: MCP profiles/errors/cancellation and Table cleanup are published in

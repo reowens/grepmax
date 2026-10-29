@@ -23,12 +23,46 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "0.26.110 published/source920afc5 once; fresh pack guard passed reusing emitted outputs. P3 staging stopped on160,866,304B host swap growth; install109 untouched, core8 not activated."
-next_step: "Return precise published-vs-deployment guard outcome. Do not republish or automatically retry guard; P3/plugin/core8 remain unfinished."
-summary: "Complete MCP/cleanup source published as110; actual staging swap guard stopped delivery before install/config changes. No extra tests/compile; private unrelated work preserved."
+current_state: "110/source920afc5 deployed ready/open/active with exact109rollback. Isolated no-swap guard and selected Codex core8 config/direct8 complete; actual parent remains329/full28 pending normal MCP reconnect."
+next_step: "Return completed guard/deploy/config records and exact remaining normal-client activation condition; no forced reconnect, new workload or automatic batch."
+summary: "Scoped guard/policy and P3/plugin handover complete. Five no-swap operational cohorts passed/closed; core8 configured/directly advertised, active provider still28. Historical failures and unrelated work preserved."
 ---
 
 # Gmax Delivery Plan
+
+## 0.26.110 deployed; isolated guard complete; core8 configured
+
+**October29,2026, user “go”:** the scoped guard/policy correction and remaining
+published110handover are complete. [Exact completion/evidence](assets/mcp-cleanup-release-20261029/isolated-guard/completion.md)
+records source920afc5, original single publication/workflow40860070807 and unchanged
+verified341-file archive. No compiler/pack/test/native/LLM/search/profile rerun.
+Earlier36/36 fake cases retain the later unrerun literal-fixture correction limit.
+
+New reusable operational wrapper creates/verifies a fresh owned no-swap cgroup
+before exec, preserving2CPU/nice10/2GiB/180s/min8GiB,containment/OOM/cleanup.
+Host SwapUsed is diagnostic; first trigger/final/cleanup are separated. Five
+ordinary operations passed with zero job swap/current/peak/zswap, no OOM/failure,
+closed cohorts and removed groups. Shared groups/global kernel/cache/processes
+unchanged. R1(stage/handover/plugin),R2(config/metadata) had actual passing use;
+finalR3 failed-metric cleanup/report refinement is source-only, no fault test.
+The14,573,568B/160,866,304B old failures remain failed/historical/immutable.
+
+P3 **110ready/open/active**, PID2840070; exact109rollback at
+`/home/reoiv/.local/state/gmax-handover/20261029-0.26.110-isolated/previous-install`.
+Config/worker4/quotas/unit/store identities preserved, owned marker removed.
+Claude plugin110 refreshed; all16payload files match published bytes. Standard
+Codex`gmax`/`["mcp"]` selected env nowcore, privatebackup/allotherconfig preserved.
+Direct metadata connection110advertised exact8and closed; zero tool/search calls.
+
+**Remaining client condition, honestly separate:** parent currentactual329/28Gmax,
+owner also329/28. No safe refresh capability exposed; actualcore8is NOT confirmed.
+A normal supported client/provider MCP reconnect must consume updatedstandard
+registration and actuallyadvertise8. No forcedT3/provider restart/reset/fork/new
+session/adapter/model switch or indexing. Currentrepo remainsnot_registered.
+No automatic nextbatch/relevance retry; unknown attempted-query budget remains.
+Later dependency/Lance0.41/Arrow/hourly-hook work stays separate and preserved;
+CPU/backend/resource-history deferred, pending prompts untouched.
+
 
 ## 0.26.110 published — P3 handover stopped by safety guard
 

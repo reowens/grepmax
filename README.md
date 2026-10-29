@@ -820,6 +820,17 @@ whether you need to act.
 
 See [CLAUDE.md](CLAUDE.md) for development setup, commands, and architecture details.
 
+### Guarded local operations
+
+For an explicitly authorized Linux operation in a source checkout, use
+`scripts/guard-local-operation.py` with new receipt/log paths and the approved
+command after `--`. It verifies a fresh job cgroup with swapping disabled before
+exec, retains CPU/RSS/deadline/host-memory and containment protections, and cleans
+up only its cohort. Host swap allocation is diagnostic, not evidence that this
+job spilled. Missing delegation or enforcement refuses work. The wrapper grants
+no test, model, maintenance or deployment permission; see
+[the operational procedure](CLAUDE.md#guarded-local-operational-commands).
+
 ### Benchmarks
 
 Two retrieval evaluation harnesses emit JSON via `:json` variants. Additional token and experimental-orientation harnesses are available as `bench:tokens` and `bench:surprises`.

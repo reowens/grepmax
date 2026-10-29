@@ -1,0 +1,30 @@
+{
+  "command": "gmax",
+  "args": [
+    "mcp"
+  ],
+  "selectedEnvironment": {
+    "GMAX_MCP_TOOL_PROFILE": "core"
+  },
+  "semanticCalls": 0,
+  "toolCalls": 0,
+  "storeQueries": 0,
+  "server": {
+    "name": "gmax",
+    "version": "0.26.110"
+  },
+  "advertisedNames": [
+    "repo_status",
+    "list_projects",
+    "semantic_search",
+    "list_symbols",
+    "extract_symbol",
+    "code_skeleton",
+    "trace_calls",
+    "impact_analysis"
+  ],
+  "advertisedToolCount": 8,
+  "currentRepoContext": "Current-repo Gmax setup: registered root, cached index state and bounded daemon ping. No search, store/model access, leases or startup. Accepts unregistered repos. Launch repo index state: not_registered.",
+  "outcome": "passed",
+  "connectionClosed": true
+}

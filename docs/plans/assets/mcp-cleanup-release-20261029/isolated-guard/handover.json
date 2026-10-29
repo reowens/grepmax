@@ -1,0 +1,92 @@
+{
+  "revision": 1,
+  "operation": "handover-published110",
+  "host": "p3",
+  "kernel": "7.0.0-38-generic",
+  "cgroup": "/user.slice/user-1000.slice/user@1000.service/app.slice/app-t3code.slice/app-t3code-agents.slice/app-t3code-agents-8ae0f247d785.slice/gmax-operation-8f057eb4fb5445819632258f6370f7de",
+  "limits": {
+    "cpus": [
+      0,
+      1
+    ],
+    "niceAtLeast": 10,
+    "maxOwnedRssBytes": 2147483648,
+    "deadlineSeconds": 180,
+    "minAvailableBytes": 8589934592,
+    "maxJobSwapBytes": 0,
+    "hostSwapAllocationDiagnosticOnly": true
+  },
+  "firstFailure": null,
+  "cleanupErrors": [],
+  "commandStarted": true,
+  "admission": {
+    "utc": "2026-10-29T12:10:25.645566+00:00",
+    "monotonicNs": 535216607168397,
+    "availableBytes": 38429761536,
+    "hostSwapAllocatedBytes": 19669356544,
+    "hostOomKills": 0,
+    "pswpinPages": 17898168,
+    "pswpoutPages": 25077724,
+    "hostMemoryPsi": "some avg10=0.00 avg60=0.00 avg300=0.06 total=285966326\nfull avg10=0.00 avg60=0.00 avg300=0.05 total=270044527",
+    "jobSwapMax": "0",
+    "jobSwapBytes": 0,
+    "jobSwapPeakBytes": 0,
+    "jobZswapBytes": 0,
+    "jobMemoryEvents": {
+      "low": 0,
+      "high": 0,
+      "max": 0,
+      "oom": 0,
+      "oom_kill": 0,
+      "oom_group_kill": 0,
+      "sock_throttled": 0
+    },
+    "jobSwapEvents": {
+      "high": 0,
+      "max": 0,
+      "fail": 0
+    },
+    "ownedRssBytes": 23232512,
+    "supervisorSwapBytes": 0,
+    "jobProcessCount": 0
+  },
+  "peakOwnedRssBytes": 50921472,
+  "minimumAvailableBytes": 38429356032,
+  "exitCode": 0,
+  "cohortEmpty": true,
+  "final": {
+    "utc": "2026-10-29T12:10:36.185517+00:00",
+    "monotonicNs": 535227147111434,
+    "availableBytes": 43592450048,
+    "hostSwapAllocatedBytes": 19668320256,
+    "hostOomKills": 0,
+    "pswpinPages": 17898196,
+    "pswpoutPages": 25077724,
+    "hostMemoryPsi": "some avg10=0.00 avg60=0.00 avg300=0.05 total=285966787\nfull avg10=0.00 avg60=0.00 avg300=0.05 total=270044988",
+    "jobSwapMax": "0",
+    "jobSwapBytes": 0,
+    "jobSwapPeakBytes": 0,
+    "jobZswapBytes": 0,
+    "jobMemoryEvents": {
+      "low": 0,
+      "high": 0,
+      "max": 0,
+      "oom": 0,
+      "oom_kill": 0,
+      "oom_group_kill": 0,
+      "sock_throttled": 0
+    },
+    "jobSwapEvents": {
+      "high": 0,
+      "max": 0,
+      "fail": 0
+    },
+    "ownedRssBytes": 23379968,
+    "supervisorSwapBytes": 0,
+    "jobProcessCount": 0
+  },
+  "ownedCgroupRemoved": true,
+  "elapsedSeconds": 10.540451150969602,
+  "hostSwapAllocationDeltaBytes": -1036288,
+  "outcome": "passed"
+}
