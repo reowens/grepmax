@@ -41,7 +41,7 @@ describe("explicit FTS catch-up guards", () => {
       async (_exe, _args, options) => {
         options!.admission!.approve();
         return JSON.stringify({
-          engine: "12.0.0",
+          engine: "13.0.0",
           index: "content_idx",
           outcome: "completed",
           beforeVersion: 5,

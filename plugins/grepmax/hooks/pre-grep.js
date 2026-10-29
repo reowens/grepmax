@@ -4,6 +4,7 @@
 // informational suggestion via additionalContext when the pattern looks
 // like a natural language query that would be better served by semantic
 // search. Claude decides whether to switch.
+const { readRepoStatus } = require("./repo-status");
 
 function readStdin() {
   return new Promise((resolve) => {
@@ -87,11 +88,13 @@ async function main() {
   const pattern = input.tool_input?.pattern;
 
   if (!isConceptualQuery(pattern)) return;
+  const status = readRepoStatus(input.cwd || process.cwd());
+  if (!status.cliHint) return;
 
   const response = {
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
-      additionalContext: `Tip: "${pattern}" looks like a conceptual query. For meaning-based search try: Bash(gmax "${pattern}" --agent)`,
+      additionalContext: `For permitted meaning-based discovery in the registered current repo, consider an advertised Gmax semantic_search tool or CLI: ${status.cliHint}. This hint does not attach MCP tools. Keep rg/Grep for literal text and honor explicit query/startup limits.`,
     },
   };
   process.stdout.write(JSON.stringify(response));

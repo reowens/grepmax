@@ -4,6 +4,7 @@ const {
   registeredRootFor,
   releaseSessionLeases,
 } = require("./watch-lease");
+const { getRepoStatus, formatRepoContext } = require("./repo-status");
 
 // Keep the daemon watching the project this session is in now, and let go of
 // the one it left. See watch-lease.js.
@@ -20,6 +21,12 @@ async function main() {
   }
 
   await ensureSessionLease(input, newCwd, { allowStart: true });
+  process.stdout.write(JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: "CwdChanged",
+      additionalContext: formatRepoContext(await getRepoStatus(newCwd)),
+    },
+  }));
 }
 
 main();

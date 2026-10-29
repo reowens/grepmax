@@ -7,6 +7,22 @@ Every agent returns within 45 minutes. Use at most one explicitly authorized
 focused test invocation for the approved batch, shared by owner and delegates.
 The current user restriction may authorize none.
 
+## Ordinary repository retrieval
+
+Use `rg`/`rg --files` for literal text and file lookup. For conceptual code
+questions, consider ordinary Gmax semantic retrieval when the current repo is
+indexed, using a tool advertised in the actual client catalog or permitted
+CLI access. A CLI hint or watch lease does not establish MCP
+attachment; a ready daemon for another project does not establish availability
+for this repo. Preserve current-repo not-registered, pending, error, offline and
+unknown states instead of silently searching another project.
+
+Ordinary permitted retrieval is not a test, benchmark or profile invocation.
+A test prohibition alone does not prohibit ordinary retrieval. Explicit query
+budgets, STOPs, no-query instructions, resource limits, no-autostart restrictions
+and large-model authorization still apply. Do not index/rebuild, start services,
+load models or change client registration merely to satisfy discovery/status.
+
 ## Keep project status out of instruction files
 
 - `AGENTS.md` and `CLAUDE.md` are durable policy, architecture and procedure

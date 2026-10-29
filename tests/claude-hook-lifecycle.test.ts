@@ -300,6 +300,11 @@ async function entry(file: string, data: Input) {
     process: { cwd: () => "/wrong", stdout: { write: vi.fn() } },
     require: (name: string) => {
       if (name === "./watch-lease") return helpers;
+      if (name === "./repo-status")
+        return {
+          getRepoStatus: async () => ({ indexState: "indexed" }),
+          formatRepoContext: () => "synthetic repo context",
+        };
       if (name === "node:path") return path;
       if (name === "node:fs") return {};
       if (name === "node:child_process")

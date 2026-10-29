@@ -1,4 +1,4 @@
-"""Exclusively leased Lance 12 prune-only cleanup.
+"""Exclusively leased Lance 13 prune-only cleanup.
 
 Never compacts, writes rows, builds indexes or starts a server. This helper is
 used by recovery and bounded automatic retention. Native host admission and
@@ -118,8 +118,8 @@ def prune(store, expected_version, cutoff_ms, owner_file, nonce, admission=None,
         raise ValueError("Cleanup cutoff must not be in the future")
     if max_versions is not None and (type(max_versions) is not int or not 1 <= max_versions <= 128):
         raise ValueError("Invalid bounded prune version count")
-    if importlib.metadata.version("pylance") != "12.0.0":
-        raise ValueError("Cleanup requires pylance 12.0.0")
+    if importlib.metadata.version("pylance") != "13.0.0":
+        raise ValueError("Cleanup requires pylance 13.0.0")
     before_bytes, before_allocated, before_free = measure(root)
     import lance
     dataset = open_dataset(lance, root)
@@ -167,7 +167,7 @@ def prune(store, expected_version, cutoff_ms, owner_file, nonce, admission=None,
         raise ValueError("Protected state changed; no retry")
     after_bytes, after_allocated, after_free = measure(root)
     return {
-        "engine": "12.0.0", "version": expected_version,
+        "engine": "13.0.0", "version": expected_version,
         "fragments": len(current[0]),
         "bytesRemoved": stats.bytes_removed if stats else 0,
         "versionsRemoved": stats.old_versions if stats else 0,

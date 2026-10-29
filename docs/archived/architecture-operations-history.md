@@ -1,12 +1,12 @@
 ---
 type: plan
-status: historical
+status: archived
 created: 2026-10-28
-updated: 2026-10-28
-parent_plan: docs/plans/gmax-delivery.md
+updated: 2026-10-29T08:10:12Z
+parent_plan: ../plans/gmax-delivery.md
 related_docs:
-  - CLAUDE.md
-  - AGENTS.md
+  - ../../CLAUDE.md
+  - ../../AGENTS.md
 summary: Historical project status and incident context relocated from the architecture guide.
 ---
 
@@ -16,7 +16,7 @@ These excerpts were moved out of `CLAUDE.md` on October 28, 2026. They preserve
 what that guide previously reported, including relative wording such as “now,”
 “current,” and “latest.” They are historical source text, not fresh verification,
 new authorization, or an assertion of the current checkout or deployment state.
-The [delivery plan](gmax-delivery.md) owns current status and selected work.
+The [delivery plan](../plans/gmax-delivery.md) owns current status and selected work.
 Durable architecture, procedures and safety rules remain in `CLAUDE.md`.
 
 ## Completion and FTS status
@@ -174,3 +174,18 @@ Durable architecture, procedures and safety rules remain in `CLAUDE.md`.
 > at the `@lancedb/lancedb-darwin-arm64` platform package under the global grepmax. A path under
 > `@lancedb/lancedb/dist/` means a stale vendored overlay from the 0.26.26-era `~/.gmax/vendor/`
 > mechanism is still in place; remove that install and reinstall.
+
+## Closeout
+
+- **Outcomes:** Completed historical relocation from CLAUDE on October 28,
+  2026; archived at the user's direction on October 29. The original dated
+  excerpts remain historical evidence, not current instructions or verification.
+- **Key commits:** This closeout is documentation-only. The relocation's dated
+  content and context are retained in the body; no product release is implied.
+- **Deferrals:** None belonging to this historical record. Current work remains
+  in the [delivery plan](../plans/gmax-delivery.md); durable policy remains in
+  [CLAUDE](../../CLAUDE.md) and [AGENTS](../../AGENTS.md).
+
+## Version History
+
+- **2026-10-29T08:10:12Z** Archived — Completed historical relocation from CLAUDE on 2026-10-28; archived at user direction. Current work remains in docs/plans/gmax-delivery.md; dated observations are not new verification.

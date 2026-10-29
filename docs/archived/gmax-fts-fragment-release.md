@@ -1,4 +1,16 @@
+---
+type: doc
+status: archived
+summary: "Archived completed 0.26.103 fragment-bounded FTS release; publication and catch-up records supersede the historical preparation below."
+updated: 2026-10-29T08:10:33Z
+---
 # Fragment-bounded FTS release 0.26.103
+
+Archived October 29, 2026 at the user's direction. The preparation/review text
+below is retained as historical evidence from the completed October 28 release,
+not a pending publication or maintenance instruction. The [publication record](../plans/gmax-delivery.md#026103-publication-and-development-reconciliation-record--october-28-2026-utc)
+and [completed handover/catch-up](../plans/gmax-delivery.md#026103-serving-production-fts-catch-up-complete--october-28-2026-utc)
+supersede its candidate wording.
 
 This patch replaces whole-backlog FTS optimization with one explicit bounded
 batch of pending whole fragments. Deleted rows count toward the unchanged
@@ -32,9 +44,9 @@ Source/test typechecks and formatting passed; exact tested source hashes and
 case/process results are retained in the linked evidence. Release preparation
 reuses this evidence without another test invocation or model load.
 
-[Source/scope receipt](assets/p3-cpu-20261027/fts-fragment-source-receipt.json),
-[process receipt](assets/p3-cpu-20261027/fts-fragment-native-receipt.json), and
-[case results](assets/p3-cpu-20261027/fts-fragment-native-tests.json).
+[Source/scope receipt](../plans/assets/p3-cpu-20261027/fts-fragment-source-receipt.json),
+[process receipt](../plans/assets/p3-cpu-20261027/fts-fragment-native-receipt.json), and
+[case results](../plans/assets/p3-cpu-20261027/fts-fragment-native-tests.json).
 
 Dependencies, model identities, native binaries and containment remain unchanged.
 The release is prepared separately from P3 installation and production FTS
@@ -68,7 +80,24 @@ findings are resolved by the owner; no additional independent review is claimed
 or required. The initial archive is retained under `reviewed-original` and must
 not be published. Only the rebuilt corrected archive is the release candidate.
 
-[Correction/source proof](assets/p3-cpu-20261027/fts-fragment-tokenizer-validation.json),
-[correction process receipt](assets/p3-cpu-20261027/fts-fragment-tokenizer-receipt.json),
-[correction cases](assets/p3-cpu-20261027/fts-fragment-tokenizer-tests.json), and
-[single review disposition](assets/p3-cpu-20261027/fts-fragment-release-review.json).
+[Correction/source proof](../plans/assets/p3-cpu-20261027/fts-fragment-tokenizer-validation.json),
+[correction process receipt](../plans/assets/p3-cpu-20261027/fts-fragment-tokenizer-receipt.json),
+[correction cases](../plans/assets/p3-cpu-20261027/fts-fragment-tokenizer-tests.json), and
+[single review disposition](../plans/assets/p3-cpu-20261027/fts-fragment-release-review.json).
+
+## Closeout
+
+- **Outcomes:** 0.26.103 publication and the controlled service handover/FTS
+  catch-up completed on October 28, 2026. Retained receipts establish publication
+  and zero unindexed rows at snapshot 8379; this closeout runs no new checks.
+- **Key commits:** Public release source `82bae78d9d284d1523d03af85e10dc94c88192c7`.
+  [Publication receipt](../plans/assets/p3-cpu-20261027/0.26.103-delivery.json)
+  and [handover receipt](../plans/assets/p3-cpu-20261027/0.26.103-handover.json)
+  retain the existing evidence and exact scope.
+- **Deferrals:** None within this release note. Later FTS/current operations and
+  unrelated deferred work remain with the [delivery plan](../plans/gmax-delivery.md)
+  and [FTS runbook](../runbooks/p3-fts-catch-up.md); they are not restarted here.
+
+## Version History
+
+- **2026-10-29T08:10:33Z** Archived — Completed and superseded by retained 0.26.103 publication and controlled handover/catch-up records from 2026-10-28. Source 82bae78 and final snapshot 8379 are historical evidence; current FTS state remains with the delivery plan/runbook. Archived at user direction without new execution.

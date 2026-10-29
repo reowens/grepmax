@@ -53,7 +53,7 @@ describe("independent version reclamation", () => {
     const f = fixture();
     const before = Date.now();
     vi.mocked(pruneVersions).mockResolvedValue({
-      engine: "12.0.0",
+      engine: "13.0.0",
       version: 7,
       fragments: 3,
       bytesRemoved: 90,

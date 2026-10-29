@@ -2,7 +2,7 @@
 type: plan
 status: active
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-29T05:31:08Z
+updated: 2026-10-29T07:43:28Z
 surfaces:
   - store
   - daemon
@@ -23,17 +23,187 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "SHIPPED0.26.108/source 2ebdb62: complete per-file save coalescing source/fixtures/docs, one publication and normal P3 handover ready/open/active. 15 focused cases passed once; one local production compilation/package passed. Fan/speedup unmeasured."
-next_step: "Return the complete committed/published/serving save-coalescing result. Start no further tests, profiles, research, maintenance, model/config/backend work or release automatically; delivery umbrella remains active."
-summary: "Per-file2s quiet/10s maximum eligibility wait shipped, one project timer; ready files/catchup/native ownership/reuse preserved. One focused invocation15 passed/53 skipped, one guarded production compilation, one publication and normal P3 handover; exact107 rollback retained."
+current_state: "Local Lance upgrade and repository agent discovery integrated; SDK/native0.40/core 13/Python 13. Final combined guarded production compilation passed after later config-home fix; earlier swap-guard failure retained. Zero tests/runtime queries/native execution. Not released; quality attempt count unknown."
+next_step: "Local selected work complete; no automatic action. No T3 code changes selected or shown necessary; use existing standard MCP registration. Active provider registration/inheritance/launch/catalog state is unverified. Two user-selected records closed out and archived below; other plans unchanged. No activation, release, query retry, Table-handle cleanup or deferred experiment selected."
+summary: "All selected upgrade/discovery source, existing fixtures, instructions and docs complete locally. Final guarded compile passed; earlier global swap-guard refusal preserved. Claude config-home bug fixed; Mac/Linux root cause and runtime/native behavior unproven. P3 unchanged."
 ---
 
 # Gmax Delivery Plan
 
+## Selected Lance/discovery publication — 0.26.109 preparation
+
+The user approved the full one-native-invocation/package/publication/P3/hooks/
+standard-MCP verification sequence. One native invocation passed3cases;8
+unselected skipped, temporary stores removed, zero swap/owned survivors. No
+second test invocation or semantic-query retry is authorized. SDK/native0.40.0,
+core13 and Python13 remain; separate qualified Rust12 unchanged and full-table
+maintenance disabled. Entire selected local batch is included on public108
+history, excluding private/unrelated source. Prior final production compilation
+is reused; packaging emission is not a new semantic check.
+[Exact focused/preparation record](assets/lance-discovery-release-20261029/preparation.md).
+No T3 changes/adapter selected; standard registration and actual catalog are
+separate observations. Quality attempt count remains unknown/no retry;
+Table-handle cleanup unselected; CPU/backend/resource-history deferred.
+
+
+## Upgrade and agent discovery — final local integration complete
+
+**October 29, 2026 UTC.** Upgrade commit `4b414da` is retained: official
+SDK/all npm native packages 0.40.0, embedded Lance 13, Python maintenance 13.0.0;
+separate qualified Rust 12 maintenance remains unchanged/unqualified for core 13
+mutation. The prior 58-file official generated SDK match was reused without
+another preparation run. No version bump/publication/global install/P3 action.
+
+All 16 frozen discovery files, including new `repo-status.js`/`repo-status.ts`,
+are integrated along with durable ordinary-retrieval guidance. A targeted
+macOS/Linux source check also fixed the plugin manager's hardcoded Claude cache
+home: detection/removal now honor `CLAUDE_CONFIG_DIR` before the default home.
+No runtime/client configuration was changed. [Discovery implementation and
+standard MCP registration](gmax-agent-discovery.md#corrected-direction-existing-mcp-registration-no-t3-code-changes)
+distinguish current-repo registration/index status, daemon state and actual MCP
+attachment. The earlier T3 adapter proposal is withdrawn at the user's request.
+**No T3 code changes are selected or shown necessary.** Use existing standard MCP
+registration: STDIO command `gmax`, args `["mcp"]`. The current active provider's
+registration/inheritance/launch/catalog state is unverified; absent advertisement
+does not establish missing T3 infrastructure or a Mac/Linux cause. Gmax-owned
+status/context works when the installed release and client integration consume
+it; no automatic cwd/registry refresh is promised. The existing Codex installer
+uses `codex mcp add gmax -- gmax mcp`; no registration or activation ran here.
+
+[Final integration record](assets/local-integration-20261029/completion.md):
+`node_modules/.bin/tsc --noEmit --incremental false` passed on final combined
+source in 0.845s, peak 339,361,792bytes aggregate owned RSS, zero swap growth,
+43,484,372,992bytes final available, no owned survivors. Two CPUs/nice10,
+2GiB/180s, minimum 8GiB/zero-new-swap guards unchanged. An earlier integration
+attempt before the later config-home fix had compiler exit 0 but **failed the
+final host guard** on 6,283,264bytes global swap growth; its receipt is retained,
+not called a passing guarded run. The subsequent material source fix received
+one final authorized compilation; no passing check was repeated for receipts.
+The upgrade-only 0.846s receipt predates discovery and remains historical.
+
+Zero tests/test typechecks, hook/CLI/MCP startup, native imports/stores/models,
+queries, profiles/benchmarks/audits/reviews or live host probes. Native and hook/
+transport behavior remain unexercised; no RSS/relevance improvement claimed.
+P3 remains the previously recorded deployed 0.26.108 (not freshly verified).
+Quality attempt count remains unknown, ranks unmeasured, and no retry/budget reset.
+Table-handle cleanup remains proposed/unselected; FTS complete and unchanged;
+CPU attribution/resource-history/backend experiments remain deferred. All local
+selected work is finished; stop without automatically activating or publishing it.
+
+
+## Plan housekeeping closeout — October 29, 2026
+
+The user explicitly selected closeout and archival of exactly the two records
+below. Both were moved through Runlist to `docs/archived/`, marked `archived`,
+and given completed closeouts. Historical content, dates and evidence are
+retained; incoming/outgoing links and the document index are updated. The prior
+five-plan inventory is now four managed nonarchived plans; the FTS note was
+scoped into metadata as a reference document before its archive operation.
+
+| Archived file | Closeout and retained evidence | Remaining scope |
+| --- | --- | --- |
+| [Architecture and operations history](../archived/architecture-operations-history.md) | Historical relocation completed October 28; archived October 29. Dated CLAUDE excerpts are preserved as history. | None in this record; current status belongs to this delivery plan and policy remains in CLAUDE/AGENTS. |
+| [Fragment-bounded FTS release note](../archived/gmax-fts-fragment-release.md) | 0.26.103 source `82bae78`, [publication](#026103-publication-and-development-reconciliation-record--october-28-2026-utc) and [handover/catch-up](#026103-serving-production-fts-catch-up-complete--october-28-2026-utc) completed October 28; archived October 29. Final snapshot 8379 had zero unindexed rows. | None for this release note; later FTS history/current operations stay here and in the runbook. |
+
+Needs an explicit disposition or carry-forward before archival:
+
+- [Session-start hint trim](session-start-hint-trim.md): `queued-after`, updated
+  October 24 (created October 22). Discovery commit `dbdb188` supersedes the old
+  unconditional startup survey and removes its duplicated fallback, but the
+  plan also requires moving the complete notation/role key into the skill.
+  That key remains in `src/lib/help/agent-cheatsheet.ts`; the skill lacks the
+  full key. Do not call the entire old plan completed. Decide whether to retain
+  or carry forward that requirement before closing it as superseded; no new
+  implementation or verification is selected by this inventory.
+- [Local workers](gmax-local-workers.md): `partial`, updated October 27. Recorded
+  P3/Windows typechecks and one Windows unit invocation cover their selected
+  routes, not wider task/native/runtime/package or named Mac acceptance. Its
+  completion-scope section explicitly retains those gaps. Keep the partial
+  record unless those optional routes are explicitly retired or carried to a
+  named owner; do not infer readiness from its three checked boxes.
+
+Keep active/reference:
+
+- This delivery umbrella owns current status, locally complete but unreleased
+  upgrade/discovery, the unresolved production-memory cause, proposed/unselected
+  Table-handle cleanup, missing quality rankings/unknown query count and deferred
+  resource-history/CPU work. Its shipped 103–108 sections are historical records
+  that could later be split out; the umbrella itself is not ready to archive.
+- [Backend evaluation](colbert-backend-evaluation.md): `deferred`, updated
+  October 29, with six open deliverables and measurement-gated experiments.
+  Completed paired runs do not complete the remaining model/backend scope.
+- [Agent discovery](gmax-agent-discovery.md) remains a local implementation and
+  configuration-boundary reference; installed consumption/tool attachment is
+  unverified. Do not mark it deployed or turn the withdrawn adapter into a task.
+
+Exactly the selected two records are archived. Delivery, session hint, local
+workers, backend evaluation, discovery and resource-history work remain in place.
+No saved prompt was consumed, and no product/runtime/release action or new
+verification was performed by this docs-only closeout.
+
+## Stable Lance dependency upgrade — locally complete, not released
+
+**October 29, 2026 UTC.** The explicitly selected stable dependency upgrade is
+complete locally: official JS SDK/all seven npm native pins **0.39.0 → 0.40.0**,
+embedded engine **12 → 13**, and Python maintenance **pylance 12.0.0 → 13.0.0**.
+Manifest/locks, helper result guards, historical-receipt compatibility, existing
+version fixtures, NOTICE and generated official runtime were updated together.
+Exact pins are reproducibility choices, not a user freeze; the durable SDK
+packaging rule now records that preference without current status/version data.
+
+[Full selected-file, compatibility and preparation record](assets/lance-upgrade-20261029/completion.md)
+and [guarded compiler receipt](assets/lance-upgrade-20261029/typecheck-receipt.json):
+one production compilation passed, zero tests; two CPUs/nice10, 2GiB/180s,
+minimum 8GiB/zero swap growth, no surviving owned processes. Installed SDK/native
+and all 58 generated SDK files match 0.40.0; Python 13 wheels were installed without
+native import. Python 14.0.2 forward-writer compatibility with SDK core 13 is not
+established, so13.0.0 is the newest aligned stable maintenance selection. The
+separate qualified custom Rust maintenance executable remains 12 and was neither
+rebuilt nor relabeled; it is absent from generated runtime and full-table
+maintenance remains disabled. Its cross-engine mutation use is not qualified.
+
+**Limits:** native/store compatibility unexercised; no RSS improvement or search
+quality gain claimed. No release/version bump/push/global install/P3 action.
+The Table-handle cleanup remains unselected. The existing quality safety stop,
+unknown attempted-query count and both existing case-set receipts remain intact;
+no retry or query budget reset. CPU/backend/resource-history work stays deferred.
+The approved local upgrade is finished; no further action starts automatically.
+
+
 Project status belongs in this plan and its linked plans, never in `AGENTS.md` or
-`CLAUDE.md`. [Architecture/operations history](architecture-operations-history.md)
+`CLAUDE.md`. [Architecture/operations history](../archived/architecture-operations-history.md)
 preserves status, incident measurements and release context moved out of
 `CLAUDE.md`; those excerpts are historical and add no execution authorization.
+
+## Current direction — better search results
+
+**All selected implementation and release work through 0.26.108 is complete.**
+The retained [completion receipt](/home/reoiv/.local/state/gmax-delivery/20261029-0.26.108/completion.json)
+records source `2ebdb621bda25ada7b400d968700544dbea7b853`,
+[release0.26.108](https://github.com/reowens/grepmax/releases/tag/v0.26.108),
+and P3 ready/open/active at handover. This is recorded evidence, not a fresh live
+check. The 0.26.106 six product features, 0.26.107 definition-eligibility fix,
+earlier CPU delivery and two-batch FTS catch-up are also complete.
+
+Recenter on the user's prior choice: **better search results with the current
+models**. When an existing example or ordinary use supplies one concrete query
+and expected file/symbol that was missed, distinguish whether that candidate was
+absent or ranked too low before choosing a change. No specific next implementation,
+query collection, capture, test or profile is selected now. The completed
+0.26.107 eligibility correction is the baseline, not another proposal.
+
+Fan reduction, production throughput and relevance gains remain **unmeasured**.
+The repeated roughly 2,000–2,300 catch-up counts remain unattributed; they do not
+prove repeated indexing of the same unchanged files. 0.26.108 targets selection
+of intermediate saves and is not a proven explanation of all-day fan activity.
+Ordinary use can supply feedback about fans, freshness and result quality;
+this is not a manual measurement assignment or another acceptance gate.
+
+CPU attribution, resource history (including its unresolved overhead regression)
+and backend/indexing experiments remain **DEFERRED/UNSELECTED**. No automatic
+worker count reduction from 4 to 2, pacing/concurrency/model tuning or new diagnostics is selected.
+The delivery umbrella remains active, saved prompts remain untouched, and no new
+work starts from this documentation update.
 
 <a id="per-file-save-coalescing--ready-for-implementation--awaiting-ratification"></a>
 
@@ -43,6 +213,14 @@ preserves status, incident measurements and release context moved out of
 release.** Complete selected scheduler source,15 focused fixtures, README and
 plan/handoff documentation are included in source `2ebdb621bda25ada7b400d968700544dbea7b853` / tag
 `v0.26.108`. [Release](https://github.com/reowens/grepmax/releases/tag/v0.26.108).
+Ordinary saves share one pending entry per path and become eligible after
+**2s since the last save**, capped at **10s since the first pending save** during
+continuous edits. Ten seconds bounds eligibility, not completion or admission.
+Other ready files and catch-up work proceed through one project timer;
+deletion/force/lifecycle behavior, native ownership, hash skips and compatible
+unchanged-chunk reuse remain preserved. Edits during active work can still need
+one coalesced follow-up; already-running work can still be superseded.
+
 One focused fake-clock invocation passed **15/15 cases**, with **53 unrelated
 cases skipped**, in1.186s; peak374,300,672 bytes, zero swap growth and owned cleanup.
 The existing non-timing fixtures were adjusted only to mature save windows for
@@ -90,12 +268,13 @@ The ratified implementation/verification/delivery checklist below records the
 completed scope; its original planning-only/future-approval wording is historical
 and creates no remaining hold or new acceptance gate.
 
-Prepared October 29, 2026 UTC at the user's explicit request to plan the fix.
-**Authorization now: local source reads, plan/handoff edits and diff inspection
-only. Tests run: zero. Compilations run: zero.** Implementation and delivery
-below are proposals, not actions authorized by this documentation turn. The
-umbrella remains active; no saved prompt is consumed or created. This section
-supersedes older next-action wording without reopening completed releases.
+### Historical planning record — subsequently ratified and completed
+
+The original October29 planning turn allowed source/plan/handoff reads and docs
+only, with zero tests or compilation then. The user subsequently ratified the
+whole implementation-to-release batch, which completed as recorded above.
+The original contract and completed checklist below preserve that sequence;
+they contain no current implementation, release or verification queue.
 
 ### Selected outcome and evidence boundary
 
@@ -206,7 +385,7 @@ change, retry-policy change, model load, maintenance or stale-result/commit rede
 Quiet scheduling reduces some intermediate dispatches; it cannot eliminate edits
 during native work or the existing validation-to-commit window.
 
-### Targeted fixtures and proposed verification budget
+### Historical targeted-fixture and verification budget — fulfilled
 
 Extend the existing mocked fixtures in
 `tests/project-batch-processor.test.ts` under one named
@@ -252,11 +431,11 @@ measurement is proposed. If the one invocation fails, fix using its evidence;
 report any remaining validation limit without silently adding a rerun. A failure
 that prevents the selected result blocks release, without creating another gate.
 
-### One-owner implementation and complete delivery checklist
+### Completed one-owner implementation and delivery checklist
 
-One future explicit ratification covers **all** normal substeps below through
-final delivery, without milestone approval loops or a separate release approval.
-No commit/version/package/publication/handover action is authorized now.
+The user's one ratification covered **all** normal substeps through final
+delivery, without milestone approval loops or a separate release approval.
+Every selected item below is complete; this checklist selects no further action.
 
 - [x] Implement only the scheduler/timing contract above, preserving all unrelated
   dirty and intent-to-add bytes, including the unreleased ColBERT query refactor.
@@ -288,10 +467,10 @@ No commit/version/package/publication/handover action is authorized now.
   work is not left uncommitted. Return the concrete committed/published/serving
   result. Keep the delivery umbrella active and deferred work unselected.
 
-The proposed outcome is a finite scheduler fix with complete delivery, not proof
-that this caused P3's repeated catch-up counts or laptop fan behavior. Rollback,
-privacy, safety-marker and cleanup rules remain applicable throughout the future
-ratified batch. No further research phase or diagnostic round is needed to start.
+The finite scheduler fix and delivery are complete. This does not prove the
+cause of P3's repeated catch-up counts or laptop fan behavior. Recorded rollback,
+privacy, safety-marker and cleanup outcomes remain intact. The current direction
+above is for recentering; no new investigation or implementation starts here.
 
 ## Soft inferred-definition eligibility release — SHIPPED in0.26.107
 
@@ -376,7 +555,12 @@ return the shipped result and start no new investigation or validation campaign.
 Earlier local-only/uncommitted statements below are historical and superseded
 by this explicit release outcome, not outstanding selected work.
 
-## Next selected direction — better search results
+<a id="next-selected-direction--better-search-results"></a>
+
+## Prior better-results direction record — before0.26.108
+
+The current direction is recorded above. This dated section preserves the
+completed0.26.107 investigation and its original limits; it is not a new queue.
 
 The first selected source-grounded eligibility correction is now **SHIPPED
 in0.26.107**, as recorded above. It keeps inferred definition intent soft while
@@ -2070,10 +2254,10 @@ A documentation reconciliation does not start the next task or transfer a claim.
 | --- | --- |
 | Publication | [0.26.99 is complete](#publication-02699-complete--october-27-2026): exact rebuild, accepted publication and matching public bytes via verify-only recovery. No republish is queued. |
 | Local development jobs | [Local workers](gmax-local-workers.md#current-use-and-next-task) owns the commands, accepted P3/Windows typechecks and selected Windows unit file. Windows uses the shorter profile cache. Other task coverage and named Mac pool use remain open. |
-| ColBERT GPU/model evaluation | Separate, unfinished work. Referenced `colbert-backend-evaluation.md` is absent here; older timing/scoring summaries are historical until retained evidence is recovered. No experiment or promotion is queued. |
+| ColBERT GPU/model evaluation | [Backend evaluation](colbert-backend-evaluation.md#recenter--paired-run-completed) and the recovered Pro handoff retain the paired timing, question screen and prepared complete-index comparison. The October 28 read-only registration recovery cleared the older reconnection prerequisite; no complete-index timing or production backend promotion is accepted. No experiment is queued by this reconciliation. |
 | Installed P3 | [Platform host receipt](../../../../platform/docs/plans/assets/p3-gmax-load-20261023/0.26.99-handover.json) records installed0.26.99 and verified service/cgroup limits. Its host plan retains thermal/indexing ownership. |
 | Worker enrollment | `beyond/platform/docs/plans/developer-setup-without-loops.md` owns the current operator sequence. Pool admission and enrollment remain separate from Gmax source integration. |
-| Startup text | Historical `session-start-hint-trim.md` is absent here. No startup-text change is selected; its old 0.26.96 dependency is historical. |
+| Startup text | The restored private [startup-text plan](session-start-hint-trim.md) retains its historical scope. No startup-text change is selected; its old 0.26.96 dependency is historical. |
 
 The [repository execution policy](../../CLAUDE.md#local-checks-and-remote-execution)
 and [verification budget](../../AGENTS.md#review-and-verification-budget) apply to
@@ -2085,7 +2269,8 @@ another verification round, remote builder, installation or runtime restart.
 [Gmax on the local worker pool](gmax-local-workers.md) owns the developer entry,
 named tasks, frozen Gmax inputs and result/artifact handling through existing
 local transports. Its [current-use table](gmax-local-workers.md#current-use-and-next-task)
-links accepted P3 and Windows typechecks and distinguishes unrun task coverage.
+links accepted P3/Windows typechecks and the selected Windows unit file, and
+distinguishes unrun task coverage.
 Earlier source-only receipts are dated evidence, not blanket passes for later
 repairs. This integration adds no release gate; pool and machine
 owners keep their scopes.

@@ -2,12 +2,123 @@
 type: doc
 status: active
 created: 2026-10-03T02:39:56Z
-updated: 2026-10-29
+updated: 2026-10-29T07:43:57Z
 audience: internal
-summary: "SHIPPED0.26.108/source 2ebdb62: per-file save coalescing complete through one publication and normal P3 handover. 15 focused cases passed once/53 skipped; one guarded local compilation/package passed. Exact107 rollback retained; fan/speedup unmeasured."
+summary: "All selected upgrade/discovery source, existing fixtures, instructions and docs complete locally. Final guarded compile passed; earlier global swap-guard refusal preserved. Claude config-home bug fixed; Mac/Linux root cause and runtime/native behavior unproven. P3 unchanged."
 ---
 
 # Future Sessions
+
+## Selected 0.26.109 delivery in progress
+
+One focused native invocation passed3/8unselected skipped. Whole selected source/
+fixtures/docs are prepared on public108 history; final production typecheck is
+reused. Continue the already-approved publication/P3/hooks/standard MCP/catalog
+steps without another query/test round. See owning delivery plan and release
+preparation assets; exact publication/handover outcomes will be recorded.
+
+
+## Final local upgrade/discovery integration complete
+
+Lance upgrade commit `4b414da` remains intact (SDK/native 0.40.0, core 13,
+Python 13; separate qualified Rust 12 unchanged). All 16 discovery files plus the
+narrow Claude config-home fix and shared durable guidance are integrated.
+`gmax status --current`, hooks and MCP `repo_status` distinguish repo setup from
+daemon state and actual tool attachment. Plugin cache checks/removal now honor
+`CLAUDE_CONFIG_DIR`; this source bug is not proven to explain the missing catalog.
+See [final record](plans/assets/local-integration-20261029/completion.md) and
+[discovery findings and existing MCP registration](plans/gmax-agent-discovery.md#corrected-direction-existing-mcp-registration-no-t3-code-changes).
+
+Final combined production compilation passed with unchanged guards: 0.845s,
+339,361,792bytes peak owned RSS, zero swap growth and no owned survivors. The
+first integration attempt (before later platform steering/fix) had compiler
+exit 0 but final swap guard failure 6,283,264bytes; it is retained separately.
+The earlier upgrade-only passing receipt does not cover discovery. Zero tests,
+queries, native/import/runtime smokes or host/client activation; no generated
+SDK preparation rerun. All selected source/fixture/doc work is complete locally.
+
+The earlier T3 adapter proposal is withdrawn. **No T3 code changes are selected
+or shown necessary.** Use existing standard MCP registration (STDIO command
+`gmax`, args `["mcp"]`); the existing Codex installer uses
+`codex mcp add gmax -- gmax mcp`. Current active provider registration,
+inheritance, launch and catalog state remain unverified. Gmax-owned status and
+context work when installed and consumed; Claude plugin refresh also picks up
+the hook/context and `CLAUDE_CONFIG_DIR` cache fix. Claude hooks are not assumed
+to run in Codex; no automatic cwd/registry refresh is promised. No registration,
+activation or T3 code change ran. Mac/Linux failure remains unproven. No current
+catalog attachment, release, global install or P3 change is claimed; deployed
+0.26.108 is only the prior record. Quality attempts remain unknown/no retry;
+Table-handle cleanup unselected; CPU/backend/resource-history deferred.
+No further work starts automatically; older next-action text below is historical.
+
+
+## Plan housekeeping — two archived
+
+The user-selected closeouts are complete:
+
+- [Architecture and operations history](archived/architecture-operations-history.md)
+  — historical relocation complete; now archived with its dated content retained.
+- [Fragment-bounded FTS release note](archived/gmax-fts-fragment-release.md)
+  — completed 0.26.103 publication/handover/catch-up, now archived with receipts
+  and historical preparation retained.
+
+The [owning closeout](plans/gmax-delivery.md#plan-housekeeping-closeout--october-29-2026)
+records the two moves and their successor ownership. Session hint still needs
+notation-key disposition; local workers remains partial. Delivery, local
+unreleased upgrade/discovery, deferred backend/resource-history and every other
+record remain in place. No saved prompt was consumed or product action run.
+
+## Stable Lance upgrade complete locally
+
+SDK and all npm native pins 0.39.0→0.40.0 (embedded Lance 13); Python maintenance
+12.0.0→13.0.0, locks/helpers/fixtures/NOTICE/generated SDK coherent. One guarded
+production compilation passed; zero tests/native imports/stores/queries. All58
+generated SDK files match official0.40.0. Older 12 prune/FTS receipts remain
+readable; new helper outputs require 13. Python 14 forward-writer compatibility
+with SDK core 13 is not established. The separate qualified Rust 12 executable is
+unchanged/absent from this generated runtime; no new qualification or mutation.
+See [completion/compatibility record](plans/assets/lance-upgrade-20261029/completion.md)
+and [owning plan](plans/gmax-delivery.md#stable-lance-dependency-upgrade--locally-complete-not-released).
+
+No push/release/version bump/global install/P3 action or RSS-gain claim. Table
+handle cleanup remains unselected. Quality rankings remain unmeasured and query
+attempt count unknown: no retry/budget reset. The selected local upgrade is
+complete; await the user's next selected work rather than start a new round.
+Older evidence/next-action text below is historical to this selected upgrade.
+
+
+## Current direction — better search results
+
+All selected work through **[0.26.108](https://github.com/reowens/grepmax/releases/tag/v0.26.108)**
+is complete, including normal P3 ready/open/active handover. Source
+`2ebdb621bda25ada7b400d968700544dbea7b853`; the retained
+[completion receipt](/home/reoiv/.local/state/gmax-delivery/20261029-0.26.108/completion.json)
+and [owning direction](plans/gmax-delivery.md#current-direction--better-search-results)
+are the current references. No live state was reverified for this docs update.
+The 0.26.106 six features, 0.26.107 eligibility fix, earlier CPU delivery and FTS
+catch-up are complete; none is pending implementation or release.
+
+Recenter on one concrete expected file/symbol miss from existing examples or
+ordinary usage when available: was the expected candidate absent, or merely
+ranked too low? Keep the current models. No particular next implementation,
+query collection, diagnostic capture or other execution is selected now.
+
+0.26.108 coalesces intermediate saves: per-path 2s quiet, at most 10s until
+eligibility from the first pending save; this is not a completion guarantee.
+Other ready files/catch-up continue. Its one timer preserves deletion/force,
+lifecycle/native ownership, hash skips and compatible chunk reuse. The completed
+release used one focused invocation (15/15 passed, 53 unrelated skipped), one
+guarded production compilation/runtime preparation/packaging and one publication
+with matching registry bytes. Owned helpers closed; exact 0.26.107 rollback is
+retained in the shipped record below. No profile/performance measurement ran.
+
+Fan reduction, production throughput and relevance gains are unmeasured.
+Roughly 2k catch-up counts do not prove unchanged files were repeatedly reindexed.
+Ordinary use may supply feedback about fans/freshness, without a measurement
+assignment or test gate. CPU attribution, resource history (overhead regression)
+and backend/indexing experiments stay DEFERRED/UNSELECTED. No automatic worker
+cap, pacing/concurrency/model change or new diagnostics. Keep the umbrella active,
+consume no saved prompt, and start no new work from this documentation update.
 
 ## Per-file save coalescing SHIPPED —0.26.108
 
@@ -84,7 +195,9 @@ pushed. CPU/backend/resource-history work stays deferred; FTS and0.26.106 remain
 completed history. Runlist umbrella stays active; no saved prompts consumed.
 Return the concrete shipped result and start no further work automatically.
 
-## Current direction — better search results
+## Prior better-results direction record — before0.26.108
+
+Historical context; use the current direction at the top of this handoff.
 
 0.26.106 completed all six selected features, both helpers/user docs, one
 publication and normal P3 handover. Source `b4955e0`, public records `d547e8a`,

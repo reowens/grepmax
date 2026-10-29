@@ -21,7 +21,8 @@ const MAX_MS = 120_000;
 const MAX_FILES = 100_000;
 
 export interface FtsRefreshResult {
-  engine: "12.0.0";
+  /** Historical receipts retain their original engine; new helpers require 13. */
+  engine: "12.0.0" | "13.0.0";
   index: "content_idx";
   outcome: "completed" | "checked";
   beforeVersion: number;
@@ -66,7 +67,7 @@ function validResult(
       ? r?.pendingFragments
       : r.selectedFragments;
   return (
-    r?.engine === "12.0.0" &&
+    (r?.engine === "12.0.0" || r?.engine === "13.0.0") &&
     r.index === "content_idx" &&
     r.outcome === (run ? "completed" : "checked") &&
     r.beforeVersion === version &&
@@ -412,7 +413,10 @@ export async function runFtsRefresh(
           },
         );
         const result: FtsRefreshResult = JSON.parse(output);
-        if (!validResult(result, request.expectedVersion!, !!request.run))
+        if (
+          result.engine !== "13.0.0" ||
+          !validResult(result, request.expectedVersion!, !!request.run)
+        )
           throw new Error("Invalid FTS result; completion is uncertain");
         return result;
       } finally {

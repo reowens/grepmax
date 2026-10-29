@@ -296,7 +296,7 @@ describe("exclusive prune admission and verification", () => {
   let child: ReturnType<typeof fakeChild>;
   const runtime = { python: "fixture", script: "fixture.py" };
   const output = {
-    engine: "12.0.0",
+    engine: "13.0.0",
     version: 5,
     fragments: 2,
     bytesRemoved: 100,

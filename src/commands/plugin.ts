@@ -24,6 +24,12 @@ function commandExists(cmd: string): boolean {
   }
 }
 
+function claudeConfigHome(): string {
+  return process.env.CLAUDE_CONFIG_DIR
+    ? path.resolve(process.env.CLAUDE_CONFIG_DIR)
+    : path.join(os.homedir(), ".claude");
+}
+
 function getClients(): Client[] {
   return [
     {
@@ -33,8 +39,7 @@ function getClients(): Client[] {
       isInstalled: () =>
         fs.existsSync(
           path.join(
-            os.homedir(),
-            ".claude",
+            claudeConfigHome(),
             "plugins",
             "cache",
             "grepmax",
@@ -47,8 +52,7 @@ function getClients(): Client[] {
       },
       uninstall: async () => {
         const cacheBase = path.join(
-          os.homedir(),
-          ".claude",
+          claudeConfigHome(),
           "plugins",
           "cache",
           "grepmax",

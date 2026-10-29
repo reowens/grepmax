@@ -6,12 +6,12 @@ import tempfile
 import unittest
 
 try:
-    native_available = importlib.metadata.version('pylance') == '12.0.0'
+    native_available = importlib.metadata.version('pylance') == '13.0.0'
 except importlib.metadata.PackageNotFoundError:
     native_available = False
 
 
-@unittest.skipUnless(native_available, 'locked pylance 12.0.0 is required')
+@unittest.skipUnless(native_available, 'locked pylance 13.0.0 is required')
 class CompactRecoveryTests(unittest.TestCase):
     def test_all_fields_indices_tags_and_batch_boundaries_survive(self):
         spec = importlib.util.spec_from_file_location('compact_recovery', Path(__file__).parents[2] / 'scripts/compact-recovery.py')

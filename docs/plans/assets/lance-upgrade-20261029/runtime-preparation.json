@@ -1,0 +1,23 @@
+{
+  "sdkVersion": "0.40.0",
+  "linuxNativeVersion": "0.40.0",
+  "generatedProvenance": {
+    "package": "@lancedb/lancedb",
+    "version": "0.40.0",
+    "upstream": "https://github.com/lancedb/lancedb",
+    "entrySha256": "da1c79bb5d956e1c706eb778827d8ea1d311a5b8f85314538021251c3eb4079f"
+  },
+  "upstreamRuntimeFilesCompared": 58,
+  "runtimeFileMismatches": [],
+  "pythonInstalledMetadata": "/home/reoiv/.local/state/gmax-lance-upgrade/20261029-stable/python-runtime/lib/python3.13/site-packages/pylance-13.0.0.dist-info/METADATA",
+  "pythonVersionMetadataPresent": true,
+  "nativeImportedOrExecuted": false,
+  "buildScriptsExecuted": false,
+  "commands": [
+    "pnpm install --lockfile-only --ignore-scripts --no-frozen-lockfile",
+    "pnpm install --frozen-lockfile --ignore-scripts",
+    "uv lock --project lance-maintenance --upgrade-package pylance --no-python-downloads --no-build",
+    "UV_PROJECT_ENVIRONMENT=<state>/python-runtime uv sync --locked --project lance-maintenance --no-dev --no-python-downloads --no-build",
+    "node scripts/prepare-lance-runtime.cjs"
+  ]
+}

@@ -127,7 +127,11 @@ function seedConfig(home: string): void {
 }
 
 if (require.main === module) {
-  if (process.argv.slice(2).join(" ") === "mcp --existing-index-only") {
+  if (process.argv[2] === "status" && process.argv.includes("--current")) {
+    // Keep discovery ahead of the CLI registry and all native/index imports.
+    void require(path.join(__dirname, "../plugins/grepmax/hooks/repo-status.js"))
+      .runStatusCli(process.argv.slice(3));
+  } else if (process.argv.slice(2).join(" ") === "mcp --existing-index-only") {
     require("./lib/mcp/document-search").runDocumentSearchBridge();
   } else if (process.argv.includes("--existing-index-only")) {
     process.stderr.write("gmax: use exactly mcp --existing-index-only\n");

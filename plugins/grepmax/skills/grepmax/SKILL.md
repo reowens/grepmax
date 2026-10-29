@@ -8,7 +8,7 @@ allowed-tools: "Bash(gmax:*), Read"
 
 - **Know the exact string/symbol?** → `Grep` tool (fastest, zero overhead)
 - **Know the file already?** → `Read` tool directly
-- **Searching by concept/behavior?** → `Bash(gmax "query" --agent)` (semantic search)
+- **Searching by concept/behavior?** → an advertised Gmax `semantic_search` tool, or `Bash(gmax "query" --agent)` when CLI use is permitted
 - **New to the codebase?** → `Bash(gmax audit --agent)` (god nodes, hubs, cycles in one pass)
 - **Need full function body?** → `Bash(gmax extract <symbol>)` (complete source with line numbers)
 - **Quick symbol overview?** → `Bash(gmax peek <symbol>)` (signature + callers + callees)
@@ -17,6 +17,19 @@ allowed-tools: "Bash(gmax:*), Read"
 - **Is a symbol unused?** → `Bash(gmax dead <symbol>)` (call-graph check — hypothesis, not proof)
 
 ## Quick start
+
+Session/directory context reports the current repo's cached setup state. A CLI
+hint or watch lease does not attach MCP tools: use them only if advertised in
+the current client's tool catalog. For an explicit setup/status question use
+`gmax status --current --json` (or an advertised `repo_status` tool), which reads
+bounded metadata and optionally pings the daemon without opening the index or
+starting services. `not_registered` applies to this repo; another indexed project
+does not make it searchable. Preserve pending, error, offline and unknown states.
+
+Ordinary permitted semantic retrieval is tool use, not a test/benchmark invocation.
+Specific query limits, STOP instructions, host/model limits and service-startup
+restrictions still apply. Use `rg` for literal text/files. Do not run setup,
+reindexing, repair or model loads merely to make a retrieval suggestion work.
 
 Use `--agent` for the most token-efficient output (one line per result with signature hints).
 
@@ -36,7 +49,8 @@ gmax remove                     # remove current project from the index
 gmax index                      # reindex an already-added project
 ```
 
-If search returns "This project hasn't been added to gmax yet", run `Bash(gmax add)` first.
+If search reports that the current repo is not registered, report that state.
+Adding/indexing is a separate action and must be within the user's authorization.
 
 ## CLI commands
 

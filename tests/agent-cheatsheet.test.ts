@@ -5,11 +5,9 @@ import {
   SESSION_START_PREFIX,
 } from "../src/lib/help/agent-cheatsheet";
 
-// The SessionStart hook (plugins/grepmax/hooks/start.js) require()s the
-// compiled form of this module and reads SESSION_START_HINT. These tests lock
-// that contract so a rename/shape change can't silently fall back to the
-// hook's inline copy and drift.
-describe("agent cheatsheet (shared with SessionStart hook)", () => {
+// Preserve the exported CLI reference shape. Session hooks now use the bounded
+// repo-status helper so a generic cheatsheet cannot imply current-repo readiness.
+describe("agent cheatsheet", () => {
   it("exports SESSION_START_HINT as a non-empty string", () => {
     expect(typeof SESSION_START_HINT).toBe("string");
     expect(SESSION_START_HINT.length).toBeGreaterThan(0);
