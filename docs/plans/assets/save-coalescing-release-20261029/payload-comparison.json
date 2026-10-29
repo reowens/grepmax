@@ -1,0 +1,14 @@
+{
+  "packageFiles": 335,
+  "unchangedPayloadsFrom026107": 330,
+  "changedPayloads": [
+    "dist/lib/index/batch-processor.js",
+    ".claude-plugin/marketplace.json",
+    "package.json",
+    "plugins/grepmax/.claude-plugin/plugin.json",
+    "README.md"
+  ],
+  "addedFiles": [],
+  "removedFiles": [],
+  "dependenciesNativeProvenanceUnchanged": true
+}

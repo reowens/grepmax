@@ -2,7 +2,7 @@
 type: plan
 status: active
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-29T04:09:47Z
+updated: 2026-10-29T05:31:08Z
 surfaces:
   - store
   - daemon
@@ -23,9 +23,9 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Save-coalescing batch RATIFIED / IN PROGRESS through release and P3 handover. Source and 15 fake-clock cases prepared; single focused invocation and guarded production compilation not yet run. 0.26.107 remains deployed until normal handover."
-next_step: "Complete the ratified scheduler/fixtures/docs, one focused timing test invocation, one guarded production compilation, commit/version/package/one publication and normal P3 handover/rollback/final records without another permission loop. No profiling or new measurements."
-summary: "Finite save-coalescing proposal: 2s per-path quiet period, 10s maximum eligibility wait, one project timer; preserve throughput/admission and chunk reuse. Future ratification includes full commit-to-P3 delivery. 0.26.107 and completed FTS history remain intact; unrelated work preserved."
+current_state: "SHIPPED0.26.108/source 2ebdb62: complete per-file save coalescing source/fixtures/docs, one publication and normal P3 handover ready/open/active. 15 focused cases passed once; one local production compilation/package passed. Fan/speedup unmeasured."
+next_step: "Return the complete committed/published/serving save-coalescing result. Start no further tests, profiles, research, maintenance, model/config/backend work or release automatically; delivery umbrella remains active."
+summary: "Per-file2s quiet/10s maximum eligibility wait shipped, one project timer; ready files/catchup/native ownership/reuse preserved. One focused invocation15 passed/53 skipped, one guarded production compilation, one publication and normal P3 handover; exact107 rollback retained."
 ---
 
 # Gmax Delivery Plan
@@ -35,18 +35,60 @@ Project status belongs in this plan and its linked plans, never in `AGENTS.md` o
 preserves status, incident measurements and release context moved out of
 `CLAUDE.md`; those excerpts are historical and add no execution authorization.
 
-## Per-file save coalescing — READY FOR IMPLEMENTATION / AWAITING RATIFICATION
+<a id="per-file-save-coalescing--ready-for-implementation--awaiting-ratification"></a>
 
-**Execution update:** the user explicitly ratified the complete plan through release
-and P3 handover on October29,2026 UTC. The planning-only wording below records
-the original proposal, not a current hold. One owner is executing, no delegation
-or review. Selected source,15 deterministic cases and README text are complete. The single
-focused invocation passed all15 cases in1.186s, peak374,300,672 bytes, zero swap
-growth and owned cleanup;53 unrelated cases were skipped. The one local production
-compilation/runtime preparation passed in1.972s, peak335,855,616 bytes, zero swap
-growth and owned cleanup. Publication/P3 handover remain in progress. Guarded build/package and release receipts will
-be retained under `/home/reoiv/.local/state/gmax-delivery/20261029-0.26.108/`;
-the patch version remains subject to the normal public-version check.
+## Per-file save coalescing — SHIPPED in0.26.108
+
+**Completed October29,2026 UTC under the user's single ratification through
+release.** Complete selected scheduler source,15 focused fixtures, README and
+plan/handoff documentation are included in source `2ebdb621bda25ada7b400d968700544dbea7b853` / tag
+`v0.26.108`. [Release](https://github.com/reowens/grepmax/releases/tag/v0.26.108).
+One focused fake-clock invocation passed **15/15 cases**, with **53 unrelated
+cases skipped**, in1.186s; peak374,300,672 bytes, zero swap growth and owned cleanup.
+The existing non-timing fixtures were adjusted only to mature save windows for
+manual dispatch; those53 cases and test-typechecking were not run.
+
+The single local production compilation/runtime preparation passed in
+1.972s, peak335,855,616 bytes; packaging passed in
+12.572s, peak632,107,008 bytes. Both retained the existing
+two-CPU/nice10/2GiB/180s/minimum8GiB available/zero swap-growth guards and
+closed owned groups. No source changed after the passing compile; packaging
+changed only version metadata and copied unchanged qualified native payloads.
+The335-file archive has330 byte-identical payloads from0.26.107. Only the batch
+processor, README and three version manifests differ; dependencies, native
+payloads and provenance are unchanged. Archive SHA256:
+`e968ea468d3f515434a6d30b7512e3cced9e6fab9c960a6483d61c9fca9d3a03`.
+
+Exactly one publication dispatch, [run40822910285](https://github.com/reowens/grepmax/actions/runs/40822910285),
+succeeded. The normal hosted rebuild matched the approved tar bytes; registry
+visibility was delayed after npm acceptance, then the published download matched
+the approved archive. No publication retry or verification-only recovery ran.
+
+Published-byte staging matched all335 files and passed in22.745s,
+peak1,169,068,032 bytes, zero swap growth and owned cleanup.
+Install lifecycle scripts were disabled; unchanged manifests permitted retaining
+the exact working0.26.107 dependency tree. Normal same-unit handover confirmed
+daemon2467304 serving **0.26.108 ready/open/active**. Configuration, unit,
+Small/CPU/384, saved workers4, two-CPU quota200000/100000, weight10/nice10 and
+store/cache directory identities are preserved. Predecessor exited; the owned
+autostart marker was removed, with no external safety marker cleared.
+Exact0.26.107 rollback: `/home/reoiv/.local/state/gmax-handover/20261029T052046Z-0.26.108/previous-install`.
+Earlier rollback installations remain intact. This was normal readiness/version
+validation, with no live search or functional/native/model exercise.
+
+Public evidence: `docs/plans/assets/save-coalescing-release-20261029/`.
+Full release/reconciliation receipts: `/home/reoiv/.local/state/gmax-delivery/20261029-0.26.108/`.
+Handover receipts: `/home/reoiv/.local/state/gmax-handover/20261029T052046Z-0.26.108/`.
+No independent review, audit, additional test/compile round, profile, benchmark,
+FTS action or maintenance was invoked. **Fan/CPU/speedup gain is unmeasured**;
+quiet scheduling does not eliminate edits during native work or identify the
+cause of the prior catch-up counts. CPU attribution/resource history/backend
+experiments remain deferred. Unrelated private/dirty/intent-to-add work is
+preserved and excluded; private history is not pushed. The umbrella stays active.
+
+The ratified implementation/verification/delivery checklist below records the
+completed scope; its original planning-only/future-approval wording is historical
+and creates no remaining hold or new acceptance gate.
 
 Prepared October 29, 2026 UTC at the user's explicit request to plan the fix.
 **Authorization now: local source reads, plan/handoff edits and diff inspection
@@ -224,16 +266,16 @@ No commit/version/package/publication/handover action is authorized now.
 - [x] Inspect the finite diff, run the single authorized focused invocation and
   single guarded final-source production compilation, retaining honest results.
   Complete all selected source/fixtures/docs and necessary fixes before release.
-- [ ] Commit the complete selected change. Isolate release source if needed so
+- [x] Commit the complete selected change. Isolate release source if needed so
   unrelated work remains preserved and excluded; no partial selected batch may
   be hidden by that checkout. Commit version/manifests through the established
   release procedure; package the existing compiled final source and required
   runtime/license payloads without another local compile or verification suite.
-- [ ] Publish once through the existing approved `release.yml` workflow; its
+- [x] Publish once through the existing approved `release.yml` workflow; its
   normal archive rebuild is part of publication, not another local compilation
   budget. Retain exact source/archive/provenance and published-byte reconciliation
   using the established process. No new CI/review/audit/profile gate is added.
-- [ ] Stage/install those published bytes through the established guarded P3
+- [x] Stage/install those published bytes through the established guarded P3
   procedure, retaining the exact previous install as rollback. Perform normal
   same-unit version/readiness handover only, preserving configuration, unit,
   worker/model/quota/weight/nice, store/cache identity and safety markers. Include
@@ -241,7 +283,7 @@ No commit/version/package/publication/handover action is authorized now.
   new measurement, profile, maintenance or FTS run. If handover fails, restore the
   retained prior install/service through the existing rollback procedure and
   report the actual serving version; do not invent successful delivery.
-- [ ] Finish release/handover/rollback and validation-limit records in this plan
+- [x] Finish release/handover/rollback and validation-limit records in this plan
   and `docs/future-sessions.md`; commit the scoped final documentation so selected
   work is not left uncommitted. Return the concrete committed/published/serving
   result. Keep the delivery umbrella active and deferred work unselected.

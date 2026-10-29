@@ -1,0 +1,32 @@
+{
+  "version": "0.26.108",
+  "pid": 2467304,
+  "ready": true,
+  "operationStatus": "open",
+  "serviceMode": "active",
+  "kernelLimits": {
+    "cpu.max": "200000 100000",
+    "cpu.weight": "10",
+    "nice": 10
+  },
+  "configPreserved": true,
+  "unitFilePreserved": true,
+  "storeDirectoryIdentitiesPreserved": true,
+  "previousInstallVersion": "0.26.107",
+  "rollbackRetained": true,
+  "ownedAutostartMarkerRemoved": true,
+  "safetyStopCleared": false,
+  "functionalQueriesRun": 0,
+  "productionMaintenanceInvoked": false,
+  "observedAt": 1793251796.5616817,
+  "staging": {
+    "outcome": "completed",
+    "elapsedSeconds": 22.745398848026525,
+    "peakSampledOwnedRssBytes": 1169068032,
+    "finalSwapGrowthBytes": 0,
+    "noLiveOwnedProcesses": true
+  },
+  "matchingPackageFiles": 335,
+  "exactPreviousDependencyTreeRetained": true,
+  "installLifecycleScriptsRun": false
+}

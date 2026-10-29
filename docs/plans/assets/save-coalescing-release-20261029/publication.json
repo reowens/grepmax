@@ -1,0 +1,13 @@
+{
+  "version": "0.26.108",
+  "sourceCommit": "2ebdb621bda25ada7b400d968700544dbea7b853",
+  "gitTag": "v0.26.108",
+  "archive": "grepmax-0.26.108.tgz",
+  "sha256": "e968ea468d3f515434a6d30b7512e3cced9e6fab9c960a6483d61c9fca9d3a03",
+  "workflowRunId": 40822910285,
+  "workflowConclusion": "success",
+  "registryBytesMatch": true,
+  "publicationInvocations": 1,
+  "releaseUrl": "https://github.com/reowens/grepmax/releases/tag/v0.26.108",
+  "observedAt": 1793251751.0607326
+}

@@ -4,48 +4,45 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-29
 audience: internal
-summary: "0.26.107 remains shipped. Save-coalescing plan ready/awaiting one ratification covering implementation, bounded test+compile and full commit/release/P3 delivery. Planning only: zero new executions; unrelated work and three saved prompts preserved."
+summary: "SHIPPED0.26.108/source 2ebdb62: per-file save coalescing complete through one publication and normal P3 handover. 15 focused cases passed once/53 skipped; one guarded local compilation/package passed. Exact107 rollback retained; fan/speedup unmeasured."
 ---
 
 # Future Sessions
 
-## Per-file save coalescing — ready, awaiting one ratification
+## Per-file save coalescing SHIPPED —0.26.108
 
-**Ratified execution now in progress:** the user approved the full batch through
-release, normal P3 handover/rollback and final committed records. The original
-planning wording below is historical. Source/15 focused timing cases/README are
-prepared; the one focused invocation passed15 cases (53 unrelated cases skipped).
-The guarded production compilation/runtime preparation passed in1.972s with
-zero swap growth and owned cleanup. Publication/P3 handover remain in progress. No new profile, measurement, review or delegation.
+The [owning completed record](plans/gmax-delivery.md#per-file-save-coalescing--shipped-in026108)
+contains the whole ratified batch. Source `2ebdb621bda25ada7b400d968700544dbea7b853`,
+tag `v0.26.108`, [release](https://github.com/reowens/grepmax/releases/tag/v0.26.108).
+The source,15 timing fixtures, scoped README and docs are committed and included.
+Per-path2s quiet/10s maximum eligibility wait uses one project timer; ready files
+and catch-up continue. Deletion/forced work, retries, fairness, ownership, hash
+skips and unchanged-chunk reuse remain. In-flight work can still be superseded.
 
-The [implementation-ready owning plan](plans/gmax-delivery.md#per-file-save-coalescing--ready-for-implementation--awaiting-ratification)
-is the current proposed next batch. It supersedes older return/no-next-action
-wording; 0.26.107/source `ed5b9cf98fee50520c26f60a555af7aa1eb7fc47` remains the
-completed shipped baseline. This turn changed plan/handoff documentation only;
-**zero tests, compilation, live/log reads, implementation or delivery actions**.
+Exactly one focused fake-clock invocation passed15 cases;53 unrelated cases
+were skipped, and test-typechecking was not run. One guarded local production
+compilation/runtime preparation and packaging passed with zero swap growth and
+owned cleanup. All335 archive files are accounted for;330 payloads are identical
+to0.26.107, with only scheduler/README/three version manifests changed. Native
+payloads, provenance and dependencies remain unchanged. One publication
+workflow40822910285 succeeded; registry bytes match the qualified archive.
 
-The finite source change is `src/lib/index/batch-processor.ts`: per-path 2s quiet
-since the latest genuine save, 10s maximum eligibility wait since the first
-pending save, one project timer, ready-only selection. Preserve ordinary
-catch-up/deletion/force scheduling, internal retry timestamps, fairness,
-post-batch delay, native ownership, hash skips, chunk reuse and write semantics.
-In-flight saves merge into one follow-up; this cannot eliminate work already
-in flight or establish the production cause of fan noise/backlog replenishment.
+P3 daemon2467304 serves0.26.108 **ready/open/active** through the same unit
+and unchanged configuration, model, workers4, two-CPU quota/weight10/nice10 and
+store identities. Published staging passed in22.745s, peak
+1,169,068,032 bytes, zero swap growth and owned cleanup;
+exact prior working dependencies retained. Rollback:
+`/home/reoiv/.local/state/gmax-handover/20261029T052046Z-0.26.108/previous-install`.
+Owned marker removed; predecessor exited; earlier rollbacks preserved.
+Public receipts: `docs/plans/assets/save-coalescing-release-20261029/`;
+full local release/reconciliation: `/home/reoiv/.local/state/gmax-delivery/20261029-0.26.108/`.
 
-One future ratification covers implementation, targeted mocked fake-clock
-fixtures in `tests/project-batch-processor.test.ts`, scoped README/docs, **at
-most one focused timing-test invocation and one guarded local production
-compilation**, then commit/version/package/one publication/normal P3
-handover with retained rollback/final committed records. No separate release
-approval loop, extra test invocation, independent review, profile or new
-measurement. Full timing/merge/lifecycle semantics, cases, guard limits and
-complete-delivery checklist are in the owning section. No part is authorized now.
-
-Preserve all unrelated dirty/intent-to-add source and README changes, including
-the unreleased ColBERT refactor. Keep this umbrella active; do not consume,
-replace or create saved prompts. FTS remains completed history; CPU attribution,
-resource history and backend/model experiments remain deferred. No further
-investigation phase is required before implementing the ratified batch.
+No additional tests, independent review, audit, profile, new measurements,
+runtime/native/model search exercise, FTS or maintenance ran. Fan/speedup gain
+remains unmeasured; prior catch-up repetition/thermal cause remains unproven.
+0.26.107 eligibility and prior FTS completion remain complete. Unrelated dirty/
+intent-to-add/private work is preserved and excluded. Keep the umbrella active,
+consume no saved prompts, return the shipped result and start no new work.
 
 ## Soft inferred-definition fix SHIPPED —0.26.107
 
