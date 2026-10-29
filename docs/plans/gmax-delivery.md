@@ -23,12 +23,60 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "MCP core/full stages1-6 complete locally: 36/36 fake-only tests in the single invocation; one guarded noEmit production compilation passed. Implementation commit 64d10ed. Stage7 unselected; active full28 and repo not_registered retained."
-next_step: "Return completed local implementation with exact commit/receipts. No automatic next work; stage7 packaging/publication/P3/core activation remains unselected. Verification allowances spent, no reruns."
-summary: "Selectable core8/full28 plus truthful annotations, disabled summarizer and review/cancellation correctness complete locally. Focused36/36 and guarded compiler passed once each; no release/client migration."
+current_state: "Deterministic operation-owned table cleanup complete locally, source-inspected only; no tests/compiler/runtime validation. Existing MCP commits 64d10ed/fff1556 remain local/unreleased; deployed 0.26.109 unchanged."
+next_step: "Return selected cleanup source/docs commit and limits; no automatic tests, compilation, runtime verification, release or relevance retry."
+summary: "Local deterministic cleanup for insertBatch, deletePaths and deletePathsExcludingIds, including schema diagnostics and failed acquisition; shared Connection/Session/lease ownership unchanged. RSS impact unmeasured."
 ---
 
 # Gmax Delivery Plan
+
+## Deterministic write-table cleanup — COMPLETE LOCALLY
+
+**October 29, 2026, user “go”:** the selected source/docs/local-commit batch is
+complete, source-inspected only. This supersedes the historical unselected
+Table-handle recommendation below; it selects no release or verification round.
+Existing MCP implementation **64d10ed** and receipt/docs **fff1556** remain intact
+and local/unreleased alongside this cleanup. Deployed 0.26.109 is unchanged.
+
+`src/lib/store/vector-db.ts` now closes each operation-owned Table in `finally`:
+
+- `insertBatch`: await `add` and mark the committed write, then close before the
+  write gate finishes. Its schema-error diagnostic awaits `schema` and closes
+  its separate handle whether schema inspection or the existing diagnostic throws.
+- `deletePaths` and `deletePathsExcludingIds`: await each existing query/delete
+  and close after all batches, including no-match results and failures. Empty
+  input/missing table still returns without creating or disposing a handle.
+- `ensureTable`/`ensureTableUnsafe`: close a newly acquired handle if validation,
+  schema setup or seed removal fails before ownership transfers to the caller.
+  Successful acquisition still returns an open handle. `openExistingTableUnsafe`
+  retains failed-acquisition cleanup without masking its original error.
+
+The narrow `closeOwnedTable` helper invokes synchronous `Table.close()`, preserving
+an in-flight operation error if close also throws; a close-only error after
+successful work propagates. The installed official SDK 0.40.0 declaration
+(`node_modules/@lancedb/lancedb/dist/table.d.ts`, `Table.close`) documents resource
+release, repeat-safe close and rejection of later use. Its `LocalTable.close`
+implementation delegates directly to native close; `Connection.openTable`
+constructs a new local wrapper. No SDK/native code was executed to inspect this.
+
+**Ownership and behavior:** shared Connection/Session, native cache lifetime,
+leases, write-gate admission/draining, SQL predicates, batch sizes, committed-write
+markers and independently pinned/shared reader handles remain unchanged. Only
+locally acquired handles are disposed, after their awaited work settles. The
+existing schema diagnostic/error translation is retained. No broader handle,
+worker, cache, recycle or memory-policy refactor and no fixture change.
+
+**Verification and limits:** scoped source/control-flow/diff and whitespace
+inspection only. ZERO tests, typechecks/compilation, builds, native/store/model/
+MCP/search/status calls, probes, profiling, independent review, package/version/
+release, service/client/config operations, remote actions or pushes. Earlier MCP
+36-test/compiler receipts do not validate this changed source. Closing a handle
+does not establish allocator/cache eviction, lower RSS, a leak cause, fan or
+relevance gains. The memory guard evidence is unchanged; Platform quality remains
+unmeasured with attempted-query count **unknown**, without retry/reset authority.
+CPU attribution, resource history and backend experiments remain unselected.
+Pending prompts, unrelated dependency/ColBERT/private work and index/ITA entries
+are preserved. No next execution starts automatically.
 
 ## MCP core/full local implementation — COMPLETE LOCALLY
 

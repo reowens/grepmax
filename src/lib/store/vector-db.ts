@@ -1171,34 +1171,54 @@ export class VectorDB {
       const existing = await this.openExistingTableUnsafe();
       if (!existing)
         throw new Error("gmax store is quarantined and has no existing table");
-      await this.validateSchema(existing);
-      return existing;
+      try {
+        await this.validateSchema(existing);
+        return existing;
+      } catch (err) {
+        this.closeOwnedTable(existing, true);
+        throw err;
+      }
     }
     return this.withWriteGate(() => this.ensureTableUnsafe());
   }
 
+  /** Close only a locally owned handle; cleanup must not mask an operation error. */
+  private closeOwnedTable(table: lancedb.Table | undefined, failed: boolean): void {
+    try {
+      table?.close();
+    } catch (err) {
+      if (!failed) throw err;
+    }
+  }
+
   private async ensureTableUnsafe(): Promise<lancedb.Table> {
     const db = await this.getDb();
-    let table: lancedb.Table;
+    let table: lancedb.Table | undefined;
     try {
-      table = await db.openTable(TABLE_NAME);
-    } catch (err) {
-      if (!isMissingTableError(err)) throw err;
-      this.assertMutationAllowed();
-      log("db", `Creating table (${this.vectorDim}d)`);
-      const schema = this.buildSchema();
-      table = await db.createTable(TABLE_NAME, [this.seedRow()], {
-        schema,
-      });
-      await table.delete("id = 'seed'");
-      this.markWriteCommitted();
-      return table;
-    }
+      try {
+        table = await db.openTable(TABLE_NAME);
+      } catch (err) {
+        if (!isMissingTableError(err)) throw err;
+        this.assertMutationAllowed();
+        log("db", `Creating table (${this.vectorDim}d)`);
+        const schema = this.buildSchema();
+        table = await db.createTable(TABLE_NAME, [this.seedRow()], {
+          schema,
+        });
+        await table.delete("id = 'seed'");
+        this.markWriteCommitted();
+        return table;
+      }
 
-    await this.validateSchema(table);
-    this.assertMutationAllowed();
-    await this.evolveSchema(table);
-    return table;
+      await this.validateSchema(table);
+      this.assertMutationAllowed();
+      await this.evolveSchema(table);
+      return table;
+    } catch (err) {
+      // Acquisition retains ownership until setup succeeds and returns the handle.
+      this.closeOwnedTable(table, true);
+      throw err;
+    }
   }
 
   /** Restricted reads must use the daemon connection without creating/evolving a table. */
@@ -1225,7 +1245,7 @@ export class VectorDB {
         await table.checkout(this.boundedProtectedVersion);
       return table;
     } catch (err) {
-      table?.close();
+      this.closeOwnedTable(table, true);
       if (isMissingTableError(err)) return null;
       throw err;
     }
@@ -1317,20 +1337,30 @@ export class VectorDB {
     try {
       await this.withWriteGate(async () => {
         const table = await this.ensureTableUnsafe();
-        await table.add(records);
-        this.markWriteCommitted();
+        let failed = true;
+        try {
+          await table.add(records);
+          this.markWriteCommitted();
+          failed = false;
+        } finally {
+          this.closeOwnedTable(table, failed);
+        }
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.toLowerCase().includes("found field not in schema")) {
         const table = await this.ensureTable();
-        const schema = await table.schema();
-        const schemaFields = schema.fields.map((f) => f.name);
-        throw new Error(
-          `[vector-db] schema mismatch detected (fields: ${schemaFields.join(
-            ", ",
-          )}). Please run "gmax index --reset" to rebuild the index.`,
-        );
+        try {
+          const schema = await table.schema();
+          const schemaFields = schema.fields.map((f) => f.name);
+          throw new Error(
+            `[vector-db] schema mismatch detected (fields: ${schemaFields.join(
+              ", ",
+            )}). Please run "gmax index --reset" to rebuild the index.`,
+          );
+        } finally {
+          this.closeOwnedTable(table, true);
+        }
       }
       throw err;
     }
@@ -2326,21 +2356,27 @@ export class VectorDB {
     await this.withWriteGate(async () => {
       const table = await this.openExistingTableUnsafe();
       if (!table) return;
-      for (let i = 0; i < unique.length; i += batchSize) {
-        const slice = unique.slice(i, i + batchSize);
-        const values = slice.map((p) => `'${escapeSqlString(p)}'`).join(",");
-        const where = `path IN (${values})`;
-        // Skip no-op deletes to avoid creating empty LanceDB versions
-        const existing = await table
-          .query()
-          .select(["id"])
-          .where(where)
-          .limit(1)
-          .toArray(QUERY_EXECUTION_OPTIONS);
-        if (existing.length > 0) {
-          await table.delete(where);
-          this.markWriteCommitted();
+      let failed = true;
+      try {
+        for (let i = 0; i < unique.length; i += batchSize) {
+          const slice = unique.slice(i, i + batchSize);
+          const values = slice.map((p) => `'${escapeSqlString(p)}'`).join(",");
+          const where = `path IN (${values})`;
+          // Skip no-op deletes to avoid creating empty LanceDB versions
+          const existing = await table
+            .query()
+            .select(["id"])
+            .where(where)
+            .limit(1)
+            .toArray(QUERY_EXECUTION_OPTIONS);
+          if (existing.length > 0) {
+            await table.delete(where);
+            this.markWriteCommitted();
+          }
         }
+        failed = false;
+      } finally {
+        this.closeOwnedTable(table, failed);
       }
     });
   }
@@ -2378,20 +2414,26 @@ export class VectorDB {
     await this.withWriteGate(async () => {
       const table = await this.openExistingTableUnsafe();
       if (!table) return;
-      for (let i = 0; i < unique.length; i += batchSize) {
-        const slice = unique.slice(i, i + batchSize);
-        const values = slice.map((p) => `'${escapeSqlString(p)}'`).join(",");
-        const where = `path IN (${values})${idExclusion}`;
-        const existing = await table
-          .query()
-          .select(["id"])
-          .where(where)
-          .limit(1)
-          .toArray(QUERY_EXECUTION_OPTIONS);
-        if (existing.length > 0) {
-          await table.delete(where);
-          this.markWriteCommitted();
+      let failed = true;
+      try {
+        for (let i = 0; i < unique.length; i += batchSize) {
+          const slice = unique.slice(i, i + batchSize);
+          const values = slice.map((p) => `'${escapeSqlString(p)}'`).join(",");
+          const where = `path IN (${values})${idExclusion}`;
+          const existing = await table
+            .query()
+            .select(["id"])
+            .where(where)
+            .limit(1)
+            .toArray(QUERY_EXECUTION_OPTIONS);
+          if (existing.length > 0) {
+            await table.delete(where);
+            this.markWriteCommitted();
+          }
         }
+        failed = false;
+      } finally {
+        this.closeOwnedTable(table, failed);
       }
     });
   }

@@ -4,10 +4,39 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-29
 audience: internal
-summary: "MCP stages1-6 COMPLETE LOCALLY: single fake-only invocation36/36 and single guarded noEmit compilation passed. No stage7 packaging/release/P3/core activation. Active full28 and repo unregistered unchanged."
+summary: "Deterministic write-table cleanup complete locally/unreleased with MCP 64d10ed/fff1556 preserved. Source/diff inspected only; no tests/compiler/runtime or RSS evidence. Deployed 0.26.109 and unknown quality-attempt budget unchanged."
 ---
 
 # Future Sessions
+
+## Deterministic write-table cleanup — COMPLETE LOCALLY / UNRELEASED
+
+User “go” selected source/docs/local commit only. See the
+[owning cleanup record](plans/gmax-delivery.md#deterministic-write-table-cleanup--complete-locally).
+`VectorDB.insertBatch`, `deletePaths` and `deletePathsExcludingIds` now close their
+operation-owned Tables in `finally` after awaited native work, including no-match
+and failed writes/deletes and insertion's separate schema-error diagnostic.
+Acquisition helpers close failed-setup handles before ownership transfers;
+successfully returned handles remain open. Cleanup preserves original operation
+errors, propagating a close-only error after success. Shared Connection/Session,
+leases, write-gate ordering, caches and independently owned reader handles stay
+unchanged. No fixture change was necessary.
+
+SDK 0.40.0 close/ownership contracts and selected control flow were read from
+source; scoped diff/whitespace inspection only. **No tests, typechecks/compiler,
+builds, runtime/native/store/model/MCP/search calls, probes, profiles, packaging,
+release/deployment, client/config changes, remote actions or push.** The earlier
+MCP receipts do not cover this source change; RSS/cache eviction, leak causation,
+fan and relevance effects remain unproven. Existing local MCP **64d10ed** and
+docs **fff1556** are preserved alongside this local/unreleased cleanup. Deployed
+0.26.109 remains the last retained release state; no fresh verification.
+
+Prior Table-handle “unselected/proposed” language below is historical and
+superseded by this completed local batch. Platform quality attempted-query count
+remains unknown/no retry, original Gmax cases never ran, and no indexing follows.
+CPU/backend/resource-history work remains deferred. Unrelated dependency edits,
+ColBERT/private history and index/ITA work remain preserved. Pending prompts are
+untouched; no next action starts automatically.
 
 ## MCP profile/correctness implementation — COMPLETE LOCALLY
 
