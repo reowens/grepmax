@@ -23,12 +23,50 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Local Lance upgrade and repository agent discovery integrated; SDK/native0.40/core 13/Python 13. Final combined guarded production compilation passed after later config-home fix; earlier swap-guard failure retained. Zero tests/runtime queries/native execution. Not released; quality attempt count unknown."
-next_step: "Local selected work complete; no automatic action. No T3 code changes selected or shown necessary; use existing standard MCP registration. Active provider registration/inheritance/launch/catalog state is unverified. Two user-selected records closed out and archived below; other plans unchanged. No activation, release, query retry, Table-handle cleanup or deferred experiment selected."
-summary: "All selected upgrade/discovery source, existing fixtures, instructions and docs complete locally. Final guarded compile passed; earlier global swap-guard refusal preserved. Claude config-home bug fixed; Mac/Linux root cause and runtime/native behavior unproven. P3 unchanged."
+current_state: "0.26.109 published/source60bc601, P3ready/open/active. Native3passed/8skipped; final compile reused; one publication plus verification-only recovery. Claude hooks109 and standard Codex MCP registration ready; direct server28tools works. Active provider301tools/noGmax; attachment awaits standard session reload."
+next_step: "No new implementation/test/query/release selected. Reconnect/new provider session consuming standard gmax mcp registration and observe its actual catalog; no T3 code/adapter. Quality attempt count unknown/no retry, Table-handle cleanup unselected, CPU/backend/resource history deferred."
+summary: "Whole selected Lance upgrade/discovery batch shipped109. SDK/native0.40/core13/Python13; Rust12 unchanged. One focused native invocation3passed; P3/hook refresh/direct MCP metadata complete. Active provider attachment not confirmed; standard session reload remains."
 ---
 
 # Gmax Delivery Plan
+
+## 0.26.109 shipped — Lance upgrade, discovery and standard MCP setup
+
+**October 29, 2026 UTC.** Whole selected source/fixtures/docs shipped as
+[`60bc601`](https://github.com/reowens/grepmax/releases/tag/v0.26.109), including
+SDK/native0.40.0/core13, Python13, current-repo status/hooks/MCP, config-home fix
+and selected archive/doc corrections. Separate qualified Rust12 stays unchanged;
+full-table maintenance remains disabled, with no new qualification claim.
+
+[Completion/evidence](assets/lance-discovery-release-20261029/completion.md): one
+focused native invocation **3passed/8unselected skipped**, tiny temporary data,
+zero swap/owned survivors. Final combined production compilation reused; local
+artifact emission/runtime/pack passed.341published files match the approved
+archive. Exactly one publication accepted; the first registry-metadata check
+failed404 propagation. One **verification-only** recovery skipped publication
+and completed successfully; no duplicate publish.
+
+P3 serves **0.26.109 ready/open/active** under the unchanged systemd unit/config/
+store identities/worker4/quota/nice policy. Exact108rollback is retained at
+`/home/reoiv/.local/state/gmax-handover/20261029T083816Z-0.26.109/previous-install`. Owned marker removed; no maintenance/model/relevance workload added.
+Claude's existing installer reports enabled user plugin109 and all7selected
+payloads match; CLI-selected cache is `.claude-robot/.../0.26.109`.
+
+Standard Codex registration was missing and now has exactly STDIO`gmax`,args
+`["mcp"]`, with other config preserved. Direct standard MCP109 initialization/
+28-tool listing/`repo_status` succeeded: Gmax remains **not_registered**;
+Platform is **indexed**, daemon ready. No search/store query/model call.
+**Active provider catalog remains301entries/zero Gmax tools.** No hot-load or
+provider attachment is claimed. Reconnect/new provider session must consume the
+new standard registration and actually advertise the tools; no T3 code change,
+custom adapter, blind whole-app restart or automatic next batch is selected.
+
+Original quality attempt count remains unknown/no retry/reset, ranks unmeasured.
+Table-handle cleanup still proposed/unimplemented; CPU attribution/resource
+history/backend experiments remain deferred. No measured fan/RSS/relevance gain.
+All approved delivery/setup-verification/records work is complete; the explicit
+remaining live-session activation condition is not hidden as an attached catalog.
+
 
 ## Selected Lance/discovery publication — 0.26.109 preparation
 

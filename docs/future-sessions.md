@@ -4,10 +4,32 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-29T07:43:57Z
 audience: internal
-summary: "All selected upgrade/discovery source, existing fixtures, instructions and docs complete locally. Final guarded compile passed; earlier global swap-guard refusal preserved. Claude config-home bug fixed; Mac/Linux root cause and runtime/native behavior unproven. P3 unchanged."
+summary: "Whole selected Lance upgrade/discovery batch shipped109. SDK/native0.40/core13/Python13; Rust12 unchanged. One focused native invocation3passed; P3/hook refresh/direct MCP metadata complete. Active provider attachment not confirmed; standard session reload remains."
 ---
 
 # Future Sessions
+
+## 0.26.109 published and serving — standard registration repaired
+
+Release/source`60bc601`, SDK/native0.40.0/core13/Python13; separate qualified
+Rust12 unchanged. Whole selected source/fixtures/docs and archive closeouts are
+included. One focused native invocation passed3/8unselected skipped; final
+production compile reused, no duplicate passing check. Publication invoked once;
+initial metadata404 timeout recovered with one verification-only run (no publish).
+P3 **109 ready/open/active**, same config/unit/store/worker4/limits; exact108
+rollback retained. Claude plugin109 refreshed through current CLI config;7files
+match. See [completion and receipts](plans/assets/lance-discovery-release-20261029/completion.md).
+
+Codex standard STDIO`gmax`,args`["mcp"]` registration was missing and is now added
+with all other config preserved. Direct server109 advertises28tools including
+repo_status/semantic_search; metadata confirms Gmax not_registered and Platform
+indexed/daemon ready. **Active provider still301tools/zero Gmax**: reconnect/start
+a provider session consuming standard config, then observe actual attachment.
+No T3 code/adapter or blind app restart; no catalog-availability promise.
+No semantic calls, indexing/FTS/maintenance/profile/new models. Original quality
+attempt count unknown/no retries; Table-handle cleanup proposed only; CPU/backend/
+resource-history deferred. Approved delivery complete; no automatic new work.
+
 
 ## Selected 0.26.109 delivery in progress
 

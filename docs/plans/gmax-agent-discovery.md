@@ -105,6 +105,20 @@ MCP attachment is client-owned: use a Gmax tool only if it is advertised in your
 The not-registered result requires no search and does not replace the daemon's
 other-project status with a claim that the daemon itself is absent.
 
+## Delivered status — October 29, 2026 UTC
+
+0.26.109 is published and P3ready/open/active. Standard CLI/stdioMCP109 metadata
+verification succeeds; repo_status and semantic_search are advertised by the
+direct server. Gmax is not_registered, Platform indexed. Standard Codex gmax
+registration was absent and is now repaired; other config is preserved. Claude
+plugin109 is enabled in its CLI-selected cache with all7selected payloads matching.
+The active provider still advertises301tools/noGmax: live attachment is unconfirmed
+until a new/reconnected provider session consumes standard configuration and its
+actual catalog is observed. No T3 code/adapter is selected or shown necessary.
+See [delivery evidence](assets/lance-discovery-release-20261029/completion.md).
+Earlier source-only/local-limit statements below describe their dated stages.
+No semantic query or production maintenance was used for setup verification.
+
 ## Corrected direction: existing MCP registration, no T3 code changes
 
 **User correction, October 29, 2026:** the earlier proposed T3 adapter is
