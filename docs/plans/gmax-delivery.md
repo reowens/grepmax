@@ -2,7 +2,7 @@
 type: plan
 status: active
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-29T07:43:28Z
+updated: 2026-10-29
 surfaces:
   - store
   - daemon
@@ -23,66 +23,559 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "0.26.109 published/source60bc601, P3ready/open/active. Native3passed/8skipped; final compile reused; one publication plus verification-only recovery. Claude hooks109 and standard Codex MCP registration ready; direct server28tools works. Active provider301tools/noGmax; attachment awaits standard session reload."
-next_step: "No new implementation/test/query/release selected. Reconnect/new provider session consuming standard gmax mcp registration and observe its actual catalog; no T3 code/adapter. Quality attempt count unknown/no retry, Table-handle cleanup unselected, CPU/backend/resource history deferred."
-summary: "Whole selected Lance upgrade/discovery batch shipped109. SDK/native0.40/core13/Python13; Rust12 unchanged. One focused native invocation3passed; P3/hook refresh/direct MCP metadata complete. Active provider attachment not confirmed; standard session reload remains."
+current_state: "Whole selected MCP/cleanup candidate prepared; authorized fresh packaging guard passed with zero swap. Prior emitted compiler exit0 reused, failed original host guard preserved."
+next_step: "Publish once, hand P3 over retaining exact109rollback, refresh plugin and selected Codex core8 registration, separately observe actual catalog."
+summary: "MCP/cleanup delivery stopped before versioning/publication on final host swap guard; owned processes closed and unrelated work preserved."
 ---
 
 # Gmax Delivery Plan
 
+## Approved delivery resumed — October 29, 2026
+
+Fresh authorized packaging window passed:18.585845s,630,263,808bytes peak
+owned RSS,23,562,391,552bytes available,zero swap growth/no owned survivors.
+Unchanged compiler/runtime outputs were reused; no new compiler/test invocation.
+The earlier14,573,568byte global-swap failure remains a separate failed receipt,
+not recast as a passing compiler guard. Required archive payloads byte-match the
+assembled candidate, with official SDK/native0.40 and no later dependency imports.
+
+The user explicitly selected one fresh guarded preparation window after reviewing
+the prior host-wide swap failure. Prior failed receipts remain unchanged. Reuse
+the unchanged emitted compiler/runtime outputs: the previous compiler exited0,
+but its combined host guard failed; no passing guarded compiler result is claimed.
+Source/fixture bytes match selected commits and artifact content contains both
+MCP-profile and table cleanup changes; no source or native runtime changed since
+emission. Fresh packaging/admission uses the same twoCPU/nice10/2GiB/180s/
+min8GiB/zero-swap limits, with no automatic second retry. No tests/native cases,
+LLM/relevance/profile work is added. Public109 dependencies (SDK0.40/Python13/
+qualified Rust12) remain isolated from later unrelated dependency work. Complete
+one publication,109rollback P3 handover/plugin refresh and selected Codex core8
+registration; actual provider advertisement remains separate from direct listing.
+
+
+## MCP and table-cleanup delivery — SAFETY STOP BEFORE PUBLICATION
+
+**October 29, 2026:** user “ship it” selected the complete MCP64d10ed,
+receiptfff1556, plan0b98ac8, deterministic Table-cleanup37aa904 and required
+README/catalog/docs release, P3 rollback/handover and selected Codex core8 setup.
+The full candidate is assembled on public109records `aa7985a` in
+`.claude/worktrees/gmax-mcp-cleanup-release-026110`; v0.26.110 was confirmed unused
+in public tags/registry. No version bump/tag/source commit/publication was made.
+Unrelated later dependency/Arrow/Lance0.41 upgrades and ColBERT/private/ITA work
+were preserved and excluded; candidate uses the published109 Lance0.40/Python13/
+qualified-Rust12 dependency baseline. All three new selected fixture files exist;
+selected product source/fixtures byte-match the committed implementation.
+
+**Actual safety blocker:** isolated frozen/offline, script-disabled dependency
+preparation passed. The ONE combined emitted production compilation
+`node_modules/.bin/tsc --incremental false` exited0, as did official SDK/runtime
+preparation, chmod and existing qualified bounded-runtime copying. However,
+that combined controller **FAILED** its final zero-host-swap-growth guard:
+**14,573,568 bytes** growth. Elapsed **3.408306s**, peak sampled aggregate owned
+RSS **381,321,216 bytes**, final available **30,335,418,368 bytes**, no live owned
+processes. Limits unchanged: two CPUs0/1, nice10,2GiB owned RSS,180s deadline,
+min8GiB available, zero swap growth. Exit0 is not a passing guarded result.
+The retained global counter does not attribute swap growth to the compiler,
+preparation or a particular unrelated process. No new window/rerun or cap raise.
+
+**Disposition:** stop before versioning, pack/publication, P3/package/plugin
+handover or selected MCP configuration/refresh. No new tests or native/model/
+LLM/runtime-feature/relevance calls, metadata RPC, maintenance/indexing, remote
+builder/review/profile/audit or service action. Existing36/36 fake-only evidence
+is retained, with its later literal-name fixture tightening still unrerun; it
+does not validate the cleanup or override this guard failure. No new native
+compatibility evidence, RSS/fan/cache-eviction or relevance benefit is claimed.
+Current release remains109; exact109rollback/core8 activation were not performed.
+Prior observed active catalog329/full28 remains the last pre-activation state;
+Gmax repo not_registered, quality attempted-query count unknown/no retry.
+
+**Preserved continuation, not an automatic retry:** candidate, exact selected
+patch and locked local dependencies are ready. The failed guarded preparation
+needs a separately selected safe continuation before pack/version/tag/publish;
+then the already specified109rollback P3 handover/plugin refresh, selected-server
+core8 env and direct-vs-active catalog verification remain unfinished. No new
+code/test/review gate was introduced, and no source defect was reported by tsc.
+Full receipts/logs/source/dirty-index before-images:
+`/home/reoiv/.local/state/gmax-delivery/20261029-0.26.110/`
+(`deps-controller-receipt.json`, `compile-prep-receipt.json`, phase logs,
+`selected-local.patch`, `release-worktree.txt`). All owned child groups closed.
+CPU/backend/resource-history work remains deferred; saved prompts untouched.
+
+
+## Selected MCP and table-cleanup release — 0.26.110 preparation
+
+**October 29, 2026, user “ship it”:** complete selected local MCP profiles,
+annotations/error/cancellation behavior, fixtures/README/docs (64d10ed,
+fff1556,0b98ac8) and deterministic Table cleanup (37aa904) are assembled on
+public 0.26.109 source/history. Later unrelated dependency upgrades, ColBERT
+refactors, dirty/ITA files and private history are preserved and excluded.
+LanceDB/native 0.40.0, embedded Lance 13/Python13 and qualified Rust12 remain
+this release's dependency baseline; no model, migration or maintenance change.
+All selected new fixture files and prior current-catalog/docs records are included.
+
+Approved verification reuses the ONE prior fake-only invocation (3 files/36
+passed), noting the core fixture's later independent literal-name expectation
+was not rerun. Cleanup had source-only inspection; one guarded combined emitted
+production compilation now covers the selected release source. No new unit/native
+cases, model/runtime feature exercise, relevance query, benchmark/profile, audit
+or independent review. All source/fixtures/docs and authorized preparation finish
+before publication; source/archive identity and limits are retained separately.
+
+Selected delivery: publish once via existing manual release.yml, normal P3
+systemd handover with exact109rollback/config/models/workers/quota/store/quarantine
+preserved, normal plugin refresh, and only the selected standard Codex server's
+GMAX_MCP_TOOL_PROFILE=core. Direct MCP initialize/tools-list is metadata-only;
+actual active provider catalog must be observed separately. No T3 adapter/app
+restart, unsafe current-session reset, global environment or indexing. Core8
+activation is not inferred from config or direct advertisement. Current repo
+not_registered and unknown prior quality-attempt count remain unchanged/no retry.
+RSS/fan/cache-eviction/relevance gains remain unproven. CPU/backend/resource-history
+work stays deferred; pending saved prompts are untouched.
+
+
+## Deterministic write-table cleanup — COMPLETE LOCALLY
+
+**October 29, 2026, user “go”:** the selected source/docs/local-commit batch is
+complete, source-inspected only. This supersedes the historical unselected
+Table-handle recommendation below; it selects no release or verification round.
+Existing MCP implementation **64d10ed** and receipt/docs **fff1556** remain intact
+and local/unreleased alongside this cleanup. Deployed 0.26.109 is unchanged.
+
+`src/lib/store/vector-db.ts` now closes each operation-owned Table in `finally`:
+
+- `insertBatch`: await `add` and mark the committed write, then close before the
+  write gate finishes. Its schema-error diagnostic awaits `schema` and closes
+  its separate handle whether schema inspection or the existing diagnostic throws.
+- `deletePaths` and `deletePathsExcludingIds`: await each existing query/delete
+  and close after all batches, including no-match results and failures. Empty
+  input/missing table still returns without creating or disposing a handle.
+- `ensureTable`/`ensureTableUnsafe`: close a newly acquired handle if validation,
+  schema setup or seed removal fails before ownership transfers to the caller.
+  Successful acquisition still returns an open handle. `openExistingTableUnsafe`
+  retains failed-acquisition cleanup without masking its original error.
+
+The narrow `closeOwnedTable` helper invokes synchronous `Table.close()`, preserving
+an in-flight operation error if close also throws; a close-only error after
+successful work propagates. The installed official SDK 0.40.0 declaration
+(`node_modules/@lancedb/lancedb/dist/table.d.ts`, `Table.close`) documents resource
+release, repeat-safe close and rejection of later use. Its `LocalTable.close`
+implementation delegates directly to native close; `Connection.openTable`
+constructs a new local wrapper. No SDK/native code was executed to inspect this.
+
+**Ownership and behavior:** shared Connection/Session, native cache lifetime,
+leases, write-gate admission/draining, SQL predicates, batch sizes, committed-write
+markers and independently pinned/shared reader handles remain unchanged. Only
+locally acquired handles are disposed, after their awaited work settles. The
+existing schema diagnostic/error translation is retained. No broader handle,
+worker, cache, recycle or memory-policy refactor and no fixture change.
+
+**Verification and limits:** scoped source/control-flow/diff and whitespace
+inspection only. ZERO tests, typechecks/compilation, builds, native/store/model/
+MCP/search/status calls, probes, profiling, independent review, package/version/
+release, service/client/config operations, remote actions or pushes. Earlier MCP
+36-test/compiler receipts do not validate this changed source. Closing a handle
+does not establish allocator/cache eviction, lower RSS, a leak cause, fan or
+relevance gains. The memory guard evidence is unchanged; Platform quality remains
+unmeasured with attempted-query count **unknown**, without retry/reset authority.
+CPU attribution, resource history and backend experiments remain unselected.
+Pending prompts, unrelated dependency/ColBERT/private work and index/ITA entries
+are preserved. No next execution starts automatically.
+
+## MCP core/full local implementation — COMPLETE LOCALLY
+
+**Batch `mcp-core-full-20261029`, October 29, 2026:** user “go” selected
+stages1–6 of the plan below; implementation, fixtures, README and owning docs are
+complete locally. Stage7 packaging/publication/P3/core activation is NOT selected.
+Parent orchestration-only, no further agents, pending prompts untouched.
+
+Startup-only `GMAX_MCP_TOOL_PROFILE=core|full` preserves unset->full28, exact
+core8 order and all full input signatures; invalid/empty values refuse on stderr
+with exit2 before resource/transport work. Each lifecycle captures one selection
+for all discovery factories. No call-triggered expansion or client refresh claim.
+Explicit effect annotations are independent of output schema presence; descriptions
+acknowledge watch/lease/model/log/report writes and the deliberately disabled
+summarizer's compatibility result. Existing startup/scheduling/lease rules remain.
+
+Review inference rejection, timeout and invalid output now fail instead of
+returning clean; genuine empty-diff and clean/finding successes retain their
+shapes. Existing MCP isError, foreground CLI exit1/finally cleanup, and background
+queued acknowledgement/error-log callsites are preserved. Optional signal flows
+through MCP ping/llm-start and both libraries, including health/all inference
+rounds/forced synthesis and pre-report checks. Started native context/dispatch
+work settles before local store close; context selection retains its15s deadline
+and clears its timer. Abort does not kill shared model/daemon/native work or undo
+a completed synchronous write; accepted server-side model work may continue.
+
+Exact selected paths (the whole local batch): `src/commands/mcp.ts`,
+`src/lib/llm/investigate.ts`, `src/lib/llm/review.ts`,
+`tests/mcp-profiles.test.ts`, `tests/review-failure.test.ts`,
+`tests/llm-request-lifecycle.test.ts`, `README.md`, `docs/plans/gmax-delivery.md`,
+`docs/future-sessions.md`. Implementation commit: **64d10edb3ba9a345ffe5143cd8eb79bf93bd1616**.
+Only selected deltas are committed; unrelated ColBERT work, older private README/
+plan/handoff history and index/ITA entries remain outside this batch.
+
+**Approved verification used exactly once each, with no reruns:**
+
+- One fake-only invocation: `pnpm exec vitest run --config
+  /home/reoiv/.local/state/gmax-mcp-core/20261029-local/focused.vitest.config.mjs
+  tests/mcp-profiles.test.ts tests/review-failure.test.ts
+  tests/llm-request-lifecycle.test.ts` — **3 files / 36 tests passed**, runner
+  exit0/controller passed; elapsed **1.640892s**, peak sampled aggregate owned
+  RSS **491671552 bytes**, final available **34620256256 bytes**, swap growth0,
+  no live owned processes. The small private config bypasses the repo global
+  grammar-download setup, with no extra fixture campaign. The `pnpm exec`
+  wrapper unexpectedly printed a cached supply-chain/install check and ran the
+  existing postinstall (“already up to date”); source inspection confirms that
+  script only prints guidance. Manifests/lockfiles are unchanged and no client
+  configuration/service action followed. This was not another requested audit.
+- One production compilation: `node_modules/.bin/tsc --noEmit --incremental false`
+  — compiler exit0/controller passed, elapsed **0.842497s**, peak sampled
+  aggregate owned RSS **339156992 bytes**, final available **34764148736 bytes**,
+  swap growth0, no live owned processes. It excludes test typechecking and emits
+  no package/distribution. No second compilation/build is inferred.
+- Both used the retained guard convention: two CPUs0/1, nice10,180s deadline,
+  max2GiB aggregate owned RSS, min8GiB available, zero swap growth, owned
+  TERM/KILL cleanup. Guards passed. Source/fixture/README bytes were unchanged
+  after these checks, except the core-catalog fixture expectation was tightened
+  to an independent literal eight-name list instead of importing the production
+  list. This fixture-only correction is **not rerun** under the spent allowance;
+  production source and README remain exactly those that passed. Final docs
+  bookkeeping followed. The36/36 result applies to the pre-tightening fixture.
+
+Private retained before-images, validated-input hashes, exact commands, controller,
+focused config, complete logs and numeric receipts:
+`/home/reoiv/.local/state/gmax-mcp-core/20261029-local/`
+(`tests-receipt.json`, `compile-receipt.json`, `validated-inputs.json`). The metrics
+above are durable summaries; private paths are supplementary. Scoped diff/link
+inspection supplies documentation verification, not another suite or review.
+
+**Limits:** fake SDK/IPC/OpenAI/store/graph/report/CLI fixtures establish local
+contracts, not live transport/native/model inference or deployed behavior. No
+independent review or whole28-tool result/schema campaign. Local/unreleased on
+0.26.109; retained active parent catalog remains **329 / full28 Gmax**, selected
+client env unchanged, current repo **not_registered**. No version/tag/push,
+packaging, P3 operation, activation, live MCP/native/store/model/search/status call,
+profile/benchmark or relevance retry. Native Table-handle cleanup and relevance/
+CPU/backend/resource-history work remain deferred. Stage7 requires later express
+selection; do not start it or request another milestone as part of this closeout.
+
+The original plan below is retained with stages1–6 checked; its initial
+READY/AWAITING START authorization statements are historical to the later “go.”
+
+## MCP core/full profile and correctness batch — READY/AWAITING START
+
+**Plan ID: `mcp-core-full-20261029`. Planning selected October 29, 2026; implementation,
+verification and delivery NOT authorized.** The user accepted the completed one-pass
+review and asked for a plan. This is its finite implementation checklist, not another
+independent review or a new test/release permission. The umbrella remains active;
+READY/AWAITING START describes this batch, not a Runlist lifecycle transition.
+Parent remains orchestration-only. No further agents are authorized by this plan.
+Each owner returns within 45 minutes; this plan creates no delegated work.
+
+Baseline: released **0.26.109**, source
+`60bc601196075961367d0fa58e511090c9ddcb82`; discovery docs `8e8f0cd`, then catalog
+closeout `b8e87c6`. Retained parent actual catalog **329 total / 28 Gmax tools NOW**;
+the separate old child remains **301 / no Gmax**, not global invisibility. This
+checkout is still `not_registered`, `matchedRoot=null`, daemon `unobserved`.
+These are retained observations, not fresh RPCs. No indexing or other-corpus
+search is implied. Native Table-handle cleanup, relevance attempts (attempt count
+unknown/no retry), CPU/backend/resource-history work remain deferred/out of scope.
+
+### 1. Freeze the startup profile and compatibility contract
+
+- [x] In `src/commands/mcp.ts`, read `GMAX_MCP_TOOL_PROFILE` once at command
+  lifecycle entry, before client/resource registration, timers or `serveStdio`.
+  Absent means `full`; exact `core` and `full` are accepted. Empty, whitespace,
+  case variants and any other present value fail closed: one stderr diagnostic
+  naming the accepted values, exit code **2**, no stdout/protocol/catalog and no
+  startup work. This follows the CLI's invalid invocation exit convention
+  (`src/bin.ts`); never fall back to the broader profile for a typo.
+- [x] Capture the immutable selection outside `createServer`; every pinned
+  connection/disposable discovery factory in that lifecycle uses the same set.
+  Core is exactly, in this deterministic order: `repo_status`, `list_projects`,
+  `semantic_search`, `list_symbols`, `extract_symbol`, `code_skeleton`,
+  `trace_calls`, `impact_analysis`. Full retains all **28 existing names and
+  input signatures**, including the disabled summarizer compatibility entry.
+  Preserve existing result/success shapes and full catalog ordering. Use a
+  fixed core ordering, not registry readiness, to determine membership.
+- [x] Recommend explicit `core` for new/selected clients. Ship the selectable
+  profile separately from migration: existing registrations without the env
+  override stay full28. STDIO command `gmax`, args `["mcp"]` stay unchanged;
+  no installer rewrite, T3 adapter/code or protocol migration. No tool-call
+  side effects enable names, no automatic cwd/registry catalog reshaping, and
+  no promise to force a client refresh. Derive server instructions from the
+  captured profile so core instructions do not recommend unavailable tools.
+
+### 2. Describe environmental effects and disabled functionality honestly
+
+- [x] In `src/commands/mcp.ts`, make explicit annotations part of each tool's
+  registration metadata, independent of `MCP_READ_OUTPUT_SCHEMAS`. Keep input
+  and existing output schemas intact. `repo_status` is read-only/closed-world;
+  the 27 helper tools can log calls, and 20 acquire/renew watch leases. Avoid
+  claiming those tools never modify their environment. Do not change logging,
+  watching, startup, scheduling, leases or model enablement to improve hints.
+- [x] Settled conservative metadata: `repo_status` gets readOnly=true,
+  destructive=false, idempotent=true, openWorld=false. The following watch-capable
+  tools get readOnly=false, destructive=true (background reconciliation can
+  replace/delete indexed rows), idempotent=false, openWorld=false:
+  `semantic_search`, `code_skeleton`, `trace_calls`, `extract_symbol`, `peek_symbol`,
+  `dead`, `audit`, `surprising_connections`, `get_neighbors`, `find_paths`,
+  `subgraph_for_files`, `list_symbols`, `related_files`, `recent_changes`,
+  `diff_changes`, `find_tests`, `impact_analysis`, `find_similar`, `build_context`,
+  `review_risk`. These are conservative effect hints, not a claim of source-file
+  deletion. The remaining seven (`index_status`, `list_projects`,
+  `summarize_directory`, `summarize_project`, `investigate`, `review_commit`,
+  `review_report`) get readOnly=false, destructive=false, idempotent=false,
+  openWorld=false, reflecting logging/startup/additive report writes and the
+  local closed domain. Hints remain advisory; no automatic consent bypass.
+- [x] Descriptions distinguish bounded repo setup, all-project status, index
+  reads/watch acquisition and explicit local-LLM startup/report writes. Keep
+  the no-autostart safety switch and large-model authorization rule. Describe
+  `summarize_directory` as disabled; return an explicit disabled/unavailable
+  message instead of implying there were no eligible chunks. Retain its name,
+  arguments and text result envelope in full; exclude core. Leave the no-op
+  in `src/lib/index/summaries.ts` disabled; do not resurrect the summarizer.
+
+### 3. Propagate review failures through every existing caller
+
+- [x] In `src/lib/llm/review.ts`, replace the inference catch returning
+  `clean:true` with a meaningful thrown failure (preserve cause/message),
+  including transport timeout. Preserve `ReviewResult` for successful clean
+  and findings cases; an empty diff remains genuinely clean. Never append a
+  successful review report after inference failure. Keep failure distinct from
+  caller abort. Empty/unparseable inference output must also fail rather than
+  letting `parseFindings`' fallback empty array become a clean verdict; retain
+  the existing supported JSON/fence extraction for valid responses.
+- [x] Callsite map, to retain shared-helper compatibility: MCP
+  `src/commands/mcp.ts:3352-3404` catches and returns `isError:true`; foreground
+  `src/commands/review.ts:116-136` already catches, prints `Review failed`, sets
+  exitCode=1 and finally calls `gracefulExit`; daemon
+  `src/lib/daemon/daemon.ts:2983-3006` already catches/logs failure inside its
+  shared operation. Background CLI (`review.ts:72-94`) and
+  `src/lib/daemon/ipc-handler.ts:457-462` acknowledge **queued**, not completed.
+  Preserve that contract and do not fabricate successful background review.
+  No caller API/CLI rewrite is needed; exercise the foreground catch with fakes.
+
+### 4. Carry caller cancellation without taking shared-process ownership
+
+- [x] `src/commands/mcp.ts`: use the existing request signal (`mcpSignal`) for
+  the two LLM startup IPCs and their bounded daemon preflight. Use the existing
+  signal-aware `sendMcpCommand` with ping's existing 2s timeout and llm-start's
+  existing 90s timeout; check cancellation before/after startup and before
+  entering a library. Do not expand `isDaemonRunning` for unrelated callers.
+  Thread optional `signal?: AbortSignal` into both library options; absent
+  signal preserves direct CLI and background behavior.
+- [x] `src/lib/llm/investigate.ts`: check before resources/health/each round,
+  before and after each internal tool dispatch and before returning an answer.
+  Pass `{signal}` to `client.models.list` and the second options argument of
+  **every** `chat.completions.create`, including the forced final answer.
+  `src/lib/llm/review.ts`: pass `{signal}` to inference, check around context
+  work and after inference/parsing, then immediately before synchronous
+  `appendReview`. Abort must escape context/risk fallback catches and health
+  catch remapping; normal non-abort degradation remains as before.
+- [x] Preserve native ownership: an in-flight native context/tool operation
+  need not be interruptible. Stop scheduling subsequent work, settle/drain
+  already-started owned native promises before closing their local VectorDB
+  in `finally`, and do not race abort against store close. In review context
+  gathering, retain the existing bounded context-selection timeout, clear its
+  timer, and drain launched work on cancellation before cleanup. Cancellation
+  prevents the report append when observed before its synchronous boundary;
+  it cannot undo a completed write or preempt synchronous JS mid-write.
+- [x] Do not stop/kill a shared model server, daemon, worker/native job or
+  another client's leases. Socket abort settles the caller; an already-accepted
+  `llm-start` may still complete on the daemon. HTTP abort releases this request,
+  not a guarantee of server-side inference quiescence. Keep these limits in
+  README; no `llm-stop`, service signal, server lifecycle or engine rewrite.
+
+Installed API grounding (read-only source evidence): server SDK 2.3.0
+`ServerContext.mcpReq.signal` is an AbortSignal in
+`node_modules/@modelcontextprotocol/server/dist/createMcpHandler-D4NN8WsG.d.mts`;
+the existing adapter is `src/lib/utils/mcp-execution.ts`. OpenAI 7.15.0 accepts
+`RequestOptions.signal` in `node_modules/openai/internal/request-options.d.ts`;
+`models.list(options)` and `completions.create(body, options)` accept it, and
+`node_modules/openai/client.mjs` distinguishes user abort. Daemon IPC
+`src/lib/utils/daemon-client.ts:23-85` already accepts signal, removes its listener
+and destroys its owned socket, returning `{ok:false,error:"aborted"}`; callers
+must recheck their signal rather than turn cancellation into a normal failure.
+
+### 5. Add minimal fake-based fixtures; propose one verification budget
+
+- [x] Add **only three focused fixture files**: `tests/mcp-profiles.test.ts`
+  (mock SDK/registration, registry, IPC, resource client, timers, logging and all
+  native/model constructors); `tests/review-failure.test.ts` (mock OpenAI, git,
+  context/store/report and CLI lifecycle); `tests/llm-request-lifecycle.test.ts`
+  (controllable deferred OpenAI/IPC/native fakes and request AbortControllers).
+  Reuse the in-process registration pattern from `tests/mcp-read-verbs.test.ts`,
+  not the subprocess campaigns in `tests/mcp-sdk-v2.test.ts`. No real socket,
+  child/server process, store/model/search, user cache or shared service access.
+- [x] Exact assertions: explicit core eight/order; full28 and absent->full
+  retain the frozen name set and representative existing input signatures;
+  each invalid value rejects before registration/startup; changing env after
+  entry cannot change later factory
+  catalogs; no tool-triggered expansion. Assert annotation presence and the
+  representative setup/watch/log-only/LLM-report effects, independent of output
+  schema presence; disabled summary is explicit and absent from core. Do not
+  add an optional 28-tool result/schema matrix or token/overhead benchmark.
+- [x] Review fixtures: genuine empty-diff clean, successful empty findings,
+  successful findings keep their shapes; inference rejection, timeout and
+  invalid output fail with no append, MCP isError and foreground CLI nonzero
+  (mock `gracefulExit`, no subprocess). Cancellation fixtures cover pre-abort
+  (no startup), abort during llm-start (no library), abort during health/inference
+  (same signal reaches request), abort between dispatches/rounds (no next call
+  or forced-final request), cancellation during native work (close after drain),
+  and abort immediately before report append (zero write). One other fake
+  request continues; no shared kill/stop/unwatch is emitted. Include listener/
+  timer cleanup and non-abort error preservation, not new process campaigns.
+- [x] **PROPOSED, NOT AUTHORIZED NOW:** one local invocation,
+  `pnpm exec vitest run tests/mcp-profiles.test.ts tests/review-failure.test.ts tests/llm-request-lifecycle.test.ts`;
+  and one guarded production compilation,
+  `node_modules/.bin/tsc --noEmit --incremental false`. Use the existing local
+  compile-controller pattern (private controller
+  `/home/reoiv/.local/state/gmax-local-integration/20261029-upgrade-discovery/compile-controller.py`),
+  adapting only selected command/output paths. Keep 180s per invocation, 2GiB
+  aggregate owned RSS, at least 8GiB available, zero swap growth, two CPUs/nice10,
+  owned TERM/KILL cleanup and no survivors. The compiler emits no package.
+  No second typecheck, full suite, audit, profile, benchmark, live LLM/native
+  smoke, model load, semantic query or independent review. No rerun of passing
+  cases or budget reset on failure; fix from retained evidence and disclose
+  remaining validation limits. Production compilation excludes tests; the
+  focused runner transpiles the fixtures, with no added test-typecheck gate.
+
+### 6. Complete the selected implementation, fixtures and documentation together
+
+- [x] Exact implementation edit set: `src/commands/mcp.ts`,
+  `src/lib/llm/investigate.ts`, `src/lib/llm/review.ts`, the three fixture files
+  above, `README.md`, `docs/plans/gmax-delivery.md`, `docs/future-sessions.md`.
+  Read-only compatibility dependencies are `src/commands/review.ts`,
+  `src/commands/investigate.ts`, `src/lib/daemon/daemon.ts`,
+  `src/lib/daemon/ipc-handler.ts`, `src/lib/utils/daemon-client.ts`,
+  `src/lib/utils/mcp-execution.ts`, `src/lib/utils/watcher-launcher.ts`,
+  `src/lib/llm/report.ts`, `src/lib/llm/tools.ts`,
+  `src/lib/output/mcp-results.ts`, `src/lib/index/summaries.ts` and
+  `src/commands/codex.ts`; no edits there are presently required. No manifests,
+  lockfiles, SDK/runtime upgrade, AGENTS/CLAUDE, T3 or service changes.
+- [x] README explains core selection, compatibility default, invalid-profile
+  refusal, full advanced names, environmental effects, failure/cancellation
+  limits, unchanged registration and the difference between indexed readiness,
+  advertisement and actual request protocol. Record actual evidence/limits in
+  this plan and point the handoff here. Preserve all unrelated dirty/ITA/index
+  bytes and private history. Complete the whole batch and selected verification
+  before a scoped source/fixtures/docs commit or release preparation; never
+  hide unfinished in-scope work in a release worktree.
+
+### 7. Later delivery and core activation — conditional on one explicit selection
+
+- [ ] A future start must state whether it covers implementation/verification
+  only or **also** the complete following delivery sequence. Old release or
+  installation permissions do not apply. Once selected, finish the chosen
+  sequence without another milestone permission loop; stop only for an actual
+  blocker, safety guard or user STOP. This plan itself authorizes none of it.
+- [ ] After all source/fixtures/README/docs and the selected evidence are complete,
+  make one scoped batch commit; prepare one release candidate/package from the
+  complete selected source, preserving unrelated work. Package assembly is
+  distinct from tests/compilation: the proposal uses applicable compiler
+  evidence and the existing bounded packaging path without prepublish hooks
+  silently adding tests/builds. If release needs emitted JS, select emission
+  in the **one** guarded production compilation before execution (instead of
+  `--noEmit`), or use matching emitted evidence; a noEmit receipt alone cannot
+  produce/qualify changed dist. No second compiler invocation is inferred.
+- [ ] Only if expressly authorized: version once, publish once via the existing
+  release workflow, perform the normal guarded install/P3 handover preserving
+  unit/store/model/CPU/resource limits and exact previous-install rollback.
+  Reuse package/source evidence where applicable; any selected bounded
+  identity/health reads are operational handover evidence, not another test or
+  query round. No indexing, repair/FTS/prune, model load or relevance retry.
+- [ ] Only in that later ratified handover, back up the **selected existing**
+  standard client registration, change only its env override to
+  `GMAX_MCP_TOOL_PROFILE=core`, retain `gmax` args `["mcp"]` and all other config,
+  and use the client's supported restart/reconnect lifecycle. Observe its
+  actual parent catalog for the exact eight Gmax names; do not assert a total
+  catalog count or visibility in every child. At most one bounded selected
+  metadata/catalog connection, no retrieval/tool-call campaign; `repo_status`
+  only if separately included in the handover's metadata allowance. An
+  unregistered current repo stays unregistered. If the host cannot refresh,
+  report activation pending without T3 changes or endless reconnect attempts.
+- [ ] Rollback activation independently: restore the owned prior env value
+  (or remove only the newly added key), preserving other config, then the same
+  supported lifecycle; full28 remains available. Retain the prior install for
+  a separately needed package/P3 rollback. Record publication/source/package,
+  install/handover, backup/rollback location and actual core catalog evidence
+  or explicit pending state here and in the handoff; no secrets/private config
+  contents in Git. Publishing a selectable core profile is not proof that the
+  active registration has migrated. No extra acceptance/review/profile gate.
+
+Official references retained from the completed review (checked October 29,
+2026; no new browsing needed for this plan): MCP's current revision is
+[2026-07-28](https://modelcontextprotocol.io/docs/2026-07-28/learn/versioning),
+released [July 28, 2026](https://blog.modelcontextprotocol.io/posts/2026-07-28/).
+[Tools/list and change subscriptions](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)
+do not promise client auto-refresh or hidden tool search; a call must not expand
+the modern connection catalog. SDK **2.3.0**, JSON-RPC **2.0** and date-versioned
+MCP are separate; do not label this a migration to “MCP2.0.” The installed SDK
+[dual-era STDIO entry](https://raw.githubusercontent.com/modelcontextprotocol/typescript-sdk/v2.3.0/packages/server/src/server/serveStdio.ts)
+already supports modern and legacy clients. Actual parent request protocol
+remains unknown: the retained handshake/metadata receipt does not record it.
+
 ## 0.26.109 shipped — Lance upgrade, discovery and standard MCP setup
 
-**October 29, 2026 UTC.** Whole selected source/fixtures/docs shipped as
-[`60bc601`](https://github.com/reowens/grepmax/releases/tag/v0.26.109), including
-SDK/native0.40.0/core13, Python13, current-repo status/hooks/MCP, config-home fix
-and selected archive/doc corrections. Separate qualified Rust12 stays unchanged;
-full-table maintenance remains disabled, with no new qualification claim.
+**Retained October 29, 2026 evidence; not rechecked during this docs closeout.**
+[0.26.109](https://github.com/reowens/grepmax/releases/tag/v0.26.109), source
+`60bc601196075961367d0fa58e511090c9ddcb82`, is published. P3 was last verified
+**ready/open/active** with configuration, unit, store identities and limits
+preserved. Hooks were refreshed to enabled Claude plugin 0.26.109; all seven
+selected payloads matched its CLI-selected cache. Exact 0.26.108 rollback is
+recorded in the [completion evidence](assets/lance-discovery-release-20261029/completion.md).
 
-[Completion/evidence](assets/lance-discovery-release-20261029/completion.md): one
-focused native invocation **3passed/8unselected skipped**, tiny temporary data,
-zero swap/owned survivors. Final combined production compilation reused; local
-artifact emission/runtime/pack passed.341published files match the approved
-archive. Exactly one publication accepted; the first registry-metadata check
-failed404 propagation. One **verification-only** recovery skipped publication
-and completed successfully; no duplicate publish.
+The release includes SDK/native 0.40.0, embedded Lance 13 and Python maintenance
+13.0.0. The separately qualified Rust engine remains 12, unchanged and not newly
+qualified for forward mutation; full-table maintenance remains disabled. One
+focused native invocation passed **3 cases**, with **8 unselected cases skipped**.
+The final production compilation was reused. One publication was followed by
+successful verification-only recovery from a registry metadata timeout; no
+republish or performance/relevance claim.
 
-P3 serves **0.26.109 ready/open/active** under the unchanged systemd unit/config/
-store identities/worker4/quota/nice policy. Exact108rollback is retained at
-`/home/reoiv/.local/state/gmax-handover/20261029T083816Z-0.26.109/previous-install`. Owned marker removed; no maintenance/model/relevance workload added.
-Claude's existing installer reports enabled user plugin109 and all7selected
-payloads match; CLI-selected cache is `.claude-robot/.../0.26.109`.
+Standard Codex STDIO registration (`gmax`, args `["mcp"]`) was repaired with other
+configuration preserved. A direct 0.26.109 MCP connection advertised **28 tools**,
+including `repo_status` and `semantic_search`; metadata reported Gmax
+**not_registered** and Platform **indexed**, with its daemon ready. At the
+earlier retained check on October 29, the active catalog had **301 entries and
+no Gmax tools**. That is a dated prior observation, not the current parent state.
+Registration/direct listing alone still do not prove attachment.
 
-Standard Codex registration was missing and now has exactly STDIO`gmax`,args
-`["mcp"]`, with other config preserved. Direct standard MCP109 initialization/
-28-tool listing/`repo_status` succeeded: Gmax remains **not_registered**;
-Platform is **indexed**, daemon ready. No search/store query/model call.
-**Active provider catalog remains301entries/zero Gmax tools.** No hot-load or
-provider attachment is claimed. Reconnect/new provider session must consume the
-new standard registration and actually advertise the tools; no T3 code change,
-custom adapter, blind whole-app restart or automatic next batch is selected.
+**Selected item 1 — agent visibility: COMPLETE for the parent provider.**
+On October 29, 2026 the parent reported its current actual `ALL_TOOLS` scan:
+**329 tools including 28 `mcp__gmax__` tools**, including
+`mcp__gmax__repo_status` and `mcp__gmax__semantic_search`. All 28 descriptions
+identify current repo `/home/reoiv/dev/hetchy/tools/gmax`,
+`index=not_registered`, `matchedRoot=null`, `daemon=unobserved`.
+This is actual parent catalog advertisement, superseding the earlier retained
+301/no-Gmax parent visibility result; it is not inferred from CLI configuration
+or the direct server's 28-tool listing. No reconnect/configuration change is
+needed for this selected parent goal.
 
-Original quality attempt count remains unknown/no retry/reset, ranks unmeasured.
-Table-handle cleanup still proposed/unimplemented; CPU attribution/resource
-history/backend experiments remain deferred. No measured fan/RSS/relevance gain.
-All approved delivery/setup-verification/records work is complete; the explicit
-remaining live-session activation condition is not hidden as an attached catalog.
+The owner's separate child catalog scan still has **301 tools / zero Gmax tools**.
+Parent visibility is confirmed; child attachment is not. Neither observation
+establishes search readiness for this **unregistered** repo. No indexing is
+authorized. No search/status RPC, client process, provider reconnect or runtime
+verification was performed to record this confirmation. No automatic cwd/catalog
+refresh or visibility in every client is claimed.
+
+README now documents current-repo status, standard MCP setup and these distinctions.
+This closeout changes documentation only: no fresh RPC/service checks,
+tests, builds or publication. Original quality attempt count remains unknown,
+with no retry/reset. Table-handle cleanup remains proposed/unimplemented;
+CPU attribution/resource history/backend experiments remain deferred.
 
 
-## Selected Lance/discovery publication — 0.26.109 preparation
+## Historical 0.26.109 preparation — completed
 
-The user approved the full one-native-invocation/package/publication/P3/hooks/
-standard-MCP verification sequence. One native invocation passed3cases;8
-unselected skipped, temporary stores removed, zero swap/owned survivors. No
-second test invocation or semantic-query retry is authorized. SDK/native0.40.0,
-core13 and Python13 remain; separate qualified Rust12 unchanged and full-table
-maintenance disabled. Entire selected local batch is included on public108
-history, excluding private/unrelated source. Prior final production compilation
-is reused; packaging emission is not a new semantic check.
-[Exact focused/preparation record](assets/lance-discovery-release-20261029/preparation.md).
-No T3 changes/adapter selected; standard registration and actual catalog are
-separate observations. Quality attempt count remains unknown/no retry;
-Table-handle cleanup unselected; CPU/backend/resource-history deferred.
-
+This stage prepared the whole selected upgrade/discovery batch on public
+0.26.108 history. Its approved publication, P3 handover, hook refresh and standard
+MCP verification are now recorded above. The later parent catalog confirmation
+also completes selected item 1; the earlier attachment condition is historical.
+[Preparation evidence](assets/lance-discovery-release-20261029/preparation.md)
+preserves the earlier scope and native-case selection. It does not authorize a
+new test or query round. Older local/prepublication records below are historical.
 
 ## Upgrade and agent discovery — final local integration complete
 

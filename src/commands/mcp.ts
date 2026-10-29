@@ -496,9 +496,46 @@ export function mcpLogQuery(
 // Command
 // ---------------------------------------------------------------------------
 
+export const MCP_CORE_TOOLS = [
+  "repo_status", "list_projects", "semantic_search", "list_symbols",
+  "extract_symbol", "code_skeleton", "trace_calls", "impact_analysis",
+] as const;
+
+const MCP_WATCH_TOOLS = new Set([
+  "semantic_search", "code_skeleton", "trace_calls", "extract_symbol", "peek_symbol",
+  "dead", "audit", "surprising_connections", "get_neighbors", "find_paths",
+  "subgraph_for_files", "list_symbols", "related_files", "recent_changes",
+  "diff_changes", "find_tests", "impact_analysis", "find_similar", "build_context",
+  "review_risk",
+]);
+
+export function mcpToolAnnotations(name: string) {
+  return {
+    readOnlyHint: name === "repo_status",
+    destructiveHint: MCP_WATCH_TOOLS.has(name),
+    idempotentHint: name === "repo_status",
+    openWorldHint: false,
+  };
+}
+
+export function parseMcpToolProfile(value: string | undefined): "core" | "full" {
+  if (value === undefined) return "full";
+  if (value === "core" || value === "full") return value;
+  throw new Error("GMAX_MCP_TOOL_PROFILE must be exactly core or full (or unset)");
+}
+
 export const mcp = new Command("mcp")
   .description("Start MCP server (stdio, auto-started by plugins)")
   .action(async (_optsArg, _cmd) => {
+    // Capture once, before any client registration or transport/background work.
+    let profile: "core" | "full";
+    try {
+      profile = parseMcpToolProfile(process.env.GMAX_MCP_TOOL_PROFILE);
+    } catch (error) {
+      process.stderr.write(`gmax: ${error instanceof Error ? error.message : String(error)}\n`);
+      process.exitCode = 2;
+      return;
+    }
     process.title = "gmax-mcp";
     try {
       const client = resourceBudget.registerClient();
@@ -2623,7 +2660,7 @@ export const mcp = new Command("mcp")
 
         if (summarized === 0) {
           return ok(
-            "No chunks to summarize (all have summaries or summarizer unavailable)",
+            "Summarization unavailable: the LLM summarizer is deliberately disabled; no summaries were generated.",
           );
         }
         const remainMsg =
@@ -3317,11 +3354,9 @@ export const mcp = new Command("mcp")
         15,
       );
       try {
-        const { isDaemonRunning, sendDaemonCommand } = await import(
-          "../lib/utils/daemon-client"
-        );
-        if (await isDaemonRunning()) {
-          const llmResp = await sendDaemonCommand(
+        checkMcpCancellation();
+        if ((await sendMcpCommand({ cmd: "ping" }, { timeoutMs: 2_000 })).ok) {
+          const llmResp = await sendMcpCommand(
             { cmd: "llm-start" },
             { timeoutMs: 90_000 },
           );
@@ -3340,6 +3375,7 @@ export const mcp = new Command("mcp")
           question,
           projectRoot: currentRoot(),
           maxRounds,
+          signal: mcpSignal(),
         });
         return ok(inv.answer);
       } catch (e) {
@@ -3354,11 +3390,9 @@ export const mcp = new Command("mcp")
     ): Promise<ToolResult> {
       const commitRef = String(args.commit || "HEAD");
       try {
-        const { isDaemonRunning, sendDaemonCommand } = await import(
-          "../lib/utils/daemon-client"
-        );
-        if (await isDaemonRunning()) {
-          const llmResp = await sendDaemonCommand(
+        checkMcpCancellation();
+        if ((await sendMcpCommand({ cmd: "ping" }, { timeoutMs: 2_000 })).ok) {
+          const llmResp = await sendMcpCommand(
             { cmd: "llm-start" },
             { timeoutMs: 90_000 },
           );
@@ -3376,6 +3410,7 @@ export const mcp = new Command("mcp")
         const rev = await reviewCommit({
           commitRef,
           projectRoot: currentRoot(),
+          signal: mcpSignal(),
         });
         if (rev.clean) {
           return ok(
@@ -3519,11 +3554,17 @@ export const mcp = new Command("mcp")
             '`scope:"all"`) to `semantic_search`. When the working directory isn\'t an ' +
             "indexed project, `semantic_search` errors instead of searching everything " +
             "implicitly. Prefer `semantic_search` (detail:'pointer') for discovery, then " +
-            "`extract_symbol`/`peek_symbol`/`code_skeleton` to read, and " +
-            "`trace_calls`/`impact_analysis`/`find_tests` for call-graph questions. " +
-            "Use `audit` and experimental `surprising_connections` for project orientation.",
+            "`extract_symbol`/`code_skeleton` to read, and " +
+            "`trace_calls`/`impact_analysis` for call-graph questions. " +
+            (profile === "full"
+              ? "Use `peek_symbol` for compact reads, `find_tests` for test discovery, `audit` and experimental `surprising_connections` for orientation. "
+              : "Core profile: use list_symbols for symbol discovery. ") +
+            "Index reads may acquire leases/start watching and write query logs. " +
+            "Tool profiles are fixed at startup; selecting another requires a client-owned reconnect.",
         },
       );
+
+      const registrations = new Map<string, () => void>();
 
       // Best-effort query logging, applied uniformly to every tool exactly as the
       // old single CallToolRequestSchema dispatch did before each return.
@@ -3563,18 +3604,18 @@ export const mcp = new Command("mcp")
         },
         handler: (args: Record<string, unknown>) => Promise<ToolResult>,
       ): void {
-        server.registerTool(
+        registrations.set(name, () => server.registerTool(
           name,
           {
             ...config,
+            description: config.description +
+              (MCP_WATCH_TOOLS.has(name)
+                ? " Primary index reads may acquire leases/start background watching."
+                : "") + " Calls may write local query logs.",
+            annotations: mcpToolAnnotations(name),
             ...(MCP_READ_OUTPUT_SCHEMAS[name]
               ? {
                   outputSchema: z.object(MCP_READ_OUTPUT_SCHEMAS[name]),
-                  annotations: {
-                    readOnlyHint: true,
-                    destructiveHint: false,
-                    openWorldHint: false,
-                  },
                 }
               : {}),
             inputSchema: z.object({
@@ -3639,12 +3680,12 @@ export const mcp = new Command("mcp")
                 return result;
               }
             }),
-        );
+        ));
       }
 
       // Unlike index-reading tools, setup discovery must also accept a repo
       // with no registration, and must bypass withStoreContext/read fallbacks.
-      server.registerTool(
+      registrations.set("repo_status", () => server.registerTool(
         "repo_status",
         {
           description:
@@ -3653,14 +3694,14 @@ export const mcp = new Command("mcp")
           inputSchema: z.object({
             cwd: z.string().describe("Repo directory; defaults to server launch cwd").optional(),
           }),
-          annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+          annotations: mcpToolAnnotations("repo_status"),
           _meta: { "anthropic/alwaysLoad": true },
         },
         async (args) => {
           const status = await getRepoStatus(args.cwd ?? process.cwd());
           return ok(formatRepoContext(status), { ...status });
         },
-      );
+      ));
 
       tool(
         "semantic_search",
@@ -4045,7 +4086,7 @@ export const mcp = new Command("mcp")
       tool(
         "summarize_directory",
         {
-          description: "Generate LLM summaries for indexed chunks.",
+          description: "Unavailable: the LLM summarizer is deliberately disabled. Retained for compatibility; does not generate summaries.",
           inputSchema: {
             path: z
               .string()
@@ -4215,7 +4256,7 @@ export const mcp = new Command("mcp")
         "investigate",
         {
           description:
-            "Agentic codebase Q&A: a local LLM answers questions using search, trace, peek, impact, and related tools. Requires LLM to be enabled (gmax llm on).",
+            "Agentic codebase Q&A using a local LLM. May start the enabled local model and open local index resources. Requires LLM to be enabled (gmax llm on).",
           inputSchema: {
             question: z
               .string()
@@ -4233,7 +4274,7 @@ export const mcp = new Command("mcp")
         "review_commit",
         {
           description:
-            "Review a git commit for bugs, breaking changes, and security issues using local LLM + codebase context. Returns structured findings. Requires LLM to be enabled (gmax llm on).",
+            "Review a git commit using local LLM + codebase context. May start the enabled local model and append a local review report. Requires LLM to be enabled (gmax llm on).",
           inputSchema: {
             commit: z
               .string()
@@ -4274,6 +4315,9 @@ export const mcp = new Command("mcp")
         handleReviewRisk,
       );
 
+      for (const name of profile === "core" ? MCP_CORE_TOOLS : registrations.keys()) {
+        registrations.get(name)!();
+      }
       return server;
     }
 

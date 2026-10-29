@@ -3,14 +3,51 @@
 Implementation note, 2026-10-29. This is the focused discovery record; the
 delivery/upgrade owners retain their shared plans and instruction files.
 
-**Final owner integration complete locally.** Durable guidance is integrated in
-AGENTS/CLAUDE, all selected discovery files and the config-home fix are included.
-The final combined guarded production compilation passed; the earlier
-pre-platform-fix swap-guard refusal is retained separately.
-[Exact integration and execution record](assets/local-integration-20261029/completion.md).
-No runtime/native/host/client activation was exercised.
+## Retained delivered state — 0.26.109
 
-## Evidence and causal chain
+[Completion evidence](assets/lance-discovery-release-20261029/completion.md) records
+published source `60bc601196075961367d0fa58e511090c9ddcb82`, P3 last verified
+ready/open/active, and refreshed Claude plugin 0.26.109. One focused native
+invocation passed 3 cases / 8 unselected skipped; final production compilation
+was reused. SDK/native 0.40.0, embedded Lance 13 and Python 13 shipped; separately
+qualified Rust 12 remains unchanged. No memory/fan/relevance gain is established.
+
+Standard Codex registration was missing and is now repaired (`gmax`, `["mcp"]`),
+with other configuration preserved. The direct server advertised 28 tools,
+including `repo_status` and `semantic_search`; Gmax was not_registered and
+Platform indexed. The earlier October 29 retained active-provider catalog had
+301 entries and no Gmax tools; that remains a dated prior observation. The direct
+listing and registration did not establish parent attachment at that stage.
+See the [README workflow](../../README.md#current-repo-status).
+
+## Selected item 1 complete — parent catalog confirmation
+
+**Selected item 1 — agent visibility: COMPLETE for the parent provider.**
+On October 29, 2026 the parent reported its current actual `ALL_TOOLS` scan:
+**329 tools including 28 `mcp__gmax__` tools**, including
+`mcp__gmax__repo_status` and `mcp__gmax__semantic_search`. All 28 descriptions
+identify current repo `/home/reoiv/dev/hetchy/tools/gmax`,
+`index=not_registered`, `matchedRoot=null`, `daemon=unobserved`.
+This is actual parent catalog advertisement, superseding the earlier retained
+301/no-Gmax parent visibility result; it is not inferred from CLI configuration
+or the direct server's 28-tool listing. No reconnect/configuration change is
+needed for this selected parent goal.
+
+The owner's separate child catalog scan still has **301 tools / zero Gmax tools**.
+Parent visibility is confirmed; child attachment is not. Neither observation
+establishes search readiness for this **unregistered** repo. No indexing is
+authorized. No search/status RPC, client process, provider reconnect or runtime
+verification was performed to record this confirmation. No automatic cwd/catalog
+refresh or visibility in every client is claimed.
+
+## Historical local integration — before publication
+
+Durable guidance and the config-home fix were complete locally before release.
+The final guarded production compilation passed; the earlier pre-platform-fix
+swap refusal remains separately recorded in the [integration evidence](assets/local-integration-20261029/completion.md).
+Runtime/setup verification then followed during delivery, as recorded above.
+
+## Historical evidence and causal chain
 
 The implementation agent's advertised catalog contained 301 entries and no name
 or description matching `gmax` or `grepmax`. This proves absence of an advertised
@@ -105,19 +142,6 @@ MCP attachment is client-owned: use a Gmax tool only if it is advertised in your
 The not-registered result requires no search and does not replace the daemon's
 other-project status with a claim that the daemon itself is absent.
 
-## Delivered status — October 29, 2026 UTC
-
-0.26.109 is published and P3ready/open/active. Standard CLI/stdioMCP109 metadata
-verification succeeds; repo_status and semantic_search are advertised by the
-direct server. Gmax is not_registered, Platform indexed. Standard Codex gmax
-registration was absent and is now repaired; other config is preserved. Claude
-plugin109 is enabled in its CLI-selected cache with all7selected payloads matching.
-The active provider still advertises301tools/noGmax: live attachment is unconfirmed
-until a new/reconnected provider session consumes standard configuration and its
-actual catalog is observed. No T3 code/adapter is selected or shown necessary.
-See [delivery evidence](assets/lance-discovery-release-20261029/completion.md).
-Earlier source-only/local-limit statements below describe their dated stages.
-No semantic query or production maintenance was used for setup verification.
 
 ## Corrected direction: existing MCP registration, no T3 code changes
 
@@ -126,8 +150,10 @@ withdrawn and is not required work or an accepted next feature. No T3 codebase
 changes are selected or authorized. The approach is standard MCP registration
 plus Gmax-owned status/context. A missing Gmax entry in the active catalog does
 not prove that T3 lacks MCP support or needs new infrastructure. The actual
-registration, inheritance, launch and catalog state for this provider remains
-unverified; missing/disabled configuration or a launch failure could explain it.
+registration, inheritance, launch and catalog state was unverified at this
+correction. Subsequent delivery established standard registration/direct server
+operation, and the later parent catalog scan above confirms parent advertisement.
+The owner's child catalog remains separate and does not contradict that result.
 
 The existing Gmax Codex installer already uses the exact registration command
 `codex mcp add gmax -- gmax mcp` (`src/commands/codex.ts:97-117`). The launch

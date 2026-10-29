@@ -34,6 +34,17 @@ Natural-language search that works like `grep`. Fast, local, and built for codin
 - **Centralized Index:** One database at `~/.gmax/` — index once, search from anywhere.
 - **Agent-Ready:** `--agent` flag returns compact one-line output — ~89% fewer tokens than default.
 
+**0.26.110:** Choose a compact eight-tool MCP catalog with
+`GMAX_MCP_TOOL_PROFILE=core`; unset/full keeps the existing 28 tools. Review
+failures and cancellation are reported accurately, and selected write operations
+close their local Lance table handles after work settles. No index rebuild is
+needed; memory or relevance gains have not been measured.
+
+**0.26.109:** Current-repo discovery/status and clearer agent setup, with
+LanceDB SDK/native packages **0.40.0** (embedded Lance **13**) and Python
+maintenance **13.0.0**. See the [release notes](https://github.com/reowens/grepmax/releases/tag/v0.26.109)
+for compatibility and validation scope.
+
 **CPU search in 0.26.100:** ColBERT reranking batches token dot products and
 reuses decoding buffers. Search fetches selected payloads by row ID within one
 snapshot. Existing indexes need no rebuild. A bounded warm P3 comparison on 96
@@ -87,7 +98,15 @@ cd my-repo && gmax add        # 2. Add + index
 gmax "where do we handle auth?" --agent  # 3. Search
 ```
 
-No setup required — gmax auto-detects your platform (GPU on Apple Silicon, CPU elsewhere) and downloads models on first use.
+gmax auto-detects your platform (GPU on Apple Silicon, CPU elsewhere). Models download when indexing or search needs them; current-repo status does not download models.
+
+### Earlier release: 0.26.99
+
+[0.26.99](https://github.com/reowens/grepmax/releases/tag/v0.26.99) routes daemon
+startup through recognized installed systemd user services, preserving their
+resource limits when hooks or CLI/MCP startup find no running daemon. The prior
+0.26.98 repairs cover busy read-only startup, FTS adoption and cleanup backoff.
+Granite Small remains the default.
 
 ### CPU worker budget
 
@@ -151,6 +170,7 @@ gmax project                  # Languages, structure, key symbols
 gmax related src/lib/auth.ts  # Dependencies + dependents
 gmax status                   # All indexed projects + chunk counts
 gmax status --json            # The same plus daemon, settings and workers, as JSON
+gmax status --current --json   # Cached setup/status for this repo only
 ```
 
 The recorded benchmark below showed about 20% fewer LLM tokens and a 30% speedup on its workload. Results depend on the repository, query and agent workflow.
@@ -181,26 +201,93 @@ gmax plugin remove claude      # Remove specific plugin
 
 After upgrading with `npm install -g grepmax@latest`, run `gmax plugin update` (or `gmax plugin update <client>`) to refresh integrations. Package installation does not modify your agent configuration; its postinstall script only prints this reminder.
 
-Starting with v0.26.51, the installer refreshes an existing Claude marketplace from its configured source and updates each existing user/project/local installation in its original scope. It does not remove the marketplace, reset disabled preferences, or reinstall after a refresh failure. New installations use the local npm package. An existing source is retained; moving to another source is a separate migration. Codex instructions follow `CODEX_HOME` (default `~/.codex`), and a matching STDIO registration retains its existing options. A different existing launch configuration is reported for review instead of overwritten. Refresh the plugins after upgrading to activate the hook and installer repairs.
+Claude updates preserve the existing marketplace source, installation scope and
+disabled preferences. The Claude CLI selects the active account/configuration;
+plugin cache operations honor `CLAUDE_CONFIG_DIR` (default `~/.claude`). Codex
+instructions follow `CODEX_HOME` (default `~/.codex`), and matching STDIO
+registrations retain their options. A different launch configuration is reported
+instead of overwritten. Reconnect existing sessions as needed to consume updates.
 
 ### How it works per client
 
-- **Claude Code:** Plugin with session/directory hooks, guidance hooks and activity renewal on UserPromptSubmit/PostToolUse for Bash. Model uses CLI via `Bash(gmax ... --agent)`; the plugin does not register an MCP server. Source hooks honor the autostart kill switch, start only after a definite absent socket and never fall back to a separate watcher beside a live daemon.
+- **Claude Code:** Startup, cwd-change and subagent hooks report current-repo setup; semantic hints require an indexed repo. CLI guidance and existing watch-lease lifecycle remain separate from MCP registration. Hooks honor startup restrictions; installing the plugin does not attach MCP tools.
 - **OpenCode:** Tool shim with dynamic SKILL + session plugin for daemon startup. Model calls gmax tool directly.
 - **Codex:** MCP server registration + AGENTS.md skill instructions.
 - **Factory Droid:** Skills + SessionStart/SessionEnd hooks for daemon lifecycle.
+
+### Current-repo status
+
+```bash
+gmax status --current --json
+gmax status --current --cwd /path/to/repo --json
+```
+
+This reads bounded registry metadata and optionally pings an existing daemon;
+it does not open the index, index files, start services or load models. The MCP
+`repo_status` tool provides the same setup information, including unregistered
+repos. Counts are cached and do not establish index freshness.
+
+| Signal | What it establishes |
+| --- | --- |
+| `indexState`, `matchedRoot` | Whether this repo is registered/indexed; preserve pending, error and unknown states. |
+| `daemon.state` | Daemon readiness, independently of whether this repo is indexed. |
+| Client STDIO registration | How the client is configured to launch Gmax. |
+| Actual client tool catalog | Whether Gmax tools are attached and available to that agent session. |
+
+`not_registered` applies to this repo even if another project is indexed or its
+daemon is ready. Status does not add a project or search a different one.
 
 ### MCP Server
 
 MCP is local-only: the client spawns it and communicates through stdin/stdout pipes. It has no HTTP, SSE, or TCP listener and cannot be reached over the network. The daemon socket is restricted to your user account.
 
-`gmax mcp` uses the official MCP SDK v2.3.0 and serves both legacy (2025 handshake) and modern (2026-07-28 discovery and per-request metadata) clients over the same stdio entry. Discovery and catalog listing perform no daemon, model or watcher startup. Index-reading tools acquire watch leases lazily; one timer renews the primary projects actually used, and disconnect closes the SDK connection and its timer.
+Register a STDIO server with command `gmax` and args `["mcp"]` in your client.
+For Codex, the existing installer adds this registration and agent guidance:
 
-Clients requesting progress receive operation-stage messages with increasing stage counts and no estimated percentage. Cancelling a daemon read closes that request's IPC connection and prevents subsequent tool operations or fallback work; concurrent requests and the session's watch leases continue. An already-running local native query finishes under its existing deadline before its store closes. Cancellation does not undo indexing writes or interrupt optional LLM work.
+```bash
+gmax plugin add codex
+# Standard registration alone: codex mcp add gmax -- gmax mcp
+```
+
+Register on the host/user where the agent executes, with `gmax` available on its
+PATH and the correct workspace/configuration home. A GUI and a remote agent may
+use different environments. After registration or upgrade, reconnect if needed
+and confirm `repo_status` and `semantic_search` in the **actual client catalog**.
+A successful direct server listing, hook or CLI hint does not prove attachment;
+automatic catalog refresh on cwd changes is not promised.
+
+Select the startup catalog using the registration's environment:
+`GMAX_MCP_TOOL_PROFILE=core` exposes exactly `repo_status`, `list_projects`,
+`semantic_search`, `list_symbols`, `extract_symbol`, `code_skeleton`,
+`trace_calls` and `impact_analysis`. Explicit core is recommended for new or
+selected clients. `GMAX_MCP_TOOL_PROFILE=full`, or leaving it unset, preserves
+all 28 existing names and arguments. Full adds `peek_symbol`, `find_tests`,
+`related_files`, `find_similar`, `build_context`, `summarize_project`,
+`diff_changes`, `audit`, `dead`, `get_neighbors`, `find_paths`,
+`subgraph_for_files`, `surprising_connections`, `review_risk`, `index_status`,
+`recent_changes`, `review_report`, `investigate`, `review_commit` and
+`summarize_directory`. The directory summarizer is deliberately disabled;
+its full-profile compatibility entry reports that no summaries were generated.
+
+Only exact `core` and `full` are valid. An empty, whitespace or unknown value
+prints a stderr diagnostic and exits 2 before registering a client or opening
+the transport. The profile is read once per server lifecycle; calls and registry
+changes do not expand it. Keep command `gmax` and args `["mcp"]` unchanged. To
+migrate a selected registration later, back up its existing environment, change
+only this key, and use that client's supported restart/reconnect. Confirm the
+eight names in its actual catalog; shipping this option does not activate it in
+existing sessions. Restore the prior key/value (or remove the newly added key)
+and reconnect to roll back. No automatic refresh or child-session inheritance
+is promised. An unregistered current repo still requires separate indexing
+authorization and never silently falls back to another corpus.
+
+`gmax mcp` uses the official MCP SDK v2.3.0 and serves both legacy (2025 handshake) and modern (2026-07-28 discovery and per-request metadata) clients over the same stdio entry. SDK major 2, JSON-RPC 2.0 and the date-versioned MCP protocol are distinct; a catalog listing alone does not establish the actual request protocol. Discovery and catalog listing perform no daemon, model or watcher startup. Index-reading tools acquire watch leases lazily; one timer renews the primary projects actually used, and disconnect closes the SDK connection and its timer.
+
+Clients requesting progress receive operation-stage messages with increasing stage counts and no estimated percentage. Cancelling a daemon read closes that request's IPC connection and prevents subsequent tool operations or fallback work; concurrent requests and the session's watch leases continue. An already-running local native query finishes under its existing deadline before its store closes. Cancellation does not undo completed indexing writes. Optional LLM startup, health and all inference rounds receive the caller signal. Aborting prevents later dispatches and a report append when observed before its synchronous write boundary. Already-started native work drains before its local store closes; this is not a native-quiescence guarantee. An accepted model-start request or server-side inference may continue after the client aborts. Cancellation never kills a shared model server or another client's leases.
 
 `gmax mcp` starts a stdio-based MCP server for clients that support MCP but can't run shell commands (Cursor, Windsurf, custom agents). Search-backed tools use the singleton daemon when available, avoiding a separate embedding worker per MCP session, and use an in-process worker for supported offline/secondary-store access. An unsupported daemon command requires `gmax watch restart`.
 
-`semantic_search`, `trace_calls`, `dead`, and `index_status` also advertise output schemas and return `structuredContent` with `schemaVersion: 1`, alongside the existing text. Search matches follow the same scope and display filters and include paths, one-based start/end lines, symbols, scores (null when unavailable), and warnings. Trace results preserve caller ancestry and legacy edge classifications; unresolved callees have no location. Graph conclusions carry `approximate: true`. Index health includes embedding identity, watcher/reconciliation state, and the last compaction result; unavailable health is null or unobserved. These four tools advertise read-only, non-destructive, closed-world annotations. Other tools retain their current contracts.
+`semantic_search`, `trace_calls`, `dead`, and `index_status` also advertise output schemas and return `structuredContent` with `schemaVersion: 1`, alongside the existing text. Search matches follow the same scope and display filters and include paths, one-based start/end lines, symbols, scores (null when unavailable), and warnings. Trace results preserve caller ancestry and legacy edge classifications; unresolved callees have no location. Graph conclusions carry `approximate: true`. Index health includes embedding identity, watcher/reconciliation state, and the last compaction result; unavailable health is null or unobserved. Annotations are explicit and independent of output schemas. Only bounded `repo_status` claims no environmental writes. Watch-capable tools conservatively advertise possible destructive effects because background reconciliation can replace/remove indexed rows; this does not mean source files are deleted. Other helper calls can write query logs; local LLM tools can start an enabled model, and review appends its report. All have a closed local domain. These advisory hints do not change existing startup, logging, watching or model authorization requirements. `review_commit` inference errors (including timeouts and invalid output) fail rather than returning a clean verdict; valid clean/finding result shapes are unchanged. Foreground CLI failures remain nonzero, and background CLI acknowledgement still means queued.
 
 Trace adds `evidenceVersion: 1`, reference evidence, center-selection evidence and coverage summaries. Evidence identifies indexed spellings, source chunks and candidate targets; `bindingResolved: false` and a null callsite preserve what the index cannot establish. Legacy `EXTRACTED`/`INFERRED` and `free`/`member`/`type` labels do not prove a call or target binding. Coverage separates producer limits from display limits, reports unknown totals as null, and treats missing metadata from older daemons as unknown. The existing `omittedCallees`/`omittedImporters` fields count display omissions only. Public evidence spans are one-based. CLI `trace --agent` keeps its data rows and appends a reserved `# evidence` summary line; parsers should skip that comment line.
 
@@ -209,6 +296,7 @@ Trace, neighbor and path traversals enforce request-local work budgets during co
 
 | Tool | Description |
 | --- | --- |
+| `repo_status` | Bounded current-repo registration/index state and optional daemon ping; no indexing or startup. |
 | `semantic_search` | Search by meaning. Pointer mode matches CLI `--agent` output; `detail=code/full` returns snippets. |
 | `code_skeleton` | File structure with bodies collapsed (~4x fewer tokens). |
 | `trace_calls` | Call graph: importers, callers (multi-hop), callees with file:line. |
@@ -222,7 +310,7 @@ Trace, neighbor and path traversals enforce request-local work budgets during co
 | `subgraph_for_files` | Graph primitive: local dependency subgraph for a set of files. |
 | `list_symbols` | Indexed symbols with role and export status. |
 | `list_projects` | List every indexed project (name, root, status, chunks) to pick a search scope. |
-| `index_status` | Index health: chunks, files, projects, watcher status. |
+| `index_status` | All-project index health; use `repo_status` for lightweight current-repo setup. |
 | `summarize_project` | Project overview: languages, structure, key symbols, entry points. |
 | `summarize_directory` | Compatibility entry; summarization is disabled and generates no summaries. |
 | `related_files` | Dependencies and dependents by shared symbols. |
@@ -690,7 +778,7 @@ Full-table compaction and new FTS/ANN index builds are disabled in the containme
 
 `gmax fts-refresh --table /path/to/lancedb/chunks.lance` reads the durable FTS receipt. `--check --expected-version N` checks native coverage and input admission; `--run --expected-version N` appends one fragment-bounded FTS delta after all store owners close. The result reports total `unindexedRows`, selected `batchRows`/`selectedFragments` and `remainingRows`; a completed batch may leave a backlog. Inspect the fresh head before explicitly selecting another run. Stored tokenizer settings and existing index segments are preserved; a single oversized fragment is refused. Missing, incomplete, unsupported or inconsistent physical tokenizer metadata is refused before writes; legacy token-file layouts are not supported. Physical metadata files are capped at 1 MiB each and parameter JSON at 64 KiB per segment. This Linux-only command admits at most 100,000 physical input rows and 64 MiB of live content, with a 120-second deadline, 90-second CPU limit, two-CPU affinity, 2 GiB address-space cap and sampled 1 GiB helper RSS guard. It requires 8 GiB available host memory and disk headroom for 512 MiB sampled growth plus 1 GiB margin. Sampled guards can overshoot and are not a native cumulative-write cap. The command preserves quarantine, refuses configured native automatic cleanup and never stops services, compacts data or prunes versions. Interrupted writes require inspection and the exact `--acknowledge-uncertain` attempt ID before retry; no automatic retry runs. Corpus-statistic updates can change BM25 scores. See `--help` for the command contract.
 
-The package includes a separate prune-only helper with pinned Lance 12 dependencies, plus an exclusively leased Node wrapper. Runtime preparation uses `uv >=0.12.18`, an existing Python interpreter and locked wheels; it does not download Python, build from source, load an embedding model or run during installation. The helper currently supports macOS and Linux. The daemon runs independent prune-only retention: at most 128 old versions per pass, keeping current, tagged and two-minute recent versions. It retries backlog every minute and checks settled history every five minutes; status polling and watched edits do not prevent cleanup. Runtime setup happens before writer suspension. Bulk project indexing defers retention without stopping watchers or closing reads, with a one-minute retry. Reads also remain available while watcher work quiesces; admission closes briefly to drain old native readers before pruning starts. Older readers and external store owners are drained under an exclusive lease; new read-only queries may use the protected current version while history is deleted. Writers resume and watchers reconcile edits after the pass. Full-table compaction admission never gates this reclamation. Normal configured host policy applies; explicit offline recovery retains its separate admission.
+The package includes a separate Python prune-only helper pinned to Lance 13, plus an exclusively leased Node wrapper. Runtime preparation uses `uv >=0.12.18`, an existing Python interpreter and locked wheels; it does not download Python, build from source, load an embedding model or run during installation. The helper currently supports macOS and Linux. The daemon runs independent prune-only retention: at most 128 old versions per pass, keeping current, tagged and two-minute recent versions. It retries backlog every minute and checks settled history every five minutes; status polling and watched edits do not prevent cleanup. Runtime setup happens before writer suspension. Bulk project indexing defers retention without stopping watchers or closing reads, with a one-minute retry. Reads also remain available while watcher work quiesces; admission closes briefly to drain old native readers before pruning starts. Older readers and external store owners are drained under an exclusive lease; new read-only queries may use the protected current version while history is deleted. Writers resume and watchers reconcile edits after the pass. Full-table compaction admission never gates this reclamation. Normal configured host policy applies; explicit offline recovery retains its separate admission.
 
 `gmax recover --table /path/to/lancedb/chunks.lance --json` reads the durable recovery receipt without starting a daemon or preparing Python. `--check` samples admission without pruning. `--prune --version <current-version> --cutoff <absolute-ISO-timestamp>` explicitly requests one offline prune. A prior uncertain attempt requires `--acknowledge-uncertain <attempt-id>` after inspection. Recovery never creates/clears quarantine, stops other owners, retries automatically or enables rewriting.
 
