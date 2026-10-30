@@ -4,10 +4,22 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-30
 audience: internal
-summary: "STOPPED: verification did not pass; no inference; no new tests/compiler, activation or release."
+summary: "Corrected runtime delivered; interrupted at owned replacement error; no inference or activation."
 ---
 
 # Future Sessions
+
+## SCP continuation: corrected runtime delivered, interrupted with inference0
+
+Actual operations, fixes and custody (private record) record successful SCP delivery
+and corrected runtime dc7/e025 materialization. Ordinary access/ACL errors were
+corrected with confirmed cleanup, retaining all caps. The last native attempt
+failed at owned private hardlink replacement; its Win32 code remains unknown.
+Native cleanup is confirmed; tool interruption prevented local guard8 final
+receipt. No inference/model load, test/compiler rerun or activation occurred.
+Continue this same selected outcome from the exact checkpoint, not a new
+permission gate; no automatic duplicate inference or unsafe retry is allowed.
+
 
 ## Selected final verification and conditional hybrid job
 

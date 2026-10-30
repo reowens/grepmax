@@ -23,12 +23,24 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "STOPPED: verification did not pass; no inference"
-next_step: "Retain exact outcome and owned assets/custody. No automatic retry, release or production activation."
-summary: "STOPPED: verification did not pass; no inference; no new tests/compiler, activation or release."
+current_state: "SCP/runtime correction delivered; interrupted at private hardlink replacement; verification incomplete, inference0."
+next_step: "Resume exact owned replacement error from checkpoint under same selected outcome; preserve single inference maximum."
+summary: "Corrected runtime delivered; interrupted at owned replacement error; no inference or activation."
 ---
 
 # Gmax Delivery Plan
+
+## SCP continuation: corrected runtime delivered, interrupted with inference0
+
+Actual operations, fixes and custody (private record) record successful SCP delivery
+and corrected runtime dc7/e025 materialization. Ordinary access/ACL errors were
+corrected with confirmed cleanup, retaining all caps. The last native attempt
+failed at owned private hardlink replacement; its Win32 code remains unknown.
+Native cleanup is confirmed; tool interruption prevented local guard8 final
+receipt. No inference/model load, test/compiler rerun or activation occurred.
+Continue this same selected outcome from the exact checkpoint, not a new
+permission gate; no automatic duplicate inference or unsafe retry is allowed.
+
 
 ## Selected final verification and conditional hybrid job
 

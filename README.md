@@ -1007,9 +1007,9 @@ excluded path stays indexable.
 
 ### Remote background embedding (local source; not activated)
 
-Latest selected verification outcome (private record): stopped: verification did not pass; no inference.
-The explicit prepared ColBERT cache-root path is corrected locally; the remote
-cache still contains the old runtime. Production remote offload remains inactive; no numerical parity or noise improvement is claimed.
+Latest SCP continuation (private record): corrected runtime delivered; final cache
+verification remains incomplete at an owned hardlink replacement error.
+No inference ran and production remote offload remains inactive.
 
 Local remains the default, including foreground query encoding. The optional
 background route sends changed chunks to a named trusted worker while P3 keeps
@@ -1020,7 +1020,7 @@ retains job custody and prevents duplicate submission.
 The source connects the prepared offline ONNX runtime, fixed worker task,
 Windows/Mac resource adapters and terminal custody. Historical fake validation
 passed 18 cases and the corrected-source typecheck passed; later source repairs
-have no new unit/compiler coverage. See the current selected outcome above.
+have no new Gmax unit/typecheck coverage. See the current selected outcome above.
 The Mac roster was not changed; existing MLX remains dense-only.
 
 Gmax worker operations use nonmultiplexed, operation-owned SSH; ordinary Platform
