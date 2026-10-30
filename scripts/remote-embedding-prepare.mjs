@@ -45,7 +45,7 @@ try {
     nativeIdentity=identity;
     writeFileSync(args[5],JSON.stringify({...record,state:'native-submitting',nativeIdentity},null,2));
   };
-  const result=await runJob({lane:'typecheck',worker:'dell-win',command:gmaxBridgeCommand(request.jobId),deps:false,allowFallback:false,demandGb:2,put:[input],fetch:sourceOnly?[]:[`${output}/result.json`,`${output}/stdout.log`],timeoutS:170,operationDeadlineMs,onNativeTaskIdentity,sourceOnly,log:`${output}${sourceOnly?'.source-only':''}.resume.transport.log`},{root:platform,workers,identifySource:()=>gmaxOperationSourceIdentity(platform,input)});
+  const result=await runJob({lane:'typecheck',worker:'dell-win',command:gmaxBridgeCommand(request.jobId),deps:false,allowFallback:false,demandGb:2,put:[input],fetch:sourceOnly?[]:[`${output}/result.json`,`${output}/stdout.log`],timeoutS:170,operationDeadlineMs,onNativeTaskIdentity,sourceOnly,reuseSourceFiles:true,log:`${output}${sourceOnly?'.source-only':''}.resume.transport.log`},{root:platform,workers,identifySource:()=>gmaxOperationSourceIdentity(platform,input)});
   writeFileSync(args[5],JSON.stringify({...record,state:'settled',nativeIdentity,result},null,2));
   console.log(JSON.stringify(result));process.exitCode=result.exit??75;
 } catch(error){console.error(error.message);process.exitCode=75;}
