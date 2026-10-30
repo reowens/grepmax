@@ -150,7 +150,7 @@ export const CONFIG = {
   // reindex to take effect. Must equal the latest entry's `v` in
   // CHUNKER_VERSION_HISTORY below — see that list for per-version severity and
   // the user-facing note rendered by `gmax doctor` and the staleness hint.
-  CHUNKER_VERSION: 4,
+  CHUNKER_VERSION: 5,
 };
 
 /**
@@ -180,6 +180,11 @@ export const CHUNKER_VERSION_HISTORY: ReadonlyArray<{
     v: 4,
     severity: "additive",
     note: "member-call edges recorded separately (obj.method()); substrate for receiver-aware call resolution, no query effect until reindex.",
+  },
+  {
+    v: 5,
+    severity: "additive",
+    note: "decorated TS/TSX classes expose method chunks and symbols, including method decorators; reindex to recover missing methods.",
   },
 ];
 

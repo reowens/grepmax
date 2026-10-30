@@ -480,7 +480,13 @@ export class TreeSitterChunker {
         node.namedChildren &&
         node.namedChildren.length > 0
       ) {
-        return node.namedChildren[0];
+        // Decorators before `export` are siblings of the declaration.
+        return (
+          node.childForFieldName?.("declaration") ??
+          node.childForFieldName?.("value") ??
+          node.namedChildren.find((child) => child.type !== "decorator") ??
+          node
+        );
       }
       return node;
     };
@@ -1069,9 +1075,27 @@ export class TreeSitterChunker {
           role = "ORCHESTRATION";
         if (effective.type.includes("import")) role = "IMPORT";
 
+        // TS/TSX method decorators are class_body siblings, outside the
+        // method_definition span. Keep their route/annotation text with it.
+        let startNode = node;
+        if (
+          (lang === "typescript" || lang === "tsx") &&
+          effective.type === "method_definition"
+        ) {
+          let previous = node.previousSibling;
+          while (previous) {
+            if (previous.type === "decorator") startNode = previous;
+            else if (!previous.type.includes("comment")) break;
+            previous = previous.previousSibling;
+          }
+        }
+
         chunks.push({
-          content: node.text,
-          startLine: node.startPosition.row,
+          content:
+            startNode === node
+              ? node.text
+              : content.slice(startNode.startIndex, node.endIndex),
+          startLine: startNode.startPosition.row,
           endLine: node.endPosition.row,
           type: classify(effective),
           context,
