@@ -553,3 +553,93 @@ describe("Claude semantic discovery guidance", () => {
     expect(write).not.toHaveBeenCalled();
   });
 });
+
+const preBashMarkers = new Map<string, number>();
+
+async function preBash(command: string, sessionId = "session") {
+  const write = vi.fn();
+  const readRepoStatus = vi.fn(() => ({
+    cliHint: "gmax \"<concept>\" --root '/project' --agent",
+  }));
+  const stdin = new EventEmitter();
+  Object.assign(stdin, { setEncoding: vi.fn() });
+  const context: Record<string, unknown> = {
+    process: { stdin, cwd: () => "/project", stdout: { write } },
+    setTimeout: vi.fn(),
+    Date,
+    require: (name: string) => {
+      if (name === "./repo-status") return { readRepoStatus };
+      if (name === "path") return path;
+      if (name === "os") return { tmpdir: () => "/tmp" };
+      if (name === "fs") {
+        return {
+          statSync: (marker: string) => {
+            if (!preBashMarkers.has(marker)) throw Error("missing");
+            return { mtimeMs: preBashMarkers.get(marker) };
+          },
+          writeFileSync: (marker: string) =>
+            preBashMarkers.set(marker, Date.now()),
+        };
+      }
+      throw Error(`unexpected require ${name}`);
+    },
+  };
+  vm.runInNewContext(
+    fs
+      .readFileSync(path.join(hooksDir, "pre-grep.js"), "utf8")
+      .replace(/main\(\);\s*$/, "globalThis.done=main();"),
+    context,
+  );
+  stdin.emit(
+    "data",
+    JSON.stringify({
+      cwd: "/project",
+      session_id: sessionId,
+      tool_name: "Bash",
+      tool_input: { command },
+    }),
+  );
+  stdin.emit("end");
+  await context.done;
+  return write;
+}
+
+describe("Claude semantic discovery guidance on shell searches", () => {
+  it.each([
+    'rg "keep.?alive|heartbeat|ping" src',
+    'rg -n "how are sessions renewed" packages',
+    'grep -rE "retry\\|backoff\\|reconnect" src',
+    'cd src && rg "login|session|token"',
+  ])("suggests gmax for %s", async (command) => {
+    const write = await preBash(command, `yes-${command}`);
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(
+      JSON.parse(write.mock.calls[0][0]).hookSpecificOutput.additionalContext,
+    ).toContain("Use rg for exact names");
+  });
+
+  it.each([
+    'ls | rg "login|session|token"',
+    'rg -F "how are sessions renewed"',
+    'rg "login|session|token" app.log',
+    'rg "login|session|token" .dev/logs',
+    'rg "login|session|token" src/a.ts',
+    'rg "login|session|token" /elsewhere',
+    'grep "login|session|token" src',
+    "rg createDb",
+    'rg "createDb|allowProd|host"',
+    'cat <<E\nrg "login|session|token"\nE',
+    'echo rg "login|session|token"',
+    "rg --files",
+    "git status",
+  ])("stays quiet for %s", async (command) => {
+    expect(await preBash(command, `no-${command}`)).not.toHaveBeenCalled();
+  });
+
+  it("repeats a hint at most once per 30 minutes per session", async () => {
+    const command = 'rg "login|session|token"';
+    expect(await preBash(command, "repeat")).toHaveBeenCalledTimes(1);
+    expect(await preBash(command, "repeat")).not.toHaveBeenCalled();
+    expect(await preBash(command, "other")).toHaveBeenCalledTimes(1);
+  });
+});
