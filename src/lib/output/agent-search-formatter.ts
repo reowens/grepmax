@@ -1,5 +1,7 @@
+import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ChunkType, FileMetadata } from "../store/types";
+import { resolveContainedFile } from "../utils/path-containment";
 
 export type AgentSearchFormatOptions = {
   includeImports?: boolean;
@@ -49,10 +51,8 @@ function relativePath(projectRoot: string, absPath: string): string {
     : absPath;
 }
 
-function firstSignatureLine(chunk: ChunkType): string {
-  const raw = (chunk as any).content ?? chunk.text ?? "";
-  const lines = String(raw).split("\n");
-  for (const line of lines) {
+function firstSignatureLine(lines: string[]): number {
+  for (const [index, line] of lines.entries()) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.length < 5) continue;
     if (
@@ -78,17 +78,9 @@ function firstSignatureLine(chunk: ChunkType): string {
     ) {
       continue;
     }
-    if (
-      /^[a-z]/.test(trimmed) &&
-      !/^(export|function|class|interface|type|const|let|var|async|return|if|for|while|switch|enum|struct|pub |fn |def |impl |mod |use )/.test(
-        trimmed,
-      )
-    ) {
-      continue;
-    }
-    return trimmed.length > 120 ? `${trimmed.slice(0, 117)}...` : trimmed;
+    return index;
   }
-  return "";
+  return -1;
 }
 
 const QUERY_STOPWORDS = new Set([
@@ -137,13 +129,12 @@ function truncateHint(line: string): string {
  * chunk hit, where the first signature line only shows what the chunk is.
  * Most distinct terms wins; code beats comments on a tie; earliest otherwise.
  */
-function queryMatchingLine(chunk: ChunkType, terms: string[]): string {
-  if (!terms.length) return "";
-  const raw = String((chunk as any).content ?? chunk.text ?? "");
-  let best = "";
+function queryMatchingLine(lines: string[], terms: string[]): number {
+  if (!terms.length) return -1;
+  let best = -1;
   let bestScore = 0;
   let bestIsComment = true;
-  for (const line of raw.split("\n")) {
+  for (const [index, line] of lines.entries()) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.length < 5) continue;
     if (trimmed.startsWith("import ") || trimmed.startsWith("File:")) continue;
@@ -157,19 +148,47 @@ function queryMatchingLine(chunk: ChunkType, terms: string[]): string {
       score > bestScore ||
       (score === bestScore && bestIsComment && !isComment)
     ) {
-      best = trimmed;
+      best = index;
       bestScore = score;
       bestIsComment = isComment;
     }
   }
-  return truncateHint(best);
+  return best;
 }
 
-function hintFor(chunk: ChunkType, queryTerms: string[]): string {
-  if (typeof chunk.summary === "string" && chunk.summary) {
-    return chunk.summary;
+/** Select only source lines in the chunk's own range, never embedding context. */
+function hintFor(
+  chunk: ChunkType,
+  queryTerms: string[],
+  sourceLines: string[] | null,
+): { text: string; line: number } {
+  const start = chunkStartLine(chunk);
+  const end = Number(
+    (chunk as any).endLine ??
+      (chunk as any).end_line ??
+      chunk.generated_metadata?.end_line ??
+      start - 1 + Math.max(0, (chunk.generated_metadata?.num_lines ?? 1) - 1),
+  );
+  const raw = String((chunk as any).content ?? chunk.text ?? "");
+  // Rich indexed text has no source offset metadata. Without the file, don't
+  // attach a source pointer to breadcrumbs, imports or an appended docstring.
+  const rich = raw.split("\n").some((line) => line.startsWith("File:"));
+  const lines = sourceLines
+    ? sourceLines.slice(start - 1, end + 1)
+    : rich
+      ? []
+      : raw.split("\n").slice(0, end - start + 2);
+  let index = queryMatchingLine(lines, queryTerms);
+  if (index < 0) index = firstSignatureLine(lines);
+  if (index < 0) {
+    index = lines.findIndex(
+      (line) => line.trim() && !/^(\/\/|\/\*|\*|#)/.test(line.trim()),
+    );
   }
-  return queryMatchingLine(chunk, queryTerms) || firstSignatureLine(chunk);
+  if (index < 0) index = lines.findIndex((line) => line.trim());
+  return index < 0
+    ? { text: "", line: start }
+    : { text: truncateHint(lines[index].trim()), line: start + index };
 }
 
 function explainSuffix(chunk: ChunkType, enabled?: boolean): string {
@@ -198,6 +217,14 @@ export function formatAgentSearchResults(
   const seenImportFiles = new Set<string>();
   for (const [absPath, members] of groups) {
     const rel = relativePath(projectRoot, absPath);
+    let sourceLines: string[] | null = null;
+    try {
+      sourceLines = fs
+        .readFileSync(resolveContainedFile(projectRoot, absPath), "utf-8")
+        .split("\n");
+    } catch {
+      // Deleted, offline or out-of-scope source: use only plainly mapped text.
+    }
 
     if (
       options.includeImports &&
@@ -226,12 +253,10 @@ export function formatAgentSearchResults(
         typeof result.score === "number"
           ? `\ts=${result.score.toFixed(3)}`
           : "";
-      const hint = hintFor(result, queryTerms);
-      const locator = grouped
-        ? `  :${chunkStartLine(result)}`
-        : `${rel}:${chunkStartLine(result)}`;
+      const hint = hintFor(result, queryTerms, sourceLines);
+      const locator = grouped ? `  :${hint.line}` : `${rel}:${hint.line}`;
       lines.push(
-        `${locator}${score}${symbol ? ` ${symbol}` : ""}${role ? ` [${role}]` : ""}${hint ? ` — ${hint}` : ""}${explainSuffix(result, options.explain)}`,
+        `${locator}${score}${symbol ? ` ${symbol}` : ""}${role ? ` [${role}]` : ""}${hint.text ? ` — ${hint.text}` : ""}${explainSuffix(result, options.explain)}`,
       );
     }
   }
