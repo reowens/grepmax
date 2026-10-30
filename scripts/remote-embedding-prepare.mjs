@@ -4,7 +4,9 @@ import { existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 const args = process.argv.slice(2);
-const operationDeadlineMs = Date.now() + 140000;
+const sourceOnly = args.at(-1) === '--source-only';
+if (sourceOnly) args.pop();
+const operationDeadlineMs = Date.now() + 170000;
 try {
   if (args.length !== 6 || args[0] !== '--job' || args[2] !== '--cleanup-receipt' || args[4] !== '--receipt' || !/^[a-f0-9]{32}$/.test(args[1])) throw Error('Use --job <preparation-id> --cleanup-receipt <owned-proof> --receipt <new-result>');
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -16,7 +18,13 @@ try {
   const quiescent = proof.proofKind === 'owned-quiescence-v1' && proof.localLockReleased === true
     && Number.isSafeInteger(proof.ownedLocalPid) && proof.ownedLocalPid > 0 && /^[a-f0-9]{64}$/.test(proof.sourceDigest ?? '')
     && ['tasks','live','leases'].every(key => Array.isArray(proof.quiescence?.[key]) && proof.quiescence[key].length === 0);
-  if (proof.outerJobId !== args[1] || proof.cleanupConfirmed !== true || (!removed && !quiescent)) throw Error('Previous owned preparation cleanup not confirmed');
+  const native = proof.result?.nativeResult;
+  const terminal = proof.proofKind === 'native-terminal-v1' && proof.result?.cleanupConfirmed === true
+    && proof.result?.ran === true && !proof.result?.uncertainFailure
+    && native?.id === proof.nativeIdentity?.taskId && native?.sourceDigest === proof.nativeIdentity?.sourceSha256
+    && /^[a-f0-9]{64}$/.test(native?.sourceDigest ?? '') && native?.embedding?.cleanupConfirmed === true
+    && native?.cleanupError === null && proof.localGuard?.cohortEmpty === true && proof.localGuard?.ownedCgroupRemoved === true;
+  if (proof.outerJobId !== args[1] || proof.cleanupConfirmed !== true || (!removed && !quiescent && !terminal)) throw Error('Previous owned preparation cleanup not confirmed');
   const {readRoster,operationSshWorker}=await import(pathToFileURL(join(platform,'scripts/worker-pool.mjs')).href);
   const {validateGmaxRequest,checkGmaxSource,gmaxInputPath,gmaxOutputRoot,gmaxBridgeCommand,gmaxOperationSourceIdentity}=await import(pathToFileURL(join(platform,'scripts/lib/gmax-project.mjs')).href);
   const {runJob}=await import(pathToFileURL(join(platform,'scripts/worker-job.mjs')).href);
@@ -37,7 +45,7 @@ try {
     nativeIdentity=identity;
     writeFileSync(args[5],JSON.stringify({...record,state:'native-submitting',nativeIdentity},null,2));
   };
-  const result=await runJob({lane:'typecheck',worker:'dell-win',command:gmaxBridgeCommand(request.jobId),deps:false,allowFallback:false,demandGb:2,put:[input],fetch:[`${output}/result.json`,`${output}/stdout.log`],timeoutS:140,operationDeadlineMs,onNativeTaskIdentity,log:`${output}.resume.transport.log`},{root:platform,workers,identifySource:()=>gmaxOperationSourceIdentity(platform,input)});
+  const result=await runJob({lane:'typecheck',worker:'dell-win',command:gmaxBridgeCommand(request.jobId),deps:false,allowFallback:false,demandGb:2,put:[input],fetch:sourceOnly?[]:[`${output}/result.json`,`${output}/stdout.log`],timeoutS:170,operationDeadlineMs,onNativeTaskIdentity,sourceOnly,log:`${output}${sourceOnly?'.source-only':''}.resume.transport.log`},{root:platform,workers,identifySource:()=>gmaxOperationSourceIdentity(platform,input)});
   writeFileSync(args[5],JSON.stringify({...record,state:'settled',nativeIdentity,result},null,2));
   console.log(JSON.stringify(result));process.exitCode=result.exit??75;
 } catch(error){console.error(error.message);process.exitCode=75;}
