@@ -4,10 +4,69 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-30
 audience: internal
-summary: "Remote source integrated locally;18 fake cases passed once, typecheck diagnostics fixed without rerun; worker runtime/native parity unqualified."
+summary: "Recenter: Dell-win matching ONNX dense+ColBERT first; source complete, corrected compilation and real worker runtime unverified; Mac/MLX and release unselected."
 ---
 
 # Future Sessions
+
+## Recenter: Dell-win first, source complete but runtime unproven
+
+**On track for the selected source milestone; not ready to publish or claim
+working offload.** The goal is background **dense plus ColBERT** inference on a
+trusted worker, with local foreground search and P3 parsing/reuse/source fences,
+leases and sole store-write authority preserved. Local remains default; remote
+outages never silently move inference back onto P3. Quiet operation is a separate
+host outcome, not a promised consequence of this feature.
+
+- **Done:** source integration `6346da3`, contained dependency closure `2575c91`,
+  real Platform Windows/Mac adapters `49ccde8152` and optional MLX assessment
+  `6dbbb3f`. One fake-only invocation passed18/18 across3 files,0 skipped.
+  The one typecheck reported3 diagnostics at2 locations; `153d6f9` fixed them.
+  `b93a8e9` retains exact evidence. Both payloads had verified hard2GiB/no-job-swap
+  protection, zero owned swap/OOM and complete group cleanup.
+- **Unverified:** corrected final compilation (no rerun); real fixed transport,
+  Windows native helper artifact/prepared runtime, exact model/tokenizer/dependency
+  inventories and read-only job-account permissions; real token/numeric parity.
+  There has been **no real remote embedding run**. Source stubs are not the blocker.
+- **Not selected:** worker/model preparation or downloads, real inference,
+  Mac route activation, MLX port, release/deployment, benchmarks or further host
+  operations. The passing18 cases will not be rerun automatically.
+
+### One recommended next batch — proposal only
+
+1. Run **one corrected-source production typecheck**, with the same hard2GiB
+   kernel cap, no-job-swap and existing CPU/RSS/deadline/host/cleanup limits.
+   A failure yields diagnostics and in-scope corrections, not an automatic loop.
+2. **Only if it passes**, prepare the existing **dell-win** fixed task using the
+   exact committed runtime/lock/dependencies and P3's matching published embedding
+   generation, model/tokenizer hashes and read-only cache permissions. Determine
+   supplied asset availability then; none has been observed here. Necessary
+   worker bundle/C# helper artifact preparation is a distinct production runtime
+   preparation step, **not a second Gmax typecheck, test suite or hidden native
+   qualification campaign**. Include it explicitly in that later batch's scope.
+3. Only under later explicit authorization for the exact models/resources, run
+   **one small real dense+ColBERT batch**, retaining result identity, token/numeric
+   comparison against the matching P3 representation and terminal/resource/cleanup
+   evidence. No broad corpus, matrix, retry, release or permanent route switch is
+   implied. Any missing same-artifact comparison input is an exact setup fact to
+   resolve, not permission to invent parity or launch a baseline campaign.
+4. Record the outcome and stop. No automatic release or further activation.
+
+This is one proposed bounded path through results/docs, not permission to execute
+any step now or a new reviewer/audit/export gate. Mac/MLX stay outside the Dell
+critical path: Mac source exists, but Air is off and Pro's xcode/device roster
+still does not admit embedding; sampled Mac CPU throttling is not Windows
+logical-CPU affinity. Existing MLX is dense-only, not the ColBERT replacement.
+
+P3 remains this local machine, on completed110 with rollback109. Power-saver's
+last retained24 EPP values were `power`; one user quiet report is not a new
+acoustic measurement. WOL magic64 applied/saved with `Unsaved=false` and PCI wake
+enabled is closed host work; driver/backing-YAML/BIOS/physical-wake limits are
+not an urgent test queue. Compiler containment `4434ed5` remains source-only and
+separate, not a prerequisite added to this Gmax path. Core8 config/direct8 versus
+last parent329/full28, unknown relevance-attempt count and unrelated dirty
+Lance/Arrow/query work remain unchanged. No operation starts in this recenter.
+
 
 ## Bounded fake validation complete; diagnostic fixes unrerun
 
