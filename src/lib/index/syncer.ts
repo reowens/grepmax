@@ -398,6 +398,8 @@ export async function initialSync(
           );
           result = await backgroundEmbeddingClient.complete(result, route, signal);
           if (route.mode === "remote") {
+            const currentPolicy = await policy.classifyFile(absPath);
+            if (currentPolicy.status !== "present") throw new Error("File no longer eligible during remote synchronization");
             const current = await readFileSnapshot(absPath, { projectRoot: resolvedRoot });
             if (current.mtimeMs !== result.mtimeMs || current.size !== result.size || computeContentHash(current.buffer, absPath) !== result.hash) throw new Error("File changed during remote synchronization");
           }

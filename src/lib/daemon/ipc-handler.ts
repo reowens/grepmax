@@ -182,7 +182,7 @@ export async function handleCommand(
 
       case "status":
         return {
-          backgroundEmbedding: backgroundEmbeddingStatus(),
+          backgroundEmbedding: backgroundEmbeddingStatus(daemon.embeddingConfiguration?.()?.generation.fingerprint),
           ok: true,
           pid: process.pid,
           uptime: daemon.uptime(),

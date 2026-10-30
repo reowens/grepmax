@@ -20,7 +20,7 @@ export function parseBackgroundEmbeddingConfig(value: unknown): BackgroundEmbedd
   const v = value as BackgroundEmbeddingConfig;
   if (v.mode === "local") return { mode: "local" };
   if (v.mode !== "remote" || typeof v.worker !== "string" || !/^[a-z][a-z0-9-]{0,39}$/.test(v.worker) || typeof v.runtimeCheckout !== "string" || !path.isAbsolute(v.runtimeCheckout) || typeof v.runtimeCommit !== "string" || !/^[a-f0-9]{40}$/.test(v.runtimeCommit)) throw new Error("Remote background embedding requires named worker and pinned absolute runtime checkout/commit");
-  return { ...v, identity: validatePreparedEmbeddingIdentity(v.identity) };
+  return { mode: "remote", worker: v.worker, runtimeCheckout: v.runtimeCheckout, runtimeCommit: v.runtimeCommit, identity: validatePreparedEmbeddingIdentity(v.identity) };
 }
 export function readBackgroundEmbeddingConfig(): BackgroundEmbeddingConfig {
   try {
@@ -32,13 +32,19 @@ export function readBackgroundEmbeddingConfig(): BackgroundEmbeddingConfig {
     throw error;
   }
 }
+export interface RemoteJobIdentity { jobId: string; remoteJobId: string; remoteTaskId?: string }
 export interface RemoteEmbeddingTransport {
   /** Trusted installed adapter, never derived from a wire request. */
   capability(config: BackgroundEmbeddingConfig): { available: boolean; reason: string };
-  submit(request: RemoteEmbeddingRequest, config: BackgroundEmbeddingConfig, signal: AbortSignal): Promise<{ result: unknown; terminal: boolean; cleanupConfirmed: boolean }>;
+  submit(request: RemoteEmbeddingRequest, config: BackgroundEmbeddingConfig, signal: AbortSignal, onIdentity?: (identity: RemoteJobIdentity) => void): Promise<{ result: unknown; terminal: boolean; cleanupConfirmed: boolean; error?: string }>;
 }
 export class RemoteEmbeddingClient {
   private active = false;
+  private readonly settledListeners = new Set<() => void>();
+  onSettled(listener: () => void): () => void {
+    this.settledListeners.add(listener);
+    return () => { this.settledListeners.delete(listener); };
+  }
   private blockedReason: string | null = null;
   private readonly epoch = randomUUID();
   constructor(private readonly transport: RemoteEmbeddingTransport = fixedWorkerTransport,
@@ -78,7 +84,17 @@ export class RemoteEmbeddingClient {
         try {
           // Do not race away from native/remote custody on cancellation. The adapter
           // must settle with terminal cleanup evidence; otherwise the record stays.
-          const reply = await this.transport.submit(request, config, controller.signal);
+          const remember = (identity: RemoteJobIdentity) => {
+            if (identity.jobId !== request.jobId || !/^[a-f0-9]{32}$/.test(identity.remoteJobId) || (identity.remoteTaskId !== undefined && !/^[A-Za-z0-9_-]{1,160}$/.test(identity.remoteTaskId))) throw new Error("Invalid remote custody identity");
+            if (fs.lstatSync(this.custodyPath).size > 8192) throw new Error("Custody record exceeds bound");
+            const prior = JSON.parse(fs.readFileSync(this.custodyPath, "utf8")) as Partial<RemoteJobIdentity>;
+            if (prior.jobId !== request.jobId) throw new Error("Custody changed before remote admission");
+            if ((prior.remoteJobId && prior.remoteJobId !== identity.remoteJobId) || (prior.remoteTaskId && identity.remoteTaskId && prior.remoteTaskId !== identity.remoteTaskId)) throw new Error("Admitted remote custody identity changed");
+            const temp = this.custodyPath+"."+request.attemptId;
+            fs.writeFileSync(temp, JSON.stringify({ ...prior, ...identity }), { flag: "wx", mode: 0o600 });
+            fs.renameSync(temp, this.custodyPath);
+          };
+          const reply = await this.transport.submit(request, config, controller.signal, remember);
           if (!reply.terminal || !reply.cleanupConfirmed) throw new Error("Remote job cleanup unknown");
           if (fs.lstatSync(this.custodyPath).size > 8192) throw new Error("Remote custody record exceeds bound");
           const custody = JSON.parse(fs.readFileSync(this.custodyPath, "utf8")) as { jobId?: string };
@@ -86,6 +102,7 @@ export class RemoteEmbeddingClient {
           fs.unlinkSync(this.custodyPath);
           controller.signal.throwIfAborted();
           if (Date.now() >= request.deadlineAt) throw new Error("Expired remote result");
+          if (reply.error) throw new EmbeddingBackendUnavailableError(reply.error);
           const result = validateRemoteEmbeddingResult(reply.result, request);
           result.vectors.forEach((r, i) => {
             const index = items[i].index;
@@ -97,13 +114,22 @@ export class RemoteEmbeddingClient {
       const { remoteChunks: _remoteChunks, ...completed } = file;
       return { ...completed, vectors };
     } catch (error) {
-      this.blockedReason = "remote_attempt_failed: explicit reconciliation/configuration restart required";
+      if (!signal?.aborted || fs.existsSync(this.custodyPath)) this.blockedReason = error instanceof Error ? error.message.replace(/[\r\n]/g, " ").slice(0, 300) : "remote_attempt_failed";
       throw new EmbeddingBackendUnavailableError(error instanceof Error ? error.message : "Remote embedding failed");
-    } finally { this.active = false; }
+    } finally {
+      this.active = false;
+      for (const listener of this.settledListeners) queueMicrotask(() => {
+        try { listener(); } catch { console.error("Remote background queue notification failed"); }
+      });
+    }
   }
 }
 export const backgroundEmbeddingClient = new RemoteEmbeddingClient();
-export function backgroundEmbeddingStatus() {
-  try { return backgroundEmbeddingClient.status(readBackgroundEmbeddingConfig()); }
+export function backgroundEmbeddingStatus(expectedFingerprint?: string) {
+  try {
+    const route = readBackgroundEmbeddingConfig();
+    if (route.mode === "remote" && expectedFingerprint && route.identity?.generation.fingerprint !== expectedFingerprint) return { mode: "remote", state: "error", active: false, reason: "Remote generation differs from initialized P3 generation" };
+    return backgroundEmbeddingClient.status(route);
+  }
   catch (error) { return { mode: "remote", state: "error", reason: error instanceof Error ? error.message : String(error) }; }
 }

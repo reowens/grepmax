@@ -87,6 +87,7 @@ export class ProjectBatchProcessor {
   private readonly wtag: string;
   private readonly batchTimeoutMs: number;
   private readonly concurrency: number;
+  private readonly unsubscribeRemote: () => void;
 
   private readonly pending = new Map<string, "change" | "unlink">();
   private readonly pendingWork = new Map<string, PendingWork>();
@@ -145,6 +146,7 @@ export class ProjectBatchProcessor {
       return Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : 120_000;
     })();
     this.batchTimeoutMs = Math.max(Math.ceil(taskTimeoutMs * 1.5), 120_000);
+    this.unsubscribeRemote = backgroundEmbeddingClient.onSettled(() => this.schedulePendingBatch(0));
   }
 
   handleFileEvent(
@@ -335,6 +337,7 @@ export class ProjectBatchProcessor {
 
   async close(): Promise<void> {
     this.closed = true;
+    this.unsubscribeRemote();
     this.batchStartAc?.abort();
     this.currentBatchAc?.abort();
     if (this.debounceTimer) {
@@ -676,6 +679,13 @@ export class ProjectBatchProcessor {
             batchAc.signal,
           );
           result = await backgroundEmbeddingClient.complete(result, route, batchAc.signal);
+          if (route.mode === "remote") {
+            const fresh = await readFileSnapshot(absPath, { projectRoot: this.projectRoot });
+            if (fresh.size !== result.size || fresh.mtimeMs !== result.mtimeMs || computeContentHash(fresh.buffer, absPath) !== result.hash) {
+              retryFailures.add(absPath);
+              return;
+            }
+          }
           applyReusedEmbeddings(result, reusable);
 
           // Policy and filesystem state can change while embedding is in

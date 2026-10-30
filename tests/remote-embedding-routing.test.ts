@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { RemoteEmbeddingClient, parseBackgroundEmbeddingConfig, type BackgroundEmbeddingConfig, type RemoteEmbeddingTransport } from "../src/lib/workers/remote-embedding/client";
+import { RemoteEmbeddingClient, parseBackgroundEmbeddingConfig, type BackgroundEmbeddingConfig, type RemoteEmbeddingTransport, type RemoteJobIdentity } from "../src/lib/workers/remote-embedding/client";
 import { resolveEmbeddingGeneration } from "../src/lib/index/embedding-generation";
 import { embeddingInputDigest, validateRemoteEmbeddingRequest, validateRemoteEmbeddingResult, type RemoteEmbeddingRequest } from "../src/lib/workers/remote-embedding/protocol";
 import type { ProcessFileResult } from "../src/lib/workers/orchestrator";
@@ -24,7 +24,7 @@ describe("background remote boundary (unexecuted fake fixture source)", () => {
     expect(parseBackgroundEmbeddingConfig(undefined)).toEqual({ mode: "local" });
     expect(() => parseBackgroundEmbeddingConfig({ mode: "remote", worker: "mac" })).toThrow();
   });
-  it("has no production worker capability or local inference fallback", () => {
+  it("defers when the fixed bridge is absent without local inference fallback", () => {
     const f=fixture(); const client=new RemoteEmbeddingClient(undefined,path.join(f.root,"custody"));
     expect(client.status(f.config).state).toBe("deferred"); expect(() => client.requireAvailable(f.config)).toThrow();
   });
@@ -41,10 +41,22 @@ describe("background remote boundary (unexecuted fake fixture source)", () => {
     expect(submit).toHaveBeenCalledTimes(1);expect(completed.remoteChunks).toBeUndefined();expect(completed.vectors[0].vector.length).toBe(384);expect(f.file.vectors[0].vector.length).toBe(0);
   });
   it("retains uncertain custody across controller replacement without resubmitting", async () => {
-    const f=fixture();const submit=vi.fn(async () => { throw new Error("disconnect"); });
+    const f=fixture();const submit=vi.fn(async (r:RemoteEmbeddingRequest, _config:BackgroundEmbeddingConfig, _signal:AbortSignal, onIdentity?: (identity:RemoteJobIdentity)=>void) => { onIdentity?.({jobId:r.jobId,remoteJobId:"d".repeat(32)}); throw new Error("disconnect"); });
     const transport:RemoteEmbeddingTransport={capability:()=>({available:true,reason:"fake"}),submit};const custody=path.join(f.root,"custody");
     await expect(new RemoteEmbeddingClient(transport,custody).complete(f.file,f.config)).rejects.toThrow("disconnect");
     const replacement=new RemoteEmbeddingClient(transport,custody);expect(replacement.status(f.config).state).toBe("unknown");
+    expect(JSON.parse(fs.readFileSync(custody,"utf8")).remoteJobId).toBe("d".repeat(32));
+    expect(fs.readFileSync(custody,"utf8")).not.toContain("formatted changed chunk");
     await expect(replacement.complete(f.file,f.config)).rejects.toThrow();expect(submit).toHaveBeenCalledTimes(1);expect(f.file.vectors[0].vector.length).toBe(0);
+  });
+  it("rejects a changed outer identity and retains the originally admitted custody", async () => {
+    const f=fixture();const custody=path.join(f.root,"custody");
+    const transport:RemoteEmbeddingTransport={capability:()=>({available:true,reason:"fake"}),submit:async (r,_config,_signal,remember)=>{
+      remember?.({jobId:r.jobId,remoteJobId:"d".repeat(32),remoteTaskId:"owned_run"});
+      remember?.({jobId:r.jobId,remoteJobId:"e".repeat(32)});
+      return {result:f.result(r),terminal:true,cleanupConfirmed:true};
+    }};
+    await expect(new RemoteEmbeddingClient(transport,custody).complete(f.file,f.config)).rejects.toThrow("identity changed");
+    expect(JSON.parse(fs.readFileSync(custody,"utf8"))).toMatchObject({remoteJobId:"d".repeat(32),remoteTaskId:"owned_run"});
   });
 });

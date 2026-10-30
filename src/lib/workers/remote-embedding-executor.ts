@@ -36,12 +36,12 @@ export function describeRemoteEmbeddingWorker(platform: string = process.platfor
     reason: "fixed_job_preparation_and_admission_required",
     modelLifetime: "one-shot job; sessions reused within batch, cold start per job",
     requirements: [
-      "trusted fixed-task adapter with pre-exec 2-CPU/below-normal containment",
+      "trusted fixed-task adapter: Windows pre-exec 2-CPU affinity/below-normal; Mac nice10 and sampled 2-core-time throttle",
       "2-GiB aggregate owned RSS, 180-second total deadline, 8-GiB native available-memory floor",
       "whole owned-child cleanup and terminal receipt before reservation release",
       "read-only exact model/tokenizer/preprocessing/runtime inventory and digest verification, offline loading",
       "Windows Job Object commit limits alone do not enforce RSS or prove zero pagefile use",
-      "Mac requires its own qualified containment; the Linux compiler cap is not an embedding cap",
+      "Mac uses its owned process-group adapter; actual route admission and native behavior are not observed",
     ],
   } as const;
 }
