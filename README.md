@@ -1016,7 +1016,8 @@ retains job custody and prevents duplicate submission.
 The source now connects the prepared offline ONNX runtime, fixed worker task,
 Windows/Mac resource adapters and terminal receipts. One focused fake-only run
 passed18 cases. The corrected-source typecheck subsequently passed. Dell
-preparation stopped on local owned-process cleanup after a metadata read; no
+preparation subsequently passed corrected SSH metadata but stopped at the
+180-second dependency-preparation deadline; no
 real embedding ran and no worker was activated. Exact prepared models/runtime/dependencies,
 read-only worker cache permissions and admitted routes must be supplied before
 use; the Mac roster was not changed. Existing MLX remains dense-only. See the
@@ -1026,4 +1027,5 @@ No remote compatibility or fan/noise improvement is claimed.
 Gmax worker operations use nonmultiplexed, operation-owned SSH connections;
 ordinary Platform connection sharing is unchanged. Future authorized preparation
 metadata uses `scripts/remote-embedding-metadata.mjs --worker dell-win` inside the
-owned guard. This transport correction is source-only and has not been retried.
+owned guard. One corrected metadata use passed; dependency preparation later
+hit its deadline. The follow-up remaining-time source correction is unexercised.

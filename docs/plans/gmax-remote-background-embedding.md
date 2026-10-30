@@ -13,12 +13,62 @@ audience: internal
 parent_plan: docs/plans/gmax-delivery.md
 related_plans:
 related_docs:
-current_state: "Owned SSH source correction locally complete (Platform6c64097eaf/Gmaxfd81c10), unexercised. Previous compile passed; Dell metadata guard stop remains historical; assets0/inference0."
-next_step: "No automatic retry. Operation-owned transport source is ready for later selected guarded preparation; no tests/compile/models/remote operations selected by this source fix."
-summary: "Operation-local nonmultiplexed SSH wired for metadata/policy/preparation/fixed tasks; shared Platform defaults unchanged; source-only unexercised correction."
+current_state: "Reused passing compile/tests. Corrected SSH metadata passed; single dependency prep hit180s deadline, cleaned owned cohort/reservation/task. Model/runtime manifest staging0; inference0. Platform22cb207e7a timeout source correction unrerun."
+next_step: "Safety stop: no automatic further window. Exact owned continuation is completed dependency preparation, then exact manifest/cache and one real batch after selection; timeout correction remains source-only."
+summary: "Corrected SSH operational metadata passed; Dell dependency preparation stopped at180s, cleanup confirmed with preserved deadline error; real inference not run."
 ---
 
 # Remote background embedding
+
+## Corrected SSH metadata passed; dependency preparation deadline stopped batch
+
+The newly selected resume reused the passing03:34:41 compile and18 fake cases:
+**zero compiler/test reruns**. Canonical nonmultiplexed metadata passed in9.317s,
+peak owned RSS95,277,056B, normal-exit empty cohort, zero owned swap/OOM and no
+cleanup errors. Dell policy was healthy, Node22.23.1/prior dependency cache were
+present, and no embedding manifest existed. This is one successful operational
+use of corrected SSH, not proof that the historical retained PID was a master.
+
+Exactly one fixed **dependency-preparation** request followed, pinned to Gmax
+`fd81c10390abfd08d144ec49e3dc5f7126d9117a`, outer job
+`93a6c684473e4137a8b598c611021992`. It hit the unchanged180s local operation
+deadline at09:30:41.603910UTC, before any terminal preparation result. Peak owned
+RSS412,471,296B; zero owned swap/OOM; the local cohort drained and was removed.
+The raw receipt retains cleanupErrors `["operation deadline"]` from its final
+check, so this is not an error-free successful preparation. No further
+preparation window, retry or inference job was started.
+
+**Failure cleanup only:** the exact owned reservation identified task name
+`2026-10-30T09-27-43-200Z_run`; it was Missing with no result. Standard task-removal
+checks passed, the owned reservation and matching local lock were released.
+A separately identified cleanup-only guard passed in10.564s, peak93,810,688B,
+zero owned swap/OOM, no errors, empty group removed. No live task was signalled.
+This does not prove whether the native preparation had ever started. Dependency
+cache partial effects remain unknown; no successful preparation is claimed.
+
+**Real embedding dispatches/jobs:0.** No prepared embedding model/runtime/manifest installation, model download,
+local inference, production route change or store/index operation ran. The frozen
+Gmax source packet transfer was attempted; apply completion is unconfirmed.
+The exact model assets were found locally for later copying, but no asset hashes
+or worker read-only closure were manufactured. Owned private source packet/log
+remain for provenance; the generated remote transfer filename was not retained,
+so no broad shared-directory cleanup was attempted. No completed manifest exists.
+
+From source, job-code readiness/staging and transfer preflight/SCP/apply could
+reuse a full timeout after earlier phases. Platform `22cb207e7a` now clips those
+phases to one remaining budget for operation-owned Gmax clients only; ordinary
+Platform behavior is unchanged. This necessary correction is **source inspected,
+unrerun**, not proof of the exact remote delay. No new compile/test or operational
+attempt followed it. Limits, guard source, auth, SSH sharing defaults and other
+jobs/settings were not weakened.
+
+Exact requests, source/archive hashes, original receipts and cleanup (private record)
+are the continuation record. The current blocker is the actual deadline stop,
+not capacity, a failed compile or another retained-SSH-child claim. Preparation
+and the single real dense+ColBERT batch remain incomplete. No automatic retry,
+release, activation, Mac work or fan/noise/parity claim follows this record.
+P3 power-saver/WOL and unrelated dirty/index/private work remain preserved.
+
 
 ## Operation-owned SSH correction completed locally, unexercised
 

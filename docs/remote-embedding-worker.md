@@ -49,3 +49,14 @@ the fixed bridge and adds canonical `scripts/remote-embedding-metadata.mjs` for
 future authorized guarded reads, using the same options on policy and metadata.
 No test/compile/runtime/guard invocation followed this correction. Historical
 failure remains immutable; the retained member was not identified as an SSH PID.
+
+## Selected resume outcome
+
+Corrected canonical SSH metadata passed with a normally empty cohort. The single
+fixed dependency-preparation request then reached the180s deadline, with no
+terminal preparation result. Local cohort drain/removal and later exact owned
+Windows reservation/task-removal cleanup completed; partial cache effects remain
+unknown. Inference0 and no model/runtime/manifest staging. Platform22cb207e7a
+corrects per-phase remaining-time reuse as source only, without a rerun.
+Actual outcome and limits (private record)
+keep this deadline failure separate from the older retained-descendant event.
