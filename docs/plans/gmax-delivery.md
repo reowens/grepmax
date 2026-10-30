@@ -23,14 +23,34 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Native launcher failure unknown; cleanup complete; inference0. Finite two-owner source-first continuation proposed only, no workstreams started."
-next_step: "PROPOSED: Platform native source owner plus sole end-to-end dispatcher; max2 qualified preparation attempts/max1 inference only after later selection. Reuse compile/18 tests."
-summary: "Finite Dell continuation proposed: native error capture/source handoff, independent cache keys, sole live owner, bounded preparation correction and one hybrid job; planning only."
+current_state: "Assets staged/hash-checked; preparation deadline failed; final cleanup/quiescence passed; inference0. Post-failure source fixes unexecuted."
+next_step: "Stopped: no automatic retry. Retain owned model inputs and cleanup proof; matching Windows dependencies/runtime/readonly cache and one hybrid job remain unqualified."
+summary: "Ratified Dell window: exact model inputs staged, preparation guard stopped, cleanup complete, no inference; selected source repairs committed locally."
 ---
 
 # Gmax Delivery Plan
 
-## Proposed next continuation: two owners, one live dispatcher
+## Ratified owner window: assets staged; preparation stopped, inference 0
+
+Complete owner evidence and source commits (private record) records 10 exact model files
+(161.6 MB) staged/hash-checked, followed by one preparation controller stopped at
+its 180-second guard. Buffered logs reached native setup with 27.8 seconds left;
+actual native invocation/result and partial cache effects remain unconfirmed.
+There was no second preparation attempt and no model inference.
+
+Final cleanup passed after two failed identity lookups: no matching owned task,
+process or lease remained, and the exact stale local marker was removed. All
+local cohorts were removed with zero owned swap/OOM. Failed receipts remain failed.
+
+The kernel cap, asset producer, scoped provenance, absolute-deadline and prelaunch
+custody source corrections are committed locally. Post-failure corrections are
+unexecuted/untested/uncompiled. Reuse the historical 18 fake passes and corrected
+compile with their original coverage; neither was rerun. The matching Windows
+runtime/dependency/native-DLL closure, final read-only cache and one real hybrid
+result remain unqualified. This failed guard closed the window: no automatic
+retry, release or activation. Power-saver/WOL and unrelated work are unchanged.
+
+## Earlier continuation proposal (historical; subsequently ratified)
 
 Finite six-step continuation and agent briefs (private record) assign a source-first
 Platform native-launch owner and this sole end-to-end operator. The launcher
