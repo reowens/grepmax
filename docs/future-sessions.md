@@ -348,6 +348,7 @@ rollback stay intact; the historical directcore8/parent28 distinction and unknow
 relevance-attempt budget are unchanged. Deferred CPU/resource/backend work remains
 unselected. Next is selection of that finite source batch, not an automatic run.
 
+
 ## 0.26.110 deployed; isolated guard complete; core8 configured
 
 **October29,2026, user “go”:** the scoped guard/policy correction and remaining
@@ -381,6 +382,111 @@ No automatic nextbatch/relevance retry; unknown attempted-query budget remains.
 Later dependency/Lance0.41/Arrow/hourly-hook work stays separate and preserved;
 CPU/backend/resource-history deferred, pending prompts untouched.
 
+
+## Isolated operational guard and 0.26.110 handover — selected
+
+User “go” selects the scoped guard/policy correction and the unfinished110
+P3/plugin/core8 delivery. New `scripts/guard-local-operation.py` applies zero
+owned-job swap via a fresh verified cgroup before payload exec; shared cgroups
+and host settings stay unchanged. Existing2CPU/nice10/2GiB ownedRSS/180s/min8GiB,
+containment/OOM/cleanup protections remain. Host allocation is diagnostic; the
+first trigger and independent final sample are preserved. Historical failures
+14,573,568B and160,866,304B remain failed and immutable. No compiler/pack/publication
+or test/native/profile/query rerun. Use the published920afc5/341-file archive,
+109dependency baseline, a fresh staging prefix and exact109rollback; no later
+dependency/hook work is included. Complete P3/plugin/selected core8 and truthful
+catalog/records without another milestone. No pending prompt consumption.
+
+
+## Swap guard semantics — investigation complete; correction PROPOSED
+
+October29,2026: [source-grounded diagnosis and finite correction](plans/assets/mcp-cleanup-release-20261029/swap-guard-semantics.md)
+conclude **wrong proxy for owned spill, not wrong arithmetic**. Pinned Linuxv7.0
+source and matching installed atomic-counter header do not support a per-CPU
+stat-fold/KB bug. Swap slots can be allocated before eviction, retained by cache,
+or used by zswap without disk writes. Existing0host-SwapUsed rule faithfully
+implements the selected literal budget, but cannot prove our task spilled or
+caused pressure. Which mechanism caused either old stop remains unknown.
+
+Definite reporting bug: both private controllers overwrite the first error with
+a final post-cleanup failure; final clamped growth is not the trigger or peak.
+Compiler phases all exited0 before that final stop; staging's trigger can differ
+from its later160,866,304B sample. Original failed receipts remain failed.
+
+Recommended finite future selection: isolated owned-job cgroup swap.max=0,
+current/peak/events plus unchanged CPU/nice/RSS/deadline/8GiB/containment/cleanup
+limits; host allocation diagnostic, host floor/critical/OOM protection retained,
+PSI and disk counters separate. Existing cgroup is shared; parent permission/
+memory-delegation metadata supports a fresh owned sibling scope, not mutation
+of peer clients or Gmax service. Creation remains unexercised/fail-closed.
+Fix first-trigger/final receipt separation in the same two controllers. No broad
+tolerance, RSS-only/pswpout-only fallback, supervisor project or new test gate.
+This is an explicit policy-scope change requiring selection, not today's waiver.
+
+No repeated process inventory/passive memory window, tests/builds/compile/native/
+MCP/LLM/runtime/profiles, source/contract/kernel/config/service changes, deployment
+retry or push. Only retained data, official kernel/source and bounded read-only
+permission metadata used. Published110/P3last109/core8 pending unchanged. Prior
+Next-server holders are not causal proof or grounds to stop all servers.
+
+
+## P3 swap investigation — READ-ONLY COMPLETE
+
+October29,2026: [focused findings](plans/assets/mcp-cleanup-release-20261029/swap-investigation.md)
+trace both failed guards to the same local P3 host/procfs. KiB conversion and
+baseline routing are correct. Their metric is net host-wide swap allocation,
+not owned-work swap or disk-write bytes; final growth is not a retained trigger/
+peak sample. Historical per-process/cgroup/counter attribution is unavailable.
+
+Two passive reads35.096s apart found33.09→31.74GiB available,12.81GiB retained
+swap,44.15MiB net swap allocation decline,pswpout0 and14.05MiB disk-counter
+swap-in. zswap is enabled, so zero disk-output does not exclude compressed-swap
+activity. No binding inspected cgroup high/max limit or OOM event explains current
+swap; “all activity idle” is not claimed. Three largest Next servers hold5.79GiB;
+Gmax service≈90MiB, daemon18.5MiB. Separately51MCP clients hold917MiB; no orphan
+or historical-cause claim.734readable process statuses,0unreadable; PID1 namespace
+symlink comparison denied and not bypassed. Full caveats/citations are in the note.
+
+Recommendation: owners verify the three Next dev-server lifetimes and normally
+close any unused servers, before speculative kernel/guard/Gmax changes. None was
+stopped. Global rule remains unchanged; no tests/build/runtime/model/MCP/query/
+service/config/deployment/guard retry/remote action or push. Published110,
+last-deployed109/core8 pending and unknown relevance-attempt budget stay intact.
+No new execution starts automatically; saved prompts untouched.
+
+
+## Dependency session stopping point — optional review saved
+
+The user asked to save the documentation and leave this dependency session here.
+The [optional dependency review](plans/gmax-delivery.md#optional-dependency-review--october-29-2026)
+records the recommendation to take **protobufjs 7.6.5 → 7.6.6 only** in a later
+selected change. It is not applied; the override/lock remain on 7.6.5. All
+optional majors remain deferred with upstream compatibility reasons recorded.
+The Rust correction is explicit: Lance 14 uses Arrow 58; Arrow 60 is separate.
+
+Completed dependency edits and selected native/schema/helper checks are retained
+in the consolidated record below. Dependency commit, final application/package
+build, publication and installation/handover remain unselected. Do not infer new
+tests, installs, agents, release work or prompt consumption from this handoff.
+Preserve unrelated pending changes and the separate release/delivery records.
+
+## Dependency upgrade batch — COMPLETE; DELIVERY NOT SELECTED
+
+All selected dependency edits, lockfiles, fixtures, generated SDK preparation
+and local synchronization are complete: npm/Python/Rust minor updates,
+LanceDB/native 0.41.0 plus Python 14.0.2, Arrow JS 21.2.0 and dotenv removal.
+Selected JavaScript/native-store/parent-guard tests passed, the 3 failed schema
+fixtures were corrected and explicitly passed, and native Python prune/FTS
+compatibility now passes 2/2 with no skips. No known failed selected case remains.
+
+The [consolidated dependency record](plans/gmax-delivery.md#dependency-upgrade-batch--consolidated-completion)
+lists the complete work, evidence, remaining delivery steps, untested areas and
+deferred upgrades together. Native Python used only disposable synthetic stores;
+resource guards passed, zero swap growth, no owned survivors, private stores removed.
+No further tests or new qualification gates are selected by this completion.
+Dependency commit/emitted application/package/publication/handover remain
+unselected; the separate 0.26.110 release uses the older dependency baseline.
+Preserve its independent delivery authorization and all unrelated pending work.
 
 ## 0.26.110 published — P3 handover stopped by safety guard
 
@@ -417,14 +523,41 @@ is automatic. This is an actual safety blocker, not a new test/review gate.
 CPU/backend/resource-history stay deferred; saved prompts untouched.
 
 
-## Approved delivery resumed — October 29, 2026
+## Three schema cases — VERIFIED ONCE
 
-Fresh authorized packaging window passed:18.585845s,630,263,808bytes peak
-owned RSS,23,562,391,552bytes available,zero swap growth/no owned survivors.
-Unchanged compiler/runtime outputs were reused; no new compiler/test invocation.
-The earlier14,573,568byte global-swap failure remains a separate failed receipt,
-not recast as a passing compiler guard. Required archive payloads byte-match the
-assembled candidate, with official SDK/native0.40 and no later dependency imports.
+The user selected one new invocation for only the three prior schema failures:
+**3 passed, 0 failed, 2 previously passing cases excluded**. The corrected fixture
+works with no-autostart retained under SDK/native 0.41.0 and Arrow 21.2.0.
+Controller limits passed, swap growth 0, no owned survivors; private stores/homes
+were removed and tested source/dependency hashes stayed unchanged afterward.
+
+The [schema follow-up record](plans/gmax-delivery.md#three-schema-cases--correction-verified)
+contains exact receipts and scope. It supersedes the fixture's unrerun status
+in the historical dependency record below without rewriting its original failed
+receipt. No passing tests were repeated. Native Python-helper compatibility and
+packaged consumers remain untested; no further verification/release is selected
+by this batch. Preserve separate delivery records and authorization.
+
+## Dependency focused invocation — SPENT; CORRECTION UNRERUN
+
+User “go” selected one focused local invocation and the proposed subsequent
+dotenv removal. Actual result: **48 passed, 3 failed, 5 excluded**, exit 1.
+The small native LanceDB/Arrow store case and prune/FTS parent guards passed;
+three schema fixtures hit no-autostart quarantine instead of creating their
+temporary tables. Added fixture-local admission isolation, with no rerun.
+Removed unused dotenv from the manifest/lock/local installation afterward.
+
+The [owning dependency test record](plans/gmax-delivery.md#dependency-focused-tests-and-dotenv-cleanup--complete-with-validation-limits)
+preserves exact file counts, tested-input hashes, correction hashes and limits.
+Safety controls passed: 2 CPUs, 180s/2 GiB/8 GiB available/zero swap growth;
+peak owned RSS 359526400 bytes, elapsed 2.1909067309461534s, no owned survivors.
+Private test homes/stores were removed. The final fixture/dependency state has
+no all-green result; native Python helpers and packaged consumers were not
+exercised. No automatic rerun/compiler/audit/review/profile/release is selected
+by this dependency batch. Separate delivery authorization and its original
+host-guard receipts are preserved in their owning records below.
+
+## Approved delivery resumed — October 29, 2026
 
 The user explicitly selected one fresh guarded preparation window after reviewing
 the prior host-wide swap failure. Prior failed receipts remain unchanged. Reuse
@@ -470,20 +603,39 @@ All owned groups closed. Pending prompts untouched, CPU/backend/resource-history
 deferred, no next work starts automatically.
 
 
-## Selected 0.26.110 delivery — in progress
+## Apache Arrow JS 21.2 — COMPLETE LOCALLY
 
-User “ship it” selects the complete MCP64d10ed/receiptfff1556/plan0b98ac8 plus
-Table-cleanup37aa904 batch and required catalog/README/docs on public109history.
-[Owning preparation](plans/gmax-delivery.md#selected-mcp-and-table-cleanup-release--026110-preparation)
-records exact scope. Unrelated later dependency/ColBERT/private/ITA work is
-preserved, not imported. Reuse36retained fake tests (literal fixture expectation
-changed afterward, not rerun); one guarded combined production compilation and
-required packaging are authorized. Zero new tests/native/relevance/profile runs.
-Then one publication, exact109rollback P3 handover/plugin refresh and selected
-standard Codex core8 env/config activation. Direct advertisement and actual
-provider catalog are distinct; no unsafe app/provider restart or T3 adapter.
-No automatic indexing or quality retry; RSS/fan/native/LLM gains are not claimed.
+User “do 2” selected Arrow 18.1.0 → 21.2.0. Manifest and lock are updated and
+local dependencies synced with scripts disabled. The root, installed SDK and
+generated SDK resolve one Arrow 21.2.0 copy; LanceDB/native 0.41.0, Python 14.0.2
+and existing generated runtime provenance remain unchanged. Source/declaration
+inspection found no required application or fixture adaptation.
 
+See the [Arrow delivery record](plans/gmax-delivery.md#apache-arrow-js-212--complete-locally)
+for source evidence, dependency-graph changes and before-images. No tests,
+typechecks, builds, native/store/model execution, release or daemon restart.
+Runtime interchange and performance are untested. Preserve the separate storage,
+cleanup/MCP and minor-update work; historical “Arrow unselected” statements in
+earlier batches are superseded only for this later selected Arrow batch.
+
+## LanceDB 0.41 / Lance 14 — COMPLETE LOCALLY
+
+User “do 1” selected the coordinated SDK/all-seven-native/Python maintenance
+upgrade, preserving JavaScript Arrow 18.1. Source guards and existing fixtures now
+require engine 14.0.2 for new helper results; historical 12/13 receipts remain
+readable. Both locks are updated. The local npm installation synced this upgrade
+and the earlier approved minors with scripts disabled. Generated vendor runtime
+matches all 60 official SDK runtime files; the Python maintenance lock passes an
+offline no-build consistency check. Application JavaScript was not rebuilt.
+
+The [owning delivery record](plans/gmax-delivery.md#lancedb-041--lance-14-storage-upgrade--complete-locally)
+contains compatibility evidence, exact versions, provenance/backup location and
+limits. No tests/typechecks/builds/native imports or store/model/service action,
+global install, publication or handover ran. Native/API/ABI/read-write behavior
+is untested. Earlier MCP and release evidence applies to its original dependency
+state. Arrow 21, Hub 2, the separate bounded Rust engine migration and release
+remain unselected; preserve the separate cleanup/MCP records, earlier dirty work
+and pending prompts.
 
 ## Deterministic write-table cleanup — COMPLETE LOCALLY / UNRELEASED
 
@@ -615,7 +767,7 @@ Gmax tools**. It remains historical evidence.
 On October 29, 2026 the parent reported its current actual `ALL_TOOLS` scan:
 **329 tools including 28 `mcp__gmax__` tools**, including
 `mcp__gmax__repo_status` and `mcp__gmax__semantic_search`. All 28 descriptions
-identify current repo `<gmax-checkout>`,
+identify current repo `<repo>`,
 `index=not_registered`, `matchedRoot=null`, `daemon=unobserved`.
 This is actual parent catalog advertisement, superseding the earlier retained
 301/no-Gmax parent visibility result; it is not inferred from CLI configuration
@@ -674,7 +826,6 @@ catalog attachment, release, global install or P3 change is claimed; deployed
 Table-handle cleanup unselected; CPU/backend/resource-history deferred.
 No further work starts automatically; older next-action text below is historical.
 
-
 ## Plan housekeeping — two archived
 
 The user-selected closeouts are complete:
@@ -709,8 +860,106 @@ attempt count unknown: no retry/budget reset. The selected local upgrade is
 complete; await the user's next selected work rather than start a new round.
 Older evidence/next-action text below is historical to this selected upgrade.
 
-
 ## Current direction — better search results
+
+**Memory investigation complete from existing evidence only.** The
+[source/evidence note](plans/assets/search-quality-platform-20261029/memory-investigation.md)
+confirms the cap compares the service MainPID's VmRSS, not daemon+workers or the
+owned client. Parsing uses KiB×1024 correctly. Stored2,879,823,872bytes is a final
+cleanup sample, with no exact trigger timestamp/sample or component breakdown.
+Earlier same-PID memory increased between the two retained preflights, but the
+cause/workload is not captured. Heap/external/ArrayBuffers/Session occupancy,
+event-time uptime, operations and recycle decisions are absent. Old104/105
+resource snapshots are null; the existing daemon.log ends October27.
+
+**Historical recommendation — selected/completed locally in the cleanup above:** deterministically
+close local Table handles in `VectorDB.insertBatch`, `deletePathsExcludingIds`
+and `deletePaths`, including the insertion schema-error handle. Released108
+opens these handles without local close, while the write gate only counts work.
+Use finally after awaited native operations; preserve shared connection/Session,
+leases, write ordering and independently pinned search tables. This fixes a
+concrete lifetime gap without worker/cache/model/limit tuning, but event causation
+and RSS reduction remain unproven. Production recycle's settling/cadence/busy
+deferral differs from the immediate query guard; current recycle failure is not
+established from the available history. No new host/service/memory/RPC read,
+test/build, workload, model, source/config/index edit or lifecycle action ran.
+No new query budget or retry follows this recommendation.
+
+**Latest outcome: corrected Platform execution stopped by unchanged safety
+guard.** Parent selected the existing `formatCents`, `<ErrorClass>` and
+`resolveActor` cases for the actual registered corpus within the same approved
+three-search budget. Exact file+symbol/current-declaration matching was frozen
+before calls. The controller stopped the client on daemon RSS
+2,879,823,872bytes exceeding the existing2,684,354,560byte (2560MiB) cap.
+No guard increase or retry occurred. The results checkpoint and client log are
+empty, so no complete ranking is retained and the attempted-query count is
+**unknown**, not established zero. Do not reuse the budget from this absence.
+All three expected ranks are unmeasured; no candidate/ranking miss or fix follows.
+
+The [owning stop record](plans/gmax-delivery.md#current-direction--better-search-results)
+links the corrected manifest, original guard receipt, empty checkpoint and
+analysis under `docs/plans/assets/search-quality-platform-20261029/`.
+Full local state:
+`/home/reoiv/.local/state/gmax-search-quality/20261029-platform-definitions/`.
+Guarded duration1.118s, peak sampled owned RSS12,562,432bytes, zero swap growth,
+minimum46,909,988,864bytes available; no owned clients remained. Source/config/
+unit hashes and CPU limits preserved; no service signal, restart or rollback.
+No source/test/config/index change, test, compilation, follow-up query, release,
+handover or new diagnostics/profile work ran.0.26.108 remains unchanged.
+Original Gmax cases/preflight remain never queried and untouched. This is a
+safety stop with missing relevance results, not an all-pass/no-change quality
+claim. Return the precise limit and stop; do not launch a new window or work.
+
+The prerequisite/pre-selection notes below are historical to the subsequent
+parent selection and safety stop; they confer no new unused query budget.
+
+Read-only prerequisite resolution confirms Platform is **not** an ancestor or
+alias of Gmax after exact path canonicalization. Index/containment policy does
+not make the sibling Gmax checkout part of Platform; no out-of-scope row RPC was
+needed. Original cases remain `not_run`; no ping/status was repeated, no query
+ran and the three-call search budget remains unused.
+
+**Option B is prepared without indexing more content:** existing historical
+`src/eval-oss.ts` labels `pf-p1-01`/`formatCents` →
+`<format-file>` (current declaration23),
+`pf-p1-03`/`<ErrorClass>` → `<errors-file>` (37),
+`pf-p1-09`/`resolveActor` → `<auth-middleware-file>` (115).
+All three file/symbol targets are verified from current local Platform source;
+source hashes, provenance and stale-line/root-mapping cautions are in the
+[resolution note](plans/assets/search-quality-three-cases-20261029/prerequisite-resolution.md).
+These are actual labeled symbol cases, not latency-query labels. Their individual
+indexed coverage/freshness and ranks are still unverified. The proposed scope is
+the already registered `<other-repo>/`; no case substitution
+or execution occurred. The owning plan records Option B ready for narrow
+case/corpus selection; Option C (indexing Gmax) is outside scope and unnecessary
+for B. Stop at this prepared alternative without automatically using the budget.
+
+The approved three-case quality batch stopped at a concrete **corpus-scope
+blocker before any search**. Locked questions from `src/eval.ts` are LMDB cache
+compression → `src/lib/store/meta-cache.ts`, vector/keyword merging →
+`src/lib/search/searcher.ts`, worker shutdown → `src/lib/workers/pool.ts`;
+their exact wording and released0.26.108 source hashes are in the
+[manifest](plans/assets/search-quality-three-cases-20261029/manifest.json).
+P3 serving daemon2906322 answered0.26.108 ready/open/active with unchanged
+Small/CPU/384/models and worker setting4/config. However, the selected
+`<repo>` root is unregistered; the local registry
+contains only `<other-repo>`. Status alone lists processors,
+so registry membership was checked separately. Zero search calls and zero exact
+row lookups ran: all three ranks are `not_run`, not misses or passes.
+
+The [owning blocker record](plans/gmax-delivery.md#current-direction--better-search-results)
+links partial results, analysis and guard/cleanup receipt under
+`docs/plans/assets/search-quality-three-cases-20261029/`. Full local state:
+`/home/reoiv/.local/state/gmax-search-quality/20261029-three-labeled-cases/`.
+One ping/one status,0.327s guarded client window, peak12,689,408bytes owned RSS,
+zero swap growth, no resource guard trip and no live owned processes. Config,
+unit/source hashes and CPU limits are preserved; no service signal or rollback.
+No alternate scope/questions, retry/window, product/test change, test/compile,
+follow-up query, commit/release/handover or model/index/FTS maintenance ran.
+Running the locked cases requires a separate corpus registration/indexing
+decision outside the current prohibition. Do not perform it automatically or
+claim candidate/ranking evidence from an unavailable corpus. The umbrella stays
+active; all prior shipped/deferred work below remains unchanged.
 
 All selected work through **[0.26.108](https://github.com/reowens/grepmax/releases/tag/v0.26.108)**
 is complete, including normal P3 ready/open/active handover. Source
@@ -847,7 +1096,7 @@ create no automatic acceptance gate. Existing release/rollback receipts remain.
 Parent receives the completed shipped batch; no further work starts automatically. Superseded pending/
 unreleased/next claims in chronological records below do not reopen completed work.
 
-## Six-feature release0.26.106 complete — recenter with the user
+## Six-feature release0.26.106 complete — recorded handover
 
 The [owning plan](plans/gmax-delivery.md#six-feature-status-and-cli-release--complete)
 records all six completed features, hash manifests, guards, one publication and
@@ -867,7 +1116,7 @@ staging groups closed with zero swap growth under twoCPU/nice10,2GiB,180s,
 minimum8GiB available-memory guards. Failed first staging is honestly retained.
 
 P3 daemon942028 was confirmed serving0.26.106 **ready/open/active** under the
-same `legacy-gmax.service` MainPID. Small/CPU/384,stored workers4, config/unit
+same `<prefix>-gmax.service` MainPID. Small/CPU/384,stored workers4, config/unit
 hashes, store/cache directory identities and twoCPU/weight10/nice10 are unchanged.
 Owned autostart marker removed; no safety latch cleared. Exact0.26.105 rollback:
 `/home/reoiv/.local/state/gmax-handover/20261029T023232Z-0.26.106/previous-install`.
@@ -925,6 +1174,33 @@ Guard reads were limited to the approved local compilation. Published/deployed
 0.26.105 is unchanged, without a fresh live verification claim. FTS remains
 historically completed9801→9802→9803/zero pending and untouched. The optional CPU
 attribution plan below remains unratified and unexecuted. No next action is selected.
+
+## CPU attribution proposal — DEFERRED/UNSELECTED
+
+The [six-step owning plan](plans/gmax-delivery.md#cpu-attribution-next-plan--proposedawaiting-ratification)
+is retained as an unselected historical proposal, superseded by better search
+results above; it is not a required gate or next action. Its original documentation
+turn used only local
+repository/evidence reads and scoped diff inspection; no fresh host/P3/RPC/SSH
+read, measurement, implementation or verification ran.0.26.105 remains complete;
+its records below and original receipts are preserved.
+
+One owner first analyzes retained evidence. Only if synchronized CPU, throttling,
+queue and search timing would change the next proposal, use at most one180s
+read-only window:30s natural observation, up to24 serial fixed-corpus diagnostic
+searches in a120s slot,30s natural observation. Reuse the existing controller and
+its unchanged guards, keep service/model/worker/quota/FTS untouched, retain partial
+results on abort and do not retry. Existing diagnostics expose candidate counts,
+not stage timings; kernel TIDs do not identify internal search stages.
+
+Ratification would cover that whole evidence-first observation/cleanup/analysis/
+documentation scope and its final next recommendation without checkpoint
+questions, no further delegation, within45 minutes. It includes zero tests,
+typechecks, builds, audits, reviews, product implementation, dependencies,
+maintenance, commits/pushes or releases. No proposed execution is authorized now.
+The exact phases, sample/RPC bounds, privacy fields, resource/cleanup limits and
+inconclusive outcomes are in the owning plan; do not infer another round from
+older instructions or a guard abort.
 
 ## Seven-step CPU delivery complete — October 29, 2026 (UTC)
 
@@ -1483,7 +1759,7 @@ checked by diff inspection; no further profile, test, review or release is queue
 
 The selected P3 installation and production catch-up are complete. **0.26.103
 is serving**, with ready/open admission on daemon **3608673**, through unchanged
-`legacy-gmax.service`. Kernel limits remain `cpu.max=200000 100000`, CPU weight10
+`<prefix>-gmax.service`. Kernel limits remain `cpu.max=200000 100000`, CPU weight10
 and nice10. Model Small/CPU/384 dimensions, workerThreads4, configuration and
 unit hashes and store/cache directory identities are preserved. Postinstall
 changed no client/integration settings. The published source is82bae78.
@@ -1662,7 +1938,7 @@ No additional test invocation is authorized or queued.
 
 The user selected the P3 installation/handover and freshly admitted production
 FTS catch-up. **P3 now serves0.26.102**, through the unchanged
-`legacy-gmax.service`. The accepted daemon PID is **2622469**, ready/active with
+`<prefix>-gmax.service`. The accepted daemon PID is **2622469**, ready/active with
 open admission. Kernel controls remain `cpu.max=200000 100000`, weight10 and
 nice10 in the same unit/cgroup. Configuration and unit-file hashes and the
 production store/cache directory identities are preserved. No model identity,
@@ -2098,7 +2374,7 @@ registry propagation, with no republishing or verification retry workflow.
 [Delivery receipt](plans/assets/p3-cpu-20261027/0.26.101-delivery.json).
 
 The handover confirmed ready/active/open **0.26.101**, PID **231823**, matching
-`legacy-gmax.service` MainPID and cgroup. Kernel `cpu.max` remains
+`<prefix>-gmax.service` MainPID and cgroup. Kernel `cpu.max` remains
 `200000 100000`, `cpu.weight=10`, nice 10. The old daemon PID3134008 exited.
 Configuration/unit hashes and production store/cache directory identities were
 preserved; the owned autostart marker was removed, and no safety marker was
@@ -2272,7 +2548,7 @@ release or service restart was added to this implementation task.
 
 **0.26.100 is installed and serving P3's existing daemon socket.** The
 [handover receipt](plans/assets/p3-cpu-20261027/0.26.100-handover.json) confirms
-PID `3134008` was ready/active/open in `legacy-gmax.service`, with kernel
+PID `3134008` was ready/active/open in `<prefix>-gmax.service`, with kernel
 `cpu.max=200000 100000`, `cpu.weight=10` and nice 10. All 327 installed package
 payload files matched the approved public archive before handover. A small,
 model-free packed-rerank smoke completed its score assertions against the fresh
@@ -2530,7 +2806,7 @@ Any new invocation follows the existing AGENTS.md budget and host controls.
 ## P3 installation and checkout complete — October 27, 2026
 
 0.26.99 is installed and the daemon is owned by the existing
-`legacy-gmax.service`. Point-in-time acceptance found ready/active/open PID
+`<prefix>-gmax.service`. Point-in-time acceptance found ready/active/open PID
 `41423`, equal to the unit MainPID and in its cgroup. Kernel `cpu.max` is
 `200000 100000` (200%), `cpu.weight` is `10`, and nice is `10`, preserving the
 existing unit. All 326 staged payload files matched the approved release.
@@ -2623,14 +2899,14 @@ verification are closed. Release does not establish installed runtime state.
 
 The pre-handover P3 readback on October 27 reported `0.26.97-p3.1`, ready/active/open.
 Its four repaired compiled modules exactly matched 0.26.98, but the daemon ran in
-a tmux scope while `legacy-gmax.service` was failed with MainPID 0. That earlier condition was corrected by the controlled handover above. The platform host plan owns service changes,
+a tmux scope while `<prefix>-gmax.service` was failed with MainPID 0. That earlier condition was corrected by the controlled handover above. The platform host plan owns service changes,
 thermal limits and indexing decisions. Gmax owns the source startup paths.
 
 ## Next items to select
 
 1. **Service startup ownership — released in 0.26.99.** Isolated
    branch `work/gmax-service-startup`, commit `999976c`, starts at released
-   `fbdaea7`. Its shared launcher recognizes `gmax.service` / `legacy-gmax.service`
+   `fbdaea7`. Its shared launcher recognizes `gmax.service` / `<prefix>-gmax.service`
    in the user's systemd config directory for the default home. Hook background
    startup already delegates to that launcher. Failed service startup cannot
    fall through to a detached daemon or per-project watcher; quarantine/Gemma

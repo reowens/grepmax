@@ -23,7 +23,7 @@ related_docs:
 
 # Known Limitations
 
-Catalog status reconciled October 21, 2026. The dated entries preserve their
+Catalog status reconciled October 27, 2026. The dated entries preserve their
 original evidence; they are not a list of required fixes. The
 [necessity audit](plans/gmax-delivery.md#necessity-audit--october-21-2026) identifies
 current obligations. Document search, bounded pruning/orphan reclamation, PID-reuse
@@ -34,12 +34,61 @@ optional ranking tradeoffs do not automatically require more implementation.
 The prior name-based startup termination could stop another instance's daemon or
 workers. The repair removes that termination and the raw-PID restart fallback,
 rechecks ownership after startup waits, and preserves predecessor evidence when
-startup refuses. It is installed in both existing prefixes and serves the live Mac
-daemon. Public npm bytes and signed GitHub provenance are verified; the GitHub
-release is public. Earlier releases through 0.26.92 contain the old defect. The [delivery checkpoint](plans/gmax-delivery.md#repair-implementation-checkpoint--october-22-utc)
+startup refuses. The October 22 acceptance recorded installation in both existing
+prefixes and the Mac daemon; this is historical installation evidence. Public npm
+bytes and signed GitHub provenance were verified; the GitHub release is public. Earlier releases through 0.26.92 contain the old defect. The [delivery checkpoint](plans/gmax-delivery.md#repair-implementation-checkpoint--october-22-utc)
 records source/archive/publication/install verification.
 Unknown or unresponsive owners now cause refusal and may require an explicit stop;
 startup does not guess ownership or kill by process name.
+
+## Service-aware startup for recognized Linux user units (fixed in 0.26.99)
+
+0.26.98 retained a gap: hooks and implicit CLI/MCP startup could spawn a detached
+daemon after its installed service stopped or failed, escaping the unit's limits.
+0.26.99 fixes it for `gmax.service` / `<prefix>-gmax.service` installed in
+`$XDG_CONFIG_HOME/systemd/user` (default `~/.config/systemd/user`) and the default
+`~/.gmax` home. Both shared launcher entry points use the unit's MainPID; failed,
+masked, ambiguous or unreadable ownership cannot fall through to a standalone
+daemon or per-project watcher. Quarantine/Gemma gates run first. A read-only
+request cannot start a normal unit; configure that service with the host owner.
+
+All 97 focused tests and one release review pass; public registry bytes match the
+approved 0.26.99 archive. The later authorized P3 installation/handover is complete in the
+platform host receipt (private record);
+it verified the new PID inside the existing service cgroup with retained limits.
+Publication alone does not move an already-running standalone process. General/system-wide service discovery
+and arbitrary unit names remain outside this repair. Inspect the actual daemon's
+cgroup and unit MainPID during a separately selected runtime handover; ping and
+package version alone do not prove service ownership.
+
+## Version cleanup failures now back off
+
+Resolved in 0.26.98. On many-core Linux, Lance's default pools and glibc arenas
+could exceed the prune helper's address-space limit, aborting every cleanup.
+Minute-by-minute retries then paused watched edits repeatedly. The helper now
+sets `LANCE_CPU_THREADS=1`, `LANCE_IO_THREADS=1` and `MALLOC_ARENA_MAX=2`.
+Failures back off 5, 10, 20, 40, then 60 minutes; success resets the cadence.
+This bounds that retry failure, not every cause of indexing delay. It does not
+enable full-table compaction or change host admission policy.
+
+The October 27 packed-consumer timeout had a separate cause: its Python Lance 12
+fixture stalled on the first overwrite, before pruning began. Transaction-history
+loading divided an I/O pool of one into zero-capacity buffered streams. The local
+fixture now sets `LANCE_IO_THREADS=2` only while preparing its temporary dataset;
+the production prune helper retains its existing I/O=1 limit.
+[Lance #10308](https://github.com/lance-format/lance/pull/10308), merged October 26,
+clamps those stages to at least one. Verify inclusion in the chosen SDK/helper
+artifacts before relying on an upstream version bump.
+
+The corrected fixture passed in 6.20 seconds against its isolated installed
+consumer, including pruning, concurrent reads, current/tagged row retention and
+reopening. Owned processes exited and the fixture store/lease were removed.
+This resolves that fixture stall; it neither establishes a pruning defect nor
+completes the wider packaging audit. The
+[retained receipt](plans/assets/p3-cpu-20261027/prune-fixture-receipt.json) records
+the tested archive and fixture hashes. The
+[P3 CPU checkpoint](future-sessions.md#p3-cpu-performance-checkpoint--october-27-2026)
+records the separate search optimizations and proposed next experiments.
 
 ## Small result lists preserve ranks; relevance still needs validation
 
@@ -101,7 +150,7 @@ before search or sync mutation; existing rows are preserved.
 - Under host-safety containment a rebuilt store has no full-text index, and searches warn
   `Full-text search unavailable`. Once every project reports `indexed`, run `gmax repair --fts`
   (0.26.96+) to build it once; it refuses while any project is still pending and never replaces an
-  existing index. The daemon's own searches adopt the new index at once; an MCP session or an
+  existing index. On 0.26.98+, the daemon's own searches adopt the new index at once; an MCP session or an
   in-process CLI search rechecks within 5 minutes.
 
 ## `gmax surprises` is experimental orientation, not proof
@@ -137,13 +186,13 @@ supported grammars. The remaining blind spots are bare callback values, dynamic 
 reflection, decorator/framework routing, and string-built calls. The older evidence below is
 retained to explain the shipped extraction work, not as a description of current class/type coverage.
 
-**Mostly fixed 2026-06-02 (all 14 grammars).** The chunker now emits identifier-as-value edges for `new ClassName(…)` / `ClassName{…}`, `instanceof ClassName` / `x is T`, and `Enum.MEMBER` / `Enum::MEMBER` (member/scope access gated to a Capitalized leaf head) across **every grammar** — TS/JS plus Python, Go, Rust, Java, C#, Ruby, Kotlin, Swift, Scala, PHP — via grammar-keyed node-type dispatch in `chunker.ts::extractRefs`. Verified on real platform source: `BeyondError`/`ErrorCodes` produce `referenced_symbols` edges in their caller chunks and `GraphBuilder.buildGraph` surfaces those callers (`tests/graph-edges.identifier-as-value.test.ts`); the other 10 languages each get a class+enum edge in `tests/graph-edges.identifier-as-value.multigrammar.test.ts`. Real-Rust spot-check (`dirplayer-rs/.../sprite.rs`): 12/16 def-chunks gained clean `ColorRef`/`Sprite`/`CastMemberRef` edges, all previously absent. TS/JS read-only A/B over the platform corpus: +1.1% `referenced_symbols` bytes, 0% embedded-content growth.
+**Mostly fixed 2026-06-02 (all 14 grammars).** The chunker now emits identifier-as-value edges for `new ClassName(…)` / `ClassName{…}`, `instanceof ClassName` / `x is T`, and `Enum.MEMBER` / `Enum::MEMBER` (member/scope access gated to a Capitalized leaf head) across **every grammar** — TS/JS plus Python, Go, Rust, Java, C#, Ruby, Kotlin, Swift, Scala, PHP — via grammar-keyed node-type dispatch in `chunker.ts::extractRefs`. Verified on real platform source: `<ErrorClass>`/`ErrorCodes` produce `referenced_symbols` edges in their caller chunks and `GraphBuilder.buildGraph` surfaces those callers (`tests/graph-edges.identifier-as-value.test.ts`); the other 10 languages each get a class+enum edge in `tests/graph-edges.identifier-as-value.multigrammar.test.ts`. Real-Rust spot-check (`dirplayer-rs/.../sprite.rs`): 12/16 def-chunks gained clean `ColorRef`/`Sprite`/`CastMemberRef` edges, all previously absent. TS/JS read-only A/B over the platform corpus: +1.1% `referenced_symbols` bytes, 0% embedded-content growth.
 
 Corpus-wide chunk-level density (eval-graph-totals reproduced fan-free over 121k platform TS/JS chunks; `ref-chunks` is a pure chunking property, so no reindex needed to measure it):
 
 | Target | Shape | Before | After |
 |---|---|---|---|
-| `BeyondError` | class (`new`/`instanceof`) | 0 | **12** |
+| `<ErrorClass>` | class (`new`/`instanceof`) | 0 | **12** |
 | `ErrorCodes` | enum (`.MEMBER`) | 0 | **62** |
 | `resolveActor` | ordinary call (already-covered shape; current code references `resolveActorV2`) | 0 | 0 |
 | `errorHandler` | callback-as-value (out of scope) | 0 | 0 |
@@ -154,18 +203,18 @@ The two in-scope class/enum targets go from an empty graph to real caller edges.
 
 Identifier-as-value and type-position extraction shipped in June and are included in the current chunker generation. Old instructions to manually stamp v3 registry entries or repeat the June corpus reindex do not apply. Inspect `gmax doctor` for the current project's chunker state before taking corrective action. June evidence about narrower language edge cases is historical, not a fresh cross-language acceptance run.
 
-**Historical baseline (May 2026, before the shipped extraction fixes above).** The chunker wrote `referenced_symbols` per chunk to support `gmax trace`, `gmax dead`, and graph-derived ranking signals. At that time the extraction tracked **call-expression callees** — names that appear in a syntactic call position. It did **not** track identifier references that weren't calls: class names used as values (`new BeyondError(…)`, `instanceof BeyondError`, `throw new ValidationError(…)`), constants/enums referenced as values (`ErrorCodes.NOT_FOUND`, `ErrorCodes.VALIDATION`), or types referenced in expression position.
+**Historical baseline (May 2026, before the shipped extraction fixes above).** The chunker wrote `referenced_symbols` per chunk to support `gmax trace`, `gmax dead`, and graph-derived ranking signals. At that time the extraction tracked **call-expression callees** — names that appear in a syntactic call position. It did **not** track identifier references that weren't calls: class names used as values (`new <ErrorClass>(…)`, `instanceof <ErrorClass>`, `throw new ValidationError(…)`), constants/enums referenced as values (`ErrorCodes.NOT_FOUND`, `ErrorCodes.VALIDATION`), or types referenced in expression position.
 
 Evidence (platform monorepo, ~123k chunks, scoped via `pathPrefix`):
 
 | Target symbol | def-chunks | ref-chunks (whole corpus) |
 |---|---|---|
-| `BeyondError` | 1 | 0 |
+| `<ErrorClass>` | 1 | 0 |
 | `ErrorCodes` | 0 | 0 |
 | `resolveActor` | 3 | 0 |
 | `errorHandler` | 3 | 0 |
 
-Despite 14.0% of platform chunks having non-empty `referenced_symbols` (avg 82 refs/chunk where non-empty), zero chunks in the entire indexed corpus have any of these four symbols in `referenced_symbols`. Spot-check on a known caller file (`packages/api/src/middleware/error.ts`, where `errorHandler` clearly handles `BeyondError`): the chunk's 40 refs are `[now, createRequestLogger, get, get, warn, annotateActiveSpan, logRequest, json, …]` — all method/function call sites, no class-as-value references.
+Despite 14.0% of platform chunks having non-empty `referenced_symbols` (avg 82 refs/chunk where non-empty), zero chunks in the entire indexed corpus have any of these four symbols in `referenced_symbols`. Spot-check on a known caller file (`packages/api/src/middleware/error.ts`, where `errorHandler` clearly handles `<ErrorClass>`): the chunk's 40 refs are `[now, createRequestLogger, get, get, warn, annotateActiveSpan, logRequest, json, …]` — all method/function call sites, no class-as-value references.
 
 **Impact:**
 - `gmax dead <ClassName>` will under-count callers — any usage that's purely `new ClassName(…)`/`instanceof ClassName`/`ClassName.MEMBER` is invisible to the graph. The current `gmax dead` output already disclaims dynamic dispatch and string-built call sites (see entry below); the class-as-value blind spot is in the same family.
@@ -220,7 +269,7 @@ Added 2026-05-25 (v0.17.2).
 
 Exported public-API symbols correctly downgrade to `PUBLIC EXPORT — no internal callers found; check external usage` when the defining chunk has `is_exported === true`. Treat `DEAD` as a starting point for removal, not a green light. Cross-check with `grep -r <symbol>` before deleting.
 
-**What is in scope.** The identifier-as-value class — `new ClassName`, `instanceof ClassName`, `Enum.MEMBER` — is fixable via the chunker work above, and **now landed for all 14 grammars** (TS/JS first; the other 10 on 2026-06-02). The platform `--reset` reindex on 2026-06-02 made TS/JS edges live at query time (`BeyondError` 0→12, `ErrorCodes` 0→62 caller chunks), so `gmax dead <ClassName>` is meaningfully more accurate for class/enum targets; non-TS repos gain the same accuracy after their next `--reset` reindex. The callback-value shape (bare lowercase identifiers passed as values) stays open. Dynamic dispatch, reflection, and string-built call sites stay outside what a static graph can claim — that's a property of the static-analysis approach, not a deferral.
+**What is in scope.** The identifier-as-value class — `new ClassName`, `instanceof ClassName`, `Enum.MEMBER` — is fixable via the chunker work above, and **now landed for all 14 grammars** (TS/JS first; the other 10 on 2026-06-02). The platform `--reset` reindex on 2026-06-02 made TS/JS edges live at query time (`<ErrorClass>` 0→12, `ErrorCodes` 0→62 caller chunks), so `gmax dead <ClassName>` is meaningfully more accurate for class/enum targets; non-TS repos gain the same accuracy after their next `--reset` reindex. The callback-value shape (bare lowercase identifiers passed as values) stays open. Dynamic dispatch, reflection, and string-built call sites stay outside what a static graph can claim — that's a property of the static-analysis approach, not a deferral.
 
 ## ColBERT rerank is opt-in (shape-sensitive: helps monolithic files, hurts modular repos)
 
@@ -278,13 +327,13 @@ GMAX_PAGERANK=1 GMAX_PR_WEIGHT=0.1 gmax search "query"
 
 Reproduce the table: `GMAX_PAGERANK=1 pnpm bench:oss:json` (express/lodash/platform); for gmax-self scoping use `GMAX_PAGERANK=1 GMAX_EVAL_PATH_PREFIX=/abs/path/to/gmax/ pnpm bench:recall:json`. Cache lives under `~/.gmax/pagerank/<sha1-of-pathPrefix>.json`, 1h TTL (tunable via `GMAX_PAGERANK_TTL_MS`).
 
-**Next direction — personalized PageRank / k-hop candidate-recovery (DEFERRED 2026-06-02, premise invalidated).** Tiebreaker is the wrong abstraction; the IR literature backs **PPR or k-hop expansion seeded on first-stage hits** (candidate-recovery, not within-pool reordering). Steps (1) extend chunker and (2) verify graph edges are **done** (TS/JS edges live post-reindex; `BeyondError`/`ErrorCodes` recoverable). But before implementing (3), a design probe (`src/eval-graph-recovery-probe.ts`) showed all 10 platform "hard-miss" definition chunks are **already inside the top-200 fusion pool** (pool#1–#106) — there is nothing *outside* the pool to recover, so PPR/k-hop has no validatable target on the current fixtures. The in-pool ranking gaps it was meant to fix turned out to be a stale-instrument artifact plus a ranking issue, both since resolved (see the symbol-definition promotion entry below). PPR/k-hop is deferred until a fixture set with genuine outside-pool misses exists. See [2026-05-25-semantic-search-landscape.md](archived/2026-05-25-semantic-search-landscape.md) — Phase 3 section.
+**Next direction — personalized PageRank / k-hop candidate-recovery (DEFERRED 2026-06-02, premise invalidated).** Tiebreaker is the wrong abstraction; the IR literature backs **PPR or k-hop expansion seeded on first-stage hits** (candidate-recovery, not within-pool reordering). Steps (1) extend chunker and (2) verify graph edges are **done** (TS/JS edges live post-reindex; `<ErrorClass>`/`ErrorCodes` recoverable). But before implementing (3), a design probe (`src/eval-graph-recovery-probe.ts`) showed all 10 platform "hard-miss" definition chunks are **already inside the top-200 fusion pool** (pool#1–#106) — there is nothing *outside* the pool to recover, so PPR/k-hop has no validatable target on the current fixtures. The in-pool ranking gaps it was meant to fix turned out to be a stale-instrument artifact plus a ranking issue, both since resolved (see the symbol-definition promotion entry below). PPR/k-hop is deferred until a fixture set with genuine outside-pool misses exists. See [2026-05-25-semantic-search-landscape.md](archived/2026-05-25-semantic-search-landscape.md) — Phase 3 section.
 
 ## Bare-symbol queries promote the symbol's definition over its usages
 
 Added 2026-06-02 (v0.17.9). Implementation `src/lib/search/searcher.ts` — `asSymbolQuery` + the symbol-definition promotion (inject + ×5 boost).
 
-A query that is a single bare identifier (`BeyondError`, `requireAuth`, `map`) is treated as a symbol lookup: the chunk whose `defined_symbols` includes the query is injected into the rerank set (so the stage-2 / `RERANK_TOP` cuts can't drop it) and multiplicatively boosted (`GMAX_DEF_BOOST`, default 5) so it outranks its own method-child chunks and wins overlap dedup. This fixed three distinct drop mechanisms on the platform set and lifted bench:oss hits@1 sharply (platform 7→14/15, lodash 4→9/10, express 5→8/9).
+A query that is a single bare identifier (`<ErrorClass>`, `requireAuth`, `map`) is treated as a symbol lookup: the chunk whose `defined_symbols` includes the query is injected into the rerank set (so the stage-2 / `RERANK_TOP` cuts can't drop it) and multiplicatively boosted (`GMAX_DEF_BOOST`, default 5) so it outranks its own method-child chunks and wins overlap dedup. This fixed three distinct drop mechanisms on the platform set and lifted bench:oss hits@1 sharply (platform 7→14/15, lodash 4→9/10, express 5→8/9).
 
 **Tradeoff / limitation:** for a bare-symbol query the **definition is promoted to the top**, ahead of usage/caller sites. This is the right default for "find X" (the overwhelmingly common intent), and usages still rank below — but if you specifically want callers, use `gmax trace --inbound <symbol>` or `gmax impact <symbol>` rather than a bare search. The promotion is **gated to single-identifier queries** via `asSymbolQuery`, so natural-language queries (anything with a space, dot, or punctuation) are completely unaffected. Disable per-process with `GMAX_DEF_BOOST=1` (neutralizes the score boost; injection still runs).
 
@@ -307,7 +356,7 @@ Bare-symbol promotion and all other explicit filters remain unchanged.
 
 The pre-upgrade LanceDB 0.30/0.31 runtime could panic in incremental FTS merge (`inverted/builder.rs`, index out of bounds). The investigation is preserved in [the closed upstream plan](archived/lance-fts-merge-upstream.md).
 
-The upstream fix first shipped in gmax v0.26.23 using a beta overlay. The current runtime packages the pinned official LanceDB 0.39.0 GA JavaScript and matching native binaries at build time, including the fix. `scripts/postinstall.js` now only prints a plugin-update reminder; it no longer overlays LanceDB. The September 7–16 GA canary recorded zero optimize failures, FTS rebuilds or panics; see [the upgrade closeout](archived/lancedb-0.38-upgrade.md).
+The upstream fix first shipped in gmax v0.26.23 using a beta overlay. The runtime packages official LanceDB JavaScript and matching native binaries at build time, using the exact pins in `package.json`. New dependency pins do not inherit earlier runtime qualification; see the [current storage upgrade record](plans/gmax-delivery.md#lancedb-041--lance-14-storage-upgrade--complete-locally). `scripts/postinstall.js` now only prints a plugin-update reminder; it no longer overlays LanceDB. The September 7–16 GA canary recorded zero optimize failures, FTS rebuilds or panics; see [the upgrade closeout](archived/lancedb-0.38-upgrade.md).
 
 The historical drop-and-rebuild guard remains regression coverage; containment disables live full-table optimization and new index builds. `disabling auto-rebuild until an optimize succeeds` means repeated rebuilds are suppressed; containment does not permit an optimize to clear this state. Failed FTS recovery can degrade retrieval to vector-only results; do not treat a fresh panic as harmless expected output.
 

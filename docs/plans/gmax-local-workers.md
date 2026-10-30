@@ -2,7 +2,7 @@
 type: plan
 status: partial
 created: 2026-10-24T03:25:08Z
-updated: 2026-10-24T11:07:07Z
+updated: 2026-10-27
 surfaces:
   - development
   - workers
@@ -18,7 +18,7 @@ related_plans:
 related_docs:
   - CLAUDE.md
 current_state: "P3/Windows typecheck routes and one Windows unit file are accepted on their recorded sources. A shorter Windows-only cache root resolved the selected Vitest startup failure: fresh preparation succeeded and all 3 cases passed in 1 invocation with normal setup and unchanged versions. Native and dependency-link cleanup confirmed; wider task/OS coverage remains open."
-next_step: "Use the accepted named-worker commands for the next user-selected Gmax change. No further readiness campaign, repeated typecheck or unit retry is queued. Other unit/runtime/package coverage, Mac holds, P3 indexing pause and separate release/evaluation ownership remain."
+next_step: "Use the accepted named-worker commands for the next user-selected Gmax change. No further readiness campaign, repeated typecheck or unit retry is queued. Other unit/runtime/package coverage, Mac holds, P3 runtime ownership and separate release/evaluation ownership remain."
 summary: "Named jobs and reusable preparation are implemented; P3 and Windows Dell typechecks have accepted live evidence. Windows uses the repaired profile cache/store and removes owned job links. Other task coverage and named Mac pool use remain open."
 ---
 
@@ -83,6 +83,9 @@ commands for the next selected development task; no additional test is queued.
 
 [Backend evaluation](colbert-backend-evaluation.md#recenter--paired-run-completed) and its recovered Pro handoff own the paired timing, question screen and prepared complete-index comparison. The October 28 registration recovery is recorded there; this worker catalog starts no retry, model load or production backend change. Current P3 runtime/indexing state remains with the delivery and host owners.
 
+0.26.98 publication is complete. These worker helpers and their recorded live
+acceptance are later local development work excluded from that release branch;
+no publication receipt implies that their commands shipped in 0.26.98.
 
 ## Job selection and machine roles
 
@@ -160,9 +163,8 @@ proof. The host's fleet-compute plan owns shared cache and broader
 scheduling work; this integration does not reopen it. These paths are relative
 to the enclosing host workspace, not this Gmax repository.
 
-[Backend evaluation](colbert-backend-evaluation.md#recenter--paired-run-completed)
-owns the separate experiment workstream; the local-worker catalog does not run
-that experiment. The platform
+The recovered [backend evaluation](colbert-backend-evaluation.md) retains the separate experiment evidence;
+the local-worker catalog does not select or run that experiment. The platform
 the host's session plan thermal-containment section owns the indexing pause. A
 selected worker job is not permission to resume indexing, restart its daemon or
 change its bounded service. Installed enrollment follows

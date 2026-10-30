@@ -422,6 +422,7 @@ rollback stay intact; the historical directcore8/parent28 distinction and unknow
 relevance-attempt budget are unchanged. Deferred CPU/resource/backend work remains
 unselected. Next is selection of that finite source batch, not an automatic run.
 
+
 ## 0.26.110 deployed; isolated guard complete; core8 configured
 
 **October29,2026, user “go”:** the scoped guard/policy correction and remaining
@@ -455,6 +456,180 @@ No automatic nextbatch/relevance retry; unknown attempted-query budget remains.
 Later dependency/Lance0.41/Arrow/hourly-hook work stays separate and preserved;
 CPU/backend/resource-history deferred, pending prompts untouched.
 
+
+## Isolated operational guard and 0.26.110 handover — selected
+
+User “go” selects the scoped guard/policy correction and the unfinished110
+P3/plugin/core8 delivery. New `scripts/guard-local-operation.py` applies zero
+owned-job swap via a fresh verified cgroup before payload exec; shared cgroups
+and host settings stay unchanged. Existing2CPU/nice10/2GiB ownedRSS/180s/min8GiB,
+containment/OOM/cleanup protections remain. Host allocation is diagnostic; the
+first trigger and independent final sample are preserved. Historical failures
+14,573,568B and160,866,304B remain failed and immutable. No compiler/pack/publication
+or test/native/profile/query rerun. Use the published920afc5/341-file archive,
+109dependency baseline, a fresh staging prefix and exact109rollback; no later
+dependency/hook work is included. Complete P3/plugin/selected core8 and truthful
+catalog/records without another milestone. No pending prompt consumption.
+
+
+## Swap guard semantics — investigation complete; correction PROPOSED
+
+October29,2026: [source-grounded diagnosis and finite correction](assets/mcp-cleanup-release-20261029/swap-guard-semantics.md)
+conclude **wrong proxy for owned spill, not wrong arithmetic**. Pinned Linuxv7.0
+source and matching installed atomic-counter header do not support a per-CPU
+stat-fold/KB bug. Swap slots can be allocated before eviction, retained by cache,
+or used by zswap without disk writes. Existing0host-SwapUsed rule faithfully
+implements the selected literal budget, but cannot prove our task spilled or
+caused pressure. Which mechanism caused either old stop remains unknown.
+
+Definite reporting bug: both private controllers overwrite the first error with
+a final post-cleanup failure; final clamped growth is not the trigger or peak.
+Compiler phases all exited0 before that final stop; staging's trigger can differ
+from its later160,866,304B sample. Original failed receipts remain failed.
+
+Recommended finite future selection: isolated owned-job cgroup swap.max=0,
+current/peak/events plus unchanged CPU/nice/RSS/deadline/8GiB/containment/cleanup
+limits; host allocation diagnostic, host floor/critical/OOM protection retained,
+PSI and disk counters separate. Existing cgroup is shared; parent permission/
+memory-delegation metadata supports a fresh owned sibling scope, not mutation
+of peer clients or Gmax service. Creation remains unexercised/fail-closed.
+Fix first-trigger/final receipt separation in the same two controllers. No broad
+tolerance, RSS-only/pswpout-only fallback, supervisor project or new test gate.
+This is an explicit policy-scope change requiring selection, not today's waiver.
+
+No repeated process inventory/passive memory window, tests/builds/compile/native/
+MCP/LLM/runtime/profiles, source/contract/kernel/config/service changes, deployment
+retry or push. Only retained data, official kernel/source and bounded read-only
+permission metadata used. Published110/P3last109/core8 pending unchanged. Prior
+Next-server holders are not causal proof or grounds to stop all servers.
+
+
+## P3 swap investigation — READ-ONLY COMPLETE
+
+October29,2026: [focused findings](assets/mcp-cleanup-release-20261029/swap-investigation.md)
+trace both failed guards to the same local P3 host/procfs. KiB conversion and
+baseline routing are correct. Their metric is net host-wide swap allocation,
+not owned-work swap or disk-write bytes; final growth is not a retained trigger/
+peak sample. Historical per-process/cgroup/counter attribution is unavailable.
+
+Two passive reads35.096s apart found33.09→31.74GiB available,12.81GiB retained
+swap,44.15MiB net swap allocation decline,pswpout0 and14.05MiB disk-counter
+swap-in. zswap is enabled, so zero disk-output does not exclude compressed-swap
+activity. No binding inspected cgroup high/max limit or OOM event explains current
+swap; “all activity idle” is not claimed. Three largest Next servers hold5.79GiB;
+Gmax service≈90MiB, daemon18.5MiB. Separately51MCP clients hold917MiB; no orphan
+or historical-cause claim.734readable process statuses,0unreadable; PID1 namespace
+symlink comparison denied and not bypassed. Full caveats/citations are in the note.
+
+Recommendation: owners verify the three Next dev-server lifetimes and normally
+close any unused servers, before speculative kernel/guard/Gmax changes. None was
+stopped. Global rule remains unchanged; no tests/build/runtime/model/MCP/query/
+service/config/deployment/guard retry/remote action or push. Published110,
+last-deployed109/core8 pending and unknown relevance-attempt budget stay intact.
+No new execution starts automatically; saved prompts untouched.
+
+
+## Dependency upgrade batch — CONSOLIDATED COMPLETION
+
+**October 29, 2026:** completed the selected dependency edits and focused
+compatibility work. This record consolidates the whole batch; the dated entries
+below retain the original commands, partial results and subsequent corrections.
+
+**Implementation complete:** npm minor/patch updates and override floors;
+Granite/Gemma Python HTTP/TLS updates; Rust helper minor/patch updates;
+LanceDB SDK and seven native packages 0.41.0 with Python maintenance 14.0.2;
+generated official SDK runtime/notices and helper/version/receipt contracts;
+Apache Arrow JS 21.2.0; unused dotenv removed. Gemma's exact model-runtime contract
+and the separate bounded Rust engine 12 remain unchanged. All source/fixtures,
+manifests/locks and local dependency synchronization for these selections are
+complete; unrelated work is preserved.
+
+**Selected validation complete:** the original focused JavaScript invocation
+passed 48 cases with 3 schema admission fixture failures and 5 filtered exclusions.
+The fixture correction was then explicitly verified using only those 3 failed
+cases; all 3 passed and the 2 already-passing cases were excluded. The small native
+JavaScript store case and parent prune/FTS guards passed. No passing case was
+rerun to manufacture a new acceptance receipt.
+
+**Native Python 14.0.2 compatibility now passed:** one focused invocation ran
+the existing bounded-retention native test and the new tiny FTS delta native
+test, **2 passed, 0 failed, 0 skipped**. Pruning preserves current/tagged versions,
+rows, indexes and unselected history across bounded batches. FTS adds coverage
+for 8 synthetic pending rows while preserving all 24 rows, prior/tagged data,
+existing data-file hashes and the other index. This exercises the helper's real
+native implementation and admission callback in disposable stores; it does not
+claim a live-process/stdin handover or production maintenance result.
+
+The pinned wheel-only environment was prepared outside the repository with
+`uv sync --locked --no-dev --no-build --no-python-downloads` using existing
+Python 3.13. One shared guarded window covered preparation and the single test
+process: 2 CPUs, nice 10, 180 s, max 2 GiB owned RSS, min 8 GiB available, zero swap growth.
+Both phases exited 0; controller elapsed **1.9460336189949885 s**, peak sampled
+aggregate owned RSS **219971584 bytes**, final available **39535783936 bytes**,
+swap growth 0, no owned survivors. Test body reported 2 cases in 0.668 s. Private
+homes/stores were removed and tested source/lock hashes remained unchanged.
+Exact runner, logs, source hashes, locked environment and receipts:
+`/home/reoiv/.local/state/gmax-dependency-tests/20261029-python-native-u6oy5mih/`
+(`tests-receipt.json`, `validated-inputs.json`, `completion.json`).
+
+**Remaining delivery work, not started by this batch:** prepare a scoped source
+commit; produce emitted application JavaScript and a package from the final
+dependency tree; publish a new dependency release and perform its separately
+selected guarded installation/handover. The generated SDK alone is not an
+application build. The separate published 0.26.110 uses the earlier SDK 0.40/
+Python 13 dependency baseline and does not contain these upgrades; its unfinished
+P3/plugin/core activation work belongs to its own delivery record below.
+
+**Remaining validation limits, not automatic extra gates:** no final-tree
+TypeScript compilation, fresh packed-consumer qualification, broad regression
+suite, Mac-native run, Python embedding-server HTTP compatibility campaign,
+model-inference/relevance or performance measurement. The selected focused
+JavaScript/schema/native-Python compatibility checks are complete. No additional
+test/compiler/audit/review/profile or release is selected automatically.
+
+**Deferred upgrades:** Granite Hugging Face Hub 2; the separate Rust engine/Arrow
+major migration; forced fast-uri/protobufjs major overrides; ONNX beyond the
+version pinned by Transformers.js; Gemma exact model-runtime changes. These
+remain optional/unselected, not unfinished implementation in the approved batch.
+
+### Optional dependency review — October 29, 2026
+
+Read-only review of the deferred choices is complete. Recommendation: take only
+the compatible **protobufjs 7.6.5 → 7.6.6 patch** in a later selected change.
+It [backports fixes from 8.x](https://github.com/protobufjs/protobuf.js/releases/tag/protobufjs-v7.6.6)
+and remains within ONNX Runtime Web's declared `^7.2.4` range. The patch was
+missed in the earlier minor-update pass. It is **recommended, not applied**:
+the workspace override/lock still select 7.6.5. No new test allowance is implied.
+
+The optional majors remain deferred for these concrete reasons:
+
+- **Granite Hugging Face Hub 2:** Transformers 5.21.1 permits it, but the
+  [migration changes HTTP libraries, exception types and certificate handling](https://github.com/huggingface/huggingface_hub/releases/tag/v2.0.0).
+  New listing features offer little benefit to the existing cached-model path.
+  Gemma already locks Hub 2.2.0; this is not a blanket Hub 1 constraint.
+- **fast-uri 4:** the installed Ajv declares 3.x, and existing
+  [3.1.9 includes the current 3.x security fixes](https://github.com/fastify/fast-uri/releases/tag/v3.1.9).
+  No demonstrated need justifies forcing a major override.
+- **protobufjs 8:** ONNX Runtime Web declares 7.x. Prefer the compatible 7.6.6
+  patch above rather than overriding the parent's major dependency range.
+- **ONNX Runtime 1.31:** Transformers.js 4.3.2 pins Node runtime 1.30.0.
+  Retain the single-runtime alignment; do not introduce a second native runtime.
+- **Separate Rust Lance migration:** the bounded maintenance executable remains
+  disabled. Correction to the earlier proposal: the
+  [Lance 14.0.2 manifest uses Arrow 58](https://github.com/lance-format/lance/blob/v14.0.2/Cargo.toml),
+  so Arrow 60 is a separate migration and must not be bundled automatically.
+  No existing native artifact may be relabeled as upgraded or newly qualified.
+- **Gemma MLX/Transformers changes:** exact runtime versions are part of the
+  hashed contract and embedding-generation identity. Preserve them until a
+  deliberate model-runtime/index migration is selected.
+
+**Stopping point selected by the user:** save these recommendations and leave
+this dependency session here. The completed edits and selected compatibility
+checks above stand; protobufjs 7.6.6, other optional upgrades, final application
+build/package, dependency commit and dependency release remain unapplied or
+unselected as recorded. This closeout changes documentation only: no installs,
+tests, builds, audits, review agents, profiles, services, publication or saved
+prompt consumption. Separate release/delivery records retain their own scope.
 
 ## 0.26.110 published — P3 handover stopped by safety guard
 
@@ -491,14 +666,94 @@ is automatic. This is an actual safety blocker, not a new test/review gate.
 CPU/backend/resource-history stay deferred; saved prompts untouched.
 
 
-## Approved delivery resumed — October 29, 2026
+## Three schema cases — CORRECTION VERIFIED
 
-Fresh authorized packaging window passed:18.585845s,630,263,808bytes peak
-owned RSS,23,562,391,552bytes available,zero swap growth/no owned survivors.
-Unchanged compiler/runtime outputs were reused; no new compiler/test invocation.
-The earlier14,573,568byte global-swap failure remains a separate failed receipt,
-not recast as a passing compiler guard. Required archive payloads byte-match the
-assembled candidate, with official SDK/native0.40 and no later dependency imports.
+**October 29, 2026:** user explicitly selected one new invocation containing
+only the three previously failing schema cases. Result: **3 passed, 0 failed,
+2 previously passing cases excluded**, runner/controller exit 0. This verifies
+the fixture-local admission correction under the retained no-autostart flag:
+physical vector width, mismatched configured width after reopening, and table
+creation after a missing-table response. SDK/native 0.41.0 and Arrow 21.2.0 were
+used. The original 48/3/5 failure receipt below remains unchanged and historical;
+no passing case from that run was repeated.
+
+The private one-file/name-filtered config retained the same test mocks and limits:
+2 CPUs, nice 10, 180s deadline, max 2 GiB owned RSS, min 8 GiB available memory,
+zero swap growth, bounded native caches and no service/model startup. Controller
+elapsed **1.6609801029553637s**, peak sampled owned RSS **203313152 bytes**,
+final available memory **32225226752 bytes**, swap growth 0. All owned processes
+closed and private homes/stores were removed. Tested source/dependency hashes
+were unchanged afterward. No additional implementation or dependency changes.
+
+Exact command/config, logs, JSON report, input hashes and cleanup receipt:
+`/home/reoiv/.local/state/gmax-dependency-tests/20261029-schema-three-t1_xc6fe/`
+(`tests-receipt.json`, `results.json`, `validated-inputs.json`, `completion.json`).
+This closes the three observed schema failures within the selected scope; it is
+not a whole-suite, native Python-helper, packaged-consumer or performance result.
+No additional test/build/compiler/audit/review/profile or release is selected.
+Separate delivery work, its authorization/evidence and pending prompts remain
+unchanged by this dependency-test batch.
+
+## Dependency focused tests and dotenv cleanup — COMPLETE WITH VALIDATION LIMITS
+
+**October 29, 2026:** user “go” selected the proposed single focused local
+compatibility invocation and subsequent unused-dotenv cleanup. The invocation
+ran once, with no rerun or additional compiler/build/audit/review campaign.
+Separate MCP/cleanup delivery work and its original host-guard receipts are
+preserved; this dependency batch neither authorizes nor validates that release.
+
+**Actual result: 48 passed, 3 failed, 5 intentionally excluded; exit 1.**
+
+- `lance-cleanup.test.ts`: **28 passed**, fake subprocess/admission/result guards.
+- `fts-refresh.test.ts`: **15 passed**, fake native-helper and receipt guards.
+- `version-cleanup.test.ts`: **2 passed**, fake prune/resource ownership guards.
+- `lancedb-native-compatibility.test.ts`: **1 passed, 5 excluded** by name filter.
+  The selected tiny disposable-store case covers FTS, exact vectors, filters,
+  indexes, mutation, temporary compaction and reopening under SDK/native 0.41.0
+  and Arrow 21.2.0. Production containment remains unchanged.
+- `vector-db-schema-dim.test.ts`: **2 passed, 3 failed**. All three failures
+  report `gmax store is quarantined and has no existing table`: the controller's
+  `GMAX_NO_AUTOSTART=1` correctly prevented fixture table creation. This is
+  fixture admission coupling, not evidence of an Arrow/native ABI failure.
+
+**Correction, not rerun:** the schema fixture now mocks only
+`assertStoreMutationAllowed` and `storeMutationDeniedReason` within that file,
+independently admitting its temporary stores while retaining the original
+module's full-table containment and disk checks. No product policy, host marker
+or service configuration changed. The corrected fixture has source/diff
+inspection only; there is no all-green result for the final tree.
+
+**Scope and resource controls:** one direct local `node_modules/.bin/vitest run`
+with a private focused config, five explicit files and a name filter. Repository
+setup mocks were retained; grammar-download global setup was omitted. A private
+`os.homedir` mock and temporary data root kept test metadata/stores private.
+Native caches were 16 MiB/8 MiB; Lance CPU/I/O threads 2. Tests ran serially on
+CPUs 0/1, nice 10, with a 180s deadline, max 2 GiB aggregate owned RSS,
+min 8 GiB available memory and zero swap growth. Controller elapsed
+**2.1909067309461534s**, peak sampled aggregate owned RSS **359526400 bytes**,
+final available memory **43497840640 bytes**, swap growth 0. All owned processes
+closed; private test homes and scratch stores were removed. The run failed
+assertions, not these resource limits. No model or Python helper runtime loaded.
+
+**Subsequent authorized cleanup:** no source/script/test/plugin usage of
+`dotenv` was found. Removed the unused 17.4.2 direct dependency from the manifest,
+pnpm lock and local installation. Lock-only resolution and frozen installation
+used scripts disabled, two CPUs, nice 10, 180s deadlines and network concurrency 4.
+No additional test invocation followed. The 48/3/5 receipt describes the fixture
+before correction and the dependency manifest before dotenv removal.
+
+Exact command/config, full log, JSON test report, controller, tested-input hashes
+and post-run correction/removal hashes are retained at
+`/home/reoiv/.local/state/gmax-dependency-tests/20261029-focused-se75mo3b/`
+(`tests-receipt.json`, `results.json`, `validated-inputs.json`,
+`post-run-correction.json`). Prune/FTS parent guards were exercised with mocks;
+native Python 14.0.2 read/write compatibility, packaged consumers, other npm SDKs
+and the corrected schema fixture remain unqualified. No profile, model/server
+load, production store operation, global install, daemon restart, version bump,
+commit, publication or P3 handover was selected by this dependency batch.
+Pending prompts, other dirty work and the separate delivery records are preserved.
+
+## Approved delivery resumed — October 29, 2026
 
 The user explicitly selected one fresh guarded preparation window after reviewing
 the prior host-wide swap failure. Prior failed receipts remain unchanged. Reuse
@@ -563,36 +818,124 @@ Full receipts/logs/source/dirty-index before-images:
 CPU/backend/resource-history work remains deferred; saved prompts untouched.
 
 
-## Selected MCP and table-cleanup release — 0.26.110 preparation
+## Apache Arrow JS 21.2 — COMPLETE LOCALLY
 
-**October 29, 2026, user “ship it”:** complete selected local MCP profiles,
-annotations/error/cancellation behavior, fixtures/README/docs (64d10ed,
-fff1556,0b98ac8) and deterministic Table cleanup (37aa904) are assembled on
-public 0.26.109 source/history. Later unrelated dependency upgrades, ColBERT
-refactors, dirty/ITA files and private history are preserved and excluded.
-LanceDB/native 0.40.0, embedded Lance 13/Python13 and qualified Rust12 remain
-this release's dependency baseline; no model, migration or maintenance change.
-All selected new fixture files and prior current-catalog/docs records are included.
+**October 29, 2026:** user “do 2” selected the second major-dependency proposal,
+following the coordinated storage upgrade. `package.json` advances
+`apache-arrow` **^18.1.0 → ^21.2.0**; pnpm locks and installs **21.2.0**.
+The existing LanceDB SDK/native 0.41.0, Python maintenance 14.0.2, Rust helper,
+generated SDK runtime/provenance and model pins are unchanged.
 
-Approved verification reuses the ONE prior fake-only invocation (3 files/36
-passed), noting the core fixture's later independent literal-name expectation
-was not rerun. Cleanup had source-only inspection; one guarded combined emitted
-production compilation now covers the selected release source. No new unit/native
-cases, model/runtime feature exercise, relevance query, benchmark/profile, audit
-or independent review. All source/fixtures/docs and authorized preparation finish
-before publication; source/archive identity and limits are retained separately.
+The [SDK 0.41.0 manifest](https://github.com/lancedb/lancedb/blob/v0.41.0/nodejs/package.json)
+accepts Arrow `>=15.0.0 <22.0.0`. Source/declaration inspection compared the
+installed 18.1.0 package with the integrity-verified official 21.2.0 archive.
+Gmax's `Schema`, `Field`, scalar/list/`FixedSizeList` constructors and
+vector/batch `toArray()` APIs remain available; `StructRowProxy` declarations
+are unchanged. The new schema/vector/batch branding and optional batch metadata
+need no Gmax adaptation. Application source, fixture source and schema/row
+materialization behavior were not changed; no fixture was executed.
 
-Selected delivery: publish once via existing manual release.yml, normal P3
-systemd handover with exact109rollback/config/models/workers/quota/store/quarantine
-preserved, normal plugin refresh, and only the selected standard Codex server's
-GMAX_MCP_TOOL_PROFILE=core. Direct MCP initialize/tools-list is metadata-only;
-actual active provider catalog must be observed separately. No T3 adapter/app
-restart, unsafe current-session reset, global environment or indexing. Core8
-activation is not inferred from config or direct advertisement. Current repo
-not_registered and unknown prior quality-attempt count remain unchanged/no retry.
-RSS/fan/cache-eviction/relevance gains remain unproven. CPU/backend/resource-history
-work stays deferred; pending saved prompts are untouched.
+Both local pnpm operations used `--ignore-scripts`, two CPUs, nice10, a 180s
+deadline and network concurrency 4: lock-only resolution followed by frozen
+installation. pnpm's normal supply-chain policy verification passed. This batch
+adds 4 lock package entries and removes 20 obsolete entries, including Arrow 18,
+its old CLI dependencies, `json-bignum` and FlatBuffers 24; Arrow 21 reuses the
+already-locked FlatBuffers 25. The root and both installed/generated SDK paths
+resolve the same Arrow 21.2.0 entry, verified by module-path resolution without
+importing Arrow or native code. Existing generated SDK provenance is unchanged;
+the application was not rebuilt and the generated SDK was not regenerated.
 
+Scoped manifest/lock diff inspection and source/provenance hashes are retained
+with before-images and upstream declarations under
+`/home/reoiv/.local/state/gmax-arrow-upgrade/20261029-21-6pylokfh/`
+(`completion-receipt.json`). No tests, typechecks, builds, standalone audits,
+native imports/store/model operations, profiles, global installation, release or
+daemon restart. Native interchange and runtime compatibility are **UNTESTED**;
+no CPU/memory improvement is claimed. Earlier evidence applies to its original
+dependency versions. All prior approved changes and unrelated work are preserved;
+earlier “Arrow unselected” statements below describe their original batches.
+
+## LanceDB 0.41 / Lance 14 storage upgrade — COMPLETE LOCALLY
+
+**October 29, 2026:** user “do 1” selected the coordinated SDK/native/Python
+upgrade from the major-dependency proposal. The separate JavaScript Arrow
+upgrade was not selected. Implementation, existing fixture expectations,
+manifests, lockfiles, notices, generated vendor runtime and documentation are
+complete together in the working tree. No version bump, commit or release for
+this storage batch. Separate cleanup/MCP changes and their records are preserved.
+
+**Selected versions and contracts:**
+
+- `@lancedb/lancedb` and all seven optional native platform packages advance
+  **0.40.0 → 0.41.0**. The
+  [official SDK Cargo manifest](https://github.com/lancedb/lancedb/blob/v0.41.0/Cargo.toml)
+  pins embedded Lance **14.0.2**. JavaScript Arrow remains **18.1.0**, within
+  the SDK's declared `>=15.0.0 <22.0.0` peer range.
+- Python maintenance advances **pylance 13.0.0 → 14.0.2**. Its lock changes
+  only pylance and the required namespace packages: `lance-namespace` and
+  `lance-namespace-urllib3-client` **0.11.1 → 0.13.0**. Python >=3.10 and the
+  existing PyArrow version remain supported by upstream package metadata.
+- Prune/FTS helpers and the standalone recovery utility require exactly
+  **14.0.2**; new parent-side result validation requires that engine too.
+  Persisted prune/FTS receipt readers retain engines **12.0.0**, **13.0.0**
+  and **14.0.2**, preserving historical evidence without relabeling it.
+  Existing fake/native fixture versions are aligned; the Python wrong-engine
+  fixture now rejects 13.0.0. Fixtures were edited, not executed.
+- The separate bounded-maintenance Rust executable remains Lance 12/Arrow 58,
+  with its prior minor dependency edits preserved. No artifact is rebuilt,
+  qualified, relabeled or enabled. Containment, leases, host limits, rollback,
+  tokenizer validation, accepted FTS formats 1–3 and model identity are unchanged.
+
+**Source compatibility evidence, not runtime qualification:** compared pinned
+[Python 13](https://github.com/lance-format/lance/blob/v13.0.0/python/python/lance/dataset.py)
+and [Python 14.0.2](https://github.com/lance-format/lance/blob/v14.0.2/python/python/lance/dataset.py)
+sources. `create_index_uncommitted`, `commit_existing_index_segments`,
+`list_indices`, `index_statistics`, `get_fragments` and `config` retain the used
+signatures and implementations. `cleanup_old_versions` adds optional
+`delete_concurrency`; the existing explicit-version, tagged-version and deletion
+rate arguments remain available. `versions()` now delegates timestamp conversion
+to a shared utility. The serialized `InvertedIndexParams` struct is unchanged
+between 13 and 14; builders still serialize it as `params` metadata for staged
+and committed FTS segments. Strict physical metadata checks remain intact.
+SDK declaration inspection found breaking lazy-listing/realtime APIs unused by
+Gmax; no compatibility adapter or new feature was added.
+
+**Local resolution and runtime preparation:** pnpm lock resolution and the
+frozen local installation used `--ignore-scripts`, two CPUs, nice10, bounded
+deadlines and network concurrency 4. The installation also synced the earlier
+approved 17 npm minor/patch updates into `node_modules`; their earlier completion
+record below describes the historical lock-only state before this installation.
+pnpm's normal supply-chain policy verification passed; the eight new release-age
+exceptions name only the exact selected SDK/native 0.41.0 versions.
+The installed SDK and Linux x64 GNU native package metadata both report 0.41.0.
+uv resolution used the existing Python 3.13 interpreter, `--no-build` and
+`--no-python-downloads`; the final maintenance lock passed an offline consistency
+check. No Python environment was installed or native library imported.
+
+The official SDK archive was verified against its registry SHA512 integrity.
+The existing `prepare-lance-runtime.cjs` copied its runtime/notices and generated
+provenance without executing the SDK. All **60 official runtime files** match
+the downloaded archive byte for byte; the tracked Apache license is unchanged.
+The old generated directory was retained before replacement, so the fresh
+`dist/vendor/lancedb` contains no stale SDK files. Generated entry SHA256:
+`94c176eb8929639acad70b3c389a1eb2a1b57a02906293a70f7b10cc6bd3232f`.
+`NOTICE` identifies 0.41.0. Application JavaScript was not rebuilt.
+
+Before-images, versioned upstream sources/diffs, original generated runtime and
+file-hash provenance receipt are retained under
+`/home/reoiv/.local/state/gmax-lance-upgrade/20261029-041-m4w_0j10/`
+(`upstream-sources.json`, `runtime-preparation.json`). Scoped source/fixture/lock
+diff and syntax inspection provide the remaining local evidence.
+
+**Limits and preservation:** no tests, typechecks, compilation, native store
+smoke, standalone audits, independent review, profiles, models, service startup,
+live store operations or daemon restart. Native ABI, helper read/write and
+cross-version storage behavior are **UNEXERCISED**; no performance improvement
+is claimed. Global installations and the running daemon are unchanged; generated
+vendor preparation is not a new runnable/qualified application build. Earlier
+MCP/compiler/native evidence does not validate this dependency state. Existing
+unrelated work, earlier approved minor changes and pending prompts are preserved.
+Arrow 21, Hugging Face Hub 2, ONNX changes and release/P3 handover remain unselected.
 
 ## Deterministic write-table cleanup — COMPLETE LOCALLY
 
@@ -641,6 +984,68 @@ unmeasured with attempted-query count **unknown**, without retry/reset authority
 CPU attribution, resource history and backend experiments remain unselected.
 Pending prompts, unrelated dependency/ColBERT/private work and index/ITA entries
 are preserved. No next execution starts automatically.
+
+## Minor and patch dependency updates — COMPLETE LOCALLY
+
+**October 29, 2026:** user “do the minots” selected minor/patch dependency
+updates following the read-only registry comparison. Direct edits and lockfile
+resolution are complete; no package version, commit, publication or deployment.
+
+- **npm:** 17 manifest entries updated with the pnpm lock: Transformers.js
+  4.3.2; MCP server/client/core 2.4.0; OpenTelemetry API 1.10.0; ignore 7.0.14;
+  LMDB 3.5.9; numkong 7.8.6; OpenAI 7.45.1; uuid 14.0.3; web-tree-sitter
+  0.27.1; Biome 2.6.4; Node types 26.6.6; legacy MCP fixture 1.32.2;
+  node-gyp 13.1.0; tsx 4.23.15; Vite 8.3.5; Vitest 5.0.5. Override floors
+  advance qs to 6.17.1, Hono to 4.13.14 and its Node server to 2.1.5.
+  Release-age exceptions are exact selected versions, including Biome's matching
+  platform packages; script/build permissions are unchanged.
+- **Granite Python:** 21 existing locked packages advance within their numeric
+  major, including FastAPI 0.162.0, Uvicorn 0.54.0, MLX-LM 0.32.2, MLX/Metal
+  0.32.4, Transformers 5.21.1 and setproctitle 1.3.8. The updated transitive
+  graph adds 9 packages and removes 18 no-longer-required packages, including
+  the datasets/aiohttp/Pandas/PyArrow branch. Advisory floors are preserved or
+  raised, including constraints on packages no longer required by the graph.
+  Hugging Face Hub is selected at 1.33.0 to avoid the resolver's initial 2.x
+  selection. These are dependency changes, not model weights or configuration.
+- **Gemma Python:** FastAPI 0.156.4 → 0.162.0, Starlette 1.9.0 → 1.10.0 and
+  certifi 2026.10.19 → 2026.10.23; other lock versions are retained. HTTP/TLS
+  manifest floors are aligned. MLX 0.32.3, Transformers 5.20.2, the MLX-VLM
+  Git revision and `gemma-contract.json` remain unchanged: the backend checks
+  exact runtime versions and hashes that contract into its identity.
+- **Rust:** object_store 0.14.1 → 0.14.2, uuid 1.27.0 → 1.29.0,
+  Tokio 1.53.2 → 1.54.1, serde_json 1.0.151 → 1.0.154 and libc
+  0.2.190 → 0.2.191. Cargo generated the lock; existing Lance 12/Arrow 58
+  engine pins remain unchanged. No native artifact is built or relabeled.
+
+**Compatibility exclusions:** dotenv 18, JavaScript Arrow 21, Python Lance 14,
+Rust Lance 14/Arrow 60 and other major changes are excluded. LanceDB/all native
+npm packages remain 0.40.0 with Python maintenance 13.0.0: the official
+[SDK 0.41.0 manifest](https://github.com/lancedb/lancedb/blob/v0.41.0/Cargo.toml)
+embeds Lance 14.0.2, requiring the excluded major maintenance alignment. ONNX
+Runtime remains 1.30.0, matching Transformers.js 4.3.2, to preserve a single
+runtime version. No Gemma contract, index or model identity is changed.
+
+**Resolution and inspection:** pnpm ran locally with `install --lockfile-only
+--ignore-scripts --no-frozen-lockfile --network-concurrency=4`; its normal
+supply-chain policy verification passed. uv ran locally with `--no-build
+--no-python-downloads` and the existing Python 3.13 interpreter. The first
+Granite attempt refused dynamic Git metadata because builds were disabled;
+subsequent resolution supplied static metadata from the exact pinned upstream
+requirements/pyproject files. Resolution-only metadata overrides were removed
+from the final lock manifests, retaining the generated package graph and hashes.
+Both final Python locks passed `uv lock --check --offline --no-build
+--no-python-downloads` without metadata overrides. Cargo/rustc were unavailable
+on PATH, so checksum-verified official components in a temporary directory
+provided Cargo resolution and compiler-version discovery only. All resolvers
+used two CPUs, nice10 and bounded deadlines. Scoped manifest/lock parsing and
+diff inspection found no existing-package numeric-major upgrades.
+
+**Limits:** no tests, typechecking, compilation, standalone audits, independent
+review, native/model imports, model/server startup, store actions or profiles.
+Project environments/node_modules and installed/live runtimes are unchanged;
+runtime/API/ABI compatibility is untested. Unrelated working-tree changes and
+all pending prompts are preserved. Earlier MCP verification applies only to
+its recorded dependency state and does not validate these new versions.
 
 ## MCP core/full local implementation — COMPLETE LOCALLY
 
@@ -1007,7 +1412,7 @@ Registration/direct listing alone still do not prove attachment.
 On October 29, 2026 the parent reported its current actual `ALL_TOOLS` scan:
 **329 tools including 28 `mcp__gmax__` tools**, including
 `mcp__gmax__repo_status` and `mcp__gmax__semantic_search`. All 28 descriptions
-identify current repo `<gmax-checkout>`,
+identify current repo `<repo>`,
 `index=not_registered`, `matchedRoot=null`, `daemon=unobserved`.
 This is actual parent catalog advertisement, superseding the earlier retained
 301/no-Gmax parent visibility result; it is not inferred from CLI configuration
@@ -1081,7 +1486,6 @@ Quality attempt count remains unknown, ranks unmeasured, and no retry/budget res
 Table-handle cleanup remains proposed/unselected; FTS complete and unchanged;
 CPU attribution/resource-history/backend experiments remain deferred. All local
 selected work is finished; stop without automatically activating or publishing it.
-
 
 ## Plan housekeeping closeout — October 29, 2026
 
@@ -1161,13 +1565,209 @@ unknown attempted-query count and both existing case-set receipts remain intact;
 no retry or query budget reset. CPU/backend/resource-history work stays deferred.
 The approved local upgrade is finished; no further action starts automatically.
 
-
 Project status belongs in this plan and its linked plans, never in `AGENTS.md` or
 `CLAUDE.md`. [Architecture/operations history](../archived/architecture-operations-history.md)
 preserves status, incident measurements and release context moved out of
 `CLAUDE.md`; those excerpts are historical and add no execution authorization.
 
 ## Current direction — better search results
+
+**Read-only memory investigation complete — October29,2026.** The
+[evidence/source note](assets/search-quality-platform-20261029/memory-investigation.md)
+validates the guard's MainPID-only Linux VmRSS/KiB-to-byte parsing, independently
+of service/worker and owned-client RSS. The receipt's2,879,823,872byte value is
+the final cleanup sample; the precise trigger sample/time and initial daemon-only
+RSS were not retained. Initial service RSS already3,649,089,536bytes changed by
+only479,232bytes during the1.118s controlled window. The same daemon's earlier
+06:24 preflight recorded1,655,394,304bytes; the later increase is not attributed
+to any workload or a version regression. Event heap/external/ArrayBuffers/cache
+occupancy/uptime/queue/recycle counters are absent; old104/105 resource snapshots
+are null, and the available daemon.log ends October27. Configured Session cache
+capacities are not measured resident memory. Worker setting4 does not imply four
+loaded workers and is not part of daemon-only VmRSS.
+
+**Historical recommendation — now selected and completed locally above:** released108
+`VectorDB.insertBatch`, `deletePathsExcludingIds` and `deletePaths` open
+operation-local native Tables without deterministic `close()`; the write gate
+only accounts writes. Add local `try/finally` closes after awaited work, including
+the insertBatch schema-error handle, without changing connection/Session ownership,
+insert/delete/meta order or a concurrent searcher's pinned Table. This is a real
+source lifetime gap; GC/native retirement may eventually release handles, and
+the retained evidence does not prove it caused the event or that closure will
+reduce RSS below the guard. Do not turn it into a whole-repository handle audit,
+new cache/worker budget, measurement campaign or query retry.
+
+Released production recycle has five-minute sampling, a30-minute minimum age,
+busy/maintenance deferral and a one-hour forced-deferral bound; the query guard
+has no such waiting policy. Event-time uptime/recycle state and actual overrides
+are missing, and the handover PID differs from the failed-query PID. Thus high
+RSS at an immediate diagnostic guard does not establish failed recycling.
+No new probes/RPCs, resource readings, tests/builds, models, source/config/index
+edits, signals/restart, installs or release occurred in this investigation.
+Only owning plan/handoff/evidence documentation changed; both original case sets,
+all guard receipts, unknown attempted-query count and unmeasured quality outcome
+remain intact. That investigation itself granted no implementation authority; the later user “go” selected only the local cleanup recorded above.
+
+**Corrected Platform execution — SAFETY STOP, October29,2026 UTC.** The selected
+`formatCents`, `<ErrorClass>` and `resolveActor` manifest was locked before the
+same approved batch resumed with the actual registered Platform corpus. The
+unchanged controller stopped the owned client on
+`Production profile guard: daemon-rss-watermark`: sampled daemon RSS
+2,879,823,872bytes exceeded the existing2,684,354,560byte (2560MiB) maximum.
+No cap was raised and no new execution/retry followed the stop.
+
+The client results checkpoint and stdout log are both empty (zero bytes).
+Consequently no top10 list, score, expected rank, candidate trace or complete
+search result is retained, and the exact attempted-search count is **unknown**.
+An empty in-place checkpoint must not be interpreted as proof that zero calls
+were attempted or as permission to reuse the budget. All three Platform case
+outcomes are unmeasured after the guard stop, not passes, misses or proven
+candidate exclusions. No relevance defect was selected and no source fix was
+invented. The capture/checkpoint limitation is recorded, not expanded into a
+new helper/diagnostics implementation or measurement campaign.
+
+[Corrected pre-call manifest](assets/search-quality-platform-20261029/manifest.json),
+[guard/cleanup receipt](assets/search-quality-platform-20261029/receipt.json),
+[empty checkpoint retained as-is](assets/search-quality-platform-20261029/results.json)
+and [honest classification/attempt-count limit](assets/search-quality-platform-20261029/analysis.json)
+retain the actual disposition separately from the original Gmax artifacts.
+Full local driver/controller/logs:
+`/home/reoiv/.local/state/gmax-search-quality/20261029-platform-definitions/`.
+The controller ended in1.117788604s, peak sampled owned RSS12,562,432bytes,
+zero swap growth, minimum available memory46,909,988,864bytes. CPUs0/1/nice10,
+2GiB owned RSS,180s,min8GiB available,zero swap-growth,1GiB service-RSS growth
+and2560MiB daemon RSS bounds remain unchanged. Service RSS started at
+3,649,089,536bytes and ended at3,649,568,768bytes; this is guard context only,
+not attribution or a performance measurement. Owned cleanup verified no live
+client descendants, unchanged source/config/unit hashes and CPU limits, and no
+service signals. No safety latch, service restart, worker/model setting or store
+ownership was changed. No rollback was necessary because no install/handover ran.
+
+Zero product/test edits, focused-test invocations, production compilations,
+post-fix searches, publications or handovers. No indexing/registration,
+extra native reader, explicit model/server start or model/dependency change,
+FTS/maintenance or review/audit/profile work was initiated.
+Original Gmax cases remain never queried and their original preflight records
+are unchanged. Platform definition-query quality and freshness are still
+unmeasured; natural-language/general quality was never covered by this cohort.
+The quality outcome is incomplete for the concrete resource guard; return that
+outcome without another approval loop or automatically starting further work.
+
+**Historical parent-selected case correction — started October29,2026 UTC.** Option B
+is now selected within the same approved batch, without added query/test budget.
+The corrected immutable pre-call manifest is
+`/home/reoiv/.local/state/gmax-search-quality/20261029-platform-definitions/manifest.json`.
+Exact queries are `formatCents`, `<ErrorClass>`, `resolveActor`; expected files
+and declaration lines23/37/115 were frozen before results. Matching requires the
+exact expected relative file and either the returned definition-symbol match or
+coverage of its current declaration line, as the existing evaluator describes.
+Scope is registered Platform only, limit10/default rerank policy, existing
+explain/diagnostics on the same calls, no seeds/extra filters/warmups/variants.
+Original Gmax records remain unchanged and never queried. This continuation
+resolves a corpus prerequisite; it is not another benchmark or resource profile.
+
+**Prerequisite resolution — Option B prepared, no searches, October29,2026 UTC.**
+The [read-only resolution note](assets/search-quality-three-cases-20261029/prerequisite-resolution.md)
+confirms canonical roots `<other-repo>` and
+`<repo>` are separate, not parent/child or aliases.
+Path-containment/index policy does not import a sibling checkout, so the original
+cases cannot use Platform as their valid scope. This is stronger than project-name
+matching and makes an out-of-scope indexed-row RPC unnecessary. It does not assert
+the absence of all historical orphan rows from the shared store.
+
+Actual existing `src/eval-oss.ts` `PLATFORM_CASES` provide a concrete alternative:
+`pf-p1-01` query `formatCents` → `<format-file>`, declaration23;
+`pf-p1-03` query `<ErrorClass>` → `<errors-file>`, declaration37;
+`pf-p1-09` query `resolveActor` → `<auth-middleware-file>`,
+declaration115. File/symbol expectations were checked from current local source,
+with hashes retained in the note. They are historical labeled definition queries,
+not manufactured labels for latency samples. Original fixture lines8 and71 have
+drifted for the first/third cases; preserve file+symbol truth rather than stale
+line scoring. The historical harness root also differs; use the actual registered
+Platform root only if this three-case change is selected. Individual indexed-row
+freshness and ranks remain unverified. No performance/natural-language quality
+claim follows from these exposed symbol cases.
+
+The original Gmax manifest and preflight receipt are unchanged, all three original
+cases stay `not_run`, and the search budget is still0/3 used. No ping/status was
+repeated and no row/search RPC, new window, source/test/config edit, test/compile,
+model/native reader, indexing/registration or release ran. Option A (unchanged
+original cases) lacks scope; Option B is ready for narrow case/corpus selection
+without more content indexing; Option C would register/index Gmax and is outside
+scope. Do not silently substitute or run either alternative.
+
+**Three-case batch disposition — BLOCKED BEFORE SEARCH, October29,2026 UTC.**
+The locked cases below could not run against their required corpus. The one
+bounded client window made exactly one `ping` and one `status` call and attempted
+**zero search calls**. P3 daemon2906322 reported0.26.108 ready/open/active,
+Small/CPU/384 with the existing Granite Small and17M ColBERT model identities,
+worker setting4/config. The selected Gmax root was absent from status. Because
+status lists active project processors rather than every registered project,
+the owner separately read the local registry and confirmed it contains only
+`<other-repo>`, status indexed; there is no registered
+`<repo>` project. The registry hash and bounded project
+membership snapshot are retained in the analysis. No row lookup or search ran.
+
+This is an **unavailable selected corpus**, not measured candidate absence, low
+ranking, stale indexed content or an actionable retrieval defect. The expected
+files/semantics are valid against released source, but they are outside the only
+registered P3 project. Registering/indexing Gmax, changing project scope or
+substituting other questions is outside this batch. No such action was taken,
+and the window was not retried. All three expected ranks are `not_run`/unknown;
+this is neither an all-pass quality result nor a demonstrated search miss.
+
+[Locked manifest](assets/search-quality-three-cases-20261029/manifest.json),
+[partial results/supporting reads](assets/search-quality-three-cases-20261029/results.json),
+[guard/cleanup receipt](assets/search-quality-three-cases-20261029/receipt.json)
+and [classification/blocker](assets/search-quality-three-cases-20261029/analysis.json)
+preserve the actual outcome. Full local driver/controller and original evidence:
+`/home/reoiv/.local/state/gmax-search-quality/20261029-three-labeled-cases/`.
+The controller completed in0.326948771s, peak sampled owned RSS12,689,408bytes,
+zero swap growth; minimum available memory38,809,247,744bytes. No resource guard
+tripped. CPU0/1/nice10,2GiB owned RSS,180s,minimum8GiB available,zero swap growth,
+1GiB service-RSS-growth and2560MiB daemon-RSS limits were retained. Cleanup
+confirmed no live owned processes, unchanged source/config/unit hashes and
+service CPU limits; no service signals were sent. The serving service remains
+running intentionally. No rollback was needed or performed.
+
+No product/test edit, unit-test invocation, production compilation, additional
+search/follow-up, model/dependency change, index/FTS/maintenance action, commit,
+publication or handover ran. Only plan/handoff/evidence documentation and approved
+Runlist bookkeeping changed. Prior0.26.108/107/106, CPU and FTS delivery remain
+complete; CPU attribution/backend/resource history remain deferred. The batch is
+incomplete for this precise missing-corpus input, with no new execution selected.
+
+**Original approved execution October29,2026 UTC:** one owner, no delegation, three
+existing labeled questions locked before any search. Exact manifest/source hashes:
+`/home/reoiv/.local/state/gmax-search-quality/20261029-three-labeled-cases/manifest.json`.
+The locked cases from `src/eval.ts` are:
+
+1. `Where is the LMDB meta cache opened with compression?` →
+   `src/lib/store/meta-cache.ts` (`MetaCache.constructor`).
+2. `How do we merge vector and keyword results before rerank?` →
+   `src/lib/search/searcher.ts` (`Searcher.search`).
+3. `How does worker pool shutdown terminate children?` →
+   `src/lib/workers/pool.ts` (`WorkerPool.destroy`).
+
+All three source targets match released0.26.108/source`2ebdb62`, with their
+documented behavior confirmed before querying. Scope is exactly
+`<repo>/`, limit10, explicit rerank false/default
+concentration policy, no seeds or extra filters. Existing explain/diagnostics
+are enabled on these same three calls to retain ranks without extra searches.
+One guarded180s client window retains root-relative top10 paths/scores/ranges,
+expected-file rank, candidate pointers/stage ranks and effective version/model/
+scope; no source snippets/vectors/raw environment/holder identities. Existing
+two-CPU/nice10/2GiB/minimum8GiB available/zero swap-growth, service-growth and
+daemon-RSS guards apply; no retry after guard/refusal. Bounded readiness/status
+and exact three-file indexed-row metadata are supporting reads, not searches.
+If all three targets are appropriately found, no patch/test/compile/release is
+needed. Otherwise choose one defensible product failure, preserve explicit
+scope/model/budgets/ownership/JSON, complete the smallest patch/fixture/docs,
+one focused unit invocation and final local production compilation, then the
+authorized complete commit/publication/P3 handover. Only after the new release
+serves P3 may the selected original failing query run once more. No other
+queries, tests, review, profiles, model/dependency work or maintenance selected.
+Earlier recenter/no-execution wording below is historical to that docs-only turn.
 
 **All selected implementation and release work through 0.26.108 is complete.**
 The retained [completion receipt](/home/reoiv/.local/state/gmax-delivery/20261029-0.26.108/completion.json)
@@ -1517,7 +2117,7 @@ not installed in the serving tree. Guarded staging took105.778308262s,
 peak sampled owned RSS1,890,308,096 bytes, zero swap growth,
 and all owned staging processes closed within the same limits above.
 
-The existing `legacy-gmax.service` now serves0.26.107; daemon1788060 was
+The existing `<prefix>-gmax.service` now serves0.26.107; daemon1788060 was
 confirmed **ready/open/active**, matching systemd MainPID. Config and unit hashes,
 store/cache directory identities, Small/CPU/384,stored workers4 and kernel limits
 (two CPUs200000/100000,weight10,nice10) are preserved. The predecessor exited;
@@ -1907,7 +2507,7 @@ matched. Unchanged dependency manifests permitted retaining the exact working
 No build/publication/test phase was repeated.
 
 The normal same-systemd-unit handover confirmed daemon942028 serving0.26.106
-**ready/open/active**, matching MainPID of `legacy-gmax.service`. Config and unit
+**ready/open/active**, matching MainPID of `<prefix>-gmax.service`. Config and unit
 hashes and store/cache directory identities are unchanged: Small/CPU/384,
 stored workers4, quota200000/100000(two CPUs), weight10,nice10. The predecessor
 exited and the temporary owned autostart marker was removed; no safety latch was
@@ -1934,8 +2534,9 @@ measurement. FTS9801→9802→9803/zero pending remains historical completed wor
 untouched.0.26.105 records and unrelated dirty/intent-to-add work are preserved.
 Optional CPU attribution and the resource-history prototype remain unselected;
 no dependency upgrade, model/config/quota tuning or other prototype was included.
-Selected implementation/publication/handover is complete; stop starting new work
-and recenter with the user. The earlier batch records below are historical and
+Selected implementation/publication/handover is complete. The next direction is
+better search results as recorded above; no execution starts here. Earlier
+records are historical and
 their old no-release restrictions are superseded only by this explicit release.
 
 ## Three-feature CPU status and CLI guidance batch — complete locally
@@ -2067,8 +2668,9 @@ preserved. Its old44 distinct passes and final unrerun CLI fixture correction
 remain historical evidence, not coverage of this feature. FTS9801→9802→9803/zero
 pending remains completed and untouched. No release is authorized.
 
-Source-grounded finite alternatives, **suggestions only**, identified during the
-selected implementation reads (no separate audit):
+Historical source-grounded alternatives, **all three shipped in0.26.106** as
+serving identity, idle-lease explanations and saved-worker notices. They are not
+remaining suggestions or unfinished implementation:
 
 1. Show the serving daemon's embedding model/mode in status: its current header
    and JSON settings use `readGlobalConfig` in the invoking client, while the
@@ -2082,6 +2684,212 @@ selected implementation reads (no separate audit):
    both client and serving worker settings, but human status does not compare
    them. Add a concise pending-change indication and existing restart guidance;
    do not apply the new count or restart automatically.
+
+<a id="cpu-attribution-next-plan--proposedawaiting-ratification"></a>
+
+## CPU attribution proposal — DEFERRED/UNSELECTED
+
+Superseded as a next direction by better search results. The original proposal
+below is retained as history; no capture/profile or other execution is selected,
+and this proposal is not a release or quality gate.
+
+Planning recorded October 29, 2026 (UTC), from local retained evidence and scoped
+source reads only. **This is a proposal, not permission to execute.** The completed
+0.26.105 delivery below remains complete. No fresh host read, P3/RPC/SSH action,
+measurement, test, build, audit, review, implementation, commit or release ran
+while writing this plan. Unrelated dirty and intent-to-add work is preserved.
+
+1. **One owner first exhausts the retained evidence; decide whether a capture
+   adds a useful missing distinction.** Start from
+   `/home/reoiv/.local/state/gmax-delivery/20261029-0.26.105/completion.json`
+   (source `b7066b82d42a7929a9a3ea7a762e8bde0147177d`, records `e1a085e`, root
+   reconciliation `f63cc67`). The completion section below traces the actual
+   [profile results](assets/cpu-quota-release-20261029/profile-results.json),
+   [analysis](assets/cpu-quota-release-20261029/profile-analysis.json),
+   [guard receipt](assets/cpu-quota-release-20261029/profile-receipt.json),
+   [controller](assets/cpu-quota-release-20261029/profile-controller.py) and
+   [driver](assets/cpu-quota-release-20261029/profile-driver.py).
+   Full retained originals are in
+   `/home/reoiv/.local/state/gmax-profile/20261029T010000Z-0.26.105-production-search/`
+   (`results.json`, `partial-results.json`, `analysis.json`, `receipt.json`,
+   `controller.py`, `driver.py`, `profile.log`). Do not overwrite them.
+
+   Already established: 12 warmups/48 measurements completed in134.645s; default
+   p50/p95 1.984/2.725s, rerank 2.143/2.723s; 914/1010 measured cgroup periods
+   throttled. Inclusive mean daemon other-thread CPU was2.832/2.883s per request,
+   main-thread0.178/0.197s, workers1.088/1.130s. Pending files changed992→2354;
+   six status snapshots show indexing, and workers naturally increased1→2.
+   The two 2s foreground-free intervals used2.261/0.640 CPU-seconds and had
+   0/2 throttled periods respectively. These short, differently situated
+   intervals do not provide a matched background baseline. Zero swap growth,
+   no guard trip,972,632,064-byte sampled service-RSS growth and owned cleanup
+   are retained observations, not a fresh host admission.
+
+   Competing explanations can coexist: **quota contention** limits aggregate
+   service execution; **daemon non-main-thread work** may be foreground-linked
+   native/runtime work or background store work; **worker processes** may spend
+   CPU on search or natural indexing; **natural indexing/verification** may
+   explain CPU and queue variation independently of our searches. Kernel TIDs
+   identify execution threads, never a Lance/vector/FTS stage or causal
+   bottleneck. The prior `workerCpuMs` actually sums every non-daemon cgroup PID;
+   stable membership alone is not proof of worker role. No isolated query cost,
+   controlled version comparison or speedup is established.
+
+   Existing results lack per-request start/end timestamps/raw counter snapshots,
+   a daemon TID series, and contemporaneous per-project queue classifications.
+   Diagnostics `stages` are candidate counts, **not stage durations**. Rejoin what
+   is available locally first, keeping those absences explicit. If that supports
+   a defensible next proposal, skip live capture and proceed to steps5–6. A fresh
+   window is justified only if simultaneous CPU/throttling, work-state and
+   request timing would change the choice between foreground/native scheduling
+   and background admission work. Missing internal-stage timers alone do not
+   justify a window or block a useful conclusion.
+
+2. **Only if needed, prepare one state-only adaptation of the retained capture.**
+   After ratification, use one fresh private directory under
+   `/home/reoiv/.local/state/gmax-profile/<UTC>-026105-cpu-attribution/` for the
+   controller/driver copies, numeric JSONL, partial results, receipt and analysis.
+   Keep changes limited to the schedule and allowlisted observations below; no
+   product/source/test edits, installed instrumentation, dependency work or new
+   harness. Reuse direct Unix-socket `ping`/`status`/`search`, not CLI fallback,
+   autostart or an independent native store opener. Admission and identity reads
+   belong inside the one180s clock, starting at the first live read. Require the
+   recorded version, ready/open/active service, matching MainPID/cgroup ownership,
+   Small/CPU/384, stored worker override4, unchanged config/unit/source identity,
+   `cpu.max=200000 100000`, weight10/nice10 and no containment marker. A changed
+   identity is a blocker, not authority to restart or reconfigure anything.
+   This permits only existing normal Small CPU search; no model experiment,
+   installation, download, summarizer or large-model load.
+
+3. **Run at most ONE read-only180s window with three observational phases.**
+   Seconds0–30: admission plus natural service observation, no owned searches.
+   Seconds30–150: at most24 serial searches, no extra warmups. Reuse exactly the
+   six query strings/labels and platform project/path prefix in the retained
+   driver, limit10, default and explicit rerank. Use two rounds of that driver's
+   rotated query order and alternating mode order (12 requests per round).
+   Set diagnostics true for these diagnostic requests; retain only the counts,
+   numeric settings and gate/FTS booleans. This changes diagnostic collection,
+   not the corpus or ranking settings; latency is labeled accordingly. Do not
+   start a search at/after130s; each has a20s timeout bounded by150s. After the
+   cap is reached, simply observe. Seconds150–180: no owned searches, observe
+   natural work. A request error/refusal/timeout ends search issuance with no
+   retry; safety limits can end the entire window earlier. Search disconnect
+   does not prove native work ended; continue observation only while safe.
+   These phases compare activity within one unchanged service, not before/after
+   versions. No induced file edits/indexing, watcher pause/stop, cache clearing,
+   FTS catch-up, compaction/prune/rebuild/migration or worker/model/quota change.
+
+   Sampling and retained fields are fixed and bounded:
+
+   - Every1s (at most181 periodic plus48 search-boundary samples): monotonic and UTC
+     timestamps/read duration; service `cpu.stat` cumulative usage/user/system,
+     `nr_periods`, `nr_throttled`, `throttled_usec`; daemon and service-member
+     PID/start identity, self user/system ticks and RSS; daemon main TID and up
+     to256 daemon TIDs with start identity and self ticks. Resolve members only
+     from that cgroup (cap32 PIDs), never a host process inventory. Confirm worker
+     role by direct-parent identity plus exact `gmax-worker` comm/title; otherwise
+     label it other/unknown service CPU. Retain only role labels, numeric
+     identities/counters and missing/truncated flags; no raw comm/argv/env.
+     Retire/replacement identities cannot be joined as one process/thread.
+     If thread/PID caps are exceeded, mark coverage partial rather than expand.
+   - Every5s, at most37 `status` calls including a final slot before180s: timestamp
+     both request and response, timeout2s, one outstanding status request, no
+     catch-up burst. Retain target-project and all-project aggregate numeric
+     pending/live/catchup/cleanup/activeFiles counts, indexing/verifying/failure
+     counts, watcher mode/catchupRunning/lastReconciledAt and worker count.
+     Replace roots with run-local labels; no raw leases/paths/status payload.
+     `activeFiles` includes work waiting on the pool; `indexing` and pending
+     counts alone do not prove native execution. Existing `resources.operations`
+     and maintenance state may be retained only with their snapshot timestamp;
+     null/stale snapshots are not current active-work gauges. No fresh pool task
+     queue/in-flight method count is exposed by status; report that gap.
+   - At most2 `ping` calls (3s timeout) and24 searches: maximum63 RPCs total. Record search
+     start/end, phase/round/query label/mode, latency, result/warning counts,
+     response bytes/digest and response indexState allowlist. Discard query text,
+     content, vectors, candidate traces, result paths and ranking environment
+     immediately. Keep the existing2MiB response cap. Record absent stage wall/CPU
+     timings as unavailable; do not manufacture them from thread samples. No
+     perf/eBPF/stack attachment, policy change or debug-logging restart.
+
+4. **Enforce unchanged guards and owned cleanup; never restart the window.**
+   Reuse the receipt's limits:180s hard capture deadline,20s search timeout,
+   two allowed CPUs/nice10 for the owned client,2GiB aggregate owned RSS,
+   at least8GiB host MemAvailable, **zero used-swap growth** from the admission
+   baseline, at most1GiB service-RSS growth and daemon RSS at most2560MiB.
+   Guard checks stay every250ms, including admission/final samples. Keep the
+   controller lightweight and bound its own observation processes to the same
+   two-CPU/nice10 policy; preserve existing client environment limits without
+   applying them to production. Track only the controller and its known child
+   group using direct numeric `/proc` reads; replace the old all-host `ps -eo`
+   discovery, retain no process inventory. No new children beyond that owned
+   Python client/observer, no dependencies or external probes.
+
+   On any threshold, daemon PID/start change, containment marker, lost essential
+   guard visibility, user STOP or deadline: close owned sockets, retain partial
+   evidence and stop the client group. Reuse SIGTERM,0.5s grace then SIGKILL only
+   for the still-owned group, wait up to3s and verify its exit; never signal a
+   daemon/worker/service process. The180s observation deadline excludes only
+   this bounded cleanup (up to3.5s) and local record writing; it grants no further
+   searches or extended sampling. A final guard failure marks partial even if
+   requests finished. No raised cap, retry, replacement capture, diagnostic
+   campaign or service recovery. Finish independent analysis/docs from partial
+   evidence; missing ownership/credentials/input or required forbidden recovery
+   is a real blocker, not an invitation to expand scope.
+
+5. **Join once and select a concrete next proposal, with uncertainty.** Use
+   common5s bins and exact request overlaps; label bins with status-request
+   overlap/age and process/thread coverage. Compute CPU-seconds/elapsed seconds
+   (100%=one core), daemon main versus non-main, confirmed workers versus other,
+   cgroup residual and throttled-period fraction. Preserve user/system splits;
+   process totals already include threads, so never add them twice. Exiting or
+   newly seen workers/TIDs have unknown edge CPU, not zero; retain residuals and
+   tick quantization. `throttled_usec` is not per-query stall time and must not
+   be subtracted from latency. No synthetic idle subtraction or causal model.
+
+   If consecutive search-free bins show indexing activity with worker CPU and
+   throttling, prioritize a later **quota-aware background CPU admission/pacing**
+   proposal; current one-file admission does not bound native threads per file.
+   If non-main daemon CPU and throttling concentrate in search-overlap bins at
+   similar observed background state, prioritize **daemon native search thread
+   budgeting/serialization** investigation. A particular vector/FTS/Arrow stage
+   remains unproven. If worker CPU dominates search overlaps with little daemon
+   CPU, propose **foreground worker encode/rerank queue timing and scheduling**
+   as the next focus, keeping model/worker override unchanged until separately
+   selected. If daemon main-thread CPU dominates, propose a **bounded JS search
+   materialization/scoring** investigation using retained prior source evidence.
+   Throttling in both phases supports aggregate quota competition, not which
+   stage is slow. Low throttling with latency leaves queue/I/O/native waits
+   unresolved; propose minimal wall-time instrumentation only if needed to
+   choose a fix. None of these observations alone establishes causality.
+
+   If indexing never varies, all searches overlap active indexing, another
+   consumer is unobservable, identity coverage is partial or a guard stops the
+   run, report the confounding explicitly. Foreground-free means no *owned*
+   search, not an idle production service. Rank only supported candidates;
+   “no change justified; stage attribution unresolved” is a valid finite result.
+   Optional stage instrumentation would require later source changes/deployment
+   and separate selection; it is not a prerequisite/export-completeness gate.
+   No speedup/SLO claim without a controlled comparison, and no such comparison
+   is authorized here.
+
+6. **Close the whole selected scope without milestone approval questions.** One
+   owner, no further delegation, returns within45 minutes: local evidence
+   analysis, only-if-needed one bounded window, owned cleanup, joined analysis,
+   this plan/handoff update and one clear next CPU proposal (or explicit
+   inconclusive/no-change result). Retain numeric results/guard/cleanup receipts
+   in the new state directory and link them here; publish only privacy-safe
+   summaries if needed. Preserve completed0.26.105 receipts, completed
+   FTS9801→9802→9803/zero pending history and unrelated working/index bytes.
+   No commits/pushes are included. Ratification authorizes the entire six-step
+   observation/analysis/documentation scope once, including the minimal
+   state-only controller adaptation and required read-only P3 access; it
+   authorizes **ZERO test/typecheck/build/audit/review invocations**, no product
+   implementation/dependency upgrade, service/config/FTS/maintenance action,
+   release or new profiling permission beyond this single optional window.
+   Stop only for actual safety/ownership/credential/input blockers or user STOP;
+   otherwise complete analysis, docs and the next recommendation without another
+   checkpoint question. Ratification of measurement never starts the proposed
+   CPU implementation.
 
 ## CPU batch end-to-end completion — COMPLETE
 
@@ -2219,9 +3027,9 @@ ask again for an ordinary action inside this ratified boundary.
    unchanged, as in the prior handover. Capture current service/config/store
    identities and exact previous installation for rollback. Use an exclusively
    owned temporary autostart marker, graceful shutdown IPC and
-   `systemctl --user stop legacy-gmax.service`; wait for the predecessor's exit
+   `systemctl --user stop <prefix>-gmax.service`; wait for the predecessor's exit
    before the atomic package swap. Remove only that owned marker, then
-   `systemctl --user start legacy-gmax.service`. Confirm daemon **ping**, unit
+   `systemctl --user start <prefix>-gmax.service`. Confirm daemon **ping**, unit
    MainPID and ready/open/active state, not merely CLI `--version`. Preserve
    Small/CPU/384, stored workerThreads4, config/unit hashes, store/cache identities
    and `cpu.max=200000 100000`, weight10/nice10. Defaults/admission take effect
@@ -2404,7 +3212,7 @@ python3 docs/plans/assets/cpu-quota-five-cases-20261029/focused-test-controller.
 It launched exactly once:
 
 ```text
-/usr/local/bin/node --max-old-space-size=768 node_modules/vitest/vitest.mjs run --config <gmax-checkout>/docs/plans/assets/cpu-quota-five-cases-20261029/focused-vitest.config.mjs --reporter=json --outputFile=/home/reoiv/.local/state/gmax-cpu-quota-five-cases/20261029T003810Z/focused-tests-results.json
+/usr/local/bin/node --max-old-space-size=768 node_modules/vitest/vitest.mjs run --config <repo>/docs/plans/assets/cpu-quota-five-cases-20261029/focused-vitest.config.mjs --reporter=json --outputFile=/home/reoiv/.local/state/gmax-cpu-quota-five-cases/20261029T003810Z/focused-tests-results.json
 ```
 
 The fresh config includes only `tests/cpu-capacity.test.ts` and
@@ -2817,7 +3625,7 @@ code change or release was performed. See the [detailed handoff](../future-sessi
 ## 0.26.103 serving; production FTS catch-up complete — October 28, 2026 (UTC)
 
 The controlled handover is complete on ready/open daemon3608673 through existing
-`legacy-gmax.service`: unchanged two-CPU quota, CPU weight10, nice10, configuration
+`<prefix>-gmax.service`: unchanged two-CPU quota, CPU weight10, nice10, configuration
 and store/cache identities. All330 staged payloads and158 runtime dependency
 packages matched, and the seven changed hashes matched after swap. Exact0.26.102
 is retained for rollback. Staging took133.45 seconds at1,949,782,016 bytes peak
@@ -2915,7 +3723,7 @@ invocation is queued.
 ## 0.26.102 serving; FTS physical-row admission refusal — October 28, 2026 (UTC)
 
 The selected controlled installation/handover is complete. P3 serves0.26.102 on
-ready/active/open daemon PID2622469 through unchanged `legacy-gmax.service`:
+ready/active/open daemon PID2622469 through unchanged `<prefix>-gmax.service`:
 two-CPU quota, weight10, nice10, original config/unit hashes and store/cache
 directory identities. All330 staged archive payloads and158 runtime dependency
 versions matched; eleven changed/added payloads were checked again after swap.
@@ -3195,7 +4003,7 @@ reset or force-push. Publication itself did not install or restart anything.
 
 Branch `work/gmax-service-startup` at `999976c` implements the shared-launcher fix
 over released `fbdaea7`, without carrying unfinished main-checkout experiments.
-User-installed `gmax.service` / `legacy-gmax.service` own default-home startup;
+User-installed `gmax.service` / `<prefix>-gmax.service` own default-home startup;
 service failure is refused rather than falling back to a detached daemon or
 watcher. Read-only requests cannot start normal service. README documents scope.
 
@@ -6105,13 +6913,36 @@ parallel omnibus plan.
 
 - **2026-10-29T14:39:55Z** Status: in-session → active — Docs-only quiet-P3 recenter; source repairs afb8dda/4434ed5 complete but unexercised. WOL closure proposed next; remote embedding/Mac agents remain unstarted.
 - **2026-10-29T14:35:41Z** Started (active → in-session).
-
 - **2026-10-29T14:20:20Z** Status: in-session → active — Canonical guard process-metric repair source-complete; no runtime verification or WOL retry. Existing limits and failed historical receipts preserved.
 - **2026-10-29T14:17:30Z** Started (active → in-session).
-
 - **2026-10-29T13:07:41Z** Status: in-session → active — Remote background embedding plan prepared; no implementation or new runtime work selected.
 - **2026-10-29T13:03:50Z** Started (active → in-session).
-
+- **2026-10-29T12:25:18Z** Status: in-session → active — Owned-cgroup guard/policy and110P3/plugin handover complete; selected core8 config/direct list confirmed, active parent329/full28 pending normal supported MCP reconnect. No extra tests/compile/pack/publication or forced refresh.
+- **2026-10-29T12:09:03Z** Started (active → in-session).
+- **2026-10-29T11:58:26Z** Status: in-session → active — Read-only guard semantics diagnosis complete: global allocation proxy mismatches owned spill; first-trigger overwrite proven. Narrow job-cgroup/host-safety correction proposed only; no source/contract/runtime changes or retry.
+- **2026-10-29T11:56:39Z** Started (active → in-session).
+- **2026-10-29T11:33:14Z** Status: in-session → active — Bounded read-only P3 swap investigation complete; host metric valid, current holders/counters recorded, historical attribution unavailable. No deployment/guard retry or host changes.
+- **2026-10-29T11:32:03Z** Started (active → in-session).
+- **2026-10-29T10:57:34Z** Status: in-session → active — 110 published once with fresh passing pack guard; later P3 staging zero-swap guard failed160866304bytes. Live109/core unchanged, no automatic retry or republish.
+- **2026-10-29T10:43:38Z** Started (active → in-session).
+- **2026-10-29T10:40:37Z** Status: in-session → active — Approved MCP/cleanup delivery stopped on actual final zero-swap guard failure; compiler exit0 is not a passing guarded result. Candidate and receipts retained; no automatic retry/publication.
+- **2026-10-29T10:36:46Z** Started (active → in-session).
+- **2026-10-29T10:23:52Z** Status: in-session → active — Selected deterministic write-table cleanup complete locally; source/diff inspection only, no execution or release. Umbrella remains active.
+- **2026-10-29T10:20:38Z** Started (active → in-session).
+- **2026-10-29T08:54:45Z** Status: in-session → active — 109 whole selected batch published once with verification-only recovery; P3/hook refresh/direct MCP verification complete. Standard registration repaired; active provider still lacks Gmax pending session reload. No new work.
+- **2026-10-29T08:27:09Z** Started (active → in-session).
+- **2026-10-29T07:43:28Z** Status: in-session → active — Final local upgrade/discovery integrated, including Claude config-home fix. Final guarded production compile passed; earlier swap refusal retained. Zero tests/runtime/activation; no publication.
+- **2026-10-29T07:36:24Z** Started (active → in-session).
+- **2026-10-29T07:22:46Z** Status: in-session → active — Stable Lance upgrade complete locally: coherent SDK/native0.40 and Python13; one guarded production compile passed; no tests/native execution/publication.
+- **2026-10-29T07:17:23Z** Started (active → in-session).
+- **2026-10-29T06:40:55Z** Status: in-session → active — Corrected Platform three-case execution stopped by unchanged daemon-RSS watermark; clean owned exit, empty checkpoint/no complete rankings, attempted-search count unknown. No retry or budget reuse, fix/test/compile/release. Umbrella stays active; original Gmax records preserved.
+- **2026-10-29T06:36:59Z** Started (active → in-session).
+- **2026-10-29T06:27:31Z** Status: in-session → active — Three-case quality batch stopped before search: selected Gmax root unregistered on serving P3; only Platform registered. Three labels locked, zero search calls; evidence and owned cleanup retained. No patch/test/compile/release or indexing; umbrella remains active.
+- **2026-10-29T06:22:09Z** Started (active → in-session).
+- **2026-10-29T05:31:08Z** Status: in-session → active — Ratified save-coalescing batch shipped0.26.108/source2ebdb62:15 focused cases passed once, one guarded production compilation/package, one publication and normal P3 ready/open/active handover; final records/reconciliation complete in the same owner turn. No profile/new measurement; umbrella remains active.
+- **2026-10-29T05:12:23Z** Started (active → in-session).
+- **2026-10-29T04:09:47Z** Status: in-session → active — Selected soft inferred-definition fix complete locally, not released: source, one existing assertion and docs finished; sole guarded production compilation passed; zero tests/runtime relevance checks. Umbrella remains open; no saved prompt consumed.
+- **2026-10-29T04:07:17Z** Started (active → in-session).
 - **2026-10-24T03:08:52Z** Status: in-session → paused — User stopped added verification and assigned release to another session. Depot build lq0xk85hhp is canceled before tests; no active jobs at recorded observation. Gmax remote execution is prohibited without explicit approval; local-only rule and repo Depot CLI deny settings added. No release or checks queued here.
 - **2026-10-24T02:56:00Z** Started (active → in-session).
 - **2026-10-24T02:56:00Z** Status: paused → active.
