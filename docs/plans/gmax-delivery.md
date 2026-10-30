@@ -23,12 +23,22 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Prep-only native attempt failed EEXIST before dependency work; cleanup complete; source fix unexecuted; inference0."
-next_step: "Stopped after single preparation attempt. Retain partial cache/model input and native terminal cleanup proof; no automatic retry."
-summary: "Ratified Dell window: exact model inputs staged, preparation guard stopped, cleanup complete, no inference; selected source repairs committed locally."
+current_state: "Second prep completed dependency marker, then EPERM; local guard missing-VmRSS stop; cleanup complete; no runtime readiness or inference."
+next_step: "Two preparation attempts exhausted. Retain matching dependency cache, owned model inputs and latest cleanup proof; no automatic operation."
+summary: "Two preparation attempts consumed; dependency marker complete; runtime input EPERM and missing-VmRSS guard stop; cleanup complete, no inference."
 ---
 
 # Gmax Delivery Plan
+
+## Second preparation: dependency marker complete, runtime access blocked
+
+Exact second-attempt evidence (private record) records successful matching dependency
+resume/marker publication, then EPERM opening the staged input. The separate
+local guard first trigger was missing VmRSS; it stopped and drained safely.
+Owned task/reservation cleanup completed. Two preparation attempts are consumed;
+no third attempt, inference or activation ran. Input-ACL source correction is
+unexecuted; runtime/native-DLL/manifest/read-only readiness remains incomplete.
+
 
 ## Prep-only continuation: captured output collision, cleanup complete
 

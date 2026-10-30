@@ -1007,9 +1007,10 @@ excluded path stays indexable.
 
 ### Remote background embedding (local source; not activated)
 
-Latest prep-only result (private record): one native attempt returned an output-directory
-`EEXIST`; cleanup completed. The empty-output resume fix is source-only.
-Windows runtime/cache readiness remains incomplete; no inference ran.
+Latest second preparation result (private record): matching dependency installation
+completed, then runtime generation hit input-access EPERM and the local guard
+stopped on missing VmRSS. Cleanup completed; no third attempt or inference ran.
+Complete runtime/native-DLL/read-only readiness remains unproved.
 
 Local remains the default, including foreground query encoding. The optional
 background route sends changed chunks to a named trusted worker while P3 keeps
@@ -1021,7 +1022,8 @@ The source connects the prepared offline ONNX runtime, fixed worker task,
 Windows/Mac resource adapters and terminal custody. Historical fake validation
 passed 18 cases and the corrected-source typecheck passed; later source repairs
 remain unexecuted. Selected model inputs have been staged and hash-checked, but
-bounded Dell preparation stopped at its deadline. No real embedding batch ran,
+runtime preparation remains blocked by input access and a missing-metric guard stop.
+No real embedding batch ran,
 no complete prepared runtime/cache is qualified and no worker was activated.
 The Mac roster was not changed; existing MLX remains dense-only.
 

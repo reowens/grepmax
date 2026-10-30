@@ -4,10 +4,20 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-30
 audience: internal
-summary: "Ratified Dell window: exact model inputs staged, preparation guard stopped, cleanup complete, no inference; selected source repairs committed locally."
+summary: "Two preparation attempts consumed; dependency marker complete; runtime input EPERM and missing-VmRSS guard stop; cleanup complete, no inference."
 ---
 
 # Future Sessions
+
+## Second preparation: dependency marker complete, runtime access blocked
+
+Exact second-attempt evidence (private record) records successful matching dependency
+resume/marker publication, then EPERM opening the staged input. The separate
+local guard first trigger was missing VmRSS; it stopped and drained safely.
+Owned task/reservation cleanup completed. Two preparation attempts are consumed;
+no third attempt, inference or activation ran. Input-ACL source correction is
+unexecuted; runtime/native-DLL/manifest/read-only readiness remains incomplete.
+
 
 ## Prep-only continuation: captured output collision, cleanup complete
 
