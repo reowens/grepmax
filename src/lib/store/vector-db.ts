@@ -2349,6 +2349,36 @@ export class VectorDB {
     return paths.size;
   }
 
+  private async hasRowsForDelete(
+    table: lancedb.Table,
+    where: string,
+  ): Promise<boolean> {
+    // An empty result may need to visit every unindexed fragment in the shared
+    // table. A transient native timeout here must not fail a completed
+    // embedding batch. Retry only this read, after native execution has failed;
+    // never replay an insert/delete or race a still-running query in JS.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const existing = await table
+          .query()
+          .select(["id"])
+          .where(where)
+          .limit(1)
+          .toArray(QUERY_EXECUTION_OPTIONS);
+        return existing.length > 0;
+      } catch (err) {
+        if (
+          attempt !== 0 ||
+          !(err instanceof Error) ||
+          !/Query timeout after \d+ ms\b/.test(err.message)
+        ) {
+          throw err;
+        }
+        debug("vectordb", "Delete preflight native timeout; retrying once");
+      }
+    }
+  }
+
   async deletePaths(paths: string[]): Promise<void> {
     if (!paths.length) return;
     const unique = Array.from(new Set(paths));
@@ -2363,13 +2393,7 @@ export class VectorDB {
           const values = slice.map((p) => `'${escapeSqlString(p)}'`).join(",");
           const where = `path IN (${values})`;
           // Skip no-op deletes to avoid creating empty LanceDB versions
-          const existing = await table
-            .query()
-            .select(["id"])
-            .where(where)
-            .limit(1)
-            .toArray(QUERY_EXECUTION_OPTIONS);
-          if (existing.length > 0) {
+          if (await this.hasRowsForDelete(table, where)) {
             await table.delete(where);
             this.markWriteCommitted();
           }
@@ -2420,13 +2444,7 @@ export class VectorDB {
           const slice = unique.slice(i, i + batchSize);
           const values = slice.map((p) => `'${escapeSqlString(p)}'`).join(",");
           const where = `path IN (${values})${idExclusion}`;
-          const existing = await table
-            .query()
-            .select(["id"])
-            .where(where)
-            .limit(1)
-            .toArray(QUERY_EXECUTION_OPTIONS);
-          if (existing.length > 0) {
+          if (await this.hasRowsForDelete(table, where)) {
             await table.delete(where);
             this.markWriteCommitted();
           }
