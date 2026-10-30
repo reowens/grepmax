@@ -23,12 +23,39 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Selected WOL closure completed15:50:21UTC: NM magic64 applied and saved through versioned TO_DISK; PCI wake enabled, power-saver/24EPPpower/Ethernet/route preserved. Driver bit, backing-YAML bytes, firmware and physical wake remain unverified. Guard rev4 passed the 3 operational stages; Platform cap remains source-only. Product110 delivery completed."
-next_step: "Recenter with the user from completed WOL configuration/persistence and preserved quiet profile. Optional remote embedding/3 proposed spins and real compiler-cap qualification remain unselected; no further host action is queued."
-summary: "WOL applied and saved through authorized NM; PCI wake enabled and power-saver/Ethernet preserved. Driver/firmware/physical-wake limits retained; optional offload remains unstarted."
+current_state: "Remote embedding source integration is incomplete; real factory/entry/sender now present, final worker adapters and terminal/closure integration still in progress. No runtime work."
+next_step: "Continue SAME approved source batch from source-integration.md; no new tests/compile/models/remote actions/release or approval loop."
+summary: "Remote embedding source-only implementation in progress, not usable-host evidence. Exact continuation retained; quiet profile, WOL and110 preserved."
 ---
 
 # Gmax Delivery Plan
+
+## Remote embedding implementation incomplete; exact source continuation retained
+
+The user selected source/fixtures/docs, with ZERO tests/compilation/models/remote
+operations or activation. P3 source commits `5c8c082`, `3914eee`, `0719246`,
+`a9e72de`, `49a362e` integrate the shared protocol, offline factory, real fixed
+entry/sender, custody and pending background sync. Worker foundations `d266cb0` /
+`a3a6833`, Platform `6403358b1f` and MLX note `6dbbb3f` are in local records.
+Exact implemented boundaries and remaining source files (private record)
+are the handoff for the SAME already approved batch, not another permission gate.
+
+**Feature INCOMPLETE.** Initial unconditional false/exit75 gates were unfinished
+source we introduced, not proof of Mac/Windows failure. Entry/factory/sender now
+call the real interfaces, but final Platform packet/native resource/owned-stop
+adapters and contained dependency closure are still with the existing worker
+owner. Final packet/job-ID/terminal cleanup integration and source freeze-once
+must be completed before claiming usable remote offload. No compiler-only
+non-Linux rule or P3 Linux cgroup requirement is imposed on Mac/Windows.
+
+Default local and foreground queries/P3 store authority stay intact. Configured
+remote has no hot local fallback; uncertainty retains custody and queued work.
+All fixture source and native/source code remain uncompiled/unexecuted. No host
+readiness, artifact presence, numerical parity or noise benefit is claimed.
+Product110, power-saver and completed WOL configuration/persistence are unchanged.
+No release/push or pending-prompt consumption. The owner-window continuation
+requires no new user permission for the selected source work and resets no budget.
+
 
 ## Recenter: quiet P3, finish WOL closure before optional offload
 

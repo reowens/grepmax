@@ -15,7 +15,7 @@ function fixture() {
   const chunks = [{ id: "0", text: "formatted changed chunk" }];
   const request = validateRemoteEmbeddingRequest({ protocolVersion: 1, jobId: "job", daemonEpoch: "epoch", fileRevisionId: "hash", attemptId: "attempt", deadlineAt: Date.now()+180000, identity, chunks, inputDigest: embeddingInputDigest(chunks) });
   const reply = (r: RemoteEmbeddingRequest) => ({ ...r, chunks: undefined, vectors: [{ id: "0", dense: Array(384).fill(0), colbert: Buffer.from([127,129]).toString("base64"), scale: 1, pooled: [0,1], tokenIds: [42] }] });
-  function result(r: RemoteEmbeddingRequest) { const { chunks: _chunks, ...rest } = reply(r); return rest; }
+  function result(r: RemoteEmbeddingRequest) { const { chunks: _chunks, deadlineAt: _deadlineAt, ...rest } = reply(r); return rest; }
   const file = { vectors: [{ id: "chunk", vector: [], colbert: [], colbert_scale: 1 }], hash: "hash", mtimeMs: 1, size: 1, remoteChunks: [{ index: 0, text: chunks[0].text }] } as ProcessFileResult;
   return { root, config, request, result, file };
 }

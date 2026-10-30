@@ -1005,29 +1005,17 @@ changes. Rules with negations, escapes or advanced pattern syntax remain in the
 indexing policy only, preserving re-included files. Source JSON outside an
 excluded path stays indexable.
 
-### Remote background embedding (source implementation incomplete)
+### Remote background embedding (implementation in progress)
 
-Background embedding defaults to `local`; foreground query encoding remains
-local in both modes. The source supports an opt-in `backgroundEmbedding` global
-configuration with `mode: "remote"`, a named `worker`, an absolute pinned
-`runtimeCheckout`, full `runtimeCommit`, and prepared `identity` (generation,
-artifact/runtime digests and ColBERT width). This is not an activated backend:
-Mac and Windows fixed-task dispatch currently refuse because their embedding
-containment and production model adapters are missing. Selecting remote defers
-background updates without silently running inference on P3.
+Local remains the default; foreground query encoding stays local. Opt-in remote
+background source includes a bounded protocol, prepared offline ONNX factory,
+fixed worker entry and guarded sender. P3 keeps parsing/reuse, file validation
+and the only Lance/FTS writer. Unknown remote cleanup retains custody and never
+triggers a hot local-inference fallback.
 
-`gmax status --json` adds `daemon.backgroundEmbedding` when the serving daemon
-supports it. Deferred/error/unknown states preserve queued files. An uncertain
-job retains its private custody record; restarting a controller does not retry
-it. Do not delete that record to bypass unknown remote cleanup. Returning the
-configuration to `local` is explicit rollback, not an automatic outage fallback;
-allow the old owned attempt to settle/reconcile before retrying its file.
-
-P3 retains parsing, embedding reuse, file revalidation and the only Lance/FTS
-writer. Remote requests contain bounded formatted changed chunks, not store
-handles or foreign file paths. The matching ONNX executor/protocol and fake
-fixtures are source-only, uncompiled and unexecuted in this batch. Existing MLX
-is dense-only; a Mac MLX ColBERT backend has not been implemented or qualified.
-See the [implementation/blockers](docs/plans/gmax-remote-background-embedding.md)
-and [worker boundary](docs/remote-embedding-worker.md). No release, model load,
-worker activation or fan/noise benefit is claimed.
+This is not yet usable offload: final worker packet/resource/terminal adapters
+and prepared dependency-closure integration are still being completed. No test,
+compile, model load, host readiness or numeric parity has been established in
+this source-only batch. Existing MLX is dense-only. See the
+implementation and exact continuation (private record).
+No release, activation or fan/noise gain is claimed.

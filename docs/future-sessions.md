@@ -4,10 +4,37 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-29
 audience: internal
-summary: "WOL configuration/save-to-disk closure complete; PCI wake enabled, power-saver/Ethernet preserved. Driver/firmware/physical wake remain unverified; optional offload unstarted."
+summary: "Remote embedding source-only implementation in progress, not usable-host evidence. Exact continuation retained; quiet profile, WOL and110 preserved."
 ---
 
 # Future Sessions
+
+## Remote embedding implementation incomplete; exact source continuation retained
+
+The user selected source/fixtures/docs, with ZERO tests/compilation/models/remote
+operations or activation. P3 source commits `5c8c082`, `3914eee`, `0719246`,
+`a9e72de`, `49a362e` integrate the shared protocol, offline factory, real fixed
+entry/sender, custody and pending background sync. Worker foundations `d266cb0` /
+`a3a6833`, Platform `6403358b1f` and MLX note `6dbbb3f` are in local records.
+Exact implemented boundaries and remaining source files (private record)
+are the handoff for the SAME already approved batch, not another permission gate.
+
+**Feature INCOMPLETE.** Initial unconditional false/exit75 gates were unfinished
+source we introduced, not proof of Mac/Windows failure. Entry/factory/sender now
+call the real interfaces, but final Platform packet/native resource/owned-stop
+adapters and contained dependency closure are still with the existing worker
+owner. Final packet/job-ID/terminal cleanup integration and source freeze-once
+must be completed before claiming usable remote offload. No compiler-only
+non-Linux rule or P3 Linux cgroup requirement is imposed on Mac/Windows.
+
+Default local and foreground queries/P3 store authority stay intact. Configured
+remote has no hot local fallback; uncertainty retains custody and queued work.
+All fixture source and native/source code remain uncompiled/unexecuted. No host
+readiness, artifact presence, numerical parity or noise benefit is claimed.
+Product110, power-saver and completed WOL configuration/persistence are unchanged.
+No release/push or pending-prompt consumption. The owner-window continuation
+requires no new user permission for the selected source work and resets no budget.
+
 
 ## Recenter: quiet P3 preserved; WOL configuration closure complete
 

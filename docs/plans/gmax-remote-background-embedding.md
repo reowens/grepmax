@@ -1,8 +1,8 @@
 ---
 type: plan
-status: awaiting
+status: partial
 created: 2026-10-29T13:06:23Z
-updated: 2026-10-29
+updated: 2026-10-30T00:32:05Z
 surfaces:
 modules:
   - src/lib/workers/orchestrator.ts
@@ -13,12 +13,38 @@ audience: internal
 parent_plan: docs/plans/gmax-delivery.md
 related_plans:
 related_docs:
-current_state: "Prepared Windows-v1 background-embedding design; optional Mac/Windows and source-only MLX work proposed, not started. Runtime compatibility and model lifetime remain unqualified."
-next_step: "After the separately proposed WOL closure, select whether to start the remote-embedding source batch/3 proposed spins. No implementation, model load, worker activation or release is authorized now."
+current_state: "Partial source implementation INCOMPLETE; production factory/entry/sender implemented, worker resource/packet/terminal adapters and contained dependency closure still being completed within same approval."
+next_step: "Resume exact continuation in source-integration.md with current owners; no new execution budget or user checkpoint required."
 summary: Move background dense and ColBERT inference off P3 through a bounded named Gmax worker task, retaining P3 parsing, reuse, source fencing and the only store writer.
 ---
 
 # Remote background embedding
+
+## Remote embedding implementation incomplete; exact source continuation retained
+
+The user selected source/fixtures/docs, with ZERO tests/compilation/models/remote
+operations or activation. P3 source commits `5c8c082`, `3914eee`, `0719246`,
+`a9e72de`, `49a362e` integrate the shared protocol, offline factory, real fixed
+entry/sender, custody and pending background sync. Worker foundations `d266cb0` /
+`a3a6833`, Platform `6403358b1f` and MLX note `6dbbb3f` are in local records.
+Exact implemented boundaries and remaining source files (private record)
+are the handoff for the SAME already approved batch, not another permission gate.
+
+**Feature INCOMPLETE.** Initial unconditional false/exit75 gates were unfinished
+source we introduced, not proof of Mac/Windows failure. Entry/factory/sender now
+call the real interfaces, but final Platform packet/native resource/owned-stop
+adapters and contained dependency closure are still with the existing worker
+owner. Final packet/job-ID/terminal cleanup integration and source freeze-once
+must be completed before claiming usable remote offload. No compiler-only
+non-Linux rule or P3 Linux cgroup requirement is imposed on Mac/Windows.
+
+Default local and foreground queries/P3 store authority stay intact. Configured
+remote has no hot local fallback; uncertainty retains custody and queued work.
+All fixture source and native/source code remain uncompiled/unexecuted. No host
+readiness, artifact presence, numerical parity or noise benefit is claimed.
+Product110, power-saver and completed WOL configuration/persistence are unchanged.
+No release/push or pending-prompt consumption. The owner-window continuation
+requires no new user permission for the selected source work and resets no budget.
 
 ## Recenter: optional Mac/Windows work is proposed, not started
 
@@ -337,6 +363,10 @@ availability/version claim is added to AGENTS.md or CLAUDE.md.
 
 ## Version History
 
+- **2026-10-30T00:32:05Z** Status: blocked → partial — Implementation incomplete, not unavailable-host proof. Real factory/entry/sender committed; worker adapters/terminal/dependency integration continue under SAME approval; zero execution.
+- **2026-10-30T00:14:55Z** Status: in-session → blocked — Usable offload incomplete: native Mac/Windows embedding containment, production model/cache/offline factory, sender custody transport and pending-sync remote route are missing. Partial source committed, zero execution.
+- **2026-10-30T00:10:17Z** Started (active → in-session).
+- **2026-10-30T00:10:17Z** Status: awaiting → active — User selected source implementation only; no test/compile/model/remote activation budget.
 - **2026-10-29** Docs-only quiet-P3 recenter: WOL closure proposed first; Mac/Windows backend and source-only MLX work are proposed, not started. No model load, verification or release selected.
 
 - **2026-10-29T13:07:41Z** Status: in-session → awaiting — Planning complete; implementation, verification and worker activation are not started.
