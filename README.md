@@ -1009,11 +1009,11 @@ excluded path stays indexable.
 
 ### Remote background embedding (local source; not activated)
 
-Latest verification and bounded-job record (private record): the exact Windows cache
-passed full hash/access/native-file verification. One selected embedding request
-failed before model loading because the Windows ESM loader path needed a file URL;
-that command is corrected in source but unexercised after a sender deadline stop.
-Owned cleanup is confirmed; production remote offload remains inactive.
+Latest real worker result and cleanup (private record): one Windows request produced
+validated dense and ColBERT output with the matching prepared models. The normal
+client reported a task-wait timeout; the artifact was recovered and owned cleanup
+confirmed. Terminal/deadline corrections are source-only after that run.
+Production remote offload remains inactive.
 
 Local remains the default, including foreground query encoding. The optional
 background route sends changed chunks to a named trusted worker while P3 keeps

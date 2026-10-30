@@ -4,10 +4,31 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-30
 audience: internal
-summary: "Cache verified; one native request failed before model load; corrected loader unexercised, all owned cleanup complete."
+summary: "Real hybrid output validated; original client timeout retained, cleanup confirmed; post-run terminal corrections source-only."
 ---
 
 # Future Sessions
+
+## Real hybrid output validated; normal terminal handover incomplete
+
+Actual request, result, cleanup and source fixes (private record) record1 new Windows
+request,2 historical total. The corrected file-URL loader executed the matching
+Granite+ColBERT models and produced1 validated row: dense384, pooled48,25 tokens.
+The normal client still reported a task-wait timeout. Mandatory reconciliation
+recovered the hash-checked artifact and confirmed zero owned tasks/processes/
+reservations, removed the local lock and reconciled custody. The original client
+failure remains failed; no expired artifact was accepted into live state.
+
+Prepared e025/DC7/deps7d2/models were reused, with no install/transfer/full-cache
+verification repeat. The P3 sender guard passed163.598s, zero owned swap/OOM.
+The old wait-timeout branch discarded the outer native resource receipt; its
+flags/peaks cannot be inferred from project exit0. Normal bounded handover is
+still unproved. Source fixes now preserve timeout evidence and separate native
+execution cutoff from terminal receipt/collection within the original180s; they
+were not rerun. No new tests/Gmax compile, second new request, release, continuous
+activation, Mac/MLX or host power/WOL/service/client changes occurred. Earlier
+sections retain dated history; model/cache preparation is complete and verified.
+
 
 ## Windows cache verified; one request failed before model loading
 
