@@ -51,10 +51,13 @@ export type ProcessFileInput = {
   projectRoot: string;
   /** `embeddingReuseKey`s of chunks the caller already holds embeddings for. */
   reusableKeys?: string[];
+  /** Background caller requests parse/reuse preparation without local inference. */
+  remoteEmbedding?: boolean;
 };
 
 export type ProcessFileResult = {
   vectors: VectorRecord[];
+  remoteChunks?: { index: number; text: string }[];
   hash: string;
   mtimeMs: number;
   size: number;
@@ -332,7 +335,9 @@ export class WorkerOrchestrator {
     }
 
     onProgress?.();
-    await this.ensureReady();
+    if (input.remoteEmbedding) {
+      await Promise.all([this.chunker.init(), this.skeletonizer.init()]);
+    } else await this.ensureReady();
     onProgress?.();
 
     const content = buffer.toString("utf-8");
@@ -390,7 +395,7 @@ export class WorkerOrchestrator {
     });
 
     const embedStart = performance.now();
-    const embedded = await this.computeHybrid(
+    const embedded: HybridResult[] = input.remoteEmbedding ? [] : await this.computeHybrid(
       toEmbed.map((idx) => preparedChunks[idx].content),
       onProgress,
       this.generation.tier === "gemma2"
@@ -433,9 +438,8 @@ export class WorkerOrchestrator {
       "orch",
       `processFile done: ${input.path} ${vectors.length} vectors ${(performance.now() - fileStart).toFixed(0)}ms`,
     );
-    return reused.length
-      ? { vectors, hash, mtimeMs, size, reused }
-      : { vectors, hash, mtimeMs, size };
+    return { vectors, hash, mtimeMs, size, ...(reused.length ? { reused } : {}),
+      ...(input.remoteEmbedding ? { remoteChunks: toEmbed.map(index => ({ index, text: preparedChunks[index].content })) } : {}) };
   }
 
   isExistingQueryReady(): boolean {

@@ -67,6 +67,7 @@ export interface StatusView {
     workerThreads: number | null;
     workerThreadsSetting?: WorkerThreadsSetting | null;
     cpuConfiguration?: WorkerPoolCpuConfiguration | null;
+    backgroundEmbedding?: unknown;
     embeddingConfiguration?: DaemonEmbeddingConfiguration | null;
     service?: { mode: "active" | "paused"; reason?: string };
     resources?: ResourceSnapshot | null;
@@ -150,6 +151,7 @@ async function loadStatusView(projects: ProjectEntry[]): Promise<StatusView> {
         cpuConfiguration:
           (resp.cpuConfiguration as WorkerPoolCpuConfiguration | undefined) ??
           null,
+        backgroundEmbedding: resp.backgroundEmbedding,
         embeddingConfiguration: readDaemonEmbeddingConfiguration(
           resp.embeddingConfiguration,
         ),
@@ -380,6 +382,7 @@ export interface StatusJson {
     workerThreads: number | null;
     workerThreadsSetting?: WorkerThreadsSetting | null;
     cpuConfiguration?: WorkerPoolCpuConfiguration | null;
+    backgroundEmbedding?: unknown;
     embeddingConfiguration?: DaemonEmbeddingConfiguration | null;
     service?: { mode: "active" | "paused"; reason?: string };
     resources?: ResourceSnapshot | null;
@@ -445,6 +448,7 @@ export function buildStatusJson(input: {
       workerThreads: d?.workerThreads ?? null,
       workerThreadsSetting: d?.workerThreadsSetting ?? null,
       cpuConfiguration: d?.cpuConfiguration ?? null,
+      ...(d?.backgroundEmbedding !== undefined ? { backgroundEmbedding: d.backgroundEmbedding } : {}),
       embeddingConfiguration: d?.embeddingConfiguration ?? null,
       ...(d?.service ? { service: d.service } : {}),
       ...(d?.resources !== undefined ? { resources: d.resources } : {}),

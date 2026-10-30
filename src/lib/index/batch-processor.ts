@@ -1,3 +1,4 @@
+import { backgroundEmbeddingClient, readBackgroundEmbeddingConfig } from "../workers/remote-embedding/client";
 import * as path from "node:path";
 import { CONFIG } from "../../config";
 import type {
@@ -15,7 +16,7 @@ import {
   readFileSnapshot,
 } from "../utils/file-utils";
 import { debug, log } from "../utils/logger";
-import { isEmbeddingBackendUnavailable } from "../workers/embedding-error";
+import { EmbeddingBackendUnavailableError, isEmbeddingBackendUnavailable } from "../workers/embedding-error";
 import type { ProcessFileResult } from "../workers/orchestrator";
 import { getWorkerPool, type WorkerPool } from "../workers/pool";
 import {
@@ -381,6 +382,16 @@ export class ProjectBatchProcessor {
   }
 
   private schedulePendingBatch(defaultDelayMs = DEBOUNCE_MS): void {
+    try {
+      const route = readBackgroundEmbeddingConfig();
+      if (route.mode === "remote" && route.identity?.generation.fingerprint !== this.workerPool.generation.fingerprint) throw new Error("Remote generation differs from P3");
+      backgroundEmbeddingClient.requireAvailable(route);
+    }
+    catch {
+      if (this.debounceTimer) clearTimeout(this.debounceTimer);
+      this.debounceTimer = null; this.debounceDueMs = 0;
+      return; // Keep pending events; never spin or silently run document models locally.
+    }
     if (this.closed || this.paused) return;
     const now = Date.now();
     if (defaultDelayMs > 0)
@@ -649,17 +660,22 @@ export class ProjectBatchProcessor {
             !forceReprocess && cached?.hasVectors !== false && cached?.hash
               ? await this.loadReusableEmbeddings(absPath)
               : undefined;
-          const result = await pool.processFile(
+          const route = readBackgroundEmbeddingConfig();
+          if (route.mode === "remote" && route.identity?.generation.fingerprint !== pool.generation.fingerprint) throw new EmbeddingBackendUnavailableError("Remote generation differs from P3");
+          backgroundEmbeddingClient.requireAvailable(route);
+          let result = await pool.processFile(
             {
               path: absPath,
               absolutePath: absPath,
               projectRoot: this.projectRoot,
+              remoteEmbedding: route.mode === "remote",
               ...(reusable?.size
                 ? { reusableKeys: Array.from(reusable.keys()) }
                 : {}),
             },
             batchAc.signal,
           );
+          result = await backgroundEmbeddingClient.complete(result, route, batchAc.signal);
           applyReusedEmbeddings(result, reusable);
 
           // Policy and filesystem state can change while embedding is in

@@ -1,3 +1,4 @@
+import { backgroundEmbeddingStatus } from "../workers/remote-embedding/client";
 import * as fs from "node:fs";
 import type * as net from "node:net";
 import * as path from "node:path";
@@ -181,6 +182,7 @@ export async function handleCommand(
 
       case "status":
         return {
+          backgroundEmbedding: backgroundEmbeddingStatus(),
           ok: true,
           pid: process.pid,
           uptime: daemon.uptime(),

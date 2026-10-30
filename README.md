@@ -1004,3 +1004,30 @@ positive rules update both daemon and standalone subscriptions when the policy
 changes. Rules with negations, escapes or advanced pattern syntax remain in the
 indexing policy only, preserving re-included files. Source JSON outside an
 excluded path stays indexable.
+
+### Remote background embedding (source implementation incomplete)
+
+Background embedding defaults to `local`; foreground query encoding remains
+local in both modes. The source supports an opt-in `backgroundEmbedding` global
+configuration with `mode: "remote"`, a named `worker`, an absolute pinned
+`runtimeCheckout`, full `runtimeCommit`, and prepared `identity` (generation,
+artifact/runtime digests and ColBERT width). This is not an activated backend:
+Mac and Windows fixed-task dispatch currently refuse because their embedding
+containment and production model adapters are missing. Selecting remote defers
+background updates without silently running inference on P3.
+
+`gmax status --json` adds `daemon.backgroundEmbedding` when the serving daemon
+supports it. Deferred/error/unknown states preserve queued files. An uncertain
+job retains its private custody record; restarting a controller does not retry
+it. Do not delete that record to bypass unknown remote cleanup. Returning the
+configuration to `local` is explicit rollback, not an automatic outage fallback;
+allow the old owned attempt to settle/reconcile before retrying its file.
+
+P3 retains parsing, embedding reuse, file revalidation and the only Lance/FTS
+writer. Remote requests contain bounded formatted changed chunks, not store
+handles or foreign file paths. The matching ONNX executor/protocol and fake
+fixtures are source-only, uncompiled and unexecuted in this batch. Existing MLX
+is dense-only; a Mac MLX ColBERT backend has not been implemented or qualified.
+See the [implementation/blockers](docs/plans/gmax-remote-background-embedding.md)
+and [worker boundary](docs/remote-embedding-worker.md). No release, model load,
+worker activation or fan/noise benefit is claimed.

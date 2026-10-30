@@ -1,3 +1,4 @@
+import type { BackgroundEmbeddingConfig } from "../workers/remote-embedding/client";
 /**
  * Index configuration — tracks which models built the current index.
  * Prevents searching with incompatible vectors after a model swap.
@@ -30,6 +31,7 @@ export interface IndexConfig {
 }
 
 export interface GlobalConfig {
+  backgroundEmbedding?: BackgroundEmbeddingConfig;
   modelTier: string;
   vectorDim: number;
   embedMode: "cpu" | "gpu";
