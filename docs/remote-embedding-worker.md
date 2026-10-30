@@ -1,9 +1,10 @@
 # Private embedding worker boundary
 
 The selected source implementation is integrated locally. One focused fake-only
-invocation passed18 cases. The single typecheck found3 diagnostics at2 locations,
-corrected in `153d6f9` without rerunning tests or compilation. Final compilation
-is unconfirmed; no actual Mac/Windows worker was activated.
+invocation passed18 cases. The initial typecheck found3 diagnostics at2 locations,
+corrected in `153d6f9`; a later expressly selected compile passed. Dell metadata
+then hit an owned-descendant cleanup stop before staging/inference. The subsequent
+SSH source correction below is unexercised; no worker was activated.
 Validation evidence (private record)
 distinguishes fake coverage from runtime compatibility.
 The source completion record (private record)
@@ -38,3 +39,13 @@ Prepared assets/ACLs, route admission and actual native/token/numeric compatibil
 remain runtime/operator prerequisites, not observed failures or missing stub code.
 Models cold-load per one-shot job and are reused within that job; no permanent
 model service was added. No fan, memory or speed improvement is claimed.
+
+## Operation-local SSH source correction
+
+Platform `6c64097eaf` clones Gmax workers through operationSshWorker and passes
+nonmultiplexed options across policy/status/reservations/task stop/fetch/cleanup.
+Shared defaults stay unchanged. Gmax `fd81c10` requires GMAX_SSH_LIFETIME from
+the fixed bridge and adds canonical `scripts/remote-embedding-metadata.mjs` for
+future authorized guarded reads, using the same options on policy and metadata.
+No test/compile/runtime/guard invocation followed this correction. Historical
+failure remains immutable; the retained member was not identified as an SSH PID.

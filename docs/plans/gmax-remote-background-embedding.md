@@ -13,12 +13,46 @@ audience: internal
 parent_plan: docs/plans/gmax-delivery.md
 related_plans:
 related_docs:
-current_state: "Corrected-source compile passed once. Dell metadata returned existing cache/no embedding manifest, then local owned-descendant cleanup guard stopped. Assets unstaged; real inference attempts0."
-next_step: "Retain stop: resolve owned SSH lifetime from existing evidence; fresh guarded preparation requires selection after failure. No automatic retry/model/remote batch/release."
-summary: "Corrected source compiles; Dell preparation safely stopped at local retained-descendant guard, cleanup complete; inference NOT RUN."
+current_state: "Owned SSH source correction locally complete (Platform6c64097eaf/Gmaxfd81c10), unexercised. Previous compile passed; Dell metadata guard stop remains historical; assets0/inference0."
+next_step: "No automatic retry. Operation-owned transport source is ready for later selected guarded preparation; no tests/compile/models/remote operations selected by this source fix."
+summary: "Operation-local nonmultiplexed SSH wired for metadata/policy/preparation/fixed tasks; shared Platform defaults unchanged; source-only unexercised correction."
 ---
 
 # Remote background embedding
+
+## Operation-owned SSH correction completed locally, unexercised
+
+The selected source-only repair is committed in Platform `6c64097eaf` and Gmax
+`fd81c10`. Platform `operationSshWorker` clones the selected identity with an
+operation lifetime marker. Central `sshOpts` places `ControlMaster=no`,
+`ControlPersist=no`, `ControlPath=none` **before** worker extras/shared defaults;
+`transportSshOpts` preserves the original raw defaults for unmarked Platform
+callers. No roster, shared option array, process environment or SSH config is
+mutated. Authentication, host keys, network admission and deadlines are retained.
+
+Every fixed Gmax task, including preparation, receives cloned identities in
+`dispatchGmaxJob`. Policy, probe/status, reservations, staging, task polling/stop,
+artifact streams, terminal publication, git/rsync and cleanup use the selected
+options. The sender checks the bridge's `GMAX_SSH_LIFETIME` contract before any
+submission. Canonical `scripts/remote-embedding-metadata.mjs --worker dell-win`
+uses the same clone for **both** policy reads and metadata; future expressly
+selected guarded preparation uses this entry instead of the immutable private
+failed script. A sender-only change would not have covered that earlier path.
+
+Source/diff/control-flow and whitespace inspection only. Fake fixture source
+asserts precedence, unchanged defaults and unclobbered roster objects, but no
+fixture, syntax check, compiler, guard, SSH or model invocation ran. The retained
+passing compile predates this SSH correction; no new passing runtime claim is
+made. The historical failed guard remains failed and its retained PID cause
+unproven; it drained the cohort **after failure**, not at normal exit. Guard
+limits, first-trigger records, PID/cgroup fencing and empty-cohort requirement
+are unchanged. No shared master/socket was killed/removed by this repair.
+
+Dell assets staged0 and inference jobs0 remain. No automatic new preparation
+window, retry, test, compile, release or activation is started. P3 power-saver/WOL,
+public110, unrelated dependencies/query work and all other index entries are
+preserved. Exact repair receipt (private record) records scope and local commits.
+
 
 ## Dell preparation stopped safely; corrected compilation passed
 

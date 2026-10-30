@@ -1022,3 +1022,8 @@ read-only worker cache permissions and admitted routes must be supplied before
 use; the Mac roster was not changed. Existing MLX remains dense-only. See the
 setup, bounds and source completion record (private record).
 No remote compatibility or fan/noise improvement is claimed.
+
+Gmax worker operations use nonmultiplexed, operation-owned SSH connections;
+ordinary Platform connection sharing is unchanged. Future authorized preparation
+metadata uses `scripts/remote-embedding-metadata.mjs --worker dell-win` inside the
+owned guard. This transport correction is source-only and has not been retried.
