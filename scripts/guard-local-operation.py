@@ -30,7 +30,8 @@ class ProcessMetricError(RuntimeError):
         super().__init__(f'process {pid} {field}: {reason}')
 
 
-def status(pid, expected_cgroup=None, still_member=None):
+def status(pid, expected_cgroup=None, still_member=None, verify_recovery=None,
+           record_recovery=None):
     """Return strict live metrics, or None for a confirmed departed task."""
     proc_fd = None
     field = 'process directory'
@@ -54,41 +55,86 @@ def status(pid, expected_cgroup=None, still_member=None):
             state, threads, start = values[0], int(values[17]), int(values[19])
             if len(state) != 1 or threads < 0 or start < 0:
                 raise ValueError('invalid process stat fields')
+            context['statFlags'] = int(values[6])
             return state, threads, start
 
-        field = 'stat'
-        before = identity()
-        context['beforeIdentity'] = {'state': before[0], 'threads': before[1], 'starttime': before[2]}
-        field = 'cgroup'
-        membership = read('cgroup').strip() if expected_cgroup is not None else None
-        context['observedCgroup'] = membership
-        field = 'status'
-        data = dict(line.split(':', 1) for line in read('status').splitlines() if ':' in line)
-        context['statusState'] = data.get('State', '').strip()
-        field = 'stat'
-        after = identity()
-        context['afterIdentity'] = {'state': after[0], 'threads': after[1], 'starttime': after[2]}
-        if before[2] != after[2]:
-            raise ProcessMetricError(pid, 'starttime', 'process identity changed during read')
-        if after[0] in ('Z', 'X', 'x'):
-            if after[1] > 1:
-                raise ProcessMetricError(pid, 'VmRSS', 'departed leader still has live thread-group members')
-            return None
-        if expected_cgroup is not None:
+        def verify_bounded_recovery():
+            try:
+                verify_recovery()
+            except (OSError, RuntimeError, ValueError, KeyError) as error:
+                raise ProcessMetricError(pid, 'recovery containment', str(error)) from error
+            if time.monotonic()-recovery_started > .05:
+                raise ProcessMetricError(pid, 'recovery containment', 'same-sample re-read exceeded 50ms')
+
+        original_start = None
+        recovery_started = None
+        context['observations'] = []
+        for attempt in range(2):
+            observation = {'attempt': attempt+1, 'monotonicNs': time.monotonic_ns()}
+            context['observations'].append(observation)
+            field = 'stat'
+            before = identity()
+            if original_start is None:
+                original_start = before[2]
+            context['beforeIdentity'] = observation['beforeIdentity'] = {
+                'state': before[0], 'threads': before[1], 'starttime': before[2]}
             field = 'cgroup'
-            if membership != '0::'+expected_cgroup or read('cgroup').strip() != membership:
-                raise ProcessMetricError(pid, field, 'live process membership differs from owned cgroup')
-        field = 'State'
-        state = data['State'].split()[0]
-        if len(state) != 1 or state in ('Z', 'X', 'x'):
-            raise ValueError('inconsistent live process state')
-        metrics = {}
-        for field in ('VmRSS', 'VmSwap'):
-            value, unit = data[field].split()
-            if unit != 'kB' or not value.isascii() or not value.isdecimal():
-                raise ValueError('expected nonnegative integer kB')
-            metrics[field] = int(value)*1024
-        return metrics
+            membership = read('cgroup').strip() if expected_cgroup is not None else None
+            context['observedCgroup'] = observation['observedCgroup'] = membership
+            field = 'status'
+            raw = read('status')
+            data = dict(line.split(':', 1) for line in raw.splitlines() if ':' in line)
+            context['statusState'] = observation['statusState'] = data.get('State', '').strip()
+            observation['statusBytes'] = len(raw.encode('utf-8'))
+            observation['statusUid'] = data.get('Uid', '').strip()
+            observation['memoryFieldsPresent'] = [key for key in ('VmRSS', 'VmSwap') if key in data]
+            field = 'stat'
+            after = identity()
+            context['afterIdentity'] = observation['afterIdentity'] = {
+                'state': after[0], 'threads': after[1], 'starttime': after[2]}
+            observation['statFlags'] = context['statFlags']
+            if before[2] != original_start or after[2] != original_start:
+                raise ProcessMetricError(pid, 'starttime', 'process identity changed during read')
+            if attempt:
+                field = 'recovery containment'
+                verify_bounded_recovery()
+            if after[0] in ('Z', 'X', 'x'):
+                if after[1] > 1:
+                    raise ProcessMetricError(pid, 'VmRSS', 'departed leader still has live thread-group members')
+                if attempt:
+                    record_recovery({'pid': pid, **context, 'resolution': 'confirmed single-thread departure'})
+                return None
+            if expected_cgroup is not None:
+                field = 'cgroup'
+                if membership != '0::'+expected_cgroup or read('cgroup').strip() != membership:
+                    raise ProcessMetricError(pid, field, 'live process membership differs from owned cgroup')
+            field = 'State'
+            state = data['State'].split()[0]
+            if len(state) != 1 or state in ('Z', 'X', 'x'):
+                raise ValueError('inconsistent live process state')
+            metrics = {}
+            missing = []
+            for field in ('VmRSS', 'VmSwap'):
+                if field not in data:
+                    missing.append(field)
+                    continue
+                value, unit = data[field].split()
+                if unit != 'kB' or not value.isascii() or not value.isdecimal():
+                    raise ValueError('expected nonnegative integer kB')
+                metrics[field] = int(value)*1024
+            if not missing:
+                if attempt:
+                    verify_bounded_recovery()
+                    record_recovery({'pid': pid, **context, 'resolution': 'fresh complete metrics'})
+                return metrics
+            field = missing[0]
+            if attempt or expected_cgroup is None or verify_recovery is None or record_recovery is None:
+                raise ProcessMetricError(pid, field, 'required live memory field absent')
+            # proc_pid_status obtains mm separately from task state. One fresh
+            # read may resolve publication/departure, never zero or stale RSS.
+            # Only the hard-capped owned cohort can use this bounded recovery.
+            recovery_started = time.monotonic()
+            verify_bounded_recovery()
     except ProcessMetricError as error:
         error.details.update(context)
         raise
@@ -97,6 +143,9 @@ def status(pid, expected_cgroup=None, still_member=None):
         # to be gone from the owned group, including when its ID is reused.
         if still_member is None or still_member():
             raise ProcessMetricError(pid, field, 'process unavailable; departure from owned scope unconfirmed')
+        if context.get('observations') and len(context['observations']) == 2:
+            verify_bounded_recovery()
+            record_recovery({'pid': pid, **context, 'resolution': 'confirmed absence from owned cohort'})
         return None
     except (OSError, UnicodeError, KeyError, ValueError, IndexError) as error:
         failure = ProcessMetricError(pid, field, f'{type(error).__name__}: {error}')
@@ -141,7 +190,7 @@ def main():
     identity = None
     initial = None
     last = None
-    result = {'revision': 4, 'operation': args.operation, 'host': socket.gethostname(),
+    result = {'revision': 5, 'operation': args.operation, 'host': socket.gethostname(),
               'kernel': os.uname().release, 'cgroup': relative,
               'limits': {'cpus': cpus, 'niceAtLeast': 10, 'maxOwnedRssBytes': 2*GIB,
                          'deadlineSeconds': 180, 'minAvailableBytes': 8*GIB,
@@ -196,8 +245,30 @@ def main():
             raise ProcessMetricError(os.getpid(), 'status', 'supervisor is not live')
         rss = own['VmRSS']
         nonlive = 0
+        def verify_recovery():
+            verify_identity()
+            if (args.memory_max_bytes is None or
+                    int((group/'memory.max').read_text()) != args.memory_max_bytes or
+                    (group/'memory.oom.group').read_text().strip() != '1' or
+                    (group/'memory.swap.max').read_text().strip() != '0'):
+                raise RuntimeError('same-sample metric recovery requires unchanged hard containment')
+            events = fields(group/'memory.events')
+            if (int(events['oom']) or int(events['oom_kill']) or
+                    any(int((group/name).read_text()) for name in
+                        ('memory.swap.current', 'memory.swap.peak', 'memory.zswap.current')) or
+                    time.monotonic()-started > 180):
+                raise RuntimeError('same-sample metric recovery safety stop')
+
+        def record_recovery(value):
+            result['processMetricRecoveryCount'] = result.get('processMetricRecoveryCount', 0)+1
+            retained = result.setdefault('processMetricRecoveries', [])
+            if len(retained) < 16:
+                retained.append(value)
+
         for pid in members:
-            process = status(pid, relative, lambda: pid in pids())
+            process = status(pid, relative, lambda: pid in pids(),
+                             verify_recovery if args.memory_max_bytes is not None else None,
+                             record_recovery)
             if process is None:
                 nonlive += 1
             else:
