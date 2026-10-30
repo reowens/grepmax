@@ -23,12 +23,26 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Three runs consumed: ACL and runtime creation passed; final verification timed out; cleanup complete, readiness unconfirmed."
-next_step: "Stopped after3-run budget and verification timeout. Retain generated manifest/dependencies/models; no automatic fourth run or inference."
-summary: "Three focused operational runs:2 pass,1 verification timeout; generated manifest retained, final readiness unconfirmed, cleanup complete."
+current_state: "STOPPED: verification did not pass; no inference"
+next_step: "Retain exact outcome and owned assets/custody. No automatic retry, release or production activation."
+summary: "STOPPED: verification did not pass; no inference; no new tests/compiler, activation or release."
 ---
 
 # Gmax Delivery Plan
+
+## Selected final verification and conditional hybrid job
+
+Exact outcome, identities and cleanup (private record): **STOPPED: verification did not pass; no inference**.
+Verification operations1/1; conditional embedding submissions0/1.
+The prepared ColBERT cache-root defect was corrected before live work; the
+actual raw-TS/manifest input repair and single-pass verifier retain all hashes,
+resource and custody limits. Historical18 fake cases/compile were reused.
+Remote runtime remains old25c/cdf1: the correction did not execute.
+The timeout was controller input handoff, before verifier/native compile.
+SCP payload correction is source-only/unexecuted.
+No automatic retry, activation, publication, Mac work or host changes follow.
+The earlier three-run section below is historical and was not rewritten.
+
 
 ## Three-run selection: runtime generated, final verification timed out
 

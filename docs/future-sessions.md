@@ -4,10 +4,24 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-30
 audience: internal
-summary: "Three focused operational runs:2 pass,1 verification timeout; generated manifest retained, final readiness unconfirmed, cleanup complete."
+summary: "STOPPED: verification did not pass; no inference; no new tests/compiler, activation or release."
 ---
 
 # Future Sessions
+
+## Selected final verification and conditional hybrid job
+
+Exact outcome, identities and cleanup (private record): **STOPPED: verification did not pass; no inference**.
+Verification operations1/1; conditional embedding submissions0/1.
+The prepared ColBERT cache-root defect was corrected before live work; the
+actual raw-TS/manifest input repair and single-pass verifier retain all hashes,
+resource and custody limits. Historical18 fake cases/compile were reused.
+Remote runtime remains old25c/cdf1: the correction did not execute.
+The timeout was controller input handoff, before verifier/native compile.
+SCP payload correction is source-only/unexecuted.
+No automatic retry, activation, publication, Mac work or host changes follow.
+The earlier three-run section below is historical and was not rewritten.
+
 
 ## Three-run selection: runtime generated, final verification timed out
 

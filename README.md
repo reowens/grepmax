@@ -1007,9 +1007,9 @@ excluded path stays indexable.
 
 ### Remote background embedding (local source; not activated)
 
-Latest three-run result (private record): input access and native runtime creation
-passed; final read-only/hash verification timed out. The generated manifest is
-retained, but complete readiness remains unconfirmed. No inference ran.
+Latest selected verification outcome (private record): stopped: verification did not pass; no inference.
+The explicit prepared ColBERT cache-root path is corrected locally; the remote
+cache still contains the old runtime. Production remote offload remains inactive; no numerical parity or noise improvement is claimed.
 
 Local remains the default, including foreground query encoding. The optional
 background route sends changed chunks to a named trusted worker while P3 keeps
@@ -1020,10 +1020,7 @@ retains job custody and prevents duplicate submission.
 The source connects the prepared offline ONNX runtime, fixed worker task,
 Windows/Mac resource adapters and terminal custody. Historical fake validation
 passed 18 cases and the corrected-source typecheck passed; later source repairs
-remain unexecuted. Selected model inputs have been staged and hash-checked, but
-runtime generation passed; final read-only/hash verification remains unconfirmed.
-No real embedding batch ran,
-no complete prepared runtime/cache is qualified and no worker was activated.
+have no new unit/compiler coverage. See the current selected outcome above.
 The Mac roster was not changed; existing MLX remains dense-only.
 
 Gmax worker operations use nonmultiplexed, operation-owned SSH; ordinary Platform
