@@ -1,3 +1,4 @@
+import { fixedWorkerTransport } from "./fixed-transport";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -36,27 +37,23 @@ export interface RemoteEmbeddingTransport {
   capability(config: BackgroundEmbeddingConfig): { available: boolean; reason: string };
   submit(request: RemoteEmbeddingRequest, config: BackgroundEmbeddingConfig, signal: AbortSignal): Promise<{ result: unknown; terminal: boolean; cleanupConfirmed: boolean }>;
 }
-const unavailableTransport: RemoteEmbeddingTransport = {
-  capability: () => ({ available: false, reason: "embedding_containment_unqualified: fixed worker task exists, but neither Mac nor Windows has a trusted embedding containment adapter; no remote execution or local fallback" }),
-  submit: async () => { throw new Error("embedding_containment_unqualified"); },
-};
 export class RemoteEmbeddingClient {
   private active = false;
   private blockedReason: string | null = null;
   private readonly epoch = randomUUID();
-  constructor(private readonly transport: RemoteEmbeddingTransport = unavailableTransport,
+  constructor(private readonly transport: RemoteEmbeddingTransport = fixedWorkerTransport,
               private readonly custodyPath = path.join(PATHS.globalRoot, "remote-embedding-job.json")) {}
   status(config: BackgroundEmbeddingConfig): { mode: string; state: string; active: boolean; worker?: string; reason?: string } {
     if (config.mode === "local") return { mode: "local", state: "local", active: this.active };
     if (fs.existsSync(this.custodyPath)) return { mode: "remote", worker: config.worker, state: this.active ? "busy" : "unknown", active: this.active, reason: this.active ? "Remote job owns reservation" : "Prior job requires terminal cleanup reconciliation; no resubmission" };
     if (this.blockedReason) return { mode: "remote", worker: config.worker, state: "deferred", active: this.active, reason: this.blockedReason };
     const capability = this.transport.capability(config);
-    return { mode: "remote", worker: config.worker, state: this.active ? "busy" : capability.available ? "available" : "deferred", active: this.active, reason: capability.reason };
+    return { mode: "remote", worker: config.worker, state: this.active ? "busy" : capability.available ? "configured" : "deferred", active: this.active, reason: capability.reason };
   }
   requireAvailable(config: BackgroundEmbeddingConfig) {
     if (config.mode === "local") return;
     const state = this.status(config);
-    if (state.state !== "available") throw new EmbeddingBackendUnavailableError(`Background embedding ${state.state}: ${state.reason ?? "busy"}`);
+    if (state.state !== "configured") throw new EmbeddingBackendUnavailableError(`Background embedding ${state.state}: ${state.reason ?? "busy"}`);
   }
   async complete(file: ProcessFileResult, config: BackgroundEmbeddingConfig, signal?: AbortSignal): Promise<ProcessFileResult> {
     if (!file.remoteChunks?.length) return file;
