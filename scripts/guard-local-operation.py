@@ -34,6 +34,7 @@ def status(pid, expected_cgroup=None, still_member=None):
     """Return strict live metrics, or None for a confirmed departed task."""
     proc_fd = None
     field = 'process directory'
+    context = {'expectedCgroup': expected_cgroup}
     try:
         # The directory descriptor keeps later reads on this task if the PID
         # exits and its numeric ID is reused before sampling finishes.
@@ -57,12 +58,16 @@ def status(pid, expected_cgroup=None, still_member=None):
 
         field = 'stat'
         before = identity()
+        context['beforeIdentity'] = {'state': before[0], 'threads': before[1], 'starttime': before[2]}
         field = 'cgroup'
         membership = read('cgroup').strip() if expected_cgroup is not None else None
+        context['observedCgroup'] = membership
         field = 'status'
         data = dict(line.split(':', 1) for line in read('status').splitlines() if ':' in line)
+        context['statusState'] = data.get('State', '').strip()
         field = 'stat'
         after = identity()
+        context['afterIdentity'] = {'state': after[0], 'threads': after[1], 'starttime': after[2]}
         if before[2] != after[2]:
             raise ProcessMetricError(pid, 'starttime', 'process identity changed during read')
         if after[0] in ('Z', 'X', 'x'):
@@ -84,6 +89,9 @@ def status(pid, expected_cgroup=None, still_member=None):
                 raise ValueError('expected nonnegative integer kB')
             metrics[field] = int(value)*1024
         return metrics
+    except ProcessMetricError as error:
+        error.details.update(context)
+        raise
     except (FileNotFoundError, ProcessLookupError):
         # Absence alone can also mean hidden proc visibility. Require the PID
         # to be gone from the owned group, including when its ID is reused.
@@ -91,7 +99,9 @@ def status(pid, expected_cgroup=None, still_member=None):
             raise ProcessMetricError(pid, field, 'process unavailable; departure from owned scope unconfirmed')
         return None
     except (OSError, UnicodeError, KeyError, ValueError, IndexError) as error:
-        raise ProcessMetricError(pid, field, f'{type(error).__name__}: {error}') from error
+        failure = ProcessMetricError(pid, field, f'{type(error).__name__}: {error}')
+        failure.details.update(context)
+        raise failure from error
     finally:
         if proc_fd is not None:
             os.close(proc_fd)

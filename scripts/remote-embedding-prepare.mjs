@@ -35,17 +35,19 @@ try {
   const bytes=Buffer.from(packet.sourceBase64,'base64');if(bytes.toString('base64')!==packet.sourceBase64)throw Error('Invalid source encoding');
   checkGmaxSource(bytes,request);
   const output=gmaxOutputRoot(request.jobId);
-  if(existsSync(join(platform,output,'result.json')))throw Error('Prior result exists; reconcile it instead of resubmitting');
+  // A native attempt has its own immutable output below the captured job root.
   const workers=readRoster().workers.map(operationSshWorker);
   const record={request,resumedCapturedPacket:true,previousCleanup:resolve(args[3]),state:'submitting'};
   writeFileSync(args[5],JSON.stringify(record,null,2),{flag:'wx',mode:0o600});
   let nativeIdentity;
+  const fetchPaths=[];
   const onNativeTaskIdentity = identity => {
     if (!/^[A-Za-z0-9_-]+_run$/.test(identity.taskId) || !/^[a-f0-9]{64}$/.test(identity.sourceSha256)) throw Error('Invalid native preparation identity');
     nativeIdentity=identity;
+    fetchPaths.splice(0,fetchPaths.length,...['result.json','stdout.log'].map(name=>`${output}/attempts/${identity.taskId}/${name}`));
     writeFileSync(args[5],JSON.stringify({...record,state:'native-submitting',nativeIdentity},null,2));
   };
-  const result=await runJob({lane:'typecheck',worker:'dell-win',command:gmaxBridgeCommand(request.jobId),deps:false,allowFallback:false,demandGb:2,put:[input],fetch:sourceOnly?[]:[`${output}/result.json`,`${output}/stdout.log`],timeoutS:170,operationDeadlineMs,onNativeTaskIdentity,sourceOnly,reuseSourceFiles:true,log:`${output}${sourceOnly?'.source-only':''}.resume.transport.log`},{root:platform,workers,identifySource:()=>gmaxOperationSourceIdentity(platform,input)});
+  const result=await runJob({lane:'typecheck',worker:'dell-win',command:gmaxBridgeCommand(request.jobId),deps:false,allowFallback:false,demandGb:2,put:[input],fetch:fetchPaths,timeoutS:170,operationDeadlineMs,onNativeTaskIdentity,sourceOnly,reuseSourceFiles:true,log:`${output}${sourceOnly?'.source-only':''}.resume.transport.log`},{root:platform,workers,identifySource:()=>gmaxOperationSourceIdentity(platform,input)});
   writeFileSync(args[5],JSON.stringify({...record,state:'settled',nativeIdentity,result},null,2));
   console.log(JSON.stringify(result));process.exitCode=result.exit??75;
 } catch(error){console.error(error.message);process.exitCode=75;}
