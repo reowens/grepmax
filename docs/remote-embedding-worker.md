@@ -1,7 +1,11 @@
 # Private embedding worker boundary
 
-The selected source implementation is integrated locally. It has not been
-compiled, tested or activated, and does not establish a usable Mac/Windows host.
+The selected source implementation is integrated locally. One focused fake-only
+invocation passed18 cases. The single typecheck found3 diagnostics at2 locations,
+corrected in `153d6f9` without rerunning tests or compilation. Final compilation
+is unconfirmed; no actual Mac/Windows worker was activated.
+Validation evidence (private record)
+distinguishes fake coverage from runtime compatibility.
 The source completion record (private record)
 contains commits, bounds, operator inputs and exact validation limits.
 

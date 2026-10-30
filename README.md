@@ -1014,8 +1014,9 @@ background work; there is no silent local-inference fallback. Uncertain cleanup
 retains job custody and prevents duplicate submission.
 
 The source now connects the prepared offline ONNX runtime, fixed worker task,
-Windows/Mac resource adapters and terminal receipts. It has not been tested,
-compiled or activated in this batch. Exact prepared models/runtime/dependencies,
+Windows/Mac resource adapters and terminal receipts. One focused fake-only run
+passed18 cases. One typecheck found2 code locations, corrected without a rerun;
+final source has no passing compile receipt. No worker was activated. Exact prepared models/runtime/dependencies,
 read-only worker cache permissions and admitted routes must be supplied before
 use; the Mac roster was not changed. Existing MLX remains dense-only. See the
 setup, bounds and source completion record (private record).

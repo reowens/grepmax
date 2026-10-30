@@ -13,14 +13,51 @@ audience: internal
 parent_plan: docs/plans/gmax-delivery.md
 related_plans:
 related_docs:
-current_state: "Remote background embedding source/fixtures/docs integrated locally; real Windows/Mac adapters and custody wired. No test/compile/runtime activation evidence."
-next_step: "Source batch complete. Await separately selected preparation/runtime qualification or release; no automatic operation, test or model authorization."
-summary: "Remote embedding source integration complete locally; untested/uncompiled and not activated. Prepared worker inputs/runtime compatibility remain unobserved;110 and quiet-P3 state preserved."
+current_state: "One fake-only invocation passed18 cases. Single production typecheck failed at2 selected locations; source corrected in153d6f9, unrerun. No activation."
+next_step: "Selected validation/correction batch complete; retain unrerun compile limit. No further test, model, remote or release action selected."
+summary: "Remote source integrated locally;18 fake cases passed once, typecheck diagnostics fixed without rerun; worker runtime/native parity unqualified."
 ---
 
 # Remote background embedding
 
+## Bounded fake validation complete; diagnostic fixes unrerun
+
+User selected exactly one fake-only Vitest invocation and one production typecheck.
+`node_modules/.bin/vitest run --config vitest.remote-embedding.config.mts` passed
+**18/18 cases,3 files,0 skipped**. Dedicated setup omits grammar-download global
+setup and blocks child-process/native-model APIs. Coverage is fake routing,
+protocol, custody, executor cancellation/settlement and dummy artifact/link bytes;
+real transport submission, OS adapters, models and stores were not exercised.
+
+The single `node_modules/.bin/tsc --noEmit --incremental false` exited1 with3
+diagnostics at2 selected locations. Commit `153d6f9` corrects remote sync's
+`classifyFile` status from `present` to `indexable` and replaces `Object.hasOwn`
+with target-compatible `Object.prototype.hasOwnProperty.call`. **Neither tests
+nor compilation were rerun after these corrections; final source has no passing
+compile receipt.** No unrelated compiler errors were reported. Installed
+Vitest5.0.5/TypeScript7.0.2 and the existing dirty dependency/query working tree
+were retained; this is not an isolated clean-release qualification.
+
+Both payloads ran serially in fresh canonical revision4 guard cohorts. Before
+each payload exec, an admission gate verified sole owned membership and kernel
+`memory.max=2147483648`, `memory.swap.max=0`, `memory.oom.group=1`. Existing
+2CPU/nice10/2GiB aggregate RSS/180s/min8GiB available and containment/OOM/cleanup
+controls stayed intact. Test peak owned RSS271,761,408B; compiler365,920,256B.
+Both had zero owned swap/OOM, no cleanup errors, empty cohorts and removed groups.
+Compiler guard preserves its command-failure first trigger; it was not a resource
+stop. No shared cgroup, service, global swap or host setting changed.
+
+Commands, immutable receipts, logs, source hashes and scope (private record) record the
+validated head `aba2703` and corrected-unrerun source `153d6f9`. No additional
+invocation, remote action, model load, release, activation or push is queued.
+Prepared assets/read-only cache permissions, actual daemon delegation, route
+admission and real token/numeric/native compatibility remain operator/runtime
+inputs. P3 power-saver/WOL and local-default routing are unchanged; no fan gain.
+
+
 ## Remote embedding source integration completed locally
+
+**Historical source-only closeout; subsequent validation and unrerun fixes are recorded above.**
 
 The selected source/fixture/documentation batch is locally implemented, including
 real fixed-task execution paths rather than permanent refusal stubs. Final Gmax

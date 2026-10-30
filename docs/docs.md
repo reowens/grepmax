@@ -6,7 +6,11 @@
 and [handoff](future-sessions.md#remote-embedding-source-integration-completed-locally)
 record locally completed remote background embedding source/fixtures/docs,
 including the real Windows/Mac fixed-task adapters and terminal custody.
-No tests, compilation, model loads, remote operations or activation ran.
+One fake-only invocation passed18 cases; the single production typecheck
+reported3 diagnostics at2 locations, corrected in `153d6f9` without a rerun.
+Validation receipts (private record)
+preserve the failed compile and successful cleanup. No model loads, remote
+operations or activation ran.
 Prepared assets/cache permissions, route admission and actual native/numeric
 compatibility remain unobserved. No fan/noise improvement is claimed.
 Completed110 delivery, power-saver and WOL configuration/persistence are unchanged.
