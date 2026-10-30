@@ -16,7 +16,8 @@ try {
   const root = resolve(config.runtimeCheckout);
   const platform = [resolve(root, '../platform'), resolve(root, '../../platform')].find(p => existsSync(join(p, 'scripts/gmax-worker.mjs')));
   if (!platform) throw new Error('Adjacent fixed Worker bridge absent');
-  const { dispatchGmaxJob } = await import(pathToFileURL(join(platform, 'scripts/gmax-worker.mjs')).href);
+  const { dispatchGmaxJob, GMAX_SSH_LIFETIME } = await import(pathToFileURL(join(platform, 'scripts/gmax-worker.mjs')).href);
+  if (GMAX_SSH_LIFETIME !== 'operation') throw new Error('Fixed Worker bridge lacks operation-owned SSH lifetime');
   const {captureGmaxSource, checkGmaxSource} = await import(pathToFileURL(join(platform,'scripts/lib/gmax-project.mjs')).href);
   const cache = join(process.env.GMAX_HOME || join(homedir(),'.gmax'),'remote-embedding-source');
   mkdirSync(cache,{recursive:true,mode:0o700});
