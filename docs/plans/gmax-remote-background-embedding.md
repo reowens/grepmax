@@ -13,33 +13,90 @@ audience: internal
 parent_plan: docs/plans/gmax-delivery.md
 related_plans:
 related_docs:
+  - docs/remote-embedding-worker.md
 current_state: "One real Windows dense+ColBERT artifact validated after task-wait timeout; prepared cache verified and custody cleanup complete; normal client handover unproved."
-next_step: "Retain the validated artifact and verified assets; terminal/deadline/evidence source fixes remain unexercised. No new request, activation or release starts from this closeout."
+next_step: "Stopped, no work queued. Saved continuation: one normal bounded client completion with verified assets and committed terminal fixes only when the user later selects it."
 summary: "Real hybrid output validated; original client timeout retained, cleanup confirmed; post-run terminal corrections source-only."
 ---
 
 # Remote background embedding
 
-## Real hybrid output validated; normal terminal handover incomplete
+## Remote embedding stopping point
 
-Actual request, result, cleanup and source fixes (private record) record1 new Windows
-request,2 historical total. The corrected file-URL loader executed the matching
-Granite+ColBERT models and produced1 validated row: dense384, pooled48,25 tokens.
-The normal client still reported a task-wait timeout. Mandatory reconciliation
-recovered the hash-checked artifact and confirmed zero owned tasks/processes/
-reservations, removed the local lock and reconciled custody. The original client
-failure remains failed; no expired artifact was accepted into live state.
+**Stopped on 2026-10-30. No owned offload work is running or automatically queued.** The goal
+remains one background dense+ColBERT offload path while P3 keeps foreground query
+encoding, parsing/reuse, revision validation and the authoritative Lance/FTS writer.
+The source is integrated locally, unreleased and not production-activated.
 
-Prepared e025/DC7/deps7d2/models were reused, with no install/transfer/full-cache
-verification repeat. The P3 sender guard passed163.598s, zero owned swap/OOM.
-The old wait-timeout branch discarded the outer native resource receipt; its
-flags/peaks cannot be inferred from project exit0. Normal bounded handover is
-still unproved. Source fixes now preserve timeout evidence and separate native
-execution cutoff from terminal receipt/collection within the original180s; they
-were not rerun. No new tests/Gmax compile, second new request, release, continuous
-activation, Mac/MLX or host power/WOL/service/client changes occurred. Earlier
-sections retain dated history; model/cache preparation is complete and verified.
+| Boundary | Retained result | Checked-in evidence |
+| --- | --- | --- |
+| Prepared Windows cache | Full hash, native PE, readonly/access and alias verification passed in 40.202s: 17,642 files, 1.2539 GB hashed, 37,046 ACL checks. e025 manifest/DC7 runtime/7d2 dependencies and models are reusable. | Preparation summary (private record) |
+| Matching-model execution | 2 historical requests: the first failed before model entry; the second loaded dense+ColBERT and produced 1 validated row (384 dense, 48 pooled, 25 tokens/1,200 packed bytes). | Actual model result and limits (private record), validated output summary (private record) |
+| Normal client handover |Still incomplete. The original client reported a task-wait timeout. Artifact recovery did not retroactively pass the request or accept expired output into live state. Native final resource flags/peaks were discarded by the old timeout branch and cannot be inferred from project exit0. | Original client outcome (private record), complete receipt (private record) |
+| Ownership and cleanup |Exact task Missing, owned processes/children/reservations 0, local sender lock removed and custody reconciled; all local groups removed. P3 sender guard passed 163.598s with zero owned swap/OOM. | Cleanup (private record), custody (private record), local guard (private record) |
 
+### Contracts and ownership references
+
+- [Gmax private worker boundary](../remote-embedding-worker.md) owns the fixed
+  request, offline cache, factory and P3/worker division of responsibility.
+- Source integration and commit map (private record)
+  connects the protocol, sender, executor, model cache roots and worker adapters.
+  [Local worker tasks](gmax-local-workers.md) covers developer build/test/package
+  tasks, not authorization for production embedding or a new inference budget.
+- [Linux operational guard procedure](../../CLAUDE.md#guarded-local-operational-commands)
+  and revision 5 source/evidence (private record)
+  cover the owned P3 controller. No actual recovery event was observed; the earlier
+  running-process missing-VmRSS cause remains unknown. Persistent/malformed/
+  permission/identity errors still fail closed.
+- In the separate **Platform repository**, `scripts/lib/gmax-embedding-worker.md`
+  (section `Gmax stopping point and evidence ownership`) links the fixed transport,
+  Windows/Mac native boundaries and its operating procedures. Platform
+  the host's worker-pool plan owns roster/admission; the host's memory-guard plan
+  owns compiler containment, whose non-Linux refusal is compiler-only;
+  the host's session plan owns the host and quiet-profile/WOL closure.
+  These are repository-qualified paths, not links assuming a shared checkout.
+
+### Exact remaining state
+
+The file-URL loader correction was exercised successfully. Source-only fixes
+Platform `bb58acef91`/`541ef86a5e` and Gmax `ca02405` retain timeout/native evidence;
+Platform `3c9b477355` separates the unchanged native cutoff, receipt tail and
+artifact tail inside the same 180s and shares artifact metadata/stream deadlines.
+Those post-run fixes have not been exercised. Recovered vectors alone do not
+establish normal completion or production activation/release readiness. The 18 historical fake passes and
+prior passed Gmax compile cover their recorded sources, not these later repairs.
+No new tests, Gmax compilation or syntax checks ran in the latest request batch.
+
+The Mac adapter exists but its route is not admitted. MLX remains dense-only,
+optional and deferred; it is not a qualified ColBERT replacement. Numerical/
+bitwise parity, sustained operation and fan/noise/performance benefit are not
+established by this one recovered result. SSH lifetime, ACL/private replacement,
+cache-root and loader repairs are retained history, not fresh preparation gates.
+Earlier possible shared-hardlink ACL effects remain unmeasured; no broad reset ran.
+
+Public/P3 Gmax 0.26.110 remains the delivered baseline, with health confirmed only
+at its [retained handover](assets/mcp-cleanup-release-20261029/isolated-guard/completion.md),
+not rechecked here. Power-saver and NetworkManager WOL persistence are complete;
+Ethernet/PCI wake state was retained, while driver/BIOS/physical wake acceptance
+is untested. The Platform host/guard notes own the separate compiler-OOM
+correlations; power-saver is not shown to have caused that interruption. This
+closeout changes no host, service, cache, client, index or production route.
+
+### Saved continuation, not queued
+
+Only when the user later selects it, one end-to-end owner uses the verified
+unchanged assets and committed terminal-handover fixes to demonstrate **one normal
+bounded client completion**, retaining its exact native result and cleanup.
+Count setup/capture, native execution, collection and cleanup within the existing
+180s; retain 2 CPUs, 2 GiB, 8 GiB floor, local fresh memory.max/swap0/oom.group1 and
+Windows owned Job Object protections. Changed identities require their applicable
+integrity/access checks. Do not restart full cache installs, the 18 passing tests,
+Gmax compilation, a broad profile or local reference inference by default.
+Ordinary in-scope fixes/records need no milestone approval loop once selected;
+a resource/deadline/metric/containment or cleanup failure still stops and drains.
+No release, continuous activation, Mac/MLX work, new agent or operational batch
+is selected or queued by this saved continuation. Pending saved prompts remain
+untouched. The sections below are retained dated history, not parallel work queues.
 
 ## Windows cache verified; one request failed before model loading
 
@@ -56,6 +113,9 @@ Earlier sections and failed receipts below are dated history, not current readin
 
 
 ### Proposed continuation after the deadline stop
+
+> Historical c6b83ef proposal, subsequently selected. Its actual outcome is in
+> [the current stopping point](#remote-embedding-stopping-point); it is not a queued batch.
 
 The goal is one working background dense+ColBERT offload path, with foreground
 query encoding and authoritative parsing/reuse/Lance/FTS writes staying on P3.
@@ -590,7 +650,7 @@ The endpoint is the existing roster identity and authenticated Windows Worker
 SSH/job-account path, not a new invented address or credential. The current
 roster and its pinned-host/authentication procedure remain authoritative.
 
-Evidence in the sibling Platform repository, all read-only in this assignment:
+Implementation boundary in the separate Platform repository:
 
 - `scripts/worker-pool.tsv:40` lists `dell-win` enabled for named tasks;
   [accepted Gmax Windows source/cache tasks](gmax-local-workers.md#short-windows-cache-and-selected-unit-acceptance)
@@ -607,11 +667,11 @@ Evidence in the sibling Platform repository, all read-only in this assignment:
   verification tasks, not embedding. Do not disguise inference as a test, use
   an administrator SSH escape, enable a held Mac, or reroute automatically.
 
-This picks a documented candidate and transport. Availability, installed exact
-model artifacts, host-key mapping and native Windows inference compatibility
-remain unverified. Resolve their actual values from existing roster/preparation
-metadata at a separately authorized activation, without changing the design or
-asking the user to invent an endpoint. No new server is required. A metadata-only
+The retained Windows verification and real hybrid output are recorded in the
+[current stopping point](#remote-embedding-stopping-point). They establish the
+selected prepared bytes/access and one matching-model execution, not fresh host
+availability, numerical parity or passing normal terminal handover. Do not reopen
+completed cache preparation or invent a new endpoint. No new server is required. A metadata-only
 `describe` operation reads the prepared runtime/model manifest and files without
 creating an ONNX session; it establishes configuration, not loaded readiness.
 
@@ -779,7 +839,8 @@ will disappear.
    `scripts/remote-embedding-submit.mjs` call the existing Platform bridge,
    cache a frozen committed source packet, persist outer identity before
    dispatch, map abort to owned cancellation and retain unknown custody.
-   The canonical revision4 Linux operational guard is reused unchanged.
+   The canonical revision5 Linux operational guard is used; its strict metric
+   semantics and observed coverage are linked from the current stopping point.
 5. **Worker packet, resources and terminal result:** Platform `49ccde8152`
    connects fixed packets, prepared bootstrap, hashed12MiB artifacts and
    Windows/Mac owned-job adapters. Windows affinity/priority are read back
@@ -788,31 +849,22 @@ will disappear.
 6. **Fake fixture sources and operator documentation:** routing, executor,
    artifact and Platform fixed-task fixtures were added/aligned as source only.
    README and the worker/source integration notes describe setup and rollback.
-7. **Local completion only:** selected source/diff/control-flow and whitespace
-   inspection, scoped commits, no test or compilation invocation. The earlier
-   proposed fake-test/compile commands were not selected by the source-only
-   approval and are not automatic acceptance gates or queued actions.
+7. **Source versus runtime completion:** initial source closeout used only
+   scoped source/diff inspection. Later explicitly selected fake/compile/cache/
+   real-worker evidence and post-run unexercised repairs are separated at the
+   current stopping point. No earlier proposed command is an automatic gate.
 
 ## Completion, permissions and remaining facts
 
-Source-batch completion means all 7 steps are implemented coherently, selected
-fixture source and the absence of test/type evidence are reported honestly, and the local commits contain
-all selected files. No fake tests or TypeScript compilation ran. Even those would not exercise
-Windows Job Object changes, remote ONNX sessions or resource enforcement;
-those remain explicitly unvalidated at source-batch closeout. It does not mean
-remote inference has run. Package release,
-P3 deployment, worker preparation/enrollment/configuration and real activation
-are later selected operations, not automatically queued by this plan. Any local
-model over 1 GiB requires the contract's explicit in-the-moment authorization;
-no planned fake test or metadata handshake grants that authorization.
-
-Before claiming live compatibility, a future expressly selected activation must
-establish exact target availability/auth mapping, prepared model/runtime hashes,
-actual resource containment, the matching immutable runtime checkout/commit,
-and same-generation token/numeric compatibility on bounded supplied inputs. This is a stated evidence gap, not a request to launch
-a new qualification campaign now or a source-batch test acceptance gate.
-Numerical tolerances must be selected from the actual same-artifact baseline;
-no tolerance or performance result is invented in this document.
+Source integration is complete; normal bounded client/terminal handover is not
+proved passing. The [stopping point](#remote-embedding-stopping-point) separates
+18 historical fake passes, the recorded passed compile, verified cache, one
+recovered real hybrid output and later source-only corrections. Artifact sanity
+checks do not establish cross-platform numerical parity or continuous readiness.
+No new test/compile/model campaign, deployment or activation follows from source
+completion. Large-model authorization remains governed by the existing contract;
+this document grants none. Keep model/cache identities and the selected native
+controls unchanged for any later expressly selected operation.
 
 Existing 0.26.110 deployment/isolated-guard completion remains complete, with its
 exact rollback in the [retained receipt](assets/mcp-cleanup-release-20261029/isolated-guard/completion.md).

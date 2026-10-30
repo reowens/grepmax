@@ -1,29 +1,18 @@
 # Docs
 
-## Current state: remote embedding source integrated, October 30, 2026
+## Current stopping point: remote embedding
 
-[Delivery](plans/gmax-delivery.md#remote-embedding-source-integration-completed-locally)
-and [handoff](future-sessions.md#remote-embedding-source-integration-completed-locally)
-record locally completed remote background embedding source/fixtures/docs,
-including the real Windows/Mac fixed-task adapters and terminal custody.
-One fake-only invocation passed18 cases; the single production typecheck
-reported3 diagnostics at2 locations, corrected in `153d6f9` without a rerun.
-Validation receipts (private record)
-preserve the failed compile and successful cleanup. No model loads, remote
-operations or activation ran.
-Prepared assets/cache permissions, route admission and actual native/numeric
-compatibility remain unobserved. No fan/noise improvement is claimed.
-Completed110 delivery, power-saver and WOL configuration/persistence are unchanged.
-
-## Remote background embedding source record
-
-The [owning plan](plans/gmax-remote-background-embedding.md) is awaiting separately
-selected runtime/preparation work; the source batch itself is finished. The
-implementation, commits and operator inputs (private record)
-and [worker boundary](remote-embedding-worker.md) distinguish implementation from
-activation. The MLX assessment (private record)
-is source-only; existing MLX remains dense-only. No release/push or new execution
-is queued, and saved prompts were not consumed.
+Start at [Delivery](plans/gmax-delivery.md#remote-embedding-stopping-point) and
+[the focused stopping point](plans/gmax-remote-background-embedding.md#remote-embedding-stopping-point).
+The [saved continuation](future-sessions.md#saved-continuation),
+[private worker contract](remote-embedding-worker.md) and
+source/commit integration map (private record)
+cross-reference the separate Platform boundary and native operating procedures.
+Verified Windows preparation and a real recovered dense+ColBERT result are
+complete; normal client/terminal handover is still unproved. See the
+actual validation/cleanup record (private record).
+No live work, new batch, release or activation is queued. Historical records and
+the generated document index below remain unchanged; saved prompts are untouched.
 
 ## Earlier delivery snapshot — October 29, 2026 (superseded)
 
@@ -54,7 +43,7 @@ Publication is closed; the original run must not be republished.
 
 0.26.99 is also installed on P3 under the existing `<prefix>-gmax.service`, with
 ready/active/open daemon identity and kernel resource limits verified. The
-platform host receipt (private record)
+Platform repository's `docs/plans/assets/p3-gmax-load-20261023/0.26.99-handover.json`
 owns that point-in-time acceptance; configuration and store identities are retained.
 
 Main merge `72e426e` integrates the release without rewriting history or losing

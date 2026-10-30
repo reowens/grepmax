@@ -9,26 +9,23 @@ summary: "Real hybrid output validated; original client timeout retained, cleanu
 
 # Future Sessions
 
-## Real hybrid output validated; normal terminal handover incomplete
+## Remote embedding stopping point
 
-Actual request, result, cleanup and source fixes (private record) record1 new Windows
-request,2 historical total. The corrected file-URL loader executed the matching
-Granite+ColBERT models and produced1 validated row: dense384, pooled48,25 tokens.
-The normal client still reported a task-wait timeout. Mandatory reconciliation
-recovered the hash-checked artifact and confirmed zero owned tasks/processes/
-reservations, removed the local lock and reconciled custody. The original client
-failure remains failed; no expired artifact was accepted into live state.
+**Stopped; no live work or automatic next batch.** The [owning stopping point](plans/gmax-remote-background-embedding.md#remote-embedding-stopping-point)
+connects source contracts, worker boundaries, native procedures, actual validation
+and the saved continuation. Windows preparation is verified and one real matching
+hybrid artifact is validated; normal client/terminal handover remains unproved.
+All owned cleanup is reconciled. Post-run terminal/deadline/evidence corrections
+are committed source-only. Release/activation/Mac/MLX remain unselected.
+The18 fake passes and prior compile retain their original source coverage.
 
-Prepared e025/DC7/deps7d2/models were reused, with no install/transfer/full-cache
-verification repeat. The P3 sender guard passed163.598s, zero owned swap/OOM.
-The old wait-timeout branch discarded the outer native resource receipt; its
-flags/peaks cannot be inferred from project exit0. Normal bounded handover is
-still unproved. Source fixes now preserve timeout evidence and separate native
-execution cutoff from terminal receipt/collection within the original180s; they
-were not rerun. No new tests/Gmax compile, second new request, release, continuous
-activation, Mac/MLX or host power/WOL/service/client changes occurred. Earlier
-sections retain dated history; model/cache preparation is complete and verified.
+### Saved continuation
 
+When the user later selects it, reuse verified unchanged e025/DC7/7d2 assets and
+committed terminal fixes for one normal bounded client completion, exact result
+and cleanup. Preserve the existing180s/resource limits; no default full install,
+passing-test/compiler rerun or new profile. No work is running or queued now.
+The owning stopping point contains the exact cross-references and limits.
 
 ## Windows cache verified; one request failed before model loading
 
@@ -43,13 +40,6 @@ retained, production offload remains inactive, and no numeric/fan claim is made.
 The18 fake passes/once-passing Gmax compile were reused; no new tests/compile ran.
 Earlier sections and failed receipts below are dated history, not current readiness.
 
-The goal remains one background dense+ColBERT offload path while P3 keeps
-foreground queries and store authority. Preparation is verified. The remaining
-work is actual use of the corrected Windows loader and setup/collection within
-the unchanged180s. The [finite proposed continuation](plans/gmax-remote-background-embedding.md#proposed-continuation-after-the-deadline-stop)
-uses retained assets, then one later-selected bounded request and complete
-cleanup/records. This docs-only recenter starts no operation, test/compile rerun,
-release or production activation. Power-saver/WOL stay complete and untouched.
 
 
 ## Replacement corrected; required process-metric safety stop

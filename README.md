@@ -1034,4 +1034,7 @@ no job swap and verified cleanup. Prepared models, Windows-native dependencies,
 read-only cache permissions and admitted routes must match the selected identity.
 A failed guard stops retries; an unused inference budget is not retry permission.
 See the source, setup and current evidence (private record).
-No numerical parity, fan/noise or performance improvement is claimed.
+Use the [stopping point and saved continuation](docs/plans/gmax-remote-background-embedding.md#remote-embedding-stopping-point)
+and [private worker boundary](docs/remote-embedding-worker.md) for the connected
+contracts, evidence and remaining handover proof. No live work or automatic next
+batch is queued. No numerical parity, fan/noise or performance improvement is claimed.
