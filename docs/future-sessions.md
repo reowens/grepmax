@@ -4,10 +4,24 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-30
 audience: internal
-summary: "Real process-metric safety stop; corrected runtime retained, atomic replacement unexercised, inference0."
+summary: "Cache verified; one native request failed before model load; corrected loader unexercised, all owned cleanup complete."
 ---
 
 # Future Sessions
+
+## Windows cache verified; one request failed before model loading
+
+Exact current outcome, fixes and cleanup (private record) records collector revision5
+(`628aa37`), corrected atomic rename (`f2b1c74c2e`) and full verification of17,642
+files in40.202s. Exactly1 embedding request/native bridge job ran, but Node rejected
+the Windows `--import` path before the prepared entry/model load. The sender
+separately hit its180s deadline. Mandatory native/task/reservation/process/local
+cleanup is confirmed; no second request ran. Loader file-URL correction
+`349c4604f6` is source-only/unexercised. Prepared dc7/e025 runtime/deps/models are
+retained, production offload remains inactive, and no numeric/fan claim is made.
+The18 fake passes/once-passing Gmax compile were reused; no new tests/compile ran.
+Earlier sections and failed receipts below are dated history, not current readiness.
+
 
 ## Replacement corrected; required process-metric safety stop
 

@@ -23,12 +23,26 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Atomic replacement source complete; real VmRSS safety stop before execution; cleanup complete, inference0."
-next_step: "Resolve essential running-process metric availability without weakening guard; preserve exact state and one inference maximum."
-summary: "Real process-metric safety stop; corrected runtime retained, atomic replacement unexercised, inference0."
+current_state: "Windows cache full verification passed; one request failed before model entry plus sender deadline safety stop; cleanup confirmed."
+next_step: "Retain verified dc7/e025 assets and source-only file-URL correction; no duplicate inference or automatic retry after deadline stop."
+summary: "Cache verified; one native request failed before model load; corrected loader unexercised, all owned cleanup complete."
 ---
 
 # Gmax Delivery Plan
+
+## Windows cache verified; one request failed before model loading
+
+Exact current outcome, fixes and cleanup (private record) records collector revision5
+(`628aa37`), corrected atomic rename (`f2b1c74c2e`) and full verification of17,642
+files in40.202s. Exactly1 embedding request/native bridge job ran, but Node rejected
+the Windows `--import` path before the prepared entry/model load. The sender
+separately hit its180s deadline. Mandatory native/task/reservation/process/local
+cleanup is confirmed; no second request ran. Loader file-URL correction
+`349c4604f6` is source-only/unexercised. Prepared dc7/e025 runtime/deps/models are
+retained, production offload remains inactive, and no numeric/fan claim is made.
+The18 fake passes/once-passing Gmax compile were reused; no new tests/compile ran.
+Earlier sections and failed receipts below are dated history, not current readiness.
+
 
 ## Replacement corrected; required process-metric safety stop
 

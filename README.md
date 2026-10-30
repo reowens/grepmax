@@ -857,8 +857,10 @@ no test, model, maintenance or deployment permission; see
 [the operational procedure](CLAUDE.md#guarded-local-operational-commands).
 
 Process sampling pins the proc directory and checks start time and owned-cgroup
-membership. Confirmed departures are accounted separately from live RSS; missing
-or malformed live metrics and unreadable in-scope processes still stop the job.
+membership. Under verified hard-cap/no-swap containment, an absent memory field
+allows one immediate same-sample re-read within50ms. Only fresh complete metrics
+or confirmed departure are accepted. Persistent absence, malformed values and
+unreadable in-scope processes still stop the job; missing RSS is never zeroed.
 The immutable first failure includes process/field details for metric errors,
 separate from cleanup and final observations.
 
@@ -1007,10 +1009,11 @@ excluded path stays indexable.
 
 ### Remote background embedding (local source; not activated)
 
-Latest replacement and safety-stop record (private record): corrected runtime is
-materialized; atomic private-entry replacement is implemented but unexercised.
-A required process-metric guard failed before verification. No inference ran;
-production remote offload remains inactive.
+Latest verification and bounded-job record (private record): the exact Windows cache
+passed full hash/access/native-file verification. One selected embedding request
+failed before model loading because the Windows ESM loader path needed a file URL;
+that command is corrected in source but unexercised after a sender deadline stop.
+Owned cleanup is confirmed; production remote offload remains inactive.
 
 Local remains the default, including foreground query encoding. The optional
 background route sends changed chunks to a named trusted worker while P3 keeps
