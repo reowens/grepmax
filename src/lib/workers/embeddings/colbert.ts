@@ -62,6 +62,11 @@ export class ColbertModel {
     }
   }
 
+  async dispose(): Promise<void> {
+    const session = this.session; this.session = null; this.tokenizer = null;
+    if (session) await session.release();
+  }
+
   isReady(): boolean {
     return !!(this.session && this.tokenizer);
   }

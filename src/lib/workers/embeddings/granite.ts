@@ -7,7 +7,6 @@ import {
 import * as ort from "onnxruntime-node";
 import { CONFIG, MODEL_IDS, PATHS } from "../../../config";
 
-const CACHE_DIR = PATHS.models;
 const ONNX_THREADS = 1;
 const LOG_MODELS =
   process.env.GMAX_DEBUG_MODELS === "1" ||
@@ -25,6 +24,7 @@ export class GraniteModel {
     vectorDim?: number,
     private readonly modelId = process.env.GMAX_EMBED_ONNX_MODEL ||
       MODEL_IDS.embed,
+    private readonly cacheRoot = PATHS.models,
   ) {
     this.vectorDimensions = vectorDim ?? CONFIG.VECTOR_DIM;
   }
@@ -32,7 +32,7 @@ export class GraniteModel {
   private resolvePaths(): { modelPath: string; tokenizerPath: string } {
     // Honor the active tier's ONNX model (propagated from the pool); fall back
     // to the small-tier default when unset (standalone/test invocations).
-    const basePath = path.join(CACHE_DIR, this.modelId);
+    const basePath = path.join(this.cacheRoot, this.modelId);
     const onnxDir = path.join(basePath, "onnx");
     const candidates = ["model_q4.onnx", "model.onnx"];
 
@@ -72,6 +72,11 @@ export class GraniteModel {
       enableMemPattern: false,
     };
     this.session = await ort.InferenceSession.create(modelPath, sessionOptions);
+  }
+
+  async dispose(): Promise<void> {
+    const session = this.session; this.session = null; this.tokenizer = null;
+    if (session) await session.release();
   }
 
   isReady(): boolean {
