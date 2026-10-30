@@ -59,7 +59,7 @@ function inventory(value: unknown): PreparedEmbeddingFile[] {
 export function validatePreparedEmbeddingManifest(value: unknown): PreparedEmbeddingManifest {
   exact(value, ["schemaVersion", "generationFingerprint", "colbertDim", "models", "runtime", "policy"]);
   exact(value.policy, ["cache", "downloads", "preprocessing"]);
-  const linked = Object.hasOwn(value.runtime as object, "dependencyFiles") || Object.hasOwn(value.runtime as object, "links");
+  const linked = Object.prototype.hasOwnProperty.call(value.runtime, "dependencyFiles") || Object.prototype.hasOwnProperty.call(value.runtime, "links");
   exact(value.runtime, ["platform", "architecture", "nodeVersion", "commit", "files", ...(linked ? ["dependencyFiles", "links"] : [])]);
   if (value.schemaVersion !== 1 || !hash(value.generationFingerprint)
     || !Number.isInteger(value.colbertDim) || Number(value.colbertDim) < 1 || Number(value.colbertDim) > 1024
