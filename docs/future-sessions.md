@@ -2,41 +2,51 @@
 type: doc
 status: active
 created: 2026-10-03T02:39:56Z
-updated: 2026-10-29
+updated: 2026-10-30
 audience: internal
-summary: "Remote embedding source-only implementation in progress, not usable-host evidence. Exact continuation retained; quiet profile, WOL and110 preserved."
+summary: "Remote embedding source integration complete locally; untested/uncompiled and not activated. Prepared worker inputs/runtime compatibility remain unobserved;110 and quiet-P3 state preserved."
 ---
 
 # Future Sessions
 
-## Remote embedding implementation incomplete; exact source continuation retained
+## Remote embedding source integration completed locally
 
-The user selected source/fixtures/docs, with ZERO tests/compilation/models/remote
-operations or activation. P3 source commits `5c8c082`, `3914eee`, `0719246`,
-`a9e72de`, `49a362e` integrate the shared protocol, offline factory, real fixed
-entry/sender, custody and pending background sync. Worker foundations `d266cb0` /
-`a3a6833`, Platform `6403358b1f` and MLX note `6dbbb3f` are in local records.
-Exact implemented boundaries and remaining source files (private record)
-are the handoff for the SAME already approved batch, not another permission gate.
+The selected source/fixture/documentation batch is locally implemented, including
+real fixed-task execution paths rather than permanent refusal stubs. Final Gmax
+integration is `6346da3`; worker Platform implementation is `49ccde8152` and the
+contained hashed dependency closure is Gmax `2575c91`. Source boundaries,
+commit chain and remaining operator inputs (private record) are the complete handoff.
 
-**Feature INCOMPLETE.** Initial unconditional false/exit75 gates were unfinished
-source we introduced, not proof of Mac/Windows failure. Entry/factory/sender now
-call the real interfaces, but final Platform packet/native resource/owned-stop
-adapters and contained dependency closure are still with the existing worker
-owner. Final packet/job-ID/terminal cleanup integration and source freeze-once
-must be completed before claiming usable remote offload. No compiler-only
-non-Linux rule or P3 Linux cgroup requirement is imposed on Mac/Windows.
+Default routing and foreground query encoding remain local. Explicit remote
+background routing sends only changed formatted chunks, at most16 per job and
+one active remote file. P3 retains parsing, reuse, source/policy revalidation,
+leases and the only Lance/FTS writer. The fixed sender caches committed source
+once, persists inner/outer job identity before execution, records native task
+identity when returned, clips deadlines and awaits terminal/cleanup evidence.
+Unknown cleanup retains custody across controller replacement; no automatic
+resubmission or hot local-inference fallback occurs.
 
-Default local and foreground queries/P3 store authority stay intact. Configured
-remote has no hot local fallback; uncertainty retains custody and queued work.
-All fixture source and native/source code remain uncompiled/unexecuted. No host
-readiness, artifact presence, numerical parity or noise benefit is claimed.
-Product110, power-saver and completed WOL configuration/persistence are unchanged.
-No release/push or pending-prompt consumption. The owner-window continuation
-requires no new user permission for the selected source work and resets no budget.
+Windows uses the existing native Job Object with pre-resume2-CPU affinity,
+below-normal priority,2GiB committed-memory bound, sampled aggregate RSS and
+8GiB memory floor. Mac has an owned process-group adapter with nice10,
+sampled RSS/floor/deadline and average2-core CPU-time throttling, **not affinity
+or a hard kernel CPU cap**. Linux no-swap isolation protects only the P3 sender.
+Mac roster admission is unchanged: Pro remains xcode/device-only and Air off.
 
+**Source-only completion:** no tests, syntax checks, typechecks, compilation,
+builds, model loads, remote probes or activation ran. Fake fixtures are source,
+not passing evidence. Exact prepared manifest/model/runtime/dependency bytes,
+read-only cache permissions, admitted route and actual native/token/numeric
+compatibility remain unobserved operator/runtime prerequisites. No missing
+blanket-refusal implementation is being relabeled as a host limitation. No
+release, host/config change, push or fan/noise/RSS gain is claimed. Product110,
+rollback109, power-saver and completed WOL configuration remain unchanged;
+core8 config/direct8 versus last parent329/full28 remains historical evidence.
+This source batch is finished; no further operation is started or queued.
 
 ## Recenter: quiet P3 preserved; WOL configuration closure complete
+
+**Historical recenter snapshot; source completion above supersedes its unstarted-offload proposal.**
 
 The [current decision and ordered proposal](plans/gmax-delivery.md#recenter-quiet-p3-finish-wol-closure-before-optional-offload)
 now records the selected WOL configuration closure. At 15:50:21 UTC, NM applied
@@ -55,8 +65,9 @@ failed receipts and unproven exact guard path/exit-race attribution are retained
 The earlier “No noise now” remains a first-activation report, not a new acoustic
 measurement; power-saver is not shown to have caused the earlier interruption.
 
-Next is the parent recenter. Remote embedding's 3 proposed spins, Mac/Windows+MLX
-assessment and real compiler-cap qualification remain unselected and unstarted.
+At that recenter, the remote workstreams were proposed, not started. The source
+implementation and MLX assessment are now completed above; real compiler-cap
+qualification remains unselected.
 No further host action, model load, agent, query retry, release or push is queued.
 Core direct8 versus last parent329/28 advertisement remains historical evidence.
 
@@ -79,7 +90,7 @@ power-saver must remain enabled. Platform compiler caps have a separate owner.
 Published/deployed110 stays unchanged, remote embedding remains planned only,
 and no relevance query budget, saved prompt, release or push is selected here.
 
-## Remote background embedding planned; implementation awaits selection
+## Historical remote background embedding planning snapshot
 
 User “plan it now” selected documentation only. The
 [implementation-ready remote background embedding plan](plans/gmax-remote-background-embedding.md)

@@ -1,32 +1,36 @@
 # Private embedding worker boundary
 
-Implementation is still in progress. This is source documentation, not evidence
-of an activated Mac/Windows worker or model compatibility.
+The selected source implementation is integrated locally. It has not been
+compiled, tested or activated, and does not establish a usable Mac/Windows host.
+The source completion record (private record)
+contains commits, bounds, operator inputs and exact validation limits.
 
-`src/embedding-batch.ts` now reads only the fixed bounded job input/output,
-validates the worker-local prepared manifest and invokes the bounded executor
-with `createPreparedOnnxRuntime`. The factory verifies artifacts, sets offline
-flags before dynamic model imports, disables transformer filesystem caching,
-uses the explicit prepared model root and awaits owned session disposal.
-Its caller must supply actual admitted job containment and trusted local roots.
-No embedding request chooses cache paths or executable instructions.
+`src/embedding-batch.ts` reads fixed bounded `embedding-input.json` and atomically
+writes `embeddings.json`. It calls the executor with the prepared ONNX factory,
+not a permanent refusal stub. Exact model/tokenizer/runtime inventory is verified;
+offline flags precede lazy model imports, transformer cache writes are disabled,
+and Granite/ColBERT use the explicit verified model root. Owned sessions are
+disposed after native settlement. Source hashes do not themselves enforce cache
+permissions; preparation must supply a read-only cache to the job account.
 
-The entry environment is fixed by the Platform task adapter:
-`GMAX_EMBED_MANIFEST`, `GMAX_EMBED_MODELS_ROOT`,
-`GMAX_EMBED_RUNTIME_ROOT`, `GMAX_EMBED_RUNTIME_COMMIT` and optional
-`GMAX_EMBED_DEPENDENCIES_ROOT`. Input is `embedding-input.json`; output is
-`embeddings.json` in the same owned job directory. Output is atomic and bounded.
-Metadata describes source requirements, not observed host readiness.
+The Platform adapter alone supplies `GMAX_EMBED_MANIFEST`,
+`GMAX_EMBED_MODELS_ROOT`, `GMAX_EMBED_RUNTIME_ROOT`,
+`GMAX_EMBED_RUNTIME_COMMIT` and optional `GMAX_EMBED_DEPENDENCIES_ROOT`.
+No request chooses executable instructions or cache paths. The contained hashed
+pnpm dependency closure is verified before the loader, with declared aliases and
+no escaping/unlisted targets. Metadata byte verification never calls inference.
 
-The P3 sender uses its Linux operational guard and the existing fixed Platform
-bridge; that Linux guard is not a Mac/Windows cgroup requirement. Existing
-Windows native task and Mac owned-process mechanisms are being extended by the
-worker owner, including cancellation-to-owned-stop and terminal/drain evidence.
-There is no generic shell endpoint or new model service. No roster was changed.
+The P3 sender uses its canonical Linux no-swap guard and the existing fixed
+Platform bridge. This is not a Mac/Windows cgroup requirement. Windows has an
+embedding-only native Job adapter with affinity/priority readback and kernel
+commit limits plus sampled RSS/floor guards. Mac has an owned process-group
+adapter with nice10, sampled RSS/floor/deadline and average2-core CPU-time
+throttling, not affinity. Existing Mac roster lanes were not changed.
 
-The original available:false/exit75 foundations were source stubs, not observed
-host failures. Real factory/entry/sender wiring is now present; final packet,
-resource, dependency-link and terminal-custody integration remains unfinished.
-See exact source continuation (private record)
-for file ownership and commits. All fixture source and native code is unexecuted
-and uncompiled under the selected budget. No fan/performance result is claimed.
+Inner/outer job identity is persisted before dispatch. Cancellation awaits owned
+stop and terminal cleanup evidence; unknown custody is retained without duplicate
+submission or silent local-inference fallback. P3 keeps the only store writer.
+Prepared assets/ACLs, route admission and actual native/token/numeric compatibility
+remain runtime/operator prerequisites, not observed failures or missing stub code.
+Models cold-load per one-shot job and are reused within that job; no permanent
+model service was added. No fan, memory or speed improvement is claimed.

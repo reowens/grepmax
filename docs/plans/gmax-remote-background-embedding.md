@@ -1,8 +1,8 @@
 ---
 type: plan
-status: partial
+status: awaiting
 created: 2026-10-29T13:06:23Z
-updated: 2026-10-30T00:32:05Z
+updated: 2026-10-30T01:01:00Z
 surfaces:
 modules:
   - src/lib/workers/orchestrator.ts
@@ -13,45 +13,55 @@ audience: internal
 parent_plan: docs/plans/gmax-delivery.md
 related_plans:
 related_docs:
-current_state: "Partial source implementation INCOMPLETE; production factory/entry/sender implemented, worker resource/packet/terminal adapters and contained dependency closure still being completed within same approval."
-next_step: "Resume exact continuation in source-integration.md with current owners; no new execution budget or user checkpoint required."
-summary: Move background dense and ColBERT inference off P3 through a bounded named Gmax worker task, retaining P3 parsing, reuse, source fencing and the only store writer.
+current_state: "Remote background embedding source/fixtures/docs integrated locally; real Windows/Mac adapters and custody wired. No test/compile/runtime activation evidence."
+next_step: "Source batch complete. Await separately selected preparation/runtime qualification or release; no automatic operation, test or model authorization."
+summary: "Remote embedding source integration complete locally; untested/uncompiled and not activated. Prepared worker inputs/runtime compatibility remain unobserved;110 and quiet-P3 state preserved."
 ---
 
 # Remote background embedding
 
-## Remote embedding implementation incomplete; exact source continuation retained
+## Remote embedding source integration completed locally
 
-The user selected source/fixtures/docs, with ZERO tests/compilation/models/remote
-operations or activation. P3 source commits `5c8c082`, `3914eee`, `0719246`,
-`a9e72de`, `49a362e` integrate the shared protocol, offline factory, real fixed
-entry/sender, custody and pending background sync. Worker foundations `d266cb0` /
-`a3a6833`, Platform `6403358b1f` and MLX note `6dbbb3f` are in local records.
-Exact implemented boundaries and remaining source files (private record)
-are the handoff for the SAME already approved batch, not another permission gate.
+The selected source/fixture/documentation batch is locally implemented, including
+real fixed-task execution paths rather than permanent refusal stubs. Final Gmax
+integration is `6346da3`; worker Platform implementation is `49ccde8152` and the
+contained hashed dependency closure is Gmax `2575c91`. Source boundaries,
+commit chain and remaining operator inputs (private record) are the complete handoff.
 
-**Feature INCOMPLETE.** Initial unconditional false/exit75 gates were unfinished
-source we introduced, not proof of Mac/Windows failure. Entry/factory/sender now
-call the real interfaces, but final Platform packet/native resource/owned-stop
-adapters and contained dependency closure are still with the existing worker
-owner. Final packet/job-ID/terminal cleanup integration and source freeze-once
-must be completed before claiming usable remote offload. No compiler-only
-non-Linux rule or P3 Linux cgroup requirement is imposed on Mac/Windows.
+Default routing and foreground query encoding remain local. Explicit remote
+background routing sends only changed formatted chunks, at most16 per job and
+one active remote file. P3 retains parsing, reuse, source/policy revalidation,
+leases and the only Lance/FTS writer. The fixed sender caches committed source
+once, persists inner/outer job identity before execution, records native task
+identity when returned, clips deadlines and awaits terminal/cleanup evidence.
+Unknown cleanup retains custody across controller replacement; no automatic
+resubmission or hot local-inference fallback occurs.
 
-Default local and foreground queries/P3 store authority stay intact. Configured
-remote has no hot local fallback; uncertainty retains custody and queued work.
-All fixture source and native/source code remain uncompiled/unexecuted. No host
-readiness, artifact presence, numerical parity or noise benefit is claimed.
-Product110, power-saver and completed WOL configuration/persistence are unchanged.
-No release/push or pending-prompt consumption. The owner-window continuation
-requires no new user permission for the selected source work and resets no budget.
+Windows uses the existing native Job Object with pre-resume2-CPU affinity,
+below-normal priority,2GiB committed-memory bound, sampled aggregate RSS and
+8GiB memory floor. Mac has an owned process-group adapter with nice10,
+sampled RSS/floor/deadline and average2-core CPU-time throttling, **not affinity
+or a hard kernel CPU cap**. Linux no-swap isolation protects only the P3 sender.
+Mac roster admission is unchanged: Pro remains xcode/device-only and Air off.
 
-## Recenter: optional Mac/Windows work is proposed, not started
+**Source-only completion:** no tests, syntax checks, typechecks, compilation,
+builds, model loads, remote probes or activation ran. Fake fixtures are source,
+not passing evidence. Exact prepared manifest/model/runtime/dependency bytes,
+read-only cache permissions, admitted route and actual native/token/numeric
+compatibility remain unobserved operator/runtime prerequisites. No missing
+blanket-refusal implementation is being relabeled as a host limitation. No
+release, host/config change, push or fan/noise/RSS gain is claimed. Product110,
+rollback109, power-saver and completed WOL configuration remain unchanged;
+core8 config/direct8 versus last parent329/full28 remains historical evidence.
+This source batch is finished; no further operation is started or queued.
+
+## Historical planning and quiet-P3 context
 
 The [quiet-P3 recenter](gmax-delivery.md#recenter-quiet-p3-finish-wol-closure-before-optional-offload)
-puts one proposed WOL readback/persistence closure ahead of optional embedding
+originally put one proposed WOL readback/persistence closure ahead of optional embedding
 work. Power-saver was selected again; no new acoustic result or measured
-embedding-offload benefit is claimed. This plan remains unimplemented.
+embedding-offload benefit is claimed. That planning snapshot preceded the
+completed source-only work above; it is retained as historical context.
 
 The earlier bounded 16-chunk dell-win design below is the prepared v1 proposal,
 not an activated worker or a mandate to reload models per job indefinitely.
@@ -71,8 +81,8 @@ No new backend experiment, release, service or worker activation is queued.
 
 ## Decision and evidence
 
-User selected planning on October 29, 2026. This document is implementation-ready
-scope, not evidence of an implemented or activated remote backend. The
+User selected planning on October 29, then selected source implementation. The
+source boundaries below are implemented locally; they are not activated-host evidence. The
 [delivery plan](gmax-delivery.md) owns shipped state; [local-worker integration](gmax-local-workers.md#source-checkpoint-and-limits)
 owns the existing named-machine transport. The separate cooling owner owns fan
 and power settings. No cooling, worker, model, service or client setting changes
@@ -134,7 +144,8 @@ creating an ONNX session; it establishes configuration, not loaded readiness.
 
 1. Add optional typed global configuration
    `backgroundEmbedding: { mode: "local" | "remote", worker?: string,
-   runtimeCheckout?: string, runtimeCommit?: string }`.
+   runtimeCheckout?: string, runtimeCommit?: string, identity?:
+   { generation, artifactDigest, runtimeDigest, colbertDim } }`.
    Missing configuration remains `local`. `remote` also requires an explicit
    reviewed immutable Gmax source checkout/full commit matching the activated
    package and prepared runtime, with its adjacent Platform integration. The
@@ -155,8 +166,8 @@ creating an ONNX session; it establishes configuration, not loaded readiness.
    `processFile` carries a background-route tag and task attempt fence from its
    existing caller. Only chunks absent from reuse go remote. A fully reused
    file makes zero remote calls and must not initialize local document models.
-3. Extract the current dense-plus-ColBERT calculation into a narrow shared
-   `hybrid-embedding.ts` helper accepting existing model instances/generation.
+3. The bounded executor calls the existing Granite and ColBERT model methods
+   with the prepared generation, without adding another inference algorithm.
    Preserve dense normalization, the 256-token Granite limit, the 512-token
    ColBERT document limit, quantization, scale, pooled vectors and token IDs.
    Split parser initialization from model initialization: remote-mode parsing
@@ -220,6 +231,11 @@ sampling, since existing committed-memory accounting is not an RSS equivalent.
 A failure to enforce or observe the selected bounds refuses work. This is not
 permission to change the worker's global configuration or other jobs.
 
+Mac source uses sampled average2-core CPU-time throttling with nice10, not
+logical-CPU affinity or an instantaneous kernel CPU cap. Its memory floor/RSS
+and owned-group cleanup are sampled/supervised. Route admission is still absent
+from the unchanged Pro roster; this does not make the adapter source a stub.
+
 The P3 transport/controller uses the corrected fresh owned Linux cgroup with
 `memory.swap.max=0` before payload exec, existing 2-CPU/nice10/2-GiB/180-second/
 8-GiB-floor, containment/OOM/cleanup rules. Apply that isolation only to its own
@@ -266,77 +282,48 @@ native operation. Foreground local query work remains separate from the remote
 reservation. Offload is not a claim that parsing/Lance/FTS CPU or all fan noise
 will disappear.
 
-## Exact implementation boundary and 7 ordered steps
+## Implemented source boundaries
 
-The following are proposed edits, not edits made by this planning assignment.
-
-1. **Define configuration and data contract.** Change
-   `src/lib/index/index-config.ts` and add
-   `src/lib/workers/remote-embedding-protocol.ts` with the exact bounds/fences,
-   artifact validator and model contract above. Keep existing config readable;
-   remote is explicit opt-in. No dependency/model upgrade or public result
-   schema/store-format change.
-2. **Separate parsing from inference.** Change
-   `src/lib/workers/orchestrator.ts`, `worker.ts`, `process-child.ts` and
-   `pool.ts`; add `src/lib/workers/hybrid-embedding.ts`. Local paths delegate
-   to unchanged math. `processFile`'s background tag selects remote only after
-   reuse, with models lazy; `encodeQuery`/rerank never inherit that tag. Resolve
-   the reviewed runtime checkout/commit independently of installed npm package cwd. Preserve
-   existing per-file admission and priority. Do not import the dirty unreleased
-   ColBERT query-feature refactor as part of this extraction.
-3. **Add one fixed worker task.** Add `src/embedding-batch.ts` as a data-file
-   entry (`node --import tsx src/embedding-batch.ts <fixed-input> <fixed-output>`),
-   importing only the protocol/shared embedder/model helpers, never daemon/store
-   startup. In sibling Platform, extend `scripts/lib/gmax-project.mjs`,
-   `scripts/gmax-worker.mjs`, `scripts/gmax-worker-task.mjs` for a versioned
-   `embed-batch` packet and exact `embeddings.json` result. Keep other task
-   schemas/results backward compatible. The metadata `describe` variant branches
-   before any lazy import of inference/native model modules. Use the existing prepared dependency tree;
-   no per-job install, test, build or model download.
-4. **Connect bounded custody.** Add
-   `src/lib/workers/remote-embedding-client.ts` and a fixed
-   `scripts/remote-embedding-job.cjs` adapter to that sibling bridge; extend
-   `scripts/local-worker.cjs` only for the fixed data operation. Extend
-   Platform `scripts/lib/worker-windows.mjs` and `worker-windows-job.cs` only
-   where the named embedding task needs its input closure, affinity/priority,
-   working-set guard and existing stop/result hooks. No generic command door,
-   enrolled Linux bypass, new daemon, source-copy authority or fallback route.
-5. **Integrate background state and fencing.** Change
-   `src/lib/index/batch-processor.ts`, `src/lib/index/syncer.ts` and
-   `src/lib/daemon/daemon.ts` to attach
-   route/revision/attempt, enforce one remote reservation, defer rather than
-   count remote outages as corrupt files, and expose additive bounded background
-   status: route, worker, available/deferred/busy/unknown, queued/active count,
-   last terminal reason and model contract. Extend `src/commands/status.ts`
-   for that display. Do not expose text, secrets or holder IDs; preserve JSON
-   compatibility for existing fields and paused-reader behavior.
-6. **Finish fake fixtures and operator docs together.** Add one focused
-   `tests/remote-background-embedding.test.ts`, mocking all transports, models,
-   clocks and stores. Cover routing/background-only/no-local-fallback, reuse,
-   exact wire validation, stale/cancelled/partial results, slot ownership and
-   deferred/unknown states, including the Platform task validators where
-   feasible. Update README, this plan and handoff with setup and rollback:
-   prepare exact models/runtime on the selected worker only under later
-   authorization; verify metadata without loading; select remote; revert the
-   configuration to local to stop future remote admission. Await or cancel an
-   existing owned attempt before local work can retry that file. Persisted
-   model/index identity never changes on routing rollback.
-7. **Close the source batch with only selected verification.** On a future
-   explicit implementation selection, propose at most one fake-only focused
-   invocation (`node_modules/.bin/vitest run tests/remote-background-embedding.test.ts`)
-   and one guarded production compilation
-   (`node_modules/.bin/tsc --noEmit --incremental false`), under the existing
-   scoped limits. These commands are **not authorized or run now**. Inspect
-   the selected cross-repo diff, finish source/fixtures/docs and local scoped
-   commits in both repositories. No independent review, native/GPU run, broad
-   tests, additional typecheck, profiling or implicit release/activation gate.
+1. **Protocol and opt-in configuration:**
+   `src/lib/workers/remote-embedding/{protocol,client}.ts` validates exact
+   generation/artifact/runtime identities, input/output budgets and attempt
+   fences. `src/lib/index/index-config.ts` retains the optional global route.
+2. **Background preparation and authoritative writes:** `orchestrator.ts` and
+   `pool.ts` carry a parse/reuse-only remote tag. `batch-processor.ts`,
+   `syncer.ts` and `daemon.ts` connect watcher and pending-project work, with
+   post-result content/policy fencing. Foreground query encoding and direct
+   CLI synchronization keep their existing route.
+3. **Prepared ONNX execution:** `src/embedding-batch.ts`,
+   `remote-embedding-executor.ts`, `remote-embedding-artifacts.ts` and
+   `remote-embedding/onnx-runtime.ts` connect bounded input/output to the
+   existing Granite/ColBERT math. Exact inventory verification precedes lazy
+   offline imports, including a contained hashed pnpm dependency-link closure.
+   Cache roots are trusted adapter inputs; the request supplies no paths.
+   Models are reused within one job and disposed after native settlement.
+4. **P3 sender and custody:** `remote-embedding/fixed-transport.ts` and
+   `scripts/remote-embedding-submit.mjs` call the existing Platform bridge,
+   cache a frozen committed source packet, persist outer identity before
+   dispatch, map abort to owned cancellation and retain unknown custody.
+   The canonical revision4 Linux operational guard is reused unchanged.
+5. **Worker packet, resources and terminal result:** Platform `49ccde8152`
+   connects fixed packets, prepared bootstrap, hashed12MiB artifacts and
+   Windows/Mac owned-job adapters. Windows affinity/priority are read back
+   before resume; Mac uses sampled average CPU-time throttling. Terminal
+   cleanup proof, not sender exit, permits custody release. No roster changed.
+6. **Fake fixture sources and operator documentation:** routing, executor,
+   artifact and Platform fixed-task fixtures were added/aligned as source only.
+   README and the worker/source integration notes describe setup and rollback.
+7. **Local completion only:** selected source/diff/control-flow and whitespace
+   inspection, scoped commits, no test or compilation invocation. The earlier
+   proposed fake-test/compile commands were not selected by the source-only
+   approval and are not automatic acceptance gates or queued actions.
 
 ## Completion, permissions and remaining facts
 
 Source-batch completion means all 7 steps are implemented coherently, selected
-fake/type evidence is reported with its limits, and the local commits contain
-all selected files. Fake tests and the TypeScript compile do not compile or
-exercise Windows Job Object changes, remote ONNX sessions or resource enforcement;
+fixture source and the absence of test/type evidence are reported honestly, and the local commits contain
+all selected files. No fake tests or TypeScript compilation ran. Even those would not exercise
+Windows Job Object changes, remote ONNX sessions or resource enforcement;
 those remain explicitly unvalidated at source-batch closeout. It does not mean
 remote inference has run. Package release,
 P3 deployment, worker preparation/enrollment/configuration and real activation
@@ -363,6 +350,7 @@ availability/version claim is added to AGENTS.md or CLAUDE.md.
 
 ## Version History
 
+- **2026-10-30T01:01:00Z** Status: partial → awaiting — Selected source/fixtures/docs integrated locally with Platform49ccde8152 and Gmax6346da3/2575c91. Zero execution; preparation/runtime qualification/activation remain separately unselected, no source stub or automatic gate.
 - **2026-10-30T00:32:05Z** Status: blocked → partial — Implementation incomplete, not unavailable-host proof. Real factory/entry/sender committed; worker adapters/terminal/dependency integration continue under SAME approval; zero execution.
 - **2026-10-30T00:14:55Z** Status: in-session → blocked — Usable offload incomplete: native Mac/Windows embedding containment, production model/cache/offline factory, sender custody transport and pending-sync remote route are missing. Partial source committed, zero execution.
 - **2026-10-30T00:10:17Z** Started (active → in-session).

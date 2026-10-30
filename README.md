@@ -1005,17 +1005,18 @@ changes. Rules with negations, escapes or advanced pattern syntax remain in the
 indexing policy only, preserving re-included files. Source JSON outside an
 excluded path stays indexable.
 
-### Remote background embedding (implementation in progress)
+### Remote background embedding (local source; not activated)
 
-Local remains the default; foreground query encoding stays local. Opt-in remote
-background source includes a bounded protocol, prepared offline ONNX factory,
-fixed worker entry and guarded sender. P3 keeps parsing/reuse, file validation
-and the only Lance/FTS writer. Unknown remote cleanup retains custody and never
-triggers a hot local-inference fallback.
+Local remains the default, including foreground query encoding. The optional
+background route sends changed chunks to a named trusted worker while P3 keeps
+parsing, reuse, file validation and all Lance/FTS writes. Remote outages defer
+background work; there is no silent local-inference fallback. Uncertain cleanup
+retains job custody and prevents duplicate submission.
 
-This is not yet usable offload: final worker packet/resource/terminal adapters
-and prepared dependency-closure integration are still being completed. No test,
-compile, model load, host readiness or numeric parity has been established in
-this source-only batch. Existing MLX is dense-only. See the
-implementation and exact continuation (private record).
-No release, activation or fan/noise gain is claimed.
+The source now connects the prepared offline ONNX runtime, fixed worker task,
+Windows/Mac resource adapters and terminal receipts. It has not been tested,
+compiled or activated in this batch. Exact prepared models/runtime/dependencies,
+read-only worker cache permissions and admitted routes must be supplied before
+use; the Mac roster was not changed. Existing MLX remains dense-only. See the
+setup, bounds and source completion record (private record).
+No remote compatibility or fan/noise improvement is claimed.

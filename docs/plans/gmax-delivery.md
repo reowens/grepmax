@@ -2,7 +2,7 @@
 type: plan
 status: active
 created: 2026-10-10T06:45:25Z
-updated: 2026-10-29T14:39:55Z
+updated: 2026-10-30
 surfaces:
   - store
   - daemon
@@ -23,41 +23,51 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Remote embedding source integration is incomplete; real factory/entry/sender now present, final worker adapters and terminal/closure integration still in progress. No runtime work."
-next_step: "Continue SAME approved source batch from source-integration.md; no new tests/compile/models/remote actions/release or approval loop."
-summary: "Remote embedding source-only implementation in progress, not usable-host evidence. Exact continuation retained; quiet profile, WOL and110 preserved."
+current_state: "Remote background embedding source/fixtures/docs integrated locally; real Windows/Mac adapters and custody wired. No test/compile/runtime activation evidence."
+next_step: "Source batch complete. Await separately selected preparation/runtime qualification or release; no automatic operation, test or model authorization."
+summary: "Remote embedding source integration complete locally; untested/uncompiled and not activated. Prepared worker inputs/runtime compatibility remain unobserved;110 and quiet-P3 state preserved."
 ---
 
 # Gmax Delivery Plan
 
-## Remote embedding implementation incomplete; exact source continuation retained
+## Remote embedding source integration completed locally
 
-The user selected source/fixtures/docs, with ZERO tests/compilation/models/remote
-operations or activation. P3 source commits `5c8c082`, `3914eee`, `0719246`,
-`a9e72de`, `49a362e` integrate the shared protocol, offline factory, real fixed
-entry/sender, custody and pending background sync. Worker foundations `d266cb0` /
-`a3a6833`, Platform `6403358b1f` and MLX note `6dbbb3f` are in local records.
-Exact implemented boundaries and remaining source files (private record)
-are the handoff for the SAME already approved batch, not another permission gate.
+The selected source/fixture/documentation batch is locally implemented, including
+real fixed-task execution paths rather than permanent refusal stubs. Final Gmax
+integration is `6346da3`; worker Platform implementation is `49ccde8152` and the
+contained hashed dependency closure is Gmax `2575c91`. Source boundaries,
+commit chain and remaining operator inputs (private record) are the complete handoff.
 
-**Feature INCOMPLETE.** Initial unconditional false/exit75 gates were unfinished
-source we introduced, not proof of Mac/Windows failure. Entry/factory/sender now
-call the real interfaces, but final Platform packet/native resource/owned-stop
-adapters and contained dependency closure are still with the existing worker
-owner. Final packet/job-ID/terminal cleanup integration and source freeze-once
-must be completed before claiming usable remote offload. No compiler-only
-non-Linux rule or P3 Linux cgroup requirement is imposed on Mac/Windows.
+Default routing and foreground query encoding remain local. Explicit remote
+background routing sends only changed formatted chunks, at most16 per job and
+one active remote file. P3 retains parsing, reuse, source/policy revalidation,
+leases and the only Lance/FTS writer. The fixed sender caches committed source
+once, persists inner/outer job identity before execution, records native task
+identity when returned, clips deadlines and awaits terminal/cleanup evidence.
+Unknown cleanup retains custody across controller replacement; no automatic
+resubmission or hot local-inference fallback occurs.
 
-Default local and foreground queries/P3 store authority stay intact. Configured
-remote has no hot local fallback; uncertainty retains custody and queued work.
-All fixture source and native/source code remain uncompiled/unexecuted. No host
-readiness, artifact presence, numerical parity or noise benefit is claimed.
-Product110, power-saver and completed WOL configuration/persistence are unchanged.
-No release/push or pending-prompt consumption. The owner-window continuation
-requires no new user permission for the selected source work and resets no budget.
+Windows uses the existing native Job Object with pre-resume2-CPU affinity,
+below-normal priority,2GiB committed-memory bound, sampled aggregate RSS and
+8GiB memory floor. Mac has an owned process-group adapter with nice10,
+sampled RSS/floor/deadline and average2-core CPU-time throttling, **not affinity
+or a hard kernel CPU cap**. Linux no-swap isolation protects only the P3 sender.
+Mac roster admission is unchanged: Pro remains xcode/device-only and Air off.
 
+**Source-only completion:** no tests, syntax checks, typechecks, compilation,
+builds, model loads, remote probes or activation ran. Fake fixtures are source,
+not passing evidence. Exact prepared manifest/model/runtime/dependency bytes,
+read-only cache permissions, admitted route and actual native/token/numeric
+compatibility remain unobserved operator/runtime prerequisites. No missing
+blanket-refusal implementation is being relabeled as a host limitation. No
+release, host/config change, push or fan/noise/RSS gain is claimed. Product110,
+rollback109, power-saver and completed WOL configuration remain unchanged;
+core8 config/direct8 versus last parent329/full28 remains historical evidence.
+This source batch is finished; no further operation is started or queued.
 
 ## Recenter: quiet P3, finish WOL closure before optional offload
+
+**Historical recenter snapshot; remote source work is now completed above.**
 
 **October 29, 2026: selected WOL closure completed.** User “go” selected the
 bounded readback/persistence operation after the documentation recenter. P3 is
@@ -73,7 +83,7 @@ model load, agent, runtime qualification, release or push is queued.
 | Gmax guard | Local commit `afb8dda`, revision4 protected the 3 selected WOL stages: all passed, zero owned swap/OOM, no cleanup errors, empty groups removed. This is actual operational evidence, not qualification of every failure branch; [source repair limits](assets/mcp-cleanup-release-20261029/isolated-guard/process-metrics-repair.md) remain. |
 | Platform compiler cap | Local commit `4434ed5aa99e1eef8c365cf80432de7358c6e5c2`: admitted whole-job kernel cap, not just Node heap flags. Owning implementation record (private record); source-only, no runtime qualification/restart. |
 | MCP | Core profile configuration/direct advertisement of 8 tools remain completed evidence; the last retained parent catalog had 329 tools/28 Gmax tools. No catalog, attachment or current-repo readiness claim was rechecked. |
-| Remote embedding | [Plan `7922a38`](gmax-remote-background-embedding.md), not implemented. Windows v1 is prepared; the proposed Mac/Windows+MLX work has not started and no large-model load is authorized. |
+| Remote embedding | [Source integration](gmax-remote-background-embedding.md) completed locally after this recenter; not activated, compiled or runtime-qualified. No large-model load authorized. |
 
 **Noise evidence:** the user's “No noise now” described the first power-saver
 activation, before the incident rollback. It is not a new acoustic measurement
