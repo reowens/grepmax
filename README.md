@@ -1015,8 +1015,9 @@ retains job custody and prevents duplicate submission.
 
 The source now connects the prepared offline ONNX runtime, fixed worker task,
 Windows/Mac resource adapters and terminal receipts. One focused fake-only run
-passed18 cases. One typecheck found2 code locations, corrected without a rerun;
-final source has no passing compile receipt. No worker was activated. Exact prepared models/runtime/dependencies,
+passed18 cases. The corrected-source typecheck subsequently passed. Dell
+preparation stopped on local owned-process cleanup after a metadata read; no
+real embedding ran and no worker was activated. Exact prepared models/runtime/dependencies,
 read-only worker cache permissions and admitted routes must be supplied before
 use; the Mac roster was not changed. Existing MLX remains dense-only. See the
 setup, bounds and source completion record (private record).

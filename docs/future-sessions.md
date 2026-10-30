@@ -4,12 +4,59 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-30
 audience: internal
-summary: "Recenter: Dell-win matching ONNX dense+ColBERT first; source complete, corrected compilation and real worker runtime unverified; Mac/MLX and release unselected."
+summary: "Corrected source compiles; Dell preparation safely stopped at local retained-descendant guard, cleanup complete; inference NOT RUN."
 ---
 
 # Future Sessions
 
+## Dell preparation stopped safely; corrected compilation passed
+
+The selected1–4 operation reached a real cleanup stop before asset staging or
+inference. **Compilation now passes; Dell embedding remains NOT RUN.** Exactly
+one `node_modules/.bin/tsc --noEmit --incremental false` ran, exit0, under the
+fresh verified2GiB kernel cap/no-job-swap gate and canonical revision4 limits.
+Peak owned RSS373,993,472B, elapsed1.819s, zero owned swap/OOM, no cleanup errors,
+empty group removed. Existing18 fake cases were not rerun. The observed working
+HEAD was `3594d8a` (includes an unrelated history-source commit); existing dirty
+dependency/query changes were preserved, not staged or hidden. This compile is
+not a clean release artifact qualification or a model/runtime result.
+
+A separate guarded prerequisite metadata read used the existing Dell roster,
+network-policy admission and standard authenticated Windows transport. Policy
+admission succeeded. The read returned job profile `C:\Users\<job-account>`, Node
+22.23.1 and one existing dependency cache key, **no embedding manifest**. No
+worker cache/model/runtime files, ACLs, helper artifacts or settings were written.
+The immutable receipt preserves exact cache identity, not invented asset hashes.
+
+The metadata command exited0, but its guard failed at03:35:57.206UTC with
+**`owned descendants retained after command exit`**. Owned cleanup drained the
+group and removed it, with zero owned swap/OOM and no cleanup errors. Peak owned
+RSS98,353,152B. No further window/retry was opened. **Real inference attempts:0**;
+no fixed embedding dispatch, outer inference job or remote reservation was begun.
+The local operation/group ID belongs to metadata only, not an embedding job.
+
+Platform `scripts/worker-pool.mjs:193` sets SSH `ControlMaster=auto` and
+`ControlPersist=600`; an owned connection master can outlive its command. That
+is a source-grounded cleanup hypothesis, **not a proven identity** of the retained
+process: the event receipt did not record its PID/executable. No shared master
+was killed or transport setting weakened. This is a local owned-lifetime stop,
+not proof that Dell is offline, model-incompatible or missing authorization.
+
+Exact logs, cap/guard receipts and metadata (private record) supersede the older
+corrected-uncompiled state while preserving all prior failed receipts unchanged.
+The remaining continuation is specific: resolve the owned SSH client's lifetime
+without changing shared clients, then a separately selected fresh preparation
+window can prepare the exact selected runtime (correction `153d6f9`), matching
+small384d dense+ColBERT model/tokenizer bytes, Windows dependencies/native helper
+and read-only manifest closure before the single still-unstarted real batch.
+No automatic retry, extra test/compile, model load, route switch or release is
+queued. Numeric/token/native parity and noise benefit remain unmeasured.
+P3 product110, power-saver, WOL, stores, Mac roster and client settings are untouched.
+
+
 ## Recenter: Dell-win first, source complete but runtime unproven
+
+**Historical proposal; selected operation and actual safe-stop outcome are recorded above.**
 
 **On track for the selected source milestone; not ready to publish or claim
 working offload.** The goal is background **dense plus ColBERT** inference on a
