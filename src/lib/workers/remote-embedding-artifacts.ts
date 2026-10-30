@@ -14,6 +14,8 @@ export interface PreparedEmbeddingManifest {
   runtime: {
     platform: string; architecture: string; nodeVersion: string; commit: string;
     files: PreparedEmbeddingFile[];
+    dependencyFiles?: PreparedEmbeddingFile[];
+    links?: { path: string; target: string }[];
   };
   policy: { cache: "read-only"; downloads: "forbidden"; preprocessing: "gmax-onnx-hybrid-v1" };
 }
@@ -57,7 +59,8 @@ function inventory(value: unknown): PreparedEmbeddingFile[] {
 export function validatePreparedEmbeddingManifest(value: unknown): PreparedEmbeddingManifest {
   exact(value, ["schemaVersion", "generationFingerprint", "colbertDim", "models", "runtime", "policy"]);
   exact(value.policy, ["cache", "downloads", "preprocessing"]);
-  exact(value.runtime, ["platform", "architecture", "nodeVersion", "commit", "files"]);
+  const linked = Object.hasOwn(value.runtime as object, "dependencyFiles") || Object.hasOwn(value.runtime as object, "links");
+  exact(value.runtime, ["platform", "architecture", "nodeVersion", "commit", "files", ...(linked ? ["dependencyFiles", "links"] : [])]);
   if (value.schemaVersion !== 1 || !hash(value.generationFingerprint)
     || !Number.isInteger(value.colbertDim) || Number(value.colbertDim) < 1 || Number(value.colbertDim) > 1024
     || value.policy.cache !== "read-only" || value.policy.downloads !== "forbidden"
@@ -66,12 +69,25 @@ export function validatePreparedEmbeddingManifest(value: unknown): PreparedEmbed
     || typeof value.runtime.architecture !== "string" || !["arm64", "x64"].includes(value.runtime.architecture)
     || typeof value.runtime.nodeVersion !== "string" || !/^\d+\.\d+\.\d+$/.test(value.runtime.nodeVersion)
     || typeof value.runtime.commit !== "string" || !/^[a-f0-9]{40}$/.test(value.runtime.commit)) refuse("unsupported manifest contract");
+  let closure: Pick<PreparedEmbeddingManifest["runtime"], "dependencyFiles" | "links"> = {};
+  if (linked) {
+    if (!Array.isArray(value.runtime.links) || value.runtime.links.length > 32768) refuse("invalid dependency aliases");
+    const names = new Set<string>();
+    const links = value.runtime.links.map(raw => {
+      exact(raw, ["path", "target"]); safePath(raw.path); safePath(raw.target);
+      if (!/^(runtime|dependencies)\//.test(raw.path) || !/^(runtime|dependencies)(\/|$)/.test(raw.target)
+        || names.has(raw.path.toLowerCase())) refuse("invalid/colliding dependency alias");
+      names.add(raw.path.toLowerCase());
+      return { path: raw.path, target: raw.target };
+    }).sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+    closure = { dependencyFiles: inventory(value.runtime.dependencyFiles), links };
+  }
   return {
     schemaVersion: 1, generationFingerprint: value.generationFingerprint,
     colbertDim: Number(value.colbertDim), models: inventory(value.models),
     policy: { cache: "read-only", downloads: "forbidden", preprocessing: "gmax-onnx-hybrid-v1" },
     runtime: { platform: String(value.runtime.platform), architecture: String(value.runtime.architecture),
-      nodeVersion: value.runtime.nodeVersion, commit: value.runtime.commit, files: inventory(value.runtime.files) },
+      nodeVersion: value.runtime.nodeVersion, commit: value.runtime.commit, files: inventory(value.runtime.files), ...closure },
   };
 }
 
@@ -95,7 +111,7 @@ async function directory(location: string) {
   return absolute;
 }
 
-async function verifyTree(root: string, files: PreparedEmbeddingFile[]) {
+async function verifyTree(root: string, files: PreparedEmbeddingFile[], aliases = new Map<string, string>()) {
   await directory(root);
   const expected = new Map(files.map(file => [file.path, file]));
   let visited = 0;
@@ -107,9 +123,16 @@ async function verifyTree(root: string, files: PreparedEmbeddingFile[]) {
       safePath(relativeFile);
       const absolute = path.join(root, ...relativeFile.split("/"));
       const before = await lstat(absolute);
-      if (before.isSymbolicLink()) refuse("symlink in prepared cache");
+      if (before.isSymbolicLink()) {
+        const target = aliases.get(relativeFile);
+        if (!target || await realpath(absolute) !== target || await realpath(target) !== target)
+          refuse("unlisted/escaping/cyclic dependency symlink");
+        aliases.delete(relativeFile);
+        continue; // Its canonical target is covered by the other full inventory.
+      }
       if (before.isDirectory()) {
-        if (!files.some(file => file.path.startsWith(relativeFile + "/"))) refuse("unlisted directory");
+        if (!files.some(file => file.path.startsWith(relativeFile + "/"))
+          && ![...aliases.keys()].some(name => name.startsWith(relativeFile + "/"))) refuse("unlisted directory");
         await walk(relativeFile); continue;
       }
       const wanted = expected.get(relativeFile);
@@ -143,13 +166,14 @@ async function verifyTree(root: string, files: PreparedEmbeddingFile[]) {
   }
   await walk("");
   if (visited !== files.length) refuse("prepared inventory is incomplete");
+  if (aliases.size) refuse("declared dependency aliases missing");
 }
 
 /** Metadata/byte verification only. Roots and manifest come from the trusted adapter. */
 export async function verifyPreparedEmbeddingArtifacts(
   value: unknown,
   expected: PreparedEmbeddingIdentity,
-  roots: { models: string; runtime: string },
+  roots: { models: string; runtime: string; dependencies?: string },
 ): Promise<{ graniteModelPath: string; colbertModelPath: string }> {
   const manifest = validatePreparedEmbeddingManifest(value);
   const tier = MODEL_TIERS[expected.generation.tier];
@@ -175,18 +199,51 @@ export async function verifyPreparedEmbeddingArtifacts(
   if (!graniteFile || !modelNames.has(colbertFile)) refuse("required ONNX artifact absent");
   if (manifest.models.some(file => !file.path.startsWith(granite + "/") && !file.path.startsWith(colbert + "/")))
     refuse("unrelated model inventory");
-  const runtimeNames = new Set(manifest.runtime.files.map(file => file.path));
+  const runtimeNames = new Set(manifest.runtime.files.map(file => `runtime/${file.path}`));
+  for (const file of manifest.runtime.dependencyFiles ?? []) runtimeNames.add(`dependencies/${file.path}`);
+  const links = manifest.runtime.links ?? [];
+  const hasRuntimeFile = (file: string) => {
+    let name = `runtime/${file}`;
+    const seen = new Set<string>();
+    for (let hop = 0; hop <= links.length; hop++) {
+      if (seen.has(name)) refuse("cyclic runtime alias");
+      seen.add(name);
+      const link = links.filter(l => name === l.path || name.startsWith(l.path + "/")).sort((a,b) => b.path.length-a.path.length)[0];
+      if (!link) return runtimeNames.has(name);
+      name = link.target + name.slice(link.path.length);
+    }
+    refuse("runtime alias chain exceeds bound");
+  };
   for (const file of ["package.json", "pnpm-lock.yaml", "src/config.ts", "src/lib/workers/colbert-tokenizer.ts",
     "src/lib/workers/embeddings/granite.ts", "src/lib/workers/embeddings/colbert.ts",
     "src/lib/workers/remote-embedding-executor.ts", "src/lib/workers/remote-embedding-artifacts.ts",
     "src/lib/workers/remote-embedding/protocol.ts", "src/lib/index/embedding-generation.ts",
     "node_modules/onnxruntime-node/package.json", "node_modules/@huggingface/transformers/package.json"])
-    if (!runtimeNames.has(file)) refuse("required runtime inventory absent");
+    if (!hasRuntimeFile(file)) refuse("required runtime inventory absent");
   const modelsRoot = await directory(roots.models), runtimeRoot = await directory(roots.runtime);
   if (modelsRoot === runtimeRoot || modelsRoot.startsWith(runtimeRoot + path.sep) || runtimeRoot.startsWith(modelsRoot + path.sep))
     refuse("overlapping prepared roots");
   await verifyTree(modelsRoot, manifest.models);
-  await verifyTree(runtimeRoot, manifest.runtime.files);
+  if (manifest.runtime.dependencyFiles) {
+    if (!roots.dependencies) refuse("trusted dependency root required");
+    const dependenciesRoot = await directory(roots.dependencies);
+    if ([modelsRoot, runtimeRoot].some(root => root === dependenciesRoot || root.startsWith(dependenciesRoot + path.sep) || dependenciesRoot.startsWith(root + path.sep)))
+      refuse("overlapping dependency root");
+    const locations = { runtime: runtimeRoot, dependencies: dependenciesRoot };
+    const runtimeAliases = new Map<string, string>(), dependencyAliases = new Map<string, string>();
+    for (const link of links) {
+      const [kind, ...parts] = link.path.split("/");
+      const [targetKind, ...targetParts] = link.target.split("/");
+      const target = path.join(locations[targetKind as keyof typeof locations], ...targetParts);
+      // Require canonical targets; OS realpath also refuses symlink cycles.
+      if (await realpath(target) !== target) refuse("dependency alias target is not canonical");
+      const targetName = link.target;
+      if (![...runtimeNames].some(name => name === targetName || name.startsWith(targetName + "/"))) refuse("alias target has no hashed closure");
+      (kind === "runtime" ? runtimeAliases : dependencyAliases).set(parts.join("/"), target);
+    }
+    await verifyTree(runtimeRoot, manifest.runtime.files, runtimeAliases);
+    await verifyTree(dependenciesRoot, manifest.runtime.dependencyFiles, dependencyAliases);
+  } else await verifyTree(runtimeRoot, manifest.runtime.files);
   return { graniteModelPath: path.join(modelsRoot, ...graniteFile.split("/")),
     colbertModelPath: path.join(modelsRoot, ...colbertFile.split("/")) };
 }

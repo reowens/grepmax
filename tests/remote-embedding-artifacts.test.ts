@@ -100,4 +100,34 @@ describe("prepared embedding artifact verifier, fake file bytes only", () => {
       expect(() => validatePreparedEmbeddingManifest({ ...f.manifest, models: [{ path: "../outside", bytes: 0, sha256: hash("") }] })).toThrow("unsafe");
     } finally { await f.cleanup(); }
   });
+
+  it("binds pnpm aliases to a fully hashed dependency closure without flattening", async () => {
+    const f = await fixture();
+    const dependencies = path.join(f.root, "dependencies");
+    try {
+      await mkdir(dependencies);
+      const moved = f.manifest.runtime.files.filter(file => file.path.startsWith("node_modules/"));
+      f.manifest.runtime.files = f.manifest.runtime.files.filter(file => !file.path.startsWith("node_modules/"));
+      f.manifest.runtime.dependencyFiles = [];
+      f.manifest.runtime.links = [{ path: "runtime/node_modules", target: "dependencies" }];
+      for (const file of moved) {
+        const name = file.path.slice("node_modules/".length);
+        const physical = `.pnpm/prepared/node_modules/${name}`;
+        await mkdir(path.dirname(path.join(dependencies, physical)), { recursive: true });
+        await writeFile(path.join(dependencies, physical), `fake fixture bytes: ${file.path}`);
+        f.manifest.runtime.dependencyFiles.push({ ...file, path: physical });
+        const alias = path.dirname(name), target = `.pnpm/prepared/node_modules/${alias}`;
+        await mkdir(path.dirname(path.join(dependencies, alias)), { recursive: true });
+        await symlink(path.join(dependencies, target), path.join(dependencies, alias), "junction");
+        f.manifest.runtime.links.push({ path: `dependencies/${alias}`, target: `dependencies/${target}` });
+      }
+      await rm(path.join(f.roots.runtime, "node_modules"), { recursive: true });
+      await symlink(dependencies, path.join(f.roots.runtime, "node_modules"), "junction");
+      await expect(verifyPreparedEmbeddingArtifacts(f.manifest, f.identity(), { ...f.roots, dependencies })).resolves.toHaveProperty("graniteModelPath");
+      const before = f.identity().runtimeDigest;
+      f.manifest.runtime.links[0].target = "runtime";
+      expect(f.identity().runtimeDigest).not.toBe(before);
+      await expect(verifyPreparedEmbeddingArtifacts(f.manifest, f.identity(), { ...f.roots, dependencies })).rejects.toThrow();
+    } finally { await f.cleanup(); }
+  });
 });
