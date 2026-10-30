@@ -116,7 +116,7 @@ typecheck, 515 tests pass; deprecation hint gone (drop the documenting comment).
 - README: structure-aware vs text-indexed language tiers (SQL was overclaimed; added
   Scala/Lua); documented missing search flags (`--in`, `--seed-*`, `--compact`,
   `--plain`, etc.); added the 5 undocumented MCP tools + `list_projects`; npm badges;
-  `--agent` ~89% wording.
+  `--agent` compact output wording (one line per hit: path:line, score, symbol, instead of code snippets).
 - `chore(deps)`: removed dead `piscina` + `@anthropic-ai/claude-agent-sdk`; added
   `tsx`; in-range updates; majors node-gyp 13, @types/node 26, uuid 14, commander 15
   (+ `engines: node>=22.12`). Held: apache-arrow (LanceDB cap), onnxruntime (ABI), biome.

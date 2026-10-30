@@ -374,3 +374,182 @@ describe("Claude entrypoints and quoted installation paths", () => {
     }
   });
 });
+
+function repoContext(
+  indexState: string,
+  daemonState = "unobserved",
+  cliHint: string | null = null,
+) {
+  // Loading the formatter must not access metadata, sockets or the live home.
+  const context = {
+    module: {
+      exports: {} as { formatRepoContext: (status: unknown) => string },
+    },
+    require: (name: string) => {
+      if (name === "node:fs" || name === "node:net") return {};
+      if (name === "node:os") return { homedir: () => "/synthetic" };
+      if (name === "node:path") return path;
+      throw Error(`unexpected status access: ${name}`);
+    },
+  };
+  vm.runInNewContext(
+    fs.readFileSync(path.join(hooksDir, "repo-status.js"), "utf8"),
+    context,
+  );
+  return context.module.exports.formatRepoContext({
+    repoRoot: "/project",
+    matchedRoot: indexState === "not_registered" ? null : "/project",
+    indexState,
+    cachedChunks: 12,
+    daemon: { state: daemonState },
+    cliHint,
+  });
+}
+
+async function preGrep(
+  pattern: unknown,
+  cliHint: string | null = "gmax \"<concept>\" --root '/project' --agent",
+) {
+  const write = vi.fn();
+  const readRepoStatus = vi.fn(() => ({ cliHint }));
+  const stdin = new EventEmitter();
+  Object.assign(stdin, { setEncoding: vi.fn() });
+  const context: Record<string, unknown> = {
+    process: { stdin, cwd: () => "/project", stdout: { write } },
+    // Input is supplied immediately; no real hook timeout is needed.
+    setTimeout: vi.fn(),
+    require: (name: string) => {
+      if (name === "./repo-status") return { readRepoStatus };
+      throw Error(`unexpected require ${name}`);
+    },
+  };
+  vm.runInNewContext(
+    fs
+      .readFileSync(path.join(hooksDir, "pre-grep.js"), "utf8")
+      .replace(/main\(\);\s*$/, "globalThis.done=main();"),
+    context,
+  );
+  stdin.emit(
+    "data",
+    JSON.stringify({ cwd: "/project", tool_input: { pattern } }),
+  );
+  stdin.emit("end");
+  await context.done;
+  return { write, readRepoStatus };
+}
+
+describe("Claude semantic discovery guidance", () => {
+  it("directs indexed-repo behavior questions to gmax, then Read", () => {
+    const text = repoContext(
+      "indexed",
+      "unobserved",
+      "gmax \"<concept>\" --root '/project' --agent",
+    );
+    expect(text).toContain("This repo has a semantic index");
+    expect(text).toContain("when you do not know the exact name");
+    expect(text).toContain(
+      "run gmax \"<question in plain words>\" --root '/project' --agent first",
+    );
+    expect(text).toContain("then Read the file:line pointers");
+    expect(text).toContain("Use Grep for exact names");
+    expect(text).toContain(
+      "freshness and embedding compatibility are unverified",
+    );
+    expect(text).toContain("does not register an MCP server");
+    expect(text).toContain(
+      "explicit query limits and model/startup restrictions still apply",
+    );
+    expect(text).not.toContain("suggest an advertised");
+  });
+
+  it.each([
+    "pending",
+    "error",
+    "legacy_unknown",
+    "metadata_unavailable",
+    "store_unavailable",
+    "unknown",
+  ])("keeps %s readiness unverified without a search instruction", (state) => {
+    const text = repoContext(state);
+    expect(text).toContain("Current-repo search readiness is unverified");
+    expect(text).not.toContain("This repo has a semantic index");
+    expect(text).not.toContain("run gmax");
+  });
+
+  it("preserves not-registered and offline caveats", () => {
+    const absent = repoContext("not_registered");
+    expect(absent).toContain("Other registered projects do not cover it");
+    expect(absent).not.toContain("run gmax");
+    for (const state of ["offline", "paused", "initializing"]) {
+      expect(repoContext("indexed", state)).toContain(
+        "Daemon state does not establish query readiness. Do not start services or load models",
+      );
+    }
+    expect(repoContext("indexed")).not.toContain("run gmax");
+  });
+
+  it.each([
+    "where authentication happens",
+    "heartbeat|ping|keepalive",
+    "(?i)reconnect|resubscribe|restore",
+    "dosdevices|sandbox|wine",
+    // Patterns an agent actually grepped while guessing at a behavior.
+    "(?i)keep.?alive|NoOp|heartbeat|ping",
+    "(?i)reconnect|resubscribe|re-?login|restore",
+    "(?i)(dry.?run|confirm|read.?only|allow.?write|safe)",
+    "keep.?alive|heartbeat|ping",
+    "(heartbeat|ping|keepalive)",
+  ])(
+    "adds informational context for %s without blocking or modifying Grep",
+    async (pattern) => {
+      const { write, readRepoStatus } = await preGrep(pattern);
+      expect(readRepoStatus).toHaveBeenCalledWith("/project");
+      expect(write).toHaveBeenCalledTimes(1);
+      const output = JSON.parse(write.mock.calls[0][0]);
+      expect(Object.keys(output)).toEqual(["hookSpecificOutput"]);
+      expect(Object.keys(output.hookSpecificOutput)).toEqual([
+        "hookEventName",
+        "additionalContext",
+      ]);
+      expect(output.hookSpecificOutput.hookEventName).toBe("PreToolUse");
+      expect(output.hookSpecificOutput.additionalContext).toBe(
+        "This repo has a semantic index: when you are guessing names for a behavior, run gmax \"<question in plain words>\" --root '/project' --agent first (requires gmax on PATH), then Read the file:line pointers it returns. Use Grep for exact names and honor explicit query/startup limits.",
+      );
+    },
+  );
+
+  it.each([
+    "heartbeat",
+    "heartbeat ping",
+    "heartbeat|ping",
+    "heartbeat|ping|",
+    "keepAlive",
+    "NoOp|heartbeat|ping",
+    "KEEPALIVE|HEARTBEAT|PING",
+    "keep_alive|heartbeat|ping",
+    "src/auth/handler",
+    "src/auth handler code",
+    "src/auth|lib/auth|test/auth",
+    "foo.bar|heartbeat|ping",
+    "dosdevices|sandbox|z:",
+    "class|function|import",
+    "UserService|AuthGuard|JwtStrategy",
+    "const auth handler",
+    '"where auth happens"',
+    "auth.handler handles requests",
+    null,
+    42,
+  ])(
+    "leaves literal, identifier and code pattern %j alone",
+    async (pattern) => {
+      const { write, readRepoStatus } = await preGrep(pattern);
+      expect(write).not.toHaveBeenCalled();
+      expect(readRepoStatus).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not suggest a search without a current-repo CLI hint", async () => {
+    const { write } = await preGrep("heartbeat|ping|keepalive", null);
+    expect(write).not.toHaveBeenCalled();
+  });
+});

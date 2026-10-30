@@ -1,6 +1,6 @@
 ---
 name: grepmax
-description: Semantic code search. Use alongside grep - grep for exact strings, gmax for concepts.
+description: Use for questions about where or how something happens in this codebase when you do not know the exact name. In an indexed repo, search with gmax first, then Read the returned lines. Use Grep for exact names.
 allowed-tools: "Bash(gmax:*), Read"
 ---
 
@@ -8,7 +8,7 @@ allowed-tools: "Bash(gmax:*), Read"
 
 - **Know the exact string/symbol?** → `Grep` tool (fastest, zero overhead)
 - **Know the file already?** → `Read` tool directly
-- **Searching by concept/behavior?** → an advertised Gmax `semantic_search` tool, or `Bash(gmax "query" --agent)` when CLI use is permitted
+- **Searching by concept/behavior in an indexed repo?** → run `Bash(gmax "<question in plain words>" --agent)` first when CLI use is permitted, then `Read` the returned file:line pointers
 - **New to the codebase?** → `Bash(gmax audit --agent)` (god nodes, hubs, cycles in one pass)
 - **Need full function body?** → `Bash(gmax extract <symbol>)` (complete source with line numbers)
 - **Quick symbol overview?** → `Bash(gmax peek <symbol>)` (signature + callers + callees)

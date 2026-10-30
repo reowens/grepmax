@@ -157,7 +157,7 @@ function formatRepoContext(status) {
       status.daemon.state === "initializing")
     lines.push("Daemon state does not establish query readiness. Do not start services or load models as part of discovery/status.");
   if (status.cliHint)
-    lines.push(`For permitted semantic discovery, suggest an advertised Gmax semantic_search tool or this CLI command (requires gmax on PATH): ${status.cliHint}. Use rg for literal text/files. Explicit query limits and model/startup restrictions still apply.`);
+    lines.push(`This repo has a semantic index: for questions about where or how something happens when you do not know the exact name, run ${status.cliHint.replace("<concept>", "<question in plain words>")} first (requires gmax on PATH), then Read the file:line pointers it returns. Use Grep for exact names and rg for literal text/files; explicit query limits and model/startup restrictions still apply.`);
   return lines.join("\n");
 }
 

@@ -32,34 +32,38 @@ const HAS_QUOTE = /['"]/;
 const CODE_KEYWORDS =
   /\b(class|function|const|let|var|import|export|return|extends|implements|interface|type|enum|struct|def|async|await)\b/;
 
+// Light fuzz agents put inside a guessed word: keep.?alive, re-?login, dry\s?run.
+const WORD_FUZZ = /\.\?|-\?|\\s[?*]?/g;
+
 /**
- * Conservative heuristic: returns true only when the pattern is very
- * likely a natural language query rather than a code pattern.
- *
- * ALL of these must hold:
- * - Multi-word (contains spaces)
- * - 3+ words (2-word phrases are too ambiguous — "auth flow" could be a grep)
- * - No regex special chars
- * - No camelCase, PascalCase, or snake_case (identifiers)
- * - No code keywords (class, function, import, etc.)
- * - No dots (method chains)
- * - Not all-caps (constants)
- * - No quotes (literal string searches)
+ * Count the plain lowercase words in a regex alternation such as
+ * `(?i)keep.?alive|NoOp|heartbeat|ping`, the shape of a grep that is guessing
+ * at a behavior's vocabulary. Identifiers, paths and code keywords don't count.
+ */
+function guessedWordCount(pattern) {
+  const body = pattern.replace(/^\(\?i\)/, "").replace(/^\((.*)\)$/, "$1");
+  const alternatives = body.split("|");
+  if (alternatives.length < 3) return 0;
+  return alternatives.filter((alt) => {
+    const word = alt.replace(WORD_FUZZ, "");
+    return /^[a-z]+$/.test(word) && !CODE_KEYWORDS.test(word);
+  }).length;
+}
+
+/**
+ * Match 3+ natural-language words, or an alternation with 3+ guessed plain
+ * words. Skip identifiers, code syntax, paths and literal string searches.
  */
 function isConceptualQuery(pattern) {
   if (!pattern || typeof pattern !== "string") return false;
 
   const trimmed = pattern.trim();
+  if (trimmed.includes("|")) return guessedWordCount(trimmed) >= 3;
 
-  // Must contain spaces (multi-word)
-  if (!trimmed.includes(" ")) return false;
+  if (trimmed.split(/\s+/).length < 3) return false;
 
-  // Must have 3+ words
-  const words = trimmed.split(/\s+/);
-  if (words.length < 3) return false;
-
-  // No regex special characters
-  if (REGEX_SPECIAL.test(trimmed)) return false;
+  // No regex special characters or paths
+  if (REGEX_SPECIAL.test(trimmed) || trimmed.includes("/")) return false;
 
   // No camelCase or PascalCase identifiers
   if (CAMEL_CASE.test(trimmed)) return false;
@@ -94,7 +98,7 @@ async function main() {
   const response = {
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
-      additionalContext: `For permitted meaning-based discovery in the registered current repo, consider an advertised Gmax semantic_search tool or CLI: ${status.cliHint}. This hint does not attach MCP tools. Keep rg/Grep for literal text and honor explicit query/startup limits.`,
+      additionalContext: `This repo has a semantic index: when you are guessing names for a behavior, run ${status.cliHint.replace("<concept>", "<question in plain words>")} first (requires gmax on PATH), then Read the file:line pointers it returns. Use Grep for exact names and honor explicit query/startup limits.`,
     },
   };
   process.stdout.write(JSON.stringify(response));

@@ -32,7 +32,7 @@ Natural-language search that works like `grep`. Fast, local, and built for codin
 - **Role Detection:** Distinguishes `ORCHESTRATION` (high-level logic) from `DEFINITION` (types/classes).
 - **Local & Private:** 100% local embeddings via ONNX (CPU) or MLX (Apple Silicon GPU).
 - **Centralized Index:** One database at `~/.gmax/` — index once, search from anywhere.
-- **Agent-Ready:** `--agent` flag returns compact one-line output — ~89% fewer tokens than default.
+- **Agent-Ready:** `--agent` returns one line per hit — path:line, score, symbol — instead of code snippets.
 
 **0.26.110:** Choose a compact eight-tool MCP catalog with
 `GMAX_MCP_TOOL_PROFILE=core`; unset/full keeps the existing 28 tools. Review
