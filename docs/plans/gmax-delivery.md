@@ -23,12 +23,23 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "SCP/runtime correction delivered; interrupted at private hardlink replacement; verification incomplete, inference0."
-next_step: "Resume exact owned replacement error from checkpoint under same selected outcome; preserve single inference maximum."
-summary: "Corrected runtime delivered; interrupted at owned replacement error; no inference or activation."
+current_state: "Atomic replacement source complete; real VmRSS safety stop before execution; cleanup complete, inference0."
+next_step: "Resolve essential running-process metric availability without weakening guard; preserve exact state and one inference maximum."
+summary: "Real process-metric safety stop; corrected runtime retained, atomic replacement unexercised, inference0."
 ---
 
 # Gmax Delivery Plan
+
+## Replacement corrected; required process-metric safety stop
+
+Exact error, source correction and cleanup (private record) record ReplaceFileW
+code5 and the implemented atomic owned-handle rename. The subsequent operation
+stopped on missing VmRSS for a running owned PID before the new native path.
+Cleanup confirmed remote processes0, temporary files removed, and corrected
+runtime hashes retained. No inference, model load, test/compiler rerun or
+activation occurred. Essential metric enforcement is the specific blocker;
+there is no automatic unsafe retry or new milestone approval requirement.
+
 
 ## SCP continuation: corrected runtime delivered, interrupted with inference0
 

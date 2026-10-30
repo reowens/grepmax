@@ -1007,9 +1007,10 @@ excluded path stays indexable.
 
 ### Remote background embedding (local source; not activated)
 
-Latest SCP continuation (private record): corrected runtime delivered; final cache
-verification remains incomplete at an owned hardlink replacement error.
-No inference ran and production remote offload remains inactive.
+Latest replacement and safety-stop record (private record): corrected runtime is
+materialized; atomic private-entry replacement is implemented but unexercised.
+A required process-metric guard failed before verification. No inference ran;
+production remote offload remains inactive.
 
 Local remains the default, including foreground query encoding. The optional
 background route sends changed chunks to a named trusted worker while P3 keeps

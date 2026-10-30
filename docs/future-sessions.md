@@ -4,10 +4,21 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-30
 audience: internal
-summary: "Corrected runtime delivered; interrupted at owned replacement error; no inference or activation."
+summary: "Real process-metric safety stop; corrected runtime retained, atomic replacement unexercised, inference0."
 ---
 
 # Future Sessions
+
+## Replacement corrected; required process-metric safety stop
+
+Exact error, source correction and cleanup (private record) record ReplaceFileW
+code5 and the implemented atomic owned-handle rename. The subsequent operation
+stopped on missing VmRSS for a running owned PID before the new native path.
+Cleanup confirmed remote processes0, temporary files removed, and corrected
+runtime hashes retained. No inference, model load, test/compiler rerun or
+activation occurred. Essential metric enforcement is the specific blocker;
+there is no automatic unsafe retry or new milestone approval requirement.
+
 
 ## SCP continuation: corrected runtime delivered, interrupted with inference0
 
