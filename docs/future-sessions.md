@@ -22,6 +22,14 @@ retained, production offload remains inactive, and no numeric/fan claim is made.
 The18 fake passes/once-passing Gmax compile were reused; no new tests/compile ran.
 Earlier sections and failed receipts below are dated history, not current readiness.
 
+The goal remains one background dense+ColBERT offload path while P3 keeps
+foreground queries and store authority. Preparation is verified. The remaining
+work is actual use of the corrected Windows loader and setup/collection within
+the unchanged180s. The [finite proposed continuation](plans/gmax-remote-background-embedding.md#proposed-continuation-after-the-deadline-stop)
+uses retained assets, then one later-selected bounded request and complete
+cleanup/records. This docs-only recenter starts no operation, test/compile rerun,
+release or production activation. Power-saver/WOL stay complete and untouched.
+
 
 ## Replacement corrected; required process-metric safety stop
 

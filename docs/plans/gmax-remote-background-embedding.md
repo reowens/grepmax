@@ -14,7 +14,7 @@ parent_plan: docs/plans/gmax-delivery.md
 related_plans:
 related_docs:
 current_state: "Windows cache full verification passed; one request failed before model entry plus sender deadline safety stop; cleanup confirmed."
-next_step: "Retain verified dc7/e025 assets and source-only file-URL correction; no duplicate inference or automatic retry after deadline stop."
+next_step: "Proposed only: inspect retained setup/collection timing and verified reuse paths, then one later-selected bounded Windows request using the corrected loader; no dispatch now."
 summary: "Cache verified; one native request failed before model load; corrected loader unexercised, all owned cleanup complete."
 ---
 
@@ -33,6 +33,59 @@ retained, production offload remains inactive, and no numeric/fan claim is made.
 The18 fake passes/once-passing Gmax compile were reused; no new tests/compile ran.
 Earlier sections and failed receipts below are dated history, not current readiness.
 
+
+### Proposed continuation after the deadline stop
+
+The goal is one working background dense+ColBERT offload path, with foreground
+query encoding and authoritative parsing/reuse/Lance/FTS writes staying on P3.
+Windows preparation is **verified**, not an unfinished cache-install task. The
+remaining critical path is actual use of loader correction `349c4604f6` and
+sender setup/result collection fitting the existing total180s. One earlier
+request reached a native bridge job but loaded0 models and returned0 vectors.
+
+The next proposed batch is finite and is **not authorized by this docs recenter**:
+
+1. Before another live attempt, inspect only the fixed sender's existing reuse,
+   setup and collection paths against the retained transport timings (private record).
+   Only95.144s remained after job-code completion,38.914s at native-task start,
+   and16.417s at actual native launch. These boundaries do not identify each
+   call's cost. Select verified source/archive/cache reuse and the corrected
+   file-URL command, rather than blindly repeating that sequence. Reuse e025/DC7,
+   unchanged7d2 dependencies and model generation; do not restart installs,
+   transfers or a separate full verification by default. Required per-job checks
+   must still fit the same deadline. Changed identities require the applicable
+   integrity/access checks; a directory or marker alone never proves validity.
+2. Once that batch is expressly selected, one end-to-end owner submits exactly
+   **one** small real request with1–2 short synthetic chunks through the complete
+   P3 sender/Windows executor/result path. Its selected dense+ColBERT model load
+   is part of that future selection. Setup, transport, execution, result capture
+   and cleanup share the absolute180s, without phase resets. Preserve hard2GiB,
+   CPU2, nice10/below-normal,8GiB floor, local swap0/oom.group1 and Windows owned
+   Job Object custody. No warmup, paired/reference arm, local model load, new
+   test suite or Gmax compiler rerun is proposed; retain the18 historical fake
+   passes and prior compile with their recorded source coverage.
+3. Retain the exact request/runtime/model/tokenizer/manifest/output identities;
+   validate actual vector shapes, finite values, normalization, token/packed
+   ColBERT bounds and terminal cleanup. No fresh reference inference or numeric
+   parity claim follows from sanity checks. Complete in-scope ordinary fixes,
+   confirmed cleanup and records within the selected owner window without
+   milestone approval loops. A resource/deadline/essential-metric/containment or
+   cleanup failure still stops and drains; no unchanged retry or limit increase.
+4. Commit the resulting source/records locally and state whether a real embedding
+   result succeeded. No publication, continuous background activation, Mac route
+   admission, MLX work or model migration is included.
+
+Public/P3 Gmax0.26.110 remains the deployed baseline, last confirmed ready/open/
+active in its delivery record and not rechecked here. This feature is local,
+unreleased and inactive. Power-saver and WOL configuration/persistence work are
+complete and unchanged; physical wake/BIOS behavior is untested. The noise
+workaround is separate from offload, with no new acoustic/performance claim.
+The Mac adapter exists but its route is not admitted; current MLX is dense-only
+and optional/deferred. Collector revision5 had no recovery event in actual use;
+the earlier running-process missing-VmRSS cause remains unknown. Native/loader
+source fixes have only their stated coverage, not an implied rerun of the old
+18 cases or compilation. No live work is running, and no operation starts from
+this proposal.
 
 ## Replacement corrected; required process-metric safety stop
 

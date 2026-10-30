@@ -24,7 +24,7 @@ related_plans:
 related_docs:
   - docs/linux-gpu-p3-design.md
 current_state: "Windows cache full verification passed; one request failed before model entry plus sender deadline safety stop; cleanup confirmed."
-next_step: "Retain verified dc7/e025 assets and source-only file-URL correction; no duplicate inference or automatic retry after deadline stop."
+next_step: "Proposed only: inspect retained setup/collection timing and verified reuse paths, then one later-selected bounded Windows request using the corrected loader; no dispatch now."
 summary: "Cache verified; one native request failed before model load; corrected loader unexercised, all owned cleanup complete."
 ---
 
@@ -42,6 +42,14 @@ cleanup is confirmed; no second request ran. Loader file-URL correction
 retained, production offload remains inactive, and no numeric/fan claim is made.
 The18 fake passes/once-passing Gmax compile were reused; no new tests/compile ran.
 Earlier sections and failed receipts below are dated history, not current readiness.
+
+The goal remains one background dense+ColBERT offload path while P3 keeps
+foreground queries and store authority. Preparation is verified. The remaining
+work is actual use of the corrected Windows loader and setup/collection within
+the unchanged180s. The [finite proposed continuation](gmax-remote-background-embedding.md#proposed-continuation-after-the-deadline-stop)
+uses retained assets, then one later-selected bounded request and complete
+cleanup/records. This docs-only recenter starts no operation, test/compile rerun,
+release or production activation. Power-saver/WOL stay complete and untouched.
 
 
 ## Replacement corrected; required process-metric safety stop
