@@ -1,22 +1,25 @@
 # Docs
 
-## Current state: quiet-P3 recenter, October 29, 2026
+## Current state: remote embedding source integrated, October 30, 2026
 
-[Delivery and next proposal](plans/gmax-delivery.md#recenter-quiet-p3-finish-wol-closure-before-optional-offload)
-and [handoff](future-sessions.md#recenter-quiet-p3-preserved-wol-configuration-closure-complete)
-record completed 0.26.110 delivery and the selected WOL configuration/save-to-disk
-closure, with power-saver and live Ethernet preserved. PCI wake is enabled;
-driver-bit, backing-YAML, BIOS and physical-wake verification limits remain.
-The repaired guard protected the operation; the Platform compiler cap remains
-source-only. Next is the parent recenter. Remote embedding/Mac MLX work remains
-proposed and unstarted; no new host action, model load, release or push is queued.
+[Delivery](plans/gmax-delivery.md#remote-embedding-source-integration-completed-locally)
+and [handoff](future-sessions.md#remote-embedding-source-integration-completed-locally)
+record locally completed remote background embedding source/fixtures/docs,
+including the real Windows/Mac fixed-task adapters and terminal custody.
+No tests, compilation, model loads, remote operations or activation ran.
+Prepared assets/cache permissions, route admission and actual native/numeric
+compatibility remain unobserved. No fan/noise improvement is claimed.
+Completed110 delivery, power-saver and WOL configuration/persistence are unchanged.
 
-## Selected planning: remote background embedding
+## Remote background embedding source record
 
-[Remote background embedding](plans/gmax-remote-background-embedding.md) retains
-the prepared Windows v1 proposal, with Mac/Windows and MLX assessment proposed
-but unstarted. No remote inference, model activation, verification or release
-has started. The delivery plan and handoff own the current ordering.
+The [owning plan](plans/gmax-remote-background-embedding.md) is awaiting separately
+selected runtime/preparation work; the source batch itself is finished. The
+implementation, commits and operator inputs (private record)
+and [worker boundary](remote-embedding-worker.md) distinguish implementation from
+activation. The MLX assessment (private record)
+is source-only; existing MLX remains dense-only. No release/push or new execution
+is queued, and saved prompts were not consumed.
 
 ## Earlier delivery snapshot — October 29, 2026 (superseded)
 
