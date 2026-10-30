@@ -1007,6 +1007,10 @@ excluded path stays indexable.
 
 ### Remote background embedding (local source; not activated)
 
+Latest prep-only result (private record): one native attempt returned an output-directory
+`EEXIST`; cleanup completed. The empty-output resume fix is source-only.
+Windows runtime/cache readiness remains incomplete; no inference ran.
+
 Local remains the default, including foreground query encoding. The optional
 background route sends changed chunks to a named trusted worker while P3 keeps
 parsing, reuse, file validation and all Lance/FTS writes. Remote outages defer

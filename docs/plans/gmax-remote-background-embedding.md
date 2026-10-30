@@ -13,12 +13,22 @@ audience: internal
 parent_plan: docs/plans/gmax-delivery.md
 related_plans:
 related_docs:
-current_state: "Assets staged/hash-checked; preparation deadline failed; final cleanup/quiescence passed; inference0. Post-failure source fixes unexecuted."
-next_step: "Stopped: no automatic retry. Retain owned model inputs and cleanup proof; matching Windows dependencies/runtime/readonly cache and one hybrid job remain unqualified."
+current_state: "Prep-only native attempt failed EEXIST before dependency work; cleanup complete; source fix unexecuted; inference0."
+next_step: "Stopped after single preparation attempt. Retain partial cache/model input and native terminal cleanup proof; no automatic retry."
 summary: "Ratified Dell window: exact model inputs staged, preparation guard stopped, cleanup complete, no inference; selected source repairs committed locally."
 ---
 
 # Remote background embedding
+
+## Prep-only continuation: captured output collision, cleanup complete
+
+Latest exact evidence (private record) records source staging/reuse and one native
+preparation attempt returning `EEXIST` before dependency work. Cleanup and
+reservation release completed; local groups were removed with zero owned
+swap/OOM. No inference, tests or compilation ran. The empty-output handling
+fix is committed source-only, unexecuted. Matching runtime/native DLL/manifest
+and read-only verification remain incomplete. No automatic retry follows.
+
 
 ## Ratified owner window: assets staged; preparation stopped, inference 0
 

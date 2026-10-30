@@ -9,6 +9,16 @@ summary: "Ratified Dell window: exact model inputs staged, preparation guard sto
 
 # Future Sessions
 
+## Prep-only continuation: captured output collision, cleanup complete
+
+Latest exact evidence (private record) records source staging/reuse and one native
+preparation attempt returning `EEXIST` before dependency work. Cleanup and
+reservation release completed; local groups were removed with zero owned
+swap/OOM. No inference, tests or compilation ran. The empty-output handling
+fix is committed source-only, unexecuted. Matching runtime/native DLL/manifest
+and read-only verification remain incomplete. No automatic retry follows.
+
+
 ## Ratified owner window: assets staged; preparation stopped, inference 0
 
 Complete owner evidence and source commits (private record) records 10 exact model files
