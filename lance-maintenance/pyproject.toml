@@ -3,7 +3,7 @@ name = "gmax-lance-maintenance"
 version = "0.1.0"
 description = "Prune-only and FTS maintenance aligned with grepmax's Lance engine"
 requires-python = ">=3.10"
-dependencies = ["pylance==13.0.0"]
+dependencies = ["pylance==14.0.2"]
 
 [tool.uv]
 package = false

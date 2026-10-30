@@ -402,7 +402,7 @@ describe.skipIf(!python || process.platform !== "linux")(
             expectedVersion: before.version,
           },
         );
-        expect(result).toMatchObject({ engine: "13.0.0", remainingRows: 0, batchRows: 32 });
+        expect(result).toMatchObject({ engine: "14.0.2", remainingRows: 0, batchRows: 32 });
         expect(hashes()).toEqual(before.hashes);
         await lease!.release();
         lease = undefined;

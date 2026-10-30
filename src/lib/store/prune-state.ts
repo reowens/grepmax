@@ -49,7 +49,8 @@ export function readPruneState(storeDir: string): PruneState | null {
       (!Number.isSafeInteger(state.finishedAt) ||
         state.result?.version !== state.version ||
         (state.result?.engine !== "12.0.0" &&
-          state.result?.engine !== "13.0.0") ||
+          state.result?.engine !== "13.0.0" &&
+          state.result?.engine !== "14.0.2") ||
         state.result?.rewritten !== false))
   )
     throw new Error("Prune state is invalid; cleanup remains pending");

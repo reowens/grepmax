@@ -4,6 +4,16 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VectorDB } from "../src/lib/store/vector-db";
 
+// Native fixtures create only temporary stores. Keep their admission independent
+// of the host's no-autostart/quarantine state without changing production policy.
+vi.mock("../src/lib/store/maintenance-policy", async (original) => ({
+  ...(await original<
+    typeof import("../src/lib/store/maintenance-policy")
+  >()),
+  assertStoreMutationAllowed: () => {},
+  storeMutationDeniedReason: () => null,
+}));
+
 // Real round-trip against LanceDB: proves getSchemaVectorDim reads the actual
 // on-disk FixedSizeList width, which is what lets `gmax doctor` catch a table
 // stranded at the old width after a model-tier change.

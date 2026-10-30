@@ -7,7 +7,7 @@ publish = false
 [dependencies]
 lance = { version = "=12.0.0", default-features = false, optional = true }
 lance-io = { version = "=12.0.0", default-features = false, optional = true }
-object_store = { version = "=0.14.1", default-features = false, features = ["fs"] }
+object_store = { version = "=0.14.2", default-features = false, features = ["fs"] }
 async-trait = "0.1"
 bytes = "1"
 futures = "0.3"
@@ -25,7 +25,7 @@ arrow-row = { version = "58", optional = true }
 lance-table = { version = "=12.0.0", default-features = false, optional = true }
 lance-index = { version = "=12.0.0", default-features = false, optional = true }
 libc = "0.2"
-uuid = { version = "=1.27.0", features = ["v4"], optional = true }
+uuid = { version = "=1.29.0", features = ["v4"], optional = true }
 prost = { version = "=0.14.4", optional = true }
 
 [features]

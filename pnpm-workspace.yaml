@@ -7,10 +7,10 @@ overrides:
   fast-uri: "^3.1.9" # Legacy MCP fixture > ajv
   source-map-js: "^1.2.2" # Vite/Vitest > PostCSS; GHSA-68fv-2mgg-jv7q
   # Legacy client fixture only: keep its unused HTTP dependencies patched in dev.
-  qs: "^6.16.1"
+  qs: "^6.17.1"
   ip-address: "^10.7.4"
-  hono: "^4.13.5"
-  "@hono/node-server": "^2.0.5"
+  hono: "^4.13.14"
+  "@hono/node-server": "^2.1.5"
   protobufjs: "^7.6.5" # .>@huggingface/transformers>onnxruntime-web
   undici: "^8.12.2" # node-gyp; openai optional peer >=5 <9
   # These two force past the parent's range, so they need justifying:
@@ -38,12 +38,33 @@ allowBuilds:
   protobufjs: false
   sharp: false
 
-# transformers 4.3.0 pins onnxruntime-node 1.30.0, which dedupes ort. With two
+# transformers 4.3.2 pins onnxruntime-node 1.30.0, which dedupes ort. With two
 # copies, Linux loads 1.24.3's libonnxruntime.so.1 under the 1.30.0 binding and
-# fails with VERS_1.30.0 not found. Remove once 4.3.0 is past the release-age window.
+# fails with VERS_1.30.0 not found. Remove once 4.3.2 is past the release-age window.
 minimumReleaseAgeExclude:
-  - '@huggingface/transformers@4.3.0'
-  # Explicitly requested SDK v2 migration; exact tested server/client/core pins.
-  - '@modelcontextprotocol/core@2.3.0'
-  - '@modelcontextprotocol/server@2.3.0'
-  - '@modelcontextprotocol/client@2.3.0'
+  - '@huggingface/transformers@4.3.2'
+  # Explicit minor dependency update; keep server/client/core pins aligned.
+  - '@modelcontextprotocol/core@2.4.0'
+  - '@modelcontextprotocol/server@2.4.0'
+  - '@modelcontextprotocol/client@2.4.0'
+  - '@biomejs/biome@2.6.4'
+  - '@biomejs/cli-android-arm64@2.6.4'
+  - '@biomejs/cli-android-x64@2.6.4'
+  - '@biomejs/cli-darwin-arm64@2.6.4'
+  - '@biomejs/cli-darwin-x64@2.6.4'
+  - '@biomejs/cli-linux-arm64-musl@2.6.4'
+  - '@biomejs/cli-linux-arm64@2.6.4'
+  - '@biomejs/cli-linux-x64-musl@2.6.4'
+  - '@biomejs/cli-linux-x64@2.6.4'
+  - '@biomejs/cli-win32-arm64@2.6.4'
+  - '@biomejs/cli-win32-x64@2.6.4'
+  - '@types/node@26.6.6'
+  - qs@6.17.1
+  - '@lancedb/lancedb-darwin-arm64@0.41.0'
+  - '@lancedb/lancedb-linux-arm64-gnu@0.41.0'
+  - '@lancedb/lancedb-linux-arm64-musl@0.41.0'
+  - '@lancedb/lancedb-linux-x64-gnu@0.41.0'
+  - '@lancedb/lancedb-linux-x64-musl@0.41.0'
+  - '@lancedb/lancedb-win32-arm64-msvc@0.41.0'
+  - '@lancedb/lancedb-win32-x64-msvc@0.41.0'
+  - '@lancedb/lancedb@0.41.0'
