@@ -9,7 +9,8 @@ const senderRoot = path.resolve(__dirname, "../../../..");
 export const fixedWorkerTransport: RemoteEmbeddingTransport = {
   capability(config: BackgroundEmbeddingConfig) {
     const root = config.runtimeCheckout ?? "";
-    const present = process.platform === "linux" && path.isAbsolute(root) && ["scripts/guard-local-operation.py", "scripts/remote-embedding-submit.mjs"].every(p => fs.existsSync(path.join(senderRoot,p)));
+    const bridge = [path.resolve(root,"../platform"),path.resolve(root,"../../platform")].some(p => fs.existsSync(path.join(p,"scripts/gmax-worker.mjs")));
+    const present = bridge && process.platform === "linux" && path.isAbsolute(root) && ["scripts/guard-local-operation.py", "scripts/remote-embedding-submit.mjs"].every(p => fs.existsSync(path.join(senderRoot,p)));
     return { available:present, reason:present ? "Fixed sender present; host admission/prepared artifacts are not observed" : "Pinned Linux sender runtime/guard missing" };
   },
   async submit(request: RemoteEmbeddingRequest, config: BackgroundEmbeddingConfig, signal: AbortSignal) {

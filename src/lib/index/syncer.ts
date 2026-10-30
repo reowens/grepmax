@@ -1,3 +1,5 @@
+import { backgroundEmbeddingClient, type BackgroundEmbeddingConfig } from "../workers/remote-embedding/client";
+import { readFileSnapshot, computeContentHash } from "../utils/file-utils";
 import * as path from "node:path";
 import { CONFIG, FRAGMENT_COMPACT_THRESHOLD } from "../../config";
 import { MetaCache, type MetaEntry } from "../store/meta-cache";
@@ -25,6 +27,7 @@ import type { InitialSyncProgress, InitialSyncResult } from "./sync-helpers";
 import { createWalkState, isPathProtectedByWalkState, walk } from "./walker";
 
 type SyncOptions = {
+  backgroundEmbedding?: BackgroundEmbeddingConfig;
   projectRoot: string;
   dryRun?: boolean;
   reset?: boolean;
@@ -126,6 +129,8 @@ export async function initialSync(
     onProgress,
     signal,
   } = options;
+  const route = options.backgroundEmbedding ?? { mode: "local" as const };
+  backgroundEmbeddingClient.requireAvailable(route);
   const paths = ensureProjectPaths(projectRoot);
   const resolvedRoot = path.resolve(projectRoot);
   const globalConfig = readGlobalConfig();
@@ -230,7 +235,7 @@ export async function initialSync(
     }
 
     // Pre-flight: verify embedding pipeline is functional
-    if (embedMode !== "cpu") {
+    if (route.mode !== "remote" && embedMode !== "cpu") {
       const { isMlxUp } = await import("../workers/embeddings/mlx-client");
       const mlxReady = await isMlxUp(generation.mlxModel);
       if (!mlxReady) {
@@ -257,7 +262,7 @@ export async function initialSync(
     // Use a large flush batch to reduce LanceDB fragment count during sync.
     // 24 vectors/flush creates ~834 fragments for 10K chunks; 2000 creates ~5.
     const batchLimit = 2000;
-    const maxConcurrency = Math.max(1, CONFIG.WORKER_THREADS);
+    const maxConcurrency = route.mode === "remote" ? 1 : Math.max(1, CONFIG.WORKER_THREADS);
 
     const activeTasks: Promise<void>[] = [];
     let processed = 0;
@@ -381,16 +386,24 @@ export async function initialSync(
       let retries = 0;
       while (true) {
         try {
-          return await pool.processFile(
+          if (route.mode === "remote" && route.identity?.generation.fingerprint !== generation.fingerprint) throw new Error("Remote sync generation differs");
+          let result = await pool.processFile(
             {
               path: absPath,
               absolutePath: absPath,
               projectRoot: resolvedRoot,
+              remoteEmbedding: route.mode === "remote",
             },
             signal,
           );
+          result = await backgroundEmbeddingClient.complete(result, route, signal);
+          if (route.mode === "remote") {
+            const current = await readFileSnapshot(absPath, { projectRoot: resolvedRoot });
+            if (current.mtimeMs !== result.mtimeMs || current.size !== result.size || computeContentHash(current.buffer, absPath) !== result.hash) throw new Error("File changed during remote synchronization");
+          }
+          return result;
         } catch (err) {
-          if (isTimeoutError(err) && retries === 0) {
+          if (route.mode !== "remote" && isTimeoutError(err) && retries === 0) {
             retries += 1;
             continue;
           }

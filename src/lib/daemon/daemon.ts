@@ -1,4 +1,4 @@
-import { readBackgroundEmbeddingConfig } from "../workers/remote-embedding/client";
+import { backgroundEmbeddingClient, readBackgroundEmbeddingConfig } from "../workers/remote-embedding/client";
 import * as fs from "node:fs";
 import * as net from "node:net";
 import * as path from "node:path";
@@ -1499,11 +1499,9 @@ export class Daemon {
   }
 
   private async indexPendingProject(root: string): Promise<void> {
-    try {
-      // No qualified full-sync remote adapter exists. Never escape remote mode
-      // through the pending-project local inference path or config parse fallback.
-      if (readBackgroundEmbeddingConfig().mode === "remote") return;
-    } catch { return; }
+    let route: ReturnType<typeof readBackgroundEmbeddingConfig>;
+    try { route = readBackgroundEmbeddingConfig(); backgroundEmbeddingClient.requireAvailable(route); }
+    catch { return; }
     const ac = new AbortController();
     this.shutdownAbortControllers.add(ac);
     try {
@@ -1528,6 +1526,7 @@ export class Daemon {
               if (this.processors.has(root))
                 await this.unwatchProjectWithinOperation(root);
               const result = await initialSync({
+                backgroundEmbedding: route,
                 projectRoot: root,
                 vectorDb: this.vectorDb,
                 metaCache: this.metaCache,

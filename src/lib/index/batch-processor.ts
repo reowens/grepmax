@@ -773,7 +773,7 @@ export class ProjectBatchProcessor {
       };
 
       const batchConcurrency = Math.min(
-        kind === "live" ? this.concurrency : 1,
+        readBackgroundEmbeddingConfig().mode === "remote" ? 1 : kind === "live" ? this.concurrency : 1,
         Math.max(1, Math.ceil(batch.size / FILES_PER_BATCH_SLOT)),
       );
       const activeTasks: Promise<void>[] = [];
