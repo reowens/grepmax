@@ -30,9 +30,10 @@ export function describeRemoteEmbeddingWorker(platform: string = process.platfor
   return {
     task: "embed-batch",
     protocolVersion: 1,
-    available: false,
+    readiness: "not_observed",
+    modelsLoaded: false,
     platform,
-    reason: "embedding_containment_unavailable",
+    reason: "fixed_job_preparation_and_admission_required",
     modelLifetime: "one-shot job; sessions reused within batch, cold start per job",
     requirements: [
       "trusted fixed-task adapter with pre-exec 2-CPU/below-normal containment",

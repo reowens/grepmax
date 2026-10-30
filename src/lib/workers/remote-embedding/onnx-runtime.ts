@@ -9,7 +9,7 @@ import { validatePreparedEmbeddingIdentity, type PreparedEmbeddingIdentity } fro
 export function createPreparedOnnxRuntime(
   manifest: unknown,
   value: PreparedEmbeddingIdentity,
-  roots: { models: string; runtime: string },
+  roots: { models: string; runtime: string; dependencies?: string },
 ): PreparedRemoteEmbeddingRuntime {
   const identity = validatePreparedEmbeddingIdentity(value);
   let verified = false;

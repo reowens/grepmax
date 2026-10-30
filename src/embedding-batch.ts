@@ -26,7 +26,7 @@ async function main() {
   const abort = () => controller.abort(new Error("Embedding job stopped"));
   process.once("SIGTERM", abort); process.once("SIGINT", abort);
   try {
-    const result = await executeRemoteEmbeddingBatch(request, createPreparedOnnxRuntime(manifest, request.identity, { models, runtime }), { signal: controller.signal });
+    const result = await executeRemoteEmbeddingBatch(request, createPreparedOnnxRuntime(manifest, request.identity, { models, runtime, ...(process.env.GMAX_EMBED_DEPENDENCIES_ROOT ? { dependencies: process.env.GMAX_EMBED_DEPENDENCIES_ROOT } : {}) }), { signal: controller.signal });
     const data = JSON.stringify(result);
     if (Buffer.byteLength(data) > REMOTE_EMBEDDING_LIMITS.resultBytes) throw new Error("Embedding result exceeds bound");
     const temp = output+".partial";

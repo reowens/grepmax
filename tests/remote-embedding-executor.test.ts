@@ -114,9 +114,9 @@ describe("private remote embedding executor (fake models only)", () => {
     expect(f.models.dispose).toHaveBeenCalledTimes(3);
   });
 
-  it("reports Mac and Windows unavailable without confusing compiler or MLX capabilities", () => {
+  it("reports unobserved readiness without inventing host failures", () => {
     for (const platform of ["darwin", "win32", "linux"]) {
-      expect(describeRemoteEmbeddingWorker(platform)).toMatchObject({ available: false, reason: "embedding_containment_unavailable" });
+      expect(describeRemoteEmbeddingWorker(platform)).toMatchObject({ readiness: "not_observed", modelsLoaded: false });
     }
   });
 });
