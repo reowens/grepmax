@@ -50,6 +50,7 @@ try {
     remoteJobId:reply.remoteJobId,remoteTaskId:reply.remoteTaskId,
     terminal:reply.terminal,cleanupConfirmed:reply.cleanupConfirmed,
     resultPath:reply.resultPath,transportLog:reply.transportLog,artifacts:reply.artifacts,
+    nativeObservation:reply.nativeObservation,
   }), {flag:'wx',mode:0o600});
   const bytes = JSON.stringify(reply);
   if (Buffer.byteLength(bytes) > 13*1024*1024) throw new Error('Sender result exceeds bound');
