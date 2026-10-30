@@ -23,12 +23,24 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Second prep completed dependency marker, then EPERM; local guard missing-VmRSS stop; cleanup complete; no runtime readiness or inference."
-next_step: "Two preparation attempts exhausted. Retain matching dependency cache, owned model inputs and latest cleanup proof; no automatic operation."
-summary: "Two preparation attempts consumed; dependency marker complete; runtime input EPERM and missing-VmRSS guard stop; cleanup complete, no inference."
+current_state: "Three runs consumed: ACL and runtime creation passed; final verification timed out; cleanup complete, readiness unconfirmed."
+next_step: "Stopped after3-run budget and verification timeout. Retain generated manifest/dependencies/models; no automatic fourth run or inference."
+summary: "Three focused operational runs:2 pass,1 verification timeout; generated manifest retained, final readiness unconfirmed, cleanup complete."
 ---
 
 # Gmax Delivery Plan
+
+## Three-run selection: runtime generated, final verification timed out
+
+Ledger, exact hashes and outcome (private record) record2 passes and1 timeout:
+owned input ACLs/readback and native runtime materialization passed; final
+read-only/hash verification did not return. Manifest25c5da2e… binds10 model and
+16704 dependency files, but final native-DLL/alias/permission readiness is
+unconfirmed. All3 runs are consumed, with no inference/test/compiler rerun.
+Owned cleanup completed after one failed lookup; failures remain immutable.
+Post-timeout verifier fixes/metric fixtures are source-only, not rerun. No
+automatic fourth operation, activation or release is authorized.
+
 
 ## Second preparation: dependency marker complete, runtime access blocked
 

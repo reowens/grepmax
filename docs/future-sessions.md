@@ -4,10 +4,22 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-30
 audience: internal
-summary: "Two preparation attempts consumed; dependency marker complete; runtime input EPERM and missing-VmRSS guard stop; cleanup complete, no inference."
+summary: "Three focused operational runs:2 pass,1 verification timeout; generated manifest retained, final readiness unconfirmed, cleanup complete."
 ---
 
 # Future Sessions
+
+## Three-run selection: runtime generated, final verification timed out
+
+Ledger, exact hashes and outcome (private record) record2 passes and1 timeout:
+owned input ACLs/readback and native runtime materialization passed; final
+read-only/hash verification did not return. Manifest25c5da2e… binds10 model and
+16704 dependency files, but final native-DLL/alias/permission readiness is
+unconfirmed. All3 runs are consumed, with no inference/test/compiler rerun.
+Owned cleanup completed after one failed lookup; failures remain immutable.
+Post-timeout verifier fixes/metric fixtures are source-only, not rerun. No
+automatic fourth operation, activation or release is authorized.
+
 
 ## Second preparation: dependency marker complete, runtime access blocked
 
