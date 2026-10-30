@@ -4,7 +4,7 @@ export interface HistoryRecord {
   readonly sessionKey: string;
   readonly turnKey: string;
   readonly provider: string;
-  readonly machine: string;
+  readonly machine: string | null;
   readonly speaker: "him" | "assistant" | "tool";
   readonly at: number | null;
   readonly text: string;

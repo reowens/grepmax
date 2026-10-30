@@ -28,7 +28,6 @@ export function validateHistoryRecord(record: HistoryRecord): void {
     "sessionKey",
     "turnKey",
     "provider",
-    "machine",
     "text",
     "sourceLocator",
     "sourceRevision",
@@ -36,6 +35,8 @@ export function validateHistoryRecord(record: HistoryRecord): void {
     if (typeof record[field] !== "string")
       throw new Error(`History ${field} must be a string`);
   }
+  if (record.machine !== null && typeof record.machine !== "string")
+    throw new Error("History machine must be a string or null");
   if (!record.sessionKey || !record.turnKey || !record.sourceLocator)
     throw new Error("History identity and sourceLocator must be nonempty");
   if (!["him", "assistant", "tool"].includes(record.speaker))
@@ -229,7 +230,7 @@ function eligible(record: HistoryRecord, filter: HistoryFilter): boolean {
     (filter.providers === undefined ||
       filter.providers.includes(record.provider)) &&
     (filter.machines === undefined ||
-      filter.machines.includes(record.machine)) &&
+      (record.machine !== null && filter.machines.includes(record.machine))) &&
     (filter.projects === undefined ||
       (record.project !== undefined &&
         filter.projects.includes(record.project))) &&
