@@ -43,6 +43,14 @@ try {
     writeFileSync(temp,JSON.stringify(identity),{flag:'wx',mode:0o600}); renameSync(temp,final);
   };
   const reply = await dispatchGmaxJob({ task:'embed-batch', worker:config.worker, sourceRoot:root, ref:config.runtimeCommit, timeoutS:180, embedding:request }, { signal:controller.signal, capture, onIdentity });
+  // Retain bounded terminal/artifact provenance after raw vectors are removed.
+  // This is evidence from the actual dispatch, never another worker request.
+  writeFileSync(join(dirname(output),'terminal.json'), JSON.stringify({
+    state:reply.state,exitCode:reply.exitCode,jobId:reply.jobId,
+    remoteJobId:reply.remoteJobId,remoteTaskId:reply.remoteTaskId,
+    terminal:reply.terminal,cleanupConfirmed:reply.cleanupConfirmed,
+    resultPath:reply.resultPath,transportLog:reply.transportLog,artifacts:reply.artifacts,
+  }), {flag:'wx',mode:0o600});
   const bytes = JSON.stringify(reply);
   if (Buffer.byteLength(bytes) > 13*1024*1024) throw new Error('Sender result exceeds bound');
   writeFileSync(output, bytes, { flag:'wx', mode:0o600 });
