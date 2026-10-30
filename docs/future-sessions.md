@@ -9,6 +9,21 @@ summary: "Corrected source compiles; Dell preparation safely stopped at local re
 
 # Future Sessions
 
+## Platform boundary diagnosis: shared SSH lifetime, not proven job collision
+
+Source establishes a mismatch between Gmax's exit-empty operation guard and
+Platform's shared SSH ControlMaster=auto/ControlPersist600 endpoint socket.
+The failed metadata receipt retains1 live member before failure, but no PID or
+executable; an SSH master is a strong explanation, not proven identity. Shared
+socket reuse creates a possible cross-job cleanup effect, not an observed second
+job collision. No embedding dispatch/reservation/artifact staging occurred.
+Exact command chain, source anchors, uncertainties and narrow repair (private record)
+cover policy, metadata and full sender propagation. Proposed repair is explicit
+operation-owned nonmultiplexed SSH options ahead of defaults, preserving shared
+clients and guard drain. No code/settings or runtime operation changed here;
+compile remains passed once, inference0, and the safety stop remains in force.
+
+
 ## Dell preparation stopped safely; corrected compilation passed
 
 The selected1–4 operation reached a real cleanup stop before asset staging or

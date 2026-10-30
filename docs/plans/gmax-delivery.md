@@ -24,11 +24,26 @@ related_plans:
 related_docs:
   - docs/linux-gpu-p3-design.md
 current_state: "Corrected-source compile passed once. Dell metadata returned existing cache/no embedding manifest, then local owned-descendant cleanup guard stopped. Assets unstaged; real inference attempts0."
-next_step: "Retain stop: resolve owned SSH lifetime from existing evidence; fresh guarded preparation requires selection after failure. No automatic retry/model/remote batch/release."
+next_step: "Proposed source-only fix: operation-owned nonmultiplexed SSH propagated through policy, metadata and fixed sender; no new guard/preparation/inference window selected."
 summary: "Corrected source compiles; Dell preparation safely stopped at local retained-descendant guard, cleanup complete; inference NOT RUN."
 ---
 
 # Gmax Delivery Plan
+
+## Platform boundary diagnosis: shared SSH lifetime, not proven job collision
+
+Source establishes a mismatch between Gmax's exit-empty operation guard and
+Platform's shared SSH ControlMaster=auto/ControlPersist600 endpoint socket.
+The failed metadata receipt retains1 live member before failure, but no PID or
+executable; an SSH master is a strong explanation, not proven identity. Shared
+socket reuse creates a possible cross-job cleanup effect, not an observed second
+job collision. No embedding dispatch/reservation/artifact staging occurred.
+Exact command chain, source anchors, uncertainties and narrow repair (private record)
+cover policy, metadata and full sender propagation. Proposed repair is explicit
+operation-owned nonmultiplexed SSH options ahead of defaults, preserving shared
+clients and guard drain. No code/settings or runtime operation changed here;
+compile remains passed once, inference0, and the safety stop remains in force.
+
 
 ## Dell preparation stopped safely; corrected compilation passed
 
