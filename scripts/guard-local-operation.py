@@ -104,9 +104,12 @@ def main():
     parser.add_argument('--cwd', type=Path, required=True)
     parser.add_argument('--operation', required=True)
     parser.add_argument('--no-autostart', action='store_true')
+    parser.add_argument('--memory-max-bytes', type=int)
     parser.add_argument('--owned-marker-receipt', type=Path)
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
+    if args.memory_max_bytes is not None and not 0 < args.memory_max_bytes <= 2*GIB:
+        parser.error('owned kernel memory cap must be positive and at most 2 GiB')
     command = args.command[1:] if args.command[:1] == ['--'] else args.command
     if not command:
         parser.error('a command after -- is required')
@@ -134,6 +137,9 @@ def main():
                          'deadlineSeconds': 180, 'minAvailableBytes': 8*GIB,
                          'maxJobSwapBytes': 0, 'hostSwapAllocationDiagnosticOnly': True},
               'firstFailure': None, 'cleanupErrors': [], 'commandStarted': False}
+    if args.memory_max_bytes is not None:
+        result['limits']['memoryMaxBytes'] = args.memory_max_bytes
+        result['limits']['memoryOomGroup'] = 1
 
     def fail(reason, phase, sample=None):
         if result['firstFailure'] is None:
@@ -193,6 +199,9 @@ def main():
                 'pswpoutPages': int(vm['pswpout']),
                 'hostMemoryPsi': Path('/proc/pressure/memory').read_text().strip(),
                 'jobSwapMax': (group/'memory.swap.max').read_text().strip(),
+                **({'jobMemoryMax': int((group/'memory.max').read_text()),
+                    'jobMemoryOomGroup': int((group/'memory.oom.group').read_text())}
+                   if args.memory_max_bytes is not None else {}),
                 'jobSwapBytes': int((group/'memory.swap.current').read_text()),
                 'jobSwapPeakBytes': int((group/'memory.swap.peak').read_text()),
                 'jobZswapBytes': int((group/'memory.zswap.current').read_text()),
@@ -203,6 +212,8 @@ def main():
 
     def check(value, phase):
         reasons = []
+        if args.memory_max_bytes is not None and (value['jobMemoryMax'] != args.memory_max_bytes or value['jobMemoryOomGroup'] != 1):
+            reasons.append('owned kernel memory enforcement changed')
         if value['jobSwapMax'] != '0': reasons.append('job no-swap enforcement changed')
         if value['jobSwapBytes'] or value['jobSwapPeakBytes'] or value['jobZswapBytes']:
             reasons.append('owned job swap observed')
@@ -229,6 +240,11 @@ def main():
         group.mkdir(mode=0o700)
         st = group.stat(); identity = (st.st_dev, st.st_ino)
         (group/'memory.swap.max').write_text('0\n')
+        if args.memory_max_bytes is not None:
+            (group/'memory.max').write_text(str(args.memory_max_bytes))
+            (group/'memory.oom.group').write_text('1')
+            if int((group/'memory.max').read_text()) != args.memory_max_bytes or (group/'memory.oom.group').read_text().strip() != '1':
+                raise RuntimeError('owned kernel memory enforcement readback failed')
         if (group/'memory.swap.max').read_text().strip() != '0' or pids():
             raise RuntimeError('empty no-swap job admission failed')
         if not os.access(group/'cgroup.kill', os.W_OK):
@@ -245,6 +261,8 @@ def main():
             if (Path('/proc/self/cgroup').read_text().strip() != '0::'+relative or
                     (group/'memory.swap.max').read_text().strip() != '0'):
                 raise RuntimeError('job placement/enforcement verification failed')
+            if args.memory_max_bytes is not None and (int((group/'memory.max').read_text()) != args.memory_max_bytes or (group/'memory.oom.group').read_text().strip() != '1'):
+                raise RuntimeError('owned kernel memory enforcement changed before exec')
 
         with args.log.open('x') as log:
             child = subprocess.Popen(command, cwd=args.cwd, env=env, stdout=log,

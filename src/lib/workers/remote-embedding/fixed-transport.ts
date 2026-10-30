@@ -31,7 +31,7 @@ export const fixedWorkerTransport: RemoteEmbeddingTransport = {
     };
     try {
       const code = await new Promise<number | null>((resolve,reject) => {
-        const child = spawn("python3",[path.join(senderRoot,"scripts/guard-local-operation.py"),"--receipt",receipt,"--log",path.join(dir,"guard.log"),"--cwd",config.runtimeCheckout!,"--operation","remote-background-embedding","--no-autostart","--",process.execPath,path.join(senderRoot,"scripts/remote-embedding-submit.mjs"),input,output],{stdio:["pipe","ignore","pipe"],shell:false});
+        const child = spawn("python3",[path.join(senderRoot,"scripts/guard-local-operation.py"),"--receipt",receipt,"--log",path.join(dir,"guard.log"),"--cwd",config.runtimeCheckout!,"--operation","remote-background-embedding","--no-autostart","--memory-max-bytes","2147483648","--",process.execPath,path.join(senderRoot,"scripts/remote-embedding-submit.mjs"),input,output],{stdio:["pipe","ignore","pipe"],shell:false});
         const abort=()=>{if(child.stdin.writable) child.stdin.write("cancel\n");};
         signal.addEventListener("abort",abort,{once:true}); if(signal.aborted) abort();
         child.stdin.on("error",()=>{}); child.stderr.on("data",()=>{});
