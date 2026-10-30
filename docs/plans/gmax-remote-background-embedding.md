@@ -13,12 +13,65 @@ audience: internal
 parent_plan: docs/plans/gmax-delivery.md
 related_plans:
 related_docs:
-current_state: "Reused passing compile/tests. Corrected SSH metadata passed; single dependency prep hit180s deadline, cleaned owned cohort/reservation/task. Model/runtime manifest staging0; inference0. Platform22cb207e7a timeout source correction unrerun."
-next_step: "Safety stop: no automatic further window. Exact owned continuation is completed dependency preparation, then exact manifest/cache and one real batch after selection; timeout correction remains source-only."
-summary: "Corrected SSH operational metadata passed; Dell dependency preparation stopped at180s, cleanup confirmed with preserved deadline error; real inference not run."
+current_state: "Exact staged source reused; old dependency cache is wrong lock. One bounded prep continuation returned uncertain native/scheduler result, cleaned exact reservation/task. Inference0; launcher evidence fix2ca68eaa62 unrerun."
+next_step: "Safety stop: retain current evidence. Native launcher/result failure remains unresolved; no automatic window/test/compile/model/inference or release."
+summary: "Source reuse established operationally; bounded native preparation failed result reconciliation. Cleanup complete, real inference0; no compile/test reruns."
 ---
 
 # Remote background embedding
+
+## Exact source reused; bounded native preparation result remains uncertain
+
+The selected investigation/resume ran no tests or compilers and reused the
+retained18 fake passes/production compile. One bounded marker read passed:
+old cache `e581d5…` has its older-lock completion marker and no partial marker;
+it is **not** the required `7d2a762d…` lock. No current-lock completion or embedding
+manifest was observed. Old cache data/permissions were not deleted or relabeled.
+
+Remote markers match the prior3-file archive/input digest: job.cs changed at
+09:29:36UTC and source.ready at09:30:37, just before the09:30:41 guard stop.
+That places the earlier window in native-helper/source setup, not a proved
+slow dependency install. Subphase network/ACL/extraction durations were not
+retained; no exact causal timing was invented.
+
+Platform `1adf5426aa` enables verified fixed-packet source reuse, requests SID-form
+ACL rules without skipping inherited/explicit writer checks, and selects the
+existing2CPU/below-normal/2GiB commit+RSS/8GiB-floor native Job envelope for fixed
+prepare requests. These remain dependency-preparation tasks, not model jobs.
+Gmax `7e2a3f4` adds `scripts/remote-embedding-prepare.mjs`, requiring the exact
+captured prepare packet and owned cleanup proof; it cannot resume inference.
+
+Exactly one admitted continuation reused the **same captured packet**, verified
+source digest and staged archive without recapture/retransfer. Normal progress
+recorded job-code complete with112152ms remaining and native-task start106098ms.
+The local operation returned after89.947s, within180s, but failed with exit75:
+**Windows scheduled task exit differs from native result**, plus missing run.log.
+It is not a dependency-preparation pass. Peak owned RSS268,361,728B; zero owned
+swap/OOM; empty cohort removed with no cleanup errors. Native resource verdict
+could not be accepted from the uncertain result. **Inference dispatches/jobs0.**
+
+Cleanup only reconciled the exact reservation/task
+`2026-10-30T10-15-17-678Z_run`. It was Missing; task/temp/process removal checks
+passed and owned reservation/uncertainty lock were released. Cleanup guard passed,
+zero owned swap/OOM, no errors, empty group removed. Partial cache effects from
+the native attempt remain unknown; no successful new marker, runtime/model/
+manifest closure, token/numeric parity or inference is claimed.
+
+The transport removed task records before checking the returned mismatch and
+lost its launcherError/native fields. Platform `2ca68eaa62` now preserves the
+bounded launcher error/state/exits and records before uncertain cleanup. This
+necessary correction is **source-only/unrerun**; the deleted historical error
+cannot be reconstructed. There is no basis to blame ONNX, memory capacity,
+package downloads or numeric incompatibility from this missing error.
+
+Exact normalized markers, hashes, phase log, guard/cleanup and returned result (private record)
+are the continuation. Private raw PowerShell metadata stays unchanged; the
+tracked summary strips provider serialization and retains its original hash.
+The current blocker is native launcher/result reconciliation, not source-copy
+reuse or an unqualified placeholder. The safety stop remains, with no automatic
+extra window, compile/test, model load, inference retry, release or activation.
+P3 power-saver/WOL, old cache, unrelated jobs/dirty/index/history remain preserved.
+
 
 ## Corrected SSH metadata passed; dependency preparation deadline stopped batch
 

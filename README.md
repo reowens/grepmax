@@ -1029,3 +1029,7 @@ ordinary Platform connection sharing is unchanged. Future authorized preparation
 metadata uses `scripts/remote-embedding-metadata.mjs --worker dell-win` inside the
 owned guard. One corrected metadata use passed; dependency preparation later
 hit its deadline. The follow-up remaining-time source correction is unexercised.
+
+The captured-source preparation resume verified and reused the staged archive,
+but its native launcher result was uncertain. No real embedding batch has run;
+the launcher-evidence correction is source-only and no retry is automatic.

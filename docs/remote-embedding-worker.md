@@ -60,3 +60,11 @@ unknown. Inference0 and no model/runtime/manifest staging. Platform22cb207e7a
 corrects per-phase remaining-time reuse as source only, without a rerun.
 Actual outcome and limits (private record)
 keep this deadline failure separate from the older retained-descendant event.
+
+## Captured preparation continuation
+
+One continuation reused the exact staged source and reached the native phase
+within budget, but returned an uncertain scheduler/native result, not a cache
+completion. Exact owned cleanup completed; model jobs0. Source-only follow-up
+preserves bounded launcher error/state/exit evidence before removal. See the
+continuation receipt (private record).
