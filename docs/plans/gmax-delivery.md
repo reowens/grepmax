@@ -23,12 +23,30 @@ related_plans:
   - docs/plans/session-start-hint-trim.md
 related_docs:
   - docs/linux-gpu-p3-design.md
-current_state: "Exact staged source reused; old dependency cache is wrong lock. One bounded prep continuation returned uncertain native/scheduler result, cleaned exact reservation/task. Inference0; launcher evidence fix2ca68eaa62 unrerun."
-next_step: "Safety stop: retain current evidence. Native launcher/result failure remains unresolved; no automatic window/test/compile/model/inference or release."
-summary: "Source reuse established operationally; bounded native preparation failed result reconciliation. Cleanup complete, real inference0; no compile/test reruns."
+current_state: "Native launcher failure unknown; cleanup complete; inference0. Finite two-owner source-first continuation proposed only, no workstreams started."
+next_step: "PROPOSED: Platform native source owner plus sole end-to-end dispatcher; max2 qualified preparation attempts/max1 inference only after later selection. Reuse compile/18 tests."
+summary: "Finite Dell continuation proposed: native error capture/source handoff, independent cache keys, sole live owner, bounded preparation correction and one hybrid job; planning only."
 ---
 
 # Gmax Delivery Plan
+
+## Proposed next continuation: two owners, one live dispatcher
+
+Finite six-step continuation and agent briefs (private record) assign a source-first
+Platform native-launch owner and this sole end-to-end operator. The launcher
+cause remains unknown; repaired error capture must expose the actual failure.
+The proposal separates source, dependency, native/runtime and model keys so
+logging-only changes do not trigger a dependency rebuild. It also identifies
+necessary fixed-sender kernel-cap wiring, not an optional review gate.
+
+Proposed later execution ceiling:2 preparation attempts, second only after an
+actionable ordinary error/correction and proven terminal cleanup with passing
+guards; ANY resource/guard/capture/cleanup failure stops. Exactly1 inference
+job, no warmup/reference arm. Retain180s and all hard caps. Reuse the passing
+compile/18 fake cases, with no default rerun. No agents or live operation start
+now. Dell preparation/native compatibility remain unresolved; Mac/MLX, release,
+production activation, power/WOL and unrelated work stay outside this proposal.
+
 
 ## Exact source reused; bounded native preparation result remains uncertain
 

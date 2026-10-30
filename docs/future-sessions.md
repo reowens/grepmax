@@ -4,10 +4,28 @@ status: active
 created: 2026-10-03T02:39:56Z
 updated: 2026-10-30
 audience: internal
-summary: "Source reuse established operationally; bounded native preparation failed result reconciliation. Cleanup complete, real inference0; no compile/test reruns."
+summary: "Finite Dell continuation proposed: native error capture/source handoff, independent cache keys, sole live owner, bounded preparation correction and one hybrid job; planning only."
 ---
 
 # Future Sessions
+
+## Proposed next continuation: two owners, one live dispatcher
+
+Finite six-step continuation and agent briefs (private record) assign a source-first
+Platform native-launch owner and this sole end-to-end operator. The launcher
+cause remains unknown; repaired error capture must expose the actual failure.
+The proposal separates source, dependency, native/runtime and model keys so
+logging-only changes do not trigger a dependency rebuild. It also identifies
+necessary fixed-sender kernel-cap wiring, not an optional review gate.
+
+Proposed later execution ceiling:2 preparation attempts, second only after an
+actionable ordinary error/correction and proven terminal cleanup with passing
+guards; ANY resource/guard/capture/cleanup failure stops. Exactly1 inference
+job, no warmup/reference arm. Retain180s and all hard caps. Reuse the passing
+compile/18 fake cases, with no default rerun. No agents or live operation start
+now. Dell preparation/native compatibility remain unresolved; Mac/MLX, release,
+production activation, power/WOL and unrelated work stay outside this proposal.
+
 
 ## Exact source reused; bounded native preparation result remains uncertain
 
