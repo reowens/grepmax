@@ -215,7 +215,7 @@ Results:
 - Default `semantic_search` for `qsys designer macos installer provisioner`
   returned `qsys-designer-macos-wrapper/...` paths and no `platform` paths.
 - Explicit `scope:"all"` for `ViewAsProvider context web terminal` returned
-  `../../../beyond/platform/packages/web-terminal/src/contexts/ViewAsContext.tsx`.
+  `<private-monorepo>/packages/web-terminal/src/contexts/ViewAsContext.tsx`.
 - Explicit `projects:"platform"` returned the same platform result and no qsys
   paths.
 

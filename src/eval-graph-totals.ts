@@ -20,10 +20,9 @@ import { VectorDB } from "./lib/store/vector-db";
 import { gracefulExit } from "./lib/utils/exit";
 import { escapeSqlString } from "./lib/utils/filter-builder";
 
-const PLATFORM_ROOT = path.join(
-  process.env.HOME ?? "",
-  "Development/beyond/platform",
-);
+const PLATFORM_ROOT =
+  process.env.GMAX_EVAL_PLATFORM_ROOT ??
+  path.join(process.env.HOME ?? "", "src/platform");
 
 const TARGETS = ["BeyondError", "ErrorCodes", "resolveActor", "errorHandler"];
 

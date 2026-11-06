@@ -25,7 +25,7 @@ current_state: >
 next_step: >
   None. Reopen only for a measured recall or repeat-latency gap, a selected replacement
   embedding model, or concrete DSL corpus failures.
-summary: Living plan for agent-UX backlog after the v0.16.x dogfooding pass. Phases capture the open P3/P4 catalog items plus the small refactors that surfaced during dogfooding in `~/Development/beyond/platform`. Most phases are independent and small; the design-project ones (`gmax impact <file>`, code/docs split) are flagged.
+summary: Living plan for agent-UX backlog after the v0.16.x dogfooding pass. Phases capture the open P3/P4 catalog items plus the small refactors that surfaced during dogfooding in `<private-monorepo>`. Most phases are independent and small; the design-project ones (`gmax impact <file>`, code/docs split) are flagged.
 ---
 
 # gmax — Agent UX Backlog
@@ -40,7 +40,7 @@ owned by this plan.
 
 ## Problem
 
-Two rounds of empirical dogfooding in `~/Development/beyond/platform` in May 2026 produced a backlog of agent-UX wins and feature-gap fills. v0.16.0–v0.16.5 shipped the Phase 0–5 items (P0–P2 categories cleared, plus SessionStart hint restructure). v0.17.4 followed with deterministic `gmax context <path>` and shared CLI/MCP pointer-mode search formatting after a fresh agent POV sweep. The remaining P3/P4 items + the small refactors haven't been expressed as a tracked plan, so they've been invisible to `dotmd context`.
+Two rounds of empirical dogfooding in `<private-monorepo>` in May 2026 produced a backlog of agent-UX wins and feature-gap fills. v0.16.0–v0.16.5 shipped the Phase 0–5 items (P0–P2 categories cleared, plus SessionStart hint restructure). v0.17.4 followed with deterministic `gmax context <path>` and shared CLI/MCP pointer-mode search formatting after a fresh agent POV sweep. The remaining P3/P4 items + the small refactors haven't been expressed as a tracked plan, so they've been invisible to `dotmd context`.
 
 ## Goals
 
@@ -338,7 +338,7 @@ Sources for the feature-gap section: perplexity research on Sourcegraph Cody / C
 
 #### 1. `gmax remove <name>` — resolve registered project names ✅
 
-**Symptom.** `gmax remove beyond-canvas` from `~/Development/beyond/tools/gmax` deleted the gmax index instead of beyond-canvas. The arg was treated as a path; non-existent path → fell through to cwd.
+**Symptom.** `gmax remove other-project` from `<gmax-checkout>` deleted the gmax index instead of other-project. The arg was treated as a path; non-existent path → fell through to cwd.
 
 **Fix shipped (v0.16.1).** In `src/commands/remove.ts`, when the arg has no path separator and doesn't exist as a directory:
 1. Look up `projects.json` for an exact name match.

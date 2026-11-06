@@ -19,7 +19,7 @@
  * carry the target in `referenced_symbols`. ≥1 hit = a 1-hop outbound graph
  * walk can recover the target → worth building the recovery layer; 0 across all
  * 4 = the signal isn't in the graph at this depth. Requires
- * ~/Development/beyond/platform to be indexed.
+ * the corpus at GMAX_EVAL_PLATFORM_ROOT (default ~/src/platform) to be indexed.
  *
  *   npx tsx src/eval-graph-sanity.ts --platform
  */
@@ -37,10 +37,9 @@ import { gracefulExit } from "./lib/utils/exit";
 import { escapeSqlString } from "./lib/utils/filter-builder";
 import { getWorkerPool } from "./lib/workers/pool";
 
-const PLATFORM_ROOT = path.join(
-  process.env.HOME ?? "",
-  "Development/beyond/platform",
-);
+const PLATFORM_ROOT =
+  process.env.GMAX_EVAL_PLATFORM_ROOT ??
+  path.join(process.env.HOME ?? "", "src/platform");
 
 const HARD_MISS_TARGETS = [
   "BeyondError",

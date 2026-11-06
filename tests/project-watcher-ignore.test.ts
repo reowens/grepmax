@@ -10,7 +10,7 @@ import {
 } from "../src/lib/index/watcher-ignore";
 
 const rule =
-  "/docs/plans/assets/ios-visual-language/**/*.json\n/docs/plans/assets/ios-visual-language/**/*.png\n";
+  "/docs/plans/assets/ui-snapshots/**/*.json\n/docs/plans/assets/ui-snapshots/**/*.png\n";
 const roots: string[] = [];
 async function fixture() {
   const root = await fs.realpath(
@@ -53,11 +53,11 @@ describe("project native watcher exclusions", () => {
     expect(await readProjectWatcherIgnores(root)).toEqual([]);
     await fs.writeFile(file, rule);
     expect(await readProjectWatcherIgnores(root)).toContain(
-      "docs/plans/assets/ios-visual-language/**/*.json",
+      "docs/plans/assets/ui-snapshots/**/*.json",
     );
     await fs.writeFile(
       file,
-      `${rule}!docs/plans/assets/ios-visual-language/keep.json\n`,
+      `${rule}!docs/plans/assets/ui-snapshots/keep.json\n`,
     );
     expect(await readProjectWatcherIgnores(root)).toEqual([]);
     await fs.writeFile(file, "#".repeat(65537));
@@ -70,7 +70,7 @@ describe("project native watcher exclusions", () => {
     const root = await fixture();
     const generated = path.join(
       root,
-      "docs/plans/assets/ios-visual-language/run/measure",
+      "docs/plans/assets/ui-snapshots/run/measure",
     );
     await fs.mkdir(generated, { recursive: true });
     await fs.mkdir(path.join(root, "src"));

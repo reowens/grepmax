@@ -20,10 +20,9 @@ import { gracefulExit } from "./lib/utils/exit";
 import { escapeSqlString } from "./lib/utils/filter-builder";
 import { getWorkerPool } from "./lib/workers/pool";
 
-const PLATFORM_ROOT = path.join(
-  process.env.HOME ?? "",
-  "Development/beyond/platform",
-);
+const PLATFORM_ROOT =
+  process.env.GMAX_EVAL_PLATFORM_ROOT ??
+  path.join(process.env.HOME ?? "", "src/platform");
 const PRE_K = 500;
 const STAGE1_K = 200;
 const SEED_K = 20;

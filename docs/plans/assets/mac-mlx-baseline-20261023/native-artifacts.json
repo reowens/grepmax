@@ -245,7 +245,7 @@
       "testInvocations": 0
     }
   ],
-  "sourceArtifactCache": "/Users/reoiv/Development/beyond/tools/gmax/lance-maintenance/artifacts",
+  "sourceArtifactCache": "<gmax-checkout>/lance-maintenance/artifacts",
   "previousSourceArtifactCache": "/Users/Shared/P3-Installer/gmax-native-linux-20261023/previous-source-artifacts",
   "preparedRuntime": "/Users/Shared/P3-Installer/gmax-native-linux-20261023/prepared-runtime",
   "preparedFileHashes": {

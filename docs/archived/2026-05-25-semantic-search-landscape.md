@@ -453,7 +453,7 @@ Implementation lives on `main` behind `GMAX_PAGERANK=1` for future re-probing. `
 
 The 4 platform hard-miss cases were the obvious target for a candidate-recovery layer: seed a k-hop walk (or PPR with restart) on the top-k dense+BM25 hits, add reached symbols to the rerank pool. Before building it, the pre-declared Phase 0 sanity check asked: for each hard-miss case, does any chunk in the top-200 fusion pool reference the missing symbol via `referenced_symbols`? ≥1/4 = mechanism is worth building. 0/4 = abort.
 
-Phase 0 results (`src/eval-graph-sanity.ts`, scoped to `~/Development/beyond/platform/`, post-RRF fusion pool size 200):
+Phase 0 results (`src/eval-graph-sanity.ts`, scoped to `<private-monorepo>/`, post-RRF fusion pool size 200):
 
 | Target | Pool size | ref-chunks in top-200 | def-chunks in top-200 | First def-chunk rank | Verdict |
 |---|---|---|---|---|---|

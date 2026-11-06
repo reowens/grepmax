@@ -8,16 +8,20 @@
 
 process.env.GMAX_WORKER_COUNT ??= "1";
 
+import * as path from "node:path";
 import { PATHS } from "./config";
 import { VectorDB } from "./lib/store/vector-db";
 import { gracefulExit } from "./lib/utils/exit";
 import { escapeSqlString } from "./lib/utils/filter-builder";
 
+const PLATFORM_ROOT =
+  process.env.GMAX_EVAL_PLATFORM_ROOT ??
+  path.join(process.env.HOME ?? "", "src/platform");
 const CANDIDATES = [
-  "/Users/reoiv/Development/beyond/platform/packages/api/src/middleware/error.ts",
-  "/Users/reoiv/Development/beyond/platform/packages/api/src/graphql/shared/error-mapping.ts",
-  "/Users/reoiv/Development/beyond/platform/packages/api/src/lib/service-errors.ts",
-];
+  "packages/api/src/middleware/error.ts",
+  "packages/api/src/graphql/shared/error-mapping.ts",
+  "packages/api/src/lib/service-errors.ts",
+].map((file) => path.join(PLATFORM_ROOT, file));
 
 function toStrArr(v: unknown): string[] {
   if (!v) return [];

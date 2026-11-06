@@ -75,7 +75,7 @@ interface SeedCase {
 // full of "fusion" prose and gets live-indexed), so a stable external corpus is
 // the honest place to assert "an irrelevant seed must not displace the winner".
 const REPO_ROOTS: Record<NonNullable<SeedCase["repo"]>, string> = {
-  gmax: path.join(process.env.HOME ?? "", "Development/beyond/tools/gmax"),
+  gmax: path.resolve(__dirname, ".."),
   express: path.join(
     process.env.HOME ?? "",
     "Development/sandbox/bench-fixtures/express",

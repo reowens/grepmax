@@ -286,10 +286,9 @@ const DATASETS: Record<string, OssDataset> = {
   },
   platform: {
     name: "platform",
-    projectRoot: path.join(
-      process.env.HOME ?? "",
-      "Development/beyond/platform",
-    ),
+    projectRoot:
+      process.env.GMAX_EVAL_PLATFORM_ROOT ??
+      path.join(process.env.HOME ?? "", "src/platform"),
     cases: PLATFORM_CASES,
   },
 };
