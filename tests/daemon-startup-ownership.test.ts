@@ -39,6 +39,11 @@ vi.mock("node:fs", async (original) => ({
   mkdirSync: vi.fn(),
   chmodSync: vi.fn(),
   writeFileSync: vi.fn(),
+  renameSync: vi.fn((from: string, to: string) => {
+    if (!h.files.has(from)) return;
+    h.files.set(to, h.files.get(from));
+    h.files.delete(from);
+  }),
 }));
 vi.mock("node:child_process", async (original) => ({
   ...(await original<typeof import("node:child_process")>()),
@@ -56,6 +61,18 @@ vi.mock("node:child_process", async (original) => ({
   },
 }));
 vi.mock("node:net", () => ({
+  // The predecessor in these fixtures answers on its socket, so an
+  // unparsable marker stays authoritative and startup refuses.
+  connect: vi.fn(() => {
+    const handlers = new Map<string, () => void>();
+    queueMicrotask(() => handlers.get("connect")?.());
+    return {
+      once(event: string, handler: () => void) {
+        handlers.set(event, handler);
+      },
+      destroy() {},
+    };
+  }),
   createServer: vi.fn(() => {
     if (!h.socketArrival) throw new Error("fixture-socket-failure");
     return {
