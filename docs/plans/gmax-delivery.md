@@ -30,6 +30,12 @@ summary: "Real hybrid output validated; original client timeout retained, cleanu
 
 # Gmax Delivery Plan
 
+## P3 catch-up throughput and daemon startup: planned
+
+[Catch-up throughput](gmax-catchup-throughput.md) owns the 2026-11-05 findings and plan:
+catch-up embeds 1 file per batch on the P3, an empty `daemon.pid` blocks startup,
+and every service start prints a false legacy-index warning. Awaiting the owner's go.
+
 ## Remote embedding stopping point
 
 **Stopped; no live work or automatic next batch.** The [owning stopping point](gmax-remote-background-embedding.md#remote-embedding-stopping-point)
