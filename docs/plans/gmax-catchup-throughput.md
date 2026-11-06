@@ -19,7 +19,7 @@ parent_plan: docs/plans/gmax-delivery.md
 related_plans:
   - docs/plans/gmax-delivery.md
   - docs/plans/gmax-p3-container.md
-current_state: "Steps 1-6 and the batch-timeout and hard-deadline fixes are implemented and committed locally; no public release."
+current_state: "Steps 1-6 and the batch-timeout and hard-deadline fixes run on the P3 as a local build of 6ec8970 at 400%; no public release."
 next_step: "Owner answers Q2-Q5; the P3 runs a local build of the commit at 400%."
 summary: "Catch-up embeds 1 file per batch because the 2 s background window cuts every slow batch and the pool admits 1 background file at 2 CPUs; Q1 sets the CPU and search trade-off."
 ---
@@ -123,6 +123,15 @@ Then one release and one same-unit handover, per the delivery plan's procedure.
 - Step 5: `daemon.pid` is written through a temp file and rename; an empty or unparsable marker is renamed to `daemon.pid.unverified-<ms>` only when the socket probe gets `ENOENT` or `ECONNREFUSED` (`src/lib/daemon/process-manager.ts`).
 - Step 6: `findLegacyProjectIndex` (`src/lib/utils/legacy-index.ts`) skips the central store.
 - Finding 9 fix: the batch aborts only after no file settles for `max(1.5 x task timeout, 120 s, hard deadline + 60 s)`, and the hard deadline is 30 min in CPU mode, 5 min with MLX (`src/lib/workers/task-deadline.ts`).
+
+## Measured after the change (P3, 2026-11-05)
+
+Local build of `6ec8970` under the same unit at `CPUQuota=400%`; `gmax status`: 4 effective CPUs, 4 workers, background allowance 3 files. Journal 17:54:14 to 17:59:58 (5.7 min), while other sessions kept editing the project:
+
+- 114 files embedded (about 20 files/min, against 2.4 to 3.8 before), 3,630 chunks, 1,440 of them reused; 0 batch timeouts, 0 failed batches, 0 Lance query timeouts.
+- Pending fell from 2,183 to 2,102 while live edits added files, about 14 files/min net: roughly 2.5 h for the rest at that rate, 1.75 h at the gross rate.
+- Files in flight averaged 1.3 of the allowed 3: catch-up batches yield to every ready live edit ("3 settled, 1 reindexed, 4 requeued") and wait for their slowest file before the live batch runs.
+- Search during catch-up: `encodeQuery waited 0ms, encoded 324ms`; the CLI search took 9.7 s wall. Package temperature 74 to 76 °C in 3 samples, against a 110 °C trip point.
 
 ## Expected catch-up time
 
