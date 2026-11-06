@@ -557,7 +557,10 @@ export class Daemon {
 
     // 3. Write PID file AFTER socket is listening — ensures any process that
     // reads the PID can immediately ping this daemon and get a response.
-    fs.writeFileSync(PATHS.daemonPidFile, String(process.pid));
+    // Temp file and rename, so an interrupted start never leaves an empty marker.
+    const pidTemp = `${PATHS.daemonPidFile}.tmp-${process.pid}`;
+    fs.writeFileSync(pidTemp, String(process.pid));
+    fs.renameSync(pidTemp, PATHS.daemonPidFile);
 
     // 5. Open shared resources
     try {

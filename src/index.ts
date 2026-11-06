@@ -46,7 +46,9 @@ import { symbols } from "./commands/symbols";
 import { testFind } from "./commands/test-find";
 import { trace } from "./commands/trace";
 import { watch } from "./commands/watch";
+import { PATHS } from "./config";
 import { explicitCommand } from "./lib/utils/cli-command";
+import { findLegacyProjectIndex } from "./lib/utils/legacy-index";
 
 program
   .name("gmax")
@@ -65,9 +67,10 @@ program
   );
 
 // Detect legacy per-project .gmax/ directory
-const legacyProjectData = [".gmax"]
-  .map((d) => path.join(process.cwd(), d))
-  .find((d) => fs.existsSync(path.join(d, "lancedb")));
+const legacyProjectData = findLegacyProjectIndex(
+  process.cwd(),
+  PATHS.globalRoot,
+);
 if (legacyProjectData) {
   console.log(`⚠️  Legacy per-project index detected at ${legacyProjectData}`);
   console.log("   gmax now uses a centralized index at ~/.gmax/lancedb/.");

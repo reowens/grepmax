@@ -442,25 +442,131 @@ describe("ProjectBatchProcessor", () => {
     expect(meta.has(fresh)).toBe(true);
   });
 
-  it("bounds background dispatch between files without aborting or charging retries", async () => {
+  it("keeps a background batch going after a slow first file", async () => {
     const files = makeFiles(8);
     const now = vi.spyOn(Date, "now").mockReturnValue(1000);
     try {
       pool.processFile.mockImplementation(async (input: { path: string }) => {
-        now.mockReturnValue(4000);
+        now.mockReturnValue(now() + 60_000);
         return makeWorkerResult(input.path);
       });
       const processor = makeProcessor() as any;
       for (const file of files)
         processor.handleFileEvent("change", file, { workKind: "catchup" });
       await processReadyBatch(processor);
-      expect(pool.processFile).toHaveBeenCalledOnce();
-      expect(processor.progress.queue.catchup).toBe(7);
+      expect(pool.processFile).toHaveBeenCalledTimes(8);
+      expect(processor.progress.queue.catchup).toBe(0);
       expect(processor.progress.failedFiles).toBe(0);
       expect(processor.retryCount.size).toBe(0);
     } finally {
       now.mockRestore();
     }
+  });
+
+  it("runs catchup at the pool's background allowance", async () => {
+    const files = makeFiles(9);
+    let active = 0;
+    let maxActive = 0;
+    const pending: Array<() => void> = [];
+    pool.backgroundIndexingAllowance = vi.fn(() => 2);
+    try {
+      pool.processFile.mockImplementation(
+        (input: { path: string }) =>
+          new Promise((resolve) => {
+            active++;
+            maxActive = Math.max(maxActive, active);
+            pending.push(() => {
+              active--;
+              resolve(makeWorkerResult(input.path));
+            });
+          }),
+      );
+      const processor = makeProcessor({ concurrency: 3 }) as any;
+      for (const file of files)
+        processor.handleFileEvent("change", file, { workKind: "catchup" });
+      const run = processReadyBatch(processor);
+      let next = 0;
+      while (next < files.length) {
+        await vi.waitFor(() => expect(pending.length).toBeGreaterThan(next));
+        pending[next++]();
+      }
+      await run;
+      expect(maxActive).toBe(2);
+      expect(pool.processFile).toHaveBeenCalledTimes(9);
+      expect(processor.progress.queue.catchup).toBe(0);
+    } finally {
+      delete pool.backgroundIndexingAllowance;
+    }
+  });
+
+  it("commits settled catchup files inside a long batch", async () => {
+    const files = makeFiles(23);
+    pool.processFile.mockImplementation(async (input: { path: string }) =>
+      makeWorkerResult(input.path),
+    );
+    const processor = makeProcessor() as any;
+    const reindexed: number[] = [];
+    processor.onReindex = (count: number) => reindexed.push(count);
+    for (const file of files)
+      processor.handleFileEvent("change", file, { workKind: "catchup" });
+    await processReadyBatch(processor);
+    expect(pool.processFile).toHaveBeenCalledTimes(23);
+    expect(vectorDb.deletePaths).toHaveBeenCalledTimes(3);
+    expect(vectorDb.deletePaths.mock.calls.map(([p]: [string[]]) => p.length)).toEqual([10, 10, 3]);
+    expect(reindexed).toEqual([10, 10, 3]);
+    expect(files.every((file) => meta.has(file))).toBe(true);
+  });
+
+  it("pausing a catchup batch keeps committed files and requeues only the rest", async () => {
+    const files = makeFiles(14);
+    let calls = 0;
+    pool.processFile.mockImplementation(
+      (input: { path: string }, signal: AbortSignal) => {
+        calls++;
+        if (calls <= 10) return Promise.resolve(makeWorkerResult(input.path));
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(new Error("aborted")));
+        });
+      },
+    );
+    const processor = makeProcessor() as any;
+    for (const file of files)
+      processor.handleFileEvent("change", file, { workKind: "catchup" });
+    startReadyBatch(processor);
+    await vi.waitFor(() => expect(pool.processFile).toHaveBeenCalledTimes(11));
+    await processor.pause();
+    expect(files.slice(0, 10).every((file) => meta.has(file))).toBe(true);
+    expect(processor.progress.pendingFiles).toBe(4);
+    expect(processor.retryCount.size).toBe(0);
+  });
+
+  it("a live save still preempts a catchup batch between files", async () => {
+    const files = makeFiles(6);
+    const fresh = path.join(tmpDir, "fresh.ts");
+    fs.writeFileSync(fresh, "export const fresh = 1;\n");
+    let release!: () => void;
+    pool.processFile.mockImplementation(async (input: { path: string }) =>
+      makeWorkerResult(input.path),
+    );
+    pool.processFile.mockImplementationOnce(
+      (input: { path: string }) =>
+        new Promise((resolve) => {
+          release = () => resolve(makeWorkerResult(input.path));
+        }),
+    );
+    const processor = makeProcessor() as any;
+    for (const file of files)
+      processor.handleFileEvent("change", file, { workKind: "catchup" });
+    const run = processReadyBatch(processor);
+    await vi.waitFor(() => expect(pool.processFile).toHaveBeenCalledOnce());
+    processor.handleFileEvent("change", fresh);
+    makeSavesReady(processor);
+    release();
+    await run;
+    expect(pool.processFile).toHaveBeenCalledOnce();
+    expect(processor.progress.queue.catchup).toBe(5);
+    await processReadyBatch(processor);
+    expect(pool.processFile.mock.calls[1][0].path).toBe(fresh);
   });
 
   it("lets catchup and cleanup progress during continuous live traffic", async () => {

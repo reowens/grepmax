@@ -72,6 +72,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 vi.unmock("../src/lib/workers/pool");
 
 import { WorkerPool } from "../src/lib/workers/pool";
+import { hardDeadlineMs } from "../src/lib/workers/task-deadline";
 
 describe("WorkerPool resilience", () => {
   let pool: any;
@@ -132,9 +133,9 @@ describe("WorkerPool resilience", () => {
     const worker = pool.workers[0];
 
     // Simulate the leak: busy with no live task timer (a dropped IPC result),
-    // busy since well beyond STUCK_BUSY_MS (HARD_DEADLINE 300s + 60s = 360s).
+    // busy since beyond the hard deadline plus its 60s margin.
     worker.busy = true;
-    worker.busySince = Date.now() - 7 * 60_000;
+    worker.busySince = Date.now() - hardDeadlineMs(pool.embedMode) - 61_000;
 
     pool.reapStuckWorkers();
 
@@ -264,7 +265,8 @@ describe("WorkerPool resilience", () => {
 
     // Heartbeat every 100s — under the 120s no-progress timeout, so the soft
     // timeout never fires. Without a hard ceiling this task would run forever.
-    for (let elapsed = 0; elapsed < 320_000; elapsed += 100_000) {
+    const deadline = hardDeadlineMs(pool.embedMode);
+    for (let elapsed = 0; elapsed < deadline + 20_000; elapsed += 100_000) {
       worker.child.emit("message", { id: taskId, heartbeat: true });
       vi.advanceTimersByTime(100_000);
     }
@@ -945,6 +947,25 @@ describe("WorkerPool resilience", () => {
       else process.env.GMAX_EMBED_ONNX_MODEL = previousModel;
       if (previousRoot === undefined) delete process.env.GMAX_PROJECT_ROOT;
       else process.env.GMAX_PROJECT_ROOT = previousRoot;
+    }
+  });
+});
+
+describe("cappedWorkerCount", () => {
+  it("caps configured workers at effective CPUs and warns once", async () => {
+    vi.resetModules();
+    const { cappedWorkerCount } = await import("../src/lib/workers/pool");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(cappedWorkerCount(4, 2)).toBe(2);
+      expect(cappedWorkerCount(4, 2)).toBe(2);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toMatch(/workerThreads 4 exceeds 2 effective CPUs/);
+      expect(cappedWorkerCount(4, 4)).toBe(4);
+      expect(cappedWorkerCount(3, 8)).toBe(3);
+      expect(cappedWorkerCount(0, 0)).toBe(1);
+    } finally {
+      warn.mockRestore();
     }
   });
 });

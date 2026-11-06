@@ -325,7 +325,7 @@ function formatCpuConfiguration(daemon: StatusView["daemon"]): string[] {
   }
   return [
     `Daemon CPU capacity: ${cpu}`,
-    `Configured workers: ${workers ?? "unavailable"} (${source}); automatic default: ${config?.automaticWorkerThreads ?? "unavailable"}`,
+    `Configured workers: ${setting?.value ?? workers ?? "unavailable"} (${source}); effective: ${workers ?? "unavailable"}; automatic default: ${config?.automaticWorkerThreads ?? "unavailable"}`,
     `Background indexing allowance: ${config ? `${config.backgroundIndexingLimit} ${config.backgroundIndexingLimit === 1 ? "file" : "files"} across all projects` : unavailable}`,
   ];
 }

@@ -36,6 +36,7 @@ import {
   WORKER_RESOURCE_RESERVE_MB,
 } from "../utils/resource-budget";
 import { latchSafetyStop } from "../utils/safety-latch";
+import { hardDeadlineMs } from "./task-deadline";
 import type { ProcessFileInput, ProcessFileResult, RerankDoc } from "./worker";
 
 type TaskMethod = "processFile" | "encodeQuery" | "rerank";
@@ -98,28 +99,14 @@ const TASK_TIMEOUT_MS = (() => {
   return 120_000;
 })();
 
-// Absolute per-task ceiling. Unlike TASK_TIMEOUT_MS (a no-progress timeout that
-// every heartbeat resets), this is wall-clock from dispatch and is NEVER reset
-// by heartbeats. It bounds a task that keeps emitting progress but never
-// finishes — e.g. a worker wedged on a hung MLX request that still services its
-// heartbeat timer. A single processFile (one file → batches of 16 chunks) is
-// seconds even for huge files, so 5 min is generous headroom, never a real cap.
-const HARD_DEADLINE_MS = (() => {
-  const fromEnv = Number.parseInt(
-    process.env.GMAX_WORKER_HARD_DEADLINE_MS ?? "",
-    10,
-  );
-  if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv;
-  return 300_000;
-})();
 
 // Backstop for the leak that motivated all of the above: a worker left
 // busy=true with no live timer to rescue it (a dropped IPC result, or a
 // timeout-kill whose SIGKILL threw and left the process alive but de-listed).
 // The reaper skips busy workers, so without this such a worker is immortal —
-// we saw six survive 4-5 days. Set above HARD_DEADLINE so the per-task timer
+// we saw six survive 4-5 days. Set above the hard deadline so the per-task timer
 // normally wins and this only fires for the no-timer case.
-const STUCK_BUSY_MS = HARD_DEADLINE_MS + 60_000;
+const STUCK_BUSY_MARGIN_MS = 60_000;
 
 const FORCE_KILL_GRACE_MS = 200;
 // Longer grace for idle reaps: the worker isn't urgently in the way, and a
@@ -300,6 +287,28 @@ export interface WorkerPoolCpuConfiguration {
   backgroundIndexingLimit: number;
 }
 
+let workerCapWarned = false;
+
+/**
+ * Each worker runs single-threaded inference, so workers beyond the CPUs the
+ * host or service quota allows hold a model each without running in parallel.
+ */
+export function cappedWorkerCount(
+  configured: number,
+  effectiveCpus: number,
+): number {
+  const requested = Math.max(1, configured);
+  const cap = Math.max(1, Math.floor(effectiveCpus));
+  if (requested <= cap) return requested;
+  if (!workerCapWarned) {
+    workerCapWarned = true;
+    console.warn(
+      `[pool] workerThreads ${requested} exceeds ${cap} effective CPUs; using ${cap} workers`,
+    );
+  }
+  return cap;
+}
+
 export class WorkerPool {
   private workers: ProcessWorker[] = [];
   private retiringWorkers = new Set<ProcessWorker>();
@@ -334,6 +343,7 @@ export class WorkerPool {
   private scaleUpTimer: ReturnType<typeof setTimeout> | null = null;
   readonly generation: Readonly<EmbeddingGenerationConfig>;
   readonly embedMode: "cpu" | "gpu";
+  private readonly hardDeadlineMs: number;
 
   constructor(
     generation?: Readonly<EmbeddingGenerationConfig>,
@@ -342,11 +352,11 @@ export class WorkerPool {
     const resolved = resolveProcessWorker();
     this.modulePath = resolved.filename;
     this.execArgv = resolved.execArgv;
-    this.maxWorkers = Math.max(1, CONFIG.WORKER_THREADS);
     let cpuCapacity: CpuCapacity | null = null;
     const effectiveCpus = effectiveCpuCount({}, (capacity) => {
       cpuCapacity = capacity;
     });
+    this.maxWorkers = cappedWorkerCount(CONFIG.WORKER_THREADS, effectiveCpus);
     this.cpuCapacity = cpuCapacity;
     this.fileCpuLimit = Math.max(1, effectiveCpus - 1);
     this.automaticWorkerThreads = resolveWorkerThreads({
@@ -355,6 +365,7 @@ export class WorkerPool {
     const config = generation && embedMode ? null : readGlobalConfig();
     this.generation = generation ?? resolveEmbeddingGeneration(config!);
     this.embedMode = embedMode ?? config!.embedMode;
+    this.hardDeadlineMs = hardDeadlineMs(this.embedMode);
     const generatedEmbeddingEnv = embeddingEnv(this.generation, this.embedMode);
     // Replacement workers must use the same embedding generation as the pool
     // that created them, even if config changes while tasks are running. Other
@@ -365,7 +376,7 @@ export class WorkerPool {
     if (!this.spawnWorker()) throw this.spawnDeniedError();
 
     // Periodically reap idle workers back to MIN_KEEP, and force-kill any
-    // worker wedged in busy=true (the leak backstop — see STUCK_BUSY_MS).
+    // worker wedged in busy=true (the leak backstop — see STUCK_BUSY_MARGIN_MS).
     this.idleReapInterval = setInterval(() => {
       this.reapStuckWorkers();
       this.reapBloatedWorkers();
@@ -381,6 +392,11 @@ export class WorkerPool {
 
   private backgroundIndexingLimit(): number {
     return Math.min(this.fileCpuLimit, Math.max(1, this.maxWorkers - 1));
+  }
+
+  /** Files the pool admits at once for background indexing across projects. */
+  backgroundIndexingAllowance(): number {
+    return this.backgroundIndexingLimit();
   }
 
   /** Read initialized limits without sampling, spawning or changing admission. */
@@ -756,6 +772,11 @@ export class WorkerPool {
           "pool",
           `complete task=${task.id} method=${task.method} ${elapsed}${filePath ? ` file=${filePath}` : ""}`,
         );
+        if (task.method === "encodeQuery" && task.startTime)
+          log(
+            "pool",
+            `encodeQuery waited ${task.startTime - task.queuedAt}ms, encoded ${Date.now() - task.startTime}ms`,
+          );
         task.resolve(msg.result);
       }
 
@@ -873,7 +894,7 @@ export class WorkerPool {
 
     this.clearTaskTimeout(task);
     const limitMs =
-      reason === "hard deadline" ? HARD_DEADLINE_MS : TASK_TIMEOUT_MS;
+      reason === "hard deadline" ? this.hardDeadlineMs : TASK_TIMEOUT_MS;
     const filePath =
       (task.payload as Record<string, unknown>)?.path ??
       (task.payload as Record<string, unknown>)?.absolutePath ??
@@ -985,7 +1006,7 @@ export class WorkerPool {
     // keeps emitting progress but never completes is still bounded.
     task.hardTimeout = setTimeout(
       () => this.handleTaskTimeout(task, idle, "hard deadline"),
-      HARD_DEADLINE_MS,
+      this.hardDeadlineMs,
     );
 
     const filePath =
@@ -1243,7 +1264,7 @@ export class WorkerPool {
   }
 
   /**
-   * Force-kill workers wedged in busy=true past STUCK_BUSY_MS. The per-task
+   * Force-kill workers wedged in busy=true past the hard deadline plus STUCK_BUSY_MARGIN_MS. The per-task
    * hard deadline normally rescues these first; this catches the case where no
    * live timer exists — a dropped IPC result, or a prior SIGKILL that threw and
    * left the process alive but de-listed. Unlike the idle reaper this ignores
@@ -1255,13 +1276,15 @@ export class WorkerPool {
     const now = Date.now();
     const stuck = this.workers.filter(
       (w) =>
-        w.busy && w.busySince !== null && now - w.busySince > STUCK_BUSY_MS,
+        w.busy &&
+        w.busySince !== null &&
+        now - w.busySince > this.hardDeadlineMs + STUCK_BUSY_MARGIN_MS,
     );
     for (const w of stuck) {
       const busyMs = w.busySince !== null ? now - w.busySince : 0;
       log(
         "pool",
-        `stuck worker PID:${w.child.pid} busy ${Math.round(busyMs / 1000)}s (>${STUCK_BUSY_MS}ms) — SIGKILL`,
+        `stuck worker PID:${w.child.pid} busy ${Math.round(busyMs / 1000)}s (>${this.hardDeadlineMs + STUCK_BUSY_MARGIN_MS}ms) — SIGKILL`,
       );
       // Leave listeners attached so handleWorkerExit runs on the resulting
       // 'exit' event: it fails any task still bound to this worker and respawns

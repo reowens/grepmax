@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
 import * as fs from "node:fs";
+import * as net from "node:net";
 import { PATHS } from "../../config";
 import { isDaemonDraining, waitForDaemonDrain } from "../utils/daemon-client";
 
@@ -20,6 +21,7 @@ export class ProcessManager {
     private readonly deps: {
       getShuttingDown: () => boolean;
       getWorkerPids?: () => number[] | undefined;
+      probeDaemonSocket?: () => Promise<DaemonSocketProbe>;
     },
   ) {}
 
@@ -81,11 +83,13 @@ export class ProcessManager {
       [PATHS.daemonDrainingFile, true],
     ] as const) {
       let pid: number;
+      let parsed = false;
       try {
         const stat = fs.lstatSync(file);
         if (!stat.isFile() || stat.isSymbolicLink())
           throw new Error("not a regular marker");
         const text = fs.readFileSync(file, "utf8").trim();
+        parsed = true;
         pid = json
           ? JSON.parse(text).pid
           : /^\d+$/.test(text)
@@ -95,6 +99,8 @@ export class ProcessManager {
           throw new Error("invalid PID");
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+        if (parsed && !json && (await this.setAsideUnverifiedMarker(file)))
+          continue;
         throw new Error(`Cannot verify daemon marker ${file}; startup refused`);
       }
       if (pid === process.pid) continue;
@@ -109,6 +115,26 @@ export class ProcessManager {
         `Daemon PID ${pid} still exists for this Gmax home; startup refused. Request shutdown through its socket and wait for exit.`,
       );
     }
+  }
+
+  /**
+   * An empty or unparsable PID marker (an interrupted start) is set aside only
+   * when nothing answers on this home's socket. A listening daemon writes its
+   * marker after listen, so an answer means a live or starting owner.
+   */
+  private async setAsideUnverifiedMarker(file: string): Promise<boolean> {
+    const probe = this.deps.probeDaemonSocket ?? probeDaemonSocket;
+    if ((await probe()) !== "absent") return false;
+    const target = `${file}.unverified-${Date.now()}`;
+    try {
+      fs.renameSync(file, target);
+    } catch {
+      return false;
+    }
+    console.warn(
+      `[daemon] Set aside unverifiable marker ${file} as ${target}; no daemon answers on the socket`,
+    );
+    return true;
   }
 
   findProcessesByTitle(title: string): number[] {
@@ -127,4 +153,30 @@ export class ProcessManager {
       return [];
     }
   }
+}
+
+export type DaemonSocketProbe = "live" | "absent" | "unknown";
+
+/** `absent` only for a missing socket or a refused connection. */
+export function probeDaemonSocket(
+  socketPath = PATHS.daemonSocket,
+  timeoutMs = 1000,
+): Promise<DaemonSocketProbe> {
+  return new Promise((resolve) => {
+    const socket = net.connect(socketPath);
+    const finish = (result: DaemonSocketProbe) => {
+      clearTimeout(timer);
+      socket.destroy();
+      resolve(result);
+    };
+    const timer = setTimeout(() => finish("unknown"), timeoutMs);
+    socket.once("connect", () => finish("live"));
+    socket.once("error", (error: NodeJS.ErrnoException) =>
+      finish(
+        error.code === "ENOENT" || error.code === "ECONNREFUSED"
+          ? "absent"
+          : "unknown",
+      ),
+    );
+  });
 }

@@ -19,6 +19,7 @@ import { debug, log } from "../utils/logger";
 import { EmbeddingBackendUnavailableError, isEmbeddingBackendUnavailable } from "../workers/embedding-error";
 import type { ProcessFileResult } from "../workers/orchestrator";
 import { getWorkerPool, type WorkerPool } from "../workers/pool";
+import { hardDeadlineMs } from "../workers/task-deadline";
 import {
   CURRENT_META_HASH_VERSION,
   isMetaEntryCacheCurrent,
@@ -50,8 +51,10 @@ export interface BatchProcessorOptions {
 const DEBOUNCE_MS = 2000;
 const MAX_RETRIES = 5;
 const MAX_BATCH_SIZE = 50;
-const MAX_CATCHUP_BATCH_SIZE = 4;
-const BACKGROUND_DISPATCH_WINDOW_MS = 2000;
+// A background batch commits what has settled every few files or seconds, so a
+// long batch publishes progress and an abort loses at most the files in flight.
+const BACKGROUND_COMMIT_FILES = 10;
+const BACKGROUND_COMMIT_MS = 30_000;
 const MAX_CONSECUTIVE_LIVE_BATCHES = 3;
 const SAVE_QUIET_MS = 2000;
 const SAVE_MAX_WAIT_MS = 10_000;
@@ -145,7 +148,14 @@ export class ProjectBatchProcessor {
       );
       return Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : 120_000;
     })();
-    this.batchTimeoutMs = Math.max(Math.ceil(taskTimeoutMs * 1.5), 120_000);
+    // The batch aborts only when no file settles for this long, and never
+    // before the pool's own deadline for one file has passed.
+    this.batchTimeoutMs = Math.max(
+      Math.ceil(taskTimeoutMs * 1.5),
+      120_000,
+      hardDeadlineMs(this.workerPool.embedMode === "cpu" ? "cpu" : "gpu") +
+        60_000,
+    );
     this.unsubscribeRemote = backgroundEmbeddingClient.onSettled(() => this.schedulePendingBatch(0));
   }
 
@@ -488,11 +498,7 @@ export class ProjectBatchProcessor {
       this.liveBatches >= MAX_CONSECUTIVE_LIVE_BATCHES;
     const kind: WatchWorkKind =
       ready.live.length > 0 && !fairBackground ? "live" : background;
-    const limit = fairBackground
-      ? 1
-      : kind === "catchup"
-        ? MAX_CATCHUP_BATCH_SIZE
-        : MAX_BATCH_SIZE;
+    const limit = fairBackground ? 1 : MAX_BATCH_SIZE;
     for (const absPath of ready[kind].slice(0, limit)) {
       const event = this.pending.get(absPath)!;
       batch.set(absPath, event);
@@ -523,13 +529,18 @@ export class ProjectBatchProcessor {
     if (operationSignal.aborted) abortBatch();
     else operationSignal.addEventListener("abort", abortBatch, { once: true });
     this.currentBatchAc = batchAc;
-    const batchTimeout = setTimeout(() => {
-      log(
-        this.wtag,
-        `Batch timed out after ${this.batchTimeoutMs}ms, aborting`,
-      );
-      batchAc.abort();
-    }, this.batchTimeoutMs);
+    let batchTimeout: NodeJS.Timeout | undefined;
+    const armBatchTimeout = () => {
+      clearTimeout(batchTimeout);
+      batchTimeout = setTimeout(() => {
+        log(
+          this.wtag,
+          `Batch made no progress for ${this.batchTimeoutMs}ms, aborting`,
+        );
+        batchAc.abort();
+      }, this.batchTimeoutMs);
+    };
+    armBatchTimeout();
 
     for (const key of batch.keys()) {
       this.pending.delete(key);
@@ -545,6 +556,7 @@ export class ProjectBatchProcessor {
     const start = Date.now();
     let reindexed = 0;
     let settled = 0;
+    let requeued = 0;
     let backoffOverrideMs = 0;
 
     try {
@@ -590,6 +602,79 @@ export class ProjectBatchProcessor {
       };
 
       let stopDispatch = false;
+
+      const markSucceeded = (absPath: string) => {
+        const processedForce = batchForceGenerations.get(absPath);
+        if (
+          processedForce !== undefined &&
+          this.forcedReprocess.get(absPath) === processedForce
+        ) {
+          this.forcedReprocess.delete(absPath);
+        }
+        this.retryCount.delete(absPath);
+        this.retryAt.delete(absPath);
+        this.terminalFailures.delete(absPath);
+        this.onPathSuccess?.(absPath);
+      };
+
+      // Background batches commit settled embeddings as they go. Pure deletes
+      // wait for the end-of-batch authority check, as before.
+      let committedReindexed = 0;
+      let lastCommitAt = start;
+      let commitChain: Promise<void> = Promise.resolve();
+      const reindexedTotal = () => reindexed + committedReindexed;
+      const takeSettled = () => {
+        const pure = new Set(metaDeletes);
+        const commitDeletes: string[] = [];
+        for (let i = deletes.length - 1; i >= 0; i--) {
+          if (!pure.has(deletes[i])) commitDeletes.push(...deletes.splice(i, 1));
+        }
+        const taken = {
+          vectors: vectors.splice(0, vectors.length),
+          deletes: commitDeletes,
+          meta: new Map(metaUpdates),
+          reindexed,
+          elapsed: Date.now() - lastCommitAt,
+        };
+        metaUpdates.clear();
+        committedReindexed += reindexed;
+        reindexed = 0;
+        lastCommitAt = Date.now();
+        return taken;
+      };
+      const writeSettled = async (taken: ReturnType<typeof takeSettled>) => {
+        const newIds = taken.vectors.map((v) => v.id);
+        if (taken.vectors.length > 0)
+          await this.vectorDb.insertBatch(taken.vectors);
+        if (taken.deletes.length > 0) {
+          if (newIds.length > 0)
+            await this.vectorDb.deletePathsExcludingIds(taken.deletes, newIds);
+          else await this.vectorDb.deletePaths(taken.deletes);
+        }
+        for (const [p, entry] of taken.meta) {
+          this.metaCache.put(p, entry);
+          completed.delete(p);
+          batch.delete(p);
+          markSucceeded(p);
+        }
+        if (taken.reindexed > 0)
+          this.onReindex?.(taken.reindexed, taken.elapsed);
+      };
+      const maybeCommitSettled = () => {
+        if (
+          kind === "live" ||
+          diskPressure === "critical" ||
+          metaUpdates.size === 0 ||
+          (metaUpdates.size < BACKGROUND_COMMIT_FILES &&
+            Date.now() - lastCommitAt < BACKGROUND_COMMIT_MS)
+        )
+          return;
+        const taken = takeSettled();
+        commitChain = commitChain.then(() => writeSettled(taken));
+        commitChain.catch(() => {
+          stopDispatch = true;
+        });
+      };
       const processOne = async (
         absPath: string,
         event: "change" | "unlink",
@@ -663,6 +748,7 @@ export class ProjectBatchProcessor {
             !forceReprocess && cached?.hasVectors !== false && cached?.hash
               ? await this.loadReusableEmbeddings(absPath)
               : undefined;
+          const fileStart = Date.now();
           const route = readBackgroundEmbeddingConfig();
           if (route.mode === "remote" && route.identity?.generation.fingerprint !== pool.generation.fingerprint) throw new EmbeddingBackendUnavailableError("Remote generation differs from P3");
           backgroundEmbeddingClient.requireAvailable(route);
@@ -687,6 +773,10 @@ export class ProjectBatchProcessor {
             }
           }
           applyReusedEmbeddings(result, reusable);
+          log(
+            this.wtag,
+            `Embedded ${path.basename(absPath)}: ${result.vectors.length} chunks, ${result.reused?.length ?? 0} reused (${((Date.now() - fileStart) / 1000).toFixed(1)}s)`,
+          );
 
           // Policy and filesystem state can change while embedding is in
           // flight. Never commit a result that no longer describes the path.
@@ -770,6 +860,8 @@ export class ProjectBatchProcessor {
           }
         } finally {
           settled++;
+          armBatchTimeout();
+          maybeCommitSettled();
           if (
             batch.size > 10 &&
             (settled % 10 === 0 || settled === batch.size)
@@ -783,7 +875,14 @@ export class ProjectBatchProcessor {
       };
 
       const batchConcurrency = Math.min(
-        readBackgroundEmbeddingConfig().mode === "remote" ? 1 : kind === "live" ? this.concurrency : 1,
+        readBackgroundEmbeddingConfig().mode === "remote"
+          ? 1
+          : kind === "live"
+            ? this.concurrency
+            : Math.min(
+                this.concurrency,
+                pool.backgroundIndexingAllowance?.() ?? 1,
+              ),
         Math.max(1, Math.ceil(batch.size / FILES_PER_BATCH_SLOT)),
       );
       const activeTasks: Promise<void>[] = [];
@@ -802,19 +901,20 @@ export class ProjectBatchProcessor {
 
       for (const [absPath, event] of batch) {
         if (batchAc.signal.aborted || stopDispatch) break;
-        // Do not enqueue a whole background batch into the worker pool. Finish
-        // the current file, commit its results, then admit waiting live edits.
-        // A single fairness file still runs during continuous live traffic.
+        // Background work yields to a waiting live edit once a file has
+        // settled; the files in flight finish and the rest are requeued. A
+        // single fairness file still runs during continuous live traffic.
         if (
           kind !== "live" &&
           settled > 0 &&
-          (Date.now() - start >= BACKGROUND_DISPATCH_WINDOW_MS ||
-            (!fairBackground && this.hasReadyLiveWork()))
+          !fairBackground &&
+          this.hasReadyLiveWork()
         )
           break;
         await schedule(() => processOne(absPath, event));
       }
       await Promise.allSettled(activeTasks);
+      await commitChain;
 
       if (backendUnavailable) {
         this.backendFailures++;
@@ -849,6 +949,7 @@ export class ProjectBatchProcessor {
       // file whose worker was in flight when the batch was aborted.
       for (const [absPath, event] of batch) {
         if (!completed.has(absPath)) {
+          requeued++;
           requeuePath(absPath, event, retryFailures.has(absPath));
         }
       }
@@ -894,9 +995,9 @@ export class ProjectBatchProcessor {
 
       const duration = Date.now() - start;
       if (reindexed > 0) {
-        this.onReindex?.(reindexed, duration);
+        this.onReindex?.(reindexed, Date.now() - lastCommitAt);
       }
-      this.recentBatches.push({ files: settled, reindexed });
+      this.recentBatches.push({ files: settled, reindexed: reindexedTotal() });
       if (
         this.recentBatches.length > ProjectBatchProcessor.RECENT_BATCH_WINDOW
       ) {
@@ -905,24 +1006,12 @@ export class ProjectBatchProcessor {
       const remaining = this.pending.size;
       log(
         this.wtag,
-        `Batch complete: ${batch.size} files, ${reindexed} reindexed (${(duration / 1000).toFixed(1)}s)${remaining > 0 ? ` — ${remaining} remaining` : ""}`,
+        `Batch complete: ${settled} settled, ${reindexedTotal()} reindexed, ${requeued} requeued (${(duration / 1000).toFixed(1)}s)${remaining > 0 ? ` — ${remaining} remaining` : ""}`,
       );
-      for (const absPath of completed) {
-        const processedForce = batchForceGenerations.get(absPath);
-        if (
-          processedForce !== undefined &&
-          this.forcedReprocess.get(absPath) === processedForce
-        ) {
-          this.forcedReprocess.delete(absPath);
-        }
-        this.retryCount.delete(absPath);
-        this.retryAt.delete(absPath);
-        this.terminalFailures.delete(absPath);
-        this.onPathSuccess?.(absPath);
-      }
+      for (const absPath of completed) markSucceeded(absPath);
 
       // Trigger compaction if fragments are accumulating
-      if (reindexed > 0 && diskPressure !== "critical") {
+      if (reindexedTotal() > 0 && diskPressure !== "critical") {
         try {
           await this.vectorDb.compactIfNeeded();
         } catch (e) {

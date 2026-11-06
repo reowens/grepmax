@@ -1,6 +1,6 @@
 ---
 type: plan
-status: awaiting
+status: active
 created: 2026-11-05T17:30:00Z
 updated: 2026-11-05
 surfaces:
@@ -19,8 +19,8 @@ parent_plan: docs/plans/gmax-delivery.md
 related_plans:
   - docs/plans/gmax-delivery.md
   - docs/plans/gmax-p3-container.md
-current_state: "Planned from source and the P3 journal of 2026-11-05; no code, release, install, restart or reindex."
-next_step: "Owner go on steps 1-6 as one batch; then one release and one same-unit handover."
+current_state: "Steps 1-6 and the batch-timeout and hard-deadline fixes are implemented and committed locally; no public release."
+next_step: "Owner answers Q2-Q5; the P3 runs a local build of the commit at 400%."
 summary: "Catch-up embeds 1 file per batch because the 2 s background window cuts every slow batch and the pool admits 1 background file at 2 CPUs; Q1 sets the CPU and search trade-off."
 ---
 
@@ -72,6 +72,30 @@ Unchanged files are already cheap when they reach `processOne`: stat match (:627
 - **"Results may be incomplete" is the queue, not the search.** The footer adds it whenever `pendingFiles > 0` (`src/lib/output/index-state-footer.ts:84-100`); it says nothing about the 17 s.
 - **The 17 s is unattributed.** Query encoding goes through the same pool (`src/lib/search/searcher.ts:575`). With 1 worker busy on a 3-170 s file, a query either waits for it or waits `SCALE_UP_WAIT_MS` and cold-spawns a model-loading worker (`pool.ts:933-950`, `SCALE_UP_WAIT_MS` at :277) under a quota the busy worker already half uses. This boot's journal shows 1 spawn only (16:30:15, "1/4"), and no search timestamps, so which of the 2 happened is not yet known.
 
+### 7. Per-chunk cost on the P3 (measured 2026-11-05)
+
+Standalone on one P-core at nice 10 with the installed models and real chunks from `<repo>` plan docs (measurement scripts not committed):
+
+| Model file | Threads | Dense ms/chunk | ColBERT ms/chunk |
+|---|---:|---:|---:|
+| granite small `model_q4.onnx` (installed) | 1 | 138.7 | 53.3 |
+| granite small `model.onnx` (fp32) | 1 | 145.5 | 46.3 |
+| granite small `model_quantized.onnx` (int8) | 1 | 79.8 | 47.1 |
+| `model_q4.onnx` | 2 | 73.5 | 28.6 |
+
+- About 190 ms per chunk at 1 thread, the same as the service: a 554-chunk plan took 108.9 s in the journal (196 ms/chunk). Dense at 256 tokens is about 15 GFLOP per chunk, so 139 ms is about 110 GFLOPS on one core: the inference runs near the core's FP32 rate, not slowly. Per-file time is chunks to embed times 0.19 s.
+- q4 is no faster than fp32 on this x86 CPU. int8 is 1.74x faster for dense, but its vectors differ from q4 (cosine mean 0.975, min 0.968 over 32 chunks; fp32 vs q4 0.985), so adopting it is Q3.
+- The Mac embeds dense on the GPU through MLX and runs only ColBERT on the CPU, so its per-chunk CPU cost is about a quarter of the P3's. Its own watcher catch-up is slow on large docs too ("3 files, 1 reindexed (181.5s)", "11 files, 9 reindexed (150.2s)" in its watch log); its fast runs are bulk indexing, which has none of the catch-up limits in finding 1.
+
+### 8. Small edits re-embed whole files
+
+Chunk boundaries are absolute offsets: `splitByChars` (`src/lib/index/chunker.ts:1253`) cuts every 1,800 characters from the start of an oversized block and `fallbackChunk` (:1278) every 65 lines. Inserting lines near the top of a file shifts every later window, so no chunk text matches a stored reuse key. A 2-line frontmatter insertion in a 41-chunk plan left 0 of 41 chunks reusable; a 554-chunk plan with mid-file edits kept 525 to 535. The 2026-11-05 backlog came from commits that inserted 2-3 frontmatter lines into about 1,000 plans, so nearly every chunk re-embeds. Content-anchored boundaries are Q4; changing them re-keys every stored chunk once.
+
+### 9. Large files time out forever, and batches fail on Lance query timeouts
+
+- **Batch timeout.** The batch aborted after 180 s of wall clock (`batchTimeoutMs`, `max(1.5 x task timeout, 120 s)`), and the pool killed any task after 300 s (`HARD_DEADLINE_MS`, sized for MLX). On the CPU path a file over about 900 chunks, or a smaller one under quota throttling, can never finish: the 2026-11-05 journal has 25 "Batch timed out after 180000ms" lines, and one 554-chunk plan was processed 148 times since 2026-11-04 with batches of 174 s and 129 s that reindexed nothing. 58 of 636 batches that day (1,596 s of 20,026 s) reindexed nothing.
+- **Lance query timeouts.** 24 batches failed with "Query timeout after 15000 ms" and lost every file in them. The P3 store has only the FTS index (`listIndices`: `content_idx`); the path btree is absent and containment does not build it, so each per-file reuse lookup and path delete scans the 666k-row table (350-475 ms idle, read-only probe). Building it is Q5.
+
 ## Plan
 
 One batch; each step lists its tests. Live-edit priority from `bad7365` stays.
@@ -90,6 +114,16 @@ One batch; each step lists its tests. Live-edit priority from `bad7365` stays.
 
 Then one release and one same-unit handover, per the delivery plan's procedure.
 
+**Implemented** (local commit, no public release):
+
+- Step 1: `Embedded <file>: N chunks, R reused (Ts)` per file, `Batch complete: S settled, R reindexed, Q requeued`, and `encodeQuery waited Wms, encoded Ems` from the pool (`src/lib/workers/pool.ts`).
+- Step 2: catch-up batches of 50, no 2 s window, background concurrency `min(batch concurrency, pool background allowance)`, commits every 10 settled files or 30 s (`BACKGROUND_COMMIT_FILES`, `BACKGROUND_COMMIT_MS`).
+- Step 3: under Q1 (c) admission stays `effectiveCpus - 1`, so 400% gives 3 background files and 1 worker for queries; no admission change.
+- Step 4: `cappedWorkerCount` caps workers at effective CPUs and warns once; `gmax status` prints configured and effective workers.
+- Step 5: `daemon.pid` is written through a temp file and rename; an empty or unparsable marker is renamed to `daemon.pid.unverified-<ms>` only when the socket probe gets `ENOENT` or `ECONNREFUSED` (`src/lib/daemon/process-manager.ts`).
+- Step 6: `findLegacyProjectIndex` (`src/lib/utils/legacy-index.ts`) skips the central store.
+- Finding 9 fix: the batch aborts only after no file settles for `max(1.5 x task timeout, 120 s, hard deadline + 60 s)`, and the hard deadline is 30 min in CPU mode, 5 min with MLX (`src/lib/workers/task-deadline.ts`).
+
 ## Expected catch-up time
 
 At 16 to 25 s per file (last 12 batches, all 55 batches) and about 2,140 files:
@@ -104,5 +138,8 @@ Batching alone saves only the gap between batches; the gain comes from more file
 
 ## Open questions for the owner
 
-- **Q1:** during catch-up, (a) 200% with 1 file in flight: 10 to 15 h, search as today; (b) 200% with 2 in flight: 5 to 7.5 h, a search can wait behind a running file; (c) 400% with 3 in flight and 1 worker kept for queries: 3.3 to 5 h, search as today, fans louder. Which one?
-- **Q2:** cap workers at effective CPUs silently with a log line (step 4), or refuse a config above the quota at startup?
+- **Q1 (answered: c).** 400% with 3 files in flight and 1 worker kept for queries, ruled in the host's session-host plan as P12. The ruling also rejected the 3.3-5 h estimate; findings 7-9 are the per-file cost it asked for.
+- **Q2:** cap workers at effective CPUs silently with a log line (step 4, as built), or refuse a config above the quota at startup?
+- **Q3:** keep q4 dense (as today), or move the CPU path to the int8 file: dense 1.74x faster, but vectors shift (cosine 0.975 to q4), so stored q4 vectors and new int8 vectors would mix unless the embedding generation changes and the store re-embeds once.
+- **Q4:** keep absolute chunk windows (as today: a few inserted lines re-embed the whole file), or anchor boundaries to lines and content so edits re-embed only nearby chunks; the change re-keys every stored chunk, so each file re-embeds fully once on its next edit.
+- **Q5:** leave the P3 store without a path btree (as today: each per-file lookup and delete scans 666k rows and can hit the 15 s query timeout under load), or allow one scalar index build on `path` as a narrow exception to containment.
