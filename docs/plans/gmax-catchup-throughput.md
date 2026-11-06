@@ -21,7 +21,7 @@ related_plans:
   - docs/plans/gmax-p3-container.md
 current_state: "Planned from source and the P3 journal of 2026-11-05; no code, release, install, restart or reindex."
 next_step: "Owner go on steps 1-6 as one batch; then one release and one same-unit handover."
-summary: "Catch-up embeds 1 file per batch because the 2 s background window cuts every slow batch and the pool admits 1 background file at 2 CPUs."
+summary: "Catch-up embeds 1 file per batch because the 2 s background window cuts every slow batch and the pool admits 1 background file at 2 CPUs; Q1 sets the CPU and search trade-off."
 ---
 
 # Catch-up throughput and daemon startup on the P3
@@ -32,7 +32,7 @@ Planned 2026-11-05 from source at `ff4941d` and the P3 service journal. Installe
 
 ### 1. Catch-up runs 1 file per batch
 
-4 limits stack; the first 2 do most of the damage:
+4 limits stack. Limits 1-3 shrink each batch to 1 file plus a 2 s gap; limit 4 holds throughput at 1 file in flight:
 
 - **The 2 s background window cuts every slow batch.** `src/lib/index/batch-processor.ts:808-813` stops dispatching background work once 1 file has settled and 2 s (`BACKGROUND_DISPATCH_WINDOW_MS`, :54) have passed, whether or not live work is waiting. A changed file takes 3-170 s to embed, so each batch embeds exactly 1 file.
 - **Catch-up batches hold at most 4 files** (`MAX_CATCHUP_BATCH_SIZE`, :53, applied at :491-495) against 50 for live and cleanup (:52).
@@ -43,7 +43,7 @@ Each ONNX session is single-threaded (`ONNX_THREADS = 1`, `src/lib/workers/embed
 
 **Origin.** Limits 1-3 arrived together in `bad7365` (2026-10-07, 0.26.63, "prioritize live edits over watcher catchup and cleanup"); before it, catch-up shared the 50-file batch at the live concurrency. README.md:519 documents the behaviour as intended. The aim was live-edit latency, not thermal containment or lock cancellation. Limit 4 arrived in `b7066b8` (2026-10-28, 0.26.105, "honor CPU quotas and share background worker admission"). The `601cdda` root on `main` is grafted; the full history is reachable with `git log --all`. Retained rollback installs 0.26.103 to 0.26.109 all carry limits 1-3.
 
-**Journal, 2026-11-05 boot (55 batches, 16:33 to 16:56):** 46 batches reported "4 files, 1 reindexed", 4 reported 2, 2 reported 0. Mean batch time 23.4 s, about 2 s between batches. The last 12 batches cleared 13 files in about 212 s, 16 s per file.
+**Journal, 2026-11-05 boot (55 batches, 16:33 to 16:56):** 46 batches reported "4 files, 1 reindexed", 4 reported 2, 2 reported 0. Mean batch time 23.4 s, about 2 s between batches. The last 12 batches cleared 13 files in about 212 s, 16 s per file; over all 55 batches it is about 25 s per file with the gap. The 2 batches with 0 reindexed left `remaining` unchanged (2190, 2171), so their first file was requeued too, most likely as a retry after an mtime change during embedding; step 1 records the reason.
 
 **The files changed.** Sampled pending files (5 under the project's plan folder) have mtimes and commits from 06:16 to 06:27 the same morning, so this backlog is real re-embedding work, not cache misses. Whether chunk reuse is working on these edits is unmeasured (step 1).
 
@@ -83,26 +83,26 @@ One batch; each step lists its tests. Live-edit priority from `bad7365` stays.
    - Run catch-up at the pool's background allowance instead of 1 (:786).
    - Log settled, reindexed and requeued counts separately.
    - Tests: extend `tests/project-batch-processor.test.ts` (fake clock, mocked worker): a slow first file no longer requeues the rest; a live save still preempts between files; pause mid-batch requeues only unsettled files.
-3. **Background admission at low CPU counts** in `pool.ts`: when no query or live task is queued, admit background files up to `effectiveCpus` (2 here); return to `effectiveCpus - 1` as soon as a query or live task arrives, and keep a warm worker for queries while background work runs so a query never cold-spawns. Tests: admission with 2 and 4 effective CPUs, query arriving mid-catch-up.
+3. **Background admission at low CPU counts** in `pool.ts`: when no query or live task is queued, admit background files up to `effectiveCpus` (2 here); return to `effectiveCpus - 1` as soon as a query or live task arrives. A running `processFile` cannot be preempted (`batch-processor.ts:65-66`), so with step 4's cap a query that arrives while 2 files run waits for the shorter one; only a third worker over the quota avoids that. Q1 decides which. Tests: admission with 2 and 4 effective CPUs, query arriving mid-catch-up.
 4. **Workers vs quota:** cap the effective `maxWorkers` at effective CPUs and log once when config asks for more; `gmax status` shows configured and effective. Tests: config 4 with 2 CPUs gives 2 and a warning.
-5. **Stale marker:** write `daemon.pid` by temp file and rename. In `assertStartupAvailable`, an empty or unparsable regular-file marker gets a connect probe of the daemon socket: an answer refuses as today; `ENOENT` or `ECONNREFUSED` renames the marker to `daemon.pid.unverified-<timestamp>`, logs it, and continues. No unlink and no signal, consistent with "Neither a PID nor a title permits termination" (:77). Symlinks, non-files and unreadable markers still refuse. Tests: empty marker with no socket starts; empty marker with a live socket refuses; symlink refuses.
+5. **Stale marker:** write `daemon.pid` by temp file and rename. In `assertStartupAvailable`, an empty or unparsable regular-file marker gets a connect probe of the daemon socket: an answer refuses as today; `ENOENT` or `ECONNREFUSED` renames the marker to `daemon.pid.unverified-<timestamp>`, logs it, and continues. No unlink and no signal, consistent with "Neither a PID nor a title permits termination" (:77). Symlinks, non-files and unreadable markers still refuse. The socket `listen` (`daemon.ts:546`) stays the final arbiter, so 2 starters racing after a quarantine end with one `EADDRINUSE` refusal, not 2 daemons. Tests: empty marker with no socket starts; empty marker with a live socket refuses; symlink refuses; a listen failure is fatal.
 6. **Legacy warning:** skip when `realpath(<cwd>/.gmax)` equals the configured home store; keep it for a real project-local `.gmax`. Tests: cwd at home is silent; a project with its own `.gmax/lancedb` warns.
 
 Then one release and one same-unit handover, per the delivery plan's procedure.
 
 ## Expected catch-up time
 
-At 16 s per file (this boot's last 12 batches) and about 2,140 files:
+At 16 to 25 s per file (last 12 batches, all 55 batches) and about 2,140 files:
 
-| Setting | Files in flight | Estimate |
-|---|---:|---:|
-| Today | 1, plus about 2 s between batches | about 10 h |
-| Steps 2-3 at 200% | 2 | about 5 h |
-| Steps 2-3 at 400% | 3 to 4 | about 2.5 to 3.5 h |
+| Setting | Files in flight | Search during catch-up | Estimate |
+|---|---:|---|---:|
+| Today | 1, plus about 2 s between batches | as today | 10 to 15 h |
+| Steps 2-4 at 200% | 2 | waits behind a running file | 5 to 7.5 h |
+| Steps 2-4 at 400% | 3, 1 worker kept for queries | as today | 3.3 to 5 h |
 
-Batching alone saves only the gap between batches; the gain comes from 2 files in flight. If step 1 shows chunk reuse is not working on these edits, fixing it shortens every row.
+Batching alone saves only the gap between batches; the gain comes from more files in flight. If step 1 shows chunk reuse is not working on these edits, fixing it shortens every row.
 
 ## Open questions for the owner
 
-- **Q1:** keep 200% and accept about 5 h for a backlog this size, or allow 400% while catch-up runs (about 2.5 to 3.5 h, fans louder)?
+- **Q1:** during catch-up, (a) 200% with 1 file in flight: 10 to 15 h, search as today; (b) 200% with 2 in flight: 5 to 7.5 h, a search can wait behind a running file; (c) 400% with 3 in flight and 1 worker kept for queries: 3.3 to 5 h, search as today, fans louder. Which one?
 - **Q2:** cap workers at effective CPUs silently with a log line (step 4), or refuse a config above the quota at startup?
