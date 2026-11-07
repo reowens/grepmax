@@ -21,7 +21,7 @@ it("accepts a narrow embedding dependency without constructing the live pool", a
   };
   const searcher = new Searcher({} as VectorDB, dependencies);
   await expect(searcher.search("synthetic")).rejects.toThrow(
-    "owned synthetic runtime failure",
+    "Query embedding failed",
   );
   expect(encodeQuery).toHaveBeenCalledWith("synthetic", undefined);
   expect(mocks.get).not.toHaveBeenCalled();

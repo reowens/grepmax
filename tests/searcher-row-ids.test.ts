@@ -173,9 +173,15 @@ it.each(["version", "checkout", "vector", "take", "rerank"])(
         throw error;
       });
     if (stage === "rerank") f.pool.rerank.mockRejectedValue(error);
+    // take and rerank run inside the requested-rerank stage, which replaces
+    // the backend error with its own guidance (src/lib/search/degradation.ts).
     await expect(
       f.searcher.search("where are requests handled", 10, { rerank: true }),
-    ).rejects.toThrow(error);
+    ).rejects.toThrow(
+      stage === "take" || stage === "rerank"
+        ? "Requested reranking failed"
+        : error,
+    );
     expect(f.table.close).toHaveBeenCalledOnce();
     expect(f.table.query).not.toHaveBeenCalled();
   },
@@ -188,7 +194,7 @@ it.each([undefined, -1, Number.MAX_SAFE_INTEGER + 1, BigInt(-1)])(
     f.rows[0]._rowid = rowId;
     await expect(
       f.searcher.search("where are requests handled", 10, { rerank: true }),
-    ).rejects.toThrow("valid Lance row ID");
+    ).rejects.toThrow("Requested reranking failed");
     expect(f.table.query).not.toHaveBeenCalled();
     expect(f.table.close).toHaveBeenCalledOnce();
   },
