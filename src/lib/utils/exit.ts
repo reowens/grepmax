@@ -3,7 +3,17 @@ import { runCleanup } from "./cleanup";
 
 const EXIT_TIMEOUT_MS = 8_000;
 
-export async function gracefulExit(code?: number): Promise<void> {
+/**
+ * With `bySignal`, the process ends by that signal's default action instead of
+ * process.exit. process.exit joins libuv's threadpool, so it waits for native
+ * work still running there, such as a file watcher subscribe crawling a large
+ * tree (31 s measured). A service manager counts SIGTERM and SIGINT as a clean
+ * stop.
+ */
+export async function gracefulExit(
+  code?: number,
+  options: { bySignal?: NodeJS.Signals } = {},
+): Promise<void> {
   const finalCode =
     typeof code === "number"
       ? code
@@ -36,5 +46,10 @@ export async function gracefulExit(code?: number): Promise<void> {
     return;
   }
 
+  if (options.bySignal) {
+    process.removeAllListeners(options.bySignal);
+    process.kill(process.pid, options.bySignal);
+    return;
+  }
   process.exit(finalCode);
 }

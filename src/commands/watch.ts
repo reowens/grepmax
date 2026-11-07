@@ -286,7 +286,7 @@ export const watch = new Command("watch")
         // path does. Without it the daemon sat idle in uv_run for minutes after
         // SIGTERM (and ignored Activity Monitor's Quit) while a remove waited on
         // a store lease that could never free.
-        const shutdownOnSignal = (signal: string) => {
+        const shutdownOnSignal = (signal: NodeJS.Signals) => {
           const backstop = setTimeout(() => {
             console.error(
               `[daemon] shutdown did not complete within ${SIGNAL_EXIT_BACKSTOP_MS / 1000}s of ${signal} (stuck in: ${daemon.shutdownStage ?? "start"}) — forcing exit`,
@@ -296,7 +296,7 @@ export const watch = new Command("watch")
           backstop.unref();
           daemon.shutdown().then(() => {
             clearTimeout(backstop);
-            return gracefulExit();
+            return gracefulExit(0, { bySignal: signal });
           });
         };
         process.on("SIGINT", () => shutdownOnSignal("SIGINT"));
