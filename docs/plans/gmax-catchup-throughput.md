@@ -2,7 +2,7 @@
 type: plan
 status: active
 created: 2026-11-05T17:30:00Z
-updated: 2026-11-05
+updated: 2026-11-07
 surfaces:
   - daemon
   - watcher
@@ -10,6 +10,9 @@ surfaces:
 modules:
   - src/lib/index/batch-processor.ts
   - src/lib/workers/pool.ts
+  - src/lib/store/vector-db.ts
+  - src/lib/store/store-lease.ts
+  - src/lib/search/searcher.ts
   - src/lib/daemon/process-manager.ts
   - src/lib/daemon/daemon.ts
   - src/index.ts
@@ -96,6 +99,28 @@ Chunk boundaries are absolute offsets: `splitByChars` (`src/lib/index/chunker.ts
 - **Batch timeout.** The batch aborted after 180 s of wall clock (`batchTimeoutMs`, `max(1.5 x task timeout, 120 s)`), and the pool killed any task after 300 s (`HARD_DEADLINE_MS`, sized for MLX). On the CPU path a file over about 900 chunks, or a smaller one under quota throttling, can never finish: the 2026-11-05 journal has 25 "Batch timed out after 180000ms" lines, and one 554-chunk plan was processed 148 times since 2026-11-04 with batches of 174 s and 129 s that reindexed nothing. 58 of 636 batches that day (1,596 s of 20,026 s) reindexed nothing.
 - **Lance query timeouts.** 24 batches failed with "Query timeout after 15000 ms" and lost every file in them. The P3 store has only the FTS index (`listIndices`: `content_idx`); the path btree is absent and containment does not build it, so each per-file reuse lookup and path delete scans the 666k-row table (350-475 ms idle, read-only probe). Building it is Q5.
 
+### 10. Search takes 7.5 to 9 s with the queue idle (measured 2026-11-07)
+
+5 queries through the installed CLI took 7.49 to 8.96 s wall with `catchup=0 live=0 active=0` on 667k chunks. The CLI uses the daemon (0.24 s user CPU; `gmax --version` 0.24 s wall) and query encoding takes 7 to 13 ms (`encodeQuery` lines). A read-only probe of the same store at 4 CPUs and nice 10 split the rest:
+
+| Stage | Time |
+|---|---:|
+| FTS `table.search()` | 6.1 to 6.5 s |
+| Flat vector search, no filter | 0.6 to 0.75 s |
+| Flat vector search with `path LIKE '<root>/%'` | 0.9 to 1.1 s |
+| `path = ...` lookup | 0.30 to 0.34 s |
+
+- **FTS is mostly unindexed.** `content_idx` (built 2026-10-26, 49 segments) covers 353,105 rows; 315,467 (47%) are unindexed and Lance scans them on every search. Under containment nothing refreshes it: the daemon only adopts the index (`createFTSIndex`, `vector-db.ts`), and `gmax fts-refresh` is explicit-only. That is Q6.
+- **A torn reader marker blocks all exclusive store work.** `lancedb.lease/readers/<nonce>.json` was 0 bytes from 2026-11-05 07:09:17, 2 minutes before an unclean reboot (kernel boots at 07:09:10 and 07:11:13). `liveReaders` (`src/lib/store/store-lease.ts`) counted any unreadable marker as a live owner forever, so every exclusive acquisition timed out: the hourly "Version cleanup deferred: Timed out waiting for shared store owners to close" since then, and `gmax fts-refresh` would refuse the same way.
+- **No path B-tree.** The project prefilter and every per-file lookup scan the table. Lance 0.41 answers `path LIKE 'prefix%'` and `path = ...` from a B-tree (`ScalarIndexQuery ... @path_idx(BTree)` in `explainPlan` on a synthetic table).
+- **The vector floor.** The flat scan reads 667k 384-d vectors across 11,481 data fragments; with compaction contained and IVF opt-in (`GMAX_ANN`), 0.6 s is the floor for this stage.
+
+Fixes (local commit):
+
+- `liveReaders` moves a reader marker that is a regular file and still unreadable after 60 s to `lancedb.lease/quarantine/<name>.unverified-<ms>` and logs it. Markers land by rename (`writeOwnerAtomic`), so a live owner's marker is never partial; symlinks and other entries still block.
+- `VectorDB.ensurePathIndex` builds `path_idx` when missing and replaces it when its unindexed tail passes 20% of indexed rows, so appends and table rewrites that drop coverage are caught. Owner-only, disk-pressure gated, through the write gate. Under containment there is still no maintenance timer: the daemon checks once at start and after committed writes, at most every 5 minutes.
+- The daemon logs each search as `[search] <total>ms: encode, vector, fts, rerank, results, ms in handler` from `Searcher.lastTimings`.
+
 ## Plan
 
 One batch; each step lists its tests. Live-edit priority from `bad7365` stays.
@@ -151,4 +176,5 @@ Batching alone saves only the gap between batches; the gain comes from more file
 - **Q2:** cap workers at effective CPUs silently with a log line (step 4, as built), or refuse a config above the quota at startup?
 - **Q3:** keep q4 dense (as today), or move the CPU path to the int8 file: dense 1.74x faster, but vectors shift (cosine 0.975 to q4), so stored q4 vectors and new int8 vectors would mix unless the embedding generation changes and the store re-embeds once.
 - **Q4:** keep absolute chunk windows (as today: a few inserted lines re-embed the whole file), or anchor boundaries to lines and content so edits re-embed only nearby chunks; the change re-keys every stored chunk, so each file re-embeds fully once on its next edit.
-- **Q5:** leave the P3 store without a path btree (as today: each per-file lookup and delete scans 666k rows and can hit the 15 s query timeout under load), or allow one scalar index build on `path` as a narrow exception to containment.
+- **Q5 (answered).** Scalar indexes the search and per-file paths need (the `path` B-tree) are built and kept current under containment, as a narrow exception; every other full-table maintenance stays disabled (`ensurePathIndex`, `src/lib/store/vector-db.ts`).
+- **Q6:** keep FTS catch-up explicit (as today: `gmax fts-refresh --run` with the daemon stopped, so `content_idx` falls behind on every store until someone runs it, and each unindexed row is brute-forced on every search), or let the daemon run the same bounded delta (100k rows, no data rewrite) in its exclusive version-cleanup window, so the index keeps up on its own; the second needs the refresh wired into that window and its tests.

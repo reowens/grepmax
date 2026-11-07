@@ -327,13 +327,16 @@ export class VectorDB {
   startMaintenanceLoop(
     runOperation?: (fn: () => Promise<void>) => Promise<void>,
   ): void {
+    if (runOperation) this.maintenanceRunner = runOperation;
     if (fullTableMaintenanceDisabled()) {
       this.recordSkippedCompaction(
         recordMaintenanceContainment(this.lancedbDir),
       );
+      // No timer under containment; the path index is checked now and after
+      // committed writes (see schedulePathIndexCheck).
+      this.schedulePathIndexCheck(true);
       return;
     }
-    if (runOperation) this.maintenanceRunner = runOperation;
     if (this.maintenanceTimer) return;
     this.maintenanceTimer = setInterval(() => {
       if (this.closed) return;
@@ -896,6 +899,7 @@ export class VectorDB {
       if (this.activeWrites === 0) {
         for (const resolve of this.writeDrainResolvers) resolve();
         this.writeDrainResolvers.clear();
+        this.schedulePathIndexCheck();
       }
     }
   }
@@ -1183,7 +1187,10 @@ export class VectorDB {
   }
 
   /** Close only a locally owned handle; cleanup must not mask an operation error. */
-  private closeOwnedTable(table: lancedb.Table | undefined, failed: boolean): void {
+  private closeOwnedTable(
+    table: lancedb.Table | undefined,
+    failed: boolean,
+  ): void {
     try {
       table?.close();
     } catch (err) {
@@ -1481,6 +1488,78 @@ export class VectorDB {
     } finally {
       this.ftsBuildPromise = null;
     }
+  }
+
+  private lastPathIndexCheckMs = 0;
+
+  /** Owner-only, at most once per maintenance interval, tracked as the
+   * maintenance promise so close() waits for it. */
+  private schedulePathIndexCheck(force = false): void {
+    if (
+      !this.canBuildIndexes() ||
+      this.closed ||
+      this.maintenancePromise ||
+      (!force &&
+        Date.now() - this.lastPathIndexCheckMs < MAINTENANCE_INTERVAL_MS)
+    )
+      return;
+    const run = this.maintenanceRunner(async () => {
+      await this.ensurePathIndex();
+    }).catch((error) => {
+      if (this.closed) return;
+      log(
+        "vectordb",
+        `Path index check deferred: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
+    const tracked: Promise<void> = run.finally(() => {
+      if (this.maintenancePromise === tracked) this.maintenancePromise = null;
+    });
+    this.maintenancePromise = tracked;
+  }
+
+  /**
+   * Keep the scalar B-tree on `path` current. It is the one index besides FTS
+   * adoption that runs under host-safety containment: it reads only the path
+   * column and rewrites no data. Per-file lookups, path deletes and the
+   * project prefilter in every search scan the whole table without it. A
+   * missing index is built; one whose unindexed tail passes 20% of its rows
+   * (appends, or a table rewrite that dropped coverage) is replaced.
+   */
+  async ensurePathIndex(): Promise<
+    "built" | "refreshed" | "current" | "skipped"
+  > {
+    if (!this.canBuildIndexes()) return "skipped";
+    if (this.checkDiskPressure() !== "ok") return "skipped";
+    this.lastPathIndexCheckMs = Date.now();
+    return this.withWriteGate(async () => {
+      const table = await this.openExistingTableUnsafe();
+      if (!table) return "skipped";
+      const indices = await table.listIndices();
+      const existing = indices.find(
+        (index) => index.name === "path_idx" || index.columns.includes("path"),
+      );
+      if (existing && existing.name !== "path_idx") return "current";
+      let unindexed = 0;
+      if (existing) {
+        const stats = await table.indexStats(existing.name);
+        unindexed = stats?.numUnindexedRows ?? 0;
+        if (unindexed <= 0.2 * Math.max(1, stats?.numIndexedRows ?? 0))
+          return "current";
+      }
+      const start = Date.now();
+      await table.createIndex("path", {
+        config: lancedb.Index.btree(),
+        name: "path_idx",
+        replace: true,
+      });
+      const outcome = existing ? "refreshed" : "built";
+      log(
+        "vectordb",
+        `Path index ${outcome}: ${JSON.stringify({ unindexedBefore: unindexed, elapsedMs: Date.now() - start })}`,
+      );
+      return outcome;
+    });
   }
 
   async createVectorIndex(

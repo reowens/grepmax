@@ -82,6 +82,74 @@ describe("VectorDB ANN index creation", () => {
     );
   });
 
+  describe("ensurePathIndex", () => {
+    function injectExisting(table: ReturnType<typeof fakeTable>): void {
+      vi.spyOn(db as any, "openExistingTableUnsafe").mockResolvedValue(table);
+    }
+
+    it("leaves the index alone for a process that is not the index owner", async () => {
+      const table = fakeTable();
+      injectExisting(table);
+      expect(await db.ensurePathIndex()).toBe("skipped");
+      expect(table.listIndices).not.toHaveBeenCalled();
+    });
+
+    it("builds a missing path btree for the owner", async () => {
+      db.markIndexOwner();
+      const table = fakeTable();
+      injectExisting(table);
+      expect(await db.ensurePathIndex()).toBe("built");
+      expect(table.createIndex).toHaveBeenCalledOnce();
+      expect(table.createIndex).toHaveBeenCalledWith(
+        "path",
+        expect.objectContaining({ name: "path_idx", replace: true }),
+      );
+    });
+
+    it("keeps a btree whose unindexed tail is within 20%", async () => {
+      db.markIndexOwner();
+      const table = fakeTable({
+        indices: [{ name: "path_idx", columns: ["path"], indexType: "BTREE" }],
+        stats: {
+          numIndexedRows: 1000,
+          numUnindexedRows: 200,
+          indexType: "BTREE",
+        },
+      });
+      injectExisting(table);
+      expect(await db.ensurePathIndex()).toBe("current");
+      expect(table.createIndex).not.toHaveBeenCalled();
+    });
+
+    it("replaces a btree after appends or a rewrite leave it stale", async () => {
+      db.markIndexOwner();
+      const table = fakeTable({
+        indices: [{ name: "path_idx", columns: ["path"], indexType: "BTREE" }],
+        stats: {
+          numIndexedRows: 1000,
+          numUnindexedRows: 201,
+          indexType: "BTREE",
+        },
+      });
+      injectExisting(table);
+      expect(await db.ensurePathIndex()).toBe("refreshed");
+      expect(table.createIndex).toHaveBeenCalledOnce();
+    });
+
+    it("does not touch a path index it did not name", async () => {
+      db.markIndexOwner();
+      const table = fakeTable({
+        indices: [
+          { name: "path_custom", columns: ["path"], indexType: "BTREE" },
+        ],
+      });
+      injectExisting(table);
+      expect(await db.ensurePathIndex()).toBe("current");
+      expect(table.indexStats).not.toHaveBeenCalled();
+      expect(table.createIndex).not.toHaveBeenCalled();
+    });
+  });
+
   it("skips tables below the configured row threshold", async () => {
     const table = fakeTable({ rows: 49_999 });
     inject(table);

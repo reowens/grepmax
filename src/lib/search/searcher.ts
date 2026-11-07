@@ -206,6 +206,15 @@ export function buildWhereClause(
 }
 
 export class Searcher {
+  /** Stage times of the most recent search, for the daemon's search log line. */
+  lastTimings?: {
+    encodeMs: number;
+    vectorMs: number;
+    ftsMs: number;
+    rerankMs: number;
+    totalMs: number;
+  };
+
   constructor(
     private db: VectorDB,
     private readonly workerPool: Pick<
@@ -566,6 +575,15 @@ export class Searcher {
       throw err;
     }
 
+    const stageStart = performance.now();
+    const timings = {
+      encodeMs: 0,
+      vectorMs: 0,
+      ftsMs: 0,
+      rerankMs: 0,
+      totalMs: 0,
+    };
+    this.lastTimings = timings;
     const {
       dense: queryVector,
       colbert: queryMatrixRaw,
@@ -574,6 +592,7 @@ export class Searcher {
     } = await runSearchStage("query-embedding", () =>
       pool.encodeQuery(query, signal),
     );
+    timings.encodeMs = Math.round(performance.now() - stageStart);
 
     if (signal?.aborted) {
       const err = new Error("Aborted");
@@ -678,9 +697,11 @@ export class Searcher {
       if (whereClause) {
         vectorQuery = vectorQuery.where(whereClause);
       }
+      const vectorStart = performance.now();
       const vectorResults = (
         await vectorQuery.toArray(QUERY_EXECUTION_OPTIONS)
       ).map(materializeSearchRow) as VectorRecord[];
+      timings.vectorMs = Math.round(performance.now() - vectorStart);
 
       let ftsResults: VectorRecord[] = [];
       let ftsSearchFailed = false;
@@ -694,9 +715,11 @@ export class Searcher {
           if (whereClause) {
             ftsQuery = ftsQuery.where(whereClause);
           }
+          const ftsStart = performance.now();
           ftsResults = (await ftsQuery.toArray(QUERY_EXECUTION_OPTIONS)).map(
             materializeSearchRow,
           ) as VectorRecord[];
+          timings.ftsMs = Math.round(performance.now() - ftsStart);
         } catch (e) {
           ftsSearchFailed = true;
           this.ftsAvailable = false;
@@ -1041,6 +1064,7 @@ export class Searcher {
       // Selected rerank membership is separate from actual batch execution.
       diagnostics?.capture("rerank", rerankCandidates);
 
+      const rerankStart = performance.now();
       // Phase B: Lazy-load colbert data only for the ~20 rerank candidates
       if (doRerank && rerankCandidates.length > 0) {
         const colbertRows = await runSearchStage(
@@ -1085,10 +1109,15 @@ export class Searcher {
                 query: queryMatrixRaw,
                 docs: rerankCandidates.map((doc) => ({
                   colbert:
-                    (doc.colbert as Buffer | Int8Array | Uint8Array | number[]) ??
-                    [],
+                    (doc.colbert as
+                      | Buffer
+                      | Int8Array
+                      | Uint8Array
+                      | number[]) ?? [],
                   scale:
-                    typeof doc.colbert_scale === "number" ? doc.colbert_scale : 1,
+                    typeof doc.colbert_scale === "number"
+                      ? doc.colbert_scale
+                      : 1,
                   token_ids: Array.isArray((doc as any).doc_token_ids)
                     ? ((doc as any).doc_token_ids as number[])
                     : undefined,
@@ -1103,6 +1132,7 @@ export class Searcher {
           rerankScoreByKey.set(key, scores?.[idx] ?? 0);
         }
       }
+      timings.rerankMs = Math.round(performance.now() - rerankStart);
 
       type ScoredItem = {
         record: (typeof displayCandidates)[number];
@@ -1313,6 +1343,7 @@ export class Searcher {
         ...(warnings.length ? { warnings } : {}),
       };
     } finally {
+      timings.totalMs = Math.round(performance.now() - stageStart);
       table.close();
     }
   }

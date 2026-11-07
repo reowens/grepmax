@@ -184,6 +184,61 @@ describe("StoreLease", () => {
     );
   });
 
+  it("moves an unreadable reader marker aside only after the grace window", async () => {
+    const paths = storeLeasePaths(storeDir);
+    fs.mkdirSync(paths.readersDir, { recursive: true });
+    const marker = path.join(paths.readersDir, "torn.json");
+    fs.writeFileSync(marker, "");
+    const acquire = () =>
+      StoreLease.acquireExclusive({
+        storeDir,
+        nonce: "writer",
+        pid: process.pid,
+        processStart: "test-process",
+        role: "writer",
+        timeoutMs: 50,
+        pollMs: 5,
+      });
+
+    await expect(acquire()).rejects.toThrow(
+      "Timed out waiting for shared store owners to close",
+    );
+    expect(fs.existsSync(marker)).toBe(true);
+
+    const old = new Date(Date.now() - 120_000);
+    fs.utimesSync(marker, old, old);
+    const exclusive = await acquire();
+    leases.push(exclusive);
+    expect(fs.existsSync(marker)).toBe(false);
+    const moved = fs.readdirSync(path.join(paths.root, "quarantine"));
+    expect(moved).toHaveLength(1);
+    expect(moved[0]).toMatch(/^torn\.json\.unverified-\d+$/);
+  });
+
+  it("keeps an old unreadable reader entry that is not a regular file", async () => {
+    const paths = storeLeasePaths(storeDir);
+    fs.mkdirSync(paths.readersDir, { recursive: true });
+    const target = path.join(root, "elsewhere.json");
+    fs.writeFileSync(target, "");
+    const link = path.join(paths.readersDir, "link.json");
+    fs.symlinkSync(target, link);
+    const old = new Date(Date.now() - 120_000);
+    fs.lutimesSync(link, old, old);
+
+    await expect(
+      StoreLease.acquireExclusive({
+        storeDir,
+        nonce: "writer",
+        pid: process.pid,
+        processStart: "test-process",
+        role: "writer",
+        timeoutMs: 50,
+        pollMs: 5,
+      }),
+    ).rejects.toThrow("Timed out waiting for shared store owners to close");
+    expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+  });
+
   it("sweeps a reader marker whose PID was recycled by another user", async () => {
     const paths = storeLeasePaths(storeDir);
     fs.mkdirSync(paths.readersDir, { recursive: true });

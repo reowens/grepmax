@@ -13,6 +13,8 @@ export interface StoreLeaseOwner {
   activeHelper?: { pid: number; processStart: string };
 }
 
+const INVALID_MARKER_GRACE_MS = 60_000;
+
 export type OwnerProbeResult = "same" | "dead" | "reused" | "unknown";
 
 export interface StoreLeaseOptions {
@@ -683,6 +685,8 @@ export class StoreLease {
       const markerPath = path.join(context.paths.readersDir, name);
       const owner = readOwner(markerPath);
       if (!owner) {
+        if (StoreLease.quarantineInvalidMarker(context, name, markerPath))
+          continue;
         blockers.push({
           pid: -1,
           processStart: "unknown",
@@ -707,6 +711,34 @@ export class StoreLease {
       }
     }
     return blockers;
+  }
+
+  /** Markers land by rename, so a live owner's marker is never partial. One
+   * that is still unreadable after the grace window was cut short by a crash
+   * or power loss: move it aside (never unlink) so it stops blocking. */
+  private static quarantineInvalidMarker(
+    context: ReturnType<typeof StoreLease.context>,
+    name: string,
+    markerPath: string,
+  ): boolean {
+    const stat = fs.lstatSync(markerPath, { throwIfNoEntry: false });
+    if (!stat) return true;
+    if (!stat.isFile() || Date.now() - stat.mtimeMs < INVALID_MARKER_GRACE_MS)
+      return false;
+    const quarantineDir = path.join(context.paths.root, "quarantine");
+    try {
+      fs.mkdirSync(quarantineDir, { recursive: true });
+      fs.renameSync(
+        markerPath,
+        path.join(quarantineDir, `${name}.unverified-${Date.now()}`),
+      );
+    } catch {
+      return false;
+    }
+    console.warn(
+      `[store-lease] Moved unreadable reader marker ${name} (${stat.size} bytes) to ${quarantineDir}`,
+    );
+    return true;
   }
 }
 

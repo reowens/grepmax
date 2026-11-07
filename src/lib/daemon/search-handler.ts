@@ -13,6 +13,7 @@ import type {
   SearchFilter,
 } from "../store/types";
 import type { VectorDB } from "../store/vector-db";
+import { log } from "../utils/logger";
 import { getProject } from "../utils/project-registry";
 import type { WorkerPool } from "../workers/pool";
 
@@ -73,6 +74,7 @@ export async function handleDaemonSearch(
   payload: DaemonSearchPayload,
   signal: AbortSignal,
 ): Promise<DaemonSearchResult> {
+  const handlerStart = performance.now();
   let maxPerFile: number | undefined;
   try {
     maxPerFile = validateMaxPerFile(payload.maxPerFile);
@@ -216,6 +218,13 @@ export async function handleDaemonSearch(
       // best-effort — drop graph, keep results
     }
   }
+
+  const t = searcher.lastTimings;
+  if (t)
+    log(
+      "search",
+      `${t.totalMs}ms: encode ${t.encodeMs}ms, vector ${t.vectorMs}ms, fts ${t.ftsMs}ms, rerank ${t.rerankMs}ms, ${result.data.length} results, ${Math.round(performance.now() - handlerStart)}ms in handler`,
+    );
 
   // 2 MB cap on the JSON line. Lance can return huge chunks for unusual
   // queries (very long markdown blobs). Above this we fall back to the
