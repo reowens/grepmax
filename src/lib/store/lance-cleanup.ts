@@ -123,7 +123,13 @@ export function runCleanupProcess(
       child.kill("SIGTERM");
       forceKill ??= setTimeout(() => child.kill("SIGKILL"), 1000);
     };
-    const abort = (): void => stop("Cleanup cancelled");
+    const abort = (): void =>
+      stop(
+        (options.signal?.reason as { name?: unknown } | undefined)?.name ===
+          "TimeoutError"
+          ? "Cleanup timed out by its caller"
+          : "Cleanup cancelled",
+      );
     const timeout = setTimeout(
       () => stop("Cleanup timed out"),
       Math.min(options.timeoutMs ?? MAX_HELPER_MS, MAX_PRUNE_MS),

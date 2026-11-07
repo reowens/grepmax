@@ -244,6 +244,20 @@ describe("prune helper subprocess bounds", () => {
     await expect(pending).rejects.toThrow("completion is uncertain");
   });
 
+  it("names a caller's timeout instead of a bare cancellation", async () => {
+    const controller = new AbortController();
+    const pending = runCleanupProcess("fixture", [], {
+      signal: controller.signal,
+    });
+    const check = expect(pending).rejects.toThrow(
+      "Cleanup timed out by its caller; cleanup completion is uncertain",
+    );
+    controller.abort(new DOMException("deadline", "TimeoutError"));
+    expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+    child.emit("close", null, "SIGTERM");
+    await check;
+  });
+
   it("enforces a bounded deadline without settling before close", async () => {
     const pending = runCleanupProcess("fixture", [], { timeoutMs: 10 });
     const check = expect(pending).rejects.toThrow("timed out");

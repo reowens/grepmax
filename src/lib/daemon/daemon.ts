@@ -1454,9 +1454,12 @@ export class Daemon {
         },
         async (signal) => {
           this.assertHeavyOperationAdmission("version-cleanup");
+          // The deadline bounds setup and admission only. A backlog prune
+          // deletes files at the helper's rate limit and has its own bound;
+          // cutting it at 60 s left every pass after a compaction uncertain.
           const result = await this.vectorDb!.cleanupVersions(
             runtime,
-            AbortSignal.any([signal, deadline]),
+            signal,
             () =>
               this.operations.openVersionCleanupReadWindow(
                 (name) =>

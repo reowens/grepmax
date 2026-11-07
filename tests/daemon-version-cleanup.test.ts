@@ -78,6 +78,25 @@ describe("daemon automatic version cleanup", () => {
     await daemon.runVersionCleanup();
     expect(d.vectorDb.cleanupVersions).toHaveBeenCalledOnce();
   });
+  it("does not cut a running prune at the setup deadline", async () => {
+    const { daemon, d } = fixture();
+    const deadline = new AbortController();
+    vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    let received: AbortSignal | undefined;
+    d.vectorDb.cleanupVersions.mockImplementationOnce(
+      async (_runtime: unknown, signal: AbortSignal) => {
+        received = signal;
+        deadline.abort(new DOMException("deadline", "TimeoutError"));
+        await Promise.resolve();
+        signal.throwIfAborted();
+        return completed;
+      },
+    );
+    await expect(daemon.runVersionCleanup()).resolves.toBe(completed);
+    expect(received?.aborted).toBe(false);
+    expect(d.watcherManager.resumePaused).toHaveBeenCalledOnce();
+  });
+
   it("rechecks bulk admission after runtime preparation yields", async () => {
     const { daemon, d } = fixture();
     let prepared!: (runtime: { python: string; script: string }) => void;
