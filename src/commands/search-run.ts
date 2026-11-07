@@ -23,6 +23,7 @@ import {
   asStoreAccessError,
   shouldFallbackFromDaemonError as classifiedFallback,
   classifyDaemonError,
+  isDaemonBypassed,
   isStoreAccessRefused,
   refuseStoreAccess,
 } from "../lib/utils/store-access";
@@ -135,7 +136,7 @@ export async function runSearch(
     let precomputedSkeletons: Record<string, string> | undefined;
     let precomputedGraph: any | undefined;
     let indexState: IndexState | undefined;
-    if (!options.sync && !options.dryRun) {
+    if (!options.sync && !options.dryRun && !isDaemonBypassed()) {
       try {
         const { sendSearchCommand } = await import(
           "../lib/utils/daemon-search"
@@ -322,8 +323,13 @@ export async function runSearch(
         }
       }
 
-      // Ensure a watcher is running for live reindexing
-      if (!process.env.VITEST && !process.env.NODE_ENV?.includes("test")) {
+      // Ensure a watcher is running for live reindexing, unless the caller
+      // asked for the in-process path: launching one starts a daemon.
+      if (
+        !process.env.VITEST &&
+        !process.env.NODE_ENV?.includes("test") &&
+        !isDaemonBypassed()
+      ) {
         const { launchWatcher } = await import("../lib/utils/watcher-launcher");
         const launched = await launchWatcher(projectRoot);
         if (!launched.ok && launched.reason === "spawn-failed") {

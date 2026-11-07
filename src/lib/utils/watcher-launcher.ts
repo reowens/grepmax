@@ -10,6 +10,7 @@ import { sendDaemonCommand } from "./daemon-client";
 import { spawnDaemon } from "./daemon-launcher";
 import { getProject } from "./project-registry";
 import {
+  isDaemonBypassed,
   storeWriteDeniedNotice,
   warnStoreWriteDeniedOnce,
 } from "./store-access";
@@ -22,6 +23,7 @@ export type LaunchResult =
         | "not-registered"
         | "spawn-failed"
         | "autostart-disabled"
+        | "daemon-bypassed"
         | "sandboxed"
         | "daemon-refused";
       message: string;
@@ -80,6 +82,15 @@ export async function launchWatcher(
   // 4. Daemon not running — try to start it, poll until ready.
   // Both remaining steps spawn a background process, so stop here when the
   // autostart kill switch is on: a quarantined daemon must stay down.
+  // GMAX_NO_DAEMON=1 asks for in-process work only, so it starts nothing either.
+  if (isDaemonBypassed()) {
+    return {
+      ok: false,
+      reason: "daemon-bypassed",
+      message:
+        "GMAX_NO_DAEMON=1 is set, so no daemon or watcher was started; unset it to start one",
+    };
+  }
   const notice = autostartDisabledNotice();
   if (notice) {
     return { ok: false, reason: "autostart-disabled", message: notice };
