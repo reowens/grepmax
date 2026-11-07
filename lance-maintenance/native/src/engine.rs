@@ -37,6 +37,14 @@ use std::{
 const MAX_SOURCE: u64 = 512 * 1024 * 1024;
 const MAX_ROWS: usize = 32768;
 const MAX_FRAGMENTS: usize = 64;
+/// Orphan, relocation and compaction planning read every fragment's metadata,
+/// so they keep a manifest-size bound. Index repair reads at most this many
+/// uncovered fragments per attempt and runs on any manifest size.
+pub(crate) const SCAN_FRAGMENTS: usize = 4096;
+
+pub(crate) fn scannable(dataset: &Dataset) -> bool {
+    dataset.manifest.fragments.len() <= SCAN_FRAGMENTS
+}
 const RECEIPT: &str = "_gmax-bounded-receipt.json";
 const MAX_RECEIPT_BYTES: usize = 64 * 1024;
 #[derive(Debug)]
@@ -405,10 +413,6 @@ async fn open_metered(
     ensure!(
         dataset.manifest.base_paths.is_empty(),
         "External base stores refused"
-    );
-    ensure!(
-        dataset.manifest.fragments.len() <= 4096,
-        "Too many fragments for bounded metadata"
     );
     let schema = serde_json::to_value(ArrowSchema::from(dataset.schema()))?;
     ensure!(
@@ -1130,6 +1134,7 @@ pub async fn run(request: Request) -> Result<()> {
             // oversized task otherwise hides every later eligible batch. Source,
             // row and fragment limits are enforced on each task before any copy.
             // Keep explicit selections on the original exact-source protocol.
+            ensure!(scannable(&dataset), "Too many fragments for bounded metadata");
             if request.selected_fragment_ids.is_none() {
                 options.max_source_fragments = None;
                 options.max_source_rows = None;

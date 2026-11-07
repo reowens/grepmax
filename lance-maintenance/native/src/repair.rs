@@ -126,10 +126,14 @@ pub async fn plan(
     previous: Option<&Receipt>,
 ) -> Result<Option<Proof>> {
     let operation = request.operation.as_deref().unwrap_or("repair");
+    let scannable = crate::engine::scannable(dataset);
+    if operation == "repair-orphans" || operation == "repair-relocate" {
+        ensure!(scannable, "Too many fragments for bounded metadata");
+    }
     if operation == "repair-orphans" {
         return crate::orphans::plan(root);
     }
-    if operation == "repair" {
+    if operation == "repair" && scannable {
         if let Some(proof) = crate::orphans::plan(root)? {
             return Ok(Some(proof));
         }
@@ -266,6 +270,7 @@ pub async fn plan(
         let mut fragments = vec![];
         let mut source = 0;
         let mut rows = 0;
+        let mut examined = 0;
         for f in dataset.manifest.fragments.iter() {
             if covered.contains(&(f.id as u32))
                 || request
@@ -275,6 +280,10 @@ pub async fn plan(
             {
                 continue;
             }
+            if examined == crate::engine::SCAN_FRAGMENTS {
+                break;
+            }
+            examined += 1;
             let n = f.files.iter().try_fold(0u64, |s, file| {
                 Ok::<_, anyhow::Error>(
                     s.checked_add(fs::metadata(root.join("data").join(&file.path))?.len())
@@ -323,7 +332,7 @@ pub async fn plan(
             }));
         }
     }
-    if operation != "repair-indexes" {
+    if operation != "repair-indexes" && scannable {
         if let Some(proof) = crate::relocation::plan(dataset, root, request).await? {
             return Ok(Some(proof));
         }

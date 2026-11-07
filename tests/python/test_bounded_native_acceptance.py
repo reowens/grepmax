@@ -197,6 +197,46 @@ class BoundedNativeAcceptance(unittest.TestCase):
             finally:
                 session.close()
 
+    def test_index_refresh_runs_past_the_whole_manifest_scan_bound(self):
+        import lance
+        import pyarrow as pa
+        with tempfile.TemporaryDirectory(prefix='gmax-native-many-fragments-') as home:
+            root, ds = self.prepare(home, deleted=False)
+            seed = ds.to_table(filter='id = 11').to_pylist()[0]
+            rows = [{**seed, 'id': 10000 + n, 'path': f'/many/{n}.ts', 'content': f'many{n} lexical'}
+                    for n in range(4100)]
+            lance.write_dataset(pa.Table.from_pylist(rows, schema=ds.schema), str(root),
+                                mode='append', max_rows_per_file=1)
+            current = lance.dataset(str(root))
+            self.assertGreater(len(current.get_fragments()), 4096)
+            digest = fixture_support.row_digest(current)
+            # Index repair reads only the fragments one unit selects.
+            session = NativeSession(self.binary, root, qualification={'operation': 'repair'})
+            try:
+                result = session.reach('result')
+                self.assertEqual(result['dataBytesWritten'], 0)
+                self.assertGreater(result['indexBytesWritten'], 0)
+                self.assertGreater(result.get('remainingIndexFragments', 0), 0)
+                receipt = json.loads((root / '_gmax-bounded-receipt.json').read_text())
+                self.assertEqual(receipt['repair']['field'], 'content')
+                self.assertLessEqual(len(receipt['repair']['fragments']), 64)
+            finally:
+                session.close()
+            current = lance.dataset(str(root))
+            self.assertEqual(fixture_support.row_digest(current), digest)
+            self.assertEqual(current.to_table(full_text_query={'query': 'many0', 'columns': ['content']})['id'].to_pylist(), [10000])
+            # Orphan and relocation planning read every fragment and keep the bound.
+            for operation in ('repair-relocate', 'repair-orphans'):
+                before = fixture_support.file_state(root)
+                session = NativeSession(self.binary, root, qualification={'operation': operation})
+                try:
+                    self.drive_to_exit(session)
+                    self.assertNotEqual(session.process.returncode, 0)
+                    self.assertIn('too many fragments', self.failure_reason(session).lower())
+                    self.assertEqual(fixture_support.file_state(root), before)
+                finally:
+                    session.close()
+
     def test_partial_relocation_preserves_values_and_protected_reader(self):
         import lance
         with tempfile.TemporaryDirectory(prefix='gmax-native-relocate-') as home:
