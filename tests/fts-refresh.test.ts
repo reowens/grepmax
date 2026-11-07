@@ -184,6 +184,46 @@ describe("explicit FTS catch-up guards", () => {
     ).rejects.toThrow(state.attemptId);
     expect(runCleanupProcess).toHaveBeenCalledOnce();
   });
+  it("reads a receipt recorded under the store's old path as uncertain and records this path after acknowledgement", async () => {
+    const attemptId = randomUUID();
+    fs.writeFileSync(
+      ftsRefreshStatePath(store),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        storeIdentity: path.join(root, "moved-from", "lancedb"),
+        attemptId,
+        expectedVersion: 5,
+        startedAt: Date.now() - 1000,
+        finishedAt: Date.now() - 500,
+        outcome: "uncertain",
+      })}\n`,
+      { mode: 0o600 },
+    );
+    expect(readFtsRefreshState(store)).toMatchObject({
+      outcome: "uncertain",
+      attemptId,
+    });
+    lease = await StoreLease.acquireExclusive({ storeDir: store });
+    await expect(
+      runFtsRefresh(runtime, table, lease, {
+        table,
+        run: true,
+        expectedVersion: 5,
+      }),
+    ).rejects.toThrow(attemptId);
+    expect(runCleanupProcess).not.toHaveBeenCalled();
+    await runFtsRefresh(runtime, table, lease, {
+      table,
+      run: true,
+      expectedVersion: 5,
+      acknowledgeUncertain: attemptId,
+    });
+    expect(readFtsRefreshState(store)).toMatchObject({
+      outcome: "completed",
+      storeIdentity: fs.realpathSync(store),
+      previousUncertainAttemptId: attemptId,
+    });
+  });
   it("retains a completed partial batch receipt without treating remaining rows as failure", async () => {
     lease = await StoreLease.acquireExclusive({ storeDir: store });
     const defaultRun = vi.mocked(runCleanupProcess).getMockImplementation()!;

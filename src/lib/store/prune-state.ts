@@ -37,7 +37,7 @@ export function readPruneState(storeDir: string): PruneState | null {
   const state = JSON.parse(fs.readFileSync(target, "utf8")) as PruneState;
   if (
     state.schemaVersion !== 1 ||
-    state.storeIdentity !== identity ||
+    typeof state.storeIdentity !== "string" ||
     typeof state.attemptId !== "string" ||
     !state.attemptId ||
     !Number.isSafeInteger(state.version) ||
@@ -54,7 +54,10 @@ export function readPruneState(storeDir: string): PruneState | null {
         state.result?.rewritten !== false))
   )
     throw new Error("Prune state is invalid; cleanup remains pending");
-  return state.outcome === "running"
+  // A receipt recorded under another path belongs to a store that was moved
+  // or copied here. It cannot vouch for completion at this path, so it reads
+  // as uncertain; the next attempt records this path.
+  return state.outcome === "running" || state.storeIdentity !== identity
     ? { ...state, outcome: "uncertain" }
     : state;
 }

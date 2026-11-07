@@ -121,7 +121,7 @@ export function readFtsRefreshState(store: string): FtsRefreshState | null {
   const state: FtsRefreshState = JSON.parse(fs.readFileSync(file, "utf8"));
   if (
     state.schemaVersion !== 1 ||
-    state.storeIdentity !== identity ||
+    typeof state.storeIdentity !== "string" ||
     !/^[a-f0-9-]{36}$/.test(state.attemptId) ||
     !Number.isSafeInteger(state.expectedVersion) ||
     state.expectedVersion < 1 ||
@@ -132,7 +132,9 @@ export function readFtsRefreshState(store: string): FtsRefreshState | null {
         !validResult(state.result!, state.expectedVersion, true)))
   )
     throw new Error("FTS refresh state is invalid; inspect before retry");
-  return state.outcome === "running"
+  // Recorded under another path: the store was moved or copied, so the
+  // receipt cannot vouch for completion here (see readPruneState).
+  return state.outcome === "running" || state.storeIdentity !== identity
     ? { ...state, outcome: "uncertain" }
     : state;
 }

@@ -462,6 +462,47 @@ describe("exclusive prune admission and verification", () => {
     });
   });
 
+  it("reads a receipt recorded under the store's old path as uncertain and records this path on the next automatic pass", async () => {
+    const oldIdentity = path.join(path.dirname(store), "moved-from", "lancedb");
+    fs.writeFileSync(
+      pruneStatePath(store),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        storeIdentity: oldIdentity,
+        attemptId: "before-move",
+        version: 5,
+        cutoffMs: Date.now() - 2000,
+        startedAt: Date.now() - 2000,
+        finishedAt: Date.now() - 1000,
+        outcome: "completed",
+        result: output,
+      })}\n`,
+      { mode: 0o600 },
+    );
+    expect(readPruneState(store)).toMatchObject({
+      outcome: "uncertain",
+      attemptId: "before-move",
+    });
+    lease = await StoreLease.acquireExclusive({ storeDir: store });
+    await expect(
+      pruneVersions(runtime, table, 5, new Date(), { lease }),
+    ).rejects.toThrow("acknowledgement required for attempt before-move");
+    expect(spawn).not.toHaveBeenCalled();
+    const pending = pruneVersions(runtime, table, 5, new Date(), {
+      lease,
+      retryUncertain: true,
+    });
+    child.stdout.write('{"admission":"launch"}\n{"admission":"ready"}\n');
+    child.stdout.write(JSON.stringify(output));
+    child.emit("close", 0, null);
+    await pending;
+    expect(readPruneState(store)).toMatchObject({
+      outcome: "completed",
+      storeIdentity: store,
+      previousUncertainAttemptId: "before-move",
+    });
+  });
+
   it("refuses corrupt or symlinked state before launching deletion", async () => {
     lease = await StoreLease.acquireExclusive({ storeDir: store });
     fs.writeFileSync(pruneStatePath(store), "invalid json");
@@ -524,6 +565,43 @@ describe("exclusive prune admission and verification", () => {
     child.emit("close", 0, null);
     await check;
     expect(readPruneState(store)?.outcome).toBe("uncertain");
+  });
+});
+
+describe("prune receipt after the store is renamed", () => {
+  it("is read as uncertain at the new path, not refused", () => {
+    const base = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), "gmax-prune-move-")),
+    );
+    try {
+      const from = path.join(base, "side-home", "lancedb");
+      const to = path.join(base, "lancedb");
+      fs.mkdirSync(from, { recursive: true });
+      writePruneState({
+        schemaVersion: 1,
+        storeIdentity: from,
+        attemptId: "side-attempt",
+        version: 7,
+        cutoffMs: 1,
+        startedAt: 2,
+        finishedAt: 3,
+        outcome: "uncertain",
+      });
+      fs.renameSync(from, to);
+      expect(readPruneState(to)).toMatchObject({
+        outcome: "uncertain",
+        attemptId: "side-attempt",
+        storeIdentity: from,
+      });
+      const receipt = JSON.parse(fs.readFileSync(pruneStatePath(to), "utf8"));
+      fs.writeFileSync(
+        pruneStatePath(to),
+        JSON.stringify({ ...receipt, storeIdentity: 7 }),
+      );
+      expect(() => readPruneState(to)).toThrow("Prune state is invalid");
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
   });
 });
 
