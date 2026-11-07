@@ -182,6 +182,7 @@ describe("VectorDB maintenance gating", () => {
       add: vi.fn(async () => {}),
       delete: vi.fn(async () => {}),
       update: vi.fn(async () => {}),
+      close: vi.fn(),
     };
     vi.spyOn(db as any, "openExistingTableUnsafe").mockResolvedValue(table);
     vi.spyOn(db as any, "ensureTableUnsafe").mockResolvedValue(table);

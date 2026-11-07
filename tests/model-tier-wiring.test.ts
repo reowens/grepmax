@@ -44,6 +44,7 @@ function stubStore(db: VectorDB) {
   const table = {
     add: vi.fn(async () => {}),
     schema: vi.fn(async () => ({ fields: [] as { name: string }[] })),
+    close: vi.fn(),
   };
   vi.spyOn(
     db as unknown as { ensureDiskOk: () => void },
@@ -104,5 +105,6 @@ describe("VectorDB dimension handling", () => {
     const table = stubStore(db);
     await db.insertBatch([makeRecord(new Array(768).fill(0.1))]);
     expect(table.add).toHaveBeenCalledOnce();
+    expect(table.close).toHaveBeenCalledOnce();
   });
 });
