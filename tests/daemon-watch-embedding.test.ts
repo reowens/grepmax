@@ -44,28 +44,12 @@ describe("Daemon watcher embedding admission", () => {
     daemon.watchLeases.acquire("/work/app", { holder: "test", ttlMs: 60_000 });
   });
 
-  it("admits a project stamped with the current generation", async () => {
-    const current = resolveEmbeddingGeneration({ modelTier: "small" });
-    mocks.project = project({
-      embedModel: current.onnxModel,
-      mlxModel: current.mlxModel,
-      colbertModel: current.colbertModel,
-      onnxProfile: current.onnxProfile,
-      embeddingFingerprint: current.fingerprint,
-    });
+  it("admits a compatible legacy project", async () => {
+    mocks.project = project();
 
     await daemon.watchProjectWithinOperation("/work/app");
 
     expect(watchProject).toHaveBeenCalledWith("/work/app");
-  });
-
-  it("rejects an unstamped project, whose vectors predate the ONNX profile", async () => {
-    mocks.project = project();
-
-    expect(() => daemon.watchProjectWithinOperation("/work/app")).toThrow(
-      /gmax repair --rebuild/i,
-    );
-    expect(watchProject).not.toHaveBeenCalled();
   });
 
   it("does not watch a project no session holds a lease on", async () => {

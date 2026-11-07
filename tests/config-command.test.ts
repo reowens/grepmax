@@ -82,12 +82,12 @@ describe("config command", () => {
       spy.mockRestore();
     });
 
-    it("shows an unstamped identity as stale, since it predates the ONNX profile", async () => {
+    it("labels a compatible unstamped identity as inferred", async () => {
       const spy = vi.spyOn(console, "log").mockImplementation(() => {});
       await (config as Command).parseAsync([], { from: "user" });
       const output = spy.mock.calls.map((c) => c[0]).join("\n");
-      expect(output).toContain("[cc340c3dd6f2] (stale)");
-      expect(output).not.toContain("Built (inferred)");
+      expect(output).toContain("Built (inferred)");
+      expect(output).toContain("gmax index");
       spy.mockRestore();
     });
   });

@@ -62,12 +62,26 @@ describe("ONNX profile in the embedding identity", () => {
   });
 
   it("allows no ONNX embedding for a generation without the profile", () => {
-    const old = resolveEmbeddingGeneration({
-      modelTier: "small",
-      onnxProfile: null,
+    const old = parseEmbeddingGeneration({
+      tier: before.modelTier,
+      vectorDim: before.vectorDim,
+      onnxModel: before.embedModel,
+      mlxModel: before.mlxModel,
+      colbertModel: before.colbertModel,
+      fingerprint: before.embeddingFingerprint,
     });
-    expect(old.fingerprint).toBe(before.embeddingFingerprint);
+    expect(old.onnxProfile).toBeUndefined();
     expect(isOnnxFallbackCompatible(old)).toBe(false);
+  });
+
+  it("infers the current generation for a project registered but not yet indexed", () => {
+    const configured = resolveEmbeddingGeneration({ modelTier: "small" });
+    const comparison = compareEmbeddingGeneration(
+      { modelTier: "small", vectorDim: 384 },
+      configured,
+    );
+    expect(comparison.state).toBe("legacy");
+    expect(comparison.built.fingerprint).toBe(configured.fingerprint);
   });
 
   it("registry accepts a pre-profile record and round-trips a stamped one", async () => {

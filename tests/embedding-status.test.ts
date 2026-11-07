@@ -27,8 +27,8 @@ function project(overrides: Partial<ProjectEntry> = {}): ProjectEntry {
 }
 
 describe("projectEmbeddingStatus", () => {
-  it("reports an unstamped project as stale, since it predates the ONNX profile", () => {
-    expect(projectEmbeddingStatus(project(), config).state).toBe("stale");
+  it("reports an equivalent unstamped project as legacy", () => {
+    expect(projectEmbeddingStatus(project(), config).state).toBe("legacy");
   });
 
   it("reports an exact persisted generation as current", () => {

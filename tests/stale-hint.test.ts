@@ -28,11 +28,6 @@ function writeRegistry(
     status?: string;
     vectorDim?: number;
     modelTier?: string;
-    embedModel?: string;
-    mlxModel?: string;
-    colbertModel?: string;
-    onnxProfile?: string;
-    embeddingFingerprint?: string;
   }>,
 ) {
   const full = entries.map((e) => ({
@@ -332,18 +327,7 @@ describe("maybeWarnStaleEmbedding", () => {
 
   it("stays silent for a current index", async () => {
     writeRegistry([
-      {
-        name: "foo",
-        root: "/proj/foo",
-        modelTier: "small",
-        vectorDim: 384,
-        embedModel: "onnx-community/granite-embedding-small-english-r2-ONNX",
-        mlxModel: "ibm-granite/granite-embedding-small-english-r2",
-        colbertModel: "ryandono/mxbai-edge-colbert-v0-17m-onnx-int8",
-        onnxProfile: "dense=model_quantized.onnx;colbert=1-per-call",
-        embeddingFingerprint:
-          "8e2958f019e85b3201906cbb2ae8dc35ef1d8bbc2787b0c8350ffe45c12717e4",
-      },
+      { name: "foo", root: "/proj/foo", modelTier: "small", vectorDim: 384 },
     ]);
     const { maybeWarnStaleEmbedding } = await import(
       "../src/lib/utils/stale-hint"

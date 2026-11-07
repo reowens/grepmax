@@ -11,8 +11,8 @@ export const ONNX_DENSE_FILE = "model_quantized.onnx";
 /**
  * How the ONNX models turn a chunk into vectors: the int8 dense file, and
  * ColBERT run 1 chunk per call (its int8 activation scale is per input tensor,
- * so batching made a chunk's vectors depend on its neighbours). Identities
- * written before it existed omit it and read as stale.
+ * so batching made a chunk's vectors depend on its neighbours). A stamped
+ * identity written before it existed omits it and reads as stale.
  */
 export const ONNX_PROFILE = `dense=${ONNX_DENSE_FILE};colbert=1-per-call`;
 
@@ -33,8 +33,6 @@ export interface EmbeddingGenerationInput {
   modelTier: string;
   vectorDim?: number;
   mlxModel?: string;
-  /** Omit only to rebuild an identity written before profiles existed. */
-  onnxProfile?: string | null;
 }
 
 export interface PersistedEmbeddingIdentity {
@@ -105,9 +103,7 @@ export function resolveEmbeddingGeneration(
     onnxModel: tier.onnxModel,
     mlxModel: requireModelId("MLX model", input.mlxModel ?? tier.mlxModel),
     colbertModel: MODEL_IDS.colbert,
-    ...(input.onnxProfile === null
-      ? {}
-      : { onnxProfile: input.onnxProfile ?? ONNX_PROFILE }),
+    onnxProfile: ONNX_PROFILE,
   };
   return Object.freeze({
     ...identity,
@@ -189,7 +185,6 @@ export function compareEmbeddingGeneration(
     : resolveEmbeddingGeneration({
         modelTier: persisted.modelTier,
         vectorDim: persisted.vectorDim,
-        onnxProfile: null,
         ...(persisted.mlxModel === undefined
           ? {}
           : { mlxModel: persisted.mlxModel }),
