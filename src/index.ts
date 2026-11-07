@@ -8,6 +8,7 @@ import { add } from "./commands/add";
 import { audit } from "./commands/audit";
 import { installClaudeCode } from "./commands/claude-code";
 import { installCodex } from "./commands/codex";
+import { compact } from "./commands/compact";
 import { config } from "./commands/config";
 import { context } from "./commands/context";
 import { dead } from "./commands/dead";
@@ -131,6 +132,7 @@ program.addCommand(doctor);
 program.addCommand(repair);
 program.addCommand(recover);
 program.addCommand(ftsRefresh);
+program.addCommand(compact);
 
 // Plugins
 program.addCommand(plugin);
