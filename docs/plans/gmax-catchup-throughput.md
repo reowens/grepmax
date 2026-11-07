@@ -191,6 +191,25 @@ After installing `5dd8d2a` on the P3, with the unit on `KillMode=mixed`:
 
 Before: `vitest run` 12 of 264 files and 20 of 2,873 tests failed in 31 s, and `tsc -p tsconfig.tests.json` had 6 errors; every failure was a test left stale by an intentional change (`b4955e0` search stage guidance, `6fe7fee` table close, `07588f7` MCP annotations and the disabled summarizer, the status JSON fields, `2ebdb62` the 2 s save-quiet window, `.at` outside the ES6 lib) plus the `node:test` file `scripts/local-worker.test.cjs` collected by vitest. After `f652467`, `37019ae`, `caacc04`, `748b4f1`, `abdf094`, `d24195d` and `2b4dca3`: 262 files and 2,864 tests pass (1 file and 11 tests skipped, as before) in 31 s, and the tests typecheck has 0 errors.
 
+### 13. The SessionStart hook blocked session start for 1.7 to 3.4 s (measured 2026-11-07)
+
+Claude Code's own records show 6 session starts in 7 days at 1.7 to 3.4 s, all in `plugins/grepmax/hooks/start.js`; warm, the hook takes 25 to 32 ms, of which bare `node` is 21 ms. The slow runs were 2 cold branches, each a fixed wait in `plugins/grepmax/hooks/watch-lease.js` before the fix:
+
+- **No daemon socket (records show `daemon=offline`, 1.67 to 1.83 s):** the hook spawned `gmax watch --daemon -b`, then polled for a ready daemon for up to 1.5 s (`sendDaemonLine({ cmd: "ping" }, 1500)`, line 324), then reported offline anyway.
+- **Daemon up, project not watched yet (records show `daemon=ready`, 2.1 to 3.4 s):** the daemon records the lease when the `watch` line arrives, but answers only after `watchProject` has subscribed the watcher (`src/lib/daemon/daemon.ts:881-893`, `src/lib/daemon/ipc-handler.ts:162-171`), which takes seconds on a large repo. The hook waited up to 2 s for that answer (`sendOnce(cmd, Math.min(remaining, 2000))`, line 241), then ran the status ping after it.
+
+Fix: `ensureDaemonLease` returns right after the spawn, the `watch` acknowledgement wait is 400 ms counted from the ping (`LEASE_REPLY_MS`, `watch-lease.js:21`), and `start.js:18` runs the lease and the status probe side by side. When the lease is not confirmed for a registered project with autostart on, the hook adds 1 line saying so and that later activity retries it (`start.js:22`); `activity.js` renews without the old 1.5 s and 2 s waits too. A healthy daemon gives byte-identical output to the installed 0.26.110 hook. The daemon still answers `watch` only after the watcher is up; answering after `acquire` is the structural fix and is not built.
+
+| Case (load 15 to 26 on 24 cores) | Before ms | After ms |
+|---|---|---|
+| Real daemon, warm, 10 runs | 50 to 65 | 61 to 83 |
+| Real daemon, during `systemctl --user restart gmax.service` | 1,140 (1 run), then 26 to 208 | 59 to 105 offline, then 62 to 85 |
+| Stand-in daemon, healthy, 5 runs | 63 to 82 | 51 to 66 |
+| Stand-in daemon, `watch` held 2.5 s, 5 runs | 2,061 to 2,083 | 446 to 457 |
+| No socket, 5 runs | 1,677 to 1,692 | 54 to 67 |
+
+Tests: `tests/claude-hook-start-budget.test.ts` runs the real hook against a stand-in socket in a temporary HOME (healthy output has no extra line; a held `watch` returns under 1.5 s; no socket returns under 1 s after asking for a daemon); 2 of its 3 fail against the old hook. The lifecycle test now expects the spawn path to return without a lease and the next call to take it.
+
 ## Plan
 
 One batch; each step lists its tests. Live-edit priority from `bad7365` stays.

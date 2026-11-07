@@ -182,15 +182,20 @@ describe("Claude hook singleton and session ownership", () => {
   });
 
   it.each(["ENOENT", "ECONNREFUSED"])(
-    "starts only one daemon after %s, never a per-project watcher",
+    "starts only one daemon after %s and leaves the lease to later activity",
     async (reply) => {
       const h = helper({ replies: [reply, live, { ok: true }] });
       expect(
         await h.api.ensureSessionLease(input, input.cwd, { allowStart: true }),
-      ).toBe(true);
+      ).toBe(false);
       expect(h.spawns).toEqual([
         { args: ["watch", "--daemon", "-b"], cwd: input.cwd },
       ]);
+      expect(h.connectionCount()).toBe(1);
+      expect(
+        await h.api.ensureSessionLease(input, input.cwd, { allowStart: true }),
+      ).toBe(true);
+      expect(h.spawns).toHaveLength(1);
       expect(h.commands[h.commands.length - 1]).toMatchObject({
         cmd: "watch",
         root: "/project",

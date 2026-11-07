@@ -15,6 +15,10 @@ const SOCKET = path.join(GMAX_DIR, "daemon.sock");
 // Activity refreshes this TTL; idle sessions do not watch forever.
 const SESSION_LEASE_TTL_MS = 4 * 60 * 60 * 1000;
 const SESSION_RENEW_INTERVAL_MS = SESSION_LEASE_TTL_MS / 4;
+// The daemon records a lease as soon as the `watch` line arrives, but answers
+// only after the project's watcher is up, which takes seconds for a large repo
+// that is not watched yet. Hooks stop waiting after this; activity confirms it.
+const LEASE_REPLY_MS = 400;
 
 function socketIdentity() {
   try {
@@ -251,16 +255,14 @@ function sessionHolder(input) {
   return id ? `session:${id}` : null;
 }
 
-async function acquireSessionLease(input, dir) {
+async function acquireSessionLease(input, dir, deadlineMs = LEASE_REPLY_MS) {
   const holder = sessionHolder(input);
   const root = registeredRootFor(dir);
   if (!holder || !root) return false;
-  const resp = await sendDaemonLine({
-    cmd: "watch",
-    root,
-    holder,
-    ttlMs: SESSION_LEASE_TTL_MS,
-  });
+  const resp = await sendDaemonLine(
+    { cmd: "watch", root, holder, ttlMs: SESSION_LEASE_TTL_MS },
+    deadlineMs,
+  );
   return resp !== null;
 }
 
@@ -294,10 +296,15 @@ async function ensureSessionLease(
 }
 
 async function ensureDaemonLease(input, dir, allowStart) {
+  const started = Date.now();
   const ping = await sendOnce({ cmd: "ping" }, 500);
   if (ping.ok) {
     if (!ping.resp.capabilities?.watchLeases) return false;
-    return acquireSessionLease(input, dir);
+    return acquireSessionLease(
+      input,
+      dir,
+      Math.max(100, LEASE_REPLY_MS - (Date.now() - started)),
+    );
   }
   // Busy, initializing, denied and timed-out sockets belong to an existing
   // daemon. Never start a per-project writer or replace that process here.
@@ -319,11 +326,9 @@ async function ensureDaemonLease(input, dir, allowStart) {
   } catch {
     return false;
   }
-  // A cold daemon may take longer than a hook's budget to become ready. Later
-  // activity retries ownership instead of opening another watcher.
-  const ready = await sendDaemonLine({ cmd: "ping" }, 1500);
-  if (!ready?.capabilities?.watchLeases) return false;
-  return acquireSessionLease(input, dir);
+  // A cold daemon takes seconds to answer. Later activity takes the lease once
+  // it does, instead of this hook waiting or opening another watcher.
+  return false;
 }
 
 async function releaseSessionLeases(input, dir) {
