@@ -25,6 +25,7 @@
     "dev": "npx tsc && node dist/bin.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:scripts": "node --test scripts/*.test.cjs",
     "bench:recall": "npx tsx src/eval.ts",
     "bench:recall:json": "GMAX_EVAL_JSON=1 npx tsx src/eval.ts",
     "bench:oss": "npx tsx src/eval-oss.ts all",
@@ -54,7 +55,7 @@
     "audit:python": "python3 scripts/audit-python.py && python3 scripts/audit-python.py --lockfile lance-maintenance/uv.lock && python3 scripts/audit-python.py --lockfile mlx-embed-server/gemma/uv.lock",
     "test:python": "python3 -m unittest discover -s tests/python",
     "audit:document-search": "node scripts/audit-document-search.cjs",
-    "release:check": "pnpm audit && pnpm run audit:python && pnpm test && pnpm run test:python && pnpm typecheck && pnpm run test:typecheck && pnpm run format:check && pnpm build && pnpm run audit:consumer"
+    "release:check": "pnpm audit && pnpm run audit:python && pnpm test && pnpm run test:scripts && pnpm run test:python && pnpm typecheck && pnpm run test:typecheck && pnpm run format:check && pnpm build && pnpm run audit:consumer"
   },
   "keywords": [
     "grepmax",
