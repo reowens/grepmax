@@ -154,9 +154,11 @@ describe("MCP protocol", () => {
         const readTool = tools.find((entry: any) => entry.name === name);
         expect(readTool.outputSchema.type).toBe("object");
         expect(readTool.outputSchema.required).toContain("schemaVersion");
+        const watches = name !== "index_status";
         expect(readTool.annotations).toEqual({
-          readOnlyHint: true,
-          destructiveHint: false,
+          readOnlyHint: false,
+          destructiveHint: watches,
+          idempotentHint: false,
           openWorldHint: false,
         });
       }

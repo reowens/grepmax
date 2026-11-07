@@ -1057,7 +1057,7 @@ describe("MCP read tools go through the daemon read verbs", () => {
   it("summarize_directory answers from the decommissioned stub without a store", async () => {
     respond({});
     const text = await call("summarize_directory", {});
-    expect(text).toContain("No chunks to summarize");
+    expect(text).toContain("deliberately disabled");
     expect(sendDaemonCommand).not.toHaveBeenCalled();
     expect(vectorDbCtor).not.toHaveBeenCalled();
   });

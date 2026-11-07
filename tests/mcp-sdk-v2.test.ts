@@ -110,7 +110,7 @@ it.each(["legacy", "modern", "auto"])(
         description: "Natural language query (5+ words recommended)",
       });
       expect(search.outputSchema?.required).toContain("schemaVersion");
-      expect(search.annotations?.readOnlyHint).toBe(true);
+      expect(search.annotations?.readOnlyHint).toBe(false);
       expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(
         catalog.tools.map((tool) => tool.name),
       );

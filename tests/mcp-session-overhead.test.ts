@@ -192,7 +192,7 @@ process.on("message", () => process.send({ memory: process.memoryUsage(), module
       arguments: {},
     }).promise;
     expect(summary.result.isError).not.toBe(true);
-    expect(summary.result.content[0].text).toContain("No chunks to summarize");
+    expect(summary.result.content[0].text).toContain("deliberately disabled");
 
     const leases = commands.filter((command) => command.cmd === "watch");
     expect(leases).toHaveLength(3);
