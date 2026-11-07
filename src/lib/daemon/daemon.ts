@@ -246,6 +246,7 @@ export class Daemon {
   private lastBoundedCleanupOutcome:
     | (CompactionResult & { recoveryPending?: boolean })
     | null = null;
+  private boundedCleanupRefusals = { reason: "", count: 0 };
   private lastCleanupAttempt = 0;
   private cleanupRetrySoon = false;
   private cleanupFailures = 0;
@@ -1210,9 +1211,7 @@ export class Daemon {
         this.cleanupPromise ||
         this.operations.status !== "open" ||
         Date.now() - this.lastBoundedCleanupAttempt <
-          (this.lastBoundedCleanupOutcome?.status === "completed"
-            ? 60_000
-            : 10 * 60_000) ||
+          this.boundedCleanupDelayMs() ||
         Date.now() - this.lastCleanupAttempt >=
           this.versionCleanupIntervalMs() ||
         (this.versionCleanupStatus()?.eligibleVersionsRemaining ?? 1) > 0 ||
@@ -1228,6 +1227,34 @@ export class Daemon {
     this.boundedCleanupInterval.unref();
   }
 
+  /** Each attempt quiesces the watchers, so a refusal that repeats with the
+   * same reason backs off from 1 h to 24 h. Success or a new reason resets. */
+  private boundedCleanupDelayMs(): number {
+    const status = this.lastBoundedCleanupOutcome?.status;
+    if (status === "completed") return 60_000;
+    const repeats = status === "failed" ? this.boundedCleanupRefusals.count : 0;
+    if (repeats < 2) return 10 * 60_000;
+    return Math.min(24, 2 ** (repeats - 2)) * 3_600_000;
+  }
+
+  private recordBoundedCleanupOutcome(outcome: CompactionResult): void {
+    if (outcome.status === "completed") {
+      this.boundedCleanupRefusals = { reason: "", count: 0 };
+      return;
+    }
+    if (outcome.status !== "failed") return;
+    const reason = outcome.reason ?? "";
+    const count =
+      this.boundedCleanupRefusals.reason === reason
+        ? this.boundedCleanupRefusals.count + 1
+        : 1;
+    this.boundedCleanupRefusals = { reason, count };
+    if (count >= 2)
+      console.log(
+        `[daemon] Bounded maintenance refused ${count} times in a row (${reason}); next attempt in ${this.boundedCleanupDelayMs() / 3_600_000} h`,
+      );
+  }
+
   /** Runtime preparation and bulk-index refusal happen before exclusive reader
    * admission. An accepted bundled manifest is the sole native capability gate. */
   runBoundedMaintenance(
@@ -1239,6 +1266,7 @@ export class Daemon {
     const run = this.performBoundedMaintenance(action).then(
       (result) => {
         this.lastBoundedCleanupOutcome = { ...result };
+        this.recordBoundedCleanupOutcome(result);
         return result;
       },
       (error: unknown) => {

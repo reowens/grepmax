@@ -154,6 +154,40 @@ describe("daemon bounded deleted-row cleanup lifecycle", () => {
     clearInterval(d.boundedCleanupInterval);
   });
 
+  it("backs off a repeated refusal and resets on a new reason or success", async () => {
+    vi.useFakeTimers();
+    const { d } = fixture();
+    let outcome: Record<string, unknown> = {
+      ...completed,
+      status: "failed",
+      reason: "Too many fragments for bounded metadata",
+    };
+    d.vectorDb.cleanupDeletedRows.mockImplementation(async () => outcome);
+    const calls = () => d.vectorDb.cleanupDeletedRows.mock.calls.length;
+    d.startVersionCleanupLoop();
+    d.startBoundedCleanupLoop();
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(calls()).toBe(1);
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(calls()).toBe(2);
+    await vi.advanceTimersByTimeAsync(60 * 60_000 - 60_000);
+    expect(calls()).toBe(2);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(calls()).toBe(3);
+    await vi.advanceTimersByTimeAsync(2 * 60 * 60_000 - 60_000);
+    expect(calls()).toBe(3);
+    outcome = { ...outcome, reason: "Cumulative total write budget exceeded" };
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(calls()).toBe(4);
+    outcome = completed;
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(calls()).toBe(5);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(calls()).toBe(6);
+    clearInterval(d.cleanupInterval);
+    clearInterval(d.boundedCleanupInterval);
+  });
+
   it("gives history backlog priority and keeps reads open while bounded work defers", async () => {
     vi.useFakeTimers();
     const { d } = fixture();
