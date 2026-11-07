@@ -142,14 +142,14 @@ After installing the local build (`9012a66`) on the P3:
 
 Causes:
 
-- **A stop during startup waits for the native subscribe.** `unwatchProject` (`src/lib/daemon/watcher-manager.ts`) awaited the in-flight `subscriptionUpdates` promise. The @parcel/watcher subscribe of a large tree on Linux cannot be cancelled and takes 25 to 50 s; "Unwatched <root>" lands in the same millisecond the startup subscribe returns.
+- **A stop during startup waits for the native subscribe.** The @parcel/watcher subscribe of a large tree on Linux cannot be cancelled and takes 25 to 50 s. Shutdown waited for it twice: `unwatchProject` (`src/lib/daemon/watcher-manager.ts`) awaited the in-flight `subscriptionUpdates` promise, and the operation drain waited for the startup `watch` operation, whose `watchProject` awaited the same subscribe. "Unwatched <root>" landed in the same millisecond the startup subscribe returned; with only the first fixed, the build logged "shutdown step operation drain took 24.4s".
 - **The pool replaced the worker the stop signal killed.** `KillMode=control-group` signals every process in the unit. The worker exited before `destroy()` ran, late in `performShutdown`, so `handleWorkerExit` and `maybeRespawn` (`src/lib/workers/pool.ts`) forked a replacement ("respawn #1 after exit") during every stop with a live worker.
 - **The backstop could not win.** `SIGNAL_EXIT_BACKSTOP_MS` (`src/commands/watch.ts`) was 90 s, equal to the unit's `TimeoutStopSec`, so a wedged step ended in SIGKILL with no record of which step. The 04:50 step is not attributable from that journal and was not reproduced, since the store was compacted after it.
 - **A CLI call cancelled the stop.** Shutdown removes the socket and pid file first, so a CLI call during the drain finds no daemon and runs `systemctl --user start gmax.service` (`startUserDaemonService`, `src/lib/utils/service-startup.ts`). In the default job mode that start replaces the queued stop, and the unit starts again in the same second (finding 10, offline `fts-refresh`).
 
 Fixes (local commit):
 
-- `unwatchProject` does not wait for an in-flight subscribe once shutdown has begun; `subscribeWatcherNow` already unsubscribes when its processor was removed.
+- `unwatchProject` does not wait for an in-flight subscribe once shutdown has begun, and `watchProject` stops waiting for it when its lifecycle is aborted; `subscribeWatcherNow` already unsubscribes when its processor was removed.
 - `WorkerPool.beginShutdown()`, called before the first await in `performShutdown`, stops every spawn and respawn, and fails queued work when the last worker exits.
 - The signal backstop is 45 s and names the step it was stuck in; `performShutdown` logs any step that takes 1 s or more (`shutdown step <name> took <s>s`).
 - The unit start runs with `--job-mode=fail`. A start while a stop job is queued fails ("Transaction for gmax.service/start is destructive", checked on the P3) and the CLI reports "gmax.service is stopping; a start would cancel that stop; no standalone daemon was started". An active or starting unit still succeeds, and a stopped one still starts.

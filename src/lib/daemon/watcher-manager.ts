@@ -301,7 +301,12 @@ export class WatcherManager {
       // subscribe failures, so we skip it on startup by priming failCount past
       // MAX before invoking it.
       try {
-        await this.subscribeWatcher(root, processor);
+        // An unwatch or shutdown aborts the lifecycle. The native subscribe
+        // cannot be cancelled, so stop waiting for it; it unsubscribes itself
+        // when it returns to a processor that was removed.
+        const subscribing = this.subscribeWatcher(root, processor);
+        subscribing.catch(() => {});
+        await Promise.race([subscribing, whenAborted(lifecycle.signal)]);
       } catch (err) {
         if (!ownsLifecycle()) return;
         const name = path.basename(root);
@@ -1161,4 +1166,11 @@ export class WatcherManager {
     }
     this.deps.subscriptions.clear();
   }
+}
+
+function whenAborted(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) =>
+    signal.addEventListener("abort", () => resolve(), { once: true }),
+  );
 }

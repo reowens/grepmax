@@ -819,18 +819,22 @@ describe("WatcherManager.unwatchProject", () => {
     vi.spyOn(wm as any, "subscribeWatcherNow").mockImplementation(
       () => new Promise<void>((resolve) => (finishSubscribe = resolve)),
     );
-    const watching = wm.watchProject(root, { catchup: false });
+    let watched = false;
+    const watching = wm
+      .watchProject(root, { catchup: false })
+      .finally(() => (watched = true));
     await vi.waitFor(() => expect(finishSubscribe).toBeTypeOf("function"));
 
     shuttingDown = true;
     let unwatched = false;
     const unwatch = wm.unwatchProject(root).then(() => (unwatched = true));
-    await vi.waitFor(() => expect(unwatched).toBe(true));
+    // Both the unwatch and the watch that admitted the subscribe return.
+    await vi.waitFor(() => expect(unwatched && watched).toBe(true));
     expect(dependencies.processors.has(root)).toBe(false);
 
     finishSubscribe();
     await unwatch;
-    await watching.catch(() => {});
+    await watching;
   });
 
   it("returns to watching after a settled zero-reindex batch", async () => {
