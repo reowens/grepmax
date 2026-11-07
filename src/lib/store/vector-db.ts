@@ -1493,7 +1493,9 @@ export class VectorDB {
   private lastPathIndexCheckMs = 0;
 
   /** Owner-only, at most once per maintenance interval, tracked as the
-   * maintenance promise so close() waits for it. */
+   * maintenance promise so close() waits for it. It goes through the write
+   * gate like any other write, not the maintenance runner: the daemon's
+   * runner turns every callback into a no-op under containment. */
   private schedulePathIndexCheck(force = false): void {
     if (
       !this.canBuildIndexes() ||
@@ -1503,15 +1505,16 @@ export class VectorDB {
         Date.now() - this.lastPathIndexCheckMs < MAINTENANCE_INTERVAL_MS)
     )
       return;
-    const run = this.maintenanceRunner(async () => {
-      await this.ensurePathIndex();
-    }).catch((error) => {
-      if (this.closed) return;
-      log(
-        "vectordb",
-        `Path index check deferred: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    });
+    const run = this.ensurePathIndex().then(
+      () => {},
+      (error) => {
+        if (this.closed) return;
+        log(
+          "vectordb",
+          `Path index check deferred: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      },
+    );
     const tracked: Promise<void> = run.finally(() => {
       if (this.maintenancePromise === tracked) this.maintenancePromise = null;
     });

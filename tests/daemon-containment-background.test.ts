@@ -80,6 +80,30 @@ describe("containment skips disabled background work before admission", () => {
     },
   );
 
+  it("checks the path index once for the owner without a timer or the runner", async () => {
+    vi.useFakeTimers();
+    const directory = fs.mkdtempSync(
+      path.join(os.tmpdir(), "gmax-path-index-owner-"),
+    );
+    const db = new VectorDB(directory, 4);
+    try {
+      db.markIndexOwner();
+      const runner = vi.fn(async () => {});
+      const ensure = vi
+        .spyOn(db, "ensurePathIndex")
+        .mockResolvedValue("current");
+      db.startMaintenanceLoop(runner);
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(60 * 60_000);
+      expect(ensure).toHaveBeenCalledOnce();
+      expect(runner).not.toHaveBeenCalled();
+      expect(db.isMaintenanceActive()).toBe(false);
+    } finally {
+      await db.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("does not create a periodic maintenance timer or call its runner", async () => {
     vi.useFakeTimers();
     const directory = fs.mkdtempSync(
