@@ -864,8 +864,15 @@ describe("WatcherManager.unwatchProject", () => {
       expect.objectContaining({ status: "syncing" }),
     );
 
-    processor.startBatch();
-    await processor.activeBatch;
+    // A saved change waits out the 2 s save-quiet window before a batch takes it.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(Date.now() + 2_001);
+      processor.startBatch();
+      await processor.activeBatch;
+    } finally {
+      vi.useRealTimers();
+    }
 
     expect(register).toHaveBeenLastCalledWith(
       expect.objectContaining({ status: "watching" }),

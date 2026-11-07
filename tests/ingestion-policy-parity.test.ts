@@ -128,8 +128,15 @@ describe("ingestion file-policy parity", () => {
     for (const candidate of candidates) {
       processor.handleFileEvent("change", candidate);
     }
-    (processor as any).startBatch();
-    await (processor as any).activeBatch;
+    // Saved changes wait out the 2 s save-quiet window before a batch takes them.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(Date.now() + 2_001);
+      (processor as any).startBatch();
+      await (processor as any).activeBatch;
+    } finally {
+      vi.useRealTimers();
+    }
 
     expect(pool.processFile).toHaveBeenCalledTimes(1);
     expect(pool.processFile).toHaveBeenCalledWith(
