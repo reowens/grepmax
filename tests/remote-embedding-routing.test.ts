@@ -16,7 +16,7 @@ function fixture() {
   const request = validateRemoteEmbeddingRequest({ protocolVersion: 1, jobId: "job", daemonEpoch: "epoch", fileRevisionId: "hash", attemptId: "attempt", deadlineAt: Date.now()+180000, identity, chunks, inputDigest: embeddingInputDigest(chunks) });
   const reply = (r: RemoteEmbeddingRequest) => ({ ...r, chunks: undefined, vectors: [{ id: "0", dense: Array(384).fill(0), colbert: Buffer.from([127,129]).toString("base64"), scale: 1, pooled: [0,1], tokenIds: [42] }] });
   function result(r: RemoteEmbeddingRequest) { const { chunks: _chunks, deadlineAt: _deadlineAt, ...rest } = reply(r); return rest; }
-  const file = { vectors: [{ id: "chunk", vector: [], colbert: [], colbert_scale: 1 }], hash: "hash", mtimeMs: 1, size: 1, remoteChunks: [{ index: 0, text: chunks[0].text }] } as ProcessFileResult;
+  const file: ProcessFileResult = { vectors: [{ id: "chunk", path: "file.ts", hash: "hash", content: chunks[0].text, start_line: 1, end_line: 1, vector: [], colbert: [], colbert_scale: 1 }], hash: "hash", mtimeMs: 1, size: 1, remoteChunks: [{ index: 0, text: chunks[0].text }] };
   return { root, config, request, result, file };
 }
 describe("background remote boundary (unexecuted fake fixture source)", () => {

@@ -40,8 +40,9 @@ vi.mock("node:fs", async (original) => ({
   chmodSync: vi.fn(),
   writeFileSync: vi.fn(),
   renameSync: vi.fn((from: string, to: string) => {
-    if (!h.files.has(from)) return;
-    h.files.set(to, h.files.get(from));
+    const content = h.files.get(from);
+    if (content === undefined) return;
+    h.files.set(to, content);
     h.files.delete(from);
   }),
 }));

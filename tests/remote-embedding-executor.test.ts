@@ -17,7 +17,7 @@ function fixture() {
     protocolVersion: 1 as const, jobId: "job", daemonEpoch: "epoch", fileRevisionId: "revision",
     attemptId: "attempt", deadlineAt: 180001, identity, chunks, inputDigest: embeddingInputDigest(chunks),
   };
-  const dense = new Float32Array(384).fill(0.25);
+  const dense: Float32Array = new Float32Array(384).fill(0.25);
   const models = {
     granite: { runBatch: vi.fn(async (_texts: string[]) => [dense]) },
     colbert: {
