@@ -159,6 +159,14 @@ Fixes (local commit):
 
 To hold a stop for maintenance: `touch ~/.gmax/autostart-disabled`, then `systemctl --user stop gmax.service`. While the file exists `daemonStartDeniedReason` (`src/lib/utils/autostart.ts`) refuses every CLI start of the daemon; remove it and start the unit when done.
 
+After installing `5dd8d2a` on the P3, with the unit on `KillMode=mixed`:
+
+- Restart of a started daemon: 0.15 s. With a live worker right after a search: 2.25 s, of which "shutdown step watcher quiesce took 2.2s" (an aborted catch-up); no respawn, no kill.
+- Restart during startup: 0.04 s, from 25.6 s.
+- Hold: with `~/.gmax/autostart-disabled` the stop took 0.03 s, a CLI search exited 1 with "Worker spawn denied: daemon startup is quarantined", and the unit stayed inactive until started by hand 5.5 s later.
+- Searches after: 1.19 and 1.34 s wall, same top hit as before.
+- Not reproduced: the silent 90 s stop at 04:50. A recurrence now logs its slow step and ends at the 45 s backstop.
+
 ## Plan
 
 One batch; each step lists its tests. Live-edit priority from `bad7365` stays.
