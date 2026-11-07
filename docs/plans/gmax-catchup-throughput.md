@@ -268,7 +268,7 @@ Work: 1 build agent for steps 1 to 4 and 6, step 5's first checks in the same ru
 
 ## Open questions for the owner
 
-- **Q1 (answered: c).** 400% with 3 files in flight and 1 worker kept for queries, ruled in the host's session-host plan as P12. The ruling also rejected the 3.3-5 h estimate; findings 7-9 are the per-file cost it asked for.
+- **Q1 (answered: c).** 400% with 3 files in flight and 1 worker kept for queries, ruled in the host's session-host plan as P12. The ruling also rejected the 3.3-5 h estimate; findings 7-9 are the per-file cost it asked for. The slow per-chunk embedding it called a bug was 1 thread per session with most of the quota idle and dense batches of 16 that cost 20-25% per chunk; `cc64c58` fixed both with vectors unchanged, and a 205-chunk re-embed went from 32.2 to 16.7 s on the P3 (finding 7).
 - **Q2:** cap workers at effective CPUs silently with a log line (step 4, as built), or refuse a config above the quota at startup?
 - **Q3:** keep q4 dense (as today), or move the CPU path to the int8 file: dense 1.74x faster, but vectors shift (cosine 0.975 to q4), so stored q4 vectors and new int8 vectors would mix unless the embedding generation changes and the store re-embeds once.
 - **Q8:** keep ColBERT in the caller's batch of 16 (as today: a chunk's ColBERT vector depends on its batch neighbours), or run it 1 chunk at a time: ColBERT drops from 46 to 34 ms/chunk at 1 thread (about 7% of a chunk's time) and each chunk's vector then depends only on its own text, as query encoding already does, but new ColBERT vectors shift slightly from stored ones (per-token cosine mean 0.9996), so the store mixes the 2 until it re-embeds; the full re-embed after Q4 could carry it.

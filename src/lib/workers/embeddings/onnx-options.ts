@@ -30,8 +30,6 @@ export function onnxThreads(env: NodeJS.ProcessEnv = process.env): number {
 }
 
 /**
- * Inference runs 1 chunk per call: the activations of a padded batch of 16
- * outgrow the core's cache and cost 20-25% more per chunk than 1 at a time.
  * Spinning is off because idle spinning threads burn the service's CPU quota;
  * with spinning on, 4 threads ran slower than 1.
  */

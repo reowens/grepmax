@@ -137,6 +137,8 @@ export class GraniteModel {
     } else await this.load();
     if (!this.session || !this.tokenizer) return [];
 
+    // 1 chunk per call: the activations of a padded batch of 16 outgrow the
+    // core's cache and cost 20-25% more per chunk, with identical vectors.
     const vectors: Float32Array[] = [];
     for (const text of texts) vectors.push(...(await this.inferBatch([text])));
     return vectors;
