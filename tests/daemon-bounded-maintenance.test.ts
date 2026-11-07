@@ -188,6 +188,88 @@ describe("daemon bounded deleted-row cleanup lifecycle", () => {
     clearInterval(d.boundedCleanupInterval);
   });
 
+  it("backs off a refused operation alone while the others keep their cadence", async () => {
+    vi.useFakeTimers();
+    vi.mocked(prepareBoundedMaintenanceRuntime).mockResolvedValue({
+      executable: "fixture",
+      incrementalRepairProtocol: 1,
+      deferredOperationsProtocol: 1,
+    });
+    try {
+      const { d } = fixture();
+      const refused = {
+        ...completed,
+        status: "failed",
+        operation: "row-relocation",
+        reason:
+          "native write budget or ledger verification refused; copy interrupted; unfinished copy discarded",
+      };
+      const refreshed = { ...completed, operation: "index-refresh" };
+      // The helper refuses relocation whenever it is offered and refreshes the
+      // index while relocation is deferred.
+      d.vectorDb.cleanupDeletedRows.mockImplementation(
+        async (...args: unknown[]) =>
+          ((args[4] as string[] | undefined) ?? []).includes("row-relocation")
+            ? refreshed
+            : refused,
+      );
+      const offered = () =>
+        d.vectorDb.cleanupDeletedRows.mock.calls.map(
+          (call: unknown[]) => !((call[4] as string[]) ?? []).length,
+        );
+      d.startVersionCleanupLoop();
+      d.startBoundedCleanupLoop();
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      expect(offered()).toEqual([true]);
+      // Index refresh keeps the 1-minute cadence for the 10 minutes relocation waits.
+      await vi.advanceTimersByTimeAsync(9 * 60_000);
+      expect(offered()).toEqual([true, ...Array(9).fill(false)]);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(offered()).toHaveLength(11);
+      expect(offered()[10]).toBe(true);
+      // The same refusal again defers relocation for 1 h, not the attempts.
+      await vi.advanceTimersByTimeAsync(59 * 60_000);
+      expect(offered()).toHaveLength(70);
+      expect(offered().slice(11).some(Boolean)).toBe(false);
+      // Relocation is offered again after the hour; its success clears the backoff.
+      d.vectorDb.cleanupDeletedRows.mockImplementation(async () => ({
+        ...completed,
+        operation: "row-relocation",
+      }));
+      await vi.advanceTimersByTimeAsync(3 * 60_000);
+      expect(offered().slice(70)).toEqual([true, true, true]);
+      clearInterval(d.cleanupInterval);
+      clearInterval(d.boundedCleanupInterval);
+    } finally {
+      vi.mocked(prepareBoundedMaintenanceRuntime).mockResolvedValue({
+        executable: "fixture",
+      });
+    }
+  });
+
+  it("waits out an operation's backoff when the helper cannot defer it", async () => {
+    vi.useFakeTimers();
+    const { d } = fixture();
+    d.vectorDb.cleanupDeletedRows.mockImplementation(async () => ({
+      ...completed,
+      status: "failed",
+      operation: "row-relocation",
+      reason: "copy interrupted",
+    }));
+    const calls = () => d.vectorDb.cleanupDeletedRows.mock.calls.length;
+    d.startVersionCleanupLoop();
+    d.startBoundedCleanupLoop();
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(calls()).toBe(1);
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(calls()).toBe(1);
+    expect(d.lastBoundedCleanupOutcome).toMatchObject({ status: "skipped" });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(calls()).toBe(2);
+    clearInterval(d.cleanupInterval);
+    clearInterval(d.boundedCleanupInterval);
+  });
+
   it("gives history backlog priority and keeps reads open while bounded work defers", async () => {
     vi.useFakeTimers();
     const { d } = fixture();

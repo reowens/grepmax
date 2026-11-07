@@ -6,6 +6,7 @@ import * as path from "node:path";
 export interface BoundedMaintenanceRuntime {
   executable: string;
   incrementalRepairProtocol?: 1;
+  deferredOperationsProtocol?: 1;
 }
 
 interface NativeManifest {
@@ -80,20 +81,19 @@ export async function verifyBoundedRuntimeAt(
   if (hash.digest("hex") !== entry.sha256)
     throw new Error("Bounded maintenance binary checksum mismatch");
   signal?.throwIfAborted();
-  const incrementalRepairProtocol = await verifyCapabilities(
-    executable,
-    signal,
-  );
-  return Object.freeze({
-    executable,
-    ...(incrementalRepairProtocol ? { incrementalRepairProtocol } : {}),
-  });
+  const capabilities = await verifyCapabilities(executable, signal);
+  return Object.freeze({ executable, ...capabilities });
 }
 
 function verifyCapabilities(
   executable: string,
   signal?: AbortSignal,
-): Promise<1 | undefined> {
+): Promise<
+  Pick<
+    BoundedMaintenanceRuntime,
+    "incrementalRepairProtocol" | "deferredOperationsProtocol"
+  >
+> {
   return new Promise((resolve, reject) => {
     const child = spawn(executable, ["--capabilities"], {
       stdio: ["ignore", "pipe", "ignore"],
@@ -138,12 +138,19 @@ function verifyCapabilities(
           report.protectedReaderProtocol !== 1
         )
           throw new Error();
-        if (
-          report.incrementalRepairProtocol !== undefined &&
-          report.incrementalRepairProtocol !== 1
-        )
-          throw new Error();
-        resolve(report.incrementalRepairProtocol);
+        for (const key of [
+          "incrementalRepairProtocol",
+          "deferredOperationsProtocol",
+        ])
+          if (report[key] !== undefined && report[key] !== 1) throw new Error();
+        resolve({
+          ...(report.incrementalRepairProtocol === 1
+            ? { incrementalRepairProtocol: 1 }
+            : {}),
+          ...(report.deferredOperationsProtocol === 1
+            ? { deferredOperationsProtocol: 1 }
+            : {}),
+        });
       } catch {
         reject(new Error("Native bounded maintenance capabilities unverified"));
       }

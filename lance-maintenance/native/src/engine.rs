@@ -73,6 +73,9 @@ pub struct Request {
     pub selected_fragment_ids: Option<Vec<u64>>,
     #[serde(default)]
     pub operation: Option<String>,
+    /// Operations the caller is backing off; `repair` plans the others.
+    #[serde(default)]
+    pub deferred_operations: Vec<String>,
     #[cfg(feature = "qualification")]
     #[serde(default)]
     pub qualification_fail_path_prefix: Option<String>,
@@ -88,6 +91,12 @@ pub struct Request {
 }
 fn source_default() -> u64 {
     MAX_SOURCE
+}
+const DEFERRABLE: [&str; 4] = ["cleanup", "index-refresh", "row-relocation", "orphan-reclamation"];
+impl Request {
+    pub(crate) fn defers(&self, operation: &str) -> bool {
+        self.deferred_operations.iter().any(|deferred| deferred == operation)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -947,6 +956,13 @@ pub async fn run(request: Request) -> Result<()> {
         "Invalid version/source bound"
     );
     ensure!(
+        request.deferred_operations.len() <= DEFERRABLE.len()
+            && request.deferred_operations.iter().all(|op| DEFERRABLE.contains(&op.as_str()))
+            && request.deferred_operations.iter().collect::<BTreeSet<_>>().len()
+                == request.deferred_operations.len(),
+        "Invalid deferred operations"
+    );
+    ensure!(
         request.free_space_margin_bytes > 0 && request.free_space_margin_bytes <= (1u64 << 53) - 1,
         "Invalid free-space margin"
     );
@@ -1127,6 +1143,7 @@ pub async fn run(request: Request) -> Result<()> {
             .operation
             .as_deref()
             .is_some_and(|op| op != "repair")
+            || request.defers("cleanup")
         {
             vec![]
         } else {

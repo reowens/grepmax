@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  BoundedMaintenanceFailure,
   parseMeteredMaintenancePlan,
   runBoundedMaintenance,
 } from "../src/lib/store/bounded-maintenance";
@@ -64,7 +65,7 @@ function helper(overrides = {}, planOverrides = {}, phaseOverrides = {}) {
       let end;
       while ((end = buffer.indexOf("\\n")) >= 0) {
         const line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
-        if (stage === 0) { const request = JSON.parse(line); if(request.expectedVersion !== plan.expectedVersion || request.action !== plan.action) process.exit(10); send({ phase: "launch" }); }
+        if (stage === 0) { const request = JSON.parse(line); if(request.expectedVersion !== plan.expectedVersion || request.action !== plan.action) process.exit(10); if (phaseOverrides.expectDeferred !== undefined && JSON.stringify(request.deferredOperations ?? null) !== JSON.stringify(phaseOverrides.expectDeferred)) process.exit(12); send({ phase: "launch" }); }
         else if (line !== "fixture-nonce") process.exit(11);
         else if (stage === 1) send({ phase: "ready", plan, ...counters, ...phaseOverrides.ready });
         else if (stage === 2 && plan.status === "no-work") {
@@ -119,6 +120,57 @@ describe("metered native child lifecycle", () => {
     ).rejects.toThrow(
       "search-index updates do not fit the total-write cap; bounded cleanup completion is uncertain",
     );
+  });
+
+  it("names the refused operation and defers operations only on a capable helper", async () => {
+    const refusal = {
+      phase: "error",
+      reason:
+        "Generic gmax-write-budget error: Submitted source ranges exceed read allowance",
+    };
+    const readers = { open: vi.fn(), drain: vi.fn(async () => {}) };
+    const capable = fixture(
+      refusal,
+      { operation: "row-relocation" },
+      { expectDeferred: ["orphan-reclamation"] },
+    );
+    const error = await runBoundedMaintenance(
+      "/fixture",
+      capable.lease,
+      7,
+      {
+        ...capable.runtime,
+        incrementalRepairProtocol: 1,
+        deferredOperationsProtocol: 1,
+      },
+      readers,
+      undefined,
+      "run",
+      ["orphan-reclamation"],
+    ).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(BoundedMaintenanceFailure);
+    expect(error).toMatchObject({
+      operation: "row-relocation",
+      message:
+        "native write budget or ledger verification refused; bounded cleanup completion is uncertain",
+    });
+    const older = fixture(
+      refusal,
+      { operation: "row-relocation" },
+      { expectDeferred: null },
+    );
+    await expect(
+      runBoundedMaintenance(
+        "/fixture",
+        older.lease,
+        7,
+        { ...older.runtime, incrementalRepairProtocol: 1 },
+        readers,
+        undefined,
+        "run",
+        ["orphan-reclamation"],
+      ),
+    ).rejects.toMatchObject({ operation: "row-relocation" });
   });
 
   it("reports a nonempty backlog when no source batch is selected", async () => {

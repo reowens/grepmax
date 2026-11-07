@@ -59,6 +59,23 @@ describe("bundled bounded cleanup runtime verification", () => {
     );
   });
 
+  it("enables operation deferral only from an explicit capability", async () => {
+    const { executable } = fixture({
+      ...capabilities,
+      incrementalRepairProtocol: 1,
+      deferredOperationsProtocol: 1,
+    });
+    expect(await verifyBoundedRuntimeAt(root, platform)).toEqual({
+      executable,
+      incrementalRepairProtocol: 1,
+      deferredOperationsProtocol: 1,
+    });
+    fixture({ ...capabilities, deferredOperationsProtocol: 2 });
+    await expect(verifyBoundedRuntimeAt(root, platform)).rejects.toThrow(
+      /capabilities unverified/,
+    );
+  });
+
   it("leaves unsupported or absent runtimes unavailable", async () => {
     expect(await verifyBoundedRuntimeAt(root, platform)).toBeNull();
     fixture();

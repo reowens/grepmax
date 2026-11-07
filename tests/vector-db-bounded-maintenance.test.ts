@@ -2,11 +2,15 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { runBoundedMaintenance } from "../src/lib/store/bounded-maintenance";
+import {
+  BoundedMaintenanceFailure,
+  runBoundedMaintenance,
+} from "../src/lib/store/bounded-maintenance";
 import { VectorDB } from "../src/lib/store/vector-db";
 import { resourceBudget } from "../src/lib/utils/resource-budget";
 
-vi.mock("../src/lib/store/bounded-maintenance", () => ({
+vi.mock("../src/lib/store/bounded-maintenance", async (original) => ({
+  ...(await original<typeof import("../src/lib/store/bounded-maintenance")>()),
   runBoundedMaintenance: vi.fn(),
 }));
 vi.mock("../src/lib/store/maintenance-policy", async (original) => ({
@@ -214,7 +218,10 @@ describe("VectorDB head-changing maintenance handles", () => {
           f.d.db = interruptedHandles;
           controller.abort();
           events.push("child-dead");
-          throw new Error("bounded cleanup completion is uncertain");
+          throw new BoundedMaintenanceFailure(
+            "native write budget or ledger verification refused; bounded cleanup completion is uncertain",
+            "row-relocation",
+          );
         },
       )
       .mockImplementationOnce(
@@ -268,12 +275,18 @@ describe("VectorDB head-changing maintenance handles", () => {
       "read-window",
       "drain",
     ]);
+    // The discarded copy is reported as its operation's refusal, so the
+    // daemon backs that operation off.
     expect(result).toMatchObject({
+      status: "failed",
+      operation: "row-relocation",
       aborted: true,
       rewritten: false,
       totalBytesWritten: 128,
     });
-    expect(result?.reason).toBe("copy interrupted; unfinished copy discarded");
+    expect(result?.reason).toBe(
+      "native write budget or ledger verification refused; copy interrupted; unfinished copy discarded",
+    );
     expect(
       vi.mocked(runBoundedMaintenance).mock.calls.map((call) => call[6]),
     ).toEqual(["run", "recover"]);

@@ -312,7 +312,23 @@ export function boundedMaintenanceUnavailable(): CompactionResult {
 export interface BoundedMaintenanceRuntime {
   executable: string;
   incrementalRepairProtocol?: 1;
+  deferredOperationsProtocol?: 1;
   args?: string[];
+}
+
+export type BoundedOperation = NonNullable<
+  BoundedMaintenanceResult["operation"]
+>;
+
+/** A helper attempt that ended without a verified result. `operation` names
+ * the native operation once the helper's plan has announced it. */
+export class BoundedMaintenanceFailure extends Error {
+  constructor(
+    message: string,
+    readonly operation?: BoundedOperation,
+  ) {
+    super(message);
+  }
 }
 
 export interface MaintenanceReaderProtection {
@@ -502,6 +518,7 @@ export async function runBoundedMaintenance(
   },
   signal?: AbortSignal,
   action: "run" | "recover" = "run",
+  deferredOperations: readonly BoundedOperation[] = [],
 ): Promise<BoundedMaintenanceResult> {
   const discoveryBudget =
     action === "recover" ? 0 : MAX_BOUNDED_TOTAL_WRITE_BYTES;
@@ -548,8 +565,11 @@ export async function runBoundedMaintenance(
         let phases = Promise.resolve();
         const stop = (reason: string, cause?: unknown) => {
           if (!failure) {
-            failure = new Error(
+            failure = new BoundedMaintenanceFailure(
               `${reason}; bounded cleanup completion is uncertain`,
+              plan && plan.status !== "no-work"
+                ? (plan.operation ?? "cleanup")
+                : undefined,
             );
             if (cause !== undefined)
               Object.defineProperty(failure, "cause", { value: cause });
@@ -933,6 +953,12 @@ export async function runBoundedMaintenance(
               action,
               ...(action === "run" && runtime.incrementalRepairProtocol === 1
                 ? { operation: "repair" }
+                : {}),
+              ...(action === "run" &&
+              runtime.incrementalRepairProtocol === 1 &&
+              runtime.deferredOperationsProtocol === 1 &&
+              deferredOperations.length
+                ? { deferredOperations: [...deferredOperations] }
                 : {}),
               store: path.join(storeDir, "chunks.lance"),
               expectedVersion,

@@ -2,10 +2,9 @@
 //! addresses in one Update. Existing address-based indexes are never remapped.
 use crate::engine::{Receipt, Request, all_indices, row_digest, save_receipt, verify_owner};
 use anyhow::{Context, Result, ensure};
-use arrow_array::{RecordBatch, RecordBatchIterator, UInt32Array, UInt64Array};
+use arrow_array::{RecordBatch, RecordBatchIterator};
 use arrow_row::{RowConverter, SortField};
 use arrow_schema::Schema;
-use futures::TryStreamExt;
 use lance::{
     Dataset,
     dataset::{
@@ -149,16 +148,19 @@ pub async fn plan(
         Ok(None)
     }
 }
-fn digest(batches: &[RecordBatch]) -> Result<(usize, String)> {
-    let schema = batches.first().context("No relocation rows")?.schema();
-    let id_index = schema.index_of("id")?;
-    let converter = RowConverter::new(
+fn row_converter(schema: &Schema) -> Result<RowConverter> {
+    Ok(RowConverter::new(
         schema
             .fields()
             .iter()
             .map(|f| SortField::new(f.data_type().clone()))
             .collect(),
-    )?;
+    )?)
+}
+fn digest(batches: &[RecordBatch]) -> Result<(usize, String)> {
+    let schema = batches.first().context("No relocation rows")?.schema();
+    let id_index = schema.index_of("id")?;
+    let converter = row_converter(&schema)?;
     let ids = RowConverter::new(vec![SortField::new(
         schema.field(id_index).data_type().clone(),
     )])?;
@@ -199,67 +201,48 @@ pub async fn execute(
     let fragment = dataset
         .get_fragment(source as usize)
         .context("Relocation source missing")?;
-    let mut scanner = fragment.scan();
-    scanner
-        .with_row_address()
-        .batch_size(64)
-        .batch_size_bytes(256 * 1024)
-        .io_buffer_size(1024 * 1024)
-        .limit(Some(ROWS as i64), None)?;
-    let columns: Vec<_> = (0..Schema::from(dataset.schema()).fields().len()).collect();
-    let mut stream = scanner.try_into_stream().await?;
+    // Take live rows by address. A sequential fragment scan schedules whole
+    // column pages, so on wide rows it reads about the whole fragment to return
+    // a few rows and exhausts the source read allowance.
+    let deleted = fragment.get_deletion_vector().await?;
+    let physical = u32::try_from(fragment.physical_rows().await?).context("Fragment row bound")?;
+    let live: Vec<u64> = (0..physical)
+        .filter(|offset| !deleted.as_ref().is_some_and(|d| d.contains(*offset)))
+        .take(ROWS)
+        .map(|offset| (source << 32) | u64::from(offset))
+        .collect();
+    let converter = row_converter(&Schema::from(dataset.schema()))?;
     let mut batches = vec![];
     let mut addresses = vec![];
-    let mut memory = 0;
-    while let Some(batch) = stream.try_next().await? {
-        let projected = batch.project(&columns)?;
+    let mut payload = 0;
+    let mut step = 1;
+    while addresses.len() < live.len() {
+        let wanted = &live[addresses.len()..(addresses.len() + step).min(live.len())];
+        let batch = dataset.take_rows(wanted, dataset.schema().clone()).await?;
+        ensure!(batch.num_rows() == wanted.len(), "Relocation source rows changed");
         ensure!(
-            projected.get_array_memory_size() <= 64 * 1024 * 1024,
-            "Decoded scan batch exceeds memory bound"
+            batch.get_array_memory_size() <= 64 * 1024 * 1024,
+            "Decoded take batch exceeds memory bound"
         );
-        // Scanner slices can retain a whole page's buffers. Materialize only
-        // the selected prefix, and shrink a dense batch before refusing it.
-        let mut chosen = projected.num_rows();
-        let payload = loop {
-            let offsets = UInt32Array::from_iter_values(0..chosen as u32);
-            let copied = RecordBatch::try_new(
-                projected.schema(),
-                projected
-                    .columns()
-                    .iter()
-                    .map(|column| arrow_select::take::take(column, &offsets, None))
-                    .collect::<std::result::Result<Vec<_>, _>>()?,
-            )?;
-            if memory + copied.get_array_memory_size() <= PAYLOAD {
-                break Some(copied);
-            }
-            if chosen == 1 {
-                break None;
-            }
-            chosen = (chosen / 2).max(1);
-        };
-        let Some(payload) = payload else {
-            ensure!(
-                !batches.is_empty(),
-                "One row exceeds relocation payload bound"
-            );
-            break;
-        };
-        let next = payload.get_array_memory_size();
-        let rowaddr = batch
-            .column_by_name("_rowaddr")
-            .context("Physical row address absent")?
-            .as_any()
-            .downcast_ref::<UInt64Array>()
-            .context("Physical address type changed")?;
-        addresses.extend(rowaddr.values().iter().take(chosen).copied());
-        memory += next;
-        batches.push(payload);
-        if chosen < projected.num_rows() {
+        // Measure rows exactly as the digest does, so a chosen batch always
+        // passes its decoded payload bound.
+        let rows = converter.convert_columns(batch.columns())?;
+        let mut chosen = 0;
+        while chosen < batch.num_rows() && payload + rows.row(chosen).as_ref().len() <= PAYLOAD {
+            payload += rows.row(chosen).as_ref().len();
+            chosen += 1;
+        }
+        if chosen == 0 {
+            ensure!(!batches.is_empty(), "One row exceeds relocation payload bound");
             break;
         }
+        addresses.extend_from_slice(&wanted[..chosen]);
+        batches.push(batch.slice(0, chosen));
+        if chosen < batch.num_rows() {
+            break;
+        }
+        step = ((PAYLOAD - payload) / (payload / addresses.len()).max(1)).clamp(1, 64);
     }
-    drop(stream);
     if addresses.is_empty() {
         // An entirely deleted source needs no copying or retraining.
         ensure!(

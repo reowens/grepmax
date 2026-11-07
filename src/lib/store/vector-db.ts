@@ -40,7 +40,9 @@ import {
 import { annMinRows, isAnnEnabled } from "./ann-config";
 import {
   type BoundedMaintenanceResult,
+  BoundedMaintenanceFailure,
   type BoundedMaintenanceRuntime,
+  type BoundedOperation,
   type MaintenanceReaderProtection,
   runBoundedMaintenance,
 } from "./bounded-maintenance";
@@ -519,6 +521,7 @@ export class VectorDB {
     },
     signal?: AbortSignal,
     action: "run" | "recover" | "auto" = "run",
+    deferredOperations: readonly BoundedOperation[] = [],
   ): Promise<BoundedMaintenanceResult | null> {
     if (this.boundedMaintenancePromise) return this.boundedMaintenancePromise;
     const run = this.performBoundedMaintenance(
@@ -526,6 +529,7 @@ export class VectorDB {
       readers,
       signal,
       action,
+      deferredOperations,
     );
     const recorded = run.then((outcome) => {
       if (outcome) this.lastBoundedMaintenanceResult = { ...outcome };
@@ -562,6 +566,7 @@ export class VectorDB {
     },
     signal?: AbortSignal,
     action: "run" | "recover" | "auto" = "run",
+    deferredOperations: readonly BoundedOperation[] = [],
   ): Promise<BoundedMaintenanceResult | null> {
     this.assertMutationAllowed();
     if (this.versionCleanupActive) throw new Error("version cleanup is active");
@@ -611,6 +616,7 @@ export class VectorDB {
           },
           nativeSignal,
           nativeAction,
+          deferredOperations,
         );
       const freshCopy = async () => {
         try {
@@ -643,13 +649,20 @@ export class VectorDB {
             await this.closeMaintenanceHandles();
             recoverySignal.throwIfAborted();
             const recovered = await execute("recover", recoverySignal);
+            // The discarded copy is still a refusal of its operation, so it
+            // counts toward that operation's backoff.
             if (
               recovered.status === "completed" &&
               recovered.recoveryPending === false
             )
               return {
                 ...recovered,
-                reason: `copy interrupted; ${recovered.reason}`,
+                status: "failed" as const,
+                ...(error instanceof BoundedMaintenanceFailure &&
+                error.operation
+                  ? { operation: error.operation }
+                  : {}),
+                reason: `${error.message.replace(/; bounded cleanup completion is uncertain$/, "")}; copy interrupted; ${recovered.reason}`,
               };
           } catch {
             // Corrupt counters, unproven head changes and fresh host pressure

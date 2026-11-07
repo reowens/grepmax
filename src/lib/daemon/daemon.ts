@@ -19,6 +19,8 @@ import { LlmServer } from "../llm/server";
 import type { IndexState } from "../output/index-state-footer";
 import type { Searcher } from "../search/searcher";
 import {
+  BoundedMaintenanceFailure,
+  type BoundedOperation,
   boundedMaintenanceReceiptState,
   boundedMaintenanceUnavailable,
 } from "../store/bounded-maintenance";
@@ -216,6 +218,19 @@ const MAINTENANCE_DEFERRING_OPERATIONS = [
   "fts-build",
 ];
 
+const BOUNDED_OPERATIONS: readonly BoundedOperation[] = [
+  "cleanup",
+  "index-refresh",
+  "row-relocation",
+  "orphan-reclamation",
+];
+
+/** 10 minutes after a first refusal, then 1 h doubling to 24 h. */
+function boundedRefusalBackoffMs(count: number): number {
+  if (count < 2) return 10 * 60_000;
+  return Math.min(24, 2 ** (count - 2)) * 3_600_000;
+}
+
 export class Daemon {
   private readonly processors = new Map<string, ProjectBatchProcessor>();
   private lastResourceSnapshot: ResourceSnapshot | null = null;
@@ -244,9 +259,17 @@ export class Daemon {
   private boundedCleanupInterval: ReturnType<typeof setInterval> | null = null;
   private lastBoundedCleanupAttempt = 0;
   private lastBoundedCleanupOutcome:
-    | (CompactionResult & { recoveryPending?: boolean })
+    | (CompactionResult & {
+        recoveryPending?: boolean;
+        operation?: BoundedOperation;
+      })
     | null = null;
-  private boundedCleanupRefusals = { reason: "", count: 0 };
+  /** Refusals in a row per native operation; "attempt" holds refusals that
+   * named no operation. */
+  private boundedCleanupRefusals = new Map<
+    BoundedOperation | "attempt",
+    { reason: string; count: number; at: number }
+  >();
   private lastCleanupAttempt = 0;
   private cleanupRetrySoon = false;
   private cleanupFailures = 0;
@@ -1230,30 +1253,48 @@ export class Daemon {
   }
 
   /** Each attempt quiesces the watchers, so a refusal that repeats with the
-   * same reason backs off from 1 h to 24 h. Success or a new reason resets. */
+   * same reason backs off from 1 h to 24 h. Refusals count per native
+   * operation: a refused operation is deferred while the others keep the
+   * 1-minute cadence, and a refusal that names no operation delays the whole
+   * attempt. Success or a new reason resets that operation's count. */
   private boundedCleanupDelayMs(): number {
-    const status = this.lastBoundedCleanupOutcome?.status;
-    if (status === "completed") return 60_000;
-    const repeats = status === "failed" ? this.boundedCleanupRefusals.count : 0;
-    if (repeats < 2) return 10 * 60_000;
-    return Math.min(24, 2 ** (repeats - 2)) * 3_600_000;
+    const outcome = this.lastBoundedCleanupOutcome;
+    if (outcome?.status === "completed") return 60_000;
+    if (outcome?.status !== "failed") return 10 * 60_000;
+    if (outcome.operation) return 60_000;
+    return boundedRefusalBackoffMs(
+      this.boundedCleanupRefusals.get("attempt")?.count ?? 1,
+    );
   }
 
-  private recordBoundedCleanupOutcome(outcome: CompactionResult): void {
+  private deferredBoundedOperations(now = Date.now()): BoundedOperation[] {
+    return BOUNDED_OPERATIONS.filter((operation) => {
+      const refusal = this.boundedCleanupRefusals.get(operation);
+      return (
+        refusal !== undefined &&
+        now - refusal.at < boundedRefusalBackoffMs(refusal.count)
+      );
+    });
+  }
+
+  private recordBoundedCleanupOutcome(
+    outcome: CompactionResult & { operation?: BoundedOperation },
+  ): void {
     if (outcome.status === "completed") {
-      this.boundedCleanupRefusals = { reason: "", count: 0 };
+      if (outcome.operation)
+        this.boundedCleanupRefusals.delete(outcome.operation);
+      this.boundedCleanupRefusals.delete("attempt");
       return;
     }
     if (outcome.status !== "failed") return;
+    const key = outcome.operation ?? "attempt";
     const reason = outcome.reason ?? "";
-    const count =
-      this.boundedCleanupRefusals.reason === reason
-        ? this.boundedCleanupRefusals.count + 1
-        : 1;
-    this.boundedCleanupRefusals = { reason, count };
+    const previous = this.boundedCleanupRefusals.get(key);
+    const count = previous?.reason === reason ? previous.count + 1 : 1;
+    this.boundedCleanupRefusals.set(key, { reason, count, at: Date.now() });
     if (count >= 2)
       console.log(
-        `[daemon] Bounded maintenance refused ${count} times in a row (${reason}); next attempt in ${this.boundedCleanupDelayMs() / 3_600_000} h`,
+        `[daemon] Bounded ${key === "attempt" ? "maintenance" : key} refused ${count} times in a row (${reason}); next attempt in ${boundedRefusalBackoffMs(count) / 3_600_000} h`,
       );
   }
 
@@ -1281,7 +1322,11 @@ export class Daemon {
             error instanceof Error
               ? error.message.slice(0, 512)
               : "deleted-row cleanup failed",
+          ...(error instanceof BoundedMaintenanceFailure && error.operation
+            ? { operation: error.operation }
+            : {}),
         };
+        this.recordBoundedCleanupOutcome(this.lastBoundedCleanupOutcome);
         throw error;
       },
     );
@@ -1317,6 +1362,11 @@ export class Daemon {
     const runtime = await prepareBoundedMaintenanceRuntime(deadline);
     if (!runtime) return boundedMaintenanceUnavailable();
     if (bulkActive()) return deferred();
+    const backedOff = action === "auto" ? this.deferredBoundedOperations() : [];
+    if (backedOff.length && runtime.deferredOperationsProtocol !== 1)
+      return skippedCompaction(
+        `${backedOff.join(", ")} backing off after refusals; this helper cannot defer single operations`,
+      );
     this.assertHeavyOperationAdmission("bounded-maintenance");
     let roots: string[] = [];
     const isRead = (name: string) =>
@@ -1348,6 +1398,7 @@ export class Daemon {
             },
             AbortSignal.any([signal, deadline]),
             action,
+            backedOff,
           );
           return outcome ?? skippedCompaction("no indexed table");
         },

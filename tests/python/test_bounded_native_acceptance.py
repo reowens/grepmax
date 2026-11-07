@@ -261,6 +261,82 @@ class BoundedNativeAcceptance(unittest.TestCase):
             self.assertEqual(current.to_table(full_text_query={'query': 'unique10', 'columns': ['content']}).num_rows, 0)
             self.assertEqual(current.to_table(nearest={'column': 'vector', 'q': [0.] * 8, 'k': 5}).num_rows, 5)
 
+    def test_relocation_of_wide_rows_reads_only_the_rows_it_moves(self):
+        import lance
+        import pyarrow as pa
+        import random
+        with tempfile.TemporaryDirectory(prefix='gmax-native-wide-relocate-') as home:
+            root = Path(home) / 'store' / 'chunks.lance'
+            root.parent.mkdir()
+            rng = random.Random(41)
+            count = 1200
+            schema = pa.schema([('id', pa.string()), ('path', pa.string()), ('content', pa.string()),
+                                ('vector', pa.list_(pa.float32(), 8)), ('colbert', pa.binary()),
+                                ('file_skeleton', pa.string())])
+            rows = [{'id': f'w{n}', 'path': f'/wide/{n // 7}.ts', 'content': f'wide unique{n}',
+                     'vector': [float(n % 11)] * 8, 'colbert': rng.randbytes(12000),
+                     'file_skeleton': rng.randbytes(2500).hex()} for n in range(count)]
+            ds = lance.write_dataset(pa.Table.from_pylist(rows, schema=schema), str(root),
+                                     max_rows_per_file=count, max_rows_per_group=64)
+            del rows
+            ds.create_scalar_index('path', 'BTREE', name='path_idx')
+            ds.create_scalar_index('content', 'INVERTED', name='content_idx')
+            ds.delete("id IN ('w3', 'w500')")
+            source = lance.dataset(str(root)).get_fragments()[0]
+            source_bytes = sum((root / 'data' / f.path).stat().st_size for f in source.metadata.files)
+            # One page per column: a sequential scan of any row reads about all of this.
+            self.assertGreater(source_bytes, 16 * 1024**2)
+            baseline = fixture_support.row_digest(lance.dataset(str(root)))
+            session = NativeSession(self.binary, root, cap=512 * 1024**2,
+                                    qualification={'operation': 'repair-relocate',
+                                                   'sourceLimitBytes': 512 * 1024**2})
+            try:
+                result = session.reach('result')
+                self.assertEqual(result['operation'], 'row-relocation')
+                # Rows are measured as the digest measures them, so the chosen
+                # batch fills the 2 MiB payload and passes its own bound.
+                self.assertGreaterEqual(result['rowsVerified'], 64)
+                self.assertLessEqual(result['sourceBytesRead'], 16 * 1024**2)
+                self.assertLess(result['sourceBytesRead'], source_bytes // 2)
+                self.assertFalse(result['recoveryPending'])
+            finally:
+                session.close()
+            current = lance.dataset(str(root))
+            self.assertEqual(fixture_support.row_digest(current), baseline)
+            self.assertEqual(current.to_table(full_text_query={'query': 'unique0', 'columns': ['content']})['id'].to_pylist(), ['w0'])
+            self.assertEqual(current.to_table(filter="path = '/wide/0.ts'").num_rows, 6)
+
+    def test_deferred_operations_skip_only_the_named_operations(self):
+        import lance
+        with tempfile.TemporaryDirectory(prefix='gmax-native-deferred-') as home:
+            root, ds = self.prepare(home)
+            before = fixture_support.row_digest(ds)
+            version = ds.version
+            session = NativeSession(self.binary, root, qualification={
+                'operation': 'repair', 'deferredOperations': ['orphan-reclamation', 'row-relocation', 'cleanup']})
+            try:
+                result = session.reach('result')
+                self.assertEqual(result['status'], 'no-work')
+                self.assertGreater(result['remainingDeletedRows'], 0)
+            finally:
+                session.close()
+            self.assertEqual(lance.dataset(str(root)).version, version)
+            session = NativeSession(self.binary, root, qualification={
+                'operation': 'repair', 'deferredOperations': ['row-relocation', 'row-relocation']})
+            try:
+                with self.assertRaisesRegex(RuntimeError, 'Invalid deferred operations'):
+                    session.reach('result')
+            finally:
+                session.close()
+            session = NativeSession(self.binary, root, qualification={
+                'operation': 'repair', 'deferredOperations': ['orphan-reclamation']})
+            try:
+                result = session.reach('result')
+                self.assertEqual(result['operation'], 'row-relocation')
+            finally:
+                session.close()
+            self.assertEqual(fixture_support.row_digest(lance.dataset(str(root))), before)
+
     def test_newer_orphan_requires_complete_references_and_age(self):
         import lance
         with tempfile.TemporaryDirectory(prefix='gmax-native-newer-orphan-') as home:

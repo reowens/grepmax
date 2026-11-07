@@ -133,13 +133,17 @@ pub async fn plan(
     if operation == "repair-orphans" {
         return crate::orphans::plan(root);
     }
+    let relocate = !request.defers("row-relocation");
     if operation == "repair" && scannable {
-        if let Some(proof) = crate::orphans::plan(root)? {
+        if !request.defers("orphan-reclamation")
+            && let Some(proof) = crate::orphans::plan(root)?
+        {
             return Ok(Some(proof));
         }
-        if previous
-            .and_then(|p| p.repair.as_ref())
-            .is_some_and(|p| !p.field.is_empty())
+        if relocate
+            && previous
+                .and_then(|p| p.repair.as_ref())
+                .is_some_and(|p| !p.field.is_empty())
         {
             if let Some(proof) = crate::relocation::plan(dataset, root, request).await? {
                 return Ok(Some(proof));
@@ -180,6 +184,9 @@ pub async fn plan(
             name.clone(),
         )
     });
+    if request.defers("index-refresh") {
+        groups.clear();
+    }
     let mut bounded_backlog = false;
     for (name, mut indices) in groups {
         let field = dataset.schema().field_path(indices[0].fields[0])?;
@@ -332,7 +339,7 @@ pub async fn plan(
             }));
         }
     }
-    if operation != "repair-indexes" && scannable {
+    if operation != "repair-indexes" && scannable && relocate {
         if let Some(proof) = crate::relocation::plan(dataset, root, request).await? {
             return Ok(Some(proof));
         }
