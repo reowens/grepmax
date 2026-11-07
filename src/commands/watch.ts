@@ -33,6 +33,7 @@ import {
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import { QUERY_EXECUTION_OPTIONS } from "../lib/utils/query-timeout";
 import { systemdServiceUnit } from "../lib/utils/service-unit";
+import { isDaemonBypassed } from "../lib/utils/store-access";
 import {
   getWatcherCoveringPath,
   getWatcherForProject,
@@ -134,7 +135,8 @@ export const watch = new Command("watch")
           const startOnly = process.env.GMAX_DAEMON_START_ONLY === "1";
           // Plugin hooks are implicit starts. Recheck quarantine in this child
           // and never use their launch as a version-upgrade restart.
-          if (startOnly && isAutostartDisabled()) return;
+          if (startOnly && (isAutostartDisabled() || isDaemonBypassed()))
+            return;
           // Skip spawn if daemon already running at the same version.
           // If version mismatches (e.g. after npm install -g), shut down the old
           // daemon so we can start a fresh one with the new code.

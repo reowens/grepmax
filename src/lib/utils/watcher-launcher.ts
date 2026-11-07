@@ -5,12 +5,11 @@
  */
 
 import { spawn } from "node:child_process";
-import { autostartDisabledNotice } from "./autostart";
+import { autostartDisabledNotice, daemonBypassNotice } from "./autostart";
 import { sendDaemonCommand } from "./daemon-client";
 import { spawnDaemon } from "./daemon-launcher";
 import { getProject } from "./project-registry";
 import {
-  isDaemonBypassed,
   storeWriteDeniedNotice,
   warnStoreWriteDeniedOnce,
 } from "./store-access";
@@ -83,13 +82,9 @@ export async function launchWatcher(
   // Both remaining steps spawn a background process, so stop here when the
   // autostart kill switch is on: a quarantined daemon must stay down.
   // GMAX_NO_DAEMON=1 asks for in-process work only, so it starts nothing either.
-  if (isDaemonBypassed()) {
-    return {
-      ok: false,
-      reason: "daemon-bypassed",
-      message:
-        "GMAX_NO_DAEMON=1 is set, so no daemon or watcher was started; unset it to start one",
-    };
+  const bypassed = daemonBypassNotice();
+  if (bypassed) {
+    return { ok: false, reason: "daemon-bypassed", message: bypassed };
   }
   const notice = autostartDisabledNotice();
   if (notice) {

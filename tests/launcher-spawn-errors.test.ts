@@ -18,7 +18,8 @@ vi.mock("../src/lib/utils/log-rotate", () => ({
 vi.mock("../src/lib/utils/daemon-client", () => ({
   sendDaemonCommand: mocks.sendDaemonCommand,
 }));
-vi.mock("../src/lib/utils/autostart", () => ({
+vi.mock("../src/lib/utils/autostart", async (original) => ({
+  ...(await original<typeof import("../src/lib/utils/autostart")>()),
   autostartDisabledNotice: mocks.autostartDisabledNotice,
   daemonStartDeniedReason: mocks.daemonStartDeniedReason,
 }));

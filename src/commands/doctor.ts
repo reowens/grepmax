@@ -1089,9 +1089,15 @@ export const doctor = new Command("doctor")
             "../lib/utils/daemon-client"
           );
           if (!(await ensureDaemonRunning())) {
+            const { daemonBypassNotice } = await import(
+              "../lib/utils/autostart"
+            );
+            const bypassed = daemonBypassNotice();
             if (!opts.agent)
               console.log(
-                "WARN  Stale chunker: daemon not running — start it (gmax watch --daemon -b) or run 'gmax index --reset' per project",
+                bypassed
+                  ? `WARN  Stale chunker: ${bypassed}; run 'gmax index --reset' per project`
+                  : "WARN  Stale chunker: daemon not running — start it (gmax watch --daemon -b) or run 'gmax index --reset' per project",
               );
           } else {
             for (const p of staleChunkerProjects) {

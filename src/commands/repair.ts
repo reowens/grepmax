@@ -3,7 +3,10 @@ import { PATHS, REBUILD_COMMAND } from "../config";
 import { readGlobalConfig } from "../lib/index/index-config";
 import { assertStoreMutationAllowed } from "../lib/store/maintenance-policy";
 import { VectorDB } from "../lib/store/vector-db";
-import { autostartDisabledUndo } from "../lib/utils/autostart";
+import {
+  autostartDisabledUndo,
+  daemonRequiredRefusal,
+} from "../lib/utils/autostart";
 import {
   ensureDaemonRunning,
   sendDaemonCommand,
@@ -20,6 +23,8 @@ async function daemonCapabilities(
 ): Promise<Record<string, unknown> | null> {
   const running = await ensureDaemonRunning();
   if (!running) {
+    const bypassed = daemonRequiredRefusal(flag);
+    if (bypassed) throw new Error(bypassed);
     const undo = autostartDisabledUndo();
     throw new Error(
       undo

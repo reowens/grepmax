@@ -185,7 +185,7 @@ function isProjectRegistered() {
 }
 
 const bin = resolveGmax();
-if (bin && isProjectRegistered()) {
+if (bin && isProjectRegistered() && process.env.GMAX_NO_DAEMON !== "1") {
   try { execFileSync(bin, ["watch", "--daemon", "-b"], { timeout: 5000, stdio: "ignore" }); } catch {}
 }
 `.trim();

@@ -475,7 +475,13 @@ export const serve = new Command("serve")
 
     try {
       if (!(await ensureDaemonRunning())) {
-        throw new Error("Could not start the gmax daemon");
+        const { daemonRequiredRefusal } = await import(
+          "../lib/utils/autostart"
+        );
+        throw new Error(
+          daemonRequiredRefusal("gmax serve") ??
+            "Could not start the gmax daemon",
+        );
       }
       const ensured = await sendStreamingCommand(
         { cmd: "ensure-project", root: projectRoot },

@@ -19,7 +19,8 @@ vi.mock("../src/lib/utils/daemon-client", () => ({
 vi.mock("../src/lib/utils/daemon-launcher", () => ({
   spawnDaemon: h.spawnDaemon,
 }));
-vi.mock("../src/lib/utils/autostart", () => ({
+vi.mock("../src/lib/utils/autostart", async (original) => ({
+  ...(await original<typeof import("../src/lib/utils/autostart")>()),
   autostartDisabledNotice: () => null,
 }));
 vi.mock("../src/lib/utils/store-access", async (original) => ({

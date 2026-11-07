@@ -33,7 +33,12 @@ Examples:
         "../lib/utils/daemon-client"
       );
       if (!(await ensureDaemonRunning())) {
-        console.error("Failed to start daemon");
+        const { daemonRequiredRefusal } = await import(
+          "../lib/utils/autostart"
+        );
+        console.error(
+          daemonRequiredRefusal("gmax investigate") ?? "Failed to start daemon",
+        );
         process.exitCode = 1;
         return;
       }

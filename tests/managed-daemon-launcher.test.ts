@@ -13,7 +13,8 @@ vi.mock("../src/lib/utils/service-startup", () => ({
   installedUserDaemonService: h.unit,
   startUserDaemonService: h.start,
 }));
-vi.mock("../src/lib/utils/autostart", () => ({
+vi.mock("../src/lib/utils/autostart", async (original) => ({
+  ...(await original<typeof import("../src/lib/utils/autostart")>()),
   daemonStartDeniedReason: h.denied,
   autostartDisabledNotice: () => null,
 }));
@@ -27,7 +28,8 @@ vi.mock("../src/lib/utils/daemon-client", () => ({
 vi.mock("../src/lib/utils/project-registry", () => ({
   getProject: () => ({ root: "/project" }),
 }));
-vi.mock("../src/lib/utils/store-access", () => ({
+vi.mock("../src/lib/utils/store-access", async (original) => ({
+  ...(await original<typeof import("../src/lib/utils/store-access")>()),
   storeWriteDeniedNotice: () => null,
 }));
 

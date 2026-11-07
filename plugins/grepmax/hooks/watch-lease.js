@@ -117,8 +117,10 @@ function markerPresentOrUnknown(file) {
 }
 
 function isAutostartDisabled() {
+  // GMAX_NO_DAEMON=1 also keeps hooks from starting a daemon (daemonBypassNotice).
   if (
     process.env.GMAX_NO_AUTOSTART === "1" ||
+    process.env.GMAX_NO_DAEMON === "1" ||
     process.env.GMAX_GEMMA_PROFILE === "1"
   )
     return true;

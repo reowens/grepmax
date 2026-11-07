@@ -39,7 +39,8 @@ vi.mock("../src/lib/utils/exit", () => ({
     process.exitCode = code ?? 0;
   },
 }));
-vi.mock("../src/lib/utils/store-access", () => ({
+vi.mock("../src/lib/utils/store-access", async (original) => ({
+  ...(await original<typeof import("../src/lib/utils/store-access")>()),
   storeWriteDeniedNotice: () => null,
 }));
 vi.mock("../src/lib/utils/daemon-launcher", () => ({
@@ -81,6 +82,18 @@ describe("hook-driven background daemon launch", () => {
     await watch.parseAsync(["--daemon", "-b"], { from: "user" });
     expect(ping).not.toHaveBeenCalled();
     expect(spawn).not.toHaveBeenCalled();
+  });
+  it("starts no daemon for a hook launch under GMAX_NO_DAEMON=1, but does for one typed by the user", async () => {
+    h.alive = false;
+    h.stillAlive = false;
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.stubEnv("GMAX_NO_DAEMON", "1");
+    await watch.parseAsync(["--daemon", "-b"], { from: "user" });
+    expect(spawn).not.toHaveBeenCalled();
+    vi.stubEnv("GMAX_DAEMON_START_ONLY", "0");
+    vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
+    await watch.parseAsync(["--daemon", "-b"], { from: "user" });
+    expect(spawn).toHaveBeenCalledOnce();
   });
   it("honors quarantine enabled between the hook and child launch", async () => {
     h.disabled = true;

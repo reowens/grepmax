@@ -10,7 +10,10 @@ import { initialSync } from "../lib/index/syncer";
 import { ensureSetup } from "../lib/setup/setup-helpers";
 import { assertStoreMutationAllowed } from "../lib/store/maintenance-policy";
 import { VectorDB } from "../lib/store/vector-db";
-import { autostartDisabledNotice } from "../lib/utils/autostart";
+import {
+  autostartDisabledNotice,
+  daemonBypassNotice,
+} from "../lib/utils/autostart";
 import { formatCliErrorGuidance } from "../lib/utils/cli-error-guidance";
 import { gracefulExit } from "../lib/utils/exit";
 import {
@@ -165,7 +168,7 @@ Examples:
         }
       } else {
         // Fallback: direct mode with lock — stop any watcher first
-        const notice = autostartDisabledNotice();
+        const notice = daemonBypassNotice() ?? autostartDisabledNotice();
         if (notice) console.log(notice);
 
         const paths = ensureProjectPaths(projectRoot);

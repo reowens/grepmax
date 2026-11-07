@@ -10,7 +10,10 @@ import { initialSync } from "../lib/index/syncer";
 import { ensureSetup } from "../lib/setup/setup-helpers";
 import { assertStoreMutationAllowed } from "../lib/store/maintenance-policy";
 import { VectorDB } from "../lib/store/vector-db";
-import { autostartDisabledNotice } from "../lib/utils/autostart";
+import {
+  autostartDisabledNotice,
+  daemonBypassNotice,
+} from "../lib/utils/autostart";
 import {
   BLOCKED_ROOTS_DESCRIPTION,
   isBlockedProjectRoot,
@@ -259,7 +262,7 @@ Examples:
         }
       } else {
         // Fallback: direct mode with lock
-        const notice = autostartDisabledNotice();
+        const notice = daemonBypassNotice() ?? autostartDisabledNotice();
         if (notice) {
           spinner.stop();
           console.log(notice);

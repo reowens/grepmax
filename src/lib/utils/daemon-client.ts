@@ -252,7 +252,8 @@ export function isDaemonDraining(pid: number): boolean {
  *
  * This is the implicit spawn path, so it honors the autostart kill switch: with
  * it on, an already-running daemon is still used, but a dead one is not
- * revived and callers fall back to in-process work.
+ * revived and callers fall back to in-process work. GMAX_NO_DAEMON=1 does the
+ * same.
  *
  * It also refuses to spawn from a sandboxed shell. A daemon inherits its
  * parent's sandbox for its whole life, so one spawned where `~/.gmax` is
@@ -267,9 +268,12 @@ export async function ensureDaemonRunning(): Promise<boolean> {
   if (!(await isDaemonRunning())) {
     const { isAutostartDisabled } = await import("./autostart");
     if (isAutostartDisabled()) return false;
-    const { storeWriteDeniedNotice, warnStoreWriteDeniedOnce } = await import(
-      "./store-access"
-    );
+    const {
+      isDaemonBypassed,
+      storeWriteDeniedNotice,
+      warnStoreWriteDeniedOnce,
+    } = await import("./store-access");
+    if (isDaemonBypassed()) return false;
     const denied = storeWriteDeniedNotice();
     if (denied) {
       warnStoreWriteDeniedOnce(denied);

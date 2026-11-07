@@ -129,6 +129,7 @@ function isProjectRegistered() {
 }
 
 function startDaemon() {
+  if (process.env.GMAX_NO_DAEMON === "1") return;
   const bin = resolveGmaxBin();
   if (!bin || !isProjectRegistered()) return;
   try {

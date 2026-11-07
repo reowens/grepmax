@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { PATHS } from "../../config";
 import { isGemma2Profile } from "../workers/embeddings/gemma2";
 import { safetyStopReason } from "./safety-latch";
+import { isDaemonBypassed } from "./store-access";
 
 /**
  * Kill switch for *implicit* daemon auto-start. Create
@@ -90,4 +91,21 @@ export function autostartDisabledNotice(): string | null {
   const undo = autostartDisabledUndo();
   if (!undo) return null;
   return `Daemon autostart is disabled — running in-process. Re-enable with: ${undo}`;
+}
+
+/**
+ * GMAX_NO_DAEMON=1 asks for in-process work only: no command starts a daemon
+ * or watcher. A daemon the user starts with `gmax watch` is still started.
+ */
+export function daemonBypassNotice(): string | null {
+  return isDaemonBypassed()
+    ? "GMAX_NO_DAEMON=1 is set, so gmax started no daemon or watcher"
+    : null;
+}
+
+/** The refusal for a command that cannot run without the daemon. */
+export function daemonRequiredRefusal(what: string): string | null {
+  return isDaemonBypassed()
+    ? `${what} needs the gmax daemon, and GMAX_NO_DAEMON=1 is set, so none was started; unset GMAX_NO_DAEMON to run it`
+    : null;
 }
