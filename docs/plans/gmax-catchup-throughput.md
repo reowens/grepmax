@@ -153,7 +153,7 @@ Fixes (local commit):
 - `unwatchProject` does not wait for an in-flight subscribe once shutdown has begun, and `watchProject` stops waiting for it when its lifecycle is aborted; `subscribeWatcherNow` already unsubscribes when its processor was removed.
 - A signal-driven daemon exit ends by that signal's default action once shutdown is complete (`gracefulExit(0, { bySignal })`, `src/lib/utils/exit.ts`), which skips the threadpool join; systemd counts death by SIGTERM as a clean stop.
 - `WorkerPool.beginShutdown()`, called before the first await in `performShutdown`, stops every spawn and respawn, and fails queued work when the last worker exits.
-- The signal backstop is 45 s and names the step it was stuck in; `performShutdown` logs any step that takes 1 s or more (`shutdown step <name> took <s>s`).
+- The signal backstop is 45 s, names the step it was stuck in and ends the daemon with SIGKILL, since `process.exit` would wait for the native work it is stuck on; `performShutdown` logs any step that takes 1 s or more (`shutdown step <name> took <s>s`).
 - The unit start runs with `--job-mode=fail`. A start while a stop job is queued fails ("Transaction for gmax.service/start is destructive", checked on the P3) and the CLI reports "gmax.service is stopping; a start would cancel that stop; no standalone daemon was started". An active or starting unit still succeeds, and a stopped one still starts.
 - The host's unit uses `KillMode=mixed`, written by the host's unit script: systemd signals only the daemon, which ends its workers after the drain.
 

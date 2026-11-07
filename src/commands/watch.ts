@@ -291,7 +291,9 @@ export const watch = new Command("watch")
             console.error(
               `[daemon] shutdown did not complete within ${SIGNAL_EXIT_BACKSTOP_MS / 1000}s of ${signal} (stuck in: ${daemon.shutdownStage ?? "start"}) — forcing exit`,
             );
-            process.exit(1);
+            // Not process.exit: it waits for native threadpool work, the
+            // likely wedge. SIGKILL ends now and reports the failure.
+            process.kill(process.pid, "SIGKILL");
           }, SIGNAL_EXIT_BACKSTOP_MS);
           backstop.unref();
           daemon.shutdown().then(() => {
