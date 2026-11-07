@@ -165,7 +165,8 @@ After installing `5dd8d2a` on the P3, with the unit on `KillMode=mixed`:
 - Restart during startup: 0.04 s, from 25.6 s.
 - Hold: with `~/.gmax/autostart-disabled` the stop took 0.03 s, a CLI search exited 1 with "Worker spawn denied: daemon startup is quarantined", and the unit stayed inactive until started by hand 5.5 s later.
 - Searches after: 1.19 and 1.34 s wall, same top hit as before.
-- Not reproduced: the silent 90 s stop at 04:50. A recurrence now logs its slow step and ends at the 45 s backstop.
+- A CLI search right after a plain stop started the unit again 0.4 s later (`--job-mode=fail` start path) and returned in 1.66 s.
+- Not reproduced: the silent 90 s stop at 04:50. A recurrence now logs its slow step. The 45 s backstop that ends it with SIGKILL is `11eb469`, not installed: its tree also carries `b186812` (version cleanup), which is not this fix's to ship. The installed backstop still calls `process.exit(1)`, so a wedge on native work still ends at the unit's 90 s kill.
 
 ## Plan
 
