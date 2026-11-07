@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { log } from "../utils/logger";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { resourceBudget } from "../utils/resource-budget";
@@ -468,6 +469,9 @@ class NativeMaintenanceRefusal extends Error {}
  * diagnostics or source content from the child process. */
 function nativeRefusal(value: unknown): NativeMaintenanceRefusal {
   const reason = typeof value === "string" ? value : "";
+  // The category goes back to callers; the native reason stays in the daemon
+  // log so a refusal can be diagnosed.
+  log("bounded", `Native refusal reason: ${reason.slice(0, 512) || "(none)"}`);
   const category = /recover.required|unfinished.*receipt/i.test(reason)
     ? "previous cleanup requires native recovery"
     : /index.*(?:fit|budget|bound|footprint)/i.test(reason)
