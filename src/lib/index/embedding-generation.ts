@@ -5,12 +5,24 @@ import {
   GEMMA2_MODEL,
 } from "../workers/embeddings/gemma2";
 
+/** The dense weights file the ONNX path loads from `<onnxModel>/onnx/`. */
+export const ONNX_DENSE_FILE = "model_quantized.onnx";
+
+/**
+ * How the ONNX models turn a chunk into vectors: the int8 dense file, and
+ * ColBERT run 1 chunk per call (its int8 activation scale is per input tensor,
+ * so batching made a chunk's vectors depend on its neighbours). Identities
+ * written before it existed omit it and read as stale.
+ */
+export const ONNX_PROFILE = `dense=${ONNX_DENSE_FILE};colbert=1-per-call`;
+
 export interface EmbeddingGenerationIdentity {
   tier: string;
   vectorDim: number;
   onnxModel: string;
   mlxModel: string;
   colbertModel: string;
+  onnxProfile?: string;
 }
 
 export interface EmbeddingGenerationConfig extends EmbeddingGenerationIdentity {
@@ -21,6 +33,8 @@ export interface EmbeddingGenerationInput {
   modelTier: string;
   vectorDim?: number;
   mlxModel?: string;
+  /** Omit only to rebuild an identity written before profiles existed. */
+  onnxProfile?: string | null;
 }
 
 export interface PersistedEmbeddingIdentity {
@@ -29,6 +43,7 @@ export interface PersistedEmbeddingIdentity {
   embedModel?: string;
   mlxModel?: string;
   colbertModel?: string;
+  onnxProfile?: string;
   embeddingFingerprint?: string;
 }
 
@@ -59,6 +74,8 @@ export function computeEmbeddingFingerprint(
     requireModelId("MLX model", identity.mlxModel),
     requireModelId("ColBERT model", identity.colbertModel),
   ];
+  if (identity.onnxProfile !== undefined)
+    canonical.push(requireModelId("ONNX profile", identity.onnxProfile));
   if (identity.tier === "gemma2") {
     if (
       identity.mlxModel !== GEMMA2_MODEL ||
@@ -88,6 +105,9 @@ export function resolveEmbeddingGeneration(
     onnxModel: tier.onnxModel,
     mlxModel: requireModelId("MLX model", input.mlxModel ?? tier.mlxModel),
     colbertModel: MODEL_IDS.colbert,
+    ...(input.onnxProfile === null
+      ? {}
+      : { onnxProfile: input.onnxProfile ?? ONNX_PROFILE }),
   };
   return Object.freeze({
     ...identity,
@@ -108,6 +128,8 @@ export function parseEmbeddingGeneration(
     typeof candidate.onnxModel !== "string" ||
     typeof candidate.mlxModel !== "string" ||
     typeof candidate.colbertModel !== "string" ||
+    (candidate.onnxProfile !== undefined &&
+      typeof candidate.onnxProfile !== "string") ||
     typeof candidate.fingerprint !== "string"
   ) {
     throw new Error("Invalid embedding generation");
@@ -118,6 +140,9 @@ export function parseEmbeddingGeneration(
     onnxModel: candidate.onnxModel,
     mlxModel: candidate.mlxModel,
     colbertModel: candidate.colbertModel,
+    ...(candidate.onnxProfile === undefined
+      ? {}
+      : { onnxProfile: candidate.onnxProfile }),
   };
   if (candidate.fingerprint !== computeEmbeddingFingerprint(identity)) {
     throw new Error("Embedding generation identity is inconsistent");
@@ -134,7 +159,8 @@ export function isOnnxFallbackCompatible(
     tier?.id === generation.tier &&
     tier.vectorDim === generation.vectorDim &&
     tier.onnxModel === generation.onnxModel &&
-    tier.mlxModel === generation.mlxModel
+    tier.mlxModel === generation.mlxModel &&
+    generation.onnxProfile === ONNX_PROFILE
   );
 }
 
@@ -157,11 +183,13 @@ export function compareEmbeddingGeneration(
         onnxModel: persisted.embedModel,
         mlxModel: persisted.mlxModel,
         colbertModel: persisted.colbertModel,
+        onnxProfile: persisted.onnxProfile,
         fingerprint: persisted.embeddingFingerprint,
       })
     : resolveEmbeddingGeneration({
         modelTier: persisted.modelTier,
         vectorDim: persisted.vectorDim,
+        onnxProfile: null,
         ...(persisted.mlxModel === undefined
           ? {}
           : { mlxModel: persisted.mlxModel }),

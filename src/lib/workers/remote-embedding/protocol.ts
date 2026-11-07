@@ -52,7 +52,7 @@ export function validatePreparedEmbeddingIdentity(value: unknown): PreparedEmbed
   const v = object(value); exact(v, ["generation", "artifactDigest", "runtimeDigest", "colbertDim"]);
   const generation = parseEmbeddingGeneration(v.generation);
   if (!["small", "standard"].includes(generation.tier) || !hash(v.artifactDigest) || !hash(v.runtimeDigest) || !Number.isInteger(v.colbertDim) || Number(v.colbertDim) < 1 || Number(v.colbertDim) > 1024) throw new Error("remote embedding: unsupported identity");
-  return { generation: { tier: generation.tier, vectorDim: generation.vectorDim, onnxModel: generation.onnxModel, mlxModel: generation.mlxModel, colbertModel: generation.colbertModel, fingerprint: generation.fingerprint }, artifactDigest: v.artifactDigest, runtimeDigest: v.runtimeDigest, colbertDim: Number(v.colbertDim) };
+  return { generation: { tier: generation.tier, vectorDim: generation.vectorDim, onnxModel: generation.onnxModel, mlxModel: generation.mlxModel, colbertModel: generation.colbertModel, ...(generation.onnxProfile === undefined ? {} : { onnxProfile: generation.onnxProfile }), fingerprint: generation.fingerprint }, artifactDigest: v.artifactDigest, runtimeDigest: v.runtimeDigest, colbertDim: Number(v.colbertDim) };
 }
 export function embeddingInputDigest(chunks: RemoteEmbeddingChunk[]): string {
   return createHash("sha256").update(JSON.stringify(chunks.map(c => [c.id, c.text]))).digest("hex");

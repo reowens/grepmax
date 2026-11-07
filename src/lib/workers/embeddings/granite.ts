@@ -6,6 +6,7 @@ import {
 } from "@huggingface/transformers";
 import * as ort from "onnxruntime-node";
 import { CONFIG, MODEL_IDS, PATHS } from "../../../config";
+import { ONNX_DENSE_FILE } from "../../index/embedding-generation";
 import { cpuSessionOptions } from "./onnx-options";
 
 const LOG_MODELS =
@@ -25,28 +26,21 @@ export class GraniteModel {
     private readonly modelId = process.env.GMAX_EMBED_ONNX_MODEL ||
       MODEL_IDS.embed,
     private readonly cacheRoot = PATHS.models,
+    private readonly modelFile = ONNX_DENSE_FILE,
   ) {
     this.vectorDimensions = vectorDim ?? CONFIG.VECTOR_DIM;
   }
 
   private resolvePaths(): { modelPath: string; tokenizerPath: string } {
-    // Honor the active tier's ONNX model (propagated from the pool); fall back
-    // to the small-tier default when unset (standalone/test invocations).
+    // Exactly the file the embedding generation names: another weights file
+    // would write vectors the stored identity does not describe.
     const basePath = path.join(this.cacheRoot, this.modelId);
-    const onnxDir = path.join(basePath, "onnx");
-    const candidates = ["model_q4.onnx", "model.onnx"];
-
-    for (const candidate of candidates) {
-      const candidatePath = path.join(onnxDir, candidate);
-      if (fs.existsSync(candidatePath)) {
-        return { modelPath: candidatePath, tokenizerPath: basePath };
-      }
+    const modelPath = path.join(basePath, "onnx", this.modelFile);
+    if (fs.existsSync(modelPath)) {
+      return { modelPath, tokenizerPath: basePath };
     }
-
     throw new Error(
-      `Granite ONNX model not found. Looked for ${candidates.join(
-        ", ",
-      )} in ${onnxDir}`,
+      `Granite ONNX model not found: ${modelPath}. Run gmax setup to download it.`,
     );
   }
 

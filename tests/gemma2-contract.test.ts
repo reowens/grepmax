@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 import { MODEL_TIERS } from "../src/config";
 import {
+  ONNX_PROFILE,
   computeEmbeddingFingerprint,
   isOnnxFallbackCompatible,
   parseEmbeddingGeneration,
@@ -18,7 +19,7 @@ import {
 } from "../src/lib/workers/embeddings/gemma2";
 
 describe("optional Gemma generation", () => {
-  it("retains the exact Granite v1 fingerprints", () => {
+  it("keeps the Granite v1 fingerprint scheme with the ONNX profile appended", () => {
     for (const modelTier of ["small", "standard"]) {
       const g = resolveEmbeddingGeneration({ modelTier });
       const expected = createHash("sha256")
@@ -30,6 +31,7 @@ describe("optional Gemma generation", () => {
             g.onnxModel,
             g.mlxModel,
             g.colbertModel,
+            ONNX_PROFILE,
           ]),
         )
         .digest("hex");
@@ -58,6 +60,7 @@ describe("optional Gemma generation", () => {
             MODEL_TIERS.gemma2.onnxModel,
             GEMMA2_MODEL,
             g.colbertModel,
+            ONNX_PROFILE,
             GEMMA2_CONTRACT_DIGEST,
           ]),
         )

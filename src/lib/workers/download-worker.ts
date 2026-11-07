@@ -117,8 +117,8 @@ async function downloadExtraFile(modelId: string, filename: string) {
 
 async function download() {
   try {
-    // 1. Download Dense Model
-    const embedPipeline = await downloadModelWithTimeout(MODEL_IDS.embed, "q4");
+    // 1. Download Dense Model (q8 is model_quantized.onnx, ONNX_DENSE_FILE)
+    const embedPipeline = await downloadModelWithTimeout(MODEL_IDS.embed, "q8");
     await embedPipeline.dispose();
 
     // 2. Download ColBERT Model

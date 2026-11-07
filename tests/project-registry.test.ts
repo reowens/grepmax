@@ -660,6 +660,7 @@ describe("strict registry reads", () => {
       embedModel: generation.onnxModel,
       mlxModel: generation.mlxModel,
       colbertModel: generation.colbertModel,
+      onnxProfile: generation.onnxProfile,
       embeddingFingerprint: generation.fingerprint,
       rebuildId: "rebuild-1",
     };

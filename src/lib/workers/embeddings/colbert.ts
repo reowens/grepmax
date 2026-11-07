@@ -69,9 +69,27 @@ export class ColbertModel {
     denseVectors: Float32Array[],
     vectorDimensions: number,
   ): Promise<HybridResult[]> {
-    // The int8 model quantizes activations with 1 scale per input tensor, so a
-    // chunk's vectors depend on the batch it shares. The batch the caller
-    // passes is kept whole so stored vectors stay comparable.
+    // 1 chunk per call: the int8 model quantizes activations with 1 scale per
+    // input tensor, so in a shared batch a chunk's vectors depend on the
+    // chunks beside it.
+    const results: HybridResult[] = [];
+    for (let i = 0; i < texts.length; i++) {
+      results.push(
+        ...(await this.inferBatch(
+          [texts[i]],
+          [denseVectors[i]],
+          vectorDimensions,
+        )),
+      );
+    }
+    return results;
+  }
+
+  private async inferBatch(
+    texts: string[],
+    denseVectors: (Float32Array | undefined)[],
+    vectorDimensions: number,
+  ): Promise<HybridResult[]> {
     if (!this.session || !this.tokenizer) return [];
     const tokenizer = this.tokenizer;
     const session = this.session;

@@ -26,7 +26,7 @@ try {
   } else {
   const generation={tier:'small',vectorDim:384,onnxModel:'onnx-community/granite-embedding-small-english-r2-ONNX',mlxModel:'ibm-granite/granite-embedding-small-english-r2',colbertModel:'ryandono/mxbai-edge-colbert-v0-17m-onnx-int8'};
   generation.fingerprint=createHash('sha256').update(JSON.stringify(['gmax-embedding-generation-v1',generation.tier,generation.vectorDim,generation.onnxModel,generation.mlxModel,generation.colbertModel])).digest('hex');
-  const names=[...['config.json','tokenizer.json','tokenizer_config.json','onnx/model_q4.onnx','onnx/model_q4.onnx_data'].map(p=>generation.onnxModel+'/'+p),...['config.json','tokenizer.json','tokenizer_config.json','skiplist.json','onnx/model_int8.onnx'].map(p=>generation.colbertModel+'/'+p)];
+  const names=[...['config.json','tokenizer.json','tokenizer_config.json','onnx/model_quantized.onnx','onnx/model_quantized.onnx_data'].map(p=>generation.onnxModel+'/'+p),...['config.json','tokenizer.json','tokenizer_config.json','skiplist.json','onnx/model_int8.onnx'].map(p=>generation.colbertModel+'/'+p)];
   const models=[];for(const path of names){const full=join(modelRoot,path),st=lstatSync(full);if(!st.isFile()||st.isSymbolicLink()||st.size>1024**3)throw Error('Invalid selected cached model');const hash=createHash('sha256');for await(const bytes of createReadStream(full))hash.update(bytes);const after=lstatSync(full);if(st.size!==after.size||st.mtimeMs!==after.mtimeMs)throw Error('Model changed while staging');models.push({path,bytes:st.size,sha256:hash.digest('hex')});}
   const spec={schemaVersion:1,commit,generation,generationFingerprint:generation.fingerprint,colbertDim:48,models};
   const local=receipt+'.input.json';writeFileSync(local,JSON.stringify(spec),{flag:'wx',mode:0o600});

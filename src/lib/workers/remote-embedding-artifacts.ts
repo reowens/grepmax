@@ -3,6 +3,7 @@ import { constants } from "node:fs";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
 import { MODEL_IDS, MODEL_TIERS } from "../../config";
+import { ONNX_DENSE_FILE } from "../index/embedding-generation";
 import type { PreparedEmbeddingIdentity } from "./remote-embedding/protocol";
 
 export interface PreparedEmbeddingFile { path: string; bytes: number; sha256: string }
@@ -22,8 +23,8 @@ export interface PreparedEmbeddingManifest {
 
 // This binds the existing Granite/ColBERT document path, not the MLX route.
 const preprocessing = {
-  granite: "q4-before-model;cpu;threads1;max256;masked-mean;L2;float32",
-  colbert: "model_int8;cpu;threads1;doc512;CLS-D-text-SEP;pad50283;token-L2;round-maxabs-int8-127;mean-L2-pooled;tokenIds",
+  granite: `${ONNX_DENSE_FILE};cpu;1-per-call;max256;masked-mean;L2;float32`,
+  colbert: "model_int8;cpu;1-per-call;doc512;CLS-D-text-SEP;pad50283;token-L2;round-maxabs-int8-127;mean-L2-pooled;tokenIds",
 };
 const hash = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -194,9 +195,9 @@ export async function verifyPreparedEmbeddingArtifacts(
     for (const file of ["tokenizer.json", "tokenizer_config.json", "config.json"])
       if (!modelNames.has(`${model}/${file}`)) refuse("required tokenizer/model metadata absent");
   }
-  const graniteFile = ["model_q4.onnx", "model.onnx"].map(name => `${granite}/onnx/${name}`).find(name => modelNames.has(name));
+  const graniteFile = `${granite}/onnx/${ONNX_DENSE_FILE}`;
   const colbertFile = `${colbert}/onnx/model_int8.onnx`;
-  if (!graniteFile || !modelNames.has(colbertFile)) refuse("required ONNX artifact absent");
+  if (!modelNames.has(graniteFile) || !modelNames.has(colbertFile)) refuse("required ONNX artifact absent");
   if (manifest.models.some(file => !file.path.startsWith(granite + "/") && !file.path.startsWith(colbert + "/")))
     refuse("unrelated model inventory");
   const runtimeNames = new Set(manifest.runtime.files.map(file => `runtime/${file.path}`));

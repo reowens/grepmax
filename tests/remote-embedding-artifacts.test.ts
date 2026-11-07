@@ -31,7 +31,7 @@ async function fixture() {
     models: await files(roots.models, [
       ...[generation.onnxModel, generation.colbertModel].flatMap(model =>
         ["tokenizer.json", "tokenizer_config.json", "config.json"].map(name => `${model}/${name}`)),
-      `${generation.onnxModel}/onnx/model_q4.onnx`, `${generation.onnxModel}/onnx/model.onnx`,
+      `${generation.onnxModel}/onnx/model_quantized.onnx`, `${generation.onnxModel}/onnx/model.onnx`,
       `${generation.colbertModel}/onnx/model_int8.onnx`,
     ]),
     runtime: {
@@ -53,7 +53,7 @@ describe("prepared embedding artifact verifier, fake file bytes only", () => {
     const f = await fixture();
     try {
       const result = await verifyPreparedEmbeddingArtifacts(f.manifest, f.identity(), f.roots);
-      expect(result.graniteModelPath).toBe(path.join(f.roots.models, f.generation.onnxModel, "onnx/model_q4.onnx"));
+      expect(result.graniteModelPath).toBe(path.join(f.roots.models, f.generation.onnxModel, "onnx/model_quantized.onnx"));
       const previous = f.identity().runtimeDigest;
       f.manifest.runtime.commit = "b".repeat(40);
       expect(f.identity().runtimeDigest).not.toBe(previous);
@@ -72,18 +72,18 @@ describe("prepared embedding artifact verifier, fake file bytes only", () => {
     } finally { await f.cleanup(); }
   });
 
-  it("rejects omitted q4 precedence even when a matching float model is listed", async () => {
+  it("requires the int8 dense file even when a float model is listed", async () => {
     const f = await fixture();
     try {
-      f.manifest.models = f.manifest.models.filter(file => !file.path.endsWith("model_q4.onnx"));
-      await expect(verifyPreparedEmbeddingArtifacts(f.manifest, f.identity(), f.roots)).rejects.toThrow("unlisted");
+      f.manifest.models = f.manifest.models.filter(file => !file.path.endsWith("model_quantized.onnx"));
+      await expect(verifyPreparedEmbeddingArtifacts(f.manifest, f.identity(), f.roots)).rejects.toThrow("required ONNX artifact absent");
     } finally { await f.cleanup(); }
   });
 
   it("rejects model/cache symlinks without following their contents", async () => {
     const f = await fixture();
     try {
-      const model = path.join(f.roots.models, f.generation.onnxModel, "onnx/model_q4.onnx");
+      const model = path.join(f.roots.models, f.generation.onnxModel, "onnx/model_quantized.onnx");
       await rm(model);
       await symlink(path.join(f.roots.models, f.generation.onnxModel, "onnx/model.onnx"), model);
       await expect(verifyPreparedEmbeddingArtifacts(f.manifest, f.identity(), f.roots)).rejects.toThrow("symlink");

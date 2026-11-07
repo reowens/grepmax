@@ -169,6 +169,7 @@ export class WorkerOrchestrator {
       process.env.GMAX_WORKER_BATCH_SIZE ?? "",
       10,
     );
+    // Sizes the MLX request only; both ONNX models run 1 chunk per call.
     const BATCH_SIZE =
       Number.isFinite(envBatch) && envBatch > 0
         ? Math.max(4, Math.min(16, envBatch))

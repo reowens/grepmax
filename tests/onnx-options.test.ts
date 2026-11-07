@@ -76,7 +76,7 @@ describe("CPU inference batching", () => {
     ]);
   });
 
-  it("ColBERT keeps the caller's batch whole, since its int8 scales span the batch", async () => {
+  it("ColBERT runs 1 chunk per call, so a chunk's vectors ignore its neighbours", async () => {
     const model = new ColbertModel() as any;
     const session = fakeSession(2);
     model.session = session;
@@ -88,9 +88,15 @@ describe("CPU inference batching", () => {
     };
     const dense = [new Float32Array([1]), new Float32Array([2])];
     const results = await model.runBatch(["abc", "a"], dense, 1);
-    expect(session.run).toHaveBeenCalledTimes(1);
-    expect(session.run.mock.calls[0][0].input_ids.dims).toEqual([2, 3]);
+    expect(session.run).toHaveBeenCalledTimes(2);
+    expect(session.run.mock.calls.map((c: any) => c[0].input_ids.dims)).toEqual([
+      [1, 3],
+      [1, 1],
+    ]);
     expect(results.map((r: any) => r.dense)).toEqual(dense);
     expect(results.map((r: any) => r.colbert.length)).toEqual([6, 2]);
+    const alone = await model.runBatch(["a"], [dense[1]], 1);
+    expect(alone[0].colbert).toEqual(results[1].colbert);
+    expect(alone[0].scale).toBe(results[1].scale);
   });
 });

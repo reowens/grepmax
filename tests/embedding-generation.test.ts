@@ -131,13 +131,13 @@ describe("resolveEmbeddingGeneration", () => {
     expect(isOnnxFallbackCompatible(custom)).toBe(false);
   });
 
-  it("distinguishes legacy, current, and stale project identities", () => {
+  it("distinguishes current and stale project identities", () => {
     const small = resolveEmbeddingGeneration({ modelTier: "small" });
     const standard = resolveEmbeddingGeneration({ modelTier: "standard" });
     expect(
       compareEmbeddingGeneration({ modelTier: "small", vectorDim: 384 }, small)
         .state,
-    ).toBe("legacy");
+    ).toBe("stale");
     expect(
       compareEmbeddingGeneration(
         {

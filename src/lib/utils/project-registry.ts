@@ -34,6 +34,7 @@ export interface ProjectEntry {
   embedModel?: string;
   mlxModel?: string;
   colbertModel?: string;
+  onnxProfile?: string;
   embeddingFingerprint?: string;
   rebuildId?: string;
 }
@@ -119,6 +120,7 @@ function isProjectEntry(entry: unknown): entry is ProjectEntry {
     optionalNonEmptyString(value.embedModel) &&
     optionalNonEmptyString(value.mlxModel) &&
     optionalNonEmptyString(value.colbertModel) &&
+    optionalNonEmptyString(value.onnxProfile) &&
     (value.embeddingFingerprint === undefined ||
       (typeof value.embeddingFingerprint === "string" &&
         /^[a-f0-9]{64}$/.test(value.embeddingFingerprint))) &&
@@ -141,6 +143,9 @@ function isProjectEntry(entry: unknown): entry is ProjectEntry {
           onnxModel: value.embedModel as string,
           mlxModel: value.mlxModel as string,
           colbertModel: value.colbertModel as string,
+          ...(value.onnxProfile === undefined
+            ? {}
+            : { onnxProfile: value.onnxProfile as string }),
         })
       );
     }
@@ -390,6 +395,7 @@ export function reserveProjectsForRebuild(
                 embedModel: generation.onnxModel,
                 mlxModel: generation.mlxModel,
                 colbertModel: generation.colbertModel,
+                onnxProfile: generation.onnxProfile,
                 embeddingFingerprint: generation.fingerprint,
                 status: "pending",
                 rebuildId: existingJournal.rebuildId,
@@ -424,6 +430,7 @@ export function reserveProjectsForRebuild(
         embedModel: generation.onnxModel,
         mlxModel: generation.mlxModel,
         colbertModel: generation.colbertModel,
+        onnxProfile: generation.onnxProfile,
         embeddingFingerprint: generation.fingerprint,
         status: "pending",
         rebuildId,
@@ -545,6 +552,7 @@ export function stampProjectFullSync(
       embedModel: stamp.generation.onnxModel,
       mlxModel: stamp.generation.mlxModel,
       colbertModel: stamp.generation.colbertModel,
+      onnxProfile: stamp.generation.onnxProfile,
       embeddingFingerprint: stamp.generation.fingerprint,
       lastIndexed: stamp.indexedAt ?? new Date().toISOString(),
       chunkCount: stamp.chunkCount,

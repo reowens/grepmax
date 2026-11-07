@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { Worker } from "node:worker_threads";
 import { MODEL_IDS } from "../../config";
+import { ONNX_DENSE_FILE } from "../index/embedding-generation";
 
 const HOMEDIR = os.homedir();
 const CACHE_DIR = path.join(HOMEDIR, ".gmax", "models");
@@ -61,7 +62,12 @@ export async function downloadModels(): Promise<void> {
  */
 export function areModelsDownloaded(): boolean {
   // Check if the model directories exist in the cache
-  const embedPath = path.join(CACHE_DIR, ...MODEL_IDS.embed.split("/"));
+  const embedPath = path.join(
+    CACHE_DIR,
+    ...MODEL_IDS.embed.split("/"),
+    "onnx",
+    ONNX_DENSE_FILE,
+  );
   const colbertPath = path.join(CACHE_DIR, ...MODEL_IDS.colbert.split("/"));
 
   return fs.existsSync(embedPath) && fs.existsSync(colbertPath);

@@ -34,6 +34,12 @@ vi.mock("../src/lib/utils/project-registry", () => ({
     lastIndexed: new Date().toISOString(),
     chunkCount: 100,
     status: "indexed",
+    embedModel: "onnx-community/granite-embedding-small-english-r2-ONNX",
+    mlxModel: "ibm-granite/granite-embedding-small-english-r2",
+    colbertModel: "ryandono/mxbai-edge-colbert-v0-17m-onnx-int8",
+    onnxProfile: "dense=model_quantized.onnx;colbert=1-per-call",
+    embeddingFingerprint:
+      "8e2958f019e85b3201906cbb2ae8dc35ef1d8bbc2787b0c8350ffe45c12717e4",
   })),
   listProjects: vi.fn(() => [
     {
@@ -45,6 +51,12 @@ vi.mock("../src/lib/utils/project-registry", () => ({
       lastIndexed: "2026-01-01T00:00:00.000Z",
       chunkCount: 100,
       status: "indexed",
+    embedModel: "onnx-community/granite-embedding-small-english-r2-ONNX",
+    mlxModel: "ibm-granite/granite-embedding-small-english-r2",
+    colbertModel: "ryandono/mxbai-edge-colbert-v0-17m-onnx-int8",
+    onnxProfile: "dense=model_quantized.onnx;colbert=1-per-call",
+    embeddingFingerprint:
+      "8e2958f019e85b3201906cbb2ae8dc35ef1d8bbc2787b0c8350ffe45c12717e4",
     },
   ]),
   registerProject: vi.fn(),
