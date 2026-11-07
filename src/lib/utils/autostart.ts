@@ -95,7 +95,8 @@ export function autostartDisabledNotice(): string | null {
 
 /**
  * GMAX_NO_DAEMON=1 asks for in-process work only: no command starts a daemon
- * or watcher. A daemon the user starts with `gmax watch` is still started.
+ * or watcher, a typed `gmax watch` included. GMAX_NO_AUTOSTART is the softer
+ * switch that still lets a typed start through.
  */
 export function daemonBypassNotice(): string | null {
   return isDaemonBypassed()

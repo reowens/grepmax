@@ -46,7 +46,8 @@ vi.mock("../src/lib/utils/store-access", async (original) => ({
 vi.mock("../src/lib/utils/daemon-launcher", () => ({
   spawnDaemonProcess: spawn,
 }));
-vi.mock("../src/lib/utils/autostart", () => ({
+vi.mock("../src/lib/utils/autostart", async (original) => ({
+  ...(await original<typeof import("../src/lib/utils/autostart")>()),
   isAutostartDisabled: () => h.disabled,
   daemonStartDeniedReason: () =>
     h.disabled ? "daemon startup is quarantined" : null,
@@ -83,15 +84,37 @@ describe("hook-driven background daemon launch", () => {
     expect(ping).not.toHaveBeenCalled();
     expect(spawn).not.toHaveBeenCalled();
   });
-  it("starts no daemon for a hook launch under GMAX_NO_DAEMON=1, but does for one typed by the user", async () => {
+  it("starts no daemon under GMAX_NO_DAEMON=1, from a hook or typed by the user", async () => {
+    h.alive = false;
+    h.stillAlive = false;
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubEnv("GMAX_NO_DAEMON", "1");
+    await watch.parseAsync(["--daemon", "-b"], { from: "user" });
+    vi.stubEnv("GMAX_DAEMON_START_ONLY", "0");
+    await watch.parseAsync(["--daemon", "-b"], { from: "user" });
+    await watch.parseAsync(["--daemon"], { from: "user" });
+    await watch.parseAsync([], { from: "user" });
+    expect(spawn).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(2);
+    expect(error).toHaveBeenLastCalledWith(
+      "gmax: GMAX_NO_DAEMON=1 is set, so gmax started no daemon or watcher; unset GMAX_NO_DAEMON to start one",
+    );
+  });
+  it("refuses a typed restart under GMAX_NO_DAEMON=1 before stopping anything", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.stubEnv("GMAX_NO_DAEMON", "1");
+    await watch.parseAsync(["restart"], { from: "user" });
+    expect(process.exitCode).toBe(2);
+    expect(ping).not.toHaveBeenCalled();
+    expect(spawn).not.toHaveBeenCalled();
+  });
+  it("still starts a typed daemon when the variable is unset", async () => {
     h.alive = false;
     h.stillAlive = false;
     vi.spyOn(console, "log").mockImplementation(() => {});
-    vi.stubEnv("GMAX_NO_DAEMON", "1");
-    await watch.parseAsync(["--daemon", "-b"], { from: "user" });
-    expect(spawn).not.toHaveBeenCalled();
-    vi.stubEnv("GMAX_DAEMON_START_ONLY", "0");
     vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
+    vi.stubEnv("GMAX_DAEMON_START_ONLY", "0");
     await watch.parseAsync(["--daemon", "-b"], { from: "user" });
     expect(spawn).toHaveBeenCalledOnce();
   });

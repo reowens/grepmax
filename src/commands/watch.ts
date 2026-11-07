@@ -14,6 +14,7 @@ import {
 import { MetaCache } from "../lib/store/meta-cache";
 import { VectorDB } from "../lib/store/vector-db";
 import {
+  daemonBypassNotice,
   daemonStartDeniedReason,
   isAutostartDisabled,
 } from "../lib/utils/autostart";
@@ -33,7 +34,6 @@ import {
 import { ensureProjectPaths, findProjectRoot } from "../lib/utils/project-root";
 import { QUERY_EXECUTION_OPTIONS } from "../lib/utils/query-timeout";
 import { systemdServiceUnit } from "../lib/utils/service-unit";
-import { isDaemonBypassed } from "../lib/utils/store-access";
 import {
   getWatcherCoveringPath,
   getWatcherForProject,
@@ -104,6 +104,12 @@ export const watch = new Command("watch")
         process.exitCode = 2;
         return;
       }
+      const bypassed = daemonBypassNotice();
+      if (bypassed) {
+        console.error(`gmax: ${bypassed}; unset GMAX_NO_DAEMON to start one`);
+        process.exitCode = 2;
+        return;
+      }
       const safetyDenied = daemonStartDeniedReason();
       if (safetyDenied !== null && !options.readOnly) {
         console.error(`gmax: ${safetyDenied}; preserving containment`);
@@ -135,8 +141,7 @@ export const watch = new Command("watch")
           const startOnly = process.env.GMAX_DAEMON_START_ONLY === "1";
           // Plugin hooks are implicit starts. Recheck quarantine in this child
           // and never use their launch as a version-upgrade restart.
-          if (startOnly && (isAutostartDisabled() || isDaemonBypassed()))
-            return;
+          if (startOnly && isAutostartDisabled()) return;
           // Skip spawn if daemon already running at the same version.
           // If version mismatches (e.g. after npm install -g), shut down the old
           // daemon so we can start a fresh one with the new code.
@@ -653,6 +658,13 @@ watch
 
     if (isGemma2Profile(PATHS.globalRoot)) {
       refuse("Gemma profiles run in-process; daemon restart is disabled");
+      await gracefulExit(2);
+      return;
+    }
+
+    const bypassed = daemonBypassNotice();
+    if (bypassed) {
+      refuse(`${bypassed}; unset GMAX_NO_DAEMON to restart the daemon`);
       await gracefulExit(2);
       return;
     }
