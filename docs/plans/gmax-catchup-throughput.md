@@ -168,6 +168,10 @@ After installing `5dd8d2a` on the P3, with the unit on `KillMode=mixed`:
 - A CLI search right after a plain stop started the unit again 0.4 s later (`--job-mode=fail` start path) and returned in 1.66 s.
 - Not reproduced: the silent 90 s stop at 04:50. A recurrence now logs its slow step. The 45 s backstop that ends it with SIGKILL is `11eb469`, not installed: its tree also carries `b186812` (version cleanup), which is not this fix's to ship. The installed backstop still calls `process.exit(1)`, so a wedge on native work still ends at the unit's 90 s kill.
 
+### 12. The test suite was red before these fixes, hiding new breakage (measured 2026-11-07)
+
+Before: `vitest run` 12 of 264 files and 20 of 2,873 tests failed in 31 s, and `tsc -p tsconfig.tests.json` had 6 errors; every failure was a test left stale by an intentional change (`b4955e0` search stage guidance, `6fe7fee` table close, `07588f7` MCP annotations and the disabled summarizer, the status JSON fields, `2ebdb62` the 2 s save-quiet window, `.at` outside the ES6 lib) plus the `node:test` file `scripts/local-worker.test.cjs` collected by vitest. After `f652467`, `37019ae`, `caacc04`, `748b4f1`, `abdf094`, `d24195d` and `2b4dca3`: 262 files and 2,864 tests pass (1 file and 11 tests skipped, as before) in 31 s, and the tests typecheck has 0 errors.
+
 ## Plan
 
 One batch; each step lists its tests. Live-edit priority from `bad7365` stays.
