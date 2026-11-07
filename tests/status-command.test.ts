@@ -366,6 +366,7 @@ describe("gmax status", () => {
         indexedAt: Date.parse("2026-01-01T00:00:00.000Z"),
         state: "watching",
         embedding: expect.any(String),
+        watchLease: { state: "unavailable", count: null, latestExpiresAt: null },
       },
     ]);
     expect(typeof json.at).toBe("number");
@@ -395,6 +396,9 @@ describe("buildStatusJson", () => {
       pid: null,
       since: null,
       workerThreads: null,
+      workerThreadsSetting: null,
+      cpuConfiguration: null,
+      embeddingConfiguration: null,
     });
     expect(json.workersRunning).toBeNull();
   });
