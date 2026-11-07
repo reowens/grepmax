@@ -6,8 +6,8 @@ import {
 } from "@huggingface/transformers";
 import * as ort from "onnxruntime-node";
 import { CONFIG, MODEL_IDS, PATHS } from "../../../config";
+import { cpuSessionOptions } from "./onnx-options";
 
-const ONNX_THREADS = 1;
 const LOG_MODELS =
   process.env.GMAX_DEBUG_MODELS === "1" ||
   process.env.GMAX_DEBUG_MODELS === "true";
@@ -58,20 +58,10 @@ export class GraniteModel {
 
     this.tokenizer = await AutoTokenizer.from_pretrained(tokenizerPath);
 
-    const sessionOptions: ort.InferenceSession.SessionOptions = {
-      executionProviders: ["cpu"],
-      intraOpNumThreads: ONNX_THREADS,
-      interOpNumThreads: 1,
-      graphOptimizationLevel: "all",
-      // Embedding inputs are variable-length, so the CPU memory arena and
-      // memory-pattern optimizer don't get reused across batches — they just
-      // retain the largest tensor a worker ever saw (a long/minified file can
-      // pin ~2 GB for the worker's lifetime). Disabling both bounds native
-      // memory at the cost of a small per-inference allocation.
-      enableCpuMemArena: false,
-      enableMemPattern: false,
-    };
-    this.session = await ort.InferenceSession.create(modelPath, sessionOptions);
+    this.session = await ort.InferenceSession.create(
+      modelPath,
+      cpuSessionOptions(),
+    );
   }
 
   async dispose(): Promise<void> {
@@ -147,6 +137,13 @@ export class GraniteModel {
     } else await this.load();
     if (!this.session || !this.tokenizer) return [];
 
+    const vectors: Float32Array[] = [];
+    for (const text of texts) vectors.push(...(await this.inferBatch([text])));
+    return vectors;
+  }
+
+  private async inferBatch(texts: string[]): Promise<Float32Array[]> {
+    if (!this.session || !this.tokenizer) return [];
     const encoded = await this.tokenizer(texts, {
       padding: true,
       truncation: true,

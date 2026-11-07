@@ -3,8 +3,8 @@ import * as path from "node:path";
 import * as ort from "onnxruntime-node";
 import { MODEL_IDS, PATHS } from "../../../config";
 import { ColBERTTokenizer } from "../colbert-tokenizer";
+import { cpuSessionOptions } from "./onnx-options";
 
-const ONNX_THREADS = 1;
 const LOG_MODELS =
   process.env.GMAX_DEBUG_MODELS === "1" ||
   process.env.GMAX_DEBUG_MODELS === "true";
@@ -44,20 +44,11 @@ export class ColbertModel {
 
     await this.tokenizer.init(basePath);
 
-    const sessionOptions: ort.InferenceSession.SessionOptions = {
-      executionProviders: ["cpu"],
-      intraOpNumThreads: ONNX_THREADS,
-      interOpNumThreads: 1,
-      graphOptimizationLevel: "all",
-      // ColBERT runs locally on every batch (MLX only covers dense), so its
-      // arena is the worker's main memory hog. Variable-length inputs mean the
-      // arena/mem-pattern never amortize — disable both to keep RSS bounded.
-      enableCpuMemArena: false,
-      enableMemPattern: false,
-    };
-
     log(`Worker: Loading ColBERT ONNX session from ${modelPath}`);
-    this.session = await ort.InferenceSession.create(modelPath, sessionOptions);
+    this.session = await ort.InferenceSession.create(
+      modelPath,
+      cpuSessionOptions(),
+    );
 
     if (!this.session) {
       throw new Error(`ColBERT ONNX load failed; tried ${modelPath}`);
@@ -78,6 +69,9 @@ export class ColbertModel {
     denseVectors: Float32Array[],
     vectorDimensions: number,
   ): Promise<HybridResult[]> {
+    // The int8 model quantizes activations with 1 scale per input tensor, so a
+    // chunk's vectors depend on the batch it shares. The batch the caller
+    // passes is kept whole so stored vectors stay comparable.
     if (!this.session || !this.tokenizer) return [];
     const tokenizer = this.tokenizer;
     const session = this.session;

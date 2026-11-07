@@ -37,6 +37,10 @@ import {
 } from "../utils/resource-budget";
 import { latchSafetyStop } from "../utils/safety-latch";
 import { hardDeadlineMs } from "./task-deadline";
+import {
+  ONNX_THREADS_ENV,
+  onnxThreadsFor,
+} from "./embeddings/onnx-options";
 import type { ProcessFileInput, ProcessFileResult, RerankDoc } from "./worker";
 
 type TaskMethod = "processFile" | "encodeQuery" | "rerank";
@@ -290,8 +294,8 @@ export interface WorkerPoolCpuConfiguration {
 let workerCapWarned = false;
 
 /**
- * Each worker runs single-threaded inference, so workers beyond the CPUs the
- * host or service quota allows hold a model each without running in parallel.
+ * Workers beyond the CPUs the host or service quota allows hold a model each
+ * without running in parallel.
  */
 export function cappedWorkerCount(
   configured: number,
@@ -373,7 +377,12 @@ export class WorkerPool {
     // Replacement workers must use the same embedding generation as the pool
     // that created them, even if config changes while tasks are running. Other
     // process environment remains live and is copied at each fork.
-    this.embeddingEnvironment = Object.freeze(generatedEmbeddingEnv);
+    this.embeddingEnvironment = Object.freeze({
+      ...generatedEmbeddingEnv,
+      [ONNX_THREADS_ENV]: String(
+        onnxThreadsFor(effectiveCpus, this.backgroundIndexingLimit()),
+      ),
+    });
 
     // Lazy spawn: start with 1 worker, scale up on demand
     if (!this.spawnWorker()) throw this.spawnDeniedError();

@@ -321,9 +321,9 @@ export const cases: EvalCase[] = [
     note: "load() builds sessionOptions for cpu backend.",
   },
   {
-    query: "Where do we limit ColBERT ONNX runtime threads to 1?",
-    expectedPath: "src/lib/workers/embeddings/colbert.ts",
-    note: "ONNX_THREADS constant and session options.",
+    query: "Where do we set ONNX runtime threads and spinning for CPU sessions?",
+    expectedPath: "src/lib/workers/embeddings/onnx-options.ts",
+    note: "cpuSessionOptions and onnxThreadsFor.",
   },
   {
     query:

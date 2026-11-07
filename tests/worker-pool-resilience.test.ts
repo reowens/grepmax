@@ -71,6 +71,10 @@ vi.mock("node:child_process", async (importOriginal) => {
 // this suite tests the real pool (with child_process faked above), so undo it.
 vi.unmock("../src/lib/workers/pool");
 
+import {
+  ONNX_THREADS_ENV,
+  onnxThreadsFor,
+} from "../src/lib/workers/embeddings/onnx-options";
 import { WorkerPool } from "../src/lib/workers/pool";
 import { hardDeadlineMs } from "../src/lib/workers/task-deadline";
 
@@ -126,6 +130,20 @@ describe("WorkerPool resilience", () => {
       expect.arrayContaining(["--import", require.resolve("tsx")]),
     );
     expect(options?.serialization).toBe("advanced");
+  });
+
+  it("gives each worker the ONNX thread count for the pool's CPUs and background files", () => {
+    h.cpuCapacity.v = 4;
+    pool = new WorkerPool();
+
+    const options = vi.mocked(childProcess.fork).mock.calls[0]?.[1] as
+      | { env?: Record<string, string> }
+      | undefined;
+    const files = pool.backgroundIndexingLimit();
+    expect(options?.env?.[ONNX_THREADS_ENV]).toBe(
+      String(onnxThreadsFor(4, files)),
+    );
+    if (files === 3) expect(options?.env?.[ONNX_THREADS_ENV]).toBe("2");
   });
 
   it("reapStuckWorkers SIGKILLs a worker wedged in busy=true past the threshold", () => {
