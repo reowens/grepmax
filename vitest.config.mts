@@ -9,6 +9,7 @@ export default defineConfig({
     // full copy of tests/. Without this exclude, vitest run from the main
     // tree discovers and runs that copy too, and the preversion gate fails
     // on tests that never belonged to this checkout.
-    exclude: [...configDefaults.exclude, "**/.claude/**"],
+    // scripts/*.test.cjs are node:test files, run with `node --test`.
+    exclude: [...configDefaults.exclude, "**/.claude/**", "scripts/**"],
   },
 });
