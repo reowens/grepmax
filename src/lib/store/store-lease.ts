@@ -210,8 +210,9 @@ async function delay(ms: number, signal?: AbortSignal): Promise<void> {
       signal?.removeEventListener("abort", onAbort);
       reject(abortError());
     };
+    // Kept referenced: an unref'd poll let a CLI waiting on the lease exit 0
+    // with no output. Every wait has a deadline and the daemon aborts them.
     signal?.addEventListener("abort", onAbort, { once: true });
-    timer.unref();
   });
 }
 
