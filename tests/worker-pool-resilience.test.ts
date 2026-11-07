@@ -292,6 +292,32 @@ describe("WorkerPool resilience", () => {
     expect(worker.child.kill).not.toHaveBeenCalled();
   });
 
+  it("replaces no worker the stop signal reaches once shutdown has begun", () => {
+    pool = new WorkerPool();
+    const fork = vi.mocked(childProcess.fork);
+    expect(fork).toHaveBeenCalledTimes(1);
+
+    pool.beginShutdown();
+    pool.workers[0].child.emit("exit", null, "SIGTERM");
+
+    expect(fork).toHaveBeenCalledTimes(1);
+    expect(pool.workers).toHaveLength(0);
+  });
+
+  it("fails queued work at once when the last worker exits during shutdown", async () => {
+    pool = new WorkerPool();
+    const worker = pool.workers[0];
+    const first = pool.processFile({ path: "/repo/a.ts", projectRoot: "/repo" });
+    const queued = pool.processFile({ path: "/repo/b.ts", projectRoot: "/repo" });
+
+    pool.beginShutdown();
+    worker.child.emit("exit", null, "SIGTERM");
+
+    await expect(first).rejects.toThrow(/exited unexpectedly/);
+    await expect(queued).rejects.toThrow(/shutting down/);
+    expect(vi.mocked(childProcess.fork)).toHaveBeenCalledTimes(1);
+  });
+
   it("strict destroy rejects by its deadline and keeps an unconfirmed child tracked", async () => {
     vi.useFakeTimers();
     pool = new WorkerPool();

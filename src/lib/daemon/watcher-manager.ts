@@ -1023,7 +1023,11 @@ export class WatcherManager {
     const processor = this.deps.processors.get(root);
     this.deps.processors.delete(root);
 
-    await this.subscriptionUpdates.get(root)?.catch(() => {});
+    // A native subscribe cannot be cancelled and takes tens of seconds on a
+    // large tree. Shutdown does not wait for it: with the processor removed
+    // above, subscribeWatcherNow unsubscribes as soon as it returns.
+    if (!this.deps.getShuttingDown())
+      await this.subscriptionUpdates.get(root)?.catch(() => {});
 
     await this.stopCatchup(root);
 

@@ -307,6 +307,8 @@ export class Daemon {
   );
   private readonly operations = new OperationCoordinator();
   private shutdownPromise: Promise<void> | null = null;
+  /** The shutdown step in progress, named by the signal backstop if it fires. */
+  shutdownStage: string | null = null;
   // Full-index progress per root while initialSync runs (--reset / initial
   // index). Presence = a full index is in flight; value drives the partial-
   // result pending count (Phase 6). Cleared in the indexProject finally.
@@ -3365,9 +3367,22 @@ export class Daemon {
   private async performShutdown(opts: { relaunch?: boolean }): Promise<void> {
     this.shuttingDown = true;
     this.ready = false;
+    // Before the first await: a worker the stop signal reached directly must
+    // not be replaced while the rest of shutdown runs.
+    this.workerPool?.beginShutdown();
     const strictResourceShutdown = this.hasUnfinishedRebuild();
 
     console.log("[daemon] Shutting down...");
+    let stage = { name: "start", at: Date.now() };
+    const mark = (name: string) => {
+      const ms = Date.now() - stage.at;
+      if (ms >= 1000)
+        console.log(
+          `[daemon] shutdown step ${stage.name} took ${(ms / 1000).toFixed(1)}s`,
+        );
+      stage = { name, at: Date.now() };
+      this.shutdownStage = name;
+    };
 
     // Announce graceful shutdown BEFORE dropping the liveness markers below, so a
     // successor spawned during the (possibly long) drain sees the draining marker
@@ -3401,6 +3416,7 @@ export class Daemon {
         fs.unlinkSync(PATHS.daemonPidFile);
       } catch {}
     }
+    mark("lock release");
     if (this.releaseLock) {
       const release = this.releaseLock;
       this.releaseLock = null;
@@ -3434,7 +3450,9 @@ export class Daemon {
     const projectDrain = this.projectMutex.close();
 
     // Abort catchup/recovery and remove each processor before worker teardown.
+    mark("watcher quiesce");
     await this.watcherManager.quiesceAll();
+    mark("operation drain");
     await this.drainOperationsBounded(
       operationDrain,
       projectDrain,
@@ -3442,11 +3460,13 @@ export class Daemon {
     );
 
     // Stop LLM server if running
+    mark("LLM server stop");
     try {
       await this.llmServer?.stop();
     } catch {}
 
     // Destroy worker pool to prevent orphaned child processes
+    mark("worker pool destroy");
     if (this.workerPool) {
       if (strictResourceShutdown) {
         await this.workerPool.destroy({
@@ -3467,6 +3487,7 @@ export class Daemon {
     }
 
     // Stop MLX embed server only after worker requests have drained.
+    mark("MLX server stop");
     await this.mlxServerManager.stopMlxServer();
 
     // Unregister all
@@ -3477,6 +3498,7 @@ export class Daemon {
     this.processors.clear();
 
     // Close shared resources
+    mark("store close");
     try {
       await this.metaCache?.close();
     } catch {}
@@ -3487,6 +3509,7 @@ export class Daemon {
         await this.vectorDb?.close();
       } catch {}
     }
+    mark("socket close");
     await serverClosed;
     clearTimeout(forceCloseConnections);
     this.connections.clear();
@@ -3496,6 +3519,7 @@ export class Daemon {
     // daemon's singleton check sees a clean slate and opens LanceDB/LMDB
     // without contending with this exiting process.
     if (opts.relaunch && this.ownsControlState) {
+      mark("successor spawn");
       const pid = await spawnDaemon();
       console.log(
         `[daemon] Spawned successor daemon${pid ? ` (PID: ${pid})` : " (spawn failed)"}`,
@@ -3507,6 +3531,7 @@ export class Daemon {
     if (this.ownsControlState) clearDrainingMarker();
     this.ownsControlState = false;
 
+    mark("complete");
     console.log("[daemon] Shutdown complete");
   }
 }

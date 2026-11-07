@@ -799,6 +799,40 @@ describe("WatcherManager.unwatchProject", () => {
     await wm.unwatchProject(root);
   });
 
+  it("does not wait for an in-flight native subscribe during shutdown", async () => {
+    const root = "/p/app";
+    let shuttingDown = false;
+    const dependencies = {
+      ...deps(),
+      getVectorDb: () => ({
+        diskPressure: "ok",
+        checkDiskPressure: () => "ok",
+        deletePaths: vi.fn(async () => {}),
+        compactIfNeeded: vi.fn(async () => {}),
+      }),
+      getMetaCache: () => ({ get: vi.fn() }),
+      getShuttingDown: () => shuttingDown,
+      touchActivity: vi.fn(),
+    } as any;
+    const wm = new WatcherManager(dependencies);
+    let finishSubscribe!: () => void;
+    vi.spyOn(wm as any, "subscribeWatcherNow").mockImplementation(
+      () => new Promise<void>((resolve) => (finishSubscribe = resolve)),
+    );
+    const watching = wm.watchProject(root, { catchup: false });
+    await vi.waitFor(() => expect(finishSubscribe).toBeTypeOf("function"));
+
+    shuttingDown = true;
+    let unwatched = false;
+    const unwatch = wm.unwatchProject(root).then(() => (unwatched = true));
+    await vi.waitFor(() => expect(unwatched).toBe(true));
+    expect(dependencies.processors.has(root)).toBe(false);
+
+    finishSubscribe();
+    await unwatch;
+    await watching.catch(() => {});
+  });
+
   it("returns to watching after a settled zero-reindex batch", async () => {
     const root = "/p/app";
     const dependencies = {

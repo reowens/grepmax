@@ -132,6 +132,31 @@ After installing the local build (`9012a66`) on the P3:
 - Even with FTS caught up, vector 0.73 s plus about 0.25 s of CLI start sits at the 1 s line; the levers left (IVF under `GMAX_ANN`, compaction) are outside the Q5 exception.
 - **After the compaction (2026-11-07 13:04 UTC, load 9.2 from other sessions):** the 5 queries took 0.54 to 0.76 s wall through the CLI; the daemon's `[search]` line shows fts 46 to 151 ms, vector 216 to 375 ms, encode 8 to 12 ms. The same morning before it: 7.67 to 10.60 s wall, fts 6.4 to 6.6 s, vector 0.97 to 1.29 s, at load 6 to 7. Under 1 s is reached, so this finding is closed; vector search stays at 0.2 to 0.4 s, under the 0.5 s line that would raise IVF. Same top hit on all 5; queries 4 and 5 swap 1 of 5 hits (Compaction, step 3).
 
+### 11. A unit stop waits up to 90 s and the next CLI call undoes it (measured 2026-11-07)
+
+`systemctl --user restart gmax.service` on the P3 before the fix:
+
+- A started, idle daemon: 0.16 s, with and without a live worker.
+- A daemon still starting (between "Watching 1 of 3 registered projects" and "Watching <root>"): 25.6 s. The journal has 40 s (04:52:09) and 53 s (05:01:52) earlier the same day.
+- At 04:50:30 no shutdown step logged for 90 s, then systemd killed the daemon and its worker ("State 'stop-sigterm' timed out. Killing.").
+
+Causes:
+
+- **A stop during startup waits for the native subscribe.** `unwatchProject` (`src/lib/daemon/watcher-manager.ts`) awaited the in-flight `subscriptionUpdates` promise. The @parcel/watcher subscribe of a large tree on Linux cannot be cancelled and takes 25 to 50 s; "Unwatched <root>" lands in the same millisecond the startup subscribe returns.
+- **The pool replaced the worker the stop signal killed.** `KillMode=control-group` signals every process in the unit. The worker exited before `destroy()` ran, late in `performShutdown`, so `handleWorkerExit` and `maybeRespawn` (`src/lib/workers/pool.ts`) forked a replacement ("respawn #1 after exit") during every stop with a live worker.
+- **The backstop could not win.** `SIGNAL_EXIT_BACKSTOP_MS` (`src/commands/watch.ts`) was 90 s, equal to the unit's `TimeoutStopSec`, so a wedged step ended in SIGKILL with no record of which step. The 04:50 step is not attributable from that journal and was not reproduced, since the store was compacted after it.
+- **A CLI call cancelled the stop.** Shutdown removes the socket and pid file first, so a CLI call during the drain finds no daemon and runs `systemctl --user start gmax.service` (`startUserDaemonService`, `src/lib/utils/service-startup.ts`). In the default job mode that start replaces the queued stop, and the unit starts again in the same second (finding 10, offline `fts-refresh`).
+
+Fixes (local commit):
+
+- `unwatchProject` does not wait for an in-flight subscribe once shutdown has begun; `subscribeWatcherNow` already unsubscribes when its processor was removed.
+- `WorkerPool.beginShutdown()`, called before the first await in `performShutdown`, stops every spawn and respawn, and fails queued work when the last worker exits.
+- The signal backstop is 45 s and names the step it was stuck in; `performShutdown` logs any step that takes 1 s or more (`shutdown step <name> took <s>s`).
+- The unit start runs with `--job-mode=fail`. A start while a stop job is queued fails ("Transaction for gmax.service/start is destructive", checked on the P3) and the CLI reports "gmax.service is stopping; a start would cancel that stop; no standalone daemon was started". An active or starting unit still succeeds, and a stopped one still starts.
+- The host's unit uses `KillMode=mixed`, written by the host's unit script: systemd signals only the daemon, which ends its workers after the drain.
+
+To hold a stop for maintenance: `touch ~/.gmax/autostart-disabled`, then `systemctl --user stop gmax.service`. While the file exists `daemonStartDeniedReason` (`src/lib/utils/autostart.ts`) refuses every CLI start of the daemon; remove it and start the unit when done.
+
 ## Plan
 
 One batch; each step lists its tests. Live-edit priority from `bad7365` stays.

@@ -325,6 +325,9 @@ export class WorkerPool {
   private existingBurst = 0;
   private nextId = 1;
   private destroyed = false;
+  // Set when the owner begins shutdown, before destroy(): a worker that exits
+  // from here on (a unit stop signals the whole cgroup) is not replaced.
+  private closing = false;
   private destroyPromise: Promise<void> | null = null;
   private readonly modulePath: string;
   private readonly execArgv: string[];
@@ -476,7 +479,12 @@ export class WorkerPool {
   }
 
   private maybeRespawn(reason: string, hasPendingTasks: boolean): boolean {
-    if (this.destroyed || this.spawnDeniedReason || this.respawnLimitReached)
+    if (
+      this.destroyed ||
+      this.closing ||
+      this.spawnDeniedReason ||
+      this.respawnLimitReached
+    )
       return false;
     this.consecutiveRespawns++;
     log(
@@ -563,8 +571,16 @@ export class WorkerPool {
       ) {
         this.maybeRespawn("exit", hasPendingTasks);
       }
+      if (this.closing && this.workers.length === 0)
+        this.rejectUnassignedTasks("Worker pool is shutting down");
       this.dispatch();
     }
+  }
+
+  /** Shutdown has begun: no worker is spawned or replaced from here on. */
+  beginShutdown(): void {
+    this.closing = true;
+    this.clearScaleUpTimer();
   }
 
   /** Stop dispatching to an unresponsive child, retaining native ownership. */
@@ -641,7 +657,7 @@ export class WorkerPool {
   }
 
   private spawnWorker(): boolean {
-    if (this.destroyed || this.spawnDeniedReason) return false;
+    if (this.destroyed || this.closing || this.spawnDeniedReason) return false;
     let worker: ProcessWorker;
     try {
       const quarantine = daemonStartDeniedReason();

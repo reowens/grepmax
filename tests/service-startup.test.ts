@@ -106,7 +106,13 @@ describe("managed startup without detached fallback", () => {
     expect(h.run.mock.calls).toEqual([
       [
         "systemctl",
-        ["--user", "--no-ask-password", "start", "gmax.service"],
+        [
+          "--user",
+          "--no-ask-password",
+          "start",
+          "--job-mode=fail",
+          "gmax.service",
+        ],
         { timeout: 5000, maxBuffer: 65536, encoding: "utf8" },
       ],
       [
@@ -132,7 +138,25 @@ describe("managed startup without detached fallback", () => {
     await expect(startUserDaemonService("gmax.service")).rejects.toThrow(
       "no standalone daemon was started",
     );
-    expect(h.run).toHaveBeenCalledTimes(1);
+    // The start, then the state read that names a stop in progress.
+    expect(h.run).toHaveBeenCalledTimes(2);
+  });
+  it("names a stop in progress instead of cancelling it", async () => {
+    h.run
+      .mockRejectedValueOnce(
+        Error("Transaction for gmax.service/start is destructive"),
+      )
+      .mockResolvedValueOnce({ stdout: "deactivating\n" });
+    await expect(startUserDaemonService("gmax.service")).rejects.toThrow(
+      "gmax.service is stopping; a start would cancel that stop; no standalone daemon was started",
+    );
+    expect(h.run.mock.calls[1]?.[1]).toEqual([
+      "--user",
+      "show",
+      "--property=ActiveState",
+      "--value",
+      "gmax.service",
+    ]);
   });
   it.each(["0\n", "not-a-pid\n", "-1\n"])(
     "does not claim success for MainPID %s",

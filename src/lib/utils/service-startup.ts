@@ -57,9 +57,12 @@ export async function startUserDaemonService(
     encoding: "utf8" as const,
   };
   try {
+    // job-mode=fail: a start never replaces a queued stop, so a CLI call that
+    // finds no daemon cannot cancel someone's `systemctl stop` and restart the
+    // unit under it. An active or starting unit still succeeds as before.
     await run(
       "systemctl",
-      ["--user", "--no-ask-password", "start", name],
+      ["--user", "--no-ask-password", "start", "--job-mode=fail", name],
       execOptions,
     );
     const { stdout } = await run(
@@ -72,7 +75,16 @@ export async function startUserDaemonService(
       throw new Error("the service has no running MainPID");
     return pid;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    let message = error instanceof Error ? error.message : String(error);
+    try {
+      const { stdout } = await run(
+        "systemctl",
+        ["--user", "show", "--property=ActiveState", "--value", name],
+        execOptions,
+      );
+      if (stdout.trim() === "deactivating")
+        message = `${name} is stopping; a start would cancel that stop`;
+    } catch {}
     throw new Error(
       `Failed to start ${name}: ${message}; no standalone daemon was started. Inspect: systemctl --user status ${name}`,
     );

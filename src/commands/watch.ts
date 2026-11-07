@@ -45,9 +45,11 @@ import {
 } from "../lib/utils/watcher-store";
 import { isGemma2Profile } from "../lib/workers/embeddings/gemma2";
 
-// Hard ceiling on signal-driven shutdown; comfortably above the daemon's own
-// 30s operation-drain grace so the orderly path normally wins.
-const SIGNAL_EXIT_BACKSTOP_MS = 90_000;
+// Hard ceiling on signal-driven shutdown: above the daemon's own 30s
+// operation-drain grace so the orderly path normally wins, and well under a
+// service manager's stop timeout (90s in the documented unit) so a wedged step
+// ends in this logged exit rather than a SIGKILL.
+const SIGNAL_EXIT_BACKSTOP_MS = 45_000;
 
 // A busy daemon misses the 2-second ping but still answers a pause once its
 // event loop frees up.
@@ -287,7 +289,7 @@ export const watch = new Command("watch")
         const shutdownOnSignal = (signal: string) => {
           const backstop = setTimeout(() => {
             console.error(
-              `[daemon] shutdown did not complete within ${SIGNAL_EXIT_BACKSTOP_MS / 1000}s of ${signal} — forcing exit`,
+              `[daemon] shutdown did not complete within ${SIGNAL_EXIT_BACKSTOP_MS / 1000}s of ${signal} (stuck in: ${daemon.shutdownStage ?? "start"}) — forcing exit`,
             );
             process.exit(1);
           }, SIGNAL_EXIT_BACKSTOP_MS);
