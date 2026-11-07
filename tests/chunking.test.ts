@@ -6,7 +6,9 @@ import {
 } from "../src/lib/index/chunker";
 
 describe("TreeSitterChunker fallback and splitting", () => {
-  it("splits large text into overlapping chunks with preserved ordering", async () => {
+  // Boundaries are content-defined and do not overlap: an overlap would tie
+  // each chunk's text to its neighbour's, so an edit would re-key both.
+  it("splits large text into ordered chunks that cover it once", async () => {
     const chunker = new TreeSitterChunker() as any;
     // Skip init and force fallback path
     chunker.initialized = true;
@@ -20,11 +22,11 @@ describe("TreeSitterChunker fallback and splitting", () => {
     expect(chunks.length).toBeGreaterThan(2);
     expect(chunks[0].startLine).toBe(0);
     expect(chunks[0].endLine).toBeGreaterThan(chunks[0].startLine);
-    // Ensure monotonic progression and overlap
     for (let i = 1; i < chunks.length; i++) {
-      expect(chunks[i].startLine).toBeLessThanOrEqual(chunks[i - 1].endLine);
+      expect(chunks[i].startLine).toBe(chunks[i - 1].endLine + 1);
       expect(chunks[i].endLine).toBeGreaterThan(chunks[i].startLine);
     }
+    expect(chunks[chunks.length - 1].endLine).toBe(lines.length - 1);
   });
 
   it("splits very long single-line content by characters", async () => {

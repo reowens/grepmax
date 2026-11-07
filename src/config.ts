@@ -150,7 +150,7 @@ export const CONFIG = {
   // reindex to take effect. Must equal the latest entry's `v` in
   // CHUNKER_VERSION_HISTORY below — see that list for per-version severity and
   // the user-facing note rendered by `gmax doctor` and the staleness hint.
-  CHUNKER_VERSION: 5,
+  CHUNKER_VERSION: 6,
 };
 
 /**
@@ -185,6 +185,11 @@ export const CHUNKER_VERSION_HISTORY: ReadonlyArray<{
     v: 5,
     severity: "additive",
     note: "decorated TS/TSX classes expose method chunks and symbols, including method decorators; reindex to recover missing methods.",
+  },
+  {
+    v: 6,
+    severity: "additive",
+    note: "chunk boundaries follow headings, blank lines and line content, so an edit re-embeds only nearby chunks; until a reindex, the first edit to each file re-embeds all of it.",
   },
 ];
 

@@ -247,8 +247,10 @@ export class TreeSitterChunker {
   // Tuned for speed: Fill the context window (512 tokens) more aggressively.
   private readonly MAX_CHUNK_LINES = CONFIG.MAX_CHUNK_LINES;
   private readonly MAX_CHUNK_CHARS = CONFIG.MAX_CHUNK_CHARS;
-  private readonly OVERLAP_LINES = 10;
   private readonly OVERLAP_CHARS = 200;
+  // Minimum distance between content-defined cuts, as a fraction of the
+  // chunk size limit; cuts land about twice this far apart on average.
+  private CUT_WINDOW = 0.45;
 
   async init() {
     if (this.initialized) return;
@@ -1210,44 +1212,119 @@ export class TreeSitterChunker {
     return sub;
   }
 
+  private chunkFits(chars: number, lines: number): boolean {
+    return lines <= this.MAX_CHUNK_LINES && chars <= this.MAX_CHUNK_CHARS;
+  }
+
   private splitIfTooBig(chunk: Chunk): Chunk[] {
-    const charCount = chunk.content.length;
     const lines = chunk.content.split("\n");
-    const lineCount = lines.length;
+    if (this.chunkFits(chunk.content.length, lines.length)) return [chunk];
+    if (lines.length === 1) return this.splitByChars(chunk);
 
-    if (
-      lineCount <= this.MAX_CHUNK_LINES &&
-      charCount <= this.MAX_CHUNK_CHARS
-    ) {
-      return [chunk];
+    return this.splitLines(lines).flatMap(([from, to]) => {
+      const sub = TreeSitterChunker.scopeSymbolsToContent({
+        ...chunk,
+        content: lines.slice(from, to).join("\n"),
+        startLine: chunk.startLine + from,
+        endLine: chunk.startLine + to - 1,
+      });
+      return sub.content.length > this.MAX_CHUNK_CHARS
+        ? this.splitByChars(sub)
+        : [sub];
+    });
+  }
+
+  /**
+   * Cut a run of lines into [from, to) segments whose boundaries come from the
+   * text itself, so an edit only moves the cuts near it and every other chunk
+   * keeps its text and its stored embedding.
+   *
+   * A line may start a chunk when it is the best-scoring candidate within
+   * CUT_WINDOW of it (measured in chunk-size units) and at least CUT_WINDOW
+   * from either end of the run. The score ranks markdown headings, then lines
+   * after a blank line, then a hash of the line's own text. A segment still
+   * over the size limits is split at its best candidate. Only a single line
+   * longer than MAX_CHUNK_CHARS comes back over the limit; the caller splits
+   * it by characters.
+   */
+  private splitLines(lines: string[]): Array<[number, number]> {
+    const n = lines.length;
+    const offset = new Float64Array(n + 1);
+    for (let i = 0; i < n; i++) {
+      offset[i + 1] =
+        offset[i] +
+        Math.max(
+          (lines[i].length + 1) / this.MAX_CHUNK_CHARS,
+          1 / this.MAX_CHUNK_LINES,
+        );
+    }
+    const score = lines.map((_, i) => cutScore(lines, i));
+    const segments: Array<[number, number]> = [];
+
+    const fits = (from: number, to: number): boolean => {
+      let chars = to - from - 1;
+      for (let i = from; i < to; i++) chars += lines[i].length;
+      return this.chunkFits(chars, to - from);
+    };
+
+    const emit = (from: number, to: number): void => {
+      if (to - from > 1 && !fits(from, to)) {
+        split(from, to);
+        return;
+      }
+      for (let i = from; i < to; i++) {
+        if (lines[i].trim().length > 0) {
+          segments.push([from, to]);
+          return;
+        }
+      }
+    };
+
+    const split = (from: number, to: number): void => {
+      const margin = 0.25;
+      let best = -1;
+      let bestInside = -1;
+      for (let k = from + 1; k < to; k++) {
+        if (score[k] < 0) continue;
+        if (best < 0 || score[k] > score[best]) best = k;
+        const balanced =
+          offset[k] - offset[from] >= margin && offset[to] - offset[k] >= margin;
+        if (balanced && (bestInside < 0 || score[k] > score[bestInside])) {
+          bestInside = k;
+        }
+      }
+      const at =
+        bestInside >= 0 ? bestInside : best >= 0 ? best : (from + to) >> 1;
+      emit(from, at);
+      emit(at, to);
+    };
+
+    if (fits(0, n)) {
+      emit(0, n);
+      return segments;
     }
 
-    if (charCount > this.MAX_CHUNK_CHARS && lineCount <= this.MAX_CHUNK_LINES) {
-      return this.splitByChars(chunk);
+    const window = this.CUT_WINDOW;
+    let start = 0;
+    for (let j = 1; j < n; j++) {
+      if (score[j] < 0) continue;
+      if (offset[j] < window || offset[n] - offset[j] < window) continue;
+      let isCut = true;
+      for (let k = j - 1; k >= 0 && offset[j] - offset[k] < window; k--) {
+        if (score[k] >= score[j]) {
+          isCut = false;
+          break;
+        }
+      }
+      for (let k = j + 1; isCut && k < n && offset[k] - offset[j] < window; k++) {
+        if (score[k] > score[j]) isCut = false;
+      }
+      if (!isCut) continue;
+      emit(start, j);
+      start = j;
     }
-
-    const subChunks: Chunk[] = [];
-    const stride = Math.max(1, this.MAX_CHUNK_LINES - this.OVERLAP_LINES);
-
-    // Simplified splitting logic
-    for (let i = 0; i < lines.length; i += stride) {
-      const end = Math.min(i + this.MAX_CHUNK_LINES, lines.length);
-      const subLines = lines.slice(i, end);
-      if (subLines.length < 3 && i > 0) continue;
-
-      subChunks.push(
-        TreeSitterChunker.scopeSymbolsToContent({
-          ...chunk,
-          content: subLines.join("\n"),
-          startLine: chunk.startLine + i,
-          endLine: chunk.startLine + end - 1,
-        }),
-      );
-    }
-
-    return subChunks.flatMap((sc) =>
-      sc.content.length > this.MAX_CHUNK_CHARS ? this.splitByChars(sc) : [sc],
-    );
+    emit(start, n);
+    return segments;
   }
 
   private splitByChars(chunk: Chunk): Chunk[] {
@@ -1277,25 +1354,43 @@ export class TreeSitterChunker {
 
   private fallbackChunk(content: string, filePath: string): Chunk[] {
     const lines = content.split("\n");
-    const chunks: Chunk[] = [];
-    const stride = Math.max(1, this.MAX_CHUNK_LINES - this.OVERLAP_LINES);
     const context = [`File: ${filePath}`];
-
-    for (let i = 0; i < lines.length; i += stride) {
-      const end = Math.min(i + this.MAX_CHUNK_LINES, lines.length);
-      const subLines = lines.slice(i, end);
-      if (subLines.length === 0) continue;
-
-      const subContent = subLines.join("\n");
-      chunks.push({
-        content: subContent,
-        startLine: i,
-        endLine: i + subLines.length - 1,
-        type: "block",
-        context,
-      });
-    }
-
-    return chunks;
+    return this.splitLines(lines).map(([from, to]) => ({
+      content: lines.slice(from, to).join("\n"),
+      startLine: from,
+      endLine: to - 1,
+      type: "block",
+      context,
+    }));
   }
+}
+
+const HEADING_RE = /^(#{1,6})\s/;
+
+function lineHash(text: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+/**
+ * How good a place line i is to start a chunk, from its own text and whether
+ * the line before it is blank: headings by level, then paragraph and
+ * statement starts after a blank line, then a hash so dense runs still get
+ * stable cut points. -1 means never (a blank line).
+ */
+function cutScore(lines: string[], i: number): number {
+  const line = lines[i];
+  const text = line.trim();
+  if (text.length === 0) return -1;
+  const heading = HEADING_RE.exec(line);
+  let rank = 0;
+  if (heading) rank = 10 - heading[1].length;
+  else if (i > 0 && lines[i - 1].trim().length === 0) {
+    rank = /^\S/.test(line) ? 3 : 2;
+  }
+  return rank * 2 ** 32 + lineHash(text);
 }
