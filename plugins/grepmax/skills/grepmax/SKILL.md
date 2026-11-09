@@ -297,6 +297,6 @@ gmax llm on/off/start/stop/status          # local LLM server — see the warnin
 
 ## If search fails or returns nothing
 
-1. Check if the project is added: `Bash(gmax status)`
-2. If not added: `Bash(gmax add)`
-3. If stale: `Bash(gmax index)` to re-index (auto-detects and repairs cache/vector mismatches)
+1. Report the failure line to the user as gmax printed it. `Bash(gmax status)` is read-only and may be run to add its state to that report.
+2. Fall back to `Grep` or `rg` for the search.
+3. Do not run `gmax add`, `gmax index` or `gmax repair`. Adding and indexing a project is the user's job, not an agent's.
