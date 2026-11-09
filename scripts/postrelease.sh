@@ -7,6 +7,40 @@ set -euo pipefail
 VERSION="${npm_package_version:-$(node -p "require('./package.json').version")}"
 TAG="v${VERSION}"
 
+# A host whose daemon is the gmax.service systemd user unit must get the new
+# build where that unit loads it from, which need not be `npm prefix -g`, and the
+# handover must go through systemd so the daemon stays inside the unit's cgroup
+# and limits. Hosts without systemd, a user bus or the unit keep the plain path.
+UNIT=""
+UNIT_ACTIVE=""
+UNIT_PREFIX=""
+UNIT_NODE_DIR=""
+UNIT_NPM="npm"
+unit_prop() {
+  systemctl --user show gmax.service -p "$1" --value 2>/dev/null || true
+}
+detect_unit() {
+  command -v systemctl >/dev/null 2>&1 || return 0
+  [ "$(unit_prop LoadState)" = "loaded" ] || return 0
+  UNIT_ACTIVE="$(unit_prop ActiveState)"
+  local file_state exec_start entry node
+  file_state="$(unit_prop UnitFileState)"
+  [ "${UNIT_ACTIVE}" = "active" ] || [ "${file_state}" = "enabled" ] || return 0
+  UNIT="gmax.service"
+  exec_start="$(unit_prop ExecStart)"
+  entry="$(printf '%s\n' "${exec_start}" | grep -oE '[^ ;"=]*/lib/node_modules/grepmax/dist/bin\.js' | head -n 1 || true)"
+  if [ -z "${entry}" ]; then
+    echo "WARN: cannot find grepmax/dist/bin.js in ${UNIT} ExecStart; installing into the default prefix." >&2
+    return 0
+  fi
+  UNIT_PREFIX="${entry%/lib/node_modules/grepmax/dist/bin.js}"
+  node="$(printf '%s\n' "${exec_start}" | sed -nE 's/.*path=([^ ;]+).*/\1/p' | head -n 1 || true)"
+  if [ -n "${node}" ] && [ -x "$(dirname "${node}")/npm" ]; then
+    UNIT_NODE_DIR="$(dirname "${node}")"
+    UNIT_NPM="${UNIT_NODE_DIR}/npm"
+  fi
+}
+
 case "${1:-}" in
   "")
     echo "==> Pushing main + ${TAG}"
@@ -20,10 +54,17 @@ case "${1:-}" in
     exit 0
     ;;
   --install)
+    detect_unit
     echo "==> Installing published grepmax@${VERSION}"
     # A missing version or failed install is an actionable failure, not a poll loop.
     # Revalidate cached metadata without clearing unrelated npm cache entries.
-    npm install -g --prefer-online "grepmax@${VERSION}"
+    if [ -n "${UNIT}" ] && [ -n "${UNIT_PREFIX}" ]; then
+      echo "    into ${UNIT_PREFIX}, where ${UNIT} loads grepmax from"
+      PATH="${UNIT_NODE_DIR:+${UNIT_NODE_DIR}:}${PATH}" "${UNIT_NPM}" install -g --prefix "${UNIT_PREFIX}" \
+        --prefer-online "grepmax@${VERSION}"
+    else
+      npm install -g --prefer-online "grepmax@${VERSION}"
+    fi
     ;;
   *)
     echo "Usage: bash scripts/postrelease.sh [--install]" >&2
@@ -85,8 +126,38 @@ process.exit(1);
 NODE
 }
 
+# Under the systemd unit the handover is `systemctl --user restart`, which stops
+# the daemon within the unit's TimeoutStopSec and starts the new build with the
+# unit's limits. An enabled unit that is not running was stopped on purpose.
+confirm_version() {
+  for i in $(seq 1 30); do
+    RUNNING="$(daemon_version || true)"
+    if [ "${RUNNING}" = "${VERSION}" ]; then
+      echo "    daemon serving ${VERSION} (confirmed over IPC)"
+      return 0
+    fi
+    if [ "${i}" -eq 30 ]; then
+      echo "WARN: daemon reports '${RUNNING:-no response}', expected ${VERSION}." >&2
+      echo "      Restart manually: $1" >&2
+    fi
+    sleep 1
+  done
+}
+
 if daemon_start_denied; then
   echo "==> Host quarantine is active — preserving it and skipping daemon restart"
+elif [ -n "${UNIT}" ]; then
+  if [ "${UNIT_ACTIVE}" != "active" ]; then
+    echo "==> ${UNIT} is not active; skipping restart"
+  else
+    echo "==> Restarting ${UNIT} onto ${VERSION}"
+    if systemctl --user restart "${UNIT}"; then
+      confirm_version "systemctl --user restart ${UNIT}"
+    else
+      echo "WARN: systemctl --user restart ${UNIT} failed; the daemon may still run the previous build." >&2
+      echo "      Restart manually: systemctl --user restart ${UNIT}" >&2
+    fi
+  fi
 elif pgrep -x gmax-daemon >/dev/null 2>&1; then
   echo "==> Restarting daemon onto ${VERSION}"
   # Never fail the release here: the publish is already live and irreversible,
