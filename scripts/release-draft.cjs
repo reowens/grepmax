@@ -44,8 +44,8 @@ function must(command, args, options, exec = run) {
 // release.yml is the contract, so its pinned toolchain is read from it.
 function releaseToolchain(root) {
   const workflow = fs.readFileSync(path.join(root, '.github/workflows/release.yml'), 'utf8');
-  const node = workflow.match(/node-version:\s*'([0-9.]+)'/)?.[1];
-  const pnpm = workflow.match(/pnpm\/action-setup@[\s\S]*?version:\s*'([0-9.]+)'/)?.[1];
+  const node = workflow.match(/node-version:\s*['"]([0-9.]+)['"]/)?.[1];
+  const pnpm = workflow.match(/pnpm\/action-setup@[\s\S]*?version:\s*['"]([0-9.]+)['"]/)?.[1];
   const npm = workflow.match(/npm install --global npm@([0-9.]+)/)?.[1];
   if (!node || !pnpm || !npm) throw new Error('release.yml no longer names its node, npm and pnpm versions');
   return { node, npm, pnpm };

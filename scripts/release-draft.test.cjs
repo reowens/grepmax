@@ -67,6 +67,21 @@ test('release.yml pins are read from the workflow contract', () => {
   assert.deepEqual(release.releaseToolchain(repository), toolchain);
 });
 
+test('release.yml pins are read in either quote style', (t) => {
+  for (const quote of ["'", '"']) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'grepmax-release-quotes-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    fs.mkdirSync(path.join(root, '.github/workflows'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.github/workflows/release.yml'), [
+      `          node-version: ${quote}26.12.0${quote}`,
+      '        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413',
+      `          version: ${quote}12.4.2${quote}`,
+      '          npm install --global npm@11.20.0 --ignore-scripts',
+    ].join('\n'));
+    assert.deepEqual(release.releaseToolchain(root), toolchain);
+  }
+});
+
 test('npm must match exactly; node may differ only by a patch release', () => {
   assert.equal(release.toolchainRefusal({ node: 'v26.12.1', npm: '11.20.0' }, toolchain), null);
   assert.equal(release.toolchainRefusal({ node: 'v26.12.0', npm: '11.20.0' }, toolchain), null);
