@@ -490,17 +490,21 @@ function nativeRefusal(value: unknown): NativeMaintenanceRefusal {
   log("bounded", `Native refusal reason: ${reason.slice(0, 512) || "(none)"}`);
   const category = /recover.required|unfinished.*receipt/i.test(reason)
     ? "previous cleanup requires native recovery"
-    : /index.*(?:fit|budget|bound|footprint)/i.test(reason)
-      ? "search-index updates do not fit the total-write cap"
-      : /disk|space|free.bytes|margin|ENOSPC/i.test(reason)
-        ? "native disk headroom unavailable"
-        : /ledger|budget|charge|write.cap|journal/i.test(reason)
-          ? "native write budget or ledger verification refused"
-          : /owner|lease|helper.*alive/i.test(reason)
-            ? "exclusive store ownership refused"
-            : /head|version|tag|fingerprint|candidate/i.test(reason)
-              ? "protected table state or recovery proof changed"
-              : "native cleanup admission or verification refused";
+    : /segment.bound/i.test(reason)
+      ? "search-index segment bound reached"
+      : /segment.coverage|coverage is not current|fragment remap/i.test(reason)
+        ? "search-index segment coverage could not be validated"
+        : /index.*(?:fit|budget|bound|footprint)/i.test(reason)
+          ? "search-index updates do not fit the total-write cap"
+          : /disk|space|free.bytes|margin|ENOSPC/i.test(reason)
+            ? "native disk headroom unavailable"
+            : /ledger|budget|charge|write.cap|journal/i.test(reason)
+              ? "native write budget or ledger verification refused"
+              : /owner|lease|helper.*alive/i.test(reason)
+                ? "exclusive store ownership refused"
+                : /head|version|tag|fingerprint|candidate/i.test(reason)
+                  ? "protected table state or recovery proof changed"
+                  : "native cleanup admission or verification refused";
   return new NativeMaintenanceRefusal(category);
 }
 

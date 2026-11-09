@@ -122,6 +122,42 @@ describe("metered native child lifecycle", () => {
     );
   });
 
+  it.each([
+    ["Relocation index segment bound", "search-index segment bound reached"],
+    [
+      "Logical index segment bound reached",
+      "search-index segment bound reached",
+    ],
+    [
+      "CreateIndex: cannot validate segment coverage built at dataset version 1623",
+      "search-index segment coverage could not be validated",
+    ],
+    [
+      "Merge source coverage is not current",
+      "search-index segment coverage could not be validated",
+    ],
+    [
+      "Deferred fragment remap refuses segment merge",
+      "search-index segment coverage could not be validated",
+    ],
+    [
+      "Index remapping cannot fit budget",
+      "search-index updates do not fit the total-write cap",
+    ],
+    [
+      "Expected head version changed",
+      "protected table state or recovery proof changed",
+    ],
+  ])("categorizes the native refusal %j", async (reason, category) => {
+    const f = fixture({ phase: "error", reason });
+    await expect(
+      runBoundedMaintenance("/fixture", f.lease, 7, f.runtime, {
+        open: vi.fn(),
+        drain: vi.fn(async () => {}),
+      }),
+    ).rejects.toThrow(`${category}; bounded cleanup completion is uncertain`);
+  });
+
   it("names the refused operation and defers operations only on a capable helper", async () => {
     const refusal = {
       phase: "error",
