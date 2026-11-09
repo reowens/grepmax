@@ -247,6 +247,61 @@ describe("daemon bounded deleted-row cleanup lifecycle", () => {
     }
   });
 
+  it("waits for the first backoff to end when every operation is refused", async () => {
+    vi.useFakeTimers();
+    vi.mocked(prepareBoundedMaintenanceRuntime).mockResolvedValue({
+      executable: "fixture",
+      incrementalRepairProtocol: 1,
+      deferredOperationsProtocol: 1,
+    });
+    try {
+      const { d } = fixture();
+      const order = [
+        "cleanup",
+        "index-refresh",
+        "row-relocation",
+        "orphan-reclamation",
+      ];
+      // The helper refuses the first operation it is offered and finds no work
+      // when every operation is deferred.
+      d.vectorDb.cleanupDeletedRows.mockImplementation(
+        async (...args: unknown[]) => {
+          const deferred = (args[4] as string[] | undefined) ?? [];
+          const operation = order.find((name) => !deferred.includes(name));
+          return operation
+            ? {
+                ...completed,
+                status: "failed",
+                operation,
+                reason: "Relocation index segment bound",
+              }
+            : { ...completed, status: "skipped", reason: "no work" };
+        },
+      );
+      const calls = () => d.vectorDb.cleanupDeletedRows.mock.calls.length;
+      d.startVersionCleanupLoop();
+      d.startBoundedCleanupLoop();
+      await vi.advanceTimersByTimeAsync(13 * 60_000);
+      expect(calls()).toBe(4);
+      // All 4 are deferred: no attempt until cleanup's 10 minutes end at 20 min.
+      await vi.advanceTimersByTimeAsync(7 * 60_000 - 1);
+      expect(calls()).toBe(4);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(calls()).toBe(5);
+      expect(d.vectorDb.cleanupDeletedRows.mock.calls[4][4]).toEqual([
+        "index-refresh",
+        "row-relocation",
+        "orphan-reclamation",
+      ]);
+      clearInterval(d.cleanupInterval);
+      clearInterval(d.boundedCleanupInterval);
+    } finally {
+      vi.mocked(prepareBoundedMaintenanceRuntime).mockResolvedValue({
+        executable: "fixture",
+      });
+    }
+  });
+
   it("waits out an operation's backoff when the helper cannot defer it", async () => {
     vi.useFakeTimers();
     const { d } = fixture();
@@ -454,5 +509,75 @@ describe("daemon bounded deleted-row cleanup lifecycle", () => {
     expect(d.watcherManager.resumePaused).toHaveBeenCalledOnce();
     expect(d.watcherManager.isPaused).toBe(false);
     expect(daemon.operationStatus()).toBe("open");
+  });
+});
+
+describe("watched batches behind an exclusive operation", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  function holdExclusive() {
+    const daemon = new Daemon();
+    const d = daemon as any;
+    vi.spyOn(d, "assertHeavyOperationAdmission").mockImplementation(() => {});
+    let release!: () => void;
+    const exclusive = d.operations.runExclusive(
+      "bounded-maintenance",
+      async () => {},
+      () => new Promise<void>((resolve) => (release = resolve)),
+    );
+    const runBatch = <T>(signal: AbortSignal, fn: () => Promise<T>) =>
+      d.watcherManager.deps.runProjectOperation(
+        "/fixture",
+        "watch-batch",
+        signal,
+        fn,
+      ) as Promise<T>;
+    return { d, exclusive, release: () => release(), runBatch };
+  }
+
+  it("wait with a backoff and run once the store is free", async () => {
+    vi.useFakeTimers();
+    const { d, exclusive, release, runBatch } = holdExclusive();
+    await vi.advanceTimersByTimeAsync(0);
+    const shared = vi.spyOn(d.operations, "runShared");
+    const fn = vi.fn(async () => "written");
+    const settled = runBatch(new AbortController().signal, fn).then(
+      (value) => ({ value }),
+      (error: unknown) => ({ error }),
+    );
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fn).not.toHaveBeenCalled();
+    // 250 ms doubling to 5 s: about 15 refusals a minute, not thousands.
+    expect(shared.mock.calls.length).toBeGreaterThan(1);
+    expect(shared.mock.calls.length).toBeLessThanOrEqual(16);
+    release();
+    await exclusive;
+    await vi.advanceTimersByTimeAsync(5000);
+    await expect(settled).resolves.toEqual({ value: "written" });
+    expect(fn).toHaveBeenCalledOnce();
+  });
+
+  it("stop waiting when the batch is cancelled", async () => {
+    vi.useFakeTimers();
+    const { exclusive, release, runBatch } = holdExclusive();
+    await vi.advanceTimersByTimeAsync(0);
+    const ac = new AbortController();
+    const fn = vi.fn(async () => "written");
+    const settled = runBatch(ac.signal, fn).then(
+      (value) => ({ value }),
+      (error: unknown) => ({ error }),
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    ac.abort();
+    await expect(settled).resolves.toMatchObject({
+      error: expect.objectContaining({ name: "AbortError" }),
+    });
+    release();
+    await exclusive;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fn).not.toHaveBeenCalled();
   });
 });

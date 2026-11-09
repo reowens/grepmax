@@ -69,6 +69,7 @@ import { KeyedMutex } from "../utils/keyed-mutex";
 import { rotateLogFds } from "../utils/log-rotate";
 import { debug as dbg, log as dlog } from "../utils/logger";
 import {
+  OperationBusyError,
   OperationClosedError,
   OperationCoordinator,
 } from "../utils/operation-coordinator";
@@ -235,6 +236,21 @@ const BOUNDED_OPERATIONS: readonly BoundedOperation[] = [
   "orphan-reclamation",
 ];
 
+function busyRetryDelay(ms: number, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", abort, { once: true });
+  });
+}
+
 /** 10 minutes after a first refusal, then 1 h doubling to 24 h. */
 function boundedRefusalBackoffMs(count: number): number {
   if (count < 2) return 10 * 60_000;
@@ -328,6 +344,7 @@ export class Daemon {
       // the scan yields. Project removal/reindex quiesces the watcher first.
       if (name === "watch-catchup")
         return this.runSharedOperation(name, signal, fn);
+      if (name === "watch-batch") return this.runWatchBatch(root, signal, fn);
       return this.withProjectLock(root, signal, () =>
         this.runSharedOperation(name, signal, fn),
       );
@@ -1371,8 +1388,13 @@ export class Daemon {
    * refusal that repeats with the same reason backs off from 1 h to 24 h. Refusals count per native
    * operation: a refused operation is deferred while the others keep the
    * 1-minute cadence, and a refusal that names no operation delays the whole
-   * attempt. Success or a new reason resets that operation's count. */
+   * attempt. Success or a new reason resets that operation's count. When
+   * every operation is backing off, the attempt waits for the first to end. */
   private boundedCleanupDelayMs(): number {
+    return Math.max(this.boundedOutcomeDelayMs(), this.allDeferredDelayMs());
+  }
+
+  private boundedOutcomeDelayMs(): number {
     const outcome = this.lastBoundedCleanupOutcome;
     if (outcome?.status === "completed") return 60_000;
     if (outcome?.status !== "failed") return 10 * 60_000;
@@ -1380,6 +1402,19 @@ export class Daemon {
     return boundedRefusalBackoffMs(
       this.boundedCleanupRefusals.get("attempt")?.count ?? 1,
     );
+  }
+
+  private allDeferredDelayMs(): number {
+    let firstEnd = Number.POSITIVE_INFINITY;
+    for (const operation of BOUNDED_OPERATIONS) {
+      const refusal = this.boundedCleanupRefusals.get(operation);
+      if (!refusal) return 0;
+      firstEnd = Math.min(
+        firstEnd,
+        refusal.at + boundedRefusalBackoffMs(refusal.count),
+      );
+    }
+    return firstEnd - this.lastBoundedCleanupAttempt;
   }
 
   private deferredBoundedOperations(now = Date.now()): BoundedOperation[] {
@@ -2081,6 +2116,31 @@ export class Daemon {
   }
 
   // --- Per-project operation serialization ---
+
+  /** A watched batch refused because an exclusive operation holds the store
+   * waits and tries again, from 250 ms doubling to 5 s. Requeueing at once
+   * spun thousands of refusals a minute. Only a refusal before the batch
+   * starts is retried, and the wait holds no project lock. */
+  private async runWatchBatch<T>(
+    root: string,
+    signal: AbortSignal | undefined,
+    fn: (signal: AbortSignal) => Promise<T>,
+  ): Promise<T> {
+    for (let delayMs = 250; ; delayMs = Math.min(delayMs * 2, 5000)) {
+      let started = false;
+      try {
+        return await this.withProjectLock(root, signal, () =>
+          this.runSharedOperation("watch-batch", signal, (operationSignal) => {
+            started = true;
+            return fn(operationSignal);
+          }),
+        );
+      } catch (error) {
+        if (started || !(error instanceof OperationBusyError)) throw error;
+      }
+      await busyRetryDelay(delayMs, signal);
+    }
+  }
 
   private async withProjectLock<T>(
     root: string,
