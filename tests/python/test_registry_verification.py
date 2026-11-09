@@ -5,6 +5,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import tempfile
 import textwrap
 import unittest
@@ -19,10 +20,16 @@ class RegistryVerificationTests(unittest.TestCase):
         "tarball": "https://registry.npmjs.org/grepmax/-/grepmax-0.26.94.tgz"
     }}).encode()
 
+    @staticmethod
+    def deadline():
+        workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/release.yml").read_text()
+        return int(re.search(r"deadline = time\.monotonic\(\) \+ (\d+)", workflow).group(1))
+
     def run_verifier(self, actions, fallback=None):
         workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/release.yml").read_text()
         section = workflow.split("      - name: Verify registry bytes\n", 1)[1]
         code = textwrap.dedent(section.split("          python3 - <<'PY'\n", 1)[1].split("          PY\n", 1)[0])
+        deadline = self.deadline()
         now = 0
         requests, sleeps = [], []
 
@@ -36,7 +43,7 @@ class RegistryVerificationTests(unittest.TestCase):
         def urlopen(url, timeout):
             nonlocal now
             self.assertGreater(timeout, 0)
-            self.assertLessEqual(timeout, 480 - now)
+            self.assertLessEqual(timeout, deadline - now)
             requests.append((url, timeout))
             action = actions.pop(0) if actions else fallback
             if isinstance(action, BaseException):
@@ -118,20 +125,20 @@ class RegistryVerificationTests(unittest.TestCase):
         error, requests, sleeps, summary = self.run_verifier([], fallback=TimeoutError("persistent timeout"))
         self.assertIsInstance(error, TimeoutError)
         self.assertIn("publication must not be retried", str(error))
-        self.assertEqual(requests[-1][1], 20)
-        self.assertEqual(sleeps[-1], 5)
-        self.assertLess(len(requests), 20)
+        self.assertEqual(sum(timeout for _, timeout in requests) + sum(sleeps), self.deadline())
+        self.assertTrue(all(timeout <= 20 for _, timeout in requests))
+        self.assertLess(len(requests), self.deadline() // 15)
         self.assertIsNone(summary)
 
     def test_tarball_request_is_capped_to_remaining_deadline(self):
-        error, requests, sleeps, summary = self.run_verifier([(475, self.metadata), self.payload])
+        error, requests, sleeps, summary = self.run_verifier([(self.deadline() - 5, self.metadata), self.payload])
         self.assertIsNone(error)
         self.assertEqual(requests[-1][1], 5)
         self.assertEqual(sleeps, [])
         self.assertTrue(summary)
 
     def test_deadline_between_metadata_and_tarball_refuses_download(self):
-        error, requests, sleeps, summary = self.run_verifier([(480, self.metadata)])
+        error, requests, sleeps, summary = self.run_verifier([(self.deadline(), self.metadata)])
         self.assertIsInstance(error, TimeoutError)
         self.assertEqual(len(requests), 1)
         self.assertEqual(sleeps, [])
