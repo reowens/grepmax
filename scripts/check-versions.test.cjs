@@ -162,6 +162,9 @@ dependencies = [
 [[package]]
 name = "lance"
 version = "14.0.2"
+dependencies = [
+ "arrow-array 58.4.1",
+]
 
 [[package]]
 name = "tempfile"
@@ -184,6 +187,13 @@ function npmEntry(versions, { latest = Object.keys(versions).at(-1), dependencie
   };
 }
 
+// crates.io's crate document: max_stable_version and every published version.
+function crateEntry(versions, { yanked = [] } = {}) {
+  const stable = versions.filter(version => !version.includes('-') && !yanked.includes(version));
+  return { crate: { max_stable_version: stable.sort((a, b) => a.localeCompare(b, 'en', { numeric: true })).at(-1) },
+    versions: versions.map(num => ({ num, yanked: yanked.includes(num) })) };
+}
+
 function pypiEntry(releases) {
   return { releases: Object.fromEntries(Object.entries(releases).map(([version, file]) => [version, [{ yanked: false, requires_python: null, ...file }]])) };
 }
@@ -203,7 +213,9 @@ function registry() {
     'https://crates.io/api/v1/crates/lancedb/0.41.0/dependencies': { dependencies: [
       { crate_id: 'lance', req: '=14.0.2', kind: 'normal' }, { crate_id: 'lance-testing', req: '=14.0.2', kind: 'dev' }] },
     'https://crates.io/api/v1/crates/lance': { crate: { max_stable_version: '14.0.2', max_version: '15.0.0-beta.3' } },
-    'https://crates.io/api/v1/crates/arrow-array': { crate: { max_stable_version: '58.4.1' } },
+    'https://crates.io/api/v1/crates/lance/14.0.2/dependencies': { dependencies: [
+      { crate_id: 'arrow-array', req: '^58.0.0', kind: 'normal' }, { crate_id: 'tempfile', req: '^3', kind: 'dev' }] },
+    'https://crates.io/api/v1/crates/arrow-array': crateEntry(['57.0.0', '58.4.1']),
     'https://crates.io/api/v1/crates/tokio': { crate: { max_stable_version: '1.48.0' } },
     'https://crates.io/api/v1/crates/anyhow': { crate: { max_stable_version: '1.0.100' } },
     'https://crates.io/api/v1/crates/tempfile': { crate: { max_stable_version: '3.23.0' } },
@@ -211,6 +223,7 @@ function registry() {
       '2.2.5': {}, '2.2.6': { requires_python: '>=3.10' }, '2.4.6': { requires_python: '>=3.11' }, '2.5.4': { requires_python: '>=3.12' },
       '2.6.0rc1': { requires_python: '>=3.12' }, '2.5.5': { yanked: true } }),
     'https://pypi.org/pypi/six/json': pypiEntry({ '1.16.0': {}, '1.17.0': { requires_python: '!=3.0.*,!=3.1.*,>=2.7' } }),
+    'https://pypi.org/pypi/numpy/2.5.4/json': { info: { requires_dist: ["six; python_full_version >= '3.11'", "six<1.17; extra == 'dev'"] } },
   };
 }
 
@@ -264,11 +277,76 @@ test('npm: onnxruntime-node is held to the version the latest transformers depen
 
 test('rust: crates are judged against the latest stable, and lance against what LanceDB embeds', async t => {
   const { run, answers } = options(t);
-  answers['https://crates.io/api/v1/crates/arrow-array'] = { crate: { max_stable_version: '60.1.0', max_version: '61.0.0-rc.1' } };
+  answers['https://crates.io/api/v1/crates/lance/14.0.2/dependencies'].dependencies[0].req = '>=58';
+  answers['https://crates.io/api/v1/crates/arrow-array'] = crateEntry(['58.4.1', '60.1.0', '61.0.0-rc.1']);
   answers['https://crates.io/api/v1/crates/tempfile'] = { crate: { max_stable_version: '3.24.0' } };
   answers['https://crates.io/api/v1/crates/lancedb/0.41.0/dependencies'].dependencies[0].req = '=14.0.3';
-  assert.deepEqual((await run()).lines, ['cargo lance 14.0.2, LanceDB 0.41.0 embeds Lance 14.0.3',
+  const result = await run();
+  assert.deepEqual(result.lines, ['cargo lance 14.0.2, LanceDB 0.41.0 embeds Lance 14.0.3',
     'cargo arrow-array 58.4.1, latest 60.1.0', 'cargo tempfile 3.23.0, latest 3.24.0']);
+  assert.deepEqual(result.held, []);
+});
+
+test('rust: lance follows LanceDB, not a newer Lance on crates.io', async t => {
+  const { run, answers, write, root } = options(t);
+  answers['https://crates.io/api/v1/crates/lance'] = { crate: { max_stable_version: '15.0.0' } };
+  const current = await run();
+  assert.deepEqual(current.lines, []);
+  assert.deepEqual(current.held, ['cargo lance 14.0.2, held by LanceDB 0.41.0 (=14.0.2); latest 15.0.0']);
+  const lock = fs.readFileSync(path.join(root, 'lance-maintenance/native/Cargo.lock'), 'utf8');
+  write('lance-maintenance/native/Cargo.lock', lock.replace('name = "lance"\nversion = "14.0.2"', 'name = "lance"\nversion = "15.0.0"'));
+  for (const [file, text] of Object.entries(ENGINE_FILES)) write(file, text('15.0.0'));
+  answers['https://crates.io/api/v1/crates/lance/15.0.0/dependencies'] = answers['https://crates.io/api/v1/crates/lance/14.0.2/dependencies'];
+  const ahead = await run();
+  assert.deepEqual(ahead.lines, ['cargo lance 15.0.0, LanceDB 0.41.0 embeds Lance 14.0.2']);
+  assert.deepEqual(ahead.held, []);
+});
+
+test('rust: a crate a parent holds below its latest is current at the newest release the parent admits', async t => {
+  const { run, answers, fetched } = options(t);
+  answers['https://crates.io/api/v1/crates/arrow-array'] = crateEntry(['57.0.0', '58.4.1', '58.4.2', '59.0.0', '60.1.0', '58.5.0-rc.1'], { yanked: ['58.4.2'] });
+  const result = await run();
+  assert.deepEqual(result.lines, []);
+  assert.deepEqual(result.held, ['cargo arrow-array 58.4.1, held by lance 14.0.2 (^58.0.0); latest 60.1.0']);
+  assert.ok(fetched.includes('https://crates.io/api/v1/crates/lance/14.0.2/dependencies'));
+  answers['https://crates.io/api/v1/crates/arrow-array'] = crateEntry(['58.4.1', '58.5.0', '60.1.0']);
+  assert.deepEqual((await run()).lines, ['cargo arrow-array 58.4.1, held to 58.5.0 by lance 14.0.2 (^58.0.0)']);
+});
+
+test('rust: every parent bounds the held version, and the loosest one is named', async t => {
+  const { run, answers, write, root } = options(t);
+  const lock = fs.readFileSync(path.join(root, 'lance-maintenance/native/Cargo.lock'), 'utf8');
+  write('lance-maintenance/native/Cargo.lock', `${lock}
+[[package]]
+name = "arrow-ipc"
+version = "58.4.1"
+dependencies = [
+ "arrow-array 58.4.1",
+]
+`);
+  answers['https://crates.io/api/v1/crates/arrow-ipc/58.4.1/dependencies'] = { dependencies: [{ crate_id: 'arrow-array', req: '^58.4.1', kind: 'normal' }] };
+  answers['https://crates.io/api/v1/crates/arrow-array'] = crateEntry(['58.0.0', '58.4.1', '60.1.0']);
+  assert.deepEqual((await run()).held, ['cargo arrow-array 58.4.1, held by lance 14.0.2 (^58.0.0) and 1 other parent; latest 60.1.0']);
+  answers['https://crates.io/api/v1/crates/arrow-ipc/58.4.1/dependencies'].dependencies[0].req = '~58.3';
+  assert.deepEqual((await run()).lines, ['cargo arrow-array 58.4.1, held to no release by lance 14.0.2 (^58.0.0) and 1 other parent']);
+});
+
+test('rust: Cargo requirements', () => {
+  const admits = (requirement, versions) => versions.filter(version => check.cargoAdmits(requirement, version));
+  const versions = ['0.0.3', '0.0.4', '0.1.0', '0.2.5', '1.0.0', '1.2.0', '1.2.3', '1.2.9', '1.3.0', '2.0.0'];
+  assert.deepEqual(admits('^1.2.3', versions), ['1.2.3', '1.2.9', '1.3.0']);
+  assert.deepEqual(admits('1.2', versions), ['1.2.0', '1.2.3', '1.2.9', '1.3.0']);
+  assert.deepEqual(admits('^0.2', versions), ['0.2.5']);
+  assert.deepEqual(admits('^0.0.3', versions), ['0.0.3']);
+  assert.deepEqual(admits('~1.2', versions), ['1.2.0', '1.2.3', '1.2.9']);
+  assert.deepEqual(admits('=1.2', versions), ['1.2.0', '1.2.3', '1.2.9']);
+  assert.deepEqual(admits('=1.2.3', versions), ['1.2.3']);
+  assert.deepEqual(admits('1.*', versions), ['1.0.0', '1.2.0', '1.2.3', '1.2.9', '1.3.0']);
+  assert.deepEqual(admits('>=1.2.3, <1.3', versions), ['1.2.3', '1.2.9']);
+  assert.deepEqual(admits('>1.2', versions), ['1.3.0', '2.0.0']);
+  assert.deepEqual(admits('<=1.2', versions), ['0.0.3', '0.0.4', '0.1.0', '0.2.5', '1.0.0', '1.2.0', '1.2.3', '1.2.9']);
+  assert.deepEqual(admits('*', versions), versions);
+  assert.throws(() => check.cargoAdmits('latest', '1.0.0'), /Could not read Cargo requirement 'latest'/);
 });
 
 test('rust: every engine string must name the Lance crate version', async t => {
@@ -291,6 +369,29 @@ test('python: a lagging package and a moved git source are reported', async t =>
     'pypi lance-maintenance/uv.lock vlm git aaaaaaaaaaaa, upstream HEAD bbbbbbbbbbbb',
     'pypi lance-maintenance/uv.lock six 1.17.0, latest 1.18.0',
   ]);
+});
+
+test('python: a package a parent holds below its latest is current at the newest release the parent admits', async t => {
+  const { run, answers } = options(t);
+  answers['https://pypi.org/pypi/six/json'] = pypiEntry({ '1.16.0': {}, '1.17.0': {}, '1.18.0': {} });
+  answers['https://pypi.org/pypi/numpy/2.5.4/json'].info.requires_dist = ['six[extra] (<=1.17.0,>=1.10)', 'six>=2; extra == "dev"'];
+  const result = await run();
+  assert.deepEqual(result.lines, []);
+  assert.deepEqual(result.held, ['pypi lance-maintenance/uv.lock six 1.17.0, held by numpy 2.5.4 (<=1.17.0,>=1.10); latest 1.18.0']);
+  answers['https://pypi.org/pypi/six/json'] = pypiEntry({ '1.17.0': {}, '1.17.1': {}, '1.18.0': {} });
+  answers['https://pypi.org/pypi/numpy/2.5.4/json'].info.requires_dist = ['Six~=1.17.0'];
+  assert.deepEqual((await run()).lines, ['pypi lance-maintenance/uv.lock six 1.17.0, held to 1.17.1 by numpy 2.5.4 (~=1.17.0)']);
+});
+
+test('python: requirement specifiers', () => {
+  const admits = (specifiers, versions) => versions.filter(version => check.pep440Admits(specifiers, version));
+  const versions = ['1.9', '2.0', '2.0.post1', '2.1.0', '2.4.6', '3.0'];
+  assert.deepEqual(admits('>=2.0,<3', versions), ['2.0', '2.0.post1', '2.1.0', '2.4.6']);
+  assert.deepEqual(admits('~=2.1', versions), ['2.1.0', '2.4.6']);
+  assert.deepEqual(admits('==2.*', versions), ['2.0', '2.0.post1', '2.1.0', '2.4.6']);
+  assert.deepEqual(admits('!=2.4.6,<=2.4.6', versions), ['1.9', '2.0', '2.0.post1', '2.1.0']);
+  assert.deepEqual(check.requirementsOn(['fsspec[http]<=2026.7.0,>=2023.1.0', 'Fsspec>=1; extra == "s3"', 'other>=1'], 'fsspec'), ['<=2026.7.0,>=2023.1.0']);
+  assert.throws(() => check.pep440Admits('>=latest', '1.0'), /Could not read Python requirement/);
 });
 
 test('python: a version split passes only when the Python version forces it', async t => {
@@ -347,6 +448,12 @@ test('main exits 1 with 1 line per lagging package, 0 when current, and takes no
   const printed = [];
   assert.equal(await check.main([], { ...base, print: line => printed.push(line), printError: line => printed.push(line) }), 0);
   assert.deepEqual(printed, ['Every dependency is at its latest release: 6 npm, 5 Rust, 4 Python']);
+  answers['https://crates.io/api/v1/crates/arrow-array'] = crateEntry(['58.4.1', '60.1.0']);
+  printed.length = 0;
+  assert.equal(await check.main([], { ...base, print: line => printed.push(line), printError: line => printed.push(line) }), 0);
+  assert.deepEqual(printed, ['cargo arrow-array 58.4.1, held by lance 14.0.2 (^58.0.0); latest 60.1.0',
+    "Every dependency is at its latest release: 6 npm, 5 Rust, 4 Python, 1 held by a parent's requirement"]);
+  answers['https://crates.io/api/v1/crates/arrow-array'] = crateEntry(['58.4.1']);
   answers['https://crates.io/api/v1/crates/tokio'] = { crate: { max_stable_version: '1.49.0' } };
   answers['https://pypi.org/pypi/six/json'] = pypiEntry({ '1.18.0': {} });
   printed.length = 0;

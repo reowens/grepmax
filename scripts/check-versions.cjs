@@ -7,11 +7,16 @@
 // the newest stable release past pnpm's minimumReleaseAge. onnxruntime-node is
 // held to the exact version the latest @huggingface/transformers depends on.
 // Rust: the Cargo.lock version of each Cargo.toml dependency, against crates.io's
-// newest stable; lance, lance-io, lance-table and lance-index must also equal the
+// newest stable; lance, lance-io, lance-table and lance-index instead equal the
 // Lance version the locked @lancedb/lancedb embeds, and every engine string must
 // name it. Python: every package in each tracked uv.lock, against PyPI's newest
 // release; a package locked at 2 or more versions is accepted only when each
 // older entry is the newest release its Python floor can install.
+//
+// A crate or Python package whose latest release falls outside a requirement of
+// a locked parent (any package that depends on it in Cargo.lock or uv.lock, read
+// from the parent's published manifest) is current at the newest release every
+// parent admits. It prints as a held line and does not fail the check.
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
@@ -61,6 +66,39 @@ function compareStableSemver(a, b) {
   return compareTuples(parseSemver(a).release, parseSemver(b).release);
 }
 
+// Does a Cargo version requirement admit the stable `version`? Comparators are
+// joined by commas; a bare version is a caret requirement.
+function cargoAdmits(requirement, version) {
+  const v = parseSemver(version).release;
+  return requirement.split(",").map(part => part.trim()).every(comparator => {
+    if (comparator === "*") return true;
+    const match = /^(\^|~|=|>=|<=|>|<)?\s*(\d+)(?:\.(\d+|\*))?(?:\.(\d+|\*))?(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.exec(comparator);
+    if (!match) throw new CheckError(`Could not read Cargo requirement '${requirement}'`);
+    const op = match[1] ?? "^";
+    const parts = match.slice(2, 5).filter(part => part !== undefined && part !== "*").map(Number);
+    const wildcard = match.slice(3, 5).includes("*");
+    const [major, minor = 0, patch = 0] = parts;
+    const low = [major, minor, patch];
+    const order = compareTuples(v, low);
+    // The first version past a partial requirement: 1 -> 2.0.0, 1.2 -> 1.3.0.
+    const next = parts.length === 1 ? [major + 1, 0, 0] : parts.length === 2 ? [major, minor + 1, 0] : [major, minor, patch + 1];
+    const below = upper => compareTuples(v, upper) < 0;
+    if (wildcard || op === "=") return order >= 0 && below(next);
+    switch (op) {
+      case "^": {
+        const upper = major > 0 || parts.length === 1 ? [major + 1, 0, 0] : minor > 0 || parts.length === 2 ? [0, minor + 1, 0] : [0, 0, patch + 1];
+        return order >= 0 && below(upper);
+      }
+      case "~": return order >= 0 && below(parts.length === 1 ? [major + 1, 0, 0] : [major, minor + 1, 0]);
+      case ">=": return order >= 0;
+      case ">": return compareTuples(v, next) >= 0;
+      case "<": return order < 0;
+      case "<=": return below(next);
+    }
+    return false;
+  });
+}
+
 // PEP 440 subset. Anything that does not parse is not a final release, so it
 // can never be the latest and is skipped rather than ordered.
 function parsePep440(version) {
@@ -77,6 +115,54 @@ function comparePep440(a, b) {
 function isFinalPep440(version) {
   const parsed = parsePep440(version);
   return Boolean(parsed) && !parsed.pre && !parsed.dev;
+}
+
+// Does a PEP 440 specifier set admit the final release `version`?
+function pep440Admits(specifiers, version) {
+  const release = parsePep440(version).release;
+  return specifiers.split(",").map(part => part.trim()).filter(Boolean).every(clause => {
+    const match = /^(~=|===|==|!=|<=|>=|<|>)\s*(\S+?)(\.\*)?$/.exec(clause);
+    if (!match || (match[1] !== "===" && !parsePep440(match[2]))) throw new CheckError(`Could not read Python requirement '${specifiers}'`);
+    const [, operator, raw, wildcard] = match;
+    if (operator === "===") return version === raw;
+    const bound = parsePep440(raw).release;
+    if (wildcard) {
+      if (operator !== "==" && operator !== "!=") throw new CheckError(`Could not read Python requirement '${specifiers}'`);
+      const equal = compareTuples(release.slice(0, bound.length), bound) === 0;
+      return operator === "==" ? equal : !equal;
+    }
+    const order = comparePep440(version, raw);
+    switch (operator) {
+      case "==": return order === 0;
+      case "!=": return order !== 0;
+      case "<": return order < 0;
+      case "<=": return order <= 0;
+      case ">": return order > 0;
+      case ">=": return order >= 0;
+      case "~=": return order >= 0 && compareTuples(release.slice(0, bound.length - 1), bound.slice(0, -1)) === 0;
+    }
+    return false;
+  });
+}
+
+// PEP 503 name normalization.
+function normalizePythonName(name) {
+  return name.toLowerCase().replace(/[-_.]+/g, "-");
+}
+
+// The requirements a published requires_dist places on `name`, without the
+// ones that apply only when an extra is requested.
+function requirementsOn(requiresDist, name) {
+  const wanted = normalizePythonName(name);
+  const found = [];
+  for (const entry of requiresDist ?? []) {
+    const [spec, marker = ""] = entry.split(";");
+    if (/\bextra\b/.test(marker)) continue;
+    const match = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*\(?([^()]*)\)?\s*$/.exec(spec);
+    if (!match) throw new CheckError(`Could not read Python requirement '${entry}'`);
+    if (normalizePythonName(match[1]) === wanted && match[2].trim()) found.push(match[2].trim());
+  }
+  return found;
 }
 
 // Does a requires-python specifier set admit Python `floor` (e.g. "3.10")?
@@ -208,7 +294,8 @@ function readCargoManifest(text) {
   return dependencies;
 }
 
-// Cargo.lock: packages and the root package's dependency list.
+// Cargo.lock: each root dependency's locked version, and the locked packages
+// other than the root that depend on a crate at a version.
 function readCargoLock(text, rootName) {
   const packages = text.split(/^\[\[package\]\]$/m).slice(1).map(block => ({
     name: /^name = "([^"]+)"/m.exec(block)?.[1],
@@ -217,14 +304,20 @@ function readCargoLock(text, rootName) {
   }));
   const root = packages.find(entry => entry.name === rootName);
   if (!root) throw new CheckError(`Could not read Cargo.lock: no ${rootName} package`);
-  return name => {
-    const listed = root.dependencies.find(entry => entry === name || entry.startsWith(`${name} `));
-    if (!listed) return null;
-    const version = listed.split(" ")[1];
-    if (version) return version;
+  const only = name => {
     const matches = packages.filter(entry => entry.name === name);
     return matches.length === 1 ? matches[0].version : null;
   };
+  const locked = name => {
+    const listed = root.dependencies.find(entry => entry === name || entry.startsWith(`${name} `));
+    if (!listed) return null;
+    return listed.split(" ")[1] ?? only(name);
+  };
+  const parents = (name, version) => packages.filter(entry => entry !== root && entry.dependencies.some(listed => {
+    const [listedName, listedVersion] = listed.split(" ");
+    return listedName === name && (listedVersion ?? only(name)) === version;
+  })).map(({ name: parent, version: parentVersion }) => ({ name: parent, version: parentVersion }));
+  return { locked, parents };
 }
 
 // uv.lock: requires-python and every package with its source and markers.
@@ -238,6 +331,7 @@ function readUvLock(text, lockPath) {
       version: /^version = "([^"]+)"/m.exec(head)?.[1],
       source: /^source = \{ (\w[\w-]*) = "([^"]*)"/m.exec(head)?.slice(1, 3) ?? [],
       markers: [...(/^resolution-markers = \[([\s\S]*?)^\]/m.exec(head)?.[1] ?? "").matchAll(/"([^"]+)"/g)].map(match => match[1]),
+      dependencies: [...(/^dependencies = \[([\s\S]*?)^\]/m.exec(block.split(/^\[package\./m)[0])?.[1] ?? "").matchAll(/\{ name = "([^"]+)"/g)].map(match => match[1]),
     };
   });
   return { floor, packages };
@@ -352,8 +446,8 @@ async function checkRust(root, { fetchJson, delay, lancedbVersion }) {
   const native = path.join(root, NATIVE_DIR);
   const dependencies = readCargoManifest(fs.readFileSync(path.join(native, "Cargo.toml"), "utf8"));
   const rootName = /^name = "([^"]+)"/m.exec(fs.readFileSync(path.join(native, "Cargo.toml"), "utf8"))[1];
-  const locked = readCargoLock(fs.readFileSync(path.join(native, "Cargo.lock"), "utf8"), rootName);
-  const lines = [];
+  const { locked, parents } = readCargoLock(fs.readFileSync(path.join(native, "Cargo.lock"), "utf8"), rootName);
+  const lines = [], held = [];
   let first = true;
   const crates = async url => {
     if (!first) await delay(CRATES_IO_INTERVAL_MS);
@@ -365,14 +459,39 @@ async function checkRust(root, { fetchJson, delay, lancedbVersion }) {
   const lanceRequirement = lancedb?.dependencies?.find(dependency => dependency.crate_id === "lance" && dependency.kind === "normal")?.req;
   const embedded = /^=\s*(\d+\.\d+\.\d+)$/.exec(lanceRequirement ?? "")?.[1];
   if (!embedded) throw couldNot(`the Lance version LanceDB ${lancedbVersion} embeds`, `its lance requirement is '${lanceRequirement ?? "absent"}', not an exact version`);
+  const manifests = new Map();
+  const parentManifest = parent => {
+    const key = `${parent.name}@${parent.version}`;
+    if (!manifests.has(key)) manifests.set(key, crates({ what: `crates.io ${parent.name} ${parent.version}`, href: `https://crates.io/api/v1/crates/${parent.name}/${parent.version}/dependencies` }));
+    return manifests.get(key);
+  };
+  const direct = new Set(dependencies.map(dependency => dependency.name));
   for (const { name, requirement } of dependencies) {
     const current = locked(name);
     if (!current) { lines.push(`cargo ${name} ${requirement} has no version in Cargo.lock`); continue; }
     const document = await crates({ what: `crates.io ${name}`, href: `https://crates.io/api/v1/crates/${name}` });
     const latest = document?.crate?.max_stable_version;
     if (!latest) throw couldNot(`crates.io ${name}`, "the registry reports no stable release");
-    if (current !== latest) lines.push(`cargo ${name} ${current}, latest ${latest}`);
-    if (LANCE_CRATES.includes(name) && current !== embedded) lines.push(`cargo ${name} ${current}, LanceDB ${lancedbVersion} embeds Lance ${embedded}`);
+    // The store is written by LanceDB's Lance, so the Lance crates follow LanceDB, not crates.io.
+    if (LANCE_CRATES.includes(name)) {
+      if (current !== embedded) lines.push(`cargo ${name} ${current}, LanceDB ${lancedbVersion} embeds Lance ${embedded}`);
+      else if (current !== latest) held.push(`cargo ${name} ${current}, held by LanceDB ${lancedbVersion} (=${embedded}); latest ${latest}`);
+      continue;
+    }
+    if (current === latest) continue;
+    const holds = [];
+    const ordered = parents(name, current).sort((a, b) => Number(direct.has(b.name)) - Number(direct.has(a.name)));
+    for (const parent of ordered) {
+      const manifest = await parentManifest(parent);
+      for (const dependency of manifest?.dependencies ?? []) {
+        if (dependency.crate_id === name && dependency.kind !== "dev") holds.push({ parent, requirement: dependency.req });
+      }
+    }
+    const message = holdMessage(holds, latest, cargoAdmits, () => (document.versions ?? [])
+      .filter(release => !release.yanked && parseSemver(release.num) && !parseSemver(release.num).pre).map(release => release.num).sort(compareStableSemver).reverse());
+    if (!message) lines.push(`cargo ${name} ${current}, latest ${latest}`);
+    else if (message.allowed === current) held.push(`cargo ${name} ${current}, held by ${message.by}; latest ${latest}`);
+    else lines.push(`cargo ${name} ${current}, held to ${message.allowed ?? "no release"} by ${message.by}`);
   }
   const lanceVersion = locked("lance");
   for (const [file, pattern] of ENGINE_STRINGS) {
@@ -383,13 +502,34 @@ async function checkRust(root, { fetchJson, delay, lancedbVersion }) {
       if (version !== lanceVersion) lines.push(`engine ${file} names ${version}, Lance crate ${lanceVersion}`);
     }
   }
-  return { checked: dependencies.length, lines };
+  return { checked: dependencies.length, lines, held };
+}
+
+// When a parent's requirement excludes `latest`: the newest release (from
+// `releases`, newest first) every parent admits, and the parents that hold it,
+// named by the loosest one, since even that one keeps the latest out.
+function holdMessage(holds, latest, admits, releases) {
+  const binding = holds.filter(hold => !admits(hold.requirement, latest));
+  if (!binding.length) return null;
+  const published = releases();
+  const allowed = published.find(version => holds.every(hold => admits(hold.requirement, version)));
+  const reach = hold => published.filter(version => admits(hold.requirement, version)).length;
+  const [first] = binding.map(hold => ({ hold, reach: reach(hold) })).sort((a, b) => b.reach - a.reach).map(entry => entry.hold);
+  const others = new Set(binding.filter(hold => hold.parent !== first.parent).map(hold => `${hold.parent.name} ${hold.parent.version}`));
+  const by = `${first.parent.name} ${first.parent.version} (${first.requirement})${others.size ? ` and ${others.size} other parent${others.size === 1 ? "" : "s"}` : ""}`;
+  return { allowed, by };
 }
 
 async function checkPython(root, { fetchJson, gitHead, uvLocks }) {
-  const lines = [];
+  const lines = [], held = [];
   let checked = 0;
   const documents = new Map();
+  const manifests = new Map();
+  const requiresDist = (name, version) => {
+    const key = `${name}@${version}`;
+    if (!manifests.has(key)) manifests.set(key, lookup(`PyPI ${name} ${version}`, fetchJson, `https://pypi.org/pypi/${name}/${version}/json`).then(document => document?.info?.requires_dist ?? []));
+    return manifests.get(key);
+  };
   const releases = name => {
     if (!documents.has(name)) documents.set(name, lookup(`PyPI ${name}`, fetchJson, `https://pypi.org/pypi/${name}/json`).then(document => pypiReleases(name, document)));
     return documents.get(name);
@@ -420,7 +560,16 @@ async function checkPython(root, { fetchJson, gitHead, uvLocks }) {
       for (const [index, entry] of entries.entries()) {
         const top = index === entries.length - 1;
         if (top) {
-          if (comparePep440(entry.version, latest) !== 0) lines.push(`pypi ${lockPath} ${name} ${entry.version}, latest ${latest}`);
+          if (comparePep440(entry.version, latest) === 0) continue;
+          // Parents with a published manifest; a git or local parent has none to read.
+          const holds = [];
+          for (const parent of packages.filter(other => other.source[0] === "registry" && other.dependencies.includes(name))) {
+            for (const requirement of requirementsOn(await requiresDist(parent.name, parent.version), name)) holds.push({ parent, requirement });
+          }
+          const message = holdMessage(holds, latest, pep440Admits, () => published.map(release => release.version));
+          if (!message) lines.push(`pypi ${lockPath} ${name} ${entry.version}, latest ${latest}`);
+          else if (message.allowed && comparePep440(entry.version, message.allowed) === 0) held.push(`pypi ${lockPath} ${name} ${entry.version}, held by ${message.by}; latest ${latest}`);
+          else lines.push(`pypi ${lockPath} ${name} ${entry.version}, held to ${message.allowed ?? "no release"} by ${message.by}`);
           continue;
         }
         const entryFloor = markerFloor(entry.markers, floor);
@@ -432,7 +581,7 @@ async function checkPython(root, { fetchJson, gitHead, uvLocks }) {
       }
     }
   }
-  return { checked, lines };
+  return { checked, lines, held };
 }
 
 function trackedUvLocks(root) {
@@ -454,16 +603,17 @@ async function checkVersions({
     checkRust(root, { fetchJson, delay, lancedbVersion: npm.lancedb }),
     checkPython(root, { fetchJson, gitHead, uvLocks }),
   ]);
-  return { lines: [...npm.lines, ...rust.lines, ...python.lines], counts: { npm: npm.checked, rust: rust.checked, python: python.checked } };
+  return { lines: [...npm.lines, ...rust.lines, ...python.lines], held: [...rust.held, ...python.held], counts: { npm: npm.checked, rust: rust.checked, python: python.checked } };
 }
 
 async function main(argv, { print = console.log, printError = console.error, ...options } = {}) {
   if (argv.length) { printError("Usage: node scripts/check-versions.cjs"); return 2; }
   try {
-    const { lines, counts } = await checkVersions(options);
-    for (const line of lines) print(line);
+    const { lines, held, counts } = await checkVersions(options);
+    for (const line of [...held, ...lines]) print(line);
     if (lines.length) return 1;
-    print(`Every dependency is at its latest release: ${counts.npm} npm, ${counts.rust} Rust, ${counts.python} Python`);
+    const heldNote = held.length ? `, ${held.length} held by a parent's requirement` : "";
+    print(`Every dependency is at its latest release: ${counts.npm} npm, ${counts.rust} Rust, ${counts.python} Python${heldNote}`);
     return 0;
   } catch (error) {
     printError(error instanceof CheckError ? error.message : `Could not check dependency versions: ${error.message}`);
@@ -472,7 +622,7 @@ async function main(argv, { print = console.log, printError = console.error, ...
 }
 
 module.exports = { checkVersions, main, readWorkspace, readPnpmLock, readCargoManifest, readCargoLock, readUvLock, markerFloor,
-  admitsPython, npmLatest, pypiReleases, parsePep440, CheckError, PNPM_DEFAULT_RELEASE_AGE_MINUTES };
+  admitsPython, cargoAdmits, pep440Admits, requirementsOn, npmLatest, pypiReleases, parsePep440, CheckError, PNPM_DEFAULT_RELEASE_AGE_MINUTES };
 if (require.main === module) {
   main(process.argv.slice(2)).then(code => { process.exitCode = code; });
 }
