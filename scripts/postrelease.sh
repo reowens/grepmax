@@ -48,8 +48,7 @@ case "${1:-}" in
     git push origin "${TAG}"
     echo "==> ${TAG} pushed; publication uses GitHub trusted publishing."
     echo "    Check locally: pnpm run release:check"
-    echo "    Attach the qualified archive and source receipt to a draft GitHub release."
-    echo "    Dispatch release.yml with the reviewed version, source commit and archive SHA256."
+    echo "    Draft and dispatch: node scripts/release-draft.cjs --dry-run, then again without the flag; add --dispatch to run release.yml."
     echo "    After publication: bash scripts/postrelease.sh --install"
     exit 0
     ;;
