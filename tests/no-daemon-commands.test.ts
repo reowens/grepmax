@@ -56,7 +56,7 @@ import { ensureDaemonRunning } from "../src/lib/utils/daemon-client";
 
 const hookPath = path.resolve("plugins/grepmax/hooks/watch-lease.js");
 const loadHook = () => {
-  const require = createRequire(import.meta.url);
+  const require = createRequire(__filename);
   delete require.cache[hookPath];
   return require(hookPath) as { isAutostartDisabled: () => boolean };
 };

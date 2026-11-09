@@ -65,9 +65,10 @@ vi.mock("../src/lib/search/searcher", () => ({
 
 import { runSearch } from "../src/commands/search-run";
 
-const { launchWatcher } = await vi.importActual<
-  typeof import("../src/lib/utils/watcher-launcher")
->("../src/lib/utils/watcher-launcher");
+const launchWatcher: typeof import("../src/lib/utils/watcher-launcher").launchWatcher = async (...args) => {
+  const actual = await vi.importActual<typeof import("../src/lib/utils/watcher-launcher")>("../src/lib/utils/watcher-launcher");
+  return actual.launchWatcher(...args);
+};
 
 describe("GMAX_NO_DAEMON=1", () => {
   beforeEach(() => {
