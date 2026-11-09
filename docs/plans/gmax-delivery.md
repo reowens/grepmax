@@ -77,8 +77,14 @@ batch and version cleanup then failed with `Invalid range 0..0 for object of siz
   re-embedded the lost files.
 - The 2 0-byte `_gmax-owned-<id>.jsonl` and `_gmax-reads-<id>.journal` files are
   normal: their finalized bounded receipt selected 0 fragments and verified 0 rows.
-- **Open:** install on the host; the daemon start path and the mid-run trigger are
-  covered by the fixture and typecheck, not by a daemon-level test.
+- **Open:** install on the host. The daemon start path, the mid-run trigger and
+  `doctor --torn-store --fix` are covered by the library fixture and typecheck, not
+  by a daemon-level or doctor test; `_indices` files are not checked.
+- **Open question:** both automatic paths try once: start waits 5 s for the
+  exclusive lease, and the mid-run attempt latches even when a live reader held
+  the store. Retrying after a lease timeout repairs without a restart but repeats
+  the wait while readers stay; keeping 1 attempt leaves the daemon failing until
+  restart, with the log naming the holders. Retry after a lease timeout, or keep 1?
 
 ## P3 catch-up throughput and daemon startup: planned
 

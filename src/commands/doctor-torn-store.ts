@@ -5,6 +5,7 @@ import { MetaCache } from "../lib/store/meta-cache";
 import { StoreLease, StoreLeaseTimeoutError } from "../lib/store/store-lease";
 import {
   assessTornStore,
+  describeRepairFailure,
   type MetaReconcileEntry,
   reconcileMetaWithTable,
   repairTornStore,
@@ -89,7 +90,7 @@ export async function runTornStoreDoctor(
     } catch (error) {
       if (error instanceof StoreLeaseTimeoutError) {
         console.error(
-          "Repair refused: the store is open (daemon or another reader). The daemon repairs a torn store when it starts: gmax watch restart",
+          `Repair refused: ${describeRepairFailure(error)}. The daemon repairs a torn store when it starts: gmax watch restart`,
         );
         return 2;
       }

@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { hasStoreExclusiveIntent } from "./store-lease";
+import { hasStoreExclusiveIntent, StoreLeaseTimeoutError } from "./store-lease";
 
 /**
  * A power loss on a filesystem with delayed allocation can bring back the
@@ -43,6 +43,13 @@ export function isTornStoreError(err: unknown): boolean {
     /magic number does not match/.test(msg) ||
     /manifest length does not match/.test(msg)
   );
+}
+
+/** Why a repair did not run, naming the processes that hold the store. */
+export function describeRepairFailure(error: unknown): string {
+  if (error instanceof StoreLeaseTimeoutError)
+    return `the store is held by ${error.blockers.map((o) => `${o.role} pid=${o.pid}`).join(", ") || "an unverified owner"}`;
+  return error instanceof Error ? error.message : String(error);
 }
 
 /** Version from a manifest file name: V2 names hold u64::MAX - version. */

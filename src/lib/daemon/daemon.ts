@@ -38,6 +38,7 @@ import { MetaCache } from "../store/meta-cache";
 import { StoreLease, StoreLeaseTimeoutError } from "../store/store-lease";
 import {
   assessTornStore,
+  describeRepairFailure,
   reconcileMetaWithTable,
   repairTornStore,
 } from "../store/torn-store";
@@ -1213,7 +1214,7 @@ export class Daemon {
       return result.moved.length > 0;
     } catch (error) {
       console.error(
-        `[daemon] Store damaged and not repaired: ${error instanceof Error ? error.message : String(error)}`,
+        `[daemon] Store damaged and not repaired: ${describeRepairFailure(error)}`,
       );
       return false;
     } finally {
@@ -1257,7 +1258,7 @@ export class Daemon {
     setImmediate(() => {
       this.repairTornStoreLive().catch((error) =>
         console.error(
-          `[daemon] Store damaged and not repaired: ${error instanceof Error ? error.message : String(error)}`,
+          `[daemon] Store damaged and not repaired: ${describeRepairFailure(error)}`,
         ),
       );
     });
