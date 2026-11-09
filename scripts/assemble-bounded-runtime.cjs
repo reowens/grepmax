@@ -50,7 +50,8 @@ for (const platform of ["darwin-arm64", "linux-x64"]) {
     "test_newer_orphan_requires_complete_references_and_age",
     "test_oversized_fragment_makes_finite_bounded_progress",
     "test_repeated_index_catchup_merges_small_segments",
-
+    "test_index_merge_commits_after_its_source_versions_are_pruned",
+    "test_relocation_at_the_segment_bound_refuses_before_writing_and_merges_first",
   ]) {
     if (!proof.testCases.some(name => typeof name === "string" && (name === test || name.endsWith(`.${test}`)))) throw new Error(`Required native acceptance case absent: ${test}`);
   }

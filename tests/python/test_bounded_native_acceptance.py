@@ -197,6 +197,115 @@ class BoundedNativeAcceptance(unittest.TestCase):
             finally:
                 session.close()
 
+    @staticmethod
+    def segmented(home, segments):
+        """A store whose content_idx has `segments` segments, all built at
+        versions that version cleanup has since removed, like a live store
+        whose maintenance window keeps only the last 2 minutes."""
+        import lance
+        import pyarrow as pa
+        from datetime import timedelta
+        root = Path(home) / 'store' / 'chunks.lance'
+        root.parent.mkdir()
+        ds = fixture_support.BoundedCleanupAcceptance.fixture(root, deleted=True)
+        ds.merge(pa.table({'id': pa.array(range(2048), type=pa.int32()),
+                           'path': [f'/fixture/β/{i}.ts' for i in range(2048)]}),
+                 left_on='id')
+        seed = lance.dataset(str(root)).to_table(filter='id = 11').to_pylist()[0]
+        for n in range(segments - 1):
+            current = lance.dataset(str(root))
+            row = {**seed, 'id': 9000 + n, 'path': f'/segment/{n}.ts', 'content': f'segment{n} lexical'}
+            lance.write_dataset(pa.Table.from_pylist([row], schema=current.schema), str(root), mode='append')
+        ds = lance.dataset(str(root))
+        ds.create_scalar_index('path', 'BTREE', name='path_idx')
+        covered = {f for index in ds.list_indices() if index['name'] == 'content_idx'
+                   for f in index['fragment_ids']}
+        built = [ds.create_index_uncommitted('content', 'INVERTED', name='content_idx', replace=True,
+                                             fragment_ids=[f.fragment_id])
+                 for f in ds.get_fragments() if f.fragment_id not in covered]
+        ds = ds.commit_existing_index_segments('content_idx', 'content', built)
+        ds.cleanup_old_versions(older_than=timedelta(0), delete_unverified=True,
+                                error_if_tagged_old_versions=False)
+        ds = lance.dataset(str(root))
+        content = [index for index in ds.list_indices() if index['name'] == 'content_idx']
+        assert len(content) == segments, len(content)
+        retained = {version['version'] for version in ds.versions()}
+        assert all(index['version'] not in retained for index in content), 'segment versions must be pruned'
+        return root
+
+    def test_index_merge_commits_after_its_source_versions_are_pruned(self):
+        import lance
+        with tempfile.TemporaryDirectory(prefix='gmax-native-pruned-merge-') as home:
+            root = self.segmented(home, 12)
+            before = fixture_support.row_digest(lance.dataset(str(root)))
+            head = lance.dataset(str(root)).version
+            session = NativeSession(self.binary, root, qualification={'operation': 'repair-indexes'})
+            try:
+                result = session.reach('result')
+                self.assertEqual(result['operation'], 'index-refresh')
+                self.assertEqual(result['dataBytesWritten'], 0)
+                self.assertFalse(result['recoveryPending'])
+            finally:
+                session.close()
+            receipt = json.loads((root / '_gmax-bounded-receipt.json').read_text())
+            self.assertGreaterEqual(len(receipt['repair']['merge']), 2)
+            current = lance.dataset(str(root))
+            content = [index for index in current.list_indices() if index['name'] == 'content_idx']
+            self.assertEqual(len(content), 12 - len(receipt['repair']['merge']) + 1)
+            merged = [index for index in content if index['uuid'] == receipt['repair']['output']]
+            # Stamped with the head it was merged and committed against, so the
+            # next merge never needs a version cleanup has removed.
+            self.assertEqual([index['version'] for index in merged], [head])
+            self.assertEqual({f for index in content for f in index['fragment_ids']},
+                             {f.fragment_id for f in current.get_fragments()})
+            self.assertEqual(fixture_support.row_digest(current), before)
+            for n in range(11):
+                self.assertEqual(current.to_table(full_text_query={'query': f'segment{n}', 'columns': ['content']})['id'].to_pylist(), [9000 + n])
+
+    def test_relocation_at_the_segment_bound_refuses_before_writing_and_merges_first(self):
+        import lance
+        with tempfile.TemporaryDirectory(prefix='gmax-native-segment-bound-') as home:
+            root = self.segmented(home, 64)
+            before = fixture_support.row_digest(lance.dataset(str(root)))
+            files = fixture_support.file_state(root)
+            head = lance.dataset(str(root)).version
+            session = NativeSession(self.binary, root, qualification={'operation': 'repair-relocate'})
+            try:
+                with self.assertRaisesRegex(RuntimeError, 'Relocation index segment bound'):
+                    session.reach('result')
+            finally:
+                session.close()
+            self.assertEqual(lance.dataset(str(root)).version, head)
+            self.assertEqual({name: state for name, state in fixture_support.file_state(root).items()
+                              if name.startswith(('data/', '_indices/', '_versions/'))},
+                             {name: state for name, state in files.items()
+                              if name.startswith(('data/', '_indices/', '_versions/'))})
+            # The automatic operation takes its orphan inventory (no
+            # candidates here), merges segments, then relocates with room for
+            # the replacement fragment's segments.
+            operations = []
+            for _ in range(3):
+                session = NativeSession(self.binary, root, qualification={'operation': 'repair'})
+                try:
+                    result = session.reach('result')
+                    self.assertFalse(result['recoveryPending'])
+                    operations.append(result['operation'])
+                finally:
+                    session.close()
+            self.assertEqual(operations, ['orphan-reclamation', 'index-refresh', 'row-relocation'])
+            current = lance.dataset(str(root))
+            self.assertEqual(fixture_support.row_digest(current), before)
+            # A bitmap may still name the drained source fragment, as Lance
+            # leaves it after a whole-fragment removal; no current fragment
+            # may be outside either index.
+            for name in ('content_idx', 'path_idx'):
+                covered = {f for index in current.list_indices() if index['name'] == name
+                           for f in index['fragment_ids']}
+                self.assertLessEqual({f.fragment_id for f in current.get_fragments()}, covered, name)
+            self.assertLess(len([i for i in current.list_indices() if i['name'] == 'content_idx']), 64)
+            self.assertEqual(current.to_table(full_text_query={'query': 'unique11', 'columns': ['content']})['id'].to_pylist(), [11])
+            self.assertEqual(current.to_table(filter="path = '/fixture/β/11.ts'")['id'].to_pylist(), [11])
+
     def test_index_refresh_runs_past_the_whole_manifest_scan_bound(self):
         import lance
         import pyarrow as pa

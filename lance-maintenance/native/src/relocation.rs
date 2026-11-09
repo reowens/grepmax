@@ -81,6 +81,7 @@ pub async fn plan(
     // A fragment covered by any segment must not be moved again merely because
     // another segment covers a different cohort.
     let mut coverage: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
+    let mut segments: BTreeMap<String, usize> = BTreeMap::new();
     for index in &all {
         if index.fields.len() == 1 {
             let field = dataset.schema().field_path(index.fields[0])?;
@@ -89,6 +90,7 @@ pub async fn plan(
                     .entry(index.name.clone())
                     .or_default()
                     .extend(index.fragment_bitmap.as_ref().unwrap().iter());
+                *segments.entry(index.name.clone()).or_default() += 1;
             }
         }
     }
@@ -125,6 +127,16 @@ pub async fn plan(
     }
     candidates.sort_by_key(|(id, deleted, source)| (std::cmp::Reverse(*deleted), *source, *id));
     if let Some((id, _, _)) = candidates.first() {
+        // The moved rows get a new segment on each index after the data
+        // commit. Without room for it, refuse before writing; the automatic
+        // operation merges segments instead.
+        if segments.values().any(|n| *n >= crate::repair::SEGMENTS) {
+            ensure!(
+                request.operation.as_deref() != Some("repair-relocate"),
+                "Relocation index segment bound"
+            );
+            return Ok(None);
+        }
         ensure!(
             !dataset.manifest.uses_stable_row_ids(),
             "Partial relocation requires physical row addresses"
@@ -399,7 +411,10 @@ pub async fn execute(
         let Some(example) = examples.first() else {
             continue;
         };
-        ensure!(examples.len() < 64, "Relocation index segment bound");
+        ensure!(
+            examples.len() < crate::repair::SEGMENTS,
+            "Relocation index segment bound"
+        );
         let name = example.name.clone();
         let (kind, settings) = crate::repair::params(example, field)?;
         let head = dataset.version_id();

@@ -17,7 +17,7 @@ use std::{
 
 pub(crate) const SOURCE: u64 = 8 * 1024 * 1024;
 const MERGE_SOURCE: u64 = 128 * 1024 * 1024;
-const SEGMENTS: usize = 64;
+pub(crate) const SEGMENTS: usize = 64;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -389,11 +389,21 @@ pub async fn execute(
             .await?
     } else {
         let selected: Vec<_> = all
-            .into_iter()
+            .iter()
             .filter(|index| proof.merge.contains(&index.uuid.to_string()))
+            .cloned()
             .collect();
         ensure!(selected.len() == proof.merge.len(), "Merge source changed");
-        dataset.merge_existing_index_segments(selected).await?
+        rebase_merge(dataset, &all, &selected)?;
+        let mut merged = dataset.merge_existing_index_segments(selected).await?;
+        // Lance stamps an inverted or B-tree merge with its oldest source's
+        // version and re-checks coverage at commit by checking that version
+        // out. Version cleanup keeps minutes of history, so that check fails
+        // for any source older than the window. The sources are committed
+        // segments of this head, whose bitmaps every later commit already
+        // pruned (rtree merges get the head the same way).
+        merged.dataset_version = dataset.manifest.version;
+        merged
     };
     receipt.repair.as_mut().unwrap().output = Some(segment.uuid.to_string());
     // The complete output identity is durable before its manifest publication.
@@ -409,6 +419,39 @@ pub async fn execute(
         .await?;
     Ok(())
 }
+/// A merge output may carry the head's version only when every source is a
+/// committed segment of this head covering current fragments, and no
+/// fragment-reuse index defers a remap that coverage would have to follow.
+/// Overlays are refused when the store opens.
+fn rebase_merge(
+    dataset: &Dataset,
+    all: &[IndexMetadata],
+    selected: &[IndexMetadata],
+) -> Result<()> {
+    ensure!(
+        !all.iter()
+            .any(|i| i.name == lance_table::system_index::frag_reuse::FRAG_REUSE_INDEX_NAME),
+        "Deferred fragment remap refuses segment merge"
+    );
+    let current: BTreeSet<_> = dataset
+        .manifest
+        .fragments
+        .iter()
+        .map(|f| f.id as u32)
+        .collect();
+    for index in selected {
+        ensure!(
+            index.dataset_version <= dataset.manifest.version
+                && index
+                    .fragment_bitmap
+                    .as_ref()
+                    .is_some_and(|b| b.iter().all(|id| current.contains(&id))),
+            "Merge source coverage is not current"
+        );
+    }
+    Ok(())
+}
+
 pub async fn verify(
     before: &Dataset,
     after: &Dataset,
