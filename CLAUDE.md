@@ -548,7 +548,9 @@ File event (from watcher or catchup) -> pending map -> debounce 2s -> processBat
 A batch waits for the project lock (`watch-batch` through `runProjectOperation`) with a per-batch
 start signal that `close()` and `pause()` abort, leaving its files pending. Callers that unwatch
 while holding that lock (`indexPendingProject`, `indexProject`, remove) would otherwise wait on a
-batch that is waiting on them. Preserve this abortable lock wait to avoid deadlock.
+batch that is waiting on them. Preserve this abortable lock wait to avoid deadlock. A batch refused
+by an exclusive operation before it starts waits 250 ms doubling to 5 s and tries again
+(`runWatchBatch`), outside the lock and under the same start signal.
 
 ### Worker pool
 
