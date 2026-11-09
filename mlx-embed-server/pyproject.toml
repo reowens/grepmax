@@ -6,7 +6,7 @@ requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.162.0",
     "uvicorn>=0.54.0",
-    "mlx-embeddings @ git+https://github.com/Blaizzy/mlx-embeddings.git@88522e288c0142170a5a44fd93c184d8ed777371",
+    "mlx-embeddings @ git+https://github.com/Blaizzy/mlx-embeddings.git@9b28270be81211f2b8daed0041aec65ea5dc4b28",
     "mlx-lm>=0.32.2",
     "setproctitle>=1.3.8",
 ]
@@ -26,7 +26,7 @@ constraint-dependencies = [
     "click>=8.5.0",
     "datasets>=5.1.0",
     "filelock>=4.2.4",
-    "fsspec>=2026.9.0",
+    "fsspec>=2026.6.0", # GHSA-27vj-qcqg-25rc; datasets 5.1.0 caps fsspec at 2026.7.0.
     "idna>=3.20",
     "multidict>=6.9.1",
     "pillow>=13.0.0",
