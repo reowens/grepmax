@@ -7,7 +7,7 @@ fn main() {
         // Report source-enforced guarantees. Packaging must independently pass
         // native acceptance and verify the executable checksum before use.
         emit(
-            json!({"protocolVersion":1,"engine":"12.0.0","nativeTotalWriteBudgetEnforced":true,
+            json!({"protocolVersion":1,"engine":"14.0.2","nativeTotalWriteBudgetEnforced":true,
             "budgetKind":"cumulative-writes","protectedReaderProtocol":1,"incrementalRepairProtocol":1,"deferredOperationsProtocol":1}),
         )
         .unwrap();

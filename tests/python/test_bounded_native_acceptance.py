@@ -1,4 +1,4 @@
-"""Independent actual-mutation acceptance for the metered Lance 12 executable.
+"""Independent actual-mutation acceptance for the metered Lance 14 executable.
 
 GMAX_BOUNDED_NATIVE_EXECUTABLE must name the candidate executable. Ordinary
 discovery skips unavailable native dependencies; this standalone runner fails
@@ -102,7 +102,7 @@ class BoundedNativeAcceptance(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if not fixture_support.AVAILABLE:
-            raise unittest.SkipTest('pinned pylance 12.0.0 unavailable; NOT QUALIFIED')
+            raise unittest.SkipTest('pinned pylance 14.0.2 unavailable; NOT QUALIFIED')
         cls.binary = (os.environ.get('GMAX_BOUNDED_NATIVE_EXECUTABLE') or
                       os.environ.get('GMAX_BOUNDED_NATIVE'))
         if not cls.binary or not Path(cls.binary).is_file():
@@ -1327,7 +1327,7 @@ if __name__ == '__main__':
         'verdict': ('PASS_BOUNDED_NATIVE_ACCEPTANCE' if result.wasSuccessful()
                     and result.testsRun > 0 and not result.skipped and provenance_unchanged
                     else 'FAIL_BOUNDED_NATIVE_ACCEPTANCE'),
-        'engine': '12.0.0',
+        'engine': '14.0.2',
         'tests': {'executed': result.testsRun,
                   'passed': max(0, result.testsRun - len(result.failures) - len(result.errors) - len(result.skipped)),
                   'skipped': len(result.skipped), 'failures': len(result.failures), 'errors': len(result.errors)},

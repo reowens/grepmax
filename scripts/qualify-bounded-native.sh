@@ -27,12 +27,9 @@ set -euo pipefail
 
 TOOLCHAIN=1.98.0
 PYTHON_VERSION=3.13
-# The native engine is Lance 12, and the acceptance harness reads its stores
-# with an independent pylance 12.0.0 (tests/python/test_bounded_cleanup_acceptance.py:23).
-# lance-maintenance itself has moved to a newer pylance, so the fixture runtime
-# is the lance-maintenance lock of v0.26.108, the last one on 12.0.0. Move this
-# with the engine.
-FIXTURE_LOCK_COMMIT=2ebdb621bda25ada7b400d968700544dbea7b853
+# The native engine is Lance 14.0.2, and the acceptance harness reads its
+# stores with an independent pylance of the same version from the
+# lance-maintenance lock (tests/python/test_bounded_cleanup_acceptance.py:23).
 FIXTURE_SIZE=192M
 MIN_FREE_GIB=20
 CARGO_AUDIT_VERSION=0.22.2
@@ -154,10 +151,10 @@ platform_run() {
   target="$CARGO_TARGET_DIR/release"
   binary="$target/gmax-bounded-maintenance"
 
-  [ -f .fixture-python/uv.lock ] || fail "the exported tree has no .fixture-python lock"
+  [ -f lance-maintenance/uv.lock ] || fail "the exported tree has no lance-maintenance lock"
   python=$(uv python find --no-python-downloads "$PYTHON_VERSION") || fail "Python $PYTHON_VERSION is required (uv python install $PYTHON_VERSION)"
-  export UV_PROJECT_ENVIRONMENT="$CACHE/python-$platform-lance12"
-  uv sync --locked --project .fixture-python --no-dev --no-build --no-python-downloads --python "$python"
+  export UV_PROJECT_ENVIRONMENT="$CACHE/python-$platform"
+  uv sync --locked --project lance-maintenance --no-dev --no-build --no-python-downloads --python "$python"
   local env_python="$UV_PROJECT_ENVIRONMENT/bin/python"
 
   trap cleanup_fixture EXIT
@@ -206,9 +203,6 @@ export_source() {
   rm -rf "$dest"
   mkdir -p "$dest"
   git -C "$ROOT" archive "$commit" | tar -x -C "$dest"
-  mkdir "$dest/.fixture-python"
-  git -C "$ROOT" archive "$FIXTURE_LOCK_COMMIT" lance-maintenance/pyproject.toml lance-maintenance/uv.lock |
-    tar -x -C "$dest/.fixture-python" --strip-components=1
 }
 
 run_linux() {

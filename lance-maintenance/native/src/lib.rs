@@ -14,3 +14,8 @@ pub mod relocation;
 
 #[cfg(feature = "engine")]
 pub mod orphans;
+
+/// Lowercase hex of a digest, as `{:x}` printed it before sha2 0.11.
+pub fn hex(bytes: impl AsRef<[u8]>) -> String {
+    bytes.as_ref().iter().map(|b| format!("{b:02x}")).collect()
+}

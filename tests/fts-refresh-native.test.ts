@@ -22,7 +22,9 @@ import { StoreLease } from "../src/lib/store/store-lease";
 // of this compatibility fixture; the owning controller and native helper retain
 // their real resource/admission limits and never access a production store.
 vi.mock("../src/lib/store/maintenance-policy", async (importOriginal) => ({
-  ...await importOriginal<typeof import("../src/lib/store/maintenance-policy")>(),
+  ...(await importOriginal<
+    typeof import("../src/lib/store/maintenance-policy")
+  >()),
   assertStoreMutationAllowed: () => {},
 }));
 
@@ -402,21 +404,34 @@ describe.skipIf(!python || process.platform !== "linux")(
             expectedVersion: before.version,
           },
         );
-        expect(result).toMatchObject({ engine: "14.0.2", remainingRows: 0, batchRows: 32 });
+        expect(result).toMatchObject({
+          engine: "14.0.2",
+          remainingRows: 0,
+          batchRows: 32,
+        });
         expect(hashes()).toEqual(before.hashes);
         await lease!.release();
         lease = undefined;
         const reopened = await open();
         expect(await reopened.countRows()).toBe(160);
         expect(await reopened.indexStats("path_idx")).toEqual(before.pathStats);
-        const ids = (await reopened.query()
-          .where("id IN ('id-0', 'id-127', 'id-128')")
-          .withRowId().toArray())
-          .map((r: any) => [r.id, String(r._rowid)]).sort();
+        const ids = (
+          await reopened
+            .query()
+            .where("id IN ('id-0', 'id-127', 'id-128')")
+            .withRowId()
+            .toArray()
+        )
+          .map((r: any) => [r.id, String(r._rowid)])
+          .sort();
         expect(ids).toEqual(before.ids);
-        const exact = await reopened.vectorSearch([1, 2, 0, 0])
-          .bypassVectorIndex().where("id = 'id-128'")
-          .select(["id", "_distance"]).limit(1).toArray();
+        const exact = await reopened
+          .vectorSearch([1, 2, 0, 0])
+          .bypassVectorIndex()
+          .where("id = 'id-128'")
+          .select(["id", "_distance"])
+          .limit(1)
+          .toArray();
         expect(exact).toMatchObject([{ id: "id-128", _distance: 0 }]);
         // "the" is normally a built-in stop word, but neither explicit list
         // contains it. Search the new fragment, not the retained old segment.

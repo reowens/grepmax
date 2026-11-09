@@ -189,7 +189,7 @@ impl WrappingObjectStore for Wrapper {
 }
 
 pub(crate) fn sha(value: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(value))
+    crate::hex(Sha256::digest(value))
 }
 pub(crate) fn object_root(root: &FsPath) -> Result<Path> {
     Ok(Path::from_absolute_path(root)?)
@@ -522,7 +522,7 @@ pub(crate) async fn row_digest(
         digest.update(id);
         digest.update(value);
     }
-    Ok((rows.len(), format!("{:x}", digest.finalize())))
+    Ok((rows.len(), crate::hex(digest.finalize())))
 }
 
 async fn index_contract(dataset: &Dataset) -> Result<Vec<Value>> {
@@ -1299,7 +1299,7 @@ pub async fn run(request: Request) -> Result<()> {
             selected
         };
         if selected.is_empty() && !repair_plan.as_ref().is_some_and(|p| p.orphans.is_some()) {
-            let no_work_plan = json!({"protocolVersion":2,"engine":"12.0.0","status":"no-work","action":request.action,
+            let no_work_plan = json!({"protocolVersion":2,"engine":"14.0.2","status":"no-work","action":request.action,
                 "expectedVersion":request.expected_version,"beforeVersion":request.expected_version,"protectedVersion":request.expected_version,"planId":sha(b"no-work"),
                 "totalWriteBudgetBytes":request.total_write_budget_bytes,"sharedTotalWriteCapBytes":request.total_write_budget_bytes,
                 "freeSpaceMarginBytes":request.free_space_margin_bytes,"nativeTotalWriteBudgetEnforced":true,
@@ -1432,7 +1432,7 @@ pub async fn run(request: Request) -> Result<()> {
         {
             let plan_id = sha(b"no-recovery");
             emit(with_counts(
-                json!({"phase":"ready","plan":{"protocolVersion":2,"engine":"12.0.0","status":"no-work","action":"recover",
+                json!({"phase":"ready","plan":{"protocolVersion":2,"engine":"14.0.2","status":"no-work","action":"recover",
                 "expectedVersion":request.expected_version,"beforeVersion":request.expected_version,"protectedVersion":request.expected_version,
                 "planId":plan_id,"sharedTotalWriteCapBytes":request.total_write_budget_bytes,"totalWriteBudgetBytes":request.total_write_budget_bytes,
                 "freeSpaceMarginBytes":request.free_space_margin_bytes,"budgetKind":"cumulative-writes","nativeTotalWriteBudgetEnforced":true,"effectiveStoreScheme":"file-object-store"}}),
@@ -1558,7 +1558,7 @@ pub async fn run(request: Request) -> Result<()> {
         receipt.reader_tag.clone()
     };
     let proof = with_counts(
-        json!({"protocolVersion":2,"engine":"12.0.0","status":"qualified","action":request.action,"operation":operation_kind(&receipt),
+        json!({"protocolVersion":2,"engine":"14.0.2","status":"qualified","action":request.action,"operation":operation_kind(&receipt),
         "expectedVersion":request.expected_version,"beforeVersion":receipt.before_version,"protectedVersion":protection_version,"planId":receipt.plan_id,
         "totalWriteBudgetBytes":receipt.total_write_budget_bytes,"sharedTotalWriteCapBytes":receipt.total_write_budget_bytes,
         "freeSpaceMarginBytes":request.free_space_margin_bytes,"nativeTotalWriteBudgetEnforced":true,

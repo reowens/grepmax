@@ -189,7 +189,7 @@ fn digest(batches: &[RecordBatch]) -> Result<(usize, String)> {
         digest.update(id);
         digest.update(value);
     }
-    Ok((rows.len(), format!("{:x}", digest.finalize())))
+    Ok((rows.len(), crate::hex(digest.finalize())))
 }
 pub async fn execute(
     dataset: &mut Dataset,
@@ -251,7 +251,7 @@ pub async fn execute(
         );
     }
     let (rows, hash) = if batches.is_empty() {
-        (0, format!("{:x}", Sha256::digest([])))
+        (0, crate::hex(Sha256::digest([])))
     } else {
         digest(&batches)?
     };
@@ -485,7 +485,7 @@ pub async fn verify(
         "Unplanned relocated output"
     );
     let candidate = if replacements.is_empty() {
-        (0, format!("{:x}", Sha256::digest([])))
+        (0, crate::hex(Sha256::digest([])))
     } else {
         row_digest(after, replacements).await?
     };

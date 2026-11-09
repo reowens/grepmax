@@ -11,7 +11,7 @@ describe("bundled bounded cleanup runtime verification", () => {
   const name = `gmax-bounded-maintenance-${platform}`;
   const capabilities = {
     protocolVersion: 1,
-    engine: "12.0.0",
+    engine: "14.0.2",
     budgetKind: "cumulative-writes",
     protectedReaderProtocol: 1,
     nativeTotalWriteBudgetEnforced: true,
@@ -27,7 +27,7 @@ describe("bundled bounded cleanup runtime verification", () => {
     fs.writeFileSync(executable, code, { mode: 0o700 });
     const manifest = {
       schemaVersion: 1,
-      engine: "12.0.0",
+      engine: "14.0.2",
       sourceSha256: "a".repeat(64),
       qualified: true,
       binaries: {

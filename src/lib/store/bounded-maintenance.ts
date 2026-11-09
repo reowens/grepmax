@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-import { log } from "../utils/logger";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { log } from "../utils/logger";
 import { resourceBudget } from "../utils/resource-budget";
 import { type CompactionResult, skippedCompaction } from "./compaction-result";
 import {
@@ -17,7 +17,7 @@ export const BOUNDED_MAINTENANCE_BLOCKED_REASON =
 
 export interface BoundedMaintenancePlan {
   protocolVersion: 1;
-  engine: "12.0.0";
+  engine: "14.0.2";
   status: "blocked" | "no-work" | "qualified";
   reason?: string;
   expectedVersion: number;
@@ -212,7 +212,7 @@ export function parseBoundedMaintenancePlan(
   const p = value as BoundedMaintenancePlan;
   if (
     p.protocolVersion !== 1 ||
-    p.engine !== "12.0.0" ||
+    p.engine !== "14.0.2" ||
     p.budgetKind !== "cumulative-writes" ||
     p.rewritten !== false ||
     typeof p.nativeTotalWriteBudgetEnforced !== "boolean" ||
@@ -342,7 +342,7 @@ export interface MaintenanceReaderProtection {
 export interface MeteredMaintenancePlan {
   operation?: BoundedMaintenanceResult["operation"];
   protocolVersion: 2;
-  engine: "12.0.0";
+  engine: "14.0.2";
   status: "qualified" | "no-work";
   expectedVersion: number;
   beforeVersion: number;
@@ -410,7 +410,7 @@ export function parseMeteredMaintenancePlan(
   if (
     (p.operation !== undefined && !repairOperations.has(p.operation)) ||
     p.protocolVersion !== 2 ||
-    p.engine !== "12.0.0" ||
+    p.engine !== "14.0.2" ||
     !["qualified", "no-work"].includes(p.status) ||
     !Number.isSafeInteger(expectedVersion) ||
     expectedVersion < 1 ||

@@ -11,7 +11,7 @@ export interface BoundedMaintenanceRuntime {
 
 interface NativeManifest {
   schemaVersion: 1;
-  engine: "12.0.0";
+  engine: "14.0.2";
   sourceSha256: string;
   qualified: boolean;
   binaries: Record<string, { file: string; sha256: string }>;
@@ -42,7 +42,7 @@ export async function verifyBoundedRuntimeAt(
   const manifest = JSON.parse(fs.readFileSync(file, "utf8")) as NativeManifest;
   if (
     manifest.schemaVersion !== 1 ||
-    manifest.engine !== "12.0.0" ||
+    manifest.engine !== "14.0.2" ||
     !digestPattern.test(manifest.sourceSha256) ||
     typeof manifest.qualified !== "boolean" ||
     !manifest.binaries ||
@@ -132,7 +132,7 @@ function verifyCapabilities(
         if (
           code !== 0 ||
           report.protocolVersion !== 1 ||
-          report.engine !== "12.0.0" ||
+          report.engine !== "14.0.2" ||
           report.nativeTotalWriteBudgetEnforced !== true ||
           report.budgetKind !== "cumulative-writes" ||
           report.protectedReaderProtocol !== 1

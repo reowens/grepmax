@@ -42,10 +42,10 @@ class BoundedArtifactPackaging(unittest.TestCase):
             (directory / 'build-profile.txt').write_text('release\n')
             (directory / 'THIRD-PARTY-NOTICES.txt').write_text('Fixture license text\n')
             self.write(directory / 'capabilities.json', {
-                'protocolVersion': 1, 'engine': '12.0.0',
+                'protocolVersion': 1, 'engine': '14.0.2',
                 'nativeTotalWriteBudgetEnforced': True,
                 'budgetKind': 'cumulative-writes', 'protectedReaderProtocol': 1, 'incrementalRepairProtocol': 1})
-            proof = {'schemaVersion': 1, 'engine': '12.0.0',
+            proof = {'schemaVersion': 1, 'engine': '14.0.2',
                      'verdict': 'PASS_BOUNDED_NATIVE_ACCEPTANCE',
                      'binarySha256': hashlib.sha256(payload).hexdigest(),
                      'sourceDigest': self.digest, 'provenanceUnchanged': True,

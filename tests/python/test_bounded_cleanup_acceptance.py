@@ -20,7 +20,7 @@ os.environ['LANCE_IO_THREADS'] = '2'
 os.environ['LANCE_DEFAULT_IO_BUFFER_SIZE'] = str(8 * 1024**2)
 
 try:
-    AVAILABLE = importlib.metadata.version('pylance') == '12.0.0'
+    AVAILABLE = importlib.metadata.version('pylance') == '14.0.2'
 except importlib.metadata.PackageNotFoundError:
     AVAILABLE = False
 
@@ -50,7 +50,7 @@ def load_candidate():
     return candidate
 
 
-@unittest.skipUnless(AVAILABLE, 'locked pylance 12.0.0 required; not qualified by skip')
+@unittest.skipUnless(AVAILABLE, 'locked pylance 14.0.2 required; not qualified by skip')
 class BoundedCleanupAcceptance(unittest.TestCase):
     @staticmethod
     def fixture(root, indexed=True, deleted=True):

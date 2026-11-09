@@ -25,7 +25,7 @@ def notices(metadata_path, output):
         pending.extend(dep['pkg'] for dep in nodes[name]['deps']
                        if any(kind['kind'] != 'dev' for kind in dep['dep_kinds']))
     sections = ['gmax bounded maintenance third-party notices\n'
-                'Lance engine 12.0.0; exact locked build dependencies.\n'
+                'Lance engine 14.0.2; exact locked build dependencies.\n'
                 'Build-only dependencies may be included conservatively.\n']
     for supplement in sources['rust-standard-library@1.98.0']:
         sections.append('\n--- Rust standard library 1.98.0: '

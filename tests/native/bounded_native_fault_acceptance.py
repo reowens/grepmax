@@ -29,7 +29,7 @@ class BoundedNativeFaultAcceptance(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if not core.fixture_support.AVAILABLE:
-            raise RuntimeError('pinned Lance 12 runtime is required for fault qualification')
+            raise RuntimeError('pinned Lance 14 runtime is required for fault qualification')
         cls.binary = os.environ.get('GMAX_BOUNDED_NATIVE_EXECUTABLE')
         if not cls.binary or not Path(cls.binary).is_file():
             raise RuntimeError('qualification-feature native executable is required')
@@ -290,7 +290,7 @@ if __name__ == '__main__':
                 'verdict': 'PASS_BOUNDED_NATIVE_FAULT_ACCEPTANCE' if passed else 'FAIL_BOUNDED_NATIVE_FAULT_ACCEPTANCE',
                 'binarySha256': binary_sha256, 'sourceDigest': source,
                 'provenanceUnchanged': unchanged, 'qualificationFeature': True,
-                'engine': '12.0.0', 'testCases': result.executed_cases,
+                'engine': '14.0.2', 'testCases': result.executed_cases,
                 'tests': {'executed': result.testsRun,
                           'passed': max(0, result.testsRun - len(result.errors) - len(result.failures) - len(result.skipped)),
                           'skipped': len(result.skipped), 'failures': len(result.failures), 'errors': len(result.errors)},

@@ -9,7 +9,7 @@ const [input, output] = process.argv.slice(2);
 if (!input || !output || process.argv.length !== 4) throw new Error("Expected artifact input and output directories");
 const root = path.resolve(__dirname, "..");
 const sourceSha256 = nativeSourceDigest(path.join(root, "lance-maintenance/native"));
-const manifest = {schemaVersion: 1, engine: "12.0.0", sourceSha256, qualified: true, binaries: {}};
+const manifest = {schemaVersion: 1, engine: "14.0.2", sourceSha256, qualified: true, binaries: {}};
 const acceptance = {schemaVersion: 1, sourceSha256, platforms: {}};
 const verified = [];
 const notices = [];
@@ -24,14 +24,14 @@ for (const platform of ["darwin-arm64", "linux-x64"]) {
   const source = read(path.join(directory, "source.sha256"), 128).toString().trim();
   if (source !== sourceSha256) throw new Error(`Native source mismatch: ${platform}`);
   const capability = JSON.parse(read(path.join(directory, "capabilities.json"), 4096));
-  if (capability.protocolVersion !== 1 || capability.engine !== "12.0.0" ||
+  if (capability.protocolVersion !== 1 || capability.engine !== "14.0.2" ||
       capability.nativeTotalWriteBudgetEnforced !== true || capability.budgetKind !== "cumulative-writes" ||
       capability.protectedReaderProtocol !== 1 || capability.incrementalRepairProtocol !== 1) throw new Error(`Incomplete native capabilities: ${platform}`);
   const binary = read(path.join(directory, "gmax-bounded-maintenance"), 256 * 1024**2);
   const sha256 = crypto.createHash("sha256").update(binary).digest("hex");
   const proof = JSON.parse(read(path.join(directory, "acceptance.json"), 64 * 1024));
   if (proof.schemaVersion !== 1 || proof.verdict !== "PASS_BOUNDED_NATIVE_ACCEPTANCE" ||
-      proof.engine !== "12.0.0" || proof.binarySha256 !== sha256 || !Number.isSafeInteger(proof.tests?.executed) ||
+      proof.engine !== "14.0.2" || proof.binarySha256 !== sha256 || !Number.isSafeInteger(proof.tests?.executed) ||
       proof.tests.executed < 21 || proof.tests.passed !== proof.tests.executed || proof.tests.skipped !== 0 ||
       proof.tests.failures !== 0 || proof.tests.errors !== 0 ||
       !Array.isArray(proof.testCases) || proof.testCases.length !== proof.tests.executed ||

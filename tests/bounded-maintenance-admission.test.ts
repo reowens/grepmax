@@ -29,7 +29,7 @@ vi.mock("../src/lib/store/bounded-runtime", () => ({
 function candidate() {
   return {
     protocolVersion: 1,
-    engine: "12.0.0",
+    engine: "14.0.2",
     status: "qualified",
     expectedVersion: 7,
     planId: "a".repeat(64),

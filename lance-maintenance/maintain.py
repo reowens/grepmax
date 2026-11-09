@@ -1,6 +1,6 @@
 """Read-only qualification for bounded deleted-row maintenance.
 
-Lance 12's source quotas and per-file size option are not total-write quotas.
+Lance source quotas and per-file size option are not total-write quotas.
 This helper deliberately refuses execution until the native writer can enforce
 a shared, non-resetting budget across data, index, metadata and temporary writes.
 It never creates receipts/tags, compacts, prunes, or starts a server.
@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 import sys
 
-ENGINE = "12.0.0"
+ENGINE = "14.0.2"
 PROTOCOL_VERSION = 1
 MAX_SAFE_INTEGER = 2**53 - 1
 SOURCE_BYTES = 512 * 1024**2
@@ -22,7 +22,7 @@ MAX_FRAGMENTS = 64
 MAX_ROWS = 32768
 MAX_TABLE_FRAGMENTS = 4096
 UNQUALIFIED_REASON = (
-    "Lance 12 does not expose an enforceable total-write budget covering data, "
+    "Lance does not expose an enforceable total-write budget covering data, "
     "index remapping, metadata and verification temporary files"
 )
 
@@ -114,7 +114,7 @@ def plan(store, expected_version, total_write_budget_bytes, free_space_margin_by
     if not root.is_dir() or root.suffix != ".lance":
         raise ValueError("Qualification requires a local Lance table directory")
     if importlib.metadata.version("pylance") != ENGINE:
-        raise ValueError("Qualification requires pylance 12.0.0")
+        raise ValueError(f"Qualification requires pylance {ENGINE}")
     support = support_module()
     before_measure = support.measure(root)
     import lance

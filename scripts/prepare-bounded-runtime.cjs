@@ -19,7 +19,7 @@ if (!fs.existsSync(path.join(source, "manifest.json"))) {
 const stat = fs.lstatSync(path.join(source, "manifest.json"));
 if (!stat.isFile() || stat.size > 64 * 1024) throw new Error("Unsafe native artifact manifest");
 const manifest = JSON.parse(fs.readFileSync(path.join(source, "manifest.json"), "utf8"));
-if (manifest.schemaVersion !== 1 || manifest.engine !== "12.0.0" || manifest.qualified !== true ||
+if (manifest.schemaVersion !== 1 || manifest.engine !== "14.0.2" || manifest.qualified !== true ||
     manifest.sourceSha256 !== nativeSourceDigest(path.join(root, "lance-maintenance/native"))) {
   throw new Error("Native artifacts are unqualified or built from different source");
 }

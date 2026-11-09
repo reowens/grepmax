@@ -62,8 +62,7 @@ struct Inventory {
     checksum: String,
 }
 fn hash(state: &Inventory) -> String {
-    format!(
-        "{:x}",
+    crate::hex(
         Sha256::digest(
             serde_json::to_vec(&(
                 &state.schema_version,

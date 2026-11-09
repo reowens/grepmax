@@ -86,16 +86,14 @@ test("platform refuses to build inside a checkout", (t) => {
   assert.equal(fs.existsSync(path.join(repo.root, "out")), false);
 });
 
-test("the fixture lock commit pins the pylance the acceptance harness requires", () => {
-  const commit = fs.readFileSync(script, "utf8").match(/^FIXTURE_LOCK_COMMIT=([0-9a-f]{40})$/m);
-  assert.ok(commit, "FIXTURE_LOCK_COMMIT not found");
+test("the lance-maintenance lock pins the pylance the acceptance harness requires", () => {
   const root = path.dirname(__dirname);
-  const show = (file) => spawnSync("git", ["-C", root, "show", `${commit[1]}:${file}`], { encoding: "utf8" });
-  const project = show("lance-maintenance/pyproject.toml");
-  assert.equal(project.status, 0, project.stderr);
-  const required = fs.readFileSync(path.join(root, "tests/python/test_bounded_cleanup_acceptance.py"), "utf8")
+  const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
+  assert.doesNotMatch(read("scripts/qualify-bounded-native.sh"), /FIXTURE_LOCK_COMMIT|fixture-python/);
+  const required = read("tests/python/test_bounded_cleanup_acceptance.py")
     .match(/version\('pylance'\) == '([0-9.]+)'/);
   assert.ok(required, "harness pylance requirement not found");
-  assert.match(project.stdout, new RegExp(`"pylance==${required[1].replaceAll(".", "\\.")}"`));
-  assert.match(show("lance-maintenance/uv.lock").stdout, new RegExp(`name = "pylance"\\nversion = "${required[1].replaceAll(".", "\\.")}"`));
+  const version = required[1].replaceAll(".", "\\.");
+  assert.match(read("lance-maintenance/pyproject.toml"), new RegExp(`"pylance==${version}"`));
+  assert.match(read("lance-maintenance/uv.lock"), new RegExp(`name = "pylance"\\nversion = "${version}"`));
 });

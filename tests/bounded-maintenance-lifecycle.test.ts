@@ -19,7 +19,7 @@ vi.mock("../src/lib/utils/resource-budget", () => ({
 
 const plan = {
   protocolVersion: 2,
-  engine: "12.0.0",
+  engine: "14.0.2",
   status: "qualified",
   expectedVersion: 7,
   beforeVersion: 7,

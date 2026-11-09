@@ -84,7 +84,7 @@ impl OwnedWrites {
         for line in bytes.split(|b| *b == b'\n').filter(|line| !line.is_empty()) {
             let record: Record =
                 serde_json::from_slice(line).map_err(|e| refused(e.to_string()))?;
-            if record.checksum != format!("{:x}", Sha256::digest(record.path.as_bytes())) {
+            if record.checksum != crate::hex(Sha256::digest(record.path.as_bytes())) {
                 return Err(refused("Ownership checksum mismatch"));
             }
             let path = Path::parse(&record.path).map_err(|e| refused(e.to_string()))?;
@@ -203,7 +203,7 @@ impl OwnedWrites {
             return Err(refused("Owned target path too long"));
         }
         let record = Record {
-            checksum: format!("{:x}", Sha256::digest(name.as_bytes())),
+            checksum: crate::hex(Sha256::digest(name.as_bytes())),
             path: name,
         };
         let mut bytes = serde_json::to_vec(&record).map_err(|e| refused(e.to_string()))?;
