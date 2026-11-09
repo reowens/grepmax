@@ -21,12 +21,14 @@ async function main() {
   }
 
   await ensureSessionLease(input, newCwd, { allowStart: true });
-  process.stdout.write(JSON.stringify({
-    hookSpecificOutput: {
-      hookEventName: "CwdChanged",
-      additionalContext: formatRepoContext(await getRepoStatus(newCwd)),
-    },
-  }));
+  process.stdout.write(
+    JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: "CwdChanged",
+        additionalContext: formatRepoContext(await getRepoStatus(newCwd)),
+      },
+    }),
+  );
 }
 
 main();

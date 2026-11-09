@@ -28,12 +28,12 @@ jobs:
           run_install: false
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
-          node-version: '22'
+          node-version: "22"
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
         with:
-          version: '0.12.18'
+          version: "0.12.18"
       - run: pnpm install --frozen-lockfile
       - name: Download exact-source native acceptance artifacts
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0

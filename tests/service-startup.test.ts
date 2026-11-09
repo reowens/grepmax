@@ -117,13 +117,7 @@ describe("managed startup without detached fallback", () => {
       ],
       [
         "systemctl",
-        [
-          "--user",
-          "show",
-          "--property=MainPID",
-          "--value",
-          "gmax.service",
-        ],
+        ["--user", "show", "--property=MainPID", "--value", "gmax.service"],
         { timeout: 5000, maxBuffer: 65536, encoding: "utf8" },
       ],
     ]);

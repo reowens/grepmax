@@ -321,7 +321,8 @@ export const cases: EvalCase[] = [
     note: "load() builds sessionOptions for cpu backend.",
   },
   {
-    query: "Where do we set ONNX runtime threads and spinning for CPU sessions?",
+    query:
+      "Where do we set ONNX runtime threads and spinning for CPU sessions?",
     expectedPath: "src/lib/workers/embeddings/onnx-options.ts",
     note: "cpuSessionOptions and onnxThreadsFor.",
   },

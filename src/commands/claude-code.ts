@@ -139,7 +139,9 @@ async function installPlugin() {
     console.log(
       "3. Plugin hooks surface current-repo status and CLI suggestions; they do not register MCP tools",
     );
-    console.log("   MCP tools require a separate explicit STDIO registration: gmax mcp");
+    console.log(
+      "   MCP tools require a separate explicit STDIO registration: gmax mcp",
+    );
     console.log("\nTo update the plugin after upgrading gmax:");
     console.log("  gmax install-claude-code");
   } catch (error) {

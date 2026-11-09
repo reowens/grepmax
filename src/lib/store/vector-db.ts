@@ -39,8 +39,8 @@ import {
 } from "../utils/resource-budget";
 import { annMinRows, isAnnEnabled } from "./ann-config";
 import {
-  type BoundedMaintenanceResult,
   BoundedMaintenanceFailure,
+  type BoundedMaintenanceResult,
   type BoundedMaintenanceRuntime,
   type BoundedOperation,
   type MaintenanceReaderProtection,

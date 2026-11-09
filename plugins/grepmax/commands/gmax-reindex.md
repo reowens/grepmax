@@ -1,4 +1,5 @@
 ---
+
 description: "Force reindex the current project"
 allowed-tools: "Bash"
 ---

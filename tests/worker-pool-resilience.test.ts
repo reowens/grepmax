@@ -325,8 +325,14 @@ describe("WorkerPool resilience", () => {
   it("fails queued work at once when the last worker exits during shutdown", async () => {
     pool = new WorkerPool();
     const worker = pool.workers[0];
-    const first = pool.processFile({ path: "/repo/a.ts", projectRoot: "/repo" });
-    const queued = pool.processFile({ path: "/repo/b.ts", projectRoot: "/repo" });
+    const first = pool.processFile({
+      path: "/repo/a.ts",
+      projectRoot: "/repo",
+    });
+    const queued = pool.processFile({
+      path: "/repo/b.ts",
+      projectRoot: "/repo",
+    });
 
     pool.beginShutdown();
     worker.child.emit("exit", null, "SIGTERM");
@@ -689,7 +695,9 @@ describe("WorkerPool resilience", () => {
       const query = pool.encodeQuery("foreground");
       expect(h.children).toHaveLength(2);
       const queryWorker = pool.workers[1];
-      expect(queryWorker.child.send.mock.calls[0][0].method).toBe("encodeQuery");
+      expect(queryWorker.child.send.mock.calls[0][0].method).toBe(
+        "encodeQuery",
+      );
 
       firstWorker.child.emit("message", {
         id: firstId,
@@ -766,7 +774,12 @@ describe("WorkerPool resilience", () => {
       await next;
     });
 
-    it.each(["timeout", "ipc-error", "failed-signal", "refused-signal"] as const)(
+    it.each([
+      "timeout",
+      "ipc-error",
+      "failed-signal",
+      "refused-signal",
+    ] as const)(
       "keeps the global slot and child tracked through %s until confirmed exit",
       async (failure) => {
         vi.useFakeTimers();
@@ -775,11 +788,17 @@ describe("WorkerPool resilience", () => {
         pool.maxWorkers = 4;
         const owner = pool.workers[0];
         owner.lastRssBytes = 123;
-        const first = pool.processFile({ path: "/a/file.ts", projectRoot: "/a" });
+        const first = pool.processFile({
+          path: "/a/file.ts",
+          projectRoot: "/a",
+        });
         const firstCheck = expect(first).rejects.toThrow(
           failure === "ipc-error" ? /Worker errored/ : /exceeded no progress/,
         );
-        const next = pool.processFile({ path: "/b/file.ts", projectRoot: "/b" });
+        const next = pool.processFile({
+          path: "/b/file.ts",
+          projectRoot: "/b",
+        });
         owner.child.kill.mockImplementation(() => {
           if (failure === "failed-signal") throw new Error("signal failed");
           return failure !== "refused-signal";
@@ -832,9 +851,8 @@ describe("WorkerPool resilience", () => {
       await firstCheck;
 
       const shutdown = pool.destroy({ requireExit: true });
-      const shutdownCheck = expect(shutdown).rejects.toThrow(
-        /did not exit within/,
-      );
+      const shutdownCheck =
+        expect(shutdown).rejects.toThrow(/did not exit within/);
       await vi.advanceTimersByTimeAsync(60_000);
       await shutdownCheck;
       expect(owner.child.kill).toHaveBeenCalledWith("SIGTERM");
@@ -1004,7 +1022,9 @@ describe("cappedWorkerCount", () => {
       expect(cappedWorkerCount(4, 2)).toBe(2);
       expect(cappedWorkerCount(4, 2)).toBe(2);
       expect(warn).toHaveBeenCalledTimes(1);
-      expect(warn.mock.calls[0][0]).toMatch(/workerThreads 4 exceeds 2 effective CPUs/);
+      expect(warn.mock.calls[0][0]).toMatch(
+        /workerThreads 4 exceeds 2 effective CPUs/,
+      );
       expect(cappedWorkerCount(4, 4)).toBe(4);
       expect(cappedWorkerCount(3, 8)).toBe(3);
       expect(cappedWorkerCount(0, 0)).toBe(1);

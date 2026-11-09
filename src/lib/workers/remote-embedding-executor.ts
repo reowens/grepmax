@@ -1,10 +1,10 @@
 import type { HybridResult } from "./embeddings/colbert";
 import {
+  type PreparedEmbeddingIdentity,
+  type RemoteEmbeddingResult,
   validatePreparedEmbeddingIdentity,
   validateRemoteEmbeddingRequest,
   validateRemoteEmbeddingResult,
-  type PreparedEmbeddingIdentity,
-  type RemoteEmbeddingResult,
 } from "./remote-embedding/protocol";
 
 /** Supplied by the trusted worker adapter, never reconstructed from wire data. */
@@ -17,7 +17,11 @@ export interface PreparedRemoteEmbeddingRuntime {
     granite: { runBatch(texts: string[]): Promise<Float32Array[]> };
     colbert: {
       load(): Promise<void>;
-      runBatch(texts: string[], dense: Float32Array[], dim: number): Promise<HybridResult[]>;
+      runBatch(
+        texts: string[],
+        dense: Float32Array[],
+        dim: number,
+      ): Promise<HybridResult[]>;
     };
     /** Dispose only this job's sessions after all native calls have settled. */
     dispose(): Promise<void>;
@@ -26,7 +30,9 @@ export interface PreparedRemoteEmbeddingRuntime {
 
 let active = false;
 
-export function describeRemoteEmbeddingWorker(platform: string = process.platform) {
+export function describeRemoteEmbeddingWorker(
+  platform: string = process.platform,
+) {
   return {
     task: "embed-batch",
     protocolVersion: 1,
@@ -34,7 +40,8 @@ export function describeRemoteEmbeddingWorker(platform: string = process.platfor
     modelsLoaded: false,
     platform,
     reason: "fixed_job_preparation_and_admission_required",
-    modelLifetime: "one-shot job; sessions reused within batch, cold start per job",
+    modelLifetime:
+      "one-shot job; sessions reused within batch, cold start per job",
     requirements: [
       "trusted fixed-task adapter: Windows pre-exec 2-CPU affinity/below-normal; Mac nice10 and sampled 2-core-time throttle",
       "2-GiB aggregate owned RSS, 180-second total deadline, 8-GiB native available-memory floor",
@@ -58,13 +65,16 @@ export async function executeRemoteEmbeddingBatch(
     throw new Error("remote embedding: prepared identity differs");
   const check = () => {
     if (signal?.aborted) throw new Error("remote embedding: cancelled");
-    if (now() >= request.deadlineAt) throw new Error("remote embedding: deadline reached");
+    if (now() >= request.deadlineAt)
+      throw new Error("remote embedding: deadline reached");
   };
   check();
   active = true;
   let modelCreationStarted = false;
   let operationFailed = false;
-  let models: Awaited<ReturnType<PreparedRemoteEmbeddingRuntime["createModels"]>> | undefined;
+  let models:
+    | Awaited<ReturnType<PreparedRemoteEmbeddingRuntime["createModels"]>>
+    | undefined;
   try {
     await runtime.verifyArtifacts();
     check();
@@ -73,40 +83,58 @@ export async function executeRemoteEmbeddingBatch(
     check();
     await models.colbert.load();
     check();
-    const texts = request.chunks.map(chunk => chunk.text);
+    const texts = request.chunks.map((chunk) => chunk.text);
     const dense = await models.granite.runBatch(texts);
     check();
-    if (dense.length !== texts.length) throw new Error("remote embedding: partial dense batch");
-    const hybrids = await models.colbert.runBatch(texts, dense, identity.generation.vectorDim);
+    if (dense.length !== texts.length)
+      throw new Error("remote embedding: partial dense batch");
+    const hybrids = await models.colbert.runBatch(
+      texts,
+      dense,
+      identity.generation.vectorDim,
+    );
     check();
-    if (hybrids.length !== texts.length) throw new Error("remote embedding: partial hybrid batch");
+    if (hybrids.length !== texts.length)
+      throw new Error("remote embedding: partial hybrid batch");
     // Bound conversion/allocation before constructing the JSON representation.
     for (const hybrid of hybrids) {
       const tokens = hybrid.token_ids?.length ?? 0;
-      if (!(hybrid.dense instanceof Float32Array) || hybrid.dense.length !== identity.generation.vectorDim
-        || !(hybrid.colbert instanceof Int8Array) || tokens < 1 || tokens > 512
-        || hybrid.colbert.length !== tokens * identity.colbertDim
-        || !(hybrid.pooled_colbert_48d instanceof Float32Array)
-        || hybrid.pooled_colbert_48d.length !== identity.colbertDim)
+      if (
+        !(hybrid.dense instanceof Float32Array) ||
+        hybrid.dense.length !== identity.generation.vectorDim ||
+        !(hybrid.colbert instanceof Int8Array) ||
+        tokens < 1 ||
+        tokens > 512 ||
+        hybrid.colbert.length !== tokens * identity.colbertDim ||
+        !(hybrid.pooled_colbert_48d instanceof Float32Array) ||
+        hybrid.pooled_colbert_48d.length !== identity.colbertDim
+      )
         throw new Error("remote embedding: invalid packed hybrid dimensions");
     }
-    const result = validateRemoteEmbeddingResult({
-      protocolVersion: request.protocolVersion,
-      jobId: request.jobId,
-      daemonEpoch: request.daemonEpoch,
-      fileRevisionId: request.fileRevisionId,
-      attemptId: request.attemptId,
-      inputDigest: request.inputDigest,
-      identity,
-      vectors: hybrids.map((hybrid, i) => ({
-        id: request.chunks[i].id,
-        dense: Array.from(hybrid.dense),
-        colbert: Buffer.from(hybrid.colbert.buffer, hybrid.colbert.byteOffset, hybrid.colbert.byteLength).toString("base64"),
-        scale: hybrid.scale,
-        pooled: Array.from(hybrid.pooled_colbert_48d ?? []),
-        tokenIds: hybrid.token_ids ?? [],
-      })),
-    }, request);
+    const result = validateRemoteEmbeddingResult(
+      {
+        protocolVersion: request.protocolVersion,
+        jobId: request.jobId,
+        daemonEpoch: request.daemonEpoch,
+        fileRevisionId: request.fileRevisionId,
+        attemptId: request.attemptId,
+        inputDigest: request.inputDigest,
+        identity,
+        vectors: hybrids.map((hybrid, i) => ({
+          id: request.chunks[i].id,
+          dense: Array.from(hybrid.dense),
+          colbert: Buffer.from(
+            hybrid.colbert.buffer,
+            hybrid.colbert.byteOffset,
+            hybrid.colbert.byteLength,
+          ).toString("base64"),
+          scale: hybrid.scale,
+          pooled: Array.from(hybrid.pooled_colbert_48d ?? []),
+          tokenIds: hybrid.token_ids ?? [],
+        })),
+      },
+      request,
+    );
     check();
     return result;
   } catch (error) {
@@ -117,8 +145,12 @@ export async function executeRemoteEmbeddingBatch(
     // A failed disposal leaves this process unavailable until owned job exit.
     let cleaned = !modelCreationStarted;
     try {
-      if (models) { await models.dispose(); cleaned = true; }
+      if (models) {
+        await models.dispose();
+        cleaned = true;
+      }
     } catch (error) {
+      // biome-ignore lint/correctness/noUnsafeFinally: a failed disposal after a successful operation must surface, and must skip releasing the slot below
       if (!operationFailed) throw error;
     }
     // A factory failure can leave partially initialized native state without a

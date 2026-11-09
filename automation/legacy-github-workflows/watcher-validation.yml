@@ -16,7 +16,7 @@ jobs:
           run_install: false
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
-          node-version: '22'
+          node-version: "22"
       - run: pnpm install --frozen-lockfile
       - run: pnpm run typecheck && pnpm run test:typecheck
       - name: Native FSEvents, gap recovery, ignore policies and queue priority

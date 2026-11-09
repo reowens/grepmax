@@ -497,15 +497,36 @@ export function mcpLogQuery(
 // ---------------------------------------------------------------------------
 
 export const MCP_CORE_TOOLS = [
-  "repo_status", "list_projects", "semantic_search", "list_symbols",
-  "extract_symbol", "code_skeleton", "trace_calls", "impact_analysis",
+  "repo_status",
+  "list_projects",
+  "semantic_search",
+  "list_symbols",
+  "extract_symbol",
+  "code_skeleton",
+  "trace_calls",
+  "impact_analysis",
 ] as const;
 
 const MCP_WATCH_TOOLS = new Set([
-  "semantic_search", "code_skeleton", "trace_calls", "extract_symbol", "peek_symbol",
-  "dead", "audit", "surprising_connections", "get_neighbors", "find_paths",
-  "subgraph_for_files", "list_symbols", "related_files", "recent_changes",
-  "diff_changes", "find_tests", "impact_analysis", "find_similar", "build_context",
+  "semantic_search",
+  "code_skeleton",
+  "trace_calls",
+  "extract_symbol",
+  "peek_symbol",
+  "dead",
+  "audit",
+  "surprising_connections",
+  "get_neighbors",
+  "find_paths",
+  "subgraph_for_files",
+  "list_symbols",
+  "related_files",
+  "recent_changes",
+  "diff_changes",
+  "find_tests",
+  "impact_analysis",
+  "find_similar",
+  "build_context",
   "review_risk",
 ]);
 
@@ -518,10 +539,14 @@ export function mcpToolAnnotations(name: string) {
   };
 }
 
-export function parseMcpToolProfile(value: string | undefined): "core" | "full" {
+export function parseMcpToolProfile(
+  value: string | undefined,
+): "core" | "full" {
   if (value === undefined) return "full";
   if (value === "core" || value === "full") return value;
-  throw new Error("GMAX_MCP_TOOL_PROFILE must be exactly core or full (or unset)");
+  throw new Error(
+    "GMAX_MCP_TOOL_PROFILE must be exactly core or full (or unset)",
+  );
 }
 
 export const mcp = new Command("mcp")
@@ -532,7 +557,9 @@ export const mcp = new Command("mcp")
     try {
       profile = parseMcpToolProfile(process.env.GMAX_MCP_TOOL_PROFILE);
     } catch (error) {
-      process.stderr.write(`gmax: ${error instanceof Error ? error.message : String(error)}\n`);
+      process.stderr.write(
+        `gmax: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
       process.exitCode = 2;
       return;
     }
@@ -3544,7 +3571,8 @@ export const mcp = new Command("mcp")
             tools: {},
           },
           instructions:
-            formatRepoContext(readRepoStatus(process.cwd())) + "\n" +
+            formatRepoContext(readRepoStatus(process.cwd())) +
+            "\n" +
             "Use repo_status for bounded current-repo setup/status, including unregistered roots; " +
             "it does not open the index or start services. " +
             "gmax is a local semantic code-search index over one or more projects. " +
@@ -3604,104 +3632,113 @@ export const mcp = new Command("mcp")
         },
         handler: (args: Record<string, unknown>) => Promise<ToolResult>,
       ): void {
-        registrations.set(name, () => server.registerTool(
-          name,
-          {
-            ...config,
-            description: config.description +
-              (MCP_WATCH_TOOLS.has(name)
-                ? " Primary index reads may acquire leases/start background watching."
-                : "") + " Calls may write local query logs.",
-            annotations: mcpToolAnnotations(name),
-            ...(MCP_READ_OUTPUT_SCHEMAS[name]
-              ? {
-                  outputSchema: z.object(MCP_READ_OUTPUT_SCHEMAS[name]),
-                }
-              : {}),
-            inputSchema: z.object({
-              root: z.string().optional(),
-              ...config.inputSchema,
-            }),
-          },
-          async (rawArgs, context) =>
-            withMcpExecution(context?.mcpReq, async () => {
-              let args = (rawArgs ?? {}) as Record<string, unknown>;
-              const startMs = Date.now();
-              let target = projectRoot;
-              try {
-                checkMcpCancellation();
-                if (typeof args.root === "string" && args.root.trim()) {
-                  const raw = args.root.trim();
-                  if (path.isAbsolute(raw) || raw.includes(path.sep))
-                    target = path.resolve(raw);
-                  else {
-                    const projects = [
-                      ...listProjects(),
-                      ...storeInventory().flatMap((store) => store.projects),
-                    ].filter(
-                      (project, i, all) =>
-                        all.findIndex((p) => p.root === project.root) === i,
-                    );
-                    const selected = resolveMcpProject(
-                      raw,
-                      projectRoot,
-                      projects,
-                    );
-                    if (!selected)
-                      return err(
-                        `Unknown or ambiguous registered project: ${raw}. Use list_projects or an exact root.`,
-                      );
-                    target = selected.root;
+        registrations.set(name, () =>
+          server.registerTool(
+            name,
+            {
+              ...config,
+              description:
+                config.description +
+                (MCP_WATCH_TOOLS.has(name)
+                  ? " Primary index reads may acquire leases/start background watching."
+                  : "") +
+                " Calls may write local query logs.",
+              annotations: mcpToolAnnotations(name),
+              ...(MCP_READ_OUTPUT_SCHEMAS[name]
+                ? {
+                    outputSchema: z.object(MCP_READ_OUTPUT_SCHEMAS[name]),
                   }
-                }
-                return await withStoreContext(target, async () => {
-                  if (args.root !== undefined) {
-                    const selected = resolveMcpProject(
-                      args.root,
-                      currentRoot(),
-                      storeProjects(),
-                    );
-                    if (!selected)
-                      return err(
-                        `Unknown registered project: ${args.root}. Use list_projects to select a project name or exact root.`,
+                : {}),
+              inputSchema: z.object({
+                root: z.string().optional(),
+                ...config.inputSchema,
+              }),
+            },
+            async (rawArgs, context) =>
+              withMcpExecution(context?.mcpReq, async () => {
+                let args = (rawArgs ?? {}) as Record<string, unknown>;
+                const startMs = Date.now();
+                let target = projectRoot;
+                try {
+                  checkMcpCancellation();
+                  if (typeof args.root === "string" && args.root.trim()) {
+                    const raw = args.root.trim();
+                    if (path.isAbsolute(raw) || raw.includes(path.sep))
+                      target = path.resolve(raw);
+                    else {
+                      const projects = [
+                        ...listProjects(),
+                        ...storeInventory().flatMap((store) => store.projects),
+                      ].filter(
+                        (project, i, all) =>
+                          all.findIndex((p) => p.root === project.root) === i,
                       );
-                    args = { ...args, root: selected.root };
-                    currentStoreContext()!.root = selected.root;
+                      const selected = resolveMcpProject(
+                        raw,
+                        projectRoot,
+                        projects,
+                      );
+                      if (!selected)
+                        return err(
+                          `Unknown or ambiguous registered project: ${raw}. Use list_projects or an exact root.`,
+                        );
+                      target = selected.root;
+                    }
                   }
-                  const result = await mcpOperation(`Starting ${name}`, () =>
-                    handler(args),
-                  );
-                  await logToolCall(name, args, startMs, result);
+                  return await withStoreContext(target, async () => {
+                    if (args.root !== undefined) {
+                      const selected = resolveMcpProject(
+                        args.root,
+                        currentRoot(),
+                        storeProjects(),
+                      );
+                      if (!selected)
+                        return err(
+                          `Unknown registered project: ${args.root}. Use list_projects to select a project name or exact root.`,
+                        );
+                      args = { ...args, root: selected.root };
+                      currentStoreContext()!.root = selected.root;
+                    }
+                    const result = await mcpOperation(`Starting ${name}`, () =>
+                      handler(args),
+                    );
+                    await logToolCall(name, args, startMs, result);
+                    return result;
+                  });
+                } catch (error) {
+                  const result = toolError("Tool failed", error);
+                  await logToolCall(name, args, startMs, result, target);
                   return result;
-                });
-              } catch (error) {
-                const result = toolError("Tool failed", error);
-                await logToolCall(name, args, startMs, result, target);
-                return result;
-              }
-            }),
-        ));
+                }
+              }),
+          ),
+        );
       }
 
       // Unlike index-reading tools, setup discovery must also accept a repo
       // with no registration, and must bypass withStoreContext/read fallbacks.
-      registrations.set("repo_status", () => server.registerTool(
-        "repo_status",
-        {
-          description:
-            "Current-repo Gmax setup: registered root, cached index state and bounded daemon ping. No search, store/model access, leases or startup. Accepts unregistered repos. " +
-            `Launch repo index state: ${readRepoStatus(process.cwd()).indexState}.`,
-          inputSchema: z.object({
-            cwd: z.string().describe("Repo directory; defaults to server launch cwd").optional(),
-          }),
-          annotations: mcpToolAnnotations("repo_status"),
-          _meta: { "anthropic/alwaysLoad": true },
-        },
-        async (args) => {
-          const status = await getRepoStatus(args.cwd ?? process.cwd());
-          return ok(formatRepoContext(status), { ...status });
-        },
-      ));
+      registrations.set("repo_status", () =>
+        server.registerTool(
+          "repo_status",
+          {
+            description:
+              "Current-repo Gmax setup: registered root, cached index state and bounded daemon ping. No search, store/model access, leases or startup. Accepts unregistered repos. " +
+              `Launch repo index state: ${readRepoStatus(process.cwd()).indexState}.`,
+            inputSchema: z.object({
+              cwd: z
+                .string()
+                .describe("Repo directory; defaults to server launch cwd")
+                .optional(),
+            }),
+            annotations: mcpToolAnnotations("repo_status"),
+            _meta: { "anthropic/alwaysLoad": true },
+          },
+          async (args) => {
+            const status = await getRepoStatus(args.cwd ?? process.cwd());
+            return ok(formatRepoContext(status), { ...status });
+          },
+        ),
+      );
 
       tool(
         "semantic_search",
@@ -4065,7 +4102,8 @@ export const mcp = new Command("mcp")
       tool(
         "index_status",
         {
-          description: "All-project index health: chunks, files, projects, watcher status. For lightweight current-repo setup use repo_status.",
+          description:
+            "All-project index health: chunks, files, projects, watcher status. For lightweight current-repo setup use repo_status.",
           inputSchema: {},
           _meta: { "anthropic/alwaysLoad": true },
         },
@@ -4086,7 +4124,8 @@ export const mcp = new Command("mcp")
       tool(
         "summarize_directory",
         {
-          description: "Unavailable: the LLM summarizer is deliberately disabled. Retained for compatibility; does not generate summaries.",
+          description:
+            "Unavailable: the LLM summarizer is deliberately disabled. Retained for compatibility; does not generate summaries.",
           inputSchema: {
             path: z
               .string()
@@ -4315,7 +4354,9 @@ export const mcp = new Command("mcp")
         handleReviewRisk,
       );
 
-      for (const name of profile === "core" ? MCP_CORE_TOOLS : registrations.keys()) {
+      for (const name of profile === "core"
+        ? MCP_CORE_TOOLS
+        : registrations.keys()) {
         registrations.get(name)!();
       }
       return server;

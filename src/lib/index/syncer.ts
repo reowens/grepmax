@@ -1,16 +1,19 @@
-import { backgroundEmbeddingClient, type BackgroundEmbeddingConfig } from "../workers/remote-embedding/client";
-import { readFileSnapshot, computeContentHash } from "../utils/file-utils";
 import * as path from "node:path";
 import { CONFIG, FRAGMENT_COMPACT_THRESHOLD } from "../../config";
 import { MetaCache, type MetaEntry } from "../store/meta-cache";
 import type { VectorRecord } from "../store/types";
 import { VectorDB } from "../store/vector-db";
 import { isFileCached } from "../utils/cache-check";
+import { computeContentHash, readFileSnapshot } from "../utils/file-utils";
 import { acquireWriterLockWithRetry, type LockHandle } from "../utils/lock";
 import { debug, debugEvery, log, timer } from "../utils/logger";
 import { getProject } from "../utils/project-registry";
 import { ensureProjectPaths } from "../utils/project-root";
 import { getWorkerPool, type WorkerPool } from "../workers/pool";
+import {
+  type BackgroundEmbeddingConfig,
+  backgroundEmbeddingClient,
+} from "../workers/remote-embedding/client";
 import type { ProcessFileResult } from "../workers/worker";
 import {
   CURRENT_META_HASH_VERSION,
@@ -262,7 +265,8 @@ export async function initialSync(
     // Use a large flush batch to reduce LanceDB fragment count during sync.
     // 24 vectors/flush creates ~834 fragments for 10K chunks; 2000 creates ~5.
     const batchLimit = 2000;
-    const maxConcurrency = route.mode === "remote" ? 1 : Math.max(1, CONFIG.WORKER_THREADS);
+    const maxConcurrency =
+      route.mode === "remote" ? 1 : Math.max(1, CONFIG.WORKER_THREADS);
 
     const activeTasks: Promise<void>[] = [];
     let processed = 0;
@@ -386,7 +390,11 @@ export async function initialSync(
       let retries = 0;
       while (true) {
         try {
-          if (route.mode === "remote" && route.identity?.generation.fingerprint !== generation.fingerprint) throw new Error("Remote sync generation differs");
+          if (
+            route.mode === "remote" &&
+            route.identity?.generation.fingerprint !== generation.fingerprint
+          )
+            throw new Error("Remote sync generation differs");
           let result = await pool.processFile(
             {
               path: absPath,
@@ -396,12 +404,26 @@ export async function initialSync(
             },
             signal,
           );
-          result = await backgroundEmbeddingClient.complete(result, route, signal);
+          result = await backgroundEmbeddingClient.complete(
+            result,
+            route,
+            signal,
+          );
           if (route.mode === "remote") {
             const currentPolicy = await policy.classifyFile(absPath);
-            if (currentPolicy.status !== "indexable") throw new Error("File no longer eligible during remote synchronization");
-            const current = await readFileSnapshot(absPath, { projectRoot: resolvedRoot });
-            if (current.mtimeMs !== result.mtimeMs || current.size !== result.size || computeContentHash(current.buffer, absPath) !== result.hash) throw new Error("File changed during remote synchronization");
+            if (currentPolicy.status !== "indexable")
+              throw new Error(
+                "File no longer eligible during remote synchronization",
+              );
+            const current = await readFileSnapshot(absPath, {
+              projectRoot: resolvedRoot,
+            });
+            if (
+              current.mtimeMs !== result.mtimeMs ||
+              current.size !== result.size ||
+              computeContentHash(current.buffer, absPath) !== result.hash
+            )
+              throw new Error("File changed during remote synchronization");
           }
           return result;
         } catch (err) {

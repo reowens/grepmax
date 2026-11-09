@@ -2,11 +2,11 @@ name: CI
 
 on:
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   changes:
@@ -19,7 +19,7 @@ jobs:
           fetch-depth: 2
       - uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version: "22"
       - name: Verify change classification
         run: node --test scripts/test-ci-changes.cjs
       - name: Select checks from the complete diff
@@ -48,9 +48,9 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: '22'
-          cache: 'pnpm'
-          cache-dependency-path: 'pnpm-lock.yaml'
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: "pnpm-lock.yaml"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -58,7 +58,7 @@ jobs:
       - name: Setup locked prune runtime tooling
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
         with:
-          version: '0.12.18'
+          version: "0.12.18"
 
       - name: Audit JavaScript dependencies including development tools
         run: pnpm audit
@@ -106,9 +106,9 @@ jobs:
           run_install: false
       - uses: actions/setup-node@v6
         with:
-          node-version: '22'
-          cache: 'pnpm'
-          cache-dependency-path: 'pnpm-lock.yaml'
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: "pnpm-lock.yaml"
       - run: pnpm install --frozen-lockfile
       - name: Native FSEvents, gap recovery, ignore policies and queue priority
         run: pnpm exec vitest run tests/watcher-manager.test.ts tests/standalone-watcher-health.test.ts tests/project-watcher-ignore.test.ts tests/watcher-ignore.test.ts tests/watcher-batch.test.ts tests/project-batch-processor.test.ts --maxWorkers=2

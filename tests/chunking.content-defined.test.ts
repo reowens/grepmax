@@ -6,9 +6,32 @@ import { embeddingReuseKey } from "../src/lib/index/embedding-reuse";
 // Deterministic word salad so fixtures read like prose without a fixture file.
 function words(seed: number, count: number): string {
   const vocab = [
-    "index", "chunk", "embed", "store", "query", "watch", "batch", "vector",
-    "reuse", "edit", "file", "line", "worker", "search", "result", "plan",
-    "the", "a", "of", "to", "and", "when", "every", "after", "before", "only",
+    "index",
+    "chunk",
+    "embed",
+    "store",
+    "query",
+    "watch",
+    "batch",
+    "vector",
+    "reuse",
+    "edit",
+    "file",
+    "line",
+    "worker",
+    "search",
+    "result",
+    "plan",
+    "the",
+    "a",
+    "of",
+    "to",
+    "and",
+    "when",
+    "every",
+    "after",
+    "before",
+    "only",
   ];
   let x = seed * 2654435761;
   const out: string[] = [];
@@ -20,7 +43,15 @@ function words(seed: number, count: number): string {
 }
 
 function markdownDoc(sections: number): string[] {
-  const lines = ["---", "title: Example", "status: active", "---", "", "# Example plan", ""];
+  const lines = [
+    "---",
+    "title: Example",
+    "status: active",
+    "---",
+    "",
+    "# Example plan",
+    "",
+  ];
   for (let s = 0; s < sections; s++) {
     lines.push(`## Section ${s}`, "");
     const paragraphs = 1 + (s % 4);
@@ -45,7 +76,11 @@ function plainText(paragraphs: number): string[] {
 }
 
 function tsFile(): string[] {
-  const lines = ['import { join } from "node:path";', "", "export function build(root: string) {"];
+  const lines = [
+    'import { join } from "node:path";',
+    "",
+    "export function build(root: string) {",
+  ];
   for (let s = 0; s < 70; s++) {
     lines.push(`  const step${s} = join(root, "part-${s}");`);
     lines.push(`  if (step${s}.length > ${s}) {`);
@@ -55,7 +90,12 @@ function tsFile(): string[] {
   }
   lines.push("  return root;", "}", "");
   for (let f = 0; f < 4; f++) {
-    lines.push(`export function helper${f}(value: number) {`, `  return value * ${f + 2};`, "}", "");
+    lines.push(
+      `export function helper${f}(value: number) {`,
+      `  return value * ${f + 2};`,
+      "}",
+      "",
+    );
   }
   return lines;
 }
@@ -65,14 +105,20 @@ async function keysOf(filePath: string, lines: string[]) {
   const { chunks, metadata } = await chunker.chunk(filePath, lines.join("\n"));
   const keys = chunks.map((chunk) =>
     embeddingReuseKey(
-      formatChunkText({ ...chunk, context: chunk.context ?? [], imports: metadata.imports }, filePath)
-        .content,
+      formatChunkText(
+        { ...chunk, context: chunk.context ?? [], imports: metadata.imports },
+        filePath,
+      ).content,
     ),
   );
   return { chunks, keys };
 }
 
-async function changedAfter(filePath: string, before: string[], after: string[]) {
+async function changedAfter(
+  filePath: string,
+  before: string[],
+  after: string[],
+) {
   const a = await keysOf(filePath, before);
   const b = await keysOf(filePath, after);
   const stored = new Set(a.keys);
@@ -100,9 +146,17 @@ describe("content-defined chunk boundaries", () => {
       it("an insertion near the top changes at most 2 chunks", async () => {
         const before = make();
         const after = [...before];
-        after.splice(at, 0, ...(label === "TypeScript"
-          ? ["  // inserted note", "  // second inserted note", "  // third inserted note"]
-          : ["inserted: one", "inserted: two", "inserted: three"]));
+        after.splice(
+          at,
+          0,
+          ...(label === "TypeScript"
+            ? [
+                "  // inserted note",
+                "  // second inserted note",
+                "  // third inserted note",
+              ]
+            : ["inserted: one", "inserted: two", "inserted: three"]),
+        );
         const { total, changed } = await changedAfter(filePath, before, after);
         expect(total).toBeGreaterThan(8);
         expect(changed).toBeLessThanOrEqual(2);
@@ -128,25 +182,38 @@ describe("content-defined chunk boundaries", () => {
       it("keeps every chunk within the size limits", async () => {
         const { chunks } = await keysOf(filePath, make());
         for (const chunk of chunks) {
-          expect(chunk.content.length).toBeLessThanOrEqual(CONFIG.MAX_CHUNK_CHARS);
-          expect(chunk.content.split("\n").length).toBeLessThanOrEqual(CONFIG.MAX_CHUNK_LINES);
+          expect(chunk.content.length).toBeLessThanOrEqual(
+            CONFIG.MAX_CHUNK_CHARS,
+          );
+          expect(chunk.content.split("\n").length).toBeLessThanOrEqual(
+            CONFIG.MAX_CHUNK_LINES,
+          );
         }
       });
     });
   }
 
   it("cuts a dense run with no blank lines at stable points", async () => {
-    const before = Array.from({ length: 600 }, (_, i) => `entry ${i} ${words(i, 6)}`);
+    const before = Array.from(
+      { length: 600 },
+      (_, i) => `entry ${i} ${words(i, 6)}`,
+    );
     const after = [...before];
     after.splice(2, 0, "entry inserted");
-    const { total, changed } = await changedAfter("logs/run.log", before, after);
+    const { total, changed } = await changedAfter(
+      "logs/run.log",
+      before,
+      after,
+    );
     expect(total).toBeGreaterThan(8);
     expect(changed).toBeLessThanOrEqual(2);
   });
 
   it("prefers a markdown heading as a cut point", async () => {
     const { chunks } = await keysOf("docs/example.md", markdownDoc(45));
-    const headingStarts = chunks.filter((chunk) => chunk.content.startsWith("## ")).length;
+    const headingStarts = chunks.filter((chunk) =>
+      chunk.content.startsWith("## "),
+    ).length;
     expect(headingStarts / chunks.length).toBeGreaterThan(0.5);
   });
 
@@ -156,8 +223,14 @@ describe("content-defined chunk boundaries", () => {
     for (let i = 1; i < chunks.length; i++) {
       expect(chunks[i].startLine).toBeGreaterThan(chunks[i - 1].endLine);
     }
-    const covered = chunks.flatMap((chunk) => lines.slice(chunk.startLine, chunk.endLine + 1));
-    expect(covered.join("\n")).toBe(chunks.map((chunk) => chunk.content).join("\n"));
-    expect(covered.filter((line) => line.trim()).length).toBe(lines.filter((line) => line.trim()).length);
+    const covered = chunks.flatMap((chunk) =>
+      lines.slice(chunk.startLine, chunk.endLine + 1),
+    );
+    expect(covered.join("\n")).toBe(
+      chunks.map((chunk) => chunk.content).join("\n"),
+    );
+    expect(covered.filter((line) => line.trim()).length).toBe(
+      lines.filter((line) => line.trim()).length,
+    );
   });
 });

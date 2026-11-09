@@ -1,7 +1,13 @@
-import { classifyLeaseError, isStoreAccessRefused } from "../utils/store-access";
+import {
+  classifyLeaseError,
+  isStoreAccessRefused,
+} from "../utils/store-access";
 import { isEmbeddingBackendUnavailable } from "../workers/embedding-error";
 
-type SearchOperation = "query-embedding" | "requested-rerank" | "automatic-rerank";
+type SearchOperation =
+  | "query-embedding"
+  | "requested-rerank"
+  | "automatic-rerank";
 
 /** Explain only a stage that actually failed; never include backend error text. */
 export async function runSearchStage<T>(

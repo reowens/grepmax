@@ -90,7 +90,11 @@ describe("effective CPU capacity", () => {
         }),
       ),
     ).toBe(2);
-    for (const membership of ["0::relative", "0::/../service", "2:cpu:/service"]) {
+    for (const membership of [
+      "0::relative",
+      "0::/../service",
+      "2:cpu:/service",
+    ]) {
       const readText = vi.fn(
         environment({ "/proc/self/cgroup": membership }).readText,
       );

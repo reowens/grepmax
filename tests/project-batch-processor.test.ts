@@ -161,7 +161,9 @@ describe("ProjectBatchProcessor", () => {
       p.handleFileEvent("change", hot);
       await advance(p, 100);
       await p.activeBatch;
-      expect(pool.processFile.mock.calls.map(([input]: any[]) => input.path)).toEqual([ready]);
+      expect(
+        pool.processFile.mock.calls.map(([input]: any[]) => input.path),
+      ).toEqual([ready]);
       await advance(p, 1999);
       expect(pool.processFile).toHaveBeenCalledOnce();
       await advance(p, 1);
@@ -195,7 +197,9 @@ describe("ProjectBatchProcessor", () => {
       p.handleFileEvent("change", hot);
       await advance(p, 1000);
       await p.activeBatch;
-      expect(pool.processFile.mock.calls.map(([input]: any[]) => input.path)).toEqual([background]);
+      expect(
+        pool.processFile.mock.calls.map(([input]: any[]) => input.path),
+      ).toEqual([background]);
       expect(p.progress.queue.live).toBe(1);
     });
 
@@ -203,13 +207,21 @@ describe("ProjectBatchProcessor", () => {
       const p = scheduled();
       let finish!: (result: ReturnType<typeof makeWorkerResult>) => void;
       const old = makeWorkerResult(filePath);
-      pool.processFile.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+      pool.processFile.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
       p.handleFileEvent("change", filePath);
       await advance(p, 2000);
       expect(pool.processFile).toHaveBeenCalledOnce();
       for (let i = 0; i < 3; i++) {
         await advance(p, 100);
-        fs.writeFileSync(filePath, `export const sample = ${i}; // changed content\n`);
+        fs.writeFileSync(
+          filePath,
+          `export const sample = ${i}; // changed content\n`,
+        );
         p.handleFileEvent("change", filePath);
       }
       expect(p.progress.pendingFiles).toBe(1);
@@ -231,7 +243,12 @@ describe("ProjectBatchProcessor", () => {
     it("skips an unchanged followup when the active snapshot already covers it", async () => {
       const p = scheduled();
       let finish!: (result: ReturnType<typeof makeWorkerResult>) => void;
-      pool.processFile.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+      pool.processFile.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
       p.handleFileEvent("change", filePath);
       await advance(p, 2000);
       await advance(p, 100);
@@ -297,7 +314,12 @@ describe("ProjectBatchProcessor", () => {
     it("retains a newer forced generation arriving during active repair", async () => {
       const p = scheduled();
       let finish!: (result: ReturnType<typeof makeWorkerResult>) => void;
-      pool.processFile.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+      pool.processFile.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
       p.handleFileEvent("change", filePath, { forceReprocess: true });
       await advance(p, 2000);
       await advance(p, 100);
@@ -320,7 +342,10 @@ describe("ProjectBatchProcessor", () => {
       p.handleFileEvent("change", filePath);
       await advance(p, 3000);
       expect(pool.processFile).not.toHaveBeenCalled();
-      expect(p.pendingWork.get(filePath).save).toEqual({ firstPendingAt: first, lastEventAt: first + 1000 });
+      expect(p.pendingWork.get(filePath).save).toEqual({
+        firstPendingAt: first,
+        lastEventAt: first + 1000,
+      });
       p.resume();
       await advance(p, 1999);
       expect(pool.processFile).not.toHaveBeenCalled();
@@ -342,8 +367,18 @@ describe("ProjectBatchProcessor", () => {
     it("rechecks quiet readiness after a project mutex wait", async () => {
       const mutex = new KeyedMutex();
       let release!: () => void;
-      const holder = mutex.run(tmpDir, undefined, () => new Promise<void>(resolve => { release = resolve; }));
-      const p = scheduled({ runOperation: (execute, signal) => mutex.run(tmpDir, signal, () => execute(signal)) });
+      const holder = mutex.run(
+        tmpDir,
+        undefined,
+        () =>
+          new Promise<void>((resolve) => {
+            release = resolve;
+          }),
+      );
+      const p = scheduled({
+        runOperation: (execute, signal) =>
+          mutex.run(tmpDir, signal, () => execute(signal)),
+      });
       p.handleFileEvent("change", filePath);
       await advance(p, 2000);
       await advance(p, 500);
@@ -512,7 +547,9 @@ describe("ProjectBatchProcessor", () => {
     await processReadyBatch(processor);
     expect(pool.processFile).toHaveBeenCalledTimes(23);
     expect(vectorDb.deletePaths).toHaveBeenCalledTimes(3);
-    expect(vectorDb.deletePaths.mock.calls.map(([p]: [string[]]) => p.length)).toEqual([10, 10, 3]);
+    expect(
+      vectorDb.deletePaths.mock.calls.map(([p]: [string[]]) => p.length),
+    ).toEqual([10, 10, 3]);
     expect(reindexed).toEqual([10, 10, 3]);
     expect(files.every((file) => meta.has(file))).toBe(true);
   });

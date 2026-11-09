@@ -1,4 +1,3 @@
-import { backgroundEmbeddingClient, readBackgroundEmbeddingConfig } from "../workers/remote-embedding/client";
 import * as path from "node:path";
 import { CONFIG } from "../../config";
 import type {
@@ -16,9 +15,16 @@ import {
   readFileSnapshot,
 } from "../utils/file-utils";
 import { debug, log } from "../utils/logger";
-import { EmbeddingBackendUnavailableError, isEmbeddingBackendUnavailable } from "../workers/embedding-error";
+import {
+  EmbeddingBackendUnavailableError,
+  isEmbeddingBackendUnavailable,
+} from "../workers/embedding-error";
 import type { ProcessFileResult } from "../workers/orchestrator";
 import { getWorkerPool, type WorkerPool } from "../workers/pool";
+import {
+  backgroundEmbeddingClient,
+  readBackgroundEmbeddingConfig,
+} from "../workers/remote-embedding/client";
 import { hardDeadlineMs } from "../workers/task-deadline";
 import {
   CURRENT_META_HASH_VERSION,
@@ -156,7 +162,9 @@ export class ProjectBatchProcessor {
       hardDeadlineMs(this.workerPool.embedMode === "cpu" ? "cpu" : "gpu") +
         60_000,
     );
-    this.unsubscribeRemote = backgroundEmbeddingClient.onSettled(() => this.schedulePendingBatch(0));
+    this.unsubscribeRemote = backgroundEmbeddingClient.onSettled(() =>
+      this.schedulePendingBatch(0),
+    );
   }
 
   handleFileEvent(
@@ -216,11 +224,16 @@ export class ProjectBatchProcessor {
       this.forcedReprocess.set(normalized, ++this.forceGeneration);
     }
     this.retryAt.delete(normalized);
-    this.enqueueWork(normalized, event, {
-      kind: options?.workKind ?? "live",
-      queuedAt: Date.now(),
-      bypassQuiet: options?.forceReprocess === true,
-    }, true);
+    this.enqueueWork(
+      normalized,
+      event,
+      {
+        kind: options?.workKind ?? "live",
+        queuedAt: Date.now(),
+        bypassQuiet: options?.forceReprocess === true,
+      },
+      true,
+    );
     this.onActivity?.();
     this.scheduleBatch();
   }
@@ -397,12 +410,17 @@ export class ProjectBatchProcessor {
   private schedulePendingBatch(defaultDelayMs = DEBOUNCE_MS): void {
     try {
       const route = readBackgroundEmbeddingConfig();
-      if (route.mode === "remote" && route.identity?.generation.fingerprint !== this.workerPool.generation.fingerprint) throw new Error("Remote generation differs from P3");
+      if (
+        route.mode === "remote" &&
+        route.identity?.generation.fingerprint !==
+          this.workerPool.generation.fingerprint
+      )
+        throw new Error("Remote generation differs from P3");
       backgroundEmbeddingClient.requireAvailable(route);
-    }
-    catch {
+    } catch {
       if (this.debounceTimer) clearTimeout(this.debounceTimer);
-      this.debounceTimer = null; this.debounceDueMs = 0;
+      this.debounceTimer = null;
+      this.debounceDueMs = 0;
       return; // Keep pending events; never spin or silently run document models locally.
     }
     if (this.closed || this.paused) return;
@@ -423,7 +441,12 @@ export class ProjectBatchProcessor {
       this.debounceDueMs = 0;
       return;
     }
-    const dueMs = Math.max(now, next, this.batchNotBeforeMs, this.backendRetryAt);
+    const dueMs = Math.max(
+      now,
+      next,
+      this.batchNotBeforeMs,
+      this.backendRetryAt,
+    );
     if (this.debounceTimer && this.debounceDueMs === dueMs) return;
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
     this.debounceDueMs = dueMs;
@@ -575,7 +598,11 @@ export class ProjectBatchProcessor {
         failed: boolean,
       ) => {
         if (this.pending.has(absPath)) {
-          this.enqueueWork(absPath, this.pending.get(absPath)!, batchWork.get(absPath)!);
+          this.enqueueWork(
+            absPath,
+            this.pending.get(absPath)!,
+            batchWork.get(absPath)!,
+          );
           return;
         }
         if (failed) {
@@ -627,7 +654,8 @@ export class ProjectBatchProcessor {
         const pure = new Set(metaDeletes);
         const commitDeletes: string[] = [];
         for (let i = deletes.length - 1; i >= 0; i--) {
-          if (!pure.has(deletes[i])) commitDeletes.push(...deletes.splice(i, 1));
+          if (!pure.has(deletes[i]))
+            commitDeletes.push(...deletes.splice(i, 1));
         }
         const taken = {
           vectors: vectors.splice(0, vectors.length),
@@ -750,7 +778,14 @@ export class ProjectBatchProcessor {
               : undefined;
           const fileStart = Date.now();
           const route = readBackgroundEmbeddingConfig();
-          if (route.mode === "remote" && route.identity?.generation.fingerprint !== pool.generation.fingerprint) throw new EmbeddingBackendUnavailableError("Remote generation differs from P3");
+          if (
+            route.mode === "remote" &&
+            route.identity?.generation.fingerprint !==
+              pool.generation.fingerprint
+          )
+            throw new EmbeddingBackendUnavailableError(
+              "Remote generation differs from P3",
+            );
           backgroundEmbeddingClient.requireAvailable(route);
           let result = await pool.processFile(
             {
@@ -764,10 +799,20 @@ export class ProjectBatchProcessor {
             },
             batchAc.signal,
           );
-          result = await backgroundEmbeddingClient.complete(result, route, batchAc.signal);
+          result = await backgroundEmbeddingClient.complete(
+            result,
+            route,
+            batchAc.signal,
+          );
           if (route.mode === "remote") {
-            const fresh = await readFileSnapshot(absPath, { projectRoot: this.projectRoot });
-            if (fresh.size !== result.size || fresh.mtimeMs !== result.mtimeMs || computeContentHash(fresh.buffer, absPath) !== result.hash) {
+            const fresh = await readFileSnapshot(absPath, {
+              projectRoot: this.projectRoot,
+            });
+            if (
+              fresh.size !== result.size ||
+              fresh.mtimeMs !== result.mtimeMs ||
+              computeContentHash(fresh.buffer, absPath) !== result.hash
+            ) {
               retryFailures.add(absPath);
               return;
             }

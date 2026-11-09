@@ -89,17 +89,27 @@ export async function reviewCommit(opts: ReviewOptions): Promise<ReviewResult> {
     // blast-radius × tests × churn ordering to anchor its judgement, rather
     // than inferring importance from prose alone.
     signal?.throwIfAborted();
-    const contextPromise = gatherContext(symbols, changedFiles, ctx, verbose, pending, signal);
+    const contextPromise = gatherContext(
+      symbols,
+      changedFiles,
+      ctx,
+      verbose,
+      pending,
+      signal,
+    );
     const riskPromise = gatherRiskInputs(commitRef, projectRoot, {
-        vectorDb,
-        graphBuilder,
-      }).catch((error) => {
-        signal?.throwIfAborted();
-        if (error instanceof Error && error.name === "AbortError") throw error;
-        return [];
-      });
+      vectorDb,
+      graphBuilder,
+    }).catch((error) => {
+      signal?.throwIfAborted();
+      if (error instanceof Error && error.name === "AbortError") throw error;
+      return [];
+    });
     pending.push(riskPromise);
-    const [context, riskInputs] = await Promise.all([contextPromise, riskPromise]);
+    const [context, riskInputs] = await Promise.all([
+      contextPromise,
+      riskPromise,
+    ]);
     signal?.throwIfAborted();
     contextStr = context;
     const riskRows = computeRiskTable(riskInputs);
@@ -135,15 +145,18 @@ export async function reviewCommit(opts: ReviewOptions): Promise<ReviewResult> {
   let content: string;
   try {
     if (verbose) process.stderr.write("[review] calling LLM...\n");
-    const response = await client.chat.completions.create({
-      model: modelName,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      max_tokens: config.maxTokens,
-      temperature: 0,
-    }, { signal });
+    const response = await client.chat.completions.create(
+      {
+        model: modelName,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        max_tokens: config.maxTokens,
+        temperature: 0,
+      },
+      { signal },
+    );
     signal?.throwIfAborted();
 
     content = response.choices?.[0]?.message?.content ?? "";
@@ -233,8 +246,10 @@ async function gatherContext(
   const timeout = new Promise<"timeout">((resolve) => {
     timer = setTimeout(() => resolve("timeout"), CONTEXT_TIMEOUT_MS);
   });
-  const settled = await Promise.race([Promise.allSettled(allPromises), timeout])
-    .finally(() => clearTimeout(timer));
+  const settled = await Promise.race([
+    Promise.allSettled(allPromises),
+    timeout,
+  ]).finally(() => clearTimeout(timer));
   signal?.throwIfAborted();
 
   const peekResults: string[] = [];

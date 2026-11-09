@@ -1,4 +1,5 @@
 ---
+
 name: grepmax
 description: Use for questions about where or how something happens in this codebase when you do not know the exact name. In an indexed repo, search with gmax first, then Read the returned lines. Use Grep for exact names.
 allowed-tools: "Bash(gmax:*), Read"
@@ -76,6 +77,7 @@ All search flags: `--agent --plain -m <n> --per-file <n> --min-score <n> --root 
 #### When `--agent` isn't enough
 
 If you need more context than the one-line hint, use `--skeleton` instead:
+
 ```
 gmax "auth middleware" --skeleton -m 2     # file skeletons for top matches
 ```
@@ -84,6 +86,7 @@ This shows function signatures, what each calls, and complexity — enough to de
 #### Full function bodies without follow-up reads
 
 Use `--context-for-llm` to get complete function bodies + imports per result in one call:
+
 ```
 gmax "auth middleware" --context-for-llm -m 3      # full bodies with imports
 gmax "auth" --context-for-llm --budget 4000 -m 5   # cap output at ~4000 tokens
@@ -92,12 +95,14 @@ gmax "auth" --context-for-llm --budget 4000 -m 5   # cap output at ~4000 tokens
 #### Debug search ranking
 
 Use `--explain` to see why results ranked where they did:
+
 ```
 gmax "auth handler" --explain                       # scoring breakdown per result
 gmax "auth handler" --explain --agent               # compact explain suffix
 ```
 
 ### Trace — `gmax trace <symbol>`
+
 ```
 gmax trace handleAuth                      # 1-hop: callers + callees
 gmax trace handleAuth -d 2                 # 2-hop: callers-of-callers
@@ -109,6 +114,7 @@ gmax trace handleAuth --inbound --limit 20      # show up to 20 callers (default
 ```
 
 ### Extract — `gmax extract <symbol>`
+
 ```
 gmax extract handleAuth                    # full function body with line numbers
 gmax extract handleAuth --agent            # compact: path:start-end then raw code
@@ -119,6 +125,7 @@ gmax extract handleAuth --no-tests         # suppress tests footer (default-on)
 Output ends with a `--- tests:` footer listing tests that exercise the symbol (default-on; opt-out with `--no-tests`).
 
 ### Peek — `gmax peek <symbol>`
+
 ```
 gmax peek handleAuth                       # signature + callers + callees
 gmax peek handleAuth --agent               # compact TSV output
@@ -129,6 +136,7 @@ gmax peek handleAuth --no-tests            # suppress tests footer (default-on)
 Agent output ends with `t: <test-file>:line\t<test-symbol>\t<hop-label>` rows where hop-label is `direct`, `N-hop`, or `via-import`.
 
 ### Skeleton — `gmax skeleton <target>`
+
 ```
 gmax skeleton src/lib/auth.ts              # single file
 gmax skeleton handleAuth                   # by symbol name (finds its file)
@@ -137,12 +145,14 @@ gmax skeleton src/lib/auth.ts --json       # structured JSON output
 ```
 
 ### Project overview — `gmax project`
+
 ```
 gmax project                               # languages, structure, key symbols
 gmax project --root ~/other/project        # different project
 ```
 
 ### Related files — `gmax related <file>`
+
 ```
 gmax related src/lib/index/syncer.ts       # dependencies + dependents
 gmax related src/lib/index/syncer.ts --root ~/project
@@ -150,6 +160,7 @@ gmax related src/lib/index/syncer.ts --root ~/project
 When both directions are empty, falls back to files mentioning the input file's basename. Generic basenames (`index`, `main`, `lib`, etc.) skip the fallback.
 
 ### Commit history — `gmax log <path-or-symbol>`
+
 ```
 gmax log src/lib/auth.ts                   # commits touching this file
 gmax log src/lib/                          # commits touching this directory
@@ -164,6 +175,7 @@ gmax log src/lib/auth.ts --agent           # TSV: hash\tisoDate\tauthor\tsubject
 ```
 
 ### Symbols — `gmax symbols`
+
 ```
 gmax symbols                               # list indexed symbols
 gmax symbols auth -p src/ --root ~/proj    # filter by name, path, project
@@ -171,6 +183,7 @@ gmax symbols --agent                       # compact: symbol\tpath:line\tcount
 ```
 
 ### Test — `gmax test <symbol|file>`
+
 ```
 gmax test handleAuth                   # tests calling handleAuth (call-graph + import-fallback)
 gmax test src/lib/auth.ts              # tests for symbols in this file
@@ -180,6 +193,7 @@ gmax test handleAuth --agent           # compact output
 Hop labels: `direct` (calls the symbol), `N-hop` (calls a transitive caller), `via-import` (test references the symbol via import or mock when no call-graph match exists).
 
 ### Impact — `gmax impact <symbol|file>`
+
 ```
 gmax impact handleAuth                 # dependents + affected tests
 gmax impact src/lib/auth.ts            # everything depending on this file
@@ -187,6 +201,7 @@ gmax impact handleAuth --agent         # compact output
 ```
 
 ### Similar — `gmax similar <symbol|file>`
+
 ```
 gmax similar handleAuth                # functions doing similar things
 gmax similar src/lib/auth.ts           # files with similar structure
@@ -194,6 +209,7 @@ gmax similar handleAuth -m 5 --agent   # top 5, compact output
 ```
 
 ### Dead — `gmax dead <symbol>`
+
 ```
 gmax dead handleAuth                   # zero-inbound-callers check via the call graph
 gmax dead handleAuth --agent           # TSV: status\tdef:line\tcaller_count\tcallers_top3
@@ -202,6 +218,7 @@ gmax dead handleAuth --in src/         # restrict to a sub-path
 Status is `DEAD` (no callers, not exported), `PUBLIC EXPORT` (no internal callers but the defining chunk is exported — check external usage), or `LIVE` (with caller count + top-3 file:line). The call graph reflects what tree-sitter chunked: dynamic dispatch, reflection, eval, and string-built call sites won't show up — `DEAD` is a hypothesis, not a proof.
 
 ### Audit — `gmax audit`
+
 ```
 gmax audit                             # god nodes, hub files, cycles, dead candidates
 gmax audit --agent --top 5             # compact TSV, 5 per category
@@ -213,6 +230,7 @@ codebase. Agent rows are `god <symbol> <path:line> <refs> <chunks>`, `hub <file>
 Dynamic dispatch, reflection, and eval are invisible to it, so dead candidates are hypotheses.
 
 ### Surprises — `gmax surprises` (experimental)
+
 ```
 gmax surprises --agent                 # embedding-similar file pairs the static graph misses
 gmax surprises --top 10 --min-sim 0.7  # tighten the similarity floor
@@ -221,6 +239,7 @@ Orientation only — surfaces cross-directory pairs that look related by embeddi
 static edge. Useful for spotting duplication or missing abstractions, not for proving anything.
 
 ### Context — `gmax context <topic-or-path> --budget <tokens>`
+
 ```
 gmax context "authentication system" --budget 4000
 gmax context "payment flow" --budget 8000
@@ -247,6 +266,7 @@ gmax investigate "where are API routes defined?" --root ~/project --rounds 5
 Agentic Q&A: a local LLM autonomously uses gmax tools (search, trace, peek, impact, related) to gather evidence and answer. Requires `gmax llm on && gmax llm start`. Use `-v` to see tool calls and reasoning.
 
 ### Other
+
 ```
 gmax status                                # show all indexed projects
 gmax status --agent                        # compact: name\tchunks\tage\tstatus

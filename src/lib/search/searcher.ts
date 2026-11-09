@@ -21,8 +21,8 @@ import {
   type ArtifactPreference,
   artifactPreference,
 } from "./artifact-preference";
-import { SearchDiagnosticCollector } from "./diagnostics";
 import { lexicalSearchWarning, runSearchStage } from "./degradation";
+import { SearchDiagnosticCollector } from "./diagnostics";
 import { detectIntent, type SearchIntent } from "./intent";
 import { loadOrComputePageRank, pageRankBoostForSymbols } from "./pagerank";
 import { validateMaxPerFile } from "./per-file";

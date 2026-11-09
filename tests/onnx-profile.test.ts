@@ -57,7 +57,10 @@ describe("ONNX profile in the embedding identity", () => {
   it("refuses a profile that does not match its fingerprint", () => {
     const configured = resolveEmbeddingGeneration({ modelTier: "small" });
     expect(() =>
-      parseEmbeddingGeneration({ ...configured, onnxProfile: "dense=model_q4.onnx" }),
+      parseEmbeddingGeneration({
+        ...configured,
+        onnxProfile: "dense=model_q4.onnx",
+      }),
     ).toThrow(/inconsistent/);
   });
 
@@ -101,7 +104,10 @@ describe("ONNX profile in the embedding identity", () => {
         status: "indexed" as const,
         ...before,
       };
-      fs.writeFileSync(path.join(home, "projects.json"), JSON.stringify([entry]));
+      fs.writeFileSync(
+        path.join(home, "projects.json"),
+        JSON.stringify([entry]),
+      );
       expect(registry.listProjects()).toHaveLength(1);
       registry.registerProject({
         ...entry,
@@ -126,7 +132,8 @@ describe("Granite dense weights file", () => {
   const cache = (files: string[]) => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "gmax-granite-"));
     fs.mkdirSync(path.join(root, modelId, "onnx"), { recursive: true });
-    for (const f of files) fs.writeFileSync(path.join(root, modelId, "onnx", f), "");
+    for (const f of files)
+      fs.writeFileSync(path.join(root, modelId, "onnx", f), "");
     return root;
   };
 

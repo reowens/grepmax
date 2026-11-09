@@ -1,4 +1,3 @@
-import { backgroundEmbeddingClient, readBackgroundEmbeddingConfig } from "../workers/remote-embedding/client";
 import * as fs from "node:fs";
 import * as net from "node:net";
 import * as path from "node:path";
@@ -119,6 +118,10 @@ import {
   isWorkerPoolInitialized,
   WorkerPool,
 } from "../workers/pool";
+import {
+  backgroundEmbeddingClient,
+  readBackgroundEmbeddingConfig,
+} from "../workers/remote-embedding/client";
 import { handleDocumentSearch } from "./document-search-handler";
 import {
   handleCommand,
@@ -1699,8 +1702,12 @@ export class Daemon {
 
   private async indexPendingProject(root: string): Promise<void> {
     let route: ReturnType<typeof readBackgroundEmbeddingConfig>;
-    try { route = readBackgroundEmbeddingConfig(); backgroundEmbeddingClient.requireAvailable(route); }
-    catch { return; }
+    try {
+      route = readBackgroundEmbeddingConfig();
+      backgroundEmbeddingClient.requireAvailable(route);
+    } catch {
+      return;
+    }
     const ac = new AbortController();
     this.shutdownAbortControllers.add(ac);
     try {

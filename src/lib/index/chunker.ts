@@ -1288,7 +1288,8 @@ export class TreeSitterChunker {
         if (score[k] < 0) continue;
         if (best < 0 || score[k] > score[best]) best = k;
         const balanced =
-          offset[k] - offset[from] >= margin && offset[to] - offset[k] >= margin;
+          offset[k] - offset[from] >= margin &&
+          offset[to] - offset[k] >= margin;
         if (balanced && (bestInside < 0 || score[k] > score[bestInside])) {
           bestInside = k;
         }
@@ -1316,7 +1317,11 @@ export class TreeSitterChunker {
           break;
         }
       }
-      for (let k = j + 1; isCut && k < n && offset[k] - offset[j] < window; k++) {
+      for (
+        let k = j + 1;
+        isCut && k < n && offset[k] - offset[j] < window;
+        k++
+      ) {
         if (score[k] > score[j]) isCut = false;
       }
       if (!isCut) continue;

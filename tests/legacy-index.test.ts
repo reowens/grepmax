@@ -28,9 +28,9 @@ describe("findLegacyProjectIndex", () => {
   it("reports a project's own .gmax/lancedb", () => {
     const project = path.join(tmp, "project");
     fs.mkdirSync(path.join(project, ".gmax", "lancedb"), { recursive: true });
-    expect(findLegacyProjectIndex(project, path.join(tmp, "home", ".gmax"))).toBe(
-      path.join(project, ".gmax"),
-    );
+    expect(
+      findLegacyProjectIndex(project, path.join(tmp, "home", ".gmax")),
+    ).toBe(path.join(project, ".gmax"));
   });
 
   it("is silent without a lancedb directory", () => {

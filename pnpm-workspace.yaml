@@ -42,29 +42,29 @@ allowBuilds:
 # copies, Linux loads 1.24.3's libonnxruntime.so.1 under the 1.30.0 binding and
 # fails with VERS_1.30.0 not found. Remove once 4.3.2 is past the release-age window.
 minimumReleaseAgeExclude:
-  - '@huggingface/transformers@4.3.2'
+  - "@huggingface/transformers@4.3.2"
   # Explicit minor dependency update; keep server/client/core pins aligned.
-  - '@modelcontextprotocol/core@2.4.0'
-  - '@modelcontextprotocol/server@2.4.0'
-  - '@modelcontextprotocol/client@2.4.0'
-  - '@biomejs/biome@2.6.4'
-  - '@biomejs/cli-android-arm64@2.6.4'
-  - '@biomejs/cli-android-x64@2.6.4'
-  - '@biomejs/cli-darwin-arm64@2.6.4'
-  - '@biomejs/cli-darwin-x64@2.6.4'
-  - '@biomejs/cli-linux-arm64-musl@2.6.4'
-  - '@biomejs/cli-linux-arm64@2.6.4'
-  - '@biomejs/cli-linux-x64-musl@2.6.4'
-  - '@biomejs/cli-linux-x64@2.6.4'
-  - '@biomejs/cli-win32-arm64@2.6.4'
-  - '@biomejs/cli-win32-x64@2.6.4'
-  - '@types/node@26.6.6'
+  - "@modelcontextprotocol/core@2.4.0"
+  - "@modelcontextprotocol/server@2.4.0"
+  - "@modelcontextprotocol/client@2.4.0"
+  - "@biomejs/biome@2.6.4"
+  - "@biomejs/cli-android-arm64@2.6.4"
+  - "@biomejs/cli-android-x64@2.6.4"
+  - "@biomejs/cli-darwin-arm64@2.6.4"
+  - "@biomejs/cli-darwin-x64@2.6.4"
+  - "@biomejs/cli-linux-arm64-musl@2.6.4"
+  - "@biomejs/cli-linux-arm64@2.6.4"
+  - "@biomejs/cli-linux-x64-musl@2.6.4"
+  - "@biomejs/cli-linux-x64@2.6.4"
+  - "@biomejs/cli-win32-arm64@2.6.4"
+  - "@biomejs/cli-win32-x64@2.6.4"
+  - "@types/node@26.6.6"
   - qs@6.17.1
-  - '@lancedb/lancedb-darwin-arm64@0.41.0'
-  - '@lancedb/lancedb-linux-arm64-gnu@0.41.0'
-  - '@lancedb/lancedb-linux-arm64-musl@0.41.0'
-  - '@lancedb/lancedb-linux-x64-gnu@0.41.0'
-  - '@lancedb/lancedb-linux-x64-musl@0.41.0'
-  - '@lancedb/lancedb-win32-arm64-msvc@0.41.0'
-  - '@lancedb/lancedb-win32-x64-msvc@0.41.0'
-  - '@lancedb/lancedb@0.41.0'
+  - "@lancedb/lancedb-darwin-arm64@0.41.0"
+  - "@lancedb/lancedb-linux-arm64-gnu@0.41.0"
+  - "@lancedb/lancedb-linux-arm64-musl@0.41.0"
+  - "@lancedb/lancedb-linux-x64-gnu@0.41.0"
+  - "@lancedb/lancedb-linux-x64-musl@0.41.0"
+  - "@lancedb/lancedb-win32-arm64-msvc@0.41.0"
+  - "@lancedb/lancedb-win32-x64-msvc@0.41.0"
+  - "@lancedb/lancedb@0.41.0"

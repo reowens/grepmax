@@ -1,4 +1,5 @@
 ---
+
 description: "Add current directory to gmax index"
 allowed-tools: "Bash"
 argument-hint: "[directory]"

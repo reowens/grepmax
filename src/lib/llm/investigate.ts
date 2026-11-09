@@ -115,19 +115,27 @@ export async function investigate(
   try {
     const searcher = new Searcher(vectorDb);
     const graphBuilder = new GraphBuilder(vectorDb, projectRoot);
-    const ctx: InvestigateContext = { vectorDb, searcher, graphBuilder, projectRoot };
+    const ctx: InvestigateContext = {
+      vectorDb,
+      searcher,
+      graphBuilder,
+      projectRoot,
+    };
     for (let round = 0; round < maxRounds; round++) {
       signal?.throwIfAborted();
       rounds = round + 1;
       const roundStart = Date.now();
 
-      const response = await client.chat.completions.create({
-        model: modelName,
-        messages,
-        tools: TOOLS,
-        tool_choice: "auto",
-        temperature: 0,
-      }, { signal });
+      const response = await client.chat.completions.create(
+        {
+          model: modelName,
+          messages,
+          tools: TOOLS,
+          tool_choice: "auto",
+          temperature: 0,
+        },
+        { signal },
+      );
       signal?.throwIfAborted();
 
       if (!response.choices?.length) {
@@ -241,11 +249,14 @@ export async function investigate(
     // model from emitting a stray tool call here (verified 2026-06-28 — it still
     // leaks raw markup into content), so the finalizeAnswer guard is what protects
     // this path rather than a request-shape tweak.
-    const response = await client.chat.completions.create({
-      model: modelName,
-      messages,
-      temperature: 0,
-    }, { signal });
+    const response = await client.chat.completions.create(
+      {
+        model: modelName,
+        messages,
+        temperature: 0,
+      },
+      { signal },
+    );
     signal?.throwIfAborted();
 
     if (!response.choices?.length) {

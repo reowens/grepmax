@@ -1,4 +1,5 @@
 ---
+
 description: "Run gmax health check"
 allowed-tools: "Bash"
 ---

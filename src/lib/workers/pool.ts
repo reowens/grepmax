@@ -36,11 +36,8 @@ import {
   WORKER_RESOURCE_RESERVE_MB,
 } from "../utils/resource-budget";
 import { latchSafetyStop } from "../utils/safety-latch";
+import { ONNX_THREADS_ENV, onnxThreadsFor } from "./embeddings/onnx-options";
 import { hardDeadlineMs } from "./task-deadline";
-import {
-  ONNX_THREADS_ENV,
-  onnxThreadsFor,
-} from "./embeddings/onnx-options";
 import type { ProcessFileInput, ProcessFileResult, RerankDoc } from "./worker";
 
 type TaskMethod = "processFile" | "encodeQuery" | "rerank";
@@ -102,7 +99,6 @@ const TASK_TIMEOUT_MS = (() => {
   if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv;
   return 120_000;
 })();
-
 
 // Backstop for the leak that motivated all of the above: a worker left
 // busy=true with no live timer to rescue it (a dropped IPC result, or a
@@ -609,7 +605,10 @@ export class WorkerPool {
       this.dispatch();
     });
     worker.child.on("error", (error: Error) => {
-      debug("pool", `retiring worker PID:${worker.child.pid}: ${error.message}`);
+      debug(
+        "pool",
+        `retiring worker PID:${worker.child.pid}: ${error.message}`,
+      );
     });
     // A signal request (or IPC error) cannot establish that native work ended.
     // Keep the child visible to ownership/shutdown bookkeeping if it fails.

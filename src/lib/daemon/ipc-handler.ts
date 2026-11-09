@@ -1,4 +1,3 @@
-import { backgroundEmbeddingStatus } from "../workers/remote-embedding/client";
 import * as fs from "node:fs";
 import type * as net from "node:net";
 import * as path from "node:path";
@@ -13,6 +12,7 @@ import {
 } from "../utils/operation-coordinator";
 import { resolveContainedPath } from "../utils/path-containment";
 import { listProjects } from "../utils/project-registry";
+import { backgroundEmbeddingStatus } from "../workers/remote-embedding/client";
 import type { Daemon } from "./daemon";
 import {
   DaemonPausedError,
@@ -182,7 +182,9 @@ export async function handleCommand(
 
       case "status":
         return {
-          backgroundEmbedding: backgroundEmbeddingStatus(daemon.embeddingConfiguration?.()?.generation.fingerprint),
+          backgroundEmbedding: backgroundEmbeddingStatus(
+            daemon.embeddingConfiguration?.()?.generation.fingerprint,
+          ),
           ok: true,
           pid: process.pid,
           uptime: daemon.uptime(),

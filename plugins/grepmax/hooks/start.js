@@ -20,12 +20,14 @@ async function main() {
   if (leasing && !leased && input.session_id && !isAutostartDisabled())
     context +=
       "\nGmax has not confirmed this session's watch lease yet (daemon offline, starting or slow to answer); later activity retries it.";
-  process.stdout.write(JSON.stringify({
-    hookSpecificOutput: {
-      hookEventName: "SessionStart",
-      additionalContext: context,
-    },
-  }));
+  process.stdout.write(
+    JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: "SessionStart",
+        additionalContext: context,
+      },
+    }),
+  );
 }
 
 main();

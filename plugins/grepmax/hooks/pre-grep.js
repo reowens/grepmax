@@ -90,17 +90,47 @@ function isConceptualQuery(pattern) {
 }
 
 const VALUE_FLAGS = new Set([
-  "-g", "--glob", "-t", "--type", "-T", "--type-not", "-A", "--after-context",
-  "-B", "--before-context", "-C", "--context", "-m", "--max-count", "-d",
-  "--max-depth", "--include", "--exclude", "--exclude-dir", "--sort", "--sortr",
-  "--color", "--colors", "-j", "--threads", "-M", "--max-columns", "--replace",
+  "-g",
+  "--glob",
+  "-t",
+  "--type",
+  "-T",
+  "--type-not",
+  "-A",
+  "--after-context",
+  "-B",
+  "--before-context",
+  "-C",
+  "--context",
+  "-m",
+  "--max-count",
+  "-d",
+  "--max-depth",
+  "--include",
+  "--exclude",
+  "--exclude-dir",
+  "--sort",
+  "--sortr",
+  "--color",
+  "--colors",
+  "-j",
+  "--threads",
+  "-M",
+  "--max-columns",
+  "--replace",
   "--max-filesize",
 ]);
 const NOT_A_PATTERN_SEARCH = new Set([
-  "--fixed-strings", "--file", "--files", "--type-list", "--help", "--version",
+  "--fixed-strings",
+  "--file",
+  "--files",
+  "--type-list",
+  "--help",
+  "--version",
 ]);
 // Logs, data and output are filtered with a search, not explored with one.
-const NOT_SOURCE = /\.(log|ndjson|jsonl|json|csv|txt)$|(^|\/)(logs?|tmp)(\/|$)|\$/;
+const NOT_SOURCE =
+  /\.(log|ndjson|jsonl|json|csv|txt)$|(^|\/)(logs?|tmp)(\/|$)|\$/;
 
 // The command's words and control operators, with quotes removed.
 function shellTokens(command) {
@@ -153,7 +183,8 @@ function searchPattern(head, args, cwd) {
       const name = arg.split("=")[0];
       if (NOT_A_PATTERN_SEARCH.has(name)) return null;
       if (name === "--recursive") recursive = true;
-      if (name === "--regexp") pattern ??= arg.includes("=") ? arg.slice(9) : args[++i];
+      if (name === "--regexp")
+        pattern ??= arg.includes("=") ? arg.slice(9) : args[++i];
       else if (VALUE_FLAGS.has(name) && !arg.includes("=")) i++;
     } else if (arg.startsWith("-") && arg.length > 1) {
       if (arg.length === 2 && VALUE_FLAGS.has(arg)) {
@@ -171,7 +202,8 @@ function searchPattern(head, args, cwd) {
   if (pattern === null) pattern = positional.shift();
   for (const path of positional) {
     if (NOT_SOURCE.test(path) || /\.\w+$/.test(path)) return null;
-    if ((path.startsWith("/") && !path.startsWith(cwd)) || path.startsWith("~")) return null;
+    if ((path.startsWith("/") && !path.startsWith(cwd)) || path.startsWith("~"))
+      return null;
   }
   return typeof pattern === "string" ? pattern.replace(/\\\|/g, "|") : null;
 }
@@ -183,14 +215,16 @@ function shellSearchPatterns(command, cwd) {
   const tokens = shellTokens(command);
   const patterns = [];
   for (let i = 0; i < tokens.length; i++) {
-    const startsPipeline = i === 0 || (tokens[i - 1].op && tokens[i - 1].op !== "|");
+    const startsPipeline =
+      i === 0 || (tokens[i - 1].op && tokens[i - 1].op !== "|");
     if (!startsPipeline || tokens[i].op) continue;
     let at = i;
     while (/^\w+=/.test(tokens[at]?.word ?? "")) at++;
     const head = (tokens[at]?.word ?? "").split("/").pop();
     if (head !== "rg" && head !== "grep" && head !== "egrep") continue;
     const args = [];
-    for (let j = at + 1; j < tokens.length && !tokens[j].op; j++) args.push(tokens[j].word);
+    for (let j = at + 1; j < tokens.length && !tokens[j].op; j++)
+      args.push(tokens[j].word);
     const pattern = searchPattern(head, args, cwd);
     if (pattern) patterns.push(pattern);
   }
@@ -207,7 +241,8 @@ function bashHintIsDue(sessionId) {
     `gmax-search-hint-${String(sessionId ?? "unknown").replace(/\W/g, "")}`,
   );
   try {
-    if (Date.now() - fs.statSync(marker).mtimeMs < BASH_HINT_INTERVAL_MS) return false;
+    if (Date.now() - fs.statSync(marker).mtimeMs < BASH_HINT_INTERVAL_MS)
+      return false;
   } catch {}
   try {
     fs.writeFileSync(marker, "");

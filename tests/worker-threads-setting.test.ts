@@ -64,7 +64,12 @@ describe("worker threads setting", () => {
       { value: 3, source: "env" },
     );
     expect(
-      resolveWorkerThreads({ cores: 2, cpuBudget: 1, configValue: 2, env: "6" }),
+      resolveWorkerThreads({
+        cores: 2,
+        cpuBudget: 1,
+        configValue: 2,
+        env: "6",
+      }),
     ).toEqual({ value: 6, source: "env" });
     expect(
       resolveWorkerThreads({ cores: 2, cpuBudget: 1, configValue: 3 }),

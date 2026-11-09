@@ -33,7 +33,9 @@ export function installedUserDaemonService({
     return USER_UNIT;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT")
-      throw new Error(`Cannot verify ${USER_UNIT}; refusing standalone startup`);
+      throw new Error(
+        `Cannot verify ${USER_UNIT}; refusing standalone startup`,
+      );
     return null;
   }
 }

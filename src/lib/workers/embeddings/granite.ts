@@ -59,7 +59,9 @@ export class GraniteModel {
   }
 
   async dispose(): Promise<void> {
-    const session = this.session; this.session = null; this.tokenizer = null;
+    const session = this.session;
+    this.session = null;
+    this.tokenizer = null;
     if (session) await session.release();
   }
 

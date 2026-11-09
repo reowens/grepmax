@@ -23,8 +23,6 @@
 </a>
 </div>
 
-
-
 Natural-language search that works like `grep`. Fast, local, and built for coding agents.
 
 - **Semantic:** Finds concepts ("where do transactions get created?"), not just strings.
@@ -227,12 +225,12 @@ it does not open the index, index files, start services or load models. The MCP
 `repo_status` tool provides the same setup information, including unregistered
 repos. Counts are cached and do not establish index freshness.
 
-| Signal | What it establishes |
-| --- | --- |
+| Signal                      | What it establishes                                                                  |
+| --------------------------- | ------------------------------------------------------------------------------------ |
 | `indexState`, `matchedRoot` | Whether this repo is registered/indexed; preserve pending, error and unknown states. |
-| `daemon.state` | Daemon readiness, independently of whether this repo is indexed. |
-| Client STDIO registration | How the client is configured to launch Gmax. |
-| Actual client tool catalog | Whether Gmax tools are attached and available to that agent session. |
+| `daemon.state`              | Daemon readiness, independently of whether this repo is indexed.                     |
+| Client STDIO registration   | How the client is configured to launch Gmax.                                         |
+| Actual client tool catalog  | Whether Gmax tools are attached and available to that agent session.                 |
 
 `not_registered` applies to this repo even if another project is indexed or its
 daemon is ready. Status does not add a project or search a different one.
@@ -293,37 +291,36 @@ Trace adds `evidenceVersion: 1`, reference evidence, center-selection evidence a
 
 Trace, neighbor and path traversals enforce request-local work budgets during consumption. Trace/neighbors admit at most 500 visited nodes; paths retain their 1,000-node ceiling. Pending queues, retained node occurrences and expansions have separate ceilings, alongside 10,000 examined edges, 20,000 copied symbol items, 10,000 fetched rows, 1,500 queries and a shared 15-second deadline. Existing smaller per-query windows still apply. Trace exposes optional `coverage.work`; neighbor/path daemon responses include `work`, and text output reports exhausted, hop-limited, budget-limited or target-found outcomes. A limited or legacy-unknown empty result does not prove absence. Counts cover admitted traversal work, including rejected fetched rows; they do not bound native scan bytes, row width or event-loop scheduling latency. File-subgraph aggregation and other graph tools retain their existing contracts.
 
-
-| Tool | Description |
-| --- | --- |
-| `repo_status` | Bounded current-repo registration/index state and optional daemon ping; no indexing or startup. |
-| `semantic_search` | Search by meaning. Pointer mode matches CLI `--agent` output; `detail=code/full` returns snippets. |
-| `code_skeleton` | File structure with bodies collapsed (~4x fewer tokens). |
-| `trace_calls` | Call graph: importers, callers (multi-hop), callees with file:line. |
-| `extract_symbol` | Complete function/class body by symbol name. |
-| `peek_symbol` | Compact overview: signature + callers + callees. |
-| `dead` | Unused-symbol check via call graph. Returns `DEAD`, `PUBLIC EXPORT`, or `LIVE` with caller count. |
-| `audit` | Graph summary: god nodes, hub files, symbol-derived file dependency cycles, and dead-code candidates. |
+| Tool                     | Description                                                                                                                          |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `repo_status`            | Bounded current-repo registration/index state and optional daemon ping; no indexing or startup.                                      |
+| `semantic_search`        | Search by meaning. Pointer mode matches CLI `--agent` output; `detail=code/full` returns snippets.                                   |
+| `code_skeleton`          | File structure with bodies collapsed (~4x fewer tokens).                                                                             |
+| `trace_calls`            | Call graph: importers, callers (multi-hop), callees with file:line.                                                                  |
+| `extract_symbol`         | Complete function/class body by symbol name.                                                                                         |
+| `peek_symbol`            | Compact overview: signature + callers + callees.                                                                                     |
+| `dead`                   | Unused-symbol check via call graph. Returns `DEAD`, `PUBLIC EXPORT`, or `LIVE` with caller count.                                    |
+| `audit`                  | Graph summary: god nodes, hub files, symbol-derived file dependency cycles, and dead-code candidates.                                |
 | `surprising_connections` | Experimental orientation signal: embedding-similar file pairs with no direct indexed static file edge. Requires `experimental:true`. |
-| `get_neighbors` | Graph primitive: symbols reachable from a node along call edges within N hops. |
-| `find_paths` | Graph primitive: shortest call-graph path between two symbols. |
-| `subgraph_for_files` | Graph primitive: local dependency subgraph for a set of files. |
-| `list_symbols` | Indexed symbols with role and export status. |
-| `list_projects` | List every indexed project (name, root, status, chunks) to pick a search scope. |
-| `index_status` | All-project index health; use `repo_status` for lightweight current-repo setup. |
-| `summarize_project` | Project overview: languages, structure, key symbols, entry points. |
-| `summarize_directory` | Compatibility entry; summarization is disabled and generates no summaries. |
-| `related_files` | Dependencies and dependents by shared symbols. |
-| `recent_changes` | Recently modified indexed files. |
-| `diff_changes` | Search scoped to git changes. |
-| `find_tests` | Find tests via reverse call graph. |
-| `impact_analysis` | Dependents + affected tests for a symbol or file. |
-| `find_similar` | Vector similarity search. |
-| `build_context` | Token-budgeted topic summary. |
-| `investigate` | Agentic codebase Q&A using local LLM + gmax tools. |
-| `review_commit` | Review a git commit for bugs, security issues, and breaking changes. |
-| `review_report` | Get accumulated code review findings for the current project. |
-| `review_risk` | Deterministic risk ranking of symbols a commit touches (blast radius × tests × churn). No LLM. |
+| `get_neighbors`          | Graph primitive: symbols reachable from a node along call edges within N hops.                                                       |
+| `find_paths`             | Graph primitive: shortest call-graph path between two symbols.                                                                       |
+| `subgraph_for_files`     | Graph primitive: local dependency subgraph for a set of files.                                                                       |
+| `list_symbols`           | Indexed symbols with role and export status.                                                                                         |
+| `list_projects`          | List every indexed project (name, root, status, chunks) to pick a search scope.                                                      |
+| `index_status`           | All-project index health; use `repo_status` for lightweight current-repo setup.                                                      |
+| `summarize_project`      | Project overview: languages, structure, key symbols, entry points.                                                                   |
+| `summarize_directory`    | Compatibility entry; summarization is disabled and generates no summaries.                                                           |
+| `related_files`          | Dependencies and dependents by shared symbols.                                                                                       |
+| `recent_changes`         | Recently modified indexed files.                                                                                                     |
+| `diff_changes`           | Search scoped to git changes.                                                                                                        |
+| `find_tests`             | Find tests via reverse call graph.                                                                                                   |
+| `impact_analysis`        | Dependents + affected tests for a symbol or file.                                                                                    |
+| `find_similar`           | Vector similarity search.                                                                                                            |
+| `build_context`          | Token-budgeted topic summary.                                                                                                        |
+| `investigate`            | Agentic codebase Q&A using local LLM + gmax tools.                                                                                   |
+| `review_commit`          | Review a git commit for bugs, security issues, and breaking changes.                                                                 |
+| `review_report`          | Get accumulated code review findings for the current project.                                                                        |
+| `review_risk`            | Deterministic risk ranking of symbols a commit touches (blast radius × tests × churn). No LLM.                                       |
 
 ## Search Options
 
@@ -331,36 +328,36 @@ Trace, neighbor and path traversals enforce request-local work budgets during co
 gmax "query" [options]
 ```
 
-| Flag | Description | Default |
-| --- | --- | --- |
-| `--agent` | Compact one-line output for AI agents. | `false` |
-| `-m <n>` | Max results. | `5` |
-| `--per-file <n>` | Max matches per file. | `3` |
-| `--role <role>` | Filter: `ORCHESTRATION`, `DEFINITION`, `IMPLEMENTATION`. | — |
-| `--lang <ext>` | Filter by extension (e.g. `ts`, `py`). | — |
-| `--file <name>` | Filter by filename. | — |
-| `--exclude <prefix>` | Exclude path prefix. | — |
-| `--symbol` | Append call graph after results. | `false` |
-| `--imports` | Prepend file imports per result. | `false` |
-| `--name <regex>` | Filter by symbol name. | — |
-| `--in <subpath>` | Restrict to a sub-path of the project (repeatable). | — |
-| `--seed-file <path>` | Bias results toward files in your working context (repeatable). | — |
-| `--seed-symbol <name>` | Bias results toward an identifier you're working with (repeatable). | — |
-| `--skeleton` | Show file skeletons for top matches. | `false` |
-| `--context-for-llm` | Full function bodies + imports per result. | `false` |
-| `--budget <tokens>` | Cap output tokens (for `--context-for-llm`). | `8000` |
-| `--explain` | Show scoring breakdown per result. | `false` |
-| `--scores` | Show relevance scores. | `false` |
-| `--compact` | Compact hits view (paths + line ranges + role/preview). | `false` |
-| `--plain` | Disable ANSI colors and use simpler formatting. | `false` |
-| `-c, --content` | Show full chunk content instead of snippets. | `false` |
-| `-C <n>` | Context lines before/after. | `0` |
-| `-s, --sync` | Sync local files to the store before searching. | `false` |
-| `--root <dir>` | Search a different project. | cwd |
-| `--all-projects` | Search every indexed project; results grouped by project. | `false` |
-| `--projects <list>` | Search only these projects (comma-separated names). | — |
-| `--exclude-projects <list>` | With `--all-projects`, skip these projects. | — |
-| `--min-score <n>` | Minimum score relative to this query’s top match, not an absolute confidence threshold. | `0` |
+| Flag                        | Description                                                                             | Default |
+| --------------------------- | --------------------------------------------------------------------------------------- | ------- |
+| `--agent`                   | Compact one-line output for AI agents.                                                  | `false` |
+| `-m <n>`                    | Max results.                                                                            | `5`     |
+| `--per-file <n>`            | Max matches per file.                                                                   | `3`     |
+| `--role <role>`             | Filter: `ORCHESTRATION`, `DEFINITION`, `IMPLEMENTATION`.                                | —       |
+| `--lang <ext>`              | Filter by extension (e.g. `ts`, `py`).                                                  | —       |
+| `--file <name>`             | Filter by filename.                                                                     | —       |
+| `--exclude <prefix>`        | Exclude path prefix.                                                                    | —       |
+| `--symbol`                  | Append call graph after results.                                                        | `false` |
+| `--imports`                 | Prepend file imports per result.                                                        | `false` |
+| `--name <regex>`            | Filter by symbol name.                                                                  | —       |
+| `--in <subpath>`            | Restrict to a sub-path of the project (repeatable).                                     | —       |
+| `--seed-file <path>`        | Bias results toward files in your working context (repeatable).                         | —       |
+| `--seed-symbol <name>`      | Bias results toward an identifier you're working with (repeatable).                     | —       |
+| `--skeleton`                | Show file skeletons for top matches.                                                    | `false` |
+| `--context-for-llm`         | Full function bodies + imports per result.                                              | `false` |
+| `--budget <tokens>`         | Cap output tokens (for `--context-for-llm`).                                            | `8000`  |
+| `--explain`                 | Show scoring breakdown per result.                                                      | `false` |
+| `--scores`                  | Show relevance scores.                                                                  | `false` |
+| `--compact`                 | Compact hits view (paths + line ranges + role/preview).                                 | `false` |
+| `--plain`                   | Disable ANSI colors and use simpler formatting.                                         | `false` |
+| `-c, --content`             | Show full chunk content instead of snippets.                                            | `false` |
+| `-C <n>`                    | Context lines before/after.                                                             | `0`     |
+| `-s, --sync`                | Sync local files to the store before searching.                                         | `false` |
+| `--root <dir>`              | Search a different project.                                                             | cwd     |
+| `--all-projects`            | Search every indexed project; results grouped by project.                               | `false` |
+| `--projects <list>`         | Search only these projects (comma-separated names).                                     | —       |
+| `--exclude-projects <list>` | With `--all-projects`, skip these projects.                                             | —       |
+| `--min-score <n>`           | Minimum score relative to this query’s top match, not an absolute confidence threshold. | `0`     |
 
 v0.26.50 carries an explicit `--per-file` value into retrieval as well as formatting. Values must be positive safe integers. Omitted requests retain the searcher's configured `GMAX_MAX_PER_FILE` cap or three; larger explicit values still respect `-m` and the existing candidate/rerank bounds. Explicit overrides require a daemon advertising `capabilities.perFileSearch: 1`; older live daemons are refused with an update/restart hint, without opening a fallback reader. An incompatible optional local HTTP fast path is skipped. v0.26.49 and older releases do not support this retrieval override.
 
@@ -541,10 +538,10 @@ Two settings keys cover it (`~/.claude/settings.json`, or the project's `.claude
 }
 ```
 
-| Key | What it unlocks |
-| --- | --- |
+| Key                                | What it unlocks                                                                                                                     |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `sandbox.network.allowUnixSockets` | Every read command — search, `test`, `impact`, `trace`, `peek`, `status` — via the daemon. This is the one that matters day to day. |
-| `sandbox.filesystem.allowWrite` | The in-process fallback, used only when no daemon is running (autostart disabled, CI). With a daemon up, nothing needs it. |
+| `sandbox.filesystem.allowWrite`    | The in-process fallback, used only when no daemon is running (autostart disabled, CI). With a daemon up, nothing needs it.          |
 
 Without them gmax refuses rather than failing with a bare `EPERM`, exits `2`, and prints the key to add:
 
@@ -620,13 +617,13 @@ The hook sends an IPC message to the daemon and returns instantly — it never b
 
 Set `GMAX_LLM_MODEL` to a GGUF file on your machine before starting; the built-in fallback path is machine-specific and may not exist. The server accepts loopback addresses only.
 
-| Variable | Description | Default |
-| --- | --- | --- |
-| `GMAX_LLM_MODEL` | Path to GGUF model file | Machine-specific fallback |
-| `GMAX_LLM_HOST` | Loopback address (`localhost` maps to IPv4 loopback) | `127.0.0.1` |
-| `GMAX_LLM_BINARY` | llama-server binary | `llama-server` |
-| `GMAX_LLM_PORT` | Server port | `8079` |
-| `GMAX_LLM_IDLE_TIMEOUT` | Minutes before auto-stop | `30` |
+| Variable                | Description                                          | Default                   |
+| ----------------------- | ---------------------------------------------------- | ------------------------- |
+| `GMAX_LLM_MODEL`        | Path to GGUF model file                              | Machine-specific fallback |
+| `GMAX_LLM_HOST`         | Loopback address (`localhost` maps to IPv4 loopback) | `127.0.0.1`               |
+| `GMAX_LLM_BINARY`       | llama-server binary                                  | `llama-server`            |
+| `GMAX_LLM_PORT`         | Server port                                          | `8079`                    |
+| `GMAX_LLM_IDLE_TIMEOUT` | Minutes before auto-stop                             | `30`                      |
 
 ### Summary compatibility commands
 
@@ -635,6 +632,7 @@ The summarizer is decommissioned. `gmax summarize` and MCP `summarize_directory`
 ## Architecture
 
 Default shared data lives in `~/.gmax/`; configured secondary stores retain their own project indexes:
+
 - `lancedb/` — LanceDB vector store (centralized, all projects)
 - `cache/meta.lmdb` — file metadata cache (hashes, mtimes)
 - `cache/watchers.lmdb` — watcher/daemon registry (LMDB, crash-safe)
@@ -652,8 +650,8 @@ Default shared data lives in `~/.gmax/`; configured secondary stores retain thei
 
 **Supported Languages:**
 
-- *Structure-aware* (Tree-sitter chunking + call graph): TypeScript, JavaScript/JSX, Python, Go, Rust, Java, C#, C++, C, Ruby, PHP, Swift, Kotlin, Scala, Lua, Bash, JSON.
-- *Text-indexed* (semantic search only, no call graph): Markdown, YAML, CSS, HTML, SQL, TOML, XML, and other common formats.
+- _Structure-aware_ (Tree-sitter chunking + call graph): TypeScript, JavaScript/JSX, Python, Go, Rust, Java, C#, C++, C, Ruby, PHP, Swift, Kotlin, Scala, Lua, Bash, JSON.
+- _Text-indexed_ (semantic search only, no call graph): Markdown, YAML, CSS, HTML, SQL, TOML, XML, and other common formats.
 
 ## Configuration
 
@@ -670,20 +668,20 @@ Default shared data lives in `~/.gmax/`; configured secondary stores retain thei
 
 gmax embeds with IBM's Granite r2 code-embedding models. Two tiers are available:
 
-| Tier | Model | Dim | Params |
-| --- | --- | --- | --- |
-| `small` (default) | `granite-embedding-small-english-r2` | 384 | 47M |
-| `standard` | `granite-embedding-english-r2` | 768 | 149M |
+| Tier              | Model                                | Dim | Params |
+| ----------------- | ------------------------------------ | --- | ------ |
+| `small` (default) | `granite-embedding-small-english-r2` | 384 | 47M    |
+| `standard`        | `granite-embedding-english-r2`       | 768 | 149M   |
 
 **384d remains the default.** In the recorded 97-case model-tier comparison
 on gmax's own repo, the larger 768d model scored **~10 points
-*worse* on Recall@10** than 384d, consistently on both the MLX GPU and ONNX CPU
+_worse_ on Recall@10** than 384d, consistently on both the MLX GPU and ONNX CPU
 embedding paths, with and without ColBERT rerank:
 
-| Model | Recall@10 | Reported MRR |
-| --- | --- | --- |
-| `small` / 384d | **0.72** | **0.51** |
-| `standard` / 768d | 0.62 | 0.44 |
+| Model             | Recall@10 | Reported MRR |
+| ----------------- | --------- | ------------ |
+| `small` / 384d    | **0.72**  | **0.51**     |
+| `standard` / 768d | 0.62      | 0.44         |
 
 <sub>Historical gmax-repo comparison: 97 cases, MLX GPU, rerank off. CPU/q4 and rerank-on comparisons showed a similar gap. These figures are not a current-release benchmark; see the evaluation caveats below.</sub>
 
@@ -730,16 +728,16 @@ fixtures/
 
 ### Environment Variables
 
-| Variable | Description | Default |
-| --- | --- | --- |
-| `GMAX_EMBED_MODE` | Force `cpu` or `gpu` | Auto-detect |
-| `GMAX_WORKER_THREADS` | Worker processes for embedding; overrides `gmax config --worker-threads` | `min(cores, 4, max(2, floor(cores/2)))` |
-| `GMAX_RESOURCE_BUDGET_MB` | macOS aggregate admission budget across clients, stores, workers and models; accepts 256–6144 MiB | `6144` |
-| `GMAX_WORKER_RSS_RECYCLE_MB` | Recycle workers that remain above this RSS; `0` disables the check | `1536` |
-| `GMAX_DEBUG` | Debug logging | Off |
-| `GMAX_RERANK` | Force ColBERT rerank (`1`); concentrated candidates can also enable it automatically ([why](docs/known-limitations.md)) | Off |
-| `GMAX_CONCENTRATION_THRESHOLD` | Top-ten candidate share in one file that enables ColBERT; set above `1` for a true rerank-off baseline | `0.7` |
-| `GMAX_ANN` | Experimental IVF_FLAT vector index (`1`); leave off unless validating recall on your corpus | Off |
+| Variable                       | Description                                                                                                             | Default                                 |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| `GMAX_EMBED_MODE`              | Force `cpu` or `gpu`                                                                                                    | Auto-detect                             |
+| `GMAX_WORKER_THREADS`          | Worker processes for embedding; overrides `gmax config --worker-threads`                                                | `min(cores, 4, max(2, floor(cores/2)))` |
+| `GMAX_RESOURCE_BUDGET_MB`      | macOS aggregate admission budget across clients, stores, workers and models; accepts 256–6144 MiB                       | `6144`                                  |
+| `GMAX_WORKER_RSS_RECYCLE_MB`   | Recycle workers that remain above this RSS; `0` disables the check                                                      | `1536`                                  |
+| `GMAX_DEBUG`                   | Debug logging                                                                                                           | Off                                     |
+| `GMAX_RERANK`                  | Force ColBERT rerank (`1`); concentrated candidates can also enable it automatically ([why](docs/known-limitations.md)) | Off                                     |
+| `GMAX_CONCENTRATION_THRESHOLD` | Top-ten candidate share in one file that enables ColBERT; set above `1` for a true rerank-off baseline                  | `0.7`                                   |
+| `GMAX_ANN`                     | Experimental IVF_FLAT vector index (`1`); leave off unless validating recall on your corpus                             | Off                                     |
 
 ## Troubleshooting
 
@@ -808,13 +806,13 @@ For detection and recovery guidance, check
 [`docs/known-limitations.md`](docs/known-limitations.md) — it covers what each case means and
 whether you need to act.
 
-| You see | What it means |
-|---|---|
-| `Optimize panicked ... inverted/builder.rs` | The historical FTS merge defect is fixed in the shipped LanceDB 0.39.0 runtime. If it recurs on a current release, preserve the version and logs and report a regression; the rebuild guard remains a recovery tripwire. |
-| `disabling auto-rebuild until an optimize succeeds` | Recovery remains paused under containment. Preserve diagnostics; use existing indexes or vector retrieval rather than forcing optimize. |
-| `ANN: vector index not built` | Normal — exact search is the default. |
-| `cannot reach the daemon socket from this sandbox` (exit 2) | The shell is sandboxed. Add the two keys in [Running under the Claude Code sandbox](#running-under-the-claude-code-sandbox); `gmax doctor` warns about the same gap. |
-| `npm audit` reports advisories on install | Record the installed version and dependency path and report new findings. JavaScript consumer audits do not cover the Python embedding environment; maintainers also audit its locked registry dependencies with `pnpm run audit:python` (Python 3.11+; no model load). |
+| You see                                                     | What it means                                                                                                                                                                                                                                                           |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Optimize panicked ... inverted/builder.rs`                 | The historical FTS merge defect is fixed in the shipped LanceDB 0.39.0 runtime. If it recurs on a current release, preserve the version and logs and report a regression; the rebuild guard remains a recovery tripwire.                                                |
+| `disabling auto-rebuild until an optimize succeeds`         | Recovery remains paused under containment. Preserve diagnostics; use existing indexes or vector retrieval rather than forcing optimize.                                                                                                                                 |
+| `ANN: vector index not built`                               | Normal — exact search is the default.                                                                                                                                                                                                                                   |
+| `cannot reach the daemon socket from this sandbox` (exit 2) | The shell is sandboxed. Add the two keys in [Running under the Claude Code sandbox](#running-under-the-claude-code-sandbox); `gmax doctor` warns about the same gap.                                                                                                    |
+| `npm audit` reports advisories on install                   | Record the installed version and dependency path and report new findings. JavaScript consumer audits do not cover the Python embedding environment; maintainers also audit its locked registry dependencies with `pnpm run audit:python` (Python 3.11+; no model load). |
 
 ## Contributing
 
@@ -880,7 +878,7 @@ The OSS harness expects indexed express, lodash and platform fixtures at the pat
 
 Both retrieval harnesses request 20 results for diagnostics, but `mrrAt10` and Recall@10 credit only ranks 1–10. Later matches retain their actual ranks and count as found/hits, with zero reciprocal-rank credit. This cutoff correction shipped in v0.26.49; historical MRR figures recorded before the correction may include ranks 11–20 and require a new run or rescoring before comparison. Also set `GMAX_CONCENTRATION_THRESHOLD=2` for a true rerank-off comparison: `GMAX_EVAL_RERANK=0` alone does not disable automatic concentration gating. Freeze fixtures and record source, embedding/index identity and ranking configuration before drawing conclusions.
 
-`pnpm bench:recall` also drives the model-tier comparison behind the 384d default — see [Model Tier](#model-tier) for why the larger 768d model is *not* the default.
+`pnpm bench:recall` also drives the model-tier comparison behind the 384d default — see [Model Tier](#model-tier) for why the larger 768d model is _not_ the default.
 
 #### Frozen multi-repository baseline
 

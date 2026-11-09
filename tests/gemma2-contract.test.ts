@@ -4,9 +4,9 @@ import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 import { MODEL_TIERS } from "../src/config";
 import {
-  ONNX_PROFILE,
   computeEmbeddingFingerprint,
   isOnnxFallbackCompatible,
+  ONNX_PROFILE,
   parseEmbeddingGeneration,
   resolveEmbeddingGeneration,
 } from "../src/lib/index/embedding-generation";

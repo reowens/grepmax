@@ -140,7 +140,10 @@ Examples:
       console.log(`Removed ${projectName}${chunkStr}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
-      console.error("Failed to remove project:", formatCliErrorGuidance(message));
+      console.error(
+        "Failed to remove project:",
+        formatCliErrorGuidance(message),
+      );
       process.exitCode = 1;
     } finally {
       if (metaCache) {

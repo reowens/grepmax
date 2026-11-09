@@ -25,12 +25,19 @@ function readJson(file) {
 }
 
 function canonical(dir) {
-  try { return fs.realpathSync(dir); } catch { return path.resolve(dir); }
+  try {
+    return fs.realpathSync(dir);
+  } catch {
+    return path.resolve(dir);
+  }
 }
 
 function within(root, dir) {
   const rel = path.relative(root, dir);
-  return rel === "" || (rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
+  return (
+    rel === "" ||
+    (rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel))
+  );
 }
 
 function repoRootFor(dir) {
@@ -43,24 +50,48 @@ function repoRootFor(dir) {
 function selectedHome(cwd) {
   if (process.env.GMAX_HOME) return path.resolve(process.env.GMAX_HOME);
   let routes;
-  try { routes = readJson(path.join(PRIMARY_HOME, "stores.json")); }
-  catch (error) { if (error.code === "ENOENT") return PRIMARY_HOME; throw error; }
-  if (!routes || !Array.isArray(routes.stores) || routes.stores.some((entry) =>
-    !entry || typeof entry.prefix !== "string" || !path.isAbsolute(entry.prefix) ||
-    typeof entry.home !== "string" || !path.isAbsolute(entry.home)))
+  try {
+    routes = readJson(path.join(PRIMARY_HOME, "stores.json"));
+  } catch (error) {
+    if (error.code === "ENOENT") return PRIMARY_HOME;
+    throw error;
+  }
+  if (
+    !routes ||
+    !Array.isArray(routes.stores) ||
+    routes.stores.some(
+      (entry) =>
+        !entry ||
+        typeof entry.prefix !== "string" ||
+        !path.isAbsolute(entry.prefix) ||
+        typeof entry.home !== "string" ||
+        !path.isAbsolute(entry.home),
+    )
+  )
     throw new Error("invalid store routes");
-  const matches = routes.stores.filter((entry) => within(canonical(entry.prefix), cwd));
-  matches.sort((a, b) => canonical(b.prefix).length - canonical(a.prefix).length);
+  const matches = routes.stores.filter((entry) =>
+    within(canonical(entry.prefix), cwd),
+  );
+  matches.sort(
+    (a, b) => canonical(b.prefix).length - canonical(a.prefix).length,
+  );
   return matches.length ? matches[0].home : PRIMARY_HOME;
 }
 
 function readRepoStatus(dir = process.cwd()) {
   const cwd = canonical(dir);
   const result = {
-    schemaVersion: 1, cwd, repoRoot: repoRootFor(cwd), matchedRoot: null,
-    indexState: "unknown", source: "registry", cachedChunks: null,
-    storeHome: null, daemon: { state: "unobserved" },
-    mcp: "client_catalog_required", cliHint: null,
+    schemaVersion: 1,
+    cwd,
+    repoRoot: repoRootFor(cwd),
+    matchedRoot: null,
+    indexState: "unknown",
+    source: "registry",
+    cachedChunks: null,
+    storeHome: null,
+    daemon: { state: "unobserved" },
+    mcp: "client_catalog_required",
+    cliHint: null,
   };
   try {
     if (!fs.statSync(cwd).isDirectory()) return result;
@@ -72,21 +103,36 @@ function readRepoStatus(dir = process.cwd()) {
       return result;
     }
     let projects;
-    try { projects = readJson(path.join(home, "projects.json")); }
-    catch (error) {
+    try {
+      projects = readJson(path.join(home, "projects.json"));
+    } catch (error) {
       if (error.code !== "ENOENT") throw error;
       result.indexState = "not_registered";
       return result;
     }
-    if (!Array.isArray(projects) || projects.some((entry) =>
-      !entry || typeof entry.root !== "string" || !path.isAbsolute(entry.root) ||
-      (entry.status !== undefined && !["indexed", "pending", "error"].includes(entry.status)) ||
-      (entry.chunkCount !== undefined && (!Number.isFinite(entry.chunkCount) || entry.chunkCount < 0))))
+    if (
+      !Array.isArray(projects) ||
+      projects.some(
+        (entry) =>
+          !entry ||
+          typeof entry.root !== "string" ||
+          !path.isAbsolute(entry.root) ||
+          (entry.status !== undefined &&
+            !["indexed", "pending", "error"].includes(entry.status)) ||
+          (entry.chunkCount !== undefined &&
+            (!Number.isFinite(entry.chunkCount) || entry.chunkCount < 0)),
+      )
+    )
       throw new Error("invalid registry");
-    const matches = projects.filter((entry) => within(canonical(entry.root), cwd));
+    const matches = projects.filter((entry) =>
+      within(canonical(entry.root), cwd),
+    );
     matches.sort((a, b) => canonical(b.root).length - canonical(a.root).length);
     const project = matches[0];
-    if (!project) { result.indexState = "not_registered"; return result; }
+    if (!project) {
+      result.indexState = "not_registered";
+      return result;
+    }
     result.matchedRoot = project.root;
     result.indexState = project.status ?? "legacy_unknown";
     result.cachedChunks = project.chunkCount ?? null;
@@ -120,23 +166,46 @@ function probeDaemon(home) {
       if (newline < 0) return;
       try {
         const response = JSON.parse(buffer.slice(0, newline));
-        finish(!response.ok ? "unavailable" : response.ready === false ? "initializing" :
-          response.service?.mode === "paused" ? "paused" :
-          response.ready === true ? "ready" : "legacy_unknown");
-      } catch { finish("unavailable"); }
+        finish(
+          !response.ok
+            ? "unavailable"
+            : response.ready === false
+              ? "initializing"
+              : response.service?.mode === "paused"
+                ? "paused"
+                : response.ready === true
+                  ? "ready"
+                  : "legacy_unknown",
+        );
+      } catch {
+        finish("unavailable");
+      }
     });
-    socket.on("error", (error) => finish(
-      ["ENOENT", "ECONNREFUSED"].includes(error.code) ? "offline" :
-      ["EACCES", "EPERM"].includes(error.code) ? "denied" : "unavailable"));
+    socket.on("error", (error) =>
+      finish(
+        ["ENOENT", "ECONNREFUSED"].includes(error.code)
+          ? "offline"
+          : ["EACCES", "EPERM"].includes(error.code)
+            ? "denied"
+            : "unavailable",
+      ),
+    );
     socket.on("end", () => finish("unavailable"));
   });
 }
 
 async function getRepoStatus(dir = process.cwd()) {
   const status = readRepoStatus(dir);
-  if (status.matchedRoot && status.storeHome === PRIMARY_HOME && !process.env.GMAX_SECONDARY_STORE) {
-    try { status.daemon = await probeDaemon(status.storeHome); }
-    catch { status.daemon = { state: "unavailable" }; }
+  if (
+    status.matchedRoot &&
+    status.storeHome === PRIMARY_HOME &&
+    !process.env.GMAX_SECONDARY_STORE
+  ) {
+    try {
+      status.daemon = await probeDaemon(status.storeHome);
+    } catch {
+      status.daemon = { state: "unavailable" };
+    }
   }
   // Secondary stores deliberately have no resident daemon.
   return status;
@@ -147,17 +216,32 @@ function formatRepoContext(status) {
     `Gmax current repo: ${JSON.stringify(status.repoRoot)}; index=${status.indexState}; matchedRoot=${JSON.stringify(status.matchedRoot)}; daemon=${status.daemon.state}.`,
   ];
   if (status.indexState === "not_registered")
-    lines.push("Gmax is not set up for this repo. Other registered projects do not cover it; do not silently search another project. Adding/indexing requires separate authorization.");
+    lines.push(
+      "Gmax is not set up for this repo. Other registered projects do not cover it; do not silently search another project. Adding/indexing requires separate authorization.",
+    );
   else if (status.indexState === "indexed")
-    lines.push(`Registry reports indexed${status.cachedChunks === null ? "" : ` (${status.cachedChunks} cached chunks)`}; freshness and embedding compatibility are unverified.`);
+    lines.push(
+      `Registry reports indexed${status.cachedChunks === null ? "" : ` (${status.cachedChunks} cached chunks)`}; freshness and embedding compatibility are unverified.`,
+    );
   else
-    lines.push("Current-repo search readiness is unverified. Pending, error, offline and legacy/unknown metadata do not mean the repo is not set up.");
-  lines.push("MCP attachment is client-owned: use a Gmax tool only if it is advertised in your actual tool catalog. This hook/CLI hint does not register an MCP server.");
-  if (status.daemon.state === "offline" || status.daemon.state === "paused" ||
-      status.daemon.state === "initializing")
-    lines.push("Daemon state does not establish query readiness. Do not start services or load models as part of discovery/status.");
+    lines.push(
+      "Current-repo search readiness is unverified. Pending, error, offline and legacy/unknown metadata do not mean the repo is not set up.",
+    );
+  lines.push(
+    "MCP attachment is client-owned: use a Gmax tool only if it is advertised in your actual tool catalog. This hook/CLI hint does not register an MCP server.",
+  );
+  if (
+    status.daemon.state === "offline" ||
+    status.daemon.state === "paused" ||
+    status.daemon.state === "initializing"
+  )
+    lines.push(
+      "Daemon state does not establish query readiness. Do not start services or load models as part of discovery/status.",
+    );
   if (status.cliHint)
-    lines.push(`This repo has a semantic index: for questions about where or how something happens when you do not know the exact name, run ${status.cliHint.replace("<concept>", "<question in plain words>")} first (requires gmax on PATH), then Read the file:line pointers it returns. Use Grep for exact names and rg for literal text/files; explicit query limits and model/startup restrictions still apply.`);
+    lines.push(
+      `This repo has a semantic index: for questions about where or how something happens when you do not know the exact name, run ${status.cliHint.replace("<concept>", "<question in plain words>")} first (requires gmax on PATH), then Read the file:line pointers it returns. Use Grep for exact names and rg for literal text/files; explicit query limits and model/startup restrictions still apply.`,
+    );
   return lines.join("\n");
 }
 
@@ -167,14 +251,29 @@ async function runStatusCli(args) {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "--current" || arg === "--agent") continue;
-    if (arg === "--json") { json = true; continue; }
-    if (arg === "--cwd" && args[i + 1]) { cwd = args[++i]; continue; }
-    process.stderr.write("Usage: gmax status --current [--cwd <directory>] [--json|--agent]\n");
+    if (arg === "--json") {
+      json = true;
+      continue;
+    }
+    if (arg === "--cwd" && args[i + 1]) {
+      cwd = args[++i];
+      continue;
+    }
+    process.stderr.write(
+      "Usage: gmax status --current [--cwd <directory>] [--json|--agent]\n",
+    );
     process.exitCode = 2;
     return;
   }
   const status = await getRepoStatus(cwd);
-  process.stdout.write(`${json ? JSON.stringify(status) : formatRepoContext(status)}\n`);
+  process.stdout.write(
+    `${json ? JSON.stringify(status) : formatRepoContext(status)}\n`,
+  );
 }
 
-module.exports = { readRepoStatus, getRepoStatus, formatRepoContext, runStatusCli };
+module.exports = {
+  readRepoStatus,
+  getRepoStatus,
+  formatRepoContext,
+  runStatusCli,
+};

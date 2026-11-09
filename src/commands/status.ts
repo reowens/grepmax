@@ -29,13 +29,13 @@ import { isLocked } from "../lib/utils/lock";
 import type { ProjectEntry } from "../lib/utils/project-registry";
 import { listProjects } from "../lib/utils/project-registry";
 import { findProjectRoot } from "../lib/utils/project-root";
+import { QUERY_EXECUTION_OPTIONS } from "../lib/utils/query-timeout";
 import {
   formatRepoContext,
   getRepoStatus,
-  readRepoStatus,
   type RepoStatus,
+  readRepoStatus,
 } from "../lib/utils/repo-status";
-import { QUERY_EXECUTION_OPTIONS } from "../lib/utils/query-timeout";
 import type { ResourceSnapshot } from "../lib/utils/resource-snapshot";
 import {
   classifyLeaseError,
@@ -211,7 +211,9 @@ async function loadStatusView(projects: ProjectEntry[]): Promise<StatusView> {
   });
 }
 
-function daemonWorkerThreadsSetting(value: unknown): WorkerThreadsSetting | null {
+function daemonWorkerThreadsSetting(
+  value: unknown,
+): WorkerThreadsSetting | null {
   if (!value || typeof value !== "object") return null;
   const setting = value as Partial<WorkerThreadsSetting>;
   return typeof setting.value === "number" &&
@@ -264,27 +266,41 @@ function savedWorkerNotice(
 
 function watchLeaseSummary(root: string, view: StatusView, now: number) {
   if (!view.leases)
-    return { state: "unavailable" as const, count: null, latestExpiresAt: null };
+    return {
+      state: "unavailable" as const,
+      count: null,
+      latestExpiresAt: null,
+    };
   const leases = view.leases.filter((lease) => lease.root === root);
   const live = leases.filter((lease) => lease.expiresAt > now);
   return {
     state: live.length
-      ? "present" as const
+      ? ("present" as const)
       : leases.length
-        ? "expired" as const
-        : "unleased" as const,
+        ? ("expired" as const)
+        : ("unleased" as const),
     count: live.length,
     latestExpiresAt: leases.length
-      ? Math.max(...(live.length ? live : leases).map((lease) => lease.expiresAt))
+      ? Math.max(
+          ...(live.length ? live : leases).map((lease) => lease.expiresAt),
+        )
       : null,
   };
 }
 
-function idleProjectReason(root: string, view: StatusView, now: number): string {
+function idleProjectReason(
+  root: string,
+  view: StatusView,
+  now: number,
+): string {
   const health = view.health?.get(root);
   if (
-    health?.indexing || health?.pendingFiles || health?.queue?.activeFiles ||
-    health?.queue?.live || health?.queue?.catchup || health?.queue?.cleanup
+    health?.indexing ||
+    health?.pendingFiles ||
+    health?.queue?.activeFiles ||
+    health?.queue?.live ||
+    health?.queue?.catchup ||
+    health?.queue?.cleanup
   )
     return "Index work is queued or active; no watcher is reported.";
   const lease = watchLeaseSummary(root, view, now);
@@ -448,7 +464,9 @@ export function buildStatusJson(input: {
       workerThreads: d?.workerThreads ?? null,
       workerThreadsSetting: d?.workerThreadsSetting ?? null,
       cpuConfiguration: d?.cpuConfiguration ?? null,
-      ...(d?.backgroundEmbedding !== undefined ? { backgroundEmbedding: d.backgroundEmbedding } : {}),
+      ...(d?.backgroundEmbedding !== undefined
+        ? { backgroundEmbedding: d.backgroundEmbedding }
+        : {}),
       embeddingConfiguration: d?.embeddingConfiguration ?? null,
       ...(d?.service ? { service: d.service } : {}),
       ...(d?.resources !== undefined ? { resources: d.resources } : {}),
@@ -519,8 +537,15 @@ function formatChunks(n?: number): string {
 
 export const status = new Command("status")
   .description("Show gmax index status for all projects")
-  .option("--current", "Bounded current-repo metadata and daemon ping only", false)
-  .option("--cwd <directory>", "Directory for --current (defaults to current directory)")
+  .option(
+    "--current",
+    "Bounded current-repo metadata and daemon ping only",
+    false,
+  )
+  .option(
+    "--cwd <directory>",
+    "Directory for --current (defaults to current directory)",
+  )
   .option("--agent", "Compact output for AI agents", false)
   .option(
     "--json",
@@ -539,7 +564,9 @@ Examples:
   .action(async (opts) => {
     if (opts.current) {
       const current = await getRepoStatus(opts.cwd ?? process.cwd());
-      console.log(opts.json ? JSON.stringify(current) : formatRepoContext(current));
+      console.log(
+        opts.json ? JSON.stringify(current) : formatRepoContext(current),
+      );
       return;
     }
     if (opts.cwd) throw new Error("--cwd requires --current");

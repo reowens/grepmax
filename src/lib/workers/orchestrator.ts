@@ -396,19 +396,21 @@ export class WorkerOrchestrator {
     });
 
     const embedStart = performance.now();
-    const embedded: HybridResult[] = input.remoteEmbedding ? [] : await this.computeHybrid(
-      toEmbed.map((idx) => preparedChunks[idx].content),
-      onProgress,
-      this.generation.tier === "gemma2"
-        ? toEmbed.map((idx) =>
-            gemma2Document(
-              preparedChunks[idx].content,
-              input.projectRoot,
-              input.path,
-            ),
-          )
-        : undefined,
-    );
+    const embedded: HybridResult[] = input.remoteEmbedding
+      ? []
+      : await this.computeHybrid(
+          toEmbed.map((idx) => preparedChunks[idx].content),
+          onProgress,
+          this.generation.tier === "gemma2"
+            ? toEmbed.map((idx) =>
+                gemma2Document(
+                  preparedChunks[idx].content,
+                  input.projectRoot,
+                  input.path,
+                ),
+              )
+            : undefined,
+        );
     const hybrids = new Map<number, HybridResult>();
     toEmbed.forEach((chunkIdx, i) => {
       if (embedded[i]) hybrids.set(chunkIdx, embedded[i]);
@@ -439,8 +441,21 @@ export class WorkerOrchestrator {
       "orch",
       `processFile done: ${input.path} ${vectors.length} vectors ${(performance.now() - fileStart).toFixed(0)}ms`,
     );
-    return { vectors, hash, mtimeMs, size, ...(reused.length ? { reused } : {}),
-      ...(input.remoteEmbedding ? { remoteChunks: toEmbed.map(index => ({ index, text: preparedChunks[index].content })) } : {}) };
+    return {
+      vectors,
+      hash,
+      mtimeMs,
+      size,
+      ...(reused.length ? { reused } : {}),
+      ...(input.remoteEmbedding
+        ? {
+            remoteChunks: toEmbed.map((index) => ({
+              index,
+              text: preparedChunks[index].content,
+            })),
+          }
+        : {}),
+    };
   }
 
   isExistingQueryReady(): boolean {

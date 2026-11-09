@@ -7,9 +7,7 @@ import { VectorDB } from "../src/lib/store/vector-db";
 // Native fixtures create only temporary stores. Keep their admission independent
 // of the host's no-autostart/quarantine state without changing production policy.
 vi.mock("../src/lib/store/maintenance-policy", async (original) => ({
-  ...(await original<
-    typeof import("../src/lib/store/maintenance-policy")
-  >()),
+  ...(await original<typeof import("../src/lib/store/maintenance-policy")>()),
   assertStoreMutationAllowed: () => {},
   storeMutationDeniedReason: () => null,
 }));

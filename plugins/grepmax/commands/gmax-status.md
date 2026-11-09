@@ -1,4 +1,5 @@
 ---
+
 description: "Show Gmax setup and cached index status for the current repo"
 allowed-tools: "Bash"
 ---

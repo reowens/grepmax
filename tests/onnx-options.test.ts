@@ -62,18 +62,26 @@ describe("CPU inference batching", () => {
     model.tokenizer = async (texts: string[]) => {
       const seq = Math.max(...texts.map((t) => t.length));
       return {
-        input_ids: { data: new BigInt64Array(texts.length * seq), dims: [texts.length, seq] },
-        attention_mask: { data: new BigInt64Array(texts.length * seq).fill(BigInt(1)), dims: [texts.length, seq] },
+        input_ids: {
+          data: new BigInt64Array(texts.length * seq),
+          dims: [texts.length, seq],
+        },
+        attention_mask: {
+          data: new BigInt64Array(texts.length * seq).fill(BigInt(1)),
+          dims: [texts.length, seq],
+        },
       };
     };
     const vectors = await model.runBatch(["ab", "abcd", "a"]);
     expect(vectors).toHaveLength(3);
     expect(session.run).toHaveBeenCalledTimes(3);
-    expect(session.run.mock.calls.map((c: any) => c[0].input_ids.dims)).toEqual([
-      [1, 2],
-      [1, 4],
-      [1, 1],
-    ]);
+    expect(session.run.mock.calls.map((c: any) => c[0].input_ids.dims)).toEqual(
+      [
+        [1, 2],
+        [1, 4],
+        [1, 1],
+      ],
+    );
   });
 
   it("ColBERT runs 1 chunk per call, so a chunk's vectors ignore its neighbours", async () => {
@@ -89,10 +97,12 @@ describe("CPU inference batching", () => {
     const dense = [new Float32Array([1]), new Float32Array([2])];
     const results = await model.runBatch(["abc", "a"], dense, 1);
     expect(session.run).toHaveBeenCalledTimes(2);
-    expect(session.run.mock.calls.map((c: any) => c[0].input_ids.dims)).toEqual([
-      [1, 3],
-      [1, 1],
-    ]);
+    expect(session.run.mock.calls.map((c: any) => c[0].input_ids.dims)).toEqual(
+      [
+        [1, 3],
+        [1, 1],
+      ],
+    );
     expect(results.map((r: any) => r.dense)).toEqual(dense);
     expect(results.map((r: any) => r.colbert.length)).toEqual([6, 2]);
     const alone = await model.runBatch(["a"], [dense[1]], 1);
