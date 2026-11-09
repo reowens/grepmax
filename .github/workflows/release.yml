@@ -33,7 +33,7 @@ jobs:
   publish-npm:
     if: github.repository == 'reowens/grepmax' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 45
     permissions:
       contents: write
       id-token: write
@@ -173,8 +173,9 @@ jobs:
           import hashlib, json, os, pathlib, time, urllib.error, urllib.request
           version, expected = os.environ['RELEASE_VERSION'], os.environ['ARCHIVE_SHA256']
           # Avoid cached 404s created before npm finished processing the version.
+          # A package carrying both native helpers took about 14 minutes to appear.
           endpoint = f'https://registry.npmjs.org/grepmax/{version}'
-          deadline = time.monotonic() + 480
+          deadline = time.monotonic() + 1800
           while True:
               remaining = deadline - time.monotonic()
               if remaining <= 0:
