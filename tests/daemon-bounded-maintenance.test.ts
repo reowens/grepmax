@@ -309,6 +309,7 @@ describe("daemon bounded deleted-row cleanup lifecycle", () => {
     await vi.advanceTimersByTimeAsync(4 * 60_000);
     expect(prepareBoundedMaintenanceRuntime).toHaveBeenCalledOnce();
     expect(d.watcherManager.quiesceAll).not.toHaveBeenCalled();
+    expect(d.watcherManager.pauseAll).not.toHaveBeenCalled();
     expect(d.vectorDb.cleanupDeletedRows).not.toHaveBeenCalled();
     await expect(
       d.operations.runShared("search", undefined, async () => "available"),
@@ -356,6 +357,7 @@ describe("daemon bounded deleted-row cleanup lifecycle", () => {
     });
     expect(prepareBoundedMaintenanceRuntime).not.toHaveBeenCalled();
     expect(d.watcherManager.quiesceAll).not.toHaveBeenCalled();
+    expect(d.watcherManager.pauseAll).not.toHaveBeenCalled();
     expect(daemon.operationStatus()).toBe("open");
     release();
     await bulk;
@@ -377,15 +379,20 @@ describe("daemon bounded deleted-row cleanup lifecycle", () => {
     prepared({ executable: "fixture" });
     await expect(cleanup).resolves.toMatchObject({ status: "skipped" });
     expect(d.watcherManager.quiesceAll).not.toHaveBeenCalled();
+    expect(d.watcherManager.pauseAll).not.toHaveBeenCalled();
     release();
     await bulk;
   });
 
-  it("keeps searches available while watcher writes quiesce, then restores catchup", async () => {
+  it("keeps searches available while watcher writes pause, then resumes without detaching", async () => {
     const { daemon, d } = fixture();
     let releaseQuiesce!: () => void;
-    d.watcherManager.quiesceAll.mockImplementationOnce(
-      () => new Promise<void>((resolve) => (releaseQuiesce = resolve)),
+    d.watcherManager.pauseAll.mockImplementationOnce(
+      () =>
+        new Promise<string[]>((resolve) => {
+          d.watcherManager.isPaused = true;
+          releaseQuiesce = () => resolve(["/fixture"]);
+        }),
     );
     const cleanup = daemon.runBoundedMaintenance();
     await Promise.resolve();
@@ -413,11 +420,25 @@ describe("daemon bounded deleted-row cleanup lifecycle", () => {
     );
     releaseQuiesce();
     await expect(cleanup).resolves.toEqual(completed);
-    expect(d.watcherManager.resumeAll).toHaveBeenCalledWith(["/fixture"], {
-      catchup: false,
-    });
-    expect(d.watcherManager.catchupAll).toHaveBeenCalledWith(["/fixture"]);
+    expect(d.watcherManager.pauseAll).toHaveBeenCalledOnce();
+    expect(d.watcherManager.resumePaused).toHaveBeenCalledOnce();
+    expect(d.watcherManager.isPaused).toBe(false);
+    // Unsubscribing re-crawled the tree and walked it again on every attempt.
+    expect(d.watcherManager.quiesceAll).not.toHaveBeenCalled();
+    expect(d.watcherManager.resumeAll).not.toHaveBeenCalled();
+    expect(d.watcherManager.catchupAll).not.toHaveBeenCalled();
     expect(daemon.operationStatus()).toBe("open");
+  });
+
+  it("detaches paused watchers when the service pauses during maintenance", async () => {
+    const { daemon, d } = fixture();
+    d.vectorDb.cleanupDeletedRows.mockImplementationOnce(async () => {
+      d.pausedReason = "critical pressure";
+      return completed;
+    });
+    await daemon.runBoundedMaintenance();
+    expect(d.watcherManager.resumePaused).not.toHaveBeenCalled();
+    expect(d.watcherManager.quiesceAll).toHaveBeenCalledOnce();
   });
 
   it("coalesces concurrent requests and restores watchers after uncertainty", async () => {
@@ -430,7 +451,8 @@ describe("daemon bounded deleted-row cleanup lifecycle", () => {
     expect(first).toBe(second);
     await expect(first).rejects.toThrow("uncertain");
     expect(d.vectorDb.cleanupDeletedRows).toHaveBeenCalledOnce();
-    expect(d.watcherManager.resumeAll).toHaveBeenCalledOnce();
+    expect(d.watcherManager.resumePaused).toHaveBeenCalledOnce();
+    expect(d.watcherManager.isPaused).toBe(false);
     expect(daemon.operationStatus()).toBe("open");
   });
 });

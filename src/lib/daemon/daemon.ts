@@ -1367,8 +1367,8 @@ export class Daemon {
     this.boundedCleanupInterval.unref();
   }
 
-  /** Each attempt quiesces the watchers, so a refusal that repeats with the
-   * same reason backs off from 1 h to 24 h. Refusals count per native
+  /** Each attempt holds watched edits and starts the native helper, so a
+   * refusal that repeats with the same reason backs off from 1 h to 24 h. Refusals count per native
    * operation: a refused operation is deferred while the others keep the
    * 1-minute cadence, and a refusal that names no operation delays the whole
    * attempt. Success or a new reason resets that operation's count. */
@@ -1483,7 +1483,6 @@ export class Daemon {
         `${backedOff.join(", ")} backing off after refusals; this helper cannot defer single operations`,
       );
     this.assertHeavyOperationAdmission("bounded-maintenance");
-    let roots: string[] = [];
     const isRead = (name: string) =>
       getReadVerb(name) !== undefined ||
       ["search", "keyword-search", "documents", "project-stats"].includes(name);
@@ -1493,13 +1492,9 @@ export class Daemon {
         async () => {
           deadline.throwIfAborted();
           this.assertHeavyOperationAdmission("bounded-maintenance");
-          roots = [
-            ...new Set([
-              ...this.processors.keys(),
-              ...this.subscriptions.keys(),
-            ]),
-          ];
-          await this.watcherManager.quiesceAll();
+          // A paused processor is enough to exclude watcher writes. Detaching
+          // made every attempt re-subscribe the whole tree and walk it again.
+          await this.watcherManager.pauseAll();
         },
         async (signal) => {
           this.assertHeavyOperationAdmission("bounded-maintenance");
@@ -1525,14 +1520,11 @@ export class Daemon {
         },
       );
     } finally {
-      if (
-        !this.shuttingDown &&
-        this.ready &&
-        this.pausedReason === null &&
-        roots.length
-      ) {
-        await this.watcherManager.resumeAll(roots, { catchup: false });
-        await this.watcherManager.catchupAll(roots);
+      if (this.watcherManager.isPaused) {
+        if (!this.shuttingDown && this.ready && this.pausedReason === null)
+          this.watcherManager.resumePaused();
+        // A service paused meanwhile keeps the detached state it had before.
+        else if (!this.shuttingDown) await this.watcherManager.quiesceAll();
       }
     }
   }
