@@ -167,7 +167,19 @@ function buildRelease({ root, commit, version, nativeDir, outDir, pnpm, log = ()
   } finally { fs.rmSync(work, { recursive: true, force: true }); }
 }
 
-function main(argv, { root = path.resolve(__dirname, '..'), exec = run, build = buildRelease, print = console.log } = {}) {
+// gmax releases only with every dependency at its latest release; the check
+// prints 1 line per lagging package, or 1 line naming what it could not read.
+function runVersionCheck(root) {
+  return run('node', [path.join(root, 'scripts/check-versions.cjs')], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+}
+
+function versionRefusal(result) {
+  if (result.status === 0) return null;
+  const lines = `${result.stdout}\n${result.stderr}`.split('\n').map(line => line.trim()).filter(Boolean);
+  return lines.length ? lines.join('\n') : `The dependency version check exited ${result.status}`;
+}
+
+function main(argv, { root = path.resolve(__dirname, '..'), exec = run, build = buildRelease, checkVersions = runVersionCheck, print = console.log } = {}) {
   const options = parseArgs(argv);
   const nativeDir = options.native ?? path.join(root, 'lance-maintenance/artifacts');
   const expected = releaseToolchain(root);
@@ -181,6 +193,8 @@ function main(argv, { root = path.resolve(__dirname, '..'), exec = run, build = 
   if (checked.refusal) throw new Error(checked.refusal);
   const remote = remoteRefusal({ ...checked, git, gh });
   if (remote) throw new Error(remote);
+  const versions = versionRefusal(checkVersions(root));
+  if (versions) throw new Error(versions);
   const pnpmVersion = required(pnpm[0], [...pnpm.slice(1), '--version'], { cwd: os.tmpdir() }).trim();
   if (pnpmVersion !== expected.pnpm) throw new Error(`pnpm ${pnpmVersion} differs from release.yml's pnpm ${expected.pnpm}`);
   print(`==> ${checked.tag} at ${checked.commit}; node ${actual.node}, npm ${actual.npm}, pnpm ${pnpmVersion} (release.yml: node ${expected.node})`);
@@ -213,7 +227,7 @@ function main(argv, { root = path.resolve(__dirname, '..'), exec = run, build = 
 }
 
 module.exports = { parseArgs, releaseToolchain, toolchainRefusal, nativeRefusal, checkPreconditions, remoteRefusal,
-  receiptText, releaseCreateArgs, dispatchArgs, shellLine, buildRelease, tarSha256, main, NATIVE_FILES, REPO };
+  versionRefusal, receiptText, releaseCreateArgs, dispatchArgs, shellLine, buildRelease, tarSha256, main, NATIVE_FILES, REPO };
 if (require.main === module) {
   try { main(process.argv.slice(2)); } catch (error) { console.error(error.message); process.exitCode = 1; }
 }

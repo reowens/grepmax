@@ -30,6 +30,41 @@ summary: "Real hybrid output validated; original client timeout retained, cleanu
 
 # Gmax Delivery Plan
 
+## Release gate: every dependency at its latest release
+
+Owner ruling: gmax uses the latest version of each dependency, and no fix is
+made on an old version. `scripts/check-versions.cjs` (`pnpm run check:versions`)
+is its guard, and `scripts/release-draft.cjs` runs it after the tag and remote
+checks and before the build, refusing on a non-zero exit. There is no skip flag.
+
+- **npm:** each direct, dev and optional dependency's `pnpm-lock.yaml` version
+  equals the newest stable release up to `dist-tags.latest` that is past pnpm's
+  `minimumReleaseAge` (1440 minutes, pnpm 11+'s default, since
+  `pnpm-workspace.yaml` sets none); `minimumReleaseAgeExclude` versions count at
+  any age. `onnxruntime-node` equals the exact version the latest
+  `@huggingface/transformers` depends on.
+- **Rust:** each `lance-maintenance/native/Cargo.toml` dependency's `Cargo.lock`
+  version equals crates.io's `max_stable_version`. `lance`, `lance-io`,
+  `lance-table` and `lance-index` also equal the `lance` requirement of the
+  `lancedb` crate at the locked `@lancedb/lancedb` version (LanceDB publishes
+  both at 1 version number). Every engine string (`prepare-bounded-runtime.cjs`,
+  `assemble-bounded-runtime.cjs`, the helper's `main.rs` and `engine.rs`, and the
+  Python `pylance` pins) names the locked `lance` version.
+- **Python:** every package in each tracked `uv.lock` equals PyPI's newest final,
+  unyanked release. A package locked at more than 1 version passes only when each
+  older entry's markers name the Python version alone and it is the newest
+  release whose `requires-python` admits that entry's Python floor. A git source
+  must sit at its remote's `HEAD`.
+- An unreadable registry refuses with 1 line naming what could not be checked.
+
+Tests: `node --test scripts/check-versions.test.cjs scripts/release-draft.test.cjs`
+(stubbed registries). The 2026-11-09 run on `9870ac0` exits 1 with 63 lines:
+`web-tree-sitter` 0.27.1 (latest 0.27.2); the 5 `arrow-*` crates at 58.4.1
+(latest 60.1.0, Lance 14.0.2 requires arrow 58); 24 packages in
+`mlx-embed-server/gemma/uv.lock` and 33 in `mlx-embed-server/uv.lock`, including
+both git sources behind `HEAD`. `lance-maintenance/uv.lock`, the Lance crates
+and every engine string pass. These are open upgrades before the next release.
+
 ## Power-loss torn commits: rollback built and tested, not installed
 
 On 2026-11-08 a power loss at about 17:53 brought 36 files of the last 11 Lance

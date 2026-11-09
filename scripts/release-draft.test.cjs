@@ -56,6 +56,8 @@ function stubExec({ gh = () => ({ status: 1, stdout: '', stderr: 'release not fo
   return { exec, calls };
 }
 
+const current = () => ({ status: 0, stdout: 'Every dependency is at its latest release: 1 npm, 1 Rust, 1 Python\n', stderr: '' });
+
 function stubBuild({ outDir, version }) {
   fs.mkdirSync(outDir, { recursive: true });
   const archive = `grepmax-${version}.tgz`, archivePath = path.join(outDir, archive);
@@ -150,7 +152,7 @@ test('a dry run builds and writes the receipt but makes no GitHub write, even wi
   const { exec, calls } = stubExec();
   const printed = [];
   const out = path.join(base, 'out');
-  const result = release.main(['--dry-run', '--dispatch', '--native', native, '--out', out], { root, exec, build: stubBuild, print: line => printed.push(line) });
+  const result = release.main(['--dry-run', '--dispatch', '--native', native, '--out', out], { root, exec, build: stubBuild, checkVersions: current, print: line => printed.push(line) });
   assert.deepEqual(calls, [['release', 'view', 'v1.2.3', '--repo', 'reowens/grepmax', '--json', 'isDraft']]);
   assert.equal(fs.readFileSync(path.join(out, 'release-SOURCE-ARTIFACT.json'), 'utf8'),
     release.receiptText({ version: '1.2.3', commit, archive: 'grepmax-1.2.3.tgz', sha256: result.sha256 }));
@@ -173,7 +175,7 @@ test('a real run creates the draft, confirms its digests and dispatches only on 
       }
       return args[1] === 'view' ? { status: 1, stdout: '', stderr: 'release not found' } : { status: 0, stdout: '', stderr: '' };
     } });
-    release.main(['--native', native, '--out', out, ...(dispatch ? ['--dispatch'] : [])], { root, exec, build: stubBuild, print: () => {} });
+    release.main(['--native', native, '--out', out, ...(dispatch ? ['--dispatch'] : [])], { root, exec, build: stubBuild, checkVersions: current, print: () => {} });
     const writes = calls.filter(args => args[1] !== 'view');
     assert.deepEqual(writes[0].slice(0, 8), ['release', 'create', 'v1.2.3', '--draft', '--verify-tag', '--repo', 'reowens/grepmax', '--title']);
     assert.deepEqual(writes.slice(1).map(args => args.slice(0, 3)), dispatch ? [['workflow', 'run', 'release.yml']] : []);
@@ -185,7 +187,30 @@ test('a draft whose asset digests differ stops before the dispatch', t => {
   const { exec, calls } = stubExec({ gh: args => args.includes('isDraft,assets')
     ? { status: 0, stderr: '', stdout: JSON.stringify({ isDraft: true, assets: [{ name: 'grepmax-1.2.3.tgz', digest: 'sha256:0' }] }) }
     : args[1] === 'view' ? { status: 1, stdout: '', stderr: 'release not found' } : { status: 0, stdout: '', stderr: '' } });
-  assert.throws(() => release.main(['--dispatch', '--native', native, '--out', path.join(base, 'out')], { root, exec, build: stubBuild, print: () => {} }),
+  assert.throws(() => release.main(['--dispatch', '--native', native, '--out', path.join(base, 'out')], { root, exec, build: stubBuild, checkVersions: current, print: () => {} }),
     /does not hold the built archive and receipt/);
   assert.equal(calls.some(args => args[0] === 'workflow'), false);
+});
+
+test('a lagging dependency or an unreadable registry refuses before the build and any GitHub write', t => {
+  const { root, native, base } = fixture(t);
+  const refusals = [
+    [{ status: 1, stdout: 'npm vite 8.3.6, latest 8.3.7\ncargo lance 14.0.2, latest 14.1.0\n', stderr: '' },
+      'npm vite 8.3.6, latest 8.3.7\ncargo lance 14.0.2, latest 14.1.0'],
+    [{ status: 1, stdout: '', stderr: 'Could not check crates.io lance: HTTP 503\n' }, 'Could not check crates.io lance: HTTP 503'],
+    [{ status: 127, stdout: '', stderr: '' }, 'The dependency version check exited 127'],
+  ];
+  for (const [result, message] of refusals) {
+    const { exec, calls } = stubExec();
+    let built = false;
+    const build = options => { built = true; return stubBuild(options); };
+    assert.throws(() => release.main(['--dispatch', '--native', native, '--out', path.join(base, 'out')],
+      { root, exec, build, checkVersions: () => result, print: () => {} }), { message });
+    assert.equal(built, false);
+    assert.equal(calls.some(args => args[1] === 'create' || args[0] === 'workflow'), false);
+  }
+});
+
+test('the version check has no skip flag', () => {
+  assert.throws(() => release.parseArgs(['--skip-version-check']), /^Error: Usage/);
 });

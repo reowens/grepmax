@@ -55,6 +55,7 @@
     "audit:python": "python3 scripts/audit-python.py && python3 scripts/audit-python.py --lockfile lance-maintenance/uv.lock && python3 scripts/audit-python.py --lockfile mlx-embed-server/gemma/uv.lock",
     "test:python": "python3 -m unittest discover -s tests/python",
     "audit:document-search": "node scripts/audit-document-search.cjs",
+    "check:versions": "node scripts/check-versions.cjs",
     "release:check": "pnpm audit && pnpm run audit:python && pnpm test && pnpm run test:scripts && pnpm run test:python && pnpm typecheck && pnpm run test:typecheck && pnpm run format:check && pnpm build && pnpm run audit:consumer"
   },
   "keywords": [
