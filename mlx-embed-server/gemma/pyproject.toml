@@ -7,9 +7,9 @@ dependencies = [
     "fastapi>=0.162.0",
     "uvicorn>=0.54.0",
     "setproctitle>=1.3.8",
-    "mlx==0.32.3",
-    "mlx-vlm @ git+https://github.com/Blaizzy/mlx-vlm.git@3d87e88402f307efbf68e568971aa887ee7d9ed0",
-    "transformers==5.20.2",
+    "mlx==0.32.4",
+    "mlx-vlm @ git+https://github.com/Blaizzy/mlx-vlm.git@a54f1a0d86fa45c466c00d819ac6ac5ba9d61ac4",
+    "transformers==5.22.2",
 ]
 
 [tool.uv]
@@ -23,7 +23,7 @@ constraint-dependencies = [
     "certifi>=2026.10.23",
     "click>=8.5.0",
     "datasets>=5.1.0",
-    "fsspec>=2026.9.0",
+    "fsspec>=2026.6.0", # GHSA-27vj-qcqg-25rc; datasets 5.1.0 caps fsspec at 2026.7.0.
     "idna>=3.20",
     "multidict>=6.9.1",
     "pillow>=13.0.0",

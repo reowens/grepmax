@@ -48,8 +48,10 @@ uv run --locked --project "$GMAX_PACKAGE/mlx-embed-server/gemma" \
   python "$GMAX_PACKAGE/mlx-embed-server/server.py"
 ```
 
-The separate lock pins MLX 0.32.3, Transformers 5.20.2 and the qualified MLX-VLM
-revision. The ordinary Granite environment is unchanged. The service binds only
+The separate lock pins MLX 0.32.4, Transformers 5.22.2 and MLX-VLM revision
+`a54f1a0d86fa45c466c00d819ac6ac5ba9d61ac4`. The measured evaluation above used MLX
+0.32.3, Transformers 5.20.2 and MLX-VLM `3d87e88402f3`; these newer versions have
+not been re-measured. The ordinary Granite environment is unchanged. The service binds only
 127.0.0.1 and exits after 30 idle minutes.
 
 ## Build and query the separate index
