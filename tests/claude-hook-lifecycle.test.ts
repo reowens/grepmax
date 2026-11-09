@@ -332,13 +332,14 @@ async function entry(file: string, data: Input) {
 }
 
 describe("Claude entrypoints and quoted installation paths", () => {
-  it.each(["start.js", "activity.js"])(
+  it.each([
+    ["start.js", { allowStart: true }],
+    ["activity.js", { allowStart: true, throttle: true }],
+  ])(
     "%s passes the session input cwd into shared safe startup",
-    async (file) => {
+    async (file, options) => {
       const calls = await entry(file, input);
-      expect(calls).toEqual([
-        ["ensure", input, input.cwd, { allowStart: true }],
-      ]);
+      expect(calls).toEqual([["ensure", input, input.cwd, options]]);
     },
   );
   it("releases the previous registered project before acquiring the new one", async () => {

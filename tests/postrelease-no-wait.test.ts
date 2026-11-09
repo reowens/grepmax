@@ -22,6 +22,11 @@ printf '%s\n' '${command}' >> "$RELEASE_TEST_LOG"
         { mode: 0o755 },
       );
     }
+    // Without this, a host whose daemon is the gmax.service user unit hands the
+    // install to that unit's real npm, outside the stubs above.
+    fs.writeFileSync(path.join(directory, "systemctl"), "#!/bin/sh\nexit 1\n", {
+      mode: 0o755,
+    });
     const result = spawnSync("/bin/bash", [script, ...args], {
       env: {
         ...process.env,
