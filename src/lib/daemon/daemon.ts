@@ -30,11 +30,17 @@ import {
   skippedCompaction,
 } from "../store/compaction-result";
 import {
+  assertStoreMutationAllowed,
   FULL_TABLE_MAINTENANCE_DISABLED_REASON,
   fullTableMaintenanceDisabled,
 } from "../store/maintenance-policy";
 import { MetaCache } from "../store/meta-cache";
-import { type StoreLease, StoreLeaseTimeoutError } from "../store/store-lease";
+import { StoreLease, StoreLeaseTimeoutError } from "../store/store-lease";
+import {
+  assessTornStore,
+  reconcileMetaWithTable,
+  repairTornStore,
+} from "../store/torn-store";
 import { VectorDB } from "../store/vector-db";
 import {
   prepareVersionCleanup,
@@ -359,7 +365,9 @@ export class Daemon {
   }
 
   private createVectorDb(vectorDim: number, lease?: StoreLease): VectorDB {
-    const db = new VectorDB(PATHS.lancedbDir, vectorDim, lease);
+    const db = new VectorDB(PATHS.lancedbDir, vectorDim, lease, {
+      onStoreDamage: (error) => this.handleStoreDamage(error),
+    });
     // The daemon owns the store, so it is the one process allowed to create or
     // rebuild the shared FTS index. Readers adopt it; see VectorDB.adoptFTSIndex.
     db.markIndexOwner();
@@ -605,11 +613,15 @@ export class Daemon {
       // Socket startup yields too. Registry evidence must be current at the
       // shared-resource admission boundary, not only before lock acquisition.
       this.assertStandaloneWatchersStopped();
+      const rolledBack =
+        this.pausedReason === null && (await this.repairTornStoreBeforeOpen());
       this.vectorDb = new VectorDB(
         PATHS.lancedbDir,
         this.activeGeneration.vectorDim,
         undefined,
-        this.pausedReason === null ? {} : PAUSED_CACHE_OPTIONS,
+        this.pausedReason === null
+          ? { onStoreDamage: (error) => this.handleStoreDamage(error) }
+          : PAUSED_CACHE_OPTIONS,
       );
       await this.recoverBoundedMaintenanceBeforeWriters();
       this.assertStartupActive();
@@ -639,6 +651,7 @@ export class Daemon {
           );
           console.log("[daemon] Opening MetaCache:", PATHS.lmdbPath);
           this.metaCache = new MetaCache(PATHS.lmdbPath);
+          if (rolledBack) await this.reconcileMetaAfterRollback();
         }
       }
       this.assertStartupActive();
@@ -1172,6 +1185,104 @@ export class Daemon {
 
   /** Startup has no admitted store readers/writers yet. Recover any unfinished
    * native receipt before worker, watcher or ordinary maintenance creation. */
+  /**
+   * A power loss can leave the newest Lance commits as 0-byte files, and then
+   * every read fails. Before any writer opens the store, roll the table back
+   * to its newest whole version under the exclusive store lease. Readers that
+   * hold the lease past the timeout leave the store as it is for this start.
+   */
+  private async repairTornStoreBeforeOpen(): Promise<boolean> {
+    const found = assessTornStore(path.join(PATHS.lancedbDir, "chunks.lance"));
+    if (found.status === "healthy") return false;
+    if (found.status === "refused") {
+      console.error(
+        `[daemon] Store damaged and not repaired: ${found.summary}. See gmax doctor --torn-store`,
+      );
+      return false;
+    }
+    let lease: StoreLease | undefined;
+    try {
+      assertStoreMutationAllowed();
+      lease = await StoreLease.acquireExclusive({
+        storeDir: PATHS.lancedbDir,
+        timeoutMs: 5000,
+        role: "gmax-daemon:torn-store-repair",
+      });
+      const result = repairTornStore(PATHS.lancedbDir);
+      console.log(`[daemon] ${result.summary}`);
+      return result.moved.length > 0;
+    } catch (error) {
+      console.error(
+        `[daemon] Store damaged and not repaired: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return false;
+    } finally {
+      await lease?.release();
+    }
+  }
+
+  /** Files whose rows were only in the lost versions are reindexed at catch-up. */
+  private async reconcileMetaAfterRollback(): Promise<void> {
+    if (!this.vectorDb || !this.metaCache) return;
+    try {
+      const marked = await reconcileMetaWithTable(
+        this.vectorDb,
+        this.metaCache,
+        { dryRun: false },
+      );
+      console.log(
+        `[daemon] Marked ${marked.length} file(s) for reindex after the store rollback`,
+      );
+    } catch (error) {
+      console.error(
+        "[daemon] Metadata reconcile after rollback failed:",
+        error,
+      );
+    }
+  }
+
+  private tornStoreRepairStarted = false;
+
+  /** Mid-run damage gets one repair attempt per daemon lifetime. */
+  private handleStoreDamage(_error: unknown): void {
+    if (
+      this.tornStoreRepairStarted ||
+      this.shuttingDown ||
+      !this.ready ||
+      this.pausedReason !== null
+    )
+      return;
+    this.tornStoreRepairStarted = true;
+    // The failing operation still holds its write slot; repair after it unwinds.
+    setImmediate(() => {
+      this.repairTornStoreLive().catch((error) =>
+        console.error(
+          `[daemon] Store damaged and not repaired: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+    });
+  }
+
+  private async repairTornStoreLive(): Promise<void> {
+    const vectorDb = this.vectorDb;
+    if (!vectorDb || this.shuttingDown) return;
+    const found = assessTornStore(path.join(PATHS.lancedbDir, "chunks.lance"));
+    if (found.status === "healthy") return;
+    if (found.status === "refused") {
+      console.error(
+        `[daemon] Store damaged and not repaired: ${found.summary}. See gmax doctor --torn-store`,
+      );
+      return;
+    }
+    const result = await vectorDb.withExclusiveTableMutation(async () =>
+      repairTornStore(PATHS.lancedbDir),
+    );
+    console.log(`[daemon] ${result.summary}`);
+    if (result.moved.length === 0 || this.shuttingDown) return;
+    await this.reconcileMetaAfterRollback();
+    await this.watcherManager.catchupAll([...this.processors.keys()]);
+  }
+
   private async recoverBoundedMaintenanceBeforeWriters(
     storeDir = PATHS.lancedbDir,
   ): Promise<void> {

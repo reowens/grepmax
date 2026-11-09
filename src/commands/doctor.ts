@@ -418,7 +418,20 @@ export const doctor = new Command("doctor")
     false,
   )
   .option("--agent", "Compact output for AI agents", false)
+  .option(
+    "--torn-store",
+    "Check the store for commits a power loss left empty (with --fix: roll back to the newest whole version)",
+    false,
+  )
   .action(async (opts) => {
+    if (opts.tornStore) {
+      const { runTornStoreDoctor } = await import("./doctor-torn-store");
+      process.exitCode = await runTornStoreDoctor({
+        fix: opts.fix,
+        agent: opts.agent,
+      });
+      return;
+    }
     if (opts.fix) {
       const denied = storeMutationDeniedReason();
       if (denied !== null) {

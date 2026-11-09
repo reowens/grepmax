@@ -22,7 +22,10 @@ export class MetaCache {
   private closed = false;
   private readonly readOnly: boolean;
 
-  constructor(private readonly lmdbPath: string) {
+  constructor(
+    private readonly lmdbPath: string,
+    options: { readOnly?: boolean } = {},
+  ) {
     let diskAllowsWrites = false;
     try {
       assertFreshDiskMutationAllowed(lmdbPath);
@@ -30,7 +33,10 @@ export class MetaCache {
     } catch {
       /* Unknown/critical disk allows existing-cache reads only. */
     }
-    this.readOnly = storeMutationDeniedReason() !== null || !diskAllowsWrites;
+    this.readOnly =
+      options.readOnly === true ||
+      storeMutationDeniedReason() !== null ||
+      !diskAllowsWrites;
     if (this.readOnly) {
       // Quarantine permits reads of an existing cache, never creating one.
       try {
@@ -84,6 +90,11 @@ export class MetaCache {
   delete(filePath: string): void {
     this.assertWritable();
     this.db.remove(filePath);
+  }
+
+  /** Resolves once queued puts and deletes are committed. */
+  async flushed(): Promise<void> {
+    await this.db.flushed;
   }
 
   private assertWritable(): void {

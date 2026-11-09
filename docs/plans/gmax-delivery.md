@@ -30,6 +30,56 @@ summary: "Real hybrid output validated; original client timeout retained, cleanu
 
 # Gmax Delivery Plan
 
+## Power-loss torn commits: rollback built and tested, not installed
+
+On 2026-11-08 a power loss at about 17:53 brought 36 files of the last 11 Lance
+commits (versions 4355 to 4365, written 17:52:46 to 17:53:13) back as 0 bytes:
+ext4 delayed allocation had not written their contents. Every search, catch-up,
+batch and version cleanup then failed with `Invalid range 0..0 for object of size
+0 bytes`, and the daemon kept running broken until the files were moved by hand.
+
+- **Detection:** `assessTornStore` in `src/lib/store/torn-store.ts` reads the
+  manifests newest first, makes the checks Lance's `read_manifest` makes, decodes
+  the fragment list and requires every data and deletion file it names to exist at
+  full size. The first version that passes is the restore point. It takes no lease.
+- **Rollback:** `repairTornStore` moves only empty or unreadable files newer than
+  the restore point into `~/.gmax/quarantine-torn-store-<stamp>/` with a
+  `moved.txt` list, and only while the exclusive store lease is held. It never
+  deletes and scans only the table's own directories, so `*.pre-*` backups are out
+  of reach. It moves nothing and reports when a loadable manifest sits above the
+  restore point or a damaged file is older than it.
+- **Where it runs:** automatically at daemon start before any writer opens the
+  store (`repairTornStoreBeforeOpen` in `src/lib/daemon/daemon.ts`), and once per
+  daemon lifetime when opening the table fails with this error (`onStoreDamage` in
+  `src/lib/store/vector-db.ts`). `gmax doctor --torn-store` is the read-only check;
+  with `--fix` it repairs offline and refuses while the daemon holds the store.
+  Automatic is the default because a power loss always restarts the daemon, and
+  the start check covers that case with no operator present.
+- **MetaCache:** after a rollback, `reconcileMetaWithTable` removes the entry of
+  every file whose metadata records vectors at a content hash the table no longer
+  holds, so the next catch-up re-embeds it. The rows' `hash` column is the file
+  content hash; a presence check alone misses an edited file whose older rows
+  survive the rollback. `MetaCache` gained a `readOnly` option for the dry run.
+- **Durability:** Lance 14.0.2 (LanceDB 0.41.0) builds its local store with
+  `LocalFileSystem::new()` in `lance-io/src/object_store/providers/local.rs` and
+  never calls object_store 0.14.2's `with_fsync`. No storage option reaches it, so
+  durable commits cannot be turned on from gmax and nothing was measured.
+- **Checks:** `pnpm typecheck` passed. 1 focused vitest run of 10 files passed 113
+  of 113, including `tests/torn-store.test.ts` (6 tests: torn tail rolled back with
+  exactly the 2 damaged files quarantined, reads and new commits working and 2
+  files marked for reindex; whole store untouched; 2 refusal cases; no lease; error
+  classification). `pnpm test:typecheck` fails only in the unchanged
+  `tests/no-daemon-bypass.test.ts` and `tests/no-daemon-commands.test.ts`.
+- **Live dry run:** the assessment on the live store found it healthy (latest
+  version whole), and the reconcile dry run marked 0 files: all 34,738 paths in the
+  table carry the hash their metadata records. That is consistent with the
+  catch-up after the manual repair (117 changed, 111 deleted at 18:01:38) having
+  re-embedded the lost files.
+- The 2 0-byte `_gmax-owned-<id>.jsonl` and `_gmax-reads-<id>.journal` files are
+  normal: their finalized bounded receipt selected 0 fragments and verified 0 rows.
+- **Open:** install on the host; the daemon start path and the mid-run trigger are
+  covered by the fixture and typecheck, not by a daemon-level test.
+
 ## P3 catch-up throughput and daemon startup: planned
 
 [Catch-up throughput](gmax-catchup-throughput.md) owns the 2026-11-05 findings and plan:

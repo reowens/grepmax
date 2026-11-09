@@ -60,6 +60,7 @@ import {
   storeMutationDeniedReason,
 } from "./maintenance-policy";
 import { StoreLease } from "./store-lease";
+import { isTornStoreError } from "./torn-store";
 import type { VectorRecord } from "./types";
 import {
   runVersionCleanup,
@@ -239,6 +240,8 @@ export interface VectorDbOptions {
   readOnly?: boolean;
   indexCacheMb?: number;
   metadataCacheMb?: number;
+  /** Told when opening the table fails the way a torn tail commit does. */
+  onStoreDamage?: (error: unknown) => void;
 }
 
 export class VectorDB {
@@ -1043,7 +1046,7 @@ export class VectorDB {
     const db = await this.getDb();
     let table: lancedb.Table;
     try {
-      table = await db.openTable(TABLE_NAME);
+      table = await this.openChunksTable(db);
     } catch (err) {
       if (isMissingTableError(err)) return null;
       throw err;
@@ -1216,7 +1219,7 @@ export class VectorDB {
     let table: lancedb.Table | undefined;
     try {
       try {
-        table = await db.openTable(TABLE_NAME);
+        table = await this.openChunksTable(db);
       } catch (err) {
         if (!isMissingTableError(err)) throw err;
         this.assertMutationAllowed();
@@ -1241,12 +1244,23 @@ export class VectorDB {
     }
   }
 
+  private async openChunksTable(
+    db: lancedb.Connection,
+  ): Promise<lancedb.Table> {
+    try {
+      return await db.openTable(TABLE_NAME);
+    } catch (err) {
+      if (isTornStoreError(err)) this.options.onStoreDamage?.(err);
+      throw err;
+    }
+  }
+
   /** Restricted reads must use the daemon connection without creating/evolving a table. */
   async existingTableForRead(): Promise<lancedb.Table> {
     if (!this.db) throw new Error("store_unavailable");
     let table: lancedb.Table | undefined;
     try {
-      table = await this.db.openTable(TABLE_NAME);
+      table = await this.openChunksTable(this.db);
       if (this.boundedProtectedVersion !== null)
         await table.checkout(this.boundedProtectedVersion);
       return table;
@@ -1260,7 +1274,7 @@ export class VectorDB {
     const db = await this.getDb();
     let table: lancedb.Table | undefined;
     try {
-      table = await db.openTable(TABLE_NAME);
+      table = await this.openChunksTable(db);
       if (this.boundedProtectedVersion !== null)
         await table.checkout(this.boundedProtectedVersion);
       return table;
@@ -2377,6 +2391,27 @@ export class VectorDB {
       unique.add(String(r.path));
     }
     return unique;
+  }
+
+  /** Every stored path with the content hashes its rows were written from. */
+  async getPathHashes(): Promise<Map<string, Set<string>>> {
+    const table = await this.openExistingTableUnsafe();
+    const hashes = new Map<string, Set<string>>();
+    if (!table) return hashes;
+    try {
+      for await (const r of streamQueryRows(
+        table.query().select(["path", "hash"]),
+        "path hashes",
+      )) {
+        const file = String(r.path);
+        const set = hashes.get(file) ?? new Set<string>();
+        set.add(String(r.hash));
+        hashes.set(file, set);
+      }
+    } finally {
+      this.closeOwnedTable(table, false);
+    }
+    return hashes;
   }
 
   /**
