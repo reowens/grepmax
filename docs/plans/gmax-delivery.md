@@ -45,9 +45,10 @@ checks and before the build, refusing on a non-zero exit. There is no skip flag.
   `@huggingface/transformers` depends on.
 - **Rust:** each `lance-maintenance/native/Cargo.toml` dependency's `Cargo.lock`
   version equals crates.io's `max_stable_version`. `lance`, `lance-io`,
-  `lance-table` and `lance-index` also equal the `lance` requirement of the
-  `lancedb` crate at the locked `@lancedb/lancedb` version (LanceDB publishes
-  both at 1 version number). Every engine string (`prepare-bounded-runtime.cjs`,
+  `lance-table` and `lance-index` instead equal the `lance` requirement of the
+  `lancedb` crate at the locked `@lancedb/lancedb` version, never a newer Lance
+  on crates.io (the store is written by LanceDB's Lance); a newer one prints a
+  held line. Every engine string (`prepare-bounded-runtime.cjs`,
   `assemble-bounded-runtime.cjs`, the helper's `main.rs` and `engine.rs`, and the
   Python `pylance` pins) names the locked `lance` version.
 - **Python:** every package in each tracked `uv.lock` equals PyPI's newest final,
@@ -55,15 +56,29 @@ checks and before the build, refusing on a non-zero exit. There is no skip flag.
   older entry's markers name the Python version alone and it is the newest
   release whose `requires-python` admits that entry's Python floor. A git source
   must sit at its remote's `HEAD`.
+- **Held by a parent:** a lagging crate or Python package whose latest release
+  falls outside a requirement of a locked parent (any `Cargo.lock` or `uv.lock`
+  package that depends on it) is current at the newest release every parent
+  admits. Requirements come from the parent's published manifest (crates.io
+  dependencies, PyPI `requires_dist` without extra-only entries; a git parent
+  holds nothing). It prints as a held line naming the loosest binding parent and
+  does not fail the check; below that release it is a lag.
 - An unreadable registry refuses with 1 line naming what could not be checked.
 
 Tests: `node --test scripts/check-versions.test.cjs scripts/release-draft.test.cjs`
-(stubbed registries). The 2026-11-09 run on `9870ac0` exits 1 with 63 lines:
-`web-tree-sitter` 0.27.1 (latest 0.27.2); the 5 `arrow-*` crates at 58.4.1
-(latest 60.1.0, Lance 14.0.2 requires arrow 58); 24 packages in
-`mlx-embed-server/gemma/uv.lock` and 33 in `mlx-embed-server/uv.lock`, including
-both git sources behind `HEAD`. `lance-maintenance/uv.lock`, the Lance crates
-and every engine string pass. These are open upgrades before the next release.
+(stubbed registries). On `a9e7b57` the real run exits 0 with 7 held lines: the 5
+`arrow-*` crates at 58.4.1 (lance 14.0.2 requires `^58.0.0`; latest 60.1.0) and
+`fsspec` 2026.7.0 in both MLX locks (datasets 5.1.0 requires `<=2026.7.0`;
+latest 2026.9.0). That tree has `web-tree-sitter` 0.27.2 (chunk output unchanged
+on 869 files, so `CHUNKER_VERSION` stays), `mlx-embeddings` and `mlx-vlm` at
+upstream `HEAD`, and both MLX locks at their latest. The `fsspec` constraint is
+`>=2026.6.0` (the GHSA-27vj-qcqg-25rc fix), since `>=2026.9.0` held `mlx-vlm` at
+0.7.6. The Gemma contract now names mlx 0.32.4, transformers 5.22.2 and
+`mlx-vlm` `a54f1a0d86fa`: its digest changed, so an existing gemma2 index needs a
+rebuild, and Gemma's evaluation has not been re-measured on these versions (that
+needs a model load). The MLX tests that load no weights pass on an Apple Silicon
+Mac in both environments. Open: the 3 `test_registry_verification.py` deadline
+tests fail on Linux and macOS, already on `58b1356`.
 
 ## Power-loss torn commits: rollback built and tested, not installed
 
