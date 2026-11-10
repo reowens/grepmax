@@ -5,7 +5,7 @@ import { ProjectBatchProcessor } from "./batch-processor";
 import { reconcileMetaEntry } from "./cache-coherence";
 import { ProjectFilePolicy } from "./file-policy";
 import { reconcileProject, WatcherSubscription } from "./watcher-core";
-import { FSEVENTS_GAP_SCAN_INTERVAL_MS } from "./watcher-errors";
+import { CoverageGap, FSEVENTS_GAP_SCAN_INTERVAL_MS } from "./watcher-errors";
 import { WatcherRecoveryTracker } from "./watcher-recovery";
 
 export interface WatcherHandle {
@@ -51,6 +51,9 @@ export async function startWatcher(
   let gapScanTimer: ReturnType<typeof setTimeout> | undefined;
   let lastReconcileStart: number | undefined;
   let gapGeneration = 0;
+  // An inferred gap, cleared by a complete reconcile that began after it.
+  let coverageGap: { reason: string; seq: number } | undefined;
+  let coverageSeq = 0;
   const subscription = new WatcherSubscription({
     root: projectRoot,
     recovery,
@@ -61,12 +64,17 @@ export async function startWatcher(
       opts.onHealthChange?.(false, 1);
       gapGeneration++;
     },
-    onGap: () => requestGapScan(),
+    onGap: (err) => {
+      if (err instanceof CoverageGap)
+        coverageGap = { reason: err.message, seq: ++coverageSeq };
+      requestGapScan();
+    },
     onTerminal: () => reconcile(),
     onRetry: (err, vanished, delayMs) =>
       console.error(
         `[${wtag}] Subscribe failed on vanished path ${vanished || "(not reported)"}, retrying in ${delayMs / 1000}s (${err.message})`,
       ),
+    newFolders: { policy: filePolicy, onResubscribeDue: () => reconcile() },
     onEvents: (events) => {
       for (const event of events)
         processor.handleFileEvent(
@@ -97,6 +105,7 @@ export async function startWatcher(
         reconcileRequested = false;
         lastReconcileStart = Date.now();
         const observedGapGeneration = gapGeneration;
+        const observedCoverageSeq = coverageSeq;
         const scan = recovery.beginScan();
         let outcome: "complete" | "incomplete" | "failed" = "failed";
         let retryDelayMs = 0;
@@ -144,6 +153,8 @@ export async function startWatcher(
           } else {
             outcome = "complete";
             scanHealthy = observedGapGeneration === gapGeneration;
+            if (coverageGap && coverageGap.seq <= observedCoverageSeq)
+              coverageGap = undefined;
             if (ingestionDegraded && processor.progress.pendingFiles > 0) {
               degradedRepairQueued = true;
             }
@@ -215,18 +226,25 @@ export async function startWatcher(
     get health(): IndexState {
       const progress = processor.progress;
       const state = recovery.snapshot();
+      const coverage = subscription.coverageGap ?? coverageGap?.reason;
       return {
         indexing: progress.processing || progress.pendingFiles > 0,
         pendingFiles: progress.pendingFiles,
         queue: progress.queue,
         failedFiles: Math.max(terminalFailures.size, progress.failedFiles),
         degraded:
-          !scanHealthy || ingestionDegraded || terminalFailures.size > 0,
+          !scanHealthy ||
+          ingestionDegraded ||
+          terminalFailures.size > 0 ||
+          coverage !== undefined,
         watcherMode: closing
           ? undefined
-          : subscription.failed || gapScanTimer || state.reconciliationNeeded
-            ? "recovering"
-            : "native",
+          : coverage
+            ? "degraded"
+            : subscription.failed || gapScanTimer || state.reconciliationNeeded
+              ? "recovering"
+              : "native",
+        ...(coverage && !closing ? { watcherReason: coverage } : {}),
         catchupRunning: reconciliation !== null,
         watcherRecovery: state,
       };

@@ -24,7 +24,7 @@ related_plans:
   - docs/plans/gmax-archived-doc-ranking.md
 related_docs:
 current_state: "The P3 runs gmax 0.26.113 under gmax.service. Its journal since 2026-11-09 16:31 PST shows 0 poll-mode falls and 0 re-watch loops, but folders created after the subscribe get no watch (2 folders, 16 files missing from the index), Linux inotify overflow is dropped without a signal, and the subscription keeps its own ignore list (33,091 watches, 356 of them in gitignored folders)."
-next_step: "Phase 4: a new folder gets a scoped walk and 1 debounced re-subscribe, inotify overflow reaches the gap catch-up, and gmax status shows missing coverage as degraded."
+next_step: "Phase 5: after the regrowth record ends 2026-11-11 16:00 UTC, release, install on the P3 and the Pro, and run the live checks."
 ---
 
 # Gmax watcher correctness
@@ -74,10 +74,12 @@ CPU is not the issue: the watcher thread used about 0.9% of a core on 0.26.113.
 
 ## Phase 4: new folders and overflow on Linux
 
-- [ ] A create event for a folder runs a scoped walk of it through `ProjectFilePolicy`, so files already inside are indexed.
-- [ ] When that walk finds a subfolder, 1 debounced re-subscribe runs (20 non-ignored folders were created in the 4 h after one subscribe; 2 missed a watch). Patching Parcel's inotify backend instead is weighed here and chosen only if the debounced re-subscribe measures too costly.
-- [ ] Overflow reaches the existing gap catch-up.
-- [ ] `gmax status` shows a watcher that is missing coverage as degraded, not native.
+- [x] A create or update event for a folder runs a scoped walk of it through `ProjectFilePolicy` and passes its files on as create events (`coverNewFolders`, `src/lib/index/watcher-core.ts:201`). Linux only; FSEvents already reports them.
+- [x] When that walk finds a subfolder that is not ignored, 1 re-subscribe runs 5 minutes after the first request (`requestResubscribe`, `watcher-core.ts:186`; `NEW_FOLDER_RESUBSCRIBE_DELAY_MS` at `:36`), forced past the unchanged-identity skip and followed by the owner's catch-up. Parcel's inotify backend already watches a new folder itself (`InotifyBackend.cc` `handleSubscription` calls `watchDir`); only subfolders already inside it are missed. Patching Parcel was not done: the backend ships as a prebuilt binary, so a patch means a fork and a native build per platform.
+- [x] Overflow reaches the gap catch-up through an inferred signal. Parcel drops `IN_Q_OVERFLOW` with no error and no log (`node_modules/@parcel/watcher/src/linux/InotifyBackend.cc:120-123`), so a Linux delivery of 4,096 or more events raises a `CoverageGap` (`src/lib/index/watcher-errors.ts:17`, `isEventGap` `:19`) on the normal gap path. Parcel counts 1 event per path, so the threshold can miss a real overflow or fire on a large checkout.
+- [x] `gmax status` shows `watcherMode: "degraded"` with a `watcherReason` while a new-folder re-subscribe is pending, and after an inferred gap until a complete catch-up that started after it (`watcher-manager.ts:134-147`, `src/lib/index/watcher.ts:229-247`); the footer prints "watcher degraded: <reason>". While degraded, document search reports coverage partial.
+- A failed forced re-subscribe in the standalone watcher leaves it detached with nothing retrying, as a failed policy-edit re-subscribe already does.
+- Checked: `pnpm typecheck` and the tests tsconfig clean; biome clean on the 12 files; `vitest run` on `watcher-core`, `watcher-manager`, `standalone-watcher-health`, `watcher-exclusion-parity`, `project-batch-processor` and `index-state-footer` 154 of 154. 3 small fixes after that run (gap cleared before the store write, timer gives up when detached, update events checked) are covered by typecheck only. `mcp-read-verbs`, `status-command` and `daemon-index-health` were not run; Phase 5's live check covers the wiring.
 
 ## Phase 5: release and live check
 

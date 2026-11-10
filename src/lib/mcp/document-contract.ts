@@ -247,10 +247,13 @@ export function documentIndexState(value: unknown): Record<string, unknown> {
     else if (has(key)) invalid = true;
   if (
     typeof source.watcherMode === "string" &&
-    ["native", "polling", "recovering"].includes(source.watcherMode)
+    ["native", "polling", "recovering", "degraded"].includes(source.watcherMode)
   )
     out.watcherMode = source.watcherMode;
   else if (has("watcherMode")) invalid = true;
+  if (typeof source.watcherReason === "string")
+    out.watcherReason = source.watcherReason;
+  else if (has("watcherReason")) invalid = true;
   if (invalid) out.degraded = true;
   return out;
 }

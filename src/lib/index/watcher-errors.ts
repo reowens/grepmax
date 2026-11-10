@@ -12,6 +12,14 @@ export function isFSEventsGap(error: Error): boolean {
   );
 }
 
+/** A gap gmax infers where the backend reports none, such as an inotify
+ * queue overflow, which Parcel drops without an error. */
+export class CoverageGap extends Error {}
+
+export function isEventGap(error: Error): boolean {
+  return error instanceof CoverageGap || isFSEventsGap(error);
+}
+
 // Bound reconciliation under sustained churn without abandoning native edits
 // for the five-minute polling fallback used by a failed subscription.
 export const FSEVENTS_GAP_SCAN_INTERVAL_MS = 30_000;

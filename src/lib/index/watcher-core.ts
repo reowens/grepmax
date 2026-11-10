@@ -3,6 +3,7 @@ import * as path from "node:path";
 import type * as watcher from "@parcel/watcher";
 import type { MetaCache } from "../store/meta-cache";
 import type { VectorDB } from "../store/vector-db";
+import { isPathWithin } from "../utils/path-containment";
 import type { ProjectBatchProcessor } from "./batch-processor";
 import type { ProjectFilePolicy } from "./file-policy";
 import {
@@ -10,8 +11,13 @@ import {
   isPathProtectedByWalkState,
   type WalkState,
   walk,
+  walkDirectories,
 } from "./walker";
-import { isFSEventsGap, vanishedSubscribePath } from "./watcher-errors";
+import {
+  CoverageGap,
+  isEventGap,
+  vanishedSubscribePath,
+} from "./watcher-errors";
 import {
   type NativeSubscription,
   readNativeWatcherIgnores,
@@ -23,6 +29,16 @@ import type { WatcherRecoveryTracker } from "./watcher-recovery";
 // A folder removed during the crawl fails the whole subscribe with ENOENT.
 // The next crawl usually passes, so retry before calling the watcher failed.
 export const VANISHED_PATH_RETRY_DELAYS_MS = [2_000, 4_000, 8_000];
+
+// Inotify watches a new folder, but not the subfolders already inside it when
+// its watch lands. A subscribe crawls the whole tree, so new folders share 1
+// re-subscribe, and their walk covers the files written before it.
+export const NEW_FOLDER_RESUBSCRIBE_DELAY_MS = 5 * 60_000;
+export const NEW_FOLDERS_UNWATCHED = "new folders wait for a re-subscribe";
+
+// Parcel drops IN_Q_OVERFLOW without an error. A delivery this large is the
+// nearest signal that the kernel queue (16,384 events by default) overflowed.
+export const POSSIBLE_OVERFLOW_EVENT_COUNT = 4_096;
 
 export interface WatcherSubscriptionOptions {
   root: string;
@@ -39,6 +55,13 @@ export interface WatcherSubscriptionOptions {
   onEvents: (events: watcher.Event[]) => void;
   /** A subscribe failed on a folder that vanished; it runs again after the delay. */
   onRetry?: (err: Error, vanished: string, delayMs: number) => void;
+  /** Linux only: each new folder is walked through policy, and one holding a
+   * subfolder asks the owner for a re-subscribe and a catch-up. */
+  newFolders?: {
+    policy: ProjectFilePolicy;
+    onResubscribeDue: () => void;
+  };
+  platform?: NodeJS.Platform;
 }
 
 /** One project's native subscription. Updates are serialized, and an update
@@ -52,11 +75,23 @@ export class WatcherSubscription {
   private pendingUpdate: Promise<void> = Promise.resolve();
   private terminalFailure = false;
   private wake: (() => void) | null = null;
+  private resubscribeTimer: ReturnType<typeof setTimeout> | undefined;
+  private resubscribeWanted = false;
+  private forceNext = false;
 
   constructor(private readonly options: WatcherSubscriptionOptions) {}
 
   get failed(): boolean {
     return this.terminalFailure;
+  }
+
+  /** Why the attached subscription misses part of the tree, if it does. */
+  get coverageGap(): string | undefined {
+    return this.resubscribeWanted ? NEW_FOLDERS_UNWATCHED : undefined;
+  }
+
+  private get linux(): boolean {
+    return (this.options.platform ?? process.platform) === "linux";
   }
 
   update(): Promise<void> {
@@ -77,6 +112,8 @@ export class WatcherSubscription {
     this.retired = true;
     this.generation++;
     this.wake?.();
+    clearTimeout(this.resubscribeTimer);
+    this.resubscribeTimer = undefined;
   }
 
   async detach(): Promise<void> {
@@ -135,13 +172,76 @@ export class WatcherSubscription {
     return null;
   }
 
+  private deliverError(err: Error): void {
+    this.options.recovery.error(err);
+    this.options.onError?.(err);
+    if (isEventGap(err)) this.options.onGap(err);
+    else {
+      // Terminal backend errors can clear Parcel's callbacks.
+      this.terminalFailure = true;
+      this.options.onTerminal(err);
+    }
+  }
+
+  private requestResubscribe(): void {
+    if (!this.subscription || this.terminalFailure) return;
+    this.resubscribeWanted = true;
+    if (this.resubscribeTimer || this.forceNext) return;
+    this.resubscribeTimer = setTimeout(() => {
+      this.resubscribeTimer = undefined;
+      if (!this.subscription || this.terminalFailure)
+        this.resubscribeWanted = false;
+      if (!this.live() || !this.resubscribeWanted) return;
+      this.forceNext = true;
+      this.options.newFolders?.onResubscribeDue();
+    }, NEW_FOLDER_RESUBSCRIBE_DELAY_MS);
+    this.resubscribeTimer.unref?.();
+  }
+
+  /** Walk each created folder so files written before its watch are indexed,
+   * and ask for a re-subscribe when it already holds a subfolder. Parcel
+   * reports a folder removed and created in one delivery as an update. */
+  private async coverNewFolders(
+    events: watcher.Event[],
+    current: () => boolean,
+  ): Promise<void> {
+    const policy = this.options.newFolders?.policy;
+    if (!policy) return;
+    const created = events
+      .filter((event) => event.type !== "delete")
+      .map((event) => event.path)
+      .sort((a, b) => a.length - b.length);
+    const walked: string[] = [];
+    for (const folder of created) {
+      if (walked.some((done) => isPathWithin(done, folder))) continue;
+      const stat = await fs.lstat(folder).catch(() => null);
+      if (!current()) return;
+      if (!stat?.isDirectory()) continue;
+      walked.push(folder);
+      const files: watcher.Event[] = [];
+      for await (const relative of walk(folder, { policy }))
+        files.push({ type: "create", path: path.join(folder, relative) });
+      if (!current()) return;
+      if (files.length > 0) this.options.onEvents(files);
+      for await (const directory of walkDirectories(folder, policy)) {
+        if (directory.depth > 0 && directory.result.status === "traverse") {
+          this.requestResubscribe();
+          break;
+        }
+      }
+    }
+  }
+
   private async updateNow(): Promise<void> {
     const { root, recovery } = this.options;
+    const force = this.forceNext;
+    this.forceNext = false;
     if (!this.live()) return;
     const ignores = await readNativeWatcherIgnores(root);
     if (
       !this.live() ||
-      (this.subscription &&
+      (!force &&
+        this.subscription &&
         !this.terminalFailure &&
         this.wanted === watcherIgnoreIdentity(ignores))
     )
@@ -150,21 +250,20 @@ export class WatcherSubscription {
     this.terminalFailure = false;
     await this.detach().catch(() => {});
     if (!this.live()) return;
-    const callback: watcher.SubscribeCallback = (err, events) => {
-      if (generation !== this.generation || !this.live()) return;
-      if (err) {
-        recovery.error(err);
-        this.options.onError?.(err);
-        if (isFSEventsGap(err)) this.options.onGap(err);
-        else {
-          // Terminal backend errors can clear Parcel's callbacks.
-          this.terminalFailure = true;
-          this.options.onTerminal(err);
-        }
-      }
-      this.options.onEvents(events);
-    };
     const current = () => generation === this.generation && this.live();
+    const callback: watcher.SubscribeCallback = (err, events) => {
+      if (!current()) return;
+      if (err) this.deliverError(err);
+      else if (this.linux && events.length >= POSSIBLE_OVERFLOW_EVENT_COUNT)
+        this.deliverError(
+          new CoverageGap(
+            `possible inotify overflow (${events.length} events in one delivery), catch-up pending`,
+          ),
+        );
+      this.options.onEvents(events);
+      if (this.linux && this.options.newFolders)
+        this.coverNewFolders(events, current).catch(() => {});
+    };
     const attached = await this.subscribe(callback, ignores, current);
     if (!attached) return;
     const { subscription, policy, wanted } = attached;
@@ -174,6 +273,9 @@ export class WatcherSubscription {
     }
     this.subscription = subscription;
     this.wanted = wanted;
+    this.resubscribeWanted = false;
+    clearTimeout(this.resubscribeTimer);
+    this.resubscribeTimer = undefined;
     recovery.attached(policy);
   }
 }

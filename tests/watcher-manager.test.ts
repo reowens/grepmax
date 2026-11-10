@@ -18,6 +18,12 @@ vi.mock("../src/lib/utils/project-registry", () => ({
 
 import { WatcherManager } from "../src/lib/daemon/watcher-manager";
 import { ProjectBatchProcessor } from "../src/lib/index/batch-processor";
+import { ProjectFilePolicy } from "../src/lib/index/file-policy";
+import {
+  NEW_FOLDER_RESUBSCRIBE_DELAY_MS,
+  NEW_FOLDERS_UNWATCHED,
+  POSSIBLE_OVERFLOW_EVENT_COUNT,
+} from "../src/lib/index/watcher-core";
 import * as fileUtils from "../src/lib/utils/file-utils";
 import { KeyedMutex } from "../src/lib/utils/keyed-mutex";
 import { registerWatcher } from "../src/lib/utils/watcher-store";
@@ -1157,5 +1163,123 @@ describe("WatcherManager.unwatchProject", () => {
         await wm.unwatchProject(root);
       },
     );
+  });
+});
+
+describe("WatcherManager coverage on Linux", () => {
+  let root: string;
+  let notify: SubscribeCallback;
+  let restorePlatform: () => void = () => {};
+
+  async function setup() {
+    const original = Object.getOwnPropertyDescriptor(process, "platform")!;
+    Object.defineProperty(process, "platform", { ...original, value: "linux" });
+    restorePlatform = () =>
+      Object.defineProperty(process, "platform", original);
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "gmax-coverage-"));
+    const watcher = await import("@parcel/watcher");
+    vi.mocked(watcher.subscribe)
+      .mockReset()
+      .mockImplementation(async (_root, callback) => {
+        notify = callback;
+        return { unsubscribe: vi.fn(async () => {}) };
+      });
+    const dependencies = {
+      processors: new Map(),
+      evictSearcher: vi.fn(),
+      touchActivity: vi.fn(),
+      getShuttingDown: () => false,
+      getMetaCache: () => ({
+        getKeysWithPrefix: vi.fn(async () => new Set<string>()),
+        get: vi.fn(),
+      }),
+      getVectorDb: () => ({
+        getDistinctPathsForPrefix: vi.fn(async () => new Set<string>()),
+      }),
+    } as any;
+    const processor = {
+      handleFileEvent: vi.fn(),
+      close: vi.fn(async () => {}),
+      filePolicy: new ProjectFilePolicy(root),
+    };
+    dependencies.processors.set(root, processor);
+    const wm = new WatcherManager(dependencies) as any;
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    await wm.subscribeWatcher(root, processor);
+    return { wm, processor, watcher };
+  }
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    restorePlatform();
+    restorePlatform = () => {};
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it("is degraded while new folders wait for 1 re-subscribe, then catches up", async () => {
+    vi.useFakeTimers();
+    const { wm, processor, watcher } = await setup();
+    const scan = vi.spyOn(wm, "runCatchup").mockResolvedValue(undefined);
+    const nested = path.join(root, "made", "by", "mkdir", "a.ts");
+    await fs.mkdir(path.dirname(nested), { recursive: true });
+    await fs.writeFile(nested, "export const a = 1;\n");
+
+    notify(null, [{ type: "create", path: path.join(root, "made") }]);
+    await vi.waitFor(() =>
+      expect(processor.handleFileEvent).toHaveBeenCalledWith("change", nested),
+    );
+    await vi.waitFor(() =>
+      expect(wm.health(root)).toMatchObject({
+        degraded: true,
+        watcherMode: "degraded",
+        watcherReason: NEW_FOLDERS_UNWATCHED,
+      }),
+    );
+
+    await vi.advanceTimersByTimeAsync(NEW_FOLDER_RESUBSCRIBE_DELAY_MS);
+    await vi.waitFor(() => expect(scan).toHaveBeenCalledOnce());
+    expect(watcher.subscribe).toHaveBeenCalledTimes(2);
+    const health = wm.health(root);
+    expect(health).toMatchObject({ degraded: false, watcherMode: "native" });
+    expect(health.watcherReason).toBeUndefined();
+    await wm.unwatchProject(root);
+  });
+
+  it("is degraded after a possible inotify overflow until a complete catch-up that began after it", async () => {
+    const { wm } = await setup();
+    const request = vi
+      .spyOn(wm, "requestOverflowCatchup")
+      .mockImplementation(() => {});
+    notify(
+      null,
+      Array.from({ length: POSSIBLE_OVERFLOW_EVENT_COUNT }, (_, index) => ({
+        type: "update" as const,
+        path: `${root}/f${index}.bin`,
+      })),
+    );
+
+    expect(request).toHaveBeenCalledOnce();
+    const health = wm.health(root);
+    expect(health).toMatchObject({
+      degraded: true,
+      watcherMode: "degraded",
+      overflowCount: 1,
+      watcherRecovery: { gapCount: 1, terminalErrorCount: 0 },
+    });
+    expect(health.watcherReason).toContain("possible inotify overflow");
+
+    await wm.catchupScan(
+      root,
+      wm.subscriptions.get(root).processor,
+      new AbortController().signal,
+    );
+    expect(wm.health(root)).toMatchObject({
+      degraded: false,
+      watcherMode: "native",
+      watcherRecovery: { outstandingGapCount: 0 },
+    });
+    await wm.unwatchProject(root);
   });
 });

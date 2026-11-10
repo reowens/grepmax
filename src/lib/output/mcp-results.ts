@@ -242,7 +242,10 @@ export const MCP_READ_OUTPUT_SCHEMAS: Record<string, z.ZodRawShape> = {
           verifying: z.boolean().optional(),
           failedFiles: z.number().optional(),
           degraded: z.boolean().optional(),
-          watcherMode: z.enum(["native", "polling", "recovering"]).optional(),
+          watcherMode: z
+            .enum(["native", "polling", "recovering", "degraded"])
+            .optional(),
+          watcherReason: z.string().optional(),
           catchupRunning: z.boolean().optional(),
           lastReconciledAt: z.number().optional(),
           overflowCount: z.number().optional(),

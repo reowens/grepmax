@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { isFSEventsGap } from "./watcher-errors";
+import { isEventGap } from "./watcher-errors";
 
 export interface WatcherRecoveryState {
   gapCount: number;
@@ -47,7 +47,7 @@ export class WatcherRecoveryTracker {
   private exclusions?: WatcherRecoveryState["exclusions"];
 
   error(error: Error): void {
-    if (isFSEventsGap(error)) {
+    if (isEventGap(error)) {
       this.gapCount++;
       this.lastGapAt = Date.now();
     } else {

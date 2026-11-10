@@ -589,7 +589,7 @@ watch
           console.log(`    queue: ${formatWatchQueue(p.indexState.queue)}`);
         if (p.indexState)
           console.log(
-            `    watcher=${p.indexState.watcherMode ?? "unknown"} overflows=${p.indexState.overflowCount ?? 0} lastReconciled=${p.indexState.lastReconciledAt ? new Date(p.indexState.lastReconciledAt).toISOString() : "unknown"} catchupMs=${p.indexState.catchupMs ?? "unknown"}`,
+            `    watcher=${p.indexState.watcherMode ?? "unknown"} overflows=${p.indexState.overflowCount ?? 0} lastReconciled=${p.indexState.lastReconciledAt ? new Date(p.indexState.lastReconciledAt).toISOString() : "unknown"} catchupMs=${p.indexState.catchupMs ?? "unknown"}${p.indexState.watcherReason ? ` reason="${p.indexState.watcherReason}"` : ""}`,
           );
         const recovery = formatWatcherRecovery(p.indexState?.watcherRecovery);
         if (recovery) console.log(`    recovery: ${recovery}`);

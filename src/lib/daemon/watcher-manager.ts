@@ -3,7 +3,10 @@ import { ProjectBatchProcessor } from "../index/batch-processor";
 import { reconcileMetaEntry } from "../index/cache-coherence";
 import { ProjectFilePolicy } from "../index/file-policy";
 import { reconcileProject, WatcherSubscription } from "../index/watcher-core";
-import { FSEVENTS_GAP_SCAN_INTERVAL_MS } from "../index/watcher-errors";
+import {
+  CoverageGap,
+  FSEVENTS_GAP_SCAN_INTERVAL_MS,
+} from "../index/watcher-errors";
 import { WatcherRecoveryTracker } from "../index/watcher-recovery";
 import type { IndexState } from "../output/index-state-footer";
 import type { MetaCache } from "../store/meta-cache";
@@ -95,6 +98,12 @@ export class WatcherManager {
   private readonly lastCatchupEndMs = new Map<string, number>();
   private readonly lastCatchupStartMs = new Map<string, number>();
   private readonly overflowPendingRoots = new Set<string>();
+  /** An inferred gap per root, cleared by a complete catchup that began after it. */
+  private readonly coverageGaps = new Map<
+    string,
+    { reason: string; seq: number }
+  >();
+  private coverageGapSeq = 0;
   private readonly deferredCatchups = new Map<
     string,
     ReturnType<typeof setTimeout>
@@ -122,16 +131,20 @@ export class WatcherManager {
   constructor(private readonly deps: WatcherManagerDeps) {}
 
   health(root: string): Partial<IndexState> {
+    const coverage = this.coverageGap(root);
     return {
       failedFiles: this.terminalFailures.get(root)?.size ?? 0,
       degraded: this.isRootDegraded(root),
       watcherMode: this.pollIntervals.has(root)
         ? "polling"
-        : this.pendingOps.has(`recover:${root}`) ||
-            this.deferredCatchups.has(root) ||
-            this.overflowPendingRoots.has(root)
-          ? "recovering"
-          : "native",
+        : coverage
+          ? "degraded"
+          : this.pendingOps.has(`recover:${root}`) ||
+              this.deferredCatchups.has(root) ||
+              this.overflowPendingRoots.has(root)
+            ? "recovering"
+            : "native",
+      ...(coverage ? { watcherReason: coverage } : {}),
       catchupRunning: this.catchups.has(root),
       lastReconciledAt: this.reconciledAt.get(root),
       overflowCount: this.overflowCounts.get(root) ?? 0,
@@ -168,29 +181,8 @@ export class WatcherManager {
         metaCache,
         ...(workerPool ? { workerPool } : {}),
         filePolicy,
-        onPolicyChange: () => {
-          void this.subscribeWatcher(root, processor)
-            .then(
-              () => {
-                if (
-                  this.deps.processors.get(root) === processor &&
-                  !this.deps.getShuttingDown()
-                )
-                  return this.runCatchup(root, processor);
-                return;
-              },
-              (error) => {
-                this.recoverWatcher(root, processor);
-                throw error;
-              },
-            )
-            .catch((err) => {
-              console.error(
-                `[daemon:${path.basename(root)}] Policy reconciliation failed:`,
-                err,
-              );
-            });
-        },
+        onPolicyChange: () =>
+          this.resubscribeAndCatchup(root, processor, "Policy reconciliation"),
         onReindex: async (files, ms) => {
           lastReindexAt = Date.now();
           console.log(
@@ -336,8 +328,41 @@ export class WatcherManager {
   private isRootDegraded(root: string): boolean {
     return (
       this.degradedRoots.has(root) ||
-      (this.terminalFailures.get(root)?.size ?? 0) > 0
+      (this.terminalFailures.get(root)?.size ?? 0) > 0 ||
+      this.coverageGap(root) !== undefined
     );
+  }
+
+  private coverageGap(root: string): string | undefined {
+    return (
+      this.subscriptions.get(root)?.subscription.coverageGap ??
+      this.coverageGaps.get(root)?.reason
+    );
+  }
+
+  private resubscribeAndCatchup(
+    root: string,
+    processor: ProjectBatchProcessor,
+    label: string,
+  ): void {
+    void this.subscribeWatcher(root, processor)
+      .then(
+        () => {
+          if (
+            this.deps.processors.get(root) === processor &&
+            !this.deps.getShuttingDown()
+          )
+            return this.runCatchup(root, processor);
+          return;
+        },
+        (error) => {
+          this.recoverWatcher(root, processor);
+          throw error;
+        },
+      )
+      .catch((err) => {
+        console.error(`[daemon:${path.basename(root)}] ${label} failed:`, err);
+      });
   }
 
   private readonly subscriptions = new Map<
@@ -392,7 +417,12 @@ export class WatcherManager {
           );
         }
       },
-      onGap: () => {
+      onGap: (err) => {
+        if (err instanceof CoverageGap)
+          this.coverageGaps.set(root, {
+            reason: err.message,
+            seq: ++this.coverageGapSeq,
+          });
         this.overflowPendingRoots.add(root);
         this.requestOverflowCatchup(root, processor);
       },
@@ -401,6 +431,17 @@ export class WatcherManager {
         console.error(
           `[daemon:${name}] Subscribe failed on vanished path ${vanished || "(not reported)"}, retrying in ${delayMs / 1000}s (${err.message})`,
         ),
+      newFolders: {
+        policy: processor.filePolicy,
+        onResubscribeDue: () => {
+          console.log(`[daemon:${name}] Re-subscribing to watch new folders`);
+          this.resubscribeAndCatchup(
+            root,
+            processor,
+            "New-folder re-subscribe",
+          );
+        },
+      },
       onEvents: (events) => {
         // Gaps do not kill Parcel's stream. Only a terminal failure should
         // reset the subscription health window or prevent leaving poll mode.
@@ -699,6 +740,7 @@ export class WatcherManager {
     try {
       const scanStart = Date.now();
       const overflowCountAtStart = this.overflowCounts.get(root) ?? 0;
+      const coverageSeqAtStart = this.coverageGapSeq;
       const { isFileCached } = await import("../utils/cache-check");
 
       const metaCache = this.deps.getMetaCache()!;
@@ -854,6 +896,10 @@ export class WatcherManager {
         });
       } else {
         this.degradedRoots.delete(root);
+        if (
+          (this.coverageGaps.get(root)?.seq ?? Infinity) <= coverageSeqAtStart
+        )
+          this.coverageGaps.delete(root);
         const failedFiles = this.terminalFailures.get(root)?.size ?? 0;
         registerWatcher({
           pid: process.pid,
@@ -1010,6 +1056,7 @@ export class WatcherManager {
     this.lastCatchupEndMs.delete(root);
     this.lastCatchupStartMs.delete(root);
     this.overflowPendingRoots.delete(root);
+    this.coverageGaps.delete(root);
     this.degradedRoots.delete(root);
     this.terminalFailures.delete(root);
     this.recoveryStates.delete(root);

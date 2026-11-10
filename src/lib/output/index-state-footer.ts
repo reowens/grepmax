@@ -32,7 +32,9 @@ export interface IndexState {
   verifying?: boolean;
   failedFiles?: number;
   degraded?: boolean;
-  watcherMode?: "native" | "polling" | "recovering";
+  watcherMode?: "native" | "polling" | "recovering" | "degraded";
+  /** Why a degraded watcher misses part of the tree. */
+  watcherReason?: string;
   catchupRunning?: boolean;
   lastReconciledAt?: number;
   overflowCount?: number;
@@ -69,11 +71,15 @@ export function formatIndexStateFooter(
   if (!state) return null;
   const issues: string[] = [];
   if (state.failedFiles) issues.push(`${state.failedFiles} files failed`);
-  if (state.degraded && !state.failedFiles)
+  if (state.degraded && !state.failedFiles && state.watcherMode !== "degraded")
     issues.push("reconciliation incomplete");
   if (state.watcherMode === "polling")
     issues.push("polling; changes may lag up to 5min");
   if (state.watcherMode === "recovering") issues.push("watcher recovering");
+  if (state.watcherMode === "degraded")
+    issues.push(
+      `watcher degraded: ${state.watcherReason ?? "coverage incomplete"}`,
+    );
   if (state.catchupRunning) issues.push("reconciling filesystem changes");
   if (issues.length) {
     const next =

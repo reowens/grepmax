@@ -9,9 +9,13 @@ vi.mock("@parcel/watcher", () => ({ subscribe: vi.fn() }));
 import * as watcher from "@parcel/watcher";
 import { ProjectFilePolicy } from "../src/lib/index/file-policy";
 import {
+  NEW_FOLDER_RESUBSCRIBE_DELAY_MS,
+  NEW_FOLDERS_UNWATCHED,
+  POSSIBLE_OVERFLOW_EVENT_COUNT,
   reconcileProject,
   WatcherSubscription,
 } from "../src/lib/index/watcher-core";
+import { CoverageGap } from "../src/lib/index/watcher-errors";
 import { WatcherRecoveryTracker } from "../src/lib/index/watcher-recovery";
 
 describe("WatcherSubscription", () => {
@@ -247,6 +251,141 @@ describe("WatcherSubscription", () => {
       expect(watcher.subscribe).toHaveBeenCalledOnce();
       expect(vi.getTimerCount()).toBe(0);
     });
+  });
+
+  describe("new folders and overflow on Linux", () => {
+    function linux(platform: NodeJS.Platform = "linux") {
+      const recovery = new WatcherRecoveryTracker();
+      const handlers = {
+        onError: vi.fn(),
+        onGap: vi.fn(),
+        onTerminal: vi.fn(),
+        onEvents: vi.fn(),
+        onResubscribeDue: vi.fn(),
+      };
+      const subscription = new WatcherSubscription({
+        root,
+        recovery,
+        isActive: () => true,
+        platform,
+        newFolders: {
+          policy: new ProjectFilePolicy(root),
+          onResubscribeDue: handlers.onResubscribeDue,
+        },
+        ...handlers,
+      });
+      handlers.onResubscribeDue.mockImplementation(() => subscription.update());
+      return { subscription, recovery, ...handlers };
+    }
+
+    const file = async (relative: string) => {
+      const target = path.join(root, relative);
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.writeFile(target, "export const value = 1;\n");
+      return target;
+    };
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("walks a created folder and queues the files already inside it", async () => {
+      const inside = await file("fresh/a.ts");
+      await file("node_modules/pkg/b.ts");
+      const plain = await file("plain.ts");
+      const { subscription, onEvents } = linux();
+      await subscription.update();
+
+      callbacks[0](null, [
+        { type: "create", path: path.join(root, "fresh") },
+        { type: "create", path: path.join(root, "node_modules") },
+        { type: "create", path: plain },
+      ]);
+
+      await vi.waitFor(() =>
+        expect(onEvents).toHaveBeenCalledWith([
+          { type: "create", path: inside },
+        ]),
+      );
+      expect(onEvents).toHaveBeenCalledTimes(2);
+      expect(subscription.coverageGap).toBeUndefined();
+    });
+
+    it("re-subscribes once, after the debounce, for new folders holding subfolders", async () => {
+      vi.useFakeTimers();
+      const first = await file("one/sub/a.ts");
+      const second = await file("two/deep/er/b.ts");
+      const { subscription, onEvents, onResubscribeDue } = linux();
+      await subscription.update();
+
+      callbacks[0](null, [{ type: "create", path: path.join(root, "one") }]);
+      callbacks[0](null, [{ type: "create", path: path.join(root, "two") }]);
+      await vi.waitFor(() => {
+        expect(onEvents).toHaveBeenCalledWith([
+          { type: "create", path: first },
+        ]);
+        expect(onEvents).toHaveBeenCalledWith([
+          { type: "create", path: second },
+        ]);
+      });
+      expect(subscription.coverageGap).toBe(NEW_FOLDERS_UNWATCHED);
+
+      await vi.advanceTimersByTimeAsync(
+        NEW_FOLDER_RESUBSCRIBE_DELAY_MS - 60_000,
+      );
+      expect(onResubscribeDue).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(onResubscribeDue).toHaveBeenCalledOnce();
+      await subscription.settled();
+
+      // Same ignore identity, but the forced update crawls again.
+      expect(watcher.subscribe).toHaveBeenCalledTimes(2);
+      expect(unsubscribes[0]).toHaveBeenCalledOnce();
+      expect(subscription.coverageGap).toBeUndefined();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("does not walk new folders off Linux", async () => {
+      await file("fresh/sub/a.ts");
+      const { subscription, onEvents } = linux("darwin");
+      await subscription.update();
+      callbacks[0](null, [{ type: "create", path: path.join(root, "fresh") }]);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(onEvents).toHaveBeenCalledOnce();
+      expect(subscription.coverageGap).toBeUndefined();
+    });
+
+    it.each([
+      ["linux", 1],
+      ["darwin", 0],
+    ] as const)(
+      "treats a very large delivery on %s as a possible overflow (%i gaps)",
+      async (platform, gaps) => {
+        const { subscription, recovery, onError, onGap, onTerminal, onEvents } =
+          linux(platform);
+        await subscription.update();
+        const events = Array.from(
+          { length: POSSIBLE_OVERFLOW_EVENT_COUNT },
+          (_, index) => ({
+            type: "update" as const,
+            path: `${root}/f${index}.ts`,
+          }),
+        );
+
+        callbacks[0](null, events);
+
+        expect(onGap).toHaveBeenCalledTimes(gaps);
+        expect(onError).toHaveBeenCalledTimes(gaps);
+        if (gaps) expect(onGap.mock.calls[0][0]).toBeInstanceOf(CoverageGap);
+        expect(onTerminal).not.toHaveBeenCalled();
+        expect(onEvents).toHaveBeenCalledWith(events);
+        expect(subscription.failed).toBe(false);
+        expect(recovery.snapshot()).toMatchObject({
+          gapCount: gaps,
+          terminalErrorCount: 0,
+        });
+      },
+    );
   });
 });
 

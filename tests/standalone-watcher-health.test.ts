@@ -9,6 +9,7 @@ vi.mock("@parcel/watcher", () => ({
 
 import * as watcher from "@parcel/watcher";
 import { startWatcher } from "../src/lib/index/watcher";
+import { POSSIBLE_OVERFLOW_EVENT_COUNT } from "../src/lib/index/watcher-core";
 import { getWorkerPool } from "../src/lib/workers/pool";
 
 describe("standalone watcher health", () => {
@@ -190,6 +191,61 @@ describe("standalone watcher health", () => {
       }),
     );
     expect(watcher.subscribe).toHaveBeenCalledOnce();
+  });
+
+  it("is degraded after a possible inotify overflow until its reconcile completes", async () => {
+    vi.useRealTimers();
+    const original = Object.getOwnPropertyDescriptor(process, "platform")!;
+    Object.defineProperty(process, "platform", { ...original, value: "linux" });
+    let errors: ReturnType<typeof vi.spyOn> | undefined;
+    try {
+      vi.mocked(watcher.subscribe).mockClear();
+      errors = vi.spyOn(console, "error").mockImplementation(() => {});
+      const handle = await startWatcher({
+        projectRoot: root,
+        dataDir: path.join(root, ".gmax"),
+        metaCache: {
+          getKeysWithPrefix: vi.fn(async () => new Set<string>()),
+          get: vi.fn(),
+          put: vi.fn(),
+          delete: vi.fn(),
+        } as any,
+        vectorDb: {
+          diskPressure: "ok",
+          checkDiskPressure: vi.fn(() => "ok"),
+          getDistinctPathsForPrefix: vi.fn(async () => new Set<string>()),
+        } as any,
+      });
+      handles.push(handle);
+      await vi.waitFor(() =>
+        expect(handle.health.watcherRecovery?.lastCompleteScan?.id).toBe(1),
+      );
+      vi.useFakeTimers();
+      vi.mocked(watcher.subscribe).mock.calls[0][1](
+        null,
+        Array.from({ length: POSSIBLE_OVERFLOW_EVENT_COUNT }, (_, index) => ({
+          type: "update" as const,
+          path: `${root}/f${index}.bin`,
+        })),
+      );
+      expect(handle.health).toMatchObject({
+        degraded: true,
+        watcherMode: "degraded",
+      });
+      expect(handle.health.watcherReason).toContain(
+        "possible inotify overflow",
+      );
+      await vi.advanceTimersByTimeAsync(30_000);
+      vi.useRealTimers();
+      await vi.waitFor(() =>
+        expect(handle.health.watcherRecovery?.lastCompleteScan?.id).toBe(2),
+      );
+      expect(handle.health.watcherMode).toBe("native");
+      expect(handle.health.watcherReason).toBeUndefined();
+    } finally {
+      errors?.mockRestore();
+      Object.defineProperty(process, "platform", original);
+    }
   });
 
   it("replaces a terminally failed stream and ignores its queued callbacks", async () => {
