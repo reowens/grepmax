@@ -70,7 +70,9 @@ owns remaining work. No other plan or saved prompt was archived.
 | Doc | Status |
 |-----|--------|
 | [Future Sessions](future-sessions.md) | Active |
+| [Catch-up throughput and daemon startup on the P3](plans/gmax-catchup-throughput.md) | Active |
 | [Gmax Delivery Plan](plans/gmax-delivery.md) | Active |
+| [Gmax watcher correctness](plans/gmax-watcher-correctness.md) | Active |
 
 ## Blocked
 

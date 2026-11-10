@@ -19,6 +19,7 @@ audience: internal
 parent_plan:
 related_plans:
   - docs/plans/gmax-local-workers.md
+  - docs/plans/gmax-watcher-correctness.md
   - docs/plans/colbert-backend-evaluation.md
   - docs/plans/session-start-hint-trim.md
 related_docs:
@@ -7176,7 +7177,7 @@ parallel omnibus plan.
 
 | Area | Disposition and reopen condition |
 | --- | --- |
-| Watcher event-drop cause | Recovery/diagnostics are shipped; the underlying host/native drop cause is not closed. Use an actual new failure and existing gap metadata to identify a change. No repeated quiet-window acceptance or new watcher migration. |
+| Watcher event-drop cause | Recovery/diagnostics are shipped. The Linux causes (vanished-folder subscribe failure, unwatched new folders, silent inotify overflow, the separate subscription ignore list) are owned by [gmax-watcher-correctness.md](gmax-watcher-correctness.md). No new watcher migration. |
 | Native/host long-cycle memory | Historical attribution is incomplete. A reproducible Gmax-owned allocation defect belongs in B; unrelated host behavior remains reference evidence. No daily sampling task or new soak is scheduled. |
 | Lower-priority performance | Nested class/method chunk duplication; embedding overlap/batching/reranker bucketing; repeated file classification; quadratic chunk splitting; row hydration; duplicate response serialization; blocking housekeeping process checks; graph N+1 lookups. Select only for a concrete cost relevant to A/B or after this plan closes. |
 | Agent formatting | Not-found recovery already shipped. Additional error/output-contract coverage requires a demonstrated inconsistency; no blanket snapshot suite is scheduled. |
