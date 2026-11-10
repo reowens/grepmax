@@ -397,6 +397,10 @@ export class WatcherManager {
         this.requestOverflowCatchup(root, processor);
       },
       onTerminal: () => this.recoverWatcher(root, processor),
+      onRetry: (err, vanished, delayMs) =>
+        console.error(
+          `[daemon:${name}] Subscribe failed on vanished path ${vanished || "(not reported)"}, retrying in ${delayMs / 1000}s (${err.message})`,
+        ),
       onEvents: (events) => {
         // Gaps do not kill Parcel's stream. Only a terminal failure should
         // reset the subscription health window or prevent leaving poll mode.
@@ -480,6 +484,7 @@ export class WatcherManager {
         this.runCatchup(root, processor).catch((err) => {
           console.error(`[daemon:${name}] Poll catchup failed:`, err);
         });
+        let polls = 0;
         const interval = setInterval(() => {
           if (
             this.deps.getShuttingDown() ||
@@ -490,6 +495,10 @@ export class WatcherManager {
           this.runCatchup(root, processor).catch((err) => {
             console.error(`[daemon:${name}] Poll catchup failed:`, err);
           });
+          // On Linux poll mode follows a crawl race, not an event burst, so
+          // the first poll already has good odds of reattaching.
+          if (++polls === 1 && process.platform === "linux")
+            this.probePollModeRecovery(root, processor);
         }, POLL_INTERVAL_MS);
         this.pollIntervals.set(root, interval);
         // Schedule periodic attempts to climb back to native FSEvents — after
@@ -594,75 +603,89 @@ export class WatcherManager {
     root: string,
     processor: ProjectBatchProcessor,
   ): void {
-    if (this.pollRecoveryTimers.has(root)) return;
-    const name = path.basename(root);
-    const lifecycle = this.watchLifecycles.get(root);
-    if (!lifecycle) return;
+    if (this.pollRecoveryTimers.has(root) || !this.watchLifecycles.has(root))
+      return;
     const timer = setInterval(() => {
       if (this.deps.getShuttingDown()) return;
-      // Skip if a watcher recovery is already in flight or we're not in poll mode anymore.
       if (!this.pollIntervals.has(root)) {
         const t = this.pollRecoveryTimers.get(root);
         if (t) clearInterval(t);
         this.pollRecoveryTimers.delete(root);
         return;
       }
-      if (this.pendingOps.has(`recover:${root}`)) return;
-
-      void (async () => {
-        if (this.deps.processors.get(root) !== processor) return;
-        console.log(
-          `[daemon:${name}] Attempting to leave poll mode and reattach FSEvents...`,
-        );
-        try {
-          // Reset failure counter so subscribeWatcher's error path treats this
-          // as a fresh start. If it fails again, we'll fall right back into
-          // poll mode via the same recoverWatcher path.
-          this.watcherFailCount.delete(root);
-          await this.subscribeWatcher(root, processor);
-          if (this.deps.processors.get(root) !== processor) return;
-
-          // Wait one health window — if the new subscription survives without
-          // another terminal failure, we consider it recovered and tear down poll mode.
-          await abortableDelay(FSEVENTS_HEALTH_WINDOW_MS, lifecycle.signal);
-          if (
-            this.deps.getShuttingDown() ||
-            this.deps.processors.get(root) !== processor
-          )
-            return;
-
-          const lastOverflow = this.lastWatcherFailureMs.get(root) ?? 0;
-          if (Date.now() - lastOverflow < FSEVENTS_HEALTH_WINDOW_MS) {
-            console.log(
-              `[daemon:${name}] FSEvents recovery aborted — terminal failure within health window, staying in poll mode`,
-            );
-            return; // recoverWatcher will have re-armed poll mode if needed
-          }
-
-          // Healthy — drop poll mode.
-          const pollInterval = this.pollIntervals.get(root);
-          if (pollInterval) {
-            clearInterval(pollInterval);
-            this.pollIntervals.delete(root);
-          }
-          const recoveryTimer = this.pollRecoveryTimers.get(root);
-          if (recoveryTimer) {
-            clearInterval(recoveryTimer);
-            this.pollRecoveryTimers.delete(root);
-          }
-          console.log(
-            `[daemon:${name}] FSEvents recovered — poll mode disabled`,
-          );
-        } catch (err) {
-          console.error(
-            `[daemon:${name}] Poll-mode recovery attempt failed:`,
-            err,
-          );
-        }
-      })();
+      this.probePollModeRecovery(root, processor);
     }, FSEVENTS_RECOVERY_INTERVAL_MS);
     timer.unref();
     this.pollRecoveryTimers.set(root, timer);
+  }
+
+  /** Subscribe again and leave poll mode once the subscription survives one
+   * health window. A failure falls back into poll mode through recoverWatcher. */
+  private probePollModeRecovery(
+    root: string,
+    processor: ProjectBatchProcessor,
+  ): void {
+    const probeKey = `probe:${root}`;
+    const lifecycle = this.watchLifecycles.get(root);
+    if (
+      !lifecycle ||
+      this.pendingOps.has(`recover:${root}`) ||
+      this.pendingOps.has(probeKey)
+    )
+      return;
+    const name = path.basename(root);
+    this.pendingOps.add(probeKey);
+    void (async () => {
+      if (this.deps.processors.get(root) !== processor) return;
+      console.log(
+        `[daemon:${name}] Attempting to leave poll mode and reattach FSEvents...`,
+      );
+      try {
+        // Reset failure counter so subscribeWatcher's error path treats this
+        // as a fresh start. If it fails again, we'll fall right back into
+        // poll mode via the same recoverWatcher path.
+        this.watcherFailCount.delete(root);
+        await this.subscribeWatcher(root, processor);
+        if (this.deps.processors.get(root) !== processor) return;
+
+        // Wait one health window — if the new subscription survives without
+        // another terminal failure, we consider it recovered and tear down poll mode.
+        await abortableDelay(FSEVENTS_HEALTH_WINDOW_MS, lifecycle.signal);
+        if (
+          this.deps.getShuttingDown() ||
+          this.deps.processors.get(root) !== processor
+        )
+          return;
+
+        const lastOverflow = this.lastWatcherFailureMs.get(root) ?? 0;
+        if (Date.now() - lastOverflow < FSEVENTS_HEALTH_WINDOW_MS) {
+          console.log(
+            `[daemon:${name}] FSEvents recovery aborted — terminal failure within health window, staying in poll mode`,
+          );
+          return; // recoverWatcher will have re-armed poll mode if needed
+        }
+
+        // Healthy — drop poll mode.
+        const pollInterval = this.pollIntervals.get(root);
+        if (pollInterval) {
+          clearInterval(pollInterval);
+          this.pollIntervals.delete(root);
+        }
+        const recoveryTimer = this.pollRecoveryTimers.get(root);
+        if (recoveryTimer) {
+          clearInterval(recoveryTimer);
+          this.pollRecoveryTimers.delete(root);
+        }
+        console.log(`[daemon:${name}] FSEvents recovered — poll mode disabled`);
+      } catch (err) {
+        console.error(
+          `[daemon:${name}] Poll-mode recovery attempt failed:`,
+          err,
+        );
+      } finally {
+        this.pendingOps.delete(probeKey);
+      }
+    })();
   }
 
   private async catchupScan(

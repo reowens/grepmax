@@ -44,6 +44,7 @@ describe("WatcherSubscription", () => {
       onGap: vi.fn(),
       onTerminal: vi.fn(),
       onEvents: vi.fn(),
+      onRetry: vi.fn(),
     };
     const subscription = new WatcherSubscription({
       root,
@@ -142,6 +143,110 @@ describe("WatcherSubscription", () => {
     const { subscription } = create({ active: () => false });
     await subscription.update();
     expect(watcher.subscribe).not.toHaveBeenCalled();
+  });
+
+  describe("a folder that vanishes during subscribe", () => {
+    const missing = (target: string) =>
+      new Error(
+        `inotify_add_watch on '${target}' failed: No such file or directory`,
+      );
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("retries after the backoff and attaches without a terminal error", async () => {
+      const gone = path.join(root, "docs", "gone");
+      vi.mocked(watcher.subscribe).mockRejectedValueOnce(missing(gone));
+      const { subscription, recovery, onTerminal, onRetry } = create();
+
+      const updating = subscription.update();
+      await vi.waitFor(() => expect(onRetry).toHaveBeenCalledOnce());
+      expect(onRetry).toHaveBeenCalledWith(expect.any(Error), gone, 2_000);
+      expect(watcher.subscribe).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(2_000);
+      await updating;
+
+      expect(watcher.subscribe).toHaveBeenCalledTimes(2);
+      expect(onTerminal).not.toHaveBeenCalled();
+      expect(subscription.failed).toBe(false);
+      expect(recovery.snapshot().exclusions?.attached).toBe(true);
+    });
+
+    it("gives up after 3 retries and rejects with the original error", async () => {
+      // Parcel's crawl reports a bare strerror with no path.
+      vi.mocked(watcher.subscribe).mockRejectedValue(
+        new Error("No such file or directory"),
+      );
+      const { subscription, onRetry } = create();
+
+      const updating = subscription.update();
+      const outcome = updating.then(
+        () => "attached",
+        (err: Error) => err.message,
+      );
+      for (const [index, delay] of [2_000, 4_000, 8_000].entries()) {
+        await vi.waitFor(() =>
+          expect(onRetry).toHaveBeenCalledTimes(index + 1),
+        );
+        expect(onRetry).toHaveBeenLastCalledWith(expect.any(Error), "", delay);
+        await vi.advanceTimersByTimeAsync(delay);
+      }
+
+      expect(await outcome).toBe("No such file or directory");
+      expect(watcher.subscribe).toHaveBeenCalledTimes(4);
+      expect(onRetry).toHaveBeenCalledTimes(3);
+    });
+
+    it.each([
+      [
+        "another error",
+        () => new Error("inotify_init1 failed: Too many open files"),
+      ],
+      ["a vanished path outside the root", () => missing("/elsewhere/gone")],
+      ["the root itself", () => missing(root)],
+    ])("rejects at once on %s", async (_label, error) => {
+      vi.mocked(watcher.subscribe).mockRejectedValue(error());
+      const { subscription, onRetry } = create();
+
+      await expect(subscription.update()).rejects.toThrow(error().message);
+      expect(watcher.subscribe).toHaveBeenCalledOnce();
+      expect(onRetry).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("does not retry a crawl failure once the root is gone", async () => {
+      vi.mocked(watcher.subscribe).mockImplementation(async () => {
+        await fs.rm(root, { recursive: true, force: true });
+        throw new Error("No such file or directory");
+      });
+      const { subscription, onRetry } = create();
+
+      await expect(subscription.update()).rejects.toThrow(
+        "No such file or directory",
+      );
+      expect(onRetry).not.toHaveBeenCalled();
+    });
+
+    it("wakes from the backoff on retire without subscribing again", async () => {
+      vi.mocked(watcher.subscribe).mockRejectedValueOnce(
+        missing(path.join(root, "gone")),
+      );
+      const { subscription, onRetry } = create();
+
+      const updating = subscription.update();
+      await vi.waitFor(() => expect(onRetry).toHaveBeenCalledOnce());
+      subscription.retire();
+      await updating;
+      await subscription.settled();
+
+      expect(watcher.subscribe).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
 });
 

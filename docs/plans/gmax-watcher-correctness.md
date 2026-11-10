@@ -24,7 +24,7 @@ related_plans:
   - docs/plans/gmax-archived-doc-ranking.md
 related_docs:
 current_state: "The P3 runs gmax 0.26.113 under gmax.service. Its journal since 2026-11-09 16:31 PST shows 0 poll-mode falls and 0 re-watch loops, but folders created after the subscribe get no watch (2 folders, 16 files missing from the index), Linux inotify overflow is dropped without a signal, and the subscription keeps its own ignore list (33,091 watches, 356 of them in gitignored folders)."
-next_step: "Phase 2: retry a subscribe that fails on a vanished folder (in WatcherSubscription.updateNow) before poll mode, and probe back to native on the first Linux poll."
+next_step: "Phase 3: build the subscription ignore set from ProjectFilePolicy sources (nested .gitignore and .gmaxignore included), delete IGNORED_DIR_NAMES, and guard against drift."
 ---
 
 # Gmax watcher correctness
@@ -59,9 +59,10 @@ CPU is not the issue: the watcher thread used about 0.9% of a core on 0.26.113.
 
 ## Phase 2: transient subscribe failures are retried
 
-- [ ] `ENOENT` or `ENOTDIR` from the crawl or `inotify_add_watch`, on a path inside the root, is retried 2 to 3 times with seconds of backoff before poll mode, and the path is logged.
-- [ ] On Linux, poll mode probes back to native on the first 5-minute poll rather than at 15 minutes.
-- [ ] Tests use a fake subscribe that fails once.
+- [x] `ENOENT` or `ENOTDIR` from the crawl or `inotify_add_watch`, on a path inside the root, is retried 3 times at 2, 4 and 8 s before poll mode, and the path is logged. `vanishedSubscribePath` (`src/lib/index/watcher-errors.ts:38`) decides it; the retry is in `WatcherSubscription.subscribe` (`src/lib/index/watcher-core.ts:166`), so both callers get it, and `retire()` wakes the backoff. A path outside the root, the root itself and other errors fail at once as before. A persistent failure reaches poll mode about 4 crawls plus 14 s later, roughly 2.5 minutes on a 33 s tree.
+- [x] On Linux, poll mode probes back to native on the first 5-minute poll (`watcher-manager.ts:500`, `probePollModeRecovery` at `:624`, guarded so 2 probes never overlap); the 15-minute interval stays for every platform.
+- [x] Tests use a fake subscribe: fails once then attaches, fails every time, rejects at once, retire wakes the backoff, startup reaches polling after 4 subscribes, and the 5-minute Linux probe. `vitest run tests/watcher-core.test.ts tests/watcher-manager.test.ts`: 51 of 51 on the second run (the first failed 1 test-only boundary check under fake timers); `pnpm typecheck` and the tests tsconfig clean.
+- Parcel's crawl error carries no path, so its log line reads "(not reported)". Log lines still say "FSEvents" on Linux.
 
 ## Phase 3: 1 ignore source for the subscription
 

@@ -63,6 +63,10 @@ export async function startWatcher(
     },
     onGap: () => requestGapScan(),
     onTerminal: () => reconcile(),
+    onRetry: (err, vanished, delayMs) =>
+      console.error(
+        `[${wtag}] Subscribe failed on vanished path ${vanished || "(not reported)"}, retrying in ${delayMs / 1000}s (${err.message})`,
+      ),
     onEvents: (events) => {
       for (const event of events)
         processor.handleFileEvent(

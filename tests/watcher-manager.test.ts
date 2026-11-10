@@ -1030,4 +1030,132 @@ describe("WatcherManager.unwatchProject", () => {
     expect(second.close).toHaveBeenCalledOnce();
     expect(dependencies.processors.size).toBe(0);
   });
+
+  describe("startup subscribe failures", () => {
+    const root = "/p/app";
+    const vanished = new Error(
+      `inotify_add_watch on '${root}/docs/gone' failed: No such file or directory`,
+    );
+    let restorePlatform: () => void = () => {};
+
+    function setPlatform(platform: NodeJS.Platform) {
+      const original = Object.getOwnPropertyDescriptor(process, "platform")!;
+      Object.defineProperty(process, "platform", {
+        ...original,
+        value: platform,
+      });
+      restorePlatform = () =>
+        Object.defineProperty(process, "platform", original);
+    }
+
+    async function manager() {
+      const dependencies = {
+        ...deps(),
+        getVectorDb: () => ({
+          diskPressure: "ok",
+          checkDiskPressure: () => "ok",
+          deletePaths: vi.fn(async () => {}),
+          compactIfNeeded: vi.fn(async () => {}),
+        }),
+        getMetaCache: () => ({ get: vi.fn() }),
+      } as any;
+      const wm = new WatcherManager(dependencies) as any;
+      vi.spyOn(wm, "runCatchup").mockResolvedValue(undefined);
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.spyOn(console, "log").mockImplementation(() => {});
+      return wm;
+    }
+
+    async function subscribeCalls(count: number) {
+      const watcher = await import("@parcel/watcher");
+      await vi.waitFor(() =>
+        expect(watcher.subscribe).toHaveBeenCalledTimes(count),
+      );
+    }
+
+    afterEach(() => {
+      vi.useRealTimers();
+      restorePlatform();
+      restorePlatform = () => {};
+    });
+
+    it("falls to poll mode only after the vanished-path retries", async () => {
+      vi.useFakeTimers();
+      const watcher = await import("@parcel/watcher");
+      vi.mocked(watcher.subscribe).mockReset().mockRejectedValue(vanished);
+      const wm = await manager();
+
+      const watching = wm.watchProject(root, { catchup: false });
+      for (const [index, delay] of [2_000, 4_000, 8_000].entries()) {
+        await subscribeCalls(index + 1);
+        expect(wm.health(root).watcherMode).toBe("native");
+        await vi.advanceTimersByTimeAsync(delay);
+      }
+      await watching;
+
+      expect(watcher.subscribe).toHaveBeenCalledTimes(4);
+      expect(wm.health(root).watcherMode).toBe("polling");
+      expect(console.error).toHaveBeenCalledWith(
+        expect.stringContaining(`vanished path ${root}/docs/gone`),
+      );
+      await wm.unwatchProject(root);
+    });
+
+    it("falls to poll mode at once on any other subscribe error", async () => {
+      vi.useFakeTimers();
+      const watcher = await import("@parcel/watcher");
+      vi.mocked(watcher.subscribe)
+        .mockReset()
+        .mockRejectedValue(
+          new Error("inotify_init1 failed: Too many open files"),
+        );
+      const wm = await manager();
+
+      await wm.watchProject(root, { catchup: false });
+
+      expect(watcher.subscribe).toHaveBeenCalledOnce();
+      expect(wm.health(root).watcherMode).toBe("polling");
+      await wm.unwatchProject(root);
+    });
+
+    it.each([
+      ["linux", 5],
+      ["darwin", 15],
+    ] as const)(
+      "on %s, probes back to native %i minutes into poll mode",
+      async (platform, minutes) => {
+        setPlatform(platform);
+        vi.useFakeTimers();
+        const watcher = await import("@parcel/watcher");
+        vi.mocked(watcher.subscribe)
+          .mockReset()
+          .mockRejectedValueOnce(new Error("backend refused"))
+          .mockResolvedValue({ unsubscribe: vi.fn(async () => {}) });
+        const wm = await manager();
+        await wm.watchProject(root, { catchup: false });
+        expect(wm.health(root).watcherMode).toBe("polling");
+
+        for (let minute = 5; minute < minutes; minute += 5) {
+          await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+          expect(wm.pendingOps.has(`probe:${root}`)).toBe(false);
+        }
+        await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+        expect(wm.pendingOps.has(`probe:${root}`)).toBe(true);
+        await subscribeCalls(2);
+        await vi.waitFor(() =>
+          expect(wm.health(root).watcherRecovery?.exclusions?.attached).toBe(
+            true,
+          ),
+        );
+
+        await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+        await vi.waitFor(() =>
+          expect(wm.pendingOps.has(`probe:${root}`)).toBe(false),
+        );
+        expect(wm.health(root).watcherMode).toBe("native");
+        expect(wm.pollRecoveryTimers.has(root)).toBe(false);
+        await wm.unwatchProject(root);
+      },
+    );
+  });
 });
