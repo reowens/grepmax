@@ -736,6 +736,7 @@ fixtures/
 | `GMAX_WORKER_RSS_RECYCLE_MB`   | Recycle workers that remain above this RSS; `0` disables the check                                                      | `1536`                                  |
 | `GMAX_DEBUG`                   | Debug logging                                                                                                           | Off                                     |
 | `GMAX_RERANK`                  | Force ColBERT rerank (`1`); concentrated candidates can also enable it automatically ([why](docs/known-limitations.md)) | Off                                     |
+| `GMAX_ARCHIVE_PENALTY`         | Score factor for docs under an `archive` or `archived` folder; `1` turns it off, `--history` waives it ([why](docs/known-limitations.md)) | `0.5`                                   |
 | `GMAX_CONCENTRATION_THRESHOLD` | Top-ten candidate share in one file that enables ColBERT; set above `1` for a true rerank-off baseline                  | `0.7`                                   |
 | `GMAX_ANN`                     | Experimental IVF_FLAT vector index (`1`); leave off unless validating recall on your corpus                             | Off                                     |
 

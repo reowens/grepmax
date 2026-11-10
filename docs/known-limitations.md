@@ -352,6 +352,14 @@ Bare-symbol promotion and all other explicit filters remain unchanged.
 
 **Measurement note.** The same investigation fixed the OSS bench instrument (`eval-oss.ts` `chunkMatches`, v0.17.8): it now credits a file + `defined_symbols`-includes-query match, not just a line-range hit. Stale hand-curated `expectedLine` values had been scoring surfaced definitions as misses (platform recall read 0.333 vs a true ~0.800). Keep this in mind when comparing pre-v0.17.8 bench numbers in older entries above — they understate recall on symbol-lookup cases.
 
+## Archived docs rank lower and stay labelled
+
+A doc chunk in a folder named `archive` or `archived` below its project root ranks lower and is never hidden. Its score is multiplied by `GMAX_ARCHIVE_PENALTY` (default `0.5`) after the usual docs factor, so an archived `.md` chunk scores half of the same doc outside the folder, a 0.30x boost overall. Code under such a folder keeps its normal score. Every archived hit carries `[ARCHIVED]` in text output and `docStatus: "archived"` in structured output, and `--explain` shows `archive=0.50x`. Implementation: `src/lib/search/archive.ts` and `applyStructureBoost` in `src/lib/search/searcher.ts`.
+
+The demotion is waived, and the label kept, when the query names history (`archived`, `superseded`, `deprecated`, `retired`, `history of`, or `old`/`previous`/`earlier`/`original`/`former`/`prior` followed by plan, design, version, doc, approach, decision, ruling or spec), when the caller passes `--history` (MCP `history: true`), or when the search is scoped inside an archive folder (`--in docs/plans/archived`).
+
+**Tradeoff:** the query trigger also fires on code questions that use those words for product records ("how are archived conversations restored"); those queries rank archived docs as plain docs. A history question with none of the words ("what was decided about door pricing") still demotes the archived doc that holds the answer, so add `--history`. Folder names are the only signal: a retired doc outside an archive folder ranks as current. Set `GMAX_ARCHIVE_PENALTY=1` to turn the factor off; a value outside (0, 1] falls back to `0.5`.
+
 ## Historical FTS merge panic is fixed; recurrence is a regression
 
 The pre-upgrade LanceDB 0.30/0.31 runtime could panic in incremental FTS merge (`inverted/builder.rs`, index out of bounds). The investigation is preserved in [the closed upstream plan](archived/lance-fts-merge-upstream.md).

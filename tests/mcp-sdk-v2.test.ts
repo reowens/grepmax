@@ -110,6 +110,23 @@ it.each(["legacy", "modern", "auto"])(
         description: "Natural language query (5+ words recommended)",
       });
       expect(search.outputSchema?.required).toContain("schemaVersion");
+      expect(search.inputSchema.properties?.history).toMatchObject({
+        type: "boolean",
+      });
+      const properties = search.outputSchema?.properties as
+        | Record<
+            string,
+            {
+              items?: {
+                properties?: Record<string, unknown>;
+                required?: string[];
+              };
+            }
+          >
+        | undefined;
+      const match = properties?.matches?.items;
+      expect(match?.properties?.docStatus).toBeDefined();
+      expect(match?.required).toContain("docStatus");
       expect(search.annotations?.readOnlyHint).toBe(false);
       expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(
         catalog.tools.map((tool) => tool.name),

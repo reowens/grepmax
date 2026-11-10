@@ -362,6 +362,7 @@ describe("MCP read tools go through the daemon read verbs", () => {
             endLine: 6,
             symbols: ["handleAuth"],
             role: "IMPLEMENTATION",
+            docStatus: null,
             score: 0.9,
           },
         ],
@@ -428,6 +429,7 @@ describe("MCP read tools go through the daemon read verbs", () => {
           endLine: 10,
           symbols: ["handleAuth"],
           role: "IMPLEMENTATION",
+          docStatus: null,
           score: null,
         },
       ]);

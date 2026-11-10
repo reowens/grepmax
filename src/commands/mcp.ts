@@ -84,6 +84,7 @@ import {
 import { readGlobalConfig } from "../lib/index/index-config";
 import { boundedAgentList, boundedAgentText } from "../lib/output/agent-budget";
 import { formatAgentSearchResults } from "../lib/output/agent-search-formatter";
+import { docStatusTag } from "../lib/output/doc-status";
 import {
   formatIndexStateFooter,
   formatWatchQueue,
@@ -746,6 +747,7 @@ export const mcp = new Command("mcp")
       pathPrefix?: string;
       rerank?: boolean;
       seeds?: { files?: string[]; symbols?: string[] };
+      history?: boolean;
     }): Promise<SearchResponse> {
       return readStore<SearchResponse>("search", {
         daemon: () =>
@@ -785,7 +787,12 @@ export const mcp = new Command("mcp")
               return await searcher.search(
                 args.query,
                 args.limit,
-                { rerank: args.rerank, seeds: args.seeds },
+                {
+                  rerank: args.rerank,
+                  seeds: args.seeds,
+                  history: args.history,
+                  projectRoot: args.projectRoot,
+                },
                 args.filters,
                 args.pathPrefix,
                 undefined,
@@ -1208,6 +1215,7 @@ export const mcp = new Command("mcp")
         const searchOptions = {
           rerank: process.env.GMAX_RERANK === "1",
           seeds,
+          history: args.history === true,
         };
         const result = await searchStore({
           projectRoot: resolvedRoot,
@@ -1242,6 +1250,8 @@ export const mcp = new Command("mcp")
               endLine: searchResultEndLine(r, startLine) + 1,
               symbols: chunkSymbols(r),
               role: String(r.role ?? "IMPLEMENTATION"),
+              // An older daemon sends no docStatus at all.
+              docStatus: r.docStatus ?? null,
               score:
                 typeof r.score === "number" && Number.isFinite(r.score)
                   ? r.score
@@ -1333,7 +1343,7 @@ export const mcp = new Command("mcp")
           const callsStr =
             refs.length > 0 ? `calls:${refs.slice(0, 8).join(",")}` : "";
 
-          const line1 = `${symbol} [${exported}${role}${complexity}] ${relPath}:${startLine + 1}-${endLine + 1}`;
+          const line1 = `${symbol} [${exported}${role}${complexity}]${docStatusTag(r.docStatus)} ${relPath}:${startLine + 1}-${endLine + 1}`;
           const summaryStr = r.summary ? `  ${r.summary}` : "";
           const line2 =
             parentStr || callsStr ? `  ${parentStr}${callsStr}` : "";
@@ -3744,7 +3754,7 @@ export const mcp = new Command("mcp")
         "semantic_search",
         {
           description:
-            "Search code by meaning in the current registered repo. Use for conceptual discovery; keep literal text/file lookup with rg. Cross-project search requires explicit scope:'all'.",
+            "Search code by meaning in the current registered repo. Use for conceptual discovery; keep literal text/file lookup with rg. Cross-project search requires explicit scope:'all'. Archived docs rank lower and are labelled [ARCHIVED]; pass history:true when looking for old plans or decisions.",
           inputSchema: {
             query: z
               .string()
@@ -3827,6 +3837,12 @@ export const mcp = new Command("mcp")
               .string()
               .describe(
                 "Bias results toward identifiers you're working with: comma-separated symbol names. Chunks defining a seeded symbol are preferred over mere callers.",
+              )
+              .optional(),
+            history: z
+              .boolean()
+              .describe(
+                "Rank archived docs as current docs (they stay labelled)",
               )
               .optional(),
           },

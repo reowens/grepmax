@@ -65,6 +65,7 @@ export interface SearchOptions {
   budget: string;
   seedFile?: string[];
   seedSymbol?: string[];
+  history?: boolean;
 }
 
 export interface RunSearchParams {
@@ -155,6 +156,7 @@ export async function runSearch(
             rerank: process.env.GMAX_RERANK === "1",
             explain: options.explain,
             seeds,
+            history: options.history,
             includeSkeletons: options.skeleton,
             includeGraph: options.symbol,
           },
@@ -347,6 +349,8 @@ export async function runSearch(
           maxPerFile,
           explain: options.explain,
           seeds,
+          history: options.history,
+          projectRoot: effectiveRoot,
         },
         Object.keys(searchFilters).length > 0
           ? (searchFilters as SearchFilter)

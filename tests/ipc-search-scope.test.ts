@@ -52,6 +52,18 @@ describe("daemon search IPC scoping", () => {
       expect(search.mock.calls[0][0]).toMatchObject({ maxPerFile: 6 });
     },
   );
+  it.each([
+    [true, true],
+    ["yes", false],
+    [undefined, false],
+  ])("forwards history %s as %s", async (history, expected) => {
+    await handleCommand(
+      daemon,
+      { cmd: "search", projectRoot: "/work/api", query: "auth", history },
+      new FakeSocket() as never,
+    );
+    expect(search.mock.calls[0][0]).toMatchObject({ history: expected });
+  });
   it.each([0, -1, 1.5, "6", null, Number.MAX_SAFE_INTEGER + 1])(
     "rejects invalid per-file wire input %s",
     async (maxPerFile) => {

@@ -8,6 +8,7 @@ import {
   resolveTargetSymbols,
 } from "../graph/impact";
 import { graphWorkNote } from "../graph/work-budget";
+import { docStatusTag } from "../output/doc-status";
 import type { Searcher } from "../search/searcher";
 import type { SearchFilter } from "../store/types";
 import type { VectorDB } from "../store/vector-db";
@@ -161,7 +162,7 @@ async function executeSearch(
   const resp = await ctx.searcher.search(
     query,
     limit,
-    { rerank: true },
+    { rerank: true, projectRoot: ctx.projectRoot },
     Object.keys(filters).length > 0 ? filters : undefined,
     pathPrefix,
   );
@@ -181,7 +182,7 @@ async function executeSearch(
     const hint = String(r.text ?? r.content ?? "")
       .split("\n")[0]
       .slice(0, 100);
-    return `${rp}:${startLine} ${sym} [${role}] — ${hint}`;
+    return `${rp}:${startLine} ${sym} [${role}]${docStatusTag(r.docStatus)} — ${hint}`;
   });
 
   return lines.join("\n");

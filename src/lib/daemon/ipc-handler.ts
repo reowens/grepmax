@@ -371,6 +371,7 @@ export async function handleCommand(
                 !Array.isArray(cmd.seeds)
                   ? (cmd.seeds as { files?: string[]; symbols?: string[] })
                   : undefined,
+              history: cmd.history === true,
               includeSkeletons: cmd.includeSkeletons === true,
               skeletonLimit: skeletonLimitRaw,
               includeGraph: cmd.includeGraph === true,

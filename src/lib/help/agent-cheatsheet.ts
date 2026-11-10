@@ -34,6 +34,7 @@ Survey:
   gmax status --current --json        current-repo setup (metadata + bounded ping only)
 
 Scope flags: --root <name|path>, --in <subpath>, --exclude <subpath>.
+Archived docs rank lower and show [ARCHIVED]; add --history when you want old plans or decisions.
 Roles in results: [DEFI] [ORCH] [IMPL] [DOCS].
 Notation: s=/d= score/distance (higher s / lower d = better; s is per-query-normalized — top hit ≈1.0, relative to this query, not absolute confidence) · C:n complexity ·
   <- caller / -> callee · dep:/rev: outbound/inbound file deps (count = shared symbols) ·

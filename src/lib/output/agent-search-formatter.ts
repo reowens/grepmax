@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ChunkType, FileMetadata } from "../store/types";
 import { resolveContainedFile } from "../utils/path-containment";
+import { appliedArchiveFactor, docStatusTag } from "./doc-status";
 
 export type AgentSearchFormatOptions = {
   includeImports?: boolean;
@@ -194,7 +195,8 @@ function hintFor(
 function explainSuffix(chunk: ChunkType, enabled?: boolean): string {
   if (!enabled || !chunk.scoreBreakdown) return "";
   const b = chunk.scoreBreakdown;
-  return `\texplain:rerank=${b.rerank.toFixed(3)},fused=${b.fused.toFixed(3)},boost=${b.boost.toFixed(2)}x,score=${b.normalized.toFixed(3)}`;
+  const archive = appliedArchiveFactor(b);
+  return `\texplain:rerank=${b.rerank.toFixed(3)},fused=${b.fused.toFixed(3)},boost=${b.boost.toFixed(2)}x,${archive ? `archive=${archive}x,` : ""}score=${b.normalized.toFixed(3)}`;
 }
 
 export function formatAgentSearchResults(
@@ -241,7 +243,9 @@ export function formatAgentSearchResults(
 
     const grouped = members.length > 1;
     if (grouped) {
-      lines.push(`${rel} (${members.length} hits):`);
+      lines.push(
+        `${rel} (${members.length} hits):${docStatusTag(members[0].docStatus)}`,
+      );
     }
 
     for (const result of members) {
@@ -256,7 +260,7 @@ export function formatAgentSearchResults(
       const hint = hintFor(result, queryTerms, sourceLines);
       const locator = grouped ? `  :${hint.line}` : `${rel}:${hint.line}`;
       lines.push(
-        `${locator}${score}${symbol ? ` ${symbol}` : ""}${role ? ` [${role}]` : ""}${hint.text ? ` — ${hint.text}` : ""}${explainSuffix(result, options.explain)}`,
+        `${locator}${score}${symbol ? ` ${symbol}` : ""}${role ? ` [${role}]` : ""}${docStatusTag(result.docStatus)}${hint.text ? ` — ${hint.text}` : ""}${explainSuffix(result, options.explain)}`,
       );
     }
   }

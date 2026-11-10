@@ -230,6 +230,27 @@ describe("formatMcpPointerSearchResults", () => {
     expect(output).toContain("src/b.ts:3\ts=0.700 gamma [DEFI]");
   });
 
+  it("labels archived docs on the hit line and the grouped header", () => {
+    const archived = (line: number, symbol: string): ChunkType => ({
+      ...chunk("docs/archive/old-plan.md", line, symbol, 0.5),
+      role: "DOCS",
+      docStatus: "archived",
+    });
+    const output = formatMcpPointerSearchResults(
+      [
+        archived(0, "alpha"),
+        archived(6, "beta"),
+        chunk("src/b.ts", 2, "gamma", 0.7),
+      ],
+      "/tmp/project",
+    );
+
+    expect(output).toContain("docs/archive/old-plan.md (2 hits): [ARCHIVED]");
+    expect(output).toContain("  :1\ts=0.500 alpha [DOCS] [ARCHIVED]");
+    expect(output).toContain("src/b.ts:3\ts=0.700 gamma [DEFI] —");
+    expect(output).not.toContain("gamma [DEFI] [ARCHIVED]");
+  });
+
   it("can prepend imports once per file", () => {
     const output = formatMcpPointerSearchResults(
       [chunk("src/a.ts", 0, "alpha", 0.9)],

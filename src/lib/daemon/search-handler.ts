@@ -28,6 +28,7 @@ export interface DaemonSearchPayload {
   diagnostics?: boolean;
   maxPerFile?: number;
   seeds?: { files?: string[]; symbols?: string[] };
+  history?: boolean;
   includeSkeletons?: boolean;
   skeletonLimit?: number;
   includeGraph?: boolean;
@@ -138,6 +139,8 @@ export async function handleDaemonSearch(
         diagnostics: payload.diagnostics === true,
         maxPerFile,
         seeds: payload.seeds,
+        history: payload.history === true,
+        projectRoot: root,
       },
       payload.filters,
       payload.pathPrefix,

@@ -158,3 +158,54 @@ describe("agent pointer source locations", () => {
     expect(out).toContain("meta-cache.ts:15");
   });
 });
+
+describe("agent pointer doc status", () => {
+  const breakdown = (archive: number) => ({
+    rerank: 0.5,
+    fused: 0.1,
+    boost: 0.3,
+    archive,
+    normalized: 0.8,
+  });
+
+  it("tags an archived hit after its role and shows the applied factor", () => {
+    const out = formatAgentSearchResults(
+      [
+        chunk({
+          path: "/proj/docs/archive/meta-cache.md",
+          role: "DOCS",
+          docStatus: "archived",
+          scoreBreakdown: breakdown(0.5),
+        }),
+      ],
+      "/proj",
+      { explain: true },
+    );
+    expect(out).toContain("MetaCache [DOCS] [ARCHIVED] — ");
+    expect(out).toContain(
+      "explain:rerank=0.500,fused=0.100,boost=0.30x,archive=0.50x,score=0.800",
+    );
+  });
+
+  it("keeps the label and drops archive= when the factor was waived", () => {
+    const out = formatAgentSearchResults(
+      [
+        chunk({
+          path: "/proj/docs/archive/meta-cache.md",
+          role: "DOCS",
+          docStatus: "archived",
+          scoreBreakdown: breakdown(1),
+        }),
+      ],
+      "/proj",
+      { explain: true },
+    );
+    expect(out).toContain("[ARCHIVED]");
+    expect(out).not.toContain("archive=");
+  });
+
+  it("prints nothing extra for a current chunk", () => {
+    const out = formatAgentSearchResults([chunk({ docStatus: null })], "/proj");
+    expect(out).not.toContain("ARCHIVED");
+  });
+});

@@ -3,6 +3,7 @@ import { CONFIG } from "../../config";
 import { configureAnnVectorQuery } from "../store/ann-config";
 import type {
   ChunkType,
+  DocStatus,
   SearchFilter,
   SearchResponse,
   VectorRecord,
@@ -21,6 +22,12 @@ import {
   type ArtifactPreference,
   artifactPreference,
 } from "./artifact-preference";
+import {
+  archivePenalty,
+  containingRoot,
+  hasArchiveSegment,
+  isArchiveScope,
+} from "./archive";
 import { lexicalSearchWarning, runSearchStage } from "./degradation";
 import { SearchDiagnosticCollector } from "./diagnostics";
 import { detectIntent, type SearchIntent } from "./intent";
@@ -63,6 +70,19 @@ function materializeSearchRow<T extends Record<string, unknown>>(row: T): T {
 }
 
 const SHORT_CONTENT_LENGTH = 50;
+
+function isDocOrData(record: Partial<VectorRecord>): boolean {
+  const pathStr = (record.path || "").toLowerCase();
+  return (
+    record.role === "DOCS" ||
+    pathStr.endsWith(".md") ||
+    pathStr.endsWith(".mdx") ||
+    pathStr.endsWith(".txt") ||
+    pathStr.endsWith(".json") ||
+    pathStr.endsWith(".lock") ||
+    pathStr.includes("/docs/")
+  );
+}
 
 function lightweightProjection(columns: string[]): Record<string, string> {
   // LEFT produces a native string-view type the JS Arrow reader cannot decode;
@@ -226,6 +246,7 @@ export class Searcher {
   private mapRecordToChunk(
     record: Partial<VectorRecord>,
     score: number,
+    docStatus: DocStatus | null,
   ): ChunkType {
     const toStrArray = (val?: unknown): string[] => {
       if (!val) return [];
@@ -335,6 +356,7 @@ export class Searcher {
       imports,
       exports,
       summary: record.summary,
+      docStatus,
     };
   }
 
@@ -343,7 +365,8 @@ export class Searcher {
     score: number,
     intent?: SearchIntent,
     preference?: ArtifactPreference,
-  ): number {
+    docStatus: DocStatus | null = null,
+  ): { score: number; archive: number } {
     let adjusted = score;
 
     // Item 6: Anchors are recall helpers, not rank contenders
@@ -424,19 +447,15 @@ export class Searcher {
     // role branch was previously a hardcoded 0.6 that stacked with the path
     // branch, double-penalizing a DOCS-role chunk in a .md / /docs/ path to
     // 0.36 — and the role half was not env-tunable.)
-    const isDocOrData =
-      record.role === "DOCS" ||
-      pathStr.endsWith(".md") ||
-      pathStr.endsWith(".mdx") ||
-      pathStr.endsWith(".txt") ||
-      pathStr.endsWith(".json") ||
-      pathStr.endsWith(".lock") ||
-      pathStr.includes("/docs/");
-    if (isDocOrData && !preference?.documentation) {
+    if (isDocOrData(record) && !preference?.documentation) {
       const docPenalty =
         Number.parseFloat(process.env.GMAX_DOC_PENALTY ?? "") || 0.6;
       adjusted *= docPenalty;
     }
+    // A retired doc is a separate condition from being a doc, so this stacks
+    // with the docs factor rather than repeating it.
+    const archive = docStatus && !preference?.history ? archivePenalty() : 1;
+    adjusted *= archive;
     // Import-only penalty
     if (
       (record.content || "").length < SHORT_CONTENT_LENGTH &&
@@ -445,7 +464,7 @@ export class Searcher {
       adjusted *= 0.9;
     }
 
-    return adjusted;
+    return { score: adjusted, archive };
   }
 
   private deduplicateResults(
@@ -536,6 +555,14 @@ export class Searcher {
        * tiebreaker over a saturated pool is a no-op). Empty/absent → no-op.
        */
       seeds?: { files?: string[]; symbols?: string[] };
+      /** Ranks archived docs as plain docs; they keep their label. */
+      history?: boolean;
+      /**
+       * The base for the archive-folder rule. Cross-project search uses the
+       * containing `filters.projectRoots` entry instead. With neither, nothing
+       * is treated as archived.
+       */
+      projectRoot?: string;
     },
     _filters?: SearchFilter,
     pathPrefix?: string,
@@ -563,7 +590,34 @@ export class Searcher {
     // symbols, so the default search path is unchanged.
     const seedCtx = buildSeedContext(_search_options?.seeds);
     const searchIntent = intent || detectIntent(query);
-    const preference = artifactPreference(query);
+    const archiveRoots = Array.isArray(_filters?.projectRoots)
+      ? _filters.projectRoots
+      : _search_options?.projectRoot
+        ? [_search_options.projectRoot]
+        : [];
+    const inArchiveScope = (prefix: string) => {
+      const root = containingRoot(prefix, archiveRoots);
+      return !!root && isArchiveScope(prefix, root);
+    };
+    const inPrefixes = _filters?.inPrefixes ?? [];
+    const scopedToArchive =
+      (!!pathPrefix && inArchiveScope(pathPrefix)) ||
+      (inPrefixes.length > 0 && inPrefixes.every(inArchiveScope));
+    const queryPreference = artifactPreference(query);
+    const preference: ArtifactPreference = {
+      ...queryPreference,
+      history:
+        queryPreference.history ||
+        _search_options?.history === true ||
+        scopedToArchive,
+    };
+    const docStatusOf = (record: Partial<VectorRecord>): DocStatus | null => {
+      const path = record.path || "";
+      const root = containingRoot(path, archiveRoots);
+      return root && isDocOrData(record) && hasArchiveSegment(path, root)
+        ? "archived"
+        : null;
+    };
     // Bare-identifier queries get symbol-definition promotion (see below).
     const symbolQuery = asSymbolQuery(query);
 
@@ -979,6 +1033,7 @@ export class Searcher {
           pooledFilterApplied: !!queryPooled && topCandidates.length > STAGE2_K,
           testArtifactRequested: preference.tests,
           documentationRequested: preference.documentation,
+          historyRequested: preference.history,
         },
         gate: {
           requestedRerank,
@@ -1141,6 +1196,7 @@ export class Searcher {
           rerank: number;
           fused: number;
           boost: number;
+          archive: number;
           normalized: number;
         };
       };
@@ -1160,12 +1216,14 @@ export class Searcher {
         const fusedScore = candidateScores.get(key) ?? 0;
         const base = rerankScoreByKey.get(key) ?? (fusedScore || 1 / (idx + 1));
         const blended = base + FUSED_WEIGHT * fusedScore;
-        let boosted = this.applyStructureBoost(
+        const structure = this.applyStructureBoost(
           doc,
           blended,
           searchIntent,
           preference,
+          docStatusOf(doc),
         );
+        let boosted = structure.score;
         if (
           symbolQuery &&
           readSymbolArray(
@@ -1182,6 +1240,7 @@ export class Searcher {
                 rerank: base,
                 fused: fusedScore,
                 boost: blended > 0 ? boosted / blended : 1,
+                archive: structure.archive,
                 normalized: 0,
               }
             : undefined,
@@ -1312,7 +1371,7 @@ export class Searcher {
 
       return {
         data: finalResults.map((r: (typeof finalResults)[number]) => {
-          const chunk = this.mapRecordToChunk(r, r._score || 0);
+          const chunk = this.mapRecordToChunk(r, r._score || 0, docStatusOf(r));
 
           // Normalize score relative to top result
           const normalized = maxScore > 0 ? r._score / maxScore : 0;

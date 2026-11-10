@@ -2,6 +2,7 @@ import * as path from "node:path";
 import { highlight } from "cli-highlight";
 import { getLanguageByExtension } from "../core/languages";
 import type { ChunkType, FileMetadata } from "../store/types";
+import { appliedArchiveFactor, docStatusTag } from "./doc-status";
 
 const useColors = process.stdout.isTTY && !process.env.NO_COLOR;
 
@@ -46,7 +47,7 @@ export function formatResult(
         ? style.cyan
         : style.blue;
 
-  const header = `${roleColor(role)} ${style.gray(relPath)}:${line}`;
+  const header = `${roleColor(role)} ${style.gray(relPath)}:${line}${docStatusTag(result.docStatus)}`;
 
   // Breadcrumb
   const breadcrumb = result.context
@@ -103,7 +104,8 @@ export function formatResult(
   let explainLine = "";
   if (options.explain && result.scoreBreakdown) {
     const b = result.scoreBreakdown;
-    explainLine = `\n${style.dim(`  Scoring: rerank=${b.rerank.toFixed(3)}  fused=${b.fused.toFixed(3)}  boost=${b.boost.toFixed(2)}x  final=${b.normalized.toFixed(3)}`)}`;
+    const archive = appliedArchiveFactor(b);
+    explainLine = `\n${style.dim(`  Scoring: rerank=${b.rerank.toFixed(3)}  fused=${b.fused.toFixed(3)}  boost=${b.boost.toFixed(2)}x  ${archive ? `archive=${archive}x  ` : ""}final=${b.normalized.toFixed(3)}`)}`;
   }
 
   return `

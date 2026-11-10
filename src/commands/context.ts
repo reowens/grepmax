@@ -235,7 +235,7 @@ export const context = new Command("context")
             const response = await searcher.search(
               topic,
               maxResults,
-              { rerank: true },
+              { rerank: true, projectRoot },
               {},
               `${projectRoot}/`,
             );

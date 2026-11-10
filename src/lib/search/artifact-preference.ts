@@ -2,6 +2,7 @@
 export interface ArtifactPreference {
   tests: boolean;
   documentation: boolean;
+  history: boolean;
 }
 
 export function artifactPreference(query: string): ArtifactPreference {
@@ -17,6 +18,12 @@ export function artifactPreference(query: string): ArtifactPreference {
     // management, guide rails). Require a noun position for those ambiguous words.
     documentation:
       /\b(?:documentation|docs?|readme)\b|\b(?:guides?|manuals?)(?=\s*(?:[?.!,;:]|$))|\b(?:guides?|manuals?)\s+(?:for|on|about|that|which|describes?|explains?|covers?|should)\b/i.test(
+        query,
+      ),
+    // Not bare "history", "archive" or "old": "conversation history" is common
+    // in code questions and "archive" is a verb in product code.
+    history:
+      /\b(?:archived|superseded|deprecated|retired)\b|\b(?:old|older|previous|earlier|original|former|prior)\s+(?:plans?|designs?|versions?|docs?|documents?|approach(?:es)?|decisions?|rulings?|specs?)\b|\bhistory\s+of\b/i.test(
         query,
       ),
   };

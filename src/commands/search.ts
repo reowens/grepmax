@@ -122,6 +122,11 @@ export const search: Command = new CommanderCommand("search")
     false,
   )
   .option(
+    "--history",
+    "Rank archived docs as current docs (they stay labelled)",
+    false,
+  )
+  .option(
     "--seed-file <path>",
     "Bias results toward your working context (repeatable; comma-separated also accepted)",
     (value: string, prev: string[] | undefined) =>

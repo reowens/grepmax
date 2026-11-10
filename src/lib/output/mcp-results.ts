@@ -133,6 +133,10 @@ const search = {
         endLine: z.number().int().positive(),
         symbols: z.array(z.string()),
         role: z.string(),
+        docStatus: z
+          .enum(["archived", "deprecated", "outdated"])
+          .nullable()
+          .describe("Set for a retired doc, which ranks lower; null otherwise"),
         score: z
           .number()
           .nullable()

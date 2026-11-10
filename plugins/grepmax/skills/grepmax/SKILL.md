@@ -38,6 +38,8 @@ Use `--agent` for the most token-efficient output (one line per result with sign
 Bash(gmax "auth handler" --role ORCHESTRATION --lang ts --agent -m 3)
 ```
 
+Docs under an `archive` or `archived` folder rank lower and show `[ARCHIVED]`. Add `--history` when you are looking for an old plan, design or decision.
+
 ## Project management
 
 Projects must be added before search works. These commands auto-start the daemon if not running:
@@ -72,7 +74,7 @@ gmax "auth" --imports --agent              # show file imports per file
 
 Output: `file:line symbol [ROLE] — signature_hint` (one line per result). When multiple hits land in the same file, they collapse under a `path/to/file.ts (N hits):` header with indented children — saves the repeated path prefix.
 
-All search flags: `--agent --plain -m <n> --per-file <n> --min-score <n> --root <dir> --file <name> --exclude <prefix> --lang <ext> --role <role> --symbol --imports --name <regex> -C <n> --compact --content --scores --skeleton --explain --context-for-llm --budget <tokens>`
+All search flags: `--agent --plain -m <n> --per-file <n> --min-score <n> --root <dir> --file <name> --exclude <prefix> --lang <ext> --role <role> --symbol --imports --name <regex> -C <n> --compact --content --scores --skeleton --explain --history --context-for-llm --budget <tokens>`
 
 #### When `--agent` isn't enough
 

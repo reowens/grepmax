@@ -1,5 +1,10 @@
 import * as path from "node:path";
-import type { ChunkType, FileMetadata, SearchResponse } from "../store/types";
+import type {
+  ChunkType,
+  DocStatus,
+  FileMetadata,
+  SearchResponse,
+} from "../store/types";
 import type { TextResult } from "../utils/formatter";
 
 export function toTextResults(data: SearchResponse["data"]): TextResult[] {
@@ -25,6 +30,7 @@ export function toTextResults(data: SearchResponse["data"]): TextResult[] {
       chunk_type: r.generated_metadata?.type,
       start_line: start,
       end_line: end,
+      docStatus: r.docStatus ?? null,
     };
   });
 }
@@ -40,6 +46,7 @@ export type CompactHit = {
   defined?: string[];
   preview?: string;
   summary?: string;
+  docStatus?: DocStatus | null;
 };
 
 function getPreviewText(chunk: ChunkType): string {
@@ -94,16 +101,25 @@ export function toCompactHits(data: SearchResponse["data"]): CompactHit[] {
             : [],
       preview: getPreviewText(chunk),
       summary: typeof chunk.summary === "string" ? chunk.summary : undefined,
+      docStatus: chunk.docStatus ?? null,
     };
   });
 }
 
-function compactRole(role?: string): string {
+function compactRoleName(role?: string): string {
   if (!role) return "UNK";
   if (role.startsWith("ORCH")) return "ORCH";
   if (role.startsWith("DEF")) return "DEF";
   if (role.startsWith("IMP")) return "IMPL";
   return role.slice(0, 4).toUpperCase();
+}
+
+/** The role cell, with the doc status after it so the column count holds. */
+function compactRole(hit: CompactHit): string {
+  const role = compactRoleName(hit.role);
+  return hit.docStatus
+    ? `${role} ${hit.docStatus.slice(0, 4).toUpperCase()}`
+    : role;
 }
 
 function compactConf(conf?: string): string {
@@ -154,7 +170,7 @@ function formatCompactTSV(
       ? path.relative(projectRoot, hit.path)
       : hit.path;
     const score = compactScore(hit.score);
-    const role = compactRole(hit.role);
+    const role = compactRole(hit);
     const conf = compactConf(hit.confidence);
     const defs = (hit.defined ?? []).join(",");
     const summary = hit.summary ?? "";
@@ -179,7 +195,7 @@ function formatCompactPretty(
 
   const wLines = 9;
   const wScore = 6;
-  const wRole = 4;
+  const wRole = Math.max(4, ...hits.map((hit) => compactRole(hit).length));
   const wConf = 1;
   const wDef = 20;
 
@@ -208,7 +224,7 @@ function formatCompactPretty(
       ? path.relative(projectRoot, hit.path)
       : hit.path;
     const score = compactScore(hit.score);
-    const role = compactRole(hit.role);
+    const role = compactRole(hit);
     const conf = compactConf(hit.confidence);
     const defs = (hit.defined ?? []).join(",") || "-";
     const displayPath = `${relPath}:${hit.start_line + 1}`;

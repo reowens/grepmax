@@ -80,12 +80,17 @@ export interface ChunkType extends MetadataRecord {
   summary?: string;
   context?: string[];
   scoreBreakdown?: ScoreBreakdown;
+  docStatus?: DocStatus | null;
 }
+
+export type DocStatus = "archived" | "deprecated" | "outdated";
 
 export interface ScoreBreakdown {
   rerank: number;
   fused: number;
   boost: number;
+  /** The archived-doc factor; 1 when it did not apply. */
+  archive?: number;
   normalized: number;
   [key: string]: MetadataValue;
 }

@@ -66,15 +66,19 @@ export async function executeServerSearch(params: {
     minScore,
   } = params;
   const maxPerFile = parseCliPerFile(options.perFile);
+  const history = options.history === true;
 
   try {
-    if (maxPerFile !== undefined) {
+    // An older server would drop these fields and answer anyway, so ask first.
+    if (maxPerFile !== undefined || history) {
       const health = await fetch(`http://127.0.0.1:${server.port}/health`);
       if (!health.ok) return false;
       const info = (await health.json()) as {
-        capabilities?: { perFileSearch?: number };
+        capabilities?: { perFileSearch?: number; historySearch?: number };
       };
-      if (info.capabilities?.perFileSearch !== 1) return false;
+      if (maxPerFile !== undefined && info.capabilities?.perFileSearch !== 1)
+        return false;
+      if (history && info.capabilities?.historySearch !== 1) return false;
     }
     const response = await fetch(`http://127.0.0.1:${server.port}/search`, {
       method: "POST",
@@ -83,6 +87,7 @@ export async function executeServerSearch(params: {
         query: pattern,
         limit: parseInt(options.m, 10),
         maxPerFile,
+        history: history || undefined,
         path: exec_path
           ? path.relative(projectRootForServer, path.resolve(exec_path))
           : undefined,

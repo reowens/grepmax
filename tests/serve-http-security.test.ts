@@ -59,6 +59,22 @@ describe("serve HTTP containment", () => {
       expect.any(AbortSignal),
     );
   });
+  it("advertises and forwards the history waiver", async () => {
+    const health = await fetch(`${baseUrl}/health`);
+    expect(await health.json()).toMatchObject({
+      capabilities: { historySearch: 1 },
+    });
+    const response = await fetch(`${baseUrl}/search`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "old pricing plan", history: true }),
+    });
+    expect(response.status).toBe(200);
+    expect(search).toHaveBeenCalledWith(
+      expect.objectContaining({ history: true }),
+      expect.any(AbortSignal),
+    );
+  });
   it("rejects invalid per-file HTTP inputs before retrieval", async () => {
     for (const maxPerFile of [
       0,

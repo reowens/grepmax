@@ -49,6 +49,42 @@ describe("search HTTP fast path", () => {
       }
     },
   );
+  it.each([true, false])(
+    "sends history only to a server that advertises it (%s)",
+    async (compatible) => {
+      const fetchMock = vi.fn(
+        async (_url: unknown, init?: RequestInit) =>
+          ({
+            ok: true,
+            json: async () =>
+              init
+                ? { results: [] }
+                : { capabilities: compatible ? { historySearch: 1 } : {} },
+          }) as Response,
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      try {
+        const handled = await executeServerSearch({
+          server: { port: 4444 },
+          pattern: "old pricing plan",
+          exec_path: undefined,
+          projectRootForServer: "/repo",
+          options: { m: "5", history: true } as SearchOptions,
+          minScore: 0,
+        });
+        expect(handled).toBe(compatible);
+        expect(fetchMock).toHaveBeenCalledTimes(compatible ? 2 : 1);
+        if (compatible)
+          expect(
+            JSON.parse(String(fetchMock.mock.calls[1][1]?.body)),
+          ).toMatchObject({ history: true });
+      } finally {
+        log.mockRestore();
+        process.exitCode = undefined;
+      }
+    },
+  );
   it("forwards every supported search scope and filter", async () => {
     const fetchMock = vi.fn(
       async (_input: string | URL | Request, _init?: RequestInit) =>

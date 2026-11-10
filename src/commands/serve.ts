@@ -53,6 +53,7 @@ export interface ServeHttpDeps {
       query: string;
       limit: number;
       maxPerFile?: number;
+      history?: boolean;
       pathPrefix?: string;
       filters?: SearchFilter;
     },
@@ -194,7 +195,10 @@ export function createServeHttpServer(
     deps.onActivity?.();
 
     if (req.method === "GET" && req.url === "/health") {
-      writeJson(res, 200, { status: "ok", capabilities: { perFileSearch: 1 } });
+      writeJson(res, 200, {
+        status: "ok",
+        capabilities: { perFileSearch: 1, historySearch: 1 },
+      });
       return;
     }
 
@@ -276,6 +280,7 @@ export function createServeHttpServer(
             query,
             limit,
             ...(maxPerFile === undefined ? {} : { maxPerFile }),
+            ...(body.history === true ? { history: true } : {}),
             pathPrefix: scope.pathPrefix,
             filters: Object.keys(filters).length ? filters : undefined,
           },
@@ -505,6 +510,7 @@ export const serve = new Command("serve")
               query: input.query,
               limit: input.limit,
               maxPerFile: input.maxPerFile,
+              history: input.history,
               pathPrefix: input.pathPrefix,
               filters: input.filters,
               rerank: true,

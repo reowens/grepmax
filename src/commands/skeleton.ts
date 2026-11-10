@@ -199,7 +199,7 @@ async function searchFiles(
         const results = await searcher.search(
           query,
           limit,
-          {},
+          { projectRoot },
           {},
           `${projectRoot}/`,
         );

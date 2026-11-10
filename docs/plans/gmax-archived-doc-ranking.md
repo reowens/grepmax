@@ -33,7 +33,7 @@ related_plans:
 related_docs:
   - docs/known-limitations.md
 current_state: "The ruling in gmax-delivery.md § Archived and superseded docs is not built. Every Markdown or /docs/ chunk takes the same 0.6 factor (src/lib/search/searcher.ts:427-439), so in <repo> 1,097 indexed docs under an archive or archived folder compete as equals with current docs. On 0.26.113, re-run 2026-11-09, the current comms.md sits at score rank 15 of 38 behind its deprecated predecessor at rank 1. Proposed; no build started."
-next_step: "Phase 1: add the archive-folder factor for docs, the history waiver and the label on every search output, with stubbed-score tests, to ship in the same release as gmax-watcher-correctness phase 5."
+next_step: "Phase 3: ship phase 1 in the gmax-watcher-correctness release and re-run the archived-versus-successor pairs on the installed build; phase 2 waits for the regrowth record to end and its own go."
 ---
 
 # Gmax archived doc ranking
@@ -147,11 +147,11 @@ The waiver is recorded in search diagnostics as `historyRequested`, next to `doc
 
 ## Phase 1: archive-folder demotion, history waiver and label (no reindex)
 
-- [ ] `applyStructureBoost` applies `GMAX_ARCHIVE_PENALTY` (default 0.5) to docs-predicate chunks with an `archive` or `archived` segment relative to the project root, after the docs factor, and records it in `scoreBreakdown.archive`.
-- [ ] `Searcher.search` takes the project root as a new option, and the 5 in-process callers listed under Path base pass it. Cross-project search uses the containing entry of `filters.projectRoots`. Callers with no root keep today's scores.
-- [ ] `artifactPreference` gains `history` with the 3 patterns above. `--history` (CLI), `history` (daemon payload, IPC parse) and the MCP `history` argument waive the factor, and so does a scope inside an archive folder. Diagnostics report `historyRequested`.
-- [ ] `ChunkType.docStatus` is filled by `mapRecordToChunk` and shown on every surface listed under The label.
-- [ ] Unit tests on stubbed scores, using the stubbed Searcher in `tests/search-artifact-preference.test.ts:43-114`:
+- [x] `applyStructureBoost` applies `GMAX_ARCHIVE_PENALTY` (default 0.5) to docs-predicate chunks with an `archive` or `archived` segment relative to the project root, after the docs factor, and records it in `scoreBreakdown.archive`.
+- [x] `Searcher.search` takes the project root as a new option, and the 5 in-process callers listed under Path base pass it. Cross-project search uses the containing entry of `filters.projectRoots`. Callers with no root keep today's scores.
+- [x] `artifactPreference` gains `history` with the 3 patterns above. `--history` (CLI), `history` (daemon payload, IPC parse) and the MCP `history` argument waive the factor, and so does a scope inside an archive folder. Diagnostics report `historyRequested`.
+- [x] `ChunkType.docStatus` is filled by `mapRecordToChunk` and shown on every surface listed under The label.
+- [x] Unit tests on stubbed scores, using the stubbed Searcher in `tests/search-artifact-preference.test.ts:43-114`:
   - an archived `.md` chunk with role DOCS gets exactly 0.6 x 0.5, once;
   - a code chunk under `packages/db/src/archive` keeps its code boost and has no label;
   - a history query and the flag each skip the factor and keep the label and the 0.6;
@@ -160,10 +160,13 @@ The waiver is recorded in search diagnostics as `historyRequested`, next to `doc
   - a single `--in` inside an archive folder demotes nothing and keeps the label;
   - `GMAX_ARCHIVE_PENALTY=1` turns the factor off, and `0`, `-1` and `abc` fall back to 0.5;
   - successor-over-archived order on a stubbed P3-shaped pool.
-- [ ] Format tests updated or added in the files listed under The label.
-- [ ] `GMAX_ARCHIVE_PENALTY` gets a row in the README environment table next to `GMAX_RERANK` (`README.md:738`), and `docs/known-limitations.md` states the rule (durable behaviour only, no status).
-- [ ] Agents can find `--history`: the agent cheatsheet (`src/lib/help/agent-cheatsheet.ts`), the plugin skill (`plugins/grepmax/skills/grepmax/SKILL.md`) and the `semantic_search` description (`src/commands/mcp.ts:3746`) each name it in 1 line.
+- [x] Format tests updated or added in the files listed under The label.
+- [x] `GMAX_ARCHIVE_PENALTY` gets a row in the README environment table next to `GMAX_RERANK` (`README.md:738`), and `docs/known-limitations.md` states the rule (durable behaviour only, no status).
+- [x] Agents can find `--history`: the agent cheatsheet (`src/lib/help/agent-cheatsheet.ts`), the plugin skill (`plugins/grepmax/skills/grepmax/SKILL.md`) and the `semantic_search` description (`src/commands/mcp.ts:3746`) each name it in 1 line.
 - [x] `gmax-delivery.md` § Archived and superseded docs links this plan, and its numbers name the run each came from (`--in docs -m 20` for 17; the 38-row shortlist for 15 and the simulated 8).
+- Built: the factor at `src/lib/search/searcher.ts:457` with the folder match in `src/lib/search/archive.ts`; the label through `src/lib/output/doc-status.ts` on `--agent`, the MCP pointer, detail and structured output (`docStatus`, nullable, `?? null` for an older daemon), TTY, plain and human text, and `--compact` (`DOCS ARCH`). `history` also crosses `gmax serve` (client body, HTTP parse, daemon command), and the client sends it only to a server whose `/health` advertises `historySearch: 1`. `src/lib/llm/tools.ts` passes the project root.
+- Checked: `pnpm typecheck` and `tsc -p tsconfig.tests.json` clean; 1 focused `vitest run` over 13 files passed 236 of 236; `biome lint` clean on the changed files. After that run, `tests/doc-status-format.test.ts` swapped its control-character regex for `stripVTControlCharacters` to satisfy lint; phase 3's release check runs it.
+- Not pinned by a test: the MCP detail first line, structured `docStatus: "archived"`, the `llm/tools` tag and the pretty compact table.
 
 ## Phase 2: frontmatter status column
 

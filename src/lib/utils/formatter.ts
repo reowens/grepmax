@@ -1,5 +1,7 @@
 import * as path from "node:path";
 import { highlight } from "cli-highlight";
+import { docStatusTag } from "../output/doc-status";
+import type { DocStatus } from "../store/types";
 
 export interface TextResult {
   path: string;
@@ -8,6 +10,7 @@ export interface TextResult {
   chunk_type?: string;
   start_line: number;
   end_line: number;
+  docStatus?: DocStatus | null;
 }
 
 const style = {
@@ -127,7 +130,7 @@ export function formatTextResults(
       const scoreStr = options.showScores
         ? ` ${style.dim(`(score: ${item.score.toFixed(3)})`)}`
         : "";
-      output += `${relPath}:${line}${scoreStr}${tagStr}\n`;
+      output += `${relPath}:${line}${scoreStr}${tagStr}${docStatusTag(item.docStatus)}\n`;
       truncated.forEach((ln) => {
         output += `  ${ln}\n`;
       });
@@ -220,7 +223,7 @@ export function formatTextResults(
         ? ` ${style.dim(`(score: ${item.score.toFixed(3)})`)}`
         : "";
 
-      output += `${rank}) 📂 ${style.green(relPath)}${style.dim(`:${line}`)}${tagStr}${scoreStr}\n`;
+      output += `${rank}) 📂 ${style.green(relPath)}${style.dim(`:${line}`)}${tagStr}${docStatusTag(item.docStatus)}${scoreStr}\n`;
       const numbered = rendered.split("\n").map((ln, idx) => {
         const num = style.dim(`${line + idx}`.padStart(4));
         return `${num} │ ${ln}`;
