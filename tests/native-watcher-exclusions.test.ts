@@ -1,10 +1,8 @@
-import { type Dir, promises as filesystem } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as watcher from "@parcel/watcher";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { WATCHER_IGNORE_GLOBS } from "../src/lib/index/watcher";
+import { afterEach, describe, expect, it } from "vitest";
 import { readNativeWatcherIgnores } from "../src/lib/index/watcher-ignore";
 
 const roots: string[] = [];
@@ -24,7 +22,7 @@ afterEach(async () => {
 });
 // Exercise Parcel's actual normalization boundary, without starting another
 // native subscription or loading a store/model.
-async function normalized(root: string) {
+async function normalized(root: string, platform: NodeJS.Platform = "darwin") {
   let actual: any;
   const { createWrapper } = require("@parcel/watcher/wrapper");
   const wrapper = createWrapper({
@@ -33,7 +31,7 @@ async function normalized(root: string) {
     },
   });
   await wrapper.subscribe(root, () => {}, {
-    ignore: await readNativeWatcherIgnores(root, WATCHER_IGNORE_GLOBS),
+    ignore: await readNativeWatcherIgnores(root, platform),
   });
   return actual;
 }
@@ -71,32 +69,29 @@ describe("macOS stream exclusions", () => {
     expect(opts.ignorePaths).toHaveLength(8);
     expect(opts.ignorePaths).toContain(path.join(root, ".dev"));
   });
-  it("finds nested build roots before a broad source tree spends the entry budget", async () => {
+  it("caps literals on macOS only", async () => {
     const root = await fixture();
-    await fs.mkdir(path.join(root, "src"));
-    await fs.mkdir(path.join(root, "packages/ios/Core/.build"), {
-      recursive: true,
-    });
-    const open = filesystem.opendir.bind(filesystem);
-    const intercepted = vi
-      .spyOn(filesystem, "opendir")
-      .mockImplementation(async (...args) => {
-        if (String(args[0]) !== path.join(root, "src")) return open(...args);
-        return {
-          async *[Symbol.asyncIterator]() {
-            for (let i = 0; i < 20000; i++)
-              yield { name: `file${i}.ts`, isDirectory: () => false };
-          },
-        } as unknown as Dir;
-      });
-    try {
-      const opts = await normalized(root);
-      expect(opts.ignorePaths).toContain(
-        path.join(root, "packages/ios/Core/.build"),
+    const directories = Array.from({ length: 12 }, (_, i) => `scratch${i}`);
+    await Promise.all(directories.map((d) => fs.mkdir(path.join(root, d))));
+    await fs.mkdir(path.join(root, ".dev"));
+    await fs.mkdir(path.join(root, "node_modules"));
+    // The negation keeps these rules out of the globs; literals still apply.
+    await fs.writeFile(
+      path.join(root, ".gitignore"),
+      ".dev/\nscratch*/\n!keep.ts\n",
+    );
+    expect((await normalized(root)).ignorePaths).toHaveLength(8);
+    const linux = await normalized(root, "linux");
+    expect(linux.ignorePaths).toHaveLength(13);
+    expect(linux.ignorePaths).toContain(path.join(root, ".dev"));
+    expect(linux.ignorePaths).not.toContain(path.join(root, "node_modules"));
+    const matched = (rel: string) =>
+      linux.ignoreGlobs.some((pattern: string) =>
+        new RegExp(pattern).test(rel),
       );
-    } finally {
-      intercepted.mockRestore();
-    }
+    expect(matched("node_modules")).toBe(true);
+    expect(matched(".dev")).toBe(false);
+    expect(matched("src")).toBe(false);
   });
   it("does not exclude a re-included directory and refreshes after policy edits/deletion", async () => {
     const root = await fixture();
@@ -180,7 +175,7 @@ describe("macOS stream exclusions", () => {
         if (error) errors.push(error);
         for (const event of events) seen.add(event.path);
       },
-      { ignore: await readNativeWatcherIgnores(root, WATCHER_IGNORE_GLOBS) },
+      { ignore: await readNativeWatcherIgnores(root, "darwin") },
     );
     try {
       await new Promise((resolve) => setTimeout(resolve, 300));

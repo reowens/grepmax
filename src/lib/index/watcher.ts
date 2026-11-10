@@ -30,7 +30,7 @@ export interface WatcherOptions {
   initialFailedFiles?: number;
 }
 
-export { WATCHER_IGNORE_GLOBS } from "./watcher-core";
+export { WATCHER_IGNORE_GLOBS } from "./watcher-ignore";
 
 export async function startWatcher(
   opts: WatcherOptions,

@@ -24,7 +24,7 @@ related_plans:
   - docs/plans/gmax-archived-doc-ranking.md
 related_docs:
 current_state: "The P3 runs gmax 0.26.113 under gmax.service. Its journal since 2026-11-09 16:31 PST shows 0 poll-mode falls and 0 re-watch loops, but folders created after the subscribe get no watch (2 folders, 16 files missing from the index), Linux inotify overflow is dropped without a signal, and the subscription keeps its own ignore list (33,091 watches, 356 of them in gitignored folders)."
-next_step: "Phase 3: build the subscription ignore set from ProjectFilePolicy sources (nested .gitignore and .gmaxignore included), delete IGNORED_DIR_NAMES, and guard against drift."
+next_step: "Phase 4: a new folder gets a scoped walk and 1 debounced re-subscribe, inotify overflow reaches the gap catch-up, and gmax status shows missing coverage as degraded."
 ---
 
 # Gmax watcher correctness
@@ -66,9 +66,11 @@ CPU is not the issue: the watcher thread used about 0.9% of a core on 0.26.113.
 
 ## Phase 3: 1 ignore source for the subscription
 
-- [ ] The Parcel ignore set is built from `ProjectFilePolicy`'s sources: default directory names plus root and nested `.gitignore` and `.gmaxignore` directory rules with their scope prefix, keeping the rule that skips negations and unsafe syntax. `IGNORED_DIR_NAMES` is deleted; the 8-literal cap stays macOS-only.
-- [ ] A `.gitignore` or `.gmaxignore` written inside an excluded folder (for example `.ruff_cache`, `tmp/`) no longer forces a re-subscribe and catch-up.
-- [ ] A guard test asserts every indexer directory exclusion is also a subscription exclusion.
+- [x] The Parcel ignore set is built from `ProjectFilePolicy`'s sources by `readNativeWatcherIgnores` (`src/lib/index/watcher-ignore.ts:85`): the default patterns, then every traversed folder's `.gitignore` and `.gmaxignore` rules scoped to that folder through `walkDirectories`. A rule file holding a negation still yields no globs; the folders it excludes become literal paths instead. `IGNORED_DIR_NAMES` and `readProjectWatcherIgnores` are deleted. The 8-literal cap applies on macOS only; on Linux every folder a policy file excludes is a literal.
+- [x] A `.gitignore` or `.gmaxignore` written inside an excluded folder no longer forces a re-subscribe: the batch processor drops a policy event whose folder the loaded policy excludes (`src/lib/index/batch-processor.ts:199`).
+- [x] `tests/watcher-exclusion-parity.test.ts` asserts every directory the indexer walk excludes is also excluded from the subscription. `.turbo` moved into the default patterns, so the indexer skips it too.
+- Each update now walks the whole tree, about 5.8 s on the platform repo against about 250 ms before, and a subscribe walks it twice (read, then verify). Updates run only at startup, on recovery and on a policy edit outside an excluded folder. On Linux, a gitignored folder that appeared since the last subscribe changes the identity, so a policy edit that leaves the rules unchanged can still re-subscribe once.
+- Checked: `pnpm typecheck` clean; `vitest run` on the 5 changed test files 156 of 156 on the second run. `tests/standalone-watcher-health.test.ts` was not run; Phase 4's run includes it.
 
 ## Phase 4: new folders and overflow on Linux
 

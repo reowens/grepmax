@@ -19,7 +19,14 @@ export type DirectoryPolicyResult =
   | { status: "missing" }
   | { status: "error"; error: unknown; protectedPath: string };
 
-type IgnoreScope = { dir: string; filter: Ignore | null };
+/** Patterns applied from the project root at any depth, before any policy file. */
+export const ROOT_IGNORE_PATTERNS = [
+  ...DEFAULT_IGNORE_PATTERNS,
+  ".git",
+  ".gmax",
+];
+
+type IgnoreScope = { dir: string; filter: Ignore | null; rules: string };
 
 export class IgnorePolicyReadError extends Error {
   constructor(
@@ -54,9 +61,7 @@ export class ProjectFilePolicy {
     }
     this.ignoreFiles = options.ignoreFiles ?? [".gitignore", ".gmaxignore"];
     this.rootFilter = ignore().add([
-      ...DEFAULT_IGNORE_PATTERNS,
-      ".git",
-      ".gmax",
+      ...ROOT_IGNORE_PATTERNS,
       ...(options.additionalPatterns ?? []),
     ]);
   }
@@ -75,14 +80,16 @@ export class ProjectFilePolicy {
    * the default patterns plus every .gitignore/.gmaxignore scope an earlier
    * classify has loaded. Never touches the filesystem, so it is safe on the
    * watcher's event path. `false` only means "not provably ignored yet" —
-   * callers must still classify before indexing.
+   * callers must still classify before indexing. A directory is checked as
+   * `classifyDirectory` checks it: its own policy files do not apply.
    */
-  isIgnoredByLoadedPolicy(absPath: string): boolean {
+  isIgnoredByLoadedPolicy(absPath: string, isDirectory = false): boolean {
     const resolved = path.resolve(absPath);
     if (!this.isLexicallyContained(resolved)) return true;
     const rootRelative = this.relative(resolved);
     if (!rootRelative) return false;
-    if (this.rootFilter.ignores(rootRelative)) return true;
+    const suffix = isDirectory ? "/" : "";
+    if (this.rootFilter.ignores(rootRelative + suffix)) return true;
     for (const dir of this.scopeDirectories(path.dirname(resolved))) {
       const scope = this.loadedScopes.get(dir);
       if (!scope?.filter) continue;
@@ -90,9 +97,15 @@ export class ProjectFilePolicy {
         .relative(scope.dir, resolved)
         .split(path.sep)
         .join("/");
-      if (relative && scope.filter.ignores(relative)) return true;
+      if (relative && scope.filter.ignores(relative + suffix)) return true;
     }
     return false;
+  }
+
+  /** The raw rules of one directory's own policy files, read and cached the
+   * same way classification reads them. Throws IgnorePolicyReadError. */
+  async ignoreRules(dir: string): Promise<string> {
+    return (await this.loadIgnoreScope(path.resolve(dir))).rules;
   }
 
   isLexicallyContained(absPath: string): boolean {
@@ -120,6 +133,7 @@ export class ProjectFilePolicy {
     if (existing) return existing;
     const pending = (async () => {
       let filter: Ignore | null = null;
+      const rules: string[] = [];
       for (const fileName of this.ignoreFiles) {
         try {
           const content = await fs.promises.readFile(
@@ -128,13 +142,14 @@ export class ProjectFilePolicy {
           );
           if (!filter) filter = ignore();
           filter.add(content);
+          rules.push(content);
         } catch (err) {
           if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
             throw new IgnorePolicyReadError(dir, err);
           }
         }
       }
-      return { dir, filter };
+      return { dir, filter, rules: rules.join("\n") };
     })();
     this.ignoreCache.set(dir, pending);
     void pending.then(

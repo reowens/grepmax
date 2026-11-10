@@ -63,6 +63,7 @@ export const DEFAULT_IGNORE_PATTERNS = [
   ".pytest_cache",
   ".next",
   ".nuxt",
+  ".turbo",
   ".gradle",
   ".m2",
   "vendor",

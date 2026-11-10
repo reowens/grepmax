@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ProjectFilePolicy } from "../src/lib/index/file-policy";
 import {
   nativeProjectIgnoreGlobs,
-  readProjectWatcherIgnores,
+  readNativeWatcherIgnores,
 } from "../src/lib/index/watcher-ignore";
 
 const rule =
@@ -47,23 +47,82 @@ describe("project native watcher exclusions", () => {
     ).toEqual([]);
   });
 
-  it("reloads policy edits and deletion and bounds oversized policies", async () => {
+  it("scopes nested rules to their folder", () => {
+    expect(nativeProjectIgnoreGlobs("tmp/\n/out\n*.log\n", "pkg/a")).toEqual([
+      "pkg/a/**/tmp/**",
+      "pkg/a/out",
+      "pkg/a/out/**",
+      "pkg/a/**/*.log",
+      "pkg/a/**/*.log/**",
+    ]);
+  });
+
+  it("reloads policy edits and deletion", async () => {
     const root = await fixture();
     const file = path.join(root, ".gmaxignore");
-    expect(await readProjectWatcherIgnores(root)).toEqual([]);
+    const scoped = "docs/plans/assets/ui-snapshots/**/*.json";
+    expect(await readNativeWatcherIgnores(root)).not.toContain(scoped);
     await fs.writeFile(file, rule);
-    expect(await readProjectWatcherIgnores(root)).toContain(
-      "docs/plans/assets/ui-snapshots/**/*.json",
-    );
+    expect(await readNativeWatcherIgnores(root)).toContain(scoped);
     await fs.writeFile(
       file,
       `${rule}!docs/plans/assets/ui-snapshots/keep.json\n`,
     );
-    expect(await readProjectWatcherIgnores(root)).toEqual([]);
-    await fs.writeFile(file, "#".repeat(65537));
-    expect(await readProjectWatcherIgnores(root)).toEqual([]);
+    expect(await readNativeWatcherIgnores(root)).not.toContain(scoped);
+    await fs.writeFile(file, rule);
     await fs.unlink(file);
-    expect(await readProjectWatcherIgnores(root)).toEqual([]);
+    expect(await readNativeWatcherIgnores(root)).not.toContain(scoped);
+  });
+
+  it("reads nested .gitignore and .gmaxignore rules with their scope prefix", async () => {
+    const root = await fixture();
+    await fs.mkdir(path.join(root, "packages/app/src"), { recursive: true });
+    await fs.writeFile(
+      path.join(root, "packages/app/.gitignore"),
+      "scratch/\n",
+    );
+    await fs.writeFile(path.join(root, "packages/app/.gmaxignore"), "/out\n");
+    const ignores = (await readNativeWatcherIgnores(root)).map(String);
+    expect(ignores).toContain("packages/app/**/scratch/**");
+    expect(ignores).toContain("packages/app/out/**");
+    expect(ignores).not.toContain("**/scratch/**");
+  });
+
+  it("skips a folder's rules when either of its policy files negates", async () => {
+    const root = await fixture();
+    await fs.mkdir(path.join(root, "packages/app"), { recursive: true });
+    await fs.writeFile(path.join(root, ".gitignore"), "cache/\n");
+    // Both files feed one filter, so the re-inclusion can undo the exclusion.
+    await fs.writeFile(
+      path.join(root, "packages/app/.gitignore"),
+      "scratch/\n",
+    );
+    await fs.writeFile(
+      path.join(root, "packages/app/.gmaxignore"),
+      "!scratch/\n",
+    );
+    const ignores = (await readNativeWatcherIgnores(root)).map(String);
+    expect(ignores.some((p) => p.startsWith("packages/app/"))).toBe(false);
+    expect(ignores).toContain("**/cache/**");
+    const policy = new ProjectFilePolicy(root);
+    await fs.mkdir(path.join(root, "packages/app/scratch"));
+    expect(
+      (await policy.classifyDirectory(path.join(root, "packages/app/scratch")))
+        .status,
+    ).toBe("traverse");
+  });
+
+  it("never reads rules inside an excluded folder or a folder Parcel would read as a pattern", async () => {
+    const root = await fixture();
+    await fs.mkdir(path.join(root, "tmp"), { recursive: true });
+    await fs.mkdir(path.join(root, "app/(group)"), { recursive: true });
+    await fs.writeFile(path.join(root, ".gitignore"), "tmp/\n");
+    await fs.writeFile(path.join(root, "tmp/.gitignore"), "inner/\n");
+    await fs.writeFile(path.join(root, "app/(group)/.gitignore"), "cache/\n");
+    const ignores = (await readNativeWatcherIgnores(root)).map(String);
+    expect(ignores.some((p) => p.startsWith("tmp/"))).toBe(false);
+    expect(ignores.some((p) => p.includes("(group)"))).toBe(false);
+    expect(ignores).toContain("**/tmp/**");
   });
 
   it("filters generated JSON in a real subscription while delivering notes, source JSON and policy edits", async () => {
@@ -83,7 +142,7 @@ describe("project native watcher exclusions", () => {
         if (error) errors.push(error);
         for (const event of events) seen.add(event.path);
       },
-      { ignore: await readProjectWatcherIgnores(root) },
+      { ignore: await readNativeWatcherIgnores(root) },
     );
     const artifact = path.join(generated, "measurement.json");
     const screenshot = path.join(generated, "screenshot.png");

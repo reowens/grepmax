@@ -5,7 +5,6 @@ import type { MetaCache } from "../store/meta-cache";
 import type { VectorDB } from "../store/vector-db";
 import type { ProjectBatchProcessor } from "./batch-processor";
 import type { ProjectFilePolicy } from "./file-policy";
-import { GENERATED_SOURCE_PATTERNS } from "./ignore-patterns";
 import {
   createWalkState,
   isPathProtectedByWalkState,
@@ -14,64 +13,12 @@ import {
 } from "./walker";
 import { isFSEventsGap, vanishedSubscribePath } from "./watcher-errors";
 import {
+  type NativeSubscription,
   readNativeWatcherIgnores,
   subscribeWithNativeExclusions,
   watcherIgnoreIdentity,
 } from "./watcher-ignore";
 import type { WatcherRecoveryTracker } from "./watcher-recovery";
-
-// Directory names ignored at ANY depth. @parcel/watcher treats a non-glob
-// ignore entry as a literal path resolved against the watch root, so a bare
-// "dist" only covered <root>/dist — nested build dirs (packages/*/dist,
-// nested node_modules, .turbo) still flooded the daemon with events on every
-// build. Glob entries are matched against the path relative to the watch
-// root, and a leading "**/" matches zero or more segments, so the expansion
-// below covers both the top-level and nested cases.
-const IGNORED_DIR_NAMES = [
-  "node_modules",
-  ".git",
-  ".gmax",
-  "dist",
-  "build",
-  ".build", // SwiftPM
-  "DerivedData", // Xcode
-  "out",
-  "target",
-  "__pycache__",
-  "coverage",
-  "venv",
-  ".venv",
-  "site-packages",
-  ".tox",
-  ".mypy_cache",
-  ".pytest_cache",
-  ".next",
-  ".nuxt",
-  ".turbo",
-  ".gradle",
-  ".m2",
-  "vendor",
-  "lancedb",
-];
-
-// Ignore patterns for @parcel/watcher (picomatch globs).
-export const WATCHER_IGNORE_GLOBS: string[] = [
-  // "**/<name>" ignores the directory entry itself, "**/<name>/**" its contents.
-  ...IGNORED_DIR_NAMES.flatMap((name) => [`**/${name}`, `**/${name}/**`]),
-  "**/*.tmp.*", // editor atomic save artifacts
-  // Atomic-save temp files named `.!<pid>!<name>` (e.g. `.!8903!dotmd.md`).
-  // picomatch treats `!` as a literal unless it leads the pattern or opens
-  // an `!(...)` extglob, so this matches only that shape, at any depth.
-  "**/.!*!*",
-  "**/*.sb-*", // Xcode swap files
-  // Codegen output never reaches the index (file policy drops it), so don't
-  // let it reach the watcher either — it is the dominant source of FSEvents
-  // buffer overflows on large projects. Bare "*.ext" patterns are anchored to
-  // the root by picomatch, so prefix them to match at any depth.
-  ...GENERATED_SOURCE_PATTERNS.map((p) =>
-    p.startsWith("**/") ? p : `**/${p}`,
-  ),
-];
 
 // A folder removed during the crawl fails the whole subscribe with ENOENT.
 // The next crawl usually passes, so retry before calling the watcher failed.
@@ -98,7 +45,8 @@ export interface WatcherSubscriptionOptions {
  * whose ignore identity matches a healthy attached subscription is skipped. */
 export class WatcherSubscription {
   private subscription: watcher.AsyncSubscription | null = null;
-  private policy = "";
+  // The ignore set policy asked for when this subscription attached.
+  private wanted = "";
   private generation = 0;
   private retired = false;
   private pendingUpdate: Promise<void> = Promise.resolve();
@@ -167,16 +115,12 @@ export class WatcherSubscription {
     callback: watcher.SubscribeCallback,
     ignores: Array<string | RegExp>,
     current: () => boolean,
-  ): Promise<{
-    subscription: watcher.AsyncSubscription;
-    policy: string;
-  } | null> {
+  ): Promise<NativeSubscription | null> {
     for (const delayMs of [...VANISHED_PATH_RETRY_DELAYS_MS, undefined]) {
       try {
         return await subscribeWithNativeExclusions(
           this.options.root,
           callback,
-          WATCHER_IGNORE_GLOBS,
           ignores,
         );
       } catch (err) {
@@ -194,12 +138,12 @@ export class WatcherSubscription {
   private async updateNow(): Promise<void> {
     const { root, recovery } = this.options;
     if (!this.live()) return;
-    const ignores = await readNativeWatcherIgnores(root, WATCHER_IGNORE_GLOBS);
+    const ignores = await readNativeWatcherIgnores(root);
     if (
       !this.live() ||
       (this.subscription &&
         !this.terminalFailure &&
-        this.policy === watcherIgnoreIdentity(ignores))
+        this.wanted === watcherIgnoreIdentity(ignores))
     )
       return;
     const generation = ++this.generation;
@@ -223,13 +167,13 @@ export class WatcherSubscription {
     const current = () => generation === this.generation && this.live();
     const attached = await this.subscribe(callback, ignores, current);
     if (!attached) return;
-    const { subscription, policy } = attached;
+    const { subscription, policy, wanted } = attached;
     if (generation !== this.generation || !this.live()) {
       await subscription.unsubscribe();
       return;
     }
     this.subscription = subscription;
-    this.policy = policy;
+    this.wanted = wanted;
     recovery.attached(policy);
   }
 }

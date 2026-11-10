@@ -188,7 +188,19 @@ export class ProjectBatchProcessor {
         ? path.resolve(absPath)
         : null;
     if (!normalized) return;
+    const isIgnored = (
+      this.filePolicy as ProjectFilePolicy & {
+        isIgnoredByLoadedPolicy?: (
+          candidate: string,
+          isDirectory?: boolean,
+        ) => boolean;
+      }
+    ).isIgnoredByLoadedPolicy;
     if (this.filePolicy.isPolicyFile(normalized) && !options?.forceDelete) {
+      // The walk never enters a folder policy excludes, so it never reads a
+      // policy file inside one: nothing changes and nothing needs a rescan.
+      if (isIgnored?.call(this.filePolicy, path.dirname(normalized), true))
+        return;
       this.filePolicy.invalidateIgnoreCache();
       if (this.processing) this.policyChangedDuringBatch = true;
       this.onPolicyChange?.();
@@ -207,11 +219,6 @@ export class ProjectBatchProcessor {
     // entry still flows through so a policy change can retire its vectors,
     // and forced repairs/deletes bypass the check because they target
     // vectors the meta cache may not know about.
-    const isIgnored = (
-      this.filePolicy as ProjectFilePolicy & {
-        isIgnoredByLoadedPolicy?: (candidate: string) => boolean;
-      }
-    ).isIgnoredByLoadedPolicy;
     if (
       isIgnored &&
       !options?.forceDelete &&

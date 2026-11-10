@@ -2,7 +2,7 @@ import type { Dirent } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { isPathWithin } from "../utils/path-containment";
-import { ProjectFilePolicy } from "./file-policy";
+import { type DirectoryPolicyResult, ProjectFilePolicy } from "./file-policy";
 
 export interface WalkState {
   rootComplete: boolean;
@@ -106,4 +106,41 @@ async function* walkDirectory(
       state.errors.push({ path: file.protectedPath, error: file.error });
     }
   }
+}
+
+export interface WalkedDirectory {
+  path: string;
+  depth: number;
+  result: DirectoryPolicyResult;
+}
+
+/** Every directory the walk classifies, in name order. A directory is
+ * entered only when policy says traverse, exactly as `walk` does. */
+export async function* walkDirectories(
+  rootDir: string,
+  policy: ProjectFilePolicy,
+): AsyncGenerator<WalkedDirectory> {
+  yield* walkDirectoryTree(path.resolve(rootDir), 0, policy);
+}
+
+async function* walkDirectoryTree(
+  directory: string,
+  depth: number,
+  policy: ProjectFilePolicy,
+): AsyncGenerator<WalkedDirectory> {
+  const result = await policy.classifyDirectory(directory);
+  yield { path: directory, depth, result };
+  if (result.status !== "traverse") return;
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(directory, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  const names = entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  for (const name of names)
+    yield* walkDirectoryTree(path.join(directory, name), depth + 1, policy);
 }

@@ -6,7 +6,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@parcel/watcher", () => ({ subscribe: vi.fn() }));
 
 import * as watcher from "@parcel/watcher";
-import { subscribeWithNativeExclusions } from "../src/lib/index/watcher-ignore";
+import {
+  subscribeWithNativeExclusions,
+  WATCHER_IGNORE_GLOBS,
+  watcherIgnoreIdentity,
+} from "../src/lib/index/watcher-ignore";
 
 const roots: string[] = [];
 async function fixture() {
@@ -37,9 +41,12 @@ describe("policy changes during native subscription", () => {
         return { unsubscribe };
       })
       .mockResolvedValue({ unsubscribe: vi.fn(async () => {}) });
-    const result = await subscribeWithNativeExclusions(root, () => {}, [
-      "**/node_modules/**",
-    ]);
+    const result = await subscribeWithNativeExclusions(
+      root,
+      () => {},
+      undefined,
+      "darwin",
+    );
     expect(unsubscribe).toHaveBeenCalledOnce();
     expect(watcher.subscribe).toHaveBeenCalledTimes(2);
     expect(vi.mocked(watcher.subscribe).mock.calls[0][2]?.ignore).toContain(
@@ -50,7 +57,7 @@ describe("policy changes during native subscription", () => {
     );
     await result.subscription.unsubscribe();
   });
-  it("bounds repeated policy churn and falls back to immutable filtering", async () => {
+  it("bounds repeated policy churn and falls back to the default globs", async () => {
     const root = await fixture();
     const file = path.join(root, ".gmaxignore");
     await fs.writeFile(file, "scratch/**\n");
@@ -61,11 +68,17 @@ describe("policy changes during native subscription", () => {
       await fs.writeFile(file, calls % 2 ? "other/**\n" : "scratch/**\n");
       return { unsubscribe: closed };
     });
-    const base = ["**/node_modules/**"];
-    const result = await subscribeWithNativeExclusions(root, () => {}, base);
+    const result = await subscribeWithNativeExclusions(root, () => {});
     expect(watcher.subscribe).toHaveBeenCalledTimes(3);
     expect(closed).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(watcher.subscribe).mock.calls[2][2]?.ignore).toEqual(base);
+    expect(vi.mocked(watcher.subscribe).mock.calls[2][2]?.ignore).toEqual(
+      WATCHER_IGNORE_GLOBS,
+    );
+    // Health reports what attached; the skip compares what policy asked for,
+    // so an unchanged policy does not subscribe again on every event.
+    expect(result.policy).toBe(watcherIgnoreIdentity(WATCHER_IGNORE_GLOBS));
+    expect(result.wanted).not.toBe(result.policy);
+    expect(result.wanted).toContain("scratch/**");
     await result.subscription.unsubscribe();
   });
 });

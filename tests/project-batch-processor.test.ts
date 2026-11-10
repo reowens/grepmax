@@ -1245,6 +1245,40 @@ describe("ProjectBatchProcessor", () => {
     expect(processor.progress.pendingFiles).toBe(0);
   });
 
+  it("ignores a policy file written inside a folder policy excludes", async () => {
+    const onPolicyChange = vi.fn();
+    fs.writeFileSync(path.join(tmpDir, ".gitignore"), "tmp/\n");
+    fs.mkdirSync(path.join(tmpDir, "tmp/cache"), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, "src"), { recursive: true });
+    const processor = makeProcessor({ onPolicyChange });
+    // Classification loads the root scope, as a walk does before events.
+    await processor.filePolicy.classifyDirectory(path.join(tmpDir, "src"));
+
+    processor.handleFileEvent("change", path.join(tmpDir, "tmp/.gitignore"));
+    processor.handleFileEvent(
+      "change",
+      path.join(tmpDir, "tmp/cache/.gmaxignore"),
+    );
+    processor.handleFileEvent(
+      "change",
+      path.join(tmpDir, "node_modules/pkg/.gitignore"),
+    );
+    expect(onPolicyChange).not.toHaveBeenCalled();
+
+    processor.handleFileEvent("change", path.join(tmpDir, "src/.gitignore"));
+    expect(onPolicyChange).toHaveBeenCalledOnce();
+    expect(processor.progress.pendingFiles).toBe(0);
+  });
+
+  it("treats a policy file as live while its folder's scope is not loaded", () => {
+    const onPolicyChange = vi.fn();
+    fs.writeFileSync(path.join(tmpDir, ".gitignore"), "tmp/\n");
+    const processor = makeProcessor({ onPolicyChange });
+
+    processor.handleFileEvent("change", path.join(tmpDir, "tmp/.gitignore"));
+    expect(onPolicyChange).toHaveBeenCalledOnce();
+  });
+
   it("preserves cached state on policy errors", async () => {
     const errorPolicy = {
       isLexicallyContained: () => true,
