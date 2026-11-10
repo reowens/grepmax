@@ -24,7 +24,7 @@ related_plans:
   - docs/plans/gmax-archived-doc-ranking.md
 related_docs:
 current_state: "The P3 runs gmax 0.26.113 under gmax.service. Its journal since 2026-11-09 16:31 PST shows 0 poll-mode falls and 0 re-watch loops, but folders created after the subscribe get no watch (2 folders, 16 files missing from the index), Linux inotify overflow is dropped without a signal, and the subscription keeps its own ignore list (33,091 watches, 356 of them in gitignored folders)."
-next_step: "Phase 1: merge the daemon and standalone watchers into 1 module, removing dead code from watcher-manager.ts first."
+next_step: "Phase 2: retry a subscribe that fails on a vanished folder (in WatcherSubscription.updateNow) before poll mode, and probe back to native on the first Linux poll."
 ---
 
 # Gmax watcher correctness
@@ -50,9 +50,12 @@ CPU is not the issue: the watcher thread used about 0.9% of a core on 0.26.113.
 
 ## Phase 1: 1 watcher implementation
 
-- [ ] Remove dead code from `watcher-manager.ts` (1,176 lines), then move subscribe, recover and reconcile into 1 module that both `startWatcher` and `WatcherManager` use.
-- [ ] The daemon skips a re-subscribe when the ignore identity is unchanged, as the standalone watcher does.
-- [ ] Tests cover both callers through the shared module.
+- [x] Remove dead code from `watcher-manager.ts`, then move subscribe, recover and reconcile into 1 module that both `startWatcher` and `WatcherManager` use. `src/lib/index/watcher-core.ts` holds `WatcherSubscription` (`update`, `settled`, `retire`, `detach`, `failed`), `reconcileProject` and the ignore globs; about 10 lines were dead (the unread `subscriptions` option in `daemon.ts`), and `watcher-manager.ts` is 1,111 lines.
+- [x] The daemon skips a re-subscribe when the ignore identity is unchanged, as the standalone watcher does.
+- [x] Tests cover both callers through the shared module: `tests/watcher-core.test.ts` (new) and `tests/watcher-manager.test.ts`. `pnpm typecheck` and `tsc -p tsconfig.tests.json` are clean; `vitest run` over the 4 touched watcher test files passed 49 of 49.
+- The standalone watcher now ignores a failed unsubscribe of its old stream, as the daemon did. It still has no poll-mode fallback (a startup failure rejects at `watcher.ts:207`).
+- Not run in this phase: `standalone-watcher-health`, `daemon-catchup-priority`, `native-watcher-exclusions`, `watcher-ignore` and `scripts/test-watcher-consumer.cjs`; phase 5's release check runs them.
+- For the next phases: the subscribe retry goes in `WatcherSubscription.updateNow`, overflow in `watcher-core.ts`'s gap routing, and a subscription attached on the fallback globs re-subscribes on every policy event until phase 3 gives it 1 ignore source.
 
 ## Phase 2: transient subscribe failures are retried
 

@@ -66,7 +66,7 @@ async function qualify(mode) {
   try {
     if (mode === "daemon") {
       const processors = new Map();
-      const manager = new WatcherManager({processors, subscriptions: new Map(), getVectorDb: () => db,
+      const manager = new WatcherManager({processors, getVectorDb: () => db,
         getMetaCache: () => meta, getWorkerPool: () => pool, getShuttingDown: () => false,
         touchActivity() {}, evictSearcher() {},
         runProjectOperation: (_root, _name, signal, fn) => fn(signal ?? new AbortController().signal),

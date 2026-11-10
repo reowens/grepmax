@@ -1,19 +1,11 @@
-import * as path from "node:path";
-import type * as watcher from "@parcel/watcher";
 import type { IndexState, WatchQueueState } from "../output/index-state-footer";
 import type { MetaCache } from "../store/meta-cache";
 import type { VectorDB } from "../store/vector-db";
 import { ProjectBatchProcessor } from "./batch-processor";
 import { reconcileMetaEntry } from "./cache-coherence";
 import { ProjectFilePolicy } from "./file-policy";
-import { GENERATED_SOURCE_PATTERNS } from "./ignore-patterns";
-import { createWalkState, isPathProtectedByWalkState, walk } from "./walker";
-import { FSEVENTS_GAP_SCAN_INTERVAL_MS, isFSEventsGap } from "./watcher-errors";
-import {
-  readNativeWatcherIgnores,
-  subscribeWithNativeExclusions,
-  watcherIgnoreIdentity,
-} from "./watcher-ignore";
+import { reconcileProject, WatcherSubscription } from "./watcher-core";
+import { FSEVENTS_GAP_SCAN_INTERVAL_MS } from "./watcher-errors";
 import { WatcherRecoveryTracker } from "./watcher-recovery";
 
 export interface WatcherHandle {
@@ -38,58 +30,7 @@ export interface WatcherOptions {
   initialFailedFiles?: number;
 }
 
-// Directory names ignored at ANY depth. @parcel/watcher treats a non-glob
-// ignore entry as a literal path resolved against the watch root, so a bare
-// "dist" only covered <root>/dist — nested build dirs (packages/*/dist,
-// nested node_modules, .turbo) still flooded the daemon with events on every
-// build. Glob entries are matched against the path relative to the watch
-// root, and a leading "**/" matches zero or more segments, so the expansion
-// below covers both the top-level and nested cases.
-const IGNORED_DIR_NAMES = [
-  "node_modules",
-  ".git",
-  ".gmax",
-  "dist",
-  "build",
-  ".build", // SwiftPM
-  "DerivedData", // Xcode
-  "out",
-  "target",
-  "__pycache__",
-  "coverage",
-  "venv",
-  ".venv",
-  "site-packages",
-  ".tox",
-  ".mypy_cache",
-  ".pytest_cache",
-  ".next",
-  ".nuxt",
-  ".turbo",
-  ".gradle",
-  ".m2",
-  "vendor",
-  "lancedb",
-];
-
-// Ignore patterns for @parcel/watcher (picomatch globs).
-export const WATCHER_IGNORE_GLOBS: string[] = [
-  // "**/<name>" ignores the directory entry itself, "**/<name>/**" its contents.
-  ...IGNORED_DIR_NAMES.flatMap((name) => [`**/${name}`, `**/${name}/**`]),
-  "**/*.tmp.*", // editor atomic save artifacts
-  // Atomic-save temp files named `.!<pid>!<name>` (e.g. `.!8903!dotmd.md`).
-  // picomatch treats `!` as a literal unless it leads the pattern or opens
-  // an `!(...)` extglob, so this matches only that shape, at any depth.
-  "**/.!*!*",
-  "**/*.sb-*", // Xcode swap files
-  // Codegen output never reaches the index (file policy drops it), so don't
-  // let it reach the watcher either — it is the dominant source of FSEvents
-  // buffer overflows on large projects. Bare "*.ext" patterns are anchored to
-  // the root by picomatch, so prefix them to match at any depth.
-  ...GENERATED_SOURCE_PATTERNS.map((p) =>
-    p.startsWith("**/") ? p : `**/${p}`,
-  ),
-];
+export { WATCHER_IGNORE_GLOBS } from "./watcher-core";
 
 export async function startWatcher(
   opts: WatcherOptions,
@@ -107,72 +48,29 @@ export async function startWatcher(
   let degradedRepairQueued = false;
   const terminalFailures = new Set<string>();
   let processor!: ProjectBatchProcessor;
-  let subscription: watcher.AsyncSubscription | null = null;
-  let subscriptionUpdate: Promise<void> = Promise.resolve();
-  let subscriptionPolicy = "";
-  let subscriptionFailed = false;
-  let subscriptionGeneration = 0;
   let gapScanTimer: ReturnType<typeof setTimeout> | undefined;
   let lastReconcileStart: number | undefined;
   let gapGeneration = 0;
-  const updateSubscription = (): Promise<void> => {
-    const update = subscriptionUpdate
-      .catch(() => {})
-      .then(async () => {
-        const ignores = await readNativeWatcherIgnores(
-          projectRoot,
-          WATCHER_IGNORE_GLOBS,
+  const subscription = new WatcherSubscription({
+    root: projectRoot,
+    recovery,
+    isActive: () => !closing,
+    onError: (err) => {
+      console.error(`[${wtag}] Watcher error:`, err);
+      scanHealthy = false;
+      opts.onHealthChange?.(false, 1);
+      gapGeneration++;
+    },
+    onGap: () => requestGapScan(),
+    onTerminal: () => reconcile(),
+    onEvents: (events) => {
+      for (const event of events)
+        processor.handleFileEvent(
+          event.type === "delete" ? "unlink" : "change",
+          event.path,
         );
-        const policy = watcherIgnoreIdentity(ignores);
-        if (
-          closing ||
-          (subscription && !subscriptionFailed && subscriptionPolicy === policy)
-        )
-          return;
-        const generation = ++subscriptionGeneration;
-        subscriptionFailed = false;
-        await subscription?.unsubscribe();
-        subscription = null;
-        recovery.detached();
-        if (closing) return;
-        const { subscription: next, policy: attachedPolicy } =
-          await subscribeWithNativeExclusions(
-            projectRoot,
-            (err, events) => {
-              if (closing || generation !== subscriptionGeneration) return;
-              if (err) {
-                recovery.error(err);
-                console.error(`[${wtag}] Watcher error:`, err);
-                scanHealthy = false;
-                opts.onHealthChange?.(false, 1);
-                gapGeneration++;
-                if (isFSEventsGap(err)) requestGapScan();
-                else {
-                  // Terminal backend errors can clear Parcel's callbacks.
-                  subscriptionFailed = true;
-                  reconcile();
-                }
-              }
-              for (const event of events)
-                processor.handleFileEvent(
-                  event.type === "delete" ? "unlink" : "change",
-                  event.path,
-                );
-            },
-            WATCHER_IGNORE_GLOBS,
-            ignores,
-          );
-        if (closing) {
-          await next.unsubscribe();
-          return;
-        }
-        subscription = next;
-        subscriptionPolicy = attachedPolicy;
-        recovery.attached(attachedPolicy);
-      });
-    subscriptionUpdate = update;
-    return update;
-  };
+    },
+  });
   const reportHealthyIfSettled = () => {
     if (
       scanHealthy &&
@@ -200,49 +98,33 @@ export async function startWatcher(
         let retryDelayMs = 0;
         try {
           filePolicy.invalidateIgnoreCache();
-          await updateSubscription();
+          await subscription.update();
           if (closing) return;
-          const rootPrefix = projectRoot.endsWith("/")
-            ? projectRoot
-            : `${projectRoot}/`;
-          const cached = await opts.metaCache.getKeysWithPrefix(rootPrefix);
-          const vectorPaths =
-            await opts.vectorDb.getDistinctPathsForPrefix(rootPrefix);
-          const knownPaths = new Set([...cached, ...vectorPaths]);
-          const seen = new Set<string>();
-          const state = createWalkState();
-          for await (const relative of walk(projectRoot, {
+          const result = await reconcileProject({
+            root: projectRoot,
             policy: filePolicy,
-            state,
-          })) {
-            if (closing) return;
-            const absolute = path.join(projectRoot, relative);
-            seen.add(absolute);
-            const reconciliation = reconcileMetaEntry(
-              absolute,
-              opts.metaCache.get(absolute),
-              vectorPaths.has(absolute),
-            );
-            if (reconciliation.action === "stamp") {
-              opts.metaCache.put(absolute, reconciliation.entry);
-            }
-            processor.handleFileEvent("change", absolute, {
-              forceReprocess: reconciliation.action === "reprocess",
-              workKind: "catchup",
-            });
-          }
-          for (const cachedPath of knownPaths) {
-            if (closing) return;
-            if (
-              !seen.has(cachedPath) &&
-              !isPathProtectedByWalkState(cachedPath, state)
-            ) {
-              processor.handleFileEvent("unlink", cachedPath, {
-                forceDelete: true,
-                workKind: "cleanup",
+            processor,
+            metaCache: opts.metaCache,
+            vectorDb: opts.vectorDb,
+            aborted: () => closing,
+            visit: async ({ absolute, vectorPaths }) => {
+              const reconciliation = reconcileMetaEntry(
+                absolute,
+                opts.metaCache.get(absolute),
+                vectorPaths.has(absolute),
+              );
+              if (reconciliation.action === "stamp") {
+                opts.metaCache.put(absolute, reconciliation.entry);
+              }
+              processor.handleFileEvent("change", absolute, {
+                forceReprocess: reconciliation.action === "reprocess",
+                workKind: "catchup",
               });
-            }
-          }
+              return true;
+            },
+          });
+          if (!result) return;
+          const { state } = result;
           if (!state.rootComplete || state.errors.length > 0) {
             outcome = "incomplete";
             scanHealthy = false;
@@ -322,7 +204,7 @@ export async function startWatcher(
     },
   });
 
-  await updateSubscription();
+  await subscription.update();
   reconcile();
 
   return {
@@ -338,7 +220,7 @@ export async function startWatcher(
           !scanHealthy || ingestionDegraded || terminalFailures.size > 0,
         watcherMode: closing
           ? undefined
-          : subscriptionFailed || gapScanTimer || state.reconciliationNeeded
+          : subscription.failed || gapScanTimer || state.reconciliationNeeded
             ? "recovering"
             : "native",
         catchupRunning: reconciliation !== null,
@@ -350,11 +232,10 @@ export async function startWatcher(
     },
     close: async () => {
       closing = true;
-      subscriptionGeneration++;
+      subscription.retire();
       clearTimeout(gapScanTimer);
-      await subscriptionUpdate.catch(() => {});
-      await subscription?.unsubscribe();
-      recovery.detached();
+      await subscription.settled();
+      await subscription.detach();
       await reconciliation;
       await processor.close();
     },

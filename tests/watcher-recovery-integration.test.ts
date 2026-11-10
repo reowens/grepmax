@@ -103,7 +103,6 @@ async function fixture(mode: "daemon" | "standalone") {
   let refuse = false;
   const dependencies = {
     processors: new Map(),
-    subscriptions: new Map(),
     getVectorDb: () => db,
     getMetaCache: () => meta,
     getWorkerPool: () => pool,

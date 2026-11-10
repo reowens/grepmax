@@ -82,7 +82,6 @@ describe("ingestion file-policy parity", () => {
     };
     const manager = new WatcherManager({
       processors: new Map(),
-      subscriptions: new Map(),
       getVectorDb: () => ({
         getDistinctPathsForPrefix: vi.fn(async () => new Set<string>()),
       }),
@@ -163,7 +162,6 @@ describe("ingestion file-policy parity", () => {
     };
     const manager = new WatcherManager({
       processors: new Map(),
-      subscriptions: new Map(),
       getVectorDb: () => ({
         getDistinctPathsForPrefix: vi.fn(async () => new Set<string>()),
       }),

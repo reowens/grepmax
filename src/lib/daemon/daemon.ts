@@ -1,7 +1,6 @@
 import * as fs from "node:fs";
 import * as net from "node:net";
 import * as path from "node:path";
-import type { AsyncSubscription } from "@parcel/watcher";
 import lockfile from "proper-lockfile";
 import { CONFIG, PATHS } from "../../config";
 import type { ProjectBatchProcessor } from "../index/batch-processor";
@@ -261,7 +260,6 @@ export class Daemon {
   private readonly processors = new Map<string, ProjectBatchProcessor>();
   private lastResourceSnapshot: ResourceSnapshot | null = null;
   private readonly searchers = new Map<string, Searcher>();
-  private readonly subscriptions = new Map<string, AsyncSubscription>();
   private vectorDb: VectorDB | null = null;
   private activeConfig: GlobalConfig | null = null;
   private activeGeneration: Readonly<EmbeddingGenerationConfig> | null = null;
@@ -327,7 +325,6 @@ export class Daemon {
   });
   private readonly watcherManager = new WatcherManager({
     processors: this.processors,
-    subscriptions: this.subscriptions,
     getVectorDb: () => this.vectorDb,
     getMetaCache: () => this.metaCache,
     getWorkerPool: () => this.workerPool,

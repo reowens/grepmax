@@ -28,7 +28,6 @@ describe("WatcherManager.unwatchProject", () => {
   function deps() {
     return {
       processors: new Map(),
-      subscriptions: new Map(),
       evictSearcher: vi.fn(),
       touchActivity: vi.fn(),
       getShuttingDown: () => false,
@@ -245,9 +244,9 @@ describe("WatcherManager.unwatchProject", () => {
       await fs.unlink(policy);
       notify(null, [{ type: "delete", path: policy }]);
       await vi.waitFor(() => expect(catchup).toHaveBeenCalledTimes(2));
-      expect(
-        vi.mocked(watcher.subscribe).mock.calls[2][2]?.ignore,
-      ).not.toContain("artifacts/**/*.json");
+      // Removing an already empty native policy needs no subscription churn.
+      expect(watcher.subscribe).toHaveBeenCalledTimes(2);
+      expect(unsubscribe).toHaveBeenCalledOnce();
     } finally {
       await wm.unwatchProject(root);
       await fs.rm(root, { recursive: true, force: true });
@@ -277,7 +276,7 @@ describe("WatcherManager.unwatchProject", () => {
     finish({ unsubscribe });
     await Promise.all([subscribing, unwatching]);
     expect(unsubscribe).toHaveBeenCalledOnce();
-    expect(dependencies.subscriptions.size).toBe(0);
+    expect(wm.subscriptions.size).toBe(0);
     expect(processor.close).toHaveBeenCalledOnce();
   });
 
@@ -603,6 +602,7 @@ describe("WatcherManager.unwatchProject", () => {
   });
 
   it("ignores errors and events from an obsolete subscription generation", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "gmax-generation-"));
     const watcher = await import("@parcel/watcher");
     const callbacks: SubscribeCallback[] = [];
     vi.mocked(watcher.subscribe).mockImplementation(async (_root, callback) => {
@@ -610,7 +610,6 @@ describe("WatcherManager.unwatchProject", () => {
       return { unsubscribe: vi.fn(async () => {}) };
     });
     const d = deps();
-    const root = "/p/app";
     const processor = {
       handleFileEvent: vi.fn(),
       close: vi.fn(async () => {}),
@@ -618,19 +617,79 @@ describe("WatcherManager.unwatchProject", () => {
     d.processors.set(root, processor);
     const wm = new WatcherManager(d) as any;
     const recover = vi.spyOn(wm, "recoverWatcher");
-    await wm.subscribeWatcher(root, processor);
-    await wm.subscribeWatcher(root, processor);
-    callbacks[0](new Error("backend stopped"), [
-      { type: "update", path: `${root}/old.ts` },
-    ]);
-    callbacks[1](null, [{ type: "update", path: `${root}/new.ts` }]);
-    expect(recover).not.toHaveBeenCalled();
-    expect(wm.health(root).overflowCount).toBe(0);
-    expect(processor.handleFileEvent).toHaveBeenCalledExactlyOnceWith(
-      "change",
-      `${root}/new.ts`,
-    );
-    await wm.unwatchProject(root);
+    try {
+      await fs.writeFile(path.join(root, ".gmaxignore"), "/first/**/*.json\n");
+      await wm.subscribeWatcher(root, processor);
+      await fs.writeFile(path.join(root, ".gmaxignore"), "/second/**/*.json\n");
+      await wm.subscribeWatcher(root, processor);
+      expect(callbacks).toHaveLength(2);
+      callbacks[0](new Error("backend stopped"), [
+        { type: "update", path: `${root}/old.ts` },
+      ]);
+      callbacks[1](null, [{ type: "update", path: `${root}/new.ts` }]);
+      expect(recover).not.toHaveBeenCalled();
+      expect(wm.health(root).overflowCount).toBe(0);
+      expect(processor.handleFileEvent).toHaveBeenCalledExactlyOnceWith(
+        "change",
+        `${root}/new.ts`,
+      );
+    } finally {
+      await wm.unwatchProject(root);
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("skips the re-subscribe on a policy event that leaves the ignore identity unchanged", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "gmax-same-policy-"));
+    const policy = path.join(root, ".gmaxignore");
+    const watcher = await import("@parcel/watcher");
+    let notify!: SubscribeCallback;
+    const unsubscribe = vi.fn(async () => {});
+    vi.mocked(watcher.subscribe)
+      .mockClear()
+      .mockImplementation(async (_root, callback) => {
+        notify = callback;
+        return { unsubscribe };
+      });
+    const dependencies = {
+      ...deps(),
+      getVectorDb: () => ({ diskPressure: "ok" }),
+      getMetaCache: () => ({ get: vi.fn() }),
+    } as any;
+    const wm = new WatcherManager(dependencies);
+    const catchup = vi
+      .spyOn(wm as any, "runCatchup")
+      .mockResolvedValue(undefined);
+    try {
+      await fs.writeFile(policy, "/artifacts/**/*.json\n");
+      await wm.watchProject(root, { catchup: false });
+      expect(watcher.subscribe).toHaveBeenCalledOnce();
+      await fs.writeFile(policy, "# comment\n/artifacts/**/*.json\n");
+      notify(null, [{ type: "update", path: policy }]);
+      await vi.waitFor(() => expect(catchup).toHaveBeenCalledOnce());
+      expect(watcher.subscribe).toHaveBeenCalledOnce();
+      expect(unsubscribe).not.toHaveBeenCalled();
+      expect(wm.health(root).watcherRecovery?.exclusions?.attached).toBe(true);
+
+      // A terminal failure still forces a fresh subscription with that policy.
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      await (wm as any).subscribeWatcher(
+        root,
+        dependencies.processors.get(root),
+      );
+      expect(watcher.subscribe).toHaveBeenCalledOnce();
+      vi.spyOn(wm as any, "recoverWatcher").mockImplementation(() => {});
+      notify(new Error("backend stopped"), []);
+      await (wm as any).subscribeWatcher(
+        root,
+        dependencies.processors.get(root),
+      );
+      expect(watcher.subscribe).toHaveBeenCalledTimes(2);
+      expect(unsubscribe).toHaveBeenCalledOnce();
+    } finally {
+      await wm.unwatchProject(root);
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 
   it("reports polling, recovery, failures, and successful reconciliation independently", async () => {
@@ -815,10 +874,17 @@ describe("WatcherManager.unwatchProject", () => {
       touchActivity: vi.fn(),
     } as any;
     const wm = new WatcherManager(dependencies);
+    const watcher = await import("@parcel/watcher");
     let finishSubscribe!: () => void;
-    vi.spyOn(wm as any, "subscribeWatcherNow").mockImplementation(
-      () => new Promise<void>((resolve) => (finishSubscribe = resolve)),
-    );
+    vi.mocked(watcher.subscribe)
+      .mockClear()
+      .mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finishSubscribe = () =>
+              resolve({ unsubscribe: vi.fn(async () => {}) });
+          }),
+      );
     let watched = false;
     const watching = wm
       .watchProject(root, { catchup: false })
@@ -903,9 +969,9 @@ describe("WatcherManager.unwatchProject", () => {
     dependencies.processors.set("/p/busy", busy);
     dependencies.processors.set("/p/idle", idle);
     dependencies.processors.set("/p/quiet", quiet);
-    const subscription = { unsubscribe: vi.fn(async () => {}) };
-    dependencies.subscriptions.set("/p/busy", subscription);
     const wm = new WatcherManager(dependencies) as any;
+    const subscription = { detach: vi.fn(async () => {}), retire: vi.fn() };
+    wm.subscriptions.set("/p/busy", { processor: busy, subscription });
     let scanAborted = false;
     const scan = vi.spyOn(wm, "catchupScan").mockImplementation(
       async (_root: unknown, _processor: unknown, signal: any) =>
@@ -928,8 +994,9 @@ describe("WatcherManager.unwatchProject", () => {
       expect(p.pause).toHaveBeenCalledOnce();
       expect(p.close).not.toHaveBeenCalled();
     }
-    expect(subscription.unsubscribe).not.toHaveBeenCalled();
-    expect(dependencies.subscriptions.size).toBe(1);
+    expect(subscription.detach).not.toHaveBeenCalled();
+    expect(subscription.retire).not.toHaveBeenCalled();
+    expect(wm.subscriptions.size).toBe(1);
     expect(dependencies.processors.size).toBe(3);
 
     // A gap or poll scan requested while paused waits for resume.

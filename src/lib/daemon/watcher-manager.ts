@@ -1,19 +1,9 @@
 import * as path from "node:path";
-import type { AsyncSubscription } from "@parcel/watcher";
 import { ProjectBatchProcessor } from "../index/batch-processor";
 import { reconcileMetaEntry } from "../index/cache-coherence";
 import { ProjectFilePolicy } from "../index/file-policy";
-import {
-  createWalkState,
-  isPathProtectedByWalkState,
-  walk,
-} from "../index/walker";
-import { WATCHER_IGNORE_GLOBS } from "../index/watcher";
-import {
-  FSEVENTS_GAP_SCAN_INTERVAL_MS,
-  isFSEventsGap,
-} from "../index/watcher-errors";
-import { subscribeWithNativeExclusions } from "../index/watcher-ignore";
+import { reconcileProject, WatcherSubscription } from "../index/watcher-core";
+import { FSEVENTS_GAP_SCAN_INTERVAL_MS } from "../index/watcher-errors";
 import { WatcherRecoveryTracker } from "../index/watcher-recovery";
 import type { IndexState } from "../output/index-state-footer";
 import type { MetaCache } from "../store/meta-cache";
@@ -61,8 +51,6 @@ function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
 export interface WatcherManagerDeps {
   /** Shared with the daemon (read by search/indexState/shutdown). */
   processors: Map<string, ProjectBatchProcessor>;
-  /** Shared with the daemon (touched by indexProject/shutdown). */
-  subscriptions: Map<string, AsyncSubscription>;
   getVectorDb: () => VectorDB | null;
   getMetaCache: () => MetaCache | null;
   getWorkerPool?: () => WorkerPool | null;
@@ -80,14 +68,9 @@ export interface WatcherManagerDeps {
 }
 
 /**
- * Owns per-project file watching: @parcel/watcher subscriptions, FSEvents
- * overflow recovery, poll-mode fallback, and the offline catchup scan. Holds the
- * watcher health/state maps; shares the `processors` and `subscriptions` maps
- * with the daemon by reference so the streaming index ops and shutdown can still
- * detach a project directly.
- *
- * Extracted from daemon.ts (Phase 2). Behavior-preserving — the daemon keeps
- * thin watchProject/unwatchProject delegators over this manager.
+ * Owns the daemon's per-project file watching: retry and poll-mode recovery
+ * around the shared WatcherSubscription, and the catchup scan. Shares the
+ * `processors` map with the daemon by reference.
  */
 export class WatcherManager {
   private readonly pendingOps = new Set<string>();
@@ -357,82 +340,64 @@ export class WatcherManager {
     );
   }
 
-  private readonly subscriptionUpdates = new Map<string, Promise<void>>();
-  private readonly watcherGenerations = new Map<string, symbol>();
+  private readonly subscriptions = new Map<
+    string,
+    { processor: ProjectBatchProcessor; subscription: WatcherSubscription }
+  >();
 
-  private async subscribeWatcher(
+  private subscribeWatcher(
     root: string,
     processor: ProjectBatchProcessor,
   ): Promise<void> {
-    const previous = this.subscriptionUpdates.get(root) ?? Promise.resolve();
-    const update = previous
-      .catch(() => {})
-      .then(() => this.subscribeWatcherNow(root, processor));
-    this.subscriptionUpdates.set(root, update);
-    try {
-      await update;
-    } finally {
-      if (this.subscriptionUpdates.get(root) === update)
-        this.subscriptionUpdates.delete(root);
-    }
-  }
-
-  private async subscribeWatcherNow(
-    root: string,
-    processor: ProjectBatchProcessor,
-  ): Promise<void> {
-    const name = path.basename(root);
     if (
       this.deps.processors.get(root) !== processor ||
-      this.deps.getShuttingDown?.()
+      this.deps.getShuttingDown()
     )
-      return;
-
-    const generation = Symbol(root);
-    this.watcherGenerations.set(root, generation);
-    // Unsubscribe existing watcher if any (e.g. during recovery)
-    const existingSub = this.deps.subscriptions.get(root);
-    if (existingSub) {
-      try {
-        await existingSub.unsubscribe();
-      } catch {}
-      this.deps.subscriptions.delete(root);
-      this.recovery(root).detached();
+      return Promise.resolve();
+    let entry = this.subscriptions.get(root);
+    if (entry?.processor !== processor) {
+      entry?.subscription.retire();
+      void entry?.subscription.detach().catch(() => {});
+      entry = {
+        processor,
+        subscription: this.createSubscription(root, processor),
+      };
+      this.subscriptions.set(root, entry);
     }
+    return entry.subscription.update();
+  }
 
-    const { subscription: sub, policy } = await subscribeWithNativeExclusions(
+  private createSubscription(
+    root: string,
+    processor: ProjectBatchProcessor,
+  ): WatcherSubscription {
+    const name = path.basename(root);
+    return new WatcherSubscription({
       root,
-      (err, events) => {
+      recovery: this.recovery(root),
+      isActive: () =>
+        this.deps.processors.get(root) === processor &&
+        !this.deps.getShuttingDown(),
+      onError: (err) => {
+        this.overflowCounts.set(root, (this.overflowCounts.get(root) ?? 0) + 1);
+        const now = Date.now();
         if (
-          this.deps.processors.get(root) !== processor ||
-          this.watcherGenerations.get(root) !== generation ||
-          this.deps.getShuttingDown?.()
-        )
-          return;
-        if (err) {
-          this.recovery(root).error(err);
-          this.overflowCounts.set(
-            root,
-            (this.overflowCounts.get(root) ?? 0) + 1,
+          !this.lastWatcherErrorLogMs.has(root) ||
+          now - this.lastWatcherErrorLogMs.get(root)! >= 60_000
+        ) {
+          this.lastWatcherErrorLogMs.set(root, now);
+          console.error(
+            `[daemon:${name}] Watcher error (total=${this.overflowCounts.get(root)}):`,
+            err,
           );
-          const now = Date.now();
-          if (
-            !this.lastWatcherErrorLogMs.has(root) ||
-            now - this.lastWatcherErrorLogMs.get(root)! >= 60_000
-          ) {
-            this.lastWatcherErrorLogMs.set(root, now);
-            console.error(
-              `[daemon:${name}] Watcher error (total=${this.overflowCounts.get(root)}):`,
-              err,
-            );
-          }
-          if (isFSEventsGap(err)) {
-            this.overflowPendingRoots.add(root);
-            this.requestOverflowCatchup(root, processor);
-          } else {
-            this.recoverWatcher(root, processor);
-          }
         }
+      },
+      onGap: () => {
+        this.overflowPendingRoots.add(root);
+        this.requestOverflowCatchup(root, processor);
+      },
+      onTerminal: () => this.recoverWatcher(root, processor),
+      onEvents: (events) => {
         // Gaps do not kill Parcel's stream. Only a terminal failure should
         // reset the subscription health window or prevent leaving poll mode.
         const lastOverflow = this.lastWatcherFailureMs.get(root) ?? 0;
@@ -447,17 +412,7 @@ export class WatcherManager {
         }
         this.deps.touchActivity();
       },
-      WATCHER_IGNORE_GLOBS,
-    );
-    if (
-      this.deps.processors.get(root) !== processor ||
-      this.watcherGenerations.get(root) !== generation
-    ) {
-      await sub.unsubscribe();
-      return;
-    }
-    this.deps.subscriptions.set(root, sub);
-    this.recovery(root).attached(policy);
+    });
   }
 
   private requestOverflowCatchup(
@@ -513,12 +468,10 @@ export class WatcherManager {
       // Always tear down the broken sub, even if poll mode is already active —
       // this can happen if a recovery attempt resubscribed successfully then
       // re-overflowed during the 5-min health window.
-      const sub = this.deps.subscriptions.get(root);
-      if (sub) {
-        sub.unsubscribe().catch(() => {});
-        this.deps.subscriptions.delete(root);
-        this.recovery(root).detached();
-      }
+      this.subscriptions
+        .get(root)
+        ?.subscription.detach()
+        .catch(() => {});
       if (!this.pollIntervals.has(root)) {
         console.error(
           `[daemon:${name}] Native watcher failed after ${fails} terminal errors — switching to poll mode (${POLL_INTERVAL_MS / 60000}min interval)`,
@@ -728,154 +681,142 @@ export class WatcherManager {
       const metaCache = this.deps.getMetaCache()!;
       const vectorDb = this.deps.getVectorDb()!;
       processor.filePolicy.invalidateIgnoreCache();
-      const rootPrefix = root.endsWith("/") ? root : `${root}/`;
-      const cachedPaths = await metaCache.getKeysWithPrefix(rootPrefix);
-      const vectorPaths = await vectorDb.getDistinctPathsForPrefix(rootPrefix);
-      const knownPaths = new Set([...cachedPaths, ...vectorPaths]);
-      if (signal.aborted) return false;
-      const seenPaths = new Set<string>();
-      const walkState = createWalkState();
 
       let queued = 0;
       let skipped = 0;
       let debugSamples = 0;
-      for await (const relPath of walk(root, {
+      const result = await reconcileProject({
+        root,
         policy: processor.filePolicy,
-        state: walkState,
-      })) {
-        if (signal.aborted) return false;
-        const absPath = path.join(root, relPath);
-
-        try {
-          const classification =
-            await processor.filePolicy.classifyFile(absPath);
-          if (classification.status === "error") {
-            walkState.protectedPaths.add(classification.protectedPath);
-            walkState.errors.push({
-              path: classification.protectedPath,
-              error: classification.error,
-            });
-            continue;
-          }
-          if (classification.status !== "indexable") continue;
-          const stats = classification.stat;
-          seenPaths.add(absPath);
-          let cached = metaCache.get(absPath);
-          const reconciliation = reconcileMetaEntry(
-            absPath,
-            cached,
-            vectorPaths.has(absPath),
-          );
-          if (reconciliation.action === "stamp") {
-            cached = reconciliation.entry;
-            metaCache.put(absPath, cached);
-          } else if (reconciliation.action === "reprocess") {
-            processor.handleFileEvent("change", absPath, {
-              forceReprocess: true,
-              workKind: "catchup",
-            });
-            queued++;
-            if (queued % 500 === 0) {
-              dbg(
-                "catchup",
-                `${path.basename(root)}: throttle pause at ${queued} queued`,
-              );
-              await abortableDelay(5_000, signal);
-            }
-            continue;
-          }
-          if (!isFileCached(cached, stats)) {
-            // Fast path: if only mtime changed but size is identical and we have a hash,
-            // just verify the hash in-process instead of sending to a worker.
-            if (cached?.hash && cached.size === stats.size) {
-              const observed = { ...cached };
-              const snapshot = await readFileSnapshot(absPath, {
-                projectRoot: root,
+        processor,
+        metaCache,
+        vectorDb,
+        aborted: () => signal.aborted,
+        visit: async ({
+          absolute: absPath,
+          relative: relPath,
+          vectorPaths,
+          state,
+        }) => {
+          let present = false;
+          try {
+            const classification =
+              await processor.filePolicy.classifyFile(absPath);
+            if (classification.status === "error") {
+              state.protectedPaths.add(classification.protectedPath);
+              state.errors.push({
+                path: classification.protectedPath,
+                error: classification.error,
               });
-              if (
-                snapshot.size !== stats.size ||
-                snapshot.mtimeMs !== stats.mtimeMs
-              ) {
-                processor.handleFileEvent("change", absPath, {
-                  workKind: "catchup",
+              return present;
+            }
+            if (classification.status !== "indexable") return present;
+            const stats = classification.stat;
+            present = true;
+            let cached = metaCache.get(absPath);
+            const reconciliation = reconcileMetaEntry(
+              absPath,
+              cached,
+              vectorPaths.has(absPath),
+            );
+            if (reconciliation.action === "stamp") {
+              cached = reconciliation.entry;
+              metaCache.put(absPath, cached);
+            } else if (reconciliation.action === "reprocess") {
+              processor.handleFileEvent("change", absPath, {
+                forceReprocess: true,
+                workKind: "catchup",
+              });
+              queued++;
+              if (queued % 500 === 0) {
+                dbg(
+                  "catchup",
+                  `${path.basename(root)}: throttle pause at ${queued} queued`,
+                );
+                await abortableDelay(5_000, signal);
+              }
+              return present;
+            }
+            if (!isFileCached(cached, stats)) {
+              // Fast path: if only mtime changed but size is identical and we have a hash,
+              // just verify the hash in-process instead of sending to a worker.
+              if (cached?.hash && cached.size === stats.size) {
+                const observed = { ...cached };
+                const snapshot = await readFileSnapshot(absPath, {
+                  projectRoot: root,
                 });
-                continue;
-              }
-              const hash = computeContentHash(snapshot.buffer, absPath);
-              if (hash === observed.hash) {
-                // Content unchanged — update mtime in cache and skip worker
-                if (signal.aborted) return false;
-                // A live batch can finish while this read yields. Never replace
-                // newer metadata or resurrect a cache entry it removed.
-                const current = metaCache.get(absPath);
                 if (
-                  current &&
-                  current.hash === observed.hash &&
-                  current.mtimeMs === observed.mtimeMs &&
-                  current.size === observed.size &&
-                  current.hashVersion === observed.hashVersion &&
-                  current.hasVectors === observed.hasVectors
+                  snapshot.size !== stats.size ||
+                  snapshot.mtimeMs !== stats.mtimeMs
                 ) {
-                  metaCache.put(absPath, {
-                    ...observed,
-                    mtimeMs: stats.mtimeMs,
+                  processor.handleFileEvent("change", absPath, {
+                    workKind: "catchup",
                   });
+                  return present;
                 }
-                skipped++;
-                continue;
+                const hash = computeContentHash(snapshot.buffer, absPath);
+                if (hash === observed.hash) {
+                  // Content unchanged — update mtime in cache and skip worker
+                  if (signal.aborted) return present;
+                  // A live batch can finish while this read yields. Never replace
+                  // newer metadata or resurrect a cache entry it removed.
+                  const current = metaCache.get(absPath);
+                  if (
+                    current &&
+                    current.hash === observed.hash &&
+                    current.mtimeMs === observed.mtimeMs &&
+                    current.size === observed.size &&
+                    current.hashVersion === observed.hashVersion &&
+                    current.hasVectors === observed.hasVectors
+                  ) {
+                    metaCache.put(absPath, {
+                      ...observed,
+                      mtimeMs: stats.mtimeMs,
+                    });
+                  }
+                  skipped++;
+                  return present;
+                }
               }
-            }
-            // Debug: log first few misses to diagnose re-queue loops
-            if (debugSamples < 5) {
-              dbg(
-                "catchup",
-                `miss ${relPath}: cached=${cached ? `mtime=${Math.trunc(cached.mtimeMs)} size=${cached.size}` : "null"} stat=mtime=${Math.trunc(stats.mtimeMs)} size=${stats.size}`,
-              );
-              debugSamples++;
-            }
-            if (signal.aborted) return false;
-            processor.handleFileEvent("change", absPath, {
-              workKind: "catchup",
-            });
-            queued++;
+              // Debug: log first few misses to diagnose re-queue loops
+              if (debugSamples < 5) {
+                dbg(
+                  "catchup",
+                  `miss ${relPath}: cached=${cached ? `mtime=${Math.trunc(cached.mtimeMs)} size=${cached.size}` : "null"} stat=mtime=${Math.trunc(stats.mtimeMs)} size=${stats.size}`,
+                );
+                debugSamples++;
+              }
+              if (signal.aborted) return present;
+              processor.handleFileEvent("change", absPath, {
+                workKind: "catchup",
+              });
+              queued++;
 
-            // Throttle: pause periodically during large catchup scans to let the
-            // batch processor drain and compaction run between bursts.
-            if (queued % 500 === 0) {
-              dbg(
-                "catchup",
-                `${path.basename(root)}: throttle pause at ${queued} queued`,
-              );
-              await abortableDelay(5_000, signal);
+              // Throttle: pause periodically during large catchup scans to let the
+              // batch processor drain and compaction run between bursts.
+              if (queued % 500 === 0) {
+                dbg(
+                  "catchup",
+                  `${path.basename(root)}: throttle pause at ${queued} queued`,
+                );
+                await abortableDelay(5_000, signal);
+              }
+            } else {
+              skipped++;
             }
-          } else {
-            skipped++;
+          } catch (error) {
+            state.protectedPaths.add(absPath);
+            state.errors.push({ path: absPath, error });
           }
-        } catch (error) {
-          walkState.protectedPaths.add(absPath);
-          walkState.errors.push({ path: absPath, error });
-        }
-      }
+          return present;
+        },
+      });
+      if (!result || signal.aborted) return false;
+      const { state: walkState, purged } = result;
       dbg(
         "catchup",
-        `${path.basename(root)}: ${queued} queued, ${skipped} skipped (cached ok), ${seenPaths.size} total`,
+        `${path.basename(root)}: ${queued} queued, ${skipped} skipped (cached ok), ${result.seen} total`,
       );
-
-      // Purge files deleted while daemon was offline
-      let purged = 0;
-      for (const cachedPath of knownPaths) {
-        if (signal.aborted) return false;
-        if (
-          !seenPaths.has(cachedPath) &&
-          !isPathProtectedByWalkState(cachedPath, walkState)
-        ) {
-          processor.handleFileEvent("unlink", cachedPath, {
-            forceDelete: true,
-            workKind: "cleanup",
-          });
-          purged++;
-        }
-      }
 
       const complete = walkState.rootComplete && walkState.errors.length === 0;
       if (!complete) {
@@ -1005,7 +946,9 @@ export class WatcherManager {
     // independently of the processor, so clear them even on the early return.
     this.watchLifecycles.get(root)?.abort();
     this.watchLifecycles.delete(root);
-    this.watcherGenerations.delete(root);
+    const subscription = this.subscriptions.get(root)?.subscription;
+    this.subscriptions.delete(root);
+    subscription?.retire();
     const pollInterval = this.pollIntervals.get(root);
     if (pollInterval) {
       clearInterval(pollInterval);
@@ -1029,20 +972,15 @@ export class WatcherManager {
     this.deps.processors.delete(root);
 
     // A native subscribe cannot be cancelled and takes tens of seconds on a
-    // large tree. Shutdown does not wait for it: with the processor removed
-    // above, subscribeWatcherNow unsubscribes as soon as it returns.
-    if (!this.deps.getShuttingDown())
-      await this.subscriptionUpdates.get(root)?.catch(() => {});
+    // large tree. Shutdown does not wait for it: the retired subscription
+    // unsubscribes as soon as it returns.
+    if (!this.deps.getShuttingDown()) await subscription?.settled();
 
     await this.stopCatchup(root);
 
     if (processor) await processor.close();
 
-    const sub = this.deps.subscriptions.get(root);
-    if (sub) {
-      await sub.unsubscribe();
-      this.deps.subscriptions.delete(root);
-    }
+    await subscription?.detach();
 
     this.deps.evictSearcher(root);
     this.lastWatcherFailureMs.delete(root);
@@ -1061,7 +999,7 @@ export class WatcherManager {
     const roots = [
       ...new Set([
         ...this.deps.processors.keys(),
-        ...this.deps.subscriptions.keys(),
+        ...this.subscriptions.keys(),
         ...this.watchLifecycles.keys(),
       ]),
     ];
@@ -1159,12 +1097,9 @@ export class WatcherManager {
     for (const active of catchups) active.controller.abort();
     await Promise.allSettled(catchups.map((active) => active.promise));
 
-    for (const sub of this.deps.subscriptions.values()) {
-      try {
-        await sub.unsubscribe();
-      } catch {}
+    for (const { subscription } of this.subscriptions.values()) {
+      await subscription.detach().catch(() => {});
     }
-    this.deps.subscriptions.clear();
   }
 }
 
