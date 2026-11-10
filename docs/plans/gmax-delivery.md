@@ -19,6 +19,7 @@ audience: internal
 parent_plan:
 related_plans:
   - docs/plans/gmax-local-workers.md
+  - docs/plans/gmax-archived-doc-ranking.md
   - docs/plans/gmax-watcher-correctness.md
   - docs/plans/colbert-backend-evaluation.md
   - docs/plans/session-start-hint-trim.md
@@ -94,14 +95,16 @@ never hidden by default. Not built, and no plan selected yet.
   the same 0.6 penalty (`searcher.ts:437`), so an archived doc competes as an
   equal. In 5 live pairs the older or superseded doc ranked first 4 times; a
   `status: deprecated` doc in an `archive/` folder ranked 1 and its
-  `superseded_by` successor ranked 17.
+  `superseded_by` successor printed at 17 (`--in docs -m 20`); in the full
+  38-row shortlist the successor ranks 15.
 - **First step (no reindex):** demote chunks whose path has an `archive` or
   `archived` folder at search time, tag them in results, and skip the demotion
-  when the query asks for history. Simulated, the successor above moves from 15
-  to 8.
+  when the query asks for history. A simulated 0.5 factor moves the successor
+  from 15 to 8 in that shortlist.
 - **Later step:** read frontmatter `status` (`archived`, `deprecated`,
   `outdated`) into a column at index time, which re-chunks only Markdown.
-- Evidence: [findings](assets/archived-doc-ranking-20261109/findings.md).
+- Plan: [gmax-archived-doc-ranking.md](gmax-archived-doc-ranking.md), proposed.
+  Evidence: [findings](assets/archived-doc-ranking-20261109/findings.md).
 
 ## Power-loss torn commits: rollback built and tested, not installed
 

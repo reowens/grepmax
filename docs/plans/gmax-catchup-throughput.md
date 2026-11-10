@@ -25,6 +25,7 @@ related_plans:
   - docs/plans/gmax-delivery.md
   - docs/plans/gmax-p3-container.md
   - docs/plans/gmax-watcher-correctness.md
+  - docs/plans/gmax-archived-doc-ranking.md
 current_state: >
   The P3 runs gmax 0.26.111 from npm under gmax.service at 400% (installed 2026-11-09 11:17:42 UTC, helper source 5e0b2e9e) on the store from the 2026-11-07 full re-embed. The 2-day regrowth record ended 12:15 UTC 2026-11-09: bounded index-refresh and row relocation are refused every pass, deleted rows rose to 150,924 and fragments to 2,103.
 next_step: >

@@ -21,6 +21,7 @@ parent_plan: docs/plans/gmax-delivery.md
 related_plans:
   - docs/plans/gmax-delivery.md
   - docs/plans/gmax-catchup-throughput.md
+  - docs/plans/gmax-archived-doc-ranking.md
 related_docs:
 current_state: "The P3 runs gmax 0.26.113 under gmax.service. Its journal since 2026-11-09 16:31 PST shows 0 poll-mode falls and 0 re-watch loops, but folders created after the subscribe get no watch (2 folders, 16 files missing from the index), Linux inotify overflow is dropped without a signal, and the subscription keeps its own ignore list (33,091 watches, 356 of them in gitignored folders)."
 next_step: "Phase 1: merge the daemon and standalone watchers into 1 module, removing dead code from watcher-manager.ts first."

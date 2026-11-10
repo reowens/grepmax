@@ -74,6 +74,12 @@ owns remaining work. No other plan or saved prompt was archived.
 | [Gmax Delivery Plan](plans/gmax-delivery.md) | Active |
 | [Gmax watcher correctness](plans/gmax-watcher-correctness.md) | Active |
 
+## Planned
+
+| Doc | Status |
+|-----|--------|
+| [Gmax archived doc ranking](plans/gmax-archived-doc-ranking.md) | Planned |
+
 ## Blocked
 
 | Doc | Status |
