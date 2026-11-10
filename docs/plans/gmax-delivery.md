@@ -81,8 +81,8 @@ upstream `HEAD`, and both MLX locks at their latest. The `fsspec` constraint is
 `mlx-vlm` `a54f1a0d86fa`: its digest changed, so an existing gemma2 index needs a
 rebuild, and Gemma's evaluation has not been re-measured on these versions (that
 needs a model load). The MLX tests that load no weights pass on an Apple Silicon
-Mac in both environments. Open: the 3 `test_registry_verification.py` deadline
-tests fail on Linux and macOS, already on `58b1356`.
+Mac in both environments. The 3 `test_registry_verification.py` deadline tests
+now read the deadline from `release.yml` (`7c3c07a`, in 0.26.113).
 
 ## Archived and superseded docs: demoted and labelled
 
