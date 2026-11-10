@@ -10,7 +10,7 @@
   "tensorCount": 413,
   "persistedValues": 271002648,
   "mlx": "0.32.4",
-  "mlxVlmRevision": "a54f1a0d86fa45c466c00d819ac6ac5ba9d61ac4",
+  "mlxVlmRevision": "763e6379a94d054b8d695d6f3f3ad675d3d366df",
   "transformers": "5.22.2",
   "queryCode": "task: code retrieval | query: ",
   "queryDocument": "task: question answering | query: ",
