@@ -83,6 +83,26 @@ needs a model load). The MLX tests that load no weights pass on an Apple Silicon
 Mac in both environments. Open: the 3 `test_registry_verification.py` deadline
 tests fail on Linux and macOS, already on `58b1356`.
 
+## Archived and superseded docs: demoted and labelled
+
+Owner ruling: search demotes archived docs and labels them in results; they are
+never hidden by default. Not built, and no plan selected yet.
+
+- **Today:** no ranking stage reads file time, git time or frontmatter
+  (`src/lib/search/searcher.ts:523-1349`; the store has no time column,
+  `src/lib/store/vector-db.ts:1076-1141`). Every `.md` or `/docs/` chunk takes
+  the same 0.6 penalty (`searcher.ts:437`), so an archived doc competes as an
+  equal. In 5 live pairs the older or superseded doc ranked first 4 times; a
+  `status: deprecated` doc in an `archive/` folder ranked 1 and its
+  `superseded_by` successor ranked 17.
+- **First step (no reindex):** demote chunks whose path has an `archive` or
+  `archived` folder at search time, tag them in results, and skip the demotion
+  when the query asks for history. Simulated, the successor above moves from 15
+  to 8.
+- **Later step:** read frontmatter `status` (`archived`, `deprecated`,
+  `outdated`) into a column at index time, which re-chunks only Markdown.
+- Evidence: [findings](assets/archived-doc-ranking-20261109/findings.md).
+
 ## Power-loss torn commits: rollback built and tested, not installed
 
 On 2026-11-08 a power loss at about 17:53 brought 36 files of the last 11 Lance
