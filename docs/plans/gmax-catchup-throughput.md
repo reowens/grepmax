@@ -366,4 +366,6 @@ The host runs gmax as `gmax.service` from its own unit script at 400% (`KillMode
 
 Fixed on Linux on 2026-10-26: a read-only `gmax watch --daemon -b` started a second daemon beside a busy one (`e7133fc`); a full-text index built while the daemon ran stayed unseen until a restart (`e899041`); a unit-run daemon's recycle spawned a successor outside its cgroup (`dfe82e1`); version cleanup aborted on Lance's default thread pools and its retries cancelled live batches (`da793ae`).
 
+The power-loss repair has run once for real: after the P3 stopped uncleanly at about 11:32 UTC on 2026-11-10, the daemon's start rolled the store back from torn version 13440 to whole version 13435 and moved 15 empty or unreadable files to `~/.gmax/quarantine-torn-store-20261110-033420`; `gmax doctor --torn-store` then read the store whole with 0 files to reindex.
+
 Open on the P3: row relocation completing on deleted rows from edits, which the regrowth record shows ([Compaction](#compaction-q7), step 5); the second regrowth record runs to 2026-11-11 16:00 UTC.
