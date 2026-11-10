@@ -69,7 +69,7 @@ describe("release hook does not wait on publication", () => {
   it("attempts an explicit installation once and preserves quarantine", () => {
     const { result, commands } = run(["--install"]);
     expect(result.status).toBe(0);
-    expect(commands).toEqual(["npm"]);
+    expect(commands).toEqual(["npm", "npm"]);
     expect(result.stdout).toContain(
       "preserving it and skipping daemon restart",
     );

@@ -57,12 +57,20 @@ case "${1:-}" in
     echo "==> Installing published grepmax@${VERSION}"
     # A missing version or failed install is an actionable failure, not a poll loop.
     # Revalidate cached metadata without clearing unrelated npm cache entries.
+    # An npm min-release-age would refuse a release published minutes ago. Only
+    # grepmax's own archive is fetched past it (npm pack checks the registry's
+    # integrity); the install of that file resolves its dependencies under it.
+    PACK_DIR="$(mktemp -d)"
+    trap 'rm -rf "${PACK_DIR}"' EXIT
+    ARCHIVE="${PACK_DIR}/grepmax-${VERSION}.tgz"
     if [ -n "${UNIT}" ] && [ -n "${UNIT_PREFIX}" ]; then
       echo "    into ${UNIT_PREFIX}, where ${UNIT} loads grepmax from"
-      PATH="${UNIT_NODE_DIR:+${UNIT_NODE_DIR}:}${PATH}" "${UNIT_NPM}" install -g --prefix "${UNIT_PREFIX}" \
-        --prefer-online "grepmax@${VERSION}"
+      PATH="${UNIT_NODE_DIR:+${UNIT_NODE_DIR}:}${PATH}" "${UNIT_NPM}" pack --min-release-age=0 --prefer-online \
+        --pack-destination "${PACK_DIR}" "grepmax@${VERSION}" >/dev/null
+      PATH="${UNIT_NODE_DIR:+${UNIT_NODE_DIR}:}${PATH}" "${UNIT_NPM}" install -g --prefix "${UNIT_PREFIX}" "${ARCHIVE}"
     else
-      npm install -g --prefer-online "grepmax@${VERSION}"
+      npm pack --min-release-age=0 --prefer-online --pack-destination "${PACK_DIR}" "grepmax@${VERSION}" >/dev/null
+      npm install -g "${ARCHIVE}"
     fi
     ;;
   *)

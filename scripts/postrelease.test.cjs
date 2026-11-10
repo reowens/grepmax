@@ -77,7 +77,8 @@ test('an active gmax.service unit gets the install in its own prefix and a syste
       const result = await run(fx, { STUB_UNIT: 'active' });
       assert.equal(result.status, 0, result.stdout + result.stderr);
       assert.equal(fx.log('npm'), '');
-      assert.match(fx.log('unit-npm'), new RegExp(`^install -g --prefix ${fx.prefix} --prefer-online grepmax@${VERSION}$`, 'm'));
+      assert.match(fx.log('unit-npm'), new RegExp(`^pack --min-release-age=0 --prefer-online --pack-destination \\S+ grepmax@${VERSION}$`, 'm'));
+      assert.match(fx.log('unit-npm'), new RegExp(`^install -g --prefix ${fx.prefix} \\S+/grepmax-${VERSION}\\.tgz$`, 'm'), 'the fetched archive, so its dependencies keep the cooldown');
       assert.match(fx.log('unit-npm'), new RegExp(`^PATH0=${fx.unitNode}$`, 'm'));
       assert.match(fx.log('systemctl'), /^--user restart gmax\.service$/m);
       assert.equal(fx.log('gmax'), '');
@@ -135,7 +136,7 @@ test('with no unit the global install and gmax handover run as before, confirmed
     try {
       const result = await run(fx, { STUB_UNIT: 'absent', STUB_PGREP_EXIT: '0' });
       assert.equal(result.status, 0, result.stdout + result.stderr);
-      assert.equal(fx.log('npm'), `install -g --prefer-online grepmax@${VERSION}\n`);
+      assert.match(fx.log('npm'), new RegExp(`^pack --min-release-age=0 --prefer-online --pack-destination \\S+ grepmax@${VERSION}\ninstall -g \\S+/grepmax-${VERSION}\\.tgz\n$`));
       assert.equal(fx.log('unit-npm'), '');
       assert.match(fx.log('pgrep'), /^-x gmax-daemon$/m);
       assert.equal(fx.log('gmax'), 'watch --daemon -b\n');
@@ -157,7 +158,7 @@ test('with no unit and no daemon running nothing is restarted', () =>
   withFixture(async (fx) => {
     const result = await run(fx, { STUB_UNIT: 'absent' });
     assert.equal(result.status, 0, result.stdout + result.stderr);
-    assert.equal(fx.log('npm'), `install -g --prefer-online grepmax@${VERSION}\n`);
+    assert.match(fx.log('npm'), new RegExp(`^pack --min-release-age=0 --prefer-online --pack-destination \\S+ grepmax@${VERSION}\ninstall -g \\S+/grepmax-${VERSION}\\.tgz\n$`));
     assert.equal(fx.log('gmax'), '');
     assert.match(result.stdout, /No daemon running/);
   }));
