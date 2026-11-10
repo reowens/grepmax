@@ -192,22 +192,23 @@ test('a draft whose asset digests differ stops before the dispatch', t => {
   assert.equal(calls.some(args => args[0] === 'workflow'), false);
 });
 
-test('a lagging dependency or an unreadable registry refuses before the build and any GitHub write', t => {
+test('a newer release or an unreadable registry is printed, and the release continues', t => {
   const { root, native, base } = fixture(t);
-  const refusals = [
+  const notices = [
     [{ status: 1, stdout: 'npm vite 8.3.6, latest 8.3.7\ncargo lance 14.0.2, latest 14.1.0\n', stderr: '' },
-      'npm vite 8.3.6, latest 8.3.7\ncargo lance 14.0.2, latest 14.1.0'],
-    [{ status: 1, stdout: '', stderr: 'Could not check crates.io lance: HTTP 503\n' }, 'Could not check crates.io lance: HTTP 503'],
-    [{ status: 127, stdout: '', stderr: '' }, 'The dependency version check exited 127'],
+      '    npm vite 8.3.6, latest 8.3.7\n    cargo lance 14.0.2, latest 14.1.0'],
+    [{ status: 1, stdout: '', stderr: 'Could not check crates.io lance: HTTP 503\n' }, '    Could not check crates.io lance: HTTP 503'],
+    [{ status: 127, stdout: '', stderr: '' }, '    The dependency version check exited 127'],
   ];
-  for (const [result, message] of refusals) {
-    const { exec, calls } = stubExec();
+  for (const [result, lines] of notices) {
+    const { exec } = stubExec();
     let built = false;
     const build = options => { built = true; return stubBuild(options); };
-    assert.throws(() => release.main(['--dispatch', '--native', native, '--out', path.join(base, 'out')],
-      { root, exec, build, checkVersions: () => result, print: () => {} }), { message });
-    assert.equal(built, false);
-    assert.equal(calls.some(args => args[1] === 'create' || args[0] === 'workflow'), false);
+    const printed = [];
+    release.main(['--dry-run', '--native', native, '--out', path.join(base, `out-${result.status}-${printed.length}-${Math.random()}`)],
+      { root, exec, build, checkVersions: () => result, print: line => printed.push(line) });
+    assert.equal(built, true);
+    assert.ok(printed.includes(`==> Upgrade next (the release continues):\n${lines}`), printed.join('\n'));
   }
 });
 

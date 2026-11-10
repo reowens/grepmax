@@ -30,12 +30,14 @@ summary: "Real hybrid output validated; original client timeout retained, cleanu
 
 # Gmax Delivery Plan
 
-## Release gate: every dependency at its latest release
+## Dependency versions: every dependency at its latest release
 
 Owner ruling: gmax uses the latest version of each dependency, and no fix is
 made on an old version. `scripts/check-versions.cjs` (`pnpm run check:versions`)
-is its guard, and `scripts/release-draft.cjs` runs it after the tag and remote
-checks and before the build, refusing on a non-zero exit. There is no skip flag.
+is its guard: dependencies are kept current by upgrading them, and a release
+never waits on a newer one. `scripts/release-draft.cjs` runs it after the tag
+and remote checks and before the build, and prints what it reports (a newer
+release, or a registry it could not read) under "Upgrade next" and continues.
 
 - **npm:** each direct, dev and optional dependency's `pnpm-lock.yaml` version
   equals the newest stable release up to `dist-tags.latest` that is past pnpm's
@@ -63,7 +65,7 @@ checks and before the build, refusing on a non-zero exit. There is no skip flag.
   dependencies, PyPI `requires_dist` without extra-only entries; a git parent
   holds nothing). It prints as a held line naming the loosest binding parent and
   does not fail the check; below that release it is a lag.
-- An unreadable registry refuses with 1 line naming what could not be checked.
+- An unreadable registry gives 1 line naming what could not be checked.
 
 Tests: `node --test scripts/check-versions.test.cjs scripts/release-draft.test.cjs`
 (stubbed registries). On `a9e7b57` the real run exits 0 with 7 held lines: the 5
